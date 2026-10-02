@@ -173,7 +173,9 @@ bool chanceRejects(int64_t v, Rng& rng);
 // capital with anger kRebelAnger, the whole population its own people, and
 // each of its five stocks starts at 4 × its production. It has explored only
 // its own system and is in contact with nobody: it meets the empires that
-// detect it (diplomacy::updateContacts). The one way a new empire is founded:
+// detect it at the next first-contact check in a system (an intelligence
+// project's rebellion runs one in the planet's system at once, an event's
+// message its own; diplomacy::firstContactIn). The one way a new empire is founded:
 // the rebellion event and the intelligence operation both use it. Invalid
 // when the limit is reached. Adding an empire invalidates references into
 // GameState::empires.

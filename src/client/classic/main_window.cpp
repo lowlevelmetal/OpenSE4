@@ -275,6 +275,17 @@ std::vector<game::ObjectId> MainWindow::objectsAt(const UiContext& ui, game::Sec
     return shownStellarObjects(ui.rules(), ui.state(), ui.session.player(), shown_, sec);
 }
 
+bool MainWindow::selectedSectorMarked(const UiContext& ui) const {
+    if (!sector_ || !shown_.valid()) return false;
+    if (!objectsAt(ui, *sector_).empty()) return true;
+    if (replay_.active()) {
+        for (const game::Vehicle& v : replay_.vehicles())
+            if (v.location == game::Location{shown_, *sector_} && replaySeen_.contains(v.id)) return true;
+        return false;
+    }
+    return !vehiclesAt(ui, {shown_, *sector_}).empty();
+}
+
 std::vector<const game::Vehicle*> MainWindow::vehiclesAt(const UiContext& ui, game::Location where) const {
     std::vector<const game::Vehicle*> out;
     for (const game::Vehicle& v : ui.state().vehicles)
@@ -1365,10 +1376,10 @@ void MainWindow::overlayText(UiContext& ui) {
                     put(tiny, tinySize, square + Vec2{float(places[i].x), kSpriteSize - kTinyCell * float(places[i].line + 1)}, color, groups[i]);
             }
         // Coordinate location (on by default): the sector under the pointer, and
-        // the range from the selected sector of this system.
+        // the range from the selected sector of this system while it is marked
+        // (it holds an object we see, §7 Q64); "Range: 0" on that sector itself.
         if (opts.coordinateLocation && hover_) {
-            std::string line = std::format("Coordinates ({}, {})", hover_->x, hover_->y);
-            if (sector_) line += std::format("   Range: {}", std::max(std::abs(hover_->x - sector_->x), std::abs(hover_->y - sector_->y)));
+            const std::string line = map_style::coordinateLine(*hover_, selectedSectorMarked(ui) ? sector_ : std::nullopt);
             put(small, kSmallSize, geo.layout->coordinateLine + Vec2{geo.left, kSmallLead}, IM_COL32_WHITE, line);
         }
     }
@@ -1714,6 +1725,7 @@ void MainWindow::trackMovement(UiContext& ui) {
     if (s.turn != seenTurn_) {
         if (seenTurn_ != UINT32_MAX && !ui.session.turnBased()) {
             beforeTurn_ = glides_.lastSeen();
+            beforeTurnHeadings_ = glides_.lastHeadings();
             beforeTurnFor_ = s.turn;
         }
         replay_.stop();
@@ -1725,9 +1737,6 @@ void MainWindow::trackMovement(UiContext& ui) {
     f.shown = shown_;
     f.animate = settings().animateSystemMovement;
     f.cellPixels = geo.cell;
-    // Settings.txt `System Ship Movement Delay Milliseconds`: a wait after each animated step (spec 06 §1.9).
-    const double stepPause = ShipGlides::stepPause(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
-    f.stepPause = stepPause;
     f.seen = [this](game::VehicleId id) { return replaySeen_.contains(id); };
     f.turns = [&](game::VehicleId id) {
         const MovementLog* log = replay_.log();
@@ -1751,12 +1760,18 @@ void MainWindow::trackMovement(UiContext& ui) {
     }
     std::vector<ShipGlides::Seen> visible;
     for (const game::Vehicle& v : s.vehicles)
-        if (knownVehicle(ui, v)) visible.push_back({v.id, v.location});
-    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible, stepPause);
+        if (knownVehicle(ui, v)) visible.push_back({v.id, v.location, v.heading, turnsToHeading(ui.rules(), s, v)});
+    // The pause after each step: Settings.txt `System Ship Movement Delay
+    // Milliseconds`, read as seconds as the original does (spec 06 §1.9,
+    // §2.4); the movement log replay never pauses (spec 06 §7 Q62).
+    const double pause = ShipGlides::stepPause(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
+    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible, geo.cell, pause);
 }
 
 void MainWindow::startReplay(UiContext& ui, OrderId id) {
-    // The four keys start the replay whatever their buttons show (§2.8, §7 Q51).
+    // The four keys start the replay whatever their buttons show (§2.8, §7
+    // Q51); while a day's entries are animated they are ignored (§7 Q62).
+    if (replay_.active() && replay_.animating()) return;
     const game::GameState& s = ui.state();
     const game::EmpireId me = ui.session.player();
     if (!replay_.available(s.turn)) {
@@ -1766,7 +1781,8 @@ void MainWindow::startReplay(UiContext& ui, OrderId id) {
             // Play the turn again from its start and record its 30 days.
             const BusyPointer busy;
             MovementRecorder recorder(*start);
-            ui.session.replayLastTurn([&recorder](int day, const game::GameState& at) { recorder.day(day, at); });
+            ui.session.replayLastTurn([&recorder](int day, const game::GameState& at) { recorder.day(day, at); },
+                                      [&recorder](const game::MovementStep& st) { recorder.step(st); });
             auto log = std::make_shared<MovementLog>(recorder.take(s.turn));
             // What the viewer sees: its own objects, those it saw at the start and those it sees now.
             for (const auto& [vid, v] : log->vehicles)
@@ -1780,7 +1796,7 @@ void MainWindow::startReplay(UiContext& ui, OrderId id) {
             std::set<game::VehicleId> seenNow;
             for (const game::Vehicle& v : s.vehicles)
                 if (knownVehicle(ui, v)) seenNow.insert(v.id);
-            auto log = std::make_shared<MovementLog>(approximateLog(beforeTurn_, s, seenNow, s.turn));
+            auto log = std::make_shared<MovementLog>(approximateLog(beforeTurn_, s, seenNow, s.turn, beforeTurnHeadings_));
             for (const auto& [vid, v] : log->vehicles) replaySeen_.insert(vid);
             replay_.setLog(std::move(log));
         }
@@ -1824,11 +1840,11 @@ void MainWindow::prepareSectors(UiContext& ui) {
     for (game::ObjectId id : shownStellarObjects(ui.rules(), s, ui.session.player(), shown_)) bySector[s.galaxy.object(id).sector].first.push_back(id);
     if (replay_.active()) {
         for (const game::Vehicle& v : replay_.vehicles())
-            if (v.location.system == shown_ && replaySeen_.contains(v.id) && !replay_.motion(v.id, ui.time))
+            if (v.location.system == shown_ && replaySeen_.contains(v.id) && !replay_.motion(v.id))
                 bySector[v.location.sector].second.push_back(&v);
     } else {
         for (const game::Vehicle& v : s.vehicles)
-            if (v.location.system == shown_ && knownVehicle(ui, v) && !glides_.find(v.id, ui.time)) bySector[v.location.sector].second.push_back(&v);
+            if (v.location.system == shown_ && knownVehicle(ui, v) && !glides_.find(v.id)) bySector[v.location.sector].second.push_back(&v);
     }
     for (auto& [sector, contents] : bySector) {
         ShownSector out;
@@ -1875,7 +1891,9 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     };
     auto headingOf = [&](const game::Vehicle& v) {
         if (!turnsToHeading(rules, s, v)) return 0;
-        return replay_.active() ? replay_.heading(v.id) : glides_.heading(v.id);
+        // The engine keeps each vehicle's heading (saved with the game); the
+        // replay its own from the start of the turn (§2.4, §7 Q62).
+        return replay_.active() ? replay_.heading(v.id) : int(v.heading % 8);
     };
     auto miniOf = [&](const game::Vehicle& v, int heading) {
         const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
@@ -1955,39 +1973,39 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
 
     // Ships on their way: gliding to their new square, or moved by the replay
     // (turning in 5° steps, then sliding).
-    const double now = ui.time;
     auto largestFirst = [&](std::vector<const game::Vehicle*>& list) {
         std::stable_sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
             return rules.hull(s.design(a->design).hull).tonnage > rules.hull(s.design(b->design).hull).tonnage;
         });
     };
+    // A mini at any angle (while turning): the quad turned about its centre, sampled like the art.
+    auto turnedMini = [&](const game::Vehicle& v, Vec2 c, double angle) {
+        const Sprite sp = miniOf(v, 0);
+        if (!sp) {
+            placeholder(c, v.owner);
+            return;
+        }
+        const float a = float(angle) * std::numbers::pi_v<float> / 180.0f, ca = std::cos(a), sa = std::sin(a);
+        auto at = [&](float x, float y) { return c + Vec2{x * ca - y * sa, x * sa + y * ca}; };
+        const float h = kSpriteSize * 0.5f;
+        r.spriteQuad(sp.tex, {at(-h, -h), at(h, -h), at(h, h), at(-h, h)}, sp.uv);
+    };
     if (replay_.active()) {
+        // Each entry on its own, the others of the day waiting where they start (§7 Q62).
         for (const game::Vehicle& v : replay_.vehicles()) {
             if (v.location.system != shown_ || !replaySeen_.contains(v.id)) continue;
-            const auto m = replay_.motion(v.id, now);
-            if (!m) continue;
-            const Vec2 c = gridPoint(m->at);
-            const Sprite sp = miniOf(v, 0);
-            if (!sp) {
-                placeholder(c, v.owner);
-                continue;
-            }
-            // Any angle while turning: the quad turned about its centre, sampled like the art.
-            const float a = float(m->angle) * std::numbers::pi_v<float> / 180.0f, ca = std::cos(a), sa = std::sin(a);
-            auto at = [&](float x, float y) { return c + Vec2{x * ca - y * sa, x * sa + y * ca}; };
-            const float h = kSpriteSize * 0.5f;
-            r.spriteQuad(sp.tex, {at(-h, -h), at(h, -h), at(h, h), at(-h, h)}, sp.uv);
+            if (const auto m = replay_.motion(v.id)) turnedMini(v, gridPoint(m->at), turnsToHeading(rules, s, v) ? m->angle : 0.0);
         }
     } else {
         std::map<std::tuple<float, float, float, float, double>, std::vector<const game::Vehicle*>> gliding;
         for (const game::Vehicle& v : s.vehicles) {
             if (v.location.system != shown_ || !knownVehicle(ui, v)) continue;
-            if (const ShipGlides::Glide* g = glides_.find(v.id, now)) gliding[{g->from.x, g->from.y, g->to.x, g->to.y, g->start}].push_back(&v);  // a fleet glides as one
+            if (const ShipGlides::Glide* g = glides_.find(v.id)) gliding[{g->from.x, g->from.y, g->to.x, g->to.y, g->start}].push_back(&v);  // a fleet glides as one
         }
         for (auto& [key, list] : gliding) {
             largestFirst(list);
-            const Vec2 at = gridPoint(ShipGlides::position(*glides_.find(list.front()->id, now), now));
-            if (!spriteAt(miniOf(*list.front(), headingOf(*list.front())), at - Vec2{kSpriteSize * 0.5f, kSpriteSize * 0.5f})) placeholder(at, list.front()->owner);
+            const ShipGlides::Glide& g = *glides_.find(list.front()->id);
+            turnedMini(*list.front(), gridPoint(ShipGlides::position(g)), turnsToHeading(rules, s, *list.front()) ? ShipGlides::angle(g) : 0.0);
         }
     }
 
@@ -2002,7 +2020,15 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
                 r.line(corner, corner - Vec2{0, sy * l}, 1.0f, col);
             }
     };
-    if (sector_) brackets(*sector_, kSelectYellow);
+    // The selected location: `Dialogs/Selection.bmp` (36x36, eight small yellow
+    // marks) over the sector's sprite square with black transparent (spec 06
+    // §2.4, observed), while the sector holds something we see (§7 Q64);
+    // the four corner lines without the picture.
+    if (selectedSectorMarked(ui)) {
+        if (const Sprite mark = ui.art.image("Pictures/Game/Dialogs/Selection.bmp"))
+            r.sprite(mark.tex, Rect::fromPosSize(spriteSquare(*sector_), {kSpriteSize, kSpriteSize}), mark.uv);
+        else brackets(*sector_, kSelectYellow);
+    }
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
     // Waypoints and tagged minefields: a cyan 1 px rectangle on the cell's edges
     // (the number or "M" is drawn by overlayText).

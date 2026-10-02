@@ -46,8 +46,16 @@ public:
         if (index_ < 0 || index_ >= int(combats.size()) || loadedTurn_ != ui.state().turn)
             load(ui, wanted_ >= 0 && wanted_ < int(combats.size()) ? wanted_ : int(combats.size()) - 1, combats);
         const game::InterfaceOptions& opts = ui.options();
-        if (playback_.pace().beams.empty() || playback_.pace().fast != opts.replayFast || playback_.pace().animateMoves != opts.replayAnimate)
-            playback_.setPace(replayPace(ui.rules(), opts));
+        if (playback_.pace().beams.empty() || playback_.pace().fast != opts.replayFast || playback_.pace().animateMoves != opts.replayAnimate) {
+            CombatPace pace = replayPace(ui.rules(), opts);
+            // No move animated across the edge of the shown map (§1.10.3).
+            pace.inView = [this](int x, int y) {
+                if (viewSize_.x <= 0.0f || viewSize_.y <= 0.0f) return true;
+                const ImVec2 half{viewSize_.x * 0.5f, viewSize_.y * 0.5f};
+                return squareInView(view_, {view_.center.x - half.x, view_.center.y - half.y}, {view_.center.x + half.x, view_.center.y + half.y}, x, y);
+            };
+            playback_.setPace(std::move(pace));
+        }
         // Next plays one combat turn: animated, or at once with animation off.
         const size_t before = playback_.cursor();
         if (playback_.playing() && playback_.cursor() >= stopAt_) playback_.pause();

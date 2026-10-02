@@ -247,9 +247,16 @@ struct InterfaceOptions {
     uint8_t queuesTab = 0;               // the Construction Queues window's tab (0 Rate)
     uint8_t queuesShown = 0x0f;          // its toggles: bit 0 Ships, 1 Planets, 2 Ship SY, 3 Planet SY
     bool simulatorNoObsolete = false;    // the Combat Simulator's No Obsolete
+    // The Ships\Units window's tab (0 General) and its Show Ships (bit 0), Show
+    // Units (bit 1) and Show Fleets (bit 2) switches, kept with the empire: Fleet
+    // Transfer's Existing Fleets opens the window with them (spec 06 §7 Q79).
+    uint8_t shipsTab = 0;
+    uint8_t shipsShown = 0x07;
     // The sort keys of the four list windows (spec 06 §7 Q24): five slots of
     // column numbers each, newest click first; a slot holds column + 1, 0 is
-    // empty. All empty: the window's Name column alone (the default).
+    // empty. All empty: the window's Name column alone (the default). The
+    // Colonies and Ships\Units keys are column identities, the same in every
+    // tab (spec 06 §1.8.3: client ColonyColumn and shipui::ShipColumn, Name 1).
     std::array<uint8_t, 5> planetsSort{};
     std::array<uint8_t, 5> coloniesSort{};
     std::array<uint8_t, 5> shipsSort{};
@@ -610,6 +617,13 @@ struct Vehicle {
     // it counts only while cameFromTurn == GameState::turn.
     Location cameFrom;
     uint32_t cameFromTurn = 0;
+    // Its heading, 0..7 in 45° steps clockwise from up (spec 06 §2.4, §7 Q62,
+    // confirmed: binary): a new vehicle faces up, each step within a system
+    // sets it to that step's bearing (movement::headingFor), a warp keeps it.
+    // Saved with the game, so a mini faces the same way after loading and at
+    // the start of a movement log replay. Whether the mini is drawn turned is
+    // the client's (engineless hulls, satellites and mines never are).
+    uint8_t heading = 0;
 };
 
 // A fleet (spec 03 §9, confirmed: binary). It has no order list of its own:
@@ -699,6 +713,13 @@ struct CombatEvent {
     int16_t x = 0, y = 0;
     int32_t amount = 0;
     uint32_t component = 0;
+    // A Hit's outcome, for the battle windows' drawing (spec 06 §1.10.3, §7
+    // Q77): kStructure when it damaged the target's structure or destroyed it
+    // (an explosion is drawn; without it the shields took it all), kDestroyed
+    // when the target did not survive it.
+    uint8_t flags = 0;
+    static constexpr uint8_t kStructure = 1;
+    static constexpr uint8_t kDestroyed = 2;
 };
 
 struct CombatPiece {

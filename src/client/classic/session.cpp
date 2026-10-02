@@ -501,11 +501,13 @@ bool ClassicSession::setAutosaveTurns(int everyTurns) {
     return true;
 }
 
-bool ClassicSession::replayLastTurn(const std::function<void(int day, const game::GameState&)>& day) const {
+bool ClassicSession::replayLastTurn(const std::function<void(int day, const game::GameState&)>& day,
+                                    const std::function<void(const game::MovementStep&)>& step) const {
     if (!turnStart_) return false;
     game::GameState again = *turnStart_;
     game::TurnOptions options;
     options.movementDay = day;
+    options.movementStep = step;
     game::processTurn(*rules_, again, turnStartOrders_, options);
     return true;
 }

@@ -15,6 +15,13 @@ points leads from the systems of your colonies to a colony of theirs. Both empir
 **First Contact** entry in the log, and their treaty becomes **None**: met, but with no treaty.
 An empire without colonies makes no contact.
 
+The game looks for new contacts only at certain moments, in the system concerned: when ships
+arrive there through a warp point, when a ship, unit group or colony there lowers its cloak
+(by an order, at the start of a battle, or when its cloak fails), when an event happens there,
+and when a planet or ship there changes hands in a trade or surrender. Ships that only move
+around inside a system, even next to a stranger's colony, make no contact until one of those
+moments comes.
+
 Contact can also be **lost**. Once a turn, each empire follows the warp points outward from its
 colonies. When no colony of an empire it has met can be reached that way any more (for example
 because a warp point was closed, or because one side lost its last colony), contact with that
@@ -22,9 +29,10 @@ empire ends: the treaty returns to "no contact" and the intelligence projects ai
 removed, and your Log reports **Contact Lost**. Contact also ends when an empire is destroyed.
 An empire you lost contact with can be met again in the usual way.
 
-You can buy contact with a third empire: **Comm Channels** can be part of a trade package, if the
-giver is in contact with that empire. The new contact lasts only if a chain of warp points links
-you.
+You can buy contact with a third empire: **Comm Channels** can be part of a trade package. If you
+have no contact with that empire yet, you and it are put in contact (with no treaty) when the
+package is carried out; there is no First Contact entry, only a note in each log. The new
+contact lasts only if a chain of warp points links you.
 
 While you are not in contact with an empire you cannot send it messages, trade with it or aim
 intelligence projects at it, and it is missing from the Empires window.
@@ -104,10 +112,13 @@ edit. The types are:
 - **Grant Independence**: you give up one of your colonies, which the recipient may then settle.
 - **Demands and requests**: ask for a gift, a tribute or surrender; ask the other side to pull ships or colonies out of a system or leave a planet; to stop hostilities, espionage, sabotage or attacks; to break a treaty with, declare war on, make peace with, support you against or attack a third empire. These bind no one. Computer players weigh them; a human may simply ignore them.
 
-A **package** can hold systems (giving up your claim), planets, resources in steps of 1,000,
-technology, ships (with their cargo), units, star charts (the receiver explores those
-systems), a treaty and comm channels. Things that are lost before the trade is accepted show as
-unavailable.
+A **package** can hold systems (your claim passes to the receiver), planets, resources in steps
+of 1,000, technology, ships (with their cargo), units, star charts (the receiver explores those
+systems), a treaty and comm channels. When a package is carried out, each item gets its own
+entries in the Log, the receiver's first: Planet, Vehicle, Resources or Technology Received and
+Transfered, Starcharts Received, Treaty Enacted and so on, each with its Goto. Things that were
+lost before the trade was accepted are simply left out. Technology that teaches the receiver
+nothing new still arrives, with a note saying so.
 
 ## How computer players feel about you
 
@@ -172,8 +183,10 @@ The buttons on the right open more windows:
 ## The Communicate window
 
 In [Communicate](window:communicate) you choose the **Message Type**, the **Tone** and, when the
-type needs it, a treaty, a third empire, a system or a planet. The text starts with a suitable
-default; change it as you like.
+type needs it, a treaty, a third empire, a system or a planet. The third empire comes from the
+empires you have met that are still in the game. The text starts with a suitable default; change
+it as you like. (Your Politics minister, when it is on, writes its own requests and needs no such
+choice.)
 
 For trades, gifts and tributes, `Edit Package` opens the package editor. Choose **We give** or
 **We ask for**, pick a tab (systems, planets, resources, technology, ships, units, star charts,

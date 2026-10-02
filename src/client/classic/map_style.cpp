@@ -1,9 +1,12 @@
 #include "client/classic/map_style.hpp"
 
+#include "game/movement.hpp"
 #include "game/sight.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <format>
 #include <numbers>
 
 namespace opense4::client::classic::map_style {
@@ -35,15 +38,7 @@ Symbol facilitySymbol(bool explored, bool colony, bool facility) {
     return Symbol{Shape::Ring, std::nullopt, facility ? kGreen : kYellow, false};
 }
 
-int headingStep(game::Sector from, game::Sector to) {
-    const int dx = to.x - from.x, dy = to.y - from.y;
-    if (dx == 0 && dy == 0) return 0;
-    // Whole degrees clockwise from up (y grows downward).
-    double deg = std::atan2(double(dx), double(-dy)) * 180.0 / std::numbers::pi;
-    long whole = std::lround(deg);
-    whole = ((whole % 360) + 360) % 360;
-    return static_cast<int>(((whole + 22) / 45) % 8);
-}
+int headingStep(game::Sector from, game::Sector to) { return game::movement::headingFor(from, to); }
 
 Point nameCorner(float x, float y, float cellW, float cellH, float textW, float textH, float boxW, float boxH) {
     const Point candidates[] = {
@@ -78,6 +73,12 @@ std::vector<std::vector<game::EmpireId>> presence(const game::Rules& r, const ga
         if (c && (c->owner == viewer || (me.hasExplored(g.object(c->planet).system) && game::sight::canSeeColony(r, s, viewer, c->planet))))
             mark(g.object(c->planet).system, c->owner);
     return out;
+}
+
+std::string coordinateLine(game::Sector hover, std::optional<game::Sector> marked) {
+    std::string line = std::format("Coordinates ({}, {})", hover.x, hover.y);
+    if (marked) line += std::format("   Range: {}", std::max(std::abs(hover.x - marked->x), std::abs(hover.y - marked->y)));
+    return line;
 }
 
 } // namespace opense4::client::classic::map_style

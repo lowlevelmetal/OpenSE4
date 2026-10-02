@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace opense4::client::classic::map_style {
@@ -64,7 +65,7 @@ Symbol facilitySymbol(bool explored, bool colony, bool facility);
 
 // The heading of a mini that moved from one sector to another in a system:
 // 0..7, 45° steps clockwise from up, the bearing rounded to the nearest step
-// (23–67° is 45°, 338–22° is up).
+// (23–67° is 45°, 338–22° is up); the engine's movement::headingFor.
 int headingStep(game::Sector from, game::Sector to);
 
 // Where a hovered system's name goes: the first corner, of above-right,
@@ -83,5 +84,11 @@ Point nameCorner(float x, float y, float cellW, float cellH, float textW, float 
 // one in a system without a sensor source of ours, adds no colour. Per
 // system, in the order found.
 std::vector<std::vector<game::EmpireId>> presence(const game::Rules& r, const game::GameState& s, game::EmpireId viewer);
+
+// The coordinate line of the system panel (spec 06 §2.4, §7 Q64, confirmed:
+// binary): "Coordinates (x, y)", then, while a selected sector of the shown
+// system is marked (it holds an object the viewer sees), three spaces,
+// "Range:", a space and the distance from it, 0 on that sector itself.
+std::string coordinateLine(game::Sector hover, std::optional<game::Sector> marked);
 
 } // namespace opense4::client::classic::map_style

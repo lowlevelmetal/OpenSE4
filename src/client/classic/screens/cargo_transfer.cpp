@@ -1,12 +1,17 @@
-// Cargo Transfer (order T, docs/spec/06 §1.3, spec 03 §11): two lists of the
-// own cargo holders in a sector (vehicles with cargo space and the colony).
-// Select a holder in each list, then click a cargo item under one to move it
-// to the one selected in the other list, one, five, ten or all at a time.
+// Cargo Transfer (order T, docs/spec/06 §1.3, spec 03 §11), titled "Transfer
+// Cargo": two lists of the own cargo holders in a sector (vehicles with cargo
+// space and the colony). Select a holder in each list, then click a cargo
+// item under one to move it to the one selected in the other list, one, five,
+// ten, a hundred or all at a time. The window has no order buttons (the Load
+// and Drop Cargo orders have their own buttons, spec 06 §7 Q80) and works in
+// both turn styles.
 //
-// The classic game offers this window only in turn-based games. OpenSE4
-// keeps the immediate transfer in both styles and offers the deferred Load /
-// Drop Cargo orders as well; in a turn-based game those execute at once too.
+// Opened by the Combat Simulator's Change Cargo (§1.10.4, §7 Q80) it works on
+// a sandbox of the setup: the left list holds every row of the Combat
+// Vehicles list, all sides together, and the right list only the temporary
+// Storehouse; cargo moves only between them.
 
+#include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 
@@ -49,53 +54,49 @@ public:
 
 private:
     bool drawIn(UiContext& ui) {
-        locate(ui);
+        const SimulatorSandbox* sim = sandbox_ ? simulatorCargoSandbox() : nullptr;
+        if (!sim) locate(ui);
         Dialog d(ui, screenTitle(ScreenId::CargoTransfer), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
-        const std::vector<Holder> holders = holdersHere(ui);
-        auto present = [&](const Holder& h) { return std::find(holders.begin(), holders.end(), h) != holders.end(); };
-        if (!present(from_)) from_ = holders.empty() ? Holder{} : holders.front();
-        if (!present(to_) || to_ == from_) {
+        // The simulator's Change Cargo: the setup's holders against the Storehouse.
+        std::vector<Holder> left, right;
+        if (sim) {
+            for (const SimulatorCargoHolder& h : sim->holders) left.push_back(Holder{h.vehicle, h.planet});
+            if (sim->storehouse.valid()) right.push_back(Holder{{}, sim->storehouse});
+        } else {
+            left = right = holdersHere(ui);
+        }
+        auto present = [](const std::vector<Holder>& list, const Holder& h) { return std::find(list.begin(), list.end(), h) != list.end(); };
+        if (!present(left, from_)) from_ = left.empty() ? Holder{} : left.front();
+        if (!present(right, to_) || (!sim && to_ == from_)) {
             to_ = {};
-            for (const Holder& h : holders)
-                if (!(h == from_)) {
+            for (const Holder& h : right)
+                if (sim || !(h == from_)) {
                     to_ = h;
                     break;
                 }
         }
 
         d.beginContent();
-        if (!where_) {
+        if (!sim && !where_) {
             ImGui::TextColored(kDim, "You have nothing that can carry cargo.");
         } else {
-            ImGui::TextColored(kDim, "Location: %s", sectorName(ui.state(), *where_, ui.session.player()).c_str());
+            if (!sim) ImGui::TextColored(kDim, "Location: %s", sectorName(ui.state(), *where_, ui.session.player()).c_str());
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
             const float w = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
             const float h = ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 4.4f;
-            holderPanel(ui, "##from", "Cargo From", holders, from_, to_, ImVec2(w, h));
+            holderPanel(ui, "##from", "Cargo From", left, from_, to_, ImVec2(w, h), sim);
             ImGui::SameLine();
-            holderPanel(ui, "##to", "Cargo To", holders, to_, from_, ImVec2(w, h));
+            holderPanel(ui, "##to", sim ? "Storehouse" : "Cargo To", right, to_, from_, ImVec2(w, h), sim);
             status_.draw(ui);
         }
 
+        // Move One, Five, Ten, Hundred and All, and nothing else, in every mode (§7 Q80).
         d.beginButtons();
-        stepButtons(d, step_);
+        stepButtons(d, step_, true);
         d.spacer();
-        const game::Vehicle* orderVehicle = deferredVehicle(ui);
-        const bool canOrder = !sandbox_ && orderVehicle && game::vehicleCargoCapacity(ui.rules(), ui.state(), *orderVehicle) > 0;
-        // The deferred orders belong to the real game, not to the simulator's sandbox.
-        if (!sandbox_ && d.button("Load Cargo Order", canOrder)) openOrderPicker(ui, game::OrderKind::LoadCargo, *orderVehicle);
-        if (!sandbox_ && d.button("Drop Cargo Order", canOrder)) openOrderPicker(ui, game::OrderKind::DropCargo, *orderVehicle);
         if (d.close()) return false;
         report_.draw(ui);
-        if (auto pick = orderPicker_.draw(ui); pick && ownVehicle(ui, orderVehicle_)) {
-            game::Order o{orderKind_};
-            o.design = pick->design;
-            o.amount = pick->amount;
-            pickLocationForOrder(ui, orderOwner(ui.state(), orderVehicle_), o,
-                                 std::format("{}: pick where", game::displayName(orderKind_)));
-            return false;  // the main window takes the pick
-        }
         return d.keepOpen();
     }
 
@@ -144,7 +145,7 @@ private:
     }
 
     void holderPanel(UiContext& ui, const char* id, const char* caption, const std::vector<Holder>& holders, Holder& mine, const Holder& other,
-                     ImVec2 size) {
+                     ImVec2 size, const SimulatorSandbox* sim) {
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
         const int64_t popMass = r.setting("Population Mass", 5);
@@ -156,7 +157,10 @@ private:
             st.lamp = h == mine ? Lamp::On : Lamp::Off;
             st.selected = h == mine;
             RowClick c;
-            if (const game::Vehicle* v = ownVehicle(ui, h.vehicle)) {
+            if (sim && h.planet.valid() && !s.colony(h.planet)) {
+                // A neutral object of the setup: listed, holding nothing.
+                c = row(ui, 0, objectSprite(ui, s.galaxy.object(h.planet)), s.galaxy.object(h.planet).name, "holds nothing", st);
+            } else if (const game::Vehicle* v = ownVehicle(ui, h.vehicle)) {
                 const std::string space = std::format("{}kT / {}kT", formatNumber(game::cargoSpaceUsed(r, s, v->cargo)),
                                                       formatNumber(game::vehicleCargoCapacity(r, s, *v)));
                 c = row(ui, 0, vehicleMini(ui, *v), v->name, space, st);
@@ -195,7 +199,7 @@ private:
             }
             ImGui::PopID();
         }
-        if (holders.empty()) ImGui::TextColored(kDim, "Nothing here can hold cargo.");
+        if (holders.empty()) ImGui::TextColored(kDim, sim ? "There is no Storehouse: you have no colony to copy." : "Nothing here can hold cargo.");
         endPanel(ui, "Click cargo to send it to the holder picked in the other list.");
     }
 
@@ -222,41 +226,11 @@ private:
         status_.ok(std::format("Moved {}.", what));
     }
 
-    // Deferred orders go to the vehicle selected in Cargo From, else the one in Cargo To.
-    const game::Vehicle* deferredVehicle(const UiContext& ui) const {
-        if (const game::Vehicle* v = ownVehicle(ui, from_.vehicle)) return v;
-        return ownVehicle(ui, to_.vehicle);
-    }
-
-    void openOrderPicker(UiContext& ui, game::OrderKind kind, const game::Vehicle& v) {
-        const game::GameState& s = ui.state();
-        orderKind_ = kind;
-        orderVehicle_ = v.id;
-        std::vector<TypeAmountPicker::Choice> choices;
-        choices.push_back({ui.me().race.name + " Population", {}, ui.art.populationMini(ui.me().race.style)});
-        std::vector<game::DesignId> designs;
-        for (game::DesignId id : ui.me().designs)
-            if (isUnitDesign(ui.rules(), s, id) && !s.design(id).obsolete) designs.push_back(id);
-        for (const auto& u : v.cargo.units)
-            if (std::find(designs.begin(), designs.end(), u.design) == designs.end()) designs.push_back(u.design);
-        for (game::DesignId id : designs) choices.push_back({s.design(id).name, id, designMini(ui, id)});
-        const bool load = kind == game::OrderKind::LoadCargo;
-        const std::string owner = ownerName(ui, orderOwner(s, v.id));
-        orderPicker_.open(load ? "Load Cargo" : "Drop Cargo",
-                          std::format("{} {}: choose the cargo, then pick the location on the map. The order is carried out "
-                                      "when the turn is processed.",
-                                      load ? "Load cargo onto" : "Drop cargo from", owner),
-                          std::move(choices));
-    }
-
     std::optional<game::Location> where_;
     Holder from_, to_;
     Step step_ = Step::Ten;
     Status status_;
     ReportPopup report_;
-    TypeAmountPicker orderPicker_;
-    game::OrderKind orderKind_ = game::OrderKind::LoadCargo;
-    game::VehicleId orderVehicle_;
     bool sandbox_ = false;   // opened by the Combat Simulator's Change Cargo
 };
 

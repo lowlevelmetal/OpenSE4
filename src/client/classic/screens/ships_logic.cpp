@@ -1,5 +1,7 @@
 #include "client/classic/screens/ships_logic.hpp"
 
+#include "client/classic/screens/colony_logic.hpp"
+
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/movement.hpp"
@@ -121,6 +123,7 @@ int64_t stepAmount(Step step, int64_t available) {
         case Step::One: return 1;
         case Step::Five: return std::min<int64_t>(5, available);
         case Step::Ten: return std::min<int64_t>(10, available);
+        case Step::Hundred: return std::min<int64_t>(100, available);
         case Step::All: return available;
     }
     return 0;
@@ -131,6 +134,7 @@ const char* stepLabel(Step step) {
         case Step::One: return "Move One";
         case Step::Five: return "Move Five";
         case Step::Ten: return "Move Ten";
+        case Step::Hundred: return "Move Hundred";
         case Step::All: return "Move All";
     }
     return "";
@@ -210,6 +214,109 @@ std::vector<game::Order> conversionOrders(const std::vector<ConversionLine>& lin
 bool canConvertAt(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::ObjectId planet) {
     const game::Colony* c = s.colony(planet);
     return c && c->owner == viewer && game::economy::colonyConverts(r, s, *c);
+}
+
+// ---- The Ships\Units list's columns ------------------------------------------------------------
+
+std::vector<ShipColumn> shipTabColumns(ShipsTab tab) {
+    using C = ShipColumn;
+    switch (tab) {
+        case ShipsTab::General: return {C::Size, C::Type, C::Movement, C::Damage, C::Supplies};
+        case ShipsTab::Orders: return {C::Class, C::Orders};
+        case ShipsTab::Cargo: return {C::CargoSpace, C::CargoMax, C::CargoList};
+        case ShipsTab::Fleet: return {C::Experience, C::Fleet};
+        case ShipsTab::Maintenance: return {C::MineralsMaintenance, C::OrganicsMaintenance, C::RadioactivesMaintenance};
+        case ShipsTab::Count: break;
+    }
+    return {};
+}
+
+std::optional<ShipColumn> shipColumnOf(int key) {
+    if (key < 0 || key >= static_cast<int>(ShipColumn::Count)) return std::nullopt;
+    return static_cast<ShipColumn>(key);
+}
+
+std::pair<int, int> destroyedComponents(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    if (!v.design.valid() || v.design.index() >= s.designs.size()) return {0, 0};
+    const game::Design& d = s.design(v.design);
+    int destroyed = 0;
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (!game::entryIntact(r, s, v, i)) ++destroyed;
+    return {destroyed, static_cast<int>(d.entries.size())};
+}
+
+ShipSortValues shipSortValues(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    ShipSortValues out;
+    out.name = v.name;
+    const bool valid = v.design.valid() && v.design.index() < s.designs.size();
+    const bool unit = isUnitVehicle(r, s, v);
+    if (valid) {
+        const game::Design& d = s.design(v.design);
+        out.hullNumber = unit ? 100 + std::max(1, v.count) : static_cast<int>(d.hull);
+        out.type = d.designType;
+        out.designName = d.name;
+    }
+    out.movement = v.movement;
+    out.destroyed = destroyedComponents(r, s, v).first;
+    out.supplies = game::vehicleHasUnlimitedSupply(r, s, v) ? kUnlimitedSupplyKey : v.supply;
+    out.cargoUsed = game::cargoSpaceUsed(r, s, v.cargo);
+    out.cargoCapacity = game::vehicleCargoCapacity(r, s, v);
+    out.experience = int64_t{v.experience} * 10 + v.experienceTenths;
+    if (const game::Fleet* f = s.fleet(v.fleet)) out.fleetNumber = static_cast<int>(f->id.index()) + 1;
+    out.maintenance = vehicleMaintenance(r, s, v);
+    return out;
+}
+
+namespace {
+
+template <class T>
+int ascending(const T& a, const T& b) {
+    return a == b ? 0 : a < b ? -1 : 1;
+}
+// By character code (case matters), A to Z.
+int byCode(const std::string& a, const std::string& b) {
+    const int d = a.compare(b);
+    return d == 0 ? 0 : d < 0 ? -1 : 1;
+}
+
+} // namespace
+
+int compareShips(ShipColumn c, const ShipSortValues& a, const ShipSortValues& b) {
+    using C = ShipColumn;
+    switch (c) {
+        case C::Picture:
+        case C::Size: return ascending(a.hullNumber, b.hullNumber);
+        case C::Name: return compareNames(a.name, b.name);
+        case C::Type: return byCode(a.type, b.type);
+        case C::Movement: return -ascending(a.movement, b.movement);
+        case C::Damage: return -ascending(a.destroyed, b.destroyed);
+        case C::Supplies: return ascending(a.supplies, b.supplies);
+        case C::Class: return byCode(a.designName, b.designName);
+        case C::Orders: return byCode(a.orders, b.orders);
+        case C::CargoSpace: return -ascending(a.cargoUsed, b.cargoUsed);
+        case C::CargoMax: return -ascending(a.cargoCapacity, b.cargoCapacity);
+        case C::CargoList: return byCode(a.cargo, b.cargo);
+        case C::Experience: return ascending(a.experience, b.experience);
+        case C::Fleet: return -ascending(a.fleetNumber, b.fleetNumber);
+        case C::MineralsMaintenance:
+        case C::OrganicsMaintenance:
+        case C::RadioactivesMaintenance: {
+            const size_t i = static_cast<size_t>(c) - static_cast<size_t>(C::MineralsMaintenance);
+            return -ascending(a.maintenance.v[i], b.maintenance.v[i]);
+        }
+        case C::Count: break;
+    }
+    return 0;
+}
+
+std::vector<size_t> shipRowOrder(const std::vector<ShipSortValues>& rows, const std::array<uint8_t, 5>& slots) {
+    std::vector<size_t> order(rows.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    sortByKeys(order, sortKeys(slots, static_cast<int>(ShipColumn::Name)), [&](int key, size_t a, size_t b) {
+        const std::optional<ShipColumn> c = shipColumnOf(key);
+        return c ? compareShips(*c, rows[a], rows[b]) : 0;
+    });
+    return order;
 }
 
 // ---- Units --------------------------------------------------------------------------------

@@ -111,10 +111,19 @@ empires are skipped.
    §6.3, spec 04 §2). A Colonize order founds its colony like any order, on an
    acting day with movement left, so a colony can appear in any phase.
    `TurnOptions::movementDay` lets a caller watch the state after each day without
-   changing it (the client's movement log replay plays a turn again from its start
-   with it, docs/spec/06 §7 Q51). Sight and first
-   contact are then updated: two empires meet when each detects the other in one system
-   and a warp path links their colonies (`diplomacy::updateContacts`).
+   changing it, and `TurnOptions::movementStep` each vehicle's every step as it is made
+   (the client's movement log replay plays a turn again from its start with them,
+   docs/spec/06 §7 Q51, Q62). Each step within a system turns the vehicle to its bearing
+   (`Vehicle::heading`, `movement::headingFor`, saved with the game); a warp keeps it. Sight is then updated.
+   **First contact** is checked in one system at a time, only at the moments spec 05
+   §3.1 names (`diplomacy::firstContactIn`): a group's arrival through a warp point, any
+   decloak (orders, ministers, battles, supply), a logged event, a package's planet or
+   vehicle and a rebellion project; in every system when the game is created and after a
+   surrender (`firstContactEverywhere`). Two empires meet when each detects the other in
+   that system now and a warp path links their colonies; moves within a system never
+   make contact. A colony's Decloak in a simultaneous game makes only the acting empire's
+   side (`onlySide`, spec 01 §14 Q44); the next check in a system where both detect each
+   other completes the pair.
 6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
    that empire's destruction check (`score::checkDestruction`):
    1. the ministers' end-of-turn actions (`ai::planEconomyStep`: Design, Research,
@@ -155,7 +164,7 @@ empires are skipped.
 9. **Event step:** hazards (`movement::runStellarHazards`), the timed events that are due
    (`events::fireDueEvents`), then one roll for a new event for the whole galaxy
    (`events::rollNewEvent`).
-10. **End.** Per-turn flags are cleared, sight and contact follow the events, the AI
+10. **End.** Per-turn flags are cleared, sight follows the events, the AI
     remembers the turn's battles and spies (`ai::rememberAiEvents`), the turn number
     advances and `economy::updateReports` projects next turn's income.
 
@@ -196,7 +205,7 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    human is first asked whether to enter a sector with visible enemies, and answers with
    `cmd::EnterSector`. Colony ships that reach their planet with movement left found the
    colony at once. Messages take effect when
-   sent (`diplomacy::deliverMessages`), and sight and contact follow every move.
+   sent (`diplomacy::deliverMessages`), and sight follows every move (first contact only at the moments of step 5).
 3. **End of the player's turn** (`endPlayerTurn`): `empireEndOfTurn`, then the next living
    empire's turn starts. Computer players take their turns the same way, one after
    another (`resumeTurnBased`).
@@ -269,8 +278,9 @@ up. A stop whose answer is missing stops the call: the state is left as it was, 
 
 - **Choose** (turn-based, a battle with a human side): Tactical or Strategic; the answer
   names the tactical sides and their script;
-- **Show** (turn-based with "No Tactical Combat", or a simultaneous game whose Settings
-  show battles): the Strategic Combat window with Begin and Close; the strategies fight it;
+- **Show** (turn-based with "No Tactical Combat", a battle with a human side; or a
+  simultaneous game whose Settings show battles, every battle, computer-only ones
+  included): the Strategic Combat window with Begin and Close; the strategies fight it;
 - **Ground** (turn-based, the colony owner's end-of-turn ground combat with a human
   side): the engine fights it and hands over its record (`BattleQuestion::ground`).
 
@@ -447,13 +457,13 @@ which the original draws in the system's Small Fonts.
 | `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay's controls, and hotkeys |
 | `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps, with each system's presence for the viewer (`map_style::presence`) |
 | `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
-| `ship_glides.*` | Ships gliding to their new square and the headings of minis |
+| `ship_glides.*` | Ships turning and sliding to their new square, frame by frame, with the Settings.txt pause after each step (spec 06 §2.4) |
 | `movement_line.*` | The movement line of the system panel (spec 06 §2.4): which object has one, and the rings, lines and turn numbers drawn for its route, worked out by `game::movement::planRoute` with the engine's own step rule and a display-only random source (headless) |
-| `movement_replay.*` | The movement log of a simultaneous turn (recorded by playing the turn again from its start with the engine's movement-day observer, or rebuilt from the client's view) and its replay (Ctrl+P/I/O/U) |
+| `movement_replay.*` | The movement log of a simultaneous turn (recorded by playing the turn again from its start with the engine's movement-step and movement-day observers, one entry per vehicle and step, or rebuilt from the client's view) and its replay (Ctrl+P/I/O/U), each entry animated on its own |
 | `sector_view.*` | What a sector of the system panel shows: which stellar objects the viewer sees (`shownStellarObjects`), the stellar object, one vehicle or the owners' flags, and the counts (headless) |
 | `finale.*`, `data_export.*` | The ending window's choice of kind and pictures (Victory, Human Dead, Lose; once per occurrence), and the Weapons Report's export tables (headless) |
 | `reports.*` | Ship, planet, fleet and system reports |
-| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...); `finale_screen.cpp` the ending window, `help.cpp` also the Weapons Report's Export button. `cargo_transfer.cpp` also holds Jettison Cargo, `convert_resources.cpp` Convert Resources; the Select Component and Select Facility pickers are the main window's. `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, the Drop Troops order, simulator rows and the sandbox its transfer windows work on); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a battle one phase per frame as it shows it) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
+| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...); `finale_screen.cpp` the ending window, `help.cpp` also the Weapons Report's Export button. `cargo_transfer.cpp` also holds Jettison Cargo, `convert_resources.cpp` Convert Resources; the Select Component and Select Facility pickers are the main window's. `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines and abilities, the Drop Troops order, simulator rows and the sandbox its transfer windows work on); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a live battle for up to 10 ms a frame, as fast as frames allow) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
 | `frontend.*` | Intro, credits, quick start, game setup, load, and the multiplayer lobby |
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |

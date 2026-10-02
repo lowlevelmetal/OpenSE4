@@ -366,6 +366,22 @@ TEST_CASE("main window: status icons of yards, fleets and fighter groups (spec 0
     CHECK(has(vehicleStatusCells(r, s, g), cell::kLowSupply));
     g.supply = 0;
     CHECK(has(vehicleStatusCells(r, s, g), cell::kNoSupply));
+
+    // A drone group by the same rule; satellite groups never show either cell (§4.4, §7 Q61).
+    const DesignId dart = design(s, r, "Dart", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    Vehicle& d = addTestVehicle(s, r, dart, where);
+    d.count = 2;
+    d.supply = warning / 10;
+    CHECK_FALSE(has(vehicleStatusCells(r, s, d), cell::kLowSupply));
+    d.supply = warning / 10 - 1;
+    CHECK(has(vehicleStatusCells(r, s, d), cell::kLowSupply));
+    d.supply = 0;
+    CHECK(has(vehicleStatusCells(r, s, d), cell::kNoSupply));
+    const DesignId moon = design(s, r, "Moon", "Test Satellite Hull", {"Test Satellite Gun"});
+    Vehicle& sat = addTestVehicle(s, r, moon, where);
+    sat.supply = 0;
+    CHECK_FALSE(has(vehicleStatusCells(r, s, sat), cell::kNoSupply));
+    CHECK_FALSE(has(vehicleStatusCells(r, s, sat), cell::kLowSupply));
 }
 
 // ---- Map colours and symbols (docs/spec/06 §2.6) ----
@@ -471,6 +487,15 @@ TEST_CASE("main window: every order key belongs to one order, and the keys of sp
     CHECK(b.chords(Action::ContextHelp)[0] == KeyChord{ImGuiKey_F1, false, true});
 }
 
+// ---- The coordinate line (docs/spec/06 §2.4, §7 Q64) ----
+
+TEST_CASE("main window: the coordinate line shows the range only from a marked selected sector") {
+    using map_style::coordinateLine;
+    CHECK(coordinateLine({3, 4}, std::nullopt) == "Coordinates (3, 4)");
+    CHECK(coordinateLine({3, 4}, game::Sector{5, 6}) == "Coordinates (3, 4)   Range: 2");
+    CHECK(coordinateLine({5, 6}, game::Sector{5, 6}) == "Coordinates (5, 6)   Range: 0");   // the pointer on it
+}
+
 // ---- Minis turned to their heading (docs/spec/06 §2.4) ----
 
 TEST_CASE("main window: minis turn nearest-neighbour, and the client follows headings") {
@@ -487,21 +512,16 @@ TEST_CASE("main window: minis turn nearest-neighbour, and the client follows hea
     CHECK(px(diagonal, 0, 0)[3] == 255);
     CHECK(px(diagonal, 0, 0)[0] == 0);
 
+    // The client keeps what the engine's headings were when it last saw them
+    // (the movement log of a network game starts from them); a mini that is
+    // never turned is kept facing up.
     ShipGlides g;
-    const VehicleId ship{3u};
-    const SystemId sys{0u}, other{1u};
-    auto see = [&](Location at, double t) {
-        const ShipGlides::Seen seen[] = {{ship, at}};
-        g.track(t, sys, false, seen);
-    };
-    see({sys, {5, 5}}, 0.0);
-    CHECK(g.heading(ship) == 0);  // a new ship faces up
-    see({sys, {6, 6}}, 1.0);
-    CHECK(g.heading(ship) == 3);  // down-right
-    see({other, {0, 6}}, 2.0);
-    CHECK(g.heading(ship) == 3);  // a warp keeps it
-    see({other, {0, 5}}, 3.0);
-    CHECK(g.heading(ship) == 0);
+    const VehicleId ship{3u}, base{4u};
+    const SystemId sys{0u};
+    const ShipGlides::Seen seen[] = {{ship, {sys, {5, 5}}, 3, true}, {base, {sys, {6, 5}}, 3, false}};
+    g.track(0.0, sys, false, seen);
+    CHECK(g.lastHeadings().at(ship) == 3);
+    CHECK(g.lastHeadings().at(base) == 0);
 }
 
 TEST_CASE("main window: the movement log is recorded day by day") {
@@ -661,40 +681,89 @@ TEST_CASE("main window: the movement log replay's keys") {
     CHECK_FALSE(replay.active());
 }
 
-TEST_CASE("main window: the replay animates a move in the shown system") {
+TEST_CASE("main window: the replay animates each entry on its own, frame by frame, from the turn's headings (spec 06 §7 Q62)") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
-    const VehicleId ship = addTestVehicle(s, r, design(s, r, "Scout", "Test Frigate", kShipBasics), where).id;
+    const DesignId d = design(s, r, "Scout", "Test Frigate", kShipBasics);
+    const VehicleId ship = addTestVehicle(s, r, d, where).id;
+    const VehicleId mate = addTestVehicle(s, r, d, where).id;
+    s.vehicle(ship)->heading = 2;   // faced east when the turn began
+    s.vehicle(mate)->heading = 2;
     MovementRecorder rec(s);
-    GameState day = s;
+    // Day 1: both step one square east (one entry each, in the order movement made them).
     Location east = where;
     east.sector.x = static_cast<decltype(east.sector.x)>(east.sector.x + 1);
+    rec.step(MovementStep{1, ship, where, east});
+    rec.step(MovementStep{1, mate, where, east});
+    GameState day = s;
     day.vehicle(ship)->location = east;
+    day.vehicle(mate)->location = east;
     rec.day(1, day);
+    const MovementLog log = rec.take(3);
+    REQUIRE(log.days[0].moves.size() == 2);   // the day's state gave no extra move
+    CHECK(log.days[0].moves[0].id == ship);
+    CHECK(log.days[0].moves[1].id == mate);
     MovementReplay replay;
-    replay.setLog(std::make_shared<MovementLog>(rec.take(3)));
+    replay.setLog(std::make_shared<MovementLog>(log));
     MovementReplay::Frame f;
     f.shown = where.system;
     f.animate = true;
     f.cellPixels = 50;
     f.turns = [](VehicleId) { return true; };
     replay.play();
+    CHECK(replay.heading(ship) == 2);   // Day 0: the heading kept by the engine, not up
     f.now = 10.0;
-    replay.update(f);  // day 1 applied, its move waits for the animation
-    REQUIRE(replay.motion(ship, 10.0));
-    // Facing east: 90° clockwise from up, turned in 5° steps of 10 ms, then 50 px at 1 ms each.
-    replay.update(f);  // starts the clock
-    CHECK(replay.motion(ship, 10.0)->angle == doctest::Approx(0.0));
-    CHECK(replay.motion(ship, 10.05)->angle == doctest::Approx(25.0));
-    const double turned = 10.0 + 18 * MovementReplay::kSecondsPerTurnStep;
-    CHECK(replay.motion(ship, turned + 0.025)->angle == doctest::Approx(90.0));
-    CHECK(replay.motion(ship, turned + 0.025)->at.x == doctest::Approx(float(where.sector.x) + 1.0f));
-    f.now = turned + 0.06;
-    replay.update(f);
-    CHECK_FALSE(replay.motion(ship, f.now));
+    replay.update(f);   // day 1 applied; its entries wait for their animations
+    REQUIRE(replay.motion(ship));
+    REQUIRE(replay.motion(mate));
+    CHECK(replay.animating());
+    // Already facing east: no turn frames, 50 slide frames, one a display frame.
+    replay.update(f);   // the first entry's first frame
+    CHECK(replay.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
+    CHECK(replay.motion(mate)->at.x == doctest::Approx(float(where.sector.x) + 0.5f));   // waits its turn
+    // A step key during the day's animations is ignored.
+    replay.step();
+    int frames = 1;
+    while (replay.motion(ship) && frames < 200) {
+        f.now += 0.0167;
+        replay.update(f);
+        ++frames;
+    }
+    // 50 frames for the first entry; the 51st display frame shows the second's first.
+    CHECK(frames == 51);
+    REQUIRE(replay.motion(mate));   // now the second entry, on its own
+    CHECK(replay.day() == 1);
+    while (replay.day() == 1 && frames < 400) {
+        f.now += 0.0167;
+        replay.update(f);
+        ++frames;
+    }
+    // 50 more; the frame after them applies day 2 at once (no pause between days).
+    CHECK(frames == 101);
+    CHECK(replay.day() == 2);
     CHECK(replay.heading(ship) == 2);
-    CHECK(replay.day() == 2);  // no pause: the next day follows at once
+
+    // A quarter turn first: 9 frames per 45°, the shorter way.
+    GameState s2 = s;
+    s2.vehicle(ship)->heading = 0;
+    MovementRecorder rec2(s2);
+    rec2.step(MovementStep{1, ship, where, east});
+    MovementReplay turning;
+    turning.setLog(std::make_shared<MovementLog>(rec2.take(3)));
+    turning.play();
+    MovementReplay::Frame g = f;
+    g.now = 20.0;
+    turning.update(g);
+    turning.update(g);
+    CHECK(turning.motion(ship)->angle == doctest::Approx(5.0));
+    for (int i = 0; i < 17; ++i) {
+        g.now += 0.0167;
+        turning.update(g);
+    }
+    CHECK(turning.motion(ship)->angle == doctest::Approx(90.0));
+    CHECK(turning.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f));
+    CHECK(turning.heading(ship) == 2);
 }
 
 TEST_CASE("main window: a network client's log is rebuilt from what it saw") {

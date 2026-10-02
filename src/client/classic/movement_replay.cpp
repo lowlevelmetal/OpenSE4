@@ -1,6 +1,6 @@
 #include "client/classic/movement_replay.hpp"
 
-#include "client/classic/map_style.hpp"
+#include "game/movement.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -47,6 +47,16 @@ MovementRecorder::MovementRecorder(const game::GameState& start) {
     log_.startColonies = colonies_;
 }
 
+void MovementRecorder::step(const game::MovementStep& st) {
+    if (st.day < 1) return;
+    if (int(log_.days.size()) < st.day) log_.days.resize(size_t(st.day));
+    // A vehicle that appeared during the day is added by day(); its steps
+    // before that are not shown (inferred).
+    if (!where_.contains(st.vehicle)) return;
+    log_.days[size_t(st.day - 1)].moves.push_back({st.vehicle, st.from, st.to});
+    where_[st.vehicle] = st.to;
+}
+
 void MovementRecorder::day(int day, const game::GameState& s) {
     if (day < 1) return;
     if (int(log_.days.size()) < day) log_.days.resize(size_t(day));
@@ -60,7 +70,7 @@ void MovementRecorder::day(int day, const game::GameState& s) {
             d.appeared.emplace_back(v.id, v.location);
             log_.vehicles.emplace(v.id, v);
         } else if (was->second != v.location) {
-            d.moves.push_back({v.id, was->second, v.location});
+            d.moves.push_back({v.id, was->second, v.location});   // moved without a reported step
         }
     }
     for (const auto& [id, at] : where_)
@@ -84,7 +94,7 @@ MovementLog MovementRecorder::take(uint32_t turn) {
 }
 
 MovementLog approximateLog(const std::map<game::VehicleId, game::Location>& before, const game::GameState& now,
-                           const std::set<game::VehicleId>& seenNow, uint32_t turn) {
+                           const std::set<game::VehicleId>& seenNow, uint32_t turn, const std::map<game::VehicleId, int>& headingsBefore) {
     MovementLog log;
     log.turn = turn;
     log.days.resize(MovementLog::kDays);
@@ -94,6 +104,7 @@ MovementLog approximateLog(const std::map<game::VehicleId, game::Location>& befo
         if (!v) continue;   // gone: nothing left to draw it with
         game::Vehicle copy = *v;
         copy.location = was;
+        if (const auto h = headingsBefore.find(id); h != headingsBefore.end()) copy.heading = static_cast<uint8_t>(h->second);
         log.vehicles.emplace(id, copy);
         log.start[id] = was;
         if (!seenNow.contains(id) || v->count <= 0) {
@@ -136,9 +147,13 @@ void MovementReplay::reset() {
     day_ = 0;
     where_ = log_ ? log_->start : std::map<game::VehicleId, game::Location>{};
     colonies_ = log_ ? log_->startColonies : std::map<game::ObjectId, game::EmpireId>{};
+    // Day 0: each mini faces where it faced when the turn began (§7 Q62).
     headings_.clear();
+    if (log_)
+        for (const auto& [id, v] : log_->vehicles) headings_[id] = v.heading % 8;
     anims_.clear();
     animIndex_ = 0;
+    frame_ = 0;
     started_ = false;
     pending_ = 0;
     rebuildView();
@@ -152,6 +167,8 @@ void MovementReplay::play() {
 
 void MovementReplay::step() {
     if (!log_) return;
+    // A press during a day's animations neither finishes nor skips the day (§7 Q62).
+    if (mode_ != Mode::Off && animating()) return;
     if (mode_ != Mode::Stepping) {
         // The first press shows the start of the turn, Day 0.
         reset();
@@ -179,6 +196,8 @@ void MovementReplay::stop() {
     mode_ = Mode::Off;
     anims_.clear();
     animIndex_ = 0;
+    frame_ = 0;
+    started_ = false;
     view_.clear();
     follow_.clear();
     pending_ = 0;
@@ -191,24 +210,25 @@ std::optional<game::VehicleId> MovementReplay::following() const {
 
 void MovementReplay::update(const Frame& f) {
     if (mode_ == Mode::Off) return;
-    // The day's animations, one after another.
+    // The day's entries, each animated in full before the next: at most one
+    // frame per call (each frame stays at least one display refresh), the
+    // next once its wait is over.
     if (animating()) {
-        if (pending_ > 0) {
-            animIndex_ = anims_.size();  // a step press finishes the day at once
-        } else {
-            if (!started_) {
-                animStart_ = f.now;
-                started_ = true;
-            }
-            while (animating()) {
-                const Animation& a = anims_[animIndex_];
-                const double total = a.turnTime + a.slideTime + a.pauseTime;
-                if (f.now - animStart_ < total) break;
-                animStart_ += total;
-                ++animIndex_;
-            }
-            if (animating()) return;
+        if (!started_) {
+            started_ = true;
+            frame_ = 0;
+            lastFrameAt_ = f.now;
+            return;
         }
+        const Animation& a = anims_[animIndex_];
+        const double wait = frame_ < a.turnFrames ? kSecondsAfterTurnFrame : kSecondsAfterSlideFrame;
+        if (f.now - lastFrameAt_ < wait) return;
+        lastFrameAt_ = f.now;
+        if (++frame_ < a.turnFrames + a.slideFrames) return;
+        // The entry is done; the next starts with this frame.
+        ++animIndex_;
+        frame_ = 0;
+        if (animating()) return;
         anims_.clear();
         animIndex_ = 0;
         started_ = false;
@@ -243,43 +263,37 @@ void MovementReplay::applyDay(const Frame& f) {
     }
     const MovementLog::Day& d = log_->days[size_t(day_)];
     ++day_;
+    // The day's entries in the order movement made them, one per vehicle and
+    // step; each is animated on its own (§7 Q62).
     for (const MovementLog::Move& m : d.moves) {
         const int before = heading(m.id);
         const bool turns = f.turns && f.turns(m.id);
         const bool inSystem = m.from.system == m.to.system && m.from.sector != m.to.sector;
         // A move within a system turns the mini to its bearing; a warp jump keeps it.
-        if (inSystem && turns) headings_[m.id] = map_style::headingStep(m.from.sector, m.to.sector);
+        if (inSystem && turns) headings_[m.id] = game::movement::headingFor(m.from.sector, m.to.sector);
         where_[m.id] = m.to;
         const bool animate = f.animate && inSystem && m.from.system == f.shown && (!f.seen || f.seen(m.id));
         if (!animate) continue;
-        // A fleet's members make the same move: one animation.
-        auto same = std::find_if(anims_.begin(), anims_.end(), [&](const Animation& a) { return a.from == m.from && a.to == m.to; });
-        if (same != anims_.end()) {
-            same->ids.push_back(m.id);
-            continue;
-        }
         Animation a;
-        a.ids = {m.id};
+        a.id = m.id;
         a.from = m.from;
         a.to = m.to;
         a.angle0 = turns ? before * 45.0 : 0.0;
-        const double target = turns ? heading(m.id) * 45.0 : 0.0;
-        const double delta = std::fmod(target - a.angle0 + 540.0, 360.0) - 180.0;  // the shorter way round
-        a.angle1 = a.angle0 + delta;
-        a.turnTime = std::abs(delta) / 5.0 * kSecondsPerTurnStep;
-        const float pixels = float(std::max(std::abs(m.to.sector.x - m.from.sector.x), std::abs(m.to.sector.y - m.from.sector.y))) * f.cellPixels;
-        a.slideTime = double(pixels) * kSecondsPerPixel;
-        // A day's move is usually one square; a faster vehicle's spans more,
-        // and waits after each of them.
-        const int squares = std::max({1, std::abs(m.to.sector.x - m.from.sector.x), std::abs(m.to.sector.y - m.from.sector.y)});
-        a.pauseTime = std::max(0.0, f.stepPause) * squares;
-        anims_.push_back(std::move(a));
+        const int delta = turns ? ((heading(m.id) - before) % 8 + 8) % 8 : 0;   // eighths clockwise
+        // The shorter way round; a half-turn goes clockwise.
+        const int signedEighths = delta > 4 ? delta - 8 : delta;
+        a.angle1 = a.angle0 + signedEighths * 45.0;
+        a.turnFrames = std::abs(signedEighths) * 45 / kDegreesPerTurnFrame;
+        const int cells = std::max(std::abs(m.to.sector.x - m.from.sector.x), std::abs(m.to.sector.y - m.from.sector.y));
+        a.slideFrames = std::max(1, int(std::lround(double(cells) * double(f.cellPixels))));
+        anims_.push_back(a);
     }
     for (const auto& [id, at] : d.appeared) where_[id] = at;
     for (const game::VehicleId id : d.removed) where_.erase(id);
     for (const auto& [planet, owner] : d.colonies) colonies_[planet] = owner;
     for (const game::ObjectId planet : d.coloniesRemoved) colonies_.erase(planet);
     animIndex_ = 0;
+    frame_ = 0;
     started_ = false;
     rebuildView();
 }
@@ -296,24 +310,24 @@ void MovementReplay::rebuildView() {
     }
 }
 
-std::optional<MovementReplay::Motion> MovementReplay::motion(game::VehicleId v, double now) const {
+std::optional<MovementReplay::Motion> MovementReplay::motion(game::VehicleId v) const {
     for (size_t i = animIndex_; i < anims_.size(); ++i) {
         const Animation& a = anims_[i];
-        if (std::find(a.ids.begin(), a.ids.end(), v) == a.ids.end()) continue;
+        if (a.id != v) continue;
+        // Still to come this day: where the entry starts.
         if (i > animIndex_ || !started_) return Motion{cellCenter(a.from.sector), a.angle0};
-        const double e = now - animStart_;
-        if (e < a.turnTime) {
-            const double steps = std::floor(e / kSecondsPerTurnStep);
-            return Motion{cellCenter(a.from.sector), a.angle0 + (a.angle1 >= a.angle0 ? 5.0 : -5.0) * steps};
+        if (frame_ < a.turnFrames) {
+            const double step = a.angle1 >= a.angle0 ? kDegreesPerTurnFrame : -kDegreesPerTurnFrame;
+            return Motion{cellCenter(a.from.sector), a.angle0 + step * (frame_ + 1)};
         }
-        const float t = a.slideTime > 0 ? std::clamp(float((e - a.turnTime) / a.slideTime), 0.0f, 1.0f) : 1.0f;
+        const int slid = frame_ - a.turnFrames + 1;
+        const float t = std::clamp(float(slid) / float(a.slideFrames), 0.0f, 1.0f);
         return Motion{lerp(cellCenter(a.from.sector), cellCenter(a.to.sector), t), a.angle1};
     }
     return std::nullopt;
 }
 
 int MovementReplay::heading(game::VehicleId v) const {
-    // A mini not yet seen moving in the replay faces up (as a new ship does).
     const auto it = headings_.find(v);
     return it == headings_.end() ? 0 : it->second;
 }

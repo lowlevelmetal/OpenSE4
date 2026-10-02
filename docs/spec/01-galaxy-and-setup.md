@@ -499,8 +499,9 @@ empire file's designs; Quick Start gives the player one Design minister run at c
 `client/classic/frontend.cpp`), which on the installed data gives a Terran player the
 eleven designs above with the observed hulls, costs, movement, cargo and supply.
 OpenSE4's tutorials may give the player ships with the lesson key `starting_ships`, an
-OpenSE4 lesson extension (docs/LEARNING.md); no game setting does. The engine still never
-runs the first-contact check at setup.
+OpenSE4 lesson extension (docs/LEARNING.md); no game setting does. Once the empires are
+placed (and a lesson's ships built), the engine runs the first-contact check in every system
+(`diplomacy::firstContactEverywhere`, spec 05 §3.1).
 
 ### 3.7 Pipeline
 
@@ -1102,9 +1103,10 @@ Since the answer to §14 Q44 (also 2026-10-01):
 - A simultaneous game's host carries out a colony Cloak or Decloak given during the turn when
   it applies that player's orders at the start of turn processing, in player and command
   order, so the colony ends as the player left it. A Decloak in a simultaneous game makes only
-  the acting empire's side of a first contact (`diplomacy::updateContacts` with its
-  `onlySide`), on the player's copy and on the host alike; the next full check completes the
-  other side. In a turn-based game both sides meet at once.
+  the acting empire's side of a first contact (`diplomacy::firstContactIn` in the colony's
+  system, with its `onlySide`), on the player's copy and on the host alike; the next
+  first-contact check in a system where both detect each other completes the other side
+  (spec 05 §3.1). In a turn-based game both sides meet at once.
 - After applying a player's orders the host recalculates each own colony those commands name
   (`coloniesNamed`; which commands count is our choice (inferred)), then recalculates sight
   in every system without a contact check.
@@ -1114,8 +1116,9 @@ Since the answer to §14 Q44 (also 2026-10-01):
   passing to the next player or to processing (`ClassicSession::endTurn`). A turn-based hotseat
   game keeps one state from player to player and is not recalculated between them (inferred).
 - A completed upgrade does not recalculate the colony.
-- An automatic decloak is a full Decloak: sight and the first-contact check
-  (`diplomacy::recalculateColony`).
+- An automatic decloak is a full Decloak: sight and the first-contact check in the colony's
+  system (`diplomacy::recalculateColony`; after a file is read, `recalculateColonies` checks
+  each system where a colony decloaked).
 
 **The client and engine follow "What other players see" since 2026-10-01:**
 - **Seeing the planet** is `sight::canSeePlanet` (`src/game/sight.cpp`): the viewer's sensor

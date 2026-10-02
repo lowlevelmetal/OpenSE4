@@ -166,8 +166,64 @@ std::vector<int> colonyStatusIcons(const game::Rules& r, const game::GameState& 
 std::vector<game::cmd::Scrap> scrapFacilityType(const game::GameState& s, game::EmpireId e, uint32_t facility,
                                                 const std::vector<game::ObjectId>& only = {});
 
-// Short descriptions of this turn's orders that concern a planet.
-std::vector<std::string> planetOrders(const std::vector<game::Command>& orders, game::ObjectId planet);
+
+// ---- The Colonies list's columns (spec 06 §1.8.3, confirmed: binary) ----------------------------
+
+enum class ColonyTab : uint8_t { General, Value, Production, Facilities, Cargo, Construction, Status, Races, Orders, Count };
+
+// Every column of the Colonies window keeps one identity in every tab, and a
+// sort key is that identity (InterfaceOptions::coloniesSort holds it + 1),
+// so a key goes on sorting by its quantity while another tab is shown. Only
+// the picture and Name appear in every tab; Name keeps the number 1 that the
+// window's key lists always gave it.
+enum class ColonyColumn : uint8_t {
+    Picture, Name,
+    Atmosphere, Conditions, Population, Mood,                                // General
+    ColonyType, MineralsValue, OrganicsValue, RadioactivesValue,             // Value
+    Minerals, Organics, Radioactives, Research, Intelligence,                // Production
+    FacilitiesBuilt, FacilitySlots, FacilityList,                            // Facilities
+    CargoUsed, CargoCapacity, CargoItems,                                    // Cargo
+    UnderConstruction, TimeRemaining,                                        // Construction
+    Status,                                                                  // Status
+    RacePopulation,                                                          // Races
+    Orders,                                                                  // Orders
+    Count
+};
+// The columns a tab shows after the picture and Name, in order.
+std::vector<ColonyColumn> colonyTabColumns(ColonyTab tab);
+// Whether a click on the column sorts anything: Facilities, Cargo Items,
+// Status and Orders have no key (a click still takes the first slot).
+bool colonyColumnSorts(ColonyColumn c);
+
+// What a colony is sorted by, whatever tab is shown.
+struct ColonySortValues {
+    std::string name;
+    int sizeRank = 0;                 // the planet size's number in the data set (picture)
+    std::string atmosphere;
+    game::Conditions conditions;
+    int64_t population = 0;
+    std::string mood;                 // the mood word; empty without population
+    std::string colonyType;
+    std::array<int64_t, 3> value{};   // the planet's value percentages
+    game::Resources production;
+    int64_t research = 0, intelligence = 0;
+    int facilities = 0, slots = 0;
+    int64_t cargoUsed = 0, cargoCapacity = 0;
+    std::string underConstruction;    // underConstructionText
+    std::string timeRemaining;        // timeRemainingText
+};
+ColonySortValues colonySortValues(const game::Rules& r, const game::GameState& s, const game::Colony& c);
+// Negative, zero or positive in the column's own direction: Name A to Z
+// ignoring case; the picture by planet size, smallest first; Atmosphere, Mood
+// and Colony Type A to Z by character code; Conditions best first; Under
+// Construction and Time Remaining Z to A by character code; every number
+// highest first. Zero for a column without a key, or an unknown one.
+int compareColonies(ColonyColumn c, const ColonySortValues& a, const ColonySortValues& b);
+// The column a stored key stands for (slot value − 1); nullopt when unknown.
+std::optional<ColonyColumn> colonyColumnOf(int key);
+// The rows' order under the stored keys (newest first; Name alone while no
+// key is stored), as indices into `rows`. An unknown key sorts nothing.
+std::vector<size_t> colonyRowOrder(const std::vector<ColonySortValues>& rows, const SortSlots& slots);
 
 // ---- Construction queues -------------------------------------------------------------------------
 

@@ -18,6 +18,7 @@
 #include "game/combat_battle.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
@@ -232,7 +233,24 @@ void Battle::buildPlanetWeapons(Piece& p) const {
 }
 
 int Battle::addPiece(Piece p) {
+    // A new piece takes the number one above the highest number present
+    // (spec 04 §10.7, confirmed: binary): at set-up, its place in piece order;
+    // later, possibly the number of a piece that has left the battle.
+    int highest = -1;
+    for (const Piece& q : pieces_)
+        if (q.alive) highest = std::max(highest, q.number);
+    p.number = highest + 1;
     const int i = static_cast<int>(pieces_.size());
+    // The drone target is kept as a piece number: a drone whose target left
+    // with that number takes the new piece for its target, without a new
+    // choice, whatever its kind (a seeker included).
+    for (Piece& d : pieces_)
+        if (d.alive && d.kind == Kind::UnitGroup && d.vtype == VehicleType::Drone && d.droneTarget >= 0 &&
+            static_cast<size_t>(d.droneTarget) < pieces_.size() && !pieces_[static_cast<size_t>(d.droneTarget)].alive &&
+            pieces_[static_cast<size_t>(d.droneTarget)].number == p.number) {
+            d.droneTarget = i;
+            d.droneTargetOwner = p.owner;
+        }
     pieces_.push_back(std::move(p));
     acted_.push_back(pieces_.back().kind == Kind::Seeker ? 1 : 0);
     const Piece& q = pieces_.back();
@@ -372,6 +390,22 @@ bool Battle::setup() {
     // Colonies decloak when the battle begins (spec 01 §6.9, spec 04 §2).
     for (ObjectId o : forces.colonies) s_.colony(o)->cloaked = false;
     for (ObjectId o : forces.obstacles) addObstaclePiece(o);
+    // Every piece is decloaked for the battle, and any decloak runs the
+    // first-contact check in the system (spec 05 §3.1, confirmed: binary). The
+    // vehicles keep their cloaked status in the state during the battle (the
+    // end of the battle decides it, spec 04 §2), so they are lowered only for
+    // the check. The simulator's battles make no contact.
+    if (!simulated() && std::any_of(pieces_.begin(), pieces_.end(), [](const Piece& p) { return p.wasCloaked; })) {
+        std::vector<Vehicle*> lowered;
+        for (const Piece& p : pieces_)
+            if (Vehicle* v = p.kind != Kind::Planet && p.wasCloaked ? s_.vehicle(p.source) : nullptr;
+                v && v->status == VehicleStatus::Cloaked) {
+                v->status = VehicleStatus::Normal;
+                lowered.push_back(v);
+            }
+        diplomacy::firstContactIn(ctx_, where_.system);
+        for (Vehicle* v : lowered) v->status = VehicleStatus::Cloaked;
+    }
 
     // Defenders had a piece in the sector already; every planet has (confirmed: binary).
     for (EmpireId e : empires_)
@@ -1208,11 +1242,20 @@ int Battle::hitChance(int i, const Weapon& w, int t) const {
 }
 
 bool Battle::hasTroops(int i) const {
-    // Units in cargo have no owner of their own: a ship's troops land for the ship's owner (spec 04 §13).
-    if (pieces_[i].kind != Kind::Vehicle) return false;
-    for (const UnitStack& u : pieces_[i].unit.cargo.units)
+    // Units in cargo have no owner of their own: a ship's troops land for the
+    // ship's owner (spec 04 §13); a planet piece's are its colony's cargo
+    // (spec 04 §19.4 Q88). A unit group has no cargo.
+    const Piece& p = pieces_[i];
+    if (p.kind != Kind::Vehicle && p.kind != Kind::Planet) return false;
+    for (const UnitStack& u : p.unit.cargo.units)
         if (u.count > 0 && isTroopDesign(r_, s_, u.design)) return true;
     return false;
+}
+
+bool Battle::hasUnitsAboard(int i) const {
+    const Piece& p = pieces_[i];
+    if (p.kind != Kind::Vehicle && p.kind != Kind::Planet) return false;
+    return std::any_of(p.unit.cargo.units.begin(), p.unit.cargo.units.end(), [](const UnitStack& u) { return u.count > 0; });
 }
 
 bool Battle::contestedBy(const Piece& planet, EmpireId e) const {
@@ -1735,7 +1778,7 @@ void Battle::move(int i) {
     // every move it plans, whether it went for a colony or waited: on whichever
     // colony of another empire is then adjacent, hostile or not (spec 04 §11,
     // §16.1, confirmed: binary). A surrounded piece plans no move, so it does
-    // not land (inferred).
+    // not land (confirmed: binary; spec 04 §19.4 Q89).
     if (!stuck && mv.mode == MoveStrategy::DropTroops && pieces_[i].alive) dropTroops(i);
     const int t = mv.target;
     if (!stuck && t >= 0 && combatant(t) && dist(i, t) <= 1) {
@@ -1816,8 +1859,24 @@ void Battle::shoot(int i, size_t wi, size_t k, int t) {
         return;
     }
     const int64_t damage = xmath::pctRound(int64_t{table} * hits, 100 + damageBonus(pieces_[i].owner));
-    event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), w.de.component);
-    applyHit(i, t, w.type, damage);
+    recordHit(i, t, w.type, damage, w.de.component);
+}
+
+void Battle::recordHit(int att, int t, DamageType type, int64_t damage, uint32_t component) {
+    event(Ev::Hit, att, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), component);
+    const size_t at = rec_.events.size() - 1;
+    const int64_t before = hitPoints(t);
+    applyHit(att, t, type, damage);
+    markHit(at, t, before);
+}
+
+void Battle::markHit(size_t at, int t, int64_t before) {
+    if (at >= rec_.events.size()) return;
+    const bool gone = !pieces_[static_cast<size_t>(t)].alive;
+    uint8_t flags = 0;
+    if (gone || hitPoints(t) < before) flags |= CombatEvent::kStructure;
+    if (gone) flags |= CombatEvent::kDestroyed;
+    rec_.events[at].flags = flags;
 }
 
 void Battle::launchSeeker(int i, const Weapon& w, int t, int count) {
@@ -2439,9 +2498,12 @@ void Battle::moveSeekers(EmpireId e) {
                 const Weapon w = pieces_[k].seekWeapon;
                 const int64_t damage = xmath::pctRound(int64_t{table} * pieces_[k].members, 100 + damageBonus(e));
                 event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), w.de.component);
+                const size_t hitAt = rec_.events.size() - 1;
+                const int64_t before = hitPoints(t);
                 pieces_[k].alive = false;
                 event(Ev::Destroyed, i, i);
                 applyHit(i, t, w.type, damage);
+                markHit(hitAt, t, before);
                 break;
             }
         }
@@ -3273,19 +3335,11 @@ void Battle::ram(int i, int t) {
         // A drone strikes with each warhead as its own hit, then with its bulk (confirmed: binary).
         for (const auto& [type, value] : droneWarheads) {
             if (!combatant(t)) break;
-            const int64_t hit = blow(value);
-            event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, hit)));
-            applyHit(i, t, type, hit);
+            recordHit(i, t, type, blow(value));
         }
-        if (combatant(t)) {
-            const int64_t hit = blow(dealt);
-            event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, hit)));
-            applyHit(i, t, DamageType::Normal, hit);
-        }
+        if (combatant(t)) recordHit(i, t, DamageType::Normal, blow(dealt));
     } else {
-        const int64_t hit = blow(dealt + warheads);
-        event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, hit)));
-        applyHit(i, t, DamageType::Normal, hit);
+        recordHit(i, t, DamageType::Normal, blow(dealt + warheads));
     }
     const bool targetDestroyed = !combatant(t) || (pieces_[t].kind == Kind::Obstacle && pieces_[t].colonyLost);
     if (!combatant(i)) return;
@@ -3304,36 +3358,44 @@ void Battle::ram(int i, int t) {
 EmpireId Battle::colonyHolder(const Piece& planet) const { return planet.capturedBy.valid() ? planet.capturedBy : planet.startOwner; }
 
 // The colony a landing takes (spec 04 §11, confirmed: binary): among the
-// colonized planet pieces of other empires adjacent to the ship, the one that
+// colonized planet pieces of other sides adjacent to the piece, the one that
 // comes last in piece order, whatever the treaty; only that one is looked at.
-// "Other" is judged by the colony's owner, so a planet piece converted to the
-// ship's empire is still a landing site for it (inferred, §19.4 Q87).
+// "Other" is judged by the side the planet piece fights for now, not by the
+// colony's owner: a planet piece converted by Crew Conversion is no landing
+// site for the converter, and is one for every other empire, its colony's
+// owner included (spec 04 §19.4 Q87, confirmed: binary).
 int Battle::landingColony(int i) const {
-    const Piece& ship = pieces_[i];
+    const Piece& lander = pieces_[i];
     int last = -1;
     for (size_t k = 0; k < pieces_.size(); ++k) {
         const Piece& q = pieces_[k];
-        if (q.alive && q.kind == Kind::Planet && colonyHolder(q).valid() && colonyHolder(q) != ship.owner && dist(i, static_cast<int>(k)) <= 1)
+        if (q.alive && q.kind == Kind::Planet && colonyHolder(q).valid() && q.owner != lander.owner && dist(i, static_cast<int>(k)) <= 1)
             last = static_cast<int>(k);
     }
     return last;
 }
 
-// Why a landing is refused (spec 04 §11, spec 06 §1.10.2): no colony of
-// another empire adjacent, a third empire's troops already landed there, or
-// no troops aboard (the order of the checks is inferred).
+// Why a landing is refused (spec 04 §11, §19.4 Q88, spec 06 §1.10.2,
+// confirmed: binary), tested in this order: no colonized planet piece of
+// another side adjacent; another empire's troops already landed on the
+// colony the landing takes; no units of any kind aboard. A piece carrying
+// units but no troops passes these and is refused without a message
+// (kSilentRefusal). The piece's kind is not checked: a planet piece drops
+// its colony's troops, and a unit group, having no cargo, fails a test.
 std::string Battle::landingProblem(int i) const {
     const int t = landingColony(i);
     if (t < 0) return "No colony of another empire is adjacent.";
     if (contestedBy(pieces_[t], pieces_[i].owner)) return "Another empire's troops are already there.";
-    if (!hasTroops(i)) return "It carries no troops.";
+    if (!hasUnitsAboard(i)) return "It carries no troops.";
+    if (!hasTroops(i)) return std::string(kSilentRefusal);
     return {};
 }
 
 void Battle::dropTroops(int i) {
-    // A ship or base drops every troop unit aboard, of whatever design, for its
-    // owner, onto the colony the landing takes; it needs no movement and planet
-    // shields do not stop it. The treaty is not checked, and the ground combat
+    // A ship or base (or a colony's planet piece, from the colony's cargo)
+    // drops every troop unit aboard, of whatever design, for its owner, onto
+    // the colony the landing takes; it needs no movement and planet shields
+    // do not stop it. The treaty is not checked, and the ground combat
     // is fought at once and to its end whatever the treaty (spec 04 §11, §13,
     // confirmed: binary).
     if (!landingProblem(i).empty()) return;
@@ -3869,12 +3931,16 @@ bool humanPresent(const GameState& s, Location where) {
 // detail::enteringGroups); empty: nobody entered, so no mine strikes.
 // `check`: who runs the battle check after the mines (spec 04 §2).
 void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering, const BattleCheck& check) {
-    // On one machine a battle with a human side stops the call once it is set
-    // up, to be shown (turn.hpp, "Battles shown as they happen"): keep the
-    // game as the battle begins, in case the answer is missing.
+    // On one machine a battle stops the call once it is set up, to be shown
+    // (turn.hpp, "Battles shown as they happen"): in a turn-based game one
+    // with a human side, in a simultaneous game whose Settings show battles
+    // every one, computer-only battles included (spec 06 §1.10.5, §7 Q76,
+    // confirmed: binary). Keep the game as the battle begins, in case the
+    // answer is missing.
     TurnContext::Battles* ask = ctx.battles && ctx.battles->answers ? ctx.battles : nullptr;
+    const bool showsAll = ctx.state.options.simultaneous;
     std::shared_ptr<GameState> before;
-    if (ask && ask->next >= ask->answers->size() && humanPresent(ctx.state, where)) before = std::make_shared<GameState>(ctx.state);
+    if (ask && ask->next >= ask->answers->size() && (showsAll || humanPresent(ctx.state, where))) before = std::make_shared<GameState>(ctx.state);
     Rng rng = ctx.state.rng.fork();
     // Mines strike first, then the battle check runs (confirmed: binary).
     if (!entering) detail::resolveMines(ctx, where, {}, rng);
@@ -3887,7 +3953,7 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
         std::vector<EmpireId> humans;
         for (EmpireId e : battle.empires())
             if (ctx.state.empire(e).alive && ctx.state.empire(e).kind == PlayerKind::Human) humans.push_back(e);
-        if (!humans.empty()) {
+        if (!humans.empty() || showsAll) {
             // A turn-based game asks Tactical or Strategic, unless the "No
             // Tactical Combat" option is on; then, as in a simultaneous game, the
             // Strategic Combat window shows it (spec 06 §1.10.5, confirmed: binary).

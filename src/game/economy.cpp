@@ -594,6 +594,17 @@ Resources vehicleMaintenance(const Rules& r, const GameState& s, const Vehicle& 
     return maintenanceOf(r, s, v, maintenancePercent(r, s.empire(v.owner)), designCost(r, s.design(v.design)));
 }
 
+Resources designMaintenance(const Rules& r, const GameState& s, const Design& d) {
+    if (!d.owner.valid() || d.owner.index() >= s.empires.size() || d.hull >= r.data().vehicleSizes.size() || !isShipOrBase(r.hull(d.hull).type))
+        return {};
+    const int pct = maintenancePercent(r, s.empire(d.owner));
+    const Resources cost = designCost(r, d);
+    const int64_t hull = 100 + designMaintenanceModifier(r, d);
+    Resources out;
+    for (size_t i = 0; i < 3; ++i) out.v[i] = std::max<int64_t>(0, pctTrunc(pctTrunc(cost.v[i], pct), hull));
+    return out;
+}
+
 Resources maintenanceCost(const Rules& r, const GameState& s, EmpireId e) {
     const int pct = maintenancePercent(r, s.empire(e));
     std::map<DesignId, Resources> costs;

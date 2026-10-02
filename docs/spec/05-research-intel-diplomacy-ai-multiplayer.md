@@ -388,12 +388,20 @@ ability never changes anything in the stock game.
   one, known or not, in its own direction). Their treaty goes from "no contact" to None and
   each logs "First Contact". So an empire without colonies makes no contact.
 
-  The engine differs: `diplomacy::updateContacts` (`diplomacy.cpp`) scans the whole galaxy
-  and is called after every live move and at the end of a player's turn and of the game
-  turn (`turn_based.cpp`: `carryOut`, `finishPlayerTurn`, `endGameTurn`), after movement,
-  combat and events (`turn.cpp`), and for a colony's Decloak (`cmd::CloakColony`), but
-  never at setup. It must take a system and run only at the moments above, in that
-  system; the galaxy-wide calls must go. The pair rule stays as it is.
+  Since 2026-10-01 the engine follows this (`diplomacy::firstContactIn`, and
+  `firstContactEverywhere` at game creation and after a surrender): a warp arrival
+  (`movement.cpp`, after the passage), every decloak (the Decloak order, the Ship Cloaking
+  minister's and a computer colony's decloak before an order, a drone's at its pursuit's
+  target, a sweeper group's in a tagged minefield, a cloak lost after an action or at the
+  supply step, the start of a battle that decloaks a piece, a colony's Decloak), a logged
+  event, a package's planet or vehicle and a rebellion project. Detection is worked out
+  from the current positions and sensors. A timed event's start message counts as the
+  event being logged (inferred, question 57). The colony's automatic decloak at a
+  recalculation is spec 01 §14 Q44 (`diplomacy::recalculateColony`, the check in the
+  colony's system). In a simultaneous game a colony's Decloak makes only the acting
+  empire's side of a contact (`firstContactIn` with its `onlySide`, spec 01 §14 Q44); a
+  pair where one side has met the other is completed by the next check in a system where
+  both detect each other.
 - **What contact enables** [M]: messages, treaties, trades and intel.
 - **Losing contact** (confirmed: binary): once per game turn, after the design cleanup and
   before the victory check, in both turn styles (§8), each living empire A checks every
@@ -3257,23 +3265,18 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       records only the system and never uses the empire. A human recipient reads the
       empire's name in the text, whatever that empire's state.
 
-    The engine differs (`ai_diplomacy.cpp`, `demand()`; `commands.cpp`, `SendMessage`):
-    - Step 3 takes the first living empire in contact that the AI is hostile to (None
-      included) and ignores X's treaty with it. It must take the lowest-numbered Z with
-      the AI at War or Non-Intercourse and X at Trade Alliance or better with Z.
-    - Step 5 picks from the attack candidates (`p_.sit.candidates`). It must use the
-      battle-report rule above; each battle report in an empire's log must then keep the
-      verdict, whether the empire was the current player, the participants at set-up and
-      the system.
-    - Each step tests its flag (`mayDemand`) and a refusal falls through to the next
-      step. It must choose first, test only the chosen request's flag, and on a refusal
-      go straight to steps 6 and 7.
-    - Step 2 makes one roll and tries colonies first. It must roll for ships, then
-      separately for colonies, with the 1-in-3 roll per candidate.
-    - `SendMessage` refuses third-empire requests from every human-played empire,
-      including those its Politics minister sends (`Planner::runOrders` → `planPolitics`).
-      The check must apply only to messages the player writes.
-    The recipient's side matches (`CarryOutDemand`, `speechLine`).
+    Since 2026-10-01 the engine follows this (`ai_diplomacy.cpp`, `chooseRequest()` and
+    `demand()`; `commands.cpp`, `SendMessage`): steps 1-5 choose the request first and
+    test only its flag, a refusal going straight to steps 6 and 7; step 2 rolls for ships,
+    then separately for colonies, with the 1-in-3 roll per candidate system; step 3 takes
+    the lowest-numbered Z by both treaties; step 5 reads the newest battle of this game
+    turn or the one before that the AI lost while defending, from the battle records the
+    game keeps for two turns (`GameState::combats`, which hold the verdict, the current
+    player, the participants at set-up and the system). The Politics minister's and the
+    computer player's messages carry `cmd::SendMessage::minister` and are not checked;
+    only the messages the player writes go through the picker's test. The order in which
+    step 2 tries its candidate systems is question 58. The recipient's side matches
+    (`CarryOutDemand`, `speechLine`).
 53. **Time in each AI state** (§7.2; spec 07 session 3 "Pace after the starting assets").
     Our computer players spend 56 % of their turns in Defend (Short Term), 34 % in
     Exploration and 5 % in Infrastructure (12 games of the pace set-up, turns 1–100); from
@@ -3328,3 +3331,15 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     statistics files also hold the population and resources columns of the four computer
     empires: their means at turns 10, 25, 50, 75 and 100 would show whether the original's
     lead is in research alone or in the whole economy.
+57. **The first-contact check of a timed event** (§3.1): the check runs in an event's
+    system "once the event is logged". A timed event logs twice: its start message when it
+    begins and its message when it strikes. OpenSE4 runs the check after each, whenever
+    the event has a location, whoever its messages reach (inferred). To verify: does the
+    start message of a timed event run the check too, and does an event whose messages
+    reach nobody (`Message To` None) run it?
+58. **The order of step 2's candidates** (§7.4 "Demands the AI starts"): each system where
+    the AI has a colony and sees a ship (or holds a colony) of X is a candidate that needs
+    a 1-in-3 roll. OpenSE4 tries the candidate systems in system order and takes the first
+    whose roll succeeds; a ship counts when the AI sees it (inferred). To verify: in what
+    order does the original try the candidates, which ships of X count (seen ones, every
+    one, unit groups too), and does it stop at the first successful roll?

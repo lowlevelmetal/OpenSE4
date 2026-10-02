@@ -237,7 +237,10 @@ public:
     // when there is no such turn (turn-based, network and PBEM games, a game
     // just loaded).
     bool canReplayLastTurn() const { return turnStart_ != nullptr; }
-    bool replayLastTurn(const std::function<void(int day, const game::GameState&)>& day) const;
+    // Plays the last turn again from its start: `day` sees the state after
+    // each movement day, `step` each vehicle's every step as it is made.
+    bool replayLastTurn(const std::function<void(int day, const game::GameState&)>& day,
+                        const std::function<void(const game::MovementStep&)>& step = {}) const;
     // The state the last processed turn started from, if kept.
     const game::GameState* turnStart() const { return turnStart_.get(); }
 

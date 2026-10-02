@@ -368,6 +368,7 @@ void io(Ar& ar, InterfaceOptions& o) {
            o.simulatorNoObsolete);
     fields(ar, o.planetsSort, o.coloniesSort, o.shipsSort, o.queuesSort);
     fields(ar, o.replayAnimate, o.replayFast, o.replayViewRect, o.replayGrid);
+    fields(ar, o.shipsTab, o.shipsShown);
 }
 
 template <class Ar>
@@ -423,7 +424,7 @@ template <class Ar>
 void io(Ar& ar, Vehicle& v) {
     fields(ar, v.id, v.slot, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
            v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.targetVehicle, v.targetObject, v.builtTurn,
-           v.immobileUntil, v.cameFrom, v.cameFromTurn);
+           v.immobileUntil, v.cameFrom, v.cameFromTurn, v.heading);
 }
 
 template <class Ar>
@@ -449,7 +450,7 @@ void io(Ar& ar, DiplomaticMessage& m) {
 
 template <class Ar>
 void io(Ar& ar, CombatEvent& e) {
-    fields(ar, e.kind, e.round, e.piece, e.target, e.x, e.y, e.amount, e.component);
+    fields(ar, e.kind, e.round, e.piece, e.target, e.x, e.y, e.amount, e.component, e.flags);
 }
 
 template <class Ar>
@@ -559,7 +560,7 @@ template <class Ar> void io(Ar& ar, cmd::SetDesignObsolete& c) { fields(ar, c.de
 template <class Ar> void io(Ar& ar, cmd::DeleteDesign& c) { fields(ar, c.design); }
 template <class Ar> void io(Ar& ar, cmd::SetResearch& c) { fields(ar, c.queue, c.evenly, c.repeat); }
 template <class Ar> void io(Ar& ar, cmd::SetIntel& c) { fields(ar, c.queue, c.evenly, c.repeat); }
-template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message); }
+template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message, c.minister); }
 template <class Ar> void io(Ar& ar, cmd::AnswerMessage& c) { fields(ar, c.message, c.accept, c.text); }
 template <class Ar> void io(Ar& ar, cmd::DecideWar& c) { fields(ar, c.target); }
 template <class Ar> void io(Ar& ar, cmd::SetInterfaceOptions& c) { fields(ar, c.options); }
@@ -597,7 +598,7 @@ template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.tu
 template <class Ar>
 void io(Ar& ar, EmpireSetup& e) {
     fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash,
-           e.ministerStyle, e.useRaceMinisterStyle, e.experience, e.designs);
+           e.ministerStyle, e.useRaceMinisterStyle, e.experience, e.designs, e.strategies);
 }
 
 template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }

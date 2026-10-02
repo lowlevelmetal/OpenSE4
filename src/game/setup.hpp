@@ -40,10 +40,16 @@ struct EmpireSetup {
     // file, becomes Empire::experience and grows during play. Only shown.
     int experience = 0;
     // Designs saved with the empire (Save Empire with its designs, spec 06
-    // §7 Q48): the new game gives them to the empire. Only name, type, hull,
-    // entries, strategy and the obsolete flag are read; ids, owners and
-    // statistics are the new game's.
+    // §7 Q48, Q72): in the new game they replace the empire's designs (it
+    // starts with none, spec 01 §3.6), in file order, each passing the design
+    // rules but the technology test (spec 03 §4.2) or dropped. Only name, type,
+    // hull, entries, strategy and creation date are read; each comes back
+    // current (not obsolete, never built); ids, owners and statistics are the
+    // new game's.
     std::vector<Design> designs;
+    // The empire's combat strategies saved with it (spec 06 §7 Q72): they
+    // replace the data set's list; empty: the data set's.
+    std::vector<ruleset::CombatStrategy> strategies;
 };
 
 struct GameSetup {

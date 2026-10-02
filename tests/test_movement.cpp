@@ -6,6 +6,7 @@
 #include "game/ai.hpp"
 #include "game/combat_detail.hpp"
 #include "game/commands.hpp"
+#include "game/diplomacy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
 #include "game/serialize.hpp"
@@ -15,6 +16,7 @@
 
 #include <format>
 #include <map>
+#include <tuple>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -1152,6 +1154,19 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     w.move();
     CHECK(w.v(thirsty).orders.empty());
     CHECK(w.logged(kA, "supplies low"));
+
+    // A drone group is low below a tenth of the warning level, like a fighter
+    // group (spec 06 §4.4, §7 Q61).
+    const int64_t warning = w.rules().setting("Supply Amount for Low Supply Warning", 1000);
+    const DesignId droneDesign = w.design(kA, "Picket Drone", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Mv Engine", "Mv Drone Tank"});
+    const VehicleId picket = w.spawn(droneDesign, at(b, 5, 5));
+    w.v(picket).supply = warning / 10;
+    w.order(picket, mk(OrderKind::Sentry));
+    w.move();
+    CHECK(w.v(picket).orders.size() == 1);  // a ship would be low here, a drone group is not
+    w.v(picket).supply = warning / 10 - 1;
+    w.move();
+    CHECK(w.v(picket).orders.empty());
 
     // Combat removes a Sentry order at the head of a participant's list, and nothing else.
     World f;
@@ -3966,4 +3981,187 @@ TEST_CASE("movement: the Ship Orders options clear orders after a warp into anot
     CHECK_FALSE(apply(r, w.s, kA, cmd::SetEncounterOptions{static_cast<EncounterClear>(3)}).ok);
     CHECK(apply(r, w.s, kA, cmd::SetEncounterOptions{EncounterClear::Any}).ok);
     CHECK(w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Any);
+}
+
+TEST_CASE("movement: the Ship Orders options empty every member's list; a turn-based Move To is not kept (spec 03 §19 Q77)") {
+    const Rules& r = mvtest::rules();
+    struct Setup {
+        World w;
+        SystemId a, b;
+        ObjectId ab;
+        Setup() {
+            a = w.system("A");
+            b = w.system("B", 10, 0);
+            ab = w.link(a, {12, 6}, b, {0, 6}).first;
+            w.exploreAll(kA);
+            w.colony(w.planet(b, {8, 8}), kB, 1000);
+            w.setTreaty(kA, kB, Treaty::War);
+        }
+    };
+    SUBCASE("a computer player's ad-hoc companion loses its list too") {
+        Setup t;
+        t.w.s.empire(kA).kind = PlayerKind::Computer;
+        REQUIRE(t.w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Enemy);
+        std::vector<VehicleId> ships;
+        for (int i = 0; i < 2; ++i) {
+            ships.push_back(t.w.spawn(t.w.ship(kA, std::format("Scout {}", i), 4), at(t.a, 11, 6)));
+            fuel(t.w, ships.back());
+            t.w.order(ships.back(), mk(OrderKind::Warp, {}, t.ab), true);
+            t.w.order(ships.back(), moveTo(t.b, 3, 6), true);
+        }
+        t.w.move();
+        for (VehicleId id : ships) {
+            CAPTURE(id.value);
+            CHECK(t.w.v(id).location == at(t.b, 0, 6));
+            CHECK(t.w.v(id).orders.empty());
+            CHECK_FALSE(t.w.v(id).repeatOrders);
+        }
+    }
+    SUBCASE("turn-based: the Move To goes on in this run with the lists already empty") {
+        Setup t;
+        t.w.s.options.simultaneous = false;
+        // Speed 4: a step to the warp point, the jump, then two more steps.
+        const VehicleId ship = t.w.spawn(t.w.ship(kA, "Scout", 4), at(t.a, 11, 6));
+        fuel(t.w, ship);
+        t.w.give(ship, {moveTo(t.b, 4, 6)});
+        TurnContext ctx{r, t.w.s, {}, {}, {}};
+        movement::startTurn(ctx, kA);
+        movement::runLive(ctx, movement::LiveMove{kA});
+        CHECK(t.w.v(ship).location == at(t.b, 2, 6));
+        CHECK(t.w.v(ship).orders.empty());
+        CHECK(t.w.logged(kA, "orders cleared"));
+        // Nothing is left of the order for a later turn.
+        movement::startTurn(ctx, kA);
+        movement::runLive(ctx, movement::LiveMove{kA});
+        CHECK(t.w.v(ship).location == at(t.b, 2, 6));
+    }
+}
+
+// ---- First contact at set moments (spec 05 §3.1) --------------------------------------------------
+
+namespace {
+
+// Two empires with a colony each in systems linked by a warp point, both
+// explored by both, not yet in contact.
+struct ContactWorld {
+    World w;
+    SystemId a, b;
+    ObjectId wa, wb;
+    ContactWorld() {
+        a = w.system("A");
+        b = w.system("B", 5, 0);
+        std::tie(wa, wb) = w.link(a, {6, 0}, b, {6, 12});
+        w.colony(w.planet(a, {6, 6}), kA, 1000);
+        w.colony(w.planet(b, {6, 6}), kB, 1000);
+        w.exploreAll(kA);
+        w.exploreAll(kB);
+    }
+    bool met() const { return w.s.empire(kA).relation(kB).contact && w.s.empire(kB).relation(kA).contact; }
+};
+
+} // namespace
+
+TEST_CASE("first contact: a warp arrival runs the check in the system reached; steps within a system never do") {
+    ContactWorld c;
+    // B's scout already sits in A's system and moves about there: both
+    // detect each other, but no moment of spec 05 §3.1 comes.
+    const VehicleId scout = c.w.spawn(c.w.ship(kB, "Scout", 6), at(c.a, 0, 0));
+    fuel(c.w, scout);
+    c.w.order(scout, moveTo(c.a, 4, 4));
+    c.w.move();
+    REQUIRE(c.w.v(scout).location == at(c.a, 4, 4));
+    CHECK_FALSE(c.met());
+    // A's ship jumps into B's system: the arrival runs the check there.
+    const VehicleId traveller = c.w.spawn(c.w.ship(kA, "Traveller", 6), at(c.a, 6, 0));
+    fuel(c.w, traveller);
+    c.w.order(traveller, mk(OrderKind::Warp, {}, c.wa));
+    c.w.move();
+    REQUIRE(c.w.v(traveller).location.system == c.b);
+    CHECK(c.met());
+    CHECK(c.w.logged(kA, "First Contact"));
+    CHECK(c.w.logged(kB, "First Contact"));
+}
+
+TEST_CASE("first contact: a Move To through a warp point checks the arrival system") {
+    ContactWorld c;
+    const VehicleId traveller = c.w.spawn(c.w.ship(kA, "Traveller", 6), at(c.a, 6, 2));
+    fuel(c.w, traveller);
+    c.w.order(traveller, moveTo(c.b, 6, 10));
+    c.w.move();
+    REQUIRE(c.w.v(traveller).location.system == c.b);
+    CHECK(c.met());
+}
+
+TEST_CASE("first contact: a ship's Decloak order and a cloak lost at the supply step run the check") {
+    for (const bool supply : {false, true}) {
+        CAPTURE(supply);
+        ContactWorld c;
+        // B's cloaked ship in A's system: A cannot see it, so no contact.
+        const VehicleId ghost = c.w.spawn(c.w.ship(kB, "Ghost", 2, {"Mv Cloak"}), at(c.a, 2, 2));
+        c.w.v(ghost).status = VehicleStatus::Cloaked;
+        {
+            TurnContext ctx{c.w.rules(), c.w.s, {}, {}, {}};
+            diplomacy::firstContactIn(ctx, c.a);
+        }
+        REQUIRE_FALSE(c.met());
+        if (supply) {
+            c.w.v(ghost).supply = 0;  // the cloak drops at the end-of-turn supply step
+            c.w.upkeep();
+        } else {
+            c.w.order(ghost, mk(OrderKind::Decloak));
+            c.w.move();
+        }
+        REQUIRE(c.w.v(ghost).status == VehicleStatus::Normal);
+        CHECK(c.met());
+    }
+}
+
+// ---- Headings and the movement steps (spec 06 §2.4, §7 Q62) ---------------------------------------
+
+TEST_CASE("movement: headings turn to each step's bearing within a system and survive a warp") {
+    using movement::headingFor;
+    const Sector c{5, 5};
+    CHECK(headingFor(c, c) == 0);
+    CHECK(headingFor(c, {5, 4}) == 0);
+    CHECK(headingFor(c, {6, 4}) == 1);
+    CHECK(headingFor(c, {6, 5}) == 2);
+    CHECK(headingFor(c, {6, 6}) == 3);
+    CHECK(headingFor(c, {5, 6}) == 4);
+    CHECK(headingFor(c, {4, 6}) == 5);
+    CHECK(headingFor(c, {4, 5}) == 6);
+    CHECK(headingFor(c, {4, 4}) == 7);
+    CHECK(headingFor({0, 0}, {3, 1}) == 2);   // 108° rounds to 90°
+    CHECK(headingFor({0, 0}, {2, 1}) == 3);   // 117° rounds to 135°
+    CHECK(headingFor({0, 3}, {1, 0}) == 0);   // 18° rounds to up
+
+    World w;
+    const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+    const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
+    (void)ba;
+    w.exploreAll(kA);
+    const VehicleId ship = w.spawn(w.ship(kA, "Pilgrim", 6), at(a, 9, 9));
+    fuel(w, ship);
+    CHECK(w.v(ship).heading == 0);   // a new ship faces up
+    w.order(ship, moveTo(a, 12, 6));
+    w.order(ship, mk(OrderKind::Warp, {}, ab));
+    std::vector<MovementStep> steps;
+    TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+    ctx.movementStep = [&](const MovementStep& st) { steps.push_back(st); };
+    movement::startTurn(ctx);
+    movement::runMovementAndCombat(ctx, {});
+    REQUIRE(w.v(ship).location.system == b);
+    // Three steps up and to the right (heading 1), then the jump, which keeps it.
+    CHECK(w.v(ship).heading == 1);
+    // Every step is reported once, in order, with its day.
+    REQUIRE(steps.size() == 4);
+    CHECK(steps[0].from == at(a, 9, 9));
+    CHECK(steps[0].to == at(a, 10, 8));
+    CHECK(steps[3].from == at(a, 12, 6));
+    CHECK(steps[3].to.system == b);
+    for (size_t i = 1; i < steps.size(); ++i) CHECK(steps[i].day >= steps[i - 1].day);
+    // The heading is saved with the game.
+    const auto bytes = serializeState(w.s);
+    const auto back = deserializeState(bytes);
+    REQUIRE(back.has_value());
+    CHECK(back->vehicle(ship)->heading == 1);
 }

@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace opense4::game {
@@ -30,16 +31,27 @@ inline constexpr uint32_t kMessageLifetime = 10;
 // `date` (DiplomaticMessage::dated; by default GameState::turn): a
 // simultaneous turn passes the advanced date for step 4.
 void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt);
-// First contact between every pair of living empires that have not met,
-// that each detect the other in one system and that a warp path links (spec
-// 05 §3.1, confirmed: binary), after sight::updateKnowledge. An empire
-// without colonies makes no contact. A pair where only one side has met the
-// other (`onlySide` below) completes the missing side.
+// The first-contact check in one system (spec 05 §3.1, confirmed: binary):
+// every pair of living empires that have not both met the other, that each
+// detect an object of the other in `sys` now (a vehicle or a colony there
+// passing the detection rule of spec 01 §6.3 by the current positions and
+// sensors) and that a warp path links both ways, make contact (makeContact),
+// in empire order. An empire without colonies makes no contact. It runs only
+// at the moments the spec names, in the system concerned: a group's arrival
+// through a warp point, any decloak of a ship, unit group or colony, an event
+// once it is logged, a planet or vehicle handed over in a package, and a
+// rebellion project; never on moves within a system or in a per-turn pass.
+// A pair where only one side has met the other (`onlySide` below) completes
+// the missing side.
 // `onlySide` valid: only that empire's side of each new contact is made (its
 // contact mark and its "First Contact" entry); the other empire's side waits
-// for the next full check. A player's Decloak in a simultaneous game reaches
-// the host that way (spec 01 §14 Q44, confirmed: binary).
-void updateContacts(TurnContext& ctx, EmpireId onlySide = {});
+// for the next check in a system where both detect each other. A player's
+// Decloak in a simultaneous game reaches the host that way (spec 01 §14 Q44,
+// confirmed: binary).
+void firstContactIn(TurnContext& ctx, SystemId sys, EmpireId onlySide = {});
+// The same check in every system, in system order: when the game is created,
+// after the empires are placed, and after a surrender.
+void firstContactEverywhere(TurnContext& ctx);
 // The contact check (spec 05 §3.1, §8 step 7, confirmed: binary), once per
 // game turn in both turn styles, after the design cleanup and before the
 // victory check: each living empire A checks every empire B it has contact
@@ -64,11 +76,21 @@ void treatyStep(TurnContext& ctx, EmpireId e);
 
 // ---- Treaties and contact ----------------------------------------------------------------------
 
+// The log entries a treaty change makes for both parties: "New Treaty"
+// (breaking a treaty, war, a subject's other treaties), none (an accepted
+// proposal, whose "Message" entry is all, spec 06 §7 Q70), or "Treaty
+// Enacted" (a package's treaty item, spec 06 §7 Q70).
+enum class TreatyEntry : uint8_t { NewTreaty, None, Enacted };
 // Sets a treaty on both sides: dominance for Subjugation/Protectorate
 // (`aDominant`: a is the master), treaty turn, last war turn, trade reset
-// below trade level, "New Treaty ..." mood events and logs. A subject's
-// other treaties are broken.
-void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false);
+// below trade level, "New Treaty ..." mood events and the log entries
+// `entry` names. A subject's other treaties are broken.
+void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
+// The text of a "Treaty Enacted" entry about `other` (the history file finds
+// the empire by it: the entry also writes a contact line, spec 05 §3.4).
+std::string treatyEnactedText(const GameState& s, EmpireId other, Treaty t, std::string_view role = {});
+// Whether a log entry is a "Treaty Enacted" entry about `other`.
+bool treatyEnactedWith(const GameState& s, const LogEntry& l, EmpireId other);
 // Happiness.txt trigger for a new treaty, from `forEmpire`'s side.
 std::string_view treatyTrigger(Treaty t, bool dominant);
 bool inContact(const GameState& s, EmpireId a, EmpireId b);
@@ -94,25 +116,29 @@ bool treatyVisible(const GameState& s, EmpireId viewer, EmpireId a, EmpireId b);
 
 // ---- Colony cloaking (spec 01 §6.9, §14 Q44, confirmed: binary) ----------------------------------
 
-// The rest of a Decloak's step once a colony's cloaked mark is cleared:
-// sight is recalculated and the first-contact check runs (updateContacts,
-// with `onlySide` as there).
-void afterDecloak(TurnContext& ctx, EmpireId onlySide = {});
+// The rest of a Decloak's step once the cloaked mark of a colony in `sys` is
+// cleared: sight is recalculated and the first-contact check runs in that
+// system (firstContactIn, with `onlySide` as there).
+void afterDecloak(TurnContext& ctx, SystemId sys, EmpireId onlySide = {});
 // Refreshes a colony's cloak and sensor levels (sight::recalculateColony).
 // A cloaked colony that can no longer cloak is decloaked by the Decloak
 // order's own step (afterDecloak). True when it was decloaked.
 bool recalculateColony(TurnContext& ctx, Colony& c, EmpireId onlySide = {});
 // Every colony, as every reading of a game file does: Load Game, a network
 // host started from a save, a play-by-e-mail game file opened by a player or
-// by the host, a hotseat game passing to the next player.
+// by the host, a hotseat game passing to the next player. After all are
+// recalculated, sight is recalculated once and the first-contact check runs
+// in each system where a colony decloaked.
 void recalculateColonies(const Rules& r, GameState& s);
 
 // ---- Ownership transfers (packages, surrender, defection, rebellion) ---------------------------
 
 void transferColony(GameState& s, ObjectId planet, EmpireId to);
 void transferVehicle(GameState& s, VehicleId vehicle, EmpireId to);
-// Moves package items from `giver` to `receiver`. Items that no longer exist
-// are skipped and reported in the logs of both sides.
+// Moves package items from `giver` to `receiver` (spec 05 §3.4, spec 06 §7
+// Q70, confirmed: binary), in package order, each item making its own log
+// entries, the receiver's first, then the giver's; an item no longer valid
+// is skipped without any entry. No game option is tested.
 void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::span<const PackageItem> items);
 // True if an item is an unfilled "Any" placeholder (no specific tech, planet, ...).
 bool isPlaceholder(const PackageItem& item);

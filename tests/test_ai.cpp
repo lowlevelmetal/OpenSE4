@@ -4436,3 +4436,189 @@ TEST_CASE("ai: the Destroy Planet minister skips every colony marked cloaked, ev
         if (c && c->owner == them) c->cloaked = true;
     CHECK(plan(hidden).empty());
 }
+
+// ---- Requests the computer starts (spec 05 §7.4 "Demands the AI starts", question 52) -----------
+
+namespace {
+
+// The rules of a computer that never declares war, breaks a treaty or
+// proposes one, so its initiative goes to the requests; `extra` adds lines.
+const char* kQuietPolitics =
+    "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n";
+
+void setBoth(GameState& s, EmpireId a, EmpireId b, Treaty t) {
+    s.empire(a).relation(b).treaty = t;
+    s.empire(b).relation(a).treaty = t;
+    s.empire(a).relation(b).contact = s.empire(b).relation(a).contact = true;
+}
+
+// Every request `cpu` sends `x` over many turns.
+std::vector<DiplomaticMessage> requestsOver(const Rules& r, const GameState& base, EmpireId cpu, EmpireId x, uint32_t turns = 60) {
+    std::vector<DiplomaticMessage> out;
+    for (uint32_t turn = 21; turn < 21 + turns; ++turn) {
+        if (turn % 10 == 0) continue;  // keep the demand lists' clearing out of it
+        GameState g = base;
+        g.turn = turn;
+        for (const Command& c : ai::planTurn(r, g, cpu))
+            if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == x && m->message.type != MessageType::General) {
+                CHECK(m->minister);  // never through the player's picker
+                out.push_back(m->message);
+            }
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("ai: step 3 asks to break with the lowest-numbered empire X holds at Trade Alliance and the AI at War or Non-Intercourse") {
+    TempTree t("request3");
+    t.write("Ai/Default_AI_Politics.txt", kQuietPolitics);
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 4, 0, 12, r);
+    const EmpireId x{0u}, cpu{1u}, z2{2u}, z3{3u};
+    setBoth(s, cpu, x, Treaty::TradeAlliance);
+    setBoth(s, x, z2, Treaty::TradeAlliance);
+    setBoth(s, x, z3, Treaty::TradeAlliance);
+    setBoth(s, cpu, z2, Treaty::None);   // None does not count
+    setBoth(s, cpu, z3, Treaty::War);
+    const auto sent = requestsOver(r, s, cpu, x);
+    bool any = false;
+    for (const DiplomaticMessage& m : sent) {
+        if (m.type != MessageType::RequestBreakTreaty && m.type != MessageType::RequestDeclareWar) continue;
+        any = true;
+        CHECK(m.type == MessageType::RequestBreakTreaty);   // not Military Alliance with X
+        CHECK(m.thirdEmpire == z3);
+    }
+    CHECK(any);
+    // At Military Alliance with X and at War with Z: X is asked to declare war on Z.
+    setBoth(s, cpu, x, Treaty::MilitaryAlliance);
+    bool war = false;
+    for (const DiplomaticMessage& m : requestsOver(r, s, cpu, x))
+        if (m.type == MessageType::RequestDeclareWar) {
+            war = true;
+            CHECK(m.thirdEmpire == z3);
+        }
+    CHECK(war);
+}
+
+TEST_CASE("ai: step 4 asks for peace with the lowest-numbered ally of the AI that X is at war with") {
+    TempTree t("request4");
+    t.write("Ai/Default_AI_Politics.txt", kQuietPolitics);
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 4, 0, 12, r);
+    const EmpireId x{0u}, cpu{1u}, z2{2u}, z3{3u};
+    setBoth(s, cpu, x, Treaty::MilitaryAlliance);
+    setBoth(s, x, z2, Treaty::War);
+    setBoth(s, x, z3, Treaty::War);
+    setBoth(s, cpu, z2, Treaty::NonAggression);   // below Military Alliance
+    setBoth(s, cpu, z3, Treaty::MilitaryAlliance);
+    bool any = false;
+    for (const DiplomaticMessage& m : requestsOver(r, s, cpu, x)) {
+        if (m.type != MessageType::RequestMakePeace) continue;
+        any = true;
+        CHECK(m.thirdEmpire == z3);
+    }
+    CHECK(any);
+}
+
+TEST_CASE("ai: step 5 names the system and the highest-numbered other side of its newest battle lost while defending") {
+    TempTree t("request5");
+    t.write("Ai/Default_AI_Politics.txt", kQuietPolitics);
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 4, 0, 12, r);
+    const EmpireId x{0u}, cpu{1u}, z2{2u}, z3{3u};
+    setBoth(s, cpu, x, Treaty::MilitaryAlliance);
+    s.turn = 21;
+    auto battle = [&](uint32_t turn, SystemId where, std::vector<EmpireId> sides, EmpireId current, bool lost) {
+        CombatRecord rec;
+        rec.turn = turn;
+        rec.location = {where, Sector{3, 3}};
+        rec.currentPlayer = current;
+        rec.participants = sides;
+        for (EmpireId e : sides) {
+            CombatPiece p;
+            p.owner = e;
+            rec.pieces.push_back(p);
+        }
+        if (lost) {
+            CombatEvent ev;
+            ev.kind = CombatEvent::Kind::Destroyed;
+            ev.piece = 0;   // ours
+            rec.events.push_back(ev);
+        }
+        return rec;
+    };
+    // An older defeat names z2; the newest, with z2 and z3 (neither met), names z3.
+    s.combats = {battle(20, SystemId{4u}, {cpu, z2}, z2, true), battle(21, SystemId{5u}, {cpu, z2, z3}, z3, true)};
+    // The battles keep their dates relative to the turn planned: only the
+    // AI's random stream (seed, turn and empire) changes from run to run.
+    auto attackRequests = [&](const GameState& g) {
+        std::vector<DiplomaticMessage> out;
+        for (uint32_t turn = 21; turn < 81; ++turn) {
+            if (turn % 10 == 0) continue;
+            GameState h = g;
+            h.turn = turn;
+            for (CombatRecord& rec : h.combats) rec.turn = turn - (21 - rec.turn);
+            for (const Command& c : ai::planTurn(r, h, cpu))
+                if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == x && m->message.type == MessageType::RequestAttackEmpire)
+                    out.push_back(m->message);
+        }
+        return out;
+    };
+    const auto asked = attackRequests(s);
+    REQUIRE_FALSE(asked.empty());
+    for (const DiplomaticMessage& m : asked) {
+        CHECK(m.thirdEmpire == z3);
+        CHECK(m.system == SystemId{5u});
+    }
+    // A battle won, or one fought as the current player, is no defeat while defending.
+    GameState won = s;
+    won.combats = {battle(21, SystemId{5u}, {cpu, z3}, z3, false)};
+    CHECK(attackRequests(won).empty());
+    GameState attacking = s;
+    attacking.combats = {battle(21, SystemId{5u}, {cpu, z3}, cpu, true)};
+    CHECK(attackRequests(attacking).empty());
+    // When the empire to name is X itself, nothing is asked.
+    GameState self = s;
+    self.combats = {battle(21, SystemId{5u}, {x, cpu}, x, true)};
+    CHECK(attackRequests(self).empty());
+}
+
+TEST_CASE("ai: the chosen request's flag is tested last; a forbidden one ends steps 1-5 for the turn") {
+    for (const bool allowed : {true, false}) {
+        CAPTURE(allowed);
+        TempTree t(allowed ? "requestflag1" : "requestflag0");
+        t.write("Ai/Default_AI_Politics.txt",
+                std::string(kQuietPolitics) + (allowed ? "" : "Will Send To Enemy Stop attacks in system := False\n"));
+        const Rules r{buildEngineRuleset(), t.root};
+        GameState s = computerGame(7, 2, 0, 12, r);
+        const EmpireId x{0u}, cpu{1u};
+        setBoth(s, cpu, x, Treaty::None);
+        // Both attacks and spying logged: step 1 chooses "stop attacks" first.
+        Relation& rel = s.empire(cpu).relation(x);
+        rel.attackedUs = true;
+        rel.attackedIn = SystemId{2u};
+        rel.spiedOnUs = true;
+        const auto sent = requestsOver(r, s, cpu, x);
+        if (allowed) {
+            REQUIRE_FALSE(sent.empty());
+            for (const DiplomaticMessage& m : sent) CHECK(m.type == MessageType::DemandStopAttacks);
+        } else {
+            CHECK(sent.empty());   // no fall-through to "stop espionage" or later steps
+        }
+    }
+}
+
+TEST_CASE("ai: a Politics minister's request about a third empire is not checked; the player's own is") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 3, 12, true);
+    const EmpireId human{0u}, other{1u}, stranger{2u};
+    REQUIRE(s.empire(human).kind == PlayerKind::Human);
+    meet(s, human, other);
+    DiplomaticMessage m;
+    m.to = other;
+    m.type = MessageType::RequestBreakTreaty;
+    m.thirdEmpire = stranger;   // not met
+    CHECK_FALSE(apply(r, s, human, cmd::SendMessage{m}).ok);
+    CHECK(apply(r, s, human, cmd::SendMessage{m, true}).ok);
+}

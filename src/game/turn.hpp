@@ -48,8 +48,9 @@ namespace opense4::game {
 // human-controlled empire asks Tactical or Strategic (with the "No Tactical
 // Combat" option it opens the Strategic Combat window with Begin and Close
 // instead), and in a simultaneous game, when the Settings flag
-// `Simultaneous Games Show Strategic Combat` is on, every such battle opens
-// the Strategic Combat window. A turn-based game also shows the colony
+// `Simultaneous Games Show Strategic Combat` is on, every battle opens the
+// Strategic Combat window, computer-only battles included, with no notice
+// before it (spec 06 §7 Q76). A turn-based game also shows the colony
 // owner's end-of-turn ground combat when one of the two empires is human
 // (a notice, then the Ground Combat window), and its processing waits.
 //
@@ -76,7 +77,8 @@ struct BattleAnswer {
     std::vector<combat::TacticalOrder> orders;    // their orders (combat::TacticalBattle::script())
 };
 
-// A stop: a battle about to start with human participants, or a ground fight to show.
+// A stop: a battle about to start with human participants (in a simultaneous
+// game that shows battles, any battle), or a ground fight to show.
 struct BattleQuestion {
     enum class Kind : uint8_t {
         Choose,   // Tactical or Strategic: the Strategic Combat window in its question form
@@ -88,7 +90,7 @@ struct BattleQuestion {
     // The vehicles that entered the sector (the mines' targets; see TacticalBattle::Setup).
     std::optional<std::vector<VehicleId>> entering;
     combat::BattleCheck check;                    // who ran the battle check (see TacticalBattle::Setup)
-    std::vector<EmpireId> humans;                 // human sides that fight in it, each asked
+    std::vector<EmpireId> humans;                 // human sides that fight in it, each asked (may be empty for Show)
     std::vector<EmpireId> participants;           // every side with pieces
     std::shared_ptr<const GameState> state;       // the game just before the battle (before the mines), or the ground fight
     size_t index = 0;                             // its place among the call's stops
@@ -108,6 +110,14 @@ bool simultaneousBattlesShown(const Rules& r);
 // go into GameState; mood events that no happiness update used this turn
 // move to GameState::pendingMood at the end of the turn and come back at the
 // start of the next.
+// One step of one vehicle in the simultaneous movement phase: within a
+// system, or through a warp point to another (TurnContext::movementStep).
+struct MovementStep {
+    int day = 0;
+    VehicleId vehicle;
+    Location from, to;
+};
+
 struct TurnContext {
     const Rules& rules;
     GameState& state;
@@ -133,6 +143,11 @@ struct TurnContext {
     // state as that day left it (TurnOptions::movementDay; the client's
     // movement log replay, docs/spec/06 §7 Q51). Observes only.
     std::function<void(int day, const GameState&)> movementDay;
+    // Simultaneous games: called for each vehicle's every step (within a
+    // system, or through a warp point) as movement makes it, members in their
+    // group's order (TurnOptions::movementStep; the replay's one entry per
+    // vehicle and step, docs/spec/06 §7 Q62). Observes only.
+    std::function<void(const MovementStep&)> movementStep;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});
@@ -152,6 +167,8 @@ struct TurnOptions {
     const std::vector<BattleAnswer>* battles = nullptr;
     // Simultaneous games: an observer of each movement day (TurnContext::movementDay).
     std::function<void(int day, const GameState&)> movementDay;
+    // Simultaneous games: an observer of each step (TurnContext::movementStep).
+    std::function<void(const MovementStep&)> movementStep;
 };
 
 struct TurnResult {

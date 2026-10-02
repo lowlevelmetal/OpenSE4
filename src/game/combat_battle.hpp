@@ -115,6 +115,10 @@ struct Piece {
     bool launched = false;
     int droneTarget = -1;
     EmpireId droneTargetOwner;
+    // The piece's number (spec 04 §10.7): its place in piece order at set-up;
+    // a new piece takes one above the highest number present, so it can take
+    // the number of a piece that has left.
+    int number = 0;
     bool droneOrderTarget = false;    // the target its Attack pursuit names: any kind of piece (spec 03 §19 Q68)
     bool wasCloaked = false;          // cloaked when the battle began: it cloaks again afterwards if it can (spec 04 §2)
     int64_t tonnageHad = 0;           // unit groups: hull tonnage of every unit it had in the battle (spec 04 §15, spec 02 §9 experience)
@@ -243,6 +247,7 @@ public:
     int maxMovement(int i) const { return computeMp(i); }
     std::array<int, 3> launchLeft(int i) const;
     bool hasTroops(int i) const;
+    bool hasUnitsAboard(int i) const;     // units of any kind in its cargo (a planet piece: its colony's)
     int leaderOf(int i) const;             // the piece i follows (-1: none)
     std::vector<std::pair<int, int>> pathToSquare(int i, int tx, int ty) const;
     // Why weapon `wi` of piece i cannot fire at t now (empty: it can). Instance -1: any ready one.
@@ -354,6 +359,11 @@ private:
     void shoot(int i, size_t wi, size_t k, int t);
     void launchSeeker(int i, const Weapon& w, int t, int count);
     void applyHit(int att, int t, DamageType type, int64_t damage);
+    // Records a Hit of `att` on `t`, applies it, and marks the event with
+    // what it did (CombatEvent::flags, spec 06 §7 Q77).
+    void recordHit(int att, int t, DamageType type, int64_t damage, uint32_t component = 0);
+    // Marks the Hit event `at` with what applying it did to `t`, whose hit points were `before`.
+    void markHit(size_t at, int t, int64_t before);
     void shipHit(int att, int t, DamageType type, int64_t damage);
     void groupHit(int att, int t, DamageType type, int64_t damage);
     void seekerHit(int att, int t, DamageType type, int64_t damage);

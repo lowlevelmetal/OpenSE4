@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <climits>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -21,8 +22,10 @@ namespace {
 using datafile::keysEqual;
 
 constexpr std::array<std::string_view, 3> kLevelNames{"Low", "Medium", "High"};
-// 2: designs saved with the empire (spec 06 §7 Q48); format 1 files still load.
-constexpr int kEmpireFileFormat = 2;
+// 2: designs saved with the empire (spec 06 §7 Q48); 3: the combat strategies,
+// each design's strategy and creation date, no obsolete mark (§7 Q72).
+// Format 1 and 2 files still load.
+constexpr int kEmpireFileFormat = 3;
 
 bool isNone(std::string_view s) { return s.empty() || keysEqual(s, "None"); }
 
@@ -536,7 +539,19 @@ std::string empireToToml(const game::Rules& r, const game::EmpireSetup& e) {
         {"experience", static_cast<int64_t>(e.experience)},
         {"race", std::move(raceTable)},
     };
-    // Designs saved with the empire (spec 06 §7 Q48), by the data set's names.
+    // The combat strategies saved with the empire (spec 06 §7 Q72): each a
+    // name and its settings, in order (designs refer to them by place).
+    if (!e.strategies.empty()) {
+        toml::array strategies;
+        for (const ruleset::CombatStrategy& st : e.strategies) {
+            toml::array settings;
+            for (const auto& [key, value] : st.settings) settings.push_back(toml::array{key, value});
+            strategies.push_back(toml::table{{"name", st.name}, {"settings", std::move(settings)}});
+        }
+        root.insert("strategy", std::move(strategies));
+    }
+    // Designs saved with the empire (spec 06 §7 Q48, Q72), by the data set's
+    // names, each with its strategy and creation date; none is obsolete.
     if (!e.designs.empty()) {
         const auto& data = r.data();
         toml::array designs;
@@ -555,7 +570,8 @@ std::string empireToToml(const game::Rules& r, const game::EmpireSetup& e) {
                 {"name", d.name},
                 {"type", d.designType},
                 {"hull", data.vehicleSizes[d.hull].name},
-                {"obsolete", d.obsolete},
+                {"strategy", static_cast<int64_t>(d.strategy)},
+                {"created", static_cast<int64_t>(d.createdTurn)},
                 {"components", std::move(components)},
             };
             if (anyMount) t.insert("mounts", std::move(mounts));
@@ -653,6 +669,19 @@ std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, st
                 out.warnings.push_back(std::format("Trait {} dropped: {}.", r.data().racialTraits[t].name, canAddTrait(r, race, t).reason));
     }
     out.empire = collapse(r, d);
+    // The combat strategies (format 3, spec 06 §7 Q72).
+    if (const toml::array* strategies = root["strategy"].as_array())
+        for (const toml::node& node : *strategies) {
+            const toml::table* t = node.as_table();
+            if (!t) continue;
+            ruleset::CombatStrategy st;
+            st.name = (*t)["name"].value_or(std::string{});
+            if (const toml::array* settings = (*t)["settings"].as_array())
+                for (const toml::node& pair : *settings)
+                    if (const toml::array* kv = pair.as_array(); kv && kv->size() == 2)
+                        st.settings.emplace_back((*kv)[0].value_or(std::string{}), (*kv)[1].value_or(std::string{}));
+            out.empire.strategies.push_back(std::move(st));
+        }
     // Designs saved with the empire: each one the data set can still build
     // (its hull, components and mounts by name) comes along (spec 06 §7 Q48).
     if (const toml::array* designs = root["design"].as_array())
@@ -662,7 +691,9 @@ std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, st
             game::Design design;
             design.name = (*t)["name"].value_or(std::string{});
             design.designType = (*t)["type"].value_or(std::string{});
-            design.obsolete = (*t)["obsolete"].value_or(false);
+            // A saved design comes back current: an old file's obsolete mark is not read (spec 06 §7 Q72).
+            design.strategy = static_cast<uint32_t>(std::clamp<int64_t>((*t)["strategy"].value_or(int64_t{0}), 0, INT32_MAX));
+            design.createdTurn = static_cast<uint32_t>(std::clamp<int64_t>((*t)["created"].value_or(int64_t{0}), 0, INT32_MAX));
             const std::string hull = (*t)["hull"].value_or(std::string{});
             std::string missing;
             if (auto h = indexByName(r.data().vehicleSizes, hull)) design.hull = *h;

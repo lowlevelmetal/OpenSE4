@@ -2126,3 +2126,66 @@ TEST_CASE("installed data set: a battle between starting warships (opt-in)") {
     CHECK(std::any_of(rec.pieces.begin(), rec.pieces.end(), [](const CombatPiece& p) { return p.kind == CombatPiece::Kind::Planet; }));
 }
 
+
+TEST_CASE("combat: a battle that decloaks a piece runs the first-contact check; one that decloaks nothing does not") {
+    for (const bool cloaked : {false, true}) {
+        CAPTURE(cloaked);
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        for (Empire& e : s.empires)
+            for (Relation& rel : e.relations) rel.contact = false;  // nobody has met yet
+        // A's uncloaked spotter sees B's ship, so the battle starts either way;
+        // its cloaked companion is what the battle decloaks.
+        spawn(s, frigate(s, ar.a, "Spotter", 1, {"CT Big Gun"}), ar.loc);
+        const VehicleId lurker = spawn(s, frigate(s, ar.a, "Lurker", 1, {"CT Big Gun", "CT Cloak"}), ar.loc);
+        if (cloaked) s.vehicle(lurker)->status = VehicleStatus::Cloaked;
+        spawn(s, frigate(s, ar.b, "Target", 1, {}), ar.loc);
+        TurnContext ctx = context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        REQUIRE_FALSE(s.combats.empty());
+        // Any decloak, the start of a battle included, runs the check (spec 05 §3.1).
+        CHECK(s.empire(ar.a).relation(ar.b).contact == cloaked);
+        CHECK(s.empire(ar.b).relation(ar.a).contact == cloaked);
+    }
+}
+
+TEST_CASE("combat: each hit's event tells whether it reached structure and whether the target survived (spec 06 §7 Q77)") {
+    SUBCASE("the shields take every hit") {
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        // A's gun does 10 a hit against B's 60 points of shields.
+        spawn(s, frigate(s, ar.a, "Gunner", 1, {"CT Gun", "CT Always Hit"}), ar.loc);
+        const VehicleId shielded = spawn(s, frigate(s, ar.b, "Shielded", 1, {"Test Shield", "Test Shield", "Test Shield"}), ar.loc);
+        TurnContext ctx = context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        REQUIRE_FALSE(s.combats.empty());
+        const CombatRecord& rec = s.combats.back();
+        const int sp = pieceOf(rec, shielded);
+        int hits = 0;
+        for (const CombatEvent& e : rec.events)
+            if (e.kind == CombatEvent::Kind::Hit && int(e.target) == sp) {
+                ++hits;
+                if (hits == 1) CHECK((e.flags & CombatEvent::kStructure) == 0);   // the first is absorbed whole
+            }
+        CHECK(hits > 0);
+    }
+    SUBCASE("a big gun reaches structure and destroys") {
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        spawn(s, frigate(s, ar.a, "Hunter", 1, {"CT Big Gun", "CT Always Hit"}), ar.loc);
+        const VehicleId prey = spawn(s, frigate(s, ar.b, "Prey", 1, {}), ar.loc);
+        TurnContext ctx = context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        REQUIRE_FALSE(s.combats.empty());
+        const CombatRecord& rec = s.combats.back();
+        const int pp = pieceOf(rec, prey);
+        bool structure = false, killed = false;
+        for (const CombatEvent& e : rec.events)
+            if (e.kind == CombatEvent::Kind::Hit && int(e.target) == pp) {
+                structure = structure || (e.flags & CombatEvent::kStructure) != 0;
+                killed = killed || (e.flags & CombatEvent::kDestroyed) != 0;
+            }
+        CHECK(structure);
+        CHECK(killed == (s.vehicle(prey)->count == 0));
+    }
+}

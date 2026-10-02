@@ -277,21 +277,28 @@ The [Colonies](window:colonies) window (`F5`) lists all your colonies, with stat
 whole empire at the top: population, facilities, space yards, idle queues, unhappy colonies and
 your output per turn.
 
+Every tab starts with the planet's picture and its name, with the planet's type and size under
+it (or **Blockaded** in red).
+
 | Tab | Columns |
 |---|---|
-| General | System, type, colony type, population, mood, facilities. |
-| Value | Type, atmosphere (domes are marked), conditions, the three values. |
-| Production | Output of each resource, research and intelligence, and whether it is delivered, lost for lack of a spaceport, or blockaded. |
-| Facilities | Slots used and the facilities, by type. |
-| Cargo | Cargo space used, and what is stored. |
-| Construction | What is being built, its progress and time, and the queue's mode. |
-| Status | Status icons, mood and anger. |
+| General | Atmosphere, conditions, population (the maximum under it) and mood. |
+| Value | Colony type and the planet's three values. |
+| Production | Output of each resource, research and intelligence. Output in brackets does not reach your empire: the colony is blockaded, or no spaceport serves it. |
+| Facilities | Facilities built, facility slots, and the facilities by type. |
+| Cargo | Cargo space used, the capacity, and what is stored. |
+| Construction | What is being built first, and the time it still needs. |
+| Status | Status icons. |
 | Races | The population of each race. |
-| Orders | The orders given to the colony this turn. |
+| Orders | The colony's own orders (launching and recovering units, using facilities, converting resources). |
 
-Click a column heading to sort. Click a colony to select it, and `Ctrl+click` or `Shift+click` to
-select several. Double-click a colony (or press `Goto`) to show it in the main window, and
-right-click it for its report.
+Click a column heading, the picture's too, to sort by it. Each heading sorts its own way:
+names and words A to Z, numbers highest first, the picture by planet size (smallest first), and
+the two Construction columns Z to A. A sort stays when you change tab, and up to five clicks are
+remembered, the latest deciding first. Facilities, cargo items, status and orders do not sort.
+
+Click a colony to select it, and `Ctrl+click` or `Shift+click` to select several. Double-click a
+colony (or press `Goto`) to show it in the main window, and right-click it for its report.
 
 | Button | What it does |
 |---|---|

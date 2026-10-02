@@ -322,49 +322,123 @@ std::vector<game::cmd::Scrap> scrapFacilityType(const game::GameState& s, game::
     return out;
 }
 
-std::vector<std::string> planetOrders(const std::vector<game::Command>& orders, game::ObjectId planet) {
-    std::vector<std::pair<std::string, int>> counted;
-    auto add = [&](std::string text) {
-        for (auto& [t, n] : counted)
-            if (t == text) {
-                ++n;
-                return;
-            }
-        counted.emplace_back(std::move(text), 1);
-    };
-    for (const game::Command& command : orders)
-        std::visit(
-            [&](const auto& c) {
-                using T = std::decay_t<decltype(c)>;
-                namespace cmd = game::cmd;
-                if constexpr (std::is_same_v<T, cmd::QueueAdd>) {
-                    if (c.target.planet == planet && !c.target.vehicle.valid()) add("Queued an item");
-                } else if constexpr (std::is_same_v<T, cmd::QueueRemove>) {
-                    if (c.target.planet == planet && !c.target.vehicle.valid()) add("Removed a queue item");
-                } else if constexpr (std::is_same_v<T, cmd::QueueMove>) {
-                    if (c.target.planet == planet && !c.target.vehicle.valid()) add("Reordered the queue");
-                } else if constexpr (std::is_same_v<T, cmd::QueueSetCount>) {
-                    if (c.target.planet == planet && !c.target.vehicle.valid()) add("Changed a batch size");
-                } else if constexpr (std::is_same_v<T, cmd::QueueFlags>) {
-                    if (c.target.planet == planet && !c.target.vehicle.valid()) add("Queue settings");
-                } else if constexpr (std::is_same_v<T, cmd::SetColonyType>) {
-                    if (c.planet == planet) add("Colony type: " + c.colonyType);
-                } else if constexpr (std::is_same_v<T, cmd::AbandonPlanet>) {
-                    if (c.planet == planet) add("Abandon");
-                } else if constexpr (std::is_same_v<T, cmd::Scrap>) {
-                    if (c.facilityPlanet == planet && !c.vehicle.valid()) add("Scrapped a facility");
-                } else if constexpr (std::is_same_v<T, cmd::Rename>) {
-                    if (c.planet == planet && !c.vehicle.valid() && !c.fleet.valid() && !c.design.valid()) add("Renamed");
-                } else if constexpr (std::is_same_v<T, cmd::SetMinister>) {
-                    if (c.planet == planet && !c.vehicle.valid() && !c.empireWide) add(c.on ? "Minister on" : "Minister off");
-                } else if constexpr (std::is_same_v<T, cmd::TransferCargo>) {
-                    if (c.fromPlanet == planet || c.toPlanet == planet) add("Cargo transfer");
-                }
-            },
-            command);
-    std::vector<std::string> out;
-    for (auto& [text, n] : counted) out.push_back(n > 1 ? std::format("{} (x{})", text, n) : text);
-    return out;
+// ---- The Colonies list's columns ---------------------------------------------------------------
+
+std::vector<ColonyColumn> colonyTabColumns(ColonyTab tab) {
+    using C = ColonyColumn;
+    switch (tab) {
+        case ColonyTab::General: return {C::Atmosphere, C::Conditions, C::Population, C::Mood};
+        case ColonyTab::Value: return {C::ColonyType, C::MineralsValue, C::OrganicsValue, C::RadioactivesValue};
+        case ColonyTab::Production: return {C::Minerals, C::Organics, C::Radioactives, C::Research, C::Intelligence};
+        case ColonyTab::Facilities: return {C::FacilitiesBuilt, C::FacilitySlots, C::FacilityList};
+        case ColonyTab::Cargo: return {C::CargoUsed, C::CargoCapacity, C::CargoItems};
+        case ColonyTab::Construction: return {C::UnderConstruction, C::TimeRemaining};
+        case ColonyTab::Status: return {C::Status};
+        case ColonyTab::Races: return {C::RacePopulation};
+        case ColonyTab::Orders: return {C::Orders};
+        case ColonyTab::Count: break;
+    }
+    return {};
+}
+
+bool colonyColumnSorts(ColonyColumn c) {
+    return c != ColonyColumn::FacilityList && c != ColonyColumn::CargoItems && c != ColonyColumn::Status && c != ColonyColumn::Orders &&
+           c != ColonyColumn::Count;
+}
+
+std::optional<ColonyColumn> colonyColumnOf(int key) {
+    if (key < 0 || key >= static_cast<int>(ColonyColumn::Count)) return std::nullopt;
+    return static_cast<ColonyColumn>(key);
+}
+
+ColonySortValues colonySortValues(const game::Rules& r, const game::GameState& s, const game::Colony& c) {
+    const game::SpaceObject& o = s.galaxy.object(c.planet);
+    ColonySortValues v;
+    v.name = o.name;
+    const ruleset::PlanetSize* size = game::planetSize(r, o);
+    v.sizeRank = size ? static_cast<int>(size - r.data().planetSizes.data()) : static_cast<int>(r.data().planetSizes.size());
+    v.atmosphere = o.atmosphere;
+    v.conditions = o.conditions;
+    v.population = c.totalPopulation();
+    if (v.population > 0) v.mood = std::string(game::economy::moodName(r, s, c));
+    v.colonyType = c.colonyType;
+    for (size_t i = 0; i < 3; ++i) v.value[i] = o.value[i];
+    const game::economy::ColonyOutput out = game::economy::colonyOutput(r, s, c);
+    v.production = out.production;
+    v.research = out.research;
+    v.intelligence = out.intelligence;
+    v.facilities = static_cast<int>(c.facilities.size());
+    v.slots = game::facilitySlots(r, s, c);
+    v.cargoUsed = game::cargoSpaceUsed(r, s, c.cargo);
+    v.cargoCapacity = game::colonyCargoCapacity(r, s, c);
+    const game::cmd::QueueTarget target{c.planet, {}};
+    v.underConstruction = underConstructionText(r, s, c.queue);
+    v.timeRemaining = timeRemainingText(r, s, c.owner, target, c.queue, game::economy::constructionRate(r, s, c.owner, target));
+    return v;
+}
+
+namespace {
+
+template <class T>
+int highestFirst(const T& a, const T& b) {
+    return a == b ? 0 : a > b ? -1 : 1;
+}
+// By character code (case matters), A to Z.
+int byCode(const std::string& a, const std::string& b) {
+    const int d = a.compare(b);
+    return d == 0 ? 0 : d < 0 ? -1 : 1;
+}
+
+} // namespace
+
+int compareColonies(ColonyColumn c, const ColonySortValues& a, const ColonySortValues& b) {
+    using C = ColonyColumn;
+    switch (c) {
+        case C::Picture: return a.sizeRank == b.sizeRank ? 0 : a.sizeRank < b.sizeRank ? -1 : 1;
+        case C::Name: return compareNames(a.name, b.name);
+        case C::Atmosphere: return byCode(a.atmosphere, b.atmosphere);
+        case C::Conditions: return highestFirst(a.conditions, b.conditions);
+        case C::Population: return highestFirst(a.population, b.population);
+        case C::Mood: return byCode(a.mood, b.mood);
+        case C::ColonyType: return byCode(a.colonyType, b.colonyType);
+        case C::MineralsValue:
+        case C::OrganicsValue:
+        case C::RadioactivesValue: {
+            const size_t i = static_cast<size_t>(c) - static_cast<size_t>(C::MineralsValue);
+            return highestFirst(a.value[i], b.value[i]);
+        }
+        case C::Minerals:
+        case C::Organics:
+        case C::Radioactives: {
+            const size_t i = static_cast<size_t>(c) - static_cast<size_t>(C::Minerals);
+            return highestFirst(a.production.v[i], b.production.v[i]);
+        }
+        case C::Research: return highestFirst(a.research, b.research);
+        case C::Intelligence: return highestFirst(a.intelligence, b.intelligence);
+        case C::FacilitiesBuilt: return highestFirst(a.facilities, b.facilities);
+        case C::FacilitySlots: return highestFirst(a.slots, b.slots);
+        case C::CargoUsed: return highestFirst(a.cargoUsed, b.cargoUsed);
+        case C::CargoCapacity: return highestFirst(a.cargoCapacity, b.cargoCapacity);
+        case C::UnderConstruction: return -byCode(a.underConstruction, b.underConstruction);
+        case C::TimeRemaining: return -byCode(a.timeRemaining, b.timeRemaining);
+        case C::RacePopulation: return highestFirst(a.population, b.population);
+        case C::FacilityList:
+        case C::CargoItems:
+        case C::Status:
+        case C::Orders:
+        case C::Count: break;
+    }
+    return 0;
+}
+
+std::vector<size_t> colonyRowOrder(const std::vector<ColonySortValues>& rows, const SortSlots& slots) {
+    std::vector<size_t> order(rows.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    sortByKeys(order, sortKeys(slots, static_cast<int>(ColonyColumn::Name)), [&](int key, size_t a, size_t b) {
+        const std::optional<ColonyColumn> c = colonyColumnOf(key);
+        return c ? compareColonies(*c, rows[a], rows[b]) : 0;
+    });
+    return order;
 }
 
 // ---- Construction queues -------------------------------------------------------------------------

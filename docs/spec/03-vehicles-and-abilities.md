@@ -220,7 +220,7 @@ effect, except that formation slots and AI logic can refer to them.
 | `Bases Can Join Fleets` | False | §9 |
 | `Population Mass` | 5 | cargo kT per 1M population (confirmed: binary) |
 | `Maximum Population For Abandon Planet Order` | 50 | planet order gate |
-| `System Ship Movement Delay Milliseconds` | 0 | presentation only: the pause after each animated step of a move in the system window, which the original reads as seconds, not milliseconds (confirmed: binary; spec 06 §2.4) |
+| `System Ship Movement Delay Milliseconds` | 0 | presentation only: the pause after each animated step of a move in the system window, which the original reads as seconds, not milliseconds (confirmed: binary; spec 06 §2.4); our client reads it the same way |
 
 ---
 
@@ -2329,12 +2329,11 @@ marked (inferred) in the code.
       the lists are already empty, so when movement runs out first nothing is left of the
       order for a later turn. In a simultaneous game the action ends there.
 
-    The engine differs for the Ship Orders options: `encounter()` (`movement.cpp`) clears
-    only the holders' lists (`setLists(g, {})`), and in a turn-based game it writes the Move
-    To back into them (`setLists(g, {o})`), so the order resumes on a later turn. It must
-    empty the list of every member of the group (`g.members`, companions included) with
-    Repeat off, and in a turn-based game let the Move To finish its steps in the current run
-    without writing it back.
+    Since 2026-10-01 the engine follows this for the Ship Orders options too: `encounter()`
+    (`movement.cpp`), used by the Warp order as well, empties the list of every member of the
+    group (companions included) with Repeat off, and in a turn-based game the Move To goes on
+    stepping in the current run only (`Mover::carried_`), so nothing of it is left for a later
+    turn.
 78. **The Scrap window's actions: the engine's choices (§15, 2026-10-01).**
     - The computer players' and ministers' Scrap and Retrofit go through the window's
       commands, so in a simultaneous game they become the vehicle's only order and are

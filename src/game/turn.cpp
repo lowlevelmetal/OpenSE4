@@ -138,9 +138,10 @@ bool simultaneousBattlesShown(const Rules& r) { return r.settingFlag("Simultaneo
 TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options) {
     if (s.gameOver) return {};
     if (!s.options.simultaneous) return detail::playTurnBasedTurn(r, s, orders, options);
-    // On one machine, with the Settings flag on, each battle with a human side
-    // stops the turn to be shown (turn.hpp): the turn is played again with the
-    // answers so far, up to the next battle (spec 04 §2, spec 06 §1.10.5).
+    // On one machine, with the Settings flag on, every battle, computer-only
+    // ones included, stops the turn to be shown (turn.hpp; spec 06 §1.10.5,
+    // §7 Q76): the turn is played again with the answers so far, up to the
+    // next battle (spec 04 §2).
     if (!options.battles || !simultaneousBattlesShown(r)) return simultaneousTurn(r, s, orders, options, nullptr);
     GameState before = s;
     TurnContext::Battles battles{options.battles, 0};
@@ -161,6 +162,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     TurnContext ctx{r, s, {}, {}, {}};
     ctx.battles = battles;
     ctx.movementDay = options.movementDay;
+    ctx.movementStep = options.movementStep;
     // Mood events raised after an empire's happiness update last turn (spec 02 §4).
     ctx.moodEvents = std::move(s.pendingMood);
     s.pendingMood.clear();
@@ -242,14 +244,14 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
 
     // ---- 5. Movement and space combat: 30 movement phases, each followed by
     // combat where it applies. Colonize orders found their colonies during the
-    // phases, like any order (spec 05 §8 step 5). Sight and first contact
-    // then follow the new positions.
+    // phases, like any order (spec 05 §8 step 5). Sight then follows the
+    // new positions; first contact was checked at the moments spec 05 §3.1
+    // names (warp arrivals, decloaks), never in a pass of its own.
     s.combats.clear();  // from here on: this turn's battles
     movement::startTurn(ctx);
     movement::runMovementAndCombat(ctx);
     s.removeDeadVehicles();
     sight::updateKnowledge(r, s);
-    diplomacy::updateContacts(ctx);
 
     // ---- 6. End-of-turn processing, one empire at a time in empire order,
     // each followed by its destruction check. An empire founded during it
@@ -281,13 +283,12 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     }
     s.removeDeadVehicles();
 
-    // ---- 10. Per-turn flags are cleared; sight and contact follow the
-    // events; the AI remembers the turn's battles and spies; stand-ins get
+    // ---- 10. Per-turn flags are cleared; sight follows the events (each
+    // logged event ran its own first-contact check); the AI remembers the turn's battles and spies; stand-ins get
     // their own ministers back; mood events still waiting carry over.
     for (Empire& e : s.empires)
         for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
     sight::updateKnowledge(r, s);
-    diplomacy::updateContacts(ctx);
     ai::rememberAiEvents(ctx);
     for (const auto& [id, saved] : standIns) ai::restoreMinisters(s.empire(id), saved);
     std::erase_if(ctx.moodEvents, [&](const MoodEvent& m) { return !living(s, m.empire); });

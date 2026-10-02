@@ -247,7 +247,11 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
             if (x.id == e) continue;
             if (l.title == "Empire Destroyed" && l.text == destroyedText(s, x.id))
                 out.history.push_back(historyLine(before, x.id, std::format("The {} was destroyed", effects::empireFullName(x))));
-            else if (l.title == "First Contact" && l.text == diplomacy::firstContactText(s, x.id))
+            else if ((l.title == "First Contact" && l.text == diplomacy::firstContactText(s, x.id)) ||
+                     diplomacy::treatyEnactedWith(s, l, x.id))
+                // A package's "Treaty Enacted" entry is of the first-contact
+                // kind, so it writes the contact line too (spec 05 §3.4, spec
+                // 06 §7 Q70, confirmed: binary).
                 out.history.push_back(historyLine(before, x.id, std::format("First contact with the {}", effects::empireFullName(x))));
             else if (l.title == "Contact Lost" && l.text == diplomacy::contactLostText(s, x.id))
                 out.history.push_back(historyLine(before, x.id, std::format("Lost contact with the {}", effects::empireFullName(x))));

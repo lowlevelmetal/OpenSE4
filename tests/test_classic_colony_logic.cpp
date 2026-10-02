@@ -654,7 +654,7 @@ TEST_CASE("classic ui: queue times in years, mode notes, Multi-Add and similar a
         CHECK(applyMoves(order) == order);
 }
 
-TEST_CASE("classic ui: status icons and this turn's orders") {
+TEST_CASE("classic ui: status icons") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(3, 2, 12);
     Colony& home = homeworld(s, kMe);
@@ -673,15 +673,6 @@ TEST_CASE("classic ui: status icons and this turn's orders") {
     CHECK(has(icons, 13));   // building
     CHECK(has(icons, 31));   // not connected
 
-    const ObjectId p = home.planet;
-    const ObjectId other = homeworld(s, kOther).planet;
-    const std::vector<Command> orders{cmd::QueueAdd{{p, {}}, item, -1}, cmd::QueueAdd{{p, {}}, item, -1}, cmd::SetColonyType{p, "Mining"},
-                                      cmd::QueueAdd{{other, {}}, item, -1}, cmd::SetResearch{}};
-    const auto summary = planetOrders(orders, p);
-    REQUIRE(summary.size() == 2);
-    CHECK(summary[0] == "Queued an item (x2)");
-    CHECK(summary[1] == "Colony type: Mining");
-    CHECK(planetOrders(orders, other).size() == 1);
 }
 
 TEST_CASE("classic ui: queue types (templates)") {
@@ -777,4 +768,86 @@ TEST_CASE("classic ui: a cloaked colony's queue is listed under Planets, its yar
     CHECK(kindOf() == QueueKind::PlanetYard);
     home.cloaked = true;
     CHECK(kindOf() == QueueKind::Planet);
+}
+
+TEST_CASE("classic ui: the Colonies columns, keys and directions (spec 06 §1.8.3, Q56)") {
+    using C = ColonyColumn;
+    // Every column but the picture and Name belongs to exactly one tab.
+    std::vector<int> seen(static_cast<size_t>(C::Count), 0);
+    for (int t = 0; t < static_cast<int>(ColonyTab::Count); ++t)
+        for (C c : colonyTabColumns(static_cast<ColonyTab>(t))) ++seen[static_cast<size_t>(c)];
+    CHECK(seen[static_cast<size_t>(C::Picture)] == 0);
+    CHECK(seen[static_cast<size_t>(C::Name)] == 0);
+    for (size_t c = 2; c < seen.size(); ++c) CHECK(seen[c] == 1);
+    CHECK(colonyTabColumns(ColonyTab::General) == std::vector<C>{C::Atmosphere, C::Conditions, C::Population, C::Mood});
+    CHECK(colonyTabColumns(ColonyTab::Construction) == std::vector<C>{C::UnderConstruction, C::TimeRemaining});
+    for (C c : {C::FacilityList, C::CargoItems, C::Status, C::Orders}) CHECK_FALSE(colonyColumnSorts(c));
+    for (C c : {C::Picture, C::Name, C::Mood, C::RacePopulation}) CHECK(colonyColumnSorts(c));
+    CHECK(static_cast<int>(C::Name) == 1);
+
+    // Directions.
+    ColonySortValues a, b;
+    a.sizeRank = 1;
+    b.sizeRank = 4;
+    CHECK(compareColonies(C::Picture, a, b) < 0);  // smallest planet first
+    a.atmosphere = "oxygen";
+    b.atmosphere = "Methane";
+    CHECK(compareColonies(C::Atmosphere, a, b) > 0);  // by character code: capitals first
+    a.conditions = Conditions::hundredths(140);
+    b.conditions = Conditions::hundredths(60);
+    CHECK(compareColonies(C::Conditions, a, b) < 0);  // best first
+    a.mood = "";
+    b.mood = "Happy";
+    CHECK(compareColonies(C::Mood, a, b) < 0);  // the word A to Z, empty without population
+    a.underConstruction = "Mine";
+    b.underConstruction = "Scout";
+    CHECK(compareColonies(C::UnderConstruction, a, b) > 0);  // Z to A
+    a.timeRemaining = "0.3 years";
+    b.timeRemaining = "On Hold";
+    CHECK(compareColonies(C::TimeRemaining, a, b) > 0);
+    a.population = 500;
+    b.population = 20;
+    CHECK(compareColonies(C::Population, a, b) < 0);
+    CHECK(compareColonies(C::RacePopulation, a, b) < 0);
+    CHECK(compareColonies(C::FacilityList, a, b) == 0);
+    a.name = "beta";
+    b.name = "Alpha";
+    CHECK(compareColonies(C::Name, a, b) > 0);
+
+    // A key stays its column: sorting by population whatever tab is shown. A
+    // keyless column takes the first slot but sorts nothing, so the next key
+    // decides; an unknown key likewise.
+    std::vector<ColonySortValues> rows(3);
+    rows[0].name = "Cyra";
+    rows[0].population = 10;
+    rows[1].name = "Amos";
+    rows[1].population = 10;
+    rows[2].name = "Brin";
+    rows[2].population = 900;
+    CHECK(colonyRowOrder(rows, {}) == std::vector<size_t>{1, 2, 0});
+    SortSlots slots = clickSort({}, static_cast<int>(C::Population), static_cast<int>(C::Name));
+    CHECK(colonyRowOrder(rows, slots) == std::vector<size_t>{2, 1, 0});
+    slots = clickSort(slots, static_cast<int>(C::Status), static_cast<int>(C::Name));
+    CHECK(slots[0] == static_cast<uint8_t>(C::Status) + 1);
+    CHECK(colonyRowOrder(rows, slots) == std::vector<size_t>{2, 1, 0});
+    CHECK(colonyRowOrder(rows, SortSlots{250, 2, 0, 0, 0}) == std::vector<size_t>{1, 2, 0});
+}
+
+TEST_CASE("classic ui: a colony's sort values") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(3, 2, 12);
+    Colony& home = homeworld(s, kMe);
+    home.queue.items.clear();
+    const ColonySortValues v = colonySortValues(r, s, home);
+    CHECK(v.name == s.galaxy.object(home.planet).name);
+    CHECK(v.population == home.totalPopulation());
+    CHECK_FALSE(v.mood.empty());
+    CHECK(v.facilities == static_cast<int>(home.facilities.size()));
+    CHECK(v.underConstruction == "None");
+    CHECK(v.timeRemaining.empty());
+    CHECK(v.colonyType == home.colonyType);
+    // Without population the mood is empty.
+    Colony empty = home;
+    empty.population.clear();
+    CHECK(colonySortValues(r, s, empty).mood.empty());
 }

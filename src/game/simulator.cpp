@@ -26,6 +26,7 @@ using ruleset::VehicleType;
 VehicleType hullType(const Rules& r, const GameState& s, DesignId d) { return r.hull(s.design(d).hull).type; }
 
 bool validDesign(const GameState& s, DesignId d) { return d.valid() && d.index() < s.designs.size(); }
+bool validEmpireId(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size(); }
 
 // Designs that can stand on the combat map (no mines, troops or platforms).
 bool fieldable(VehicleType t) { return t != VehicleType::Mine && t != VehicleType::Troop && t != VehicleType::WeaponPlatform; }
@@ -182,6 +183,10 @@ int64_t simulatorCargoUsed(const Rules& r, const GameState& s, const SimulatorIt
     } else {
         c.units = item.cargo;
     }
+    // People aboard a ship take cargo space; a colony's population does not.
+    if (item.kind == SimulatorItem::Kind::Design)
+        for (const SimulatorPeople& p : item.people)
+            if (p.millions > 0) c.population.push_back({p.race, p.millions});
     return cargoSpaceUsed(r, s, c);
 }
 
@@ -205,7 +210,8 @@ std::string simulatorProblem(const Rules& r, const GameState& s, const Simulator
             if (std::find(samples.begin(), samples.end(), item.planet) == samples.end()) return "Sample planets come from the home system.";
             if (!simulatorColony(s, item)) {
                 // A neutral object: on no side.
-                if (item.count != 1 || item.fleet >= 0 || !item.cargo.empty() || item.replaceCargo) return "A neutral object takes no orders or cargo.";
+                if (item.count != 1 || item.fleet >= 0 || !item.cargo.empty() || item.replaceCargo || !item.people.empty() || item.replacePeople)
+                    return "A neutral object takes no orders or cargo.";
                 for (const SimulatorItem& other : setup.items)
                     if (&other != &item && other.kind == SimulatorItem::Kind::Planet && other.planet == item.planet)
                         return "Each sample planet can be used once.";
@@ -230,12 +236,16 @@ std::string simulatorProblem(const Rules& r, const GameState& s, const Simulator
         for (const UnitStack& u : item.cargo) {
             if (u.count < 1) return "Cargo needs at least one unit.";
             // The viewer's own unit designs, those it has seen, and the units the
-            // sample colonies hold (Cargo Transfer moves them, spec 06 §1.10.4).
-            if (!validDesign(s, u.design) || !isUnitType(hullType(r, s, u.design)) || hullType(r, s, u.design) == VehicleType::Mine ||
+            // sample colonies hold (the Transfer Cargo window's Storehouse offers
+            // them all, mines included, spec 06 §1.10.4, §7 Q80).
+            if (!validDesign(s, u.design) || !isUnitType(hullType(r, s, u.design)) ||
                 (!usable(s, viewer, u.design) && !sampleHolds(s, setup, u.design)))
-                return "Cargo holds fighters, satellites, drones, troops or weapon platforms.";
+                return "Cargo holds fighters, satellites, mines, drones, troops or weapon platforms.";
         }
-        if (!item.cargo.empty() || item.replaceCargo) {
+        for (const SimulatorPeople& p : item.people)
+            if (p.millions < 1 || (p.side >= 0 ? static_cast<size_t>(p.side) >= setup.sides.size() : !validEmpireId(s, p.race)))
+                return "People need a race and at least 1M.";
+        if (!item.cargo.empty() || item.replaceCargo || (!item.people.empty() && item.kind == SimulatorItem::Kind::Design)) {
             if (simulatorCargoUsed(r, s, item) > simulatorCargoCapacity(r, s, item)) return "The cargo does not fit.";
         }
         ++used[static_cast<size_t>(item.side)];
@@ -351,6 +361,18 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
         sim.designCopies.emplace_back(id, d);
         return id;
     };
+    // People of a side are of its virtual empire's race; others of the real empire's.
+    auto peopleOf = [&](const std::vector<SimulatorPeople>& people) {
+        std::vector<PopulationGroup> out;
+        for (const SimulatorPeople& p : people) {
+            if (p.millions <= 0) continue;
+            const EmpireId race = p.side >= 0 && static_cast<size_t>(p.side) < sim.sides.size() ? sim.sides[static_cast<size_t>(p.side)] : p.race;
+            auto it = std::find_if(out.begin(), out.end(), [&](const PopulationGroup& g) { return g.race == race; });
+            if (it != out.end()) it->millions += p.millions;
+            else out.push_back({race, p.millions});
+        }
+        return out;
+    };
     auto copyCargo = [&](size_t side, const std::vector<UnitStack>& units) {
         std::vector<UnitStack> out;
         for (const UnitStack& u : units)
@@ -387,6 +409,7 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
             c.militia = -1;
             c.homeworld = false;
             for (PopulationGroup& g : c.population) g.race = owner;
+            if (item.replacePeople) c.population = peopleOf(item.people);
             c.cargo.units = copyCargo(side, item.replaceCargo ? item.cargo : c.cargo.units);
             sb.colonies[c.planet.index()] = std::move(c);
             // Every planet uses the viewer's strategy for planets (spec 04 §17, §19.2 Q71).
@@ -429,6 +452,7 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
             v.damage.assign(sb.design(d).entries.size(), 0);
             v.builtTurn = sb.turn;
             v.cargo.units = copyCargo(side, item.cargo);
+            if (!units) v.cargo.population = peopleOf(item.people);   // people aboard fight with the ship (spec 06 §7 Q80)
             v.supply = initialSupply(r, sb, v);
             const VehicleId id = sb.addVehicle(std::move(v)).id;
             sim.itemVehicles[itemIndex].push_back(id);

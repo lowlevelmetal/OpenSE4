@@ -152,6 +152,12 @@ std::vector<int> actionDays(int speed, DayCounterMode mode = kDayCounterMode);
 // the days of actionDays, in a turn-based game its movement points.
 int movesPerTurn(const GameState& s, int speed);
 
+// The heading of a step from one square to another (spec 06 §2.4,
+// confirmed: binary): 0..7 in 45° steps clockwise from up (y grows
+// downward), the bearing rounded to the nearest 45° (23-67° gives 45°,
+// 338-22° is up); 0 for no move. Integer arithmetic only.
+int headingFor(Sector from, Sector to);
+
 // The lowest maximum movement among the members at a fleet's location (its speed).
 int fleetSpeed(const Rules& r, const GameState& s, const Fleet& f);
 

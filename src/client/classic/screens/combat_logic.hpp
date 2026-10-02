@@ -94,6 +94,12 @@ private:
 // with plague.
 std::vector<std::pair<std::string, std::string>> pieceReportLines(const game::Rules& r, const game::GameState& s,
                                                                   const std::vector<game::combat::TacticalPiece>& pieces, int piece);
+// The Combat Piece Report's Ability page (spec 06 §1.10.1, §7 Q78, confirmed:
+// binary): for a ship or base its hull's abilities, then its whole design's
+// (every component, destroyed or not), then its own (none in ours); for a
+// planet only the planet's own abilities, not its facilities' or its
+// colony's. Each line is the identifier and its values; AI tags are left out.
+std::vector<std::string> pieceReportAbilities(const game::Rules& r, const game::GameState& s, const game::combat::TacticalPiece& p);
 
 // Drop Troops (spec 06 §1.10.2, spec 04 §11, confirmed: binary): no target
 // click. The troops land on the colony of another empire adjacent to the
@@ -117,6 +123,14 @@ struct SimulatorRow {
     int units = 0;                 // a unit group's units (0 otherwise)
     game::DesignId design;         // for the picture (first item's)
     game::ObjectId object;
+    // The Name column's small lines (spec 06 §1.10.4, §7 Q38): "Cargo:" what a
+    // ship, base or colony holds, or "Units:" a unit group's stacks, and
+    // "Fleet:" its simulator fleet; empty values read "None". A neutral
+    // object has neither line.
+    bool lines = false;
+    bool unitsLine = false;        // "Units:" rather than "Cargo:"
+    std::string cargo;
+    std::string fleet;
 };
 std::vector<SimulatorRow> simulatorRows(const game::Rules& r, const game::GameState& s, const game::combat::SimulatorSetup& setup);
 
@@ -128,14 +142,26 @@ bool simulatorAdd(const game::Rules& r, const game::GameState& s, game::combat::
 void simulatorRemove(game::combat::SimulatorSetup& setup, const SimulatorRow& row);
 
 // Fleets For Plr and Change Cargo (spec 06 §1.10.4, confirmed: binary) open the
-// real Fleet Transfer and Cargo Transfer windows; ours work on a sandbox built
+// real Fleet Transfer and Transfer Cargo windows; ours work on a sandbox built
 // from the setup (game::combat::buildSimulation), never on the real game. For
 // Fleets For Plr the window plays the chosen side: its ships and its fleets,
-// with formation and strategy from its copied list. For Change Cargo every
-// vehicle and colony of the simulator is made the chosen side's in the
-// sandbox, so that the one window lists them all (inferred: units in cargo
-// have no owner). The sandbox state is simultaneous, so commands take effect
-// at once. `anchor*`: what the window opens on.
+// with formation and strategy from its copied list. For Change Cargo (§7 Q80)
+// the left list holds every row of the Combat Vehicles list as a holder, all
+// sides together in that list's order, and the right list only a temporary
+// Storehouse: a copy of the player's first colony (systems in order) owned by
+// side 1, with Cargo Storage 500000000, 1000 of every unit design the player
+// owns or has seen (sorted by the owner's empire name, then the design name)
+// and 10000M of side 1's people on top of the copy's own. Cargo moves only
+// between a holder and the Storehouse and no owner is checked, so in the
+// sandbox every holder and the Storehouse are played by side 1. The sandbox
+// state is simultaneous, so commands take effect at once. `anchor*`: what the
+// window opens on.
+struct SimulatorCargoHolder {
+    game::VehicleId vehicle;
+    game::ObjectId planet;         // a sample planet (a neutral object has no colony)
+    int side = -1;                 // the setup side (-1: a neutral object)
+    bool operator==(const SimulatorCargoHolder&) const = default;
+};
 struct SimulatorSandbox {
     game::combat::Simulation sim;
     int sideIndex = 0;
@@ -143,12 +169,17 @@ struct SimulatorSandbox {
     bool cargo = false;
     game::VehicleId anchorVehicle;
     game::ObjectId anchorPlanet;
+    std::vector<SimulatorCargoHolder> holders;   // Change Cargo: the left list
+    game::ObjectId storehouse;                   // Change Cargo: the right list (invalid: the player has no colony)
 };
+inline constexpr int64_t kStorehouseCargoStorage = 500'000'000;
+inline constexpr int kStorehouseUnits = 1000;
+inline constexpr int64_t kStorehousePeople = 10'000;
 SimulatorSandbox simulatorSandbox(const game::Rules& r, const game::GameState& real, const game::combat::SimulatorSetup& setup, int side, bool cargo);
 // What the window changed in `sandbox` comes back into the setup: the side's
 // fleets (members, name, formation, strategy; unit groups are in none), or
-// every ship's and colony's units (in real designs; population moved onto a
-// ship is not kept, inferred).
+// every ship's and colony's units and people (in real designs; people moved
+// onto a ship stay aboard and fight, spec 06 §7 Q80).
 void simulatorTakeBack(const game::Rules& r, const SimulatorSandbox& made, const game::GameState& sandbox, game::combat::SimulatorSetup& setup);
 
 } // namespace opense4::client::classic

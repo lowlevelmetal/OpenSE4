@@ -9,7 +9,9 @@
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/session.hpp"
 
+#include "game/abilities.hpp"
 #include "game/commands.hpp"
+#include "game/design.hpp"
 #include "game/query.hpp"
 #include "game/serialize.hpp"
 #include "game/simulator.hpp"
@@ -18,6 +20,10 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <format>
+#include <span>
+#include <string>
+#include <vector>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -218,6 +224,63 @@ TEST_CASE("combat windows: the piece report lines and the Drop Troops colony") {
         }
     }
     CHECK(landed);
+}
+
+TEST_CASE("combat windows: the Ability tab of the Combat Piece Report") {
+    // A ship lists its hull's abilities, then every component of its design,
+    // destroyed or not; a planet only its own (spec 06 §1.10.1, §7 Q78).
+    using combat::TacticalPiece;
+    const Rules& r = combatRules();
+    Arena ar = makeArena(11);
+    GameState& s = ar.s;
+    Colony& colony = homeworld(s, ar.b);
+    const Location there = locationOf(s.galaxy, colony.planet);
+    const DesignId hauler = frigate(s, ar.a, "Hauler", 1, {"Test Cargo Bay", "CT Combat Thruster", "Test Cargo Bay"});
+    const VehicleId ship = spawn(s, hauler, there);
+    Vehicle& v = *s.vehicle(ship);
+    // The thruster is shot away: its ability still shows.
+    const Design& d = s.design(hauler);
+    v.damage.assign(d.entries.size(), 0);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (d.entries[i].component == opense4::test::componentIndex(r, "CT Combat Thruster")) v.damage[i] = r.component(d.entries[i].component).structure * 2;
+    REQUIRE(game::vehicleAbilities(r, s, v).size() < [&] {
+        size_t n = r.hullAbilities(d.hull).size();
+        for (const DesignEntry& e : d.entries) n += r.componentAbilities(e.component).size();
+        return n;
+    }());
+
+    TacticalPiece sp;
+    sp.kind = CombatPiece::Kind::Vehicle;
+    sp.vehicle = ship;
+    sp.design = hauler;
+    sp.owner = ar.a;
+    std::vector<std::string> expected;
+    auto add = [&](std::span<const ParsedAbility> list) {
+        for (const ParsedAbility& a : list) {
+            if (a.kind == AbilityKind::AITag) continue;
+            const std::string name(identifier(a.kind));
+            expected.push_back(a.value1 != 0 || a.value2 != 0 ? std::format("{} ({}, {})", name, a.value1, a.value2) : name);
+        }
+    };
+    add(r.hullAbilities(d.hull));
+    for (const DesignEntry& e : d.entries) add(r.componentAbilities(e.component));
+    const std::vector<std::string> shipList = classic::pieceReportAbilities(r, s, sp);
+    CHECK(shipList == expected);
+    CHECK(std::count(shipList.begin(), shipList.end(), "Cargo Storage (50, 0)") == 2);
+    CHECK(std::count(shipList.begin(), shipList.end(), "Combat Movement (2, 0)") == 1);
+
+    // The planet: its own abilities, not its facilities' or its colony's.
+    colony.facilities.push_back(opense4::test::facilityIndex(r, "Test Depot"));
+    s.galaxy.object(colony.planet).abilities = {ab(AbilityKind::CombatModifierSystem, 7)};
+    TacticalPiece pp;
+    pp.kind = CombatPiece::Kind::Planet;
+    pp.planet = colony.planet;
+    pp.owner = ar.b;
+    const std::vector<std::string> planetList = classic::pieceReportAbilities(r, s, pp);
+    REQUIRE(planetList.size() == 1);
+    CHECK(planetList[0].starts_with(std::string(identifier(AbilityKind::CombatModifierSystem))));
+    s.galaxy.object(colony.planet).abilities.clear();
+    CHECK(classic::pieceReportAbilities(r, s, pp).empty());
 }
 
 TEST_CASE("combat windows: every line of the Combat Piece Report") {
@@ -492,6 +555,91 @@ TEST_CASE("combat windows: Fleets For Plr and Change Cargo work on a sandbox and
         CHECK(setup.fleets.size() == 1);   // fleets untouched
         CHECK(combat::simulatorProblem(r, s, setup).empty());
     }
+    // The real game never changed.
+    CHECK(stateChecksum(s) == stateChecksum(before));
+}
+
+TEST_CASE("combat windows: Change Cargo lists the setup's rows against a temporary Storehouse; people moved aboard stay (spec 06 §7 Q80)") {
+    Arena ar = makeArena(23);
+    GameState& s = ar.s;
+    const Rules& r = combatRules();
+    const DesignId lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser"});
+    const DesignId hauler = frigate(s, ar.a, "Hauler", 2, {"Test Cargo Bay", "Test Cargo Bay"});
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const DesignId wasp = design(s, ar.a, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    Colony& home = homeworld(s, ar.a);
+    home.cargo.units = {{trooper, 6}};
+    const int64_t homePeople = home.totalPopulation();
+    combat::SimulatorSetup setup;
+    setup.viewer = ar.a;
+    for (int k = 0; k < combat::kSimulatorMaxSides; ++k) setup.sides.push_back({std::format("Race {}", k + 1), k > 0});
+    using Item = combat::SimulatorItem;
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 1}));
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, hauler, {}, 0}));
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, wasp, {}, 0}));
+    const GameState before = s;
+
+    classic::SimulatorSandbox box = classic::simulatorSandbox(r, s, setup, 3, true);
+    GameState& sb = box.sim.state;
+    // Side 1 plays every holder and the Storehouse.
+    REQUIRE(box.side == box.sim.sides.front());
+    // The left list: the Combat Vehicles list's rows in order (side 1's Hauler and fighters, then side 2's Lancer).
+    REQUIRE(box.holders.size() == 3);
+    CHECK(box.holders[0].vehicle == box.sim.itemVehicles[1].front());
+    CHECK(box.holders[0].side == 0);
+    CHECK(box.holders[1].vehicle == box.sim.itemVehicles[2].front());
+    CHECK(box.holders[2].vehicle == box.sim.itemVehicles[0].front());
+    CHECK(box.holders[2].side == 1);
+    for (const auto& h : box.holders) CHECK(sb.vehicle(h.vehicle)->owner == box.side);
+    // The Storehouse: a copy of the player's first colony with 500000000 kT of
+    // storage, 1000 of every unit design the player owns (sorted by name) on
+    // top of the copy's own, and 10000M of side 1's people on top of its own.
+    REQUIRE(box.storehouse.valid());
+    const Colony* store = sb.colony(box.storehouse);
+    REQUIRE(store);
+    CHECK(sb.galaxy.object(box.storehouse).name == "Storehouse");
+    CHECK(store->owner == box.side);
+    CHECK(sb.galaxy.object(box.storehouse).sector == box.sim.where.sector);
+    CHECK(colonyCargoCapacity(r, sb, *store) >= classic::kStorehouseCargoStorage);
+    CHECK(store->cargo.unitCount(trooper) == 6 + classic::kStorehouseUnits);
+    CHECK(store->cargo.unitCount(wasp) == classic::kStorehouseUnits);
+    CHECK(store->totalPopulation() == homePeople + classic::kStorehousePeople);
+    std::vector<std::string> order;
+    for (const UnitStack& u : store->cargo.units) order.push_back(sb.design(u.design).name);
+    CHECK(std::find(order.begin(), order.end(), "Trooper") != order.end());
+    // People and troops from the Storehouse onto the Hauler.
+    cmd::TransferCargo people;
+    people.fromPlanet = box.storehouse;
+    people.toVehicle = box.holders[0].vehicle;
+    people.populationRace = box.side;
+    people.amount = 2;
+    REQUIRE(apply(r, sb, box.side, people).ok);
+    cmd::TransferCargo troops;
+    troops.fromPlanet = box.storehouse;
+    troops.toVehicle = box.holders[0].vehicle;
+    troops.unitDesign = trooper;
+    troops.amount = 4;
+    REQUIRE(apply(r, sb, box.side, troops).ok);
+    classic::simulatorTakeBack(r, box, sb, setup);
+    const Item& haul = setup.items[1];
+    REQUIRE(haul.people.size() == 1);
+    CHECK(haul.people[0].side == 0);
+    CHECK(haul.people[0].millions == 2);
+    REQUIRE(haul.cargo.size() == 1);
+    CHECK(haul.cargo[0].design == trooper);
+    CHECK(haul.cargo[0].count == 4);
+    CHECK(combat::simulatorProblem(r, s, setup).empty());
+    // The rows say what each holds; the people fight aboard.
+    const auto rows = classic::simulatorRows(r, s, setup);
+    CHECK(rows[0].cargo == "4 Trooper, 2M people");
+    CHECK_FALSE(rows[0].unitsLine);
+    CHECK(rows[1].unitsLine);
+    CHECK(rows[1].cargo == "1 Wasp");
+    CHECK(rows[0].fleet.empty());
+    const combat::Simulation sim = combat::buildSimulation(r, s, setup);
+    const Vehicle& aboard = *sim.state.vehicle(sim.itemVehicles[1].front());
+    CHECK(aboard.cargo.totalPopulation() == 2);
+    CHECK(aboard.cargo.population.front().race == sim.sides.front());
     // The real game never changed.
     CHECK(stateChecksum(s) == stateChecksum(before));
 }

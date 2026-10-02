@@ -54,7 +54,8 @@ simultaneous game it pursues the target wherever it goes, and the battle comes w
 Attacking does not decloak a ship; only drones decloak to strike their target.
 
 **Sentry** is useful for guards: the order ends the moment an enemy appears in the system, so
-the ship's next orders start then.
+the ship's next orders start then. It also ends when supplies run low: for a ship below the
+low-supply warning level, for a group of fighters or drones below a tenth of it.
 
 [View Orders](window:view-orders) (`V`) shows the order list of the selected ship, or of its
 fleet. Select an order and use `Move Up`, `Move Down` or `Delete Order`; `Clear Orders` empties the
@@ -71,7 +72,7 @@ of a turn are lost; the ship gets its full speed again next turn.
 - Routes between systems go through the warp points you know, and only through systems you have explored.
 - Ships step around storms that damage ships and around sectors with visible enemies, when they can.
 - Flying into a damaging storm has an even chance of hurting every ship that enters. If it does, the ships stop for the turn and their orders are cleared. The same goes for a turbulent warp point, and for a minefield.
-- With the Empire Options switches on, your ships clear their orders when they warp into a system with an enemy (on for a new empire) or with any other empire. This stops ships from flying blindly into danger.
+- With the Empire Options switches on, your ships clear their orders when they warp into a system with an enemy (on for a new empire) or with any other empire. This stops ships from flying blindly into danger. Every ship that made the jump together loses its orders. In a turn-based game a ship that was on a Move To still uses up the rest of its movement for this turn heading on toward its destination, but the order is gone afterwards.
 
 `Ctrl+L` (or *Display Ship Movement Lines* in the [Options](settings#the-options-window) window)
 shows the route of your selected ship as a dashed line in the system panel.
@@ -92,7 +93,7 @@ not in a fleet (**Vehicles in sector**) and the fleets there (**Fleets in sector
 marked). `Create Fleet` asks for a name and makes a new fleet with your ship; then **click** ships
 to add them, and click members to take them out. `Formation` and `Strategy` choose the fleet's
 combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do what they say, and
-`Existing Fleets` lists all your fleets in the Ships and Units window.
+`Existing Fleets` opens the Ships and Units window, with the tab and the Show switches you left it with, to look at your fleets; clicking a row there does nothing.
 
 A ship can also leave its fleet without you: when it is captured or given away, or when an event
 or an enemy agent sends it somewhere else.
@@ -131,11 +132,14 @@ The [Ships and Units](window:ships) window (`F6`, titled `Ships \ Units`) lists 
 groups in space and fleets. The totals at the top count your ships, units in space and fleets,
 and your maintenance per turn. Its tabs show different columns:
 
-- **General**: size, type, movement, damage and supplies;
-- **Orders**: the class and each ship's first order, with the number of further orders and whether they repeat;
-- **Cargo**: space used and what is carried;
+- **General**: size, type, movement, destroyed components and supplies;
+- **Orders**: the class and the ship's orders, one a line (with **Repeat** on, the current one is in brackets);
+- **Cargo**: space used, the capacity and what is carried;
 - **Fleet**: experience and fleet;
 - **Maintenance**: the cost of each ship per turn.
 
-`Show Ships`, `Show Units` and `Show Fleets` choose what to list. Click a column heading to sort.
+`Show Ships`, `Show Units` and `Show Fleets` choose what to list; fleets always come last. Click a
+column heading, the picture's too, to sort by it. The picture and Size sort by hull size, with
+unit groups after every ship; supplies and experience sort lowest first, the fleet column by
+fleet, and other numbers highest first. A sort stays when you change tab.
 **Left-click** a row to close the window and select the ship in the main window (for a fleet, its leader); **right-click** it for its report.

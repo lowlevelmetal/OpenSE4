@@ -123,6 +123,14 @@ bool startDemoSimulation(UiContext& ui, bool tactical);
 inline constexpr const char* kSimulatorWindow = "simulator";
 bool drawInSimulatorSandbox(UiContext& ui, const std::function<bool(UiContext&)>& draw);
 void simulatorSandboxClosed();
+// Change Cargo's two lists (spec 06 §7 Q80): every row of the Combat Vehicles
+// list as a holder, and the temporary Storehouse; null without a cargo sandbox.
+struct SimulatorSandbox;
+const SimulatorSandbox* simulatorCargoSandbox();
+// Opened with ScreenArgs::text kViewOnly (Fleet Transfer's Existing Fleets,
+// spec 06 §7 Q79), the Ships\Units window is for viewing only: a left-click
+// on a row does nothing.
+inline constexpr const char* kViewOnly = "view";
 // A tactical simulation is being fought: Designs closes, and the Tactical
 // Combat window opens it again with the simulator afterwards (spec 06 §1.10.4).
 bool tacticalSimulationRunning(const UiContext& ui);

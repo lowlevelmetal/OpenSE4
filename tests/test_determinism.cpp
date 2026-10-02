@@ -155,32 +155,32 @@ void checkCoverage(const Coverage& c) {
 
 TEST_CASE("determinism: a simultaneous game gives the golden checksums") {
     static constexpr std::array<Milestone, 10> kGolden{{
-        {0, 0x7d5e7c73c1e126cfull},
-        {1, 0x037bc09275e4ab22ull},
-        {2, 0x540d84efdb44fbbfull},
-        {5, 0x7b3e6e1984e2119eull},
-        {10, 0xb3d161dbddbefe8bull},
-        {20, 0x0ad7cde13ee30a7dull},
-        {40, 0x957d98bbd3d07d9full},
-        {60, 0xb7831ee6d2db6b81ull},
-        {80, 0x7d8a5161fb9f5401ull},
-        {100, 0x08961ba5d14f3f49ull},
+        {0, 0xf64477b5a8cdad53ull},
+        {1, 0xe3c89b0948fe976aull},
+        {2, 0x99fff62d76e7fed7ull},
+        {5, 0x23d194b94ddda217ull},
+        {10, 0xb9ada001749444f9ull},
+        {20, 0xc22b67cde494973full},
+        {40, 0x5599e7f74388a669ull},
+        {60, 0xed3652ad6145537cull},
+        {80, 0xc3b907dbe8d9979full},
+        {100, 0x801cb4331a1aa57bull},
     }};
     checkCoverage(playGolden("simultaneous", 11, true, kGolden));
 }
 
 TEST_CASE("determinism: a turn-based game gives the golden checksums") {
     static constexpr std::array<Milestone, 10> kGolden{{
-        {0, 0xba0f8539e6ac0e5eull},
-        {1, 0x2c274f33d9a42afcull},
-        {2, 0xb2ced2259b0e9082ull},
-        {5, 0x38ae2bc0486c9511ull},
-        {10, 0x0f9120dc049b2b1aull},
-        {20, 0xfef0ea893f996cb0ull},
-        {40, 0x7b142cd8fc0faf0eull},
-        {60, 0x592242a816b7ca99ull},
-        {80, 0x5755fd889d5477d1ull},
-        {100, 0xad17e6c64b9a5542ull},
+        {0, 0xb099d837f4c8c8eaull},
+        {1, 0xfeff712130ce71d4ull},
+        {2, 0xe0b898840be33312ull},
+        {5, 0xdef38413335c809bull},
+        {10, 0x8bd0159bc498fd5full},
+        {20, 0x21a7df6f7f257a8eull},
+        {40, 0x8790e58b22d6dca4ull},
+        {60, 0x20cd9bf7016370f3ull},
+        {80, 0x84ccf7d1151c85ecull},
+        {100, 0x4ec48005337ed4baull},
     }};
     checkCoverage(playGolden("turn-based", 11, false, kGolden));
 }
@@ -193,16 +193,16 @@ TEST_CASE("determinism: a turn-based game gives the golden checksums") {
 // ground combat on the invaded planet.
 TEST_CASE("determinism: varied battles give the golden checksums") {
     static constexpr std::array<uint64_t, 10> kGolden{{
-        0xac0be65c5cf23de5ull,
-        0xa2285c32e391c6bdull,
-        0x5d8a3fff53ab1818ull,
-        0xd8a03907c405b3d1ull,
-        0x06d45b58595a9d37ull,
-        0x870e9355bef24031ull,
-        0x73f4e04f830c3c64ull,
-        0xa4ae4eb4c5c5765eull,
-        0x50e888c00d97201dull,
-        0x41837b13e5bcb6f8ull,
+        0x2b9b355ea8d5930cull,
+        0xcd7b0f1393db7c28ull,
+        0x8642484a81eda7ebull,
+        0xd5a3048bbc0478c1ull,
+        0xbf086d46a79731f7ull,
+        0xa89a06ee6a1dd586ull,
+        0x9cba3742b0782062ull,
+        0x5bbb416a41a22e19ull,
+        0x459e352ffa0779f7ull,
+        0x0ed57b0e92161a7dull,
     }};
     std::string printed;
     int fought = 0, landed = 0;

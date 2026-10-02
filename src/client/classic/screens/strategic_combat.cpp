@@ -47,6 +47,7 @@
 #include "game/tactical.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <random>
 
@@ -272,19 +273,29 @@ private:
         return playback_.atEnd();
     }
 
-    // Once begun: one empire phase per frame for a battle fought here, one
-    // combat turn per frame for one played back; nothing while a Ground
-    // Combat window is open. No delay is added (spec 06 §1.10.5 "Pace").
+    // Once begun, a battle fought here goes on step after step for as long
+    // as the frame allows and the window shows the state it reached: the
+    // original paints every step straight onto the window and never waits, so
+    // a current machine shows two to five combat turns a frame, never a single
+    // step, and Close lights in the frame that first shows the last turn
+    // (spec 06 §1.10.5 "Pace", §7 Q73, observed). A landing stops the frame's
+    // fighting, so Ground Combat opens at once. A battle played back goes one
+    // combat turn a frame. Nothing while a Ground Combat window is open.
+    static constexpr std::chrono::milliseconds kFightPerFrame{10};
     void update(UiContext& ui, BattleSource& src) {
         if (!begun_ || gGroundWindows > 0) return;
         if (src.live && playback_.atEnd() && !src.live->finished()) {
-            const int before = src.live->round();
-            src.live->step();
+            const auto until = std::chrono::steady_clock::now() + kFightPerFrame;
+            const size_t landings = src.record->grounds.size();
+            do {
+                const int before = src.live->round();
+                src.live->step();
+                if (src.live->round() != before || src.live->finished()) {
+                    countAfter_ = true;
+                    turn_ = src.live->round();
+                }
+            } while (!src.live->finished() && src.record->grounds.size() == landings && std::chrono::steady_clock::now() < until);
             sync(*src.record);
-            if (src.live->round() != before || src.live->finished()) {
-                countAfter_ = true;
-                turn_ = src.live->round();
-            }
         }
         size_t target = playback_.eventCount();
         if (!src.live) {

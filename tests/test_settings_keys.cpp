@@ -88,7 +88,7 @@ TEST_CASE("settings keys: the loader keeps the client's Settings.txt keys") {
     CHECK(musicAllowed(none));
     CHECK_FALSE(exportAllowed(none));
     CHECK(ShipGlides::stepPause(none.integer("System Ship Movement Delay Milliseconds", 0)) == 0.0);
-    CHECK(ShipGlides::stepPause(40) == doctest::Approx(0.04));
+    CHECK(ShipGlides::stepPause(40) == doctest::Approx(40.0));   // read as seconds, as the original does (§2.4)
     CHECK(ShipGlides::stepPause(-5) == 0.0);
 }
 
@@ -158,34 +158,44 @@ TEST_CASE("settings keys: the Weapons Report's export writes four tables") {
 }
 
 TEST_CASE("settings keys: the movement delay waits after each animated step") {
-    // Spec 06 §1.9: with System Ship Movement Delay Milliseconds above 0 the
-    // system window waits that long after each one-square step.
+    // Spec 06 §1.9, §2.4 (confirmed: binary): with System Ship Movement Delay
+    // Milliseconds above 0 the system window waits after each one-square
+    // step, on the new square; the original reads the value as seconds. The
+    // movement log replay never waits (§7 Q62).
     ShipGlides g;
     const VehicleId ship{1u};
     const SystemId sys{0u};
-    const double pause = 0.2;
-    auto frame = [&](double now, Location at) {
-        const ShipGlides::Seen seen[] = {{ship, at}};
-        g.track(now, sys, true, seen, pause);
+    const double pause = ShipGlides::stepPause(2);
+    REQUIRE(pause == doctest::Approx(2.0));
+    double now = 0.0;
+    auto frame = [&](Location at) {
+        const ShipGlides::Seen seen[] = {{ship, at, 2, true}};   // facing east throughout
+        g.track(now, sys, true, seen, 50.0f, pause);
     };
-    frame(0.0, {sys, Sector{2, 2}});
-    frame(1.0, {sys, Sector{6, 2}});  // four squares east
-    const ShipGlides::Glide* glide = g.find(ship, 1.0);
+    frame({sys, Sector{2, 2}});
+    now = 1.0;
+    frame({sys, Sector{4, 2}});  // two squares east: no turn, then the slide
+    const ShipGlides::Glide* glide = g.find(ship);
     REQUIRE(glide);
-    CHECK(glide->squares == 4);
-    const double move = 4 * ShipGlides::kSecondsPerSquare;
-    CHECK(glide->duration == doctest::Approx(move + 4 * pause));
-    const double step = move / 4;
-    CHECK(ShipGlides::position(*glide, 1.0).x == doctest::Approx(2.5f));
-    // The first square is reached after one step's share of the move, then it waits there.
-    CHECK(ShipGlides::position(*glide, 1.0 + step).x == doctest::Approx(3.5f));
-    CHECK(ShipGlides::position(*glide, 1.0 + step + pause * 0.9).x == doctest::Approx(3.5f));
-    CHECK(ShipGlides::position(*glide, 1.0 + 2 * (step + pause)).x == doctest::Approx(4.5f));
-    CHECK(ShipGlides::position(*glide, 1.0 + glide->duration).x == doctest::Approx(6.5f));
-    CHECK(g.find(ship, 1.0 + move + 3 * pause));   // still in its last pause
-    CHECK_FALSE(g.find(ship, 1.0 + glide->duration + 0.01));
+    CHECK(glide->turnFrames == 0);
+    CHECK(glide->slideFrames == 100);
+    CHECK(glide->pause == doctest::Approx(2 * pause));   // after each of the two steps
+    for (int i = 0; i < 100; ++i) {
+        now += 0.0167;
+        frame({sys, Sector{4, 2}});
+    }
+    // The slide is over; the ship waits on its new square.
+    REQUIRE(g.find(ship));
+    CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(4.5f));
+    now += 2 * pause - 0.1;
+    frame({sys, Sector{4, 2}});
+    CHECK(g.find(ship));
+    now += 0.2;
+    frame({sys, Sector{4, 2}});
+    CHECK_FALSE(g.find(ship));
 
-    // The movement log replay waits as long after each move it animates.
+    // The movement log replay animates a move without any pause: the next day
+    // comes with the frame that ends the slide.
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
@@ -202,21 +212,21 @@ TEST_CASE("settings keys: the movement delay waits after each animated step") {
     f.shown = where.system;
     f.animate = true;
     f.cellPixels = 50;
-    f.stepPause = 0.5;
     f.turns = [](VehicleId) { return false; };
     replay.play();
     f.now = 10.0;
     replay.update(f);  // day 1 applied
-    replay.update(f);  // the clock starts
-    const double slide = 50 * MovementReplay::kSecondsPerPixel;
-    f.now = 10.0 + slide + 0.1;
-    replay.update(f);
-    REQUIRE(replay.motion(scout, f.now));   // the slide is over, the pause is not
-    CHECK(replay.motion(scout, f.now)->at.x == doctest::Approx(float(east.sector.x) + 0.5f));
+    replay.update(f);  // its entry's first frame
+    for (int i = 0; i < 49; ++i) {
+        f.now += 0.0167;
+        replay.update(f);
+    }
+    REQUIRE(replay.motion(scout));
     CHECK(replay.day() == 1);
-    f.now = 10.0 + slide + 0.5 + 0.01;
-    replay.update(f);
-    CHECK_FALSE(replay.motion(scout, f.now));
+    f.now += 0.0167;
+    replay.update(f);  // the slide's last frame
+    CHECK_FALSE(replay.motion(scout));
+    CHECK(replay.day() == 2);
 }
 
 TEST_CASE("settings keys: which ending the game shows, once") {

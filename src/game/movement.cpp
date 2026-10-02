@@ -22,6 +22,7 @@
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
@@ -34,6 +35,7 @@
 #include <algorithm>
 #include <climits>
 #include <format>
+#include <optional>
 #include <set>
 
 namespace opense4::game::movement {
@@ -210,6 +212,7 @@ public:
 
     void run() {
         for (int day = 1; day <= kDaysPerTurn; ++day) {
+            day_ = day;
             newDay();
             const std::vector<ObjectRef> order = refreshObjectOrder();
             for (const ObjectRef& ref : order) {
@@ -592,13 +595,16 @@ private:
             if (g.stopped) break;
             for (VehicleId id : g.members) join(id, id == g.actor);
             std::vector<Order>* list = orders(g);
-            if (!list || list->empty()) {
+            const bool carried = (!list || list->empty()) && carried_.has_value();
+            if (!carried && (!list || list->empty())) {
                 last = g;
                 break;
             }
-            Order o = list->front();
+            Order o = carried ? *carried_ : list->front();
             const Order head = o;
+            if (carried) carried_.reset();
             const Exec e = execute(g, o);
+            if (carried && e == Exec::Moved && !carried_) carried_ = o;  // still on its way
             prune(g);
             last = g;
             result = e;
@@ -633,16 +639,24 @@ private:
     // After every daily action: the depot check (§7), and a cloak drops at 0
     // supply or when it can no longer work (§8).
     void afterAction() {
+        std::vector<SystemId> decloakedIn;
         for (VehicleId id : participants_) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
             if (resupplyDepotAt(r_, s_, v->owner, v->location)) refillSupply(r_, s_, *v);
             if (v->status == VehicleStatus::Cloaked &&
-                ((v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) || !canCloak(r_, s_, *v)))
+                ((v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) || !canCloak(r_, s_, *v))) {
                 v->status = VehicleStatus::Normal;
+                decloakedIn.push_back(v->location.system);
+            }
         }
         participants_.clear();
+        for (SystemId sys : decloakedIn) decloaked(sys);
     }
+
+    // Any decloak of a ship, unit group or colony, whatever its cause, runs
+    // the first-contact check in its system (spec 05 §3.1, confirmed: binary).
+    void decloaked(SystemId sys) { diplomacy::firstContactIn(ctx_, sys); }
 
     // The order stays where it is, as the execution left it (a Colonize whose
     // colonists came aboard): in each list whose head it still is.
@@ -693,18 +707,24 @@ private:
         return Exec::Done;
     }
 
-    // The owner's Ship Orders option cleared the group's lists after a warp
-    // transit (spec 03 §6.4, confirmed: binary). The jump itself does not
-    // fail: in a turn-based game a Move To in progress goes on stepping to
-    // its end while movement lasts; otherwise the action ends there.
+    // The owner's Ship Orders option cleared the lists after a warp transit
+    // (spec 03 §6.4, §19 Q77, confirmed: binary): the list of every member of
+    // the acting group, a computer player's ad-hoc companions and the
+    // turn-based selection included, is emptied with Repeat off. The jump
+    // itself does not fail: in a turn-based game a Move To in progress goes on
+    // stepping toward its destination in this run while movement lasts
+    // (carried_), but nothing is left of it for a later turn; otherwise the
+    // action ends there.
     Exec encounter(Group& g, const Order& o, bool arrived) {
         ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
                  "Another empire is in the system; the orders were cleared (empire options).", where(g));
+        routes_.erase(routeKey(g));
+        clearListsOf(g.members);
+        clearListsOf(g.holders);
         if (live_ && (o.kind == OrderKind::MoveTo || o.kind == OrderKind::MoveToWaypoint) && !arrived) {
-            setLists(g, {o});
+            carried_ = o;
             return Exec::Moved;
         }
-        setLists(g, {});
         return Exec::Cleared;
     }
 
@@ -893,6 +913,11 @@ private:
             // The sector it leaves, for combat's attackers and start boxes (spec 04 §3).
             v->cameFrom = v->location;
             v->cameFromTurn = s_.turn;
+            // A step within a system turns the vehicle to its bearing; a warp
+            // keeps its heading (spec 06 §2.4, §7 Q62).
+            if (!via.valid() && v->location.system == next.system)
+                v->heading = static_cast<uint8_t>(headingFor(v->location.sector, next.sector));
+            if (ctx_.movementStep && !live_) ctx_.movementStep(MovementStep{day_, id, v->location, next});
             v->location = next;
             fleetMemberMoved(s_, *v);  // the fleet's location goes with it (spec 03 §9)
             v->movement = std::max(0, v->movement - 1);
@@ -909,7 +934,7 @@ private:
         prune(g);
         if (g.members.empty()) return;
         // A sweeper group entering a tagged minefield where mines act decloaks first (§12).
-        decloakSweepers(r_, s_, next, g.members);
+        if (decloakSweepers(r_, s_, next, g.members)) decloaked(next.system);
         if (via.valid()) {
             for (size_t i = 0; i < g.members.size(); ++i) sight::learnWarpLink(s_, g.owner, via);
             // Turbulence: a 50 % chance per transit that every member takes the
@@ -933,6 +958,10 @@ private:
             if (g.members.empty()) return;
         }
         arrive(g);
+        // A group arriving through a warp point, some member still there after
+        // the passage, runs the first-contact check in the system it reached
+        // (spec 05 §3.1, confirmed: binary); in-system steps never do.
+        if (via.valid()) diplomacy::firstContactIn(ctx_, next.system);
     }
 
     void arrive(Group& g) {
@@ -969,7 +998,10 @@ private:
             // not it was cloaked before (spec 01 §6.9, confirmed: binary).
             Colony* c = s_.colony(g.planet);
             const bool minister = c && colonyUnderCloakingMinister(*c);
-            if (minister) c->cloaked = false;
+            if (minister && c->cloaked) {
+                c->cloaked = false;
+                decloaked(where(g).system);
+            }
             const Exec e = colonyOrder(g, o);
             if (Colony* after = s_.colony(g.planet); minister && after && sight::colonyCanCloak(*after)) after->cloaked = true;
             return e;
@@ -1036,13 +1068,16 @@ private:
 
     // Sentry stays at the head at no cost until an enemy is present in the
     // system or a member's supply is low; then it counts as done: removed, or
-    // with Repeat on passed over (§8, confirmed: binary).
+    // with Repeat on passed over (§8, confirmed: binary). A fighter or drone
+    // group is low below a tenth of the warning level while it holds at least
+    // one unit (spec 06 §4.4, §7 Q54, Q61, confirmed: binary).
     Exec sentry(Group& g) {
         const int64_t low = r_.setting("Supply Amount for Low Supply Warning", 1000);
         const bool lowSupply = any(g, [&](const Vehicle& v) {
             if (!vehicleUsesSupply(r_, s_, v) || vehicleHasUnlimitedSupply(r_, s_, v)) return false;
-            const int64_t threshold = vehicleType(r_, s_, v) == VehicleType::Fighter ? low / 10 : low;
-            return v.supply < threshold;
+            const VehicleType t = vehicleType(r_, s_, v);
+            if (t == VehicleType::Fighter || t == VehicleType::Drone) return v.count >= 1 && v.supply < low / 10;
+            return v.supply < low;
         });
         const bool enemy = hostilePresentInSystem(g.owner, where(g).system);
         if (!lowSupply && !enemy) return Exec::Wait;
@@ -1063,13 +1098,7 @@ private:
         if (t != Travel::Arrived) return afterTravel(g, o, t);
         const Travel j = jump(g, o.object);
         if (j == Travel::Moved) return Exec::MovedDone;
-        if (j == Travel::Encounter) {
-            // A Warp order just ends with the cleared lists (§6.4).
-            setLists(g, {});
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
-                     "Another empire is in the system; the orders were cleared (empire options).", where(g));
-            return Exec::Cleared;
-        }
+        if (j == Travel::Encounter) return encounter(g, o, true);  // a Warp order just ends with the cleared lists (§6.4)
         return afterTravel(g, o, j);
     }
 
@@ -1110,16 +1139,21 @@ private:
         if (t != Travel::Arrived) return afterTravel(g, o, t);
         if (!droneSeeksHere(g, goal)) return Exec::Wait;
         if (remaining(g) <= 0 || immobile(g)) return Exec::Wait;
+        bool lowered = false;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
             // Only drones decloak (§6.4, §19 Q69). A drone's target in a
             // battle is read from its first order when the battle starts
             // (spec 03 §19 Q68, spec 04 §10.7).
-            if (vehicleType(r_, s_, *v) == VehicleType::Drone && v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
+            if (vehicleType(r_, s_, *v) == VehicleType::Drone && v->status == VehicleStatus::Cloaked) {
+                v->status = VehicleStatus::Normal;
+                lowered = true;
+            }
             v->movement = std::max(0, v->movement - 1);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
+        if (lowered) decloaked(goal.system);
         if (live_) checkHere_ = true;  // turn-based: the Seek runs a battle check (runLive)
         return Exec::ActedStay;
     }
@@ -1157,16 +1191,19 @@ private:
             ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g));
             return Exec::Done;
         }
+        bool lowered = false;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
             if (v->status == VehicleStatus::Cloaked && underCloakingMinister(*v)) {
                 v->status = VehicleStatus::Normal;
                 recloak_.push_back(id);
+                lowered = true;
             }
             v->movement = std::max(0, v->movement - 1);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
+        if (lowered) decloaked(where(g).system);
         checkHere_ = true;  // the attack runs a battle check (runLive)
         return Exec::Acted;
     }
@@ -1290,11 +1327,14 @@ private:
     // Cloaking needs a working part of level 2 or more and supply above 0; it
     // costs nothing now (the parts' supply is charged every end of turn) (§8).
     Exec cloak(Group& g, Order& o) {
-        bool changed = false;
+        bool changed = false, lowered = false;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (o.kind == OrderKind::Decloak) {
-                if (v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
+                if (v->status == VehicleStatus::Cloaked) {
+                    v->status = VehicleStatus::Normal;
+                    lowered = true;
+                }
                 changed = true;
                 continue;
             }
@@ -1304,6 +1344,7 @@ private:
             v->queue.items.clear();  // cloaked ships cannot build (spec 01 §6.4)
             changed = true;
         }
+        if (lowered) decloaked(where(g).system);
         return changed ? Exec::Acted : fail(g, o, "No working cloaking device, or no supplies.");
     }
 
@@ -1314,7 +1355,7 @@ private:
     // and one move's supply. Always done.
     Exec sweep(Group& g) {
         const Location here = where(g);
-        decloakSweepers(r_, s_, here, g.members);
+        if (decloakSweepers(r_, s_, here, g.members)) decloaked(here.system);
         combat::detail::resolveMines(ctx_, here, g.members, s_.rng);
         prune(g);
         for (VehicleId id : g.members)
@@ -1655,6 +1696,11 @@ private:
 
     void liveActor(ActorRef ref) {
         int completed = 0;  // orders that left the head of the list, chained ones included
+        carried_.reset();
+        struct EndRun {
+            std::optional<Order>& carried;
+            ~EndRun() { carried.reset(); }  // a carried Move To lasts for this run only
+        } endRun{carried_};
         for (int n = 0; n < kLiveActionLimit; ++n) {
             const size_t steps = entered_.size();
             checkHere_ = false;
@@ -1789,6 +1835,10 @@ private:
     std::vector<Entry> entered_;                        // steps made today
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase
     bool checkHere_ = false;                            // turn-based: the last action's Attack or Seek runs a battle check
+    int day_ = 0;                                       // simultaneous games: the movement day being played
+    // Turn-based: a Move To whose lists the Ship Orders options emptied after
+    // a warp transit; it goes on stepping in this run only (spec 03 §6.4, §19 Q77).
+    std::optional<Order> carried_;
     std::vector<VehicleId> recloak_;                    // turn-based: decloaked by the Ship Cloaking minister for an Attack
     bool pursuing_ = false;                             // the steps being made are an Attack pursuit's
     UnitBudget budget_;
@@ -1814,6 +1864,22 @@ std::optional<Sector> inSystemStep(const Rules& r, const GameState& s, EmpireId 
 
 std::vector<int> actionDays(int speed, DayCounterMode mode) {
     return mode == DayCounterMode::Exact ? daysActed<DayCounterMode::Exact>(speed) : daysActed<DayCounterMode::Double>(speed);
+}
+
+int headingFor(Sector from, Sector to) {
+    const int dx = to.x - from.x, dy = to.y - from.y;
+    if (dx == 0 && dy == 0) return 0;
+    const int ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+    const int major = std::max(ax, ay), minor = std::min(ax, ay);
+    // Along the major axis when minor / major < tan 22.5° = √2 − 1, that is
+    // (minor + major)² < 2 · major²; never a tie with whole squares.
+    const bool straight = (minor + major) * (minor + major) < 2 * major * major;
+    if (straight) {
+        if (ay >= ax) return dy < 0 ? 0 : 4;
+        return dx > 0 ? 2 : 6;
+    }
+    if (dx > 0) return dy < 0 ? 1 : 3;
+    return dy > 0 ? 5 : 7;
 }
 
 int movesPerTurn(const GameState& s, int speed) {

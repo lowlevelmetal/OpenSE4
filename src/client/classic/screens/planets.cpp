@@ -3,6 +3,7 @@
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/ships_common.hpp"
 
 #include "game/design.hpp"
 #include "game/economy.hpp"
@@ -11,7 +12,9 @@
 #include <algorithm>
 #include <array>
 #include <format>
-#include <functional>
+#include <initializer_list>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -22,11 +25,6 @@ constexpr Vec2 kMapSize{236, 158};
 std::string percent(int64_t v) { return std::format("{}%", v); }
 // Conditions show as their band (spec 02 §2).
 std::string conditionsText(game::Conditions conditions) { return std::string(game::economy::conditionsName(game::economy::conditionsBand(conditions))); }
-
-std::string surfaceAndSize(const game::SpaceObject& o) {
-    if (o.kind == game::ObjectKind::Asteroids) return "Asteroids";
-    return o.size.empty() ? o.surface : std::format("{} {}", o.size, o.surface);
-}
 
 // Selection with Ctrl/Shift toggling (multi-select), plain click selecting one.
 void clickSelect(std::vector<game::ObjectId>& sel, game::ObjectId id) {
@@ -338,8 +336,6 @@ private:
 // Colonies
 // ============================================================================================
 
-enum class ColonyTab { General, Value, Production, Facilities, Cargo, Construction, Status, Races, Orders, Count };
-
 constexpr std::array<std::pair<ColonyTab, const char*>, 9> kColonyTabs{{
     {ColonyTab::General, "General"},
     {ColonyTab::Value, "Value"},
@@ -355,37 +351,57 @@ constexpr std::array<std::pair<ColonyTab, const char*>, 9> kColonyTabs{{
 constexpr std::array<const char*, 9> kColonyTabIds{
     {"general", "value", "production", "facilities", "cargo", "construction", "status", "races", "orders"}};
 
-// Everything a Colonies row shows, computed once per state revision.
+// Everything a Colonies row shows, computed once per state revision: what it
+// is sorted by in every tab (colony_logic.hpp) and what only the eye needs.
 struct ColonyRow {
     game::ObjectId planet;
-    std::string name, system, type, colonyType;
-    int64_t population = 0, maxPopulation = 0;
-    int facilities = 0, slots = 0;
+    ColonySortValues keys;
+    std::string secondLine;           // "type - size" (grey), or "Blockaded" (red)
+    bool blockaded = false;
+    bool delivered = true;            // its output reaches the empire (no brackets)
+    int64_t maxPopulation = 0;
     game::Mood mood = game::Mood::Indifferent;
-    std::string moodName;
-    int anger = 0;
-    game::economy::ColonyOutput out;
-    int64_t cargoUsed = 0, cargoCapacity = 0;
-    game::Resources rate;
-    std::string building;             // "Under Construction" (spec 06 §7 Q48)
-    std::string time;                 // "Time Remaining"
-    float progress = 0;
-    int turns = -1;                   // the first item's time (kNeverTurns: never)
+    std::string conditions;           // the band's name
+    std::string cargo;                // the cargo in words
     int queueLength = 0;
-    std::string queueMode;
     std::vector<int> icons;
-    std::vector<std::string> orders;
-    bool breathable = true;
-    bool homeworld = false;
+    std::vector<std::string> orders;  // the colony's order list, one a line
 };
 
-struct ColonyColumn {
-    const char* name;
-    float width;  // 0 = stretch
-    std::function<SortKey(const ColonyRow&)> key;
-    std::function<void(UiContext&, const ColonyRow&)> draw;
-    bool descendingFirst = false;
+// A heading of the Colonies list: the column it stands for, its label and
+// width (spec 06 §1.8.3; 0 takes the rest) and a fixed colour.
+struct ColonyHeading {
+    ColonyColumn id;
+    const char* label;
+    float width;
+    uint32_t color = 0;
 };
+
+std::vector<ColonyHeading> colonyHeadings(ColonyTab tab) {
+    using C = ColonyColumn;
+    std::vector<ColonyHeading> h{{C::Picture, "", 40}, {C::Name, "Name", 150}};
+    auto add = [&](std::initializer_list<ColonyHeading> more) { h.insert(h.end(), more); };
+    switch (tab) {
+        case ColonyTab::General: add({{C::Atmosphere, "Atmosphere", 90}, {C::Conditions, "Conditions", 90}, {C::Population, "Pop", 65}, {C::Mood, "Mood", 0}}); break;
+        case ColonyTab::Value:
+            add({{C::ColonyType, "Type", 120},
+                 {C::MineralsValue, "Min.", 70, palette::kMinerals},
+                 {C::OrganicsValue, "Org.", 70, palette::kOrganics},
+                 {C::RadioactivesValue, "Rad.", 0, palette::kRadioactives}});
+            break;
+        case ColonyTab::Production:
+            add({{C::Minerals, "Min.", 60}, {C::Organics, "Org.", 60}, {C::Radioactives, "Rad.", 60}, {C::Research, "Res", 60}, {C::Intelligence, "Intel", 0}});
+            break;
+        case ColonyTab::Facilities: add({{C::FacilitiesBuilt, "Num", 50}, {C::FacilitySlots, "Max", 50}, {C::FacilityList, "Facilities", 0}}); break;
+        case ColonyTab::Cargo: add({{C::CargoUsed, "Space", 65}, {C::CargoCapacity, "Max", 65}, {C::CargoItems, "Cargo Items", 0}}); break;
+        case ColonyTab::Construction: add({{C::UnderConstruction, "Under Construction", 200}, {C::TimeRemaining, "Time Remaining", 0}}); break;
+        case ColonyTab::Status: add({{C::Status, "Status", 0}}); break;
+        case ColonyTab::Races: add({{C::RacePopulation, "Population", 0}}); break;
+        case ColonyTab::Orders: add({{C::Orders, "Orders", 0}}); break;
+        case ColonyTab::Count: break;
+    }
+    return h;
+}
 
 class ColoniesScreen final : public Screen {
 public:
@@ -465,40 +481,20 @@ private:
             const game::SpaceObject& o = s.galaxy.object(c->planet);
             ColonyRow row;
             row.planet = c->planet;
-            row.name = o.name;
-            row.system = s.galaxy.system(o.system).name;
-            row.type = surfaceAndSize(o);
-            row.colonyType = c->colonyType;
-            row.population = c->totalPopulation();
+            row.keys = colonySortValues(r, s, *c);
+            const game::economy::ColonyOutput out = game::economy::colonyOutput(r, s, *c);
+            row.blockaded = out.blockaded;
+            row.delivered = out.connected && !out.blockaded;
+            row.secondLine = out.blockaded ? std::string("Blockaded") : typeLine(o);
             row.maxPopulation = game::maxPopulation(r, s, *c);
-            row.facilities = static_cast<int>(c->facilities.size());
-            row.slots = game::facilitySlots(r, s, *c);
-            row.anger = c->anger;
             row.mood = game::moodFromAnger(c->anger);
-            row.moodName = std::string(game::economy::moodName(r, s, *c));
-            row.out = game::economy::colonyOutput(r, s, *c);
-            row.cargoUsed = game::cargoSpaceUsed(r, s, c->cargo);
-            row.cargoCapacity = game::colonyCargoCapacity(r, s, *c);
-            const game::cmd::QueueTarget target{c->planet, {}};
-            row.rate = game::economy::constructionRate(r, s, me, target);
+            row.conditions = conditionsText(o.conditions);
+            row.cargo = cargoText(s, c->planet);
             row.queueLength = static_cast<int>(c->queue.items.size());
-            row.building = underConstructionText(r, s, c->queue);
-            row.time = timeRemainingText(r, s, me, target, c->queue, row.rate);
-            if (!c->queue.items.empty()) {
-                const game::QueueItem& top = c->queue.items.front();
-                const game::Resources cost = displayCost(r, s, me, target, top);
-                const int64_t total = cost.total();
-                row.progress = total > 0 ? float(top.spent.total()) / float(total) : 0.0f;
-                row.turns = timeRemainingTurns(cost - top.spent, row.rate);
-            }
-            if (c->queue.onHold) row.queueMode = "On hold";
-            else if (c->queue.emergency) row.queueMode = "Emergency";
-            else if (c->queue.slowTurns > 0) row.queueMode = std::format("Slow ({})", c->queue.slowTurns);
-            else if (c->queue.repeat) row.queueMode = "Repeat";
-            row.icons = colonyStatusIcons(r, s, *c, row.out.connected);
-            row.orders = planetOrders(ui.session.ordersThisTurn(), c->planet);
-            row.breathable = game::breathable(s, *c);
-            row.homeworld = c->homeworld;
+            row.icons = colonyStatusIcons(r, s, *c, out.connected);
+            shipui::OrderOwner owner;
+            owner.planet = c->planet;
+            row.orders = shipui::orderListLines(ui, owner);
             rows_.push_back(std::move(row));
         }
         std::erase_if(selection_, [&](game::ObjectId id) { return !s.colony(id) || s.colony(id)->owner != me; });
@@ -510,14 +506,14 @@ private:
         int facilities = 0, slots = 0, yards = 0, idle = 0, unhappy = 0;
         game::Resources production;
         for (const ColonyRow& r : rows_) {
-            population += r.population;
+            population += r.keys.population;
             maxPop += r.maxPopulation;
-            production += r.out.production;
-            research += r.out.research;
-            intel += r.out.intelligence;
-            facilities += r.facilities;
-            slots += r.slots;
-            idle += r.queueLength == 0 && r.population > 0;
+            production += r.keys.production;
+            research += r.keys.research;
+            intel += r.keys.intelligence;
+            facilities += r.keys.facilities;
+            slots += r.keys.slots;
+            idle += r.queueLength == 0 && r.keys.population > 0;
             unhappy += r.mood >= game::Mood::Unhappy;
             yards += std::find(r.icons.begin(), r.icons.end(), 1) != r.icons.end();
         }
@@ -547,138 +543,6 @@ private:
         ImGui::EndChild();
     }
 
-    std::vector<ColonyColumn> columns(UiContext& ui) const {
-        const game::GameState& s = ui.state();
-        using R = const ColonyRow&;
-        auto num = [](int64_t v) { return SortKey{v}; };
-        auto text = [](UiContext& u, const std::string& t) { cellText(u, t); };
-        std::vector<ColonyColumn> c;
-        switch (tab_) {
-            case ColonyTab::General:
-                // The widths, with 2 px of padding each side, fit the list's 556 px
-                // with the picture, the name and a scroll bar (the system shows on the
-                // mini-map under the pointer).
-                c.push_back({"Type", 84, [](R r) { return SortKey{r.type}; }, [=](UiContext& u, R r) { text(u, r.type); }});
-                c.push_back({"Colony Type", 96, [](R r) { return SortKey{r.colonyType}; }, [=](UiContext& u, R r) { text(u, r.colonyType); }});
-                c.push_back({"Population", 90, [=](R r) { return num(r.population); },
-                             [=](UiContext& u, R r) {
-                                 text(u, std::format("{}M / {}M", formatNumber(r.population), formatNumber(r.maxPopulation)));
-                             },
-                             true});
-                c.push_back({"Mood", 64, [=](R r) { return num(r.anger); },
-                             [=](UiContext& u, R r) {
-                                 cellText(u, r.moodName, r.mood >= game::Mood::Unhappy ? kTextWarn : ImVec4(1, 1, 1, 1));
-                             }});
-                c.push_back({"Facil.", 44, [=](R r) { return num(r.facilities); },
-                             [=](UiContext& u, R r) { text(u, std::format("{} / {}", r.facilities, r.slots)); }, true});
-                break;
-            case ColonyTab::Value:
-                c.push_back({"Type", 84, [](R r) { return SortKey{r.type}; }, [=](UiContext& u, R r) { text(u, r.type); }});
-                c.push_back({"Atmosphere", 76, [&s](R r) { return SortKey{s.galaxy.object(r.planet).atmosphere}; },
-                             [&s](UiContext& u, R r) {
-                                 cellText(u, s.galaxy.object(r.planet).atmosphere + (r.breathable ? "" : " (dome)"),
-                                          r.breathable ? ImVec4(1, 1, 1, 1) : kTextWarn);
-                             }});
-                c.push_back({"Conditions", 66, [&s](R r) { return SortKey{static_cast<int64_t>(s.galaxy.object(r.planet).conditions.bits)}; },
-                             [&s](UiContext& u, R r) { cellText(u, conditionsText(s.galaxy.object(r.planet).conditions)); }, true});
-                for (size_t i = 0; i < 3; ++i)
-                    c.push_back({i == 0 ? "Min." : i == 1 ? "Org." : "Rad.", 52,
-                                 [&s, i](R r) { return SortKey{int64_t{s.galaxy.object(r.planet).value[i]}}; },
-                                 [&s, i](UiContext& u, R r) { cellText(u, percent(s.galaxy.object(r.planet).value[i])); }, true});
-                break;
-            case ColonyTab::Production:
-                for (size_t i = 0; i < 3; ++i)
-                    c.push_back({i == 0 ? "Minerals" : i == 1 ? "Organics" : "Radioact.", 58, [i](R r) { return SortKey{r.out.production.v[i]}; },
-                                 [i](UiContext& u, R r) { cellText(u, formatNumber(r.out.production.v[i])); }, true});
-                c.push_back({"Research", 60, [](R r) { return SortKey{r.out.research}; },
-                             [](UiContext& u, R r) { cellText(u, formatNumber(r.out.research)); }, true});
-                c.push_back({"Intel", 48, [](R r) { return SortKey{r.out.intelligence}; },
-                             [](UiContext& u, R r) { cellText(u, formatNumber(r.out.intelligence)); }, true});
-                c.push_back({"Delivery", 96, [](R r) { return SortKey{int64_t{r.out.connected && !r.out.blockaded}}; },
-                             [](UiContext& u, R r) {
-                                 cellText(u, r.out.blockaded ? "Blockaded" : r.out.connected ? "Delivered" : "No spaceport",
-                                          r.out.connected && !r.out.blockaded ? kTextDim : kTextWarn);
-                             }});
-                break;
-            case ColonyTab::Facilities:
-                c.push_back({"Used", 64, [](R r) { return SortKey{int64_t{r.facilities}}; },
-                             [](UiContext& u, R r) { cellText(u, std::format("{} / {}", r.facilities, r.slots)); }, true});
-                c.push_back({"Facilities", 0, [](R r) { return SortKey{int64_t{r.facilities}}; },
-                             [&s](UiContext& u, R r) { facilityIcons(u, s, r.planet); }, true});
-                break;
-            case ColonyTab::Cargo:
-                c.push_back({"Space", 110, [](R r) { return SortKey{r.cargoUsed}; },
-                             [](UiContext& u, R r) { cellText(u, std::format("{} / {} kT", formatNumber(r.cargoUsed), formatNumber(r.cargoCapacity))); },
-                             true});
-                c.push_back({"Contents", 0, [&s](R r) { return SortKey{int64_t(s.colony(r.planet) ? s.colony(r.planet)->cargo.units.size() : 0)}; },
-                             [&s](UiContext& u, R r) { cellText(u, cargoText(s, r.planet), kTextDim); }, true});
-                break;
-            case ColonyTab::Construction:
-                c.push_back({"Building", 0, [](R r) { return SortKey{r.building}; },
-                             [](UiContext& u, R r) { cellText(u, r.building, r.queueLength == 0 ? kTextWarn : ImVec4(1, 1, 1, 1)); }});
-                c.push_back({"Progress", 90, [](R r) { return SortKey{int64_t(r.progress * 1000)}; },
-                             [](UiContext& u, R r) {
-                                 if (r.queueLength > 0) cellProgress(u, r.progress, std::format("{}%", int(r.progress * 100)));
-                             },
-                             true});
-                c.push_back({"Time", 72, [](R r) { return SortKey{int64_t{r.queueLength == 0 ? 1 << 30 : r.turns}}; },
-                             [](UiContext& u, R r) { cellText(u, r.time, kTextDim); }});
-                c.push_back({"Items", 46, [](R r) { return SortKey{int64_t{r.queueLength}}; },
-                             [](UiContext& u, R r) { cellText(u, std::to_string(r.queueLength)); }, true});
-                c.push_back({"Mode", 84, [](R r) { return SortKey{r.queueMode}; }, [](UiContext& u, R r) { cellText(u, r.queueMode, kTextDim); }});
-                break;
-            case ColonyTab::Status:
-                c.push_back({"Status", 0, [](R r) { return SortKey{int64_t(r.icons.size())}; },
-                             [](UiContext& u, R r) { statusIconRow(u, r.icons); }, true});
-                c.push_back({"Mood", 90, [](R r) { return SortKey{int64_t{r.anger}}; },
-                             [](UiContext& u, R r) {
-                                 cellText(u, r.moodName, r.mood >= game::Mood::Unhappy ? kTextWarn : ImVec4(1, 1, 1, 1));
-                             }});
-                c.push_back({"Anger", 60, [](R r) { return SortKey{int64_t{r.anger}}; },
-                             [](UiContext& u, R r) { cellText(u, std::format("{}%", r.anger), kTextDim); }, true});
-                break;
-            case ColonyTab::Races:
-                c.push_back({"Races", 0, [&s](R r) { return SortKey{int64_t(s.colony(r.planet) ? s.colony(r.planet)->population.size() : 0)}; },
-                             [&s](UiContext& u, R r) { raceList(u, s, r.planet); }, true});
-                break;
-            case ColonyTab::Orders:
-                c.push_back({"Orders given this turn", 0, [](R r) { return SortKey{int64_t(r.orders.size())}; },
-                             [](UiContext& u, R r) {
-                                 std::string t;
-                                 for (const auto& o : r.orders) t += (t.empty() ? "" : ", ") + o;
-                                 cellText(u, t.empty() ? "None" : t, t.empty() ? kTextDim : ImVec4(1, 1, 1, 1));
-                             },
-                             true});
-                break;
-            case ColonyTab::Count: break;
-        }
-        return c;
-    }
-
-    static void facilityIcons(UiContext& ui, const game::GameState& s, game::ObjectId planet) {
-        const game::Colony* c = s.colony(planet);
-        if (!c) return;
-        // One icon per facility type, with a count when there are several.
-        std::vector<std::pair<uint32_t, int>> types;
-        for (uint32_t f : c->facilities) {
-            auto it = std::find_if(types.begin(), types.end(), [&](const auto& t) { return t.first == f; });
-            if (it == types.end()) types.emplace_back(f, 1);
-            else ++it->second;
-        }
-        const float y = ImGui::GetCursorPosY();
-        for (size_t i = 0; i < types.size(); ++i) {
-            if (i > 0) ImGui::SameLine(0, ui.px(6));
-            ImGui::SetCursorPosY(y);
-            cellImage(ui, ui.art.facility(ui.rules().facility(types[i].first).picture), 20);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s x%d", ui.rules().facility(types[i].first).name.c_str(), types[i].second);
-            if (types[i].second > 1) {
-                ImGui::SameLine(0, ui.px(1));
-                ImGui::SetCursorPosY(y);
-                cellText(ui, std::format("x{}", types[i].second), kTextDim);
-            }
-        }
-    }
-
     static std::string cargoText(const game::GameState& s, game::ObjectId planet) {
         const game::Colony* c = s.colony(planet);
         if (!c || c->cargo.empty()) return "Empty";
@@ -689,81 +553,176 @@ private:
         return t;
     }
 
-    static void raceList(UiContext& ui, const game::GameState& s, game::ObjectId planet) {
-        const game::Colony* c = s.colony(planet);
-        if (!c) return;
-        const float y = ImGui::GetCursorPosY();
-        for (size_t i = 0; i < c->population.size(); ++i) {
-            const game::PopulationGroup& p = c->population[i];
-            if (i > 0) ImGui::SameLine(0, ui.px(14));
-            ImGui::SetCursorPosY(y);
-            cellImage(ui, ui.art.populationMini(p.race.valid() ? s.empire(p.race).race.style : ""), 20);
-            ImGui::SameLine(0, ui.px(4));
-            ImGui::SetCursorPosY(y);
-            cellText(ui, std::format("{} {}M", p.race.valid() ? s.empire(p.race).race.name : "Unknown", formatNumber(p.millions)));
-        }
-    }
-
+    // The list (spec 06 §1.8.3, confirmed: binary): the headings, every one a
+    // sort key by the column it stands for, and rows of 36 px.
     void table(UiContext& ui) {
         const game::GameState& s = ui.state();
-        const std::vector<ColonyColumn> cols = columns(ui);
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(2), ui.px(2)));
-        // Our own headings (tableHeadings): a click adds a sort key, in the
-        // column's fixed direction (spec 06 §7 Q24); nothing reverses it.
-        const ImGuiTableFlags flags =
-            ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-        // The rows take the window's height less 265 (spec 06 §2.1.1), under 20 px of headings.
-        if (ImGui::BeginTable(tableId_.c_str(), static_cast<int>(cols.size()) + 2, flags, ImVec2(0, listRowsHeight(ui) + ui.px(20)))) {
-            ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ui.px(24), 0);
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, ui.px(110), 1);
-            for (size_t i = 0; i < cols.size(); ++i)
-                ImGui::TableSetupColumn(cols[i].name, cols[i].width == 0 ? ImGuiTableColumnFlags_WidthStretch : ImGuiTableColumnFlags_WidthFixed,
-                                        cols[i].width == 0 ? 0.0f : ui.px(cols[i].width), static_cast<ImGuiID>(i + 2));
-            std::vector<ListColumn> headings{{"", 0, 0, false}, {"Name", 0}};
-            for (const ColonyColumn& c : cols) headings.push_back({c.name, 0});
-            if (const int clicked = tableHeadings(ui, headings); clicked >= 0) {
-                game::InterfaceOptions o = ui.options();
-                o.coloniesSort = clickSort(o.coloniesSort, clicked, 1);
-                ui.setOptions(o);
-            }
-            std::vector<const ColonyRow*> rows;
-            for (const ColonyRow& r : rows_) rows.push_back(&r);
-            // Column numbers are the table's: 1 the name, 2 on the tab's own
-            // columns, so a key stands for whatever that column of the tab
-            // shown measures (inferred, like Construction Queues' middle column).
-            sortByKeys(rows, sortKeys(ui.options().coloniesSort, 1), [&](int column, const ColonyRow* a, const ColonyRow* b) {
-                if (column == 1) return compareNames(a->name, b->name);
-                if (column < 2 || static_cast<size_t>(column - 2) >= cols.size()) return 0;
-                const ColonyColumn& c = cols[static_cast<size_t>(column - 2)];
-                const SortKey x = c.key(*a), y = c.key(*b);
-                if (!sortKeyLess(x, y) && !sortKeyLess(y, x)) return 0;
-                // Numbers highest first, names A to Z.
-                return (c.descendingFirst ? sortKeyLess(y, x) : sortKeyLess(x, y)) ? -1 : 1;
-            });
-            for (const ColonyRow* r : rows) {
-                const RowEvents ev = tableRow(ui, static_cast<int>(r->planet.index()), contains(selection_, r->planet));
-                if (ev.hovered) hovered_ = r->planet;
-                if (ev.clicked) clickSelect(selection_, r->planet);
-                if (ev.rightClicked) report_.openPlanet(r->planet);
-                if (ev.doubleClicked) goto_ = r->planet;
-                cellImage(ui, objectSprite(ui, s.galaxy.object(r->planet)), 22);
-                ImGui::TableSetColumnIndex(1);
-                cellText(ui, r->homeworld ? r->name + " (home)" : r->name, r->homeworld ? kTextHighlight : ImVec4(1, 1, 1, 1));
-                for (size_t i = 0; i < cols.size(); ++i) {
-                    ImGui::TableSetColumnIndex(static_cast<int>(i) + 2);
-                    cols[i].draw(ui, *r);
-                }
-            }
-            if (rows_.empty()) {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextColored(kTextDim, "No colonies.");
-            }
-            ImGui::EndTable();
-            ui.tagItem("colonies:list");
+        const std::vector<ColonyHeading> heads = colonyHeadings(tab_);
+        std::vector<ListColumn> cols;
+        for (const ColonyHeading& h : heads) cols.push_back({h.label, h.width, h.color});
+        // The rows' child has no padding; the header leaves room for its scrollbar.
+        const float width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 2.0f;
+        if (const int c = listHeader(ui, tableId_.c_str(), cols, width); c >= 0 && static_cast<size_t>(c) < heads.size()) {
+            // A click on any heading takes the first slot, a column without a
+            // key too; the keys are stored with the empire at once (§7 Q24).
+            game::InterfaceOptions o = ui.options();
+            o.coloniesSort = clickSort(o.coloniesSort, static_cast<int>(heads[static_cast<size_t>(c)].id), static_cast<int>(ColonyColumn::Name));
+            ui.setOptions(o);
         }
+        const std::vector<float> x = columnEdges(ui, cols, width);
+        std::vector<ColonySortValues> keys;
+        for (const ColonyRow& r : rows_) keys.push_back(r.keys);
+        const std::vector<size_t> order = colonyRowOrder(keys, ui.options().coloniesSort);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1, 1));
+        ImGui::BeginChild("##colonyrows", ImVec2(0, listRowsHeight(ui)), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PopStyleVar();
+        const float rowH = ui.px(kListRowH);
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(order.size()), rowH);
+        while (clipper.Step())
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                const ColonyRow& row = rows_[order[static_cast<size_t>(i)]];
+                ImGui::PushID(static_cast<int>(row.planet.index()));
+                const ImVec2 a = ImGui::GetCursorScreenPos();
+                const bool clicked = ImGui::Selectable("##row", contains(selection_, row.planet), ImGuiSelectableFlags_AllowDoubleClick,
+                                                       ImVec2(0, rowH - ImGui::GetStyle().ItemSpacing.y));
+                const bool hovered = ImGui::IsItemHovered();
+                ImGui::PopID();
+                if (hovered) hovered_ = row.planet;
+                if (clicked) clickSelect(selection_, row.planet);
+                if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) report_.openPlanet(row.planet);
+                if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) goto_ = row.planet;
+                for (size_t k = 0; k < heads.size(); ++k) drawCell(ui, s, row, heads[k].id, a, x[k], x[k + 1] - x[k]);
+            }
+        if (rows_.empty()) ImGui::TextColored(kTextDim, "No colonies.");
+        ImGui::EndChild();
+        ui.tagItem("colonies:list");
+    }
+
+    // One cell of a row whose top left is `a`, the column from `cx` (`cw` wide).
+    void drawCell(UiContext& ui, const game::GameState& s, const ColonyRow& row, ColonyColumn id, ImVec2 a, float cx, float cw) const {
+        using C = ColonyColumn;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float rowH = ui.px(kListRowH);
+        const float lh = ImGui::GetTextLineHeight();
+        const float top = a.y + ui.px(2);
+        const float mid = a.y + (rowH - lh) * 0.5f;
+        const ImU32 white = IM_COL32_WHITE;
+        const ColonySortValues& k = row.keys;
+        auto text = [&](float cy, ImU32 color, const std::string& t) {
+            dl->PushClipRect(ImVec2(a.x + cx, a.y), ImVec2(a.x + cx + cw, a.y + rowH), true);
+            dl->AddText(ImVec2(a.x + cx + ui.px(2), cy), color, t.c_str());
+            dl->PopClipRect();
+        };
+        auto small = [&](float cy, ImU32 color, const std::string& t) {
+            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+            text(cy, color, t);
+            ImGui::PopFont();
+        };
+        auto picture = [&](const Sprite& sp, float px, float size) {
+            if (!sp) return;
+            const ImVec2 p0{a.x + px, a.y + (rowH - size) * 0.5f};
+            dl->PushClipRect(ImVec2(a.x + cx, a.y), ImVec2(a.x + cx + cw, a.y + rowH), true);
+            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(sp.tex.value)), p0, ImVec2(p0.x + size, p0.y + size), {sp.uv.min.x, sp.uv.min.y},
+                         {sp.uv.max.x, sp.uv.max.y});
+            dl->PopClipRect();
+        };
+        // Output that does not reach the empire is shown in brackets.
+        auto output = [&](int64_t v) { return row.delivered ? formatNumber(v) : std::format("({})", formatNumber(v)); };
+        switch (id) {
+            case C::Picture:
+                if (Sprite pic = objectSprite(ui, s.galaxy.object(row.planet)))
+                    dl->AddImage(ImTextureRef(static_cast<ImTextureID>(pic.tex.value)), ImVec2(a.x + cx + ui.px(2), top),
+                                 ImVec2(a.x + cx + ui.px(32), top + ui.px(30)), {pic.uv.min.x, pic.uv.min.y}, {pic.uv.max.x, pic.uv.max.y});
+                break;
+            case C::Name:
+                text(top, white, k.name);
+                small(top + lh + ui.px(1), row.blockaded ? imColor(0xff0000) : imColor(palette::kSecondary), row.secondLine);
+                break;
+            case C::Atmosphere: text(mid, white, k.atmosphere); break;
+            case C::Conditions: text(mid, white, row.conditions); break;
+            case C::Population:
+                text(top, white, std::format("{}M", formatNumber(k.population)));
+                small(top + lh + ui.px(1), imColor(palette::kSecondary), std::format("{}M", formatNumber(row.maxPopulation)));
+                break;
+            case C::Mood: text(mid, row.mood >= game::Mood::Unhappy ? ImGui::ColorConvertFloat4ToU32(kTextWarn) : white, k.mood); break;
+            case C::ColonyType: text(mid, white, k.colonyType); break;
+            case C::MineralsValue:
+            case C::OrganicsValue:
+            case C::RadioactivesValue: {
+                const size_t i = static_cast<size_t>(id) - static_cast<size_t>(C::MineralsValue);
+                constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+                text(mid, imColor(kColors[i]), percent(k.value[i]));
+                break;
+            }
+            case C::Minerals:
+            case C::Organics:
+            case C::Radioactives: text(mid, white, output(k.production.v[static_cast<size_t>(id) - static_cast<size_t>(C::Minerals)])); break;
+            case C::Research: text(mid, white, output(k.research)); break;
+            case C::Intelligence: text(mid, white, output(k.intelligence)); break;
+            case C::FacilitiesBuilt: text(mid, white, std::to_string(k.facilities)); break;
+            case C::FacilitySlots: text(mid, white, std::to_string(k.slots)); break;
+            case C::FacilityList: {
+                const game::Colony* c = s.colony(row.planet);
+                if (!c) break;
+                // One icon per facility type, with a count when there are several.
+                std::vector<std::pair<uint32_t, int>> types;
+                for (uint32_t f : c->facilities) {
+                    auto it = std::find_if(types.begin(), types.end(), [&](const auto& t) { return t.first == f; });
+                    if (it == types.end()) types.emplace_back(f, 1);
+                    else ++it->second;
+                }
+                float px = cx + ui.px(2);
+                for (const auto& [f, n] : types) {
+                    picture(ui.art.facility(ui.rules().facility(f).picture), px, ui.px(20));
+                    px += ui.px(21);
+                    if (n > 1) {
+                        const std::string count = std::format("x{}", n);
+                        dl->PushClipRect(ImVec2(a.x + cx, a.y), ImVec2(a.x + cx + cw, a.y + rowH), true);
+                        dl->AddText(ImVec2(a.x + px, mid), ImGui::ColorConvertFloat4ToU32(kTextDim), count.c_str());
+                        dl->PopClipRect();
+                        px += ImGui::CalcTextSize(count.c_str()).x;
+                    }
+                    px += ui.px(5);
+                }
+                break;
+            }
+            case C::CargoUsed: text(mid, white, formatNumber(k.cargoUsed)); break;
+            case C::CargoCapacity: text(mid, white, formatNumber(k.cargoCapacity)); break;
+            case C::CargoItems: text(mid, ImGui::ColorConvertFloat4ToU32(kTextDim), row.cargo); break;
+            case C::UnderConstruction: text(mid, row.queueLength == 0 ? ImGui::ColorConvertFloat4ToU32(kTextWarn) : white, k.underConstruction); break;
+            case C::TimeRemaining: text(mid, white, k.timeRemaining); break;
+            case C::Status: {
+                float px = cx + ui.px(2);
+                for (int icon : row.icons) {
+                    picture(ui.art.statusIcon(icon), px, ui.px(18));
+                    px += ui.px(20);
+                }
+                break;
+            }
+            case C::RacePopulation: {
+                const game::Colony* c = s.colony(row.planet);
+                if (!c) break;
+                float px = cx + ui.px(2);
+                for (const game::PopulationGroup& p : c->population) {
+                    picture(ui.art.populationMini(p.race.valid() ? s.empire(p.race).race.style : ""), px, ui.px(20));
+                    px += ui.px(24);
+                    const std::string t = std::format("{} {}M", p.race.valid() ? s.empire(p.race).race.name : "Unknown", formatNumber(p.millions));
+                    dl->PushClipRect(ImVec2(a.x + cx, a.y), ImVec2(a.x + cx + cw, a.y + rowH), true);
+                    dl->AddText(ImVec2(a.x + px, mid), white, t.c_str());
+                    dl->PopClipRect();
+                    px += ImGui::CalcTextSize(t.c_str()).x + ui.px(14);
+                }
+                break;
+            }
+            case C::Orders:
+                // The colony's own order list (launch, recover, facilities,
+                // conversions), one order per 12 px line.
+                for (size_t l = 0; l < row.orders.size() && l < 3; ++l) small(a.y + ui.px(12.0f * float(l) - 1.0f), white, row.orders[l]);
+                break;
+            case C::Count: break;
+        }
     }
 
     void colonyTypePopup(UiContext& ui) {

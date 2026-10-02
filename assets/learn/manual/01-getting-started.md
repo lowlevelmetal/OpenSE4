@@ -109,7 +109,7 @@ Press `F2` (or the first command button) to open the [Game Menu](window:game-men
 | `Load` | Open a saved game: click one in the list. |
 | `Save Game` | Save the game. The name starts as your empire and the date; clicking an existing save copies its name, and saving over it asks first. In a play-by-e-mail game it saves your turn so far. |
 | `Save Map` | Save the quadrant as a map. It is dim unless the game was set up with *Players can save the map during the game*. |
-| `Save Empire` | Save your empire (its name, leader, race and ministers' style) for later games. |
+| `Save Empire` | Save your empire (its name, leader, race, ministers' style and combat strategies, and if you like its designs) for later games. Saved designs come back as fresh, current designs and replace the ones a new empire would have. |
 | `Players` | Show which empires the computer plays. |
 | `Options` | The [Options](window:options) of this computer: animation, sound, music and autosave (see [Settings](settings#the-options-window)). |
 | `Delete Game` | Remove a saved game (it asks first). |

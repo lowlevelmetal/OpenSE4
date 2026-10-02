@@ -606,9 +606,11 @@ struct Applier {
         }
         if (!col->cloaked) return R::fail("The colony is not cloaked");
         col->cloaked = false;
-        // Decloak recalculates sight and runs the first-contact check at once.
+        // Decloak recalculates sight and runs the first-contact check at once,
+        // in the colony's system (spec 05 §3.1); in a simultaneous game for the
+        // acting side only (decloakSide).
         TurnContext contact{r, s, {}, {}, {}};
-        diplomacy::afterDecloak(contact, decloakSide());
+        diplomacy::afterDecloak(contact, s.galaxy.object(c.planet).system, decloakSide());
         return {};
     }
 
@@ -793,10 +795,11 @@ struct Applier {
         if (emp().relation(m.to).messageSentThisTurn) return R::fail("Only one message per empire per turn");
         // A request about a third empire names one the sender picks from the
         // empires it has met that are still in the game, other than itself and
-        // the recipient (spec 05 open question 51, confirmed: binary). A
-        // computer player's own messages do not go through that picker and are
-        // not checked (inferred).
-        if (needsThirdEmpire(m.type) && emp().kind == PlayerKind::Human) {
+        // the recipient (spec 05 open question 51, confirmed: binary). Only the
+        // messages the player writes go through that picker: a computer
+        // player's, and those a human empire's Politics minister writes, are
+        // not checked (question 52, confirmed: binary).
+        if (needsThirdEmpire(m.type) && emp().kind == PlayerKind::Human && !c.minister) {
             const EmpireId third = m.thirdEmpire;
             if (!third.valid() || third.index() >= s.empires.size() || third == e || third == m.to || !s.empire(third).alive ||
                 !emp().relation(third).contact)

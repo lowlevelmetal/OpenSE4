@@ -69,8 +69,9 @@ A few lines of the game's own `Data/Settings.txt` change how these windows behav
 - `Allow Export of Weapon And Component Data`: with `TRUE` the Weapons Report (Help) gets an
   `Export` button. It writes four text tables, weapons, components, weapon families and
   component families, into your saves folder and tells you where each one went.
-- `System Ship Movement Delay Milliseconds`: above 0, a ship moving in the system window, and
-  in the movement log replay, waits this many milliseconds after every square.
+- `System Ship Movement Delay Milliseconds`: above 0, a ship moving in the system window
+  waits after every square. Despite its name, the value counts seconds, as in the original
+  game, so keep it small. The movement log replay never waits.
 
 ## Empire options
 

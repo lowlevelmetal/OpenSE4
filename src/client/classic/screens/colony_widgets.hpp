@@ -107,6 +107,21 @@ private:
     ReportTab tab_ = ReportTab::Detail;
 };
 
+// The Design Report (spec 06 §1.8.3): a design's name, size, design type,
+// date created, "(Obsolete)", cost, maintenance cost, movement, shields,
+// cargo space, supply capacity and components. A right-click on a queued
+// ship, base or unit opens it, as on a design in the buildable list of Set
+// Construction Queue and on a design in the Combat Simulator.
+class DesignReportPopup {
+public:
+    void open(game::DesignId d);
+    void draw(UiContext& ui);
+
+private:
+    bool pending_ = false;
+    game::DesignId design_;
+};
+
 // "Select Facilities": a checklist of one colony's facilities with their
 // refunds; scraps the checked ones.
 class ScrapFacilitiesPopup {

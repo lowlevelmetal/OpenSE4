@@ -44,6 +44,15 @@
 
 namespace opense4::game::combat {
 
+// People in the setup: of a side's race (`side` >= 0, the virtual empire of
+// that side), or else of a real empire's race (`race`).
+struct SimulatorPeople {
+    int side = -1;
+    EmpireId race;
+    int64_t millions = 0;
+    bool operator==(const SimulatorPeople&) const = default;
+};
+
 struct SimulatorItem {
     enum class Kind : uint8_t { Design, Planet };
     Kind kind = Kind::Design;
@@ -55,10 +64,16 @@ struct SimulatorItem {
     ObjectId planet;
     int side = 0;                  // index into SimulatorSetup::sides
     int count = 1;                 // ships of the design; unit designs: units in one group
-    // Units carried (the viewer's own unit designs). Planets: replaces the
-    // colony's stored units when `replaceCargo`.
+    // Units carried (unit designs the viewer owns or has seen, and units the
+    // sample colonies hold). Planets: replaces the colony's stored units when
+    // `replaceCargo`.
     std::vector<UnitStack> cargo;
     bool replaceCargo = false;
+    // People carried by a ship or base, or (with `replacePeople`) living on a
+    // sample colony instead of its own population: the Transfer Cargo window
+    // moves them (spec 06 §7 Q80), and they stay aboard and fight.
+    std::vector<SimulatorPeople> people;
+    bool replacePeople = false;
     int fleet = -1;                // index into SimulatorSetup::fleets (same side), -1: none
     // Ships and bases: the serial number of its first ship, given when the
     // item was added (simulatorAddShips); 0: none given, the next free ones

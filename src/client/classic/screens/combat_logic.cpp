@@ -1,11 +1,13 @@
 #include "client/classic/screens/combat_logic.hpp"
 
+#include "game/abilities.hpp"
 #include "game/design.hpp"
 #include "game/query.hpp"
 
 #include <algorithm>
 #include <format>
 #include <optional>
+#include <span>
 
 namespace opense4::client::classic {
 
@@ -198,6 +200,28 @@ std::vector<std::pair<std::string, std::string>> pieceReportLines(const game::Ru
     return out;
 }
 
+std::vector<std::string> pieceReportAbilities(const game::Rules& r, const game::GameState& s, const game::combat::TacticalPiece& p) {
+    std::vector<std::string> out;
+    auto add = [&](std::span<const game::ParsedAbility> list) {
+        for (const game::ParsedAbility& a : list) {
+            if (a.kind == game::AbilityKind::AITag) continue;
+            const std::string name = a.kind == game::AbilityKind::Unknown ? a.raw : std::string(game::identifier(a.kind));
+            out.push_back(a.value1 != 0 || a.value2 != 0 ? std::format("{} ({}, {})", name, a.value1, a.value2) : name);
+        }
+    };
+    // A ship or base: its hull, then every component of its design, destroyed
+    // or not; our vehicles have no abilities of their own to follow.
+    if (p.kind == PieceKind::Vehicle && p.design.valid() && p.design.index() < s.designs.size()) {
+        const game::Design& d = s.design(p.design);
+        if (d.hull < r.data().vehicleSizes.size()) add(r.hullAbilities(d.hull));
+        for (const game::DesignEntry& e : d.entries)
+            if (e.component < r.data().components.size()) add(r.componentAbilities(e.component));
+    } else if (p.kind == PieceKind::Planet && p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) {
+        add(game::parseAbilities(s.galaxy.object(p.planet).abilities));
+    }
+    return out;
+}
+
 int dropTroopsColony(const game::combat::TacticalBattle& b, int piece) {
     const auto& pieces = b.pieces();
     if (piece < 0 || size_t(piece) >= pieces.size()) return -1;
@@ -253,6 +277,38 @@ std::vector<SimulatorRow> simulatorRows(const game::Rules& r, const game::GameSt
             out.push_back(std::move(row));
         }
     }
+    // The Name column's lines: what each row holds, and its fleet.
+    for (SimulatorRow& row : out) {
+        row.lines = true;
+        const SimulatorItem& first = setup.items[row.items.front()];
+        row.unitsLine = unitType(first).has_value();
+        std::vector<std::pair<game::DesignId, int>> counts;
+        auto addUnits = [&](game::DesignId d, int n) {
+            if (n <= 0) return;
+            auto it = std::find_if(counts.begin(), counts.end(), [&](const auto& c) { return c.first == d; });
+            if (it != counts.end()) it->second += n;
+            else counts.emplace_back(d, n);
+        };
+        int64_t people = 0;
+        if (row.unitsLine) {
+            for (size_t k : row.items) addUnits(setup.items[k].design, setup.items[k].count);
+        } else if (first.kind == SimulatorItem::Kind::Planet) {
+            if (first.replaceCargo) {
+                for (const game::UnitStack& u : first.cargo) addUnits(u.design, u.count);
+            } else if (const game::Colony* c = s.colony(first.planet)) {
+                for (const game::UnitStack& u : c->cargo.units) addUnits(u.design, u.count);
+            }
+        } else {
+            for (const game::UnitStack& u : first.cargo) addUnits(u.design, u.count);
+            for (const game::combat::SimulatorPeople& p : first.people) people += p.millions;
+        }
+        for (const auto& [d, n] : counts) {
+            if (!row.cargo.empty()) row.cargo += ", ";
+            row.cargo += std::format("{} {}", n, d.valid() && d.index() < s.designs.size() ? s.design(d).name : std::string("?"));
+        }
+        if (people > 0) row.cargo += std::format("{}{}M people", row.cargo.empty() ? "" : ", ", people);
+        if (first.fleet >= 0 && size_t(first.fleet) < setup.fleets.size()) row.fleet = setup.fleets[size_t(first.fleet)].name;
+    }
     for (size_t k = 0; k < setup.items.size(); ++k) {
         const SimulatorItem& i = setup.items[k];
         if (i.kind != SimulatorItem::Kind::Planet || game::combat::simulatorColony(s, i)) continue;
@@ -307,13 +363,84 @@ SimulatorSandbox simulatorSandbox(const game::Rules& r, const game::GameState& r
     game::GameState& state = out.sim.state;
     state.options.simultaneous = true;   // commands take effect at once; nobody's turn is played
     if (cargo) {
+        // Side 1 plays every holder and the Storehouse: no owner is checked (§7 Q80).
+        out.sideIndex = 0;
+        out.side = out.sim.sides.empty() ? game::EmpireId{} : out.sim.sides.front();
         for (game::Vehicle& v : state.vehicles)
             if (v.location == out.sim.where && v.count > 0) v.owner = out.side;
         for (game::ObjectId o : out.sim.itemObjects)
-            if (game::Colony* c = o.valid() ? state.colony(o) : nullptr) {
-                c->owner = out.side;
-                if (!out.anchorPlanet.valid()) out.anchorPlanet = o;
+            if (game::Colony* c = o.valid() ? state.colony(o) : nullptr) c->owner = out.side;
+        // The left list: the Combat Vehicles list's rows, in its order.
+        for (const SimulatorRow& row : simulatorRows(r, real, setup))
+            for (size_t k : row.items) {
+                if (k < out.sim.itemObjects.size() && out.sim.itemObjects[k].valid()) {
+                    out.holders.push_back({{}, out.sim.itemObjects[k], row.side});
+                    continue;
+                }
+                if (k >= out.sim.itemVehicles.size()) continue;
+                for (game::VehicleId v : out.sim.itemVehicles[k]) {
+                    const SimulatorCargoHolder h{v, {}, row.side};
+                    if (std::find(out.holders.begin(), out.holders.end(), h) == out.holders.end()) out.holders.push_back(h);
+                }
             }
+        // The Storehouse: a copy of the player's first colony, systems in order.
+        game::ObjectId first;
+        for (const game::StarSystem& sys : real.galaxy.systems) {
+            for (game::ObjectId o : sys.objects)
+                if (const game::Colony* c = real.colony(o); c && c->owner == setup.viewer) {
+                    first = o;
+                    break;
+                }
+            if (first.valid()) break;
+        }
+        if (first.valid() && out.side.valid()) {
+            game::SpaceObject obj = real.galaxy.object(first);
+            obj.sector = out.sim.where.sector;
+            obj.name = "Storehouse";
+            ruleset::Ability storage;
+            storage.type = std::string(game::identifier(game::AbilityKind::CargoStorage));
+            storage.value1 = std::to_string(kStorehouseCargoStorage);
+            obj.abilities.push_back(storage);
+            const game::ObjectId planet = state.addObject(std::move(obj), out.sim.where.system);
+            game::Colony c = *real.colony(first);
+            c.planet = planet;
+            c.owner = out.side;
+            c.orders.clear();
+            c.queue = {};
+            c.homeworld = false;
+            c.militia = -1;
+            // 1000 of every unit design the player owns or has seen, sorted by
+            // the owner's empire name, then the design name.
+            std::vector<game::DesignId> designs;
+            const game::Empire& viewer = real.empire(setup.viewer);
+            for (game::DesignId d : viewer.designs) designs.push_back(d);
+            for (const game::SeenDesign& seen : viewer.knowledge.seenDesigns) designs.push_back(seen.design);
+            std::erase_if(designs, [&](game::DesignId d) {
+                const ruleset::VehicleSize* hull = hullOf(r, real, d);
+                return !hull || !game::isUnitType(hull->type);
+            });
+            auto ownerName = [&](game::DesignId d) {
+                const game::EmpireId o = real.design(d).owner;
+                return o.valid() && o.index() < real.empires.size() ? real.empire(o).name : std::string{};
+            };
+            std::sort(designs.begin(), designs.end(), [&](game::DesignId a, game::DesignId b) {
+                const std::string oa = ownerName(a), ob = ownerName(b);
+                if (oa != ob) return oa < ob;
+                if (real.design(a).name != real.design(b).name) return real.design(a).name < real.design(b).name;
+                return a < b;
+            });
+            designs.erase(std::unique(designs.begin(), designs.end()), designs.end());
+            for (game::DesignId d : designs) {
+                auto it = std::find_if(c.cargo.units.begin(), c.cargo.units.end(), [&](const game::UnitStack& u) { return u.design == d; });
+                if (it != c.cargo.units.end()) it->count += kStorehouseUnits;
+                else c.cargo.units.push_back({d, kStorehouseUnits});
+            }
+            // Side 1's people on top of the copy's own.
+            c.population.push_back({out.side, kStorehousePeople});
+            state.colonies[planet.index()] = std::move(c);
+            out.storehouse = planet;
+            out.anchorPlanet = planet;
+        }
     }
     if (!out.anchorPlanet.valid())
         for (const std::vector<game::VehicleId>& vehicles : out.sim.itemVehicles)
@@ -337,6 +464,20 @@ void simulatorTakeBack(const game::Rules& r, const SimulatorSandbox& made, const
         return sb.vehicle(made.sim.itemVehicles[item].front());
     };
     if (made.cargo) {
+        // People of a side's virtual empire belong to that side; others keep their real race.
+        auto peopleOf = [&](const std::vector<game::PopulationGroup>& groups) {
+            std::vector<game::combat::SimulatorPeople> out;
+            for (const game::PopulationGroup& g : groups) {
+                if (g.millions <= 0) continue;
+                const auto side = std::find(made.sim.sides.begin(), made.sim.sides.end(), g.race);
+                game::combat::SimulatorPeople p;
+                p.millions = g.millions;
+                if (side != made.sim.sides.end()) p.side = int(side - made.sim.sides.begin());
+                else p.race = g.race;
+                out.push_back(p);
+            }
+            return out;
+        };
         for (size_t k = 0; k < setup.items.size(); ++k) {
             SimulatorItem& item = setup.items[k];
             std::vector<game::UnitStack> units;
@@ -348,6 +489,8 @@ void simulatorTakeBack(const game::Rules& r, const SimulatorSandbox& made, const
                     if (u.count > 0) units.push_back({realDesign(u.design), u.count});
                 item.cargo = std::move(units);
                 item.replaceCargo = true;
+                item.people = peopleOf(c->population);
+                item.replacePeople = true;
                 continue;
             }
             const game::Vehicle* v = vehicleOf(k);
@@ -355,6 +498,7 @@ void simulatorTakeBack(const game::Rules& r, const SimulatorSandbox& made, const
             for (const game::UnitStack& u : v->cargo.units)
                 if (u.count > 0) units.push_back({realDesign(u.design), u.count});
             item.cargo = std::move(units);
+            item.people = peopleOf(v->cargo.population);   // people moved aboard stay and fight (§7 Q80)
         }
         return;
     }

@@ -69,6 +69,10 @@ private:
     const game::Vehicle* selectedVehicle(const UiContext& ui) const;
     const game::Colony* selectedColony(const UiContext& ui) const;
     std::vector<game::ObjectId> objectsAt(const UiContext& ui, game::Sector s) const;
+    // The selected sector is marked (the yellow corners, and the coordinate
+    // line's range) only while it holds an object the viewer sees, tested at
+    // every redraw; the selection itself stays as clicked (spec 06 §2.4, §7 Q64).
+    bool selectedSectorMarked(const UiContext& ui) const;
     std::vector<const game::Vehicle*> vehiclesAt(const UiContext& ui, game::Location where) const;
     void cycleVehicle(UiContext& ui, int dir, bool idleOnly);
     void cycleFleet(UiContext& ui, int dir);
@@ -160,6 +164,7 @@ private:
     std::set<game::VehicleId> replaySeen_;          // the vehicles of the log the player sees
     std::optional<game::SystemId> replayShownBefore_;
     std::map<game::VehicleId, game::Location> beforeTurn_;  // where we saw everything before this turn
+    std::map<game::VehicleId, int> beforeTurnHeadings_;     // and the headings then
     uint32_t beforeTurnFor_ = UINT32_MAX;
     uint32_t seenTurn_ = UINT32_MAX;
     double trackedAt_ = -1.0;

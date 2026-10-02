@@ -152,9 +152,10 @@ questions are what the observation sessions still have to settle.
    Q52 and spec 06 §7 Q38, Q56, Q61, Q62, Q64, Q70, Q72, Q73, Q76–Q80 and Q82 (Q63, Q71,
    Q74, Q75 and Q81 are OpenSE4 choices with no counterpart). It also found that the
    original gives no starting designs or ships (spec 01 §3.6) and checks first contact
-   only at set moments (spec 05 §3.1). The differences these leave are the rows dated
-   2026-10-01 in [PARITY_GAPS.md](PARITY_GAPS.md) and its "Client windows" list. Implement
-   from the spec text, not from any listing.
+   only at set moments (spec 05 §3.1). All of these are implemented since 2026-10-01; the
+   choices they left are spec 05 questions 57 and 58 and spec 06 §7 Q83–Q88, and the rows
+   still open are in [PARITY_GAPS.md](PARITY_GAPS.md). Implement from the spec text, not
+   from any listing.
 2. **Observation.** Done on 2026-10-01 (spec 07 session 3): the starting assets were
    confirmed, Q60 was measured under Wine, Q73 and Q77 were measured, and the computer
    players' pace and the main windows were compared with ours. Their differences are the

@@ -8,6 +8,7 @@
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/session.hpp"
 #include "datafile/datafile.hpp"
+#include "game/design.hpp"
 #include "game/economy.hpp"
 
 #include <doctest/doctest.h>
@@ -490,11 +491,18 @@ TEST_CASE("setup model: empire files keep the designs saved with them, and a new
     game::Design saved;
     saved.name = "Long Reach";
     saved.designType = "Attack Ship";
-    saved.hull = 0;
-    saved.entries = {{0, -1}, {1, data.weaponMounts.empty() ? -1 : 0}};
+    // A frigate that passes the design rules (spec 03 §4.2).
+    saved.hull = test::hullIndex(r, "Test Frigate");
+    for (const char* part : {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"})
+        saved.entries.push_back({test::componentIndex(r, part), -1});
+    REQUIRE(game::computeDesignStats(r, nullptr, saved).problems.empty());
     saved.obsolete = true;
     saved.built = 7;   // statistics are not kept
+    saved.strategy = 1;
+    saved.createdTurn = 31;
     e->designs = {saved};
+    // The combat strategies go with the empire (spec 06 §7 Q72).
+    e->strategies = {{"Hold Back", {{"Primary Movement Strategy", "Don't Get Hurt"}}}, {"Close In", {{"Primary Movement Strategy", "Optimal Firing Range"}, {"Drones Per Target", "4"}}}};
     const std::string text = setup::empireToToml(r, *e);
     auto back = setup::empireFromToml(r, text);
     REQUIRE(back.has_value());
@@ -503,14 +511,19 @@ TEST_CASE("setup model: empire files keep the designs saved with them, and a new
     const game::Design& got = back->empire.designs.front();
     CHECK(got.name == "Long Reach");
     CHECK(got.designType == "Attack Ship");
-    CHECK(got.hull == 0);
+    CHECK(got.hull == saved.hull);
     CHECK(got.entries == saved.entries);
-    CHECK(got.obsolete);
+    CHECK_FALSE(got.obsolete);   // comes back current
     CHECK(got.built == 0);
+    CHECK(got.strategy == 1);
+    CHECK(got.createdTurn == 31);
+    REQUIRE(back->empire.strategies.size() == 2);
+    CHECK(back->empire.strategies[1].name == "Close In");
+    CHECK(back->empire.strategies[1].settings == e->strategies[1].settings);
 
     // A component the data set lacks: the design is left out.
     std::string edited = text;
-    const std::string first = std::format("'{}'", data.components[0].name);
+    const std::string first = "'Test Bridge'";
     const auto pos = edited.find(first, edited.find("[[design]]"));
     REQUIRE(pos != std::string::npos);
     edited.replace(pos, first.size(), "'No Such Part'");
@@ -520,16 +533,22 @@ TEST_CASE("setup model: empire files keep the designs saved with them, and a new
     CHECK(missing->warnings.size() == 1);
     // A file of the first format, without designs, still loads.
     std::string old = setup::empireToToml(r, *e);
-    const auto fpos = old.find("format = 2");
+    const auto fpos = old.find("format = 3");
     REQUIRE(fpos != std::string::npos);
     old.replace(fpos, 10, "format = 1");
     CHECK(setup::empireFromToml(r, old).has_value());
 
-    // The new game gives the empire the design after its starting ones, under a free name.
+    // The new game: the file's designs replace the empire's, which has none
+    // of its own (spec 01 §3.6), under a free name, with their strategy among
+    // the saved strategies; a design that breaks the design rules is dropped.
     setup::NewGameSettings s = setup::defaultSettings(r, 5);
     s.options.systemCount = 12;
     REQUIRE_FALSE(s.players.empty());
-    s.players[0].designs = {saved};
+    game::Design broken = saved;
+    broken.name = "Overloaded";
+    broken.entries.assign(200, game::DesignEntry{0, -1});   // far beyond the hull's tonnage
+    s.players[0].designs = {saved, broken};
+    s.players[0].strategies = e->strategies;
     auto g = setup::buildGameSetup(r, s);
     REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
     auto game = game::createGame(r, *g);
@@ -541,6 +560,13 @@ TEST_CASE("setup model: empire files keep the designs saved with them, and a new
     CHECK(given.owner == first0.id);
     CHECK(given.entries == saved.entries);
     CHECK(given.built == 0);
+    CHECK_FALSE(given.obsolete);
+    CHECK(given.strategy == 1);
+    REQUIRE(first0.strategies.size() == 2);
+    CHECK(first0.strategies[0].name == "Hold Back");
+    // The file's valid designs are the empire's only designs.
+    REQUIRE(first0.designs.size() == 1);
+    CHECK(game->design(first0.designs.front()).name == "Long Reach");
 }
 
 TEST_CASE("setup model: the minister style of Empire Setup reaches the game and the empire file") {

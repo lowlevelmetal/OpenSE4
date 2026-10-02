@@ -27,10 +27,6 @@ int toInt(std::string_view v) {
     return out;
 }
 
-float smooth(float t) {
-    t = std::clamp(t, 0.0f, 1.0f);
-    return t * t * (3.0f - 2.0f * t);
-}
 
 // Race art that Art has no helper for: `<style>_<suffix>` with the generic fallback.
 Sprite raceCell(Art& art, std::string_view style, std::string_view suffix, int x, int y, int w, int h) {
@@ -317,6 +313,39 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
         dl->AddText(font, fs, {c.x - ts.x * 0.5f + 1, c.y + 1}, IM_COL32(0, 0, 0, 200), text.c_str());
         dl->AddText(font, fs, {c.x - ts.x * 0.5f, c.y}, col, text.c_str());
     };
+    // A square of the original's map is 36 px: its pixel distances scale with our cells.
+    const float px = v.cell / 36.0f;
+    // Where a shot ends (spec 06 §1.10.3, §7 Q77, confirmed: binary): the
+    // target's centre on a hit (a planet's: a point within its 4x4 block),
+    // 17 px short for a hit the shields took, 18 px off in x and y on a miss.
+    // The original draws the signs and the planet's point from the battle's
+    // random sequence; ours derive them from the event's place, so the battle
+    // is not touched (spec 04 §19.1).
+    auto shotEnd = [&](const game::CombatEvent* outcome) {
+        if (!hasTarget || !outcome) return to;
+        const uint32_t h = static_cast<uint32_t>(playback_.cursor()) * 2654435761u ^ (e.piece * 40503u + e.target * 9973u);
+        if (outcome->kind == Kind::Miss)
+            return ImVec2{to.x + ((h & 1) ? 18.0f : -18.0f) * px, to.y + ((h & 2) ? 18.0f : -18.0f) * px};
+        if ((outcome->flags & game::CombatEvent::kStructure) == 0) {
+            const float dx = to.x - from.x, dy = to.y - from.y, len = std::sqrt(dx * dx + dy * dy);
+            if (len <= 17.0f * px) return from;
+            return ImVec2{to.x - dx / len * 17.0f * px, to.y - dy / len * 17.0f * px};
+        }
+        if (record_.pieces.size() > e.target && record_.pieces[e.target].kind == game::CombatPiece::Kind::Planet) {
+            const float half = pieceExtent(e.target) * 0.5f;
+            const float ox = float(h % 4) + 0.5f - half, oy = float((h >> 2) % 4) + 0.5f - half;
+            return ImVec2{to.x + ox * v.cell, to.y + oy * v.cell};
+        }
+        return to;
+    };
+    // The target's own shield-hit pictures: 8 frames of 36x36 (the race's, else the generic ones).
+    auto shieldRing = [&](int frame) {
+        if (!hasTarget) return;
+        const float sz = v.cell * pieceExtent(e.target);
+        if (Sprite ring = raceCell(ui_.art, styleOf(pieces[e.target].owner), "Shields.bmp", 36 * std::clamp(frame, 0, 7), 0, 36, 36))
+            drawSprite(dl, ring, {to.x - sz * 0.5f, to.y - sz * 0.5f}, {to.x + sz * 0.5f, to.y + sz * 0.5f});
+        else dl->AddCircle(to, sz * 0.55f, IM_COL32(80, 230, 255, 220), 0, ui_.px(1.5f));
+    };
     switch (e.kind) {
         case Kind::Move:
         case Kind::Seeker: break;  // drawn as piece movement
@@ -327,63 +356,80 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
             const ruleset::Weapon* w = e.component < comps.size() ? &comps[e.component].weapon : nullptr;
             const std::string type = w ? w->displayType : std::string();
             const int index = w ? toInt(w->display) : 0;
-            if (f.part == Part::BeamErase) break;
+            const game::CombatEvent* outcome = playback_.shotOutcome(playback_.cursor());
+            const ImVec2 end = shotEnd(outcome);
+            const float bearing = std::atan2(end.x - from.x, -(end.y - from.y));
+            // A one-square target with its shields up shimmers while the shot is
+            // drawn, one picture every 8 shot frames (ours: when the shields took the hit).
+            const bool shimmer = outcome && outcome->kind == Kind::Hit && (outcome->flags & game::CombatEvent::kStructure) == 0 &&
+                                 pieceExtent(e.target) <= 1.0f;
+            if (shimmer) shieldRing((f.step / 8) % 8);
             if (type == "Beam") {
+                // Stamps of the 10x10 centre of the 20x20 beam cell, turned to
+                // the bearing, one every 6 px: drawn one by one outward, then
+                // erased one by one in the same order (§5.3).
                 // Beams and torpedoes are 1-based: cell = Weapon Display - 1, 0 = no picture (§5.2).
-                // Drawn opaque with black keyed, never faded (§5.1).
                 const Sprite beam = index > 0 ? ui_.art.cell("Pictures/Combat/Beams.bmp", index - 1, 20, 20) : Sprite{};
-                if (beam) drawSpriteAlong(dl, beam, from, to, v.cell * 0.5f, IM_COL32_WHITE);
-                else dl->AddLine(from, to, shooter, ui_.px(2.5f));
-            } else {
+                const int stamps = std::max(1, f.steps);
+                const int first = f.part == Part::BeamErase ? f.step + 1 : 0;
+                const int last = f.part == Part::BeamErase ? stamps - 1 : f.step;
+                for (int k = first; k <= last; ++k) {
+                    const float t0 = float(k + 1) / float(stamps);
+                    const ImVec2 at{from.x + (end.x - from.x) * t0, from.y + (end.y - from.y) * t0};
+                    if (beam) {
+                        Sprite centre = beam;
+                        const Vec2 uv = beam.uv.max - beam.uv.min;
+                        centre.uv = Rect{beam.uv.min + Vec2{uv.x * 0.25f, uv.y * 0.25f}, beam.uv.min + Vec2{uv.x * 0.75f, uv.y * 0.75f}};
+                        drawSpriteRotated(dl, centre, at, 10.0f * px, 10.0f * px, bearing);
+                    } else {
+                        dl->AddCircleFilled(at, 2.0f * px + 1.0f, shooter);
+                    }
+                }
+            } else if (f.part == Part::Torpedo) {
+                // A 40x40 picture of the 20x20 cell turned to the bearing, moving along the shot.
                 const Sprite shot = type == "Seeker" ? raceCell(ui_.art, styleOf(pieces[e.piece].owner), "Main.bmp", 40 + 20 * std::clamp(index, 0, 2), 0, 20, 20)
                                                      : index > 0 ? ui_.art.cell("Pictures/Combat/Torps.bmp", index - 1, 20, 20) : Sprite{};
-                const float k = f.part == Part::Torpedo ? t : smooth(t);
-                const ImVec2 p{from.x + (to.x - from.x) * k, from.y + (to.y - from.y) * k};
-                const float sz = v.cell * 0.6f;
-                if (shot) drawSpriteRotated(dl, shot, p, sz, sz, std::atan2(to.x - from.x, -(to.y - from.y)));
-                else dl->AddCircleFilled(p, sz * 0.25f, shooter);
+                const float k = float(f.step + 1) / float(std::max(1, f.steps));
+                const ImVec2 at{from.x + (end.x - from.x) * k, from.y + (end.y - from.y) * k};
+                if (shot) drawSpriteRotated(dl, shot, at, 40.0f * px, 40.0f * px, bearing);
+                else dl->AddCircleFilled(at, 5.0f * px, shooter);
             }
             break;
         }
         case Kind::Hit: {
-            if (!hasTarget || f.part != Part::Explosion) break;   // wiped, then the pause after the hit
+            if (!hasTarget) break;
+            if (f.part == Part::Shield) {
+                shieldRing(0);   // a single shield picture; the next redraw removes it
+                break;
+            }
+            if (f.part != Part::Explosion) break;   // wiped, then the pause after a seeker's impact
             if (!playback_.followsFire(playback_.cursor())) dl->AddLine(from, to, shooter, ui_.px(1.5f));
-            const int row = e.amount <= 5 ? 1 : e.amount <= 20 ? 2 : e.amount <= 60 ? 3 : 4;
             const int frame = std::clamp(f.step, 0, 7);
-            const float sz = v.cell * 1.2f;
-            if (Sprite boom = ui_.art.cell("Pictures/Combat/Explosions.bmp", row * 8 + frame, 36, 36))
-                drawSprite(dl, boom, {to.x - sz * 0.5f, to.y - sz * 0.5f}, {to.x + sz * 0.5f, to.y + sz * 0.5f});
-            else dl->AddCircleFilled(to, sz * 0.3f * (1 - t * 0.5f), IM_COL32(255, 160, 60, 200));
+            // A loss uses the 72x72 explosion of the lost piece's race (every ship
+            // and base loss observed); other damaging hits the 36x36 pictures.
+            const bool loss = (e.flags & game::CombatEvent::kDestroyed) != 0 && record_.pieces.size() > e.target &&
+                              record_.pieces[e.target].kind == game::CombatPiece::Kind::Vehicle;
+            if (loss) {
+                Sprite boom = raceCell(ui_.art, styleOf(pieces[e.target].owner), "BigExplosion.bmp", frame * 72, 0, 72, 72);
+                const float sz = 72.0f * px;
+                if (boom) drawSprite(dl, boom, {to.x - sz * 0.5f, to.y - sz * 0.5f}, {to.x + sz * 0.5f, to.y + sz * 0.5f});
+                else dl->AddCircleFilled(to, sz * 0.4f * t, IM_COL32(255, 200, 80, int(255 * (1 - t))));
+            } else {
+                const int row = e.amount <= 5 ? 1 : e.amount <= 20 ? 2 : e.amount <= 60 ? 3 : 4;
+                const float sz = 36.0f * px;
+                if (Sprite boom = ui_.art.cell("Pictures/Combat/Explosions.bmp", row * 8 + frame, 36, 36))
+                    drawSprite(dl, boom, {to.x - sz * 0.5f, to.y - sz * 0.5f}, {to.x + sz * 0.5f, to.y + sz * 0.5f});
+                else dl->AddCircleFilled(to, sz * 0.3f * (1 - t * 0.5f), IM_COL32(255, 160, 60, 200));
+            }
             label({to.x, to.y - v.cell * (0.6f + 0.5f * t)}, IM_COL32(255, 110, 90, 255), std::format("-{}", e.amount));
             break;
         }
+        // A miss adds nothing to its shot; a loss, a capture, a launch or a
+        // landing is only redrawn (spec 06 §1.10.3, §7 Q77).
         case Kind::Miss:
-            if (!hasTarget) break;
-            if (!playback_.followsFire(playback_.cursor())) dl->AddLine(from, to, shooter, ui_.px(1.0f));
-            label({to.x + v.cell * 0.4f, to.y - v.cell * (0.6f + 0.3f * t)}, IM_COL32(190, 195, 210, 230), "miss");
-            break;
-        case Kind::Destroyed: {
-            if (f.part != Part::Explosion) break;
-            const int frame = std::clamp(f.step, 0, 7);
-            Sprite boom = raceCell(ui_.art, styleOf(pieces[e.piece].owner), "BigExplosion.bmp", frame * 72, 0, 72, 72);
-            if (!boom) boom = ui_.art.cell("Pictures/Combat/BigExplosions.bmp", frame, 72, 72);
-            const float sz = v.cell * 2.2f;
-            if (boom) drawSprite(dl, boom, {from.x - sz * 0.5f, from.y - sz * 0.5f}, {from.x + sz * 0.5f, from.y + sz * 0.5f});
-            else dl->AddCircleFilled(from, sz * 0.4f * t, IM_COL32(255, 200, 80, int(255 * (1 - t))));
-            break;
-        }
-        case Kind::Captured: {
-            const ImU32 col = hasTarget && e.target != e.piece ? empireColor(s_, pieces[e.target].owner) : IM_COL32(255, 220, 80, 255);
-            dl->AddCircle(from, v.cell * (0.6f + 0.4f * t), withAlpha(col, 1 - t * 0.5f), 0, ui_.px(2.5f));
-            label({from.x, from.y - v.cell * 1.1f}, IM_COL32(255, 220, 80, 255), "Captured");
-            break;
-        }
-        case Kind::Launch: {
-            const float half = pieceExtent(e.piece) * 0.5f;
-            const ImVec2 c = v.at(float(e.x) + half, float(e.y) + half);
-            dl->AddCircle(c, v.cell * (0.2f + 0.6f * t), IM_COL32(200, 230, 255, int(255 * (1 - t))), 0, ui_.px(2));
-            break;
-        }
+        case Kind::Destroyed:
+        case Kind::Captured:
+        case Kind::Launch: break;
     }
 }
 
@@ -429,14 +475,18 @@ ImU32 sideNumberColor(int side) {
     return dark ? IM_COL32_WHITE : IM_COL32_BLACK;
 }
 
+// A plain filled box with no outline, the number centred both ways in the
+// text font the window is drawing with (spec 06 §7 Q82, confirmed: binary).
+// OpenSE4 keeps the number within the box's height (inferred).
 void drawSideBox(UiContext& ui, ImDrawList* dl, ImVec2 min, ImVec2 max, int side) {
+    (void)ui;
     dl->AddRectFilled(min, max, sideBoxColor(side));
-    dl->AddRect(min, max, IM_COL32(0, 0, 0, 255));
     const std::string number = std::to_string(side);
-    ImFont* font = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
-    const float size = std::min(max.y - min.y - 2.0f, std::max(ui.px(11), 8.0f));
+    ImFont* font = ImGui::GetFont();
+    const float size = std::min(ImGui::GetFontSize(), max.y - min.y);
     const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, number.c_str());
-    dl->AddText(font, size, {(min.x + max.x - ts.x) * 0.5f, (min.y + max.y - ts.y) * 0.5f}, sideNumberColor(side), number.c_str());
+    dl->AddText(font, size, {std::floor((min.x + max.x - ts.x) * 0.5f), std::floor((min.y + max.y - ts.y) * 0.5f)}, sideNumberColor(side),
+                number.c_str());
 }
 
 void sideBox(UiContext& ui, int side, Vec2 size) {
@@ -464,8 +514,17 @@ CombatPace combatPace(const game::Rules& r, bool fast, bool animateMoves) {
     pace.animateMoves = animateMoves;
     const auto& comps = r.data().components;
     pace.beams.resize(comps.size(), 0);
-    for (size_t k = 0; k < comps.size(); ++k) pace.beams[k] = comps[k].weapon.displayType == "Beam" ? 1 : 0;
+    pace.seekers.resize(comps.size(), 0);
+    for (size_t k = 0; k < comps.size(); ++k) {
+        pace.beams[k] = comps[k].weapon.displayType == "Beam" ? 1 : 0;
+        pace.seekers[k] = comps[k].isWeapon() && comps[k].weapon.kind == ruleset::WeaponKind::Seeking ? 1 : 0;
+    }
     return pace;
+}
+
+bool squareInView(const CombatView& v, ImVec2 mapMin, ImVec2 mapMax, int x, int y) {
+    const ImVec2 a = v.at(float(x), float(y)), b = v.at(float(x + 1), float(y + 1));
+    return a.x >= mapMin.x - 0.5f && a.y >= mapMin.y - 0.5f && b.x <= mapMax.x + 0.5f && b.y <= mapMax.y + 0.5f;
 }
 
 void CombatMapPainter::sounds(size_t from, size_t to) const {

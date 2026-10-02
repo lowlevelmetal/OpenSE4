@@ -87,8 +87,10 @@ bool hurt(TurnContext& ctx, VehicleId id, int amount, std::string_view cause);
 // treaty), with no member of its own (spec 03 §12, confirmed: binary).
 bool minefieldActs(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> group);
 // A group with a sweeper entering one of its owner's tagged minefields where
-// a minefield acts: its cloaked members decloak first (spec 03 §12).
-void decloakSweepers(const Rules& r, GameState& s, Location where, std::span<const VehicleId> group);
+// a minefield acts: its cloaked members decloak first (spec 03 §12). True
+// when a member decloaked (the caller runs the first-contact check, spec 05
+// §3.1).
+bool decloakSweepers(const Rules& r, GameState& s, Location where, std::span<const VehicleId> group);
 
 // ---- Colonization (spec 03 §8) --------------------------------------------------------------------
 // `colonizer` founds a colony on `planet`, which it has checked it may: the

@@ -292,13 +292,13 @@ TEST_CASE("colony cloaking: first contact needs the cloak-aware test; a simultan
     // Spec 01 §6.9, §14 Q44 (confirmed: binary): the Decloak's contact check
     // runs on the player's machine, and the host takes over only the player's
     // side (its contact and its "First Contact" entry); the other side waits
-    // for the host's next first-contact check.
+    // for the host's next first-contact check in that system.
     CloakWorld cw;  // simultaneous
     const Rules& r = cw.w.rules();
     REQUIRE(cw.cloak().ok);
     TurnContext ctx{r, cw.w.s, {}, {}, {}};
     sight::updateKnowledge(r, cw.w.s);
-    diplomacy::updateContacts(ctx);
+    diplomacy::firstContactIn(ctx, cw.a);
     // B sees A's colony, A does not see B's: no mutual detection.
     CHECK_FALSE(cw.w.s.empire(kA).relation(kB).contact);
     REQUIRE(cw.cloak(false).ok);
@@ -306,8 +306,8 @@ TEST_CASE("colony cloaking: first contact needs the cloak-aware test; a simultan
     CHECK_FALSE(cw.w.s.empire(kA).relation(kB).contact);
     CHECK(logged(cw.w, kB, "First Contact") == 1);
     CHECK(logged(cw.w, kA, "First Contact") == 0);
-    // The next full check completes the other side, and B meets A only once.
-    diplomacy::updateContacts(ctx);
+    // The next check in that system completes the other side, and B meets A only once.
+    diplomacy::firstContactIn(ctx, cw.a);
     CHECK(cw.w.s.empire(kA).relation(kB).contact);
     CHECK(logged(cw.w, kA, "First Contact") == 1);
     CHECK(logged(cw.w, kB, "First Contact") == 1);

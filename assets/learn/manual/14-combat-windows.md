@@ -19,7 +19,7 @@ happens until the battle is over and its window closed: the battle reports, the 
 the rest of the turn come after.
 
 - In a game set up with **Strategic combat only**, the Strategic Combat window opens the same way, with `Begin` and `Close` instead of the question.
-- In simultaneous games you read about battles in the Log, and watch them with `Combat Replay`; when the game's settings ask for it, each battle with a human side is shown in the Strategic Combat window as it breaks out.
+- In simultaneous games you read about battles in the Log, and watch them with `Combat Replay`; when the game's settings ask for it, every battle on this computer is shown in the Strategic Combat window as it breaks out, battles between computer players included, without a notice first.
 - In network and play-by-e-mail games the host fights every battle at once; you watch the battles you were in (by e-mail, those your own orders started) afterwards.
 
 ## Tactical combat
@@ -43,7 +43,7 @@ In your phase:
 - **Left-click** one of your pieces to select it.
 - **Left-click an empty square** to move the selected piece there. The pointer shows the path.
 - **Left-click an enemy** to fire every ticked weapon of the selected piece at it. The pointer shows whether you can fire, and why not.
-- **Right-click** any piece, or click the name of the selected piece, for its **Combat Piece Report**: movement, shields, damage, supplies, the number of targets it can engage, its combat group and formation.
+- **Right-click** any piece, or click the name of the selected piece, for its **Combat Piece Report**: movement, shields, damage, supplies, the number of targets it can engage, its combat group and formation. Its tabs list a ship's components, a planet's facilities, the cargo and the abilities: a ship's come from its hull and every component of its design, even those shot away; a planet shows only its own, not those of its facilities.
 - Click the map, or press `Space`, to skip an animation.
 
 **The current piece panel** shows the selected piece's shields, damage, movement and supplies,
@@ -78,6 +78,14 @@ sound and music, *Fast Tactical Combat*, and display switches: group identifiers
 rectangle on the map, centring the map on the current ship, the chance to hit of each weapon when
 you point at an enemy, and the grid. In the simulator it also has `Stop Combat`. *Music On* is
 lit only while music is on and your copy's settings allow it ([Settings](settings)).
+
+The battle is drawn at the original's pace: a ship turns before it moves and then slides across
+its square in about half a second; beams are drawn and wiped out stamp by stamp and torpedoes fly
+toward their targets; a hit that gets through the shields explodes for about a second, while one
+the shields take whole only flashes the target's shield ring. A miss ends half a square off the
+target. *Fast Tactical Combat* keeps every picture but removes the waits. In the Strategic Combat
+window there is no animation at all: the battle runs as fast as your computer allows, several
+combat turns between two pictures.
 
 > Look at the chance to hit before you click: a 5 % shot wastes supplies and a reload.
 
@@ -115,10 +123,10 @@ game: no losses, no experience. Open it with `Simulator` in the [Designs](window
 The battle is fought between ten imaginary races, **Race 1** to **Race 10**. You command Race 1;
 the computer plays the others (change this with `Computer Control`).
 
-1. In **Owner For Item** at the bottom right, choose the race that new items join.
-2. Click an entry in the **Items** list at the top right to add it: your designs, the enemy designs you have seen (with their empire's name), and the planets of your home system. Each click adds one ship, or one unit to that race's group of its kind. Right-click an item for its report.
-3. The **Combat Vehicles** list on the left shows everything in the battle, one row per ship, unit group or planet, with its race. Click a row to remove it.
-4. `Fleets For Plr` puts a race's ships into one fleet, with a formation and a strategy. `Change Cargo` loads fighters, troops or platforms into a ship or planet. `No Obsolete` hides your obsolete designs; `Strategies` opens the strategy editor.
+1. In **Owner for item** at the bottom right, choose the race that new items join. Each race is shown as a box in its own colour with its number.
+2. Click an entry in the **Items to choose** list at the top right to add it: your designs, the enemy designs you have seen (with their empire's name), and the planets of your home system. Each click adds one ship, or one unit to that race's group of its kind. Right-click an item for its report.
+3. The **Combat Vehicles** list on the left shows everything in the battle, one row per ship, unit group or planet, with its race's numbered box, what it carries (or a group's units) and its fleet. Click a row to remove it.
+4. `Fleets For Plr` opens Fleet Transfer for the chosen race's ships, to form fleets with a formation and a strategy (`Existing Fleets` there shows your real fleets, for viewing only). `Change Cargo` opens Transfer Cargo with everything in the battle on the left and a **Storehouse** on the right: a copy of your first colony stocked with 1,000 of every unit design you own or have seen and 10,000M people. Click cargo to move it between a vehicle or planet and the Storehouse; people you load onto a ship stay aboard in the battle. `No Obsolete` hides your obsolete designs; `Strategies` opens the strategy editor.
 5. Choose **Tactical** or **Strategic** and press `Begin`.
 
 With **Tactical**, the simulator closes while you fight in the Tactical Combat window and comes

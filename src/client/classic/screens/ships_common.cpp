@@ -133,6 +133,18 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
     }
 }
 
+std::vector<std::string> orderListLines(const UiContext& ui, OrderOwner owner, game::DesignId design) {
+    const auto* orders = ordersOf(ui.state(), owner);
+    const bool repeat = repeatOf(ui.state(), owner);
+    if (!orders || orders->empty()) return {repeat ? "REPEAT ORDERS" : "None"};
+    std::vector<std::string> lines;
+    for (size_t i = 0; i < orders->size(); ++i) {
+        const std::string d = describeOrder(ui, (*orders)[i], design);
+        lines.push_back(repeat && i == 0 ? "(" + d + ")" : d);
+    }
+    return lines;
+}
+
 std::string cargoSummary(const UiContext& ui, const game::Cargo& c) {
     const game::GameState& s = ui.state();
     std::string out;
@@ -270,10 +282,10 @@ RowClick row(UiContext& ui, int id, const Sprite& picture, std::string_view titl
     return out;
 }
 
-bool stepButtons(Dialog& d, Step& step) {
+bool stepButtons(Dialog& d, Step& step, bool hundred) {
     bool changed = false;
-    for (Step s : {Step::One, Step::Five, Step::Ten, Step::All})
-        if (d.tab(stepLabel(s), step == s)) {
+    for (Step s : {Step::One, Step::Five, Step::Ten, Step::Hundred, Step::All})
+        if ((hundred || s != Step::Hundred) && d.tab(stepLabel(s), step == s)) {
             changed = step != s;
             step = s;
         }
