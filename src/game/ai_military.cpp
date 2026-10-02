@@ -1333,8 +1333,6 @@ void planMinesSatellitesDrones(Planner& p) {
 
 namespace {
 
-// Spec 05 §7.5 "Repair" (confirmed: binary): only a vehicle with a destroyed
-// part, and then by design type.
 // The empire's space yards in visiting order (spec 05 §7.5 Repair,
 // confirmed: binary): an uncloaked colony with a Space Yard facility or an
 // uncloaked ship with a working yard, by system number, then in the game's
@@ -1358,6 +1356,8 @@ std::vector<Yard> ownYards(const Planner& p) {
     return yards;
 }
 
+// Spec 05 §7.5 "Repair" (confirmed: binary): only a vehicle with a destroyed
+// part, and then by design type.
 bool needsRepair(Planner& p, const Vehicle& v) {
     const int destroyed = damagedComponents(p.r, p.st, v);
     if (destroyed == 0) return false;
