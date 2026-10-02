@@ -160,6 +160,8 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->front_ = makeLearnFrontScreen("manual:" + *options.manual);
     } else if (auto front = frontScreenByName(options.openWindow)) {
         mode->front_ = std::move(front);  // automation: --open=<front-end screen>
+        // --select: once the game joined or started there has such a vehicle.
+        mode->pendingSelect_ = options.select;
     } else if (options.skipIntro) {
         std::string race = options.race;
         if (race.empty())
@@ -429,6 +431,12 @@ bool ClassicMode::update(const FrameState& fs) {
     return keepRunning;
 }
 
+void ClassicMode::background() {
+    // Minimized: the game's network traffic goes on (new states, the host's
+    // own clients); nothing is drawn.
+    if (session_) session_->poll();
+}
+
 bool ClassicMode::updateFrame(const FrameState& fs) {
     art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
 
@@ -475,6 +483,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     ui.facts = {};
     ui.lessonRunning = lesson_ != nullptr;
     session_->poll();
+    if (!pendingSelect_.empty() && !selectForAutomation(pendingSelect_)) pendingSelect_.clear();
 
     // Hotseat: when the turn passes to another human, hide the map until that
     // player starts their turn (with their password, if they set one).

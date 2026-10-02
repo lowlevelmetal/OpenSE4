@@ -64,6 +64,10 @@ public:
     virtual bool update(const FrameState& fs) = 0;
     // Draws the scene with the 2D renderer; the ImGui overlay is drawn afterwards.
     virtual void render(gfx::Renderer2D& renderer, const FrameState& fs) = 0;
+    // Called instead of update() while the window is minimized (no frames are
+    // drawn then): what must go on regardless, such as a network game's
+    // traffic (a host drops a client that sends nothing for a minute).
+    virtual void background() {}
     virtual Color clearColor() const { return Color::hex(0x05070d); }
 };
 

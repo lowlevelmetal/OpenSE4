@@ -58,6 +58,7 @@ public:
     ~ClassicMode() override;
 
     bool update(const FrameState& fs) override;
+    void background() override;
     void render(gfx::Renderer2D& renderer, const FrameState& fs) override;
     Color clearColor() const override { return Color::hex(0x000000); }
 
@@ -105,6 +106,7 @@ private:
     std::unique_ptr<classic::FrontScreen> front_;
     std::optional<classic::FrontId> nextFront_;
     std::string frontError_;
+    std::string pendingSelect_;   // --select after a front-end screen: tried every frame until it succeeds
     bool quit_ = false;
     std::optional<std::pair<learn::LessonKind, std::string>> pendingLesson_;   // chosen in the front end
 

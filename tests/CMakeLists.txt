@@ -63,6 +63,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_line.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_replay.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/net_transport.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/order_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/pbem_play.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/pointer_rules.cpp

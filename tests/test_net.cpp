@@ -7,6 +7,10 @@
 
 #include "engine_fixture.hpp"
 
+#include "client/classic/movement_line.hpp"
+#include "client/classic/net_transport.hpp"
+#include "client/classic/session.hpp"
+#include "game/design.hpp"
 #include "game/query.hpp"
 #include "game/redact.hpp"
 #include "game/serialize.hpp"
@@ -27,6 +31,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <thread>
 
@@ -1323,4 +1328,86 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
 
     std::error_code ec;
     fs::remove_all(dir, ec);
+}
+
+// ---- The client's own view ----------------------------------------------------------------------------------
+
+TEST_CASE("net: a network client shows the movement line of its own new orders at once") {
+    // A simultaneous network game. The client applies its own commands to its
+    // copy of the game, so the movement line of the open report (spec 06 §2.4)
+    // shows a new Move To at once; End Turn sends the orders, and the line
+    // then follows the host's state.
+    net::HostSession host(engineRules(), hostConfig(2));
+    REQUIRE(host.start().has_value());
+    auto alice = std::make_unique<net::ClientSession>(clientConfig(host, "alice"));
+    net::ClientSession bob(clientConfig(host, "bob"));
+    net::ClientSession* a = alice.get();
+    Loop loop(host, {a, &bob});
+    REQUIRE(a->connect().has_value());
+    REQUIRE(bob.connect().has_value());
+    REQUIRE(loop.until([&] { return a->phase() == net::ClientPhase::Lobby && bob.phase() == net::ClientPhase::Lobby; }));
+    a->setReady(true);
+    bob.setReady(true);
+    REQUIRE(loop.until([&] {
+        const auto& l = host.lobby();
+        return l.slots.size() == 2 && l.slots[0].ready && l.slots[1].ready;
+    }));
+    REQUIRE(host.startGame().has_value());
+    REQUIRE(loop.until([&] { return a->state() && bob.state(); }));
+
+    // From here Alice's client belongs to her session's transport.
+    Loop rest(host, {&bob});
+    const std::shared_ptr<const game::Rules> rules(&engineRules(), [](const game::Rules*) {});
+    client::classic::ClassicSession session(rules, *a->state(), a->empire(), client::classic::SessionKind::NetworkClient);
+    session.setTransport(std::make_unique<client::classic::ClientTransport>(std::move(alice)));
+
+    // An idle ship of hers, and a square three steps along its row.
+    const game::GameState& s = session.state();
+    const game::Vehicle* ship = nullptr;
+    for (const game::Vehicle& v : s.vehicles)
+        if (v.owner == session.player() && v.orders.empty() && !v.fleet.valid() && game::vehicleMaxMovement(*rules, s, v) > 0 &&
+            game::vehicleType(*rules, s, v) == ruleset::VehicleType::Ship) {
+            ship = &v;
+            break;
+        }
+    REQUIRE(ship);
+    const game::VehicleId id = ship->id;
+    const game::Location start = ship->location;
+    const int dx = start.sector.x + 3 < game::kSystemSize ? 3 : -3;
+    const game::Location target{start.system, game::Sector{start.sector.x + dx, start.sector.y}};
+    game::cmd::SetOrders order;
+    order.vehicle = id;
+    order.orders = {game::Order{game::OrderKind::MoveTo, target}};
+    REQUIRE(session.issue(order).ok);
+
+    using client::classic::movementLineRoute;
+    using client::classic::movementLineSubject;
+    const auto subject = movementLineSubject(*rules, session.state(), session.player(), id, std::nullopt);
+    REQUIRE(subject.has_value());
+    const game::movement::PlannedRoute route = movementLineRoute(*rules, session.state(), *subject);
+    REQUIRE(route.points.size() == 4);
+    CHECK(route.points.front() == start);
+    CHECK(route.points.back() == target);
+
+    // End Turn: the orders go to the host, which processes the turn with Bob's.
+    session.endTurn();
+    CHECK(session.waitingForOthers());
+    REQUIRE(bob.submitOrders(game::EmpireOrders{bob.empire(), bob.state()->turn, {}}).has_value());
+    REQUIRE(rest.until([&] {
+        session.poll();
+        return session.state().turn == 1;
+    }));
+    const game::Vehicle* moved = session.state().vehicle(id);
+    REQUIRE(moved);
+    CHECK(moved->location != start);
+    if (moved->orders.empty()) {
+        CHECK(moved->location == target);
+    } else {
+        // Still under way: the line starts where the host's turn left the ship.
+        const auto still = movementLineSubject(*rules, session.state(), session.player(), id, std::nullopt);
+        REQUIRE(still.has_value());
+        const game::movement::PlannedRoute rest_ = movementLineRoute(*rules, session.state(), *still);
+        CHECK(rest_.points.front() == moved->location);
+        CHECK(rest_.points.back() == target);
+    }
 }
