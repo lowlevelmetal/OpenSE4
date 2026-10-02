@@ -18,6 +18,7 @@
 // Cancel discards the setup.
 
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/screens/combat_map.hpp"
@@ -34,6 +35,8 @@
 #include <format>
 #include <map>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -169,6 +172,9 @@ public:
         ui.tagTab("tactical", tactical_);
         if (d.tab("Strategic", !tactical_)) tactical_ = false;
         ui.tagTab("strategic", !tactical_);
+        // Four gaps, then the other buttons from the 7th slot, a gap, and Begin in
+        // the 13th (observed, spec 07 session 3).
+        for (int gap = 0; gap < 4; ++gap) d.spacer();
         // No Obsolete: kept with the empire; hides only the player's own obsolete designs.
         if (d.check("No Obsolete", ui.options().simulatorNoObsolete)) {
             game::InterfaceOptions o = ui.options();
@@ -180,6 +186,7 @@ public:
         if (d.button("Computer Control")) ImGui::OpenPopup("Empires Under Computer Control##sim");
         if (d.button("Fleets For Plr")) openSandbox(ui, false);
         if (d.button("Change Cargo")) openSandbox(ui, true);
+        d.spacer();
         const bool beginClicked = d.button("Begin");
         ui.tagItem("combat-simulator:begin");
         if (beginClicked) {
@@ -223,7 +230,9 @@ private:
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{17, 58}));
         ImGui::TextColored(kLabelBlue, "Combat Vehicles");
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{17, 75}));
-        ImGui::BeginChild("##vehicles", ui.size({295, 370}), ImGuiChildFlags_Borders);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        beginList(ui, "##vehicles", ui.size({295, 370}), 36);
+        ImGui::PopStyleVar();
         const std::vector<SimulatorRow> rows = simulatorRows(ui.rules(), s, setup_);
         std::optional<size_t> remove;
         ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
@@ -254,7 +263,7 @@ private:
             }
             ImGui::PopID();
         }
-        ImGui::EndChild();
+        endList(ui);
         ui.tagItem("combat-simulator:vehicles");
         hint(ui, o + Vec2{17, 447}, 295, "(click combat vehicle to remove it)");
         if (remove) {
@@ -283,7 +292,9 @@ private:
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 58}));
         ImGui::TextColored(kLabelBlue, "Items to choose");
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 75}));
-        ImGui::BeginChild("##items", ui.size({250, 230}), ImGuiChildFlags_Borders);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        beginList(ui, "##items", ui.size({250, 230}), 24);
+        ImGui::PopStyleVar();
         const bool noObsolete = ui.options().simulatorNoObsolete;
         auto row = [&](const std::string& id, const Sprite& pic, const std::string& name) -> int {
             ImGui::PushID(id.c_str());
@@ -296,23 +307,33 @@ private:
             ImGui::PopID();
             return clicked ? 1 : right ? 2 : 0;
         };
+        // Designs and home-system objects together, in alphabetical order
+        // (observed, spec 07 session 3; letter case ignored, inferred).
+        struct Entry {
+            std::string name;
+            game::DesignId design;
+            game::ObjectId object;
+        };
+        std::vector<Entry> entries;
         for (game::DesignId id : game::combat::simulatorDesigns(ui.rules(), s, me, false)) {
             const game::Design& d = s.design(id);
             if (noObsolete && d.owner == me && d.obsolete) continue;
-            const std::string name = d.owner == me || !d.owner.valid() ? d.name : std::format("{} ({})", d.name, s.empire(d.owner).name);
-            const int click = row(std::format("d{}", id.value), designSprite(ui, id), name);
-            if (click == 1) add(ui, SimulatorItem{SimulatorItem::Kind::Design, id, {}, current_});
-            if (click == 2) {
-                designReport_.open(id);
+            entries.push_back({d.owner == me || !d.owner.valid() ? d.name : std::format("{} ({})", d.name, s.empire(d.owner).name), id, {}});
+        }
+        for (game::ObjectId obj : game::combat::simulatorPlanets(s, me)) entries.push_back({s.galaxy.object(obj).name, {}, obj});
+        std::stable_sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) { return compareNames(a.name, b.name) < 0; });
+        for (const Entry& e : entries) {
+            if (e.design.valid()) {
+                const int click = row(std::format("d{}", e.design.value), designSprite(ui, e.design), e.name);
+                if (click == 1) add(ui, SimulatorItem{SimulatorItem::Kind::Design, e.design, {}, current_});
+                if (click == 2) designReport_.open(e.design);
+            } else {
+                const int click = row(std::format("o{}", e.object.value), objectSprite(ui, s.galaxy.object(e.object)), e.name);
+                if (click == 1) add(ui, SimulatorItem{SimulatorItem::Kind::Planet, {}, e.object, current_});
+                if (click == 2) report_.openPlanet(e.object);
             }
         }
-        for (game::ObjectId obj : game::combat::simulatorPlanets(s, me)) {
-            const game::SpaceObject& so = s.galaxy.object(obj);
-            const int click = row(std::format("o{}", obj.value), objectSprite(ui, so), so.name);
-            if (click == 1) add(ui, SimulatorItem{SimulatorItem::Kind::Planet, {}, obj, current_});
-            if (click == 2) report_.openPlanet(obj);
-        }
-        ImGui::EndChild();
+        endList(ui);
         ui.tagItem("combat-simulator:items");
         hint(ui, o + Vec2{322, 307}, 250, "(click item to add to vehicles)");
     }
@@ -325,7 +346,9 @@ private:
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 308}));
         ImGui::TextColored(kLabelBlue, "Owner for item");
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 325}));
-        ImGui::BeginChild("##owners", ui.size({250, 120}), ImGuiChildFlags_Borders);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        beginList(ui, "##owners", ui.size({250, 120}), 20);
+        ImGui::PopStyleVar();
         const ImVec2 top = ImGui::GetCursorScreenPos();
         for (int k = 0; k < int(setup_.sides.size()); ++k) {
             ImGui::PushID(k);
@@ -338,7 +361,7 @@ private:
         }
         ImGui::SetCursorScreenPos({top.x, top.y + ui.px(20) * float(setup_.sides.size())});
         ImGui::Dummy(ImVec2(1, 1));
-        ImGui::EndChild();
+        endList(ui);
         ui.tagItem("combat-simulator:owners");
     }
 

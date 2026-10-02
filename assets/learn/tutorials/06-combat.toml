@@ -25,9 +25,9 @@ manual = "combat#when-battles-happen"
 [[step]]
 title = "Open the simulator"
 text = """
-Open the **Designs** window (`F3`). Its list shows each design's type after its hull: note the
-names of your **Attack Ship** and your **Defense Base**, which your Design minister made at the
-start. Then press **Simulator**.
+Open the **Designs** window (`F3`). Its list groups your designs under their design types: note
+the names of your **Attack Ship** and your **Defense Base**, which your Design minister made at
+the start. Then press **Simulator**.
 """
 highlight = ["command:designs", "designs:simulator"]
 done = { window = "combat-simulator" }
@@ -39,9 +39,9 @@ text = """
 The simulator fights between ten imaginary races. **Race 1** is yours to command; the computer
 plays the others.
 
-1. In **Owner For Item** at the bottom right, choose **Race 1**. Then click your **Attack Ship**
-   design in the **Items** list twice: two attack ships join your side, one row each in
-   **Combat Vehicles** on the left.
+1. In **Owner for item** at the bottom right, choose **Race 1**. Then click your **Attack Ship**
+   design in **Items to choose** (in alphabetical order) twice: two attack ships join your side,
+   one row each in **Combat Vehicles** on the left.
 2. Choose **Race 2** and click your **Defense Base** design, to give the other side something to
    defend.
 
