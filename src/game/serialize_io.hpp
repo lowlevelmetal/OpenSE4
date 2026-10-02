@@ -284,6 +284,7 @@ void fields(Ar& ar, T&... v) {
 template <class Ar, class... T>
 void unsaved(Ar&, T&... v) {
     if constexpr (Ar::kReading) ((v = T{}), ...);
+    else ((void)v, ...);   // writing and hashing skip them (MSVC 2022 warns C4100 otherwise)
 }
 
 // ---- Rules data held in the state ----------------------------------------------------------
