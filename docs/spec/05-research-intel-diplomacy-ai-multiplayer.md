@@ -3567,6 +3567,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     With 1 and 2 our computers are in Defend (Short Term) 48 % of all turns and 70 % of
     turns 51–100, and in Infrastructure 11 % and 8 %: about half of the gap in Defend (Short
     Term) and a quarter of the gap in Infrastructure. The rest is questions 61–63.
+
+    **After the rules** (2026-10-02, spec 07 "Pace after the movement rules"; all four,
+    with the choices of question 64): on the 24 seeds our computers are in Defend (Short
+    Term) 51 % of all turns and 72 % of turns 51–100, in Infrastructure 8 % and 8 %, and
+    69–79 % of their attack ships are in fleets (the original's 74–78 %). On 120 seeds the
+    shares did not move (50 % and 72 % before and after): the one-turn orders and the
+    pursuit take about 2 points off Defend (Short Term), and the explorers, which take ships
+    whose first order is a Seek, put them back. The 24 seeds lie 3–4 points above our
+    long-run share, so the gap to the original's three games is about 4 points over all
+    turns and 9 over turns 51–100, and it sits in the hostile colonies at war that our
+    territories keep listing (question 63).
 54. **What enters the enemy-in-territory list** (§7.2 "Lists built each turn"): **Answer**
     (confirmed: binary), now in §7.2:
     - ships and unit groups other than mine fields: only those the evaluating empire
