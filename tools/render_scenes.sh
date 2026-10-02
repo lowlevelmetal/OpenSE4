@@ -41,7 +41,8 @@ render() {
         shift
         "${program[@]}" "${common[@]}" "$@" "--screenshot=$shot_prefix$out/$name.png" > "$out/$name.log" 2>&1 || echo "failed: $name"
     }
-    local game=(--quick-start=Terran --turns=2 --turn-style=simultaneous)
+    # A new game starts without ships (spec 01 §3.6): by turn 8 the first ones are under way.
+    local game=(--quick-start=Terran --turns=8 --turn-style=simultaneous)
     shot main1024 "${game[@]}" --select=moving --open=none --layout=1024x768
     shot main800 "${game[@]}" --select=moving --open=none --layout=800x600
     shot main800-small "${game[@]}" --select=moving --open=none --layout=800x600 --size=1000x750
