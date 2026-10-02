@@ -337,20 +337,27 @@ the real game is never changed.
 Players on Linux and Windows play one game together, so both builds must compute the
 same game and draw the same picture. The rules below keep it that way. Everything here
 was checked on 2026-10-01: the Linux build (GCC), the Windows build (MinGW-w64) under
-Wine, and a Clang 21 + libc++ build of the tests.
+Wine, and a Clang 21 + libc++ build of the tests. CI builds and tests every push with
+GCC, Clang, Apple Clang (macOS on ARM, libc++), MSVC (Visual Studio 2022 and 2026) and
+MinGW-w64.
 
 - **Golden checksums.** `tests/test_determinism.cpp` plays a simultaneous and a
   turn-based game of four computer players for 100 turns (battles, frequent events,
   intelligence, diplomacy) and fights ten varied battles with a ground combat. It
   compares the state checksums with constants, and on a mismatch names the first turn
-  and the part of the state that differs. CI runs it with GCC, Clang, MSVC and
-  MinGW-w64. After a deliberate rules change, print the new values with
+  and the part of the state that differs. CI runs it with every compiler above.
+  After a deliberate rules change, print the new values with
   `OPENSE4_PRINT_GOLDEN=1 opense4_tests -tc="determinism*" -s`. With the player's own
   data, the same PBEM game played for 15 turns by the Linux and the Windows
   `opense4-server` gave identical states.
 - **Engine code.** It follows the rules of the section above. Serialized and hashed
-  values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`: the Windows builds
-  reject `long` and `wchar_t`), and little-endian 64-bit targets are asserted.
+  values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`, which also takes
+  `size_t`, 64 bits everywhere: the Windows and macOS builds reject `long` and
+  `wchar_t`), and little-endian 64-bit targets are asserted. `xmath::Ext` is plain
+  integer code with no path of its own for any compiler. `test_xmath.cpp` checks it
+  against exact arithmetic in its own multi-word integers with every compiler, and
+  against the x87 itself on x86 with GCC or Clang; golden checksums of its results
+  tie the compilers to those x87 runs.
   Character classes are ASCII-only, never the C library's locale-dependent `isalpha` and
   the like.
 - **Files.** Data files parse the same everywhere: CR is dropped and Windows-1252 is
@@ -392,7 +399,8 @@ Wine, and a Clang 21 + libc++ build of the tests.
   - the default window size (1600×900) is in pixels on Windows and in points on
     Wayland and macOS; the frame fills the window either way;
   - GPU rounding, as above;
-  - MSVC builds are checked in CI only (Clang was also checked locally, with libc++).
+  - MSVC and macOS builds are checked in CI only (Clang was also checked locally,
+    with libc++).
 
 ## Multiplayer
 

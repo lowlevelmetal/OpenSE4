@@ -1,6 +1,6 @@
 # Builds and tests OpenSE4 on Linux, macOS and Windows (docs/BUILDING.md,
-# "Continuous integration"). Nothing here needs the original game: the tests that read an
-# installed copy are opt-in (OPENSE4_CLASSIC_DATA) and stay off.
+# "Continuous integration"). Nothing here needs the original game: the tests
+# that read an installed copy are opt-in (OPENSE4_CLASSIC_DATA) and stay off.
 #
 # Third-party actions are pinned to a full commit SHA; the comment names the tag.
 
