@@ -110,6 +110,9 @@ public:
     // Creates the game (open human slots are dropped) and sends it out.
     // force: start even if some players are not ready.
     std::expected<void, std::string> startGame(bool force = false);
+    // For tests and tools: runs on the new game before it is sent out, so
+    // every player receives the changed state.
+    void setGameCreatedHook(std::function<void(game::GameState&)> hook) { gameCreated_ = std::move(hook); }
 
     // ---- Game -------------------------------------------------------------------------------
     const game::GameState* state() const { return state_ ? &*state_ : nullptr; }
@@ -221,6 +224,7 @@ private:
     LobbyInfo lobby_;
     TurnStatus turnStatus_;
     std::optional<game::GameState> state_;
+    std::function<void(game::GameState&)> gameCreated_;
     std::vector<std::optional<game::EmpireOrders>> orders_;
     std::optional<std::chrono::steady_clock::time_point> deadline_;
     std::vector<std::vector<uint8_t>> stateCache_;  // per-empire views of the current turn (+ spectator)

@@ -196,7 +196,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         if (options.systemCount > 0) setup.options.systemCount = options.systemCount;
         setup.options.quadrantType = options.quadrantType;
         setup.options.simultaneous = !options.turnBased;
-        auto session = startLocalGame(mode->rules_, setup);
+        auto session = startLocalGame(mode->rules_, setup, quickStartExtras());
         if (!session) {
             error = session.error();
             return nullptr;
@@ -454,8 +454,9 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
             }
     }
     game::GameSetup setup = quickStartSetup(*rules_, race, lesson->setup.seed.value_or(options_.seed), lesson->setup.computerPlayers);
-    learn::applySetup(lesson->setup, setup);
-    auto session = startLocalGame(rules_, setup);
+    game::StartExtras extras = quickStartExtras();
+    learn::applySetup(lesson->setup, setup, extras);
+    auto session = startLocalGame(rules_, setup, extras);
     if (!session) return std::format("The {} '{}' could not start its game: {}", what, slug, session.error());
     startGame(std::move(*session));
     lesson_ = std::make_unique<LessonRunner>(*lesson, *session_);

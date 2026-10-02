@@ -82,11 +82,13 @@ TEST_CASE("design tools: upgrade replaces components with the newest of their fa
     }
 }
 
-TEST_CASE("design tools: an upgraded starting design is valid and can be created") {
+TEST_CASE("design tools: an upgraded design is valid and can be created") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(5, 2, 10);
     Empire& e = s.empires[0];
-    const Design scout = s.design(e.designs.front());  // a copy: creating a design reallocates the list
+    const DesignId made = addTestDesign(s, r, e.id, "Courier", "Test Frigate",
+                                        {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine"});
+    const Design scout = s.design(made);  // a copy: creating a design reallocates the list
     e.techLevels[techArea(r, "Test Propulsion").index()] = 3;
     std::vector<DesignEntry> entries = scout.entries;
     REQUIRE(upgradeEntries(r, e, entries));
@@ -194,7 +196,7 @@ TEST_CASE("design tools: known weapons by type") {
 TEST_CASE("design tools: design names") {
     GameState s = newEngineGame(5, 2, 10);
     const Empire& e = s.empires[0];
-    const std::string taken = s.design(e.designs.front()).name;
+    const std::string taken = s.design(addTestDesign(s, engineRules(), e.id, "Courier", "Test Frigate", {"Test Bridge"})).name;
     const std::vector<std::string> list{taken, "Aurora", "Borealis"};
     size_t cursor = 0;
     CHECK(suggestDesignName(s, e, list, cursor) == "Aurora");

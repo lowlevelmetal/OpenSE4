@@ -1,6 +1,7 @@
 #include "game/setup.hpp"
 
 #include "datafile/datafile.hpp"
+#include "game/ai.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/generate.hpp"
@@ -12,7 +13,9 @@
 #include <algorithm>
 #include <array>
 #include <format>
-#include <map>
+#include <optional>
+#include <string>
+#include <string_view>
 
 namespace opense4::game {
 
@@ -72,6 +75,23 @@ void addStartingFacilities(const Rules& r, const GameState& s, const Empire& e, 
         if (mineral ? !mines : !labs) continue;
         add(mineral ? AbilityKind::ResourceGenMinerals : AbilityKind::PointGenResearch);
     }
+}
+
+// The empire's newest design of a design type (a lesson's ship, docs/
+// LEARNING.md): matched without regard to case; "Colony" stands for the
+// colony-ship type of the race's own planet type.
+std::optional<DesignId> newestOfType(const GameState& s, const Empire& e, std::string_view type) {
+    const std::string surface = keysEqual(e.race.nativeSurface, "Ice")  ? "Ice"
+                                : keysEqual(e.race.nativeSurface, "Rock") ? "Rock"
+                                                                          : "Gas";
+    const std::string wanted = keysEqual(type, "Colony") ? std::format("Colony ({})", surface) : std::string(type);
+    std::optional<DesignId> best;
+    for (DesignId d : e.designs) {
+        const Design& design = s.design(d);
+        if (design.obsolete || !keysEqual(design.designType, wanted)) continue;
+        if (!best || design.createdTurn > s.design(*best).createdTurn) best = d;
+    }
+    return best;
 }
 
 Vehicle makeVehicle(const Rules& r, GameState& s, const Design& d, Location where) {
@@ -326,7 +346,7 @@ std::vector<int> startingTechLevels(const Rules& r, const GameOptions& o, const 
     return levels;
 }
 
-std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup& setup) {
+std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup& setup, const StartExtras& extras) {
     if (setup.empires.empty()) return std::unexpected("A game needs at least one empire.");
     GameState s;
     s.seed = setup.seed;
@@ -429,9 +449,9 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         Empire& e = s.empires[i];
         const ObjectId home = (*homes)[i];
         // A neutral empire always gets one starting planet.
-        const int extras = e.kind == PlayerKind::Neutral ? 0 : std::max(0, s.options.startingPlanets - 1);
+        const int more = e.kind == PlayerKind::Neutral ? 0 : std::max(0, s.options.startingPlanets - 1);
         std::vector<ObjectId> planets{home};
-        for (ObjectId o : extraStartingPlanets(r, s, e, *homes, extras)) planets.push_back(o);
+        for (ObjectId o : extraStartingPlanets(r, s, e, *homes, more)) planets.push_back(o);
         for (ObjectId p : planets) setUpStartingPlanet(r, s, e, p);
         e.claimedSystems.push_back(s.galaxy.object(home).system);
     }
@@ -439,44 +459,13 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     // The starting stockpile and the research and intelligence pools are set
     // at the end (research::openingPools, spec 02 §9).
 
-    // ---- Starting designs and ships.
-    for (size_t i = 0; i < n; ++i) {
-        const EmpireId id{i};
-        const Location home = locationOf(s.galaxy, (*homes)[i]);
-        struct Start {
-            std::string role;
-            std::string name;
-            std::string designType;
-            int ships;
-        };
-        const std::string colonyRole = "colony:" + s.empires[i].race.nativeSurface;
-        const std::array<Start, 4> roles{{
-            {"scout", "Scout", "Scout", 2},
-            {colonyRole, "Colonizer", "Colony Ship", 1},
-            {"warship", "Escort", "Attack Ship", 0},
-            {"base", "Defense Base", "Defense Base", 0},
-        }};
-        for (const Start& st : roles) {
-            auto d = autoDesign(r, s.empires[i], st.role);
-            if (!d) continue;
-            // Design names are unique in the whole game (spec 03 §4.1): the
-            // plain name when it is free, else prefixed with the empire's name,
-            // else numbered (inferred).
-            d->name = !designNameInUse(s, st.name) ? st.name : uniqueDesignName(s, std::format("{} {}", s.empires[i].name, st.name));
-            d->designType = st.designType;
-            d->owner = id;
-            const DesignId did = addDesign(s, std::move(*d));
-            for (int k = 0; k < st.ships; ++k) {
-                Vehicle v = makeVehicle(r, s, s.design(did), home);
-                ++s.design(did).built;
-                s.addVehicle(std::move(v));
-            }
-        }
-    }
-
-    // ---- Designs an empire file brought (spec 06 §7 Q48), after the starting
-    // ones: those the data set can still build from (hull, components and
-    // mounts it has), under a name no other design uses (inferred).
+    // ---- Starting assets (spec 01 §3.6, confirmed: binary): no empire gets a
+    // ship, base, unit or design of its own. A computer player's Design
+    // minister makes its designs in its first turn (spec 05 §7.5).
+    //
+    // Designs an empire file brought (spec 06 §7 Q48): those the data set can
+    // still build from (hull, components and mounts it has), under a name no
+    // other design uses (inferred).
     for (size_t i = 0; i < n; ++i)
         for (const Design& saved : setup.empires[i].designs) {
             const auto& data = r.data();
@@ -496,6 +485,23 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
             d.obsolete = saved.obsolete;
             addDesign(s, std::move(d));
         }
+
+    // Quick Start (spec 01 §2.1, confirmed: binary): one Design minister run
+    // for the human player, dated the first turn. The original runs it before
+    // the galaxy is made; it reads only the race and its technology, so the
+    // order makes no difference.
+    for (EmpireId e : extras.designMinisterRun)
+        if (e.index() < n) ai::designMinisterRun(r, s, e);
+
+    // A lesson's ships (OpenSE4 lesson extension, docs/LEARNING.md): built at
+    // the homeworld from the empire's newest design of each listed type.
+    for (size_t i = 0; i < n && i < extras.lessonShips.size(); ++i)
+        for (const std::string& type : extras.lessonShips[i])
+            if (const auto design = newestOfType(s, s.empires[i], type)) {
+                Vehicle v = makeVehicle(r, s, s.design(*design), locationOf(s.galaxy, (*homes)[i]));
+                ++s.design(*design).built;
+                s.addVehicle(std::move(v));
+            }
 
     sight::updateKnowledge(r, s);
     // Starting Resources plus one turn of production for the stockpile and

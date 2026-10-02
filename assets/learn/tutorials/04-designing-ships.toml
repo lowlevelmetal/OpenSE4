@@ -12,9 +12,10 @@ events = "none"
 [[step]]
 title = "Your own ships"
 text = """
-Every ship you build follows a **design**: a hull filled with components. You start with a few
-ready-made designs, and you make new ones as your technology grows. In this lesson you design a
-small warship. Press **Next**.
+Every ship you build follows a **design**: a hull filled with components. After a Quick Start
+your **Design minister** has already made one design for each kind of ship your technology
+allows; you make new ones as your technology grows. In this lesson you design a small warship.
+Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "ship-design"
@@ -31,8 +32,9 @@ manual = "ship-design#the-designs-window"
 [[step]]
 title = "Your designs"
 text = """
-The list shows your ship designs: a scout, a colony ship, an escort and a defense base. Click one
-to see its numbers on the right: cost, size, structure, movement, shields, weapons, cargo and
+The list shows your ship designs, each with its hull and its **design type**: an attack ship,
+a colony ship, transports, bases and more. Their names come from your race's list. Click one to
+see its numbers on the right: cost, size, structure, movement, shields, weapons, cargo and
 supply, and its components.
 
 The tabs on the right switch to unit designs and to the enemy designs you have seen. Press

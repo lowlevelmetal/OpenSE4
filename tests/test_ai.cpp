@@ -259,6 +259,16 @@ DesignId addWarship(GameState& s, const Rules& r, EmpireId owner, std::string_vi
     return d;
 }
 
+// A colony ship for the race's own planet type at the empire's homeworld (a
+// new game gives no ships, spec 01 §3.6).
+VehicleId addColonyShip(GameState& s, const Rules& r, EmpireId owner) {
+    const std::string_view surface = s.empire(owner).race.nativeSurface;
+    const std::string_view pod = surface == "Ice" ? "Test Ice Pod" : surface == "Rock" ? "Test Rock Pod" : "Test Gas Pod";
+    const DesignId d = addTestDesign(s, r, owner, std::format("Colonizer {}", owner.value), "Test Frigate",
+                                     {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod", pod});
+    return addTestVehicle(s, r, d, locationOf(s.galaxy, homeworld(s, owner).planet)).id;
+}
+
 } // namespace
 
 // ---- Data ----------------------------------------------------------------------------------------
@@ -622,10 +632,6 @@ TEST_CASE("ai: idle attack ships explore the frontier") {
     const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
     const DesignId warship = addWarship(s, r, me, "Picket");
     const VehicleId explorer = addTestVehicle(s, r, warship, home).id;
-    // The starting ships are busy, so the free warp points go to the new ship
-    // (the home system may have a single warp point).
-    for (Vehicle& v : s.vehicles)
-        if (v.owner == me && v.id != explorer) v.orders = {Order{OrderKind::Sentry}};
     const auto cmds = ai::planTurn(r, s, me);
     bool explored = false;
     std::vector<ObjectId> targets;
@@ -657,6 +663,7 @@ TEST_CASE("ai: a colony ship moves to the best target and colonizes it") {
             break;
         }
     }
+    addColonyShip(s, r, me);
     const auto cmds = ai::planTurn(r, s, me);
     bool found = false;
     for (const Command& c : cmds) {
@@ -727,20 +734,24 @@ TEST_CASE("ai: research, construction and designs on the first turn") {
         CHECK(r.techVisible(s, s.empire(me), p.area));
         CHECK(s.empire(me).techLevel(p.area) < r.tech(p.area).maxLevel);
     }
-    // The first turn processed sees date 1 (a simultaneous game): with premade
-    // designs and no research event the Design minister rests.
-    CHECK(countOf<cmd::CreateDesign>(cmds) == 0);
-    CHECK(applyAll(r, s, me, cmds).empty());
-    CHECK_FALSE(homeworld(s, me).queue.items.empty());
-    // Every tenth date it designs: turn 9 is processed with date 10.
-    s.turn = 9;
-    const auto tenth = ai::planTurn(r, s, me);
-    CHECK(countOf<cmd::CreateDesign>(tenth) >= 1);
-    for (const Command& c : tenth)
+    // A new game gives no designs (spec 01 §3.6): the Design minister makes
+    // them in the first turn, and Ship Construction queues from them.
+    CHECK(s.empire(me).designs.empty());
+    CHECK(countOf<cmd::CreateDesign>(cmds) >= 1);
+    for (const Command& c : cmds)
         if (const auto* d = as<cmd::CreateDesign>(c)) {
             CHECK(ai::isAiDesignType(d->design.designType));  // never a scout
             CHECK(computeDesignStats(r, &s.empire(me), d->design).problems.empty());
         }
+    CHECK(applyAll(r, s, me, cmds).empty());
+    CHECK_FALSE(homeworld(s, me).queue.items.empty());
+    // Then it rests while nothing is new (date 5, no research event), and
+    // looks again every tenth date: turn 9 is processed with date 10.
+    s.empire(me).techLevels[techArea(r, "Test Propulsion").index()] = 3;  // a better engine, unannounced
+    s.turn = 4;
+    CHECK(countOf<cmd::CreateDesign>(ai::planTurn(r, s, me)) == 0);
+    s.turn = 9;
+    CHECK(countOf<cmd::CreateDesign>(ai::planTurn(r, s, me)) >= 1);
 }
 
 TEST_CASE("ai: ship construction spends one turn of net income on queues under 5 turns") {
@@ -796,7 +807,7 @@ TEST_CASE("ai: Colonizer entries build the colony-ship type of the first uncover
     for (std::string_view surface : {"Rock", "Ice", "Gas"}) {
         const std::string pod = std::format("Test {} Pod", surface);
         const DesignId d = addTestDesign(s, r, cpu, std::format("{} Settler", surface), "Test Frigate",
-                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", pod});
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod", pod});
         s.design(d).designType = std::format("Colony ({})", surface);
         e.designs.push_back(d);
         ships[std::format("Colony ({})", surface)] = d;
@@ -2082,11 +2093,8 @@ TEST_CASE("ai: ministers act only on what they were given") {
     off.empire(me).ministers &= ~ministerBit(Minister::FacilityConstruction);
     CHECK(ai::ministerCommands(r, off, me).empty());
 
-    // A premade scout under the Exploration minister explores.
-    VehicleId scout;
-    for (const Vehicle& v : s.vehicles)
-        if (v.owner == me && s.design(v.design).designType == "Scout") scout = v.id;
-    REQUIRE(scout.valid());
+    // A ship under the Exploration minister explores.
+    const VehicleId scout = addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, home.planet)).id;
     s.vehicle(scout)->minister = true;
     cmds = ai::ministerCommands(r, s, me);
     bool ordered = false;
@@ -2501,6 +2509,7 @@ TEST_CASE("ai: a missed human turn is played with every minister on, the politic
     CHECK(ai::ministerOn(s.empire(me), Minister::Politics));
     ai::politicalStep(ctx);
     CHECK(s.empire(me).relation(other).anger == 50 + ai::builtinProfile().anger.regularDecrease);
+    addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet));
     CHECK_FALSE(ai::planOrders(r, s, me).empty());  // every minister acts on everything
 
     ai::restoreMinisters(s.empire(me), saved);
@@ -2889,6 +2898,10 @@ TEST_CASE("ai: the ministers see the advanced date in simultaneous games, the un
     const Rules& r = engineRules();
     GameState s = newEngineGame(3, 2, 12, true);
     const EmpireId me{1u};
+    // Its first designs, then a better engine that no research event announced.
+    ai::designMinisterRun(r, s, me);
+    REQUIRE_FALSE(s.empire(me).designs.empty());
+    s.empire(me).techLevels[techArea(r, "Test Propulsion").index()] = 3;
     s.turn = 9;
     s.options.simultaneous = true;
     CHECK(ai::aiDate(s) == 10);

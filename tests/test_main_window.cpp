@@ -720,8 +720,10 @@ TEST_CASE("main window: what a sector shows") {
     GameState s = newEngineGame();
     const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
     const DesignId d = design(s, r, "Scout", "Test Frigate", kShipBasics);
-    Vehicle& a = addTestVehicle(s, r, d, where);
-    Vehicle& b = addTestVehicle(s, r, d, where);
+    const VehicleId aId = addTestVehicle(s, r, d, where).id;
+    const VehicleId bId = addTestVehicle(s, r, d, where).id;  // may move the first: take both afterwards
+    Vehicle& a = *s.vehicle(aId);
+    Vehicle& b = *s.vehicle(bId);
     const std::vector<const Vehicle*> both{&a, &b};
     // Beside a planet: the owner's flag and a count, even of 1.
     const std::vector<ObjectId> planet{homeworld(s, kMe).planet};
@@ -815,7 +817,8 @@ TEST_CASE("main window: new ships take the next four-digit serial of their desig
     CHECK(nextVehicleName(s, s.design(d)) == "Hood 0008");
     b.name = "Renamed";  // the highest serial is gone: its number is used again
     CHECK(nextVehicleName(s, s.design(d)) == "Hood 0002");
-    // The starting ships of a new game: two scouts of one design are 0001 and 0002.
+    // Two ships of another design start at 0001 again.
+    addHomeShips(s, r);
     for (const Vehicle& v : s.vehicles)
         if (v.owner == kMe && v.design != d) CHECK((v.name.ends_with(" 0001") || v.name.ends_with(" 0002")));
 }

@@ -554,7 +554,8 @@ struct Design {
     // question 41, confirmed: binary): set when a queue completes a vehicle
     // or unit of it or a ship is retrofitted to it, cleared only when the
     // design is saved again in the designer (cmd::EditDesign). No statistics
-    // reset clears it, and the starting ships of a new game do not set it.
+    // reset clears it, and nothing else sets it (a lesson's ships of
+    // docs/LEARNING.md do not).
     bool everBuilt = false;
     // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
     // There is no kill counter (confirmed: binary).

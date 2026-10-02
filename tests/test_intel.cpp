@@ -412,7 +412,7 @@ TEST_CASE("intel: theft of technology, resources and designs") {
     // Ship Designs - Steal: we learn the newest design built at least once
     // (a queue completed one, or a ship was retrofitted to it) that we do not
     // know and they can build; nothing joins our own designs (spec 05 §2.3,
-    // open question 41). The starting ships do not mark their designs.
+    // open question 41). The fixture's ships at home do not mark their designs.
     const size_t designs = s.empire(kA).designs.size();
     const size_t allDesigns = s.designs.size();
     std::vector<DesignId> built;

@@ -883,6 +883,7 @@ std::expected<void, std::string> HostSession::startGame(bool force) {
     }
     std::erase_if(slots_, [](const auto& s) { return s->info.open(); });
     state_ = std::move(*created);
+    if (gameCreated_) gameCreated_(*state_);
     orders_.assign(state_->empires.size(), std::nullopt);
     phase_ = HostPhase::Playing;
     for (size_t i = 0; i < slots_.size(); ++i) slots_[i]->info.setup.name = state_->empires[i].name;

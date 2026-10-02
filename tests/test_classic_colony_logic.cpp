@@ -11,6 +11,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <format>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -50,11 +51,13 @@ Colony& addColony(GameState& s, const Rules& r, ObjectId planet, EmpireId owner)
     return col;
 }
 
-DesignId colonyShipDesign(const GameState& s, const Rules& r, EmpireId e) {
+// The empire's rock colony-ship design, made the first time (a new game
+// gives no designs, spec 01 §3.6).
+DesignId colonyShipDesign(GameState& s, const Rules& r, EmpireId e) {
     for (DesignId d : s.empire(e).designs)
         if (computeDesignStats(r, nullptr, s.design(d)).canColonizeRock) return d;
-    FAIL("no colony ship design");
-    return {};
+    return addTestDesign(s, r, e, std::format("Colonizer {}", e.value), "Test Frigate",
+                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod", "Test Rock Pod"});
 }
 
 } // namespace
@@ -185,6 +188,7 @@ TEST_CASE("classic ui: Send Colony Ship takes the available colony ship with the
     const ObjectId rock = freePlanet(s, "Rock");
     const ObjectId ice = freePlanet(s, "Ice");
     const Location target = locationOf(s.galaxy, rock);
+    addTestVehicle(s, r, colonyShipDesign(s, r, kMe), locationOf(s.galaxy, homeworld(s, kMe).planet));  // a colony ship at home
 
     const auto ships = colonyShips(r, s, kMe);
     REQUIRE_FALSE(ships.empty());

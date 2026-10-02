@@ -9,7 +9,10 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstdlib>
+#include <string>
+#include <vector>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -31,7 +34,7 @@ const Rules* installRules() {
 
 } // namespace
 
-TEST_CASE("installed data set: race presets, setup and starting designs (opt-in)") {
+TEST_CASE("installed data set: race presets, setup and starting assets (opt-in)") {
     const Rules* r = installRules();
     if (!r) return;
     CHECK(r->racePresets().size() >= 10);
@@ -49,7 +52,10 @@ TEST_CASE("installed data set: race presets, setup and starting designs (opt-in)
         e.kind = i == 0 ? PlayerKind::Human : PlayerKind::Computer;
         setup.empires.push_back(e);
     }
-    auto game = createGame(*r, setup);
+    // The player as in a Quick Start: one Design minister run (spec 01 §2.1).
+    StartExtras extras;
+    extras.designMinisterRun.push_back(EmpireId{0u});
+    auto game = createGame(*r, setup, extras);
     REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
     GameState& s = *game;
     for (const Empire& e : s.empires) {
@@ -58,14 +64,47 @@ TEST_CASE("installed data set: race presets, setup and starting designs (opt-in)
         const Colony& home = opense4::test::homeworld(s, e.id);
         CHECK(home.totalPopulation() > 0);
         CHECK(colonyHasSpaceYard(*r, home));
-        CHECK(e.designs.size() >= 2);
+        // Starting assets (spec 01 §3.6): only the Quick Start player has designs.
+        if (e.id.index() == 0) CHECK(e.designs.size() >= 2);
+        else CHECK(e.designs.empty());
         for (DesignId d : e.designs) {
             const DesignStats st = computeDesignStats(*r, &e, s.design(d));
             CHECK_MESSAGE(st.problems.empty(), s.design(d).name << ": " << (st.problems.empty() ? "" : st.problems.front()));
         }
     }
-    for (const Vehicle& v : s.vehicles) CHECK(vehicleMaxMovement(*r, s, v) > 0);
+    CHECK(s.vehicles.empty());
     std::vector<EmpireOrders> none;
     processTurn(*r, s, none);
     CHECK(s.turn == 1);
+    for (const Empire& e : s.empires)
+        if (e.kind == PlayerKind::Computer) CHECK_FALSE(e.designs.empty());  // designed in the first turn
+}
+
+TEST_CASE("installed data set: a Terran Quick Start gets the observed designs (opt-in)") {
+    // Spec 07 session 3: eleven designs, one per design type, dated 2400.0,
+    // all prototypes, and no ship.
+    const Rules* r = installRules();
+    if (!r || !findPreset(*r, "Terran")) return;
+    GameSetup setup;
+    setup.seed = 7;
+    EmpireSetup me;
+    me.preset = "Terran";
+    setup.empires.push_back(me);
+    StartExtras extras;
+    extras.designMinisterRun.push_back(EmpireId{0u});
+    auto game = createGame(*r, setup, extras);
+    REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+    std::vector<std::string> types;
+    for (DesignId d : game->empire(EmpireId{0u}).designs) {
+        const Design& design = game->design(d);
+        CHECK(design.createdTurn == 0);
+        CHECK(design.built == 0);
+        types.push_back(design.designType);
+    }
+    std::sort(types.begin(), types.end());
+    const std::vector<std::string> observed{"Attack Ship",          "Base Space Yard", "Cargo Transport",   "Colony (Rock)",   "Defense Base",
+                                            "Kamikaze Attack Ship", "Population Transport", "Satellite", "Satellite Layer", "Troop Transport",
+                                            "Weapon Platform"};
+    CHECK(types == observed);
+    CHECK(game->vehicles.empty());
 }

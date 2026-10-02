@@ -2,6 +2,9 @@
 
 #include "learn/ids.hpp"
 
+#include "datafile/datafile.hpp"
+#include "game/ai_data.hpp"
+
 #include <toml++/toml.hpp>
 
 #include <algorithm>
@@ -263,7 +266,7 @@ Setup readSetup(Reader& rd, const toml::table& t) {
     rd.allowOnly(t, "[setup]",
                  {"seed", "race", "computer_players", "systems", "quadrant", "quadrant_size", "turn_style", "tech_level", "tech_cost",
                   "starting_resources", "starting_planets", "events", "ai_difficulty", "no_tactical_combat", "all_systems_seen",
-                  "omnipresent", "no_ruins"});
+                  "omnipresent", "no_ruins", "starting_ships"});
     Setup s;
     if (auto v = rd.integer(t, "seed", 0, std::numeric_limits<int64_t>::max())) s.seed = static_cast<uint64_t>(*v);
     if (auto v = rd.string(t, "race", "[setup]", false)) s.race = *v;
@@ -287,6 +290,18 @@ Setup readSetup(Reader& rd, const toml::table& t) {
     s.allSystemsSeen = rd.boolean(t, "all_systems_seen");
     s.omnipresent = rd.boolean(t, "omnipresent");
     s.noRuins = rd.boolean(t, "no_ruins");
+    if (const toml::node* n = t.get("starting_ships")) {
+        const auto* list = n->as_array();
+        if (!list) rd.error(n, "'starting_ships' must be a list of design types, such as [\"Attack Ship\", \"Colony\"]");
+        else
+            for (const toml::node& item : *list) {
+                const auto* type = item.as_string();
+                if (type && (game::ai::isAiDesignType(type->get()) || datafile::keysEqual(type->get(), "Colony")))
+                    s.startingShips.push_back(type->get());
+                else
+                    rd.error(item, "each of 'starting_ships' must be a design type (\"Attack Ship\", \"Colony (Rock)\", ...) or \"Colony\"");
+            }
+    }
     return s;
 }
 
@@ -294,7 +309,7 @@ Setup readSetup(Reader& rd, const toml::table& t) {
 
 std::string_view kindName(LessonKind k) { return k == LessonKind::Tutorial ? "tutorial" : "training"; }
 
-void applySetup(const Setup& s, game::GameSetup& g) {
+void applySetup(const Setup& s, game::GameSetup& g, game::StartExtras& extras) {
     game::GameOptions& o = g.options;
     if (s.systems) o.systemCount = *s.systems;
     if (!s.quadrant.empty()) o.quadrantType = s.quadrant;
@@ -309,6 +324,10 @@ void applySetup(const Setup& s, game::GameSetup& g) {
     if (s.allSystemsSeen) o.allSystemsSeen = *s.allSystemsSeen;
     if (s.omnipresent) o.omnipresent = *s.omnipresent;
     if (s.noRuins) o.noRuins = *s.noRuins;
+    if (!g.empires.empty() && !s.startingShips.empty()) {
+        if (extras.lessonShips.empty()) extras.lessonShips.resize(1);
+        extras.lessonShips.front() = s.startingShips;
+    }
     if (s.aiDifficulty) {
         o.aiDifficulty = *s.aiDifficulty;
         o.randomAiPlayers.assign(g.empires.size(), 0);

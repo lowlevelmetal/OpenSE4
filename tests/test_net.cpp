@@ -1440,6 +1440,8 @@ TEST_CASE("net: a network client shows the movement line of its own new orders a
         const auto& l = host.lobby();
         return l.slots.size() == 2 && l.slots[0].ready && l.slots[1].ready;
     }));
+    // A new game starts without ships (spec 01 §3.6): give every empire a few.
+    host.setGameCreatedHook([](game::GameState& g) { addHomeShips(g, engineRules()); });
     REQUIRE(host.startGame().has_value());
     REQUIRE(loop.until([&] { return a->state() && bob.state(); }));
 

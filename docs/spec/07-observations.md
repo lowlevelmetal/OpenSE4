@@ -333,6 +333,10 @@ research fall by one mood step (the 10 % Happy term of 07 "Calibration") after t
 the other two after turn 6. In ours the same drop comes after turns 6–8, or not within 30
 turns (60 empires, 12 seeds). Inferred cause: our starting ships sit in the home system.
 
+The engine has followed spec 01 §3.6 since (2026-10-01). A Terran Quick Start now gets the
+eleven designs of the table above, with the same hulls, costs, movement, cargo and supply,
+and no ship; the side effects are measured again under "Pace after the starting assets".
+
 ### A game with only one empire
 
 A New Game with only the human and both random-computer boxes cleared shows, before the
@@ -475,6 +479,72 @@ Clear differences:
   because of the starting ships.
 - Within the noise: systems, units and intelligence (a few original empires had 1,500–5,800
   intelligence points by turn 92–100; ours rarely any).
+
+### Pace after the starting assets (OpenSE4, 2026-10-01)
+
+Measured again once the engine followed spec 01 §3.6 (no starting ships or designs; computer
+players design in their first turn), with the same scratch method as above (seeds 1–12, Small
+quadrant, simultaneous, 100 `processTurn` calls, `Empire::history`). "Five computers" is the
+set-up above; "passive player" is closer to the original's games, whose human player hardly
+grew: empire 1 is a human empire that gives no orders and gets no stand-in, and the means are
+over the four computer empires (48). Means per empire, original / five computers / passive
+player:
+
+| Turn | Colonies | Systems | Tech levels | Research | Ships | Bases | Units | Score |
+|---|---|---|---|---|---|---|---|---|
+| 10 | 1.7 / 1.5 / 1.5 | 1.0 / 1.0 / 1.0 | 17.2 / 17.4 / 17.3 | 3,612 / 3,505 / 3,453 | 2.0 / 2.5 / 2.4 | 0.0 / 0.0 / 0.0 | 14 / 10 / 10 | 19,664 / 19,942 / 19,815 |
+| 25 | 5.3 / 5.5 / 5.6 | 2.2 / 1.9 / 2.0 | 19.2 / 19.0 / 18.9 | 5,935 / 6,173 / 5,907 | 3.0 / 3.3 / 3.3 | 0.3 / 0.2 / 0.2 | 23 / 23 / 23 | 30,579 / 30,703 / 29,869 |
+| 50 | 11.2 / 10.8 / 10.9 | 3.5 / 3.2 / 3.5 | 24.8 / 22.9 / 23.0 | 13,865 / 9,769 / 9,747 | 7.2 / 6.6 / 6.1 | 0.6 / 0.3 / 0.3 | 38 / 35 / 35 | 65,216 / 54,546 / 52,738 |
+| 75 | 14.8 / 14.0 / 15.0 | 4.5 / 3.9 / 4.1 | 31.4 / 28.1 / 28.2 | 17,852 / 12,385 / 13,188 | 10.4 / 9.4 / 8.1 | 0.8 / 0.2 / 0.2 | 76 / 67 / 55 | 97,235 / 80,092 / 75,035 |
+| 100 | 19.6 / 15.8 / 17.2 | 5.6 / 4.3 / 4.5 | 39.4 / 33.8 / 34.1 | 23,502 / 13,354 / 13,899 | 10.7 / 10.3 / 9.3 | 0.9 / 0.3 / 0.2 | 98 / 85 / 66 | 125,370 / 93,433 / 90,275 |
+
+(Our standard errors: colonies ±0.1 at turn 10, ±0.6 at 50, ±1.0 at 100; research ±500 at 50
+and ±930 at 100; bases ±0.1.)
+
+- **The early game now agrees**: colonies 1.5 against 1.7 at turn 10 and 5.5 against 5.3 at
+  turn 25, ships 2.5 against 2.0 at turn 10. Every computer player has its eleven-odd designs
+  after the first turn; in each game the first ship of any empire is in the statistics of turn
+  2 (7 games) or turn 3 (5 games), and at turn 10 every empire has 1–3 ships, as in the
+  original.
+- **Homeworld population**: 2000M in the statistics of turns 1–6 for all 60 homeworlds, as for
+  the original's 15.
+- **Homeworld mood**: the research of the homeworld first falls by one mood step (to 92.6–93.9 %
+  of the row before) in the statistics row of turn 4 for 32 of 60 empires, turn 5 for 7, turn 6
+  for 19 and turn 8 for 2 (the anger rises by 1 or 2 points a turn from 25 to the Indifferent
+  band at 30, depending on the race). That matches the original's "after turn 4" (13 of 15)
+  and "after turn 6" (2 of 15) if those count statistics rows the same way, as the 1996M "after
+  turn 1" above does; otherwise ours is one turn early.
+- **Still behind**: research (70 % of the original's at turn 50, 57 % at 100), tech levels (5.6
+  fewer at 100), bases (0.2–0.3 against 0.6–0.9) and, from turn 50, colonies and systems. The
+  passive player changes little.
+
+What our computer players do (seeds 1–12, five computers), for the analyst questions of spec
+05 (53–56):
+- **AI state**, share of all empire-turns 1–100: Exploration 34 %, Infrastructure 5 %, Prepare
+  for Attack 2 %, Attack 2 %, Secure Holdings 1 %, Defend (Short Term) 56 %; from turn 50, 73–83 %
+  of our computers are in Defend (Short Term) at any moment. What keeps them there is mostly
+  other empires' attack ships one jump from a colony system and other empires' colonies there
+  (per empire 1.7 ships and 0.8 colonies at turn 50, 4.0 and 3.5 at turn 100). The stock vehicle
+  table builds Defense Bases, Base Space Yards and population transports only in
+  Infrastructure; most of our empires never build a base.
+- **Colonies** at turn 50 / 100: 10.8 / 15.8 per empire, of which Mining 2.6 / 4.0, Research
+  Compound 2.7 / 4.0, Military Installation 1.2 / 1.7, Construction Yard 1.0 / 1.4, Farming
+  0.8 / 1.3, Intelligence Compound 0.8 / 1.4, Refining 0.7 / 1.2. Of the colonies other than
+  the homeworld, 83 % are domed at turn 100 (2.5 breathable ones per empire, 34 slots between
+  them; 12.4 domed ones, 33 slots).
+- **Research facilities**: 16.6 / 22.6 per empire, all Research Center I (no computer reaches
+  the Applied Research rows of its research file, rows 31–38 of 66–73, by turn 100); research
+  13.5k at turn 100, of which the homeworld 3.5k, flat from turn 25. Facilities 51 of 64 slots
+  at turn 50, 73 of 83 at turn 100: the empty slots are mostly on Intelligence Compounds, which
+  get nothing at all while the empire has no intelligence facility (spec 05 Q55).
+- **Population** 2,491M at turn 50, 3,214M at turn 100 (the homeworld 2,000M).
+- **Research lost** (the excess of finished projects, spec 05 §1.4): 1–6 % of the pool.
+- **Sensitivity** (scratch experiments against the spec, not kept; turn 100, five computers):
+  counting a hostile colony in the enemy-in-territory list only when it is seen (spec 05 Q54)
+  gives 17.4 colonies and 14.0k research; letting a colony whose type has nothing to build use
+  the Homeworld rows (Q55) gives 14.6k research; never entering Defend (Short Term) gives 17.2
+  colonies, 0.5 bases and 13.4k research; placing Defense Bases whatever the queue backlog
+  changes nothing. None of these closes the gap alone.
 
 ### Side by side: our client against the original (Quick Start, first turn)
 

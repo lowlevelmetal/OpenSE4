@@ -389,7 +389,9 @@ Texts are Markdown as in the manual; their links are checked like the manual's.
 
 The lesson's game is a quick start (the intro's Quick Start path, `quickStartSetup`)
 for `race` with `computer_players` opponents picked from the seed; the other keys then
-set the game options. Keys left out keep the quick start's values.
+set the game options. Keys left out keep the quick start's values. As in any quick
+start, the player's empire gets the designs of one Design minister run and no ships
+(spec 01 §2.1, §3.6); `starting_ships` is the only way a lesson adds ships.
 
 | Key | Value | Without it |
 |---|---|---|
@@ -410,6 +412,20 @@ set the game options. Keys left out keep the quick start's values.
 | `all_systems_seen` | true or false | false |
 | `omnipresent` | true or false | false |
 | `no_ruins` | true or false | false |
+| `starting_ships` | a list of design types, such as `["Attack Ship", "Attack Ship", "Colony"]`: **OpenSE4 lesson extension**, see below | none, as in every game |
+
+**Starting ships** (an OpenSE4 lesson extension, not a setting of the original). A normal
+game starts with no ships at all (spec 01 §3.6). A lesson that teaches with ships from its
+first step lists them in `starting_ships`: each entry builds one ship at the player's
+homeworld when the game is created, from the newest of the player's quick start designs
+with that design type (the 39 AI design types of spec 05 §7.7, such as `"Attack Ship"`,
+`"Colony (Rock)"`, `"Population Transport"`). `"Colony"` stands for the colony ship of the
+race's own planet type, so a lesson does not depend on its race. An entry the player has
+no design for builds nothing; any other text is a load error. The ships are ordinary
+ships, built with the game (`game::StartExtras::lessonShips`, never saved or sent over the
+network). Tutorials 1, 2, 5 and 7 use it (two attack ships, and a colony ship where the
+lesson settles a planet), and the first lesson tells the player that a normal game starts
+without them. The training games do not use it: they are played from a normal start.
 
 ### Condition keys
 
@@ -438,7 +454,7 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`:
 | `bases` | N | it has N bases (mothballed ones not counted) |
 | `units` | N | it has N units: fighters, satellites, mines, troops, drones and weapon platforms, in space and in cargo |
 | `fleets` | N | it has N fleets |
-| `designs` | N | it has N designs that are not obsolete (the starting designs included) |
+| `designs` | N | it has N designs that are not obsolete (a quick start's designs included) |
 | `research_queued` | N | N research projects are queued |
 | `construction_queued` | N | N items wait in its construction queues, all of them together |
 | `techs_researched` | N | since: N tech levels were researched |

@@ -334,11 +334,17 @@ cloak, and takes its planet out of the system's list, so a modified client canno
 OpenSE4 choice; the original sends everyone the whole game). Left: location lines can name a
 hidden planet in local and e-mail games.
 
+The starting assets followed spec 01 §2.1 and §3.6 on 2026-10-01 (`setup.cpp`,
+`ai::designMinisterRun`, `game::StartExtras`): no empire gets a ship or a design at creation,
+computer players design in their first turn, a New Game player has only its empire file's
+designs, and Quick Start gives the player one Design minister run, which gives a Terran player
+the eleven observed designs. The tutorials that teach with ships list them with the lesson key
+`starting_ships`, an OpenSE4 extension (docs/LEARNING.md).
+
 These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Starting assets (`setup.cpp`, "Starting designs and ships"; `client/classic/frontend.cpp` `quickStartSetup`) | Every empire gets four designs of its own (`autoDesign`), two scouts and a colonizer | Spec 01 §3.6 "Starting assets", §2.1: no empire gets ships or designs at creation; computer players design in their first turn; Quick Start gives the human one Design minister run | H |
 | When first contact is checked (`diplomacy.cpp` `updateContacts`; callers in `turn_based.cpp`, `turn.cpp`, `commands.cpp`) | Galaxy-wide, after every live move, each player's and game turn's end, movement, combat and events; never at setup | Spec 05 §3.1: one system at a time, only at game creation, warp arrival, any decloak, a logged event, a surrender, a package's planet or vehicle and a rebellion project | M |
 | Generation edge cases (`generate.cpp` `drawNames`, the connectivity pass of `buildLinks`, the "warp points anywhere" draw of `placeWarpPoints`, `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
 
@@ -491,17 +497,17 @@ waiting test, the units reserve). No row remains from the executable.
 
 **Observed pace** (2026-10-01, [spec 07](spec/07-observations.md) session 3): three
 original games against twelve of ours, Small quadrant, five empires, simultaneous, 100
-turns. Early on our computers are one colony ahead (2.9 against 1.7 at turn 10, 6.8
-against 5.3 at turn 25), a result of the starting assets row above, as are an earlier loss
-of the homeworld's Happy bonus in the original (turn 4 against our 6–8) and our 4M of
-colonists on turns 1 and 3. Two differences remain once that is set aside:
+turns. With the starting assets following the spec, the early game agrees (colonies 1.5
+against 1.7 at turn 10 and 5.5 against 5.3 at turn 25; homeworlds at 2000M through turn 6;
+first ships after turn 2 or 3; the homeworld's Happy bonus lost in the statistics of turn 4
+for most empires). Measured again (spec 07 "Pace after the starting assets"), two
+differences remain, and colonies fall behind from turn 50:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Research after turn 25 (likely, 1–2 standard errors; cause not traced; `ai_research.cpp`, `ai_economy.cpp`, facility choices) | Mean research points per empire 11.2k at turn 50, 13.6k at 75, 14.5k at 100; 34.6 tech levels at 100 | 13.9k, 17.9k, 23.5k; 39.4 tech levels at 100; score 125k against our 96k | M |
-| Bases (about two standard errors; `ai_economy.cpp`, the vehicle queue) | 0.1–0.2 bases per empire from turn 50 | 0.6–0.9 | M |
+| Research after turn 25 (likely, 1–2 standard errors; cause not found: the Research, Facility Construction and Ship Construction ministers, colony types and colonization targets follow spec 05 §7.5 as written; questions 55–56 of spec 05) | Mean research points per empire 9.8k at turn 50, 12.4k at 75, 13.4k at 100; 33.8 tech levels and 15.8 colonies at 100 | 13.9k, 17.9k, 23.5k; 39.4 tech levels and 19.6 colonies at 100; score 125k against our 93k | M |
+| Bases (about two standard errors; the stock vehicle table builds bases only in Infrastructure, and ours spend 5 % of their turns there and 56 % in Defend (Short Term); questions 53–54 of spec 05) | 0.2–0.3 bases per empire from turn 50 | 0.6–0.9 | M |
 
-Ships, systems, colonies after turn 50 and units agree within the noise. Recheck both rows
-with more original games once the starting assets follow the spec, since an earlier start
-changes the whole game.
+Ships, systems and units agree within the noise. A game where the first empire gives no
+orders, closer to the original's games, changes neither row.
 

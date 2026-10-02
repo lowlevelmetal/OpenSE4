@@ -229,6 +229,7 @@ EmpireOrders busyOrders(const Rules& r, const GameState& s, EmpireId me, int rou
 GameState busyGame() {
     const Rules& r = engineRules();
     GameState s = newEngineGame(5, 3, 12, false);
+    addHomeShips(s, r);
     for (int round = 0; round < 4; ++round) {
         std::vector<EmpireOrders> orders{busyOrders(r, s, EmpireId{0u}, round)};
         processTurn(r, s, orders);
@@ -473,6 +474,7 @@ TEST_CASE("serialize: corrupt, truncated and incompatible input is rejected") {
 TEST_CASE("serialize: states that refer to missing things are rejected") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(9, 2, 6);
+    addHomeShips(s, r);
     CHECK(validateState(s).empty());
     CHECK(validateState(s, &r).empty());
     CHECK(validateState(busyGame(), &r).empty());
