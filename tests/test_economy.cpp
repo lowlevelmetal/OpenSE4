@@ -2089,7 +2089,7 @@ TEST_CASE("economy: updateReports projects without changing the game") {
     Colony& home = homeworld(s, kMe);
     const cmd::QueueTarget q{home.planet, {}};
     QueueItem item;
-    item.design = s.empire(kMe).designs.front();
+    item.design = addTestDesign(s, r, kMe, "Courier", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
     REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, item}).ok);
     const GameState before = s;
     economy::updateReports(r, s);
@@ -2228,20 +2228,30 @@ TEST_CASE("economy: installed data set keeps the books straight over many turns 
         e.preset = r->racePresets()[i * 5 % r->racePresets().size()].folder;
         setup.empires.push_back(e);
     }
-    auto game = createGame(*r, setup);
+    StartExtras extras;  // every empire gets a Quick Start player's designs
+    for (size_t i = 0; i < setup.empires.size(); ++i) extras.designMinisterRun.push_back(EmpireId{i});
+    auto game = createGame(*r, setup, extras);
     REQUIRE(game.has_value());
     GameState& s = *game;
+    std::vector<DesignId> built;
     for (Empire& e : s.empires) {
-        // Keep every yard busy with the empire's first design.
+        // Keep every yard busy with the empire's attack ship.
+        REQUIRE_FALSE(e.designs.empty());
+        DesignId ship = e.designs.front();
+        for (DesignId d : e.designs)
+            if (s.design(d).designType == "Attack Ship") ship = d;
+        built.push_back(ship);
         Colony& home = homeworld(s, e.id);
         QueueItem item;
-        item.design = e.designs.front();
+        item.design = ship;
         apply(*r, s, e.id, cmd::QueueAdd{cmd::QueueTarget{home.planet, {}}, item});
         apply(*r, s, e.id, cmd::QueueFlags{cmd::QueueTarget{home.planet, {}}, false, true, false, -1});
     }
     std::vector<EmpireOrders> none;
+    TurnOptions opts;
+    opts.aiForMissing = false;  // the players' own queues; a computer stand-in would replace the designs
     for (int t = 0; t < 30; ++t) {
-        processTurn(*r, s, none);
+        processTurn(*r, s, none, opts);
         for (const Empire& e : s.empires) {
             CHECK_FALSE(e.stockpile.anyNegative());
             CHECK(economy::storageCapacity(*r, s, e.id).covers(e.stockpile));
@@ -2249,5 +2259,5 @@ TEST_CASE("economy: installed data set keeps the books straight over many turns 
         for (const auto& c : s.colonies)
             if (c) CHECK(c->totalPopulation() <= maxPopulation(*r, s, *c));
     }
-    for (const Empire& e : s.empires) CHECK(s.design(e.designs.front()).built >= 5);
+    for (DesignId d : built) CHECK(s.design(d).built >= 5);
 }

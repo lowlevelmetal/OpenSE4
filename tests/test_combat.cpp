@@ -9,6 +9,7 @@
 
 #include "datafile/datafile.hpp"
 
+#include "game/ai.hpp"
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
@@ -28,6 +29,7 @@
 #include <format>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 
 using namespace opense4;
@@ -2086,7 +2088,7 @@ TEST_CASE("installed data set: a battle between starting warships (opt-in)") {
     GameState& s = *game;
     setTreaty(s, EmpireId{0u}, EmpireId{1u}, Treaty::War);
     const Location where = locationOf(s.galaxy, homeworld(s, EmpireId{1u}).planet);
-    // The automatic warship may carry special weapons; give it the first plain direct-fire gun instead.
+    // The Design minister's attack ship may carry special weapons; give it the first plain direct-fire gun instead.
     std::optional<uint32_t> plainGun;
     for (uint32_t c = 0; c < r->data().components.size() && !plainGun; ++c) {
         const ruleset::Component& comp = r->component(c);
@@ -2097,9 +2099,12 @@ TEST_CASE("installed data set: a battle between starting warships (opt-in)") {
     }
     REQUIRE(plainGun.has_value());
     for (uint32_t e = 0; e < 2; ++e) {
-        auto d = autoDesign(*r, s.empire(EmpireId{e}), "warship");
+        ai::designMinisterRun(*r, s, EmpireId{e});  // as a Quick Start player's designs
+        std::optional<Design> d;
+        for (DesignId id : s.empire(EmpireId{e}).designs)
+            if (s.design(id).designType == "Attack Ship") d = s.design(id);
         REQUIRE(d.has_value());
-        d->name = "Test Warship";
+        d->name = std::format("Test Warship {}", e);
         for (DesignEntry& entry : d->entries)
             if (r->component(entry.component).isWeapon()) entry = {*plainGun, -1};
         const DesignId id = addDesign(s, *d);

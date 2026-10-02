@@ -41,13 +41,19 @@ struct Setup {
     std::optional<bool> allSystemsSeen;
     std::optional<bool> omnipresent;
     std::optional<bool> noRuins;
+    // OpenSE4 lesson extension (docs/LEARNING.md): ships the player's empire
+    // starts with, by design type ("Attack Ship", "Colony" for the colony
+    // ship of the race's planet type), built from its Quick Start designs. A
+    // normal game starts with none (spec 01 §3.6).
+    std::vector<std::string> startingShips;
 };
 // Applies the options the setup sets to a quick start's setup (the race,
-// the seed and the opponents are the client's to choose). With
+// the seed and the opponents are the client's to choose), and the starting
+// ships to the first empire, the player's (`extras`). With
 // `ai_difficulty`, the computer empires play at that level: they count as
 // random computer players (GameOptions::randomAiPlayers), which the
 // difficulty applies to.
-void applySetup(const Setup& setup, game::GameSetup& game);
+void applySetup(const Setup& setup, game::GameSetup& game, game::StartExtras& extras);
 
 // A tutorial step.
 struct Step {

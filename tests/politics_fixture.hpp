@@ -153,6 +153,7 @@ inline game::GameState newPoliticsGame(uint64_t seed = 5, int empires = 3, int s
     }
     auto g = game::createGame(politicsRules(), setup);
     REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+    addHomeShips(*g, politicsRules());  // these tests were written with a few ships at home
     return std::move(*g);
 }
 

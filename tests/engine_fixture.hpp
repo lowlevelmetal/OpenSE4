@@ -49,4 +49,10 @@ game::Vehicle& addTestVehicle(game::GameState& s, const game::Rules& r, game::De
 // The homeworld colony of an empire.
 game::Colony& homeworld(game::GameState& s, game::EmpireId e);
 
+// Gives every living empire two scouts and a colony ship for its own planet
+// type, of test designs of its own ("<empire> Scout", "<empire> Colonizer"),
+// at its homeworld. A new game has no ships (spec 01 §3.6); tests written
+// for a game with a few ships at home start from this.
+void addHomeShips(game::GameState& s, const game::Rules& r);
+
 } // namespace opense4::test

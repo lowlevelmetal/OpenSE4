@@ -9,6 +9,7 @@
 #include "client/classic/session.hpp"
 #include "game/ai.hpp"
 #include "game/commands.hpp"
+#include "game/query.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/pbem.hpp"
@@ -59,10 +60,10 @@ TEST_CASE("computer control: the window's switch sets the mark, every minister a
     me.aiMinimalChanges = true;
     me.ministersForNewVehicles = false;
     me.ministers = kIndividualMinisters;
-    // A fleet too, so every kind of individual flag is there.
-    const auto ship = std::find_if(s.vehicles.begin(), s.vehicles.end(), [](const Vehicle& v) { return v.owner == kMe; });
-    REQUIRE(ship != s.vehicles.end());
-    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"F", {ship->id}}).ok);
+    // A ship in a fleet too, so every kind of individual flag is there.
+    const DesignId design = addTestDesign(s, r, kMe, "Courier", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    const VehicleId ship = addTestVehicle(s, r, design, locationOf(s.galaxy, homeworld(s, kMe).planet)).id;
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"F", {ship}}).ok);
     REQUIRE(me.aiDifficulty < 0);
 
     REQUIRE(ai::setComputerControl(s, kMe, true));

@@ -7,6 +7,8 @@
 #include <doctest/doctest.h>
 
 #include <format>
+#include <string>
+#include <string_view>
 
 namespace opense4::test {
 
@@ -393,6 +395,28 @@ game::DesignId addTestDesign(game::GameState& s, const game::Rules& r, game::Emp
 
 game::Vehicle& addTestVehicle(game::GameState& s, const game::Rules& r, game::DesignId design, game::Location where) {
     return game::movement::spawnVehicle(r, s, s.design(design).owner, design, where);
+}
+
+void addHomeShips(game::GameState& s, const game::Rules& r) {
+    for (size_t i = 0; i < s.empires.size(); ++i) {
+        const game::EmpireId e{i};
+        if (!s.empire(e).alive) continue;
+        const std::string name = s.empire(e).name;
+        const std::string_view surface = s.empire(e).race.nativeSurface;
+        const std::string_view pod = surface == "Ice" ? "Test Ice Pod" : surface == "Rock" ? "Test Rock Pod" : "Test Gas Pod";
+        const game::DesignId scout = addTestDesign(s, r, e, std::format("{} Scout", name), "Test Frigate",
+                                                   {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine",
+                                                    "Test Supply Pod"});
+        s.design(scout).designType = "Scout";
+        const game::DesignId colonizer = addTestDesign(s, r, e, std::format("{} Colonizer", name), "Test Frigate",
+                                                       {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine",
+                                                        "Test Supply Pod", pod});
+        s.design(colonizer).designType = "Colony Ship";
+        const game::Location home = game::locationOf(s.galaxy, homeworld(s, e).planet);
+        addTestVehicle(s, r, scout, home);
+        addTestVehicle(s, r, scout, home);
+        addTestVehicle(s, r, colonizer, home);
+    }
 }
 
 game::Colony& homeworld(game::GameState& s, game::EmpireId e) {

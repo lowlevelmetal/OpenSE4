@@ -6,6 +6,7 @@
 #include "engine_fixture.hpp"
 
 #include "game/ai.hpp"
+#include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
 #include "learn/access.hpp"
@@ -224,7 +225,9 @@ TEST_CASE("learn: a training game loads with objectives, pages, hints and a fail
     CHECK(l->setup.events == 0);
 
     game::GameSetup g;
-    applySetup(l->setup, g);
+    game::StartExtras extras;
+    applySetup(l->setup, g, extras);
+    CHECK(extras.lessonShips.empty());  // no starting_ships: a lesson's game starts without ships, as any game
     CHECK(g.options.quadrantSize == 0);
     CHECK(g.options.eventFrequency == 0);
     CHECK_FALSE(g.options.simultaneous);
@@ -245,7 +248,8 @@ TEST_CASE("learn: ai_difficulty sets the level of the lesson's computer empires"
         e.kind = i == 0 ? game::PlayerKind::Human : game::PlayerKind::Computer;
         g.empires.push_back(e);
     }
-    applySetup(l->setup, g);
+    game::StartExtras extras;
+    applySetup(l->setup, g, extras);
     CHECK(g.options.aiDifficulty == game::kDifficultyHigh);
     CHECK(g.options.randomAiPlayers == std::vector<uint8_t>{0, 1, 1});
     auto s = game::createGame(engineRules(), g);
@@ -253,6 +257,45 @@ TEST_CASE("learn: ai_difficulty sets the level of the lesson's computer empires"
     CHECK(game::ai::difficultyOf(*s, game::EmpireId{1u}) == game::kDifficultyHigh);
     CHECK(game::ai::difficultyOf(*s, game::EmpireId{2u}) == game::kDifficultyHigh);
     CHECK(game::ai::difficultyOf(*s, game::EmpireId{0u}) == game::kDifficultyMedium);   // the player's ministers
+}
+
+TEST_CASE("learn: starting_ships gives the lesson's player ships of its Quick Start designs") {
+    std::vector<Diagnostic> problems;
+    const auto l = parseLesson("title = \"t\"\n[setup]\nstarting_ships = [\"Attack Ship\", \"Attack Ship\", \"Colony\"]\n"
+                               "[[objective]]\ntext = \"o\"\nwhen = { turn = 3 }\n",
+                               "s.toml", LessonKind::Training, problems);
+    REQUIRE_MESSAGE(l.has_value(), problemsText(problems));
+    CHECK(l->setup.startingShips == std::vector<std::string>{"Attack Ship", "Attack Ship", "Colony"});
+    game::GameSetup g;
+    g.seed = 7;
+    g.options.systemCount = 12;
+    for (int i = 0; i < 2; ++i) {
+        game::EmpireSetup e;
+        e.name = std::format("Empire {}", i + 1);
+        e.kind = i == 0 ? game::PlayerKind::Human : game::PlayerKind::Computer;
+        g.empires.push_back(e);
+    }
+    game::StartExtras extras;
+    extras.designMinisterRun.push_back(game::EmpireId{0u});  // as a quick start
+    applySetup(l->setup, g, extras);
+    REQUIRE(extras.lessonShips.size() == 1);
+    auto s = game::createGame(engineRules(), g, extras);
+    REQUIRE_MESSAGE(s.has_value(), (s ? std::string{} : s.error()));
+    std::vector<std::string> types;
+    for (const game::Vehicle& v : s->vehicles) {
+        CHECK(v.owner == game::EmpireId{0u});  // the computer player gets nothing
+        CHECK(v.location == game::locationOf(s->galaxy, homeworld(*s, game::EmpireId{0u}).planet));
+        types.push_back(s->design(v.design).designType);
+    }
+    const std::string colony = std::format("Colony ({})", s->empire(game::EmpireId{0u}).race.nativeSurface == "Ice" ? "Ice" : "Rock");
+    CHECK(types == std::vector<std::string>{"Attack Ship", "Attack Ship", colony});
+    CHECK(s->empire(game::EmpireId{1u}).designs.empty());
+
+    // Anything but a design type is refused.
+    problems.clear();
+    CHECK_FALSE(parseLesson("title = \"t\"\n[setup]\nstarting_ships = [\"Scout\"]\n[[objective]]\ntext = \"o\"\nwhen = { turn = 3 }\n",
+                            "b.toml", LessonKind::Training, problems));
+    CHECK(problemsText(problems).find("starting_ships") != std::string::npos);
 }
 
 TEST_CASE("learn: lesson errors name the file and line") {

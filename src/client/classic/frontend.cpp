@@ -261,7 +261,7 @@ public:
 private:
     void begin(MenuContext& ctx, size_t preset) {
         auto setup = quickStartSetup(*ctx.rules, ctx.rules->racePresets()[preset].folder, ctx.seed);
-        auto session = startLocalGame(ctx.rules, setup);
+        auto session = startLocalGame(ctx.rules, setup, quickStartExtras());
         if (session) ctx.startGame(std::move(*session));
         else error_ = session.error();
     }
@@ -363,8 +363,9 @@ private:
 
 Painter MenuContext::painter() const { return {art, fonts, map, fbScale, appSettings().graphics.textScale}; }
 
-std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::shared_ptr<const game::Rules> rules, const game::GameSetup& setup) {
-    auto state = game::createGame(*rules, setup);
+std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::shared_ptr<const game::Rules> rules, const game::GameSetup& setup,
+                                                                          const game::StartExtras& extras) {
+    auto state = game::createGame(*rules, setup, extras);
     if (!state) return std::unexpected(state.error());
     game::EmpireId player;
     int humans = 0;
@@ -397,6 +398,12 @@ game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playe
         setup.empires.push_back(e);
     }
     return setup;
+}
+
+game::StartExtras quickStartExtras() {
+    game::StartExtras extras;
+    extras.designMinisterRun.push_back(game::EmpireId{0u});  // the player, empire 0 of quickStartSetup
+    return extras;
 }
 
 std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id) {

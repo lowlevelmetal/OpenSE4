@@ -93,6 +93,13 @@ std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireI
 // the nearest empire before it whose units step ran; in a turn-based game,
 // and with the stock install, it is always 0.
 int64_t unitReserveLeft(const Rules& r, const Empire& e);
+// Quick Start (spec 01 §2.1, §3.6, confirmed: binary): one run of the Design
+// minister (spec 05 §7.5) for an empire at game creation. With no designs
+// yet it makes at most one design for each template of the race's
+// AI_DesignCreation file that yields one, from the starting technology.
+// Creation is not a turn, so its designs go straight into the game
+// (createGame calls it for EmpireSetup::designMinisterRun).
+void designMinisterRun(const Rules& r, GameState& s, EmpireId e);
 // Orders for a human empire's active ministers (both groups): the global
 // ministers switched on in Empire::ministers take over their area, the
 // individual ones act on the colonies and vehicles whose minister flag is on.

@@ -181,10 +181,4 @@ int vehicleCargoCapacity(const Rules& r, const GameState& s, const Vehicle& v);
 // Cargo space used by a cargo hold (population mass + unit hull tonnage).
 int64_t cargoSpaceUsed(const Rules& r, const GameState& s, const Cargo& c);
 
-// Starting designs: builds a plausible design for a role from the empire's
-// available tech ("scout", "colony:<Surface>", "warship", "base",
-// "transport", "fighter", "satellite", "mine", "troop"). Returns nullopt if
-// nothing valid can be made.
-std::optional<Design> autoDesign(const Rules& r, const Empire& owner, std::string_view role);
-
 } // namespace opense4::game

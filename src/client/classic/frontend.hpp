@@ -72,10 +72,14 @@ void introBackground(MenuContext& ctx);
 std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name);
 
 // Creates a local game from a setup; on failure returns the reason.
-std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::shared_ptr<const game::Rules> rules, const game::GameSetup& setup);
+std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::shared_ptr<const game::Rules> rules, const game::GameSetup& setup,
+                                                                          const game::StartExtras& extras = {});
 
 // Quick start: the player's race plus random computer opponents.
 game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed, int opponents = 4);
+// What a quick start gives beyond its setup (spec 01 §2.1, confirmed:
+// binary): the player gets one Design minister run at creation, and no ships.
+game::StartExtras quickStartExtras();
 
 // Game Setup / Empire Setup windows (setup.cpp in screens/), Multiplayer lobby (multiplayer.cpp).
 // `startPage`: a Game Setup page name, or "empire[:page]" to open Empire Setup at once.

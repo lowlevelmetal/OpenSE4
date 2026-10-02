@@ -742,7 +742,7 @@ std::string aiTypeOf(const Rules& r, const Design& d, const DesignStats& st) {
         default: break;
     }
     // 7. Cargo space makes a Population Transport; anything else, armed or
-    // not, is an Attack Ship (so a premade scout is one).
+    // not, is an Attack Ship (so a hand-made scout is one).
     return st.cargoCapacity > 0 ? "Population Transport" : "Attack Ship";
 }
 
@@ -869,6 +869,15 @@ std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireI
 int64_t unitReserveLeft(const Rules& r, const Empire& e) {
     const AiProfile& prof = profileFor(r, e);
     return prof.unitsFile ? prof.unitReservePercent : 0;
+}
+
+void designMinisterRun(const Rules& r, GameState& s, EmpireId e) {
+    if (!planFor(s, e)) return;
+    // The Design minister alone, as a computer player's would run (it plans
+    // on a private copy); its designs then join the game itself.
+    detail::Planner p(r, s, e, detail::Mode::Computer, kSaltEconomy);
+    detail::planDesigns(p);
+    for (const Command& c : p.report().commands) apply(r, s, e, c);
 }
 
 bool ministersActive(const GameState& s, EmpireId e) {

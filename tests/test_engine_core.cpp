@@ -11,6 +11,11 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <format>
+#include <string>
+#include <vector>
+
 using namespace opense4;
 using namespace opense4::game;
 using namespace opense4::test;
@@ -24,7 +29,7 @@ TEST_CASE("engine: abilities parse by identifier") {
     CHECK(identifier(AbilityKind::SpaceYard) == "Space Yard");
 }
 
-TEST_CASE("engine: setup creates homeworlds, tech, designs and ships") {
+TEST_CASE("engine: setup creates homeworlds and tech, and no designs or ships") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(3, 3, 12);
     REQUIRE(s.empires.size() == 3);
@@ -49,19 +54,57 @@ TEST_CASE("engine: setup creates homeworlds, tech, designs and ships") {
         CHECK(e.techLevel(techArea(r, "Test Psionics")) == 0);       // racial area
         CHECK(e.relations.size() == 3);
         CHECK(e.hasExplored(s.galaxy.object(home.planet).system));
-        CHECK(e.designs.size() >= 2);
-        for (DesignId d : e.designs) {
-            const DesignStats st = computeDesignStats(r, &e, s.design(d));
-            CHECK_MESSAGE(st.problems.empty(), s.design(d).name << ": " << (st.problems.empty() ? "" : st.problems.front()));
-        }
+        CHECK(e.designs.empty());  // starting assets: no design and no ship (spec 01 §3.6)
     }
-    int ships = 0;
-    for (const Vehicle& v : s.vehicles) {
-        ++ships;
-        CHECK(v.location == locationOf(s.galaxy, homeworld(s, v.owner).planet));
-        CHECK(vehicleMaxMovement(r, s, v) > 0);
+    CHECK(s.designs.empty());
+    CHECK(s.vehicles.empty());
+    CHECK(s.fleets.empty());
+}
+
+TEST_CASE("engine: a Quick Start player gets one Design minister run, a computer player designs in its first turn") {
+    const Rules& r = engineRules();
+    GameSetup setup;
+    setup.seed = 3;
+    setup.options.systemCount = 12;
+    setup.options.simultaneous = true;
+    for (int i = 0; i < 2; ++i) {
+        EmpireSetup e;
+        e.name = std::format("Empire {}", i + 1);
+        e.kind = i == 0 ? PlayerKind::Human : PlayerKind::Computer;
+        setup.empires.push_back(e);
     }
-    CHECK(ships == 3 * 3);  // 2 scouts + 1 colony ship each
+    StartExtras extras;
+    extras.designMinisterRun.push_back(EmpireId{0u});
+    auto g = createGame(r, setup, extras);
+    REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+    GameState& s = *g;
+    const Empire& me = s.empire(EmpireId{0u});
+    REQUIRE_FALSE(me.designs.empty());
+    std::vector<std::string> types;
+    for (DesignId d : me.designs) {
+        const Design& design = s.design(d);
+        CHECK(design.createdTurn == 0);   // dated 2400.0
+        CHECK(design.built == 0);         // prototypes
+        CHECK_FALSE(design.obsolete);
+        CHECK_FALSE(design.templateName.empty());  // the Design minister's
+        CHECK(computeDesignStats(r, &me, design).problems.empty());
+        types.push_back(design.designType);
+    }
+    std::sort(types.begin(), types.end());
+    CHECK(std::adjacent_find(types.begin(), types.end()) == types.end());  // at most one per design type
+    CHECK(s.vehicles.empty());                            // and no ship
+    CHECK(s.empire(EmpireId{1u}).designs.empty());        // the computer player gets nothing at creation
+
+    // The computer player's Design minister runs in its first turn, before
+    // the statistics; its first ships come from the queues afterwards.
+    std::vector<EmpireOrders> none;
+    TurnOptions opts;
+    opts.aiForMissing = false;
+    processTurn(r, s, none, opts);
+    CHECK_FALSE(s.empire(EmpireId{1u}).designs.empty());
+    REQUIRE_FALSE(s.empire(EmpireId{1u}).history.empty());
+    CHECK(s.empire(EmpireId{1u}).history.back().ships == 0);
+    CHECK(s.empire(EmpireId{0u}).designs.size() == types.size());  // a human's ministers are off
 }
 
 TEST_CASE("engine: setup is deterministic") {
@@ -198,6 +241,7 @@ TEST_CASE("engine: commands - designs, queues, fleets, orders") {
     CHECK(home.queue.emergency);
 
     // Fleets.
+    for (int k = 0; k < 2; ++k) addTestVehicle(s, r, warbird, locationOf(s.galaxy, home.planet));
     std::vector<VehicleId> mine;
     for (const Vehicle& v : s.vehicles)
         if (v.owner == me) mine.push_back(v.id);

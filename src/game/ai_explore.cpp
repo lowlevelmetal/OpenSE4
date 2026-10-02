@@ -82,8 +82,8 @@ void planColonization(Planner& p) {
 void planExploration(Planner& p) {
     if (!p.on(Minister::Exploration) || p.neutral) return;
     // Explorers: idle attack ships, and loaded carriers and drone carriers,
-    // outside fleets with fewer than 4 damaged components. A premade scout is
-    // an Attack Ship (spec 05 §7.5 design types).
+    // outside fleets with fewer than 4 damaged components. A hand-made scout
+    // is an Attack Ship (spec 05 §7.5 design types).
     std::vector<VehicleId> explorers;
     for (VehicleId id : p.ownVehicles(Minister::Exploration)) {
         const Vehicle* v = p.st.vehicle(id);

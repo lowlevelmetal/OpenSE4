@@ -412,6 +412,7 @@ TEST_CASE("ships ui: Jettison Cargo is for an own ship or base that is not mothb
     const Colony& home = homeworld(s, me);
     CHECK(shipui::canJettisonFrom(r, s, me, {}, home.planet));
     CHECK_FALSE(shipui::canJettisonFrom(r, s, EmpireId{1u}, {}, home.planet));
+    addHomeShips(s, r);
     VehicleId ship;
     for (const Vehicle& v : s.vehicles)
         if (v.owner == me && !shipui::isUnitVehicle(r, s, v)) ship = v.id;

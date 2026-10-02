@@ -1,7 +1,9 @@
 #pragma once
 
 // New game creation (docs/spec/01 §3, spec 02 §9): quadrant, empires with
-// their races, homeworlds, starting technology, designs and ships.
+// their races, homeworlds and starting technology. No empire gets a ship or a
+// design of its own (spec 01 §3.6 "Starting assets"): only an empire file's
+// designs, the Quick Start design run and a lesson's ships (StartExtras).
 
 #include "game/map_file.hpp"
 #include "game/rules.hpp"
@@ -38,9 +40,9 @@ struct EmpireSetup {
     // file, becomes Empire::experience and grows during play. Only shown.
     int experience = 0;
     // Designs saved with the empire (Save Empire with its designs, spec 06
-    // §7 Q48): the new game gives them to the empire after its starting
-    // designs. Only name, type, hull, entries, strategy and the obsolete
-    // flag are read; ids, owners and statistics are the new game's.
+    // §7 Q48): the new game gives them to the empire. Only name, type, hull,
+    // entries, strategy and the obsolete flag are read; ids, owners and
+    // statistics are the new game's.
     std::vector<Design> designs;
 };
 
@@ -53,6 +55,23 @@ struct GameSetup {
     std::optional<QuadrantMap> map;
 };
 
+// What a new game gets beyond its setup, from the client's own entry points.
+// Kept apart from GameSetup, which the lobby sends over the network: these
+// are never sent or saved.
+struct StartExtras {
+    // Quick Start (spec 01 §2.1, confirmed: binary): these empires (the
+    // human player) get one run of the Design minister at creation
+    // (ai::designMinisterRun), dated the first turn.
+    std::vector<EmpireId> designMinisterRun;
+    // OpenSE4 lesson extension (docs/LEARNING.md, `starting_ships`), never
+    // part of a normal game. Per EmpireId: one ship per entry, built at
+    // creation at the homeworld from the empire's newest design of that
+    // design type ("Attack Ship", "Colony (Rock)", ...; "Colony" stands for
+    // the colony ship of the race's own planet type). An entry without such
+    // a design builds nothing.
+    std::vector<std::vector<std::string>> lessonShips;
+};
+
 // Builds a race from a preset tier: characteristics, traits (by name), culture,
 // happiness model, environment.
 Race raceFromPreset(const Rules& r, const ruleset::RacePreset& preset, int tier);
@@ -61,7 +80,7 @@ const ruleset::RacePreset* findPreset(const Rules& r, std::string_view folderOrN
 // Racial points a race costs (spec 02 §8.1); used to validate custom races.
 int racialPointCost(const Rules& r, const Race& race);
 
-std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup& setup);
+std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup& setup, const StartExtras& extras = {});
 
 // Starting technology levels per the tech-start option (spec 05 §1.2).
 std::vector<int> startingTechLevels(const Rules& r, const GameOptions& o, const Race& race);
