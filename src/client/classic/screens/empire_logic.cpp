@@ -291,6 +291,23 @@ std::vector<ruleset::TechAreaId> researchableAreas(const game::Rules& r, const g
     return list;
 }
 
+std::vector<ResearchListArea> researchListAreas(const game::Rules& r, const game::GameState& s, const game::Empire& e) {
+    const std::vector<ruleset::TechAreaId> open = researchableAreas(r, s, e);
+    const auto& allowed = s.options.techAreasAllowed;
+    std::vector<ResearchListArea> out;
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
+        const ruleset::TechAreaId a{i};
+        if (std::find(open.begin(), open.end(), a) != open.end()) {
+            out.push_back({a, false});
+            continue;
+        }
+        if (!allowed.empty() && i < allowed.size() && !allowed[i]) continue;
+        const int max = r.tech(a).maxLevel;
+        if (max > 0 && e.techLevel(a) >= max) out.push_back({a, true});
+    }
+    return out;
+}
+
 std::string_view unlockKindName(TechUnlock::Kind k) {
     switch (k) {
         case TechUnlock::Kind::Component: return "Component";

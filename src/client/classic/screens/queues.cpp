@@ -95,14 +95,28 @@ struct QueueRow {
 };
 
 // Three amounts in the resource colours, from `at`, in Futurist Medium.
-void drawAmounts(UiContext& ui, ImDrawList* dl, ImVec2 at, const std::array<int64_t, 3>& v, const char* suffix = "") {
+// Three amounts in their resource colours; with `icons` each is followed by its
+// resource's icon (the Rate and Usage values, observed in spec 07 session 3).
+void drawAmounts(UiContext& ui, ImDrawList* dl, ImVec2 at, const std::array<int64_t, 3>& v, const char* suffix = "", bool icons = false) {
+    static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
     ImFont* font = ui.fonts.medium;
     const float size = ui.fontPx(kTextSize);
     float x = at.x;
     for (size_t k = 0; k < 3; ++k) {
         const std::string t = std::format("{}{}", v[k], suffix);
         dl->AddText(font, size, ImVec2(x, at.y), imColor(kResourceColors[k]), t.c_str());
-        x += std::max(font->CalcTextSizeA(size, FLT_MAX, 0.0f, t.c_str()).x + ui.px(6), ui.px(44));
+        const float w = font->CalcTextSizeA(size, FLT_MAX, 0.0f, t.c_str()).x;
+        if (!icons) {
+            x += std::max(w + ui.px(6), ui.px(44));
+            continue;
+        }
+        x += w + ui.px(1);
+        if (const Sprite icon = ui.art.icon16(kIcons[k])) {
+            const ImVec2 p0(x, at.y);
+            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), p0, ImVec2(p0.x + ui.px(14), p0.y + ui.px(14)), {icon.uv.min.x, icon.uv.min.y},
+                         {icon.uv.max.x, icon.uv.max.y});
+        }
+        x += ui.px(14 + 4);
     }
 }
 
@@ -149,8 +163,9 @@ public:
                 ui.tagTab(kTabIds[i], tab_ == static_cast<QueueTab>(i));
             }
             d.spacer();
+            // On/off settings: check boxes (observed, spec 07 session 3).
             for (const auto& [kind, label] : kQueueToggles)
-                if (d.tab(label, (shown_ & queueKindBit(kind)) != 0)) shown_ = uint8_t(shown_ ^ queueKindBit(kind));
+                if (d.check(label, (shown_ & queueKindBit(kind)) != 0)) shown_ = uint8_t(shown_ ^ queueKindBit(kind));
             // Always enabled; with nothing tagged it explains how to tag (spec 06 §1.8.2).
             if (d.button("Multi-Add")) {
                 if (tagged_.empty()) {
@@ -305,8 +320,8 @@ private:
     void list(UiContext& ui, const std::vector<const QueueRow*>& rows) {
         const game::GameState& s = ui.state();
         const std::array<ListColumn, 3> cols{{{"Name", 170}, {kQueueTabHeaders[size_t(tab_)], 150}, {"Construction Queue", 0}}};
-        // The rows' child has no padding; the header leaves room for its scrollbar.
-        const float width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 2.0f;
+        // The headings span the rows, not the arrow column.
+        const float width = listRowsWidth(ui, ImGui::GetContentRegionAvail().x);
         if (const int c = listHeader(ui, "##queuehead", cols, width); c >= 0) {
             // Stored with the empire at once (spec 06 §7 Q24).
             game::InterfaceOptions o = ui.options();
@@ -314,8 +329,8 @@ private:
             ui.setOptions(o);
         }
         const std::vector<float> x = columnEdges(ui, cols, width);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1, 1));
-        ImGui::BeginChild("##queuerows", ImVec2(0, listRowsHeight(ui)), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        beginList(ui, "##queuerows", ImVec2(0, listRowsHeight(ui)));
         ImGui::PopStyleVar();
         const float rowH = ui.px(kListRowH);
         ImFont* body = ui.fonts.medium;
@@ -374,8 +389,8 @@ private:
             clip(QcTab, FLT_MAX);
             const ImVec2 tabAt(a.x + x[QcTab] + ui.px(2), a.y + ui.px(kBodyLead));
             switch (tab_) {
-                case QueueTab::Rate: drawAmounts(ui, dl, tabAt, r.rate.v); break;
-                case QueueTab::Usage: drawAmounts(ui, dl, tabAt, r.usage.v); break;
+                case QueueTab::Rate: drawAmounts(ui, dl, tabAt, r.rate.v, "", true); break;
+                case QueueTab::Usage: drawAmounts(ui, dl, tabAt, r.usage.v, "", true); break;
                 case QueueTab::PlanetValue:
                     if (r.colony) drawAmounts(ui, dl, tabAt, {r.value[0], r.value[1], r.value[2]}, s.options.finiteResources ? "" : "%");
                     break;
@@ -408,7 +423,7 @@ private:
             dl->AddLine(ImVec2(a.x, lineY), ImVec2(a.x + x.back(), lineY), imColor(palette::kFrameLight));
         }
         if (rows.empty()) ImGui::TextColored(kTextDim, "%s", shown_ == 0 ? "Every toggle is off." : "No queues of the shown kinds.");
-        ImGui::EndChild();
+        endList(ui);
         ui.tagItem("queues:list");
     }
 
@@ -456,14 +471,14 @@ private:
         if (!beginModal(ui, id, {420, 520})) return;
         const game::GameState& s = ui.state();
         const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
-        ImGui::BeginChild("##pick", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##pick", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (game::ObjectId p : pickRows_) {
             const game::SpaceObject& o = s.galaxy.object(p);
             const std::string label = std::format("{}   ({})###p{}", o.name, s.galaxy.system(o.system).name, p.index());
             if (ImGui::Selectable(label.c_str(), picked_ == p)) picked_ = p;
         }
         if (pickRows_.empty()) ImGui::TextColored(kTextDim, "No colonies are listed.");
-        ImGui::EndChild();
+        endList(ui);
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         ImGui::BeginDisabled(!picked_);
         const bool ok = ImGui::Button("Select", ImVec2(w, ui.px(26)));
@@ -602,23 +617,24 @@ private:
             if (lampButton(d, ui, label, tab_ == tab, tabEnabled(tab, planet))) tab_ = tab;
             ui.tagTab(kBuildTabIds[static_cast<size_t>(tab)], tab_ == tab);
         }
-        if (lampButton(d, ui, "Only Latest", onlyLatest_, true, "Show only the newest level of each facility and no obsolete designs"))
+        // On/off settings are check boxes (spec 07 §UI).
+        if (checkButton(d, ui, "Only Latest", onlyLatest_, true, "Show only the newest level of each facility and no obsolete designs"))
             onlyLatest_ = !onlyLatest_;
         // Multi-Add disables the queue option buttons (spec 06 §1.8.2).
         const bool options = !multi_;
         game::cmd::QueueFlags flags{target_, q->onHold, q->repeat, q->emergency, q->autoWaypoint};
         const bool recovering = !q->emergency && q->slowTurns > 0;
-        if (lampButton(d, ui, "Emergency Build", q->emergency, options && !recovering,
+        if (checkButton(d, ui, "Emergency Build", q->emergency, options && !recovering,
                        recovering ? "The yard is recovering from emergency construction"
                                   : "Build at 150% for up to 10 turns; afterwards the yard runs slow for as long")) {
             flags.emergency = !q->emergency;
             status_.issue(ui, flags);
         }
-        if (lampButton(d, ui, "Repeat Build", q->repeat, options, "Keep rebuilding the top item")) {
+        if (checkButton(d, ui, "Repeat Build", q->repeat, options, "Keep rebuilding the top item")) {
             flags.repeat = !q->repeat;
             status_.issue(ui, flags);
         }
-        if (lampButton(d, ui, "Queue On Hold", q->onHold, options, "Freeze the queue; nothing is spent")) {
+        if (checkButton(d, ui, "Queue On Hold", q->onHold, options, "Freeze the queue; nothing is spent")) {
             flags.onHold = !q->onHold;
             status_.issue(ui, flags);
         }
@@ -856,10 +872,10 @@ private:
         }
         avail_ = buildables(ui);
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(4), ui.px(2)));
-        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit;
-        if (ImGui::BeginTable("##avail", 3, flags)) {
+        const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit;
+        if (beginListTable(ui, "##avail", 3, flags, ImVec2(0, 0), kRowHeight)) {
             ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("", 0, ui.px(28));
+            ImGui::TableSetupColumn(kPicHeading, 0, ui.px(28));
             ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Time", 0, ui.px(62));
             ImGui::TableHeadersRow();
@@ -884,7 +900,7 @@ private:
                                                    : tab_ == BuildTab::Facilities && !planet ? "Only planets build facilities."
                                                                                               : "Nothing available.");
             }
-            ImGui::EndTable();
+            endListTable(ui);
         }
         ImGui::PopStyleVar();
     }
@@ -903,10 +919,10 @@ private:
         else ImGui::TextColored(kTextDim, "%zu item%s, all done in %s", q.items.size(), q.items.size() == 1 ? "" : "s", turnsText(est.back().doneIn).c_str());
         std::optional<size_t> clicked;
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(4), ui.px(2)));
-        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit;
-        if (ImGui::BeginTable("##queue", 4, flags)) {
+        const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit;
+        if (beginListTable(ui, "##queue", 4, flags, ImVec2(0, 0), kRowHeight)) {
             ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("", 0, ui.px(28));
+            ImGui::TableSetupColumn(kPicHeading, 0, ui.px(28));
             ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Progress", 0, ui.px(70));
             ImGui::TableSetupColumn("Done", 0, ui.px(62));
@@ -932,7 +948,7 @@ private:
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextColored(kTextDim, "Add items from the list on the left.");
             }
-            ImGui::EndTable();
+            endListTable(ui);
         }
         ImGui::PopStyleVar();
         if (!clicked) return;
@@ -1113,7 +1129,7 @@ private:
         ImGui::TextColored(kTextDim, "New ships from this queue move to:");
         const auto& wps = ui.me().waypoints;
         const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
-        ImGui::BeginChild("##wps", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##wps", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         bool any = false;
         for (size_t i = 0; i < wps.size(); ++i) {
             const game::Waypoint& w = wps[i];
@@ -1128,7 +1144,7 @@ private:
             any = any || w.set;
         }
         if (!any) ImGui::TextColored(kTextDim, "No waypoints are set. Set them in Empire Status > Waypoints.");
-        ImGui::EndChild();
+        endList(ui);
         if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
@@ -1165,15 +1181,15 @@ private:
         all.insert(all.end(), userTemplates_.begin(), userTemplates_.end());
         if (chosenTemplate_ >= static_cast<int>(all.size())) chosenTemplate_ = -1;
         const float footer = ui.px(26) * 2 + ImGui::GetStyle().ItemSpacing.y * 3;
-        ImGui::BeginChild("##list", ImVec2(ui.px(280), -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##list", ImVec2(ui.px(280), -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (size_t i = 0; i < all.size(); ++i) {
             if (static_cast<int>(i) == builtIns) ImGui::Separator();
             if (ImGui::Selectable(std::format("{}##t{}", all[i].name, i).c_str(), chosenTemplate_ == static_cast<int>(i))) chosenTemplate_ = static_cast<int>(i);
         }
         if (userTemplates_.empty()) ImGui::TextColored(kTextDim, "Add Type saves this queue as a new type.");
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SameLine();
-        ImGui::BeginChild("##preview", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##preview", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         std::vector<game::QueueItem> items;
         if (chosenTemplate_ >= 0) {
             items = resolveTemplate(r, s, ui.session.player(), target_, all[static_cast<size_t>(chosenTemplate_)]);
@@ -1188,7 +1204,7 @@ private:
         } else {
             ImGui::TextColored(kTextDim, "Pick a queue type to see what it adds.");
         }
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SetNextItemWidth(ui.px(280));
         ImGui::InputTextWithHint("##newname", "Name for a new type", newTemplateName_, sizeof(newTemplateName_));
         ImGui::SameLine();

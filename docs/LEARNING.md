@@ -594,10 +594,10 @@ the Weapons Report.
 | `research:areas`, `research:queue`, `research:tech-tree` | Research: the list of areas (a click adds a project), the current projects, Tech Tree |
 | `set-queue:available`, `set-queue:queue` | Set Construction Queue: what can be built (a click adds it), the queue |
 | `queues:list` | Construction Queues: the list of queues |
-| `designs:list`, `designs:create`, `designs:simulator` | Designs: the list, Create, Simulator |
-| `create-design:hull`, `create-design:name`, `create-design:suggest` | Create Design: the size, the name box and Suggest |
-| `create-design:on-design`, `create-design:components` | the components on the design, those that can be added |
-| `create-design:warnings`, `create-design:save` | the problems box, Create Design (Save Design when editing) |
+| `designs:list`, `designs:create`, `designs:simulator` | Designs: the list, Create (it asks the vehicle type first), Simulator |
+| `create-design:hull`, `create-design:name`, `create-design:suggest` | Create Design: the Size box with its list button, the Design Name box, and the button beside it that lists names |
+| `create-design:on-design`, `create-design:components` | the Components on Design strip, the Components Available grid |
+| `create-design:warnings`, `create-design:save` | the Warnings box, Create Design (Save Design when editing) |
 | `fleet-transfer:ships`, `fleet-transfer:fleets`, `fleet-transfer:create-fleet` | Fleet Transfer: the ships outside fleets, the fleets, Create Fleet |
 | `combat-simulator:vehicles`, `combat-simulator:items`, `combat-simulator:owners` | Combat Simulator: the Combat Vehicles list, the Items to choose list (a click adds the item for the chosen race), the Owner for item list (Race 1 to Race 10) |
 | `combat-simulator:strategies`, `combat-simulator:begin` | its Strategies and Begin buttons (its Tactical and Strategic tabs: `combat-simulator:tactical`, `combat-simulator:strategic`) |
@@ -606,7 +606,7 @@ the Weapons Report.
 | `tactical-combat:options`, `tactical-combat:orders`, `tactical-combat:auto`, `tactical-combat:end-turn` | its Options, Orders and Auto buttons, and Begin (End Turn once the battle has begun) |
 | `planets:list`, `planets:send-colony-ship` | Planets: the list, Send Colony Ship |
 | `planets:filters`, `planets:no-sys-to-avoid` | the Planets filters (each one is `planets:<filter>`, above), No Sys To Avoid |
-| `colonies:list`, `colonies:queue` | Colonies: the list, Constr. Queue |
+| `colonies:list` | Colonies: the list |
 | `research:divide-evenly`, `research:repeat` | Research: Divide Pts Evenly, Repeat Projects |
 | `log:messages`, `log:categories`, `log:send-reply` | the Log's messages, its category buttons (All to Misc; each one is `log:<category>`, above), Send Reply |
 | `empires:list`, `empires:intelligence` | the Empires window's empires, its Intelligence button |

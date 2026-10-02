@@ -136,7 +136,7 @@ constexpr std::string_view kOtherTags[] = {
     "tactical-combat:map", "tactical-combat:piece", "tactical-combat:weapons", "tactical-combat:target",
     "tactical-combat:options", "tactical-combat:orders", "tactical-combat:auto", "tactical-combat:end-turn",
     "planets:list", "planets:filters", "planets:no-sys-to-avoid", "planets:send-colony-ship",
-    "colonies:list", "colonies:queue",
+    "colonies:list",
     "research:divide-evenly", "research:repeat",
     "log:messages", "log:categories", "log:send-reply",
     "empires:list", "empires:intelligence",

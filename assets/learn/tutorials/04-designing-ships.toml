@@ -32,10 +32,10 @@ manual = "ship-design#the-designs-window"
 [[step]]
 title = "Your designs"
 text = """
-The list shows your ship designs, each with its hull and its **design type**: an attack ship,
-a colony ship, transports, bases and more. Their names come from your race's list. Click one to
-see its numbers on the right: cost, size, structure, movement, shields, weapons, cargo and
-supply, and its components.
+The list shows your ship designs under their **design types**: attack ships, colony ships,
+transports, bases and more, each with its hull. Their names come from your race's list. Click one
+to see its numbers on the right: size, cost, movement, shields, cargo space and supply capacity,
+and its components as a grid of icons.
 
 The tabs on the right switch to unit designs and to the enemy designs you have seen. Press
 **Next**.
@@ -47,7 +47,8 @@ manual = "ship-design#the-designs-window"
 [[step]]
 title = "A new design"
 text = """
-Press **Create** to open the designer with an empty design.
+Press **Create**. The game asks which kind of vehicle to design: pick **Ship**, and the designer
+opens with an empty ship design.
 """
 highlight = ["designs:create"]
 done = { window = "create-design" }
@@ -56,9 +57,9 @@ manual = "ship-design#the-create-design-window"
 [[step]]
 title = "Choose a hull"
 text = """
-Pick a hull with **Size**. The hull sets the class of the vehicle and how many kT of components
-fit in it. A larger hull holds more, but costs more and needs more crew. For a first warship,
-choose one of the smaller ship hulls in the **Size** list.
+A new design has no size yet. Press the arrow button beside **Size** and pick a hull. The hull
+sets how many kT of components fit in the vehicle. A larger hull holds more, but costs more and
+needs more crew. For a first warship, choose one of the smaller ship hulls in the list.
 """
 highlight = ["create-design:hull"]
 done = { design_hull_chosen = true }
@@ -67,10 +68,11 @@ manual = "ship-design#hulls-and-components"
 [[step]]
 title = "Add components"
 text = """
-Click components in the **Available** list to add them; click one on the design to remove it.
-Right-click any component for its report. A warship needs:
+Click components in **Components Available** to add them; they appear in the strip of
+**Components on Design**, where a click removes one. Right-click any component for its report. A
+warship needs:
 
-- vehicle control: a **bridge**, **life support** and **crew quarters** (the warnings box tells you how many of each the hull needs);
+- vehicle control: a **bridge**, **life support** and **crew quarters** (the **Warnings** box tells you how many of each the hull needs);
 - **engines**, to move;
 - **weapons**;
 - **armor**, which is destroyed before anything else when the ship is hit;
@@ -86,9 +88,9 @@ manual = "ship-design#design-rules"
 [[step]]
 title = "Check the rules"
 text = """
-The warnings box lists every rule the design breaks: too many kT, a missing bridge, too few
-crew quarters, too many engines and so on. Fix each one. When the box says the design meets
-every rule, it can be created. Press **Next**.
+The **Warnings** box lists every rule the design breaks: too many kT, a missing bridge, too few
+crew quarters, too many engines, no name yet and so on. Fix each one. When the box has nothing
+left, the design can be created. Press **Next**.
 """
 highlight = ["create-design:warnings"]
 allow = ["create-design:components", "create-design:on-design"]
@@ -97,8 +99,8 @@ manual = "ship-design#design-rules"
 [[step]]
 title = "Name it"
 text = """
-Click the name box and type a name for the design, or press **Suggest** for the next name from
-your race's list. Names must be unique in the whole game. Press **Next**.
+Click the **Design Name** box and type a name for the design, or press the arrow button beside it
+and pick a name from your race's list. Names must be unique in the whole game. Press **Next**.
 """
 highlight = ["create-design:name", "create-design:suggest"]
 allow = ["create-design:name", "create-design:suggest"]
@@ -107,8 +109,8 @@ manual = "ship-design#the-create-design-window"
 [[step]]
 title = "Create it"
 text = """
-Press **Create Design**. If it is dim, the warnings box still names a rule the design breaks:
-fix that first.
+Press **Create Design**. If the design is refused, the Warnings box still names a rule the
+design breaks: fix that first.
 """
 highlight = ["create-design:save"]
 allow = ["create-design:components", "create-design:on-design", "create-design:name", "create-design:suggest"]

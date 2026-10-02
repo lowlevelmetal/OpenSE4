@@ -161,7 +161,8 @@ leader has a price.
 ## The Empires window
 
 Open [Empires](window:empires) with `F9`. It shows a portrait for each empire you are in contact
-with, four at a time, with a column of facts below each.
+with, four at a time, with a column of facts below each; before your first contact the strip is
+empty.
 
 - **Left-click** a portrait to open [Communicate](window:communicate) with that empire.
 - **Right-click** a portrait for its Race Report: its race, characteristics, traits and description, and its technology if it is your partner.
@@ -173,10 +174,10 @@ The buttons on the right open more windows:
 |---|---|
 | History | A dated record of your empire's and others' main events. |
 | Treaty Grid | The treaty between each pair of empires. You see treaties of your allies only; the rest show `??`. |
-| Intelligence | Your [intelligence](intelligence) projects. |
-| Borders | A check box that switches the view to the systems each empire claims, with filters `Select All`, `Allies`, `Enemies` and `Us`. |
-| Victory Conditions | Progress toward the game's [victory conditions](score-and-victory). |
+| Intelligence | Your [intelligence](intelligence) projects (dim until you have met another empire). |
+| Borders | Switches the view to the systems each empire claims, with filters `Select All`, `Allies`, `Enemies` and `Us`; press it again, or a tab, for the portraits. |
 | Scores | The score table (see [Score and victory](score-and-victory#the-scores-window)). |
+| Victory Conditions | Progress toward the game's [victory conditions](score-and-victory). |
 | Comparisons | Graphs of the score table over time. |
 | Our Race | Your own race report. |
 

@@ -31,7 +31,7 @@ function key.
 | Designs | `F3` | Your ship and unit designs ([Ship design](ship-design)). |
 | Planets | `F4` | Every planet you have seen ([Planets and colonies](planets-and-colonies#colonizing)). |
 | Colonies | `F5` | Your colonies ([Planets and colonies](planets-and-colonies#the-colonies-window)). |
-| `Ships \ Units` | `F6` | Your ships, unit groups and fleets ([Ships and fleets](ships-and-fleets#the-ships-and-units-window)). |
+| `Ships\Units` | `F6` | Your ships, unit groups and fleets ([Ships and fleets](ships-and-fleets#the-ships-and-units-window)). |
 | Construction Queues | `F7` | Everything being built ([Construction](construction)). |
 | Research | `F8` | Research projects ([Research](research)). |
 | Empires | `F9` | Diplomacy, intelligence and scores ([Diplomacy](diplomacy)). |
@@ -69,7 +69,7 @@ The **system panel** shows the selected system as a grid of 13 by 13 sectors. St
 asteroid fields, storms, warp points and ships appear at their sectors. The system's name is at
 the top left, followed by the coordinates of the sector under the pointer.
 
-- **Left-click** a sector. If it holds one thing, the report panel shows its report. If it holds several, the panel lists them; click one in the list to see its report, and `List` to go back.
+- **Left-click** a sector. If it holds one thing, the report panel shows its report. If it holds several, the panel lists them; click one in the list to see its report, and the up-arrow button at the report's top right to go back.
 - **Left-click empty space** to read about the whole system: its type and its special features. The sector stays selected, so that you can set a waypoint there, but it is not marked.
 - **Right-click** a sector while one of your ships is selected, and the ship moves there (you can turn this off in [Settings](settings#controls)).
 - The selected sector has yellow corner marks while it holds something you can see; the coordinate line then also gives the range from it to the sector under the pointer.

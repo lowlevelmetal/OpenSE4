@@ -9,6 +9,7 @@
 // replay keeps no log of any kind (spec 06 §7 Q39; kept, inferred).
 
 #include "client/classic/replay.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/combat_map.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -195,7 +196,7 @@ private:
 
     void eventList(UiContext& ui, ImVec2 size) {
         heading(ui, playback_.round() > 0 ? std::format("Combat Turn {}", playback_.round()).c_str() : "Before the battle");
-        ImGui::BeginChild("##events", ImVec2(size.x, size.y - ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Borders);
+        beginList(ui, "##events", ImVec2(size.x, size.y - ImGui::GetFrameHeightWithSpacing()), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         const int round = playback_.round();
         const size_t from = round > 0 ? playback_.roundStart(round) : 0;
         const size_t to = playback_.cursor();
@@ -222,7 +223,7 @@ private:
             ImGui::SetScrollHereY(1.0f);
             listCursor_ = to;
         }
-        ImGui::EndChild();
+        endList(ui);
     }
 
     void summary(UiContext& ui, ImVec2 size) {
@@ -310,12 +311,12 @@ public:
         game::InterfaceOptions o = ui.options();
         d.beginContent();
         ImGui::TextColored(kLabelBlue, "Options In Use");
-        ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##options", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         lampToggle(ui, "Animate ship movement in combat replay", &o.replayAnimate);
         lampToggle(ui, "Fast Tactical Combat", &o.replayFast);
         lampToggle(ui, "Show Viewing Rectangle on Map", &o.replayViewRect);
         lampToggle(ui, "Show Grid", &o.replayGrid);
-        ImGui::EndChild();
+        endList(ui);
         ui.setOptions(o);
         d.beginButtons();
         if (d.button("Stop Replay")) {

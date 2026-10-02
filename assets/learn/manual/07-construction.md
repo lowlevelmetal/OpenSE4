@@ -80,11 +80,11 @@ show your resources and queue usage per turn, how many space yards you have (on 
 ships) and how many queues are on hold.
 
 - Each row shows the queue's owner with its status icons, the column of the chosen tab, and the first three items of the queue with the time the whole queue needs: in years, or `Never` when it cannot finish, or `On Hold`. A yellow note shows an emergency or a slow period.
-- The tabs choose that column: **Rate**, **Usage Per Turn**, **Planet Value**, **Number of Facilities** (built and slots) and **Cargo Space**. Click a column heading to sort.
-- The lamps **Ships**, **Planets**, **Ship SY** and **Planet SY** choose which queues to list: ships and bases whose space yard is not working now (cloaked or mothballed), colonies without a working yard, ships and bases with a working yard, and colonies with one.
+- The tabs choose that column: **Rate** and **Usage Per Turn** (each amount with its resource's icon), **Planet Value**, **Number of Facilities** (built and slots) and **Cargo Space**. Click a column heading to sort.
+- The check boxes **Ships**, **Planets**, **Ship SY** and **Planet SY** choose which queues to list: ships and bases whose space yard is not working now (cloaked or mothballed), colonies without a working yard, ships and bases with a working yard, and colonies with one.
 - **Click** a row to open that queue. **Shift+click** tags a queue for Multi-Add. **Right-click** shows the planet's or ship's report.
 
-The window remembers the tab and the lamps.
+The window remembers the tab and the check boxes.
 
 | Button | What it does |
 |---|---|
@@ -106,7 +106,7 @@ The buttons on the right:
 
 | Button | What it does |
 |---|---|
-| `Emergency Build`, `Repeat Build`, `Queue On Hold` | The build modes above. Emergency Build is dim while the yard recovers from an emergency. |
+| `Emergency Build`, `Repeat Build`, `Queue On Hold` | Check boxes for the build modes above. Emergency Build is dim while the yard recovers from an emergency. |
 | `Set Move To`, `Clear Move To` | Send new ships to one of your waypoints, or stop doing so. |
 | `Fill Queue` | Add a saved list of items (a queue type). |
 | `Clear Queue` | Empty the queue (it asks first). |

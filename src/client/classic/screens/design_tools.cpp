@@ -73,6 +73,24 @@ std::vector<uint32_t> filterComponents(const game::Rules& r, const game::Empire&
 
 } // namespace
 
+std::vector<ruleset::VehicleType> designableTypes(const game::Rules& r, const game::Empire& e) {
+    std::vector<ruleset::VehicleType> out;
+    for (size_t t = 0; t < static_cast<size_t>(ruleset::VehicleType::Count); ++t) {
+        const auto type = static_cast<ruleset::VehicleType>(t);
+        if (!hullsOfType(r, e, type).empty()) out.push_back(type);
+    }
+    return out;
+}
+
+std::vector<uint32_t> hullsOfType(const game::Rules& r, const game::Empire& e, ruleset::VehicleType t, std::optional<uint32_t> keep) {
+    std::vector<uint32_t> out;
+    for (uint32_t i = 0; i < r.data().vehicleSizes.size(); ++i)
+        if (r.hull(i).type == t && (r.hullAvailable(e, i) || keep == i)) out.push_back(i);
+    return out;
+}
+
+std::string designWindowTitle(ruleset::VehicleType t) { return std::string(ruleset::displayName(t)) + " Design"; }
+
 std::vector<uint32_t> designerComponents(const game::Rules& r, const game::Empire& e, uint32_t hull, std::string_view group, bool onlyLatest) {
     const auto mask = ruleset::maskOf(r.hull(hull).type);
     return filterComponents(r, e, onlyLatest, [&](const ruleset::Component& c) {

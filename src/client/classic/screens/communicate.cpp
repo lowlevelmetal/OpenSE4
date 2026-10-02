@@ -3,6 +3,7 @@
 // §4.2; docs/spec/05 §3.4).
 
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 
@@ -242,14 +243,14 @@ private:
             ImGui::Spacing();
             const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
             const float h = ImGui::GetContentRegionAvail().y - ui.px(34);
-            ImGui::BeginChild("##give", ImVec2(n.request ? half : 0, h), ImGuiChildFlags_Borders);
+            beginList(ui, "##give", ImVec2(n.request ? half : 0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
             packageList(ui, "We give", draft_.offer, true);
-            ImGui::EndChild();
+            endList(ui);
             if (n.request) {
                 ImGui::SameLine();
-                ImGui::BeginChild("##take", ImVec2(0, h), ImGuiChildFlags_Borders);
+                beginList(ui, "##take", ImVec2(0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
                 packageList(ui, "We ask for", draft_.request, true);
-                ImGui::EndChild();
+                endList(ui);
             }
         } else {
             ImGui::TextColored(kTextDim, "This kind of message carries no package.");
@@ -558,7 +559,7 @@ private:
         std::vector<PackageItem>& side = giveSide_ ? draft_.offer : draft_.request;
         const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         const float h = ImGui::GetContentRegionAvail().y - ui.px(30);
-        ImGui::BeginChild("##available", ImVec2(half, h), ImGuiChildFlags_Borders);
+        beginList(ui, "##available", ImVec2(half, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         heading(ui, giveSide_ ? "Ours to offer" : "Theirs to ask for");
         ImGui::SameLine();
         ImGui::TextColored(kTextDim, "(click to add)");
@@ -579,11 +580,11 @@ private:
                 ImGui::PopID();
             }
         }
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SameLine();
-        ImGui::BeginChild("##current", ImVec2(0, h), ImGuiChildFlags_Borders);
+        beginList(ui, "##current", ImVec2(0, h), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         packageList(ui, giveSide_ ? "We give" : "We ask for", side, true);
-        ImGui::EndChild();
+        endList(ui);
         ImGui::TextColored(kTextDim, "Items the other side is asked to choose (\"Any\") must be filled in before a trade can be accepted.");
     }
 
@@ -645,13 +646,13 @@ private:
         if (!m.offer.empty() || !m.request.empty()) {
             auto offer = m.offer, request = m.request;
             const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-            ImGui::BeginChild("##offer", ImVec2(half, ui.px(120)), ImGuiChildFlags_Borders);
+            beginList(ui, "##offer", ImVec2(half, ui.px(120)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
             packageList(ui, "They give", offer, false);
-            ImGui::EndChild();
+            endList(ui);
             ImGui::SameLine();
-            ImGui::BeginChild("##request", ImVec2(0, ui.px(120)), ImGuiChildFlags_Borders);
+            beginList(ui, "##request", ImVec2(0, ui.px(120)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
             packageList(ui, "They ask for", request, false);
-            ImGui::EndChild();
+            endList(ui);
         }
     }
 

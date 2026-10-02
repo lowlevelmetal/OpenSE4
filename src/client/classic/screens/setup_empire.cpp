@@ -1,4 +1,5 @@
 #include "client/classic/screens/setup_empire.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 
 #include "client/classic/screens/setup_widgets.hpp"
 #include "datafile/datafile.hpp"
@@ -307,7 +308,7 @@ void EmpireEditor::pageCulture(MenuContext& ctx) {
     note("A culture shifts the whole empire's output and abilities by these percentages. Click a row to choose it.");
     static constexpr std::array<const char*, 10> kColumns{"Prod", "Research", "Intel", "Trade", "Space", "Ground", "Happy", "Maint", "Yards", "Repair"};
     const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
-    if (ImGui::BeginTable("##cultures", 11, flags, ImVec2(0, ctx.px(400)))) {
+    if (beginListTable(ctx.painter(), "##cultures", 11, flags, ImVec2(0, ctx.px(400)), kListLineStep)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Culture", ImGuiTableColumnFlags_WidthStretch);
         for (const char* c : kColumns) ImGui::TableSetupColumn(c, ImGuiTableColumnFlags_WidthFixed, ctx.px(56));
@@ -329,7 +330,7 @@ void EmpireEditor::pageCulture(MenuContext& ctx) {
                 ImGui::TextColored(signColor(x), "%s", signedPercent(x).c_str());
             }
         }
-        ImGui::EndTable();
+        endListTable(ctx.painter());
     }
     if (draft_.race.culture < cultures.size()) {
         ImGui::Dummy(ImVec2(0, ctx.px(6)));
@@ -400,7 +401,7 @@ void EmpireEditor::pageTraits(MenuContext& ctx) {
     ImGui::Dummy(ImVec2(0, ctx.px(4)));
     int hovered = -1;
     const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV;
-    if (ImGui::BeginTable("##traits", 4, flags, ImVec2(0, ctx.px(420)))) {
+    if (beginListTable(ctx.painter(), "##traits", 4, flags, ImVec2(0, ctx.px(420)), kListLineStep)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Trait", ImGuiTableColumnFlags_WidthFixed, ctx.px(240));
         ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, ctx.px(60));
@@ -436,7 +437,7 @@ void EmpireEditor::pageTraits(MenuContext& ctx) {
             ImGui::TextColored(!has && !check.ok ? kBad : kDim, "%s", rulesText.c_str());
             ImGui::PopID();
         }
-        ImGui::EndTable();
+        endListTable(ctx.painter());
     }
     if (hovered >= 0) hoveredTrait_ = hovered;
     if (hoveredTrait_ >= 0 && static_cast<size_t>(hoveredTrait_) < traits.size()) {

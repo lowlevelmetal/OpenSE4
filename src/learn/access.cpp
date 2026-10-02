@@ -21,7 +21,6 @@ constexpr std::pair<std::string_view, std::string_view> kOpens[] = {
     {"designs:create", "create-design"},
     {"designs:simulator", "combat-simulator"},
     {"research:tech-tree", "tech-tree"},
-    {"colonies:queue", "set-queue"},
     {"order:build-queue", "set-queue"},
     {"queues:list", "set-queue"},
     {"order:fleet-transfer", "fleet-transfer"},

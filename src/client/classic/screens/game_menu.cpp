@@ -3,6 +3,7 @@
 
 #include "client/audio.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/pointers.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
@@ -412,14 +413,14 @@ public:
         if (!saved_.empty()) ImGui::TextColored(kGoodText, "Saved as %s", saved_.c_str());
         ImGui::Spacing();
         ImGui::TextColored(kLabelBlue, "Saved games (click one to reuse its name)");
-        ImGui::BeginChild("##saves", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##saves", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (const SaveFile& f : saves_) {
             if (ImGui::Selectable(f.name.c_str(), f.name == name_)) name_ = f.name;
             ImGui::SameLine(ImGui::GetWindowWidth() - ui.px(130));
             dimText(formatTime(f.modified).c_str());
         }
         if (saves_.empty()) dimText("No saved games yet.");
-        ImGui::EndChild();
+        endList(ui);
 
         d.beginButtons();
         const std::string clean = cleanName(name_);
@@ -483,7 +484,7 @@ public:
             ImGui::TextColored(kErrorText, "%s", error_.c_str());
             ImGui::PopTextWrapPos();
         }
-        ImGui::BeginChild("##list", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##list", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         if (ImGui::BeginTable("##saves", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 1.6f);
             ImGui::TableSetupColumn("Last saved", ImGuiTableColumnFlags_WidthStretch, 1.0f);
@@ -508,7 +509,7 @@ public:
             ImGui::EndTable();
         }
         if (saves_.empty()) dimText("There are no saved games.");
-        ImGui::EndChild();
+        endList(ui);
         if (askDelete) ImGui::OpenPopup("Delete");
         if (pending_ < saves_.size() && confirmPopup(ui, "Delete", std::format("Delete the saved game \"{}\"?", saves_[pending_].name))) {
             std::error_code ec;

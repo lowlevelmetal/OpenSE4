@@ -5,6 +5,7 @@
 // the game (net_transport.hpp).
 
 #include "client/classic/frontend.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/settings.hpp"
 #include "game/redact.hpp"
@@ -168,8 +169,8 @@ private:
             return;
         }
         const std::string mine = game::dataSetIdentity(*ctx.rules);
-        if (ImGui::BeginTable("##lan", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY,
-                              ImVec2(0, ctx.px(140)))) {
+        if (beginListTable(ctx.painter(), "##lan", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH, ImVec2(0, ctx.px(140)),
+                           kListLineStep)) {
             ImGui::TableSetupColumn("Game");
             ImGui::TableSetupColumn("Address", ImGuiTableColumnFlags_WidthFixed, ctx.px(170));
             ImGui::TableSetupColumn("Players", ImGuiTableColumnFlags_WidthFixed, ctx.px(70));
@@ -197,7 +198,7 @@ private:
                 else if (g.password) ImGui::TextUnformatted("Password needed");
                 ImGui::PopID();
             }
-            ImGui::EndTable();
+            endListTable(ctx.painter());
         }
         if (browser_.games().empty()) ImGui::TextDisabled("Looking for games...");
         if (ImGui::SmallButton("Refresh")) browser_.refresh();
@@ -362,8 +363,8 @@ private:
 
         // Slots.
         const uint32_t mine = host_ ? host_->localSlot() : client_->slot();
-        if (ImGui::BeginTable("##slots", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY,
-                              ImVec2(0, ctx.px(250)))) {
+        if (beginListTable(ctx.painter(), "##slots", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH, ImVec2(0, ctx.px(250)),
+                           kListLineStep)) {
             ImGui::TableSetupColumn("Player");
             ImGui::TableSetupColumn("Race");
             ImGui::TableSetupColumn("Connected", ImGuiTableColumnFlags_WidthFixed, ctx.px(90));
@@ -394,7 +395,7 @@ private:
                 }
                 ImGui::PopID();
             }
-            ImGui::EndTable();
+            endListTable(ctx.painter());
         }
 
         // Own empire and readiness.

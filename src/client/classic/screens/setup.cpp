@@ -3,6 +3,7 @@
 // game::GameSetup (screens/setup_model.hpp) and starts a local or hotseat game.
 
 #include "client/classic/frontend.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/setup_empire.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/screens/setup_widgets.hpp"
@@ -473,7 +474,7 @@ private:
         ImGui::PushStyleColor(ImGuiCol_Text, kDim);
         ImGui::TextWrapped("Map files in %s", mapsDir().string().c_str());
         ImGui::PopStyleColor();
-        ImGui::BeginChild("##maps", ImVec2(0, -ctx.px(38)), ImGuiChildFlags_Borders);
+        beginList(ctx.painter(), "##maps", ImVec2(0, -ctx.px(38)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         if (mapFiles_.empty()) note("No saved maps yet. Save Map keeps the quadrant shown here for later games.");
         for (size_t i = 0; i < mapFiles_.size(); ++i) {
             const MapFileInfo& f = mapFiles_[i];
@@ -495,7 +496,7 @@ private:
             }
             ImGui::PopID();
         }
-        ImGui::EndChild();
+        endList(ctx.painter());
         if (ImGui::Button("Cancel", ctx.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
@@ -554,7 +555,7 @@ private:
         if (o.eventFrequency == 0) ImGui::TextColored(kDim, "none: random events are off");
         else ImGui::TextColored(kDim, "%d of %zu event types", eligible, events.size());
         const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV;
-        if (ImGui::BeginTable("##events", 4, flags, ImVec2(0, ImGui::GetContentRegionAvail().y))) {
+        if (beginListTable(ctx.painter(), "##events", 4, flags, ImVec2(0, ImGui::GetContentRegionAvail().y), kListLineStep)) {
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("Event", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Effect", ImGuiTableColumnFlags_WidthFixed, ctx.px(250));
@@ -576,7 +577,7 @@ private:
                 if (e.turnsToComplete > 0) ImGui::TextColored(color, "%d turns", e.turnsToComplete);
                 else ImGui::TextColored(color, "at once");
             }
-            ImGui::EndTable();
+            endListTable(ctx.painter());
         }
     }
 
@@ -728,7 +729,7 @@ private:
         const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
         const float rowH = ctx.px(40);
         int toggle = -1;
-        if (ImGui::BeginTable("##players", 6, flags, ImVec2(0, ctx.px(292)))) {
+        if (beginListTable(ctx.painter(), "##players", 6, flags, ImVec2(0, ctx.px(292)), kListLineStep)) {
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, rowH);
             ImGui::TableSetupColumn("Empire", ImGuiTableColumnFlags_WidthStretch);
@@ -777,7 +778,7 @@ private:
                 ImGui::TextColored(cost > s_.options.racialPoints ? kBad : ImGui::GetStyle().Colors[ImGuiCol_Text], "%d", cost);
                 ImGui::PopID();
             }
-            ImGui::EndTable();
+            endListTable(ctx.painter());
         }
         if (toggle >= 0) {
             game::EmpireSetup& e = players[static_cast<size_t>(toggle)];
@@ -869,7 +870,7 @@ private:
         ImGui::PushStyleColor(ImGuiCol_Text, kDim);
         ImGui::TextWrapped("Empire files in %s", dir.string().c_str());
         ImGui::PopStyleColor();
-        ImGui::BeginChild("##files", ImVec2(0, -ctx.px(38)), ImGuiChildFlags_Borders);
+        beginList(ctx.painter(), "##files", ImVec2(0, -ctx.px(38)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         if (files_.empty()) note("No saved empires yet. Use Save To File on an empire to keep it for later games.");
         for (size_t i = 0; i < files_.size(); ++i) {
             const EmpireFileInfo& f = files_[i];
@@ -898,7 +899,7 @@ private:
                 ImGui::CloseCurrentPopup();
             }
         }
-        ImGui::EndChild();
+        endList(ctx.painter());
         if (ImGui::Button("Cancel", ctx.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }

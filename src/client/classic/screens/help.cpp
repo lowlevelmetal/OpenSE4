@@ -13,6 +13,7 @@
 #include "client/classic/data_export.hpp"
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 
 #include "game/design.hpp"
@@ -206,7 +207,7 @@ private:
         ImGui::BeginGroup();
         ImGui::SetNextItemWidth(listW);
         ImGui::InputTextWithHint("##find", "Find...", filter_.data(), filter_.size());
-        ImGui::BeginChild("##items", ImVec2(listW, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##items", ImVec2(listW, 0), 26, ImGuiChildFlags_AlwaysUseWindowPadding);
         std::string lastGroup;
         for (size_t i = 0; i < shown.size(); ++i) {
             const Entry& e = *shown[i];
@@ -226,7 +227,7 @@ private:
         }
         scrollToSelection_ = false;
         if (shown.empty()) ImGui::TextColored(kDimText, all.empty() ? "Nothing known yet." : "No match.");
-        ImGui::EndChild();
+        endList(ui);
         ImGui::EndGroup();
 
         // Right: everything about the selected item.
@@ -265,17 +266,17 @@ private:
         selection.push_back({"Left or right click", "Select in the system view; a list row opens its report"});
         selection.push_back({"Right click (galaxy)", "Open the Galaxy Map"});
         const float colW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        ImGui::BeginChild("##keysA", ImVec2(colW, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##keysA", ImVec2(colW, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         table("##windows", "Windows", boundKeys({"Windows"}));
         ImGui::Spacing();
         table("##selection", "Selection, Display and Mouse", selection);
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SameLine();
-        ImGui::BeginChild("##keysB", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##keysB", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         table("##orders", "Orders", orders);
         ImGui::Spacing();
         table("##replay", "Movement Log (simultaneous games)", boundKeys({"Movement log"}));
-        ImGui::EndChild();
+        endList(ui);
     }
 
     void topicButtons(UiContext& ui, Dialog& d) {
@@ -308,11 +309,10 @@ private:
                            mount.c_str(), first, first + 9);
 
         constexpr int kColumns = 4 + 10;
-        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter |
-                                      ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-        if (!ImGui::BeginTable("##weapons", kColumns, flags)) return;
+        const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+        if (!beginListTable(ui, "##weapons", kColumns, flags, ImVec2(0, 0), 26)) return;
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ui.px(26));
+        ImGui::TableSetupColumn(kPicHeading, ImGuiTableColumnFlags_WidthFixed, ui.px(26));
         ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, ui.px(44));
         ImGui::TableSetupColumn("Rld", ImGuiTableColumnFlags_WidthFixed, ui.px(28));
@@ -351,7 +351,7 @@ private:
                 else ImGui::TextColored(kDimText, "-");
             }
         }
-        ImGui::EndTable();
+        endListTable(ui);
         if (list.empty()) ImGui::TextColored(kDimText, "No known weapon matches.");
     }
 
@@ -379,7 +379,7 @@ private:
             }
             ImGui::EndPopup();
         }
-        if (lampButton(ui, d, "Only Latest", onlyLatest_)) onlyLatest_ = !onlyLatest_;
+        if (d.check("Only Latest", onlyLatest_)) onlyLatest_ = !onlyLatest_;
         if (lampButton(ui, d, "Dmg 1-10", page_ == 0)) page_ = 0;
         if (lampButton(ui, d, "Dmg 11-20", page_ == 1)) page_ = 1;
         d.spacer();
