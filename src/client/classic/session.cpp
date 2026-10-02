@@ -35,22 +35,23 @@ void writePlayerRecords(const std::vector<game::score::PlayerRecords>& records) 
         log::warn("Cannot create {}: {}", dir.string(), ec.message());
         return;
     }
-    auto write = [&](const std::filesystem::path& file, const std::vector<std::string>& lines, bool fresh, std::string_view end = "\n") {
+    // CR LF line ends on every platform, as the original's Windows text files
+    // (the log copy's are confirmed, docs/spec/06 §6.1; the others inferred),
+    // written in binary so that Linux and Windows give the same bytes.
+    auto write = [&](const std::filesystem::path& file, const std::vector<std::string>& lines, bool fresh) {
         if (lines.empty()) {
             if (fresh) std::filesystem::remove(file, ec);
             return;
         }
-        // Binary when the line end is spelled out, so that it is written as given.
-        std::ofstream out(file, (fresh ? std::ios::trunc : std::ios::app) | (end == "\n" ? std::ios::openmode{} : std::ios::binary));
-        for (const std::string& line : lines) out << line << end;
+        std::ofstream out(file, (fresh ? std::ios::trunc : std::ios::app) | std::ios::binary);
+        for (const std::string& line : lines) out << line << "\r\n";
         if (!out) log::warn("Cannot write {}", file.string());
     };
     for (const game::score::PlayerRecords& rec : records) {
         const bool fresh = rec.turn == 0;
         write(dir / historyFileName(rec.empire, "stats.txt"), rec.statistics, fresh);
         write(dir / historyFileName(rec.empire, "events.txt"), rec.history, fresh);
-        // The log copy's lines end in CR LF (docs/spec/06 §6.1).
-        if (!rec.log.empty()) write(dir / historyFileName(rec.empire, "log.txt"), rec.log, true, "\r\n");
+        if (!rec.log.empty()) write(dir / historyFileName(rec.empire, "log.txt"), rec.log, true);
         else if (fresh) std::filesystem::remove(dir / historyFileName(rec.empire, "log.txt"), ec);
     }
 }

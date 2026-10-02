@@ -2345,7 +2345,8 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     the layouts above, copies them next to each Save Game and autosave and restores them
     on loading. It differs: its saves and `History/` live in the user-data folder, not
     the install, and keep our own save format (fine, §6). The log copy's layout matches
-    (Q55).
+    (Q55). It ends every line of the three files with CR LF on every platform, as
+    Windows text files do (for the statistics and history files inferred).
 13. **Status icons.** **Answer:** drones in cargo use cell 37, not 34. The executable
     draws 23 cells and never the other 15. §4.4 lists each cell, its condition and the
     drawing order for ships, planets and fleets, including cell 36 (remote mining),

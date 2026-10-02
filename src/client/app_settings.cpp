@@ -196,7 +196,7 @@ AppSettings& appSettings() {
 
 bool saveAppSettings() {
     const std::filesystem::path file = appSettingsFile();
-    std::ofstream out(file);
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);  // LF line ends on every platform
     if (!out) {
         log::warn("Could not write {}", file.string());
         return false;

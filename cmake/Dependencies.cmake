@@ -135,6 +135,10 @@ target_include_directories(vma SYSTEM INTERFACE "${vma_SOURCE_DIR}/include")
 
 add_library(tomlplusplus INTERFACE)
 target_include_directories(tomlplusplus SYSTEM INTERFACE "${tomlplusplus_SOURCE_DIR}/include")
+# Floats are written the same way with every compiler: toml++ would use
+# std::to_chars (shortest form) with MSVC and a stream (17 digits) with GCC and
+# Clang, so the same settings file came out different on Windows.
+target_compile_definitions(tomlplusplus INTERFACE TOML_FLOAT_CHARCONV=0)
 
 add_library(stb INTERFACE)
 target_include_directories(stb SYSTEM INTERFACE "${stb_SOURCE_DIR}")

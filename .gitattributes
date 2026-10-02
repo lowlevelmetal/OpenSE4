@@ -1,0 +1,6 @@
+# Every file is checked out exactly as committed, on every platform and
+# whatever core.autocrlf says (docs/BUILDING.md, "Same on every platform"):
+# the builds embed some files (assets/learn, the fonts), so a CR LF checkout
+# on Windows would make a different program, and the data-file fixtures keep
+# the original game's CR LF line ends on purpose. Diffs still work as usual.
+* -text

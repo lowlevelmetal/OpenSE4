@@ -116,7 +116,7 @@ ClassicSettings& settings() {
 
 bool saveSettings() {
     const std::filesystem::path file = settingsFile();
-    std::ofstream out(file, std::ios::trunc);
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);  // LF line ends on every platform
     if (out) out << settingsToToml(settings());
     if (!out) {
         log::warn("Could not write {}", file.string());
