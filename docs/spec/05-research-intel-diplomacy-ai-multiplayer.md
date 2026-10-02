@@ -2500,12 +2500,12 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
   computer is played each turn by the stand-in rule (§7.1: all ministers on for the turn,
   restored afterwards). Open: needs observation (or a resource lookup): the button's caption
   in the earlier states.
-  The engine differs: `HostSession::setAiControl` (`src/net/host.cpp`) sets a per-slot
-  stand-in flag, not the empire's kind, and no window calls it
-  (`ClientSession::requestAiControl` in `src/net/client.cpp` has no caller). The original flips
-  the lasting mark, so other players see it, Team Mode sides follow it and the text files stop
-  for that empire. Turn-based TCP/IP is an OpenSE4 extension, so its behaviour there is our
-  choice.
+  OpenSE4 follows this since 2026-10-01: `HostSession::setAiControl` (`src/net/host.cpp`)
+  flips the empire's kind (`ai::setComputerMark`), and the in-game host's Empires list
+  (network status strip) asks "Change Empire Control" and calls it. A kicked player's empire
+  is still played by a stand-in with the mark unchanged (`Slot::aiControl`), and an empire
+  that was a computer player from the start cannot be handed to a human (inferred).
+  Turn-based TCP/IP is an OpenSE4 extension, so its behaviour there is our choice.
 - Play any empire's turn.
 
 **Other behavior**:

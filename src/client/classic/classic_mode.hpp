@@ -123,6 +123,10 @@ private:
     void drawPbem(classic::UiContext& ui);
     bool chatOpen_ = false;
     std::string chatInput_;
+    // The in-game host's empire list with "Toggle Empire AI On/Off" (spec 05 §9.4).
+    void drawHostEmpires(classic::UiContext& ui);
+    bool hostEmpiresOpen_ = false;
+    game::EmpireId toggleAsked_;
 
     // Turn-based games: the Attack Sector question.
     void drawEntryQuestion(classic::UiContext& ui);

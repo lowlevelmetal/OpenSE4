@@ -926,6 +926,34 @@ std::string_view moodLabel(int anger) {
     return "Murderous";
 }
 
+bool setComputerMark(GameState& s, EmpireId e, bool computer) {
+    if (!e.valid() || e.index() >= s.empires.size()) return false;
+    Empire& emp = s.empire(e);
+    if (emp.kind == PlayerKind::Neutral) return false;
+    // The stored difficulty a human's ministers play at; a computer player keeps its own.
+    if (computer && emp.aiDifficulty < 0) emp.aiDifficulty = kDifficultyMedium;
+    emp.kind = computer ? PlayerKind::Computer : PlayerKind::Human;
+    return true;
+}
+
+bool setComputerControl(GameState& s, EmpireId e, bool computer) {
+    if (!setComputerMark(s, e, computer)) return false;
+    Empire& emp = s.empire(e);
+    emp.ministers = computer ? kAllMinisters : 0;
+    emp.ministerAll = computer;
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == e) v.minister = computer;
+    for (Fleet& f : s.fleets)
+        if (f.owner == e) f.minister = computer;
+    for (auto& c : s.colonies)
+        if (c && c->owner == e) c->minister = computer;
+    return true;
+}
+
+bool anyHumanLeft(const GameState& s) {
+    return std::any_of(s.empires.begin(), s.empires.end(), [](const Empire& e) { return e.alive && e.kind == PlayerKind::Human; });
+}
+
 int difficultyOf(const GameState& s, EmpireId e) {
     if (!e.valid() || e.index() >= s.empires.size()) return kDifficultyMedium;
     const Empire& emp = s.empire(e);

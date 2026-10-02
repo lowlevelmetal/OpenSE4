@@ -528,6 +528,10 @@ void recordAiDecisions(TurnContext& ctx) {
     // first turn, other than a random player, was founded by a revolt.
     const int rebels = rebelDifficulty(s);
     for (Empire& e : s.empires) {
+        // A human empire whose ministers act has its stored difficulty set to
+        // Medium (spec 05 §7.5, spec 06 §1.2.1, confirmed: binary): handed to
+        // the computer later, it plays at Medium.
+        if (e.kind == PlayerKind::Human && ministersActive(s, e.id)) e.aiDifficulty = kDifficultyMedium;
         if (e.aiDifficulty >= 0 || e.kind == PlayerKind::Human) continue;
         const auto& random = s.options.randomAiPlayers;
         const bool randomPlayer = e.id.index() < random.size() && random[e.id.index()] != 0;
@@ -546,6 +550,7 @@ void recordAiDecisions(TurnContext& ctx, EmpireId id) {
     GameState& s = ctx.state;
     if (!id.valid() || id.index() >= s.empires.size()) return;
     Empire& e = s.empire(id);
+    if (e.kind == PlayerKind::Human && ministersActive(s, id)) e.aiDifficulty = kDifficultyMedium;  // as above
     if (e.aiDifficulty < 0 && e.kind != PlayerKind::Human) {
         const auto& random = s.options.randomAiPlayers;
         const bool randomPlayer = id.index() < random.size() && random[id.index()] != 0;

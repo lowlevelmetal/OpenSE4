@@ -256,9 +256,19 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
     // the players' copies do when they open it (spec 01 §6.9, §14 Q44).
     game::diplomacy::recalculateColonies(rules, state);
     if (state.gameOver) return std::unexpected(std::string("The game is over."));
+    if (!options.resetPasswords.empty() && game::turnBased(state))
+        return std::unexpected(std::string("Reset Passwords is for simultaneous games."));
+    for (game::EmpireId e : options.resetPasswords)
+        if (!e.valid() || e.index() >= state.empires.size()) return std::unexpected(std::string("Reset Passwords names an empire that does not exist."));
 
     auto rep = processTurn(rules, state, info, ordersDir);
     if (!rep) return rep;
+    // The new passwords win over those the orders files carried (spec 06 §1.9).
+    for (game::EmpireId e : options.resetPasswords) {
+        std::string password = resetPassword();
+        state.empire(e).passwordHash = passwordVerifier(hashPassword(password));
+        rep->passwordResets.emplace_back(e, std::move(password));
+    }
 
     // Keep the previous turn next to the game file, then replace it.
     std::error_code ec;

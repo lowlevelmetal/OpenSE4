@@ -3,6 +3,7 @@
 // Settings (Options → Settings, Ctrl+, or the intro): OpenSE4's
 // graphics, controls and sound pages, in the classic dialog layout.
 
+#include "client/classic/net_transport.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
@@ -11,6 +12,8 @@
 
 #include <algorithm>
 #include <format>
+#include <string>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -116,12 +119,89 @@ public:
         d.beginButtons();
         // OpenSE4's own: graphics, controls and the effects volume.
         if (d.button("Settings")) ui.open(ScreenId::Settings);
+        // Reset Passwords: only on the host of a simultaneous game (spec 06
+        // §1.9, confirmed: binary). A click first discards every reset chosen
+        // earlier and not applied yet, even if the picker is then cancelled.
+        if (resetOffered(ui) && d.button("Reset Passwords")) {
+            if (net::HostSession* host = hostOf(ui)) host->clearPasswordResets();
+            resetLamps_.assign(ui.state().empires.size(), 0);
+            ImGui::OpenPopup("Select Empires to have password reset");
+        }
+        resetPicker(ui);
+        resetNotice(ui);
         d.close();
         return d.keepOpen();
     }
 
 private:
+    // The in-game host (the HostSession runs here), or none.
+    static net::HostSession* hostOf(UiContext& ui) {
+        auto* t = dynamic_cast<HostTransport*>(ui.session.transport());
+        return t ? &t->host() : nullptr;
+    }
+    // A player who gave the master password to a headless server stands in
+    // for its host (inferred: the dedicated server has no window of its own).
+    static net::ClientSession* adminOf(UiContext& ui) {
+        auto* t = dynamic_cast<ClientTransport*>(ui.session.transport());
+        return t && t->client().admin() ? &t->client() : nullptr;
+    }
+    static bool resetOffered(UiContext& ui) { return !ui.session.turnBased() && (hostOf(ui) || adminOf(ui)); }
+
+    // The Player Computer Control check list, titled for the purpose: every
+    // empire, all lamps off; OK resets the lit ones.
+    void resetPicker(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({420, 0}));
+        if (!ImGui::BeginPopupModal("Select Empires to have password reset", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
+            return;
+        const game::GameState& s = ui.state();
+        resetLamps_.resize(s.empires.size(), 0);
+        for (const game::Empire& e : s.empires) {
+            ImGui::PushID(int(e.id.index()));
+            bool on = resetLamps_[e.id.index()] != 0;
+            if (lampToggle(ui, std::format("{}. {}", e.id.value + 1, e.name).c_str(), &on)) resetLamps_[e.id.index()] = on;
+            ImGui::PopID();
+        }
+        ImGui::Spacing();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("OK", ImVec2(w, ui.px(26)))) {
+            std::vector<game::EmpireId> empires;
+            for (size_t i = 0; i < resetLamps_.size(); ++i)
+                if (resetLamps_[i]) empires.push_back(game::EmpireId{static_cast<uint32_t>(i)});
+            if (net::HostSession* host = hostOf(ui)) {
+                if (auto r = host->resetPasswords(empires); r)
+                    for (const auto& p : *r)
+                        resets_.push_back(std::format("Player {} ({}) has the new password {}. It takes effect when the next turn is processed.",
+                                                      p.empire.value + 1, s.empire(p.empire).name, p.password));
+                else
+                    resets_.push_back(r.error());
+            } else if (net::ClientSession* admin = adminOf(ui)) {
+                admin->requestPasswordReset(empires);
+                if (!empires.empty()) resets_.push_back("The host will answer with the new passwords in the chat log.");
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(w, ui.px(26)))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        if (!resets_.empty()) ImGui::OpenPopup("Password Reset");
+    }
+
+    // One "Password Reset" message per empire, to the host only.
+    void resetNotice(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({380, 0}));
+        if (!ImGui::BeginPopupModal("Password Reset", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
+        if (!resets_.empty()) ImGui::TextWrapped("%s", resets_.front().c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) {
+            if (!resets_.empty()) resets_.erase(resets_.begin());
+            if (resets_.empty()) ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     bool opened_ = false;
+    std::vector<uint8_t> resetLamps_;
+    std::vector<std::string> resets_;
 };
 
 } // namespace

@@ -208,28 +208,39 @@ newly built vehicles" and "AI should not make changes during a simultaneous game
 - The simultaneous sign-in lists every empire, computer-controlled ones included, plus Game
   Master.
 
-**The engine and client differ** (2026-10-01):
-- The Players window (`playersPopup` in `src/client/classic/screens/game_menu.cpp`) is
-  read-only, leaves out neutral empires, asks for no Game Master password (local games keep no
-  master password in `GameState`) and cannot switch control. It needs the lamp list, the
-  password check when the game has one, and OK applying the clicked rows.
-- `game::Empire::kind` (`src/game/types.hpp`) is fixed at setup and no command changes it. A
-  host-side or local command (not a player command) is needed. To computer: kind Computer,
-  every minister on (`ministers`, `ministerAll`), and every own vehicle, fleet and colony
-  `minister` flag on. To human: kind Human, every minister off, every individual flag off. It
-  keeps `aiDifficulty`, `ministerStyle`, `aiMinimalChanges`, `newVehicles` and
-  `passwordHash`. Note that `ai::difficultyOf` (`src/game/ai.cpp`) gives a random computer
-  player the options' difficulty again after a round trip, where the original keeps Medium
-  once its ministers acted while it was human.
-- `src/game/turn_based.cpp` (`resume`, `anyHumanToPlay`) goes on playing a game with no human
-  left, one turn per call. The original stops with the "all human players eliminated" ending
-  in local turn-based and hotseat play; the client should present that ending (headless
-  all-computer runs may keep the engine's behaviour).
-- `liveControl` in `src/game/turn_based.cpp` plays a computer empire normally even with
-  `aiMinimalChanges` set; see the quirk in spec 05 §7.1.
-- Random computer players and rebels have no password in ours (`src/game/events.cpp` clears it
-  for rebels); in the original they get the master password. This matters only once switching
-  to human exists.
+**The engine and client follow this subsection since 2026-10-01:**
+- The Players window (`playersPopup` in `src/client/classic/screens/game_menu.cpp`) is the
+  check list above, every empire in number order, behind the master password when the game
+  has one (exact comparison, `ClassicSession::masterPasswordMatches`); OK applies every row
+  clicked at least once.
+- `game::ai::setComputerControl` (`src/game/ai.cpp`) is the switch, a local or host-side
+  change rather than a player command: to computer, kind Computer, every minister and every
+  own vehicle's, fleet's and colony's flag on; to human, all off. It keeps `ministerStyle`,
+  `aiMinimalChanges`, `ministersForNewVehicles`, `passwordHash` and a stored `aiDifficulty`.
+  A human empire whose ministers act stores Medium each turn (`ai::recordAiDecisions`), so a
+  round trip plays at Medium as in the original.
+- A local or hotseat game in which no living empire is human-controlled plays no further
+  turn (`ClassicSession::humansGone`, `LiveOptions::endWithoutHumans`) and shows the Finale
+  "Human Dead" ending; hosts and automated runs play on.
+- On a player's copy of a game on different machines (network or e-mail), the window
+  changes only that copy; for the player's own empire the session also gives
+  `cmd::SetMinisters` (every area, every flag) and `cmd::SetMinister` (complete control), so
+  the orders carry the minister switches and flags, never the mark.
+- The TCP/IP host's toggle (`HostSession::setAiControl`, the in-game host's Empires list)
+  flips only the mark (`ai::setComputerMark`), spec 05 §9.4.
+
+OpenSE4's own choices, (inferred):
+- Neutral empires are listed but cannot be switched: our engine keeps neutrality in the same
+  field as the computer-controlled mark (`Empire::kind`).
+- Local games keep no master password; a network or e-mail game file opened here keeps its
+  host's (`SaveInfo::masterPasswordVerifier`). A network player's copy holds none, and the
+  in-game host's Players window works on its own player's copy like any player's; the host
+  hands empires over with the toggle.
+- A human empire that never had a stored difficulty gets Medium when it is handed to the
+  computer (ours stores none until it is needed).
+- Random computer players and rebels keep no password in ours (the original gives them the
+  master password), and `liveControl` still plays a computer empire with
+  `aiMinimalChanges` set normally (the quirk of spec 05 §7.1 is not copied).
 
 ### 1.3 Order dialogs and pickers (opened by order buttons in the command panel)
 
@@ -545,11 +556,15 @@ computer, not in the game, except the autosave choice, which belongs to the game
   quits, or abandons the processing, before then, they are lost.
 - **Who is told:** only the host, by that message. There is no log entry and nothing goes to
   the player, so the host passes the password on.
-- Our client and hosts have no Reset Passwords (`OptionsScreen` in
-  `src/client/classic/screens/settings_screen.cpp`, `src/net/host.cpp`, `src/net/pbem.cpp`).
-  Needed: a six-digit password from a non-game random source shown to the host, stored as the
-  empire's new `passwordHash` at the next turn processing after the orders are read, pending
-  resets discarded on a new click and never saved.
+- OpenSE4 follows this since 2026-10-01. The in-game TCP/IP host's Options window shows the
+  button for a simultaneous game (`OptionsScreen` in
+  `src/client/classic/screens/settings_screen.cpp`); `HostSession::resetPasswords` draws
+  each password with `net::resetPassword` (not the game's random numbers), discards the
+  earlier choice, keeps them in memory only and writes their verifiers into the empires
+  right after the next turn is processed from the orders. The e-mail host takes them with
+  `opense4-server pbem process --reset-passwords=N,M` and prints them. A headless server has
+  no window: a player who gave the master password stands in for its host (the same button,
+  an admin request, the passwords coming back to that player only) (inferred).
 
 **Music and Settings.txt** (confirmed: binary). The Settings.txt key that turns music off is
 `Allow CD Music`. With `FALSE` no track ever plays (§5.5). Opening this window with music off
@@ -2434,9 +2449,10 @@ the 800x600 layout in §2.1.1.
    Empire Options lists every row of the table above with its default, kept with the
    empire and saved with the game, and the Game Menu has the original ten buttons; Save
    Empire writes an empire file (ours holds no designs, so it does not ask about them).
-   It still differs: the Players window is read-only (§1.2.1); there is no Reset
-   Passwords (§1.9); the Options music rows ignore `Allow CD Music` (playback honours it);
-   the other Settings.txt gaps are listed in §1.9; our own choices are in Q41–Q48.
+   Since 2026-10-01 the Players window switches computer control (§1.2.1), the host of a
+   simultaneous game has Reset Passwords (§1.9) and the client honours the Settings.txt keys
+   of §1.9 (the music rows and `Allow CD Music` included); our own choices are in Q41–Q48
+   and Q83.
 9. **Start-up menu (1.95).** What is the `StartMenu.bmp` window? **Answer:** a launcher
    built into the game (the 736x536 window spec 07 saw), shown only when the program
    starts without arguments, as the Steam shortcut does. Play opens the Intro; the other

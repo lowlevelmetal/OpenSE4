@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <format>
 #include <random>
 
 namespace opense4::net {
@@ -136,6 +137,13 @@ bool constantTimeEquals(std::string_view a, std::string_view b) {
 bool checkPassword(std::string_view verifier, std::string_view passwordHash) {
     if (verifier.empty()) return true;
     return constantTimeEquals(verifier, passwordVerifier(passwordHash));
+}
+
+std::string resetPassword() {
+    const uint64_t a = 11 + randomId() % 89;
+    const uint64_t b = 11 + randomId() % 89;
+    const uint64_t c = 11 + randomId() % 89;
+    return std::format("{}{}{}", a, b, c);
 }
 
 uint64_t randomId() {

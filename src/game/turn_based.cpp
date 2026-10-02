@@ -369,6 +369,7 @@ void resume(LiveContext& lc, const LiveOptions& options) {
     GameState& s = lc.ctx.state;
     bool turnEnded = false;
     while (!s.gameOver) {
+        if (options.endWithoutHumans && !ai::anyHumanLeft(s)) return;
         if (!s.playerTurn.empire.valid()) {
             // An all-computer game (or one whose humans the computer plays
             // for now) plays one game turn per call.

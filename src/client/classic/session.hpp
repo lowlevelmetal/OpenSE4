@@ -208,6 +208,23 @@ public:
 
     // Hotseat: switches the local player (after a password check by the UI).
     void setPlayer(game::EmpireId e);
+
+    // ---- Player Computer Control (spec 06 §1.2.1, confirmed: binary) ----
+    // Whether the game has a master password the window asks for first: a
+    // network or e-mail game file opened here keeps its host's (SaveInfo);
+    // local games and a network player's copy hold none (inferred).
+    bool hasMasterPassword() const { return !masterVerifier_.empty(); }
+    // The exact comparison the window makes (letter case and spaces count).
+    bool masterPasswordMatches(std::string_view password) const;
+    // The window's OK: each row clicked at least once, with the lamp's final
+    // state (game::ai::setComputerControl). A local or hotseat game changes
+    // at once; on a player's copy of a game on different machines only that
+    // copy changes, and the orders carry the player's own empire's minister
+    // switches and flags (never the mark) to the host.
+    void setComputerControl(const std::vector<std::pair<game::EmpireId, bool>>& rows);
+    // A local or hotseat game with no living human-controlled empire has
+    // ended: no further turn is played (spec 06 §1.2.1 "No human left").
+    bool humansGone() const;
     // Replaces the state (e.g. after loading or a network update).
     void replaceState(game::GameState s);
     // Automation: the computer plays every empire (humans too) for n turns.
@@ -247,6 +264,8 @@ private:
     void runCall();
     // Whether this session's engine calls stop for battles to show (local and hotseat games).
     bool showsBattles() const;
+    // Who plays the human empires' turns in this session's turn-based calls.
+    game::LiveOptions liveOptions() const;
 
     std::shared_ptr<const game::Rules> rules_;
     game::GameState state_;
@@ -255,6 +274,9 @@ private:
     // A network or PBEM game file opened with Load Game (SaveInfo::gameId set):
     // its empire passwords are verifiers, and saving keeps the game id.
     uint64_t multiplayerGameId_ = 0;
+    // The master password verifier of a network or PBEM game file opened
+    // here (SaveInfo::masterPasswordVerifier); kept when the game is saved.
+    std::string masterVerifier_;
     uint64_t revision_ = 1;
     std::vector<game::Command> orders_;
     std::vector<uint8_t> ended_;  // hotseat: humans who ended this turn

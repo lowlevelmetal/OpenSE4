@@ -11,6 +11,7 @@ add_executable(opense4_tests
     test_client_logic.cpp
     test_colony_orders.cpp
     test_combat.cpp
+    test_computer_control.cpp
     test_combat_rules.cpp
     test_combat_planning.cpp
     test_combat_replay.cpp

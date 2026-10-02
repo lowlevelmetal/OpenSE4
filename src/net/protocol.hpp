@@ -73,7 +73,7 @@ enum class MsgType : uint8_t {
 
 enum class RejectReason : uint8_t { Protocol, DataSet, Password, Name, Full, NotInGame, Banned, ShuttingDown };
 
-enum class AdminAction : uint8_t { StartGame, AddComputer, RemoveSlot, Kick, ProcessTurn, SetAiControl, SetTurnTimeout };
+enum class AdminAction : uint8_t { StartGame, AddComputer, RemoveSlot, Kick, ProcessTurn, SetAiControl, SetTurnTimeout, ResetPasswords };
 
 struct Hello {
     uint32_t magic = kMagic;
@@ -145,7 +145,7 @@ struct PlayResult {
 struct Admin {
     AdminAction action = AdminAction::StartGame;
     uint32_t slot = kNoSlot;
-    int32_t value = 0;            // StartGame: force; SetAiControl: on; SetTurnTimeout: seconds
+    int32_t value = 0;            // StartGame: force; SetAiControl: on; SetTurnTimeout: seconds; ResetPasswords: bit i = empire i
     game::EmpireSetup setup;      // AddComputer
     std::string text;             // Kick: reason
 };

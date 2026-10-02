@@ -24,6 +24,7 @@
 #include <expected>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace opense4::net::pbem {
@@ -71,6 +72,10 @@ struct ProcessOptions {
     std::string masterPasswordHash;  // hashPassword() of the master password (needed when the game has one)
     bool deleteProcessed = true;     // remove the .plr files that were used (the classic behavior)
     bool allowDataSetMismatch = false;
+    // Reset Passwords (spec 06 §1.9, simultaneous games): these empires get a
+    // new six-digit password (net::resetPassword), written in once the turn's
+    // orders have been read; the report lists them for the host only.
+    std::vector<game::EmpireId> resetPasswords;
 };
 
 struct ProcessReport {
@@ -87,6 +92,8 @@ struct ProcessReport {
     bool turnBased = false;
     std::string next;
     game::EmpireId nextEmpire;
+    // Reset Passwords: each empire and its new password (show the host only).
+    std::vector<std::pair<game::EmpireId, std::string>> passwordResets;
 };
 
 // Processes the current turn of `state` from the .plr files in `ordersDir`

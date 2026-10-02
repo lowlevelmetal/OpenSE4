@@ -56,5 +56,9 @@ bool constantTimeEquals(std::string_view a, std::string_view b);
 
 // A random 64-bit id (game ids, keepalive tokens); not for game rules.
 uint64_t randomId();
+// A password the host's Reset Passwords gives (spec 06 §1.9): three random
+// numbers from 11 to 99 written one after another, six digits, drawn from
+// randomId(), a source apart from the game's random numbers.
+std::string resetPassword();
 
 } // namespace opense4::net

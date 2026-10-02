@@ -130,7 +130,8 @@ void ClientTransport::endPlayerTurn() {
 std::optional<game::GameState> ClientTransport::pollState() {
     std::optional<game::GameState> fresh;
     for (const net::Event& e : client_->poll(0)) {
-        if (worthShowing(e.type)) log_.add(net::describe(e));
+        // The host's notices to us (refused commands, Reset Passwords answers) show too.
+        if (worthShowing(e.type) || e.type == net::EventType::Info) log_.add(net::describe(e));
         // Back after a reconnect: the host resent the game (turn-based: always
         // news; simultaneous: when a turn was processed meanwhile).
         const bool rejoined = e.type == net::EventType::GameStarted && client_->state() &&

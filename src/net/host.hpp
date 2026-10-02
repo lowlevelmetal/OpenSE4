@@ -134,9 +134,26 @@ public:
     // Ends that empire's turn; computer players move and the next player's turn starts.
     std::expected<void, std::string> endPlayerTurn(game::EmpireId empire);
     void setTurnTimeout(int seconds);
-    // Hands a human empire to the computer (the host stops waiting for its
-    // orders) or back to its player.
+    // "Toggle Empire AI On/Off" (spec 05 §9.4): flips only the empire's
+    // computer-controlled mark (the host stops waiting for its orders, and
+    // the computer plays it every turn) or hands it back to its player.
     std::expected<void, std::string> setAiControl(game::EmpireId empire, bool ai);
+
+    // ---- Reset Passwords (spec 06 §1.9, spec 05 §9.2, confirmed: binary) -------------------------
+    struct PasswordReset {
+        game::EmpireId empire;
+        std::string password;
+    };
+    // The host of a simultaneous game gives each listed empire a new six-digit
+    // password (net::resetPassword, not the game's random numbers). Every reset
+    // chosen earlier and not yet applied is discarded first. The passwords are
+    // written into the empires when the host next processes a turn, after the
+    // orders are read, and are kept nowhere else: not saved, lost if the host
+    // stops first. Returns them, to show to the host only.
+    std::expected<std::vector<PasswordReset>, std::string> resetPasswords(const std::vector<game::EmpireId>& empires);
+    // Discards the resets not yet applied (a new Reset Passwords click does).
+    void clearPasswordResets() { resets_.clear(); }
+    const std::vector<PasswordReset>& pendingPasswordResets() const { return resets_; }
 
     void chat(std::string_view text);
 
@@ -208,6 +225,7 @@ private:
     std::optional<std::chrono::steady_clock::time_point> deadline_;
     std::vector<std::vector<uint8_t>> stateCache_;  // per-empire views of the current turn (+ spectator)
     std::vector<Event> events_;
+    std::vector<PasswordReset> resets_;  // Reset Passwords not applied yet (never saved)
 };
 
 } // namespace opense4::net

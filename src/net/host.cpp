@@ -2,6 +2,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai_data.hpp"
+#include "game/ai.hpp"
 #include "game/redact.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
@@ -15,6 +16,7 @@
 #include <exception>
 #include <format>
 #include <map>
+#include <utility>
 
 namespace opense4::net {
 
@@ -644,6 +646,23 @@ void HostSession::handleAdmin(Peer& peer, std::span<const uint8_t> payload) {
             what = "set the turn timeout";
             setTurnTimeout(a.value);
             break;
+        case proto::AdminAction::ResetPasswords: {
+            // A player with the master password stands in for the host of a
+            // headless server: the new passwords go to that player only (inferred).
+            what = "reset passwords";
+            std::vector<game::EmpireId> empires;
+            for (uint32_t i = 0; i < 31; ++i)
+                if ((static_cast<uint32_t>(a.value) >> i) & 1u) empires.push_back(game::EmpireId{i});
+            auto r = resetPasswords(empires);
+            if (!r) {
+                result = std::unexpected(r.error());
+                break;
+            }
+            for (const PasswordReset& p : *r)
+                peer.conn.send(MsgType::Notice, proto::Notice{std::format("Password Reset: player {} ({}): {}", p.empire.value + 1,
+                                                                           state_->empire(p.empire).name, p.password)});
+            break;
+        }
         default: result = std::unexpected(std::string("Unknown admin action.")); break;
     }
     emit(EventType::Info, std::format("{} (admin) asked to {}: {}", peer.player, what, result ? "done" : result.error()));
@@ -1058,6 +1077,10 @@ std::expected<void, std::string> HostSession::processTurnNow() {
 
     notifyRejections(result, turn);
     emit(EventType::Info, std::format("Turn {} processed: {} empires sent orders, {} commands refused.", turn, submitted, result.rejected.size()));
+    // The passwords Reset Passwords chose take effect now, after the orders
+    // (which carry the players' own passwords) were read (spec 06 §1.9).
+    for (const PasswordReset& p : std::exchange(resets_, {}))
+        if (p.empire.index() < state_->empires.size()) state_->empire(p.empire).passwordHash = passwordVerifier(hashPassword(p.password));
 
     orders_.assign(state_->empires.size(), std::nullopt);
     stateCache_ = redactedState();
@@ -1082,11 +1105,34 @@ void HostSession::setTurnTimeout(int seconds) {
     if (phase_ != HostPhase::Stopped) broadcastLobby();
 }
 
+std::expected<std::vector<HostSession::PasswordReset>, std::string> HostSession::resetPasswords(const std::vector<game::EmpireId>& empires) {
+    resets_.clear();  // a new click discards every reset not applied yet
+    if (!state_ || phase_ != HostPhase::Playing) return std::unexpected(std::string("No game is running."));
+    if (turnBased()) return std::unexpected(std::string("Reset Passwords is for simultaneous games."));
+    std::vector<PasswordReset> out;
+    for (game::EmpireId e : empires) {
+        if (!e.valid() || e.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
+        out.push_back({e, resetPassword()});
+    }
+    resets_ = out;
+    for (const PasswordReset& p : out)
+        emit(EventType::Info, std::format("Password Reset: player {} ({}) gets the password {} at the next turn processing.", p.empire.value + 1,
+                                          state_->empire(p.empire).name, p.password));
+    return out;
+}
+
 std::expected<void, std::string> HostSession::setAiControl(game::EmpireId empire, bool ai) {
     if (!state_ || phase_ != HostPhase::Playing) return std::unexpected(std::string("No game is running."));
     if (!empire.valid() || empire.index() >= slots_.size()) return std::unexpected(std::string("No such empire."));
     Slot& s = *slots_[empire.index()];
     if (s.info.kind != SlotKind::Human) return std::unexpected(std::string("That empire is always played by the computer."));
+    // "Toggle Empire AI On/Off" flips only the empire's computer-controlled
+    // mark (spec 05 §9.4, confirmed: binary): its ministers and individual
+    // flags stay. Marked, the empire is played by the computer every turn and
+    // the host waits for no orders from it; handed back, it waits for its
+    // player (or the host's orders) again. A kicked player's stand-in keeps
+    // the mark as it is (Slot::aiControl alone).
+    if (!game::ai::setComputerMark(*state_, empire, ai)) return std::unexpected(std::string("That empire cannot change hands."));
     s.info.aiControl = ai;
     broadcastLobby();
     broadcastTurnStatus();
