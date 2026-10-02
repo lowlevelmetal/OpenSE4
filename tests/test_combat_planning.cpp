@@ -852,6 +852,47 @@ TEST_CASE("planning: drones choosing one after another spread over the targets; 
     CHECK(b.totalFor(x).all == 60);
 }
 
+TEST_CASE("planning: a new piece takes the number of the highest one that left; a drone aimed at that number takes it (spec 04 §10.7)") {
+    Bench k(makeArena());
+    GameState& s = k.ar.s;
+    const DesignId dart = design(s, k.ar.a, "Dart", "Test Drone Hull", {"Test Engine", "Test Engine", "Test Engine", "Test Engine", "Test Warhead"});
+    const DesignId wasp = design(s, k.ar.a, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "CT Fighter Fuel"});
+    const VehicleId drone = spawn(s, dart, k.ar.loc);
+    const VehicleId carrier = spawn(s, frigate(s, k.ar.a, "Carrier", 1, {"Test Fighter Bay"}), k.ar.loc);
+    s.vehicle(carrier)->cargo.units = {{wasp, 4}};
+    const DesignId skiff = design(s, k.ar.b, "Skiff", "Test Frigate", {"Test Bridge"});
+    const VehicleId first = spawn(s, skiff, k.ar.loc), last = spawn(s, skiff, k.ar.loc);
+    Battle& b = k.start({k.ar.a});
+    const int d = k.at(drone), c = k.at(carrier), x = k.at(first), y = k.at(last);
+    // At set-up the numbers are the places in piece order; B's last skiff is the highest.
+    for (size_t i = 0; i < b.pieces().size(); ++i) CHECK(b.pieces()[i].number == static_cast<int>(i));
+    k.arrange({{d, 20, 20}, {c, 10, 10}, {x, 30, 30}, {y, 24, 20}});
+    b.droneTargetFor(d);
+    REQUIRE(b.piece(d).droneTarget == y);
+    b.advance();
+    REQUIRE(b.phaseEmpire() == k.ar.a);
+    // The skiff the drone is aimed at leaves the battle; the carrier then launches
+    // a fighter group, which takes that number, and the drone goes for it,
+    // without a new choice, though it is of its own side.
+    b.piece(y).alive = false;
+    TacticalOrder launch{OK::Launch, k.ar.a, c};
+    launch.design = wasp;
+    launch.count = 2;
+    launch.group = 0;
+    REQUIRE(b.submit(launch).empty());
+    const int group = static_cast<int>(b.pieces().size()) - 1;
+    CHECK(b.pieces()[static_cast<size_t>(group)].number == b.pieces()[static_cast<size_t>(y)].number);
+    CHECK(b.piece(d).droneTarget == group);
+    // A piece that leaves below the highest number frees nothing: the next new piece goes above.
+    b.piece(x).alive = false;
+    launch.count = 1;
+    launch.group = 1;
+    REQUIRE(b.submit(launch).empty());
+    const int second = static_cast<int>(b.pieces().size()) - 1;
+    REQUIRE(second != group);
+    CHECK(b.pieces()[static_cast<size_t>(second)].number == b.pieces()[static_cast<size_t>(group)].number + 1);
+}
+
 TEST_CASE("planning: a warhead-only drone takes planets or ships by its design type; never a fighter group while another is there") {
     auto target = [](std::string_view type, bool fighters, bool ship) {
         Arena ar = makeArena();

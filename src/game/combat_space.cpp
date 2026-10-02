@@ -233,7 +233,24 @@ void Battle::buildPlanetWeapons(Piece& p) const {
 }
 
 int Battle::addPiece(Piece p) {
+    // A new piece takes the number one above the highest number present
+    // (spec 04 §10.7, confirmed: binary): at set-up, its place in piece order;
+    // later, possibly the number of a piece that has left the battle.
+    int highest = -1;
+    for (const Piece& q : pieces_)
+        if (q.alive) highest = std::max(highest, q.number);
+    p.number = highest + 1;
     const int i = static_cast<int>(pieces_.size());
+    // The drone target is kept as a piece number: a drone whose target left
+    // with that number takes the new piece for its target, without a new
+    // choice, whatever its kind (a seeker included).
+    for (Piece& d : pieces_)
+        if (d.alive && d.kind == Kind::UnitGroup && d.vtype == VehicleType::Drone && d.droneTarget >= 0 &&
+            static_cast<size_t>(d.droneTarget) < pieces_.size() && !pieces_[static_cast<size_t>(d.droneTarget)].alive &&
+            pieces_[static_cast<size_t>(d.droneTarget)].number == p.number) {
+            d.droneTarget = i;
+            d.droneTargetOwner = p.owner;
+        }
     pieces_.push_back(std::move(p));
     acted_.push_back(pieces_.back().kind == Kind::Seeker ? 1 : 0);
     const Piece& q = pieces_.back();
@@ -1761,7 +1778,7 @@ void Battle::move(int i) {
     // every move it plans, whether it went for a colony or waited: on whichever
     // colony of another empire is then adjacent, hostile or not (spec 04 §11,
     // §16.1, confirmed: binary). A surrounded piece plans no move, so it does
-    // not land (inferred).
+    // not land (confirmed: binary; spec 04 §19.4 Q89).
     if (!stuck && mv.mode == MoveStrategy::DropTroops && pieces_[i].alive) dropTroops(i);
     const int t = mv.target;
     if (!stuck && t >= 0 && combatant(t) && dist(i, t) <= 1) {

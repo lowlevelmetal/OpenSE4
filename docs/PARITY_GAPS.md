@@ -224,7 +224,6 @@ Spec 04 §19.4 Q87–Q89 and spec 06 §7 Q76–Q78 were settled from the executa
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | Simultaneous battles shown (`combat_space.cpp` `resolve()`, `turn.cpp`) | With `Simultaneous Games Show Strategic Combat` on, only battles with a human side stop the turn | Spec 06 §1.10.5, §7 Q76: every battle on that machine is shown, computer-only battles included | L |
-| A drone's target after a piece leaves (`Battle::chooseDroneTarget`) | Piece numbers are never reused; a drone whose target left chooses again | Spec 04 §10.7: a new piece takes the number one above the highest present, so it can inherit a dead piece's number and become a drone's target without a choice | L |
 | Random numbers of a battle shown tactically (client drawing) | The display draws no random numbers | Spec 04 §19.1, spec 06 §7 Q77: a miss's direction and a planet's point are drawn from the battle's sequence, so a shown battle continues differently | M |
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)

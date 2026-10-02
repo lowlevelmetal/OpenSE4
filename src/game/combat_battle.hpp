@@ -115,6 +115,10 @@ struct Piece {
     bool launched = false;
     int droneTarget = -1;
     EmpireId droneTargetOwner;
+    // The piece's number (spec 04 §10.7): its place in piece order at set-up;
+    // a new piece takes one above the highest number present, so it can take
+    // the number of a piece that has left.
+    int number = 0;
     bool droneOrderTarget = false;    // the target its Attack pursuit names: any kind of piece (spec 03 §19 Q68)
     bool wasCloaked = false;          // cloaked when the battle began: it cloaks again afterwards if it can (spec 04 §2)
     int64_t tonnageHad = 0;           // unit groups: hull tonnage of every unit it had in the battle (spec 04 §15, spec 02 §9 experience)

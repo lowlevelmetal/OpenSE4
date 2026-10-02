@@ -3741,7 +3741,8 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
       destroyed piece leaves the list at once, so the line reads None until the drone's
       planning picks again. Our client matches. One quirk of the original: a new piece
       can take the dead piece's number, and the drone then shows and goes for that new
-      piece (spec 04 §10.7, "A reused piece number"); the engine does not reproduce it.
+      piece (spec 04 §10.7, "A reused piece number"); since 2026-10-01 the engine does the
+      same, so our report shows that new piece too.
     - **Facil** shows the colony's facilities as they are when the report opens, none
       marked lost; lost facilities stay in the list until the battle ends, so during a
       battle this is the set the colony began with. Our client matches in effect.

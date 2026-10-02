@@ -881,8 +881,9 @@ same (§10.6).
   the highest number present, so after the highest-numbered piece leaves the battle the
   next new piece takes its number. A drone whose target had that number then takes the
   new piece for its target, without a new choice; this can be a seeker or another piece
-  the choice above never allows. The engine differs: it never reuses piece numbers, so a
-  drone whose target left always chooses again (`Battle::chooseDroneTarget`).
+  the choice above never allows. Since 2026-10-01 the engine follows this: each piece keeps
+  its number (`Piece::number`), and `Battle::addPiece` gives a new piece one above the
+  highest number present and turns to it every drone whose target left with that number.
 - A drone attacks by ramming (§10.3); its warheads strike separately. Drones also fire
   any weapons they carry. Drone hulls give +50 defense.
 
