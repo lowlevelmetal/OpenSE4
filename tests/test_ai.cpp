@@ -1531,11 +1531,16 @@ TEST_CASE("ai: the territory pass claims for exactly the empires whose Politics 
     REQUIRE_FALSE(ai::ministerOn(e, Minister::Politics));   // off for a new human empire
     e.claimedSystems = {elsewhere};
     ai::updateAiState(ctx, human);
+    ai::claimTerritory(ctx, human);
     CHECK(s.empire(human).claimedSystems == std::vector<SystemId>{elsewhere});
+    // The minister claims as a computer player's does: the colony systems and their neighbours.
     s.empire(human).ministers |= ministerBit(Minister::Politics);
     ai::updateAiState(ctx, human);
+    CHECK(s.empire(human).claimedSystems == std::vector<SystemId>{elsewhere});  // not in the state update
+    ai::claimTerritory(ctx, human);
     const auto& claimed = s.empire(human).claimedSystems;
     CHECK(std::binary_search(claimed.begin(), claimed.end(), home));
+    for (SystemId nb : s.galaxy.neighbors(home)) CHECK(std::binary_search(claimed.begin(), claimed.end(), nb));
     CHECK(claimed == ai::detail::computeTerritory(s, human));
 }
 
@@ -3449,7 +3454,7 @@ TEST_CASE("ai: Allow Surrender gates the computer's answer and the Surrender mes
     CHECK_FALSE(owns(cpu));
 }
 
-TEST_CASE("ai: colonization danger: any object seen or not, and one per warp point to such a system") {
+TEST_CASE("ai: colonization danger: any object seen or not, and one per empire beyond each warp point") {
     GameState s = computerGame(17, 3, 0, 14);
     exploreEverything(s);
     const EmpireId me{0u}, stranger{1u};
@@ -3486,6 +3491,14 @@ TEST_CASE("ai: colonization danger: any object seen or not, and one per warp poi
     ai::detail::Planner after(r, s, me, ai::detail::Mode::Computer, 1);
     for (const ai::detail::ColonyTarget& t : after.sit.colonyTargets)
         if (t.planet == pick->planet) CHECK(t.danger == pick->danger + links);
+    // A second empire there adds 1 more per warp point; a second ship of the same one adds nothing.
+    const EmpireId third{2u};
+    addTestVehicle(s, r, lurker, {*quiet, Sector{1, 0}});
+    addTestVehicle(s, r, addWarship(s, r, third, "Prowler"), {*quiet, Sector{0, 1}});
+    ai::detail::Planner two(r, s, me, ai::detail::Mode::Computer, 1);
+    for (const ai::detail::ColonyTarget& t : two.sit.colonyTargets)
+        if (t.planet == pick->planet) CHECK(t.danger == pick->danger + 2 * links);
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == third; });
     // In the target system itself: 5 more.
     addTestVehicle(s, r, lurker, {pick->system, Sector{0, 0}});
     ai::detail::Planner inside(r, s, me, ai::detail::Mode::Computer, 1);
@@ -4621,4 +4634,131 @@ TEST_CASE("ai: a Politics minister's request about a third empire is not checked
     m.thirdEmpire = stranger;   // not met
     CHECK_FALSE(apply(r, s, human, cmd::SendMessage{m}).ok);
     CHECK(apply(r, s, human, cmd::SendMessage{m, true}).ok);
+}
+
+// ---- The computer players' pace (spec 05 questions 53-56, confirmed: binary) ----------------------
+
+TEST_CASE("ai: the exploration frontier holds the warp points into unexplored systems, whatever we know of the links") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    const EmpireId me{0u}, other{1u};
+    // Every system explored and no link known: no frontier point (the engine
+    // used to count every unknown link), so contact leads to Infrastructure.
+    s.empire(me).knowledge.explored.assign(s.galaxy.systems.size(), 1);
+    s.empire(me).knowledge.knownWarpLink.assign(s.galaxy.objects.size(), 0);
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        CHECK(p.sit.frontier.empty());
+        CHECK(p.sit.freeFrontier.empty());
+        CHECK_FALSE(p.sit.bordersUnexplored);
+    }
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Exploration);  // no contact yet
+    meet(s, me, other);
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::DefendShortTerm);
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
+
+    // One neighbour of home unexplored: the frontier is exactly the warp
+    // points of explored systems that lead there, and it borders our territory.
+    s.empire(me).aiState = static_cast<int>(ai::AiState::Exploration);
+    const SystemId home = ai::detail::homeSystem(s, me);
+    const SystemId beyond = s.galaxy.neighbors(home).front();
+    s.empire(me).knowledge.explored[beyond.index()] = 0;
+    std::vector<ObjectId> expected;
+    for (size_t i = 0; i < s.galaxy.systems.size(); ++i)
+        if (SystemId{i} != beyond)
+            for (ObjectId wp : s.galaxy.warpPoints(SystemId{i}))
+                if (const SpaceObject& o = s.galaxy.object(wp); o.destination.valid() && s.galaxy.object(o.destination).system == beyond)
+                    expected.push_back(wp);
+    REQUIRE_FALSE(expected.empty());
+    std::sort(expected.begin(), expected.end());
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        std::vector<ObjectId> got = p.sit.frontier;
+        std::sort(got.begin(), got.end());
+        CHECK(got == expected);
+        CHECK(p.sit.bordersUnexplored);
+    }
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Exploration);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::DefendShortTerm);
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Exploration);
+
+    // An explorer heads for one of those points only.
+    const VehicleId scout = addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet)).id;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planExploration(p);
+    const std::vector<Order> orders = ordersOf(p, scout);
+    REQUIRE_FALSE(orders.empty());
+    CHECK(orders.back().kind == OrderKind::Warp);
+    CHECK(std::binary_search(expected.begin(), expected.end(), orders.back().object));
+}
+
+TEST_CASE("ai: the territory is what the Politics minister claimed the turn before; its exclusions spare our colony systems") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 3, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, rival{1u}, stranger{2u};
+    const SystemId home = ai::detail::homeSystem(s, me);
+    const SystemId rivalHome = ai::detail::homeSystem(s, rival);
+    // A start of the game claims the home system only.
+    CHECK(s.empire(me).claimedSystems == std::vector<SystemId>{home});
+
+    // A colony of ours in another computer player's home system, and in a
+    // system we agreed to leave: both are claimed. The exclusions apply to
+    // the neighbour systems only.
+    {
+        GameState g = s;
+        const auto spare = freePlanetIn(g, rivalHome);
+        REQUIRE(spare);
+        addColony(g, *spare, me, {{me, 100}});
+        const SystemId avoided = g.galaxy.neighbors(home).front();
+        g.empire(me).aiMemory.avoid = {rivalHome, avoided};
+        const std::vector<SystemId> claim = ai::detail::computeTerritory(g, me);
+        CHECK(std::binary_search(claim.begin(), claim.end(), rivalHome));
+        CHECK(std::binary_search(claim.begin(), claim.end(), home));
+        if (avoided != rivalHome) CHECK_FALSE(std::binary_search(claim.begin(), claim.end(), avoided));
+        for (SystemId nb : g.galaxy.neighbors(rivalHome))
+            if (nb != home && nb != avoided && nb != ai::detail::homeSystem(g, stranger))
+                CHECK(std::binary_search(claim.begin(), claim.end(), nb));
+        // Another computer player's home system next to one of ours is left out.
+        for (SystemId nb : g.galaxy.neighbors(home))
+            if (nb == ai::detail::homeSystem(g, stranger)) CHECK_FALSE(std::binary_search(claim.begin(), claim.end(), nb));
+    }
+
+    // A system Y away from every home, with room for two colonies.
+    std::optional<SystemId> y;
+    for (size_t i = 0; i < s.galaxy.systems.size() && !y; ++i) {
+        const SystemId sys{i};
+        bool someoneHome = false;
+        for (const Empire& e : s.empires) someoneHome = someoneHome || ai::detail::homeSystem(s, e.id) == sys;
+        const auto neighbours = s.galaxy.neighbors(home);
+        if (someoneHome || std::find(neighbours.begin(), neighbours.end(), sys) != neighbours.end()) continue;
+        const auto first = freePlanetIn(s, sys);
+        if (first && freePlanetIn(s, sys, *first)) y = sys;
+    }
+    REQUIRE(y);
+    const ObjectId ours = *freePlanetIn(s, *y);
+    const ObjectId theirs = *freePlanetIn(s, *y, ours);
+    // Our new colony there, and a populated colony of an empire we have not met.
+    addColony(s, ours, me, {{me, 100}});
+    addColony(s, theirs, stranger, {{stranger, 100}});
+    {
+        // The state update still uses the claims made before the colony was founded ...
+        GameState g = s;
+        TurnContext ctx{r, g, {}, {}, {}};
+        ai::updateAiState(ctx, me);
+        CHECK(g.empire(me).aiState == static_cast<int>(ai::AiState::Exploration));
+        // ... the Politics minister then claims Y, and the next update finds the enemy there.
+        ai::claimTerritory(ctx, me);
+        CHECK(std::binary_search(g.empire(me).claimedSystems.begin(), g.empire(me).claimedSystems.end(), *y));
+        ai::updateAiState(ctx, me);
+        CHECK(g.empire(me).aiState == static_cast<int>(ai::AiState::DefendShortTerm));
+    }
+    // The same through the turn: Y counts from the second start-of-turn update.
+    std::vector<EmpireOrders> none;
+    processTurn(r, s, none);
+    CHECK(s.empire(me).aiState == static_cast<int>(ai::AiState::Exploration));
+    CHECK(std::binary_search(s.empire(me).claimedSystems.begin(), s.empire(me).claimedSystems.end(), *y));
+    processTurn(r, s, none);
+    CHECK(s.empire(me).aiState == static_cast<int>(ai::AiState::DefendShortTerm));
 }

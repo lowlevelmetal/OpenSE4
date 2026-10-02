@@ -125,11 +125,16 @@ struct Situation {
 // Everything that reads the galaxy the way the AI does. `settings` is the
 // empire's AI_Settings (defend list size).
 Situation assess(const Rules& r, const GameState& s, EmpireId e, const AiProfile& prof);
-// The systems the empire claims (spec 05 §7.2, §7.3), sorted: for a computer
-// player its colony systems, the systems one jump away (not for neutrals),
-// less other computer players' home systems and the systems it agreed to
-// leave; for a human the systems claimed by hand plus the home system.
+// The systems the Politics minister claims now (spec 05 §7.2 "Territory",
+// §7.3), sorted: every system holding one of the empire's colonies, and,
+// unless the empire is neutral, every other system one jump away over every
+// link, except a computer player's home system and the systems the empire
+// agreed to leave (these two exclusions apply only to the neighbours).
 std::vector<SystemId> computeTerritory(const GameState& s, EmpireId e);
+// The territory the AI's lists use (spec 05 §7.2): the empire's claimed
+// systems (Empire::claimedSystems), sorted. For a computer player they are
+// the claims its Politics minister made during the previous turn.
+std::vector<SystemId> territoryOf(const GameState& s, EmpireId e);
 // Is this hostile object noticed this turn? Low difficulty misses each one
 // with a 10 % chance per turn (spec 05 §7.2); the roll is the same for every
 // caller on the same turn.

@@ -283,7 +283,10 @@ Decision decide(const GameState& s, EmpireId id, const Situation& sit, const AiP
 
 struct AngerInputs {
     std::vector<int64_t> scores;
-    std::vector<std::vector<SystemId>> territory;   // per empire, sorted
+    // Per empire, sorted: the systems it claims now, and the claim its own
+    // political step makes first (spec 05 §7.3 "Territory").
+    std::vector<std::vector<SystemId>> territory;
+    std::vector<std::vector<SystemId>> ownClaim;
     std::vector<EmpireId> mee;                      // per viewer
     // What the step counts (spec 05 §7.3 "What it counts"): per battle of
     // GameState::combats, per log entry of each empire, and the messages.
@@ -319,7 +322,7 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
     int anger = std::clamp(rel.anger, 0, kMaxAnger);
     auto add = [&](int64_t delta) { anger = static_cast<int>(std::clamp<int64_t>(anger + delta, 0, kMaxAnger)); };
     const bool belowNonAggression = treatyIsHostile(rel.treaty);
-    const std::vector<SystemId>& ours = in.territory[e.id.index()];
+    const std::vector<SystemId>& ours = in.ownClaim[e.id.index()];
 
     // 1. Combat. We are Attacking when we were the "current player" when the
     // battle was fought, wherever it was (confirmed: binary): in a turn-based
@@ -582,14 +585,10 @@ void decideState(const Rules& r, GameState& s, EmpireId id) {
     }
 }
 
-// Territory: every empire whose Politics minister is on (every computer
-// player, and a human who turns that minister on) claims its territory anew
-// (spec 06 §7 Q47, confirmed: binary). Computer players also make the systems
-// they agreed to leave their systems to avoid.
-void claimTerritory(const Rules& r, GameState& s, Empire& e) {
-    if (!politicsOn(e)) return;
-    e.claimedSystems = computeTerritory(s, e.id);
-    if (e.kind == PlayerKind::Human) return;
+// Computer players make the systems they agreed to leave their systems to
+// avoid, and copy their movement options, at the start of each turn.
+void keepAiOptions(const Rules& r, Empire& e) {
+    if (!politicsOn(e) || e.kind == PlayerKind::Human) return;
     e.systemsToAvoid = e.aiMemory.avoid;
     std::sort(e.systemsToAvoid.begin(), e.systemsToAvoid.end());
     // The four AI_Settings movement flags become the empire's own Ship
@@ -606,9 +605,11 @@ AngerInputs angerInputs(const Rules& r, const GameState& s, PoliticalWindow wind
     AngerInputs in;
     in.scores = politicalScores(r, s);
     in.territory.resize(s.empires.size());
+    in.ownClaim.resize(s.empires.size());
     in.mee.resize(s.empires.size());
     for (const Empire& e : s.empires) {
-        in.territory[e.id.index()] = computeTerritory(s, e.id);
+        in.territory[e.id.index()] = territoryOf(s, e.id);
+        in.ownClaim[e.id.index()] = computeTerritory(s, e.id);
         in.mee[e.id.index()] = megaEvilEmpire(r, in.scores, s, e.id);
     }
     in.window = std::move(window);
@@ -646,7 +647,7 @@ void updateAiStates(TurnContext& ctx) {
     GameState& s = ctx.state;
     for (Empire& e : s.empires)
         if (e.alive) forgetDemands(s, e);
-    for (Empire& e : s.empires) claimTerritory(ctx.rules, s, e);
+    for (Empire& e : s.empires) keepAiOptions(ctx.rules, e);
     for (const Empire& e : s.empires)
         if (e.alive) decideState(ctx.rules, s, e.id);
 }
@@ -655,8 +656,19 @@ void updateAiState(TurnContext& ctx, EmpireId id) {
     GameState& s = ctx.state;
     if (!id.valid() || id.index() >= s.empires.size() || !s.empire(id).alive) return;
     forgetDemands(s, s.empire(id));
-    claimTerritory(ctx.rules, s, s.empire(id));
+    keepAiOptions(ctx.rules, s.empire(id));
     decideState(ctx.rules, s, id);
+}
+
+// Spec 05 §7.2 "Territory" (confirmed: binary): the Politics minister of
+// every empire whose Politics minister is on (every computer player, and a
+// human who turns that minister on; spec 06 §7 Q47) rewrites the claims. The
+// lists and transitions of the state update, built before it, and this
+// turn's other ministers therefore use the claims of the previous turn.
+void claimTerritory(TurnContext& ctx, EmpireId id) {
+    GameState& s = ctx.state;
+    if (!id.valid() || id.index() >= s.empires.size() || !politicsOn(s.empire(id))) return;
+    s.empire(id).claimedSystems = computeTerritory(s, id);
 }
 
 void politicalStep(TurnContext& ctx) {
@@ -690,13 +702,14 @@ void politicalStep(TurnContext& ctx, EmpireId id, const PoliticalWindow& window)
 void rememberAiEvents(TurnContext& ctx) {
     GameState& s = ctx.state;
     for (Empire& e : s.empires)
-        if (e.alive) rememberEvents(s, e, computeTerritory(s, e.id));
+        if (e.alive) rememberEvents(s, e, territoryOf(s, e.id));
 }
 
 void updateAnger(TurnContext& ctx) {
     recordAiDecisions(ctx);
     updateAiStates(ctx);  // the state machine comes before the political step (spec 05 §7.1)
     politicalStep(ctx);
+    for (const Empire& e : ctx.state.empires) claimTerritory(ctx, e.id);
     rememberAiEvents(ctx);
 }
 
