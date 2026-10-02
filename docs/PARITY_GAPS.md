@@ -346,8 +346,6 @@ differs"). Those settled on 2026-10-01 in the last round, still to implement:
   in every tab; the original's Colonies columns, directions and keyless columns; clickable
   pictures; fleet rows last and unsorted; a queued design's right-click opens its Design
   Report (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`).
-- **Combat Piece Report** (§1.10.1, §7 Q78): the 310×420 window with Close under the
-  tabs; the Ability tab's sets (`screens/tactical.cpp`).
 
 ## Computer player (spec 05 §7)
 

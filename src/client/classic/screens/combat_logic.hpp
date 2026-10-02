@@ -94,6 +94,12 @@ private:
 // with plague.
 std::vector<std::pair<std::string, std::string>> pieceReportLines(const game::Rules& r, const game::GameState& s,
                                                                   const std::vector<game::combat::TacticalPiece>& pieces, int piece);
+// The Combat Piece Report's Ability page (spec 06 §1.10.1, §7 Q78, confirmed:
+// binary): for a ship or base its hull's abilities, then its whole design's
+// (every component, destroyed or not), then its own (none in ours); for a
+// planet only the planet's own abilities, not its facilities' or its
+// colony's. Each line is the identifier and its values; AI tags are left out.
+std::vector<std::string> pieceReportAbilities(const game::Rules& r, const game::GameState& s, const game::combat::TacticalPiece& p);
 
 // Drop Troops (spec 06 §1.10.2, spec 04 §11, confirmed: binary): no target
 // click. The troops land on the colony of another empire adjacent to the

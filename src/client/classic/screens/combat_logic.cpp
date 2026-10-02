@@ -1,11 +1,13 @@
 #include "client/classic/screens/combat_logic.hpp"
 
+#include "game/abilities.hpp"
 #include "game/design.hpp"
 #include "game/query.hpp"
 
 #include <algorithm>
 #include <format>
 #include <optional>
+#include <span>
 
 namespace opense4::client::classic {
 
@@ -194,6 +196,28 @@ std::vector<std::pair<std::string, std::string>> pieceReportLines(const game::Ru
         if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size())
             if (const game::Colony* colony = s.colony(p.planet)) plague = std::max(plague, colony->plagueLevel);
         if (plague > 0) out.emplace_back("Conditions", std::format("Plague {}", plague));
+    }
+    return out;
+}
+
+std::vector<std::string> pieceReportAbilities(const game::Rules& r, const game::GameState& s, const game::combat::TacticalPiece& p) {
+    std::vector<std::string> out;
+    auto add = [&](std::span<const game::ParsedAbility> list) {
+        for (const game::ParsedAbility& a : list) {
+            if (a.kind == game::AbilityKind::AITag) continue;
+            const std::string name = a.kind == game::AbilityKind::Unknown ? a.raw : std::string(game::identifier(a.kind));
+            out.push_back(a.value1 != 0 || a.value2 != 0 ? std::format("{} ({}, {})", name, a.value1, a.value2) : name);
+        }
+    };
+    // A ship or base: its hull, then every component of its design, destroyed
+    // or not; our vehicles have no abilities of their own to follow.
+    if (p.kind == PieceKind::Vehicle && p.design.valid() && p.design.index() < s.designs.size()) {
+        const game::Design& d = s.design(p.design);
+        if (d.hull < r.data().vehicleSizes.size()) add(r.hullAbilities(d.hull));
+        for (const game::DesignEntry& e : d.entries)
+            if (e.component < r.data().components.size()) add(r.componentAbilities(e.component));
+    } else if (p.kind == PieceKind::Planet && p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) {
+        add(game::parseAbilities(s.galaxy.object(p.planet).abilities));
     }
     return out;
 }

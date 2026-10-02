@@ -43,7 +43,7 @@ In your phase:
 - **Left-click** one of your pieces to select it.
 - **Left-click an empty square** to move the selected piece there. The pointer shows the path.
 - **Left-click an enemy** to fire every ticked weapon of the selected piece at it. The pointer shows whether you can fire, and why not.
-- **Right-click** any piece, or click the name of the selected piece, for its **Combat Piece Report**: movement, shields, damage, supplies, the number of targets it can engage, its combat group and formation.
+- **Right-click** any piece, or click the name of the selected piece, for its **Combat Piece Report**: movement, shields, damage, supplies, the number of targets it can engage, its combat group and formation. Its tabs list a ship's components, a planet's facilities, the cargo and the abilities: a ship's come from its hull and every component of its design, even those shot away; a planet shows only its own, not those of its facilities.
 - Click the map, or press `Space`, to skip an animation.
 
 **The current piece panel** shows the selected piece's shields, damage, movement and supplies,

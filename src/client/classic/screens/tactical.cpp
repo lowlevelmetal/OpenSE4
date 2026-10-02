@@ -1332,52 +1332,70 @@ public:
     explicit CombatPieceReportScreen(int piece) : piece_(piece) {}
     bool modal() const override { return true; }
 
+    // A borderless 310x420 report window, as every report opened on its own
+    // (spec 06 §1.10.1, §7 Q78, confirmed: binary): the pages at (10,10), the
+    // four 72x30 tabs at (10,340), and a 153x30 Close button centred under
+    // them at (79,380).
     bool draw(UiContext& ui) override {
         const TacticalFight* f = ui.session.tactical();
         if (!f || !f->battle || piece_ < 0 || size_t(piece_) >= f->battle->pieces().size()) return false;
         const TacticalBattle& b = *f->battle;
         const game::GameState& s = b.state();
         const TacticalPiece& p = b.pieces()[size_t(piece_)];
-        Dialog d(ui, screenTitle(ScreenId::CombatPieceReport), Vec2{353, 422}, 0);
-        if (!d.open()) return d.keepOpen();
-        d.beginContent();
-        const ImVec2 page = ImGui::GetCursorScreenPos();
-        // The 290x361 page and the tab strip under it, fitted to our dialog's content area.
-        const float pageH = std::min(361.0f, ImGui::GetContentRegionAvail().y / ui.px(1) - 32.0f);
-        if (p.kind == PieceKind::Obstacle) {
-            // The object's ordinary report (stars, warp points, comets, empty planets).
-            ImGui::BeginChild("##page", ui.size({290, pageH}));
-            if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) objectReport(ui, p.planet, &s);
-            ImGui::EndChild();
-        } else {
-            const bool group = p.kind == PieceKind::UnitGroup;
-            const bool seeker = p.kind == PieceKind::Seeker;
-            const bool planet = p.kind == PieceKind::Planet;
-            const bool tabs = !group && !seeker;
-            if (!tabs) tab_ = ReportTab::Detail;
-            // A unit group's page is cut to 249 px, its unit grid (108 px) at y 253.
-            const float detailH = group ? std::min(249.0f, pageH - 112.0f) : pageH;
-            ImGui::BeginChild("##page", ui.size({290, detailH}), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
-            switch (tab_) {
-                case ReportTab::Detail: detail(ui, b, p); break;
-                case ReportTab::Components: components(ui, s, p); break;
-                case ReportTab::Facilities: facilities(ui, s, p); break;
-                case ReportTab::Cargo: cargo(ui, s, p); break;
-                case ReportTab::Abilities: abilities(ui, s, p); break;
+        const Vec2 size{310, 420};
+        const Vec2 min{(frameW() - size.x) * 0.5f, (frameH() - size.y) * 0.5f};
+        ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        const bool open = ImGui::Begin("Combat Piece Report", nullptr,
+                                       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags);
+        ImGui::PopStyleVar(2);
+        bool keep = true;
+        if (open) {
+            if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+            ui.tagWindow(ui.at(min), ui.at(min + size));
+            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + size}, nullptr, 0);
+            const ImVec2 page = ui.at(min + Vec2{10, 10});
+            if (p.kind == PieceKind::Obstacle) {
+                // The object's ordinary report (stars, warp points, comets, empty planets).
+                ImGui::SetCursorScreenPos(page);
+                ImGui::BeginChild("##page", ui.size({290, 361}));
+                if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) objectReport(ui, p.planet, &s);
+                ImGui::EndChild();
+            } else {
+                const bool group = p.kind == PieceKind::UnitGroup;
+                const bool seeker = p.kind == PieceKind::Seeker;
+                const bool planet = p.kind == PieceKind::Planet;
+                const bool tabs = !group && !seeker;
+                if (!tabs) tab_ = ReportTab::Detail;
+                // The Detail page is 290x361; with tabs the strip at y 340 takes its foot (inferred).
+                // A unit group's page is cut to 249 px, its unit grid (108 px) at y 253.
+                const float pageH = tabs ? 328.0f : 361.0f;
+                const float detailH = group ? 249.0f : pageH;
+                ImGui::SetCursorScreenPos(page);
+                ImGui::BeginChild("##page", ui.size({290, detailH}), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+                switch (tab_) {
+                    case ReportTab::Detail: detail(ui, b, p); break;
+                    case ReportTab::Components: components(ui, s, p); break;
+                    case ReportTab::Facilities: facilities(ui, s, p); break;
+                    case ReportTab::Cargo: cargo(ui, s, p); break;
+                    case ReportTab::Abilities: abilities(ui, s, p); break;
+                }
+                ImGui::EndChild();
+                if (group) unitGrid(ui, s, p, ui.at(min + Vec2{10, 10 + 253}), 108);
+                if (tabs) {
+                    ImGui::SetCursorScreenPos(ui.at(min + Vec2{10, 340}));
+                    tab_ = reportTabs(ui, tab_, planet, cargoSpace(ui.rules(), s, p) > 0);
+                }
             }
-            ImGui::EndChild();
-            if (group) unitGrid(ui, s, p, {page.x, page.y + ui.px(detailH + 4)}, pageH - detailH - 4);
-            if (tabs) {
-                ImGui::SetCursorScreenPos({page.x, page.y + ui.px(pageH + 2)});
-                tab_ = reportTabs(ui, tab_, planet, cargoSpace(ui.rules(), s, p) > 0);
-            }
+            ImGui::SetCursorScreenPos(ui.at(min + Vec2{79, 380}));
+            if (classicButton(ui, "Close", {153, 30})) keep = false;
+            // Esc closes a report window (spec 06 §3.4).
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) keep = false;
         }
-        // Esc closes a report window (spec 06 §3.4).
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) d.requestClose();
-        // Close in the title strip (OpenSE4's: the strip under the page holds the tabs).
-        ImGui::SetCursorScreenPos(d.at({353 - 74, 7}));
-        if (classicButton(ui, "Close", {64, 22})) d.requestClose();
-        return d.keepOpen();
+        ImGui::End();
+        return keep;
     }
 
 private:
@@ -1473,23 +1491,12 @@ private:
             ImGui::Text("%d x %s", u.count, u.design.index() < s.designs.size() ? s.design(u.design).name.c_str() : "?");
     }
 
-    // Ability: what its parts or facilities give it.
+    // Ability: a ship's or base's hull, then its whole design (destroyed parts
+    // too); a planet's own abilities only (spec 06 §1.10.1, §7 Q78).
     void abilities(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
-        std::vector<game::ParsedAbility> list;
-        if (p.kind == PieceKind::Vehicle && p.vehicle.valid()) {
-            if (const game::Vehicle* v = s.vehicle(p.vehicle)) list = game::vehicleAbilities(ui.rules(), s, *v);
-        } else if (p.kind == PieceKind::Planet && p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) {
-            if (const game::Colony* c = s.colony(p.planet)) list = game::colonyAbilities(ui.rules(), s, *c);
-        }
-        bool any = false;
-        for (const game::ParsedAbility& a : list) {
-            if (a.kind == game::AbilityKind::AITag) continue;
-            any = true;
-            const std::string name = a.kind == game::AbilityKind::Unknown ? a.raw : std::string(game::identifier(a.kind));
-            if (a.value1 != 0 || a.value2 != 0) ImGui::BulletText("%s (%lld, %lld)", name.c_str(), static_cast<long long>(a.value1), static_cast<long long>(a.value2));
-            else ImGui::BulletText("%s", name.c_str());
-        }
-        if (!any) dimText("No special abilities");
+        const std::vector<std::string> list = pieceReportAbilities(ui.rules(), s, p);
+        for (const std::string& line : list) ImGui::BulletText("%s", line.c_str());
+        if (list.empty()) dimText("No special abilities");
     }
 
     // A unit group's units in a 108 px grid under its cut Detail page.

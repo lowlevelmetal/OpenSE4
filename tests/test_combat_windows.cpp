@@ -9,7 +9,9 @@
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/session.hpp"
 
+#include "game/abilities.hpp"
 #include "game/commands.hpp"
+#include "game/design.hpp"
 #include "game/query.hpp"
 #include "game/serialize.hpp"
 #include "game/simulator.hpp"
@@ -18,6 +20,10 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <format>
+#include <span>
+#include <string>
+#include <vector>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -218,6 +224,63 @@ TEST_CASE("combat windows: the piece report lines and the Drop Troops colony") {
         }
     }
     CHECK(landed);
+}
+
+TEST_CASE("combat windows: the Ability tab of the Combat Piece Report") {
+    // A ship lists its hull's abilities, then every component of its design,
+    // destroyed or not; a planet only its own (spec 06 §1.10.1, §7 Q78).
+    using combat::TacticalPiece;
+    const Rules& r = combatRules();
+    Arena ar = makeArena(11);
+    GameState& s = ar.s;
+    Colony& colony = homeworld(s, ar.b);
+    const Location there = locationOf(s.galaxy, colony.planet);
+    const DesignId hauler = frigate(s, ar.a, "Hauler", 1, {"Test Cargo Bay", "CT Combat Thruster", "Test Cargo Bay"});
+    const VehicleId ship = spawn(s, hauler, there);
+    Vehicle& v = *s.vehicle(ship);
+    // The thruster is shot away: its ability still shows.
+    const Design& d = s.design(hauler);
+    v.damage.assign(d.entries.size(), 0);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (d.entries[i].component == opense4::test::componentIndex(r, "CT Combat Thruster")) v.damage[i] = r.component(d.entries[i].component).structure * 2;
+    REQUIRE(game::vehicleAbilities(r, s, v).size() < [&] {
+        size_t n = r.hullAbilities(d.hull).size();
+        for (const DesignEntry& e : d.entries) n += r.componentAbilities(e.component).size();
+        return n;
+    }());
+
+    TacticalPiece sp;
+    sp.kind = CombatPiece::Kind::Vehicle;
+    sp.vehicle = ship;
+    sp.design = hauler;
+    sp.owner = ar.a;
+    std::vector<std::string> expected;
+    auto add = [&](std::span<const ParsedAbility> list) {
+        for (const ParsedAbility& a : list) {
+            if (a.kind == AbilityKind::AITag) continue;
+            const std::string name(identifier(a.kind));
+            expected.push_back(a.value1 != 0 || a.value2 != 0 ? std::format("{} ({}, {})", name, a.value1, a.value2) : name);
+        }
+    };
+    add(r.hullAbilities(d.hull));
+    for (const DesignEntry& e : d.entries) add(r.componentAbilities(e.component));
+    const std::vector<std::string> shipList = classic::pieceReportAbilities(r, s, sp);
+    CHECK(shipList == expected);
+    CHECK(std::count(shipList.begin(), shipList.end(), "Cargo Storage (50, 0)") == 2);
+    CHECK(std::count(shipList.begin(), shipList.end(), "Combat Movement (2, 0)") == 1);
+
+    // The planet: its own abilities, not its facilities' or its colony's.
+    colony.facilities.push_back(opense4::test::facilityIndex(r, "Test Depot"));
+    s.galaxy.object(colony.planet).abilities = {ab(AbilityKind::CombatModifierSystem, 7)};
+    TacticalPiece pp;
+    pp.kind = CombatPiece::Kind::Planet;
+    pp.planet = colony.planet;
+    pp.owner = ar.b;
+    const std::vector<std::string> planetList = classic::pieceReportAbilities(r, s, pp);
+    REQUIRE(planetList.size() == 1);
+    CHECK(planetList[0].starts_with(std::string(identifier(AbilityKind::CombatModifierSystem))));
+    s.galaxy.object(colony.planet).abilities.clear();
+    CHECK(classic::pieceReportAbilities(r, s, pp).empty());
 }
 
 TEST_CASE("combat windows: every line of the Combat Piece Report") {

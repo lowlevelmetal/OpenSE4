@@ -3749,11 +3749,13 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
       (10,340), and a Close button 153×30 centred under them at (79,380), its bottom
       10 px above the window's.
 
-    Our client differs: its Ability tab (`abilities()` in `screens/tactical.cpp`) leaves
-    out destroyed components (`vehicleAbilities()`) and lists a planet's facility and
-    colony abilities (`colonyAbilities()`); its `CombatPieceReportScreen` is a 353×422
-    dialog with a 64×22 Close button in the title strip at (279,7). The window must be
-    310×420 with the tab strip and the Close button laid out as above.
+    Since 2026-10-01 our client follows: the Ability tab lists the hull's abilities and
+    then every component's of the design, destroyed or not, and a planet's own abilities
+    only (`pieceReportAbilities()` in `combat_logic.cpp`; our vehicles have no abilities
+    of their own to add); `CombatPieceReportScreen` is a borderless 310×420 window with
+    the pages at (10,10), the tabs at (10,340) and the 153×30 Close button at (79,380).
+    Where the 290×361 page meets the tab strip, a page with tabs is cut to 328 px so
+    the strip lies below it; without tabs it keeps its 361 px (inferred: question 83).
 79. **Fleets For Plr.** Ours hides Fleet Transfer's Existing Fleets button (the real
     game's fleet list) while it works on the simulator's sandbox. Is it there in the
     original, and what does it list?
@@ -3824,3 +3826,8 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
     Since 2026-10-01 `drawSideBox()` (`screens/combat_map.cpp`) draws no outline and uses
     the window's text font, kept within the box's height (inferred). (An out-of-range side
     is black in the original and grey in ours; that case never arises.)
+83. **The Combat Piece Report's page and tabs.** §1.10.1 gives the Detail page as
+    290×361 from (10,10), which reaches y 371, and the tab strip at (10,340). Is the
+    page drawn under the tabs (its last 31 px hidden), or is a page with tabs shorter?
+    Our client cuts a page with tabs to 328 px, ending 2 px above the strip, and keeps
+    361 px for a seeker's page, which has no tabs (inferred).
