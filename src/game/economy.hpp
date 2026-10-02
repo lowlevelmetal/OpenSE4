@@ -42,7 +42,8 @@
 //   a plagued planet) are computed here and must not be reported by other
 //   modules. updateHappiness(e) consumes e's events from TurnContext::moodEvents;
 //   events reported later in the turn stay there, and processTurn carries them
-//   over to e's next update (GameState::pendingMood).
+//   over to e's next update (GameState::pendingMood, kept in memory only: a
+//   loaded game has none, spec 02 §4).
 
 #include "game/commands.hpp"
 #include "game/rules.hpp"

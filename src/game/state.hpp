@@ -973,7 +973,10 @@ struct GameState {
     std::vector<Fleet> fleets;                    // sorted by id
     std::vector<DiplomaticMessage> messages;      // not yet answered/expired
     std::vector<PendingEvent> pendingEvents;
-    std::vector<MoodEvent> pendingMood;           // raised after an empire's happiness update, for its next one
+    // Raised after an empire's happiness update, for its next one. Kept in
+    // memory only: no game file holds them, so a loaded game starts with
+    // none (spec 02 §4, confirmed: binary).
+    std::vector<MoodEvent> pendingMood;
     // Battles of the last processed turn. Turn-based games keep those of the
     // game turn in progress and of the one before (CombatRecord::turn).
     std::vector<CombatRecord> combats;

@@ -664,9 +664,25 @@ the next) therefore never counts a construction event; a game played on one mach
 without reloading does. Observed under a debugger (2026-10-02): in two hosted 100-turn games
 of five computer players, no update met a construction event, while battle, ship-loss,
 population-loss, colonization and treaty events (all logged before the update of the same
-turn) arrived every turn they happened. The engine differs: it keeps such events in the
-saved state (`GameState::pendingMood`) and applies them at the next update whether or not
-the game was saved and loaded.
+turn) arrived every turn they happened.
+
+What reads a game file follows from other rules: the host reads the game to process a
+simultaneous turn and a hotseat game reloads it between players (spec 01 §6.9, spec 05
+§9.4), while a TCP/IP host keeps the game in memory from turn to turn (spec 05 §9.4), so
+there the events would count (inferred from those rules). OpenSE4 follows this since
+2026-10-02: `GameState::pendingMood` is kept in memory only, outside the save format,
+network messages and checksums, so a loaded game starts with none.
+- A play-by-e-mail host loads the game for every turn: no construction event ever counts.
+- A local or hotseat simultaneous game drops them where it stands for the original's
+  reading of the game file before processing (`ClassicSession::reloadGame`), so they do
+  not count there either. A turn-based game on one machine keeps them.
+- The network host keeps the game in memory, as the original's TCP/IP host does, so its
+  games count them until the host is stopped and started again from a save. Its clients
+  never receive them; they play no turn themselves, and the checksums they compare leave
+  them out.
+
+The engine used to save them and apply them at the next update whether or not the game was
+saved and loaded.
 
 **Conditions** do not affect anger.
 

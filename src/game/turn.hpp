@@ -109,7 +109,8 @@ bool simultaneousBattlesShown(const Rules& r);
 // Transient data passed between the phases of one turn. Persistent results
 // go into GameState; mood events that no happiness update used this turn
 // move to GameState::pendingMood at the end of the turn and come back at the
-// start of the next.
+// start of the next, unless the game was saved and loaded in between (they
+// are not saved, spec 02 §4).
 // One step of one vehicle in the simultaneous movement phase: within a
 // system, or through a warp point to another (TurnContext::movementStep).
 struct MovementStep {

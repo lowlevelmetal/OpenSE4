@@ -278,6 +278,14 @@ void fields(Ar& ar, T&... v) {
     (io(ar, v), ...);
 }
 
+// Members kept only in memory: never saved, sent or hashed. Reading leaves
+// them empty, as a loaded game starts without them. The field guard of
+// tests/test_serialize.cpp counts them with the others.
+template <class Ar, class... T>
+void unsaved(Ar&, T&... v) {
+    if constexpr (Ar::kReading) ((v = T{}), ...);
+}
+
 // ---- Rules data held in the state ----------------------------------------------------------
 
 template <class Ar> void io(Ar& ar, ruleset::Ability& a) { fields(ar, a.type, a.description, a.value1, a.value2); }
@@ -522,8 +530,11 @@ template <class Ar> void io(Ar& ar, LeftFacilities& l) { fields(ar, l.planet, l.
 template <class Ar>
 void io(Ar& ar, GameState& s) {
     fields(ar, s.turn, s.seed, s.options, s.galaxy, s.colonies, s.empires, s.designs, s.vehicles, s.fleets, s.messages, s.pendingEvents,
-           s.pendingMood, s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng,
-           s.playerTurn, s.startingPoints, s.leftFacilities, s.arrivals);
+           s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng, s.playerTurn,
+           s.startingPoints, s.leftFacilities, s.arrivals);
+    // The happiness events waiting for an empire's next update are not saved:
+    // a loaded game starts with none (spec 02 §4, confirmed: binary).
+    unsaved(ar, s.pendingMood);
 }
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------

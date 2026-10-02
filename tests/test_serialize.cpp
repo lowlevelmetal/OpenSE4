@@ -37,6 +37,10 @@ template <class... T>
 void fields(FieldCounter& c, T&...) {
     c.count += sizeof...(T);
 }
+template <class... T>
+void unsaved(FieldCounter& c, T&...) {
+    c.count += sizeof...(T);
+}
 } // namespace opense4::game::serial
 
 // Converts to any field type. Only declared: it is used in unevaluated contexts.
@@ -613,8 +617,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xb6ee5621e1120f6cull;
-    constexpr size_t kGoldenSize = 1816;
+    constexpr uint64_t kGoldenChecksum = 0xd39d08ce67b87cfcull;
+    constexpr size_t kGoldenSize = 1812;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

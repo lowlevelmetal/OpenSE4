@@ -4,12 +4,15 @@
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
 
+#include "client/classic/session.hpp"
+
 #include "game/ai.hpp"
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/events.hpp"
 #include "game/research.hpp"
+#include "game/serialize.hpp"
 #include "game/turn.hpp"
 
 #include <doctest/doctest.h>
@@ -181,6 +184,52 @@ TEST_CASE("turn order: mood events raised after an empire's happiness update wai
     quietTurn(politicsRules(), stirred);
     CHECK(homeworld(stirred, kA).anger != homeworld(calm, kA).anger);
     CHECK(stirred.pendingMood.empty());
+}
+
+TEST_CASE("turn order: the mood events waiting for the next update are not saved; a loaded game starts with none") {
+    // Spec 02 §4 (confirmed: binary).
+    GameState calm = newPoliticsGame();
+    const auto& models = politicsRules().data().happinessModels;
+    for (uint32_t i = 0; i < models.size(); ++i)
+        if (models[i].name == "Test Politics Mood") calm.empire(kA).race.happinessModel = i;
+    GameState stirred = calm;
+    stirred.pendingMood.push_back({kA, "New Treaty War", {}, {}, 10});
+    // Neither saved, sent nor counted in the checksum.
+    CHECK(serializeState(stirred) == serializeState(calm));
+    CHECK(stateChecksum(stirred) == stateChecksum(calm));
+    auto loaded = deserializeState(serializeState(stirred));
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->pendingMood.empty());
+    // The loaded game's next update is the calm game's; the game kept in memory differs.
+    GameState kept = stirred;
+    quietTurn(politicsRules(), *loaded);
+    quietTurn(politicsRules(), calm);
+    quietTurn(politicsRules(), kept);
+    CHECK(homeworld(*loaded, kA).anger == homeworld(calm, kA).anger);
+    CHECK(homeworld(kept, kA).anger != homeworld(calm, kA).anger);
+    CHECK(stateChecksum(*loaded) == stateChecksum(calm));
+}
+
+TEST_CASE("turn order: a local simultaneous game reads its game again before processing, so the waiting mood events are gone") {
+    // Spec 02 §4 with spec 01 §6.9: the original processes a simultaneous
+    // turn from its game file (client::classic::ClassicSession::reloadGame).
+    GameState calm = newPoliticsGame();
+    const auto& models = politicsRules().data().happinessModels;
+    for (uint32_t i = 0; i < models.size(); ++i)
+        if (models[i].name == "Test Politics Mood") calm.empire(kA).race.happinessModel = i;
+    for (Empire& e : calm.empires)
+        if (e.id != kA) e.kind = PlayerKind::Computer;
+    GameState stirred = calm;
+    stirred.pendingMood.push_back({kA, "New Treaty War", {}, {}, 10});
+    auto play = [](GameState s) {
+        const uint32_t turn = s.turn;
+        client::classic::ClassicSession session(std::make_shared<const Rules>(buildPoliticsRuleset()), std::move(s), kA,
+                                                client::classic::SessionKind::Local);
+        session.endTurn();
+        CHECK(session.state().turn == turn + 1);
+        return stateChecksum(session.state());
+    };
+    CHECK(play(stirred) == play(calm));
 }
 
 TEST_CASE("turn order: a player with missing orders is covered by every minister for one turn") {
