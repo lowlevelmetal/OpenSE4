@@ -603,7 +603,9 @@ u8 message type, then the payload, which is encoded with the save-format archive
    politely and carries a reason, for example a kick or a shutdown.
 
 `net::kProtocolVersion` must change whenever the messages or the save format
-change. It is 2 since turn-based games.
+change; the host refuses any other version and compares nothing else, so releases
+that share it play together. It was 2 from turn-based games on, 3 in 0.5.0 and is 4
+since 0.6.0.
 
 ### Save format
 

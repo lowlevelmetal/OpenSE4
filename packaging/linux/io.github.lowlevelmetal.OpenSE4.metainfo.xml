@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.6.1" date="2026-10-02" type="development">
+      <description>
+        <p>A build fix for Visual Studio 2022; plays together with 0.6.0 and reads its saves.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-10-02" type="development">
       <description>
         <p>Computer players brought closer to the original's: fleets, scrapping, budget and base building follow rules measured on the original game.</p>
