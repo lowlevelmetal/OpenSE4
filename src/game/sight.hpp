@@ -32,10 +32,16 @@ void updateKnowledge(const Rules& r, GameState& s);
 
 // Live checks (they reflect the current positions, also mid-turn).
 bool canSeeVehicle(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& v);
-// Planets, asteroid fields, stars, storms and warp points as the viewer's map
-// shows them: the stellar bodies of an explored system are remembered, except
-// planets and asteroid fields hidden by a storm or nebula, which need current
-// sensors that pierce it. Stars, storms and warp points are never hidden.
+// "Seeing the planet" (spec 01 §6.9 "What other players see", confirmed:
+// binary): whether the viewer's windows show a stellar object of an explored
+// system at all (the system panel, the sector click, the Planets window).
+// Its owner always sees an own colony's planet; anyone else when, in some
+// sight type, the planet's obscuration (planetObscuration: a cloaked
+// colony's cloak levels, raised by storms and nebulae) is no more than the
+// viewer's sensor level in the system, EM Active counted as at least 1. No
+// sensor source is needed, so only a storm, a nebula or a colony's cloak
+// hides a planet. Stars, storms and warp points are never hidden. The
+// windows also show only explored systems, which this test keeps.
 bool canSeePlanet(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet);
 // A colony as the movement rules see it (bad squares, the Attack Sector
 // question, the Ship Orders options, Sentry, stellar manipulation; spec 03
@@ -44,7 +50,10 @@ bool canSeePlanet(const Rules& r, const GameState& s, EmpireId viewer, ObjectId 
 // sees it; another empire only when it has explored the system and its
 // sensor level there (its own sources, its partners', omnipresence) reaches
 // the planet's obscuration in some sight type. Without sensors in the system
-// no colony is seen, even one the map remembers (canSeePlanet).
+// no foreign colony is seen, cloaked or not, even where the planet is
+// (canSeePlanet). Every window that asks whether a colony is seen uses this
+// test: the map's colony mark, the planet report, the Planets window, the
+// galaxy map's presence colours and the intelligence picker (spec 01 §6.9).
 bool canSeeColony(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet);
 // True when the viewer has a sensor source in the system (its own or a
 // partner's whose sensors it gets), or the game is omnipresent.
@@ -96,11 +105,6 @@ bool recalculateColonies(const Rules& r, GameState& s);
 // The colony can cloak: its stored cloak level is 2 or more in some sight
 // type. Cloaking needs no supply and costs nothing.
 bool colonyCanCloak(const Colony& c);
-// Whether the viewer sees the colony on its map and in its lists (the Planets
-// window, the intelligence target picker, the map's colony mark): always,
-// unless the colony is another empire's and cloaked, when the detection rule
-// decides (canSeeColony).
-bool colonyShown(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet);
 
 // Long-range scanning (spec 01 §6.6, spec 03 §3.3, spec 05 §8 "Design
 // knowledge", confirmed: binary): the viewer sees the foreign vehicle, it

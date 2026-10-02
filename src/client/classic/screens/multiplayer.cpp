@@ -310,7 +310,7 @@ private:
     void startPlaying(MenuContext& ctx) {
         if (host_ && host_->state()) {
             const game::EmpireId me = host_->localEmpire();
-            game::GameState state = game::redactForEmpire(*host_->state(), me);
+            game::GameState state = game::redactForEmpire(*rules_, *host_->state(), me);
             auto session = std::make_unique<ClassicSession>(rules_, std::move(state), me, SessionKind::NetworkClient);
             session->setTransport(std::make_unique<HostTransport>(rules_, std::move(host_)));
             ctx.startGame(std::move(session));

@@ -24,6 +24,7 @@ add_executable(opense4_tests
     test_engine_install.cpp
     test_events.cpp
     test_generate.cpp
+    test_hidden_colonies.cpp
     test_history.cpp
     test_integration.cpp
     test_intel.cpp

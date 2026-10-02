@@ -1,5 +1,7 @@
 #include "client/classic/map_style.hpp"
 
+#include "game/sight.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -53,6 +55,29 @@ Point nameCorner(float x, float y, float cellW, float cellH, float textW, float 
     for (const Point& p : candidates)
         if (p.x >= 0 && p.y >= 0 && p.x + textW <= boxW && p.y + textH <= boxH) return p;
     return candidates[3];
+}
+
+std::vector<std::vector<game::EmpireId>> presence(const game::Rules& r, const game::GameState& s, game::EmpireId viewer) {
+    const game::Galaxy& g = s.galaxy;
+    std::vector<std::vector<game::EmpireId>> out(g.systems.size());
+    if (!viewer.valid() || viewer.index() >= s.empires.size()) return out;
+    const game::Empire& me = s.empire(viewer);
+    auto mark = [&](game::SystemId sys, game::EmpireId e) {
+        if (!sys.valid() || sys.index() >= out.size()) return;
+        auto& list = out[sys.index()];
+        if (std::find(list.begin(), list.end(), e) == list.end()) list.push_back(e);
+    };
+    // Vehicles: our own, and those we see this turn (knownVehicle).
+    const auto& visible = me.knowledge.visibleVehicles;
+    for (const game::Vehicle& v : s.vehicles)
+        if (v.owner.valid() && (v.owner == viewer || std::find(visible.begin(), visible.end(), v.id) != visible.end())) mark(v.location.system, v.owner);
+    // Colonies by the detection rule: our own, and another empire's only while
+    // our sensors (or a partner's) see it, so a hidden or unseen colony adds
+    // no colour (spec 01 §6.7, §6.9).
+    for (const auto& c : s.colonies)
+        if (c && (c->owner == viewer || (me.hasExplored(g.object(c->planet).system) && game::sight::canSeeColony(r, s, viewer, c->planet))))
+            mark(g.object(c->planet).system, c->owner);
+    return out;
 }
 
 } // namespace opense4::client::classic::map_style

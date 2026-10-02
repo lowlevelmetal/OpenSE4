@@ -46,6 +46,15 @@ struct SectorView {
     bool cloakRing = false;
 };
 
+// The stellar objects of a system that the viewer's system panel shows, in
+// the system's list order (only those in `sector` when given): none while the
+// viewer has not explored the system; otherwise every one that passes the
+// "seeing the planet" test (sight::canSeePlanet), so a planet hidden by its
+// colony's cloak, a storm or a nebula is not drawn, counted, named, listed or
+// clickable (spec 01 §6.9 "What other players see", spec 06 §2.4).
+std::vector<game::ObjectId> shownStellarObjects(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::SystemId sys,
+                                                std::optional<game::Sector> sector = std::nullopt);
+
 // `objects`: the sector's stellar objects in the system's list order;
 // `vehicles`: the vehicles the viewer sees there. `cellHeight`: 36 or 50.
 SectorView sectorView(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, std::span<const game::ObjectId> objects,

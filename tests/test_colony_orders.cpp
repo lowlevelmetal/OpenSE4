@@ -268,16 +268,16 @@ TEST_CASE("colony cloaking: a cloaked colony hides behind its cloak levels; part
     // The planet's obscuration is the cloak level; A's colony (EM Active 1) does not see it.
     CHECK(sight::planetObscuration(r, cw.w.s, cw.hidden) == sight::SightVector{3, 3, 3, 3, 3});
     CHECK_FALSE(sight::canSeeColony(r, cw.w.s, kA, cw.hidden));
-    CHECK_FALSE(sight::canSeePlanet(r, cw.w.s, kA, cw.hidden));  // nor does the map remember it
-    CHECK_FALSE(sight::colonyShown(r, cw.w.s, kA, cw.hidden));
-    CHECK(sight::colonyShown(r, cw.w.s, kB, cw.hidden));         // its owner always does
+    CHECK_FALSE(sight::canSeePlanet(r, cw.w.s, kA, cw.hidden));  // nor is the planet drawn
+    CHECK(sight::canSeeColony(r, cw.w.s, kB, cw.hidden));        // its owner always sees it
+    CHECK(sight::canSeePlanet(r, cw.w.s, kB, cw.hidden));
     cw.w.s.options.omnipresent = true;
     CHECK_FALSE(sight::canSeeColony(r, cw.w.s, kA, cw.hidden));
     cw.w.s.options.omnipresent = false;
     // Sensors of level 3 in any type reveal it.
     const VehicleId eye = cw.w.spawn(cw.w.ship(kA, "Eye", 1, {"Mv Sensor 3"}), at(cw.a, 2, 2));
     CHECK(sight::canSeeColony(r, cw.w.s, kA, cw.hidden));
-    CHECK(sight::colonyShown(r, cw.w.s, kA, cw.hidden));
+    CHECK(sight::canSeePlanet(r, cw.w.s, kA, cw.hidden));
     cw.w.v(eye).count = 0;
     cw.w.s.removeDeadVehicles();
     // Uncloaked, it is seen as before.

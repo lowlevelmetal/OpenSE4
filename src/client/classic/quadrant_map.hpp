@@ -46,7 +46,7 @@ QuadrantMapResult quadrantMap(UiContext& ui, const char* id, Vec2 frameSize, con
 // A system's symbol under an overlay (map_style.hpp).
 map_style::Symbol systemSymbol(const UiContext& ui, game::SystemId sys, MapOverlay overlay,
                                const std::vector<std::vector<game::EmpireId>>& presence);
-// Empires the local player sees in each system (own and visible vehicles, known colonies).
+// Empires the local player sees in each system (map_style::presence).
 std::vector<std::vector<game::EmpireId>> systemPresence(const UiContext& ui);
 // Straight-line distance between two systems in light-years (grid squares × 10, rounded).
 int lightYears(const game::Galaxy& g, game::SystemId a, game::SystemId b);

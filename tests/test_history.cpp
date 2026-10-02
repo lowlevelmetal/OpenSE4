@@ -285,12 +285,12 @@ TEST_CASE("history: each player's view holds only its own record and seen design
     TurnContext ctx = turnContext(r, s);
     diplomacy::makeContact(ctx, kA, kB);
     seeDesign(s.empire(kA).knowledge, s.empire(kB).designs.front(), 0);
-    const GameState v = redactForEmpire(s, kA);
+    const GameState v = redactForEmpire(r, s, kA);
     CHECK(validateState(v, &r).empty());
     CHECK(v.empire(kA).historyEvents.size() == s.empire(kA).historyEvents.size());
     CHECK(v.empire(kB).historyEvents.empty());
     CHECK(knowsDesign(v.empire(kA).knowledge, s.empire(kB).designs.front()));
-    const GameState spectator = redactForEmpire(s, EmpireId{});
+    const GameState spectator = redactForEmpire(r, s, EmpireId{});
     for (const Empire& e : spectator.empires) CHECK(e.historyEvents.empty());
 }
 

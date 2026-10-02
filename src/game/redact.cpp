@@ -2,8 +2,10 @@
 
 #include "game/design.hpp"
 #include "game/score.hpp"
+#include "game/sight.hpp"
 
 #include <algorithm>
+#include <vector>
 
 namespace opense4::game {
 
@@ -17,10 +19,20 @@ bool treatySharesMaps(const GameState& s, EmpireId viewer, EmpireId other) {
 
 } // namespace
 
-GameState redactForEmpire(const GameState& s, EmpireId viewer) {
+GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
     GameState v = s;
     const bool spectator = !viewer.valid() || viewer.index() >= s.empires.size();
     const Empire* me = spectator ? nullptr : &s.empire(viewer);
+
+    // Colonies hidden from us by their cloak (spec 01 §6.9): their planets
+    // fail the "seeing the planet" test on the full state. Worked out before
+    // anything changes, in planet order.
+    std::vector<ObjectId> hidden;
+    if (me)
+        for (const auto& c : s.colonies)
+            if (c && c->owner != viewer && me->hasExplored(s.galaxy.object(c->planet).system) &&
+                !sight::canSeePlanet(r, s, viewer, c->planet))
+                hidden.push_back(c->planet);
 
     // Other empires: only what diplomacy and the score screens show.
     for (Empire& e : v.empires) {
@@ -77,6 +89,15 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
         x.minister = false;
     }
     std::erase_if(v.fleets, [&](const Fleet& f) { return f.owner != viewer; });
+
+    // A hidden colony is not in our view at all: no colony record, and its
+    // planet leaves its system's object list (as an object removed by stellar
+    // manipulation does), so nothing draws, lists or selects it. Its object
+    // stays, so every reference to it remains valid.
+    for (ObjectId planet : hidden) {
+        v.colonies[planet.index()].reset();
+        std::erase(v.galaxy.system(v.galaxy.object(planet).system).objects, planet);
+    }
 
     // Colonies: foreign ones only in systems we have explored; their contents stay hidden.
     for (auto& c : v.colonies) {

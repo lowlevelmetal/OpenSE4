@@ -393,7 +393,9 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
     const game::SpaceObject& o = s.galaxy.object(planet);
-    const game::Colony* c = s.colony(planet);
+    // The colony only when the player sees it by the detection rule: an
+    // unseen one's planet reports as uncolonized (spec 01 §6.9).
+    const game::Colony* c = seenColony(r, s, ui.session.player(), planet);
     const bool own = c && c->owner == ui.session.player();
     const ruleset::SectorObjectType& type = r.data().sectorObjectTypes[o.sectorType];
     if (tab != ReportTab::Detail) {
@@ -439,8 +441,8 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
                 row += 14;
             };
             if (!own) {
-                line("Owner", s.empire(c->owner).name);
-                line("Colony Type", c->colonyType);
+                // A foreign colony shows its owner's flag and a Population line,
+                // never its owner's name or colony type (spec 01 §6.9).
                 line("Population", std::format("{}M", c->totalPopulation()));
                 break;
             }

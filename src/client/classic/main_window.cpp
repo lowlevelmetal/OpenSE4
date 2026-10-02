@@ -269,12 +269,10 @@ void MainWindow::clearSelection() {
 }
 
 std::vector<game::ObjectId> MainWindow::objectsAt(const UiContext& ui, game::Sector sec) const {
-    std::vector<game::ObjectId> out;
-    const game::GameState& s = ui.state();
-    if (!shown_.valid() || !ui.me().hasExplored(shown_)) return out;
-    for (game::ObjectId id : s.galaxy.system(shown_).objects)
-        if (s.galaxy.object(id).sector == sec) out.push_back(id);
-    return out;
+    // Only the stellar objects the player sees: a colony's cloak, a storm or
+    // a nebula can hide a planet, which is then neither clickable nor listed
+    // (spec 01 §6.9 "What other players see", spec 06 §2.4).
+    return shownStellarObjects(ui.rules(), ui.state(), ui.session.player(), shown_, sec);
 }
 
 std::vector<const game::Vehicle*> MainWindow::vehiclesAt(const UiContext& ui, game::Location where) const {
@@ -1338,6 +1336,7 @@ void MainWindow::overlayText(UiContext& ui) {
             for (game::ObjectId id : sys.objects) {
                 const game::SpaceObject& o = s.galaxy.object(id);
                 if (o.kind != game::ObjectKind::Planet || (o.sector.x == 0 && o.sector.y == 0)) continue;
+                if (!game::sight::canSeePlanet(ui.rules(), s, ui.session.player(), id)) continue;  // a hidden planet has no name (spec 01 §6.9)
                 const int line = planetLines[o.sector]++;
                 smallAbove(sectorCenter(o.sector).x, cellOrigin(o.sector).y + geo.cell + kSmallCell * float(line), IM_COL32_WHITE, o.name);
             }
@@ -1349,7 +1348,8 @@ void MainWindow::overlayText(UiContext& ui) {
                 const game::SpaceObject& o = s.galaxy.object(id);
                 const game::Colony* col = s.colony(id);
                 if (o.kind != game::ObjectKind::Planet || !col || !showsFacilityMarkers(s, ui.session.player(), col->owner)) continue;
-                if (!game::sight::colonyShown(ui.rules(), s, ui.session.player(), id)) continue;  // a partner's cloak hides it too (spec 01 §6.9)
+                // Only on a colony the player sees: a partner's colony needs sensors there (spec 01 §6.9).
+                if (col->owner != ui.session.player() && !game::sight::canSeeColony(ui.rules(), s, ui.session.player(), id)) continue;
                 if (replay_.active() && replay_.colonyOwner(id) != col->owner) continue;
                 const std::vector<std::string> groups = facilityMarkerGroups(ui.rules(), *col, opts.facilityMarkers);
                 if (groups.empty()) continue;
@@ -1783,11 +1783,10 @@ void MainWindow::prepareSectors(UiContext& ui) {
     sectors_.clear();
     if (!shown_.valid()) return;
     const game::GameState& s = ui.state();
-    const game::StarSystem& sys = s.galaxy.system(shown_);
-    const bool explored = ui.me().hasExplored(shown_);
     std::map<game::Sector, std::pair<std::vector<game::ObjectId>, std::vector<const game::Vehicle*>>> bySector;
-    if (explored)
-        for (game::ObjectId id : sys.objects) bySector[s.galaxy.object(id).sector].first.push_back(id);
+    // The stellar objects the player sees (spec 01 §6.9): a hidden planet is
+    // not drawn and does not count in the sector's number of stellar objects.
+    for (game::ObjectId id : shownStellarObjects(ui.rules(), s, ui.session.player(), shown_)) bySector[s.galaxy.object(id).sector].first.push_back(id);
     if (replay_.active()) {
         for (const game::Vehicle& v : replay_.vehicles())
             if (v.location.system == shown_ && replaySeen_.contains(v.id) && !replay_.motion(v.id, ui.time))
@@ -1862,12 +1861,16 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         // colonise get the classic star (green: breathable, red: needs domes).
         for (game::ObjectId id : sys.objects) {
             const game::SpaceObject& o = s.galaxy.object(id);
+            // A planet the player does not see gets no mark at all (spec 01 §6.9).
+            if (!game::sight::canSeePlanet(rules, s, ui.session.player(), id)) continue;
             const Vec2 c = sectorCenter(o.sector);
             const game::Colony* col = s.colony(id);
             std::optional<game::EmpireId> owner = col ? std::optional(col->owner) : std::nullopt;
             if (replay_.active()) owner = replay_.colonyOwner(id);
-            // The planet is always drawn; a cloaked colony's flag only when it is seen (spec 01 §6.9).
-            if (owner && !game::sight::colonyShown(rules, s, ui.session.player(), id)) owner.reset();
+            // The colony's mark only when the player sees the colony by the
+            // detection rule; an unseen colony's planet looks empty and gets
+            // the colonize star when its type fits (spec 01 §6.9, spec 06 §2.4).
+            if (owner && *owner != ui.session.player() && !game::sight::canSeeColony(rules, s, ui.session.player(), id)) owner.reset();
             if (owner) {
                 const Sprite flag = ui.art.flag(s.empire(*owner).race.style, false);
                 if (flag) r.sprite(flag.tex, Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), flag.uv);
