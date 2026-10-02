@@ -260,6 +260,9 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
         giveOrders(lc, e, ai::planPoliticsOrders(r, s, e));
         giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e));
     }
+    // The Politics minister's claims: the state update and this turn's
+    // ministers used those of the previous turn (spec 05 §7.2).
+    if (control != Control::Absent) ai::claimTerritory(ctx, e);
     ai::recordAiDecisions(ctx, e);
     // 3. Movement is refilled, and every group carries out its orders.
     movement::startTurn(ctx, e);

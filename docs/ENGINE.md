@@ -98,8 +98,10 @@ empires are skipped.
    player, the active ones for a human): the Politics minister alone first
    (`ai::planPoliticsOrders`), whose messages take effect at once and carry the advanced
    date (`DiplomaticMessage::dated`, which the answer window reads), then the others
-   (`ai::planOrdersAfterPolitics`), which see the treaties it changed. Afterwards
-   `ai::recordAiDecisions` notes what was decided.
+   (`ai::planOrdersAfterPolitics`), which see the treaties it changed. Then the Politics
+   minister's claims are rewritten (`ai::claimTerritory`): the state update and the
+   ministers worked on the claims of the previous turn, as the original's lists do (spec 05
+   §7.2). Afterwards `ai::recordAiDecisions` notes what was decided.
 5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
    vehicle, fleet and planet with orders acts, in object order, whenever its day counter
    reaches 1: the acting vehicle gets exactly 1 movement point and its list runs, orders
@@ -185,7 +187,7 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    the start-of-turn step as in step 4 above (`ai::updateAiState`, `ai::politicalStep`
    counting everything since the empire's previous step, `Empire::politicsMark`; the
    Politics minister, then the other ministers, whose orders are given but not yet
-   carried out; `ai::recordAiDecisions`); then its vehicles regain their movement
+   carried out; `ai::claimTerritory`; `ai::recordAiDecisions`); then its vehicles regain their movement
    (`movement::startTurn(ctx, empire)`) and every group carries out its order list, the
    ministers' new orders included, at most 21 orders each; a computer player's
    destruction check comes last.

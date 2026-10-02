@@ -14,11 +14,11 @@
 // ministers in two groups:
 //   1. at the start of the turn, for each empire in turn, before movement:
 //      the AI state update (updateAiState), the political step
-//      (politicalStep: territory and anger), then Politics, Troops,
-//      Transports, Colonization, Space Yard Ships, Carriers,
-//      Mines/Satellites/Drones, Fleets, Defense, Attack, Exploration, Patrol,
-//      Resupply, Repair, Scrap, Retrofit and Stellar Manipulation
-//      -> planOrders();
+//      (politicalStep: anger), then Politics, Troops, Transports,
+//      Colonization, Space Yard Ships, Carriers, Mines/Satellites/Drones,
+//      Fleets, Defense, Attack, Exploration, Patrol, Resupply, Repair, Scrap,
+//      Retrofit and Stellar Manipulation -> planOrders(); then the Politics
+//      minister's territory claims (claimTerritory);
 //   2. at the start of the empire's end-of-turn processing, before income:
 //      Design, Research, Intelligence, Facility Construction, Ship
 //      Construction and Facility Construction again (the first facility pass
@@ -125,9 +125,9 @@ PlanReport planTurnReport(const Rules& r, const GameState& s, EmpireId e, bool m
 // places): records what the computer players decided this turn (war
 // declarations set anger to 100, accepted demands are carried out half of
 // the time), keeps the per-empire counters, runs the AI state machine (spec
-// 05 §7.2), the political step (territory and anger, §7.3) for empires whose
-// Politics minister is on, counting this turn's battles, reports and
-// messages, and what the AI remembers of the turn.
+// 05 §7.2), the political step (anger, §7.3) and the territory claims for
+// empires whose Politics minister is on, counting this turn's battles,
+// reports and messages, and what the AI remembers of the turn.
 void updateAnger(TurnContext& ctx);
 // The parts of updateAnger:
 // after the AI's commands were applied (difficulty, counters, war declarations and
@@ -135,8 +135,9 @@ void updateAnger(TurnContext& ctx);
 void recordAiDecisions(TurnContext& ctx);
 // ... or one empire's, after its own group 1 (turn-based games, spec 05 §8).
 void recordAiDecisions(TurnContext& ctx, EmpireId e);
-// before the ministers act (territory and the state machine of §7.2): every
-// empire, or one empire at the start of its turn;
+// before the ministers act (the state machine of §7.2, on the territory
+// claimed during the previous turn): every empire, or one empire at the start
+// of its turn;
 void updateAiStates(TurnContext& ctx);
 void updateAiState(TurnContext& ctx, EmpireId e);
 // then the political step (anger, §7.3) before Politics decides: every
@@ -169,6 +170,15 @@ void recordPoliticalStep(GameState& s, EmpireId e);
 void politicalStep(TurnContext& ctx);
 void politicalStep(TurnContext& ctx, EmpireId e, std::optional<uint32_t> eventsTurn);
 void politicalStep(TurnContext& ctx, EmpireId e, const PoliticalWindow& window);
+// after the empire's start-of-turn ministers, the Politics minister's claims
+// (spec 05 §7.2 "Territory"): when its Politics minister is on, the empire
+// claims its colony systems and their neighbours (detail::computeTerritory).
+// The original claims first thing in the Politics minister's run, after the
+// state update built its lists, and the other ministers plan with those
+// lists; claiming after them keeps the state update and this turn's ministers
+// on the claims of the previous turn. The political step's anger terms
+// already use the empire's new claim (§7.3);
+void claimTerritory(TurnContext& ctx, EmpireId e);
 // and once per turn after combat and every empire's end-of-turn processing
 // (combat counts, traced spies, mine fields met).
 void rememberAiEvents(TurnContext& ctx);

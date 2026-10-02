@@ -16,6 +16,23 @@
 
 namespace opense4::game::ai::detail {
 
+bool amountAbility(AbilityKind k) {
+    switch (k) {
+        case AbilityKind::ShieldGeneration:
+        case AbilityKind::PhasedShieldGeneration:
+        case AbilityKind::CargoStorage:
+        case AbilityKind::SupplyStorage:
+        case AbilityKind::StandardShipMovement:
+        case AbilityKind::LaunchRecoverFighters:
+        case AbilityKind::LaunchRecoverSatellites:
+        case AbilityKind::LaunchDrones:
+        case AbilityKind::LayMines:
+        case AbilityKind::MineSweeping:
+        case AbilityKind::DropTroops: return true;
+        default: return false;
+    }
+}
+
 namespace {
 
 using datafile::keysEqual;
@@ -34,24 +51,6 @@ bool componentHas(const Rules& r, uint32_t c, std::string_view ability) {
     for (const ParsedAbility& a : r.componentAbilities(c))
         if (abilityMatches(a, ability)) return true;
     return false;
-}
-
-// Abilities whose parts are ranked by their Amount 1 (spec 05 §7.5).
-bool amountAbility(AbilityKind k) {
-    switch (k) {
-        case AbilityKind::ShieldGeneration:
-        case AbilityKind::PhasedShieldGeneration:
-        case AbilityKind::CargoStorage:
-        case AbilityKind::SupplyStorage:
-        case AbilityKind::StandardShipMovement:
-        case AbilityKind::LaunchRecoverFighters:
-        case AbilityKind::LaunchRecoverSatellites:
-        case AbilityKind::LaunchDrones:
-        case AbilityKind::LayMines:
-        case AbilityKind::MineSweeping:
-        case AbilityKind::DropTroops: return true;
-        default: return false;
-    }
 }
 
 int64_t techSum(const Rules& r, uint32_t c) {

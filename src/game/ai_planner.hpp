@@ -125,11 +125,16 @@ struct Situation {
 // Everything that reads the galaxy the way the AI does. `settings` is the
 // empire's AI_Settings (defend list size).
 Situation assess(const Rules& r, const GameState& s, EmpireId e, const AiProfile& prof);
-// The systems the empire claims (spec 05 §7.2, §7.3), sorted: for a computer
-// player its colony systems, the systems one jump away (not for neutrals),
-// less other computer players' home systems and the systems it agreed to
-// leave; for a human the systems claimed by hand plus the home system.
+// The systems the Politics minister claims now (spec 05 §7.2 "Territory",
+// §7.3), sorted: every system holding one of the empire's colonies, and,
+// unless the empire is neutral, every other system one jump away over every
+// link, except a computer player's home system and the systems the empire
+// agreed to leave (these two exclusions apply only to the neighbours).
 std::vector<SystemId> computeTerritory(const GameState& s, EmpireId e);
+// The territory the AI's lists use (spec 05 §7.2): the empire's claimed
+// systems (Empire::claimedSystems), sorted. For a computer player they are
+// the claims its Politics minister made during the previous turn.
+std::vector<SystemId> territoryOf(const GameState& s, EmpireId e);
 // Is this hostile object noticed this turn? Low difficulty misses each one
 // with a 10 % chance per turn (spec 05 §7.2); the roll is the same for every
 // caller on the same turn.
@@ -268,7 +273,14 @@ bool canSettle(const Rules& r, const GameState& s, const Empire& e, const SpaceO
 bool hasColonyModule(const Rules& r, const Empire& e, std::string_view surface);
 // Builds the design of a template the empire would make now (spec 05 §7.5), or nullopt.
 std::optional<Design> buildDesign(const Rules& r, const GameState& s, const Empire& e, const DesignTemplate& t);
-// Resolves an ability identifier from the AI tables to the newest researched facility.
+// Abilities whose parts the Design minister ranks by their Amount 1 (spec
+// 05 §7.5 `AI_DesignCreation`): shields, cargo, supply, movement, bays,
+// mines, sweeping and troops (ai_design.cpp).
+bool amountAbility(AbilityKind k);
+// The researched facility that provides an ability of the AI tables best
+// (spec 05 §7.5 `AI_Construction_Facilities`, confirmed: binary): the highest
+// Value 1 for an amount-type ability, otherwise the highest sum of its tech
+// requirement levels; a tie goes to the later facility in the file.
 std::optional<uint32_t> bestFacilityFor(const Rules& r, const Empire& e, std::string_view ability);
 bool facilityHas(const Rules& r, uint32_t facility, std::string_view ability);
 // A line drawn from a pool of the empire's AI_Speech with the [%...] tokens

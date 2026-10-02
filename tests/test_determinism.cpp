@@ -155,34 +155,34 @@ void checkCoverage(const Coverage& c) {
 
 TEST_CASE("determinism: a simultaneous game gives the golden checksums") {
     static constexpr std::array<Milestone, 10> kGolden{{
-        {0, 0xf64477b5a8cdad53ull},
-        {1, 0x0b49d65ddc67fb7aull},
-        {2, 0x8c80196a9c2dd5dfull},
-        {5, 0x84426210f297d59full},
-        {10, 0x7bfaa7bd52cbdf21ull},
-        {20, 0x978400485f6513e7ull},
-        {40, 0x978ec30389bd3a79ull},
-        {60, 0x77fdcc75154e22fcull},
-        {80, 0xbe08179adb95d26full},
-        {100, 0x19b59a19d1892453ull},
+        {0, 0x6430cd2c9c0fc850ull},
+        {1, 0xfa68b0a789004c37ull},
+        {2, 0xf113907014d407b7ull},
+        {5, 0x6f60f22182315dd3ull},
+        {10, 0x222681971cae5250ull},
+        {20, 0xd8e9f119481d0bbcull},
+        {40, 0xf9d07bf7a40b6364ull},
+        {60, 0xe054c73d3133610bull},
+        {80, 0xcb73fc80fc2d6bceull},
+        {100, 0x3a5765cb1650af67ull},
     }};
-    checkCoverage(playGolden("simultaneous", 11, true, kGolden));
+    checkCoverage(playGolden("simultaneous", 39, true, kGolden));
 }
 
 TEST_CASE("determinism: a turn-based game gives the golden checksums") {
     static constexpr std::array<Milestone, 10> kGolden{{
-        {0, 0xb099d837f4c8c8eaull},
-        {1, 0xcae70f205384f2c4ull},
-        {2, 0xf5111002b4ca5c32ull},
-        {5, 0x3075f2b0f96e2263ull},
-        {10, 0xe7823b26d6f2aeefull},
-        {20, 0x8061359350398f1eull},
-        {40, 0x8608d68c723367bcull},
-        {60, 0x19a53bbdaebfba93ull},
-        {80, 0x1f0d74b5410087dcull},
-        {100, 0x4c0293547f10898aull},
+        {0, 0x7798a5019bbf8c47ull},
+        {1, 0x26fad0744819a250ull},
+        {2, 0x540ee5109e60c68dull},
+        {5, 0xcaed66a21c033f7bull},
+        {10, 0x9524ba12745446b4ull},
+        {20, 0x5d636f5ddeb40118ull},
+        {40, 0x5ca7d2584368bb75ull},
+        {60, 0x51b653d721f23e23ull},
+        {80, 0xbd822d460c0533deull},
+        {100, 0xf6a69ba0d61a67a2ull},
     }};
-    checkCoverage(playGolden("turn-based", 11, false, kGolden));
+    checkCoverage(playGolden("turn-based", 39, false, kGolden));
 }
 
 // ---- Battles ---------------------------------------------------------------------------------------

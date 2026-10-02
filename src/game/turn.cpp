@@ -239,6 +239,9 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
             applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id));
             diplomacy::deliverMessages(ctx, date);
         }
+        // The Politics minister's claims: the state update and this turn's
+        // ministers used those of the previous turn (spec 05 §7.2).
+        if (controlOf(i) != Control::Absent) ai::claimTerritory(ctx, id);
     }
     ai::recordAiDecisions(ctx);
 

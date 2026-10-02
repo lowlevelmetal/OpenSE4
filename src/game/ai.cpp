@@ -6,7 +6,6 @@
 #include "game/query.hpp"
 #include "game/score.hpp"
 #include "game/setup.hpp"
-#include "game/sight.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
@@ -172,33 +171,39 @@ std::vector<int> jumpsOver(const GameState& s, SystemId from) {
 std::vector<SystemId> computeTerritory(const GameState& s, EmpireId id) {
     const Empire& e = s.empire(id);
     const size_t nSys = s.galaxy.systems.size();
+    // 0: not claimed, 1: a neighbour system, 2: a system holding one of our colonies.
     std::vector<uint8_t> mine(nSys, 0);
-    if (e.kind == PlayerKind::Human) {
-        for (SystemId sys : e.claimedSystems)
-            if (sys.index() < nSys) mine[sys.index()] = 1;
-        if (const SystemId home = homeSystem(s, id); home.valid()) mine[home.index()] = 1;
-    } else {
-        std::vector<uint8_t> colonySys(nSys, 0);
-        for (const auto& c : s.colonies)
-            if (c && c->owner == id) colonySys[s.galaxy.object(c->planet).system.index()] = 1;
+    for (const auto& c : s.colonies)
+        if (c && c->owner == id) mine[s.galaxy.object(c->planet).system.index()] = 2;
+    if (e.kind != PlayerKind::Neutral) {
+        // One warp jump over every link of the map, known or not (spec 05 §7.2).
         for (size_t i = 0; i < nSys; ++i) {
-            if (!colonySys[i]) continue;
-            mine[i] = 1;
-            if (e.kind == PlayerKind::Neutral) continue;
-            // One warp jump over every link of the map, known or not (spec 05 §7.2).
+            if (mine[i] != 2) continue;
             for (SystemId nb : s.galaxy.neighbors(SystemId{i}))
-                if (nb.index() < nSys) mine[nb.index()] = 1;
+                if (nb.index() < nSys && mine[nb.index()] == 0) mine[nb.index()] = 1;
         }
-        // Not another computer player's home system, nor a system we agreed to leave.
+        // Only the neighbour systems leave out the home system of a computer
+        // player and the systems we agreed to leave: a system holding one of
+        // our colonies is always claimed (confirmed: binary).
+        auto leaveOut = [&](SystemId sys) {
+            if (sys.index() < nSys && mine[sys.index()] == 1) mine[sys.index()] = 0;
+        };
         for (const Empire& other : s.empires)
-            if (other.id != id && other.alive && other.kind != PlayerKind::Human)
-                if (const SystemId home = homeSystem(s, other.id); home.valid()) mine[home.index()] = 0;
-        for (SystemId sys : e.aiMemory.avoid)
-            if (sys.index() < nSys) mine[sys.index()] = 0;
+            if (other.alive && other.kind != PlayerKind::Human) leaveOut(homeSystem(s, other.id));
+        for (SystemId sys : e.aiMemory.avoid) leaveOut(sys);
     }
     std::vector<SystemId> out;
     for (size_t i = 0; i < nSys; ++i)
         if (mine[i]) out.push_back(SystemId{i});
+    return out;
+}
+
+std::vector<SystemId> territoryOf(const GameState& s, EmpireId id) {
+    std::vector<SystemId> out;
+    for (SystemId sys : s.empire(id).claimedSystems)
+        if (sys.index() < s.galaxy.systems.size()) out.push_back(sys);
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
     return out;
 }
 
@@ -228,8 +233,11 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
             }
     auto considered = [&](SystemId sys) { return !neutral || sys == sit.home; };
 
+    // The territory is the set of systems the empire claims (spec 05 §7.2).
+    // A computer player's Politics minister claims after this assessment
+    // (ai::claimTerritory), so it is the set claimed during the previous turn.
     sit.territory.assign(nSys, 0);
-    for (SystemId sys : computeTerritory(s, id)) sit.territory[sys.index()] = 1;
+    for (SystemId sys : territoryOf(s, id)) sit.territory[sys.index()] = 1;
 
     // Strength of every empire per system, counting everything it owns, in
     // tenths: each object its rating + 1, planets rating 0 (spec 05 §7.2).
@@ -284,7 +292,10 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         return std::tuple(a.jumps, -a.anger, -a.value, a.planet) < std::tuple(b.jumps, -b.anger, -b.value, b.planet);
     });
 
-    // The exploration frontier: warp points in explored systems into unexplored space.
+    // The exploration frontier (spec 05 §7.2, confirmed: binary): the warp
+    // points of explored systems whose far system we have not explored,
+    // whether or not we know where the link leads. A point is free when none
+    // of our ships is headed for it.
     std::set<ObjectId> headed;
     std::set<Location> headedTo;
     auto note = [&](const std::vector<Order>& orders) {
@@ -300,8 +311,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         for (ObjectId wp : s.galaxy.system(SystemId{i}).objects) {
             const SpaceObject& o = s.galaxy.object(wp);
             if (o.kind != ObjectKind::WarpPoint || !o.destination.valid()) continue;
-            const bool leadsOut = !sight::knowsWarpLink(s, id, wp) || !e.hasExplored(s.galaxy.object(o.destination).system);
-            if (!leadsOut) continue;
+            if (e.hasExplored(s.galaxy.object(o.destination).system)) continue;
             sit.frontier.push_back(wp);
             if (sit.territory[i]) sit.bordersUnexplored = true;
             if (!headed.contains(wp) && !headedTo.contains(locationOf(s.galaxy, wp))) sit.freeFrontier.push_back(wp);
@@ -378,10 +388,11 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
             if (taken && (taken->owner == id || taken->totalPopulation() > 0 || !hostileTo(e, taken->owner))) continue;
             if (!notices(s, id, planetKey(o))) continue;
             if (danger[i] < 0) {
-                // 5 per non-friendly empire present here, 1 per warp point leading
-                // to a system where such an empire is present.
+                // 5 per non-friendly empire present here, plus 1 for each such
+                // empire present in each system a warp point leads to (one
+                // entry per warp point, so two points into one system count twice).
                 danger[i] = 5 * nonFriendlyPresent(sys);
-                for (const SystemId nb : s.galaxy.neighbors(sys)) danger[i] += nonFriendlyPresent(nb) > 0 ? 1 : 0;
+                for (const SystemId nb : s.galaxy.neighbors(sys)) danger[i] += nonFriendlyPresent(nb);
             }
             ColonyTarget t;
             t.planet = o;
@@ -800,10 +811,22 @@ bool facilityHas(const Rules& r, uint32_t facility, std::string_view ability) {
 }
 
 std::optional<uint32_t> bestFacilityFor(const Rules& r, const Empire& e, std::string_view ability) {
+    const AbilityKind kind = parseAbilityKind(ability).value_or(AbilityKind::Unknown);
+    const bool byAmount = amountAbility(kind);
     std::optional<uint32_t> best;
+    int64_t bestScore = 0;
     for (uint32_t i = 0; i < r.data().facilities.size(); ++i) {
         if (!r.facilityAvailable(e, i) || !facilityHas(r, i, ability)) continue;
-        if (!best || r.facility(i).romanNumeral >= r.facility(*best).romanNumeral) best = i;
+        int64_t score = 0;
+        if (byAmount) {
+            score = sumValue1(r.facilityAbilities(i), kind);
+        } else {
+            for (const auto& q : r.facility(i).requirements) score += q.level;
+        }
+        if (!best || score >= bestScore) {  // a tie goes to the later facility
+            best = i;
+            bestScore = score;
+        }
     }
     return best;
 }

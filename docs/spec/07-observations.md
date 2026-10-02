@@ -547,12 +547,64 @@ What our computer players do (seeds 1–12, five computers), for the analyst que
   changes nothing. None of these closes the gap alone.
 - **Settled from the executable** (spec 05 questions 53–56, 2026-10-01): the original's
   enemy-in-territory list is the engine's, so the first two experiments above depart from
-  the original. What keeps our computer players out of Infrastructure is their exploration
-  frontier, which also counts unknown links into explored systems (spec 05 §7.2). Set
+  the original. What keeps our computer players out of Infrastructure was thought to be their
+  exploration frontier, which also counted unknown links into explored systems (spec 05
+  §7.2); once fixed it made little difference ("Pace after the frontier fix" below). Set
   against the original's statistics files, ours have the same population and resource
   output but about 40 % less research per colony from turn 25, while the original's fastest
   empires add about two Research Centers a turn (spec 05 question 56). The cause of that
   is spec 05 question 59.
+
+### Pace after the frontier fix (OpenSE4, 2026-10-01)
+
+Measured again once the engine followed the rules settled in spec 05 questions 53–56: the
+exploration frontier, the territory claimed one turn late, colonization danger per empire,
+the queue choice of Defense Bases and units, facility upgrades first and the facility
+minister's lists (commits e1b910b, 4badd2c and a72b94d). The set-up is the five computers of
+"Pace of the computer players" (seeds 1–12, Small quadrant, simultaneous, 100 `processTurn`
+calls, `Empire::history`), run on the engine just before these changes (500ab8f, which
+includes later work than the table above) and after them. Means per empire, original /
+before / after:
+
+| Turn | Colonies | Systems | Tech levels | Research | Ships | Bases | Units | Score |
+|---|---|---|---|---|---|---|---|---|
+| 10 | 1.7 / 1.5 / 1.5 | 1.0 / 1.0 / 1.0 | 17.2 / 17.4 / 17.4 | 3,612 / 3,505 / 3,501 | 2.0 / 2.5 / 2.5 | 0.0 / 0.0 / 0.0 | 14 / 10 / 10 | 19,664 / 19,942 / 19,929 |
+| 25 | 5.3 / 5.3 / 5.3 | 2.2 / 1.9 / 1.9 | 19.2 / 19.0 / 18.9 | 5,935 / 6,097 / 6,131 | 3.0 / 3.3 / 3.5 | 0.3 / 0.3 / 0.2 | 23 / 22 / 21 | 30,579 / 31,137 / 31,067 |
+| 50 | 11.2 / 10.3 / 10.8 | 3.5 / 3.2 / 3.3 | 24.8 / 22.9 / 23.0 | 13,865 / 9,619 / 10,018 | 7.2 / 7.4 / 6.8 | 0.6 / 0.2 / 0.1 | 38 / 34 / 36 | 65,216 / 56,653 / 54,190 |
+| 75 | 14.8 / 14.3 / 14.4 | 4.5 / 4.0 / 3.9 | 31.4 / 28.0 / 28.2 | 17,852 / 12,366 / 12,438 | 10.4 / 10.0 / 11.4 | 0.8 / 0.3 / 0.1 | 76 / 67 / 85 | 97,235 / 83,649 / 89,384 |
+| 100 | 19.6 / 16.4 / 16.5 | 5.6 / 4.4 / 4.4 | 39.4 / 33.7 / 33.8 | 23,502 / 14,155 / 13,582 | 10.7 / 10.2 / 11.3 | 0.9 / 0.2 / 0.0 | 98 / 94 / 103 | 125,370 / 94,306 / 99,113 |
+
+(Standard errors after: colonies ±0.1 at turn 10, ±0.6 at 50, ±1.0 at 100; research ±520 at
+50 and ±870 at 100; bases ±0.1.)
+
+- **Nothing moved but the bases.** Colonies, research and tech levels are within the noise
+  of the run before. Research per colony is 997 at turn 50 and 877 at turn 100 (the
+  original's 1,423 and 1,310).
+- **AI states**, share of all empire-turns 1–100, before / after: Exploration 34 / 35 %,
+  Infrastructure 7 / 8 %, Prepare for Attack 2 / 3 %, Attack 2 / 2 %, Secure Holdings 1 / 1 %,
+  Defend (Short Term) 53 / 52 %. Turns 51–100: Infrastructure 4 / 5 %, Defend (Short Term)
+  79 / 78 %. With the frontier, territory and danger rules alone (e1b910b) Infrastructure
+  was 9 % and Defend (Short Term) 51 %. 27 of the 60 empires never reach Infrastructure in
+  100 turns (30 before); the others first do at a median of turn 19.
+- **Why the frontier changed so little** (seeds 1–6, every turn): in the turns with contact
+  and an empty enemy-in-territory list, the territory borders a system we have not explored
+  in 75 % of them in turns 1–25, 71 % in turns 26–50 and 64 % in turns 51–100; the old rule
+  (unknown links too) gave 78, 74 and 66 %. Our computers have explored 6, 9 and 12 of the
+  23–37 systems in those periods; 4–5 frontier points are open, nearly all free; of their
+  1.8, 3.2 and 6.2 attack ships, 0.3, 2.4 and 3.2 are in fleets and 0.5, 0.4 and 1.1 are idle
+  outside fleets at the end of the turn.
+- **Bases**: the original's Defense Base placement (spec 05 §7.5) sends a base to the K-th
+  queue of the empire's list, mostly a colony without a yard, where it is lost; our bases
+  fell from 0.2–0.3 to 0.0–0.1 per empire (10 empires of 60 had one at turn 100 before, 1
+  after). The original's 0.6–0.9 therefore needs much more time in Infrastructure, or yard
+  colonies early in the list, than ours have.
+- **Sensitivity** (scratch, not kept): with every system explored from the start (the
+  game option that shows every system), no frontier is left, but our computers stop
+  exploring and meet nobody for longer (Exploration 93 % of turns 1–25, first
+  Infrastructure at a median of turn 42); Defend (Short Term) is still 75 % of turns
+  51–100, and research at turn 100 is 12.8k.
+- Colonies at turn 50 / 100, the research per Research Compound and the moods are in spec
+  05 question 59.
 
 ### Side by side: our client against the original (Quick Start, first turn)
 

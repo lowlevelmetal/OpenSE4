@@ -479,31 +479,42 @@ below.
 **Observed pace** (2026-10-01, [spec 07](spec/07-observations.md) session 3): three
 original games against twelve of ours, Small quadrant, five empires, simultaneous, 100
 turns. With the starting assets following the spec, the early game agrees (colonies 1.5
-against 1.7 at turn 10 and 5.5 against 5.3 at turn 25; homeworlds at 2000M through turn 6;
+against 1.7 at turn 10 and 5.3 against 5.3 at turn 25; homeworlds at 2000M through turn 6;
 first ships after turn 2 or 3; the homeworld's Happy bonus lost in the statistics of turn 4
-for most empires). Measured again (spec 07 "Pace after the starting assets"), two
-differences remain, and colonies fall behind from turn 50:
+for most empires). Measured again after the rules below (spec 07 "Pace after the frontier
+fix"), two differences remain, and colonies fall behind by turn 100:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Research after turn 25 (likely, 1–2 standard errors). Spec 05 questions 53–56 are settled: the Research, Facility Construction and Ship Construction ministers, colony types and colonization follow the binary except for the rows below, and the captures show the same population and resource output on both sides but about 40 % more research per colony in the original from turn 25 (question 56). The cause is open: spec 05 question 59 | Mean research points per empire 9.8k at turn 50, 12.4k at 75, 13.4k at 100; 33.8 tech levels and 15.8 colonies at 100; research per colony about 950 | 13.9k, 17.9k, 23.5k; 39.4 tech levels and 19.6 colonies at 100; score 125k against our 93k; research per colony about 1,300–1,400, with a few empires far ahead (22–25k at turn 50) | M |
-| Bases (about two standard errors). The stock vehicle table builds bases only in Infrastructure, where ours spend 5 % of their turns. Their exploration frontier counts unknown links into explored systems (row below, spec 05 question 53), which keeps them in Exploration and sends them from Defend (Short Term) back there. The original's own Defense Base placement builds fewer bases than ours would (spec 05 §7.5), so the gap is time in Infrastructure | 0.2–0.3 bases per empire from turn 50 | 0.6–0.9 | M |
+| Research after turn 25 (likely, 1–2 standard errors). Spec 05 questions 53–56 are settled and implemented: the Research, Facility Construction and Ship Construction ministers, colony types, colonization, the frontier and the territory follow the binary, and the captures show the same population and resource output on both sides but about 40 % more research per colony in the original from turn 25 (question 56). The cause is open: spec 05 question 59, which lists what our computers build | Mean research points per empire 10.0k at turn 50, 12.4k at 75, 13.6k at 100; 33.8 tech levels and 16.5 colonies at 100; research per colony about 1,000 at turn 50 and 880 at 100 | 13.9k, 17.9k, 23.5k; 39.4 tech levels and 19.6 colonies at 100; score 125k against our 99k; research per colony about 1,300–1,400, with a few empires far ahead (22–25k at turn 50) | M |
+| Bases (more than two standard errors). The stock vehicle table builds bases only in Infrastructure, where ours spend 8 % of their turns (Defend (Short Term) 52 %, 78 % from turn 51), and the original's Defense Base placement, now ours, loses most bases in a colony queue without a yard. The frontier fix was expected to bring more Infrastructure time and did not (spec 05 question 53): our territory borders truly unexplored systems in about 70 % of the calm turns, as our computers explore slowly | 0.0–0.1 bases per empire from turn 50 | 0.6–0.9 | M |
 
 Ships, systems and units agree within the noise. A game where the first empire gives no
 orders, closer to the original's games, changes neither row.
 
 On 2026-10-01 spec 05 questions 53–56 were settled from the executable and the captures.
-The rows found then (`ai.cpp`, `ai_economy.cpp`):
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Exploration frontier (`ai.cpp` `assess`) | A warp point of an explored system is on the frontier when its far system is unexplored or when we do not know its link | Only when its far system is unexplored (spec 05 §7.2 "Exploration frontier"). The engine's territory keeps bordering "unexplored space", so its computers stay in Exploration instead of reaching Infrastructure, and leave Defend (Short Term) for Exploration; the explorers, the Not Connected test and the Open Warp Point gate read the same list | H |
-| Territory (`ai.cpp` `computeTerritory`) | Worked out afresh in each start-of-turn assessment; another computer player's home system and avoided systems are left out even when one of our colonies is there | The claimed systems the Politics minister set during the previous turn (one turn late); those two exclusions apply only to the neighbour systems (spec 05 §7.2 "Territory") | L |
-| Defense Base placement (`ai_economy.cpp` `ShipBuilder::place`) | The yard planet with the fewest bases, then the highest planet value, among those with under 5 turns of backlog | The K-th queue of the empire's queue list, K being the number of queues with a working yard, or a random queue when every yard colony already counts three bases; the backlog test on that queue alone; built only when that queue has a yard (spec 05 §7.5 "Placement") | M |
-| Placement of mines, satellites, weapon platforms and fighters (same) | Backlog, then rate; the next queue is tried when one refuses the item | Backlog, then free cargo space, fewest such units held, planet size, resource production and rate; only the first queue is tried (spec 05 §7.5 "Placement") | L |
-| Colonization danger (`ai.cpp` `assess`) | 1 per warp point that leads to a system where a non-friendly empire is present | 1 per non-friendly empire present beyond each warp point (spec 05 §7.5 "Colonization") | L |
-| Facility upgrades (`ai_economy.cpp` `planFacilities`) | Queued after the colonies' new facilities on every fifth turn | Queued first, so an upgraded planet gets no new facility that turn (spec 05 §7.5 "Upgrades") | L |
-| Facility blocks (`ai_economy.cpp` `blocked`, `ai.cpp` `bestFacilityFor`) | The research and intelligence lists hold the `Generate Points` abilities, the intelligence list lacks `Change Bad Intelligence Chance - System`, and the finite-resource block also covers system modifiers and planet-value abilities; the best facility is the highest Roman numeral | The lists and the best-facility rule of spec 05 §7.5 `AI_Construction_Facilities` | L |
+The rows found then were implemented that day (`ai.cpp`, `ai_anger.cpp`, `ai_economy.cpp`):
+the exploration frontier holds only warp points into unexplored systems, whatever we know of
+the link, for the state machine, the explorers, the Not Connected test and the Open Warp
+Point gate; the territory is the set of claimed systems, which the Politics minister now
+rewrites after the empire's start-of-turn ministers (`ai::claimTerritory`), so the state
+update and those ministers use the claims of the previous turn, and its exclusions (another
+computer player's home system, avoided systems) apply only to neighbour systems; a human
+whose Politics minister is on claims by the same rule; colonization danger adds 1 per
+non-friendly empire beyond each warp point; a Defense Base goes to the K-th queue of the
+empire's queue list, or a random one, with the backlog test on that queue alone, and a base
+sent to a colony without a yard is counted and paid for but never queued (the original's
+construction step drops it); mines, satellites, weapon platforms and fighters take the first
+colony queue by backlog, free cargo, units of that kind held, planet size, production and
+rate, and nothing is placed without room for the batch; no item tries a second queue;
+facility upgrades come first on every fifth turn; the research and intelligence lists and the
+finite-resource block follow §7.5; the best facility for an ability is the highest Value 1
+for amount-type abilities, else the highest tech-requirement sum, the later on a tie.
+OpenSE4 choices (spec 05 question 60): the ministers after Politics read the territory only
+through the lists; a system's queues follow the game's object order; a ship's yard works
+while its component is intact and not mothballed; a queued base item counts its count; units
+"of that kind" share the vehicle type. The golden games of `tests/test_determinism.cpp` moved
+to seed 39, whose games still cover battles, events, intelligence and politics.
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state

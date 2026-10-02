@@ -1531,11 +1531,16 @@ TEST_CASE("ai: the territory pass claims for exactly the empires whose Politics 
     REQUIRE_FALSE(ai::ministerOn(e, Minister::Politics));   // off for a new human empire
     e.claimedSystems = {elsewhere};
     ai::updateAiState(ctx, human);
+    ai::claimTerritory(ctx, human);
     CHECK(s.empire(human).claimedSystems == std::vector<SystemId>{elsewhere});
+    // The minister claims as a computer player's does: the colony systems and their neighbours.
     s.empire(human).ministers |= ministerBit(Minister::Politics);
     ai::updateAiState(ctx, human);
+    CHECK(s.empire(human).claimedSystems == std::vector<SystemId>{elsewhere});  // not in the state update
+    ai::claimTerritory(ctx, human);
     const auto& claimed = s.empire(human).claimedSystems;
     CHECK(std::binary_search(claimed.begin(), claimed.end(), home));
+    for (SystemId nb : s.galaxy.neighbors(home)) CHECK(std::binary_search(claimed.begin(), claimed.end(), nb));
     CHECK(claimed == ai::detail::computeTerritory(s, human));
 }
 
@@ -3449,7 +3454,7 @@ TEST_CASE("ai: Allow Surrender gates the computer's answer and the Surrender mes
     CHECK_FALSE(owns(cpu));
 }
 
-TEST_CASE("ai: colonization danger: any object seen or not, and one per warp point to such a system") {
+TEST_CASE("ai: colonization danger: any object seen or not, and one per empire beyond each warp point") {
     GameState s = computerGame(17, 3, 0, 14);
     exploreEverything(s);
     const EmpireId me{0u}, stranger{1u};
@@ -3486,6 +3491,14 @@ TEST_CASE("ai: colonization danger: any object seen or not, and one per warp poi
     ai::detail::Planner after(r, s, me, ai::detail::Mode::Computer, 1);
     for (const ai::detail::ColonyTarget& t : after.sit.colonyTargets)
         if (t.planet == pick->planet) CHECK(t.danger == pick->danger + links);
+    // A second empire there adds 1 more per warp point; a second ship of the same one adds nothing.
+    const EmpireId third{2u};
+    addTestVehicle(s, r, lurker, {*quiet, Sector{1, 0}});
+    addTestVehicle(s, r, addWarship(s, r, third, "Prowler"), {*quiet, Sector{0, 1}});
+    ai::detail::Planner two(r, s, me, ai::detail::Mode::Computer, 1);
+    for (const ai::detail::ColonyTarget& t : two.sit.colonyTargets)
+        if (t.planet == pick->planet) CHECK(t.danger == pick->danger + 2 * links);
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == third; });
     // In the target system itself: 5 more.
     addTestVehicle(s, r, lurker, {pick->system, Sector{0, 0}});
     ai::detail::Planner inside(r, s, me, ai::detail::Mode::Computer, 1);
@@ -4621,4 +4634,406 @@ TEST_CASE("ai: a Politics minister's request about a third empire is not checked
     m.thirdEmpire = stranger;   // not met
     CHECK_FALSE(apply(r, s, human, cmd::SendMessage{m}).ok);
     CHECK(apply(r, s, human, cmd::SendMessage{m, true}).ok);
+}
+
+// ---- The computer players' pace (spec 05 questions 53-56, confirmed: binary) ----------------------
+
+namespace {
+
+// A facility of one ability for tests that add their own, requiring Test Economics at `level`.
+ruleset::Facility abilityFacility(const ruleset::Ruleset& rs, std::string name, AbilityKind kind, int64_t value, int level, int family = 0,
+                                  int numeral = 1) {
+    ruleset::Facility f;
+    f.name = std::move(name);
+    f.group = "Tests";
+    f.cost = {300, 0, 0};
+    ruleset::Ability a;
+    a.type = std::string(identifier(kind));
+    a.value1 = std::to_string(value);
+    f.abilities.push_back(a);
+    const auto econ = rs.findTechArea("Test Economics");
+    REQUIRE(econ);
+    f.requirements.push_back({*econ, level});
+    f.family = family;
+    f.romanNumeral = numeral;
+    return f;
+}
+
+// The queue items of a design anywhere in the empire's queues.
+int queuedOf(const GameState& s, EmpireId e, DesignId d) {
+    int n = 0;
+    for (const auto& c : s.colonies)
+        if (c && c->owner == e)
+            for (const QueueItem& q : c->queue.items) n += q.kind == QueueItem::Kind::Vehicle && q.design == d;
+    return n;
+}
+
+} // namespace
+
+TEST_CASE("ai: the exploration frontier holds the warp points into unexplored systems, whatever we know of the links") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    const EmpireId me{0u}, other{1u};
+    // Every system explored and no link known: no frontier point (the engine
+    // used to count every unknown link), so contact leads to Infrastructure.
+    s.empire(me).knowledge.explored.assign(s.galaxy.systems.size(), 1);
+    s.empire(me).knowledge.knownWarpLink.assign(s.galaxy.objects.size(), 0);
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        CHECK(p.sit.frontier.empty());
+        CHECK(p.sit.freeFrontier.empty());
+        CHECK_FALSE(p.sit.bordersUnexplored);
+    }
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Exploration);  // no contact yet
+    meet(s, me, other);
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::DefendShortTerm);
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
+
+    // One neighbour of home unexplored: the frontier is exactly the warp
+    // points of explored systems that lead there, and it borders our territory.
+    s.empire(me).aiState = static_cast<int>(ai::AiState::Exploration);
+    const SystemId home = ai::detail::homeSystem(s, me);
+    const SystemId beyond = s.galaxy.neighbors(home).front();
+    s.empire(me).knowledge.explored[beyond.index()] = 0;
+    std::vector<ObjectId> expected;
+    for (size_t i = 0; i < s.galaxy.systems.size(); ++i)
+        if (SystemId{i} != beyond)
+            for (ObjectId wp : s.galaxy.warpPoints(SystemId{i}))
+                if (const SpaceObject& o = s.galaxy.object(wp); o.destination.valid() && s.galaxy.object(o.destination).system == beyond)
+                    expected.push_back(wp);
+    REQUIRE_FALSE(expected.empty());
+    std::sort(expected.begin(), expected.end());
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        std::vector<ObjectId> got = p.sit.frontier;
+        std::sort(got.begin(), got.end());
+        CHECK(got == expected);
+        CHECK(p.sit.bordersUnexplored);
+    }
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Exploration);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::DefendShortTerm);
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Exploration);
+
+    // An explorer heads for one of those points only.
+    const VehicleId scout = addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet)).id;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planExploration(p);
+    const std::vector<Order> orders = ordersOf(p, scout);
+    REQUIRE_FALSE(orders.empty());
+    CHECK(orders.back().kind == OrderKind::Warp);
+    CHECK(std::binary_search(expected.begin(), expected.end(), orders.back().object));
+}
+
+TEST_CASE("ai: the territory is what the Politics minister claimed the turn before; its exclusions spare our colony systems") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 3, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, rival{1u}, stranger{2u};
+    const SystemId home = ai::detail::homeSystem(s, me);
+    const SystemId rivalHome = ai::detail::homeSystem(s, rival);
+    // A start of the game claims the home system only.
+    CHECK(s.empire(me).claimedSystems == std::vector<SystemId>{home});
+
+    // A colony of ours in another computer player's home system, and in a
+    // system we agreed to leave: both are claimed. The exclusions apply to
+    // the neighbour systems only.
+    {
+        GameState g = s;
+        const auto spare = freePlanetIn(g, rivalHome);
+        REQUIRE(spare);
+        addColony(g, *spare, me, {{me, 100}});
+        const SystemId avoided = g.galaxy.neighbors(home).front();
+        g.empire(me).aiMemory.avoid = {rivalHome, avoided};
+        const std::vector<SystemId> claim = ai::detail::computeTerritory(g, me);
+        CHECK(std::binary_search(claim.begin(), claim.end(), rivalHome));
+        CHECK(std::binary_search(claim.begin(), claim.end(), home));
+        if (avoided != rivalHome) CHECK_FALSE(std::binary_search(claim.begin(), claim.end(), avoided));
+        for (SystemId nb : g.galaxy.neighbors(rivalHome))
+            if (nb != home && nb != avoided && nb != ai::detail::homeSystem(g, stranger))
+                CHECK(std::binary_search(claim.begin(), claim.end(), nb));
+        // Another computer player's home system next to one of ours is left out.
+        for (SystemId nb : g.galaxy.neighbors(home))
+            if (nb == ai::detail::homeSystem(g, stranger)) CHECK_FALSE(std::binary_search(claim.begin(), claim.end(), nb));
+    }
+
+    // A system Y away from every home, with room for two colonies.
+    std::optional<SystemId> y;
+    for (size_t i = 0; i < s.galaxy.systems.size() && !y; ++i) {
+        const SystemId sys{i};
+        bool someoneHome = false;
+        for (const Empire& e : s.empires) someoneHome = someoneHome || ai::detail::homeSystem(s, e.id) == sys;
+        const auto neighbours = s.galaxy.neighbors(home);
+        if (someoneHome || std::find(neighbours.begin(), neighbours.end(), sys) != neighbours.end()) continue;
+        const auto first = freePlanetIn(s, sys);
+        if (first && freePlanetIn(s, sys, *first)) y = sys;
+    }
+    REQUIRE(y);
+    const ObjectId ours = *freePlanetIn(s, *y);
+    const ObjectId theirs = *freePlanetIn(s, *y, ours);
+    // Our new colony there, and a populated colony of an empire we have not met.
+    addColony(s, ours, me, {{me, 100}});
+    addColony(s, theirs, stranger, {{stranger, 100}});
+    {
+        // The state update still uses the claims made before the colony was founded ...
+        GameState g = s;
+        TurnContext ctx{r, g, {}, {}, {}};
+        ai::updateAiState(ctx, me);
+        CHECK(g.empire(me).aiState == static_cast<int>(ai::AiState::Exploration));
+        // ... the Politics minister then claims Y, and the next update finds the enemy there.
+        ai::claimTerritory(ctx, me);
+        CHECK(std::binary_search(g.empire(me).claimedSystems.begin(), g.empire(me).claimedSystems.end(), *y));
+        ai::updateAiState(ctx, me);
+        CHECK(g.empire(me).aiState == static_cast<int>(ai::AiState::DefendShortTerm));
+    }
+    // The same through the turn: Y counts from the second start-of-turn update.
+    std::vector<EmpireOrders> none;
+    processTurn(r, s, none);
+    CHECK(s.empire(me).aiState == static_cast<int>(ai::AiState::Exploration));
+    CHECK(std::binary_search(s.empire(me).claimedSystems.begin(), s.empire(me).claimedSystems.end(), *y));
+    processTurn(r, s, none);
+    CHECK(s.empire(me).aiState == static_cast<int>(ai::AiState::DefendShortTerm));
+}
+
+TEST_CASE("ai: mines, satellites, platforms and fighters take the first queue by backlog, free cargo, units held, size, production, rate") {
+    TempTree t("unitqueue");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Satellite\nEntry 1 Must Have At Least := 1\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId sat = addTestDesign(s, rules, me, "Sentinel", "Test Satellite Hull", {"Test Satellite Gun"});
+    s.design(sat).designType = "Satellite";
+    const DesignId mine = addTestDesign(s, rules, me, "Spike", "Test Mine Hull", {"Test Warhead"});
+    s.design(mine).designType = "Mine";
+    Colony& home = homeworld(s, me);
+    const ObjectId homePlanet = home.planet;
+    home.queue.items.clear();
+    const auto second = freePlanetIn(s, s.galaxy.object(homePlanet).system);
+    REQUIRE(second);
+    addColony(s, *second, me, {{me, 500}});
+    auto freeCargo = [&](const GameState& g, ObjectId planet) {
+        const Colony& c = *g.colony(planet);
+        return colonyCargoCapacity(rules, g, c) - cargoSpaceUsed(rules, g, c.cargo);
+    };
+    // Room for a whole batch (as many as the queue finishes in one turn).
+    ruleset::Ability hold;
+    hold.type = std::string(identifier(AbilityKind::CargoStorage));
+    hold.value1 = "100000";
+    s.galaxy.object(*second).abilities.push_back(hold);
+    REQUIRE(freeCargo(s, *second) >= 100'000);
+    // The homeworld's hold is full of mines (another kind): with both queues
+    // empty, the colony with more free cargo space takes the satellites,
+    // whatever the rates.
+    const int64_t mineTons = designTonnage(rules, s.design(mine));
+    REQUIRE(mineTons > 0);
+    homeworld(s, me).cargo.units = {{mine, static_cast<int>(colonyCargoCapacity(rules, s, homeworld(s, me)) / mineTons)}};
+    REQUIRE(freeCargo(s, homePlanet) < designTonnage(rules, s.design(sat)));
+    {
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+        REQUIRE(p.state == ai::AiState::Exploration);
+        ai::detail::planShips(p);
+        CHECK(p.st.colony(homePlanet)->queue.items.empty());
+        REQUIRE(p.st.colony(*second)->queue.items.size() == 1);
+        CHECK(p.st.colony(*second)->queue.items.front().design == sat);
+    }
+    // A smaller backlog comes first: the full homeworld is chosen, and as it
+    // has no room for the batch nothing is placed anywhere.
+    QueueItem busy;
+    busy.kind = QueueItem::Kind::Vehicle;
+    busy.design = sat;
+    busy.count = 1000;
+    s.colony(*second)->queue.items = {busy};
+    {
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+        ai::detail::planShips(p);
+        CHECK(p.st.colony(homePlanet)->queue.items.empty());
+        CHECK(p.st.colony(*second)->queue.items.size() == 1);
+    }
+}
+
+TEST_CASE("ai: a Defense Base goes to the K-th queue of the empire's list, K the queues with a working yard") {
+    TempTree t("defensebase");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Defense Base\nEntry 1 Must Have At Least := 2\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId base =
+        addTestDesign(s, rules, me, "Bastion", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"});
+    s.design(base).designType = "Defense Base";
+    const ObjectId homePlanet = homeworld(s, me).planet;
+    homeworld(s, me).queue.items.clear();
+    const Location homeAt = locationOf(s.galaxy, homePlanet);
+    auto plan = [&](const Rules& rr, const GameState& g) {
+        ai::detail::Planner p(rr, g, me, ai::detail::Mode::Computer, 3);
+        REQUIRE(p.state == ai::AiState::Exploration);
+        ai::detail::planShips(p);
+        return p.st;
+    };
+    // Only the homeworld: K is 1 and the first queue is the homeworld's.
+    CHECK(queuedOf(plan(rules, s), me, base) == 2);
+
+    // A colony without a yard ahead of the homeworld in the list (a lower
+    // system, or earlier in the home system): K is still 1, so the bases go
+    // there, and with no yard they are lost; nothing is queued anywhere.
+    std::optional<ObjectId> before;
+    for (size_t i = 0; i <= homeAt.system.index() && !before; ++i)
+        for (ObjectId o : s.galaxy.system(SystemId{i}).objects) {
+            if (o == homePlanet) break;
+            if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) {
+                before = o;
+                break;
+            }
+        }
+    REQUIRE(before);
+    addColony(s, *before, me, {{me, 500}});
+    CHECK(queuedOf(plan(rules, s), me, base) == 0);
+
+    // That colony gets a yard: K is 2, and the second queue of the list (the
+    // homeworld) takes the base, although the homeworld already has a base and
+    // the other yard none.
+    s.colony(*before)->facilities.push_back(facilityIndex(rules, "Test Space Yard"));
+    addTestVehicle(s, rules, base, homeAt);
+    {
+        const GameState g = plan(rules, s);
+        CHECK(g.colony(homePlanet)->queue.items.size() == 1);
+        CHECK(g.colony(*before)->queue.items.empty());
+    }
+    // The backlog test is made on that queue alone: a busy homeworld takes
+    // nothing, and the free yard is not tried.
+    QueueItem busy;
+    busy.kind = QueueItem::Kind::Vehicle;
+    busy.design = addWarship(s, rules, me, "Picket");
+    busy.count = 1000;
+    homeworld(s, me).queue.items = {busy};
+    {
+        const GameState g = plan(rules, s);
+        CHECK(g.colony(*before)->queue.items.empty());
+        CHECK(g.colony(homePlanet)->queue.items.size() == 1);
+    }
+    // Every yard colony counts three bases or more (those in its sector plus
+    // every base queued): each base goes to a queue of the list drawn at random.
+    homeworld(s, me).queue.items.clear();
+    for (int i = 0; i < 3; ++i) addTestVehicle(s, rules, base, locationOf(s.galaxy, *before));
+    addTestVehicle(s, rules, base, homeAt);
+    addTestVehicle(s, rules, base, homeAt);
+    TempTree more("defensebase2");
+    more.write("Ai/Default_AI_Construction_Vehicles.txt",
+               "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Defense Base\nEntry 1 Must Have At Least := 9\n");
+    const Rules moreRules{buildEngineRuleset(), more.root};
+    const GameState g = plan(moreRules, s);
+    CHECK(queuedOf(g, me, base) == 3);
+}
+
+TEST_CASE("ai: on every fifth turn the facility upgrades come first, and an upgraded planet gets no new facility") {
+    TempTree t("upgradefirst");
+    t.write("Ai/Default_AI_Construction_Facilities.txt",
+            "AI State := Exploration\nConstruction Queue Type := Homeworld\nNum Queue Entries := 1\n"
+            "Facility 1 Ability := Resource Generation - Organics\nFacility 1 Amount := 10\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    Colony& home = homeworld(s, me);
+    const ObjectId homePlanet = home.planet;
+    home.facilities = {facilityIndex(rules, "Test Mine")};
+    home.queue.items.clear();
+    REQUIRE(facilitySlots(rules, s, home) > 1);
+    auto queued = [&](uint32_t turn) {
+        s.turn = turn;
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 5);
+        ai::detail::planFacilities(p, false);
+        return p.st.colony(homePlanet)->queue.items;
+    };
+    const std::vector<QueueItem> ordinary = queued(5);  // date 6
+    REQUIRE(ordinary.size() == 1);
+    CHECK(ordinary.front().kind == QueueItem::Kind::Facility);
+    CHECK(rules.facility(ordinary.front().facility).name == "Test Farm");
+    const std::vector<QueueItem> fifth = queued(4);  // date 5
+    REQUIRE(fifth.size() == 1);
+    CHECK(fifth.front().kind == QueueItem::Kind::Upgrade);
+    CHECK(rules.facility(fifth.front().facility).name == "Test Mine II");
+}
+
+TEST_CASE("ai: the facility minister's research, intelligence and finite-resource blocks follow the fixed lists") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    rs.facilities.push_back(abilityFacility(rs, "Test Point Generator", AbilityKind::GeneratePointsResearch, 100, 1));
+    rs.facilities.push_back(abilityFacility(rs, "Test Counter Intel", AbilityKind::ChangeBadIntelChanceSystem, 10, 1));
+    rs.facilities.push_back(abilityFacility(rs, "Test Mineral Booster", AbilityKind::ResourceGenModSystemMinerals, 10, 1));
+    TempTree t("facilityblocks");
+    t.write("Ai/Default_AI_Settings.txt", "Maximum Research Point Generation := 10\n");
+    t.write("Ai/Default_AI_Construction_Facilities.txt",
+            "AI State := Exploration\nConstruction Queue Type := Homeworld\nNum Queue Entries := 3\n"
+            "Facility 1 Ability := Change Bad Intelligence Chance - System\nFacility 1 Amount := 1\n"
+            "Facility 2 Ability := Point Generation - Research\nFacility 2 Amount := 10\n"
+            "Facility 3 Ability := Generate Points Research\nFacility 3 Amount := 10\n"
+            "AI State := Exploration\nConstruction Queue Type := Mining Colony\nNum Queue Entries := 2\n"
+            "Facility 1 Ability := Resource Generation - Minerals\nFacility 1 Amount := 1\n"
+            "Facility 2 Ability := Resource Gen Modifier System - Minerals\nFacility 2 Amount := 1\n");
+    const Rules rules{std::move(rs), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.turn = 5;  // date 6: no upgrades
+    s.options.allowIntel = false;
+    s.empire(me).economy = {};
+    s.empire(me).economy.research = 100;  // above the cap of 10
+    Colony& home = homeworld(s, me);
+    const ObjectId homePlanet = home.planet;
+    home.facilities.clear();
+    home.queue.items.clear();
+    auto firstQueued = [&](const GameState& g, ObjectId planet) -> std::string {
+        ai::detail::Planner p(rules, g, me, ai::detail::Mode::Computer, 2);
+        ai::detail::planFacilities(p, false);
+        const auto& items = p.st.colony(planet)->queue.items;
+        return items.empty() ? std::string{} : rules.facility(items.front().facility).name;
+    };
+    // Change Bad Intelligence Chance - System is on the intelligence list, so
+    // it is blocked while intelligence projects are off; Point Generation -
+    // Research is blocked by the cap, Generate Points Research is not.
+    CHECK(firstQueued(s, homePlanet) == "Test Point Generator");
+    s.options.allowIntel = true;
+    CHECK(firstQueued(s, homePlanet) == "Test Counter Intel");
+
+    // With finite resources, a planet without minerals gets no Resource
+    // Generation for them; the system modifier is not blocked.
+    s.options.finiteResources = true;
+    const auto second = freePlanetIn(s, s.galaxy.object(homePlanet).system);
+    REQUIRE(second);
+    Colony& c = addColony(s, *second, me, {{me, 500}});
+    c.colonyType = "Mining Colony";
+    s.galaxy.object(*second).value[0] = 0;
+    CHECK(firstQueued(s, *second) == "Test Mineral Booster");
+    s.galaxy.object(*second).value[0] = 100;
+    CHECK(firstQueued(s, *second) == "Test Mine II");
+}
+
+TEST_CASE("ai: the best facility for an ability: the highest Value 1 for amount-type abilities, else the highest tech sum, ties to the later") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    rs.facilities.push_back(abilityFacility(rs, "Test Old Big Lab", AbilityKind::PointGenResearch, 900, 3, 40, 1));
+    rs.facilities.push_back(abilityFacility(rs, "Test New Small Lab", AbilityKind::PointGenResearch, 100, 1, 40, 7));
+    rs.facilities.push_back(abilityFacility(rs, "Test Twin Lab", AbilityKind::PointGenResearch, 50, 3, 41, 1));
+    rs.facilities.push_back(abilityFacility(rs, "Test Small Store", AbilityKind::SupplyStorage, 100, 3));
+    rs.facilities.push_back(abilityFacility(rs, "Test Big Store", AbilityKind::SupplyStorage, 500, 1));
+    const Rules rules{std::move(rs), {}};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    Empire& e = s.empire(EmpireId{0u});
+    researchEverything(rules, e);
+    auto best = [&](std::string_view ability) -> std::string {
+        const auto f = ai::detail::bestFacilityFor(rules, e, ability);
+        return f ? rules.facility(*f).name : std::string{};
+    };
+    // Not by Roman numeral: the highest tech-requirement sum, the later one on a tie.
+    CHECK(best("Point Generation - Research") == "Test Twin Lab");
+    // Supply Storage is ranked by its Value 1.
+    CHECK(best("Supply Storage") == "Test Big Store");
 }
