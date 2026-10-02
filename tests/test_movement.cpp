@@ -1510,7 +1510,6 @@ TEST_CASE("movement: launching and recovering units") {
         if (v.design == drone) {
             ++drones;
             CHECK(v.count == 1);
-            CHECK_FALSE(v.targetVehicle.valid());
             CHECK(v.orders.empty());
         }
     CHECK(drones == 2);
@@ -1538,8 +1537,7 @@ TEST_CASE("movement: drones move only by orders; an Attack order pursues its tar
     const SystemId a = w.system("A");
     const DesignId droneDesign = w.design(kA, "Drone", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"});
     const VehicleId prey = w.spawn(w.ship(kB, "Prey", 1), at(a, 6, 0));
-    const VehicleId idle = w.spawn(droneDesign, at(a, 0, 3));
-    w.v(idle).targetVehicle = prey;  // a battle target is not an order
+    const VehicleId idle = w.spawn(droneDesign, at(a, 0, 3));  // no orders
     const VehicleId drone = w.spawn(droneDesign, at(a, 0, 0));
     w.order(drone, mk(OrderKind::Attack, {}, {}, prey));
     CombatSpy spy;
@@ -1559,7 +1557,6 @@ TEST_CASE("movement: drones move only by orders; an Attack order pursues its tar
     const int64_t before = w.v(drone).supply;
     w.move(spy.hooks());
     CHECK(w.v(drone).status == VehicleStatus::Normal);
-    CHECK_FALSE(w.v(drone).targetVehicle.valid());
     CHECK(w.v(drone).supply < before);
     REQUIRE(w.v(drone).orders.size() == 1);
     CHECK(w.v(drone).orders.front().vehicle == prey);

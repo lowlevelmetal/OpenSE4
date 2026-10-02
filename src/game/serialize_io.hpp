@@ -424,7 +424,7 @@ template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o
 template <class Ar>
 void io(Ar& ar, Vehicle& v) {
     fields(ar, v.id, v.slot, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
-           v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.targetVehicle, v.targetObject, v.builtTurn,
+           v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.builtTurn,
            v.immobileUntil, v.cameFrom, v.cameFromTurn, v.heading);
 }
 
