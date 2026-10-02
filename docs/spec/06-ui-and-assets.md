@@ -3386,13 +3386,13 @@ the executable and Q63 has no counterpart; Q60 needs observation:
     - weapon platforms never form a group in space (they exist only as cargo), so they
       have no row of their own.
 
-    Our client differs: `vehicleStatusCells()` (`client/classic/status_icons.cpp`) draws
-    the supply cell only for ships, bases and fighter groups. It must treat drone groups
-    like fighter groups. The same low-supply rule ends a Sentry order for each member
-    (§7 Q54), so a drone group's threshold is also the tenth, with at least one unit; the
-    engine's `sentry()` (`movement.cpp`), which uses the tenth for fighters only, and the
-    client's `lowOnSupply()` (`order_rules.cpp`) differ there. (Whether the original's
-    Sentry button for drone groups uses this test was not traced.)
+    The same low-supply rule ends a Sentry order for each member (§7 Q54), so a drone
+    group's threshold is also the tenth, with at least one unit. Since 2026-10-01 our client
+    and engine follow this: `vehicleStatusCells()` (`client/classic/status_icons.cpp`) treats
+    drone groups like fighter groups, and so do the engine's `sentry()` (`movement.cpp`) and
+    the client's `lowOnSupply()` (`order_rules.cpp`), which lights the Sentry button.
+    (Whether the original's Sentry button for drone groups uses this test was not traced;
+    ours does, inferred.)
 62. **Movement log animation details.** Ours animates the moves of one day in the log's
     order, a fleet's identical moves as one, shows one day per frame without the
     animation, and starts every mini facing up. In what order does the original animate

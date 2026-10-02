@@ -81,12 +81,14 @@ bool anyWaypoint(const game::Empire& e) {
     return std::any_of(e.waypoints.begin(), e.waypoints.end(), [](const game::Waypoint& w) { return w.set; });
 }
 
-// Supplies below the warning level; fighter groups warn at a tenth of it (as
-// their Sentry does, spec 03 §8; inferred for the button).
+// Supplies below the warning level; fighter and drone groups warn at a tenth
+// of it while they hold a unit, as their Sentry does (spec 06 §4.4, §7 Q54,
+// Q61; for a drone group's button not traced, inferred).
 bool lowOnSupply(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     if (game::vehicleHasUnlimitedSupply(r, s, v) || !game::vehicleUsesSupply(r, s, v)) return false;
-    int64_t warning = r.setting("Supply Amount for Low Supply Warning", 1000);
-    if (game::vehicleType(r, s, v) == ruleset::VehicleType::Fighter) warning /= 10;
+    const int64_t warning = r.setting("Supply Amount for Low Supply Warning", 1000);
+    const ruleset::VehicleType t = game::vehicleType(r, s, v);
+    if (t == ruleset::VehicleType::Fighter || t == ruleset::VehicleType::Drone) return v.count >= 1 && v.supply < warning / 10;
     return v.supply < warning;
 }
 

@@ -129,12 +129,9 @@ Orders options clear when a computer group has companions).
 The executable settled Q77 later on 2026-10-01: the turn-based clearing switches Repeat off as
 the engine does, and a minefield clears only the lists a failure clears, as the engine does.
 The Ship Orders options after a warp now empty every member's list, companions included, and a
-turn-based Move To they interrupt goes on only within the current run (`encounter()`). This
-row remains:
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Low supply of drone groups at a Sentry's end (`movement.cpp` `sentry()`; client `order_rules.cpp` `lowOnSupply()`) | The tenth of `Supply Amount for Low Supply Warning` applies to fighter groups only | Spec 06 §4.4, §7 Q61: drone groups use the same tenth, and need at least one unit | L |
+turn-based Move To they interrupt goes on only within the current run (`encounter()`), and a
+drone group's Sentry ends at a tenth of `Supply Amount for Low Supply Warning` while it holds a
+unit, as a fighter group's does (`sentry()`, spec 06 §7 Q61). No row remains.
 
 ## Combat (spec 04)
 
@@ -345,8 +342,6 @@ differs"). Those settled on 2026-10-01 in the last round, still to implement:
   in every tab; the original's Colonies columns, directions and keyless columns; clickable
   pictures; fleet rows last and unsorted; a queued design's right-click opens its Design
   Report (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`).
-- **Supply icons** (§4.4, §7 Q61): drone groups like fighter groups
-  (`status_icons.cpp`).
 - **Coordinate line** (§2.4, §7 Q64): the range and the selection marker only while the
   selected sector holds an object the viewer sees (`main_window.cpp`).
 - **Movement log replay** (§7 Q62): one entry per vehicle and step in movement order, each

@@ -1064,13 +1064,16 @@ private:
 
     // Sentry stays at the head at no cost until an enemy is present in the
     // system or a member's supply is low; then it counts as done: removed, or
-    // with Repeat on passed over (§8, confirmed: binary).
+    // with Repeat on passed over (§8, confirmed: binary). A fighter or drone
+    // group is low below a tenth of the warning level while it holds at least
+    // one unit (spec 06 §4.4, §7 Q54, Q61, confirmed: binary).
     Exec sentry(Group& g) {
         const int64_t low = r_.setting("Supply Amount for Low Supply Warning", 1000);
         const bool lowSupply = any(g, [&](const Vehicle& v) {
             if (!vehicleUsesSupply(r_, s_, v) || vehicleHasUnlimitedSupply(r_, s_, v)) return false;
-            const int64_t threshold = vehicleType(r_, s_, v) == VehicleType::Fighter ? low / 10 : low;
-            return v.supply < threshold;
+            const VehicleType t = vehicleType(r_, s_, v);
+            if (t == VehicleType::Fighter || t == VehicleType::Drone) return v.count >= 1 && v.supply < low / 10;
+            return v.supply < low;
         });
         const bool enemy = hostilePresentInSystem(g.owner, where(g).system);
         if (!lowSupply && !enemy) return Exec::Wait;

@@ -54,7 +54,8 @@ simultaneous game it pursues the target wherever it goes, and the battle comes w
 Attacking does not decloak a ship; only drones decloak to strike their target.
 
 **Sentry** is useful for guards: the order ends the moment an enemy appears in the system, so
-the ship's next orders start then.
+the ship's next orders start then. It also ends when supplies run low: for a ship below the
+low-supply warning level, for a group of fighters or drones below a tenth of it.
 
 [View Orders](window:view-orders) (`V`) shows the order list of the selected ship, or of its
 fleet. Select an order and use `Move Up`, `Move Down` or `Delete Order`; `Clear Orders` empties the

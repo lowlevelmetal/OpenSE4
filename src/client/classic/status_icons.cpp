@@ -71,14 +71,14 @@ std::vector<int> vehicleStatusCells(const game::Rules& r, const game::GameState&
     const VehicleType type = game::vehicleType(r, s, v);
     // 1. Supplies: out at 0, else low strictly below the warning level; not for
     // mothballed ships, with no exception for ships that use no supply or have
-    // unlimited supply. A fighter group is low below a tenth of the level, and
-    // only while it holds a fighter (§7 Q54). Other unit groups carry no
-    // supplies, so they show neither (inferred).
+    // unlimited supply. A fighter or drone group is low below a tenth of the
+    // level, and only while it holds a unit; satellite groups and mine fields
+    // never show either cell (§4.4, §7 Q54, Q61, confirmed: binary).
     const int64_t warning = r.setting("Supply Amount for Low Supply Warning", 1000);
-    if (!mothballed && (!game::isUnitType(type) || type == VehicleType::Fighter)) {
-        const bool fighters = type == VehicleType::Fighter;
+    const bool smallCraft = type == VehicleType::Fighter || type == VehicleType::Drone;
+    if (!mothballed && (!game::isUnitType(type) || smallCraft)) {
         if (v.supply <= 0) out.push_back(cell::kNoSupply);
-        else if (fighters ? v.count >= 1 && v.supply < warning / 10 : v.supply < warning) out.push_back(cell::kLowSupply);
+        else if (smallCraft ? v.count >= 1 && v.supply < warning / 10 : v.supply < warning) out.push_back(cell::kLowSupply);
     }
     // 2-3. Damage, and a repair source in the sector.
     if (damagedParts(v)) {

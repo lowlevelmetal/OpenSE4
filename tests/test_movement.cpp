@@ -1155,6 +1155,19 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     CHECK(w.v(thirsty).orders.empty());
     CHECK(w.logged(kA, "supplies low"));
 
+    // A drone group is low below a tenth of the warning level, like a fighter
+    // group (spec 06 §4.4, §7 Q61).
+    const int64_t warning = w.rules().setting("Supply Amount for Low Supply Warning", 1000);
+    const DesignId droneDesign = w.design(kA, "Picket Drone", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Mv Engine", "Mv Drone Tank"});
+    const VehicleId picket = w.spawn(droneDesign, at(b, 5, 5));
+    w.v(picket).supply = warning / 10;
+    w.order(picket, mk(OrderKind::Sentry));
+    w.move();
+    CHECK(w.v(picket).orders.size() == 1);  // a ship would be low here, a drone group is not
+    w.v(picket).supply = warning / 10 - 1;
+    w.move();
+    CHECK(w.v(picket).orders.empty());
+
     // Combat removes a Sentry order at the head of a participant's list, and nothing else.
     World f;
     const SystemId fa = f.system("A");

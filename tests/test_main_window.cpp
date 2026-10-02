@@ -366,6 +366,22 @@ TEST_CASE("main window: status icons of yards, fleets and fighter groups (spec 0
     CHECK(has(vehicleStatusCells(r, s, g), cell::kLowSupply));
     g.supply = 0;
     CHECK(has(vehicleStatusCells(r, s, g), cell::kNoSupply));
+
+    // A drone group by the same rule; satellite groups never show either cell (§4.4, §7 Q61).
+    const DesignId dart = design(s, r, "Dart", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    Vehicle& d = addTestVehicle(s, r, dart, where);
+    d.count = 2;
+    d.supply = warning / 10;
+    CHECK_FALSE(has(vehicleStatusCells(r, s, d), cell::kLowSupply));
+    d.supply = warning / 10 - 1;
+    CHECK(has(vehicleStatusCells(r, s, d), cell::kLowSupply));
+    d.supply = 0;
+    CHECK(has(vehicleStatusCells(r, s, d), cell::kNoSupply));
+    const DesignId moon = design(s, r, "Moon", "Test Satellite Hull", {"Test Satellite Gun"});
+    Vehicle& sat = addTestVehicle(s, r, moon, where);
+    sat.supply = 0;
+    CHECK_FALSE(has(vehicleStatusCells(r, s, sat), cell::kNoSupply));
+    CHECK_FALSE(has(vehicleStatusCells(r, s, sat), cell::kLowSupply));
 }
 
 // ---- Map colours and symbols (docs/spec/06 §2.6) ----
