@@ -46,8 +46,14 @@ description. Click one to choose it, then press `Begin Game`; `Cancel` goes back
 You play against four computer empires, in a medium-sized quadrant, with turn-based play and
 every other option at its default. It is a good way to learn the game.
 
-Every empire starts with its homeworld, two scouts and a colony ship, and with ready-made designs
-for a scout, a colony ship, an escort and a defense base.
+Every empire starts with its homeworld (its facilities, population and stores), its treasury and
+its research points, and **no ships at all**. A Quick Start also gives you a set of designs: your
+Design minister makes one design for each kind of ship and unit your starting technology allows,
+such as an attack ship, a colony ship, transports, a defense base and a space yard base. Your
+first ships come from your homeworld's construction queue.
+
+The computer players start the same way, without ships or designs, and make their designs in
+their first turn.
 
 > For your first game, pick an empire whose description sounds balanced rather than extreme. Racial strengths matter less than learning the flow of a turn.
 
@@ -162,10 +168,11 @@ A good plan for the first ten turns of a standard game:
 1. Read the [Log](window:log) (`F10`): it opens by itself at the start of each turn when there is news.
 2. Look at your homeworld: click it in the system panel and read its report.
 3. Fill your research queue (`F8`) with a few useful areas (see [Research](research)).
-4. Send your two scouts to explore: select each one and press `E` (see [The galaxy](galaxy#exploring)).
-5. Find a good planet for your colony ship with the [Planets](window:planets) window (`F4`), and give the ship the Colonize order (`C`).
-6. Queue more colony ships at your homeworld (`F7`), and keep its construction queue busy.
-7. Press `F12` to end the turn.
+4. You start without ships: queue one or two attack ships to explore and a colony ship at your homeworld (select it and press `Q`, see [Construction](construction)). Look at your [Designs](window:designs) (`F3`) to see what each design is for.
+5. When the attack ships are built, send them exploring: select each one and press `E` (see [The galaxy](galaxy#exploring)).
+6. When a colony ship is built, find it a good planet with the [Planets](window:planets) window (`F4`) and give it the Colonize order (`C`).
+7. Keep your homeworld's construction queue busy with more colony ships.
+8. Press `F12` to end the turn.
 
 The [Main window](main-window) chapter explains what you see on the screen, and
 [Turns](turns) explains what happens when you end a turn.

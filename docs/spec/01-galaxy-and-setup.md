@@ -492,13 +492,15 @@ empty. In three five-empire games the statistics file showed 0 ships for every e
 after the first turn, the first ship after the second or third turn and 1–3 ships per
 empire by turn 10.
 
-The engine differs: `setup.cpp` ("Starting designs and ships") gives every empire, human
-or computer, four designs of its own (`autoDesign`: Scout, Colonizer, Escort, Defense
-Base), two scouts and a colonizer. That block must go: computer players then get their
-designs from the Design minister in their first turn; a Quick Start human gets the one
-Design minister run at creation (`quickStartSetup` in `client/classic/frontend.cpp`, then
-setup); a New Game human gets only its empire file's designs. The engine also never runs
-the first-contact check at setup.
+The engine follows this (2026-10-01): `createGame` gives no empire a ship or a design of
+its own; computer players design in their first turn; a New Game player gets only its
+empire file's designs; Quick Start gives the player one Design minister run at creation
+(`game::StartExtras`, `ai::designMinisterRun`, `quickStartExtras` in
+`client/classic/frontend.cpp`), which on the installed data gives a Terran player the
+eleven designs above with the observed hulls, costs, movement, cargo and supply.
+OpenSE4's tutorials may give the player ships with the lesson key `starting_ships`, an
+OpenSE4 lesson extension (docs/LEARNING.md); no game setting does. The engine still never
+runs the first-contact check at setup.
 
 ### 3.7 Pipeline
 

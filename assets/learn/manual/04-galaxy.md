@@ -78,7 +78,7 @@ planets you can colonize, where your neighbours are and which warp points lead t
 - Two ships with Explore orders do not pick the same warp point.
 - A Move To order cannot enter an unexplored system; Explore and Warp can.
 
-> Build one or two cheap, fast scouts early and keep them on Explore. They pay for themselves many times over.
+> Build one or two cheap, fast ships early (an attack ship, or a small scout you design yourself) and keep them on Explore. They pay for themselves many times over.
 
 ## Sight and sensors
 

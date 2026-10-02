@@ -162,6 +162,9 @@ questions are what the observation sessions still have to settle.
    open: Windows' own Small Fonts size (Q60, needs a Windows machine) and more original
    games for the pace rows.
 3. **Side-by-side checks** of the windows not yet compared (Ground Combat, Combat Replay,
-   Intelligence, the setup pages), and a recheck of the pace once the starting assets
-   follow the spec.
+   Intelligence, the setup pages). The starting assets follow the spec since 2026-10-01 and
+   the pace was measured again (spec 07 "Pace after the starting assets"): the early game
+   agrees, research and bases stay behind, and spec 05 questions 53–56 ask the analyst for
+   the original's AI states, enemy-in-territory list, empty colony types and research
+   inputs.
 4. Encrypted connections, and per-player views for PBEM.

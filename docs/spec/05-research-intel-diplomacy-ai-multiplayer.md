@@ -3274,3 +3274,57 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       including those its Politics minister sends (`Planner::runOrders` → `planPolitics`).
       The check must apply only to messages the player writes.
     The recipient's side matches (`CarryOutDemand`, `speechLine`).
+53. **Time in each AI state** (§7.2; spec 07 session 3 "Pace after the starting assets").
+    Our computer players spend 56 % of their turns in Defend (Short Term), 34 % in
+    Exploration and 5 % in Infrastructure (12 games of the pace set-up, turns 1–100); from
+    turn 50 three in four are in Defend (Short Term) at any moment. The stock vehicle table
+    builds Defense Bases, Base Space Yards and population transports only in Infrastructure,
+    and the original's computers keep 0.6–0.9 bases each from turn 50 against our 0.2–0.3,
+    which points to more Infrastructure turns in the original. Check, in the pace set-up
+    (Small quadrant of the first type, five empires, simultaneous, default settings): each
+    computer empire's AI state after its start-of-turn update, turns 1–100; the share of
+    turns in each state; how long a Defend (Short Term) spell lasts; and which transition
+    most often ends one.
+54. **What enters the enemy-in-territory list** (§7.2 "Lists built each turn"). What keeps
+    ours in Defend (Short Term) is mostly other empires' attack ships one jump from a colony
+    system (explorers and fleets) and other empires' colonies one jump away (per empire 1.7
+    ships and 0.8 colonies at turn 50). Check, for the list the state machine reads:
+    - ships: only those the evaluating empire detects this turn, every hostile ship in a
+      territory system, or those it has ever seen; and whether ships of an empire it has
+      not met count, as "hostile" includes "not yet met";
+    - colonies: whether a populated hostile colony counts when the evaluating empire cannot
+      see it this turn (the system explored earlier, no ship or sensor there now), and
+      before the two empires have met;
+    - the systems: the claimed territory (colony systems and every system one jump away,
+      over all links), or a smaller set such as the colony systems only.
+
+    Ours: ships detected this turn (`Knowledge::visibleVehicles`), met or not; every
+    populated hostile colony in an explored territory system, seen or not, met or not; the
+    claimed territory (`ai.cpp` `assess`).
+55. **A colony type whose row builds nothing** (§7.5 `AI_Construction_Facilities`, colony
+    types). The stock Intelligence Compound row names only a spaceport, supply generation,
+    the two intelligence point modifiers and intelligence facilities. While the empire has
+    no intelligence facility and the system already has a spaceport and a depot, no entry
+    can be built, and ours queues nothing there for the whole game (0.8 such colonies per
+    computer empire at turn 50, 1.4 at turn 100, about a sixth of them breathable with all
+    their slots empty). Check whether the original also leaves such a colony empty, or
+    falls back (to the Homeworld rows, as for an unknown type; to the next matching table;
+    by giving the colony another type). And does the `AI_Planet_Types` test of an
+    Intelligence Compound or Research Compound row look at whether the empire has a
+    facility of that kind?
+56. **The computer players' research inputs** (spec 07 session 3). The original's computer
+    players produce 1.4 times our research at turn 50 with about as many colonies (11.2
+    against 10.8), and 1.75 times at turn 100 (19.6 colonies against 15.8). Our Research,
+    Facility Construction and Ship Construction ministers, colony types and colonization
+    targets follow §7.5 as written, so the difference lies in what those rules produce or in
+    a rule this spec does not state. Check, for two or three computer empires of the pace
+    set-up at turns 50 and 100: colonies of each colony type and how many are domed;
+    facilities with `Point Generation - Research` and their versions (I, II, III), and the
+    research modifier facilities; facilities against slots; total population; the colonies'
+    moods; the homeworld's own research. Ours (spec 07): at turn 50, 10.8 colonies (Research
+    Compound 2.7, Mining 2.6), 16.6 Research Center I, 51 facilities of 64 slots, 2,491M; at
+    turn 100, 15.8 colonies, 83 % of those beyond the homeworld domed, 22.6 Research
+    Center I, the homeworld's research flat at 3.5k from turn 25, 3,214M. The session's
+    statistics files also hold the population and resources columns of the four computer
+    empires: their means at turns 10, 25, 50, 75 and 100 would show whether the original's
+    lead is in research alone or in the whole economy.
