@@ -6,6 +6,7 @@
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STBIW_WINDOWS_UTF8  // file names are UTF-8, as on Linux
 #define STBI_WRITE_NO_STDIO_FALLBACK
 #include <stb_image_write.h>
 #if defined(__GNUC__)

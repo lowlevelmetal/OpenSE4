@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  The application manifest of every OpenSE4 program on Windows (CMakeLists.txt,
+  opense4_windows_manifest). The UTF-8 code page makes the C library's narrow
+  file functions (fopen, used by stb_image and dr_mp3) and std::filesystem's
+  narrow strings use UTF-8, as on Linux, so paths with letters outside ASCII
+  (a user name like José, a game folder like Spiele) work the same everywhere.
+  Windows 10 1903 and later honour it. SDL declares the DPI awareness itself
+  (per monitor, version 2).
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>

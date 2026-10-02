@@ -126,12 +126,14 @@ void soundSettingsPage(float px) {
     ImGui::SetNextItemWidth(300 * px);
     changed |= ImGui::SliderFloat("Effects volume", &s.soundVolume, 0.0f, 1.0f, "%.2f");
     changed |= ImGui::Checkbox("Music", &s.musicOn);
-    // The music volume has the Options window's five steps (spec 06 §1.9).
+    // The music volume has the Options window's five steps (spec 06 §1.9). The
+    // label is a printf format: a lone % at its end is undefined (glibc shows
+    // stray bytes, the Windows runtime may stop the program), so it is doubled.
     ImGui::SetNextItemWidth(300 * px);
     int step = 0;
     for (size_t i = 0; i < kMusicVolumes.size(); ++i)
         if (kMusicVolumes[i] == s.musicVolume) step = int(i);
-    if (ImGui::SliderInt("Music volume", &step, 0, int(kMusicVolumes.size()) - 1, std::format("{}%", kMusicVolumes[size_t(step)]).c_str())) {
+    if (ImGui::SliderInt("Music volume", &step, 0, int(kMusicVolumes.size()) - 1, std::format("{}%%", kMusicVolumes[size_t(step)]).c_str())) {
         s.musicVolume = kMusicVolumes[size_t(std::clamp(step, 0, int(kMusicVolumes.size()) - 1))];
         changed = true;
     }
