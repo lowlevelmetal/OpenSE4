@@ -67,7 +67,11 @@ Conventions used throughout:
   have loaded.
 - **Quick Start.** The player picks one race portrait. The candidates come from the
   `Settings.txt` keys `Number of Quick Start Styles` and `Quick Start Style N`. All other
-  settings keep their defaults.
+  settings keep their defaults. Before the galaxy is made, the human player (player 1)
+  gets one run of the Design minister of spec 05 §7.5 for its race: having no designs, it
+  gets at most one design for each template of its race's `AI_DesignCreation` file that
+  yields one. It gets no ships, and the computer opponents get nothing at creation
+  (confirmed: binary; §3.6 "Starting assets").
 - **Scenario and Tutorial.** These load a prepared savegame plus a text script (§12).
 
 ### 2.2 New Game: eight tabs
@@ -462,6 +466,25 @@ its system is explored, ruins are removed, the values are set, any old colony is
 and it becomes a colony of the player's race at maximum population that is a **capital**
 of colony type "Homeworld". Neutral empires cannot use warp points at all (§8), so they
 never leave their home system.
+
+**Starting assets** (confirmed: binary). Creating a game (New Game, local, hotseat or the
+host of a simultaneous game) gives no empire any ship, base, unit or design: an empire
+starts with its starting planets (their facilities, population and cargo), its stockpile
+and its pools (spec 02 §9). No setting gives starting ships; ships come only from
+construction (and the combat simulator, files and copies). A human player's designs come
+from its empire file, if one was loaded (spec 06 §7 Q72), else from the design window; a
+computer player's from its Design minister, which runs in that empire's first turn
+processing because it has no designs (spec 05 §7.5). Quick Start alone gives the human
+player one Design minister run at creation (§2.1). Once the empires are placed, the
+first-contact check runs once in every system (spec 05 §3.1).
+
+The engine differs: `setup.cpp` ("Starting designs and ships") gives every empire, human
+or computer, four designs of its own (`autoDesign`: Scout, Colonizer, Escort, Defense
+Base), two scouts and a colonizer. That block must go: computer players then get their
+designs from the Design minister in their first turn; a Quick Start human gets the one
+Design minister run at creation (`quickStartSetup` in `client/classic/frontend.cpp`, then
+setup); a New Game human gets only its empire file's designs. The engine also never runs
+the first-contact check at setup.
 
 ### 3.7 Pipeline
 
@@ -875,7 +898,13 @@ unless marked otherwise.
   - when Scrap Facilities is used;
   - when the planet takes damage that destroys facilities (in combat, or from a storm);
   - when the colony is founded;
-  - when the game is loaded.
+  - whenever a game file is read: Load Game, the host's reading of the game to process a
+    turn, a player opening a play-by-e-mail game file, the hotseat reload between players
+    and the movement-log replay's reloads;
+  - for each colony a player's turn file carries, when the host reads that file (§14 Q44).
+
+  A completed facility upgrade does not recalculate them: an upgraded cloaking or sensor
+  facility counts at its new level from the colony's next recalculation (§14 Q44).
 - Facilities destroyed by the intelligence project `Planet - Facility Damage` do not cause a
   recalculation. A colony that loses its cloaking or sensor facility that way keeps its old
   levels until the next recalculation.
@@ -887,19 +916,20 @@ turn. A ship differs: it needs supply and pays upkeep (spec 03 §8).
 **The Cloak and Decloak orders.**
 - Both are for an own colony. Cloak (Z) is lit when the colony can cloak and is not cloaked.
   Decloak (X) is lit whenever the colony is cloaked, even when it can no longer cloak.
-- Both act at once and are never queued, in both turn styles. They play the `cloakon` and
-  `cloakoff` sounds and write no log entry.
+- Both act at once and are never queued, in both turn styles; no turn style disables them.
+  They play the `cloakon` and `cloakoff` sounds and write no log entry.
 - Cloak marks the colony cloaked and recalculates the system's sight. It does not touch the
   construction queue (cloaking a ship clears its queue).
 - Decloak clears the mark, recalculates sight and runs the first-contact check of spec 05
   §3.1 at once. Cloaking runs no contact check.
-- Open: needs observation. How the host of a simultaneous game receives a colony's Cloak or
-  Decloak given during the turn. The player's copy changes at once; presumably the turn file
-  carries it like the rest of the colony (inferred). OpenSE4's choice is below (§14 Q44).
+- In a simultaneous game the player's turn file carries the colony's cloaked mark as it
+  stands at the end of the turn, and the host takes it over when it reads the file. A
+  Decloak's first contact reaches the host for the player's side only (§14 Q44).
 
 **When a colony decloaks or cloaks by itself.**
 - **Recalculation.** At each recalculation above, a cloaked colony that can no longer cloak
-  is decloaked, without a message. Nothing else checks it each turn, unlike ships (spec 03
+  is decloaked, without a message. This is the Decloak order's own step: it also
+  recalculates the system's sight and runs the first-contact check (§14 Q44). Nothing else checks it each turn, unlike ships (spec 03
   §8).
 - **Battle.** Every colony in the sector is decloaked when a battle begins (spec 04 §2).
   After the battle, a colony that was cloaked when it began cloaks again if the planet still
@@ -1452,3 +1482,52 @@ highlighted, and an X marks each empire that has met one.
       recalculate?
     - An upgrade that converts a colony's facilities counts as completing facilities and
       recalculates the levels. Does it?
+
+    **Answer** (confirmed: binary; §6.9, spec 05 §9.2). Each point has a counterpart in the
+    original:
+    - **Simultaneous games.** Nothing about colony cloaking is restricted: Cloak and
+      Decloak are lit by the same tests in both turn styles. A player's turn file carries
+      each of the player's own objects that got a command or a queue change during the
+      turn, with its state at the end of the turn. For a planet that state includes its
+      colony's cloaked mark, and Cloak and Decloak mark the colony like any command, so the
+      file carries the colony's final state. The host takes it over while it reads the
+      turn files, players in order, in step 1 of turn processing (spec 05 §8), before the
+      messages, the date and the start-of-turn steps. Reading the colony recalculates its
+      levels (below); once the files are read, sight is recalculated in every system. No
+      first-contact check runs then. Hotseat simultaneous games go through the same files.
+    - **Contact.** A Decloak's first-contact check runs only on the player's machine. From
+      the player's empire record the host takes each treaty value only where it differs
+      from the host's and is None, "no contact" or War, and the player's log is replaced
+      by the file's. So the host gets the player's side of a contact made there (treaty
+      None, its "First Contact" entry). The other empire's side stays "no contact", and its
+      entry made on the player's copy is lost, until the host's own first-contact check
+      next runs in that system (spec 05 §3.1).
+    - **Loading.** Every reading of a game file recalculates every colony, with the
+      automatic decloak: Load Game, the host's reading of the game to process a turn, a
+      player opening a play-by-e-mail game file, the hotseat reload between players, and
+      the movement-log replay. The host's reading of a turn file recalculates each colony
+      that file carries. Both sides read the same file the same way, so they agree. A
+      TCP/IP host keeps the game in memory between turns (spec 05 §9.4), so it recalculates
+      only through the turn files.
+    - **Upgrades.** Completing a facility upgrade converts the facilities and recalculates
+      the system's sight with the old stored levels; it does not recalculate the colony.
+    - **The automatic decloak** at a recalculation is the Decloak order's own step: it
+      recalculates the system's sight and runs the first-contact check.
+
+    The engine differs in four points:
+    1. On the host, a Decloak from a simultaneous player's orders runs the full contact
+       check (`cmd::CloakColony` in `commands.cpp` calls `diplomacy::updateContacts`), so
+       both empires meet and log it. It must set only the acting empire's side (treaty
+       None, its own "First Contact" entry); the other side waits for the host's next
+       first-contact check in that system. The timing (applied at the start of processing,
+       in player and command order) matches, and the "(inferred)" note in `commands.hpp`
+       becomes "(confirmed: binary)".
+    2. `loadPbemGame` (`client/classic/pbem_play.cpp`) and `processGameFile`
+       (`net/pbem.cpp`) load without recalculating colonies. Both must call
+       `sight::recalculateColonies`, as `ClassicSession::load` and the server's `--load`
+       already do.
+    3. The Upgrade branch of `completeItem` (`economy_queue.cpp`) calls
+       `sight::recalculateColony`. That call must go.
+    4. `sight::recalculateColony` clears the cloaked mark silently. Its automatic decloak
+       must recalculate the system's sight and run the first-contact check, as a Decloak
+       does.

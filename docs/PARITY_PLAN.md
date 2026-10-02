@@ -146,20 +146,18 @@ questions are what the observation sessions still have to settle.
 
 ## Next steps
 
-1. **The engine's own choices.** Every open question of specs 01–06 has been settled from
-   the executable (2026-10-01, in two passes), and the engine and client follow the
-   answers. Implementing the second pass raised a last round of small questions where the
-   spec is silent; each names the engine's choice, marked "(inferred)" in the code:
-   - spec 01 §14 Q44 (colony cloaking in simultaneous and PBEM games);
-   - spec 03 §19 Q77 (clearing lists for Use Component and Use Facility);
-   - spec 04 §19.4 Q87–Q89 (Drop Troops details);
-   - spec 05 Q52 (computer players' third-empire requests);
-   - spec 06 §7 Q56, Q60–Q64, Q70–Q72 (list windows, fonts, pointers, the 800×600 layout,
-     the Log) and Q73–Q82 (the battle flow and the combat windows), and the small open
-     part of Q38 (the simulator's flag column).
-
-   Settle them from the executable where it can, and implement from the spec text, not
-   from any listing.
-2. **Side-by-side checks** with the original through `tools/observe`: screenshots of each
+1. **Implement the last round of answers.** Every open question of specs 01–06 has been
+   settled from the executable (2026-10-01, in three passes). The third pass answered the
+   engine's last choices: spec 01 §14 Q44, spec 03 §19 Q77, spec 04 §19.4 Q87–Q89, spec 05
+   Q52 and spec 06 §7 Q38, Q56, Q61, Q62, Q64, Q70, Q72, Q73, Q76–Q80 and Q82 (Q63, Q71,
+   Q74, Q75 and Q81 are OpenSE4 choices with no counterpart). It also found that the
+   original gives no starting designs or ships (spec 01 §3.6) and checks first contact
+   only at set moments (spec 05 §3.1). The differences these leave are the rows dated
+   2026-10-01 in [PARITY_GAPS.md](PARITY_GAPS.md) and its "Client windows" list. Implement
+   from the spec text, not from any listing.
+2. **Observation.** Three points need the running original (spec 06 §7): Q60 (the size of
+   the small map lettering), Q73 (what a viewer sees of a strategic battle) and Q77 (the
+   measured animation timings under Wine).
+3. **Side-by-side checks** with the original through `tools/observe`: screenshots of each
    window, and an all-computer game to compare the computer players' pace.
-3. Encrypted connections, and per-player views for PBEM.
+4. Encrypted connections, and per-player views for PBEM.
