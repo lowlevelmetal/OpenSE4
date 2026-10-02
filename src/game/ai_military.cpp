@@ -103,6 +103,22 @@ bool attackMaterial(Planner& p, const Vehicle& v) {
     }
 }
 
+// A new fleet's leader (spec 05 §7.5 AI_Fleets, confirmed: binary): a ship
+// that can move and that an attack or a defence fleet could take, never a
+// troop transport or a boarding ship: an attack ship, a carrier or drone
+// carrier with its units aboard, a kamikaze ship, or a defence ship.
+bool canLeadFleet(Planner& p, const Vehicle& v) {
+    if (v.status == VehicleStatus::Mothballed || vehicleMaxMovement(p.r, p.st, v) <= 0) return false;
+    switch (p.info(v.design).role) {
+        case Role::Attack:
+        case Role::Kamikaze:
+        case Role::Defense: return true;
+        case Role::Carrier:
+        case Role::DroneCarrier: return loaded(v);
+        default: return false;
+    }
+}
+
 // The goal of the attack fleets in the current state (spec 05 §7.5): a Seek
 // that lasts one movement phase, so the fleet heads for it again every turn.
 std::vector<Order> stateGoal(Planner& p) {
@@ -251,12 +267,13 @@ void planFleets(Planner& p) {
         }
         keep.push_back(fid);
     }
-    // At most one new fleet per turn, around the newest idle, fit ship outside fleets.
+    // At most one new fleet per turn, around the newest idle, fit ship outside
+    // fleets among those that may lead one (canLeadFleet; inferred, spec 05 Q72).
     if (static_cast<int>(keep.size()) < wanted) {
         std::optional<VehicleId> leader;
         for (VehicleId id : p.ownVehicles(Minister::Fleets)) {
             const Vehicle* v = p.st.vehicle(id);
-            if (!v || v->fleet.valid() || !p.idle(*v) || unfit(p, *v)) continue;
+            if (!v || v->fleet.valid() || !p.idle(*v) || unfit(p, *v) || !canLeadFleet(p, *v)) continue;
             if (!leader || id > *leader) leader = id;
         }
         if (leader && p.emit(cmd::CreateFleet{{}, {*leader}})) {

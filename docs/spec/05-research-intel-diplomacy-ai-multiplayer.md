@@ -2197,12 +2197,13 @@ binary).
     Formation` and `Fleets Default Strategy`. Only a ship that can move and that an attack
     fleet or a defence fleet could take may lead it, and never a troop transport or a
     boarding ship: an attack ship, a carrier or drone carrier with its units aboard, a
-    kamikaze ship, or a defence ship (confirmed: binary). The engine differs: `planFleets`
-    (`ai_military.cpp`) forms a fleet around any fit ship, troop transports and empty
-    carriers included; 7 % of our fleets were troop transports alone and 6 % carriers alone
-    (fleet-turns of turns 51–100), against none and 1 % in one game of the original, and
-    such fleets go to fight and draw (spec 07 "Battles, bases and the first turns under a
-    debugger").
+    kamikaze ship, or a defence ship (confirmed: binary). OpenSE4 follows this since
+    2026-10-02 (`canLeadFleet`, `ai_military.cpp`), taking the newest of the ships that may
+    lead (inferred, question 72). It used to form a fleet around any fit ship, troop
+    transports and empty carriers included: 7 % of its fleets were troop transports alone and
+    6 % carriers alone (fleet-turns of turns 51–100), against none and 1 % in one game of the
+    original, and such fleets went to fight and draw (spec 07 "Battles, bases and the first
+    turns under a debugger").
   - *Disbanding*: fleets beyond n are disbanded, and so is a fleet whose leader is gone
     or unfit.
   - *Roles*: fleet i of n (counting from 1) is an attack fleet when i is odd and (i + 1) /
@@ -4053,7 +4054,7 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     51–100 (scratch run); the original in none of turns 26–50 and 14–16 % of turns 51–100
     (two games). To verify: the maintenance and revenue compared at the test in turns 26–50
     in the original and in ours, and which vehicles make the difference.
-72. **Details the scrap rule leaves open** (§7.5 *Scrap*).
+72. **Details the scrap and fleet-leader rules leave open** (§7.5 *Scrap*, `AI_Fleets`).
     OpenSE4's choices since 2026-10-02 (inferred):
     - unit groups (fighters, satellites, mines and the like in space) are never scrap
       candidates, as before; "the empire's vehicles" is read as its ships and bases;
@@ -4066,8 +4067,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       no route takes to a yard is not scrapped, and no other candidate is tried that turn;
     - the Move To and Scrap are given together, so the vehicle is scrapped when it reaches
       the yard in the same movement, and its orders are not touched by the ministers after
-      the Scrap minister that turn.
+      the Scrap minister that turn;
+    - a new fleet's leader is the newest idle, fit ship outside fleets among those that may
+      lead one, not the newest such ship whatever it is.
 
     To verify in the executable: whether unit groups are in the candidates' list, what
     happens to a candidate in a fleet or cloaked, how the scrap place is chosen and what a
-    candidate with no reachable yard gets.
+    candidate with no reachable yard gets, and whether the leader test filters the
+    candidates or tests only the newest ship.

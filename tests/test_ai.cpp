@@ -5671,3 +5671,55 @@ TEST_CASE("ai: over the soft cap the oldest design goes: a ship wherever it is, 
     CHECK(countOf<cmd::Scrap>(cmds) == 1);
     CHECK(applyAll(r, s, me, cmds).empty());
 }
+
+TEST_CASE("ai: a new fleet forms around a ship that can move and that a fleet could take, never a troop transport or boarding ship") {
+    // Spec 05 §7.5 AI_Fleets (confirmed: binary).
+    TempTree t("leaders");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 1\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId grunt = addTestDesign(s, r, me, "Grunt", "Test Troop Hull", {"Test Troop Rifle"});
+    const DesignId wasp = addTestDesign(s, r, me, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    const DesignId trooper = typedDesign(s, r, me, "Trooper", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Cargo Bay"},
+                                         "Troop Transport", 1);
+    const DesignId boarder = typedDesign(s, r, me, "Boarder", "Test Frigate",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Boarding Party"},
+                                         "Boarding Ship", 1);
+    const DesignId carrier = typedDesign(s, r, me, "Carrier", "Test Frigate",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Fighter Bay"}, "Carrier", 1);
+    const DesignId hulk = typedDesign(s, r, me, "Hulk", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"},
+                                      "Attack Ship", 1);
+    auto leader = [&]() -> VehicleId {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planFleets(p);
+        const auto cmds = p.report().commands;
+        const cmd::CreateFleet* c = firstOf<cmd::CreateFleet>(cmds);
+        return c ? c->members.front() : VehicleId{};
+    };
+    // A loaded troop transport (an attack fleet would take it), a boarding
+    // ship, an empty carrier and an attack ship without engines: none leads.
+    const VehicleId attackShipWithoutEngines = addTestVehicle(s, r, hulk, home).id;
+    REQUIRE(vehicleMaxMovement(r, s, *s.vehicle(attackShipWithoutEngines)) == 0);
+    const VehicleId troops = addTestVehicle(s, r, trooper, home).id;
+    s.vehicle(troops)->cargo.units = {{grunt, 2}};
+    addTestVehicle(s, r, boarder, home);
+    const VehicleId flattop = addTestVehicle(s, r, carrier, home).id;
+    CHECK_FALSE(leader().valid());
+    // A carrier with its fighters aboard may lead.
+    s.vehicle(flattop)->cargo.units = {{wasp, 2}};
+    CHECK(leader() == flattop);
+    s.vehicle(flattop)->cargo.units.clear();
+    // So may an attack ship that can move, though older than the others.
+    s.vehicle(attackShipWithoutEngines)->count = 0;
+    s.removeDeadVehicles();
+    const VehicleId hammer = addTestVehicle(s, r, addWarship(s, r, me, "Hammer"), home).id;
+    addTestVehicle(s, r, trooper, home);
+    CHECK(leader() == hammer);
+}
