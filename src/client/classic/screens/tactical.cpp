@@ -1054,11 +1054,13 @@ private:
         TacticalBattle& b = *f.battle;
         TacticalUi& u = state();
         const ImGuiIO& io = ImGui::GetIO();
-        // Scrolling the map.
-        if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) u.cx -= 0.5f;
-        if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) u.cx += 0.5f;
-        if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) u.cy -= 0.5f;
-        if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) u.cy += 0.5f;
+        // Scrolling the map: 30 squares a second (half a square a frame at
+        // 60 Hz), whatever the display's refresh rate.
+        const float scroll = 30.0f * std::min(ui.dt, 0.1f);
+        if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) u.cx -= scroll;
+        if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) u.cx += scroll;
+        if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) u.cy -= scroll;
+        if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) u.cy += scroll;
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) u.aim = Aim::None;   // Esc closes nothing here
         if (!u.begun) return;
         if (animating()) {

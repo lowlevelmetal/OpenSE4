@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
@@ -73,10 +74,19 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     // classic pointers replace ImGui's (no text beam, no resize arrows).
     pointers().load(mode->art_->files());
     if (pointers().loaded()) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-    // The layout the original would pick: from the desktop width alone (§2.1.1).
+    // The layout the original would pick: from the desktop width alone (§2.1.1),
+    // in logical units, as the original (which knows nothing of display
+    // scaling) sees it on a scaled Windows desktop. SDL gives Wayland's desktop
+    // in logical points already, Windows' and X11's in pixels with a content
+    // scale; dividing by that scale gives the same width everywhere.
     int desktopWidth = 1024;
-    if (platform.window)
-        if (const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(platform.window))) desktopWidth = desktop->w;
+    if (platform.window) {
+        const SDL_DisplayID display = SDL_GetDisplayForWindow(platform.window);
+        if (const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display)) {
+            const float scale = SDL_GetDisplayContentScale(display);
+            desktopWidth = scale > 0.0f ? static_cast<int>(std::lround(static_cast<float>(desktop->w) / scale)) : desktop->w;
+        }
+    }
     mode->desktopLayout_ = layoutForDesktop(desktopWidth);
     mode->applyLayout();
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
