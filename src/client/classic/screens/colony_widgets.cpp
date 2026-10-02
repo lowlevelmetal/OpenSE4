@@ -37,6 +37,12 @@ bool lampButton(Dialog& d, UiContext& /*ui*/, const char* label, bool on, bool e
     return clicked;
 }
 
+bool checkButton(Dialog& d, UiContext& /*ui*/, const char* label, bool on, bool enabled, const char* tooltip) {
+    const bool clicked = d.check(label, on, enabled);
+    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) itemTooltip(tooltip);
+    return clicked;
+}
+
 void itemTooltip(const char* text) {
     if (ImGui::BeginTooltip()) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);

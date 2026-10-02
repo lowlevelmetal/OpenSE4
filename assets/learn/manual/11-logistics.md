@@ -16,7 +16,7 @@ Ships use **supplies** for moving, firing and cloaking:
 - a cloaked ship pays its cloaking device's supply use every turn.
 
 A ship with **no supplies** can move only one sector a turn, cannot fire and has no shields. In a
-simultaneous game it cannot move at all. The **Supplies** column of the `Ships \ Units` window
+simultaneous game it cannot move at all. The **Supplies** column of the `Ships\Units` window
 shows how much each ship has left.
 
 A ship is refilled completely, for free, whenever it is in a sector with a **resupply depot**: a

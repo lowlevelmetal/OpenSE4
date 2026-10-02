@@ -27,6 +27,8 @@ inline constexpr ImVec4 kTextHighlight{1.0f, 0.86f, 0.35f, 1.0f};
 // A right-column tab, filter or toggle button with the classic lamp: lit
 // green when on (docs/spec/06, "radio lights").
 bool lampButton(Dialog& d, UiContext& ui, const char* label, bool on, bool enabled = true, const char* tooltip = nullptr);
+// An on/off setting in the button column: a check box holding the lamp when on (spec 07 §UI).
+bool checkButton(Dialog& d, UiContext& ui, const char* label, bool on, bool enabled = true, const char* tooltip = nullptr);
 // A tooltip for the last item, in the dialog font.
 void itemTooltip(const char* text);
 

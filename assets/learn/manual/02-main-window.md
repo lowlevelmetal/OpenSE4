@@ -31,7 +31,7 @@ function key.
 | Designs | `F3` | Your ship and unit designs ([Ship design](ship-design)). |
 | Planets | `F4` | Every planet you have seen ([Planets and colonies](planets-and-colonies#colonizing)). |
 | Colonies | `F5` | Your colonies ([Planets and colonies](planets-and-colonies#the-colonies-window)). |
-| `Ships \ Units` | `F6` | Your ships, unit groups and fleets ([Ships and fleets](ships-and-fleets#the-ships-and-units-window)). |
+| `Ships\Units` | `F6` | Your ships, unit groups and fleets ([Ships and fleets](ships-and-fleets#the-ships-and-units-window)). |
 | Construction Queues | `F7` | Everything being built ([Construction](construction)). |
 | Research | `F8` | Research projects ([Research](research)). |
 | Empires | `F9` | Diplomacy, intelligence and scores ([Diplomacy](diplomacy)). |

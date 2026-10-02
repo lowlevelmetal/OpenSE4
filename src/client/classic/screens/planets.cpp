@@ -13,14 +13,14 @@
 #include <array>
 #include <format>
 #include <initializer_list>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
 namespace opense4::client::classic {
 
 namespace {
-
-constexpr Vec2 kMapSize{236, 158};
 
 std::string percent(int64_t v) { return std::format("{}%", v); }
 // Conditions show as their band (spec 02 §2).
@@ -39,9 +39,6 @@ void clickSelect(std::vector<game::ObjectId>& sel, game::ObjectId id) {
 
 bool contains(const std::vector<game::ObjectId>& v, game::ObjectId id) { return std::find(v.begin(), v.end(), id) != v.end(); }
 
-// A labelled statistics line in two columns.
-void stat(UiContext& ui, const char* label, const std::string& value, float column = 118.0f) { labelValue(ui, label, value, column); }
-
 // ============================================================================================
 // Planets (spec 06 §1.8.1, confirmed: binary)
 // ============================================================================================
@@ -54,13 +51,15 @@ constexpr std::array<const char*, 10> kFilterIds{{"all", "colonizable", "all-col
                                                   "colonizable-breathable", "ship-enroute", "asteroids", "special"}};
 
 enum PlanetColumn { PcPicture, PcName, PcAtmosphere, PcMinerals, PcOrganics, PcRadioactives, PcEnroute };
-// The three Value columns' headings are always in their resource colours (spec 06 §5.4).
-constexpr std::array<ListColumn, 7> kPlanetColumns{{{"", 40},
+// "Pic" over the picture; three "Value" headings, each with its resource's
+// icon and always in its resource colour (spec 06 §5.4; observed, spec 07
+// session 3).
+constexpr std::array<ListColumn, 7> kPlanetColumns{{{kPicHeading, 40},
                                                     {"Name", 145},
                                                     {"Atmosphere", 95},
-                                                    {"Min.", 58, palette::kMinerals},
-                                                    {"Org.", 58, palette::kOrganics},
-                                                    {"Rad.", 58, palette::kRadioactives},
+                                                    {"Value", 58, palette::kMinerals, true, static_cast<int>(Icon::Minerals)},
+                                                    {"Value", 58, palette::kOrganics, true, static_cast<int>(Icon::Organics)},
+                                                    {"Value", 58, palette::kRadioactives, true, static_cast<int>(Icon::Radioactives)},
                                                     {"Ship Enroute", 0}}};
 constexpr std::array<uint32_t, 3> kValueColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
 
@@ -113,8 +112,9 @@ public:
             }
             ui.tag("planets:filters", filtersMin, filtersMax);
             d.spacer();
-            // Stored with the empire when clicked (spec 06 §1.8.1).
-            if (d.tab("No Sys To Avoid", noAvoid)) {
+            // An on/off setting: a check box (observed, spec 07 session 3), stored
+            // with the empire when clicked (spec 06 §1.8.1).
+            if (d.check("No Sys To Avoid", noAvoid)) {
                 game::InterfaceOptions o = ui.options();
                 o.planetsNoSysToAvoid = !noAvoid;
                 if (!ui.setOptions(o)) status_.fail("The option cannot be changed now.");
@@ -179,16 +179,18 @@ private:
     void statistics(UiContext& ui) {
         // Labels at x 18 one every 16 px from y 40, values right-aligned at x 289 (window pixels).
         const PlanetStatistics& st = stats_;
+        // The original's labels (observed, spec 07 session 3): the lines under a
+        // count start with "..." and narrow it.
         const std::array<std::pair<const char*, int>, 10> lines{{{"Known Systems", st.systems},
-                                                                 {"Planets", st.planets},
-                                                                 {"Colonizable Planets", st.colonizable},
-                                                                 {"Owned By Enemies", st.enemy},
-                                                                 {"Owned By Allies", st.ally},
-                                                                 {"Owned By Non-Aligned", st.nonAligned},
-                                                                 {"Not Colonized", st.free},
-                                                                 {"Not Colonized, Breathable", st.freeBreathable},
+                                                                 {"Number of Planets", st.planets},
+                                                                 {"Number of Colonizable Planets", st.colonizable},
+                                                                 {"... which are owned by Enemies", st.enemy},
+                                                                 {"... which are owned by Allies", st.ally},
+                                                                 {"... which are owned by Non-Aligned", st.nonAligned},
+                                                                 {"... which are not Colonized", st.free},
+                                                                 {"... which are Breathable", st.freeBreathable},
                                                                  {"Colonizing Ships", st.colonyShips},
-                                                                 {"Available Colonizing Ships", st.available}}};
+                                                                 {"... which are available", st.available}}};
         for (size_t i = 0; i < lines.size(); ++i) {
             const float y = 5.0f + 16.0f * float(i) + (i >= 8 ? 16.0f : 0.0f);
             ImGui::SetCursorPos(ui.size({3, y}));
@@ -202,8 +204,8 @@ private:
     // The list; returns true when a row was left-clicked (the window closes and shows that planet).
     bool list(UiContext& ui, const std::vector<const PlanetInfo*>& rows) {
         const game::GameState& s = ui.state();
-        // The rows' child has no padding; the header leaves room for its scrollbar.
-        const float width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 2.0f;
+        // The headings span the rows, not the arrow column.
+        const float width = listRowsWidth(ui, ImGui::GetContentRegionAvail().x);
         if (const int c = listHeader(ui, "##planethead", kPlanetColumns, width); c >= 0) {
             // The sort keys are stored with the empire at once (spec 06 §7 Q24).
             game::InterfaceOptions o = ui.options();
@@ -212,8 +214,8 @@ private:
         }
         const std::vector<float> x = columnEdges(ui, kPlanetColumns, width);
         bool leave = false;
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1, 1));
-        ImGui::BeginChild("##planetrows", ImVec2(0, listRowsHeight(ui)), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        beginList(ui, "##planetrows", ImVec2(0, listRowsHeight(ui)));
         ImGui::PopStyleVar();
         const float rowH = ui.px(kListRowH);
         ImGuiListClipper clipper;
@@ -246,12 +248,14 @@ private:
                     dl->AddText(ImVec2(a.x + cx + ui.px(2), cy), color, t.c_str());
                     dl->PopClipRect();
                 };
-                text(x[PcName], top, p.own ? imColor(0xffdb59) : white, o.name, x[PcName + 1] - x[PcName]);
+                // Every name in white, our own colonies' too; the atmosphere on the
+                // name's line (observed, spec 07 session 3).
+                text(x[PcName], top, white, o.name, x[PcName + 1] - x[PcName]);
                 ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
                 text(x[PcName], top + lh + ui.px(1), imColor(palette::kSecondary), typeLine(o), x[PcName + 1] - x[PcName]);
                 ImGui::PopFont();
                 const float mid = a.y + (rowH - lh) * 0.5f;
-                text(x[PcAtmosphere], mid, white, p.asteroids ? std::string("None") : o.atmosphere, x[PcAtmosphere + 1] - x[PcAtmosphere]);
+                text(x[PcAtmosphere], top, white, p.asteroids ? std::string("None") : o.atmosphere, x[PcAtmosphere + 1] - x[PcAtmosphere]);
                 for (size_t k = 0; k < 3; ++k) {
                     // A percentage, or the amount left when resources are finite.
                     const std::string v = s.options.finiteResources ? formatNumber(o.value[k]) : std::format("{}%", o.value[k]);
@@ -261,7 +265,7 @@ private:
                 if (p.enroute) text(x[PcEnroute], mid, white, p.enrouteShip, x[PcEnroute + 1] - x[PcEnroute]);
             }
         if (rows.empty()) ImGui::TextColored(kTextDim, "No planets on this tab.");
-        ImGui::EndChild();
+        endList(ui);
         ui.tagItem("planets:list");
         return leave;
     }
@@ -379,7 +383,7 @@ struct ColonyHeading {
 
 std::vector<ColonyHeading> colonyHeadings(ColonyTab tab) {
     using C = ColonyColumn;
-    std::vector<ColonyHeading> h{{C::Picture, "", 40}, {C::Name, "Name", 150}};
+    std::vector<ColonyHeading> h{{C::Picture, kPicHeading, 40}, {C::Name, "Name", 150}};
     auto add = [&](std::initializer_list<ColonyHeading> more) { h.insert(h.end(), more); };
     switch (tab) {
         case ColonyTab::General: add({{C::Atmosphere, "Atmosphere", 90}, {C::Conditions, "Conditions", 90}, {C::Population, "Pop", 65}, {C::Mood, "Mood", 0}}); break;
@@ -417,13 +421,14 @@ public:
             if (!d.open()) return d.keepOpen();
             d.beginContent();
             statistics(ui);
-            ImGui::SameLine();
+            // The mini-map where Planets has it (inferred, spec 06 §7 Q90).
+            ImGui::SetCursorPos(ui.size({290, 3}));
             std::vector<uint8_t> marked(ui.state().galaxy.systems.size(), 0);
             for (const ColonyRow& r : rows_) marked[ui.state().galaxy.object(r.planet).system.index()] = 1;
             std::optional<game::SystemId> highlight;
             if (hovered_) highlight = ui.state().galaxy.object(*hovered_).system;
             else if (!selection_.empty()) highlight = ui.state().galaxy.object(selection_.front()).system;
-            quadrantMap(ui, "##map", kMapSize, marked, highlight);
+            quadrantMap(ui, "##map", {262, 190}, marked, highlight);
             hovered_.reset();
             status_.drawAt(ui, {3, 183}, 280);
             ImGui::SetCursorPos(ui.size({0, 197}));
@@ -434,6 +439,10 @@ public:
                 if (lampButton(d, ui, label, tab_ == tab)) setTab(tab);
                 ui.tagTab(kColonyTabIds[static_cast<size_t>(tab)], tab_ == tab);
             }
+            // The original's column: the nine tabs, two empty slots, the two
+            // actions just above Close in the 14th slot; no Constr. Queue or Goto
+            // (observed, spec 07 session 3; the actions' slots inferred, Q90).
+            d.spacer();
             d.spacer();
             if (d.button("Scrap Facil Types")) scrapTypes_.open(selection_.size() > 1 ? selection_ : std::vector<game::ObjectId>{});
             if (ImGui::IsItemHovered())
@@ -443,14 +452,6 @@ public:
                 pendingColonyType_ = true;
                 chosenType_ = -1;
             }
-            const bool one = selection_.size() == 1;
-            if (d.button("Constr. Queue", one)) {
-                ScreenArgs a;
-                a.planet = selection_.front();
-                ui.open(ScreenId::SetQueue, a);
-            }
-            ui.tagItem("colonies:queue");
-            if (d.button("Goto", one)) goto_ = selection_.front();
             if (d.close()) return false;
             report_.draw(ui);
             scrapTypes_.draw(ui, status_);
@@ -502,45 +503,65 @@ private:
     }
 
     void statistics(UiContext& ui) {
-        int64_t population = 0, maxPop = 0, research = 0, intel = 0;
-        int facilities = 0, slots = 0, yards = 0, idle = 0, unhappy = 0;
+        // The original's summary (observed, spec 07 session 3), laid out as the
+        // Planets statistics: labels at x 18 one every 16 px, values right-aligned
+        // at x 289, the resource amounts on the line under their label (inferred,
+        // spec 06 §7 Q90).
+        const game::GameState& s = ui.state();
+        int64_t population = 0, research = 0, intel = 0;
+        int blockaded = 0;
         game::Resources production;
+        std::vector<game::SystemId> systems;
         for (const ColonyRow& r : rows_) {
             population += r.keys.population;
-            maxPop += r.maxPopulation;
             production += r.keys.production;
             research += r.keys.research;
             intel += r.keys.intelligence;
-            facilities += r.keys.facilities;
-            slots += r.keys.slots;
-            idle += r.queueLength == 0 && r.keys.population > 0;
-            unhappy += r.mood >= game::Mood::Unhappy;
-            yards += std::find(r.icons.begin(), r.icons.end(), 1) != r.icons.end();
+            blockaded += r.blockaded ? 1 : 0;
+            const game::SystemId sys = s.galaxy.object(r.planet).system;
+            if (std::find(systems.begin(), systems.end(), sys) == systems.end()) systems.push_back(sys);
         }
-        ImGui::BeginChild("##stats", ImVec2(ImGui::GetContentRegionAvail().x - ui.px(kMapSize.x) - ImGui::GetStyle().ItemSpacing.x,
-                                            ui.px(kMapSize.y)));
-        ImGui::BeginGroup();
-        heading(ui, "Statistics");
-        stat(ui, "Colonies", std::to_string(rows_.size()), 96);
-        stat(ui, "Population", std::format("{}M / {}M", formatNumber(population), formatNumber(maxPop)), 96);
-        stat(ui, "Facilities", std::format("{} / {} slots", facilities, slots), 96);
-        stat(ui, "Space yards", std::to_string(yards), 96);
-        stat(ui, "Idle queues", std::to_string(idle), 96);
-        stat(ui, "Unhappy", std::to_string(unhappy), 96);
-        ImGui::EndGroup();
-        ImGui::SameLine(ui.px(256));
-        ImGui::BeginGroup();
-        heading(ui, "Output per turn");
-        ImGui::TextColored(kTextLabel, "Production");
-        ImGui::SameLine(ui.px(84));
-        resources(ui, production, true);
-        stat(ui, "Research", formatNumber(research), 84);
-        stat(ui, "Intelligence", formatNumber(intel), 84);
-        ImGui::Spacing();
-        if (selection_.empty()) ImGui::TextColored(kTextDim, "Ctrl/Shift+click selects several.");
-        else ImGui::TextColored(kTextDim, "%zu selected (Ctrl/Shift+click)", selection_.size());
-        ImGui::EndGroup();
-        ImGui::EndChild();
+        const game::Resources storage = game::economy::storageCapacity(ui.rules(), s, ui.session.player());
+        float y = 5.0f;
+        auto line = [&](const char* label, const std::string& value, std::optional<Icon> icon = std::nullopt) {
+            ImGui::SetCursorPos(ui.size({3, y}));
+            ImGui::TextColored(kLabelBlue, "%s", label);
+            const float iconW = icon ? 18.0f : 0.0f;
+            ImGui::SetCursorPos(ImVec2(ui.px(274 - iconW) - ImGui::CalcTextSize(value.c_str()).x, ui.px(y)));
+            ImGui::TextUnformatted(value.c_str());
+            if (icon) {
+                ImGui::SetCursorPos(ui.size({274 - 16, y}));
+                image(ui, ui.art.icon16(*icon), {16, 16});
+            }
+            y += 16.0f;
+        };
+        // Three amounts, each in its resource colour with its icon.
+        auto amounts = [&](const std::array<std::string, 3>& v) {
+            static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
+            static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+            float x = 274.0f;
+            for (size_t i = 3; i-- > 0;) {
+                x -= 16.0f;
+                ImGui::SetCursorPos(ui.size({x, y}));
+                image(ui, ui.art.icon16(kIcons[i]), {16, 16});
+                x -= 2.0f + ImGui::CalcTextSize(v[i].c_str()).x / ui.k();
+                ImGui::SetCursorPos(ui.size({x, y}));
+                ImGui::TextColored(imColorV(kColors[i]), "%s", v[i].c_str());
+                x -= 10.0f;
+            }
+            y += 16.0f;
+        };
+        line("Systems with Colonies", std::to_string(systems.size()));
+        line("Number of Colonies", std::to_string(rows_.size()));
+        line("Number of Blockaded Colonies", std::to_string(blockaded));
+        line("Total Population", std::format("{}M", formatNumber(population)), Icon::Population);
+        line("Research Points Produced", formatNumber(research), Icon::Research);
+        line("Intelligence Points Produced", formatNumber(intel), Icon::Intelligence);
+        line("Total Resources Produced", {});
+        amounts({formatNumber(production.v[0]), formatNumber(production.v[1]), formatNumber(production.v[2])});
+        line("Maximum Resource Storage", {});
+        // Storage in thousands, as "50kT" (observed; whole thousands, rounded down: inferred, Q90).
+        amounts({std::format("{}kT", storage.v[0] / 1000), std::format("{}kT", storage.v[1] / 1000), std::format("{}kT", storage.v[2] / 1000)});
     }
 
     static std::string cargoText(const game::GameState& s, game::ObjectId planet) {
@@ -560,8 +581,8 @@ private:
         const std::vector<ColonyHeading> heads = colonyHeadings(tab_);
         std::vector<ListColumn> cols;
         for (const ColonyHeading& h : heads) cols.push_back({h.label, h.width, h.color});
-        // The rows' child has no padding; the header leaves room for its scrollbar.
-        const float width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 2.0f;
+        // The headings span the rows, not the arrow column.
+        const float width = listRowsWidth(ui, ImGui::GetContentRegionAvail().x);
         if (const int c = listHeader(ui, tableId_.c_str(), cols, width); c >= 0 && static_cast<size_t>(c) < heads.size()) {
             // A click on any heading takes the first slot, a column without a
             // key too; the keys are stored with the empire at once (§7 Q24).
@@ -574,8 +595,8 @@ private:
         for (const ColonyRow& r : rows_) keys.push_back(r.keys);
         const std::vector<size_t> order = colonyRowOrder(keys, ui.options().coloniesSort);
 
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1, 1));
-        ImGui::BeginChild("##colonyrows", ImVec2(0, listRowsHeight(ui)), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        beginList(ui, "##colonyrows", ImVec2(0, listRowsHeight(ui)));
         ImGui::PopStyleVar();
         const float rowH = ui.px(kListRowH);
         ImGuiListClipper clipper;
@@ -596,7 +617,7 @@ private:
                 for (size_t k = 0; k < heads.size(); ++k) drawCell(ui, s, row, heads[k].id, a, x[k], x[k + 1] - x[k]);
             }
         if (rows_.empty()) ImGui::TextColored(kTextDim, "No colonies.");
-        ImGui::EndChild();
+        endList(ui);
         ui.tagItem("colonies:list");
     }
 

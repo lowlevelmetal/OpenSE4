@@ -36,7 +36,7 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::CreateDesign: return "Create Design";
         case ScreenId::Planets: return "Planets";
         case ScreenId::Colonies: return "Colonies";
-        case ScreenId::Ships: return "Ships \\ Units";
+        case ScreenId::Ships: return "Ships\\Units";
         case ScreenId::Queues: return "Construction Queues";
         case ScreenId::SetQueue: return "Set Construction Queue";
         case ScreenId::Research: return "Research";

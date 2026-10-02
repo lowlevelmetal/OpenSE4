@@ -606,7 +606,7 @@ the Weapons Report.
 | `tactical-combat:options`, `tactical-combat:orders`, `tactical-combat:auto`, `tactical-combat:end-turn` | its Options, Orders and Auto buttons, and Begin (End Turn once the battle has begun) |
 | `planets:list`, `planets:send-colony-ship` | Planets: the list, Send Colony Ship |
 | `planets:filters`, `planets:no-sys-to-avoid` | the Planets filters (each one is `planets:<filter>`, above), No Sys To Avoid |
-| `colonies:list`, `colonies:queue` | Colonies: the list, Constr. Queue |
+| `colonies:list` | Colonies: the list |
 | `research:divide-evenly`, `research:repeat` | Research: Divide Pts Evenly, Repeat Projects |
 | `log:messages`, `log:categories`, `log:send-reply` | the Log's messages, its category buttons (All to Misc; each one is `log:<category>`, above), Send Reply |
 | `empires:list`, `empires:intelligence` | the Empires window's empires, its Intelligence button |

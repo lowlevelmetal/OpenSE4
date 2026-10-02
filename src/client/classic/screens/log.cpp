@@ -8,6 +8,7 @@
 // with the game) and come back on every opening.
 
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 
@@ -151,10 +152,12 @@ public:
             ui.open(ScreenId::CombatReplay, a);
         }
         if (d.button("Constr. Queues")) ui.open(ScreenId::Queues);
-        // Goto follows the target the entry was made with (spec 06 §7 Q41).
+        // Goto follows the target the entry was made with (spec 06 §7 Q41); with no
+        // entry selected (an empty list) it stays lit and does nothing (observed,
+        // spec 07 session 3; spec 06 §7 Q91).
         const game::LogGoto target = sel && sel->entry ? sel->entry->target : game::LogGoto::None;
         bool close = false;
-        if (d.button("Goto", target != game::LogGoto::None)) {
+        if (d.button("Goto", target != game::LogGoto::None || !sel)) {
             remember(ui);
             if (target == game::LogGoto::Location) {
                 // A location closes the Log and shows the sector in the main window
@@ -220,7 +223,8 @@ private:
         ImGui::SetCursorScreenPos(d.at(kListPos));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-        ImGui::BeginChild("##list", ui.size(kListSize), ImGuiChildFlags_Borders);
+        // The arrow column at the list's right (spec 06 conventions).
+        beginList(ui, "##list", ui.size(kListSize), kRowH);
         if (restoreScroll_) {
             ImGui::SetScrollY(ui.px(kRowH) * float(std::max(0, scrollRows_)));
             restoreScroll_ = false;
@@ -244,9 +248,9 @@ private:
             dl->PopClipRect();
             ImGui::PopID();
         }
-        if (shown.empty()) dimText("Nothing to report this turn.");
+        // An empty log shows an empty list (observed, spec 07 session 3).
         scrollRows_ = int(std::lround(ImGui::GetScrollY() / ui.px(kRowH)));
-        ImGui::EndChild();
+        endList(ui);
         ImGui::PopStyleVar(2);
     }
 

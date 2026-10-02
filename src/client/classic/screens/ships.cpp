@@ -103,7 +103,8 @@ public:
             if (d.tab(kTabs[i].second, tab_ == kTabs[i].first)) tab_ = kTabs[i].first;
             ui.tagTab(kTabIds[i], tab_ == kTabs[i].first);
         }
-        d.spacer();
+        // The Show check boxes in slots 11-13, just above Close (observed, spec 07 session 3).
+        for (int gap = 0; gap < 5; ++gap) d.spacer();
         if (d.check("Show Ships", ships_)) ships_ = !ships_;
         if (d.check("Show Units", units_)) units_ = !units_;
         if (d.check("Show Fleets", fleets_)) fleets_ = !fleets_;
@@ -163,11 +164,6 @@ private:
         ImGui::Indent(ui.px(12));
         resources(ui, maintenance);
         ImGui::Unindent(ui.px(12));
-        ImGui::Dummy(ImVec2(0, ui.px(8)));
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(kDim, "Left-click a row to select it in the main window; right-click for its report. "
-                                 "Click a column heading to sort by it.");
-        ImGui::PopTextWrapPos();
         ImGui::EndChild();
         ImGui::SameLine();
         miniMap(ui, ImVec2(mapW, mapH), hovered_, present);
@@ -310,14 +306,14 @@ private:
         const std::vector<ListRow>& rows = rows_;
         const std::vector<Column> cols = columnsOf(tab_);
         const int ncols = static_cast<int>(cols.size()) + 2;
-        const ImGuiTableFlags flags =
-            ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+        const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
         // The list from y 232 (headings) and 252 (rows); the rows take the window's height less 265 (spec 06 §2.1.1).
         ImGui::SetCursorPos(ui.size({0, 197}));
         // A new ID per tab so each tab keeps its own column setup.
         ImGui::PushID(static_cast<int>(tab_));
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(2), ui.px(2)));
-        if (!ImGui::BeginTable("##ships", ncols, flags, ImVec2(0, listRowsHeight(ui) + ui.px(20)))) {
+        // The arrow column in place of a scroll bar.
+        if (!beginListTable(ui, "##ships", ncols, flags, ImVec2(0, listRowsHeight(ui) + ui.px(20)))) {
             ImGui::PopStyleVar();
             ImGui::PopID();
             return;
@@ -332,7 +328,7 @@ private:
         }
         // A heading click, the picture's too, adds a sort key: the column it
         // stands for, in that column's fixed direction (spec 06 §1.8.3, §7 Q24).
-        std::vector<ListColumn> headings{{"", 0}, {"Name", 0}};
+        std::vector<ListColumn> headings{{kPicHeading, 0}, {"Name", 0}};
         std::vector<ShipColumn> ids{ShipColumn::Picture, ShipColumn::Name};
         for (const Column& c : cols) {
             headings.push_back({c.name, 0, c.color});
@@ -404,7 +400,7 @@ private:
             ImGui::TableSetColumnIndex(1);
             ImGui::TextColored(kDim, "Nothing to show.");
         }
-        ImGui::EndTable();
+        endListTable(ui);
         ImGui::PopStyleVar();
         ImGui::PopID();
     }

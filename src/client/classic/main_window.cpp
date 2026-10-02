@@ -133,7 +133,7 @@ constexpr std::array<CommandButton, 12> kCommands{{
     {4, ScreenId::Designs, "Designs", Action::Designs},
     {2, ScreenId::Planets, "Planets", Action::Planets},
     {1, ScreenId::Colonies, "Colonies", Action::Colonies},
-    {3, ScreenId::Ships, "Ships \\ Units", Action::Ships},
+    {3, ScreenId::Ships, "Ships\\Units", Action::Ships},
     {9, ScreenId::Queues, "Construction Queues", Action::Queues},
     {6, ScreenId::Research, "Research", Action::Research},
     {7, ScreenId::Empires, "Empires", Action::Empires},

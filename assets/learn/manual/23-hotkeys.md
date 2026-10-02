@@ -15,7 +15,7 @@ pointing at an order button shows its name and key at the top of the system pane
 | Designs | `F3` |
 | Planets | `F4` |
 | Colonies | `F5` |
-| `Ships \ Units` | `F6` |
+| `Ships\Units` | `F6` |
 | Construction Queues | `F7` |
 | Research | `F8` |
 | Empires | `F9` |

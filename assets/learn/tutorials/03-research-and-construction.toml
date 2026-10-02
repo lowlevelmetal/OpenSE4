@@ -93,21 +93,22 @@ done = { all = [{ not = { window = "tech-tree" } }, { not = { window = "research
 manual = "research#the-tech-tree-window"
 
 [[step]]
-title = "Your colonies"
+title = "Your construction queues"
 text = """
-Now construction. Every colony with people has a **construction queue**. Open the **Colonies**
-window (`F5`).
+Now construction. Every colony with people has a **construction queue**. Open **Construction
+Queues** with its command button (the wrench) or `F7`.
 """
-highlight = ["command:colonies"]
-done = { window = "colonies" }
+highlight = ["command:queues"]
+done = { window = "queues" }
 manual = "construction#who-can-build"
 
 [[step]]
 title = "Open a queue"
 text = """
-Click your homeworld in the list, then press **Constr. Queue** to open its construction queue.
+The window lists every queue of your empire, what each is building and when it will be done.
+Click your homeworld's row to open its construction queue.
 """
-highlight = ["colonies:list", "colonies:queue"]
+highlight = ["queues:list"]
 done = { window = "set-queue" }
 manual = "construction#the-set-construction-queue-window"
 
@@ -139,15 +140,15 @@ highlight = ["set-queue:queue"]
 manual = "construction#how-a-queue-builds"
 
 [[step]]
-title = "All your queues"
+title = "Your colonies"
 text = """
-Close this window and open **Construction Queues** with its command button (the wrench) or `F7`.
-It lists every queue of your empire, what each is building and when it will be done. Click a
-queue to open it.
+Close the queue and Construction Queues, and open the **Colonies** window with its command button
+or `F5`. It lists your colonies with their population, production and facilities; its tabs choose
+the columns, and a click on a heading sorts by that column.
 """
-highlight = ["command:queues"]
-done = { window = "queues" }
-manual = "construction#the-construction-queues-window"
+highlight = ["command:colonies"]
+done = { window = "colonies" }
+manual = "planets-and-colonies#the-colonies-window"
 
 [[step]]
 title = "Your budget"

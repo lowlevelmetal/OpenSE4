@@ -236,14 +236,17 @@ star. A colony ship sent there finds the colony when it arrives.
 ## The Planets window
 
 The [Planets](window:planets) window (`F4`) lists the planets of the systems you have explored.
-Each row shows a picture, the planet's **Name** (yours in yellow) with its type and size below
-it, its **Atmosphere**, its value for minerals, organics and radioactives (**Min.**, **Org.**,
-**Rad.**; in a game with finite resources, the amount left), and the colony ship on its way to it
-(**Ship Enroute**). Click a column heading to sort; earlier choices break ties. The statistics at
-the top count your known systems, the planets you can colonize, those owned by others, the
-uncolonized ones, and your colony ships; a small map marks where the listed planets are. The
-statistics count every planet of your explored systems with its true owner, so they can include
-planets the tabs leave out (hidden by a cloak, a storm or a nebula) or list as uncolonized.
+Each row shows a picture (**Pic**), the planet's **Name** with its type and size below it, its
+**Atmosphere**, its value for minerals, organics and radioactives (the three **Value** columns,
+each marked with its resource's icon; in a game with finite resources, the amount left), and the
+colony ship on its way to it (**Ship Enroute**). Click a column heading to sort; earlier choices
+break ties. The arrows at the right of the list scroll it, as in every list. The statistics at
+the top count your known systems, the planets, those you can colonize and, of those, the ones
+owned by enemies, allies and non-aligned empires, the uncolonized ones and the breathable ones,
+then your colonizing ships and how many are available; a small map marks where the listed
+planets are. The statistics count every planet of your explored systems with its true owner, so
+they can include planets the tabs leave out (hidden by a cloak, a storm or a nebula) or list as
+uncolonized.
 
 The tabs on the right choose what to list:
 
@@ -258,7 +261,8 @@ The tabs on the right choose what to list:
 | `Asteroids` | Asteroid fields. |
 | `Special` | Planets with ancient ruins. |
 
-`No Sys To Avoid` hides planets in your systems to avoid. The window remembers the tab.
+The `No Sys To Avoid` check box hides planets in your systems to avoid. The window remembers the
+tab and the check box.
 
 **Left-click** a planet to close the window and show the planet in the main window;
 **right-click** it for its report.
@@ -273,9 +277,10 @@ only while you have such a ship available.
 
 ## The Colonies window
 
-The [Colonies](window:colonies) window (`F5`) lists all your colonies, with statistics for your
-whole empire at the top: population, facilities, space yards, idle queues, unhappy colonies and
-your output per turn.
+The [Colonies](window:colonies) window (`F5`) lists all your colonies. The summary at the top
+counts the systems with your colonies, your colonies and the blockaded ones, your population, the
+research and intelligence points your colonies produce, the resources they produce each turn and
+how much of each resource you can store; a small map marks where the colonies are.
 
 Every tab starts with the planet's picture and its name, with the planet's type and size under
 it (or **Blockaded** in red).
@@ -298,11 +303,11 @@ the two Construction columns Z to A. A sort stays when you change tab, and up to
 remembered, the latest deciding first. Facilities, cargo items, status and orders do not sort.
 
 Click a colony to select it, and `Ctrl+click` or `Shift+click` to select several. Double-click a
-colony (or press `Goto`) to show it in the main window, and right-click it for its report.
+colony to show it in the main window, and right-click it for its report. A colony's construction
+queue opens from [Construction Queues](construction#the-construction-queues-window) (`F7`), or with
+the **Build Queue** order when the colony is selected in the main window.
 
 | Button | What it does |
 |---|---|
 | `Scrap Facil Types` | Scrap every facility of one type, on the selected colonies or on all of them. |
 | `Set Colony Type` | Change the colony type of the selected colonies. |
-| `Constr. Queue` | Open the selected colony's construction queue. |
-| `Goto` | Show the selected colony in the main window. |
