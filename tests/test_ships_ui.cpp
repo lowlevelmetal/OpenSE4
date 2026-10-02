@@ -3,13 +3,19 @@
 
 #include "engine_fixture.hpp"
 
+#include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/ships_logic.hpp"
 #include "game/commands.hpp"
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/query.hpp"
 #include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
+
+#include <array>
+#include <utility>
+#include <vector>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -426,4 +432,102 @@ TEST_CASE("ships ui: the Convert Resources window adds and takes steps, merges l
     CHECK(orders[2].amount == 1000);
     CHECK(orders[2].from == static_cast<uint8_t>(Resource::Minerals));
     CHECK(orders[2].to == static_cast<uint8_t>(Resource::Minerals));
+}
+
+TEST_CASE("ship windows: the Ships\\Units columns, keys and directions (spec 06 §1.8.3, Q56)") {
+    using C = shipui::ShipColumn;
+    using shipui::ShipsTab;
+    // Every column but the picture and Name belongs to exactly one tab.
+    std::vector<int> seen(static_cast<size_t>(C::Count), 0);
+    for (int t = 0; t < static_cast<int>(ShipsTab::Count); ++t)
+        for (C c : shipui::shipTabColumns(static_cast<ShipsTab>(t))) ++seen[static_cast<size_t>(c)];
+    CHECK(seen[static_cast<size_t>(C::Picture)] == 0);
+    CHECK(seen[static_cast<size_t>(C::Name)] == 0);
+    for (size_t c = 2; c < seen.size(); ++c) CHECK(seen[c] == 1);
+    CHECK(shipui::shipTabColumns(ShipsTab::General) == std::vector<C>{C::Size, C::Type, C::Movement, C::Damage, C::Supplies});
+    CHECK(shipui::shipTabColumns(ShipsTab::Fleet) == std::vector<C>{C::Experience, C::Fleet});
+    // Name keeps 1, the number earlier key lists used.
+    CHECK(static_cast<int>(C::Name) == 1);
+    CHECK(shipui::shipColumnOf(1) == C::Name);
+    CHECK_FALSE(shipui::shipColumnOf(static_cast<int>(C::Count)).has_value());
+
+    // Directions.
+    shipui::ShipSortValues a, b;
+    a.hullNumber = 3;
+    b.hullNumber = 101;  // a unit group of one: after every ship and base
+    CHECK(shipui::compareShips(C::Size, a, b) < 0);
+    CHECK(shipui::compareShips(C::Picture, a, b) < 0);
+    a.supplies = shipui::kUnlimitedSupplyKey;
+    b.supplies = 5000;
+    CHECK(shipui::compareShips(C::Supplies, a, b) > 0);  // lowest first; unlimited counts 60000
+    a.experience = 10;
+    b.experience = 25;
+    CHECK(shipui::compareShips(C::Experience, a, b) < 0);  // lowest first
+    a.fleetNumber = 0;
+    b.fleetNumber = 2;
+    CHECK(shipui::compareShips(C::Fleet, a, b) > 0);  // highest first, no fleet 0
+    a.movement = 4;
+    b.movement = 2;
+    CHECK(shipui::compareShips(C::Movement, a, b) < 0);
+    a.destroyed = 0;
+    b.destroyed = 3;
+    CHECK(shipui::compareShips(C::Damage, a, b) > 0);
+    a.type = "attack";
+    b.type = "Carrier";
+    CHECK(shipui::compareShips(C::Type, a, b) > 0);  // by character code: capitals first
+    a.name = "alpha";
+    b.name = "Beta";
+    CHECK(shipui::compareShips(C::Name, a, b) < 0);  // Name ignores case
+    a.maintenance = Resources{10, 0, 0};
+    b.maintenance = Resources{20, 0, 0};
+    CHECK(shipui::compareShips(C::MineralsMaintenance, a, b) > 0);
+
+    // A key goes on sorting by its column whatever tab is shown; an unknown key sorts nothing.
+    std::vector<shipui::ShipSortValues> rows(3);
+    rows[0].name = "Cobra";
+    rows[0].fleetNumber = 0;
+    rows[1].name = "Asp";
+    rows[1].fleetNumber = 2;
+    rows[2].name = "Boa";
+    rows[2].fleetNumber = 2;
+    CHECK(shipui::shipRowOrder(rows, {}) == std::vector<size_t>{1, 2, 0});
+    std::array<uint8_t, 5> slots{};
+    slots = client::classic::clickSort(slots, static_cast<int>(C::Fleet), static_cast<int>(C::Name));
+    CHECK(shipui::shipRowOrder(rows, slots) == std::vector<size_t>{1, 2, 0});  // fleet 2 first, then by name
+    rows[2].fleetNumber = 3;
+    CHECK(shipui::shipRowOrder(rows, slots) == std::vector<size_t>{2, 1, 0});
+    CHECK(shipui::shipRowOrder(rows, std::array<uint8_t, 5>{250, 2, 0, 0, 0}) == std::vector<size_t>{1, 2, 0});
+}
+
+TEST_CASE("ship windows: a vehicle's sort values") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    const Location where = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId plain = frigate(s, r, me, "Plain", {"Test Laser"});
+    Vehicle& v = addTestVehicle(s, r, plain, where);
+    const VehicleId id = v.id;
+    shipui::ShipSortValues k = shipui::shipSortValues(r, s, v);
+    CHECK(k.hullNumber == static_cast<int>(s.design(plain).hull));
+    CHECK(k.designName == "Plain");
+    CHECK(k.fleetNumber == 0);
+    CHECK(k.destroyed == 0);
+    CHECK(shipui::destroyedComponents(r, s, v) == std::pair<int, int>{0, static_cast<int>(s.design(plain).entries.size())});
+    // A destroyed laser counts in Dmg.
+    Vehicle& hit = *s.vehicle(id);
+    hit.damage.assign(s.design(plain).entries.size(), 0);
+    hit.damage.back() = r.component(s.design(plain).entries.back().component).structure;
+    CHECK(shipui::shipSortValues(r, s, hit).destroyed == 1);
+    // In a fleet: the fleet's number.
+    Fleet f;
+    f.id = FleetId{static_cast<uint32_t>(s.fleets.size())};
+    f.owner = me;
+    f.members = {id};
+    s.fleets.push_back(f);
+    s.vehicle(id)->fleet = f.id;
+    CHECK(shipui::shipSortValues(r, s, *s.vehicle(id)).fleetNumber == static_cast<int>(f.id.index()) + 1);
+    // The Design Report's maintenance: one vehicle's, before any system's reduction.
+    const Resources perDesign = economy::designMaintenance(r, s, s.design(plain));
+    CHECK_FALSE(perDesign.isZero());
+    CHECK(perDesign == economy::vehicleMaintenance(r, s, *s.vehicle(id)));
 }

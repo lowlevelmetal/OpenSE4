@@ -550,6 +550,7 @@ public:
     bool draw(UiContext& ui) override {
         const bool keep = drawWindow(ui);
         itemReport_.draw(ui);
+        designReport_.draw(ui);
         return keep;
     }
 
@@ -868,6 +869,7 @@ private:
                 const RowEvents ev = tableRow(ui, static_cast<int>(i), false);
                 if (ev.hovered) hoverAvail_ = i;
                 if (ev.clicked || ev.doubleClicked) add(ui, b);
+                if (ev.rightClicked) openItemReport(ui, b.item);
                 cellImage(ui, queueItemSprite(ui, b.item), 22);
                 ImGui::TableSetColumnIndex(1);
                 cellText(ui, b.name, ok ? ImVec4(1, 1, 1, 1) : kTextDim);
@@ -945,10 +947,11 @@ private:
 
     // The report of a queued item: a facility's, or the hull's for a ship or unit
     // (our engine has no report of a whole design; inferred).
+    // A ship, base or unit opens its design's Design Report; a facility or
+    // an upgrade that facility's report (spec 06 §1.8.3, §7 Q56).
     void openItemReport(UiContext& ui, const game::QueueItem& item) {
         if (item.kind == game::QueueItem::Kind::Vehicle) {
-            if (item.design.valid() && item.design.index() < ui.state().designs.size())
-                itemReport_.open({ItemRef::Kind::Hull, ui.state().design(item.design).hull});
+            if (item.design.valid() && item.design.index() < ui.state().designs.size()) designReport_.open(item.design);
         } else if (item.facility < ui.rules().data().facilities.size()) {
             itemReport_.open({ItemRef::Kind::Facility, item.facility});
         }
@@ -1252,6 +1255,7 @@ private:
     size_t reorderCount_ = 0;
     std::vector<size_t> pendingOrder_;
     ItemReportPopup itemReport_;
+    DesignReportPopup designReport_;
     bool waypointPending_ = false;
     bool templatesPending_ = false;
     bool templatesLoaded_ = false;

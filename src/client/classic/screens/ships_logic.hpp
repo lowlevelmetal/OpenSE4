@@ -9,8 +9,11 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace opense4::client::classic::shipui {
@@ -110,6 +113,61 @@ std::vector<game::Order> conversionOrders(const std::vector<ConversionLine>& lin
 // Whether Convert Resources is for this colony: an own colony whose planet or
 // facilities give `Resource Conversion` of at least 1.
 bool canConvertAt(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::ObjectId planet);
+
+// ---- The Ships\Units list's columns (spec 06 §1.8.3, confirmed: binary) ----------------------
+
+enum class ShipsTab : uint8_t { General, Orders, Cargo, Fleet, Maintenance, Count };
+
+// Every column keeps one identity in every tab, and a sort key is that
+// identity (InterfaceOptions::shipsSort holds it + 1), so a key goes on
+// sorting by its quantity while another tab is shown. Name keeps the number 1
+// that the window's key lists always gave it.
+enum class ShipColumn : uint8_t {
+    Picture, Name,
+    Size, Type, Movement, Damage, Supplies,                                  // General
+    Class, Orders,                                                           // Orders
+    CargoSpace, CargoMax, CargoList,                                         // Cargo
+    Experience, Fleet,                                                       // Fleet
+    MineralsMaintenance, OrganicsMaintenance, RadioactivesMaintenance,       // Maintenance
+    Count
+};
+// The columns a tab shows after the picture and Name, in order.
+std::vector<ShipColumn> shipTabColumns(ShipsTab tab);
+// Unlimited supply sorts as this much (between ships, lowest first).
+inline constexpr int64_t kUnlimitedSupplyKey = 60000;
+
+// What a ship or unit group is sorted by, whatever tab is shown.
+struct ShipSortValues {
+    std::string name;
+    int hullNumber = 0;          // the hull's place in the data set; a unit group 100 + its units (picture and Size)
+    std::string type;            // the design type
+    int movement = 0;            // movement left
+    int destroyed = 0;           // destroyed components
+    int64_t supplies = 0;        // kUnlimitedSupplyKey with unlimited supply
+    std::string designName;      // Class
+    std::string orders;          // the order list as one line (the caller's words)
+    int64_t cargoUsed = 0, cargoCapacity = 0;
+    std::string cargo;           // the cargo in words (the caller's)
+    int64_t experience = 0;      // in tenths
+    int fleetNumber = 0;         // 0 outside a fleet
+    game::Resources maintenance;
+};
+// Everything but `orders` and `cargo`, which the window writes in its words.
+ShipSortValues shipSortValues(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+// Negative, zero or positive in the column's own direction: Name A to Z
+// ignoring case; the picture and Size by hull number, lowest first; Type,
+// Class, Orders and Cargo List A to Z by character code; Move, Dmg, Space, Max
+// and the maintenance columns highest first; Supplies and Experience lowest
+// first; Fleet by fleet number, highest first. Zero for an unknown column.
+int compareShips(ShipColumn c, const ShipSortValues& a, const ShipSortValues& b);
+// The column a stored key stands for (slot value − 1); nullopt when unknown.
+std::optional<ShipColumn> shipColumnOf(int key);
+// The vehicle rows' order under the stored keys (newest first; Name alone
+// while no key is stored), as indices into `rows`. Fleet rows are not sorted:
+// the window puts them after every vehicle, in the empire's fleet order.
+std::vector<size_t> shipRowOrder(const std::vector<ShipSortValues>& rows, const std::array<uint8_t, 5>& slots);
+// "N/M": destroyed and total components of a vehicle (the Dmg column).
+std::pair<int, int> destroyedComponents(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
 
 // ---- Units --------------------------------------------------------------------------------
 

@@ -191,7 +191,7 @@ public:
             }
         }
         computerPopup(ui);
-        designPopup(ui);
+        designReport_.draw(ui);
         report_.draw(ui);
         // Cancel discards the setup (Esc too).
         if (d.close(true, "Cancel")) {
@@ -303,8 +303,7 @@ private:
             const int click = row(std::format("d{}", id.value), designSprite(ui, id), name);
             if (click == 1) add(ui, SimulatorItem{SimulatorItem::Kind::Design, id, {}, current_});
             if (click == 2) {
-                designReport_ = id;
-                ImGui::OpenPopup("Design Report##sim");
+                designReport_.open(id);
             }
         }
         for (game::ObjectId obj : game::combat::simulatorPlanets(s, me)) {
@@ -428,33 +427,12 @@ private:
         simulatorTakeBack(ui.rules(), box.made, box.session->state(), setup_);
     }
 
-    // A design's report (right-click on an item): its hull and parts.
-    void designPopup(UiContext& ui) {
-        ImGui::SetNextWindowSize(ui.size({360, 0}));
-        if (!ImGui::BeginPopupModal("Design Report##sim", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
-        const game::GameState& s = ui.state();
-        if (designReport_.valid() && designReport_.index() < s.designs.size()) {
-            const game::Design& d = s.design(designReport_);
-            image(ui, designSprite(ui, designReport_), {36, 36});
-            ImGui::SameLine();
-            ImGui::BeginGroup();
-            ImGui::TextUnformatted(d.name.c_str());
-            dimText(ui.rules().hull(d.hull).name.c_str());
-            ImGui::EndGroup();
-            std::map<std::string, int> parts;
-            for (const game::DesignEntry& e : d.entries) ++parts[ui.rules().component(e.component).name];
-            for (const auto& [name, n] : parts) ImGui::TextUnformatted(n > 1 ? std::format("{} x{}", name, n).c_str() : name.c_str());
-        }
-        if (ImGui::Button("Close", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-    }
-
     bool demo_ = false;
     SimulatorSetup setup_;
     int current_ = 0;
     bool tactical_ = true;
     std::string message_;
-    game::DesignId designReport_;
+    DesignReportPopup designReport_;
     ReportPopup report_;
 };
 

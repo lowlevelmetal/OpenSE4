@@ -340,12 +340,8 @@ These rows are where the engine differs:
 ## Client windows (spec 06)
 
 The client's own differences are written in spec 06 beside each answer ("Our client
-differs"). Those settled on 2026-10-01 in the last round, still to implement:
-
-- **Colonies and Ships\Units** (§1.8.3, §7 Q56): a sort key is a column with one identity
-  in every tab; the original's Colonies columns, directions and keyless columns; clickable
-  pictures; fleet rows last and unsorted; a queued design's right-click opens its Design
-  Report (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`).
+differs"). Every one settled on 2026-10-01 is implemented; the client's own choices are
+noted beside each answer, and the open ones are spec 06 §7 Q83 and Q84.
 
 ## Computer player (spec 05 §7)
 

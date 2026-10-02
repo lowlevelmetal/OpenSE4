@@ -254,7 +254,9 @@ struct InterfaceOptions {
     uint8_t shipsShown = 0x07;
     // The sort keys of the four list windows (spec 06 §7 Q24): five slots of
     // column numbers each, newest click first; a slot holds column + 1, 0 is
-    // empty. All empty: the window's Name column alone (the default).
+    // empty. All empty: the window's Name column alone (the default). The
+    // Colonies and Ships\Units keys are column identities, the same in every
+    // tab (spec 06 §1.8.3: client ColonyColumn and shipui::ShipColumn, Name 1).
     std::array<uint8_t, 5> planetsSort{};
     std::array<uint8_t, 5> coloniesSort{};
     std::array<uint8_t, 5> shipsSort{};

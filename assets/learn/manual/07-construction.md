@@ -100,7 +100,7 @@ for a selected colony or ship.
 - The top shows the queue's owner, its rate, your stockpile, its facility slots (and how many are free after the queue) and population, its cargo space, its mode and where new ships go.
 - The list on the left shows what this queue can build, with the build time in turns. The tabs are **Ships**, **Facilities**, **Units** and **Upgrades** (ships and bases have only the first and third). **Only Latest** hides old facility levels and obsolete designs. On the Units tab, `1`, `5`, `10` and `20` choose how many to build at once. Items that cannot be built here are greyed; click one to see why. **Click** an item to add it to the end of the queue.
 - The queue on the right shows each item's progress and when it will be done, in turns. `Top`, `Up`, `Down`, `Bottom` and `Remove` change it, and `-` and `+` change the count of a unit item; `Delete` removes the selected item too. Removing the first item asks first (an Empire Option), because its progress is lost.
-- Hover over an item to see its cost, build time and details.
+- Hover over an item to see its cost, build time and details. **Right-click** a ship, base or unit, in either list, for its design's report (size, type, cost, maintenance, movement, shields, cargo, supplies and components); right-click a facility for the facility's report.
 
 The buttons on the right:
 

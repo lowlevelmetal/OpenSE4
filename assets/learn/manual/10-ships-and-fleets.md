@@ -132,11 +132,14 @@ The [Ships and Units](window:ships) window (`F6`, titled `Ships \ Units`) lists 
 groups in space and fleets. The totals at the top count your ships, units in space and fleets,
 and your maintenance per turn. Its tabs show different columns:
 
-- **General**: size, type, movement, damage and supplies;
-- **Orders**: the class and each ship's first order, with the number of further orders and whether they repeat;
-- **Cargo**: space used and what is carried;
+- **General**: size, type, movement, destroyed components and supplies;
+- **Orders**: the class and the ship's orders, one a line (with **Repeat** on, the current one is in brackets);
+- **Cargo**: space used, the capacity and what is carried;
 - **Fleet**: experience and fleet;
 - **Maintenance**: the cost of each ship per turn.
 
-`Show Ships`, `Show Units` and `Show Fleets` choose what to list. Click a column heading to sort.
+`Show Ships`, `Show Units` and `Show Fleets` choose what to list; fleets always come last. Click a
+column heading, the picture's too, to sort by it. The picture and Size sort by hull size, with
+unit groups after every ship; supplies and experience sort lowest first, the fleet column by
+fleet, and other numbers highest first. A sort stays when you change tab.
 **Left-click** a row to close the window and select the ship in the main window (for a fleet, its leader); **right-click** it for its report.

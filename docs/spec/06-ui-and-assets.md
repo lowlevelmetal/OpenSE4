@@ -2689,9 +2689,9 @@ executable:
     Queue asks and also turns off On Hold and Repeat Build; Reorder Queue opens the
     reorder list and asks "Move First Queue Item" when another entry would come first, No
     dropping the whole reorder; nothing asks in the Multi-Add queue. When the first item
-    changes, its progress is discarded by queueing it again at its new place. It differs
-    only in the report a right-click opens on a queued ship or unit: ours opens the hull's,
-    the original the design's Design Report (§1.8.3, Q56).
+    changes, its progress is discarded by queueing it again at its new place. A
+    right-click on a queued ship or unit opens the design's Design Report (§1.8.3, Q56;
+    since 2026-10-01, before which ours opened the hull's).
 29. **Similar system-wide abilities.** We note it after a facility is queued whose
     abilities include one with "System" in its identifier that a facility of one of our
     colonies in the same system already has. Which abilities count, does the original
@@ -3341,28 +3341,23 @@ Raised while implementing the answers above (inferred, open):
     column by fleet number); fleet rows always come last, unsorted. A right-click on a
     queued ship, base or unit opens the design's Design Report.
 
-    Our client differs (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`,
-    `state.hpp`):
-    1. `InterfaceOptions::coloniesSort` and `shipsSort` hold the column's position in the
-       tab shown (`table()` in `planets.cpp`, `sortRows()` and `table()` in `ships.cpp`).
-       They must hold the column's identity as in §1.8.3; saved values need a mapping.
-    2. The picture headings are not clickable (`{"", 0, 0, false}` in both files). They
-       must sort: planet size smallest first, hull number lowest first.
-    3. Our Colonies tabs have other columns (General: Type, Colony Type, Population, Mood,
-       Facil.; Value adds Type, Atmosphere, Conditions; Production adds Delivery;
-       Facilities: Used, Facilities; Cargo: Space, Contents; Construction: Building,
-       Progress, Time, Items, Mode; Status adds Mood and Anger). `columns()` in
-       `planets.cpp` must give the original's sets.
-    4. Directions: in Colonies, Mood sorts by the word (ours by anger), Under Construction
-       and Time Remaining Z to A by text, and Facilities, Cargo Items, Status and Orders
-       have no key (ours sort by counts). In Ships\Units, Size sorts by hull number (ours
-       by the hull's name), Supplies and Experience lowest first, Fleet by fleet number
-       highest first (ours by the fleet's name).
-    5. `buildRows()` and `sortRows()` (`ships.cpp`) sort fleet rows with the vehicles.
-       Fleets must follow every vehicle, in fleet order, unsorted.
-    6. `openItemReport()` (`queues.cpp`) opens the hull's report (`ItemRef::Kind::Hull`).
-       It must open the design's report, like the simulator's "Design Report" popup
-       (`screens/simulator.cpp`).
+    Since 2026-10-01 our client follows §1.8.3. A key is the column's identity
+    (`ColonyColumn` in `colony_logic.hpp`, `shipui::ShipColumn` in `ships_logic.hpp`),
+    stored as identity + 1; Name keeps the number 1 it always had, and a stored value
+    that names no column sorts nothing. Every heading can be clicked, the picture's
+    included, and each column sorts in the direction §1.8.3 gives it
+    (`compareColonies()`, `compareShips()`); Facilities, Cargo Items, Status and Orders
+    take a slot but sort nothing. The Colonies tabs have the original's columns and
+    widths, the grey "type - size" line (or a red "Blockaded") under the name, the
+    maximum population under the population, and Production's values in brackets when
+    they are not delivered; the Orders tab shows the colony's own order list. Fleet rows
+    follow every ship and unit row in the empire's fleet order, unsorted. A right-click
+    on a queued ship, base or unit opens the design's Design Report
+    (`DesignReportPopup`, `colony_widgets.hpp`), which the buildable list and the Combat
+    Simulator open too. Our own choices (inferred): Supplies reads "now/capacity"; a
+    fleet's number is its place in the game's fleet list, counted from 1; a mixed unit
+    group's Type is "N designs"; the second lines are grey in the small font; "REPEAT
+    ORDERS" stands for Repeat on an empty list (question 84).
 
 Questions 60–64 are choices of ours made while implementing the fonts, pointers, the
 800x600 layout and the movement log replay (inferred). Q61, Q62 and Q64 are settled from
@@ -3831,3 +3826,9 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
     page drawn under the tabs (its last 31 px hidden), or is a page with tabs shorter?
     Our client cuts a page with tabs to 328 px, ending 2 px above the strip, and keeps
     361 px for a seeker's page, which has no tabs (inferred).
+84. **"REPEAT ORDERS" in the order lists.** §1.8.3 names "REPEAT ORDERS" among the
+    texts the Ships\Units Orders column sorts by, beside "None" and the joined orders,
+    without saying when it is written. Ours writes it for Repeat on an empty list, and the
+    orders (the current one in brackets) whenever there are any, in the Ships\Units and
+    Colonies Orders columns alike (inferred). When does the original write it, and does
+    the Colonies Orders column write its list the same way?

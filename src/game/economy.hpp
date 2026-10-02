@@ -231,6 +231,9 @@ Resources maintenanceCost(const Rules& r, const GameState& s, EmpireId e);
 int maintenancePercent(const Rules& r, const Empire& e);
 // One ship's or base's maintenance per turn; 0 when mothballed and for units.
 Resources vehicleMaintenance(const Rules& r, const GameState& s, const Vehicle& v);
+// One vehicle of a design: its owner's maintenance per turn before any
+// system's Reduced Maintenance (the Design Report's figure); 0 for units.
+Resources designMaintenance(const Rules& r, const GameState& s, const Design& d);
 
 // Convert Resources (spec 02 §5.6, confirmed: binary unless marked). The
 // colony may be given the order when the largest `Resource Conversion` among

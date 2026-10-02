@@ -1,5 +1,7 @@
 #include "client/classic/screens/colony_widgets.hpp"
 
+#include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/query.hpp"
 
 #include <algorithm>
@@ -315,6 +317,61 @@ void ReportPopup::draw(UiContext& ui) {
     else ImGui::TextColored(kTextDim, "No longer known");
     ImGui::EndChild();
     tab_ = reportTabs(ui, tab_, planet_.has_value());
+    if (ImGui::Button("Close", ImVec2(-FLT_MIN, ui.px(26))) || escapePressed()) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+void DesignReportPopup::open(game::DesignId d) {
+    design_ = d;
+    pending_ = true;
+}
+
+void DesignReportPopup::draw(UiContext& ui) {
+    const char* id = "Design Report###designreport";
+    if (pending_) {
+        ImGui::OpenPopup(id);
+        pending_ = false;
+    }
+    if (!beginModal(ui, id, {360, 500})) return;
+    const game::GameState& s = ui.state();
+    const game::Rules& r = ui.rules();
+    const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
+    ImGui::BeginChild("##body", ImVec2(0, -footer));
+    if (design_.valid() && design_.index() < s.designs.size() && s.design(design_).hull < r.data().vehicleSizes.size()) {
+        const game::Design& d = s.design(design_);
+        const game::DesignStats st = game::computeDesignStats(r, nullptr, d);
+        image(ui, designSprite(ui, design_), {36, 36});
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted(d.name.c_str());
+        if (d.obsolete) {
+            ImGui::SameLine();
+            ImGui::TextColored(kTextWarn, "(Obsolete)");
+        }
+        ImGui::TextColored(kTextDim, "%s", r.hull(d.hull).name.c_str());
+        ImGui::EndGroup();
+        labelValue(ui, "Design Type", d.designType.empty() ? std::string("-") : d.designType, 130);
+        labelValue(ui, "Date Created", formatDate(d.createdTurn), 130);
+        ImGui::TextColored(kTextLabel, "Cost");
+        ImGui::SameLine(ui.px(130));
+        resources(ui, st.cost, true);
+        ImGui::TextColored(kTextLabel, "Maintenance Cost");
+        ImGui::SameLine(ui.px(130));
+        resources(ui, game::economy::designMaintenance(r, s, d), true);
+        labelValue(ui, "Movement", std::to_string(st.movement), 130);
+        labelValue(ui, "Shields", std::to_string(st.shields + st.phasedShields), 130);
+        labelValue(ui, "Cargo Space", formatNumber(st.cargoCapacity), 130);
+        labelValue(ui, "Supply Capacity", formatNumber(st.supplyCapacity), 130);
+        ImGui::Spacing();
+        ImGui::TextColored(kTextLabel, "Components");
+        std::map<std::string, int> parts;
+        for (const game::DesignEntry& e : d.entries)
+            if (e.component < r.data().components.size()) ++parts[r.component(e.component).name];
+        for (const auto& [name, n] : parts) ImGui::TextUnformatted(n > 1 ? std::format("{} x{}", name, n).c_str() : name.c_str());
+    } else {
+        ImGui::TextColored(kTextDim, "No longer known");
+    }
+    ImGui::EndChild();
     if (ImGui::Button("Close", ImVec2(-FLT_MIN, ui.px(26))) || escapePressed()) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
 }
