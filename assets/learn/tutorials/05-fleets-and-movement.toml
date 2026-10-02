@@ -8,20 +8,23 @@ seed = 404
 computer_players = 2
 quadrant_size = "small"
 events = "none"
+# OpenSE4 lesson extension (docs/LEARNING.md): ships to learn with. A normal game starts with none.
+starting_ships = ["Attack Ship", "Attack Ship", "Colony"]
 
 [[step]]
 title = "Ships on the move"
 text = """
 Ships do their work far from home. This lesson shows you how to group them into a **fleet**, how
-to move them, and how to keep them supplied. You will use your two scouts. Press **Next**.
+to move them, and how to keep them supplied. You will use the two attack ships this lesson's
+game gives you. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "ships-and-fleets"
 
 [[step]]
-title = "Select a scout"
+title = "Select an attack ship"
 text = """
-Select one of your scouts with the ship arrows at the top right, or `Space`.
+Select one of your attack ships with the ship arrows at the top right, or `Space`.
 """
 highlight = ["cycle:ship"]
 done = { selected = "ship" }
@@ -42,17 +45,17 @@ manual = "ships-and-fleets#fleets"
 title = "Create a fleet"
 text = """
 Press **Create Fleet** and give the fleet a name (or keep the one offered). The fleet starts with
-your selected scout.
+your selected attack ship.
 """
 highlight = ["fleet-transfer:create-fleet"]
 done = { command = "CreateFleet" }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
-title = "Add the second scout"
+title = "Add the second attack ship"
 text = """
-With the new fleet selected, click your other **scout** in the list of ships outside fleets to add
-it. (Leave the colony ship out: a fleet moves at the speed of its slowest member.)
+With the new fleet selected, click your other **attack ship** in the list of ships outside fleets
+to add it. (Leave the colony ship out: a fleet moves at the speed of its slowest member.)
 """
 highlight = ["fleet-transfer:ships", "fleet-transfer:fleets"]
 done = { command = "JoinFleet" }
@@ -61,9 +64,9 @@ manual = "ships-and-fleets#fleets"
 [[step]]
 title = "Your fleet"
 text = """
-Close Fleet Transfer (**Close** or `Esc`). Then select a scout again with the ship arrows: the
-report panel now shows the **fleet** above the ship, with its speed, supplies, formation,
-strategy and members. Orders you give now go to the whole fleet.
+Close Fleet Transfer (**Close** or `Esc`). Then select an attack ship again with the ship
+arrows: the report panel now shows the **fleet** above the ship, with its speed, supplies,
+formation, strategy and members. Orders you give now go to the whole fleet.
 """
 highlight = ["fleet-transfer:close", "cycle:ship"]
 allow = ["panel:report"]
@@ -109,7 +112,7 @@ manual = "ships-and-fleets#waypoints"
 [[step]]
 title = "Go to the waypoint"
 text = """
-Select your fleet again: a scout, with the ship arrows. Then press `Ctrl+1`, or the **Move To
+Select your fleet again: an attack ship, with the ship arrows. Then press `Ctrl+1`, or the **Move To
 Waypoint** order button and pick waypoint 1 from the list.
 """
 highlight = ["order:move-to-waypoint", "cycle:ship"]

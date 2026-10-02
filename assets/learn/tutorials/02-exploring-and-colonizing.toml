@@ -1,6 +1,6 @@
 # OpenSE4's own lesson (docs/LEARNING.md). Written from docs/spec and the client.
 title = "Exploring and colonizing"
-summary = "Send your scouts into the unknown, choose a planet to settle and found your first new colony."
+summary = "Send your ships into the unknown, choose a planet to settle and found your first new colony."
 minutes = 15
 
 [setup]
@@ -8,12 +8,15 @@ seed = 404
 computer_players = 2
 quadrant_size = "small"
 events = "none"
+# OpenSE4 lesson extension (docs/LEARNING.md): ships to learn with. A normal game starts with none.
+starting_ships = ["Attack Ship", "Attack Ship", "Colony"]
 
 [[step]]
 title = "Explore and expand"
 text = """
-Your empire starts with one planet, two **scouts** and a **colony ship**. In this lesson you send
-the scouts to explore the quadrant and use the colony ship to found a second colony.
+This lesson's game gives your empire two **attack ships** and a **colony ship** besides its
+homeworld (a normal game starts without ships: you build them first). In this lesson you send
+the attack ships to explore the quadrant and use the colony ship to found a second colony.
 
 This game is **turn-based**: the orders you give are carried out at once, as far as your ships'
 movement allows. Press **Next**.
@@ -22,11 +25,10 @@ highlight = ["lesson:panel"]
 manual = "galaxy#exploring"
 
 [[step]]
-title = "Select a scout"
+title = "Select an attack ship"
 text = """
 Click the right arrow of the top row of selectors (or press `Space`) until the report panel shows
-one of your **scouts**. Check the class name in the report: the colony ship must stay at home for
-now.
+one of your **attack ships**. Check the report: the colony ship must stay at home for now.
 """
 highlight = ["cycle:ship", "panel:report"]
 done = { selected = "ship" }
@@ -35,11 +37,12 @@ manual = "main-window#selecting-things"
 [[step]]
 title = "Explore"
 text = """
-Give the scout the **Explore** order: the order button named `Explore` (point at a button to see
+Give the ship the **Explore** order: the order button named `Explore` (point at a button to see
 its name and key at the top of the system view), or simply press `E`.
 
 Explore picks the nearest warp point that leads to a system you have not visited, flies there
-and jumps through. The scout leaves at once.
+and jumps through. The ship leaves at once. Any ship that can move can explore; there is no
+special scout.
 """
 highlight = ["order:explore"]
 allow = ["cycle:ship", "panel:report"]
@@ -47,10 +50,10 @@ done = { order = "explore" }
 manual = "ships-and-fleets#orders"
 
 [[step]]
-title = "The second scout"
+title = "The second attack ship"
 text = """
-Now select your other scout with the ship arrows, and give it the Explore order too. Two scouts
-with Explore orders never pick the same warp point.
+Now select your other attack ship with the ship arrows, and give it the Explore order too. Two
+ships with Explore orders never pick the same warp point.
 """
 highlight = ["cycle:ship", "order:explore"]
 done = { order = "explore" }
@@ -59,12 +62,12 @@ manual = "galaxy#exploring"
 [[step]]
 title = "New systems"
 text = """
-Look at the galaxy panel. As your scouts jump through warp points, the systems they reach become
+Look at the galaxy panel. As your ships jump through warp points, the systems they reach become
 **explored**: from now on you know their planets and warp points, even when no ship of yours is
 there.
 
-An Explore order ends when the scout arrives. Each time a scout has arrived, select it and press
-`E` again. Press **Next**.
+An Explore order ends when the ship arrives. Each time one has arrived, select it and press `E`
+again. Press **Next**.
 """
 highlight = ["panel:galaxy"]
 manual = "galaxy#exploring"
@@ -150,8 +153,8 @@ manual = "economy#spaceports"
 [[step]]
 title = "Keep exploring"
 text = """
-Close the window and end turns until your scouts have explored at least three systems, your home
-system included. Remember to give each scout that has arrived a new Explore order: select it with
+Close the window and end turns until your ships have explored at least three systems, your home
+system included. Remember to give each ship that has arrived a new Explore order: select it with
 the ship arrows, then press **Explore** or `E`.
 """
 highlight = ["button:end-turn", "order:explore"]
@@ -163,8 +166,8 @@ manual = "galaxy#warp-points"
 title = "Well done"
 text = """
 You have explored new systems and founded a colony. From here on, the game is about doing this
-again and again: build more colony ships, settle the best planets you find, and keep your scouts
-moving.
+again and again: build more colony ships, settle the best planets you find, and keep your
+explorers moving.
 
 The next lesson shows you how to choose research and use your construction queues. Press
 **Finish** to end this one.

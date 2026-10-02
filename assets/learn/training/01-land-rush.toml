@@ -41,9 +41,13 @@ turn = 0
 series = "briefing"
 title = "How to do it"
 text = """
-- Send both scouts out with **Explore** (`E`), and give them the order again each time they
-  arrive.
-- Use your colony ship at once: the [Planets](window:planets) window (`F4`) shows the planets
+- Your empire starts with no ships, only the designs your Design minister made (the
+  [Designs](window:designs) window, `F3`, shows each one's type). Select your homeworld, press
+  `Q` and queue your **Attack Ship** design once or twice on the Ships tab, then your **Colony**
+  ship design.
+- Send the attack ships out with **Explore** (`E`) as soon as they are built, and give them the
+  order again each time they arrive.
+- Use each colony ship at once: the [Planets](window:planets) window (`F4`) shows the planets
   you can settle, and **Send Colony Ship** sends it.
 - Keep your homeworld's construction queue building **colony ships**.
 - Prefer planets your people can breathe on: a domed colony grows far less.
@@ -62,19 +66,21 @@ until that system has a **spaceport**.
 """
 
 [[hint]]
-title = "Your colony ship"
-when = { all = [{ turn = 2 }, { not = { colonies = 2 } }, { not = { order = "colonize" } }] }
+title = "An idle yard"
+when = { all = [{ turn = 1 }, { not = { construction_queued = 1 } }] }
 text = """
-Your colony ship is still waiting at home. Open the Planets window (`F4`), pick a colonizable
-planet with a green star, and press **Send Colony Ship**.
+Nothing is being built, and you have no ships yet. Select your homeworld, press `Q`, and add an
+**Attack Ship** to explore with and your colony ship design on the Ships tab. **Repeat Build**
+keeps colony ships coming.
 """
 
 [[hint]]
-title = "An idle yard"
-when = { all = [{ turn = 4 }, { not = { construction_queued = 1 } }] }
+title = "Your colony ship"
+when = { all = [{ turn = 12 }, { not = { colonies = 2 } }, { not = { order = "colonize" } }] }
 text = """
-Nothing is being built. Select your homeworld, press `Q`, and add a **Colonizer** on the Ships
-tab. Turn on **Repeat Build** to keep them coming.
+No colony yet. If your first colony ship is built, open the Planets window (`F4`), pick a
+colonizable planet with a green star, and press **Send Colony Ship**. If it is not, look at your
+homeworld's construction queue (`Q`).
 """
 
 [[hint]]

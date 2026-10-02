@@ -8,6 +8,8 @@ seed = 404
 computer_players = 2
 quadrant_size = "small"
 events = "none"
+# OpenSE4 lesson extension (docs/LEARNING.md): ships to learn with. A normal game starts with none.
+starting_ships = ["Attack Ship", "Attack Ship", "Colony"]
 
 [[step]]
 title = "Welcome"
@@ -65,9 +67,9 @@ title = "Your homeworld"
 text = """
 Your homeworld carries your empire's small flag. Click it again.
 
-Your two scouts and your colony ship are in the same sector, so the report panel first lists
-everything there. Click your homeworld in that list. (The **List** button at the top right of a
-report brings the list back.)
+This lesson's game gave you two attack ships and a colony ship (more about them later), and they
+are in the same sector, so the report panel first lists everything there. Click your homeworld
+in that list. (The **List** button at the top right of a report brings the list back.)
 """
 highlight = ["panel:system", "panel:report"]
 done = { selected = "colony" }
@@ -167,10 +169,12 @@ manual = "main-window#the-help-window"
 title = "Your ships"
 text = """
 The arrows at the top right step through your **ships**, **fleets** and **colonies**. Click the
-right arrow of the top row (or press `Space`) to select one of your ships.
+right arrow of the top row (or press `Space`) to select one of your ships: the report panel
+shows it, and the buttons in the middle of the top bar light up with its **orders**.
 
-The report panel then shows the ship, and the strip of small buttons in the middle of the top
-bar lights up with the **orders** it can take.
+A normal game starts with **no ships**, only designs: your first ships come from your
+construction queue (lesson 3). This lesson's game gives you two **attack ships** and a **colony
+ship** to learn with.
 """
 highlight = ["cycle:ship"]
 done = { selected = "ship" }
@@ -209,8 +213,8 @@ text = """
 A new turn has begun. The **Log** (`F10`) holds the news of each turn: what was built, what was
 discovered and what happened to your ships. Read it at the start of every turn.
 
-That is the main window. The next lesson sends your scouts out and founds your first colony.
-Press **Finish** to end this one.
+That is the main window. The next lesson sends your attack ships out exploring and founds your
+first colony. Press **Finish** to end this one.
 """
 highlight = ["command:log"]
 allow = ["command:log"]

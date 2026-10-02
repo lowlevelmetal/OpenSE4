@@ -117,8 +117,9 @@ text = """
 The list on the left shows what this queue can build. Its tabs choose **Ships**, **Facilities**,
 **Units** and **Upgrades**. Hover over an item to see its cost and build time.
 
-Click an item to add it to the queue. A second **colony ship** is a good choice: more colonies
-mean more of everything.
+Click an item to add it to the queue. A **colony ship** is a good choice: more colonies mean
+more of everything. A game starts without ships, so your first colony ships and the attack ships
+that explore for them all come from queues like this one.
 """
 highlight = ["set-queue:available"]
 allow = ["set-queue:ships", "set-queue:facilities", "set-queue:units", "set-queue:upgrades"]

@@ -8,6 +8,8 @@ seed = 11
 computer_players = 3
 systems = 6
 events = "none"
+# OpenSE4 lesson extension (docs/LEARNING.md): ships to learn with. A normal game starts with none.
+starting_ships = ["Attack Ship", "Attack Ship"]
 
 [[step]]
 title = "Neighbours"
@@ -22,10 +24,10 @@ highlight = ["lesson:panel"]
 manual = "diplomacy#meeting-other-empires"
 
 [[step]]
-title = "Send out a scout"
+title = "Send out an explorer"
 text = """
-Select one of your scouts with the ship arrows (or `Space`) and give it the **Explore** order
-(`E`).
+This lesson's game gives you two attack ships to explore with. Select one with the ship arrows
+(or `Space`) and give it the **Explore** order (`E`).
 """
 highlight = ["cycle:ship", "order:explore"]
 allow = ["panel:report"]
@@ -35,9 +37,10 @@ manual = "galaxy#exploring"
 [[step]]
 title = "First contact"
 text = """
-Send your second scout exploring too: select it with the ship arrows and press **Explore**. Then
-end turns until you meet another empire: the Log reports a **first contact**. Give each scout a
-new Explore order when it arrives. Your neighbours' scouts may also find you first.
+Send your second attack ship exploring too: select it with the ship arrows and press
+**Explore**. Then end turns until you meet another empire: the Log reports a **first contact**.
+Give each ship a new Explore order when it arrives. Your neighbours' ships may also find you
+first.
 """
 highlight = ["button:end-turn", "order:explore", "cycle:ship"]
 allow = ["panel:report"]

@@ -49,8 +49,8 @@ turn = 0
 series = "briefing"
 title = "How to make friends"
 text = """
-- You meet an empire when your ships and theirs are in the same system. Keep your scouts
-  exploring.
+- You meet an empire when your ships and theirs are in the same system. Your empire starts with
+  no ships: build an attack ship or two at your homeworld (`Q`) and keep them exploring (`E`).
 - In the [Empires](window:empires) window (`F9`) each computer player's **mood** toward you shows
   how it feels about you. Click a portrait to talk.
 - A computer player accepts a treaty only when it is calm enough. **Gifts** calm it; your ships
