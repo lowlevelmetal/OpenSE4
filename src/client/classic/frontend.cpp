@@ -1,4 +1,5 @@
 #include "client/classic/frontend.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/pointers.hpp"
 
 #include "client/app_settings.hpp"
@@ -215,7 +216,7 @@ public:
             const Rect box{{328, 85}, {912, 632}};
             drawWindowFrame(p, dl, box, nullptr, 0);
             ImGui::SetCursorPos(ctx.size({338, 95}));
-            ImGui::BeginChild("##races", ctx.size({566, 530}));
+            beginList(ctx.painter(), "##races", ctx.size({566, 530}), 132, ImGuiChildFlags_None, false);
             int col = 0;
             for (size_t i = 0; i < presets.size(); ++i) {
                 if (presets[i].neutral) continue;
@@ -246,7 +247,7 @@ public:
                 ImGui::PopID();
                 if (col % 2 == 0) ImGui::Dummy(ctx.size({0, 2}));
             }
-            ImGui::EndChild();
+            endList(ctx.painter());
 
             ImGui::SetCursorPos(ctx.size({608, 645}));
             if (classicButton(p, "Begin Game", {148, 26}, 0, false, chosen_ >= 0)) begin(ctx, size_t(chosen_));
@@ -324,7 +325,8 @@ public:
         background(ctx);
         if (!scanned_) scan();
         if (beginPanel(ctx, "##load", Rect{{212, 120}, {812, 660}}, "Load Game")) {
-            ImGui::BeginChild("##saves", ImVec2(0, -ctx.px(46)));
+            // The list scrolls with the arrow column (spec 06 §1.1: scroll arrows).
+            beginList(ctx.painter(), "##saves", ImVec2(0, -ctx.px(46)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
             if (saves_.empty()) ImGui::TextDisabled("No saved games in %s", savesDir().string().c_str());
             for (const auto& [name, path] : saves_)
                 if (ImGui::Selectable(name.c_str())) {
@@ -338,7 +340,7 @@ public:
                         error_ = session.error();
                     }
                 }
-            ImGui::EndChild();
+            endList(ctx.painter());
             if (ImGui::Button("Cancel", ctx.size({140, 34}))) ctx.go(FrontId::Intro);
             if (!error_.empty()) {
                 ImGui::SameLine();

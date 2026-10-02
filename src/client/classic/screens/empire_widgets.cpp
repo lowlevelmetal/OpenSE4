@@ -1,4 +1,5 @@
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -203,12 +204,12 @@ std::optional<std::vector<size_t>> ReorderPopup::draw(UiContext& ui) {
         return result;
 
     const float buttons = ui.px(150);
-    ImGui::BeginChild("##rows", ImVec2(-(buttons + ImGui::GetStyle().ItemSpacing.x), 0), ImGuiChildFlags_Borders);
+    beginList(ui, "##rows", ImVec2(-(buttons + ImGui::GetStyle().ItemSpacing.x), 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
     for (size_t i = 0; i < order_.size(); ++i) {
         const std::string label = std::format("{:>2}. {}", i + 1, rows_[order_[i]]);
         if (ImGui::Selectable(label.c_str(), selected_ == int(i))) selected_ = int(i);
     }
-    ImGui::EndChild();
+    endList(ui);
     ImGui::SameLine();
     ImGui::BeginChild("##moves", ImVec2(0, 0));
     const ImVec2 bs(-FLT_MIN, ui.px(26));

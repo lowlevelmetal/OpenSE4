@@ -1,6 +1,7 @@
 // Intelligence window (docs/spec/06 §1.5, docs/spec/05 §2).
 
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 
 #include "game/design.hpp"
@@ -150,7 +151,7 @@ private:
         for (uint32_t i : list)
             if (std::find(groups.begin(), groups.end(), project(ui, i).group) == groups.end()) groups.push_back(project(ui, i).group);
         const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV;
-        if (!ImGui::BeginTable("##projects", 2, flags, ImVec2(0, 0))) return;
+        if (!beginListTable(ui, "##projects", 2, flags, ImVec2(0, 0), kListLineStep)) return;
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Project", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Cost (IP)", ImGuiTableColumnFlags_WidthFixed, ui.px(72));
@@ -173,7 +174,7 @@ private:
                 ImGui::PopID();
             }
         }
-        ImGui::EndTable();
+        endListTable(ui);
     }
 
     // Known planets of `owner` (colonies in systems we have explored).

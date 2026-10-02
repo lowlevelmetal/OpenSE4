@@ -409,9 +409,8 @@ void ScrapFacilitiesPopup::draw(UiContext& ui, StatusLine& status) {
     const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 3 + ImGui::GetTextLineHeightWithSpacing();
     game::Resources refund;
     int count = 0;
-    if (ImGui::BeginTable("##facilities", 3, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter,
-                          ImVec2(0, -footer))) {
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ui.px(26));
+    if (beginListTable(ui, "##facilities", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter, ImVec2(0, -footer), kRowHeight)) {
+        ImGui::TableSetupColumn(kPicHeading, ImGuiTableColumnFlags_WidthFixed, ui.px(26));
         ImGui::TableSetupColumn("Facility", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Refund", ImGuiTableColumnFlags_WidthFixed, ui.px(170));
         ImGui::TableSetupScrollFreeze(0, 1);
@@ -436,7 +435,7 @@ void ScrapFacilitiesPopup::draw(UiContext& ui, StatusLine& status) {
             ImGui::TableSetColumnIndex(1);
             ImGui::TextColored(kTextDim, "This colony has no facilities.");
         }
-        ImGui::EndTable();
+        endListTable(ui);
     }
     ImGui::Text("Selected: %d   Refund: %s", count, resourcesText(refund).c_str());
     const int b = popupButtons(ui, {{"Select All", !checked_.empty()}, {"Clear", count > 0}, {"Scrap", count > 0}, {"Cancel", true}});
@@ -494,8 +493,8 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
                                                    : "Every facility of the chosen type on the %d selected colonies is scrapped.",
                        colonyCount);
     const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
-    if (ImGui::BeginTable("##types", 4, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter, ImVec2(0, -footer))) {
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ui.px(26));
+    if (beginListTable(ui, "##types", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter, ImVec2(0, -footer), kRowHeight)) {
+        ImGui::TableSetupColumn(kPicHeading, ImGuiTableColumnFlags_WidthFixed, ui.px(26));
         ImGui::TableSetupColumn("Facility", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, ui.px(110));
         ImGui::TableSetupColumn("Refund", ImGuiTableColumnFlags_WidthFixed, ui.px(130));
@@ -512,7 +511,7 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
             ImGui::TableSetColumnIndex(3);
             cellText(ui, resourcesText(t.refund), kTextDim);
         }
-        ImGui::EndTable();
+        endListTable(ui);
     }
     if (chosen_ && !types.contains(*chosen_)) chosen_.reset();
     const int b = popupButtons(ui, {{"Scrap All Of Type", chosen_.has_value()}, {"Cancel", true}});

@@ -3,6 +3,7 @@
 // §1.5; docs/spec/05 §3, §5, §6). Communicate lives in communicate.cpp.
 
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 
 #include "game/diplomacy.hpp"
@@ -518,7 +519,7 @@ public:
         static constexpr std::array<const char*, 11> kHeads{"Score", "Resrc", "Resch", "Intel", "Tech", "Systm", "Plnts", "Pop (M)",
                                                             "Units", "Ships", "Bases"};
         const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV;
-        if (ImGui::BeginTable("##scores", int(kColumns.size()) + 2, flags, ImVec2(0, 0))) {
+        if (beginListTable(ui, "##scores", int(kColumns.size()) + 2, flags, ImVec2(0, 0), kListLineStep)) {
             ImGui::TableSetupScrollFreeze(2, 1);
             ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed, ui.px(34));
             ImGui::TableSetupColumn("Empire", ImGuiTableColumnFlags_WidthFixed, ui.px(150));
@@ -549,7 +550,7 @@ public:
                     ImGui::TextUnformatted(formatNumber(v).c_str());
                 }
             }
-            ImGui::EndTable();
+            endListTable(ui);
         }
         d.beginButtons();
         if (d.button("Comparisons")) ui.open(ScreenId::Comparisons);
@@ -581,7 +582,7 @@ public:
         graph(ui);
         ImGui::EndChild();
         ImGui::SameLine();
-        ImGui::BeginChild("##legend", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##legend", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (EmpireId e : candidates) {
             ImGui::PushID(int(e.index()));
             bool on = std::find(selected_.begin(), selected_.end(), e) != selected_.end();
@@ -595,7 +596,7 @@ public:
         }
         if (candidates.size() < s.empires.size())
             wrappedText("Other empires' statistics are hidden unless we are allied with them.", kTextDim);
-        ImGui::EndChild();
+        endList(ui);
 
         d.beginButtons();
         for (int i = 0; i < int(Metric::Count); ++i) {
@@ -710,8 +711,8 @@ public:
         ImGui::SameLine();
         ImGui::TextColored(kTextDim, "Timeline, newest first. Select an event to see where it happened.");
         const float mapSize = ui.px(330);
-        ImGui::BeginChild("##events", ImVec2(ImGui::GetContentRegionAvail().x - mapSize - ImGui::GetStyle().ItemSpacing.x, 0),
-                          ImGuiChildFlags_Borders);
+        beginList(ui, "##events", ImVec2(ImGui::GetContentRegionAvail().x - mapSize - ImGui::GetStyle().ItemSpacing.x, 0), kListLineStep,
+                  ImGuiChildFlags_AlwaysUseWindowPadding);
         if (events.empty()) ImGui::TextColored(kTextDim, "Nothing recorded yet.");
         else if (ImGui::BeginTable("##timeline", 2, ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, ui.px(60));
@@ -730,7 +731,7 @@ public:
             }
             ImGui::EndTable();
         }
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SameLine();
         ImGui::BeginGroup();
         MiniMapStyle style;

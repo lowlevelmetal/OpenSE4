@@ -61,24 +61,40 @@ inline constexpr float kListArrowW = 16.0f;
 // The rows' child takes the current WindowPadding and `rowsFlags`; `step` is
 // one click's scroll in frame pixels (a row). After endList() the last item is
 // the whole list, so ui.tagItem() after it tags the list.
-void beginList(UiContext& ui, const char* id, ImVec2 size, float step = kListRowH, ImGuiChildFlags rowsFlags = ImGuiChildFlags_None,
+void beginList(const Painter& p, const char* id, ImVec2 size, float step = kListRowH, ImGuiChildFlags rowsFlags = ImGuiChildFlags_None,
                bool border = true);
-void endList(UiContext& ui);
+void endList(const Painter& p);
 // The same for a table that scrolls itself (ImGuiTableFlags_ScrollY is added):
 // the table takes `size` less the arrow column and draws no scroll bar. Call
 // endListTable() only when this returned true, in place of EndTable().
-bool beginListTable(UiContext& ui, const char* id, int columns, ImGuiTableFlags flags, ImVec2 size = ImVec2(0, 0), float step = kListRowH);
-void endListTable(UiContext& ui);
+bool beginListTable(const Painter& p, const char* id, int columns, ImGuiTableFlags flags, ImVec2 size = ImVec2(0, 0), float step = kListRowH);
+void endListTable(const Painter& p);
 // The step of lists of text lines: one line of the body font, in frame pixels.
 inline constexpr float kListLineStep = 16.0f;
 // The width the rows get in a list `width` wide (ImGui units): the arrow column taken off.
-float listRowsWidth(UiContext& ui, float width);
+float listRowsWidth(const Painter& p, float width);
 // One arrow button of the column at the cursor (`up` or down), `size` in
 // frame pixels; dim and inert when `enabled` is false. Returns true on a
 // click and, while held, on each repeat.
-bool listArrow(UiContext& ui, const char* id, bool up, Vec2 size, bool enabled);
+bool listArrow(const Painter& p, const char* id, bool up, Vec2 size, bool enabled);
 // The same small button with a left or right arrow, or a square (a stop button).
 enum class ArrowGlyph { Up, Down, Left, Right, Stop };
-bool arrowButton(UiContext& ui, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled);
+bool arrowButton(const Painter& p, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled);
+
+// The same in a game's windows.
+inline void beginList(UiContext& ui, const char* id, ImVec2 size, float step = kListRowH, ImGuiChildFlags rowsFlags = ImGuiChildFlags_None,
+                      bool border = true) {
+    beginList(ui.painter(), id, size, step, rowsFlags, border);
+}
+inline void endList(UiContext& ui) { endList(ui.painter()); }
+inline bool beginListTable(UiContext& ui, const char* id, int columns, ImGuiTableFlags flags, ImVec2 size = ImVec2(0, 0), float step = kListRowH) {
+    return beginListTable(ui.painter(), id, columns, flags, size, step);
+}
+inline void endListTable(UiContext& ui) { endListTable(ui.painter()); }
+inline float listRowsWidth(UiContext& ui, float width) { return listRowsWidth(ui.painter(), width); }
+inline bool listArrow(UiContext& ui, const char* id, bool up, Vec2 size, bool enabled) { return listArrow(ui.painter(), id, up, size, enabled); }
+inline bool arrowButton(UiContext& ui, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled) {
+    return arrowButton(ui.painter(), id, glyph, size, enabled);
+}
 
 } // namespace opense4::client::classic

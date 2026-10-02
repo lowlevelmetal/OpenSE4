@@ -415,7 +415,7 @@ private:
         ImGui::SameLine();
         ImGui::TextColored(kTextDim, "Prerequisites of every area. Green: complete, white: researchable, grey: locked. Click for levels.");
         const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable;
-        if (!ImGui::BeginTable("##tree", 4, flags, ImVec2(0, 0))) return;
+        if (!beginListTable(ui, "##tree", 4, flags, ImVec2(0, 0), kListLineStep)) return;
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Area", ImGuiTableColumnFlags_WidthFixed, ui.px(190));
         ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(52));
@@ -457,7 +457,7 @@ private:
                 ImGui::PopID();
             }
         }
-        ImGui::EndTable();
+        endListTable(ui);
     }
 
     // Requirements, each coloured by whether we meet it.
@@ -486,7 +486,7 @@ private:
         if (areas.empty()) return;
         if (!selected_ || std::find(areas.begin(), areas.end(), *selected_) == areas.end()) selected_ = areas.front();
 
-        ImGui::BeginChild("##levelAreas", ImVec2(ui.px(220), 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##levelAreas", ImVec2(ui.px(220), 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (const auto& [group, list] : byGroup(r, areas)) {
             ImGui::TextColored(kTextWarn, "%s", group.empty() ? "Other" : group.c_str());
             for (TechAreaId a : list) {
@@ -497,7 +497,7 @@ private:
                 ImGui::PopID();
             }
         }
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SameLine();
         ImGui::BeginChild("##levels", ImVec2(0, 0));
         const TechAreaId a = *selected_;
@@ -513,7 +513,7 @@ private:
         reqList(ui, t.requirements);
         ImGui::Spacing();
         const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV;
-        if (ImGui::BeginTable("##levelTable", 3, flags, ImVec2(0, 0))) {
+        if (beginListTable(ui, "##levelTable", 3, flags, ImVec2(0, 0), kListLineStep)) {
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(48));
             ImGui::TableSetupColumn("Cost (RP)", ImGuiTableColumnFlags_WidthFixed, ui.px(86));
@@ -535,7 +535,7 @@ private:
                     ImGui::TextUnformatted(u.name.c_str());
                 }
             }
-            ImGui::EndTable();
+            endListTable(ui);
         }
         ImGui::EndChild();
     }

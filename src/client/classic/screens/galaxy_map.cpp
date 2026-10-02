@@ -3,6 +3,7 @@
 // and per-system player notes.
 
 #include "client/classic/map_style.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
@@ -120,7 +121,7 @@ private:
             };
             return lower(name).find(lower(filter_)) != std::string::npos;
         };
-        ImGui::BeginChild("##list", ImVec2(0, -ui.px(32)), ImGuiChildFlags_Borders);
+        beginList(ui, "##list", ImVec2(0, -ui.px(32)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (game::SystemId sys : exploredSystems(ui)) {
             const std::string& name = g.system(sys).name;
             if (!matches(name)) continue;
@@ -131,7 +132,7 @@ private:
             }
             ImGui::PopID();
         }
-        ImGui::EndChild();
+        endList(ui);
         if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
         return picked;

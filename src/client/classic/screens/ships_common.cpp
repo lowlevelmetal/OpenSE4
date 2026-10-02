@@ -1,5 +1,7 @@
 #include "client/classic/screens/ships_common.hpp"
 
+#include "client/classic/screens/list_widgets.hpp"
+
 #include "game/design.hpp"
 #include "game/query.hpp"
 
@@ -226,11 +228,12 @@ void beginPanel(UiContext& ui, const char* id, const std::string& caption, ImVec
     if (!caption.empty()) ImGui::TextColored(kLabelBlue, "%s", caption.c_str());
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(4), ui.px(4)));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.35f));
-    ImGui::BeginChild(id, size, ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+    // A list: the arrow column at its right (spec 06 conventions).
+    beginList(ui, id, size, 26, ImGuiChildFlags_AlwaysUseWindowPadding);
 }
 
 void endPanel(UiContext& ui, const char* footnote) {
-    ImGui::EndChild();
+    endList(ui);
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
     if (footnote) {

@@ -1035,10 +1035,10 @@ private:
                 cancelled = ImGui::Button("No", ui.size({140, 26})) || key == false;
             } else {
                 ImGui::TextColored(kLabelBlue, "%s", column.c_str());
-                ImGui::BeginChild("##rows", ImVec2(0, -ui.px(34)), ImGuiChildFlags_Borders);
+                beginList(ui, "##rows", ImVec2(0, -ui.px(34)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
                 for (size_t k = 0; k < rows.size(); ++k)
                     if (ImGui::Selectable(rows[k].c_str(), false)) picked = int(k);
-                ImGui::EndChild();
+                endList(ui);
                 cancelled = ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) ||
                             (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsWindowAppearing());
             }
@@ -1311,7 +1311,7 @@ public:
         ClassicSettings& prefs = settings();
         bool changed = false;
         ImGui::TextColored(kLabelBlue, "Options In Use");
-        ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##options", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         heading(ui, "Animation");
         changed |= lampToggle(ui, "Animate ship movement in combat", &prefs.animateCombatMovement);
         ImGui::Spacing();
@@ -1331,7 +1331,7 @@ public:
         changed |= lampToggle(ui, "Center Map on Current Ship", &prefs.centerOnCurrentShip);
         changed |= lampToggle(ui, "Show Weapon To Hit Chances", &prefs.showToHitChances);
         changed |= lampToggle(ui, "Show Grid", &prefs.tacticalGrid);
-        ImGui::EndChild();
+        endList(ui);
         if (changed) saveSettings();
         d.beginButtons();
         const TacticalFight* f = ui.session.tactical();

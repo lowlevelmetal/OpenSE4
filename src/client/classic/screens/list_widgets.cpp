@@ -127,13 +127,13 @@ std::vector<OpenList>& openLists() {
 
 } // namespace
 
-float listRowsWidth(UiContext& ui, float width) { return std::max(1.0f, width - ui.px(kListArrowW) - ui.px(1)); }
+float listRowsWidth(const Painter& ui, float width) { return std::max(1.0f, width - ui.px(kListArrowW) - ui.px(1)); }
 
-bool listArrow(UiContext& ui, const char* id, bool up, Vec2 size, bool enabled) {
+bool listArrow(const Painter& ui, const char* id, bool up, Vec2 size, bool enabled) {
     return arrowButton(ui, id, up ? ArrowGlyph::Up : ArrowGlyph::Down, size, enabled);
 }
 
-bool arrowButton(UiContext& ui, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled) {
+bool arrowButton(const Painter& ui, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled) {
     const ImVec2 a = ImGui::GetCursorScreenPos();
     const ImVec2 s = ui.size(size);
     const ImVec2 b{a.x + s.x, a.y + s.y};
@@ -163,7 +163,7 @@ bool arrowButton(UiContext& ui, const char* id, ArrowGlyph glyph, Vec2 size, boo
     return clicked && enabled;
 }
 
-void beginList(UiContext& ui, const char* id, ImVec2 size, float step, ImGuiChildFlags rowsFlags, bool border) {
+void beginList(const Painter& ui, const char* id, ImVec2 size, float step, ImGuiChildFlags rowsFlags, bool border) {
     const ImVec2 padding = ImGui::GetStyle().WindowPadding;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(1), ui.px(1)));
     ImGui::BeginChild(id, size, (border ? ImGuiChildFlags_Borders : ImGuiChildFlags_None) | ImGuiChildFlags_AlwaysUseWindowPadding,
@@ -179,7 +179,7 @@ void beginList(UiContext& ui, const char* id, ImVec2 size, float step, ImGuiChil
 namespace {
 
 // The arrow column at the cursor, `height` ImGui units tall, scrolling `rows`.
-void arrowColumn(UiContext& ui, const OpenList& list, float scroll, float maxScroll, float height) {
+void arrowColumn(const Painter& ui, const OpenList& list, float scroll, float maxScroll, float height) {
     const ImVec2 at = ImGui::GetCursorScreenPos();
     const float h = height / ui.k();
     const float arrow = std::min(kListArrowW, std::floor(h * 0.5f));
@@ -194,7 +194,7 @@ void arrowColumn(UiContext& ui, const OpenList& list, float scroll, float maxScr
 
 } // namespace
 
-void endList(UiContext& ui) {
+void endList(const Painter& ui) {
     if (openLists().empty()) return;
     const OpenList list = openLists().back();
     openLists().pop_back();
@@ -206,7 +206,7 @@ void endList(UiContext& ui) {
     ImGui::EndChild();
 }
 
-bool beginListTable(UiContext& ui, const char* id, int columns, ImGuiTableFlags flags, ImVec2 size, float step) {
+bool beginListTable(const Painter& ui, const char* id, int columns, ImGuiTableFlags flags, ImVec2 size, float step) {
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float w = size.x > 0 ? size.x : std::max(1.0f, avail.x + size.x);
     const float h = size.y > 0 ? size.y : std::max(1.0f, avail.y + size.y);
@@ -223,7 +223,7 @@ bool beginListTable(UiContext& ui, const char* id, int columns, ImGuiTableFlags 
     return true;
 }
 
-void endListTable(UiContext& ui) {
+void endListTable(const Painter& ui) {
     if (openLists().empty()) {
         ImGui::EndTable();
         ImGui::EndGroup();

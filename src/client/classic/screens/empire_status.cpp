@@ -4,6 +4,7 @@
 
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/ai_data.hpp"
@@ -208,7 +209,7 @@ public:
         game::InterfaceOptions o = ui.options();
         d.beginContent();
         ImGui::TextColored(kLabelBlue, "Options In Use");
-        ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##options", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         heading(ui, "General Options");
         lampToggle(ui, "Show the log at the start of each turn", &o.showLogAtTurnStart);
         lampToggle(ui, "Confirm ending the turn", &o.confirmEndTurn);
@@ -267,7 +268,7 @@ public:
         heading(ui, "Politics");
         lampToggle(ui, "Claim every system we colonize", &o.autoClaimColonized);
         status_.draw();
-        ImGui::EndChild();
+        endList(ui);
         if (!ui.setOptions(o)) status_.error = "The options cannot be changed now.";
         d.beginButtons();
         d.close();
@@ -303,7 +304,7 @@ public:
         const float listHeight = std::max(ui.px(200), ImGui::GetContentRegionAvail().y - below);
         for (int pass = 0; pass < 2; ++pass) {
             if (pass == 1) ImGui::SameLine();
-            ImGui::BeginChild(pass == 0 ? "##global" : "##individual", ImVec2(col, listHeight), ImGuiChildFlags_Borders);
+            beginList(ui, pass == 0 ? "##global" : "##individual", ImVec2(col, listHeight), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
             heading(ui, pass == 0 ? "Empire-wide ministers" : "Individual ministers");
             wrappedDim(pass == 0 ? "Each takes over its whole area." : "Each acts on ships and planets with the minister flag set.");
             ImGui::Spacing();
@@ -315,7 +316,7 @@ public:
                 if (lampToggle(ui, std::string(game::displayName(m)).c_str(), &on))
                     status_.issue(ui, cmd::SetMinisters{.areas = on ? (me.ministers | bit) : (me.ministers & ~bit)});
             }
-            ImGui::EndChild();
+            endList(ui);
         }
         ImGui::Spacing();
         bool newVehicles = me.ministersForNewVehicles;
@@ -475,7 +476,7 @@ public:
         }
         ImGui::Spacing();
         heading(ui, "Ships heading there");
-        ImGui::BeginChild("##ships", ImVec2(0, ui.px(130)), ImGuiChildFlags_Borders);
+        beginList(ui, "##ships", ImVec2(0, ui.px(130)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         int shown = 0;
         if (sel.set) {
             auto headingThere = [&](const std::vector<game::Order>& orders) {
@@ -499,9 +500,9 @@ public:
                 }
         }
         if (shown == 0) dimText("None");
-        ImGui::EndChild();
+        endList(ui);
         heading(ui, "Space yards sending new ships there");
-        ImGui::BeginChild("##yards", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##yards", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         int yards = 0;
         for (const auto& c : s.colonies)
             if (c && c->owner == me.id && c->queue.autoWaypoint == selected_) {
@@ -514,7 +515,7 @@ public:
                 ++yards;
             }
         if (yards == 0) dimText("None");
-        ImGui::EndChild();
+        endList(ui);
         ImGui::EndChild();
 
         ImGui::SameLine();
@@ -687,14 +688,14 @@ public:
         selected_ = std::clamp(selected_, 0, std::max(0, int(list.size()) - 1));
         d.beginContent();
 
-        ImGui::BeginChild("##list", ImVec2(ui.px(220), 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##list", ImVec2(ui.px(220), 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         heading(ui, "Strategies");
         for (int i = 0; i < int(list.size()); ++i) {
             ImGui::PushID(i);
             if (ImGui::Selectable(list[size_t(i)].name.c_str(), selected_ == i)) selected_ = i;
             ImGui::PopID();
         }
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SameLine();
         ImGui::BeginChild("##page", ImVec2(0, 0), ImGuiChildFlags_Borders);
         if (list.empty()) {
@@ -915,7 +916,7 @@ public:
         wrappedDim("Damaged ships get their components fixed group by group in this order. Click a group on the left to add it; "
                    "groups not in the list are repaired last.");
         const float col = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        ImGui::BeginChild("##available", ImVec2(col, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##available", ImVec2(col, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         heading(ui, "Component groups");
         for (const std::string& g : available)
             if (ImGui::Selectable(g.c_str())) {
@@ -924,9 +925,9 @@ public:
                 changed = true;
             }
         if (available.empty()) dimText("Every group is in the list.");
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SameLine();
-        ImGui::BeginChild("##order", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##order", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         heading(ui, "Repair order");
         for (int i = 0; i < int(order.size()); ++i) {
             ImGui::PushID(i);
@@ -935,7 +936,7 @@ public:
         }
         if (order.empty()) dimText("Empty: components are repaired in design order.");
         status_.draw();
-        ImGui::EndChild();
+        endList(ui);
 
         d.beginButtons();
         const bool hasSel = selected_ >= 0 && selected_ < int(order.size());

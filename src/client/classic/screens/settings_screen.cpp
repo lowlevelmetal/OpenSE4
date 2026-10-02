@@ -4,6 +4,7 @@
 // graphics, controls and sound pages, in the classic dialog layout.
 
 #include "client/classic/net_transport.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
@@ -85,7 +86,7 @@ public:
         }
         d.beginContent();
         ImGui::TextColored(kLabelBlue, "Options In Use");
-        ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        beginList(ui, "##options", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         heading(ui, "Animation");
         changed |= lampToggle(ui, "Animate ship movement in the system window", &s.animateSystemMovement);
         changed |= lampToggle(ui, "Animate ship movement in combat", &s.animateCombatMovement);
@@ -114,7 +115,7 @@ public:
                 if (lampToggle(ui, label.c_str(), &on) && on) ui.session.setAutosaveTurns(n);
             }
         }
-        ImGui::EndChild();
+        endList(ui);
         if (changed) saveSettings();
         d.beginButtons();
         // OpenSE4's own: graphics, controls and the effects volume.

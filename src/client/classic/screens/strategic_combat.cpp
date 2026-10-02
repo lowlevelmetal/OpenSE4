@@ -35,6 +35,7 @@
 
 #include "client/audio.hpp"
 #include "client/classic/replay.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/screens/combat_map.hpp"
@@ -342,7 +343,7 @@ private:
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{15 + 270, 38}));
         ImGui::TextColored(kLabelBlue, "Lost");
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{15, 55}));
-        ImGui::BeginChild("##forces", ui.size({329, 400}), ImGuiChildFlags_Borders);
+        beginList(ui, "##forces", ui.size({329, 400}), 18, ImGuiChildFlags_AlwaysUseWindowPadding);
         // 18 px rows: the text drawn in place, then a dummy item that takes the row.
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float rowH = ui.px(18);
@@ -359,7 +360,7 @@ private:
             flagAndName(ui, s, side.empire);
             for (const ForceRow& r : side.rows) row(r.name, r.current, r.lost);
         }
-        ImGui::EndChild();
+        endList(ui);
     }
 
     // The map at (354,55), 218x191: the whole combat grid in 3 px squares, framed by a #647EC7 line just outside it.

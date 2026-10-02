@@ -471,14 +471,14 @@ private:
         if (!beginModal(ui, id, {420, 520})) return;
         const game::GameState& s = ui.state();
         const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
-        ImGui::BeginChild("##pick", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##pick", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (game::ObjectId p : pickRows_) {
             const game::SpaceObject& o = s.galaxy.object(p);
             const std::string label = std::format("{}   ({})###p{}", o.name, s.galaxy.system(o.system).name, p.index());
             if (ImGui::Selectable(label.c_str(), picked_ == p)) picked_ = p;
         }
         if (pickRows_.empty()) ImGui::TextColored(kTextDim, "No colonies are listed.");
-        ImGui::EndChild();
+        endList(ui);
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         ImGui::BeginDisabled(!picked_);
         const bool ok = ImGui::Button("Select", ImVec2(w, ui.px(26)));
@@ -875,7 +875,7 @@ private:
         const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit;
         if (beginListTable(ui, "##avail", 3, flags, ImVec2(0, 0), kRowHeight)) {
             ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("", 0, ui.px(28));
+            ImGui::TableSetupColumn(kPicHeading, 0, ui.px(28));
             ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Time", 0, ui.px(62));
             ImGui::TableHeadersRow();
@@ -922,7 +922,7 @@ private:
         const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit;
         if (beginListTable(ui, "##queue", 4, flags, ImVec2(0, 0), kRowHeight)) {
             ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("", 0, ui.px(28));
+            ImGui::TableSetupColumn(kPicHeading, 0, ui.px(28));
             ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Progress", 0, ui.px(70));
             ImGui::TableSetupColumn("Done", 0, ui.px(62));
@@ -1129,7 +1129,7 @@ private:
         ImGui::TextColored(kTextDim, "New ships from this queue move to:");
         const auto& wps = ui.me().waypoints;
         const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
-        ImGui::BeginChild("##wps", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##wps", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         bool any = false;
         for (size_t i = 0; i < wps.size(); ++i) {
             const game::Waypoint& w = wps[i];
@@ -1144,7 +1144,7 @@ private:
             any = any || w.set;
         }
         if (!any) ImGui::TextColored(kTextDim, "No waypoints are set. Set them in Empire Status > Waypoints.");
-        ImGui::EndChild();
+        endList(ui);
         if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
@@ -1181,15 +1181,15 @@ private:
         all.insert(all.end(), userTemplates_.begin(), userTemplates_.end());
         if (chosenTemplate_ >= static_cast<int>(all.size())) chosenTemplate_ = -1;
         const float footer = ui.px(26) * 2 + ImGui::GetStyle().ItemSpacing.y * 3;
-        ImGui::BeginChild("##list", ImVec2(ui.px(280), -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##list", ImVec2(ui.px(280), -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (size_t i = 0; i < all.size(); ++i) {
             if (static_cast<int>(i) == builtIns) ImGui::Separator();
             if (ImGui::Selectable(std::format("{}##t{}", all[i].name, i).c_str(), chosenTemplate_ == static_cast<int>(i))) chosenTemplate_ = static_cast<int>(i);
         }
         if (userTemplates_.empty()) ImGui::TextColored(kTextDim, "Add Type saves this queue as a new type.");
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SameLine();
-        ImGui::BeginChild("##preview", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##preview", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         std::vector<game::QueueItem> items;
         if (chosenTemplate_ >= 0) {
             items = resolveTemplate(r, s, ui.session.player(), target_, all[static_cast<size_t>(chosenTemplate_)]);
@@ -1204,7 +1204,7 @@ private:
         } else {
             ImGui::TextColored(kTextDim, "Pick a queue type to see what it adds.");
         }
-        ImGui::EndChild();
+        endList(ui);
         ImGui::SetNextItemWidth(ui.px(280));
         ImGui::InputTextWithHint("##newname", "Name for a new type", newTemplateName_, sizeof(newTemplateName_));
         ImGui::SameLine();

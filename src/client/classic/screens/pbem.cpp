@@ -4,6 +4,7 @@
 // (ClassicSession, SessionKind::Pbem; the logic is in pbem_play.hpp).
 
 #include "client/classic/frontend.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/pbem_play.hpp"
 
 #include <cstdio>
@@ -46,14 +47,14 @@ public:
         ImGui::SameLine();
         if (ImGui::Button("Open", ctx.size({90, 0}))) open(ctx);
         ImGui::TextDisabled("Game files in %s:", folder_.string().c_str());
-        ImGui::BeginChild("##files", ImVec2(0, ctx.px(120)), ImGuiChildFlags_Borders);
+        beginList(ctx.painter(), "##files", ImVec2(0, ctx.px(120)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         if (files_.empty()) ImGui::TextDisabled("None. Put the game file there, or type its full path above.");
         for (const auto& f : files_)
             if (ImGui::Selectable(f.filename().string().c_str(), game_ && game_->gameFile == f)) {
                 file_ = f.string();
                 open(ctx);
             }
-        ImGui::EndChild();
+        endList(ctx.painter());
 
         if (game_) gamePanel(ctx);
 

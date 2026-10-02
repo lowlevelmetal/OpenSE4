@@ -282,14 +282,14 @@ private:
         const game::GameState& s = ui.state();
         bool leave = false;
         const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
-        ImGui::BeginChild("##pick", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##pick", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (game::ObjectId id2 : pickRows_) {
             const game::SpaceObject& o = s.galaxy.object(id2);
             const std::string label = std::format("{}   ({}, {})###p{}", o.name, typeLine(o), s.galaxy.system(o.system).name, id2.index());
             if (ImGui::Selectable(label.c_str(), picked_ == id2, ImGuiSelectableFlags_AllowDoubleClick)) picked_ = id2;
         }
         if (pickRows_.empty()) ImGui::TextColored(kTextDim, "No planets on this tab.");
-        ImGui::EndChild();
+        endList(ui);
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         ImGui::BeginDisabled(!picked_);
         const bool go = ImGui::Button("Colonize", ImVec2(w, ui.px(26)));
@@ -756,12 +756,12 @@ private:
         const auto& types = ui.me().colonyTypes;
         ImGui::TextColored(kTextDim, "Colony type for %zu selected colon%s:", selection_.size(), selection_.size() == 1 ? "y" : "ies");
         const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
-        ImGui::BeginChild("##types", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        beginList(ui, "##types", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (size_t i = 0; i < types.size(); ++i)
             if (ImGui::Selectable(types[i].c_str(), chosenType_ == static_cast<int>(i), ImGuiSelectableFlags_AllowDoubleClick))
                 chosenType_ = static_cast<int>(i);
         if (types.empty()) ImGui::TextColored(kTextDim, "No colony types are defined.");
-        ImGui::EndChild();
+        endList(ui);
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         bool apply = chosenType_ >= 0 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
         ImGui::BeginDisabled(chosenType_ < 0);
