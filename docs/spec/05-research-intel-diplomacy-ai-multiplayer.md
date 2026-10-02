@@ -1646,11 +1646,15 @@ binary).
     not subtracted. The start-of-turn step works it out once and keeps it for the facility
     upgrades of the economy step; the Ship Construction minister works it out afresh, with
     the vehicles and queues of that moment, and its units step uses the same reckoning.
-    (An earlier reading took the last term for facility upkeep.) The engine
-    differs: `Planner::netIncome` (`ai.cpp`) is revenue less the maintenance last paid, and
-    the vehicle list, the units step and the upgrades (`ai_economy.cpp`) spend it without
-    taking off what the queues already spend, so our computers queue more while their
-    queues are busy (question 71).
+    (An earlier reading took the last term for facility upkeep.) OpenSE4 follows this
+    since 2026-10-02: `Planner::netIncome` (`ai.cpp`) is the revenue less the maintenance
+    of the vehicles of the moment (`economy::maintenanceCost`) and less the queues'
+    commitments (`queueCommitments`); the vehicle list and the units step work it out when
+    they start, and the facility upgrades spend the figure the start-of-turn step worked out
+    (`Planner::startOfTurnNet`, handed to the economy step through `TurnContext::aiStartNet`).
+    Its own choices are question 73. The engine used to take the maintenance last paid and
+    nothing for the queues, so its computers queued more while their queues were busy
+    (question 71).
   - *Revenue*: production × income factor + income from other empires, rounded, worked
     out at the start-of-turn step only (confirmed: binary); the economy step's cap tests
     reuse it. The production is the empire's delivered production of the moment (a
@@ -1662,7 +1666,9 @@ binary).
     when, for any one of minerals, organics or radioactives, that resource's maintenance
     > its revenue × M / 100. It is over the hard cap when the same holds with M + 20. The
     product is taken in single precision (M / 100 as a 32-bit float, so with the stock 80
-    the threshold is a hair above 80 %) (confirmed: binary).
+    the threshold is a hair above 80 %) (confirmed: binary). The engine compares in its
+    extended precision (`Planner::overCap`); the two differ only when the maintenance lies
+    within a float's rounding of the threshold.
   - The maintenance in that test (confirmed: binary) is the sum, over the empire's ships
     and bases, of each one's maintenance by spec 02 §7, leaving out every vehicle whose hull
     has `Requirement Pct Colony Mods` above 0 (in the stock data the Colony Ship hull):
@@ -2011,11 +2017,13 @@ binary).
       design's place in the empire's design list, not its design type, not ships before
       bases. So a base at a yard is a candidate even when a ship of an equally old design
       stands elsewhere, and it is chosen when its slot comes first; a ship that can move and
-      has a strictly older design, wherever it is, always comes before it. The engine
-      differs: the rule as implemented breaks ties by the order of `GameState::vehicles`
-      (vehicle id, creation order), which `Planner::ownVehicles` follows, not by the slot
-      (`Vehicle::slot`, `objectOrderKey`); with reused slots the two orders disagree in
-      either direction.
+      has a strictly older design, wherever it is, always comes before it. OpenSE4 follows
+      this since 2026-10-02: `scrapOldest` (`ai_military.cpp`) meets the candidates by slot
+      (`Vehicle::slot`, `objectOrderKey`); it used to break ties by the order of
+      `GameState::vehicles` (vehicle id, creation order), which disagrees with the slots
+      once they are reused. Over 120 games of the pace set-up 116 played out differently,
+      with no measurable change in the bases, ships or turns over the soft cap (spec 07
+      "Pace after the tie-break and budget rules").
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -4115,6 +4123,15 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     26–50 instead of 4.1 % and in 9.1 % of turns 51–100 instead of 14.1 % (the original 0
     and 14–16 % in two games), with 3.8 ships per empire at turn 25 instead of 4.1 (the
     original 3.4) and 7.9 at turn 50 instead of 8.6 (8.3).
+
+    The engine follows the budget rule since 2026-10-02. Over 120 games (paired by seed)
+    the turns over the soft cap went from 3.5 to 1.2 % of turns 26–50 and from 16.3 to
+    11.0 % of turns 51–100; per game, the share of turns 51–100 has a median of 11 % and
+    quartiles of 6 and 15 %, so the original's two games (14 and 16 %) sit at our upper
+    quartile. The computers keep more for colonies: 16.4 colonies per empire at turn 100
+    instead of 15.4 and 33.2k resources produced instead of 30.8k, with 3.3 / 7.6 ships at
+    turns 25 / 50 instead of 3.5 / 8.1 (spec 07 "Pace after the tie-break and budget
+    rules").
 72. **Details the scrap and fleet-leader rules leave open** (§7.5 *Scrap*, `AI_Fleets`).
     OpenSE4's choices since 2026-10-02 (inferred):
     - unit groups (fighters, satellites, mines and the like in space) are never scrap
@@ -4125,7 +4142,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - "the nearest sector where it can be scrapped" is found as the Repair minister finds a
       yard: our uncloaked colonies with a Space Yard facility and uncloaked ships with a
       working yard, by travel, the earlier in the visiting order on a tie; a candidate that
-      no route takes to a yard is not scrapped, and no other candidate is tried that turn;
+      no route takes to a yard is not scrapped, and no other candidate is tried that turn
+      (the last part confirmed since: when no place to scrap it is found, nothing is
+      scrapped that turn, §7.5 *Scrap*);
     - the Move To and Scrap are given together, so the vehicle is scrapped when it reaches
       the yard in the same movement, and its orders are not touched by the ministers after
       the Scrap minister that turn;
@@ -4136,3 +4155,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     happens to a candidate in a fleet or cloaked, how the scrap place is chosen and what a
     candidate with no reachable yard gets, and whether the leader test filters the
     candidates or tests only the newest ship.
+73. **Details the net income rule leaves open** (§7.5 *Net income*). OpenSE4's choices
+    since 2026-10-02 (inferred):
+    - the start-of-turn step works the figure out when its ministers after Politics start;
+      an economy step that has none (a human's ministers whose turn-based start-of-turn
+      step ran in an earlier engine call, for one) works it out when its own ministers
+      start, before anything is queued;
+    - the vehicle list works its budget out after its clean-up of obsolete items, and the
+      units step afresh after the vehicle list;
+    - a queue's commitment is its first item's full cost (a batch's whole count) less what
+      was paid, at most the queue's rate of the moment, with the computer bonus.
+
+    To verify in the executable: when in the start-of-turn step the figure is worked out,
+    whether the vehicle list's budget comes before or after its clean-up, and which rate
+    the commitment is capped at.

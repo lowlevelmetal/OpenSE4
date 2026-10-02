@@ -145,6 +145,10 @@ struct TurnContext {
     // whose ministers ran left in place. The next economy step whose ministers
     // run plans with them instead of building its own, and removes them.
     std::optional<std::vector<ObjectId>> aiColonyTargets;
+    // Each empire's net income as its start-of-turn step worked it out, kept
+    // for the facility upgrades of its economy step (spec 05 §7.5 *Net
+    // income*, confirmed: binary), by empire index; the economy step takes it.
+    std::vector<std::optional<Resources>> aiStartNet;
 
     // Simultaneous games: called after each of the 30 movement days with the
     // state as that day left it (TurnOptions::movementDay; the client's

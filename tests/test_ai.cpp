@@ -3295,8 +3295,11 @@ TEST_CASE("ai: facility upgrades go on while what was queued is at most half the
     queued.facility = oldMine;
     queued.spent = {10, 0, 0};
     other.queue.items = {queued};
-    e.economy = {};  // a net income of 0
-    s.turn = 4;      // date 5
+    // A net income of 0: the revenue pays for the maintenance and what the
+    // queues will spend this turn (spec 05 §7.5 *Net income*).
+    e.economy = {};
+    e.economy.colonies = economy::maintenanceCost(r, s, me) + ai::detail::queueCommitments(r, s, me);
+    s.turn = 4;  // date 5
     auto upgrades = [&](const ai::detail::Planner& p, ObjectId planet) {
         int n = 0;
         for (const QueueItem& q : p.st.colony(planet)->queue.items) n += q.kind == QueueItem::Kind::Upgrade;
@@ -5762,4 +5765,176 @@ TEST_CASE("ai: an enemy colony in the defend list adds the foreign ratings in it
     const std::optional<int64_t> guarded = threat();
     REQUIRE(guarded);
     CHECK(*guarded == rating + (guardListed ? rating + ai::detail::kStrengthScale : 0));
+}
+
+TEST_CASE("ai: scrap ties go to the first candidate in slot order; dates are compared strictly") {
+    // Spec 05 §7.5 *Scrap* "Ties" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    s.turn = 12;   // not a tenth turn
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location away{home.system, Sector{home.sector.x < 6 ? 11 : 1, home.sector.y}};
+    const std::initializer_list<std::string_view> crew{"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Laser"};
+    const DesignId hammer = typedDesign(s, r, me, "Hammer", "Test Frigate", crew, "Attack Ship", 3);
+    const DesignId anvil = typedDesign(s, r, me, "Anvil", "Test Frigate", crew, "Attack Ship", 3);   // made the same turn
+    const DesignId fortress = typedDesign(s, r, me, "Fort", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"},
+                                          "Defense Base", 3);
+    const VehicleId first = addTestVehicle(s, r, hammer, away).id;
+    const VehicleId second = addTestVehicle(s, r, anvil, away).id;
+    const VehicleId fort = addTestVehicle(s, r, fortress, home).id;
+    auto scrapped = [&]() -> VehicleId {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        p.capUpkeep = Resources{1'000'000, 1'000'000, 1'000'000};
+        ai::detail::planScrap(p);
+        const auto cmds = p.report().commands;
+        const cmd::Scrap* c = firstOf<cmd::Scrap>(cmds);
+        return c ? c->vehicle : VehicleId{};
+    };
+    auto setSlots = [&](VehicleId a, VehicleId b, VehicleId c) {
+        // Three slots the vehicles already hold, given out again in this order.
+        std::vector<uint32_t> slots{s.vehicle(first)->slot, s.vehicle(second)->slot, s.vehicle(fort)->slot};
+        std::sort(slots.begin(), slots.end());
+        s.vehicle(a)->slot = slots[0];
+        s.vehicle(b)->slot = slots[1];
+        s.vehicle(c)->slot = slots[2];
+    };
+    // Equally old: the first in slot order wins, whatever the vehicle ids,
+    // the designs' order or the kind (a base at a yard beside ships elsewhere).
+    setSlots(first, second, fort);
+    CHECK(scrapped() == first);
+    setSlots(second, first, fort);
+    CHECK(scrapped() == second);
+    setSlots(fort, second, first);
+    CHECK(scrapped() == fort);
+    // A strictly older design comes first, wherever its slot.
+    s.design(anvil).createdTurn = 2;
+    CHECK(scrapped() == second);
+}
+
+TEST_CASE("ai: net income takes off the maintenance of the moment and what the colony queues will spend this turn") {
+    // Spec 05 §7.5 *Net income* (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(6, 2, 0, 10);
+    const EmpireId me{0u};
+    Empire& e = s.empire(me);
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId warship = addWarship(s, r, me, "Picket");
+    e.designs.push_back(warship);
+    Colony& hw = homeworld(s, me);
+    hw.queue.items.clear();
+    const cmd::QueueTarget homeQueue{hw.planet, {}};
+    REQUIRE(ai::detail::queueCommitments(r, s, me) == Resources{});
+    // A first item partly paid: its cost less what was paid, at most the queue's rate.
+    QueueItem ship;
+    ship.kind = QueueItem::Kind::Vehicle;
+    ship.design = warship;
+    ship.count = 50;
+    ship.spent = {30, 0, 0};
+    hw.queue.items = {ship, ship};   // only the first item counts
+    const Resources rate = economy::constructionRate(r, s, me, homeQueue);
+    const Resources cost = economy::itemCost(r, s, me, homeQueue, ship);
+    const Resources expected = min(max(cost - ship.spent, Resources{}), rate);
+    REQUIRE(expected != Resources{});
+    CHECK(ai::detail::queueCommitments(r, s, me) == expected);
+    // A yard ship's queue is not counted.
+    const DesignId tender = addTestDesign(s, r, me, "Tender", "Test Cruiser",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Yard Module"});
+    Vehicle& yard = addTestVehicle(s, r, tender, home);
+    QueueItem one = ship;
+    one.count = 1;
+    one.spent = {};
+    yard.queue.items = {one};
+    CHECK(ai::detail::queueCommitments(r, s, me) == expected);
+    // Net income: revenue less the vehicles' maintenance now (not the one last
+    // paid) and less the queues' commitments.
+    e.economy = {};
+    e.economy.colonies = Resources{100'000, 100'000, 100'000};
+    e.economy.maintenance = Resources{99'999, 99'999, 99'999};
+    const ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+    CHECK(p.netIncome() == Resources{100'000, 100'000, 100'000} - economy::maintenanceCost(r, s, me) - expected);
+}
+
+TEST_CASE("ai: the Ship Construction minister places nothing while the queues' commitments use up the budget") {
+    // Spec 05 §7.5 *Net income* (confirmed: binary), question 71.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(3, 2, 12, false);
+    const EmpireId cpu{1u};
+    Empire& e = s.empire(cpu);
+    const DesignId warship = addWarship(s, r, cpu, "Picket");
+    e.designs.push_back(warship);
+    const Resources perShip = computeDesignStats(r, &e, s.design(warship)).cost;
+    Colony& hw = homeworld(s, cpu);
+    hw.queue.items.clear();
+    const cmd::QueueTarget homeQueue{hw.planet, {}};
+    auto shipsQueued = [&](const ai::detail::Planner& p) {
+        int n = 0;
+        for (const auto& c : p.st.colonies)
+            if (c && c->owner == cpu)
+                for (const QueueItem& q : c->queue.items) n += q.kind == QueueItem::Kind::Vehicle;
+        return n;
+    };
+    // One ship's worth of net income after maintenance: a ship is queued.
+    e.economy = {};
+    e.economy.colonies = perShip + economy::maintenanceCost(r, s, cpu);
+    {
+        ai::detail::Planner p(r, s, cpu, ai::detail::Mode::Computer, 9);
+        p.state = ai::AiState::Infrastructure;
+        ai::detail::planShips(p);
+        CHECK(shipsQueued(p) >= 1);
+    }
+    // The same income while the home queue's first item takes its whole rate
+    // this turn: the budget is spent before the loop starts.
+    QueueItem busy;
+    busy.kind = QueueItem::Kind::Facility;
+    busy.facility = facilityIndex(r, "Test Lab");
+    busy.count = 1000;
+    hw.queue.items = {busy};
+    REQUIRE(ai::detail::queueCommitments(r, s, cpu) ==
+            min(economy::itemCost(r, s, cpu, homeQueue, busy), economy::constructionRate(r, s, cpu, homeQueue)));
+    ai::detail::Planner p(r, s, cpu, ai::detail::Mode::Computer, 9);
+    p.state = ai::AiState::Infrastructure;
+    ai::detail::planShips(p);
+    CHECK(shipsQueued(p) == 0);
+}
+
+TEST_CASE("ai: the facility upgrades spend the net income the start-of-turn step worked out") {
+    // Spec 05 §7.5 *Net income* (confirmed: binary): worked out once at the
+    // start-of-turn step and kept for the economy step's upgrades.
+    const Rules& r = engineRules();
+    GameState s = computerGame(8, 2, 0, 10);
+    const EmpireId me{0u};
+    Empire& e = s.empire(me);
+    researchEverything(r, e);
+    const uint32_t oldMine = facilityIndex(r, "Test Mine");
+    Colony& home = homeworld(s, me);
+    const ObjectId homePlanet = home.planet;
+    home.facilities = {oldMine};
+    home.queue.items.clear();
+    const auto second = freePlanetIn(s, s.galaxy.object(homePlanet).system);
+    REQUIRE(second);
+    addColony(s, *second, me, {{me, 100}}).facilities = {oldMine};
+    addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homePlanet));
+    e.economy = {};   // the net income now: no revenue, a ship's maintenance, below 0
+    s.turn = 4;       // date 5
+    auto upgrades = [&](const std::vector<Command>& cmds) {
+        int n = 0;
+        for (const Command& c : cmds)
+            if (const auto* q = as<cmd::QueueAdd>(c)) n += q->item.kind == QueueItem::Kind::Upgrade;
+        return n;
+    };
+    // The start-of-turn step hands its figure over: the net income of that moment.
+    std::optional<Resources> start;
+    ai::planOrdersAfterPolitics(r, s, me, nullptr, nullptr, &start);
+    REQUIRE(start.has_value());
+    CHECK(*start == ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).netIncome());
+    REQUIRE(start->v[0] < 0);
+    // The economy step's upgrades spend the figure handed over, not one of their own.
+    const Resources plenty{1'000'000, 1'000'000, 1'000'000};
+    CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, &plenty)) == 2);
+    CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, &*start)) == 0);
+    // Without one, the step works it out as it starts: below 0, nothing is upgraded.
+    CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, nullptr)) == 0);
 }

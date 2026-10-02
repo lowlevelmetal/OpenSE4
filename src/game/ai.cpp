@@ -610,7 +610,19 @@ Resources Planner::revenue() const {
            eco.tariffsIn;
 }
 
-Resources Planner::netIncome() const { return revenue() - emp().economy.maintenance; }
+Resources Planner::netIncome() const { return revenue() - economy::maintenanceCost(r, st, id) - queueCommitments(r, st, id); }
+
+Resources queueCommitments(const Rules& r, const GameState& s, EmpireId e) {
+    Resources sum;
+    for (const auto& c : s.colonies) {
+        if (!c || c->owner != e || c->queue.items.empty()) continue;
+        const cmd::QueueTarget target{c->planet, {}};
+        const QueueItem& first = c->queue.items.front();
+        const Resources left = max(economy::itemCost(r, s, e, target, first) - first.spent, Resources{});
+        sum += min(left, economy::constructionRate(r, s, e, target));
+    }
+    return sum;
+}
 
 // Over the soft cap (extraPercent 0) or the hard cap (20) when, for any one
 // resource, the maintenance of the empire's vehicles other than colony ships
@@ -657,6 +669,7 @@ void Planner::runOrders(bool politics, bool others) {
     capUpkeep = capMaintenance(r, st, id);   // the vehicles as the start-of-turn ministers find them
     if (politics && on(Minister::Politics)) planPolitics(*this);
     if (!others) return;
+    startOfTurnNet = netIncome();   // kept for the economy step's facility upgrades
     planTroops(*this);
     planTransports(*this);
     planColonization(*this);
@@ -678,6 +691,7 @@ void Planner::runOrders(bool politics, bool others) {
 void Planner::runEconomy() {
     if (!emp().alive) return;
     capUpkeep = capMaintenance(r, st, id);   // and as the economy-step ministers find them
+    if (!startOfTurnNet) startOfTurnNet = netIncome();
     // New colonies already have their type: colonization calls
     // colonyTypeAtColonization for every empire (spec 05 §7.5).
     if (mode == Mode::Computer) planStrategies(*this);
@@ -936,7 +950,7 @@ std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, Empi
 }
 
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory,
-                                             std::vector<ObjectId>* colonyTargets) {
+                                             std::vector<ObjectId>* colonyTargets, std::optional<Resources>* startNet) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltOrders, territory);
@@ -945,15 +959,17 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
         for (const detail::ColonyTarget& t : p.sit.colonyTargets) colonyTargets->push_back(t.planet);
     }
     p.runOrders(false, true);
+    if (startNet) *startNet = p.startOfTurnNet;
     return p.report().commands;
 }
 
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve,
-                                     const std::vector<ObjectId>* colonyTargets) {
+                                     const std::vector<ObjectId>* colonyTargets, const Resources* startNet) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltEconomy);
     p.unitReserve = unitReserve;
+    if (startNet) p.startOfTurnNet = *startNet;
     // The lists another step left (spec 05 §7.2 "Whose lists the economy step
     // reads"): of them the economy step reads only the colonization targets.
     if (colonyTargets) {

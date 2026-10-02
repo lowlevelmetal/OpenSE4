@@ -1235,6 +1235,48 @@ rule to the one before; paired by seed, standard errors of the change in bracket
   (1.0 against 1.9–2.2), question 69; the colonies, ships and resources from turn 50,
   questions 61, 62 and 65.
 
+### Pace after the tie-break and budget rules (OpenSE4, 2026-10-02)
+
+Measured again once the engine followed the scrap tie-break (candidates met in slot order,
+dates compared strictly) and the construction budget's queue commitments (net income less
+the maintenance of the moment and what the colony queues will spend this turn, the
+start-of-turn figure kept for the upgrades; spec 05 §7.5, questions 71 and 73). Set-up and
+records as in "Pace after the scrap, cap and fleet rules", the waiting happiness events
+dropped after each turn. Original / before (6fcd48e) / after, seeds 1–24:
+
+| | Original | Before | After |
+|---|---|---|---|
+| Bases per empire at turns 50 / 75 / 100 | 0.5 / 0.6 / 0.6 (three games) | 0.43 / 0.36 / 0.35 | 0.30 / 0.37 / 0.35 |
+| Turns over the soft cap, 26–50 / 51–100 | 0 / 14–16 % (two games) | 4.5 / 17.7 % | 1.0 / 11.9 % |
+| Ships per empire at turns 25 / 50 | 3.5 / 8.6 (five games) | 3.5 / 7.7 | 3.2 / 7.3 |
+| Defend (Short Term), all turns / turns 51–100 | 48 / 70 % | 50 / 71 % | 50 / 71 % |
+| Infrastructure, all turns / turns 51–100 | 9 / 11 % | 8 / 7 % | 8 / 7 % |
+| Exploration, turns 1–25 | 85 % | 75 % | 74 % |
+| Colonies / resources produced at turn 100 | 17.0 / 36.9k | 15.0 / 29.5k | 16.4 / 32.5k |
+
+Over 120 seeds, paired by seed (standard errors of the change in brackets): turns over the
+soft cap 3.5 → 1.2 % of turns 26–50 (−2.4, 0.4) and 16.3 → 11.0 % of turns 51–100 (−5.4,
+0.7); ships at turns 25 / 50 3.5 / 8.1 → 3.3 / 7.6 (−0.27, 0.04; −0.46, 0.11), at turn 100
+14.7 → 15.0; bases at turns 50 / 75 / 100 0.35 / 0.36 / 0.36 → 0.29 / 0.33 / 0.34 (−0.07,
+0.02 at turn 50); colonies at turns 50 / 100 10.7 / 15.4 → 11.0 / 16.4 (+0.33, 0.08; +0.98,
+0.21); resources produced at turn 100 30.8k → 33.2k (+2.4k, 0.5k); Defend (Short Term) in
+turns 51–100 70 → 72 % (+1.5, 1.1), Infrastructure 6.5 → 6.2 %, Exploration in turns 1–25
+77 % unchanged.
+
+- **The budget rule** does it all: the tie-break alone changed the course of 116 of the 120
+  games and none of these figures measurably (turns 51–100 over the soft cap −0.8 points,
+  0.4).
+- **Turns 26–50 over the soft cap** are now close to the original's none (77 of 120 games
+  have none). **Turns 51–100** fell below the original's two games: per game, our median
+  is 11 % and our quartiles 6 and 15 %, so the original's 14 and 16 % sit at our upper
+  quartile. Per game the share does not follow the ships held (correlation −0.15 with the
+  ships at turn 75).
+- **What the budget kept goes to colonies**: a colony more per empire at turn 100 and 8 %
+  more resources, closing three fifths of the gap to the original in colonies and two
+  fifths in resources (spec 05 questions 61, 65), with fewer ships at turns 25 and 50 and
+  about as many from turn 75 (question 62). The bases placed early fall a little (0.29
+  against 0.35 at turn 50).
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.

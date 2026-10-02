@@ -81,9 +81,11 @@ std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e);
 // the territory only through the lists built then (spec 05 §7.2, question 60).
 std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e);
 // `colonyTargets` receives the colonization targets of the lists, in order
-// (TurnContext::aiColonyTargets).
+// (TurnContext::aiColonyTargets); `startNet` the net income this step worked
+// out, which the empire's economy step keeps for its facility upgrades
+// (TurnContext::aiStartNet, spec 05 §7.5 *Net income*).
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory = nullptr,
-                                             std::vector<ObjectId>* colonyTargets = nullptr);
+                                             std::vector<ObjectId>* colonyTargets = nullptr, std::optional<Resources>* startNet = nullptr);
 // Group 2 above: Design, Research, Intelligence and the construction ministers.
 // `unitReserve`: the percentage the vehicle list holds back for units, which
 // the turn passes on (the reserve quirk of spec 05 §7.5 "Units file"; see
@@ -92,8 +94,10 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
 // (TurnContext::aiColonyTargets), which the economy step then plans with
 // instead of its own; whether the empire can settle each is its own test
 // (inferred, spec 05 Q64).
+// `startNet`: the net income the empire's start-of-turn step worked out, for
+// the facility upgrades; without it the step works it out when it starts.
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve = 0,
-                                     const std::vector<ObjectId>* colonyTargets = nullptr);
+                                     const std::vector<ObjectId>* colonyTargets = nullptr, const Resources* startNet = nullptr);
 // The reserve quirk (spec 05 §7.5 "Units file", confirmed: binary): the
 // reserve is one value shared by all empires. Each empire's start-of-turn AI
 // step resets it to 0; the units step of every empire whose Ship

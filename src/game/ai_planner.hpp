@@ -218,6 +218,10 @@ public:
     bool idle(const Vehicle& v) const;      // no orders, not in a fleet with orders, not busy this turn
 
     // ---- Budget (spec 05 §7.5 "Budget and maintenance caps").
+    // One turn of net income (spec 05 §7.5 *Net income*, confirmed: binary):
+    // revenue less the maintenance of all the empire's vehicles of the moment
+    // (colony ships included) and less what its colony queues will spend this
+    // turn (queueCommitments), worked out from the state as it is now.
     Resources netIncome() const;
     Resources revenue() const;
     bool overCap(int extraPercent) const;   // soft cap: 0, hard cap: 20
@@ -225,6 +229,12 @@ public:
     // moment (capMaintenance) when the planner is made and again when its
     // start-of-turn and economy-step ministers start.
     Resources capUpkeep;
+    // The net income the start-of-turn step worked out once, kept for the
+    // facility upgrades of the economy step (spec 05 §7.5 *Net income*,
+    // confirmed: binary): set when the ministers after Politics start, or
+    // handed over from that step (planEconomyStep). An economy step that has
+    // none works it out when its ministers start (inferred, spec 05 Q73).
+    std::optional<Resources> startOfTurnNet;
 
     // ---- Orders (emitted only when they differ from the current ones).
     bool setOrders(VehicleId v, std::vector<Order> orders, bool repeat = false);
@@ -268,6 +278,12 @@ void planStellarManipulation(Planner& p);
 // vehicle whose hull takes colony modules (`Requirement Pct Colony Mods`
 // above 0), so colony ships never count. The maintenance paid includes them.
 Resources capMaintenance(const Rules& r, const GameState& s, EmpireId e);
+// What the empire's colony queues will spend this turn on their first items
+// (spec 05 §7.5 *Net income*, confirmed: binary): for each colony queue
+// holding items, the first item's cost less what has been paid into it (not
+// below 0), at most the queue's construction rate, per resource. Queues of
+// yard ships are not counted.
+Resources queueCommitments(const Rules& r, const GameState& s, EmpireId e);
 // The AI design type of a design (spec 05 §7.5 "Design types of other
 // designs", confirmed: binary): its type label when that is exactly one of the
 // 39, else the first of the fixed tests on what it carries. Never empty.

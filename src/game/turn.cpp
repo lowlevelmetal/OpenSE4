@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <format>
 #include <optional>
+#include <utility>
 
 namespace opense4::game {
 
@@ -48,9 +49,15 @@ void resetCameFrom(const Rules& r, GameState& s, EmpireId e) {
     }
 }
 
+void keepStartNet(TurnContext& ctx, EmpireId e, const std::optional<Resources>& net) {
+    if (ctx.aiStartNet.size() <= e.index()) ctx.aiStartNet.resize(e.index() + 1);
+    ctx.aiStartNet[e.index()] = net;
+}
+
 } // namespace detail
 
 using detail::applyCommands;
+using detail::keepStartNet;
 using detail::Control;
 using detail::living;
 using detail::ministersPlan;
@@ -81,7 +88,10 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     if (ministers) {
         const std::optional<std::vector<ObjectId>> lists = std::move(ctx.aiColonyTargets);
         ctx.aiColonyTargets.reset();
-        applyCommands(ctx, e, ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0, lists ? &*lists : nullptr));
+        std::optional<Resources> startNet;
+        if (e.index() < ctx.aiStartNet.size()) startNet = std::exchange(ctx.aiStartNet[e.index()], std::nullopt);
+        applyCommands(ctx, e, ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0, lists ? &*lists : nullptr,
+                                                  startNet ? &*startNet : nullptr));
         if (living(s, e) && ai::ministerOn(s.empire(e), Minister::ShipConstruction)) ctx.unitReserve = ai::unitReserveLeft(r, s.empire(e));
     }
     // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5;
@@ -247,8 +257,10 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
             applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id));
             diplomacy::deliverMessages(ctx, date);
             std::vector<ObjectId> targets;
-            applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets));
+            std::optional<Resources> net;
+            applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets, &net));
             ctx.aiColonyTargets = std::move(targets);  // the step's lists stay in place
+            keepStartNet(ctx, id, net);
             diplomacy::deliverMessages(ctx, date);
         }
     }
