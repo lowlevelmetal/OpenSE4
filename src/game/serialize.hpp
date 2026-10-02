@@ -57,8 +57,12 @@ class Rules;
 // combat counts per round in battle records, log entry targets and messages,
 // combat piece damage, and the windows' sort history (spec 01 §6.9, spec 02
 // §5.6, spec 06 §7 Q24, Q33, Q41-Q43).
-inline constexpr uint32_t kSaveVersion = 4;
-inline constexpr uint32_t kMinSaveVersion = 4;
+// Version 5: design Number Scrapped, the Scrap window's actions as orders,
+// vehicle headings, combat event flags, the Ships\Units window's tab and
+// switches, the minister flag on messages, empire-file strategies; the unused
+// vehicle target fields are gone (spec 03 §15, spec 06 §7 Q56, Q62, spec 05 Q52).
+inline constexpr uint32_t kSaveVersion = 5;
+inline constexpr uint32_t kMinSaveVersion = 5;
 
 inline constexpr size_t kEnvelopeSize = 32;
 
