@@ -220,7 +220,7 @@ effect, except that formation slots and AI logic can refer to them.
 | `Bases Can Join Fleets` | False | §9 |
 | `Population Mass` | 5 | cargo kT per 1M population (confirmed: binary) |
 | `Maximum Population For Abandon Planet Order` | 50 | planet order gate |
-| `System Ship Movement Delay Milliseconds` | 0 | presentation only |
+| `System Ship Movement Delay Milliseconds` | 0 | presentation only: the pause after each animated step of a move in the system window, which the original reads as seconds, not milliseconds (confirmed: binary; spec 06 §2.4) |
 
 ---
 
@@ -861,9 +861,14 @@ records every step for replay, per system and per ship.
 All rules in this section are (confirmed: binary) unless marked otherwise.
 
 - An order whose destination cannot be reached fails, and a failed order clears the whole list
-  (§8).
+  (§8). The lists a failure clears are the acting vehicle's, or, when it is a fleet member, those
+  of its fleet's members at the fleet's location, or in a turn-based game those of the vehicles
+  the player selected together; a computer player's ad-hoc companions keep theirs (§8, §19 Q75,
+  Q77).
 - Movement stops and the list is cleared by: storm damage on entry, turbulence damage on a warp, a
-  minefield, a refused entry into an enemy sector, and (turn-based games only) combat on entry. A
+  minefield, a refused entry into an enemy sector, and (turn-based games only) combat on entry.
+  Each of these makes the step fail, and the failure clears the lists named above, never a
+  companion's (§19 Q77). A
   pursuit (the Seek form of Attack, §8) is the exception: when its step meets storm damage,
   turbulence, mines or a battle, it only stops moving for this run of its list; its order and the
   list are kept (spec 04 §2, §19.2 Q76) (confirmed: binary).
@@ -875,9 +880,13 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   To or a pursuit; never on in-system steps, and not for groups made only of drones. They count
   the objects of other empires in the arrival system that the group's owner can see (colonies
   and unit groups included, only if seen); "enemy" means a treaty below Non-Aggression. When one
-  applies, every group member's order list is cleared, fleet copies included. The jump itself
-  does not fail: a Warp order just ends, and a Move To in progress keeps stepping to its end in a
-  turn-based game while MP last, while in a simultaneous game the action ends there.
+  applies, the order list of every member of the acting group is cleared and its Repeat switched
+  off: fleet copies, a computer player's ad-hoc companions, companion drone groups and, in a
+  turn-based game, the vehicles selected together (§19 Q77). The jump itself does not fail: a
+  Warp order just ends; in a turn-based game a Move To in progress keeps stepping toward its
+  destination in the same run while MP last, although the lists are already empty, so nothing is
+  left of it for a later turn if MP run out first; in a simultaneous game the action ends
+  there.
 - If a vehicle's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1). In a
   simultaneous game a drop during the vehicle's own action (supply running out on its step, for
   example) stops it once its counter has no whole unit left (§6.3 step 4), and a drop between
@@ -998,7 +1007,9 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   bases and unit groups, fleet members, mothballed and cloaked ones included, each alone (not its
   whole fleet). Carrying out the order changes only the acting vehicle's list (or its fleet's
   lists at the location); the companions' lists are left as they are, and they carry the order
-  out again on their own next action (§19 Q75). For a human player only a drone
+  out again on their own next action (§19 Q75). A failure, a minefield or another hazard of
+  §6.4 included, leaves them alone too. The one exception is the Ship Orders options at the end
+  of a warp, which clear every group member's list, companions included (§6.4, §19 Q77). For a human player only a drone
   group outside fleets gathers the other drone groups outside fleets in its sector with an
   identical head order; human ships never form ad-hoc groups. In turn-based games the vehicles the
   player selected together act as the group. A group moves only while every member has MP left
@@ -1142,7 +1153,8 @@ sector is elsewhere) plus the action.
   separately. "Select Facility" lists each facility position of the colony whose facility has
   either ability. Closing the picker without a choice gives no order.
 - **Giving the order.** The order records the chosen position, not the part. In a turn-based
-  game the object's order list is cleared first, then the order is added. For a fleet member,
+  game the object's order list is cleared first, by the same clearing as Clear Orders (so Repeat
+  is switched off too), then the order is added. For a fleet member,
   the lists of all the members at the fleet's location are cleared (§9). Then the vehicle's list
   runs at once, so Use Component takes effect as it is given. In a simultaneous game the order is
   appended like any other, for a fleet member to each member at the fleet's location. It runs
@@ -1167,9 +1179,9 @@ sector is elsewhere) plus the action.
   list at once (Convert Resources, spec 02 §5.6; Abandon Planet; Launch or Recover Units
   Remotely). Its only visible effects are that, in a turn-based game, giving it clears the colony's
   other orders, and that it shows in the colony's order list until it runs.
-- **The engine follows this since 2026-10-01**, with the pickers above. One choice is its own:
-  the clearing in a turn-based game also switches Repeat off, as Clear Orders does (inferred,
-  §19 Q77).
+- **The engine follows this since 2026-10-01**, with the pickers above. The clearing in a
+  turn-based game is the Clear Orders clearing, so it also switches Repeat off (confirmed:
+  binary, §19 Q77).
 
 **Convert Resources** is a colony order with economic effects; its rules are in spec 02 §5.6.
 Scrap Facilities and Abandon Planet are also in spec 02. The movement-log replay orders are UI
@@ -2250,8 +2262,9 @@ binary.
     The engine follows this since 2026-10-01: each companion joins alone, and only the actor's
     list (or its fleet's members' at the location), or the turn-based selection, changes. It
     reads "never touched" for every list change, so a minefield that stops the group or a
-    Ship Orders option met after a warp clears only those lists too (inferred: §6.4 says every
-    member's list; Q77).
+    Ship Orders option met after a warp clears only those lists too. Q77 settled both: the
+    minefield is right, the Ship Orders options clear every member's list, companions
+    included.
 76. **Changes to a fleet's orders other than adding (§8, Q65):** the engine appends added orders
     to every copy, as the original does; for any other change (Clear Orders, an order taken back
     or put in front) it makes every copy the new list. Orders given to a member away from the
@@ -2289,3 +2302,29 @@ marked (inferred) in the code.
       the group and the Ship Orders options after a warp clear only the actor's (or its
       fleet's) lists, though §6.4 says every group member's list is cleared. Which lists do
       those two clear when the group holds companions?
+
+    **Answer** (confirmed: binary; §6.4, §8):
+    - **Repeat.** In a turn-based game the clearing done before Use Component or Use
+      Facility is the Clear Orders clearing: each list is emptied, Repeat is switched off and
+      the list restarts at its first order. It reaches the same lists as Clear Orders: the
+      vehicle's, its fleet's members' at the fleet's location, every vehicle of the turn-based
+      selection, and for Use Facility the colony's. The engine matches.
+    - **A minefield** clears nothing by itself: the strike makes the step fail, and the failure
+      clears only the lists a failure clears (the actor's, or its fleet's members' at the
+      location, or the turn-based selection). Companions keep theirs. Storm damage,
+      turbulence, a refused entry and turn-based combat on entry behave the same way. The
+      engine matches (`movement.cpp`, the hazard's `clearListsOf(e.holders)`).
+    - **The Ship Orders options** at the end of a warp clear the list of every member of the
+      acting group, each with Repeat switched off: the fleet's members at the location, a
+      computer player's ad-hoc companions, companion drone groups (the check is skipped when
+      every member is a drone) and the turn-based selection. In a turn-based game a Move To
+      then goes on stepping toward its destination in the same run while movement lasts, but
+      the lists are already empty, so when movement runs out first nothing is left of the
+      order for a later turn. In a simultaneous game the action ends there.
+
+    The engine differs for the Ship Orders options: `encounter()` (`movement.cpp`) clears
+    only the holders' lists (`setLists(g, {})`), and in a turn-based game it writes the Move
+    To back into them (`setLists(g, {o})`), so the order resumes on a later turn. It must
+    empty the list of every member of the group (`g.members`, companions included) with
+    Repeat off, and in a turn-based game let the Move To finish its steps in the current run
+    without writing it back.

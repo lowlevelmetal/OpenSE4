@@ -876,6 +876,13 @@ same (§10.6).
   Only Master Computers). So drones that choose one after another spread over the
   targets. A drone keeps its target as long as that piece is in the battle; its weapons
   get targets at every choice like any piece's.
+- **A reused piece number** (confirmed: binary; spec 06 §7 Q78). The drone target is kept
+  as a piece number. A new piece (a seeker, a launched group) takes the number one above
+  the highest number present, so after the highest-numbered piece leaves the battle the
+  next new piece takes its number. A drone whose target had that number then takes the
+  new piece for its target, without a new choice; this can be a seeker or another piece
+  the choice above never allows. The engine differs: it never reuses piece numbers, so a
+  drone whose target left always chooses again (`Battle::chooseDroneTarget`).
 - A drone attacks by ramming (§10.3); its warheads strike separately. Drones also fire
   any weapons they carry. Drone hulls give +50 defense.
 
@@ -919,17 +926,29 @@ same (§10.6).
   of whatever design, onto an **adjacent** colony of another empire. **The treaty is not
   checked**: the colony may belong to an empire at Non-Aggression or better with the
   ship's owner, an ally included, and the landing goes ahead all the same. The order
-  names no planet: among the colonized planet pieces of other empires adjacent to the
-  ship, the one that comes **last in piece order** is taken, and only that one is looked
-  at. The landing is refused when that colony already holds landed troops of an empire
-  other than the ship's owner, and does nothing when the ship carries no troops. It
-  needs no movement points and uses none; planet shields do not stop it. The troops land
-  for the empire that owns the ship at that moment.
+  names no planet: among the colonized planet pieces adjacent to the ship that fight for
+  another side, the one that comes **last in piece order** is taken, and only that one is
+  looked at. "Another side" is judged by the side the planet piece fights for at that
+  moment, not by the colony's owner: a planet converted by Crew Conversion (§12) is no
+  landing site for the converter's ships, but it is one for every other empire, its own
+  owner included. The landing is refused when that colony already holds landed troops of
+  an empire other than the ship's owner, and does nothing when the ship carries no
+  troops. The three tests run in that order (§19.4 Q88). It needs no movement points and
+  uses none; planet shields do not stop it. The troops land for the empire that owns the
+  ship at that moment.
+- **Who gives the order** (confirmed: binary). The order does not check what kind of
+  piece is selected. A colony's planet piece of the side whose phase it is can give it
+  too: it lands the troops held in its colony's cargo on an adjacent colonized planet of
+  another side. A unit group has no cargo, so it is always refused, by the first of the
+  three tests it fails.
 - **The ground combat that follows** is fought **at once** (§13), in the middle of the
   space battle, whatever the treaty: troops landed on a friendly or allied colony fight
-  it exactly as on an enemy one, and take it if they win. Then the planet's piece is
+  it exactly as on an enemy one, and take it if they win. The defender is always the
+  colony's owner (the empire that held it when the battle began, or that took it with
+  troops since), also on a converted planet. Then the planet's piece is
   reset, whether or not the planet fell: it belongs to the colony's owner after the fight
-  (the invader if the planet fell), its weapon targets and its list of targets engaged
+  (the invader if the planet fell), so a landing on a converted planet ends the
+  conversion; its weapon targets and its list of targets engaged
   this combat turn are cleared, every weapon's reload counter goes back to 0, so every
   weapon is ready again, its shields go back to their maximum, and its offense, defense
   and target budget are worked out again. So each landing also refills the planet's
@@ -1036,8 +1055,12 @@ same (§10.6).
   ground combat.
 - **Reinforcing** (confirmed: binary). The invading empire may drop more troops at any
   time, in the same battle or a later one; they join the landed ones and a new fight is
-  fought at once. Drop Troops never lands on a colony of the ship's own empire (§11), so
-  the defender cannot reinforce this way. A third empire may not land on a planet where
+  fought at once. Drop Troops never lands on a planet piece of the ship's own side (§11),
+  so the defender cannot reinforce this way. The one exception is a colony whose planet
+  piece Crew Conversion took over: its owner's ships may land there, their troops fight
+  the colony's own defenders and militia by the usual rules (the code makes no exception
+  for this case), and the piece returns to its owner's side afterwards (confirmed:
+  binary). A third empire may not land on a planet where
   another empire's troops are already landed.
 - **Invaders of a destroyed empire** (confirmed: binary). When an empire is destroyed, its
   troops already landed on other empires' colonies stay there. Every treaty with it goes
@@ -1227,7 +1250,9 @@ formation slot checks whether every square on the map around its footprint is ta
 (squares off the map do not count). If so, it makes no plan and does not move, though it
 still fires (its fire-first test then measures from square (0, 0)), and if it leads a
 group, that whole group is dissolved first (spec 03 §10). This is the only surrounded
-test: nothing is tested after a piece has moved.
+test: nothing is tested after a piece has moved. A surrounded carrier with Drop Troops in
+effect does not try a landing in that phase, since the landing is part of the plan it
+skips; it still fires (confirmed: binary; §19.4 Q89).
 
 **Strategy in effect.** The primary strategy is used unless it is impossible: Drop Troops
 needs a ship carrying troops; the four range strategies (Maximum, Optimal, Short, Point
@@ -1379,6 +1404,12 @@ describes this effect).
   - Ships are new vehicles built from the designs, fully supplied, with no experience. A
     sample planet is a copy of the real colony, owned by its side and moved to the battle
     sector.
+  - **Cargo** (confirmed: binary; spec 06 §7 Q80). Change Cargo lists every holder of the
+    setup, all sides together, against a temporary "Storehouse": a copy of the player's
+    first colony, owned by side 1, with 1000 of every unit design the player owns or has
+    seen and 10000M of side 1's population added. Cargo moves only between a holder and
+    the Storehouse, whatever the sides, and what is moved stays with the setup,
+    population on a ship included. Without a colony there is no Storehouse.
   - **Names** (confirmed: binary). A ship is named after its design followed by a space
     and a four-digit number: each side has one counter for all its ships, whatever the
     design, starting at 0 when the setup is made; a ship takes counter + 1 and the
@@ -1395,8 +1426,11 @@ describes this effect).
     opened from them show a side not by a flag but by a box in the side's fixed colour
     holding its number: 1 red, 2 blue, 3 green, 4 yellow, 5 purple, 6 white, 7 aqua, 8
     lime, 9 maroon, 10 olive, the number in white on the dark colours (1, 2, 3, 5, 9,
-    10) and in black on the others. (What the Flag column of the Combat Vehicles list
-    draws was not traced; open: needs observation.)
+    10) and in black on the others. The Combat Vehicles list's Flag column shows the same
+    box; a neutral object's row has none. No empire flag is drawn anywhere in the
+    simulator. The box is a plain filled rectangle without outline, 26×18 where a large
+    flag would stand and 14×10 where a small one would, the number centred both ways in
+    the text font the window is drawing with (spec 06 §7 Q38, Q82).
   - Start positions go by side number, as if each side had arrived from a neighbouring
     sector (§3): 1 from the north, 2 south, 3 west, 4 east, 5 north-west, 6 south-west, 7
     north-east, 8 south-east; sides 9 and 10, and any side that owns a planet or a base,
@@ -1746,6 +1780,15 @@ the bullets below were checked in the executable on 2026-09-30; those parts are 
   for its other pieces. The original uses one stream for everything; ours keeps a side's
   moves, given as orders by hand, playing out exactly as its strategies' do (the tactical
   tests rely on it). Both are deterministic.
+- **Random numbers drawn by the display** (confirmed: binary; spec 06 §7 Q77). In the
+  original the Tactical Combat window draws a miss's direction (two numbers per beam or
+  torpedo miss) and the point on a planet target (two numbers) from the same random
+  sequence as the battle. So a battle shown in the Tactical Combat window uses more random
+  numbers than the same battle fought unseen, and its later rolls differ. Whether Combat
+  Replay draws from the game's sequence too was not traced. The engine differs: the
+  client's drawing takes nothing from the battle's numbers, so a battle shown tactically
+  follows the same course as one fought unseen. Matching it would need the window to draw
+  those numbers from the battle's sequence at the same points.
 - **OpenSE4 extensions in the tactical window (Q49).** Auto can be given to a single
   piece, which then acts by its strategy at once, and "Auto This Phase" lets the
   strategies play the rest of the player's phase (the battle's Auto toggle and Resolve
@@ -2096,7 +2139,8 @@ engine was brought in line with the answers the same day (the questions it raise
 
 On 2026-10-01 the engine was brought in line with the answers of §19.3 (Q80, Q84, Q86)
 and with the Drop Troops rules of §11, §13 and §16.1 (spec 06 §7 Q37). These details
-were left open; each is an engine choice marked "(inferred)" in the code.
+were left open; each is an engine choice marked "(inferred)" in the code. All three were
+settled from the executable the same day; Q87 and Q88 need changes to the engine.
 
 87. **Landing on a converted planet.** A planet piece converted by Crew Conversion fights
     for the converter while the colony keeps its owner (§12). Is "a colonized planet piece
@@ -2104,10 +2148,57 @@ were left open; each is an engine choice marked "(inferred)" in the code.
     judges by the colony's owner (the empire that held it at the battle's start, or that
     took it with troops since), so the converter's ships may still land there, and that
     owner is the defender of the ground combat.
+    **Answer:** by the side the planet piece fights for at that moment, not by the
+    colony's owner (confirmed: binary; §11, §13).
+    - A planet piece converted by Crew Conversion is no landing site for the converter's
+      ships.
+    - It is a landing site for every other empire's ships, the colony's own owner
+      included. Their troops then fight the colony's own defenders and militia by the
+      usual rules; nothing makes an exception for this case.
+    - The defender of the ground combat is always the colony's owner: the empire that
+      held it when the battle began, or that took it with troops since.
+    - After any landing the planet piece goes back to the colony owner's side, or to the
+      invader's if the planet fell, so a landing on a converted planet also ends the
+      conversion.
+
+    The engine differs: `Battle::landingColony` (`combat_space.cpp`) judges "another
+    empire" by the colony's owner (`colonyHolder`). It must judge by the planet piece's
+    current owner, and still require a colony. The defender and the reset after the fight
+    already match, and so does the client's own pick (`dropTroopsColony`,
+    `combat_logic.cpp`), which reads the piece's owner.
 88. **The order of a landing's refusals.** Spec 06 §1.10.2 lists three reasons for a
     refused landing (no colony adjacent, another empire's troops already there, no troops
     aboard). In what order are they tested, so which message does a ship that fails
     several get? The engine tests them in that order.
+    **Answer:** in the listed order (confirmed: binary; §11, spec 06 §1.10.2):
+    1. no colonized planet piece of another side is adjacent;
+    2. the colony the landing takes (the last adjacent one in piece order) already holds
+       landed troops of an empire other than the lander;
+    3. there are no units of any kind aboard.
+
+    Details:
+    - A ship that carries other units (fighters, mines, satellites) but no troops passes
+      the third test and is refused without any message.
+    - The messages appear only for a side played by a human in a tactical battle, in a
+      message box titled "Drop Troops". Computer sides, strategic battles and the sides
+      handed over by Resolve Combat get none.
+    - The order does not check the kind of the selected piece. A colony's planet piece can
+      give it and lands the troops held in its colony's cargo. A unit group has no cargo,
+      so it is refused by whichever test it reaches first, at the latest the third.
+
+    The engine differs in two points (`combat_space.cpp`, `combat_tactical.cpp`):
+    - `Battle::landingProblem` gives "no troops" also when other units are aboard. It must
+      refuse such a ship with an empty reason (refused, no message).
+    - The DropTroops case of `TacticalBattle::check` refuses every piece that is not a
+      ship or base. It must let a planet piece drop the troops of its colony's cargo
+      (`hasTroops` and `dropTroops` would read the colony's cargo for a planet piece), and
+      give a unit group the refusals above.
 89. **A surrounded carrier.** A piece found surrounded makes no plan (§16.1). Does a
     computer carrier with Drop Troops in effect still try its landing then? The engine
     does not: the landing follows a planned move only.
+    **Answer:** no (confirmed: binary; §16.1). The landing is decided by the move
+    planning, which a surrounded piece skips. Such a piece still fires, but it does not
+    try a landing in that phase. A member that follows its formation place does not plan
+    either, but a piece with Drop Troops in effect always leaves its formation first, so
+    that case cannot arise. The engine matches; its "(inferred)" mark becomes "(confirmed:
+    binary)".

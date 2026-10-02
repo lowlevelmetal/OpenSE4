@@ -124,7 +124,16 @@ Component** (the group's first member only, no checks or log, never failing, cle
 a turn-based game; no Self-Destruct branch), and **Use Facility** (a colony order with no
 effect, cleared first and run with the colony's list in a turn-based game). The engine's new
 choices are §19 Q77 (Repeat after the turn-based clearing; which lists a minefield and the Ship
-Orders options clear when a computer group has companions). No row remains.
+Orders options clear when a computer group has companions).
+
+The executable settled Q77 later on 2026-10-01: the turn-based clearing switches Repeat off as
+the engine does, and a minefield clears only the lists a failure clears, as the engine does.
+These rows remain:
+
+| Where | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| Ship Orders options after a warp (`movement.cpp` `encounter()`) | Clears only the holders' lists (`setLists(g, {})`), and in a turn-based game writes the Move To back (`setLists(g, {o})`), so it resumes on a later turn | Spec 03 §6.4, §19 Q77: every member of the acting group, a computer player's companions included, has its list emptied with Repeat off; a turn-based Move To keeps stepping only within the current run | M |
+| Low supply of drone groups at a Sentry's end (`movement.cpp` `sentry()`; client `order_rules.cpp` `lowOnSupply()`) | The tenth of `Supply Amount for Low Supply Warning` applies to fighter groups only | Spec 06 §4.4, §7 Q61: drone groups use the same tenth, and need at least one unit | L |
 
 ## Combat (spec 04)
 
@@ -209,7 +218,18 @@ were closed the same day:
 
 Games on different machines are the one difference left in how battles are shown: their
 host fights every battle without stopping, and the client shows the battles afterwards
-(spec 06 §7 Q74, the turn-based row under Cross-cutting). No combat row remains.
+(spec 06 §7 Q74, the turn-based row under Cross-cutting, an OpenSE4 extension).
+
+Spec 04 §19.4 Q87–Q89 and spec 06 §7 Q76–Q78 were settled from the executable later on
+2026-10-01 (Q89 matches). These rows remain:
+
+| Where | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| Landing on a converted planet (`combat_space.cpp` `Battle::landingColony`) | "Another empire" is the colony's owner (`colonyHolder`), so the converter's ships may land on a planet piece it converted | Spec 04 §11, §19.4 Q87: judged by the side the planet piece fights for; the converter may not land there, every other empire may, its owner included | L |
+| Refusals of a landing (`Battle::landingProblem`; `combat_tactical.cpp` `TacticalBattle::check`) | "No troops" also when other units are aboard; every piece other than a ship or base is refused | Spec 04 §11, §19.4 Q88: a ship with units but no troops is refused silently; a colony's planet piece drops the troops of its colony's cargo; a unit group meets the three tests | L |
+| Simultaneous battles shown (`combat_space.cpp` `resolve()`, `turn.cpp`) | With `Simultaneous Games Show Strategic Combat` on, only battles with a human side stop the turn | Spec 06 §1.10.5, §7 Q76: every battle on that machine is shown, computer-only battles included | L |
+| A drone's target after a piece leaves (`Battle::chooseDroneTarget`) | Piece numbers are never reused; a drone whose target left chooses again | Spec 04 §10.7: a new piece takes the number one above the highest present, so it can inherit a dead piece's number and become a drone's target without a choice | L |
+| Random numbers of a battle shown tactically (client drawing) | The display draws no random numbers | Spec 04 §19.1, spec 06 §7 Q77: a miss's direction and a planet's point are drawn from the battle's sequence, so a shown battle continues differently | M |
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 
@@ -258,7 +278,16 @@ Planet reports to the empires still present after its result, the shockwave to e
 that lost an object there, mine fields included (`Manipulation::noteWitnesses`); a human
 player's request about a third empire must name a living empire it has met, other than itself
 and the recipient (`cmd::SendMessage`). The engine's choice is question 52: a computer
-player's own requests are not checked. No row remains.
+player's own requests are not checked.
+
+Question 52 and spec 06 §7 Q70 were settled from the executable later on 2026-10-01. These
+rows remain:
+
+| Where | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| Requests the computer starts (`ai_diplomacy.cpp` `demand()`) | Step 3 names the first empire in contact the AI is hostile to (None included), ignoring the recipient's treaty with it; step 5 names one of the attack candidates; each step tests its flag and falls through on a refusal; step 2 makes one roll, colonies first | Spec 05 §7.4, question 52: step 3 names the lowest-numbered empire the AI holds at War or Non-Intercourse and the recipient at Trade Alliance or better; step 5 comes from the AI's newest battle lost while defending; the first applicable request is chosen, then its flag tested, a refusal ending steps 1–5; ships and colonies are two rolls, ships first, 1 in 3 per candidate | M |
+| Third-empire check of messages (`commands.cpp` `SendMessage`) | Refuses unchecked requests from every human-played empire, its Politics minister's included | Question 52: only messages the player writes go through the picker; a minister's are not checked | L |
+| Log of a completed package (`diplomacy.cpp` `acceptPackage`, `executePackage`, `setTreaty`, `makeContact`) | One "… Completed" entry per party; "Items Unavailable" entries; treaty items log "New Treaty" (accepted proposals too) and channel items "First Contact"; channels need the giver's contact and a living empire; technology refused without `allowTechTrades`; a System item only drops the giver's claim; star charts need the giver's exploration and copy its warp links | Spec 06 §7 Q70, spec 05 §3.4: one entry per item, receiver then giver, with the titles and targets listed; invalid items skipped silently; "Treaty Enacted" plus a history contact line; channels set both sides to None without checks; no option tested; the receiver claims the system; no exploration test, no warp links; an accepted proposal logs only its message | M |
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
@@ -284,13 +313,53 @@ first contact, the battle checks, Sentry, stellar manipulation, Colonize, the co
 choices, the Planets window, the map and the intelligence picker; a cloaked colony's yard does
 not work; battles decloak colonies and cloak them again; the computer players' colony orders
 decloak and cloak again. The engine's choices (how a simultaneous host receives a mid-turn
-Cloak, which loads recalculate, upgrades) are §14 Q44.
+Cloak, which loads recalculate, upgrades) are §14 Q44, settled from the executable later on
+2026-10-01; they leave four rows below.
 
-This row is where the engine differs:
+These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
+| Starting assets (`setup.cpp`, "Starting designs and ships"; `client/classic/frontend.cpp` `quickStartSetup`) | Every empire gets four designs of its own (`autoDesign`), two scouts and a colonizer | Spec 01 §3.6 "Starting assets", §2.1: no empire gets ships or designs at creation; computer players design in their first turn; Quick Start gives the human one Design minister run | H |
+| When first contact is checked (`diplomacy.cpp` `updateContacts`; callers in `turn_based.cpp`, `turn.cpp`, `commands.cpp`) | Galaxy-wide, after every live move, each player's and game turn's end, movement, combat and events; never at setup | Spec 05 §3.1: one system at a time, only at game creation, warp arrival, any decloak, a logged event, a surrender, a package's planet or vehicle and a rebellion project | M |
+| A Decloak in a simultaneous player's orders (`commands.cpp` `cmd::CloakColony`) | The host runs the full first-contact check, so both empires meet and log it | Spec 01 §14 Q44: only the acting empire's side reaches the host (treaty None, its own entry); the other side waits for the host's next first-contact check in that system | L |
+| Colonies after a PBEM file is read (`client/classic/pbem_play.cpp` `loadPbemGame`, `net/pbem.cpp` `processGameFile`) | Loaded without recalculating colonies | Spec 01 §6.9, §14 Q44: every reading of a game file recalculates every colony | L |
+| A completed facility upgrade (`economy_queue.cpp` `completeItem`, Upgrade branch) | Recalculates the colony's cloak and sensor levels | Spec 01 §14 Q44, spec 02 §6.6: it does not; the new level counts from the next recalculation | L |
+| The automatic decloak (`sight.cpp` `recalculateColony`) | Clears the mark silently | Spec 01 §6.9: it is the Decloak step, recalculating the system's sight and running the first-contact check | L |
 | Generation edge cases (`generate.cpp` `drawNames`, the connectivity pass of `buildLinks`, the "warp points anywhere" draw of `placeWarpPoints`, `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
+
+## Client windows (spec 06)
+
+The client's own differences are written in spec 06 beside each answer ("Our client
+differs"). Those settled on 2026-10-01 in the last round, still to implement:
+
+- **Colonies and Ships\Units** (§1.8.3, §7 Q56): a sort key is a column with one identity
+  in every tab; the original's Colonies columns, directions and keyless columns; clickable
+  pictures; fleet rows last and unsorted; a queued design's right-click opens its Design
+  Report (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`).
+- **Supply icons** (§4.4, §7 Q61): drone groups like fighter groups
+  (`status_icons.cpp`).
+- **Coordinate line** (§2.4, §7 Q64): the range and the selection marker only while the
+  selected sector holds an object the viewer sees (`main_window.cpp`).
+- **Movement log replay** (§7 Q62): one entry per vehicle and step in movement order, each
+  animated alone, headings kept from the start of the turn (the engine must keep a
+  heading), step keys ignored during a day (`movement_replay.cpp`). Moves as they are made
+  turn and slide as in §2.4 (`ship_glides.cpp`).
+- **Strategic Combat** (§7 Q73): fight on step by step until the next refresh is due
+  (`screens/strategic_combat.cpp`).
+- **Tactical animation** (§1.10.3, §7 Q77): 36-frame slides, 9 frames per 45°, torpedo
+  and beam steps, explosions only for structure damage, no flash, the 0.3 s only after a
+  surviving seeker impact, misses off-centre (`replay.cpp`, `screens/combat_map.cpp`).
+- **Combat Piece Report** (§1.10.1, §7 Q78): the 310×420 window with Close under the
+  tabs; the Ability tab's sets (`screens/tactical.cpp`).
+- **Combat Simulator** (§1.10.4, §7 Q38, Q79, Q80, Q82): the side's box in the Combat
+  Vehicles list with its Cargo/Units and Fleet lines, 26×18 boxes, the window titles and
+  hints; Existing Fleets shown; Change Cargo against a Storehouse with population kept and
+  no order buttons; side boxes without outline (`screens/simulator.cpp`,
+  `fleet_transfer.cpp`, `cargo_transfer.cpp`, `combat_logic.cpp`, `combat_map.cpp`).
+- **Save Empire** (§7 Q72): the file keeps the strategies; designs lose the obsolete
+  mark, replace the empire's designs and must pass the validity rules (`setup.cpp`,
+  `setup_model.cpp`).
 
 ## Computer player (spec 05 §7)
 

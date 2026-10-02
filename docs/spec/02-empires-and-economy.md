@@ -1045,6 +1045,9 @@ once (confirmed: binary).
   converted to the target until the count is used up, in that order and not lowest level
   first. If fewer are left than the count, only those change, and the full price was
   still paid.
+- Completing an upgrade recalculates the system's sight but not the colony's stored cloak
+  and sensor levels, so an upgraded cloaking or sensor facility counts at its new level
+  only from the colony's next recalculation (spec 01 §6.9, §14 Q44) (confirmed: binary).
 - The "Upgrade Facilities" button does this for every colony and every facility type on
   it. The target is the empire's highest researched level of that family. Facility items
   already in the queues are also moved to that newest level, keeping their counts.
@@ -1242,7 +1245,9 @@ also needs its password before it can be edited [H].
 - Event frequency and severity.
 - Allow intelligence.
 
-Quick Start picks from the Settings style list and hands out premade designs [H].
+Quick Start picks from the Settings style list and hands out premade designs [H]: one run
+of the Design minister for the human player, at creation; no empire gets ships, and in a
+New Game no empire gets designs (spec 01 §2.1, §3.6 "Starting assets"; confirmed: binary).
 
 **Homeworld and starting planets** (confirmed: binary unless marked)
 

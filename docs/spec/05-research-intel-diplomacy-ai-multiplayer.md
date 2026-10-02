@@ -361,12 +361,39 @@ ability never changes anything in the stock game.
 
 ### 3.1 Contact
 
-- **First contact** (confirmed: binary): whenever sight in a system changes, every pair of
-  living empires that have not met and that **each detect the other** in that system make
-  contact, but only when a warp path links them: a colony of the other empire must lie in
+- **First contact** (confirmed: binary): the check runs in one system at a time, and only
+  at these moments:
+  - once in every system when the game is created, after the empires are placed;
+  - in the destination system when a group arrives through a warp point (Warp, Move To or
+    pursuit) and some member is still there after the passage;
+  - in an object's system whenever a ship, unit group or colony decloaks, whatever the
+    cause: the Decloak order (a fleet's reaches every member that can cloak), a
+    minister's or computer player's decloak before an order, the start of a battle, a ship
+    that can no longer cloak or runs out of supply, a fighter or drone group out of
+    supply, a colony's automatic decloak at a recalculation (spec 01 §6.9);
+  - in an event's system once the event is logged (sight is updated first);
+  - in every system after a surrender;
+  - in the system of a planet or vehicle handed over in a package, after that system
+    becomes explored for the receiver;
+  - in a planet's system when an intelligence project's `Planet - Population Rebel`
+    makes its colony a new empire (§2.3; as an event, the event's own check covers it).
+
+  It does not run on moves within a system, colonizing, construction, launches or
+  recoveries, the end of a battle, the host's reading of turn or game files, or in any
+  per-turn pass; so ships of two empires that meet inside a system make no contact until
+  one of these moments comes there. Each time, every pair of living empires that have not
+  met and that **each detect the other** in that system make contact, but only when a warp
+  path links them: a colony of the other empire must lie in
   a system reached from the systems holding our colonies by following warp points (every
   one, known or not, in its own direction). Their treaty goes from "no contact" to None and
   each logs "First Contact". So an empire without colonies makes no contact.
+
+  The engine differs: `diplomacy::updateContacts` (`diplomacy.cpp`) scans the whole galaxy
+  and is called after every live move and at the end of a player's turn and of the game
+  turn (`turn_based.cpp`: `carryOut`, `finishPlayerTurn`, `endGameTurn`), after movement,
+  combat and events (`turn.cpp`), and for a colony's Decloak (`cmd::CloakColony`), but
+  never at setup. It must take a system and run only at the moments above, in that
+  system; the galaxy-wide calls must go. The pair rule stays as it is.
 - **What contact enables** [M]: messages, treaties, trades and intel.
 - **Losing contact** (confirmed: binary): once per game turn, after the design cleanup and
   before the victory check, in both turn styles (§8), each living empire A checks every
@@ -495,8 +522,9 @@ up the trade chain [M].
   against an empire, attack an empire in a system, attack a planet, stop espionage, stop
   sabotage, stop attacks in a system. The recipient replies Accept or Refuse. Only the AI
   acts on them (§7.4).
-- **Package items**:
-  - Systems: gives up our border claim.
+- **Package items** (each logged on its own when carried out, spec 06 §7 Q70; confirmed:
+  binary):
+  - Systems: our border claim on the system passes to the receiver.
   - Planets: transfers ownership.
   - Resources: in steps of 1000.
   - Technologies.
@@ -504,7 +532,8 @@ up the trade chain [M].
   - Loaded transports: the ship and its cargo.
   - Star Charts: the system becomes explored for the recipient.
   - A Treaty: becomes active on acceptance.
-  - Comm Channels.
+  - Comm Channels: only when the receiver has no contact with the named empire; the two
+    are then set to treaty None, without a first-contact check or entry.
 - **Borders**: each empire publicly claims systems, and claims may overlap. The AI uses
   claims to compute anger.
 - **History window** (confirmed: binary): each human player's history is a file of dated
@@ -517,7 +546,9 @@ up the trade chain [M].
     established"), a broken treaty and a declaration of war. The original also has a line for
     a surrender, but its test can never pass, so a surrender is never recorded;
   - from the player's own log: an empire destroyed, first contact, and contact lost (§3.1).
-    A destruction writes only its own line, never a contact-lost line.
+    A destruction writes only its own line, never a contact-lost line. The log entry for a
+    treaty enacted by a package is of the same kind as a first-contact entry, so it also
+    writes a contact line naming the other party (spec 06 §7 Q70).
 
   Nothing else is recorded: colonies, battles, events, research and intelligence stay in the
   log. Computer players have no history.
@@ -1416,16 +1447,29 @@ Team mates are always accepted, and team enemies always refused.
   So two computer players never chatter back and forth: a General message ends each
   exchange.
 
-**Demands the AI starts**, the first that applies. Each needs the `Will Send To
-Friend/Enemy …` flag.
+**Demands the AI starts.** The first of steps 1–5 that applies is chosen, and only then is
+the chosen request's `Will Send To Friend/Enemy …` flag tested. When the flag forbids it,
+nothing from steps 1–5 is sent that turn; only steps 6 and 7 remain. A step's roll is made
+only when the earlier steps found nothing, and a step whose roll succeeds but that finds no
+candidate sends nothing, so the next step is tried (confirmed: binary; question 52).
 
 1. Stop attacks, espionage or sabotage, after the AI logged such acts by X.
-2. 20 %: remove ships, or colonies, from a system where the AI has a colony.
-3. At Trade Alliance or better with X, 20 %: break with a third empire the AI is hostile
-   to. If the AI is Military Alliance or better with X and at war with that empire, it
-   asks X to declare war instead.
-4. At Military Alliance or better, 20 %: make peace with one of the AI's allies.
-5. At Military Alliance or better, 20 %: attack an empire in a system.
+2. Remove ships (20 %), then, as a separate 20 % roll, remove colonies, from a system where
+   the AI has a colony; each candidate system also needs a 1-in-3 roll.
+3. At Trade Alliance or better with X, 20 %: break with Z, the lowest-numbered empire other
+   than the AI and X that X holds at Trade Alliance or better by its own treaty and that
+   the AI holds at War or Non-Intercourse (None does not count). If the AI is Military
+   Alliance or better with X and at War with Z, it asks X to declare war on Z instead.
+4. At Military Alliance or better, 20 %: make peace with the lowest-numbered empire other
+   than the AI and X that X is at War with and that the AI holds at Military Alliance or
+   better.
+5. At Military Alliance or better, 20 %: attack an empire in a system. Both come from the
+   AI's newest battle report, dated this turn or the turn before, of a battle it lost
+   while defending (`Combat Defending Lost`, §7.3 term 1): the battle's system, and the
+   highest-numbered empire other than the AI that had pieces when the battle began,
+   whatever its treaty, contact or survival. Nothing is asked when that empire is X. In a
+   simultaneous game the empire with the game's highest player number counts every battle
+   as Attacking (§7.3 term 1), so it never sends this request.
 6. At war, 33 %, after more than one combat report in the last two turns: demand
    surrender. No flag is needed.
 7. At Trade Alliance or better, 10 %: plain chatter.
@@ -2348,8 +2392,9 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
      the `.gam` is not changed. The player's side keeps a copy of the turn's `.gam` for the
      movement replay. It never reads a `.plr` back: only the host's turn processing reads
      them. A `.plr` is a snapshot of the player's own part of the game (its empire record, its
-     view of the systems, its designs and its objects with their orders), not a list of
-     commands.
+     view of the systems, its designs, and those of its objects that got a command or a
+     queue change during the turn, each with its state and orders), not a list of commands
+     (confirmed: binary; spec 01 §14 Q44).
   4. The host loads the game with the master password and processes the turn:
      - the AI plays any empire whose file is missing, making only minimal changes if that
        empire set the option "AI should not make changes during a Simultaneous game" [M];
@@ -2364,6 +2409,13 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
        empire: its minister settings, its password and e-mail, its options, its vehicles,
        fleets, designs and so on. It never restores the empire's name, its computer-controlled
        mark or its difficulty.
+     - (confirmed: binary; spec 01 §14 Q44) The files are read in player order at the start
+       of processing (§8 step 1). Reading a file replaces each object it carries that the
+       player still owns on the host (others are skipped), recalculating the colonies among
+       them (spec 01 §6.9). The player's treaty with each empire is taken only where it
+       differs from the host's and is None, "no contact" or War, and the player's log comes
+       from the file. Then sight is recalculated in every system; no first-contact check
+       runs.
   5. The host sends out the new files.
 - **Password reset**: the host may reset players' passwords between turns (Reset Passwords,
   spec 06 §1.9). The new password is shown to the host in a message and takes effect at the
@@ -3158,8 +3210,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     The engine has the same effect, since recording nothing is equivalent. Since 2026-10-01
     its send-message command refuses these requests from a human player unless the third
     empire meets the picker's rule above. A computer player's (and a minister's) own
-    messages do not go through the picker, and the engine does not check them (inferred,
-    question 52).
+    messages do not go through the picker, and the engine does not check them (question
+    52 settles which of them can name an invalid empire).
 52. **A computer player's request about a third empire** (question 51, §7.4): the computer
     players send "break a treaty with", "declare war on", "make peace with" and "attack an
     empire in a system" from their own rules, not through the player's picker; the
@@ -3167,3 +3219,51 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     may not have met. OpenSE4 checks the third empire only for human players' messages
     (inferred). To verify: can a computer player's request name an empire it has not met,
     or one no longer in the game?
+    **Answer:** only "attack an empire in a system" can; the other three always name a
+    living empire the sender is in contact with, never itself or the recipient
+    (confirmed: binary; §7.4 "Demands the AI starts"). The attack target does not come
+    from the attack candidates, as the question assumed.
+    - **Break a treaty with, declare war on:** Z is the lowest-numbered empire, other
+      than the AI and the recipient X, that X holds at Trade Alliance or better by its own
+      treaty and the AI holds at War or Non-Intercourse; the request is "declare war on"
+      when the AI is Military Alliance or better with X and at War with Z. Any treaty
+      other than "not yet met" means contact, and an empire's destruction resets every
+      living empire's treaty with it to "not yet met", so Z is met and alive.
+    - **Make peace with:** the lowest-numbered empire, other than the AI and X, that X is
+      at War with and that the AI holds at Military Alliance or better; met and alive for
+      the same reason.
+    - **Attack an empire in a system:** taken from the AI's newest report, dated this turn
+      or the turn before, of a battle it lost while defending: the battle's system, and
+      the highest-numbered empire other than the AI that had pieces at the battle's start.
+      Nothing tests treaty, contact or survival, so that empire may be unmet, destroyed
+      since, or an ally. When it is X nothing is asked. In a simultaneous game the empire
+      with the game's highest player number never sends it, since it counts every battle
+      as Attacking (§7.3 term 1).
+    - **No candidate:** the step sends nothing and the next step is tried; its roll is
+      spent.
+    - **The flag:** the request is chosen before its `Will Send …` flag is tested; a
+      forbidden request cancels steps 1–5 for that turn.
+    - **Ministers:** a human empire whose Politics minister is on sends these requests by
+      the same rules, unchecked.
+    - **Recipients:** a computer recipient that carries the request out records the named
+      empire without any check (question 51); for "attack an empire in a system" it
+      records only the system and never uses the empire. A human recipient reads the
+      empire's name in the text, whatever that empire's state.
+
+    The engine differs (`ai_diplomacy.cpp`, `demand()`; `commands.cpp`, `SendMessage`):
+    - Step 3 takes the first living empire in contact that the AI is hostile to (None
+      included) and ignores X's treaty with it. It must take the lowest-numbered Z with
+      the AI at War or Non-Intercourse and X at Trade Alliance or better with Z.
+    - Step 5 picks from the attack candidates (`p_.sit.candidates`). It must use the
+      battle-report rule above; each battle report in an empire's log must then keep the
+      verdict, whether the empire was the current player, the participants at set-up and
+      the system.
+    - Each step tests its flag (`mayDemand`) and a refusal falls through to the next
+      step. It must choose first, test only the chosen request's flag, and on a refusal
+      go straight to steps 6 and 7.
+    - Step 2 makes one roll and tries colonies first. It must roll for ships, then
+      separately for colonies, with the 1-in-3 roll per candidate.
+    - `SendMessage` refuses third-empire requests from every human-played empire,
+      including those its Politics minister sends (`Planner::runOrders` → `planPolitics`).
+      The check must apply only to messages the player writes.
+    The recipient's side matches (`CarryOutDemand`, `speechLine`).

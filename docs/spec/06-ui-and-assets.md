@@ -32,6 +32,7 @@ Conventions that hold across the whole UI:
   to five, newest first; an earlier copy of the same column is not removed, so it can
   push out the oldest key. Each column has a fixed direction, and clicking again does not
   reverse it. The sort keys are stored with the empire (confirmed: binary; §1.8, §7 Q24).
+  In Colonies and Ships\Units a key is the column itself, whatever tab is shown (§1.8.3).
 - **No pop-up tooltips.** Hovering a command or order button writes the button's name
   and key at the top of the system panel (§2.3). No other control has a hint
   (confirmed: binary).
@@ -91,8 +92,8 @@ sit below; **Close is always the bottom slot** [S].
 | Weapon Mounts | Pick a mount for weapons added next. | List; Cancel. | Create Design; Weapons Report. |
 | Combat Simulator | Set up a test battle. | Vehicles-in-combat list, design list, owner picker; Tactical / Strategic choice; No Obsolete, Strategies, Computer Control, Fleets for Plr, Change Cargo, Begin, Cancel [T]. Details in §1.10.4 (confirmed: binary). | Designs → Simulator. |
 | Planets | All planets seen. | Statistics block; galaxy mini-map highlighting the hovered row; planet list. Filter tabs: All, Colonizable, All Colonies, Enemy Colonies, Ally Colonies, Coloniz\Empty, Coloniz\Breathe, Ship Enroute, Asteroids, Special; toggle No Sys To Avoid; Send Colony Ship [T]. Rules and layout in §1.8.1 (confirmed: binary). | F4. |
-| Colonies | Own colonies. | Statistics; mini-map; sortable list whose columns depend on the tab: General, Value, Production, Facilities, Cargo, Construction, Status (status icons), Races, Orders. Actions: Scrap Facil Types, Set Colony Type [T]. | F5. |
-| Ships\Units | Own ships, units, fleets. | Statistics; mini-map; list. Column tabs: General, Orders, Cargo, Fleet, Maintenance (each starts with a picture column); toggles Show Ships / Show Units / Show Fleets [T]. | F6. |
+| Colonies | Own colonies. | Statistics; mini-map; sortable list whose columns depend on the tab: General, Value, Production, Facilities, Cargo, Construction, Status (status icons), Races, Orders. Actions: Scrap Facil Types, Set Colony Type [T]. Columns and sorting in §1.8.3 (confirmed: binary). | F5. |
+| Ships\Units | Own ships, units, fleets. | Statistics; mini-map; list. Column tabs: General, Orders, Cargo, Fleet, Maintenance (each starts with a picture column); toggles Show Ships / Show Units / Show Fleets [T]. Columns and sorting in §1.8.3 (confirmed: binary). | F6. |
 | Construction Queues | All queues. | Statistics; quadrant map; queue list. Column tabs Rate, Usage, Planet Value, Facilities, Cargo; inclusion toggles Ships, Planets, Ship SY, Planet SY; Multi-Add (acts on the shift-selected queues), Scrap Facilities, Upgrade Facilities [T]. Rules and layout in §1.8.2 (confirmed: binary). | F7; Log → Constr. Queues. |
 | Set Construction Queue | Edit one queue. | Buildable-items list (tabs Ships, Facilities, Units, Upgrades; Only Latest); queue owner header; the queue itself; hover detail. Toggles Emergency Build, Repeat Build, Queue On Hold; Set Move To / Clear Move To; Fill Queue; Clear Queue; Reorder Queue [T]. | Order "Build Queue" (Q); row in Construction Queues. |
 | Select Queue Type | Fill a queue from a template. | Template list; Add Type, Delete Type, Cancel. | Set Construction Queue → Fill Queue. |
@@ -236,7 +237,7 @@ newly built vehicles" and "AI should not make changes during a simultaneous game
 |---|---|---|
 | Select Waypoint | Choose a waypoint as a destination. | Move To Waypoint; Set Construction Queue → Set Move To. |
 | Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. | Order F; Combat Simulator. |
-| Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / All. The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
+| Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / Hundred / All (titled "Transfer Cargo"; no order buttons, spec 04 §17 for the simulator's use). The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
 | Launch \ Recover Units | Same two-list pattern for units in space. Not available in simultaneous games. | Order U; tactical combat orders. |
 | Cargo-type / unit-type picker, then location pick | Deferred Load, Drop, Launch-Remote, Recover-Remote orders. | Orders L, D, I, O. |
 | Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). | Order B. |
@@ -304,7 +305,7 @@ reports render inside the right-hand panel (§2.5).
 | Tutorial / Scenario text window | Titled text with a 128x128 picture and previous/next through a series; re-opened with Ctrl+H or the "T" button in the status bar [T][M]. |
 | Finale | Full picture for victory, defeat, or "human players all dead", chosen from lists in Settings.txt [M]. |
 
-### 1.8 Planets and Construction Queues windows
+### 1.8 Planets, Construction Queues, Colonies and Ships\Units windows
 
 All of this subsection is (confirmed: binary).
 
@@ -453,6 +454,58 @@ colonies, then the scrap checklist for the planet picked. **Upgrade Facilities**
 the tags: it queues every possible facility upgrade on every colony of the empire, with
 no cost limit.
 
+#### 1.8.3 Colonies and Ships\Units: columns and sorting
+
+All of this subsection is (confirmed: binary; §7 Q56).
+
+**A sort key is a column, not a position.** Every column of these two windows keeps one
+identity in every tab; only the picture and Name appear in all tabs, every other column
+belongs to one tab and measures one thing. A key stays that column after a tab change,
+so it goes on sorting by its quantity while another tab is shown. Each window has its own
+five slots (§7 Q24), stored with the empire and saved with the game; both start with Name
+only. Ties go to the next key; after five keys the order is not fixed (the sort is not
+stable). Every header can be clicked, the picture's included. A few columns have no key:
+a click on one still takes the first slot and pushes the oldest out, but sorts nothing.
+Text keys compare by character code, so case matters; only Name ignores case.
+
+**Colonies.** Every tab starts with the picture (40 px) and Name (150 px). Under the name
+is a grey second line "type - size", or "Blockaded" in red. The picture sorts by planet
+size (the size's number in the data file), smallest first. Widths in px; "rest" is the
+remaining width.
+
+| Tab | Columns and keys |
+|---|---|
+| General | Atmosphere (90): the atmosphere's name, A to Z. Conditions (90): best first. Pop (65; population, the maximum on a second line): highest first. Mood (rest; the mood word, empty without population): the word, A to Z |
+| Value | Type (120; the colony type): A to Z. Three value columns (70, 70, rest) in the resource colours: the value percentage, highest first |
+| Production | Three production columns (60 each), Res (60) and Intel (rest): highest first. A value is shown in brackets when the colony's output is not delivered (blockaded, or no spaceport serves it) |
+| Facilities | Num (50; facilities built): highest first. Max (50; facility slots): highest first. Facilities (rest; the list): no key |
+| Cargo | Space (65; space used): highest first. Max (65; capacity): highest first. Cargo Items (rest): no key |
+| Construction | Under Construction (200; the first item as "<name>", "<name> x N" when its count is above 1, or "None") and Time Remaining (rest; "0.3 years", "Never", "On Hold", or empty for an empty queue, without brackets): both by their text, **Z to A** |
+| Status | The planet status icons (rest): no key |
+| Races | Population (rest): highest first |
+| Orders | The colony's orders (rest): no key |
+
+**Ships\Units.** Every tab starts with the picture (36 px) and Name (134 px). The picture
+and Size both sort by the hull's number in `VehicleSize.txt`, lowest first; a unit group
+counts as 100 plus its number of units, so groups come after every ship and base.
+
+| Tab | Columns and keys |
+|---|---|
+| General | Size (99; the hull's name): hull number as above. Type (120; the design type): A to Z. Move (40; "left/max"): movement left, highest first. Dmg (47; "destroyed/total" components): destroyed components, highest first. Supplies (rest): **lowest first**, unlimited supply counting as 60000 |
+| Orders | Class (120; the design name): A to Z. Orders (rest; one order per 12 px line): A to Z by the list written as one line ("None", "REPEAT ORDERS", or the orders joined by ", ", the current one in brackets when Repeat is on) |
+| Cargo | Space (65) and Max (65): highest first. Cargo List (rest): A to Z by the cargo in words ("N People, …", or "None") |
+| Fleet | Experience (120): **lowest first**. Fleet (rest; the fleet's name or "None"): by fleet number, highest first, vehicles in no fleet counting 0 |
+| Maintenance | Three cost columns (70, 70, rest) in the resource colours: maintenance, highest first |
+
+Fleet rows, shown with Show Fleets, always come after every ship and unit row, in the
+empire's fleet order, and are never sorted.
+
+**Set Construction Queue.** A right-click on a queued ship, base or unit opens the
+design's report: the Design Report window, the same one a right-click on a design in the
+buildable list opens (name, size, design type, date created, "(Obsolete)", cost,
+maintenance cost, movement, shields, cargo space, supply capacity and the components). A
+right-click on a queued facility or upgrade opens that facility's report.
+
 ### 1.9 Options windows
 
 There are two windows (confirmed: binary). Both show one scrolling list of lamp rows under
@@ -581,8 +634,9 @@ All of this subsection is (confirmed: binary). W×H is the tactical window's siz
   window and of most dialogs, and Hourglass replaces the pointer everywhere while the game
   works (turn processing, loading, long computer moves); nothing else draws a pointer.
 - **Right-click on a piece** opens the object's ordinary report for a neutral obstacle,
-  and otherwise the **Combat Piece Report**: a 353×422 report window built like the
-  object reports of §1.4, whose Detail page (290×361) holds the 128×128 picture at the
+  and otherwise the **Combat Piece Report**: a borderless 310×420 report window built like
+  the object reports of §1.4 opened on their own (pages at (10,10), the four 72×30 tabs at
+  (10,340), a 153×30 Close button centred under them at y 380), whose Detail page (290×361) holds the 128×128 picture at the
   top left with the owner's flag on it, the name at the top (from x 120, or right-aligned
   10 px from the page's right edge when it is too long), and these lines: labels in
   #7D9FFF at x 130, y 20, 50, 80 … (30 px apart), each value in white at x 140, 15 px
@@ -594,7 +648,7 @@ All of this subsection is (confirmed: binary). W×H is the tactical window's siz
   | Population (planets, in place of Movement) | the colony's total population, as for colonies elsewhere ("0M" without a colony) |
   | Shields | now / maximum |
   | Damage | taken / full hit points, for every kind of piece: full hit points as in the overkill limit (spec 04 §16: a ship's full design structure, a unit group's units at full health, a planet's hit points at the battle's start, a seeker's resistance), taken = full − current, at least 0 |
-  | Supply | ships, bases, fighter and drone groups: now / capacity, a number above 100000 written in thousands with "K"; "Endless" with unlimited supply. Planets and satellite groups: "Never". Seekers: "None" |
+  | Supply | ships, bases, fighter and drone groups: now / capacity, each number strictly above 100000 written as its thousands, truncated, with "K" (150999 → "150K", 100000 as it is); "Endless" with unlimited supply. Planets and satellite groups: "Never". Seekers: "None" |
   | Max Targets | the piece's target budget (spec 04 §6) |
   | Combat Group | "Group N - Leader" when it leads group N, else "Group N - Wingman" when it belongs to group N, else None. Fleet groups are numbered groups like the others (spec 04 §3 step 5), so a fleet's ships show their number. A drone group has **Target** here instead: its drone target's name, or None |
   | Formation (not for drone groups) | the formation of the group the piece leads; None for every other piece. The value is not cleared when the piece stops leading, so a former leader still shows it |
@@ -605,7 +659,13 @@ All of this subsection is (confirmed: binary). W×H is the tactical window's siz
   Facil, Cargo (likewise) and Ability; Detail is selected first. A fighter, satellite or
   drone group has no tabs: the Detail page is cut to 249 px and the group's units are
   listed under it in a 108 px unit grid at y 253. A seeker has no tabs, and its Detail
-  page shows the picture of the weapon that launched it.
+  page shows the picture of the weapon that launched it. Facil lists the colony's
+  facilities as they are when the report opens, one cell each, none marked lost; lost
+  facilities stay in the list until the battle ends, so during a battle this is the set
+  the colony began with. Ability lists, for a ship or base, the abilities of its hull,
+  then of its whole design (every component, destroyed or not), then its own; for a
+  planet only the planet's own abilities, not its facilities' or its colony's (confirmed:
+  binary; §7 Q78).
 
 #### 1.10.2 Tactical Combat Orders
 
@@ -618,7 +678,7 @@ opens after the menu has gone:
 |---|---|---|
 | Launch Units | L | opens the Launch Units window for the selected piece |
 | Launch Fighters in Groups | — | opens a list window titled "Select Fighters Per group", one column "Amount", rows 5, 8, 10, 15, 20, 30, 40, 50 |
-| Drop Troops | T | acts at once, no target click: lands all troops of the selected ship on the adjacent colony of another empire that comes last in piece order, **whatever the treaty**; refused when that colony already holds a third empire's troops; ground combat follows at once (spec 04 §11). For a side played by hand a message explains a refusal: no colony adjacent, troops of another empire already there, or no troops aboard |
+| Drop Troops | T | acts at once, no target click: lands all troops of the selected ship on the adjacent colonized planet of another side (the side its piece fights for) that comes last in piece order, **whatever the treaty**; refused when that colony already holds a third empire's troops; ground combat follows at once (spec 04 §11). For a side played by hand a message box titled "Drop Troops" explains a refusal; the tests run in this order: no colonized planet of another side adjacent, troops of another empire already on the colony the landing takes, no units of any kind aboard. A ship with units but no troops is refused without a message. The selected piece's kind is not checked: a colony's planet piece drops the troops of its colony's cargo (confirmed: binary; spec 04 §19.4 Q88) |
 | Ram Ship | R | arms a target mode; the next left-click on a piece rams it, a click on an empty square cancels |
 | Capture Ship | C | as Ram Ship, boarding instead |
 | Resolve Combat | — | the game's confirmation window, titled "Resolve Combat", asking whether the rest of the battle should be fought automatically; confirming hands every side to its strategies (spec 04 §4) |
@@ -646,22 +706,42 @@ Closing the window saves the switches and starts or stops the music. In the Comb
 Simulator only, a Stop Combat button ends the battle and closes the tactical window.
 Layout as in §1.9 ("Options In Use" at (15,38), list at (15,56), 560×400).
 
-**Fast Tactical Combat** keeps every animation and every frame of it, and removes the
-waits between frames; there is no speed factor. Without it the Tactical Combat window
-waits:
+**Fast Tactical Combat** keeps every animation and removes the waits between frames;
+there is no speed factor. Besides, a torpedo then moves 6 px a frame instead of 4, and
+the shield picture of a hit absorbed by shields is not stamped. **Each wait** first lets
+the program handle its pending window messages once, then busy-waits on the system's
+millisecond tick counter until it has advanced by the wait; there is no sleep and no
+finer timer. So a wait shorter than the counter's step (about 15.6 ms on current Windows,
+1 ms under Wine) lasts until the counter's next step, and in a run of frames each frame
+lasts about one step: on Windows a 36-frame slide takes about 0.56 s, not 36 ms. Fast
+Tactical Combat skips the wait call itself, message handling included. Without the
+switch the Tactical Combat window draws and waits (confirmed: binary; §7 Q77):
 
-| Animation | Wait |
+| Animation | Frames and waits |
 |---|---|
-| a piece moving one square, with "animate ship movement in combat" on | it slides to the square, 1 ms after each frame |
-| the same with that switch off | the piece jumps, then 0.1 s |
-| a piece turning to a new facing | 0.01 s after each frame of the turn |
-| a beam | 0.00001 s after each stamp while it is drawn, 0.00005 s after each while it is erased |
-| a torpedo | 1 ms after each frame of its flight |
-| a hit (explosion or shield-hit animation, 8 frames drawn in place) | 0.1 s after each frame and after the last is wiped, 0.9 s in all |
-| after each hit | 0.3 s |
+| a piece moving one square, with "animate ship movement in combat" on | slides 1 px a frame along the longer axis, so 36 frames for any step, diagonal too, 1 ms after each; seekers slide the same way. No slide and no wait when either square is outside the shown part of the map: the piece just appears on its new square |
+| the same with that switch off | the piece jumps, then 0.1 s (also off-screen) |
+| a piece turning to a new facing (switch on, square in view) | before the step, on its old square, the shorter way (clockwise for a half-turn): 5° a frame, 9 frames per 45°, 36 for a half-turn, 0.01 s after each. Otherwise the piece simply faces the new way. Seekers never turn |
+| a beam | stamps of the 10x10 centre of the 20x20 beam cell, rotated to the bearing, one every 6 px along the longer axis (6 per square), drawn one by one outward with 0.00001 s after each, then erased one by one in the same order with 0.00005 s after each |
+| a torpedo | a 40x40 picture (the 20x20 cell rotated to the bearing) moving 4 px a frame (9 frames per square), 1 ms after each |
+| a hit that damages structure or destroys the target | the 8-frame explosion drawn in place (36x36, or 72x72 for some losses), 0.1 s after each frame and after the last is wiped, 0.9 s in all, with a boom sound (boom3 for a loss); a destroying shot plays it once, with no second loss animation |
+| a hit absorbed entirely by shields | no explosion and no wait; a single shield picture is stamped (not with Fast Tactical Combat) and the next redraw removes it |
+| after a seeker's impact on a piece that survives it | 0.3 s (Tactical Combat only; a direct-fire hit has no pause, nor has a seeker that destroys its target) |
+
+The shot's end point is the target's centre on a hit (for a planet in view, a random
+point within its 4x4 block), 17 px short of the centre for a hit fully absorbed by
+shields, and on a miss 18 px off the centre in both x and y, each sign drawn at random, so
+a miss lands half a square off diagonally; a miss adds nothing else. While a shot at a
+one-square target with shields up is drawn, the target shows its 8-frame shield shimmer,
+one frame every 8 shot frames. The random draws for a miss's direction and a planet's
+point come from the battle's own random sequence (§7 Q77). A seeker's launch is not
+animated (the launcher is redrawn and the launch sound plays), and neither are a launch
+of units, a landing or a successful capture: the map is only redrawn. A boarding outcome
+that destroys both pieces plays two explosions (not traced further).
 
 With the switch on, all of these are drawn without waiting, so the pace is the drawing's
-own. Fast Tactical Combat in Combat Replay Options does the same for the replay. Neither
+own. Combat Replay draws the same frames with its own switches, without the 0.3 s pause;
+Fast Tactical Combat in Combat Replay Options does the same for the replay. Neither
 switch touches the Ground Combat window (§1.10.6) or the Strategic Combat window, which
 has no animations (§1.10.5).
 
@@ -673,13 +753,24 @@ Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the
 
 - **Buttons**, top to bottom: Tactical and Strategic (tabs; Tactical selected); No
   Obsolete (toggle, off, saved per empire; hides only the player's own obsolete designs);
-  Strategies (the player's Strategies window); Computer Control (the Player Computer
-  Control list for the 10 sides; side 1 by hand and sides 2–10 by the computer at
-  first); Fleets For Plr (Fleet Transfer for the side chosen in the owner picker, holding
-  that side's ships; fleets, formation and strategy are set there); Change Cargo (Cargo
-  Transfer over all the simulator's vehicles and planets); Begin; Cancel.
-- **Combat vehicles** (left; (17,75), 295×370, 36 px rows with flag, picture and name),
-  sorted by side 1 to 10, then neutral objects. A left-click on a row removes it.
+  Strategies (the player's Strategies window); Computer Control (the "Empires Under
+  Computer Control" list for the 10 sides, columns Pic with the side's box and Name "Race
+  N"; side 1 by hand and sides 2–10 by the computer at first); Fleets For Plr (Fleet
+  Transfer for the side chosen in the owner picker, holding that side's ships and bases
+  and its copied fleets; fleets, formation and strategy are set there; its Existing
+  Fleets button opens the real empire's Ships\Units window, in which a click does
+  nothing, §7 Q79); Change Cargo (Cargo Transfer: the setup's holders against a temporary
+  Storehouse, spec 04 §17, §7 Q80); Begin; Cancel.
+- **Combat vehicles** (left; (17,75), 295×370, 36 px rows), sorted by side 1 to 10, then
+  neutral objects. A left-click on a row removes it. Columns: Flag, the side's 26×18 box
+  5 px from the column's left and 9 px from the row's top (nothing for a neutral object);
+  Pic, the item's picture (a colonized planet's with its population bars in its side's
+  colour); Name, the name, then in the small font "Cargo:" (what a ship, base or colony
+  holds) or "Units:" (a unit group's stacks) at y 14 and "Fleet:" (its simulator fleet)
+  at y 24, labels at x 8 and values at x 44, a missing value "None" in grey (96,96,96)
+  (confirmed: binary; §7 Q38). Headings "Combat Vehicles", "Items to choose" and "Owner
+  for item" in #7D9FFF 17 px above the lists; the hints "(click combat vehicle to remove
+  it)" and "(click item to add to vehicles)" right-aligned under them.
 - **Items** (top right; (322,75), 250×230, picture and name): every design whose hull is
   a ship, base, fighter, satellite or drone, both the player's own and the other
   empires' designs the player has seen (no mines, troops or weapon platforms); and the
@@ -689,7 +780,7 @@ Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the
   right-click opens its report. Storms and uncolonised asteroid fields can be added but
   take no part in the battle (spec 04 §17).
 - **Owner for item** (bottom right; (322,325), 250×120): a lamp list from "Race 1" to
-  "Race 10", each row with the side's numbered colour box (spec 04 §17: 1 red, 2 blue,
+  "Race 10", each 20 px row with the side's 26×18 numbered colour box at x 80, y 1 (spec 04 §17: 1 red, 2 blue,
   3 green, 4 yellow, 5 purple, 6 white, 7 aqua, 8 lime, 9 maroon, 10 olive), never an
   empire flag, whoever the side copies; Race 1 is selected at first. The Computer
   Control list shows the same boxes with "Race N", and so do the battle windows of a
@@ -718,8 +809,9 @@ Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the
 - **Turn-based, different machines.** No question: the Strategic Combat window opens
   with Begin and Close when the player whose turn it is is human; otherwise the battle is
   not shown.
-- **Simultaneous.** The window opens for every battle, and only when
-  `Simultaneous Games Show Strategic Combat` is on.
+- **Simultaneous.** The window opens for every battle, computer-only battles included,
+  and only when `Simultaneous Games Show Strategic Combat` is on; always in its Begin and
+  Close form, never after a notice (§7 Q76).
 - **The sequence**, step by step. A battle interrupts whatever started it (a group's
   move, an Attack or Seek order, spec 04 §2); nothing else in the game happens until it
   is over and its window closed.
@@ -729,8 +821,9 @@ Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the
   2. **Who sees it** is decided as above. A battle nobody sees is fought to its end
      there and then, with every side on its strategies and no window, and the sequence
      goes on at step 7.
-  3. **Notice.** On one machine, when the empire whose turn it is is computer-controlled,
-     the 253×150 notice comes first.
+  3. **Notice.** On one machine, in a turn-based game, when the empire whose turn it is
+     is computer-controlled, the 253×150 notice comes first. It belongs to the question
+     form only, so a simultaneous battle never has one (§7 Q76).
   4. **The window opens before the first combat turn**, modal over the main window: in
      its question form ("Select Combat Type", buttons Strategic and Tactical) when
      tactical combat is offered, otherwise in its own form ("Strategic Combat", Begin,
@@ -743,9 +836,11 @@ Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the
      form Begin starts. Both buttons go dim, every side is handed to its strategies, and
      the window fights whole combat turns one after another, each with every empire's
      phase in the fixed order (drones, seekers, the other pieces; spec 04 §4). The small
-     map is redrawn after every single step of any piece or seeker, as it is taken. The
-     window lets the system handle its pending messages after each empire's phase and
-     after each combat turn, so it repaints as it goes. After each combat turn and the
+     map is painted straight onto the window after every single step of any piece or
+     seeker, as it is taken, not through a repaint request; after each combat turn
+     "Combat Turn N" is drawn straight onto the window and the forces list is repainted at
+     once. The window lets the system handle its pending messages after each empire's
+     phase and after each combat turn, which serves input and other windows (§7 Q73). After each combat turn and the
      next one's upkeep it recounts the forces, redraws "Combat Turn N", the list and the
      map, and checks the end (spec 04 §4). A computer side's landing in the middle of a
      phase opens Ground Combat over it at once (§1.10.6); the battle waits until that
@@ -1055,7 +1150,17 @@ cells sit inside it after a margin:
   nearest 45° (23–67° gives 45°, 68–112° gives 90°, and so on; 338–22° is up). Arriving
   through a warp point keeps the old heading. The sprite is turned clockwise by that
   angle, sampling each pixel nearest-neighbour with no smoothing (45° views look
-  jagged); pixels from outside the source come out black, so transparent.
+  jagged); pixels from outside the source come out black, so transparent. Headings are
+  saved with the game.
+- **Moves as they are made** (confirmed: binary; found while settling §7 Q62, not traced
+  in full). With "animate ship movement in the system window" on, a visible move of a
+  group within the shown system first turns the mini 5° a frame with 10 ms after each
+  frame, then slides the whole group as one sprite 1 px a frame with 1 ms after each
+  (the waits of §1.10.3). After each animated step the game pauses for `System Ship
+  Movement Delay Milliseconds`, but reads the value as seconds (a defect of the original;
+  the stock value 0 hides it). Our client differs: its glides (`ShipGlides`,
+  `client/classic/ship_glides.cpp`) take 0.12 s per square (0.35 to 1.0 s in all), have
+  no turn animation, and start every heading facing up after loading.
 
 Contents [T][S]:
 
@@ -1138,10 +1243,13 @@ text has a transparent background.
   "M" marker of §2.4 is drawn the same way.
 - **Coordinate location** (Empire Option, on by default): while the pointer is over a
   sector of the panel, a line in Futurist small, white, at (10, panel height − 20): the
-  word "Coordinates" and the sector as "(x, y)" (column and row, both 0–12), and, when a
-  sector of the system shown is selected, "Range:" and the distance in sectors from the
-  selected sector to the one under the pointer (the larger of the column and row
-  differences). The line is empty while the pointer is over the panel's margin outside
+  word "Coordinates" and the sector as "(x, y)" (column and row, both 0–12), and, while
+  the system shown has a marked selected sector, three spaces, "Range:", a space and the
+  distance in sectors from it to the sector under the pointer (the larger of the column
+  and row differences; 0 on the selected sector itself), all as one string:
+  "Coordinates (3, 4)   Range: 2". The selected sector is the last one clicked; it is
+  marked, and the range shown, only while it holds at least one object the viewer can
+  see, tested at every redraw (§7 Q64). The line is empty while the pointer is over the panel's margin outside
   the sectors. Nothing is ever drawn next to the system name.
 - **Facility markers** (the System Display rows of Empire Options, all off by default):
   on each colonized planet (never an asteroid field) that the viewer can see and that is
@@ -1652,6 +1760,10 @@ Where entries come from:
   of trades, gifts and tributes included, becomes an ordinary entry when it arrives,
   titled "Message", category Politics, Goto Empires, its text naming the sender and
   quoting the message (confirmed: binary).
+- **Packages** (trade, gift, tribute): when the acceptance arrives, each item carried out
+  makes its own entries, the receiver's first, then the giver's, category Politics; the
+  package as a whole makes none. The kinds, titles and Goto targets are in §7 Q70
+  (confirmed: binary).
 - **Refused and failed orders**: each one is an ordinary entry made when the order fails,
   with its own title (unable to move, unable to drop cargo, cannot mothball or unmothball,
   retrofit problem, launch and recover warnings, colonization failed and so on), category
@@ -1712,7 +1824,7 @@ viewer's own colonies.
 
 | Order | Cell | Shown when |
 |---|---|---|
-| 1 | 5, else 4 | out of supplies (supplies 0); else low supplies (strictly below `Supply Amount for Low Supply Warning`, 1000 in stock data). Not for mothballed ships; no exception for ships that use no supply or have unlimited supply. A fighter group is low below a tenth of the setting and only while it holds at least one fighter (§7 Q54) |
+| 1 | 5, else 4 | out of supplies (supplies 0); else low supplies (strictly below `Supply Amount for Low Supply Warning`, 1000 in stock data). Not for mothballed ships; no exception for ships that use no supply or have unlimited supply. A fighter or drone group is out at 0, and low below a tenth of the setting (integer division) only while it holds at least one unit; satellite groups and mine fields never show either cell (§7 Q54, Q61) |
 | 2 | 33 | has damaged components |
 | 3 | 16 | damaged, and a repair source of the same owner is in the sector |
 | 4 | 3 | the first order is Sentry |
@@ -2155,7 +2267,8 @@ All of this subsection is (confirmed: binary).
   records its full path as the "last saved game" that Resume Game loads: Save Game, every
   autosave, the per-player turn-based saves, the multiplayer and host saves, and even the
   `temp/<game>_CurrTurn.gam` written when a movement-log replay starts (§7 Q53).
-- **Save Map** writes `Maps/<name>.map`; **Save Empire** writes `Empires/<name>.emp`.
+- **Save Map** writes `Maps/<name>.map`; **Save Empire** writes `Empires/<name>.emp` under
+  the name typed in the empire file picker (§7 Q72).
   Scenarios are listed from `Scenarios/*_Settings.txt`.
 - **Autosave** writes `AutoSav<d>.gam` into the save folder, where d is the last digit
   of the turn number (ten rotating files), after turn processing whenever the turn
@@ -2211,9 +2324,13 @@ says where our client differs ("Our client differs: ..."), so the client can be 
 from the text alone. Questions 24–55 began as OpenSE4's own choices (inferred) where those
 rules left something open. On 2026-10-01 they were settled from the executable too, each
 with an **Answer** marked (confirmed: binary) and the differences of our client or engine:
-Q24–Q29 and Q40–Q55 and the last part of Q18, then Q30–Q39 (the combat windows), of which
-Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x600 layout in
-§2.1.1.
+Q24–Q29 and Q40–Q55 and the last part of Q18, then Q30–Q39 (the combat windows). The
+questions our implementation of those answers raised (Q56, Q61–Q64, Q70–Q82 and the open
+part of Q38) were settled from the executable the same day; Q63, Q71, Q74, Q75 and Q81
+are OpenSE4 choices with no counterpart. Still open, for an observer of the running game:
+Q60 (the size of the original's small map lettering), what a viewer sees of a strategic
+battle (Q73) and the measured timings of Q77. Fonts and pointers are in §5.4 and §5.8,
+the 800x600 layout in §2.1.1.
 
 1. **1024x768 layout.** *Answered in spec 07 §UI (panel rectangles and frame strips).*
    Exact panel rectangles; what fills the 67 px right strip and
@@ -2490,9 +2607,9 @@ executable:
     empire and saved with the game (`InterfaceOptions::planetsSort`, `coloniesSort`,
     `shipsSort`, `queuesSort`), written at once through `cmd::SetInterfaceOptions`, Name
     the only key at first, an earlier copy of the column kept. It differs: its sort is
-    stable (harmless). In Colonies and Ships\Units, where the columns change with the tab,
-    a slot holds the table's column number, so after a tab change it stands for that
-    column of the tab shown, and their fixed directions are ours (Q56).
+    stable (harmless). In Colonies and Ships\Units our client stores the column's position
+    in the tab shown; the original stores the column itself, with its own direction
+    (§1.8.3, Q56).
 25. **Available colony ships.** We count a ship as having orders when its fleet has orders,
     and as out of supplies at 0 supply. Send Colony Ship on a planet that is already
     colonized (possible from the Colonizable tab) refuses with a message. What does the
@@ -2568,8 +2685,8 @@ executable:
     reorder list and asks "Move First Queue Item" when another entry would come first, No
     dropping the whole reorder; nothing asks in the Multi-Add queue. When the first item
     changes, its progress is discarded by queueing it again at its new place. It differs
-    only in the report a right-click opens on a queued ship or unit: the hull's, since our
-    client has no report of a whole design (Q56).
+    only in the report a right-click opens on a queued ship or unit: ours opens the hull's,
+    the original the design's Design Report (§1.8.3, Q56).
 29. **Similar system-wide abilities.** We note it after a facility is queued whose
     abilities include one with "System" in its identifier that a facility of one of our
     colonies in the same system already has. Which abilities count, does the original
@@ -2693,7 +2810,9 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     (confirmed: binary; §1.10.3, which lists every wait: 1 ms per frame of a slide, 0.1 s
     after a jump when movement is not animated, 0.01 s per frame of a turn, a few
     hundredths of a millisecond per beam stamp, 1 ms per frame of a torpedo, 0.1 s per
-    frame of a hit animation and 0.3 s after each hit). Every frame is still drawn. The
+    frame of a hit animation and 0.3 s after each hit; corrected by Q77: the 0.3 s comes
+    only after a seeker's impact on a piece that survives it, and a torpedo moves farther
+    per frame with the switch on). Every frame is still drawn. The
     replay's switch does the same in the replay; neither touches the Ground Combat or
     Strategic Combat window.
     The client differs: it speeds the animations up threefold. To match, with the switch
@@ -2764,8 +2883,9 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     is reset: weapons ready, shields full, targets cleared.
     Our engine follows this since 2026-10-01 (`Battle::landingColony`, `dropTroops`):
     no treaty is checked, the order names no planet, a Drop Troops piece tries the
-    landing after every move it plans, and every landing resets the planet's piece. The
-    engine's own choices are spec 04 §19.4 Q87–Q89.
+    landing after every move it plans, and every landing resets the planet's piece. Its
+    remaining choices were settled as spec 04 §19.4 Q87–Q89: who counts as another side
+    and the refusals still differ there.
 38. **Combat Simulator.** A race's flag is that of the empire its first item belongs to,
     or the player's while it has none. Every object of the home system is offered,
     asteroid fields and storms included. Fleets For Plr is our list of the race's ships
@@ -2778,8 +2898,12 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
       box in a fixed colour by side number holding the number (1 red, 2 blue, 3 green,
       4 yellow, 5 purple, 6 white, 7 aqua, 8 lime, 9 maroon, 10 olive), whichever empire
       the side copies, and so do the combat windows of a simulation and the reports
-      opened from them. Open: what the Combat Vehicles list's Flag column draws was not
-      traced; needs observation.
+      opened from them. The Combat Vehicles list's Flag column shows the same box (26×18,
+      5 px from the column's left, 9 px from the row's top); a neutral object's row
+      leaves it empty. Its Name column adds "Cargo:" or "Units:" and "Fleet:" lines in
+      the small font (§1.10.4). The Owner for item rows (20 px) carry the 26×18 box at x
+      80, y 1, and the Computer Control window ("Empires Under Computer Control") a Pic
+      column with the box and a Name column "Race N" (confirmed: binary).
     - **Items:** the home system's colonized planets (any owner) and every unowned
       object there (stars, warp points, comets, storms, empty planets and asteroid
       fields), so ours matches; storms and uncolonised asteroid fields can be added but
@@ -2794,9 +2918,13 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     Fleet Transfer and Cargo Transfer; a counter per side and design; Designs stays open.
     Since 2026-10-01 our client follows each point. The numbered boxes stand for the
     sides in the Owner for item and Computer Control lists, in the Tactical and
-    Strategic Combat windows of a simulation and in the reports opened from them; the
-    Combat Vehicles list keeps the flag of the empire a side copies until the Flag
-    column is observed. Each ship item takes its side's next numbers when it is added
+    Strategic Combat windows of a simulation and in the reports opened from them. It
+    still differs in the simulator window itself (`screens/simulator.cpp`): `vehicles()`
+    draws the copied empire's flag (`sideStyle()`) and one line "name xN (Race k)" or
+    "(neutral)" where the original draws the side's box and the name with its Cargo or
+    Units and Fleet lines; `owners()` and `computerPopup()` draw an 18×14 box at x 22
+    instead of the 26×18 box; the Computer Control popup is titled "Player Computer
+    Control"; the Items heading reads "Items"; and the two hints are missing. Each ship item takes its side's next numbers when it is added
     (game::combat::simulatorNumberShips). Fleets For Plr and Change Cargo open the real
     Fleet Transfer and Cargo Transfer windows over a sandbox of the setup, and the setup
     takes back the fleets or the cargo when the window closes; the real game never
@@ -2951,8 +3079,8 @@ something open; all are now settled from the executable:
     by "Range: N" when a sector of the shown system is selected, N being the larger of
     the column and row differences between the two sectors. Details in §2.4 (confirmed:
     binary).
-    Our client follows this. The line reads "Coordinates (x, y)   Range: N"; the spacing
-    between the two parts is ours (inferred).
+    Our client follows this. The line reads "Coordinates (x, y)   Range: N"; the text and
+    spacing match the original (Q64).
 46. **Confirmations.** "Confirm stellar manipulation" asks before every action. "Confirm
     scrapping" asks before scrapping vehicles or facilities and before self-destruction.
     Do the original's ask in the same cases? **Answer:**
@@ -2985,7 +3113,7 @@ something open; all are now settled from the executable:
       but nothing reads it: founding a colony never claims a system. Systems become
       claimed only as the home system at empire creation, by a click in the Borders
       window (which toggles the claim), through a trade or gift package (the giver loses
-      it), and by the Politics minister's territory pass each turn (spec 05) for every
+      it and the receiver claims it, Q70), and by the Politics minister's territory pass each turn (spec 05) for every
       empire whose Politics minister is on: every computer player, and a human who turns
       that minister on.
     - Abandon Planet empties the population and resets the colony's anger to 25. If the
@@ -3021,15 +3149,17 @@ something open; all are now settled from the executable:
       and Enter mean No), then opens the empire file picker. The file holds a copy of the
       empire with the game state cleared (research, intelligence, diplomacy, queues, log,
       fleets, systems to avoid, waypoints, tagged minefields, computer control) and all the
-      player's designs on Yes, none on No.
+      player's designs on Yes, none on No. The cleared state leaves the empire's combat
+      strategies; each design keeps its strategy, creation date and statistics but loses
+      its obsolete and built marks and the other empires' sighting dates (Q72).
 
     (confirmed: binary)
     Our client follows Time Remaining and Under Construction in the planet and ship
     reports, the Colonies list and the Construction Queues rows ("0.3 years", "0.1 years"
     for 0 turns, "Never", "On Hold", nothing for an empty queue; " x N" for any item;
     "Upg. <facility>"). Save Empire asks about the designs first and our empire file
-    keeps them on Yes; it differs only in having no file picker (Q72). "Skip ships under
-    construction" skipping nothing already matches.
+    keeps them on Yes; it differs in having no file picker and in what it keeps of a
+    design (Q72). "Skip ships under construction" skipping nothing already matches.
 
 Questions 49–55 were our own choices for the main window, maps, art, sound and files;
 all are now settled from the executable:
@@ -3092,8 +3222,10 @@ all are now settled from the executable:
       system and galaxy panels are redrawn. There is no pause between days. With "animate
       ship movement in the system window" on, visible moves inside the shown system are
       animated: the sprite first turns in 5° steps of 10 ms each, then slides 1 px per
-      step, waiting at least 1 ms per step; warp jumps are never animated. After day 30
-      the current turn is reloaded and the panels unlocked.
+      step, waiting at least 1 ms per step; warp jumps are never animated. Each entry (one
+      per vehicle and step) is animated on its own, one after another, in the log's order;
+      key presses while a day is shown are ignored (Q62). After day 30 the current turn is
+      reloaded and the panels unlocked.
     - Ctrl+P (Play Movement Log) ends any replay in progress and plays days 1–30 in one go.
     - Ctrl+I (one step): the first press loads the start of the turn and shows Day 0
       without applying anything; each later press applies one more day; the step past day
@@ -3126,8 +3258,10 @@ all are now settled from the executable:
       vehicles no longer seen removed after day 30 (inferred).
     - No turn file is written: the log lives in memory, so a game just loaded has none and
       the keys say Replay Unavailable, as a notice in the system panel rather than a box.
-    - Without the animation one day is shown per frame; a fleet's members that make the
-      same move are animated as one; minis start the replay facing up (inferred, Q62).
+    - Without the animation one day is shown per frame (inferred). A fleet's members that
+      make the same move are animated as one and minis start the replay facing up, where
+      the original animates each member's entry on its own and starts from the headings
+      saved with the turn (Q62).
 52. **Tagged groups.** What do Scrap and Move To Waypoint show for a tagged group? Our
     client asks to confirm the scrapping of every tagged object, and lists the set
     waypoints (inferred). **Answer:**
@@ -3192,34 +3326,150 @@ Raised while implementing the answers above (inferred, open):
     to Z and numbers highest first; both windows start with Name. A right-click on a
     queued ship or unit in Set Construction Queue opens its hull's report. What are the
     original's columns per tab, their directions, and the report a queued design opens?
+    **Answer:** the columns, keys and directions per tab are in §1.8.3 (confirmed:
+    binary). In short: a sort key is a column with one identity in every tab, not a
+    position, so it keeps sorting by its quantity after a tab change; every header,
+    the picture's included, can be clicked, and a few columns have no key; text compares
+    by character code except Name, which ignores case; several directions are not ours
+    (Construction's two columns Z to A, Supplies and Experience lowest first, the Fleet
+    column by fleet number); fleet rows always come last, unsorted. A right-click on a
+    queued ship, base or unit opens the design's Design Report.
+
+    Our client differs (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`,
+    `state.hpp`):
+    1. `InterfaceOptions::coloniesSort` and `shipsSort` hold the column's position in the
+       tab shown (`table()` in `planets.cpp`, `sortRows()` and `table()` in `ships.cpp`).
+       They must hold the column's identity as in §1.8.3; saved values need a mapping.
+    2. The picture headings are not clickable (`{"", 0, 0, false}` in both files). They
+       must sort: planet size smallest first, hull number lowest first.
+    3. Our Colonies tabs have other columns (General: Type, Colony Type, Population, Mood,
+       Facil.; Value adds Type, Atmosphere, Conditions; Production adds Delivery;
+       Facilities: Used, Facilities; Cargo: Space, Contents; Construction: Building,
+       Progress, Time, Items, Mode; Status adds Mood and Anger). `columns()` in
+       `planets.cpp` must give the original's sets.
+    4. Directions: in Colonies, Mood sorts by the word (ours by anger), Under Construction
+       and Time Remaining Z to A by text, and Facilities, Cargo Items, Status and Orders
+       have no key (ours sort by counts). In Ships\Units, Size sorts by hull number (ours
+       by the hull's name), Supplies and Experience lowest first, Fleet by fleet number
+       highest first (ours by the fleet's name).
+    5. `buildRows()` and `sortRows()` (`ships.cpp`) sort fleet rows with the vehicles.
+       Fleets must follow every vehicle, in fleet order, unsorted.
+    6. `openItemReport()` (`queues.cpp`) opens the hull's report (`ItemRef::Kind::Hull`).
+       It must open the design's report, like the simulator's "Design Report" popup
+       (`screens/simulator.cpp`).
 
 Questions 60–64 are choices of ours made while implementing the fonts, pointers, the
-800x600 layout and the movement log replay (inferred):
+800x600 layout and the movement log replay (inferred). Q61, Q62 and Q64 are settled from
+the executable and Q63 has no counterpart; Q60 needs observation:
 
 60. **The Small Fonts stand-in.** The map numbers and letters use OpenSE4's own raster
     face: an 8 px cell with ascent 6, capitals and digits 5 px tall and 3 px wide (M, N,
     W and a few others wider), lower case 4 px tall, one blank column between
     characters. How tall and wide are the original's digits and letters on the system
     panel at 96 DPI, so the stand-in can match their size and spacing?
+    Open: needs observation. Capture the system panel at 1:1 with the facility markers
+    on and the numbers drawn on the map in view (§2.4), and measure the cap height, digit width and spacing of the
+    letters. The face is the system's Small Fonts, not a file of the game, so note
+    whether the capture comes from Windows or from Wine, whose stand-in may differ.
 61. **Supply icons of unit groups.** §4.4 gives the supply icons for ships, bases and
     fighter groups. Satellite, mine, drone and weapon platform groups carry no supplies in
     our engine, so ours show neither icon. Does the original show the out-of-supplies icon
     on them?
+    **Answer:** fighter and drone groups by the same rule; satellite groups and mine
+    fields never (confirmed: binary; §4.4). Unit-group rows and the group reports draw
+    their status icons with the ship routine, whose first cell asks the object:
+    - a fighter or drone group is out of supplies at 0 supply, and low while it holds at
+      least one unit and its supply is below `Supply Amount for Low Supply Warning` div 10;
+      a drone group at 0 is destroyed at the end of the turn (spec 03 §7), so it shows the
+      icon only until then;
+    - a satellite group or a mine field always answers no, so it shows neither icon;
+    - weapon platforms never form a group in space (they exist only as cargo), so they
+      have no row of their own.
+
+    Our client differs: `vehicleStatusCells()` (`client/classic/status_icons.cpp`) draws
+    the supply cell only for ships, bases and fighter groups. It must treat drone groups
+    like fighter groups. The same low-supply rule ends a Sentry order for each member
+    (§7 Q54), so a drone group's threshold is also the tenth, with at least one unit; the
+    engine's `sentry()` (`movement.cpp`), which uses the tenth for fighters only, and the
+    client's `lowOnSupply()` (`order_rules.cpp`) differ there. (Whether the original's
+    Sentry button for drone groups uses this test was not traced.)
 62. **Movement log animation details.** Ours animates the moves of one day in the log's
     order, a fleet's identical moves as one, shows one day per frame without the
     animation, and starts every mini facing up. In what order does the original animate
     a day's moves, does each fleet member move on its own, and which heading does a mini
     have at Day 0?
+    **Answer** (confirmed: binary; Q51):
+    - **One entry per vehicle and step.** When a group steps one sector or jumps through
+      a warp point, each member gets its own log entry for that day, one after another in
+      the group's order. A day of the replay applies its entries in the order they were
+      written, which is the order in which that day's movement carried them out.
+    - **No grouping.** Each entry is animated on its own, and in full, before the next
+      starts, so a fleet's members turn and slide one after another along the same path.
+    - **When an entry is animated:** only with "animate ship movement in the system
+      window" on, for a move that stays in one system, when that system is shown and the
+      viewer sees the vehicle.
+    - **The turn.** When the bearing from the vehicle's sector to its new one, taken to
+      the nearest of the 8 headings, differs from its heading, the mini first turns the
+      shorter way (clockwise for a half-turn), 5° a frame (9 frames per 45°), 0.01 s after
+      each frame.
+    - **The slide.** The vehicle is then placed in its new sector with its new heading
+      (its fleet's location moves with it), its old square is redrawn without it, and the
+      mini slides 1 px a frame along the longer axis: 36 frames per sector at 800x600, 50
+      at 1024x768, diagonal steps the same, 1 ms after each frame (with the tick counter
+      of §1.10.3, so about 15.6 ms a frame on current Windows).
+    - **Never animated or paused:** no switch shortens these waits; the Settings pause
+      after a normal move is not used in the replay; warp jumps, colonies and removals are
+      never animated; after a day's entries the system and galaxy panels are redrawn with
+      no pause.
+    - **One Ctrl+I step** is one such day: all its entries, each animated in turn, then
+      the redraw. Key presses during a day's animations are ignored; they neither finish
+      nor skip the day.
+    - **Day 0.** The replay reloads the game saved at the start of the turn, which keeps
+      each ship's, fighter group's and drone group's heading, so each mini faces where it
+      faced when the turn began, not up. Satellite and mine groups have no heading; a
+      vehicle whose hull uses no engines (a base) is always drawn facing up.
+
+    Our client differs (`client/classic/movement_replay.cpp`):
+    - `MovementRecorder::day` builds each day's moves from the states before and after the
+      day, in `GameState::vehicles` order, so several steps of one day become one move and
+      the order is not that of movement. The observer `ClassicSession::replayLastTurn` uses
+      must report each step of each vehicle as it is made, and the log keep that order.
+    - `MovementReplay::applyDay` merges a fleet's identical moves into one animation. Each
+      entry must be animated on its own, in sequence.
+    - `MovementReplay::heading` starts every mini facing up. It must start from each
+      vehicle's heading at the start of the turn, so the engine must keep a vehicle's
+      heading as state (saved with the game); bases always face up.
+    - `MovementReplay::update` finishes the day at once on a step key pressed during its
+      animations, then applies the next. Such a press must be ignored.
+    - One day per displayed frame without the animation stays an OpenSE4 choice (the
+      original plays its 30 days without any pause).
 63. **Pointer size on a scaled screen.** Ours shows the 32x32 pointers at the whole
     multiple nearest the frame's scale (twice as large on a frame drawn twice its size).
     The original draws the frame 1:1, so this has no counterpart; is a fixed 32x32
     pointer preferable on large screens?
+    **No answer needed:** an OpenSE4 choice with no counterpart in the original, which
+    never scales its frame (confirmed: binary; §2.1.1). Ours stays as it is.
 64. **The coordinate line's text.** Ours reads "Coordinates (3, 4)   Range: 2". What
     separates the parts in the original, and is the range shown when the selected sector
     is the one under the pointer (Range 0)?
+    **Answer:** the text matches ours character for character, and Range 0 is shown
+    (confirmed: binary; §2.4). The line is one string: "Coordinates", a space, "(x, y)"
+    with ", " between the numbers, then, while a selected sector of the shown system is
+    marked, three spaces, "Range:", a space and the distance: "Coordinates (3, 4)   Range:
+    2". The selected sector is the last one clicked in the panel. It is marked, and the
+    range shown, only while it holds at least one object the viewer can see (a star,
+    planet, warp point, vehicle or group), tested at every redraw: after a click on an
+    empty sector neither the marker nor the range appears, though the sector stays
+    selected. Nothing excludes the selected sector itself, so with the pointer on it the
+    line ends in "Range: 0". With no marked selection only the coordinates show.
+
+    Our client differs: `selectSector()` (`client/classic/main_window.cpp`) selects an
+    empty sector too, and the coordinate line then adds the range and the selection
+    brackets are drawn. Both must appear only while the selected sector holds an object
+    the viewer sees, tested at every frame; the selection itself stays as clicked.
 
 Our own choices made while implementing Q41–Q55 for the Log, the engine and Save Empire
-(inferred, open):
+(inferred). Q70 and Q72 are settled from the executable; Q71 has no counterpart:
 
 70. **One entry per package.** Our engine logs a completed trade, gift or tribute as one
     entry for the whole package, where the original makes one entry per item. Its Goto
@@ -3227,18 +3477,118 @@ Our own choices made while implementing Q41–Q55 for the Log, the engine and Sa
     treaties or communication channels (Empires), else planets, vehicles and star charts
     (the first planet's or vehicle's location). Does the original's entry per item use
     these targets, and in what order are the entries made?
+    **Answer:** one entry per item for each party concerned, none for the package
+    (confirmed: binary; §4.1, spec 05 §3.4).
+    - **Order.** The package is carried out when the acceptance arrives: a gift's or
+      tribute's items from giver to receiver; for a trade, the proposer's offered items
+      first (proposer to accepter), then the requested ones (accepter to proposer). Items
+      go in package order. Each item makes the receiver's entry first, then the giver's.
+      Every entry is category Politics. After the items, the acceptance itself becomes the
+      proposer's (or the gift giver's) "Message" entry (§4.1).
+    - **Planet** (only when it still exists, still belongs to the giver and is colonized;
+      otherwise nothing at all): "Planet Received" for the receiver and "Planet Transfered"
+      for the giver (the original's spelling), each naming the planet and the other
+      empire. Goto: the planet's sector.
+    - **Ship, base or unit group** (only when it exists and still belongs to the giver):
+      "Vehicle Received" / "Vehicle Transfered", naming it. Goto: its sector.
+    - **Resources:** the amount moved is the package's amount × 1000, at most the giver's
+      stock; both entries are made even when nothing moves. "Resources Received" /
+      "Resources Transfered" with the amount and the resource. Goto: Empires.
+    - **Technology:** "Technology Received" for the receiver, saying the giver sent its
+      data on the area, with a closing remark when the data is of no use (an area the
+      receiver cannot research, data not ahead of the receiver's level, or an area unique
+      or racially unique to the giver); "Technology Transfered" for the giver. Goto:
+      Research for both. A level the receiver gains then adds its usual Research entries.
+    - **Star charts:** "Starcharts Received" for the receiver only, naming the system and
+      the giver. Goto: that system, with no sector. The giver gets nothing; nothing
+      checks that the giver has explored the system.
+    - **Treaty:** "Treaty Enacted" for both, naming the treaty and the other party. Goto:
+      Empires. The entry is of the same kind as a first-contact entry, so each human
+      party's history file also gets a contact line naming the other party (spec 05
+      §3.4).
+    - **Communication channels** (only when the receiver has no contact with the named
+      empire C): the receiver and C are both set to treaty None, without a first-contact
+      entry; "Comm Channels Received" for the receiver, "Comm Channels Opened" for C.
+      Goto: Empires. The giver gets nothing. Nothing checks the giver's own contact with
+      C or that C is alive.
+    - **System** (a border claim): no entry; the giver's claim goes and the receiver
+      claims the system.
+    - Items no longer valid are skipped without any entry; there is no "unavailable"
+      entry. "Any" items never reach this point. The code that carries a package out
+      tests no game option, Allow Technology Gifts included (whether the option is
+      enforced when a message is composed was not traced).
+    - Accepting a treaty proposal makes no treaty entry, only the "Message" entry.
+
+    The engine differs (`diplomacy.cpp`):
+    - `acceptPackage` writes one "<Trade|Gift|Tribute> Completed" entry per party with a
+      single target (`packageGoto`). It must write the entries per item above, in that
+      order, with those titles and targets, and none for the package.
+    - `executePackage` writes "Items Unavailable" entries; invalid items must be skipped
+      silently.
+    - Treaty items go through `setTreaty`, which logs "New Treaty" for both parties (and
+      does so for accepted treaty proposals too, which the original never logs). A
+      package treaty must log "Treaty Enacted" instead, plus the history's contact line;
+      an accepted proposal logs nothing beyond its "Message".
+    - Channel items go through `makeContact`, which makes "First Contact" entries and
+      history lines and requires the giver's contact and a living C. They must set both
+      sides to None with the two entries above, without those checks.
+    - Technology is refused when `!allowTechTrades`; the package code must not test it.
+    - A System item only drops the giver's claim; the receiver must claim the system.
+    - Star charts require the giver to have explored the system and also copy the giver's
+      known warp links; neither is in the original's package code.
 71. **Refused commands.** A network or play-by-e-mail host can refuse a command that the
     player's client accepted; the original has no such case. Ours lists each one after
     the turn's entries as a Misc row "Order not carried out" without a Goto, not stored in
     the empire's log. Should they become ordinary log entries?
+    **No answer needed:** an OpenSE4 choice with no counterpart. The original's host takes
+    a player's turn as a snapshot of its part of the game (spec 05 §9.2), not as commands
+    it could refuse one by one. Ours stays as it is.
 72. **Save Empire.** Ours writes the empire file under the empire's name in our own
     folder, without the original's file picker. Designs come back in a new game after its
     starting designs, renamed when another design has their name, with the obsolete flag
     they had and the first combat strategy; designs whose hull, components or mounts the
     data set lacks are left out with a warning. Does the original keep the strategy?
+    **Answer** (confirmed: binary; this has a counterpart in the original):
+    - **Name.** The file name comes only from the empire file picker, which opens after
+      the question about designs; cancelling it saves nothing. The game setup's empire
+      window offers the same save.
+    - **Strategies are kept.** The cleared game state leaves the empire's list of combat
+      strategies, so the file holds it, and each design keeps its strategy (its place in
+      that list). Loading restores both.
+    - **Design marks.** Each saved design loses its obsolete and built marks, so it comes
+      back current and editable, and the other empires' sighting dates. It keeps its
+      creation date and its statistics.
+    - **Where the designs go.** Loading an empire file that has designs first deletes all
+      of that empire's designs, then adds the file's designs in file order, each into the
+      first free place of the game's design list or at its end. So the file's designs are
+      the empire's only designs.
+    - **Parts and checks.** The hull, components and mounts are stored as positions in the
+      data set's lists, not by name, so a data set with other lists silently gives other
+      parts. Each design must pass the validity rules of spec 03 §4.2 without rule 2 (the
+      technology test); a design that fails is dropped without a message. The mount
+      technology test of rule 5 still runs, against the saved empire's research, which
+      Save Empire cleared, so a design with a mount that needs research would be dropped
+      (stock mounts need none; not traced further). Names are not checked, so duplicates
+      stay (spec 03 Q50).
+
+    The client and engine differ:
+    - Our empire file stores neither the strategy list nor each design's strategy, so a
+      loaded design gets the first strategy (`setup.cpp`, "Designs an empire file
+      brought"). The file must store both and setup must restore both.
+    - Ours keeps the obsolete flag (`setup_model.cpp` writes it, `setup.cpp` copies it). It
+      must clear it (and the built mark) and keep the creation date and statistics.
+    - Ours adds the file's designs after the empire's starting designs. In the original
+      they replace every design the empire has, and an empire has none at creation (spec
+      01 §3.6 "Starting assets").
+    - Ours checks only that the hull, components and mounts exist. It must also drop
+      designs that fail the validity rules other than the technology test.
+    - OpenSE4 choices that stand: renaming on a name clash (spec 03 Q50), parts stored by
+      name with a warning when one is missing (our own file format), and the file named
+      after the empire without a picker.
 
 Bringing the battle flow in line with Q30–Q33 (2026-10-01) left these choices of ours,
-each marked "(inferred)" in the client:
+each marked "(inferred)" in the client. Q73 and Q76 are settled from the executable (what
+a viewer sees of Q73 needs observation); Q74 and Q75 have no counterpart:
 
 73. **What a displayed frame shows of a strategic battle.** The original redraws the small
     map after every step and repaints when it handles its messages, after each empire's
@@ -3247,6 +3597,26 @@ each marked "(inferred)" in the client:
     steps of a phase appear together; nothing is held. Is that what a current machine
     shows of the original (it repaints only at those points), or are the steps of a
     phase visible one by one there?
+    **Answer** (confirmed: binary; §1.10.5 step 5): the original does not wait for
+    repaints. After every single step of a piece or seeker it paints the small map
+    straight onto the window; after each combat turn it draws "Combat Turn N" straight
+    onto the window, repaints the forces list at once and paints the map. The message
+    handling after each empire's phase and each combat turn only serves input and other
+    windows. Nothing waits anywhere. So each step is drawn as it is taken and stays only
+    until the next is drawn: on a period machine without desktop composition each step
+    appeared as drawn; on a current machine many steps, often whole combat turns, fall
+    between two display refreshes, and only the state at each refresh is seen.
+
+    Our client differs: `screens/strategic_combat.cpp` (the window's `update`) fights one
+    empire's phase per displayed frame, so a battle lasts at least as many refreshes as it
+    has phases, slower than the original on a current machine. To match, it would fight
+    on, step by step, until the next refresh is due, then show that state.
+
+    Open: needs observation of what a viewer sees. Record the original's Strategic Combat
+    window with a frame-accurate capture (60 fps or more) during a simulator battle of
+    several combat turns between two or three sides; count the distinct map states and
+    the "Combat Turn" values seen between Begin and the moment Close lights up, and time
+    that span.
 74. **Battles of games on different machines.** The original shows the Strategic Combat
     window, before the battle, to the human whose turn it is (§1.10.5). Our network and
     PBEM hosts fight every battle without stopping, so our client shows a network game's
@@ -3254,17 +3624,36 @@ each marked "(inferred)" in the client:
     afterwards, played back from the record one combat turn per frame, with the results
     already in the game. To match, the host (or the PBEM player's own turn) would have to
     stop as a local game does.
+    **No answer needed:** an OpenSE4 choice with no counterpart. The original has no host
+    for a turn-based game on different machines: the game file passes from player to
+    player, and each battle is fought on the machine of the player whose turn it is (spec
+    05 §9.1). Our hosts are an OpenSE4 extension (spec 05 §9.5), and showing their battles
+    afterwards is part of it.
 75. **A mixed group in a battle shown afterwards.** The battle record keeps a unit group's
     first design only, so a battle shown afterwards (Q74) counts a group that mixes
     designs under that design's hull, where the live window counts each stack under its
     own (§1.10.5).
+    **No answer needed:** an OpenSE4 choice with no counterpart; it concerns only the
+    playback of Q74, which the original does not have.
 76. **A notice before a shown simultaneous battle.** On one machine the notice comes first
     when the empire whose turn it is is computer-controlled (§1.10.5). A simultaneous
     turn has no such empire; ours shows no notice there. Does the original?
+    **Answer:** no (confirmed: binary; §1.10.5). The notice belongs only to the question
+    form: it comes when a battle on one machine is about to ask Tactical or Strategic and
+    the empire whose turn it is is computer-controlled. A simultaneous battle never asks.
+    With `Simultaneous Games Show Strategic Combat` on, the Strategic Combat window opens
+    at once in its Begin and Close form for every battle, computer-only battles included:
+    the setting takes the place of the test for a human side.
+    Our client matches for the notice (`ClassicMode::drawBattleQuestion`,
+    `classic_mode.cpp`, shows it only in turn-based games). The engine differs: `resolve()`
+    (`combat_space.cpp`) stops a simultaneous turn to show a battle only when it has a
+    human side (it requires `humans` to be non-empty; the comment in `turn.cpp` says the
+    same). With the setting on in a simultaneous game, every battle on that machine must
+    stop to be shown.
 
 Bringing the combat windows in line with Q34–Q36 and Q38 on 2026-10-01 left these
-choices of ours (inferred), each to check in the running game (Q73–Q76 are those of
-the live battle flow):
+choices of ours (inferred) (Q73–Q76 are those of the live battle flow). All are settled
+from the executable; Q77's timings still need measuring and Q81 has no counterpart:
 
 77. **Animation frames.** How many frames does the original's slide over one square
     take, and how many its turn to a new facing (one per 45 degrees?), its torpedo's
@@ -3274,22 +3663,168 @@ the live battle flow):
     with the hit's waits; a miss adds nothing to its shot; a launch, a landing or a
     capture flashes for 4 frames without a wait. Every frame stays at least one display
     refresh.
+    **Answer** (confirmed: binary; §1.10.3 holds the full table). The same holds in Combat
+    Replay with its own switches, except that the replay has no 0.3 s pause.
+    - **Waits:** each one first handles pending window messages, then busy-waits on the
+      system's millisecond tick counter (§1.10.3). Under Wine the nominal waits hold; on
+      current Windows each frame lasts about 15.6 ms.
+    - **Slide:** 1 px a frame along the longer axis, 36 frames for any one-square step,
+      diagonal too, 1 ms after each; no slide and no wait when either square is outside
+      the shown part of the map. With the movement animation off the piece jumps and then
+      waits 0.1 s.
+    - **Turn:** before the step, the shorter way (clockwise for a half-turn), 5° a frame,
+      9 frames per 45°, 0.01 s after each; only with the movement animation on and the
+      square in view.
+    - **Seekers** never turn; a seeker's step is the ship's slide, not a torpedo's
+      flight. Their launch is not animated.
+    - **Torpedo:** 4 px a frame (9 frames per square), 1 ms after each; with Fast Tactical
+      Combat 6 px a frame (6 per square).
+    - **Beam:** one stamp every 6 px (6 per square), drawn one by one outward with
+      0.00001 s after each, then erased one by one in the same order with 0.00005 s after
+      each.
+    - **Shots:** a hit ends at the target's centre (a random point of a planet's 4x4
+      block), a shield-only hit 17 px short of it, a miss 18 px off in x and y with random
+      signs; a one-square target with shields up shimmers (8 frames, one per 8 shot
+      frames) while the shot is drawn.
+    - **Impact:** only a hit that damages structure or destroys the target plays the
+      8-frame explosion (0.1 s per frame and after the wipe), once, also for a loss; a
+      shield-only hit stamps one shield picture (not with Fast) and has no wait; a miss
+      adds nothing. The 0.3 s pause comes only in Tactical Combat after a seeker's impact
+      on a piece that survives it.
+    - **Launch, landing and capture:** no animation, only a redraw.
+    - **Random numbers:** a miss's direction (two draws) and the point on a planet (two
+      draws) are drawn from the battle's own random sequence. So a battle shown in the
+      Tactical Combat window uses more random numbers than the same battle fought unseen,
+      and what follows in it can differ. Whether Combat Replay draws from the game's
+      sequence too was not traced.
+
+    Our client differs (`CombatPlayback::framesOf` in `client/classic/replay.cpp`, the
+    drawing in `screens/combat_map.cpp`):
+    - `kSlideFrames` 6 must become 36 (1 px a frame), and a seeker's step must be this
+      slide, not a torpedo's flight.
+    - `turnSteps` must give 9 frames per 45° (5° each, clockwise on a tie), and no turn
+      frames when `animateMoves` is off or the square is out of view.
+    - Torpedo: 9 frames per square, 6 with Fast Tactical Combat.
+    - Beam: 6 stamps per square drawn one by one and then erased one by one, instead of
+      one stamp stretched by `drawSpriteAlong`.
+    - `Kind::Hit`: an explosion only when structure is damaged or the target destroyed;
+      a shield-only hit gets one shield stamp and no wait; the 0.3 s `AfterHit` frame only
+      after a seeker's impact that the target survives, and only in Tactical Combat. The
+      battle record must tell structure damage from shield damage.
+    - `Kind::Destroyed` must not play a second explosion.
+    - `Kind::Captured` and `Kind::Launch` must drop the 4-frame flash (`kFlashFrames`).
+    - Misses must end at the diagonal half-square offset, shield-only hits 17 px short,
+      and shielded one-square targets shimmer.
+    - The engine's battle does not draw the display's random numbers, so a battle shown
+      tactically follows another random course in the original than in ours; matching it
+      would need the tactical window to draw those numbers from `GameState::rng` at the
+      same points (spec 04 §19.1).
+    - Keeping each frame on screen for at least one display refresh stays an OpenSE4
+      choice; it is close to what Windows gives (about 15.6 ms a frame).
+
+    Open: needs observation, to confirm under Wine with a high-rate capture of the
+    Tactical Combat window (Fast Tactical Combat off): the duration of a one-square slide
+    (about 36 ms or more), of a 45° and a 90° turn (about 90 and 180 ms), of a beam and a
+    torpedo over a known distance; that shield-only hits show no explosion; that misses
+    land half a square off diagonally; that only seeker impacts are followed by the 0.3 s
+    pause; and which losses use the 72x72 explosion.
 78. **Combat Piece Report details.** Ours writes "K" thousands truncated (150999 →
     "150K"); a drone whose drone target has died shows None until it picks another; the
     Facil and Ability tabs show the colony or ship as the battle began; the report has a
     Close button in its title strip, as our tab strip leaves no room under the page.
+    **Answer** (confirmed: binary; §1.10.1):
+    - **"K":** right. Current supply and capacity are written separately; each number
+      strictly above 100000 becomes its thousands, truncated by integer division, then
+      "K" (150999 → "150K"; 100000 stays "100000"). Our client matches
+      (`supplyNumber()`, `combat_logic.cpp`).
+    - **A dead drone target:** the line looks the target up by its piece number; a
+      destroyed piece leaves the list at once, so the line reads None until the drone's
+      planning picks again. Our client matches. One quirk of the original: a new piece
+      can take the dead piece's number, and the drone then shows and goes for that new
+      piece (spec 04 §10.7, "A reused piece number"); the engine does not reproduce it.
+    - **Facil** shows the colony's facilities as they are when the report opens, none
+      marked lost; lost facilities stay in the list until the battle ends, so during a
+      battle this is the set the colony began with. Our client matches in effect.
+    - **Ability** lists, for a ship or base, its hull's abilities, then its whole
+      design's (every component, destroyed or not), then its own; for a planet only the
+      planet's own abilities, not its facilities' or its colony's.
+    - **The window** is borderless, 310×420, as every report opened on its own (the size
+      in the form resource is overridden): pages at (10,10), the four 72×30 tabs at
+      (10,340), and a Close button 153×30 centred under them at (79,380), its bottom
+      10 px above the window's.
+
+    Our client differs: its Ability tab (`abilities()` in `screens/tactical.cpp`) leaves
+    out destroyed components (`vehicleAbilities()`) and lists a planet's facility and
+    colony abilities (`colonyAbilities()`); its `CombatPieceReportScreen` is a 353×422
+    dialog with a 64×22 Close button in the title strip at (279,7). The window must be
+    310×420 with the tab strip and the Close button laid out as above.
 79. **Fleets For Plr.** Ours hides Fleet Transfer's Existing Fleets button (the real
     game's fleet list) while it works on the simulator's sandbox. Is it there in the
     original, and what does it list?
+    **Answer:** it is there, in the simulator as in the real game (confirmed: binary;
+    §1.10.4). Fleet Transfer always has Create Fleet, Formation, Strategy, Existing
+    Fleets, Add All and Remove All. Existing Fleets opens the ordinary Ships\Units window
+    of the player's real empire, with the empire's saved Show Ships, Show Units and Show
+    Fleets switches and tab, never the simulator's ships. Opened this way the window is
+    for viewing only: a left-click on a row does nothing (normally it goes to the object
+    and closes the window); this holds in the real game's Fleet Transfer too. In the
+    simulator, Fleet Transfer itself lists the chosen side's ships and bases from the
+    setup (not its unit groups or planets) and that side's copied fleets.
+
+    Our client differs (`screens/fleet_transfer.cpp`): it hides the button over the
+    sandbox (`!sandbox_`), and in the real game it opens Ships\Units with only Show
+    Fleets on. The button must appear in both cases and open the real game's Ships\Units
+    with its saved switches, in a mode where a left-click does nothing.
 80. **Change Cargo.** Ours lists every vehicle and colony of the setup in one Cargo
     Transfer window by giving them all to the chosen side in the sandbox; the deferred
     Load and Drop Cargo orders are hidden; population moved onto a ship is not kept; and
     the setup then accepts any unit design a sample colony stores, foreign ones
     included. How does the original list the holders of different sides, and where do
     units for a ship come from without a sample colony that stores them?
+    **Answer** (confirmed: binary; spec 04 §17):
+    - The window is titled "Transfer Cargo" and has only Move One, Move Five, Move Ten,
+      Move Hundred and Move All, in every mode; no Load or Drop Cargo order buttons.
+    - **Left list:** every row of the Combat Vehicles list as a holder, all sides
+      together in that list's order (sides 1–10, then neutral objects), each followed by
+      its population and cargo lines. Planets carry their population bars in their side's
+      colour; nothing else marks a side.
+    - **Right list:** only a "Storehouse", made when the window opens: a copy of the
+      player's first colony (systems in order), owned by side 1, renamed "Storehouse",
+      given `Cargo Storage` 500000000, 1000 of every unit design the player owns or has
+      seen (troops, fighters, satellites, mines, drones, weapon platforms; sorted by the
+      owner's empire name, then the design name), and 10000M of side 1's population on
+      top of the copied colony's own population and stored units. It is removed when the
+      window closes. Without a colony there is no Storehouse and the right list is empty.
+    - **Moves:** a click on a cargo line moves it to the holder selected in the other
+      list, so cargo goes only between a setup holder and the Storehouse, never directly
+      between two holders, and no owner is checked. Plague quarantine and "leave at
+      least 1M" still apply.
+    - **What stays:** everything moved stays with the setup's objects; population moved
+      onto a ship stays aboard and fights in the battle.
+
+    Our client differs: `simulatorSandbox()` (`combat_logic.cpp`) gives every holder to
+    the chosen side in one shared list and takes units only from sample colonies' stores;
+    `simulatorTakeBack()` keeps units only, so population moved onto a ship is dropped;
+    and `cargo_transfer.cpp` shows "Load Cargo Order" and "Drop Cargo Order" in the real
+    game, which the original's window never has (it hides them over the sandbox). The
+    holders must be listed as above against a Storehouse built as above, population on
+    ships kept, and the two order buttons removed in every mode. Its Move steps must add
+    Move Hundred.
 81. **Ship numbers of items without one.** An item put in the setup without a number
     (a sample setup made by the program) takes the next numbers of its side, in item
     order, after the side's counter and every number already given.
+    **No answer needed:** an OpenSE4 choice with no counterpart (confirmed: binary). In
+    the original a ship enters the setup only by a click, which names it at once with
+    its side's counter + 1 (spec 04 §17); there are no setups made by the program, and
+    units get no numbers. Ours stays as it is (`game::combat::simulatorNumberShips`).
 82. **Side colours.** Ours uses the plain colours of those names (red 255,0,0; blue
     0,0,255; green 0,128,0; yellow 255,255,0; purple 128,0,128; white; aqua 0,255,255;
     lime 0,255,0; maroon 128,0,0; olive 128,128,0). Are these the original's values?
+    **Answer:** yes, exactly these, white being 255,255,255 (confirmed: binary; spec 04
+    §17). The number is white on 1, 2, 3, 5, 9 and 10 and black on the others, as ours.
+    The box is a plain filled rectangle with no outline, 26×18 where a large flag would
+    stand and 14×10 where a small one would, the number centred both ways in whatever
+    text font the window is drawing with.
+    Our client differs only in `drawSideBox()` (`screens/combat_map.cpp`): it adds a 1 px
+    black outline and always uses the bold font; both must go. (An out-of-range side is
+    black in the original and grey in ours; that case never arises.)
