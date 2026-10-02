@@ -303,7 +303,7 @@ reports render inside the right-hand panel (§2.5).
 | TCP/IP Player | Source and host IP, player name, status line, chat; Connect to Host, Create Empire, Play Turn, Chat, Minimize, Quit [T]. |
 | Movement log replay | Not a window: in simultaneous games the main window replays the host's 30-day movement (full, stepped by day, per ship, rewind) [T]. Exact behaviour: §7 Q51 (confirmed: binary). |
 | Tutorial / Scenario text window | Titled text with a 128x128 picture and previous/next through a series; re-opened with Ctrl+H or the "T" button in the status bar [T][M]. |
-| Finale | Full picture for victory, defeat, or "human players all dead", chosen from lists in Settings.txt [M]. |
+| Finale | Full picture for victory, defeat, or "human players all dead", chosen from lists in Settings.txt [M]. Ours: §1.9 "Other Settings.txt keys". |
 
 ### 1.8 Planets, Construction Queues, Colonies and Ships\Units windows
 
@@ -556,25 +556,39 @@ computer, not in the game, except the autosave choice, which belongs to the game
 or not allowed lights "Music Off" and sets the computer's stored music volume to 0 at once; on
 Close, music is stored as on only if the player picked a volume lamp, so opening and closing
 the window while Settings.txt forbids music stores "music off" on that computer. The Combat
-Options "Music On" lamp (§1.10.3) is lit only when music is on and allowed. Our playback
-honours the key (`readPlaylists` in `src/client/audio_playlist.cpp`), but the music rows here
-(`musicRows` in `settings_screen.cpp`) and the Combat Options lamp
-(`src/client/classic/screens/tactical.cpp`) ignore it and do not store "off" on close.
+Options "Music On" lamp (§1.10.3) is lit only when music is on and allowed. Our client
+follows this since 2026-10-01: playback honours the key (`readPlaylists` in
+`src/client/audio_playlist.cpp`), opening the Options window stores music off at once when it
+is off or not allowed (`openMusicRows` in `src/client/classic/settings.cpp`, called by
+`OptionsScreen`), music is stored on only while a volume lamp is lit, and the Combat Options
+lamp shows on only when music is on and allowed (`musicLampLit`, `tactical.cpp`).
 
 Other Settings.txt keys the client must honour (confirmed: binary):
 - `Allow Export of Weapon And Component Data`: when TRUE the Weapons Report gets an Export
   button, which writes four plain-text tables (weapons, components, weapon families,
   component families) to the SaveGame folder, each followed by a message titled "Export
-  Successful" naming the path. Ours has no Export button (`src/client/classic/screens/help.cpp`).
+  Successful" naming the path. Ours does the same since 2026-10-01 (`help.cpp`,
+  `src/client/classic/data_export.cpp`): `OpenSE4_weapons.txt`, `OpenSE4_components.txt`,
+  `OpenSE4_weapon_families.txt` and `OpenSE4_component_families.txt` in the client's saves
+  folder, tab-separated under one header line, in a layout of our own, listing every
+  component of the data set (inferred, Q83).
 - `System Ship Movement Delay Milliseconds`: when the system window animates ship movement and
   the value is above 0, the game waits that many milliseconds after each animated one-square
-  step (stock value 0). Ours adds no pause (`main_window.cpp`, `movement_replay.cpp`).
+  step (stock value 0). Ours does too since 2026-10-01: a ship gliding to its new square
+  goes square by square and waits that long after each (`ShipGlides`, `ship_glides.cpp`), and
+  the movement log replay waits after each move it animates (`MovementReplay::Frame::stepPause`,
+  `movement_replay.cpp`).
 - `Num Finale Lose Pictures`, `Num Finale Human Dead Pictures`, `Num Finale Victory Pictures`
   and `Finale <Kind> Picture N`: the ending window's pictures, from `Pictures/Game/Finale/`.
   All humans eliminated uses Human Dead; "your empire was destroyed" uses Lose; galaxy
   conquered and victory conditions met use Victory. One picture is drawn uniformly from the
-  list; the original uses the game's random numbers, OpenSE4 must use a separate source. Our
-  client has no ending window with these pictures.
+  list; the original uses the game's random numbers, OpenSE4 must use a separate source. Ours
+  has the ending window since 2026-10-01 (`screens/finale_screen.cpp`, `finale.hpp`): one
+  picture of the kind's list drawn with a source of its own, a few words of ours, Scores and
+  Close. The main window opens it once when the game ends: Victory once the game is over,
+  Human Dead in a local or hotseat game when no living empire is human-controlled, Lose when
+  the player's own empire is destroyed (in that order, so a single player's fall shows Human
+  Dead; inferred, Q83).
 - `Use Old Log Political Message Display`: the log layout (§4.1, §7 Q11).
 - `Create Log Text File for Game` is read but never used by the original: nothing to honour.
 
@@ -3828,3 +3842,11 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
     Our client differs only in `drawSideBox()` (`screens/combat_map.cpp`): it adds a 1 px
     black outline and always uses the bold font; both must go. (An out-of-range side is
     black in the original and grey in ours; that case never arises.)
+83. **Export and ending choices (§1.9).** OpenSE4 chose, marked (inferred) in the code:
+    the Weapons Report's export lists every component of the data set, researched or not,
+    in tab-separated tables of our own layout named `OpenSE4_<table>.txt`; and the ending
+    window shows Victory first (the game is over), then Human Dead (local and hotseat games
+    with no living human-controlled empire), then Lose (the player's own empire destroyed),
+    so a single player who loses everything sees Human Dead. Which components does the
+    original's export list (all, or the empire's), and does a lone human's destruction
+    show Lose or Human Dead?
