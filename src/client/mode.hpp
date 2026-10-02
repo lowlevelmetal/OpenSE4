@@ -68,6 +68,9 @@ public:
     // drawn then): what must go on regardless, such as a network game's
     // traffic (a host drops a client that sends nothing for a minute).
     virtual void background() {}
+    // The app reset ImGui's style (the window moved to a display with another
+    // scale): a mode with its own look applies it again.
+    virtual void restyle() {}
     virtual Color clearColor() const { return Color::hex(0x05070d); }
 };
 

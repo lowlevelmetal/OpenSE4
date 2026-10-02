@@ -228,6 +228,7 @@ void App::updateUiScale() {
     const float display = SDL_GetWindowDisplayScale(window_);
     uiScale_ = (density > 0.0f && display > 0.0f) ? std::clamp(display / density, 0.5f, 4.0f) : 1.0f;
     applyTheme(uiScale_);
+    if (mode_) mode_->restyle();
 }
 
 bool App::frame() {

@@ -7,6 +7,7 @@
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
+#include "client/ui/theme.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
 #include "learn/markdown.hpp"
@@ -79,7 +80,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->desktopLayout_ = layoutForDesktop(desktopWidth);
     mode->applyLayout();
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
-    applyClassicStyle();
+    mode->restyle();
     mode->learn_ = loadLearnContent(platform.assetsDir, options.learnDir, mode->art_->files());
 
     if (!options.pbemFile.empty()) {
@@ -430,6 +431,18 @@ bool ClassicMode::update(const FrameState& fs) {
     // The frame's pointer, grown with the classic screens by whole multiples.
     if (pointers().loaded()) pointers().apply(int(std::lround(mapping_.scale / std::max(0.01f, fs.fbScale))));
     return keepRunning;
+}
+
+void ClassicMode::restyle() {
+    // The classic frame is scaled to the window and every size is in its
+    // pixels (UiContext::k, fontPx), so the desktop's scale must not scale the
+    // style again: from the theme at scale 1, then the classic look. Without
+    // this a Windows desktop at 125 % or 150 % (display scale over pixel
+    // density) made every classic text and style size that much larger than
+    // on a Linux desktop, and a move to a display with another scale left the
+    // plain theme in place of the classic look.
+    applyTheme(1.0f);
+    applyClassicStyle();
 }
 
 void ClassicMode::background() {

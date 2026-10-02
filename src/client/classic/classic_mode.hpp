@@ -59,6 +59,7 @@ public:
 
     bool update(const FrameState& fs) override;
     void background() override;
+    void restyle() override;
     void render(gfx::Renderer2D& renderer, const FrameState& fs) override;
     Color clearColor() const override { return Color::hex(0x000000); }
 
