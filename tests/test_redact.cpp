@@ -27,7 +27,7 @@ TEST_CASE("redact: an empire's view hides what it does not know") {
     s.design(ours).enemyTonnageDestroyed = 120;
     seeDesign(s.empire(me).knowledge, theirs, s.turn);
 
-    const GameState v = redactForEmpire(s, me);
+    const GameState v = redactForEmpire(r, s, me);
     CHECK(v.design(theirs).name == s.design(theirs).name);  // seen: the design itself is known
     CHECK(v.design(theirs).enemyTonnageDestroyed == 0);
     CHECK(v.design(theirs).built == 0);
@@ -50,7 +50,7 @@ TEST_CASE("redact: an empire's view hides what it does not know") {
     CHECK_FALSE(v.empire(other).homeSystem.valid());
     CHECK(v.empire(me).homeSystem == s.empire(me).homeSystem);
     s.startingPoints.push_back({s.empire(other).homeSystem, Sector{1, 1}, 1});
-    CHECK(redactForEmpire(s, me).startingPoints.empty());
+    CHECK(redactForEmpire(r, s, me).startingPoints.empty());
     // Foreign vehicles only when visible, and without their orders or cargo.
     for (const Vehicle& x : v.vehicles) {
         if (x.owner == me) continue;
@@ -75,7 +75,7 @@ TEST_CASE("redact: an empire's view hides what it does not know") {
 TEST_CASE("redact: spectators see no empire's private data") {
     const Rules& r = test::engineRules();
     GameState s = test::newEngineGame(3, 2, 10);
-    const GameState v = redactForEmpire(s, EmpireId{});
+    const GameState v = redactForEmpire(r, s, EmpireId{});
     CHECK(validateState(v, &r).empty());
     CHECK(v.vehicles.empty());
     CHECK(v.fleets.empty());

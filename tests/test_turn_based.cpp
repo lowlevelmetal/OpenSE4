@@ -600,9 +600,9 @@ TEST_CASE("turn-based: open Attack Sector questions stay in the game until answe
     auto copy = deserializeState(serializeState(d.s()));
     REQUIRE(copy.has_value());
     CHECK(copy->playerTurn.questions == res.questions);
-    CHECK(redactForEmpire(d.s(), kA).playerTurn.questions == res.questions);
-    CHECK(redactForEmpire(d.s(), kB).playerTurn.questions.empty());
-    CHECK(redactForEmpire(d.s(), EmpireId{}).playerTurn.questions.empty());
+    CHECK(redactForEmpire(d.r(), d.s(), kA).playerTurn.questions == res.questions);
+    CHECK(redactForEmpire(d.r(), d.s(), kB).playerTurn.questions.empty());
+    CHECK(redactForEmpire(d.r(), d.s(), EmpireId{}).playerTurn.questions.empty());
 
     // New orders for the group replace the question.
     applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 0, 5)}));
@@ -610,8 +610,8 @@ TEST_CASE("turn-based: open Attack Sector questions stay in the game until answe
     CHECK(d.w.v(d.runner).location == at(d.a, 0, 5));
     // A step records the move; only A's view shows it.
     REQUIRE_FALSE(d.s().playerTurn.moves.empty());
-    CHECK_FALSE(redactForEmpire(d.s(), kA).playerTurn.moves.empty());
-    CHECK(redactForEmpire(d.s(), kB).playerTurn.moves.empty());
+    CHECK_FALSE(redactForEmpire(d.r(), d.s(), kA).playerTurn.moves.empty());
+    CHECK(redactForEmpire(d.r(), d.s(), kB).playerTurn.moves.empty());
 
     // Asked again, then answered: the question goes.
     const TurnResult again = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 1, 6)}));

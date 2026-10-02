@@ -381,8 +381,8 @@ TEST_CASE("net: lobby, game start and a turn with two clients") {
     CHECK(loop.hostSaw(EventType::NewTurn));
     CHECK_FALSE(g.alice.ordersAccepted());
     // Each client holds its own fog-of-war view of the host's state.
-    CHECK(game::stateChecksum(*g.alice.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), g.alice.empire())));
-    CHECK(game::stateChecksum(*g.bob.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), g.bob.empire())));
+    CHECK(game::stateChecksum(*g.alice.state()) == game::stateChecksum(game::redactForEmpire(engineRules(), *host.state(), g.alice.empire())));
+    CHECK(game::stateChecksum(*g.bob.state()) == game::stateChecksum(game::redactForEmpire(engineRules(), *host.state(), g.bob.empire())));
     CHECK(noteOf(*g.bob.state(), game::EmpireId{0u}).empty());  // Alice's notes are hers
     CHECK(g.bob.state()->empire(game::EmpireId{0u}).stockpile.isZero());
 
@@ -813,7 +813,7 @@ struct Sent {
 };
 
 bool viewMatches(const net::ClientSession& c, const net::HostSession& host) {
-    return c.state() && game::stateChecksum(*c.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), c.empire()));
+    return c.state() && game::stateChecksum(*c.state()) == game::stateChecksum(game::redactForEmpire(engineRules(), *host.state(), c.empire()));
 }
 
 // Sends one command and waits for the host's answer.

@@ -87,7 +87,7 @@ std::optional<game::GameState> HostTransport::pollState() {
                 (e.type == net::EventType::StateUpdated && e.empire == host_->localEmpire());
     }
     // The hosting player sees the same fog of war as everyone else.
-    if (fresh && host_->state()) return game::redactForEmpire(*host_->state(), host_->localEmpire());
+    if (fresh && host_->state()) return game::redactForEmpire(*rules_, *host_->state(), host_->localEmpire());
     return std::nullopt;
 }
 

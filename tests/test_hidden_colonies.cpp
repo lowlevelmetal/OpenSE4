@@ -1,6 +1,7 @@
 // What other players see of a colony (docs/spec/01 §6.9 "What other players
 // see"): the "seeing the planet" test, the detection rule for the colony, the
-// windows that follow them.
+// windows that follow them, and the network view that leaves a hidden colony
+// out (spec 05 §9.5).
 
 #include "movement_fixture.hpp"
 
@@ -8,6 +9,8 @@
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/sector_view.hpp"
 #include "game/commands.hpp"
+#include "game/redact.hpp"
+#include "game/serialize.hpp"
 #include "game/sight.hpp"
 
 #include <doctest/doctest.h>
@@ -171,4 +174,60 @@ TEST_CASE("hidden colonies: the galaxy map's presence colours follow the detecti
     presence = ui::map_style::presence(r, s, kA);
     CHECK_FALSE(marked(presence, sky.nearSys, kB));
     CHECK(marked(ui::map_style::presence(r, s, kB), sky.nearSys, kB));
+}
+
+TEST_CASE("hidden colonies: the network view leaves a hidden colony out, and the windows cannot show it (spec 05 §9.5)") {
+    Sky sky;
+    const Rules& r = sky.w.rules();
+    GameState& s = sky.w.s;
+    // Before it cloaks, A's view holds B's colony as usual.
+    {
+        const GameState v = redactForEmpire(r, s, kA);
+        REQUIRE(v.colony(sky.cloaker));
+        CHECK(v.colony(sky.cloaker)->owner == kB);
+    }
+    sky.cloak();
+    const GameState v = redactForEmpire(r, s, kA);
+    CHECK(validateState(v, &r).empty());
+    // No colony record, and the planet is off its system's list.
+    CHECK(v.colony(sky.cloaker) == nullptr);
+    CHECK_FALSE(contains(v.galaxy.system(sky.nearSys).objects, sky.cloaker));
+    // The colony that is merely unseen (no sensors of ours there) stays, as before.
+    REQUIRE(v.colony(sky.far));
+    CHECK(v.colony(sky.far)->owner == kB);
+    CHECK(contains(v.galaxy.system(sky.farSys).objects, sky.far));
+    // Our own colony is untouched.
+    REQUIRE(v.colony(sky.mine));
+    // The view depends on the state alone: the same state gives the same
+    // view and checksum, and it survives a round trip.
+    CHECK(stateChecksum(redactForEmpire(r, s, kA)) == stateChecksum(v));
+    auto back = deserializeState(serializeState(v));
+    REQUIRE(back.has_value());
+    CHECK(stateChecksum(*back) == stateChecksum(v));
+    // Nothing in the client's windows can show it: the system panel, the
+    // sector click, the Planets list and the galaxy map.
+    CHECK_FALSE(contains(ui::shownStellarObjects(r, v, kA, sky.nearSys), sky.cloaker));
+    CHECK(ui::shownStellarObjects(r, v, kA, sky.nearSys, Sector{6, 6}).empty());
+    CHECK_FALSE(listed(r, v, kA, sky.cloaker));
+    CHECK_FALSE(marked(ui::map_style::presence(r, v, kA), sky.nearSys, kB));
+    // The owner's view keeps it.
+    const GameState own = redactForEmpire(r, s, kB);
+    REQUIRE(own.colony(sky.cloaker));
+    CHECK(own.colony(sky.cloaker)->cloaked);
+    CHECK(contains(own.galaxy.system(sky.nearSys).objects, sky.cloaker));
+    // A colony we see through its cloak is kept, cloak mark and levels included.
+    const VehicleId eye = sky.w.spawn(sky.w.ship(kA, "Eye", 1, {"Mv Sensor 3"}), at(sky.nearSys, 2, 2));
+    sight::updateKnowledge(r, s);
+    {
+        const GameState seen = redactForEmpire(r, s, kA);
+        REQUIRE(seen.colony(sky.cloaker));
+        CHECK(seen.colony(sky.cloaker)->cloaked);
+        CHECK(contains(seen.galaxy.system(sky.nearSys).objects, sky.cloaker));
+    }
+    sky.w.v(eye).count = 0;
+    s.removeDeadVehicles();
+    // A spectator sees no foreign colony at all.
+    const GameState spectator = redactForEmpire(r, s, EmpireId{});
+    CHECK(validateState(spectator, &r).empty());
+    CHECK(spectator.colony(sky.cloaker) == nullptr);
 }

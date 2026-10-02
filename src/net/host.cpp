@@ -907,8 +907,8 @@ std::vector<std::vector<uint8_t>> HostSession::redactedState() const {
     // entry is the spectator view for peers without an empire. Password
     // verifiers never leave the host.
     std::vector<std::vector<uint8_t>> views;
-    for (const game::Empire& e : state_->empires) views.push_back(game::serializeState(game::redactForEmpire(*state_, e.id)));
-    views.push_back(game::serializeState(game::redactForEmpire(*state_, game::EmpireId{})));
+    for (const game::Empire& e : state_->empires) views.push_back(game::serializeState(game::redactForEmpire(rules_, *state_, e.id)));
+    views.push_back(game::serializeState(game::redactForEmpire(rules_, *state_, game::EmpireId{})));
     return views;
 }
 
@@ -1172,7 +1172,7 @@ game::TurnResult HostSession::runLive(game::EmpireId empire, const std::vector<g
     // One view per empire and a spectator's; an empire founded meanwhile (a rebel colony) renews them all.
     if (stateCache_.size() != state_->empires.size() + 1) stateCache_ = redactedState();
     for (game::EmpireId e : changed) {
-        stateCache_[e.index()] = game::serializeState(game::redactForEmpire(*state_, e));
+        stateCache_[e.index()] = game::serializeState(game::redactForEmpire(rules_, *state_, e));
         emit(EventType::StateUpdated, e == empire ? std::string("its own commands") : std::string("a battle"), playerName(e), kNoSlot, e,
              state_->turn);
         if (e.index() >= slots_.size()) continue;

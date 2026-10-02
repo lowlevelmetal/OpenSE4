@@ -455,6 +455,11 @@ Setup files hold passwords in plain text. To avoid that, a player can run
       records and plans;
     - ships the player cannot see this turn;
     - colonies in systems the player has not explored;
+    - colonies hidden from the player by their cloak (the planet's cloak beats the
+      player's sensors there): the colony is left out and its planet taken off its
+      system's list, so the player's windows show nothing there, as the original's do
+      (spec 01 §6.9). A colony the player merely has no sensors near stays, and the
+      windows show its planet as uncolonized, as the original's do;
     - the contents of foreign colonies;
     - the details of designs the player has never seen, or has forgotten (designs not
       seen for 50 turns), and every foreign design's statistics (built, lost, kills,
