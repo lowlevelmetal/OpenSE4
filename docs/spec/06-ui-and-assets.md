@@ -3565,17 +3565,18 @@ Our own choices made while implementing Q41–Q55 for the Log, the engine and Sa
       (stock mounts need none; not traced further). Names are not checked, so duplicates
       stay (spec 03 Q50).
 
-    The client and engine differ:
-    - Our empire file stores neither the strategy list nor each design's strategy, so a
-      loaded design gets the first strategy (`setup.cpp`, "Designs an empire file
-      brought"). The file must store both and setup must restore both.
-    - Ours keeps the obsolete flag (`setup_model.cpp` writes it, `setup.cpp` copies it). It
-      must clear it (and the built mark) and keep the creation date and statistics.
-    - Ours adds the file's designs after the empire's starting designs. In the original
-      they replace every design the empire has, and an empire has none at creation (spec
-      01 §3.6 "Starting assets").
-    - Ours checks only that the hull, components and mounts exist. It must also drop
-      designs that fail the validity rules other than the technology test.
+    Since 2026-10-01 the client and engine follow this: our empire file (format 3) stores
+    the strategy list and each design's strategy and creation date, and setup restores
+    them (`EmpireSetup::strategies`, `setup.cpp` "Designs an empire file brought"); Save
+    Empire clears the obsolete and built marks; the file's designs replace the empire's,
+    and a design that fails the design rules other than the technology test is dropped
+    without a message. What remains:
+    - The design statistics are not kept: in ours a built count makes a design a
+      non-prototype, which a design brought back must not be (inferred).
+    - The mount technology test of rule 5 is skipped with the rest of the technology tests
+      (stock mounts need no technology; inferred).
+    - Until spec 01 §3.6 ("no starting assets") takes effect, the starting designs that the
+      starting ships use stay with the empire (inferred).
     - OpenSE4 choices that stand: renaming on a name clash (spec 03 Q50), parts stored by
       name with a warning when one is missing (our own file format), and the file named
       after the empire without a picker.

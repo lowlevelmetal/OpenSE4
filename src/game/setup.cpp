@@ -392,7 +392,8 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         e.knowledge.lastSeen.assign(s.galaxy.systems.size(), 0);
         e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), s.options.allSystemsSeen ? 1 : 0);
         e.knowledge.notes.assign(s.galaxy.systems.size(), {});
-        e.strategies = r.data().combatStrategies;
+        // The strategies saved with the empire, else the data set's (spec 06 §7 Q72).
+        e.strategies = es.strategies.empty() ? r.data().combatStrategies : es.strategies;
         if (e.strategies.empty()) e.strategies.push_back({"Default", {}});
         e.designTypes = r.data().names.designTypes;
         e.colonyTypes = r.data().names.colonyTypes;
@@ -469,28 +470,45 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         }
     }
 
-    // ---- Designs an empire file brought (spec 06 §7 Q48), after the starting
-    // ones: those the data set can still build from (hull, components and
-    // mounts it has), under a name no other design uses (inferred).
-    for (size_t i = 0; i < n; ++i)
-        for (const Design& saved : setup.empires[i].designs) {
+    // ---- Designs an empire file brought (spec 06 §7 Q48, Q72, confirmed:
+    // binary): they replace the empire's designs, in file order. Each must
+    // pass the design rules but the technology test (spec 03 §4.2, without
+    // rule 2; OpenSE4 also skips the mount technology test of rule 5, which
+    // stock mounts never fail, inferred) or it is dropped without a message;
+    // a design whose parts the data set lacks was already left out with a
+    // warning when the file was read. Each comes back current: not obsolete,
+    // never built (so a prototype, editable), with its saved strategy and
+    // creation date. A name another design has is renamed (an OpenSE4
+    // choice, spec 03 Q50). The starting designs that the starting ships
+    // use stay with the empire until spec 01 §3.6 ("no starting assets")
+    // takes effect (inferred).
+    for (size_t i = 0; i < n; ++i) {
+        const auto& saved = setup.empires[i].designs;
+        if (saved.empty()) continue;
+        const EmpireId id{i};
+        std::erase_if(s.empires[i].designs, [&](DesignId d) {
+            return std::none_of(s.vehicles.begin(), s.vehicles.end(), [&](const Vehicle& v) { return v.owner == id && v.design == d; });
+        });
+        for (const Design& file : saved) {
             const auto& data = r.data();
-            const bool known = saved.hull < data.vehicleSizes.size() &&
-                               std::all_of(saved.entries.begin(), saved.entries.end(), [&](const DesignEntry& e) {
+            const bool known = file.hull < data.vehicleSizes.size() &&
+                               std::all_of(file.entries.begin(), file.entries.end(), [&](const DesignEntry& e) {
                                    return e.component < data.components.size() &&
                                           (e.mount < 0 || static_cast<size_t>(e.mount) < data.weaponMounts.size());
                                });
-            if (!known || saved.name.empty()) continue;
+            if (!known || file.name.empty()) continue;
+            if (!computeDesignStats(r, nullptr, file.hull, file.entries).problems.empty()) continue;
             Design d;
-            d.owner = EmpireId{i};
-            d.name = designNameInUse(s, saved.name) ? uniqueDesignName(s, saved.name) : saved.name;
-            d.designType = saved.designType;
-            d.hull = saved.hull;
-            d.entries = saved.entries;
-            d.strategy = saved.strategy < s.empires[i].strategies.size() ? saved.strategy : 0;
-            d.obsolete = saved.obsolete;
+            d.owner = id;
+            d.name = designNameInUse(s, file.name) ? uniqueDesignName(s, file.name) : file.name;
+            d.designType = file.designType;
+            d.hull = file.hull;
+            d.entries = file.entries;
+            d.strategy = file.strategy < s.empires[i].strategies.size() ? file.strategy : 0;
+            d.createdTurn = file.createdTurn;
             addDesign(s, std::move(d));
         }
+    }
 
     sight::updateKnowledge(r, s);
     // The first-contact check runs once in every system when the game is

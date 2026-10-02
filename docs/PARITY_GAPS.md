@@ -358,9 +358,6 @@ differs"). Those settled on 2026-10-01 in the last round, still to implement:
   hints; Existing Fleets shown; Change Cargo against a Storehouse with population kept and
   no order buttons; side boxes without outline (`screens/simulator.cpp`,
   `fleet_transfer.cpp`, `cargo_transfer.cpp`, `combat_logic.cpp`, `combat_map.cpp`).
-- **Save Empire** (§7 Q72): the file keeps the strategies; designs lose the obsolete
-  mark, replace the empire's designs and must pass the validity rules (`setup.cpp`,
-  `setup_model.cpp`).
 
 ## Computer player (spec 05 §7)
 

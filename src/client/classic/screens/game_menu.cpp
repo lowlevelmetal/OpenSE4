@@ -218,10 +218,12 @@ private:
         ImGui::EndPopup();
     }
 
-    // Save Empire (spec 06 §6.1, §7 Q48): the empire's name, leader, race,
-    // minister style and experience, and with `designs` every design of the
-    // player's, as an empire file for a later game's setup (our format, named
-    // after the empire, under <user data>/empires); the game state is not kept.
+    // Save Empire (spec 06 §6.1, §7 Q48, Q72): the empire's name, leader, race,
+    // minister style, experience and combat strategies, and with `designs`
+    // every design of the player's (each losing its obsolete and built marks,
+    // keeping its strategy and creation date), as an empire file for a later
+    // game's setup (our format, named after the empire, under <user
+    // data>/empires); the game state is not kept.
     void saveEmpire(UiContext& ui, bool designs) {
         const game::Empire& e = ui.me();
         game::EmpireSetup out;
@@ -233,9 +235,16 @@ private:
         out.ministerStyle = e.ministerStyle;
         out.useRaceMinisterStyle = e.useRaceMinisterStyle;
         out.experience = e.experience;
+        out.strategies = e.strategies;
         if (designs)
             for (const game::DesignId d : e.designs)
-                if (d.valid() && d.index() < ui.state().designs.size()) out.designs.push_back(ui.state().design(d));
+                if (d.valid() && d.index() < ui.state().designs.size()) {
+                    game::Design copy = ui.state().design(d);
+                    copy.obsolete = false;
+                    copy.everBuilt = false;
+                    copy.retrofitted = false;
+                    out.designs.push_back(std::move(copy));
+                }
         const BusyPointer busy;
         const auto saved = setup::saveEmpireFile(ui.rules(), userDataDir() / "empires", out);
         empireNote_ = saved ? std::format("The {} empire is saved as {}{}. New games can use it in the empire setup.", e.name, saved->string(),
