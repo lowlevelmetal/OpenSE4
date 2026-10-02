@@ -66,10 +66,11 @@ manual = "combat-windows#tactical-combat"
 title = "The battlefield"
 text = """
 This is the **Tactical Combat** window. Your ships start on one edge of the map, the base in the
-middle. The status bar at the top shows the combat turn and whose phase it is; the panels show
-your selected ship, its shields, damage, movement and weapons.
+middle. The title strip at the top shows the location, the combat turn and the empires, the one
+whose phase it is framed in yellow. On the right, the panel shows your selected ship (its size,
+movement, shields and damage) with its weapons below it.
 
-Press **Begin** at the bottom right to start the battle.
+Press **Begin** at the bottom right, beside **Auto**, to start the battle.
 """
 highlight = ["tactical-combat:end-turn"]
 done = { battle_begun = true }
@@ -90,9 +91,9 @@ manual = "combat#movement-in-combat"
 [[step]]
 title = "Fire"
 text = """
-Point at the enemy: the pointer shows whether your ship can fire at it. Hover over a weapon in
-the ship's weapon list to see its chance to hit and its damage. Click the enemy to fire every
-ticked weapon.
+Point at the enemy: the pointer shows whether your ship can fire at it, and its report appears
+under your ship's weapons. Hover over a weapon in your ship's weapon grid to see its chance to hit
+and its damage. Click the enemy to fire every weapon that is switched on.
 
 If it is still out of range, move closer, or press **End Turn** (`E`) to end your phase and fire
 in the next one. Shields absorb damage first, then armor is destroyed, then everything else.
@@ -109,7 +110,7 @@ text = """
 When your ships have moved and fired, press **End Turn** (or `E`) to end your phase. The other
 side then acts, and a new combat turn begins.
 
-**Auto** lets every side follow its strategies; press it again to take control back. Play on
+The **Auto** check box lets every side follow its strategies; click it again to take control back. Play on
 until the battle ends: **Combat Complete** appears, and after **OK** the window closes by itself
 and the simulator comes back.
 """

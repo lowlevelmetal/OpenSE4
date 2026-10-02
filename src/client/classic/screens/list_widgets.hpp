@@ -77,5 +77,8 @@ float listRowsWidth(UiContext& ui, float width);
 // frame pixels; dim and inert when `enabled` is false. Returns true on a
 // click and, while held, on each repeat.
 bool listArrow(UiContext& ui, const char* id, bool up, Vec2 size, bool enabled);
+// The same small button with a left or right arrow, or a square (a stop button).
+enum class ArrowGlyph { Up, Down, Left, Right, Stop };
+bool arrowButton(UiContext& ui, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled);
 
 } // namespace opense4::client::classic

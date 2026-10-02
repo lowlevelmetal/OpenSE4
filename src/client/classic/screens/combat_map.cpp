@@ -247,9 +247,7 @@ std::optional<uint32_t> CombatMapPainter::pieces(ImDrawList* dl, const CombatVie
         const float extent = v.cell * pieceExtent(i);
         const float spriteSize = rp.kind == game::CombatPiece::Kind::Seeker ? v.cell * 0.6f : extent * 0.98f;
         const ImU32 owner = empireColor(s_, p.owner);
-        if (!p.neutral)
-            dl->AddRect({c.x - extent * 0.5f + 1, c.y - extent * 0.5f + 1}, {c.x + extent * 0.5f - 1, c.y + extent * 0.5f - 1},
-                        withAlpha(owner, 0.75f), 0.0f, ui_.px(1.2f));
+        // No box around a piece (observed, spec 07 session 3): the picture alone.
         bool directional = false;
         const Sprite sprite = pieceSprite(rp, p.owner, directional);
         if (sprite) {

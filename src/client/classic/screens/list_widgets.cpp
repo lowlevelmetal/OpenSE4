@@ -130,6 +130,10 @@ std::vector<OpenList>& openLists() {
 float listRowsWidth(UiContext& ui, float width) { return std::max(1.0f, width - ui.px(kListArrowW) - ui.px(1)); }
 
 bool listArrow(UiContext& ui, const char* id, bool up, Vec2 size, bool enabled) {
+    return arrowButton(ui, id, up ? ArrowGlyph::Up : ArrowGlyph::Down, size, enabled);
+}
+
+bool arrowButton(UiContext& ui, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled) {
     const ImVec2 a = ImGui::GetCursorScreenPos();
     const ImVec2 s = ui.size(size);
     const ImVec2 b{a.x + s.x, a.y + s.y};
@@ -145,11 +149,17 @@ bool listArrow(UiContext& ui, const char* id, bool up, Vec2 size, bool enabled) 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float lw = std::max(1.0f, std::floor(ui.map.scale)) / ui.fbScale, h = lw * 0.5f;
     dl->AddRect({a.x + h, a.y + h}, {b.x - h, b.y - h}, imColor(state), 0.0f, lw);
-    // A filled triangle, a little smaller than the box, pointing up or down.
-    const float cx = std::floor((a.x + b.x) * 0.5f), cy = (a.y + b.y) * 0.5f;
+    // A filled triangle, a little smaller than the box, pointing its way; or a square.
+    const float cx = std::floor((a.x + b.x) * 0.5f), cy = std::floor((a.y + b.y) * 0.5f);
     const float hw = std::floor(std::min(s.x, s.y) * 0.3f), hh = std::floor(std::min(s.x, s.y) * 0.18f);
-    if (up) dl->AddTriangleFilled({cx, cy - hh}, {cx + hw, cy + hh}, {cx - hw, cy + hh}, imColor(state));
-    else dl->AddTriangleFilled({cx - hw, cy - hh}, {cx + hw, cy - hh}, {cx, cy + hh}, imColor(state));
+    const ImU32 c = imColor(state);
+    switch (glyph) {
+        case ArrowGlyph::Up: dl->AddTriangleFilled({cx, cy - hh}, {cx + hw, cy + hh}, {cx - hw, cy + hh}, c); break;
+        case ArrowGlyph::Down: dl->AddTriangleFilled({cx - hw, cy - hh}, {cx + hw, cy - hh}, {cx, cy + hh}, c); break;
+        case ArrowGlyph::Left: dl->AddTriangleFilled({cx - hh, cy}, {cx + hh, cy - hw}, {cx + hh, cy + hw}, c); break;
+        case ArrowGlyph::Right: dl->AddTriangleFilled({cx + hh, cy}, {cx - hh, cy + hw}, {cx - hh, cy - hw}, c); break;
+        case ArrowGlyph::Stop: dl->AddRectFilled({cx - hh, cy - hh}, {cx + hh, cy + hh}, c); break;
+    }
     return clicked && enabled;
 }
 
