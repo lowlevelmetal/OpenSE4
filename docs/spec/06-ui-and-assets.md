@@ -84,7 +84,7 @@ sit below; **Close is always the bottom slot** [S].
 | Main Window | Everything during a turn. | See §2. | Game start / load. |
 | Game Menu ("File Menu") | File operations. | Vertical buttons: New, Load, Save Game, Save Map, Save Empire, Players, Options, Delete Game, Quit, Close [T][S]. Save Map is enabled only when the game's setup lets players save the map; Save Empire asks whether to include the designs; Esc closes the menu (confirmed: binary). | F2 / first command button. |
 | Save Game, Delete Game | Name / remove a save. | Save Game: buttons New Save Game, Change Directory, Cancel; files go to the folder in §6.1 (confirmed: binary). | Game Menu. |
-| Player Computer Control | Toggle AI control per player. | Player list with lamps; OK / Cancel. Also reused by the Combat Simulator [T]. Asks for the Game Master password first when one is set; switching an empire also switches its ministers (confirmed: binary). | Game Menu → Players. |
+| Player Computer Control | Hand empires to the computer or take them back. | Check list titled "Empires Under Computer Control", 420x520, OK / Cancel: one row per empire in empire-number order (every empire, neutral and destroyed ones included) with a lamp, the empire's flag and its name; a lit lamp means computer-controlled. The same window serves the Combat Simulator [T] and Reset Passwords (§1.9). Rules in §1.2.1 (confirmed: binary). | Game Menu → Players. |
 | Options (per computer) | Sound, music, animation and autosave. | Lamp list under headings; Close. Full list in §1.9 (confirmed: binary). | Game Menu → Options. |
 | Designs | Browse and manage designs. | Design list; detail pane (stats, then either components or, with Stats\Strategy on, build/loss/kill counts and default strategy). Tabs: Ship Designs, Unit Designs, Enemy Ship Dsgn, Enemy Unit Dsgn. Actions: Create, Copy, Edit, Upgrade, Make Obsolete, Hide Obsolete, Stats\Strategy, Simulator [T]. | F3. |
 | Create Design | Ship designer. | Size, type and name pickers; running totals; components-on-design and components-available lists; warnings box; hover detail. Comp Type (group filter), Weap Mount, Condensed View, Only Latest, Weapons Report, Create Design, Cancel [T]. | Designs → Create / Copy / Edit. |
@@ -111,6 +111,125 @@ sit below; **Close is always the bottom slot** [S].
 | Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point-Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. | Help; Create Design. |
 | Galaxy Map | Enlarged strategic map. | See §2.6. | Right-click the galaxy panel. |
 
+#### 1.2.1 Player Computer Control
+
+All rules of this subsection are (confirmed: binary).
+
+**Opening the window.**
+- The Game Menu's Players button is always enabled, in every kind of game: single player,
+  hotseat in both turn styles, turn-based on different machines, and both sides of a
+  simultaneous game on different machines (the host's between-turns Game Master view, and a
+  player's own machine, by e-mail or TCP/IP).
+- When the game has a master password, an input box "Enter Game Master Password" comes
+  first. Cancel does nothing; a wrong entry shows "Invalid Password" and the window does not
+  open. This comparison is exact (letter case and spaces count), unlike the sign-in windows,
+  which ignore letter case and leading or trailing spaces. Without a master password the
+  window opens at once.
+- Nothing else limits who may switch what. Whoever passes the password check may switch any
+  empire: their own, other humans', computer players' and neutral ones.
+
+**The list.** Every lamp starts as the empire's computer-controlled mark, and a click flips it.
+OK applies every row whose lamp was clicked at least once, with the state the lamp shows at
+the end, even a lamp clicked back to its starting state. Cancel applies nothing.
+
+**Switching to computer control** (a row applied lit), at once:
+- the empire is marked computer-controlled;
+- all 25 of its ministers are switched on;
+- every one of its ships, bases, unit groups, colonies and fleets gets its individual minister
+  flag switched on.
+
+**Switching to human control** (a row applied dark), at once:
+- the mark is cleared;
+- all 25 ministers are switched off; the player's earlier minister settings are not restored;
+- every individual minister flag of its vehicles, colonies and fleets is switched off.
+
+So a human empire whose lamp was clicked twice before OK loses all its minister settings and
+flags.
+
+**What switching never changes:** the empire's AI state and memory, its stored difficulty, its
+minister style, its password, and the Ministers window options "use individual ministers for
+newly built vehicles" and "AI should not make changes during a simultaneous game".
+
+**What the computer-controlled mark decides** (as opposed to the minister switches):
+- whose turns the game plays by itself, and when the game ends for lack of humans (below);
+- whether the host of a game on different machines reports a missing orders file (spec 05
+  §9.2);
+- the Team Mode sides (spec 05 §7.1): a switched empire changes sides at once;
+- two per-turn effects whenever the empire's ministers act (spec 05 §7.5): a
+  computer-controlled empire's four movement options are overwritten from its `AI_Settings`,
+  and a human empire's stored difficulty is set to Medium. So a random computer player that is
+  handed to a human, plays a turn with any minister on and is then handed back plays at
+  Medium from then on;
+- only human-controlled empires get the start-of-turn log window, scenario texts and the
+  per-player text files (statistics, history, log copy; §6.1);
+- each time a game is loaded, every computer-controlled empire's combat strategies are
+  replaced by those of its `AI_Strategies` file (spec 05 §7.2).
+
+**When a switch takes effect.**
+- **Turn-based** (one machine or several): the empire whose turn is in progress is still played
+  by hand until End Turn. Its end-of-turn processing at that End Turn already runs all its
+  ministers (the economy-step group, spec 05 §8), and writes no text files for it if it is now
+  computer-controlled. From then on, whenever its number comes up, the game plays its turn by
+  itself like any computer player's (start-of-turn ministers, then the turn ends at once), and
+  no sign-in is asked for it. An empire handed back to a human is played by hand from its next
+  turn. On different machines, the computer-controlled empires between two humans are played
+  on the machine of the human before them, as usual.
+- **Simultaneous, hotseat:** the remaining humans are asked for their orders in turn and
+  computer-controlled empires are skipped; every computer-controlled empire's ministers act
+  when the turn is processed. Orders that an empire switched in mid-phase had already given
+  remain.
+- **No human left:** in both of the loops above, after each End Turn the game checks whether
+  any living empire is human-controlled. If none is, it shows the ending for "all human
+  players eliminated" with a Finale "Human Dead" picture and plays no further turn. The host's
+  processing of a game on different machines has no such check.
+- **Simultaneous on different machines, at the host** (Game Master view between turns): the
+  switch goes into the next processed turn and into the game file sent out. A missing orders
+  file of a computer-controlled empire is not reported. The host's stand-in rule (spec 05
+  §9.2) still applies to every empire without an orders file, so it changes nothing for an
+  empire whose ministers are already all on. If the player of a switched empire still sends an
+  orders file, the minister settings in that file replace the host's.
+- **Simultaneous on different machines, on a player's machine:** the window changes only that
+  machine's copy of the game. The orders file carries the player's own empire's minister
+  switches and its vehicles' minister flags (probably its fleets' and colonies' flags too
+  (inferred)), but never the computer-controlled mark, and nothing about other empires. So
+  switching one's own empire to the computer makes all of that empire's ministers act on the
+  host from the next processing, while the host still counts it as a human that must send
+  orders; switching it back turns them all off. Switching any other empire has no effect
+  beyond the local copy, which the next game file replaces.
+
+**Passwords and signing in after a switch.**
+- Switching never changes a password.
+- A random computer player's password is set to the game's master password when it is
+  created, so a random computer player handed to a human asks for the master password at its
+  sign-in when the game has one.
+- In the Next Player window (hotseat, more than one human), an empire password equal to
+  "master" (any letter case) counts as no password: no password box is shown.
+- The simultaneous sign-in lists every empire, computer-controlled ones included, plus Game
+  Master.
+
+**The engine and client differ** (2026-10-01):
+- The Players window (`playersPopup` in `src/client/classic/screens/game_menu.cpp`) is
+  read-only, leaves out neutral empires, asks for no Game Master password (local games keep no
+  master password in `GameState`) and cannot switch control. It needs the lamp list, the
+  password check when the game has one, and OK applying the clicked rows.
+- `game::Empire::kind` (`src/game/types.hpp`) is fixed at setup and no command changes it. A
+  host-side or local command (not a player command) is needed. To computer: kind Computer,
+  every minister on (`ministers`, `ministerAll`), and every own vehicle, fleet and colony
+  `minister` flag on. To human: kind Human, every minister off, every individual flag off. It
+  keeps `aiDifficulty`, `ministerStyle`, `aiMinimalChanges`, `newVehicles` and
+  `passwordHash`. Note that `ai::difficultyOf` (`src/game/ai.cpp`) gives a random computer
+  player the options' difficulty again after a round trip, where the original keeps Medium
+  once its ministers acted while it was human.
+- `src/game/turn_based.cpp` (`resume`, `anyHumanToPlay`) goes on playing a game with no human
+  left, one turn per call. The original stops with the "all human players eliminated" ending
+  in local turn-based and hotseat play; the client should present that ending (headless
+  all-computer runs may keep the engine's behaviour).
+- `liveControl` in `src/game/turn_based.cpp` plays a computer empire normally even with
+  `aiMinimalChanges` set; see the quirk in spec 05 §7.1.
+- Random computer players and rebels have no password in ours (`src/game/events.cpp` clears it
+  for rebels); in the original they get the master password. This matters only once switching
+  to human exists.
+
 ### 1.3 Order dialogs and pickers (opened by order buttons in the command panel)
 
 | Screen | Purpose | Reached from |
@@ -121,7 +240,7 @@ sit below; **Close is always the bottom slot** [S].
 | Launch \ Recover Units | Same two-list pattern for units in space. Not available in simultaneous games. | Order U; tactical combat orders. |
 | Cargo-type / unit-type picker, then location pick | Deferred Load, Drop, Launch-Remote, Recover-Remote orders. | Orders L, D, I, O. |
 | Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). | Order B. |
-| Scrap | Vehicles at the location with scrap value, research potential, status, unmothball cost, self-destruct and fire-on flags; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On. | Order G. |
+| Scrap | Selected Vehicles list (own vehicles at the location in no fleet and not cloaked); Statistics: Scrap Value, Research Potential (None, Minor, Moderate, Sizable or Major, of the last selected vehicle; "None" when any selected one cannot be analyzed), Status, Cost to Unmothball, Can Self-Destruct and Can Be Fired On (Yes only when every selected vehicle can), Space Yard In Sector; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On, each lit only when every selected vehicle qualifies. Rules and turn styles in spec 03 §15 (confirmed: binary). | Order G. |
 | View Orders | Pending orders of the selected object. | Order V. |
 | Select Facilities | Pick facilities to scrap on a planet. | Scrap Facilities order. |
 | Select Component | Pick a usable component. | Use Component order. |
@@ -194,9 +313,12 @@ All of this subsection is (confirmed: binary).
 **What is listed.** Planets in systems the empire has explored. Planets hidden by a
 planetary cloak stronger than the empire's sensors are left out; with the Omnipresent
 view option only this cloak test applies. Asteroid fields appear only under the
-Asteroids tab. A planet counts as a colony only while the empire can see the colony. A
-cloaked colony is therefore either left out or listed as a colony; only the map, which always
-draws the planet, shows a hidden colony's planet without its colony mark (spec 01 §6.9).
+Asteroids tab. A planet counts as a colony only while the empire sees the colony by the
+detection rule (spec 01 §6.3), which needs a sensor source in the system. A foreign colony in
+a system where the empire has none, cloaked or not, is listed as an uncolonized planet: under
+All, Colonizable, Coloniz\Empty and Coloniz\Breathe, never under the colony tabs. A planet
+hidden by its colony's cloak is left out of every tab, and the map does not draw it either
+(spec 01 §6.9 "What other players see") (confirmed: binary).
 
 Terms used by the tabs:
 
@@ -248,7 +370,9 @@ Shift+click does nothing here.
 y 40; values right-aligned at x 289): known systems; planets (no asteroid fields);
 colonizable planets; of those, owned by enemies, by allies, by non-aligned empires, not
 colonized, not colonized and breathable; then, after a gap, colonizing ships and how many
-of them are available. These counts use the real owner, not visibility. Non-aligned is
+of them are available. These counts use every non-asteroid planet of the explored systems
+and its real owner, with no sight test, so they include planets that the tabs leave out or
+list as uncolonized (confirmed: binary). Non-aligned is
 always 0, since the treaty test puts every empire in one of the other two groups.
 
 **Columns** (list at (12,252), 563 px wide, 36 px rows, header 20 px above): picture
@@ -345,20 +469,73 @@ computer, not in the game, except the autosave choice, which belongs to the game
 | Sound | Sound On; Classic Sound Effects (the original set in `Sounds/` instead of the remastered `Sounds/New/`) |
 | Music (pick one) | Music Off; Music Volume 20%, 40%, 60%, 80%, 100% (shows Music Off when music is off or Settings.txt does not allow music) |
 | Tactical Combat | Fast Tactical Combat |
-| System Display | Display Ship Movement Lines (the switch Ctrl+L toggles (inferred)) |
+| System Display | Display Ship Movement Lines (Ctrl+L flips the same switch, §3.2) |
 | Autosave For This Game (pick one) | None; Every Turn; Every 2, 3, 5 or 10 Turns |
 
-A **Reset Passwords** button appears only on the host of a simultaneous game, between
-turns, when no player is signed in. The host picks players; each gets a new six-digit
-password (three random two-digit numbers from 11 to 99), which a message shows to the
-host. Drawing these numbers does not disturb the game's random sequence.
+**Reset Passwords** (confirmed: binary).
+- **When the button appears:** in this window when the game is simultaneous and the machine
+  is signed in as Game Master, that is in the host's between-turns view, whatever the play
+  style (a hotseat simultaneous game opened as Game Master shows it too).
+- **The picker.** A click first discards every reset chosen earlier in this session and not
+  yet applied, even if the picker is then cancelled. It then opens the Player Computer Control
+  window (§1.2.1) titled "Select Empires to have password reset", listing every empire with all
+  lamps off.
+- **New passwords.** On OK each lit empire gets a new password: three random numbers from 11
+  to 99 written one after another, six digits. A message titled "Password Reset" shows the
+  host the player number and the new password, one message per empire. The numbers come from
+  a clock-seeded draw, and the game's random sequence is saved before and restored after, so
+  the game's random numbers are not disturbed (OpenSE4 simply uses a separate source).
+- **When it takes effect.** Not at once: the new passwords are written into the empires when
+  the host next processes a turn, right after every orders file has been read and the host has
+  chosen to go on. An orders file carries the player's own password, so applying the reset
+  after reading the files is what lets it win. The pending resets are not saved: if the host
+  quits, or abandons the processing, before then, they are lost.
+- **Who is told:** only the host, by that message. There is no log entry and nothing goes to
+  the player, so the host passes the password on.
+- Our client and hosts have no Reset Passwords (`OptionsScreen` in
+  `src/client/classic/screens/settings_screen.cpp`, `src/net/host.cpp`, `src/net/pbem.cpp`).
+  Needed: a six-digit password from a non-game random source shown to the host, stored as the
+  empire's new `passwordHash` at the next turn processing after the orders are read, pending
+  resets discarded on a new click and never saved.
+
+**Music and Settings.txt** (confirmed: binary). The Settings.txt key that turns music off is
+`Allow CD Music`. With `FALSE` no track ever plays (§5.5). Opening this window with music off
+or not allowed lights "Music Off" and sets the computer's stored music volume to 0 at once; on
+Close, music is stored as on only if the player picked a volume lamp, so opening and closing
+the window while Settings.txt forbids music stores "music off" on that computer. The Combat
+Options "Music On" lamp (§1.10.3) is lit only when music is on and allowed. Our playback
+honours the key (`readPlaylists` in `src/client/audio_playlist.cpp`), but the music rows here
+(`musicRows` in `settings_screen.cpp`) and the Combat Options lamp
+(`src/client/classic/screens/tactical.cpp`) ignore it and do not store "off" on close.
+
+Other Settings.txt keys the client must honour (confirmed: binary):
+- `Allow Export of Weapon And Component Data`: when TRUE the Weapons Report gets an Export
+  button, which writes four plain-text tables (weapons, components, weapon families,
+  component families) to the SaveGame folder, each followed by a message titled "Export
+  Successful" naming the path. Ours has no Export button (`src/client/classic/screens/help.cpp`).
+- `System Ship Movement Delay Milliseconds`: when the system window animates ship movement and
+  the value is above 0, the game waits that many milliseconds after each animated one-square
+  step (stock value 0). Ours adds no pause (`main_window.cpp`, `movement_replay.cpp`).
+- `Num Finale Lose Pictures`, `Num Finale Human Dead Pictures`, `Num Finale Victory Pictures`
+  and `Finale <Kind> Picture N`: the ending window's pictures, from `Pictures/Game/Finale/`.
+  All humans eliminated uses Human Dead; "your empire was destroyed" uses Lose; galaxy
+  conquered and victory conditions met use Victory. One picture is drawn uniformly from the
+  list; the original uses the game's random numbers, OpenSE4 must use a separate source. Our
+  client has no ending window with these pictures.
+- `Use Old Log Political Message Display`: the log layout (§4.1, §7 Q11).
+- `Create Log Text File for Game` is read but never used by the original: nothing to honour.
 
 The same per-computer store keeps the last saved game's name (Resume Game), the tactical
 display switches of §1.10.3, and up to ten remembered TCP/IP host addresses and player
 names. With nothing stored yet (a fresh install), the game starts with: both animations
 on, Sound On on, Classic Sound Effects off (so the remastered set plays), music on at
 100 %, Fast Tactical Combat off, ship movement lines off, and the tactical display
-defaults of §1.10.3.
+defaults of §1.10.3. The same defaults are used for every per-computer value when the store is
+missing or any value in it cannot be read. Starting a new simultaneous game (the setup's start,
+not loading or joining a game) switches Display Ship Movement Lines on and stores it at once,
+so after a player's first simultaneous game it stays on until they turn it off (confirmed:
+binary). Our client keeps it off by default (`showMovementLines` in
+`src/client/classic/settings.hpp`) but never switches it on for a new simultaneous game.
 
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
@@ -885,7 +1062,9 @@ Contents [T][S]:
 - Planets, asteroid fields, the star(s), storms and warp points as 36x36 sprites. A warp
   point whose destination system the empire has explored shows that system's name in its
   cell (with the Empire Option "warp point names"; details below) (confirmed: binary).
-- A colonised planet has small population bars at its top right, coloured by owner.
+- A colonised planet has small population bars at its top right, coloured by owner. They
+  are drawn only when the viewer sees the colony (spec 01 §6.9); an unseen foreign colony
+  shows the colonisation star instead, when its type fits (confirmed: binary).
 - Ships: a single-owner stack shows one ship sprite with a count in the bottom-right
   corner; a location with several empires, or ships orbiting a planet, shows small empire
   flags instead. The counts are drawn in the owner's empire colour (§5.3), next to each
@@ -900,13 +1079,17 @@ Contents [T][S]:
 - Waypoints 1–10: a cyan rectangle around the sector with the number in cyan. A cyan "M"
   marks the sectors of a second list of locations, probably the tagged minefields of
   Ctrl+T / Ctrl+R (confirmed: binary; the meaning of "M" is inferred).
-- Optional movement lines (Ctrl+L): a line from a moving ship to its destination with a
-  small circle per movement point and the number of turns until each point is reached.
+- Movement lines (the per-computer option "Display Ship Movement Lines", Ctrl+L): the
+  planned route of the vehicle or fleet whose report is open, as a blue line through the
+  sector centres with a small ring on each square and the turn in which that square is
+  reached. Exact rules: **Movement lines** below (confirmed: binary).
 - Nebula and black-hole systems use a full background picture instead of a star field.
 
 **Sector contents** (confirmed: binary). "Sprite square" is the 36x36 square centred in
 the cell, top-left (X, Y): the cell's corner at 800x600, the corner plus 7 at 1024x768.
-For each sector the game sorts what the viewer can see into two groups:
+For each sector the game sorts what the viewer can see into two groups (stellar objects by
+the "seeing the planet" test of spec 01 §6.9, vehicles by the detection rule; the sector click
+and the planet names use the same tests):
 
 - **The stellar object**: a planet, asteroid field, star, storm, warp point or comet. With
   several, the first in the system's object list is shown, unless a later planet has a
@@ -976,6 +1159,114 @@ text has a transparent background.
   the panel is blanked for another player's move. All in SE4 Text button, white, asked
   for at 24 px (drawn at the face's only size, 17 px (inferred)), centred, top at one
   third of the panel height.
+
+**Movement lines** (confirmed: binary).
+
+*Whose line.* There is at most one line. It belongs to the single object whose report is
+open in the report panel (§2.5), and only to a ship or base of the viewer (the current
+player), a fighter group or drone group of the viewer, or a fleet. Nothing is drawn for other
+empires' vehicles (allies' and scanned ships included), satellite groups, minefields, planets,
+stars, storms, warp points, the system report, or a sector list showing several objects;
+tagging ships adds nothing. The object needs at least one order. Selecting a sector replaces
+the line: the new report sets its own, and an empty sector or a list removes it. Showing
+another system (a click in the galaxy panel, Find System) leaves the report open, so the line
+is kept and the panel draws the part of the route that lies in the system now shown.
+
+*The route.* It starts at the object's current square (the fleet's location for a fleet) and
+follows the order list in the order the orders will be carried out; with Repeat on it starts
+at the order now due and goes once round the list.
+- Only Move To, Move To Waypoint and the Seek orders aimed at a location add to the route.
+  Composite orders (Warp, Colonize, Load and Drop Cargo, Explore, Resupply, Repair, Set
+  Patrol) store their moving part as an ordinary Move To (spec 03 §8), which counts. Every
+  other order adds nothing (the Warp itself, Attack and its pursuit, Sentry, the Colonize
+  action) and the route goes on from where the last move ended.
+- Move To Waypoint uses the waypoint's location when the line is worked out; an unset
+  waypoint adds nothing.
+- A move within the current system follows the in-system step rule of spec 03 §6.2 square by
+  square (the greedy steps with their replacement squares, or the destructive-centre cost
+  map). A move to another system uses the Move To route search of spec 03 §6.2: in-system
+  steps to each warp point, then the jump. An unreachable destination adds nothing, and the
+  next order starts from the same square.
+- The route is a list of points: the start square, then one point per square entered; a jump
+  gives one point, the exit warp point's square in the next system. Consecutive repeats are
+  dropped. Every point after the start is one movement point. Let s be a point's number of
+  steps from the start (s = 0 for the start).
+
+*When it is worked out.* Whenever the open report is set up or refreshed: when the object is
+selected, after any order is given to it, and after it carries out orders (in a turn-based
+game the line shrinks as the ship moves). When the result differs from the stored route the
+system panel is redrawn. Because a blocked step takes a random replacement square, the
+original draws from the game's own random sequence each time it works a line out, and the
+detour shown can differ from the one taken later. OpenSE4 must not copy this: it uses a
+display-only random source (or a fixed choice), so that showing a line never changes game
+results.
+
+*Turn numbers.* Let A be the movement the object has left now and B its full movement per
+turn (0 when mothballed). For a fleet, A and B are the smallest values among its members at
+the fleet's location (both 0 when there are none). A point's number is 0 when s ≤ A;
+otherwise ((s − A − 1) div B) + 1 when B > 0, and 0 when B = 0. So 0 means reached with the
+movement left now, 1 during the next turn, and so on. In a turn-based game A is what is left
+this turn; in a simultaneous game a vehicle normally has its full movement during the
+player's turn, so the squares reached in the coming turn processing read 0.
+
+*Drawing.* Only while the option is on, and only the points that lie in the system shown.
+Nothing is drawn over an unexplored system, or while the panel is blanked for another player
+or for the host's notice.
+- With (X, Y) the point's sprite-square top-left ("Sector contents" above), its centre is
+  C = (X + 18, Y + 18): the sector centres of the geometry table, frame (34 + 36c, 139 + 36r)
+  at 800x600 and (34 + 50c, 139 + 50r) at 1024x768.
+- Pen: solid, 1 px, pure blue RGB(0,0,255). No fill: rings are outlines, and the text has no
+  background.
+- The points that lie in the shown system are handled in route order:
+  1. Except for the start point, a ring: a Windows ellipse on the box from C − (4,4) to
+     C + (4,4), right and bottom edges excluded, so 8 px across, spanning C − 4 to C + 3 on
+     each axis.
+  2. If an earlier point of the route was drawn in this system, a line from that last drawn
+     centre to C (a Windows line, so the end pixel C itself is not set). Then the number of the
+     route point just before this one is written, centred on that last drawn centre.
+  3. If this point is the last of the route, or the next point lies in another system, its own
+     number is written, centred on C.
+- Numbers are written after the line through their square, so they sit on top of lines and
+  rings. Text: the decimal number in Tiny (Small Fonts 6 pt, §5.4), white RGB(255,255,255),
+  no background, top-left at (C.x − (w div 2), C.y − (h div 2)), w and h being the text's width
+  and height.
+- So the start square always shows a "0" over the vehicle's own sprite (A is never negative),
+  and a vehicle whose orders include no move shows only that "0".
+- Quirk: the last drawn point is not forgotten when the route leaves the shown system. A route
+  that leaves and later comes back draws a straight segment from the last square before
+  leaving to the first square after returning, and the last square before leaving gets a
+  second number over its first (that of the route point just before the return). OpenSE4 may
+  break the line there instead.
+- The line is drawn last, over the background, sprites, counts, flags, names, facility markers
+  and waypoint frames, and again after any single sector is redrawn (for example during the
+  movement animation).
+
+*The switch.* While "Display Ship Movement Lines" is off, the stored route is neither updated
+nor cleared. When Ctrl+L switches it back on, the panel shows the last route stored while it
+was on, which may belong to another vehicle or be out of date, until the open report is next
+refreshed. OpenSE4 should work the route out again when the option is switched on.
+
+Our client differs (`src/client/classic/main_window.cpp`, the "Movement line for the selected
+own vehicle" block and the Ctrl+L handler):
+1. Style: a dashed light-green line (1.5 px, 6/4 dashes) instead of a solid 1 px pure blue one.
+2. Shape: straight segments from the vehicle to each order's target, instead of the route
+   square by square. A display-only form of the engine's greedy step (now inside
+   `src/game/movement.cpp`, drawing from the game's generator) is needed; `game::findPath` is a
+   shortest-path search, not that step, and can show a different route.
+3. No rings, no turn numbers, no "0" on the start square.
+4. Every order with a location counts, Warp and Colonize targets included; the original counts
+   only Move To, Move To Waypoint and the location Seek orders, with waypoints looked up when
+   the line is worked out.
+5. A segment is drawn only when both ends are in the shown system; the original draws every
+   route point in it, so a line can end at a warp point and start again at an entry point.
+6. It follows the selected vehicle, satellites and mines included, with its fleet's orders; the
+   original follows the open report (the viewer's ship or base, fighter or drone group, or a
+   fleet, with A and B from the members). Ours also hides the line during the movement-log
+   replay (the original's behaviour there was not examined).
+7. It is drawn before the selection corners and waypoint frames; the original draws it last.
+8. Ctrl+L flips the switch and saves the settings at once; the original only flips it (§3.2).
+   Keeping ours is harmless. Ours never shows a stale line, since it draws from live state.
+9. Starting a new simultaneous game does not switch the option on (§1.9).
 
 Clicks (left and right behave the same): one object → its report in the right panel;
 several objects → a list; empty space → a report about the whole system. Only visible
@@ -1218,7 +1509,7 @@ has no Esc or Enter binding (confirmed: binary).
 | Ctrl+O | Movement log replay, reload (rewind) |
 | Ctrl+I | Movement log replay, single step (one day) |
 | Ctrl+U | Movement log replay, the button the executable names "for all ships" (the manual says follow ship) |
-| Ctrl+L | Toggle ship movement lines |
+| Ctrl+L | Toggle ship movement lines: flips the per-computer Display Ship Movement Lines switch (§1.9) and redraws the system panel. It is not stored at once but with the other per-computer settings the next time they are saved (a game save or autosave, closing an Options, Combat Options or Combat Replay Options window, starting a new simultaneous game); loading or starting a game before then reads the stored value back and undoes the toggle (confirmed: binary). Ours saves at once. |
 | Ctrl+S | Toggle sound effects (the Sound On switch of §1.9; music is not touched) |
 | Ctrl+H | Show tutorial / scenario window |
 | Shift+A / Shift+C | Tag all / clear tagged ships in the ship list |
@@ -2012,8 +2303,9 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
    Empire Options lists every row of the table above with its default, kept with the
    empire and saved with the game, and the Game Menu has the original ten buttons; Save
    Empire writes an empire file (ours holds no designs, so it does not ask about them).
-   It still differs: Players cannot switch computer control; there is no Reset
-   Passwords; no Settings.txt switch turns music off; our own choices are in Q41–Q48.
+   It still differs: the Players window is read-only (§1.2.1); there is no Reset
+   Passwords (§1.9); the Options music rows ignore `Allow CD Music` (playback honours it);
+   the other Settings.txt gaps are listed in §1.9; our own choices are in Q41–Q48.
 9. **Start-up menu (1.95).** What is the `StartMenu.bmp` window? **Answer:** a launcher
    built into the game (the 736x536 window spec 07 saw), shown only when the program
    starts without arguments, as the Steam shortcut does. Play opens the Intro; the other
