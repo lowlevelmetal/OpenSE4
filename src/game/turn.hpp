@@ -24,6 +24,7 @@
 // Deterministic: the same state and orders give the same result on every
 // machine.
 
+#include "game/ai.hpp"
 #include "game/commands.hpp"
 #include "game/movement.hpp"
 #include "game/rules.hpp"
@@ -145,10 +146,11 @@ struct TurnContext {
     // whose ministers ran left in place. The next economy step whose ministers
     // run plans with them instead of building its own, and removes them.
     std::optional<std::vector<ObjectId>> aiColonyTargets;
-    // Each empire's net income as its start-of-turn step worked it out, kept
-    // for the facility upgrades of its economy step (spec 05 §7.5 *Net
-    // income*, confirmed: binary), by empire index; the economy step takes it.
-    std::vector<std::optional<Resources>> aiStartNet;
+    // Each empire's figures as its start-of-turn step worked them out first
+    // thing (ai::startOfTurnFigures: the net income for the facility
+    // upgrades of its economy step, spec 05 §7.5 *Net income*, confirmed:
+    // binary), by empire index; the economy step takes them.
+    std::vector<std::optional<ai::StartOfTurnFigures>> aiStartFigures;
 
     // Simultaneous games: called after each of the 30 movement days with the
     // state as that day left it (TurnOptions::movementDay; the client's

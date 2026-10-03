@@ -599,18 +599,24 @@ bool Planner::idle(const Vehicle& v) const {
 // Spec 05 §7.5 (confirmed: binary): production × the computer-player income
 // factor, plus income from other empires (trade and tariffs received). The
 // tariffs the empire pays are not subtracted.
-Resources Planner::revenue() const {
-    const EconomyReport& eco = emp().economy;
+Resources revenueOf(const GameState& s, EmpireId e) {
+    const EconomyReport& eco = s.empire(e).economy;
     // The report's otherIncome holds the bonus on what was left after tariffs:
     // (production - tariffs) x (factor - 1). Production x factor is the
     // report's income plus tariffs x (factor - 1).
-    const int64_t extra = incomeBonusFactor(st, id) - 1;
+    const int64_t extra = incomeBonusFactor(s, e) - 1;
     const Resources& t = eco.tariffsOut;
     return eco.colonies + eco.remoteMining + eco.otherIncome + Resources{t.v[0] * extra, t.v[1] * extra, t.v[2] * extra} + eco.trade +
            eco.tariffsIn;
 }
 
-Resources Planner::netIncome() const { return revenue() - economy::maintenanceCost(r, st, id) - queueCommitments(r, st, id); }
+Resources netIncomeOf(const Rules& r, const GameState& s, EmpireId e) {
+    return revenueOf(s, e) - economy::maintenanceCost(r, s, e) - queueCommitments(r, s, e);
+}
+
+Resources Planner::revenue() const { return revenueOf(st, id); }
+
+Resources Planner::netIncome() const { return netIncomeOf(r, st, id); }
 
 Resources queueCommitments(const Rules& r, const GameState& s, EmpireId e) {
     Resources sum;
@@ -669,7 +675,6 @@ void Planner::runOrders(bool politics, bool others) {
     capUpkeep = capMaintenance(r, st, id);   // the vehicles as the start-of-turn ministers find them
     if (politics && on(Minister::Politics)) planPolitics(*this);
     if (!others) return;
-    startOfTurnNet = netIncome();   // kept for the economy step's facility upgrades
     planTroops(*this);
     planTransports(*this);
     planColonization(*this);
@@ -949,27 +954,32 @@ std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, Empi
     return p.report().commands;
 }
 
+StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, EmpireId e) {
+    if (!planFor(s, e)) return {};
+    return {detail::netIncomeOf(r, s, e)};
+}
+
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory,
-                                             std::vector<ObjectId>* colonyTargets, std::optional<Resources>* startNet) {
+                                             std::vector<ObjectId>* colonyTargets, const StartOfTurnFigures* figures) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltOrders, territory);
+    if (figures) p.startOfTurnNet = figures->net;
     if (colonyTargets) {
         colonyTargets->clear();
         for (const detail::ColonyTarget& t : p.sit.colonyTargets) colonyTargets->push_back(t.planet);
     }
     p.runOrders(false, true);
-    if (startNet) *startNet = p.startOfTurnNet;
     return p.report().commands;
 }
 
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve,
-                                     const std::vector<ObjectId>* colonyTargets, const Resources* startNet) {
+                                     const std::vector<ObjectId>* colonyTargets, const StartOfTurnFigures* figures) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltEconomy);
     p.unitReserve = unitReserve;
-    if (startNet) p.startOfTurnNet = *startNet;
+    if (figures) p.startOfTurnNet = figures->net;
     // The lists another step left (spec 05 §7.2 "Whose lists the economy step
     // reads"): of them the economy step reads only the colonization targets.
     if (colonyTargets) {

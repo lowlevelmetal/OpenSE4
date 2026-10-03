@@ -1676,8 +1676,10 @@ binary).
     of the vehicles of the moment (`economy::maintenanceCost`) and less the queues'
     commitments (`queueCommitments`); the vehicle list and the units step work it out when
     they start, and the facility upgrades spend the figure the start-of-turn step worked out
-    (`Planner::startOfTurnNet`, handed to the economy step through `TurnContext::aiStartNet`).
-    Its own choices are question 73. The engine used to take the maintenance last paid and
+    first thing, before the AI state update (`ai::startOfTurnFigures`, handed to the economy
+    step through `TurnContext::aiStartFigures` as `Planner::startOfTurnNet`; since
+    2026-10-03, question 73: it used to be worked out after Politics). The engine used to
+    take the maintenance last paid and
     nothing for the queues, so its computers queued more while their queues were busy
     (question 71).
   - *Revenue*: production × income factor + income from other empires, rounded, worked
@@ -4369,7 +4371,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     vehicle list works its budget out after its clean-up, as ours does. A queue's commitment
     is its first item's cost times the item's count, less what was paid, capped at the rate
     the queue spends at that turn (its owner's rate, raised by an emergency build and
-    lowered in the slow turns after one), as ours does (§7.5 *Net income*).
+    lowered in the slow turns after one), as ours does (§7.5 *Net income*). OpenSE4 works
+    the start-of-turn figure out first thing too since 2026-10-03 (`ai::startOfTurnFigures`,
+    called before `ai::updateAiState`).
 74. **A Scrap order on a fleet member** (§7.5 *Scrap*, question 72). The original puts the
     Move To and the Scrap straight onto the candidate's own list, also when it is in a fleet
     or cloaked; a fleet member's list is run through its fleet's group (spec 03 §8). To

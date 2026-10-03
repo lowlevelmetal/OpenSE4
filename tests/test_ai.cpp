@@ -6271,16 +6271,15 @@ TEST_CASE("ai: the facility upgrades spend the net income the start-of-turn step
             if (const auto* q = as<cmd::QueueAdd>(c)) n += q->item.kind == QueueItem::Kind::Upgrade;
         return n;
     };
-    // The start-of-turn step hands its figure over: the net income of that moment.
-    std::optional<Resources> start;
-    ai::planOrdersAfterPolitics(r, s, me, nullptr, nullptr, &start);
-    REQUIRE(start.has_value());
-    CHECK(*start == ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).netIncome());
-    REQUIRE(start->v[0] < 0);
+    // The start-of-turn step works its figure out first thing: the net income of that moment.
+    const ai::StartOfTurnFigures start = ai::startOfTurnFigures(r, s, me);
+    CHECK(start.net == ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).netIncome());
+    REQUIRE(start.net.v[0] < 0);
     // The economy step's upgrades spend the figure handed over, not one of their own.
-    const Resources plenty{1'000'000, 1'000'000, 1'000'000};
+    ai::StartOfTurnFigures plenty = start;
+    plenty.net = Resources{1'000'000, 1'000'000, 1'000'000};
     CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, &plenty)) == 2);
-    CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, &*start)) == 0);
+    CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, &start)) == 0);
     // Without one, the step works it out as it starts: below 0, nothing is upgraded.
     CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, nullptr)) == 0);
 }

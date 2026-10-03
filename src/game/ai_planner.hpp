@@ -240,10 +240,10 @@ public:
     // moment (capMaintenance) when the planner is made and again when its
     // start-of-turn and economy-step ministers start.
     Resources capUpkeep;
-    // The net income the start-of-turn step worked out once, kept for the
-    // facility upgrades of the economy step (spec 05 §7.5 *Net income*,
-    // confirmed: binary): set when the ministers after Politics start, or
-    // handed over from that step (planEconomyStep). An economy step that has
+    // The net income the start-of-turn step worked out once, first thing,
+    // kept for the facility upgrades of the economy step (spec 05 §7.5 *Net
+    // income*, confirmed: binary): handed over from that step
+    // (planEconomyStep, ai::StartOfTurnFigures). An economy step that has
     // none works it out when its ministers start (inferred, spec 05 Q73).
     std::optional<Resources> startOfTurnNet;
 
@@ -289,6 +289,9 @@ void planStellarManipulation(Planner& p);
 // vehicle whose hull takes colony modules (`Requirement Pct Colony Mods`
 // above 0), so colony ships never count. The maintenance paid includes them.
 Resources capMaintenance(const Rules& r, const GameState& s, EmpireId e);
+// Planner::revenue and Planner::netIncome for the state as it is now.
+Resources revenueOf(const GameState& s, EmpireId e);
+Resources netIncomeOf(const Rules& r, const GameState& s, EmpireId e);
 // What the empire's colony queues will spend this turn on their first items
 // (spec 05 §7.5 *Net income*, confirmed: binary): for each colony queue
 // holding items, the first item's cost less what has been paid into it (not

@@ -21,7 +21,7 @@ namespace opense4::game {
 
 using detail::Control;
 using detail::living;
-using detail::keepStartNet;
+using detail::keepStartFigures;
 using detail::ministersPlan;
 
 namespace {
@@ -251,9 +251,13 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
         score::checkDestruction(ctx, e);
         if (!living(s, e)) return false;
     }
-    // 2. The start-of-turn step. The Politics minister rewrites the claims
-    // first thing; the state update and the ministers after it use those of
-    // the previous turn (spec 05 §7.2).
+    // 2. The start-of-turn step. First thing it works out the figures its
+    // ministers and the economy step use (spec 05 §7.5 *Net income*,
+    // confirmed: binary). The Politics minister rewrites the claims first
+    // thing in its run; the state update and the ministers after it use
+    // those of the previous turn (spec 05 §7.2).
+    std::optional<ai::StartOfTurnFigures> figures;
+    if (ministersPlan(s, e, control)) figures = ai::startOfTurnFigures(r, s, e);
     ai::updateAiState(ctx, e);
     const std::vector<SystemId> territory = s.empire(e).claimedSystems;
     if (control != Control::Absent) {
@@ -264,10 +268,9 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     if (ministersPlan(s, e, control)) {
         giveOrders(lc, e, ai::planPoliticsOrders(r, s, e));
         std::vector<ObjectId> targets;
-        std::optional<Resources> net;
-        giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets, &net));
+        giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets, figures ? &*figures : nullptr));
         ctx.aiColonyTargets = std::move(targets);  // the step's lists stay in place for its economy step
-        keepStartNet(ctx, e, net);
+        keepStartFigures(ctx, e, figures);
     }
     ai::recordAiDecisions(ctx, e);
     // 3. Movement is refilled, and every group carries out its orders.
