@@ -65,6 +65,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/items.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/player.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/script/recorder.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/script.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/sdl_input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp

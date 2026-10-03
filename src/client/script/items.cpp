@@ -53,7 +53,12 @@ void add(std::string_view label, ImVec2 min, ImVec2 max, bool disabled) {
 void onItem(ImGuiContext* ctx, ImGuiID id, const char* label, int /*flags*/) {
     if (!registry().on || !label || !ctx) return;
     const ImGuiLastItemData& last = ctx->LastItemData;
-    if (last.ID != id) return;   // a window's own entry, or an item registered elsewhere
+    if (last.ID != id) {
+        // A window's own entry: root windows and popups are items "window:<name>".
+        const ImGuiWindow* w = ctx->CurrentWindow;
+        if (w && w->ID == id && w->RootWindow == w) add(std::string("window:") + label, w->Pos, ImVec2(w->Pos.x + w->Size.x, w->Pos.y + w->Size.y), false);
+        return;
+    }
     if (std::string_view(label) == "##classic") return;   // a classic button reports its own label (reportItem)
     add(label, last.Rect.Min, last.Rect.Max, (last.ItemFlags & ImGuiItemFlags_Disabled) != 0);
 }
@@ -94,6 +99,8 @@ bool labelMatches(std::string_view label, std::string_view wanted) {
     if (wanted.empty()) return false;
     // A pattern matches the label as shown (never a widget without one).
     if (wanted.find('*') != std::string_view::npos) {
+        // Windows ("window:<name>") match only patterns that name them so.
+        if (label.starts_with("window:") && !wanted.starts_with("window:")) return false;
         const std::string_view shown = visibleLabel(label);
         return !shown.empty() && glob(shown, wanted);
     }

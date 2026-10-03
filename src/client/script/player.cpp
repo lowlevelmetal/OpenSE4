@@ -152,6 +152,7 @@ FrameOutput Player::tick(const Probe& probe) {
             settle_ = 0;
             decisive_.reset();
             awaitingVerdict_ = false;
+            aimed_.reset();
             why_.clear();
             mark_ = probe.mark(false);
             out.messages.push_back(std::format("  {}:{}: {}", std::filesystem::path(script_.file).filename().string(), st.line, st.source));
@@ -308,7 +309,7 @@ Player::Status Player::pointerStep(const Step& st, const Probe& probe, FrameOutp
             return Status::Running;
         }
         const ImVec2 p = at->point;
-        const int button = st.op == Op::RightClick ? 3 : st.op == Op::MiddleClick ? 2 : 1;
+        const int button = st.op == Op::RightClick ? 3 : st.op == Op::MiddleClick ? 2 : st.op == Op::Drag && st.button ? st.button : 1;
         auto event = [&](InputEvent::Kind kind, ImVec2 pos, bool decisive = false) {
             InputEvent e;
             e.kind = kind;
@@ -370,6 +371,29 @@ Player::Status Player::pointerStep(const Step& st, const Probe& probe, FrameOutp
             queue_.push_back(std::move(last));
         }
         queued_ = true;
+        aimed_ = p;
+        reaims_ = 0;
+    }
+    // Just before the press: if the target has moved since (a window still
+    // settling its layout), the pointer goes there first.
+    const bool pressNext = !queue_.empty() && std::any_of(queue_.front().begin(), queue_.front().end(), [](const InputEvent& e) {
+        return e.kind == InputEvent::Kind::ButtonDown || e.kind == InputEvent::Kind::Wheel;
+    });
+    if (pressNext && aimed_ && reaims_ < 10) {
+        std::string why;
+        if (const auto now = resolve(st.target, probe, why);
+            now && (std::abs(now->point.x - aimed_->x) > 0.5f || std::abs(now->point.y - aimed_->y) > 0.5f)) {
+            const ImVec2 from = *aimed_;
+            for (std::vector<InputEvent>& frame : queue_)
+                for (InputEvent& e : frame)
+                    if (e.kind != InputEvent::Kind::KeyDown && e.kind != InputEvent::Kind::KeyUp && e.pos.x == from.x && e.pos.y == from.y) e.pos = now->point;
+            InputEvent move;
+            move.kind = InputEvent::Kind::Motion;
+            move.pos = now->point;
+            queue_.push_front({move});
+            aimed_ = now->point;
+            ++reaims_;
+        }
     }
     return playQueue(st, out);
 }
@@ -528,6 +552,14 @@ Player::Status Player::check(const Step& st, const Probe& probe) {
         case Op::AssertLesson:
             if (st.text == "none" ? !lesson : lesson && lesson->slug == st.text) return Status::Done;
             return fail(lesson ? std::format("the lesson '{}' is running", lesson->slug) : "no lesson is running");
+        case Op::AssertInside: {
+            const auto a = resolve(st.target, probe, why);
+            if (!a) return fail(why);
+            Box box;
+            if (!resolveBox(st.to, probe, box, why)) return fail(why);
+            if (a->point.x >= box.min.x && a->point.x < box.max.x && a->point.y >= box.min.y && a->point.y < box.max.y) return Status::Done;
+            return fail(std::format("{} is not inside {}", st.target.text, st.to.text));
+        }
         case Op::AssertTurn: {
             const auto t = probe.turn();
             if (t && *t == uint64_t(st.number)) return Status::Done;
@@ -537,7 +569,19 @@ Player::Status Player::check(const Step& st, const Probe& probe) {
     }
 }
 
-std::optional<Player::Resolved> Player::resolve(const Target& t, const Probe& probe, std::string& why) const {
+bool Player::resolveBox(const Target& t, const Probe& probe, Box& box, std::string& why) const {
+    if (t.kind == TargetKind::At) {
+        const ImVec2 p = probe.framePoint(t.x, t.y);
+        box = Box{p, ImVec2(p.x + 1, p.y + 1)};
+        return true;
+    }
+    Target whole = t;
+    whole.offset = {};
+    const auto r = resolve(whole, probe, why, &box);
+    return r.has_value();
+}
+
+std::optional<Player::Resolved> Player::resolve(const Target& t, const Probe& probe, std::string& why, Box* boxOut) const {
     std::vector<Box> boxes;
     std::vector<bool> dim;
     switch (t.kind) {
@@ -597,6 +641,7 @@ std::optional<Player::Resolved> Player::resolve(const Target& t, const Probe& pr
     }
     const size_t i = size_t(t.nth) - 1;
     const Box& b = boxes[i];
+    if (boxOut) *boxOut = b;
     Resolved r;
     r.disabled = i < dim.size() && dim[i];
     r.point = b.center();

@@ -1,0 +1,46 @@
+# Sliders, dragged with the mouse (docs/BUILDING.md "Input scripts"): a combat strategy's
+# setting (it takes effect when the slider is let go) and OpenSE4's Settings.
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --quick-start --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-for tag:command:empire-status
+# Empire Status, Strategies: a copy of a strategy can be edited.
+key F11
+wait-window empire-status
+click item:Strategies in=empire-status
+wait-window strategies
+click item:Copy in=strategies
+wait-for item:"Copy of *" in=strategies
+click item:Launching in=strategies
+# The slider changes the strategy (a command of the game) once it is let go.
+repeat 2 until { command = "SetStrategy" }
+  drag item:"Fighters Launch Group Amount"@5,50% in=strategies to item:"Fighters Launch Group Amount"@-3,50% in=strategies
+end
+repeat 2 until { command = "SetStrategy" }
+  drag item:"Fighters Launch Group Amount"@-3,50% in=strategies to item:"Fighters Launch Group Amount"@40%,50% in=strategies frames=20
+end
+# The Firing page's sliders lie below its table: the wheel scrolls to them.
+click item:Firing in=strategies
+wheel item:window:Strategies@60%,60% -10
+wait-for item:"Damage Percent Per Ship" in=strategies
+repeat 2 until { command = "SetStrategy" }
+  drag item:"Damage Percent Per Ship"@-3,50% in=strategies to item:"Damage Percent Per Ship"@50%,50% in=strategies
+end
+key Escape
+wait-closed strategies
+key Escape
+wait-closed empire-status
+# OpenSE4's Settings (Ctrl+Comma): the text size, the double-click time and the volumes.
+key Ctrl+Comma
+wait-window settings
+drag item:"Text size"@60%,50% in=settings to item:"Text size"@75%,50% in=settings
+drag item:"Text size"@75%,50% in=settings to item:"Text size"@33%,50% in=settings
+click item:Controls in=settings
+wait-for item:"Double-click time" in=settings
+drag item:"Double-click time"@20%,50% in=settings to item:"Double-click time"@25%,50% in=settings
+click item:Sound in=settings
+wait-for item:"Effects volume" in=settings
+drag item:"Effects volume"@50%,50% in=settings to item:"Effects volume"@10%,50% in=settings
+drag item:"Music volume"@50%,50% in=settings to item:"Music volume"@90%,50% in=settings
+click item:Close in=settings
+wait-closed settings

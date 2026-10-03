@@ -133,7 +133,9 @@ private:
         ImVec2 point;
         bool disabled = false;
     };
-    std::optional<Resolved> resolve(const Target& t, const Probe& probe, std::string& why) const;
+    std::optional<Resolved> resolve(const Target& t, const Probe& probe, std::string& why, Box* box = nullptr) const;
+    // The rectangle a target names (its offset left out).
+    bool resolveBox(const Target& t, const Probe& probe, Box& box, std::string& why) const;
     std::string context(const Probe& probe) const;
 
     Script script_;
@@ -157,6 +159,9 @@ private:
     std::vector<bool> sentDecisive_;   // which events of the frame sent last decide
     uint64_t lastPressFrame_ = 0;
     ImVec2 lastPressPos_;
+    // Where the pointer step's events aim, and how often it had to aim again.
+    std::optional<ImVec2> aimed_;
+    int reaims_ = 0;
     learn::Mark mark_;
     // The loops under way: per repeat step, the passes made and where its condition counts from.
     struct Loop {

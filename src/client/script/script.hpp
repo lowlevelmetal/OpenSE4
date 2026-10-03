@@ -64,7 +64,7 @@ enum class Op : uint8_t {
     Wait, WaitFor, WaitGone, WaitWindow, WaitClosed, WaitStep, WaitUntil, WaitTurn, WaitResult, WaitScreen, WaitLesson,
     // Checks.
     AssertPresent, AssertAbsent, AssertEnabled, AssertDisabled, AssertWindow, AssertNoWindow, AssertStep, Assert, AssertLog,
-    AssertNoLog, AssertResult, AssertScreen, AssertLesson, AssertTurn,
+    AssertNoLog, AssertResult, AssertScreen, AssertLesson, AssertTurn, AssertInside,
     // Other.
     Screenshot, Echo, Print, Dump,
     // Loops: repeat N [until {condition}] ... end.
@@ -83,6 +83,7 @@ struct Step {
     KeyChord chord;         // key
     bool shift = false, ctrl = false, alt = false;   // held during a click, a drag or a wheel turn
     bool refused = false;   // the tutorial input lock must refuse the press or key
+    int button = 0;         // drag: 2 middle, 3 right (default left)
     bool optional = false;  // a pointer step whose target may not come: skipped then (after kOptionalTimeout frames)
     std::optional<learn::Condition> condition;      // wait-until, assert
     int timeout = 0;        // frames a wait (or a pointer step's target) may take

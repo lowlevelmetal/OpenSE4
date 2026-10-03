@@ -3,6 +3,7 @@
 #include "learn/lesson.hpp"
 
 #include <charconv>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -198,6 +199,7 @@ constexpr OpInfo kOps[] = {
     {"assert-screen", Op::AssertScreen},
     {"assert-lesson", Op::AssertLesson},
     {"assert-turn", Op::AssertTurn},
+    {"assert-inside", Op::AssertInside},
     {"screenshot", Op::Screenshot},
     {"echo", Op::Echo},
     {"print", Op::Print},
@@ -220,7 +222,8 @@ bool takesTarget(Op op) {
         case Op::AssertPresent:
         case Op::AssertAbsent:
         case Op::AssertEnabled:
-        case Op::AssertDisabled: return true;
+        case Op::AssertDisabled:
+        case Op::AssertInside: return true;
         default: return false;
     }
 }
@@ -419,6 +422,12 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
                     break;
                 }
                 lastTarget->scope = w.substr(3);
+                if (const size_t at = lastTarget->scope.rfind('@'); at != std::string::npos && at + 1 < lastTarget->scope.size() &&
+                                                                    !tok.quoted[3 + at] && lastTarget->scope.find(',', at) != std::string::npos) {
+                    fail(std::format("'{}': an offset goes right after the target (item:\"label\"@x,y in=scope)", w));
+                    bad = true;
+                    break;
+                }
                 continue;
             }
             if (!anyQuoted && isPointer(st.op) && (w == "shift" || w == "ctrl" || w == "alt" || w == "refused" || w == "optional")) {
@@ -437,7 +446,11 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
                 sawTo = true;
                 continue;
             }
-            if (takesTarget(st.op) && (args.empty() || (st.op == Op::Drag && sawTo && args.size() == 1))) {
+            if (!anyQuoted && st.op == Op::Drag && (w == "middle" || w == "right")) {
+                st.button = w == "middle" ? 2 : 3;
+                continue;
+            }
+            if (takesTarget(st.op) && (args.empty() || (st.op == Op::Drag && sawTo && args.size() == 1) || (st.op == Op::AssertInside && args.size() == 1))) {
                 auto t = parseTarget(tok, error);
                 if (!t) {
                     fail(error);
@@ -485,6 +498,7 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
             case Op::AssertAbsent:
             case Op::AssertEnabled:
             case Op::AssertDisabled: ok = needArgs(1, "a target (tag:, item:, window:, sector:, system: or at:)"); break;
+            case Op::AssertInside: ok = needArgs(2, "two targets: the point of the first must lie in the second"); break;
             case Op::Drag:
                 ok = needArgs(2, "a target, 'to' and a second target") && sawTo;
                 if (args.size() == 2 && !sawTo) fail("'drag' takes a target, 'to' and a second target");

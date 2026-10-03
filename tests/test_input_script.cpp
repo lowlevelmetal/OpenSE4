@@ -3,12 +3,17 @@
 
 #include "client/script/items.hpp"
 #include "client/script/player.hpp"
+#include "client/script/recorder.hpp"
 #include "client/script/script.hpp"
 #include "client/script/sdl_input.hpp"
+
+#include "temp_dir.hpp"
 
 #include <doctest/doctest.h>
 #include <imgui.h>
 
+#include <fstream>
+#include <iterator>
 #include <map>
 
 ImGuiKey ImGui_ImplSDL3_KeyEventToImGuiKey(SDL_Keycode keycode, SDL_Scancode scancode);
@@ -180,6 +185,8 @@ TEST_CASE("input script: problems name the file and line") {
     CHECK(e[0].starts_with("t.txt:1: unknown key 'Hyper+Q'"));
     e = problems("click tag:a@x,y\n");
     CHECK(e[0].find("an offset is @x,y") != std::string::npos);
+    e = problems("click item:Next in=lesson@5,5\n");
+    CHECK(e[0].find("an offset goes right after the target") != std::string::npos);
     e = problems("drag tag:a tag:b\n");
     CHECK(e[0].find("'to'") != std::string::npos);
     e = problems("# nothing\n");
@@ -203,6 +210,10 @@ TEST_CASE("input script: quoting and labels") {
     CHECK(labelMatches("Keep Playing", "*Play?ng"));
     CHECK_FALSE(labelMatches("##up", "*"));
     CHECK_FALSE(labelMatches("Keep Playing", "*Plays"));
+    CHECK(labelMatches("window:Design Report###designreport", "window:Design Report"));
+    CHECK(labelMatches("window:##itemreport", "window:##itemreport"));
+    CHECK_FALSE(labelMatches("window:Research", "*"));
+    CHECK(labelMatches("window:Research", "window:*"));
 }
 
 TEST_CASE("input script: a click is a move, a press and a release") {
@@ -220,6 +231,28 @@ TEST_CASE("input script: a click is a move, a press and a release") {
     CHECK(events[1].decisive);
     CHECK(events[2].kind == InputEvent::Kind::ButtonUp);
     CHECK(events[2].button == 1);
+}
+
+TEST_CASE("input script: a target that moves before the press is aimed at again") {
+    FakeProbe probe;
+    probe.tags["link"] = {Box{ImVec2(100, 100), ImVec2(120, 110)}};
+    Player p(parse("click tag:link\n"), "/tmp");
+    std::vector<InputEvent> events;
+    for (int i = 0; i < 50 && !p.finished(); ++i) {
+        FrameOutput out = p.tick(probe);
+        for (const InputEvent& e : out.events) events.push_back(e);
+        p.verdicts(std::vector<Verdict>(out.events.size(), Verdict::Pass));
+        if (i == 0) probe.tags["link"] = {Box{ImVec2(300, 50), ImVec2(320, 60)}};   // the layout settled
+    }
+    REQUIRE(p.finished());
+    REQUIRE(events.size() == 4);
+    CHECK(events[0].kind == InputEvent::Kind::Motion);
+    CHECK(events[0].pos.x == 110);
+    CHECK(events[1].kind == InputEvent::Kind::Motion);
+    CHECK(events[1].pos.x == 310);
+    CHECK(events[2].kind == InputEvent::Kind::ButtonDown);
+    CHECK(events[2].pos.x == 310);
+    CHECK(events[3].pos.y == 55);
 }
 
 TEST_CASE("input script: offsets, items, scopes and the n-th match") {
@@ -313,6 +346,27 @@ TEST_CASE("input script: the wheel turns a notch a frame") {
     REQUIRE(frames.size() == 3);
     CHECK(frames[1] == frames[0] + 1);
     CHECK(frames[2] == frames[1] + 1);
+}
+
+TEST_CASE("input script: where things are, and drags with other buttons") {
+    FakeProbe probe;
+    probe.tags["panel"] = {Box{ImVec2(0, 0), ImVec2(100, 100)}};
+    probe.tags["lesson"] = {Box{ImVec2(20, 20), ImVec2(60, 60)}};
+    Player p(parse("assert-inside tag:lesson tag:panel\nassert-inside tag:panel@-1,-1 tag:panel\n"), "/tmp");
+    play(p, probe);
+    CHECK(p.finished());
+    Player q(parse("assert-inside tag:panel@99,99 tag:lesson\n"), "/tmp");
+    play(q, probe);
+    REQUIRE(q.failed());
+    CHECK(q.failure().find("tag:panel@99,99 is not inside tag:lesson") != std::string::npos);
+    Player d(parse("drag tag:lesson to tag:panel middle frames=2\n"), "/tmp");
+    const auto events = play(d, probe);
+    REQUIRE(d.finished());
+    REQUIRE(events.size() == 5);
+    CHECK(events[1].kind == InputEvent::Kind::ButtonDown);
+    CHECK(events[1].button == 2);
+    CHECK(events[4].kind == InputEvent::Kind::ButtonUp);
+    CHECK(events[4].pos.x == 50);
 }
 
 TEST_CASE("input script: loops") {
@@ -452,4 +506,98 @@ TEST_CASE("input script: SDL events as a keyboard and mouse send them") {
     SDL_zero(quit);
     quit.type = SDL_EVENT_QUIT;
     CHECK_FALSE(isUserInput(quit));
+}
+
+namespace {
+
+SDL_Event mouse(Uint32 type, float x, float y, Uint8 button = SDL_BUTTON_LEFT) {
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = type;
+    if (type == SDL_EVENT_MOUSE_MOTION) {
+        e.motion.x = x;
+        e.motion.y = y;
+    } else {
+        e.button.x = x;
+        e.button.y = y;
+        e.button.button = button;
+    }
+    return e;
+}
+
+} // namespace
+
+TEST_CASE("input script: the recorder names what was clicked and writes a script that parses") {
+    FakeProbe probe;
+    probe.tags["panel:report"] = {Box{ImVec2(600, 100), ImVec2(900, 400)}};
+    probe.tags["lesson:next"] = {Box{ImVec2(700, 500), ImVec2(760, 520)}};
+    probe.tags["window:research"] = {Box{ImVec2(100, 100), ImVec2(500, 400)}};
+    probe.itemList = {item("Keep Playing", "lesson", ImVec2(300, 600), ImVec2(400, 620)), item("Close", "research", ImVec2(400, 350), ImVec2(480, 370)),
+                      item("Close", "help", ImVec2(10, 10), ImVec2(20, 20)), item("Back", "main", ImVec2(150, 150), ImVec2(200, 170))};
+    // The smallest name around the point: a widget, a tag (with an offset when the point is not
+    // at its middle), else a point of the frame.
+    CHECK(Recorder::targetFor(ImVec2(350, 610), probe) == "item:\"Keep Playing\"");
+    CHECK(Recorder::targetFor(ImVec2(730, 510), probe) == "tag:lesson:next");
+    CHECK(Recorder::targetFor(ImVec2(700, 200), probe) == "tag:panel:report@100,100");
+    CHECK(Recorder::targetFor(ImVec2(440, 360), probe) == "item:Close in=research");
+    CHECK(Recorder::targetFor(ImVec2(950, 700), probe) == "at:950,700");
+    // A window in front hides what lies behind it: the main window's Back is not named there.
+    probe.windows = {"research"};
+    CHECK(Recorder::targetFor(ImVec2(175, 160), probe) == "window:research@75,60");
+
+    test::TempDir dir("recorder");
+    Recorder rec(dir.path() / "rec.script", {"--tutorial=first-steps"});
+    double t = 1.0;
+    auto send = [&](const SDL_Event& e) {
+        rec.event(e, probe, t);
+        t += 0.05;
+    };
+    // A click, the same again at once (a double click), a pause, a right-click, a drag.
+    for (int i = 0; i < 2; ++i) {
+        send(mouse(SDL_EVENT_MOUSE_BUTTON_DOWN, 730, 510));
+        send(mouse(SDL_EVENT_MOUSE_BUTTON_UP, 730, 510));
+    }
+    t += 2.0;
+    send(mouse(SDL_EVENT_MOUSE_BUTTON_DOWN, 350, 610, SDL_BUTTON_RIGHT));
+    send(mouse(SDL_EVENT_MOUSE_BUTTON_UP, 350, 610, SDL_BUTTON_RIGHT));
+    send(mouse(SDL_EVENT_MOUSE_BUTTON_DOWN, 730, 510));
+    send(mouse(SDL_EVENT_MOUSE_MOTION, 600, 400));
+    send(mouse(SDL_EVENT_MOUSE_BUTTON_UP, 350, 610));
+    // The wheel, twice in a row the same way; a key; typing into a text field.
+    SDL_Event w;
+    SDL_zero(w);
+    w.type = SDL_EVENT_MOUSE_WHEEL;
+    w.wheel.y = -1;
+    w.wheel.mouse_x = 730;
+    w.wheel.mouse_y = 510;
+    send(w);
+    send(w);
+    SDL_Event k;
+    SDL_zero(k);
+    k.type = SDL_EVENT_KEY_DOWN;
+    k.key.key = SDLK_H;
+    k.key.scancode = SDL_SCANCODE_H;
+    k.key.mod = SDL_KMOD_LCTRL;
+    send(k);
+    probe.textField = true;
+    SDL_Event txt;
+    SDL_zero(txt);
+    txt.type = SDL_EVENT_TEXT_INPUT;
+    txt.text.text = "Hi there";
+    send(txt);
+    std::string error;
+    REQUIRE(rec.save(error));
+
+    std::ifstream in(dir.path() / "rec.script");
+    const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    CHECK(text.find("options --tutorial=first-steps\n") != std::string::npos);
+    CHECK(text.find("double-click tag:lesson:next\n") != std::string::npos);
+    CHECK(text.find("wait 126\n") != std::string::npos);   // the right-click came 2.1 s after the double click
+    CHECK(text.find("right-click item:\"Keep Playing\"\n") != std::string::npos);
+    CHECK(text.find("drag tag:lesson:next to item:\"Keep Playing\"\n") != std::string::npos);
+    CHECK(text.find("wheel tag:lesson:next -2\n") != std::string::npos);
+    CHECK(text.find("key Ctrl+H\n") != std::string::npos);
+    CHECK(text.find("type \"Hi there\"\n") != std::string::npos);
+    std::vector<std::string> errors;
+    CHECK(parseScript(text, "rec.script", errors).has_value());
 }

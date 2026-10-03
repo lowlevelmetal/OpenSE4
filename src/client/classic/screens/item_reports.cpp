@@ -462,6 +462,9 @@ void ItemReportPopup::draw(UiContext& ui) {
         ImGui::Spacing();
         ImGui::TextColored(kDimText, "Click to close");
         if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) ImGui::CloseCurrentPopup();
+        // Input scripts name the popup by its id (Dear ImGui names popup windows by a number).
+        const ImVec2 pos = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+        script::reportItem("window:##itemreport", pos, ImVec2(pos.x + size.x, pos.y + size.y));
         ImGui::EndPopup();
     }
     ImGui::PopFont();

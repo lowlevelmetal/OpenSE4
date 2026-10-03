@@ -91,6 +91,8 @@ private:
         const float w = width() - indent;
         const float h = flow(b.text, font, size, imColor(color), b.level == 3, Align::Left, pos.x + indent, w, pos.y);
         ImGui::Dummy(ImVec2(w, h));
+        // Input scripts see which sections are in view (anchor:<id>).
+        if (!b.anchor.empty() && script::collectingItems()) script::reportItem("anchor:" + b.anchor);
         if (b.level == 1) {
             const ImVec2 at = ImGui::GetCursorScreenPos();
             ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x + indent, at.y), ImVec2(at.x + indent + w, at.y), imColor(palette::kFrame), 1.0f);

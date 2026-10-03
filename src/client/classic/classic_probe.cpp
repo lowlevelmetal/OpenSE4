@@ -4,6 +4,7 @@
 
 #include "client/classic/classic_mode.hpp"
 
+#include <algorithm>
 #include <format>
 
 namespace opense4::client {

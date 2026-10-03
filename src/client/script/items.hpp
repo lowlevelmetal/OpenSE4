@@ -16,7 +16,7 @@
 namespace opense4::client::script {
 
 struct Item {
-    std::string label;   // as written: "Keep Playing", "Name##col", "##up", "link:economy#minerals"
+    std::string label;   // as written: "Keep Playing", "Name##col", "##up", "link:economy#minerals"; a window or popup: "window:<name>"
     std::string scope;   // what was being drawn: a window id ("research"), "main", "lesson", "front", or ""
     std::string window;  // the Dear ImGui window it is in (the root window's name)
     ImVec2 min, max;     // the visible part (clipped to its window)
@@ -27,7 +27,8 @@ struct Item {
 std::string_view visibleLabel(std::string_view label);
 // Whether `wanted` names `label`: the label as written, the part shown, or
 // (for "##id") the hidden id. A `wanted` with * is a pattern for the part
-// shown (* any run of characters, ? one), so "*" is any labelled widget.
+// shown (* any run of characters, ? one), so "*" is any labelled widget (a
+// window only when the pattern starts with "window:").
 bool labelMatches(std::string_view label, std::string_view wanted);
 
 // Collecting on or off (and Dear ImGui's hooks with it).

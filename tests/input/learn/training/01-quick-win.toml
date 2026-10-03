@@ -1,0 +1,21 @@
+# A training game for the input scripts (docs/BUILDING.md "Input scripts"): won as soon as a
+# research project is queued.
+title = "Quick win"
+summary = "Queue one research project to win."
+minutes = 1
+
+[setup]
+seed = 404
+computer_players = 1
+quadrant_size = "small"
+events = "none"
+
+[[objective]]
+text = "Queue a research project"
+when = { research_queued = 1 }
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "One task"
+text = "Open the [Research](window:research) window and queue any project."

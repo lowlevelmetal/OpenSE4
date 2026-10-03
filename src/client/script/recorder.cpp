@@ -4,6 +4,7 @@
 #include "client/script/script.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <format>
 #include <fstream>
 
@@ -43,19 +44,30 @@ Recorder::Recorder(std::filesystem::path file, std::vector<std::string> options)
 
 std::string Recorder::targetFor(ImVec2 p, const Probe& probe) {
     const float k = std::max(0.01f, probe.frameScale());
+    // A classic window in front covers what lies behind it: only its own
+    // names (and the lesson panel's) count where it is.
+    std::string front;
+    if (const std::vector<std::string> open = probe.openWindows(); !open.empty())
+        for (const Box& b : probe.tagBoxes("window:" + open.back()))
+            if (inside(p, b.min, b.max)) front = open.back();
+    auto visible = [&](std::string_view scope) { return front.empty() || scope == front || scope == "lesson"; };
+    auto visibleTag = [&](std::string_view name) {
+        return front.empty() || name.starts_with(front + ":") || name == "window:" + front || name.starts_with("lesson:");
+    };
     // The smallest labelled widget under the pointer.
     const std::vector<Item>& items = probe.items();
     const Item* best = nullptr;
     for (const Item& item : items) {
-        if (!inside(p, item.min, item.max) || item.label.empty() || item.label == "##classic") continue;
+        if (!inside(p, item.min, item.max) || item.label.empty() || item.label == "##classic" || !visible(item.scope)) continue;
         // On a tie the later one: our own names come after Dear ImGui's for the same widget.
         if (!best || area(item.min, item.max) <= area(best->min, best->max)) best = &item;
     }
     // The smallest UI tag around it.
     std::optional<std::pair<std::string, Box>> tag;
     for (const std::string& name : probe.tagNames())
-        for (const Box& b : probe.tagBoxes(name))
-            if (inside(p, b.min, b.max) && (!tag || area(b.min, b.max) < area(tag->second.min, tag->second.max))) tag = {name, b};
+        if (visibleTag(name))
+            for (const Box& b : probe.tagBoxes(name))
+                if (inside(p, b.min, b.max) && (!tag || area(b.min, b.max) < area(tag->second.min, tag->second.max))) tag = {name, b};
     if (best && (!tag || area(best->min, best->max) < area(tag->second.min, tag->second.max))) {
         // Its label; where it is drawn, and which of them, when the label is not unique.
         size_t total = 0, inScope = 0, index = 0, indexInScope = 0;
@@ -79,7 +91,8 @@ std::string Recorder::targetFor(ImVec2 p, const Probe& probe) {
         return out;
     }
     // The system view and the galaxy panel name sectors and systems.
-    if (std::string map = probe.targetAt(p); !map.empty() && (!tag || tag->first == "panel:system" || tag->first == "panel:galaxy")) return map;
+    if (std::string map = front.empty() ? probe.targetAt(p) : std::string{}; !map.empty() && (!tag || tag->first == "panel:system" || tag->first == "panel:galaxy"))
+        return map;
     if (tag) {
         std::string name = tag->first;
         if (name.starts_with("window:")) name = "window:" + name.substr(7);
@@ -92,7 +105,13 @@ std::string Recorder::targetFor(ImVec2 p, const Probe& probe) {
 }
 
 void Recorder::line(std::string text, double seconds) {
-    if (lastAction_ >= 0 && seconds - lastAction_ > 1.0) lines_.push_back(std::format("# ({:.1f} s later)", seconds - lastAction_));
+    // A pause of half a second or more is kept (in frames at the fixed 60 a second),
+    // so that what the player waited for (an animation, a battle) has its time.
+    if (lastAction_ >= 0 && seconds - lastAction_ >= 0.5) lines_.push_back(std::format("wait {}", std::lround((seconds - lastAction_) * 60.0)));
+    // A pointer step waits for its target up to its timeout: give one that came
+    // much later (after a battle, a long turn) the time it took, and half again.
+    if (lastAction_ >= 0 && seconds - lastAction_ > double(kDefaultTimeout) / 60.0 * 0.8 && !text.starts_with("key ") && !text.starts_with("type "))
+        text += std::format(" timeout={}", std::lround((seconds - lastAction_) * 60.0 * 1.5));
     lastAction_ = seconds;
     lines_.push_back(std::move(text));
     // What the press already did (a lesson step done on the press) follows the click.
@@ -156,7 +175,8 @@ void Recorder::event(const SDL_Event& e, const Probe& probe, double seconds) {
             const Press pr = *press_;
             press_.reset();
             if (pr.moved) {
-                line(std::format("drag {} to {}{}", pr.target, targetFor(ImVec2(e.button.x, e.button.y), probe), mods()), seconds);
+                const char* button = pr.button == SDL_BUTTON_MIDDLE ? " middle" : pr.button == SDL_BUTTON_RIGHT ? " right" : "";
+                line(std::format("drag {} to {}{}{}", pr.target, targetFor(ImVec2(e.button.x, e.button.y), probe), button, mods()), seconds);
                 break;
             }
             const char* verb = pr.button == SDL_BUTTON_RIGHT ? "right-click" : pr.button == SDL_BUTTON_MIDDLE ? "middle-click" : "click";
@@ -166,6 +186,7 @@ void Recorder::event(const SDL_Event& e, const Probe& probe, double seconds) {
                 // The second click of a double click: one line for both.
                 lines_.back() = std::format("double-click {}{}", pr.target, mods());
                 lastClick_.seconds = -10;
+                lastAction_ = seconds;
                 break;
             }
             line(std::format("{} {}{}", verb, pr.target, mods()), seconds);
@@ -179,8 +200,9 @@ void Recorder::event(const SDL_Event& e, const Probe& probe, double seconds) {
             const std::string target = targetFor(ImVec2(e.wheel.mouse_x, e.wheel.mouse_y), probe);
             // Turns in a row over one place make one line.
             const std::string prefix = "wheel " + target + " ";
-            if (!lines_.empty() && lines_.back().starts_with(prefix) && seconds - lastAction_ < 1.0) {
-                const int before = std::atoi(lines_.back().c_str() + prefix.size());
+            const int last = !lines_.empty() && lines_.back().starts_with(prefix) ? std::atoi(lines_.back().c_str() + prefix.size()) : 0;
+            if (last != 0 && (last < 0) == (notches < 0) && seconds - lastAction_ < 1.0) {
+                const int before = last;
                 lines_.back() = prefix + std::to_string(before + notches);
                 lastAction_ = seconds;
             } else {

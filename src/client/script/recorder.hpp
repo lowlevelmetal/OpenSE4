@@ -4,8 +4,8 @@
 // BUILDING.md "Input scripts"), to start a script from: clicks, drags, the
 // wheel, keys and typing, each click named by what lies under the pointer
 // (a widget's label, a UI tag, a sector or a system, else a point of the
-// frame), and the lesson's progress as wait-step lines so that the script
-// waits where the player did.
+// frame), pauses of half a second or more as waits, and the lesson's progress
+// as wait-step lines so that the script waits where the player did.
 
 #include "client/script/player.hpp"
 

@@ -1,0 +1,70 @@
+# The manual during a game (docs/LEARNING.md "The Learn window and the manual"): Shift+F1
+# opens the page for the window in front, window and Help links open game windows, and the
+# Game Menu's Learn window reads the manual (docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --quick-start --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait-for tag:command:research
+# Shift+F1 with no window open: the page about the main window.
+key Shift+F1
+wait-window manual
+wait-for item:page:main-window in=manual
+# Its section about the Help window (from the contents tree) links to the Help window's
+# tabs: they open the Help window over the manual.
+click item:"The Help window##the-help-window" in=manual
+wait-for item:anchor:the-help-window in=manual
+wait-for item:link:help:components in=manual
+click item:link:help:components in=manual
+wait-window help
+key Escape
+wait-closed help
+assert-window manual
+key Escape
+wait-closed manual
+# Shift+F1 over a window: the page that explains it.
+key F8
+wait-window research
+key Shift+F1
+wait-for item:page:research in=manual
+# A window link in the page opens that window.
+click item:"The Tech Tree window##the-tech-tree-window" in=manual
+wait-for item:link:window:tech-tree in=manual
+click item:link:window:tech-tree in=manual
+wait-window tech-tree
+key Escape
+wait-closed tech-tree
+key Escape
+wait-closed manual
+key Escape
+wait-closed research
+# The Game Menu's Learn window: its Manual tab reads the manual in a window of the game.
+click tag:command:game-menu
+wait-window game-menu
+click item:Learn in=game-menu
+wait-window learn
+click item:Manual in=learn
+click item:Turns in=learn
+click item:Read in=learn
+wait-window manual
+wait-for item:page:turns in=manual
+key Escape
+wait-closed manual
+# The chapter list scrolls with the wheel to the later chapters.
+wheel item:"The galaxy" in=learn -25
+wait-for item:Combat in=learn
+click item:Combat in=learn
+click item:Read in=learn
+wait-window manual
+wait-for item:page:combat in=manual
+key Escape
+wait-closed manual
+# Starting a lesson from a game asks first; No keeps the game.
+click item:Tutorials in=learn
+click item:"First steps" in=learn
+click item:"Start Lesson" in=learn
+click item:No in="Start Lesson"
+wait-gone item:No in="Start Lesson"
+assert-lesson none
+key Escape
+wait-closed learn
