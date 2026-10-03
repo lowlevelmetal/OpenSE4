@@ -1,5 +1,6 @@
 #include "client/classic/screens/item_reports.hpp"
 
+#include "client/script/items.hpp"
 #include "game/design.hpp"
 
 #include <algorithm>
@@ -484,6 +485,7 @@ RowResult itemRow(UiContext& ui, int id, const Sprite& icon, std::string_view te
     const ImVec2 p = ImGui::GetCursorScreenPos();
     RowResult res;
     res.clicked = ImGui::Selectable("##row", selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, h));
+    script::reportItem(text);   // input scripts find a row by what it shows
     res.hovered = ImGui::IsItemHovered();
     res.rightClicked = ImGui::IsItemClicked(ImGuiMouseButton_Right);
     res.doubleClicked = res.hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);

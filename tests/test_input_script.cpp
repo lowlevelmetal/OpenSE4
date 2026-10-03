@@ -72,6 +72,7 @@ public:
     bool typing() const override { return textField; }
     std::optional<bool> holds(const learn::Condition&, const learn::Mark&, std::string&) const override { return conditionHolds; }
     learn::Mark mark(bool) const override { return {}; }
+    std::optional<int64_t> factValue(learn::Fact, const learn::Mark&) const override { return 4; }
 };
 
 Item item(std::string label, std::string scope, ImVec2 min, ImVec2 max, bool disabled = false) {
@@ -112,9 +113,10 @@ wait-step 3
 assert-log "colonized"
 screenshot shot.png
 echo Hello there
+print colonies turn
 )");
     CHECK(s.options == std::vector<std::string>{"--tutorial=first-steps", "--layout=1024x768"});
-    REQUIRE(s.steps.size() == 16);
+    REQUIRE(s.steps.size() == 17);
     CHECK(s.steps[0].op == Op::Click);
     CHECK(s.steps[0].target.kind == TargetKind::Tag);
     CHECK(s.steps[0].target.name == "lesson:next");
@@ -157,6 +159,7 @@ echo Hello there
     CHECK(s.steps[13].text == "colonized");
     CHECK(s.steps[14].text == "shot.png");
     CHECK(s.steps[15].text == "Hello there");
+    CHECK(s.steps[16].facts == std::vector<std::string>{"colonies", "turn"});
 }
 
 TEST_CASE("input script: problems name the file and line") {
@@ -184,9 +187,9 @@ TEST_CASE("input script: problems name the file and line") {
 }
 
 TEST_CASE("input script: quoting and labels") {
-    CHECK(quoted("Next") == "Next");
-    CHECK(quoted("Keep Playing") == "\"Keep Playing\"");
-    CHECK(quoted("a\"b") == "\"a\\\"b\"");
+    CHECK(quoteWord("Next") == "Next");
+    CHECK(quoteWord("Keep Playing") == "\"Keep Playing\"");
+    CHECK(quoteWord("a\"b") == "\"a\\\"b\"");
     CHECK(visibleLabel("Name##col") == "Name");
     CHECK(visibleLabel("##up").empty());
     CHECK(labelMatches("Next##next", "Next"));
@@ -195,6 +198,11 @@ TEST_CASE("input script: quoting and labels") {
     CHECK(labelMatches("##up", "##up"));
     CHECK_FALSE(labelMatches("##up", "up"));
     CHECK_FALSE(labelMatches("Next", "Nex"));
+    CHECK(labelMatches("Keep Playing##x", "Keep*"));
+    CHECK(labelMatches("Keep Playing", "*"));
+    CHECK(labelMatches("Keep Playing", "*Play?ng"));
+    CHECK_FALSE(labelMatches("##up", "*"));
+    CHECK_FALSE(labelMatches("Keep Playing", "*Plays"));
 }
 
 TEST_CASE("input script: a click is a move, a press and a release") {
@@ -273,6 +281,65 @@ TEST_CASE("input script: waits time out with the reason") {
     play(r, probe);
     REQUIRE(r.failed());
     CHECK(r.failure().find("is dim (disabled)") != std::string::npos);
+}
+
+TEST_CASE("input script: an optional click is skipped when its target never comes") {
+    FakeProbe probe;
+    const Script s = parse("click tag:log:close optional\nclick tag:x optional timeout=30\n");
+    CHECK(s.steps[0].optional);
+    CHECK(s.steps[0].timeout == kOptionalTimeout);
+    CHECK(s.steps[1].timeout == 30);
+    Player p(s, "/tmp");
+    const auto events = play(p, probe);
+    CHECK(p.finished());
+    CHECK(events.empty());
+    CHECK(p.frame() >= 40);
+}
+
+TEST_CASE("input script: the wheel turns a notch a frame") {
+    FakeProbe probe;
+    Player p(parse("wheel sector:1,1 -3\n"), "/tmp");
+    std::vector<uint64_t> frames;
+    for (int i = 0; i < 100 && !p.finished(); ++i) {
+        FrameOutput out = p.tick(probe);
+        for (const InputEvent& e : out.events) {
+            if (e.kind != InputEvent::Kind::Wheel) continue;
+            CHECK(e.wheel == -1.0f);
+            CHECK(e.pos.x == 75);
+            frames.push_back(p.frame());
+        }
+        p.verdicts(std::vector<Verdict>(out.events.size(), Verdict::Pass));
+    }
+    REQUIRE(frames.size() == 3);
+    CHECK(frames[1] == frames[0] + 1);
+    CHECK(frames[2] == frames[1] + 1);
+}
+
+TEST_CASE("input script: loops") {
+    FakeProbe probe;
+    probe.tags["a"] = {Box{ImVec2(0, 0), ImVec2(10, 10)}};
+    // A plain repeat runs its body N times.
+    Player p(parse("repeat 3\n  move tag:a\nend\necho done\n"), "/tmp");
+    const auto events = play(p, probe);
+    CHECK(p.finished());
+    CHECK(events.size() == 3);
+    // An until-condition leaves at once when it holds...
+    probe.conditionHolds = true;
+    Player q(parse("repeat 5 until { turns_passed = 1 }\n  move tag:a\nend\n"), "/tmp");
+    CHECK(play(q, probe).empty());
+    CHECK(q.finished());
+    // ... and fails when it never does.
+    probe.conditionHolds = false;
+    Player r(parse("repeat 2 until { turns_passed = 1 }\n  move tag:a\nend\n"), "/tmp");
+    CHECK(play(r, probe).size() == 2);
+    REQUIRE(r.failed());
+    CHECK(r.failure().find("still does not hold after 2 passes") != std::string::npos);
+    // Nested loops.
+    Player n(parse("repeat 2\n  repeat 3\n    move tag:a\n  end\nend\n"), "/tmp");
+    CHECK(play(n, probe).size() == 6);
+    CHECK(problems("repeat 2\nmove tag:a\n")[0] == "t.txt:1: this 'repeat' has no 'end'");
+    CHECK(problems("end\n")[0] == "t.txt:1: 'end' without a 'repeat'");
+    CHECK(problems("repeat 2 while { turn = 1 }\nend\n")[0].find("until") != std::string::npos);
 }
 
 TEST_CASE("input script: waits and checks pass when they hold") {

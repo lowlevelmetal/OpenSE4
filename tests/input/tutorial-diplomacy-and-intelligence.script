@@ -1,0 +1,111 @@
+# Tutorial 7, "Diplomacy and intelligence", played through under the input lock
+# (docs/BUILDING.md "Input scripts").
+options --tutorial=diplomacy-and-intelligence --layout=1024x768 --size=1280x800
+
+wait-lesson diplomacy-and-intelligence
+# 1 Neighbours.
+click item:Next in=lesson
+wait-step 2
+# 2 Send out an explorer: the first attack ship, Explore.
+click tag:cycle:ship@75%,50%
+click tag:order:explore
+wait-step 3
+# 3 First contact: the second ship explores too; end turns, sending ships that have arrived
+# exploring again, until an empire is met.
+click tag:cycle:ship@75%,50%
+click tag:order:explore
+repeat 20 until { empires_met = 1 }
+  click tag:cycle:ship@75%,50%
+  click tag:order:explore
+  click tag:cycle:ship@75%,50%
+  click tag:order:explore
+  click tag:button:end-turn
+  click item:Yes in="End Turn"
+  wait 5
+  click tag:log:close optional
+end
+wait-step 4
+# 4 The Empires window.
+click tag:command:empires
+wait-window empires
+wait-step 5
+# 5 The empires you know: the Trade and Tariff columns, back to Treaty, Next.
+click tag:empires:trade
+click tag:empires:tariff
+click tag:empires:treaty
+click item:Next in=lesson
+wait-step 6
+# 6 Open a channel: left-click the portrait.
+click item:##portrait in=empires
+wait-window communicate
+wait-step 7
+# 7 Propose a treaty: Propose Treaty in the Message Type list, Non-Aggression, Send Message.
+click tag:communicate:message-type
+click item:"Propose Treaty" in=communicate
+wait-for tag:communicate:treaty
+click tag:communicate:treaty
+click item:Non-Aggression in=communicate
+click item:Pleading in=communicate
+click tag:communicate:send
+wait-step 8
+assert { command = "SendMessage" }
+# 8 Wait for the answer: sending closed the windows; End Turn and Yes.
+wait-closed communicate
+key Escape
+wait-closed empires
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 2
+# 9 Read the answer: the Log opens by itself at the start of the turn, with the answer in it.
+wait-window log
+wait-step 10
+# 10 Politics: the category, the message in it, Next.
+click tag:log:politics
+click item:##row in=log nth=2
+click item:Next in=lesson
+wait-step 11
+# 11 A treaty: close the Log, end turns until a treaty is signed or three turns have passed.
+key Escape
+wait-closed log
+repeat 4 until { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns_passed = 3 }] }
+  click tag:button:end-turn
+  click item:Yes in="End Turn"
+  wait 5
+  click tag:log:close optional
+end
+wait-step 12
+# 12 More about other empires: the Empires window's Treaty Grid, Scores, Victory Conditions and
+# Our Race, each closed again; then Next.
+click tag:command:empires
+wait-window empires
+click item:"Treaty Grid" in=empires
+wait-window treaty-grid
+key Escape
+wait-closed treaty-grid
+click item:Scores in=empires
+wait-window scores
+key Escape
+wait-closed scores
+click item:"Victory Conditions" in=empires
+wait-window victory-conditions
+key Escape
+wait-closed victory-conditions
+click item:"Our Race" in=empires
+wait-window race-report
+key Escape
+wait-closed race-report
+click item:Next in=lesson
+wait-step 13
+# 13 Intelligence: the button in the Empires window.
+click tag:empires:intelligence
+wait-window intelligence
+wait-step 14
+# 14 A first project: the defense project, the only row of the list (after the two headings).
+click item:* in=intelligence nth=3
+wait-step 15
+assert { command = "SetIntel" }
+# 15 Well done: Finish.
+click item:Finish in=lesson
+wait-result done
+click item:"Keep Playing"
+wait-gone item:"Keep Playing"

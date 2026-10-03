@@ -109,6 +109,15 @@ std::vector<std::string> ClassicMode::logLines() const {
 
 bool ClassicMode::typing() const { return ImGui::GetIO().WantTextInput; }
 
+std::string ClassicMode::lockDescription() const {
+    const LockState& l = lock_.state();
+    if (!l.active) return "off";
+    std::string keys;
+    for (const KeyChord& k : l.keys) keys += (keys.empty() ? "" : " ") + chordName(k);
+    return std::format("on: {} areas, {} to look at; keys: {}{}{}{}", l.areas.size(), l.lookAreas.size(), keys.empty() ? "none" : keys,
+                       l.windowKeys ? "; Esc and Enter for the window in front" : "", l.prompt ? "; a prompt's keys" : "", l.typing ? "; typing" : "");
+}
+
 std::optional<bool> ClassicMode::holds(const learn::Condition& c, const learn::Mark& since, std::string& error) const {
     if (!session_) {
         error = "no game is running";
@@ -116,6 +125,12 @@ std::optional<bool> ClassicMode::holds(const learn::Condition& c, const learn::M
     }
     const learn::EvalContext ctx{session_->rules(), session_->state(), session_->player(), lastFacts_, scriptTracker_, since};
     return learn::holds(c, ctx);
+}
+
+std::optional<int64_t> ClassicMode::factValue(learn::Fact f, const learn::Mark& since) const {
+    if (!session_) return std::nullopt;
+    const learn::EvalContext ctx{session_->rules(), session_->state(), session_->player(), lastFacts_, scriptTracker_, since};
+    return learn::factValue(f, ctx);
 }
 
 learn::Mark ClassicMode::mark(bool gameStart) const {

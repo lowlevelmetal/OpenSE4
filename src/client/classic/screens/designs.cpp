@@ -17,6 +17,7 @@
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/script/items.hpp"
 #include "client/classic/widgets.hpp"
 
 #include "datafile/datafile.hpp"
@@ -232,6 +233,7 @@ private:
                     selected_ = designId;
                     note_.clear();
                 }
+                script::reportItem(d.name);   // input scripts find a design by its name
                 ImGui::PopID();
                 const bool selected = designId == selected_;
                 if (const Sprite& lampSprite = selected ? green : blue)

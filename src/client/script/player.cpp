@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <format>
 #include <utility>
 
@@ -98,6 +99,51 @@ FrameOutput Player::tick(const Probe& probe) {
     // another in the same frame; a step that sends input or waits ends it.
     for (size_t guard = 0; guard < 10000 && step_ < script_.steps.size(); ++guard) {
         const Step& st = script_.steps[step_];
+        if (st.op == Op::Repeat || st.op == Op::End) {
+            // Loops take no frame: they only move the script on.
+            started_ = false;
+            if (st.op == Op::End) {
+                step_ = st.jump;
+                continue;
+            }
+            const auto [it, first] = loops_.try_emplace(step_);
+            if (first) it->second.since = probe.mark(false);
+            bool leave = false;
+            if (st.condition) {
+                std::string error;
+                const auto h = probe.holds(*st.condition, it->second.since, error);
+                if (!h) {
+                    why_ = error;
+                    failed_ = true;
+                } else {
+                    leave = *h;
+                }
+            }
+            if (!failed_ && !leave && it->second.passes >= st.number) {
+                if (st.condition) {
+                    why_ = std::format("the condition still does not hold after {} passes", st.number);
+                    failed_ = true;
+                } else {
+                    leave = true;
+                }
+            }
+            if (failed_) {
+                failure_ = std::format("{}:{}: {}\n  {}\n  ({})", script_.file, st.line, st.source, why_, context(probe));
+                out.messages.push_back("FAILED " + failure_);
+                out.captures.push_back(failureShot());
+                return out;
+            }
+            if (leave) {
+                loops_.erase(it);
+                step_ = st.jump + 1;
+            } else {
+                ++it->second.passes;
+                out.messages.push_back(std::format("  {}:{}: {} (pass {})", std::filesystem::path(script_.file).filename().string(), st.line,
+                                                   st.source, it->second.passes));
+                ++step_;
+            }
+            continue;
+        }
         if (!started_) {
             started_ = true;
             stepFrames_ = 0;
@@ -175,6 +221,36 @@ Player::Status Player::run(const Step& st, const Probe& probe, FrameOutput& out)
             return Status::Done;
         }
         case Op::Echo: out.messages.push_back(st.text); return Status::Done;
+        case Op::Dump: {
+            // What a script can name now: the UI tags, and the widgets (of one scope) in their order.
+            out.messages.push_back("tags: " + joined(probe.tagNames(), 500));
+            if (const std::string lock = probe.lockDescription(); !lock.empty()) out.messages.push_back("lock: " + lock);
+            std::map<std::string, int> seen;
+            std::string list;
+            for (const Item& item : probe.items()) {
+                if (!st.text.empty() && !scopeMatches(item, st.text)) continue;
+                const int n = ++seen[item.scope + "\n" + item.label];
+                // Where it is, in frame pixels.
+                const ImVec2 o = probe.framePoint(0, 0);
+                const float k = std::max(0.01f, probe.frameScale());
+                list += std::format("\n    item:{}{}{}{}  [{:.0f},{:.0f} {:.0f}x{:.0f}]", quoteWord(item.label),
+                                    item.scope.empty() ? "" : " in=" + quoteWord(item.scope), n > 1 ? std::format(" nth={}", n) : "",
+                                    item.disabled ? " (dim)" : "", (item.min.x - o.x) / k, (item.min.y - o.y) / k, (item.max.x - item.min.x) / k,
+                                    (item.max.y - item.min.y) / k);
+            }
+            out.messages.push_back("items:" + list);
+            return Status::Done;
+        }
+        case Op::Print: {
+            std::string text;
+            for (const std::string& key : st.facts) {
+                const learn::FactInfo* f = learn::findFact(key);
+                const auto v = f ? probe.factValue(f->fact, probe.mark(true)) : std::nullopt;
+                text += std::format("{}{} = {}", text.empty() ? "" : ", ", key, v ? std::to_string(*v) : std::string("(no game)"));
+            }
+            out.messages.push_back(text);
+            return Status::Done;
+        }
         default: return check(st, probe);
     }
 }
@@ -223,6 +299,10 @@ Player::Status Player::pointerStep(const Step& st, const Probe& probe, FrameOutp
             why = std::format("{} is dim (disabled)", st.target.text);
         }
         if (!at) {
+            if (stepFrames_ >= st.timeout && st.optional) {
+                out.messages.push_back(std::format("  (skipped: {})", why));
+                return Status::Done;
+            }
             if (stepFrames_ >= st.timeout) return fail(std::format("timed out after {} frames: {}", st.timeout, why));
             why_ = why;
             return Status::Running;
@@ -274,9 +354,12 @@ Player::Status Player::pointerStep(const Step& st, const Probe& probe, FrameOutp
                 break;
             }
             case Op::Wheel: {
-                InputEvent w = event(InputEvent::Kind::Wheel, p, true);
-                w.wheel = float(st.number);
-                queue_.push_back({w});
+                // One notch a frame, as a wheel turns.
+                for (int64_t i = 0; i < (st.number < 0 ? -st.number : st.number); ++i) {
+                    InputEvent w = event(InputEvent::Kind::Wheel, p, i == 0);
+                    w.wheel = st.number < 0 ? -1.0f : 1.0f;
+                    queue_.push_back({w});
+                }
                 break;
             }
             default: break;   // Move: the motion is all

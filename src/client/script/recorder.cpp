@@ -68,10 +68,10 @@ std::string Recorder::targetFor(ImVec2 p, const Probe& probe) {
             ++total;
             if (item.scope == best->scope) ++inScope;
         }
-        std::string out = "item:" + script::quoted(best->label);
+        std::string out = "item:" + quoteWord(best->label);
         if (area(best->min, best->max) > 1600 * k * k) out += offsetFor(p, best->min, best->max, k);
         if (total > 1 && !best->scope.empty()) {
-            out += " in=" + script::quoted(best->scope);
+            out += " in=" + quoteWord(best->scope);
             if (inScope > 1) out += std::format(" nth={}", indexInScope + 1);
         } else if (total > 1) {
             out += std::format(" nth={}", index + 1);
@@ -109,7 +109,7 @@ void Recorder::progress(std::string text) {
 
 void Recorder::flushText(double seconds) {
     if (text_.empty()) return;
-    line("type " + script::quoted(text_), seconds);
+    line("type " + quoteWord(text_), seconds);
     text_.clear();
 }
 
@@ -237,7 +237,7 @@ bool Recorder::save(std::string& error) {
     out << "# Recorded with opense4 --record-input: check the targets and add waits and checks.\n";
     if (!options_.empty()) {
         out << "options";
-        for (const std::string& o : options_) out << ' ' << script::quoted(o);
+        for (const std::string& o : options_) out << ' ' << quoteWord(o);
         out << '\n';
     }
     for (const std::string& l : lines_) out << l << '\n';

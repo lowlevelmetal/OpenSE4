@@ -200,6 +200,10 @@ constexpr OpInfo kOps[] = {
     {"assert-turn", Op::AssertTurn},
     {"screenshot", Op::Screenshot},
     {"echo", Op::Echo},
+    {"print", Op::Print},
+    {"dump", Op::Dump},
+    {"repeat", Op::Repeat},
+    {"end", Op::End},
 };
 
 bool takesTarget(Op op) {
@@ -234,7 +238,7 @@ std::string_view opName(Op op) {
     return "?";
 }
 
-std::string quoted(std::string_view text) {
+std::string quoteWord(std::string_view text) {
     bool plain = !text.empty();
     for (const char c : text)
         if (c == ' ' || c == '\t' || c == '"' || c == '\\' || c == '#') plain = false;
@@ -252,6 +256,7 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
     script.file = std::string(file);
     int timeout = kDefaultTimeout;
     const size_t errorsBefore = errors.size();
+    std::vector<size_t> open;   // repeats without their end yet
     int lineNo = 0;
     size_t pos = 0;
     while (pos <= text.size()) {
@@ -337,9 +342,49 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
             continue;
         }
 
+        // repeat N [until {condition}]: the condition is TOML, as for wait-until.
+        if (st.op == Op::Repeat) {
+            int64_t n = 0;
+            if (tokens.size() < 2 || !parseInt(tokens[1].text, n) || n < 1) {
+                fail("'repeat' takes how many times at most, and optionally until { condition }");
+                continue;
+            }
+            st.number = n;
+            if (tokens.size() > 2) {
+                if (tokens[2].text != "until" || tokens.size() < 4) {
+                    fail("'repeat N' is followed by nothing, or by until { condition }");
+                    continue;
+                }
+                std::vector<learn::Diagnostic> problems;
+                st.condition = learn::parseCondition(line.substr(tokens[3].start), file, lineNo, problems);
+                st.source = std::string(line);
+                for (const learn::Diagnostic& d : problems) fail(d.message);
+                if (!st.condition) continue;
+            }
+            open.push_back(script.steps.size());
+            script.steps.push_back(std::move(st));
+            continue;
+        }
+        if (st.op == Op::End) {
+            if (tokens.size() != 1) {
+                fail("'end' stands alone");
+                continue;
+            }
+            if (open.empty()) {
+                fail("'end' without a 'repeat'");
+                continue;
+            }
+            st.jump = open.back();
+            script.steps[open.back()].jump = script.steps.size();
+            open.pop_back();
+            script.steps.push_back(std::move(st));
+            continue;
+        }
+
         // The other steps: their arguments, then key=value options and flags.
         std::vector<const Token*> args;
         Target* lastTarget = nullptr;
+        bool explicitTimeout = false;
         bool sawTo = false;
         bool bad = false;
         for (size_t i = 1; i < tokens.size() && !bad; ++i) {
@@ -355,7 +400,10 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
                     bad = true;
                     break;
                 }
-                if (w.starts_with("timeout=")) st.timeout = static_cast<int>(n);
+                if (w.starts_with("timeout=")) {
+                    st.timeout = static_cast<int>(n);
+                    explicitTimeout = true;
+                }
                 else if (w.starts_with("frames=")) st.dragFrames = static_cast<int>(n);
                 else if (lastTarget) lastTarget->nth = static_cast<int>(n);
                 else {
@@ -373,11 +421,12 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
                 lastTarget->scope = w.substr(3);
                 continue;
             }
-            if (!anyQuoted && isPointer(st.op) && (w == "shift" || w == "ctrl" || w == "alt" || w == "refused")) {
+            if (!anyQuoted && isPointer(st.op) && (w == "shift" || w == "ctrl" || w == "alt" || w == "refused" || w == "optional")) {
                 if (w == "shift") st.shift = true;
                 if (w == "ctrl") st.ctrl = true;
                 if (w == "alt") st.alt = true;
                 if (w == "refused") st.refused = true;
+                if (w == "optional") st.optional = true;
                 continue;
             }
             if (!anyQuoted && st.op == Op::Key && w == "refused") {
@@ -516,11 +565,32 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
             case Op::Echo:
                 for (const Token* t : args) st.text += (st.text.empty() ? "" : " ") + t->text;
                 break;
+            case Op::Dump:
+                ok = args.size() <= 1;
+                if (!ok) fail("'dump' takes at most a scope (a window id, main, lesson, front)");
+                if (ok && !args.empty()) st.text = args[0]->text;
+                break;
+            case Op::Print:
+                ok = !args.empty();
+                if (!ok) fail("'print' takes condition keys with numbers (colonies, turn, systems_explored, ...)");
+                for (const Token* t : args) {
+                    const learn::FactInfo* f = learn::findFact(t->text);
+                    if (!f || f->value != learn::FactValue::Number) {
+                        fail(std::format("'{}' is not a condition key with a number", t->text));
+                        ok = false;
+                    }
+                    st.facts.push_back(t->text);
+                }
+                break;
             case Op::WaitUntil:
-            case Op::Assert: break;
+            case Op::Assert:
+            case Op::Repeat:
+            case Op::End: break;
         }
+        if (st.optional && !explicitTimeout) st.timeout = kOptionalTimeout;
         if (ok) script.steps.push_back(std::move(st));
     }
+    for (const size_t i : open) errors.push_back(std::format("{}:{}: this 'repeat' has no 'end'", file, script.steps[i].line));
     if (errors.size() != errorsBefore) return std::nullopt;
     if (script.steps.empty()) {
         errors.push_back(std::format("{}: no steps", file));

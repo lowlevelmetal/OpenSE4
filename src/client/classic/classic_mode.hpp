@@ -164,8 +164,10 @@ private:
     std::optional<uint32_t> turn() const override;
     std::vector<std::string> logLines() const override;
     bool typing() const override;
+    std::string lockDescription() const override;
     std::optional<bool> holds(const learn::Condition& c, const learn::Mark& since, std::string& error) const override;
     learn::Mark mark(bool gameStart) const override;
+    std::optional<int64_t> factValue(learn::Fact f, const learn::Mark& since) const override;
     // Each frame: the commands and battles since the game began.
     void trackForScripts();
     learn::ClientFacts lastFacts_;

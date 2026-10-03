@@ -10,6 +10,9 @@
 //     wait-step 4
 //     key F12
 //     assert { turns_passed = 1 }
+//     repeat 10 until { battle_order = "fire" }
+//       ...
+//     end
 //
 // This is the format and its parser (headless); player.hpp plays it.
 
@@ -63,7 +66,9 @@ enum class Op : uint8_t {
     AssertPresent, AssertAbsent, AssertEnabled, AssertDisabled, AssertWindow, AssertNoWindow, AssertStep, Assert, AssertLog,
     AssertNoLog, AssertResult, AssertScreen, AssertLesson, AssertTurn,
     // Other.
-    Screenshot, Echo,
+    Screenshot, Echo, Print, Dump,
+    // Loops: repeat N [until {condition}] ... end.
+    Repeat, End,
 };
 
 struct Step {
@@ -74,12 +79,15 @@ struct Step {
     Target to;              // drag: where to
     int64_t number = 0;     // wait: frames; wait-step/assert-step: the step; wait-turn/assert-turn: the turn; wheel: notches
     std::string text;       // type: the text; key: the chord as written; windows, results, screens, lessons, log text, files
+    std::vector<std::string> facts;   // print: condition keys
     KeyChord chord;         // key
     bool shift = false, ctrl = false, alt = false;   // held during a click, a drag or a wheel turn
     bool refused = false;   // the tutorial input lock must refuse the press or key
+    bool optional = false;  // a pointer step whose target may not come: skipped then (after kOptionalTimeout frames)
     std::optional<learn::Condition> condition;      // wait-until, assert
     int timeout = 0;        // frames a wait (or a pointer step's target) may take
     int dragFrames = 8;     // drag: the moves between press and release
+    size_t jump = 0;        // repeat: the index of its end; end: the index of its repeat
 };
 
 struct Script {
@@ -91,6 +99,8 @@ struct Script {
 // The frames a wait takes at most unless the script says otherwise (`timeout N`,
 // or timeout=N on a step): 30 seconds at the fixed 60 frames a second.
 inline constexpr int kDefaultTimeout = 1800;
+// How long an optional step waits for its target unless it says otherwise.
+inline constexpr int kOptionalTimeout = 10;
 
 // Parses a script. Every problem is "file:line: message" in `errors`; the
 // script is returned only when there are none.
@@ -98,7 +108,7 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
 std::optional<Script> loadScript(const std::filesystem::path& path, std::vector<std::string>& errors);
 
 // One line of a script for a value: quoted when it needs to be.
-std::string quoted(std::string_view text);
+std::string quoteWord(std::string_view text);
 
 // "click tag:x" for messages: the step's verb.
 std::string_view opName(Op op);

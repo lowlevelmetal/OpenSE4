@@ -54,6 +54,7 @@ void onItem(ImGuiContext* ctx, ImGuiID id, const char* label, int /*flags*/) {
     if (!registry().on || !label || !ctx) return;
     const ImGuiLastItemData& last = ctx->LastItemData;
     if (last.ID != id) return;   // a window's own entry, or an item registered elsewhere
+    if (std::string_view(label) == "##classic") return;   // a classic button reports its own label (reportItem)
     add(label, last.Rect.Min, last.Rect.Max, (last.ItemFlags & ImGuiItemFlags_Disabled) != 0);
 }
 
@@ -64,8 +65,38 @@ std::string_view visibleLabel(std::string_view label) {
     return hash == std::string_view::npos ? label : label.substr(0, hash);
 }
 
+namespace {
+
+// A pattern with * (any run of characters) and ? (one character).
+bool glob(std::string_view text, std::string_view pattern) {
+    size_t t = 0, p = 0, star = std::string_view::npos, mark = 0;
+    while (t < text.size()) {
+        if (p < pattern.size() && (pattern[p] == '?' || pattern[p] == text[t])) {
+            ++t;
+            ++p;
+        } else if (p < pattern.size() && pattern[p] == '*') {
+            star = p++;
+            mark = t;
+        } else if (star != std::string_view::npos) {
+            p = star + 1;
+            t = ++mark;
+        } else {
+            return false;
+        }
+    }
+    while (p < pattern.size() && pattern[p] == '*') ++p;
+    return p == pattern.size();
+}
+
+} // namespace
+
 bool labelMatches(std::string_view label, std::string_view wanted) {
     if (wanted.empty()) return false;
+    // A pattern matches the label as shown (never a widget without one).
+    if (wanted.find('*') != std::string_view::npos) {
+        const std::string_view shown = visibleLabel(label);
+        return !shown.empty() && glob(shown, wanted);
+    }
     if (label == wanted) return true;
     const std::string_view shown = visibleLabel(label);
     if (!shown.empty() && shown == wanted) return true;

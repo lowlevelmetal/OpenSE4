@@ -1,0 +1,85 @@
+# Tutorial 3, "Research and construction", played through under the input lock
+# (docs/BUILDING.md "Input scripts"). The research areas are picked by their place in
+# the list of the stock data set.
+options --tutorial=research-and-construction --layout=1024x768 --size=1280x800
+
+wait-lesson research-and-construction
+# 1 Research and building.
+click item:Next in=lesson
+wait-step 2
+# 2 The Research window.
+click tag:command:research
+wait-window research
+wait-step 3
+# 3 Research points: an explanation.
+click item:Next in=lesson
+wait-step 4
+# 4 Choose projects: two cheap areas first (the 12th and 10th rows), then a long-term goal
+# (the first row, another planet type's colonization).
+click item:* in=research nth=12
+click item:* in=research nth=10
+click item:* in=research nth=1
+wait-step 5
+assert { research_queued = 3 }
+# 5 Your projects: switch Divide Pts Evenly off.
+click tag:research:divide-evenly
+wait-step 6
+assert { not = { option = "research-evenly" } }
+# 6 The Tech Tree.
+click tag:research:tech-tree
+wait-window tech-tree
+wait-step 7
+# 7 Close the windows: Esc closes the Tech Tree, then the Research window.
+key Escape
+wait-closed tech-tree
+key Escape
+wait-closed research
+wait-step 8
+# 8 Construction Queues.
+click tag:command:queues
+wait-window queues
+wait-step 9
+# 9 Open a queue: the homeworld's row (the only one).
+click item:##row in=queues
+wait-window set-queue
+wait-step 10
+# 10 Build something: the colony ship design (the third row of the Ships tab).
+click item:##row in=set-queue nth=3
+wait-step 11
+assert { construction_queued = 1 }
+# 11 How a queue builds: an explanation.
+click item:Next in=lesson
+wait-step 12
+# 12 Your colonies: close the queue and Construction Queues (Esc; the lesson panel covers
+# their Close buttons), then the Colonies command button.
+key Escape
+wait-closed set-queue
+key Escape
+wait-closed queues
+click tag:command:colonies
+wait-window colonies
+wait-step 13
+# 13 Your budget: Empire Status (over the Colonies window).
+click tag:command:empire-status
+wait-window empire-status
+wait-step 14
+# 14 End the turn: close the windows, End Turn and Yes. The cheap first project is done at the
+# end of this turn.
+key Escape
+wait-closed empire-status
+key Escape
+wait-closed colonies
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 1
+wait-step 15
+assert { techs_researched = 1 }
+# 15 New technology: the Log the turn opened tells it; read it, close it, Finish.
+wait-window log
+click tag:log:research
+click tag:log:close
+wait-closed log
+click item:Finish in=lesson
+wait-result done
+click item:"Keep Playing"
+wait-gone item:"Keep Playing"

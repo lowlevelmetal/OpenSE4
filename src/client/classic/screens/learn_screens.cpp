@@ -7,6 +7,7 @@
 #include "client/classic/frontend.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
+#include "client/script/items.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -91,6 +92,7 @@ void LearnView::lessons(const Painter& p, LearnHost& host, learn::LessonKind kin
             sel = l.slug;
             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) host.start(kind, l.slug);
         }
+        script::reportItem(l.title);   // input scripts find a lesson by its title
         const ImVec2 min = ImGui::GetItemRectMin();
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddText(ImVec2(min.x + p.px(4), min.y + p.px(2)), IM_COL32_WHITE, l.title.c_str());

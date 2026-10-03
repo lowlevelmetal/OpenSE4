@@ -26,7 +26,8 @@ struct Item {
 // The label as shown: "Name##col" shows "Name", "##up" nothing.
 std::string_view visibleLabel(std::string_view label);
 // Whether `wanted` names `label`: the label as written, the part shown, or
-// (for "##id") the hidden id.
+// (for "##id") the hidden id. A `wanted` with * is a pattern for the part
+// shown (* any run of characters, ? one), so "*" is any labelled widget.
 bool labelMatches(std::string_view label, std::string_view wanted);
 
 // Collecting on or off (and Dear ImGui's hooks with it).
