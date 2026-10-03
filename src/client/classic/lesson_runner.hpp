@@ -151,9 +151,11 @@ private:
     // (or a way back to them was).
     std::optional<size_t> activeSeen_;
     std::vector<std::string> leftOpen_;   // windowsAtStepStart()
+    std::vector<std::string> seenOpen_;   // the windows open at some time during the active step (checkRewind)
     int closedFrames_ = 0;                // checkRewind: frames a window of the step has been closed
     std::optional<size_t> rewoundTo_;     // the step the lesson went back to (its note shows until it is done)
     std::string rewoundNote_;
+    std::string rewoundWindow_;           // the window whose closing sent it back
     double activeSince_ = 0;
     double targetsSeen_ = 0;
     Recovery recovery_;

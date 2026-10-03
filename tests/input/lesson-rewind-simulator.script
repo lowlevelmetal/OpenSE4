@@ -1,7 +1,10 @@
 # The way back for tutorial 6's Combat Simulator (docs/LEARNING.md "Getting back"; docs/BUILDING.md
 # "Input scripts"): Esc is refused while the battle is set up (Designs lies under the simulator);
-# with Free Play the simulator closes and its setup is lost, so the lesson goes back to the step
-# that opens it, and the sides are set up again from Race 1.
+# with Free Play the simulator closes and its setup is lost, so the lesson goes back to the first
+# step that set it up (step 3: the Combat Simulator button of step 2 only opened it), and the
+# sides are set up again from Race 1. The same after the tactical battle: at step 13 a strategic
+# battle needs the setup, so closing the simulator goes back to step 3 again. At step 15
+# (Strategies, which needs no battle) it only shows the way back.
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=combat --layout=1024x768 --size=1280x800
 
@@ -21,18 +24,19 @@ click item:"Race 2" in=combat-simulator
 wait-step 5
 key Escape refused
 assert-window combat-simulator
-# Free Play (at 800x600 More shows it first): the simulator closes with its setup; back to step 2.
+# Free Play (at 800x600 More shows it first): the simulator closes with its setup; back to step 3.
 click item:More in=lesson optional
 click tag:lesson:free-play
 key Escape
 wait-closed combat-simulator
-wait-step 2
-wait-for item:"hint:The * window was closed*" in=lesson
+wait-step 3
+wait-for item:"hint:The Combat Simulator window was closed and what was set up in it was lost: the lesson went back to step 3. Press Simulator in Designs to open it again." in=lesson
 click item:More in=lesson optional
 click tag:lesson:free-play
+# Step 3 shows the way back: the Combat Simulator button in Designs.
 click tag:designs:simulator
 wait-window combat-simulator
-wait-step 3
+assert-step 3
 assert { simulator_owner = "race-1" }
 wait-for tag:combat-simulator:items:named
 click tag:combat-simulator:items:named
@@ -44,3 +48,56 @@ wait-for tag:combat-simulator:items:named
 click tag:combat-simulator:items:named
 wait-step 6
 assert { all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }
+# The tactical battle, as in tutorial-combat.script: the simulator comes back after it with
+# its setup.
+click tag:combat-simulator:tactical
+click tag:combat-simulator:begin
+wait-window tactical-combat
+wait-step 7
+click tag:tactical-combat:end-turn
+wait-step 8
+wheel tag:tactical-combat:map -12
+wait-for item:piece:enemy in=tactical-combat
+click item:Next in=lesson
+wait-step 9
+click item:piece:own in=tactical-combat nth=1
+click item:piece:enemy@50%,-50% in=tactical-combat
+wait-step 10
+repeat 15 until { battle_order = "fire" }
+  click item:piece:own in=tactical-combat nth=1 optional
+  click item:piece:enemy in=tactical-combat
+  click item:piece:enemy@50%,-50% in=tactical-combat
+  click item:piece:own in=tactical-combat nth=2 optional
+  click item:piece:enemy in=tactical-combat
+  click item:piece:enemy@50%,-50% in=tactical-combat
+  key E
+  wait 30
+end
+wait-step 12
+click item:Auto in=tactical-combat
+repeat 100 until { not = { window = "tactical-combat" } }
+  key E
+  wait 30
+  click item:OK in="Combat Complete" optional
+end
+wait-window combat-simulator
+wait-step 13
+assert { simulator_items = 3 }
+# Step 13 starts a strategic battle from the setup: with the simulator closed (Free Play), the
+# lesson goes back to step 3 and says so; the battles fought stay fought.
+click item:More in=lesson optional
+click tag:lesson:free-play
+key Escape
+wait-closed combat-simulator
+wait-step 3
+wait-for item:"hint:The Combat Simulator window was closed and what was set up in it was lost: the lesson went back to step 3. Press Simulator in Designs to open it again." in=lesson
+click item:More in=lesson optional
+click tag:lesson:free-play
+click tag:designs:simulator
+wait-window combat-simulator
+assert-step 3
+assert { not = { simulator_items = 1 } }
+wait-for tag:combat-simulator:items:named
+click tag:combat-simulator:items:named
+click tag:combat-simulator:items:named
+wait-step 4

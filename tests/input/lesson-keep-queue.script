@@ -1,0 +1,73 @@
+# Closing a window whose work the game keeps does not send the lesson back (docs/LEARNING.md
+# "Getting back"; docs/BUILDING.md "Input scripts"): tutorial 3. The research projects chosen at
+# step 4 and the colony ship queued at step 10 are the game's. When Research closes at step 5,
+# or the queue window at step 11 (Free Play on), the lesson stays at that step and only shows the
+# way back; nothing is chosen or queued twice.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --tutorial=research-and-construction --layout=1024x768 --size=1280x800
+
+wait-lesson research-and-construction
+click item:Next in=lesson
+wait-step 2
+click tag:command:research
+wait-window research
+wait-step 3
+click item:Next in=lesson
+wait-step 4
+click item:* in=research nth=12
+click item:* in=research nth=10
+click item:* in=research nth=1
+wait-step 5
+# Step 5 with Research closed: it stays, the projects with it.
+click item:More in=lesson optional
+click tag:lesson:free-play
+key Escape
+wait-closed research
+click item:More in=lesson optional
+click tag:lesson:free-play
+wait 10
+assert-step 5
+assert { research_queued = 3 }
+wait-for item:"hint:The Research window was closed. Press the Research button* to open it again." in=lesson
+click tag:command:research
+wait-window research
+assert-absent item:"hint:*" in=lesson
+click tag:research:divide-evenly
+wait-step 6
+assert { research_queued = 3 }
+click tag:research:tech-tree
+wait-window tech-tree
+wait-step 7
+key Escape
+wait-closed tech-tree
+key Escape
+wait-closed research
+wait-step 8
+click tag:command:queues
+wait-window queues
+wait-step 9
+click item:##row in=queues
+wait-window set-queue
+wait-step 10
+wait-for tag:set-queue:available:named
+click tag:set-queue:available:named
+wait-step 11
+assert { construction_queued = 1 }
+# Step 11 with the queue window closed: it stays; the queued ship stays queued, once.
+click item:More in=lesson optional
+click tag:lesson:free-play
+key Escape
+wait-closed set-queue
+click item:More in=lesson optional
+click tag:lesson:free-play
+wait 10
+assert-step 11
+assert { construction_queued = 1 }
+assert-absent item:"hint:* the lesson went back*" in=lesson
+wait-for item:"hint:The * window was closed. * to open it again." in=lesson
+click item:##row in=queues
+wait-window set-queue
+assert-step 11
+assert { construction_queued = 1 }
+click item:Next in=lesson
+wait-step 12

@@ -37,7 +37,7 @@ click tag:lesson:free-play
 key Escape
 wait-closed create-design
 wait-step 4
-wait-for item:"hint:The * window was closed*" in=lesson
+wait-for item:"hint:The Ship Design window was closed and what was set up in it was lost: the lesson went back to step 4." in=lesson
 click item:More in=lesson optional
 click tag:lesson:free-play
 # Step 4 again: Create, and only Ship.

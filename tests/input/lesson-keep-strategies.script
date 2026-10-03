@@ -1,0 +1,27 @@
+# Tutorial 6's Strategies step needs no battle set up (docs/LEARNING.md "Getting back";
+# docs/BUILDING.md "Input scripts"): started at step 15, the simulator opens by the way back
+# (Designs, then its Combat Simulator button); closed with Free Play on, the lesson stays at step 15
+# and only shows the way back again. Strategies then opens from the reopened, empty simulator.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --tutorial=combat:15 --layout=1024x768 --size=1280x800
+
+wait-lesson combat
+wait-step 15
+click tag:command:designs
+wait-window designs
+click tag:designs:simulator
+wait-window combat-simulator
+click item:More in=lesson optional
+click tag:lesson:free-play
+key Escape
+wait-closed combat-simulator
+click item:More in=lesson optional
+click tag:lesson:free-play
+wait 10
+assert-step 15
+wait-for item:"hint:The Combat Simulator window was closed. Press*" in=lesson
+click tag:designs:simulator
+wait-window combat-simulator
+click tag:combat-simulator:strategies
+wait-window strategies
+wait-step 16

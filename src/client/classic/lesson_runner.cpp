@@ -181,6 +181,7 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const L
         activeSeen_ = progress_.active();
         activeSince_ = targetsSeen_ = ui.time;
         leftOpen_ = facts.openWindows;
+        seenOpen_.clear();
         closedFrames_ = 0;
         spot_.reset();   // a new step chooses its place afresh (the old one is kept only against jitter)
         // A note about a click the step before refused is not about this one.
@@ -188,6 +189,11 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const L
         refusedKey_.clear();
         refusals_.clear();
     }
+    // The windows open at some time during the step (checkRewind): also one
+    // that opens after the step began, such as the Combat Simulator coming
+    // back when a battle in it ends.
+    for (const std::string& w : facts.openWindows)
+        if (std::find(seenOpen_.begin(), seenOpen_.end(), w) == seenOpen_.end()) seenOpen_.push_back(w);
     updateRecovery(ui, facts);
     const Prompts prompts = findPrompts(ui);
     drawPanel(ui, prompts);
@@ -308,10 +314,11 @@ void LessonRunner::checkRewind(const UiContext& ui, const learn::ClientFacts& fa
         return;
     }
     // A window the player opens (not a battle's), which the step works in and
-    // which was open when the step began, closed now; a step that waits for it
-    // to close (or for another to open in its place) is not left behind.
+    // which was open at some time during the step, closed now; a step that
+    // waits for it to close (or for another to open in its place) is not left
+    // behind.
     std::optional<std::string> gone;
-    for (const std::string& w : leftOpen_) {
+    for (const std::string& w : seenOpen_) {
         if (std::find(facts.openWindows.begin(), facts.openWindows.end(), w) != facts.openWindows.end()) continue;
         const learn::WindowInfo* info = learn::findWindow(w);
         if (!info || !info->openable || !learn::worksIn(*st, w) || (st->done && mentionsWindow(*st->done, w))) continue;
@@ -331,8 +338,9 @@ void LessonRunner::checkRewind(const UiContext& ui, const learn::ClientFacts& fa
     seen_ = 0;
     panelOpen_ = true;
     rewoundTo_ = to;
-    rewoundNote_ = std::format("The {} window was closed, and what was done in it with it: the lesson went back to the step that opens it.",
-                               windowTitle(*gone));
+    rewoundWindow_ = *gone;
+    rewoundNote_ = std::format("The {} window was closed and what was set up in it was lost: the lesson went back to step {}.",
+                               windowTitle(*gone), to + 1);
 }
 
 std::string LessonRunner::describe(const Recovery& r) const {
@@ -364,6 +372,9 @@ std::string LessonRunner::describe(const Recovery& r) const {
             const Press first = press(r.press, true);
             std::string how = first.verb + " " + first.what;
             if (!r.then.empty()) how += ", then " + press(r.then, false).what + ",";
+            // Closing it sent the lesson back here: say so, with the way back.
+            if (rewoundTo_ && *rewoundTo_ == progress_.active() && !progress_.completed(progress_.active()) && r.window == rewoundWindow_)
+                return std::format("{} {} to open it again", rewoundNote_, how);
             return std::format("The {} window was closed. {} to open it again", title(r.window), how);
         }
     }

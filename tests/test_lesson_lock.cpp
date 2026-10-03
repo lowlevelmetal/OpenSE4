@@ -413,6 +413,24 @@ TEST_CASE("lesson recovery: the way back to a closed or covered window") {
     CHECK(findRecovery(step({"tactical-combat:map"}, true), mainOnly, {}).kind == Recovery::Kind::None);
     // Only the lesson's own tags: nothing to recover.
     CHECK(findRecovery(step({"lesson:next"}, false), mainOnly, {}).kind == Recovery::Kind::None);
+
+    // The queue window closed over Construction Queues: its list (free) opens it
+    // again; the Build Queue order under Construction Queues is not the way back.
+    const std::vector<TaggedArea> queues{
+        {"panel:orders", box(0, 0, 400, 60)},
+        {"order:build-queue", box(300, 20, 330, 50)},
+        {"window:queues", box(200, 10, 900, 600)},
+        {"queues:list", box(220, 100, 880, 500)},
+        {"queues:close", box(780, 550, 880, 590)},
+    };
+    r = findRecovery(step({"set-queue:queue"}, false), queues, {"queues"});
+    CHECK(r.kind == Recovery::Kind::Reopen);
+    CHECK(r.press == "queues:list");
+    // With no free way back, closing the window over one is.
+    std::vector<TaggedArea> orderOnly(queues.begin(), queues.begin() + 3);
+    r = findRecovery(step({"set-queue:queue"}, false), orderOnly, {"queues"});
+    CHECK(r.kind == Recovery::Kind::Uncover);
+    CHECK(r.window == "queues");
 }
 
 TEST_CASE("lesson pager: an outlined order on another page of the order strip") {

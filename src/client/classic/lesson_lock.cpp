@@ -378,6 +378,9 @@ Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& ta
     };
     // A part on screen that a window covers, or a way to open its window again
     // that is on screen (two windows deep), in the order the step names them.
+    // A way back that can be pressed comes first: closing the window over
+    // another one (the order strip under Construction Queues) only when no
+    // free one is on screen (Construction Queues' list).
     for (std::string_view t : targets) {
         if (shownTag(tags, t)) {
             if (auto cover = coveringWindow(t, tags, openWindows)) return uncover(t, std::move(*cover));
@@ -385,10 +388,14 @@ Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& ta
         }
         const auto window = windowOf(t);
         if (!window || contains(openWindows, *window)) continue;
+        std::optional<Recovery> covered;
         const std::vector<std::string> openers = learn::openersOf(*window);
         for (const std::string& o : openers) {
             if (!shownTag(tags, o)) continue;
-            if (auto cover = coveringWindow(o, tags, openWindows)) return uncover(t, std::move(*cover));
+            if (auto cover = coveringWindow(o, tags, openWindows)) {
+                if (!covered) covered = uncover(t, std::move(*cover));
+                continue;
+            }
             return Recovery{Recovery::Kind::Reopen, std::string(t), std::string(*window), o, {}};
         }
         for (const std::string& o : openers) {
@@ -396,10 +403,14 @@ Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& ta
             if (!inner || contains(openWindows, *inner)) continue;
             for (const std::string& first : learn::openersOf(*inner)) {
                 if (!shownTag(tags, first)) continue;
-                if (auto cover = coveringWindow(first, tags, openWindows)) return uncover(t, std::move(*cover));
+                if (auto cover = coveringWindow(first, tags, openWindows)) {
+                    if (!covered) covered = uncover(t, std::move(*cover));
+                    continue;
+                }
                 return Recovery{Recovery::Kind::Reopen, std::string(t), std::string(*window), first, o};
             }
         }
+        if (covered) return *covered;
     }
     return {};
 }

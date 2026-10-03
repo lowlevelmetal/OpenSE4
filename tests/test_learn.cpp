@@ -1482,7 +1482,47 @@ TEST_CASE("learn progress: going back to an earlier step when a window closed") 
     CHECK(rewindStep(l, 4, "create-design") == 1);
     CHECK(rewindStep(l, 2, "create-design") == 1);
     CHECK(rewindStep(l, 1, "create-design") == 1);   // nothing before it opens it: stays
-    CHECK(rewindStep(l, 5, "designs") == 5);          // steps 1 to 4 do not work in Designs: none opened it before 5
+    CHECK(rewindStep(l, 5, "designs") == 5);          // Designs holds no work of its own: nothing to go back to
+    // Never past a step the game met: a fleet created, an item queued stay done.
+    Lesson g = l;
+    g.steps[2].done = condition("{ command = \"QueueAdd\" }");
+    CHECK(rewindStep(g, 4, "create-design") == 3);   // step 3 read the design; step 2 the game kept
+    CHECK(rewindStep(g, 3, "create-design") == 3);
+    // A window whose work is the game's (Fleet Transfer, Set Construction Queue) never rewinds.
+    CHECK(lostWithWindow("fleet-transfer").empty());
+    CHECK(lostWithWindow("set-queue").empty());
+    CHECK_FALSE(lostWithWindow("combat-simulator").empty());
+    CHECK_FALSE(lostWithWindow("communicate").empty());
+    CHECK(clientOnly(condition("{ all = [{ window = \"designs\" }, { battle_order = \"fire\" }, { simulator_items = 2 }] }")));
+    CHECK_FALSE(clientOnly(condition("{ command = \"CreateFleet\" }")));
+    CHECK_FALSE(clientOnly(condition("{ not = { option = \"research-evenly\" } }")));
+    // The simulator: a battle fought in it keeps the setup's steps reachable; a
+    // later step that starts another battle goes back to them, one that only
+    // presses Strategies does not.
+    Lesson sim;
+    sim.kind = LessonKind::Tutorial;
+    auto addSim = [&](std::vector<std::string> highlight, std::string_view done) {
+        Step st;
+        st.title = "s";
+        st.highlight = std::move(highlight);
+        st.done = condition(done);
+        sim.steps.push_back(std::move(st));
+    };
+    addSim({"designs:simulator"}, "{ window = \"combat-simulator\" }");                             // 0
+    addSim({"combat-simulator:items"}, "{ simulator_items = 2 }");                                   // 1
+    addSim({"combat-simulator:begin"}, "{ window = \"tactical-combat\" }");                          // 2
+    addSim({"tactical-combat:end-turn"}, "{ not = { window = \"tactical-combat\" } }");              // 3
+    addSim({"combat-simulator:strategic", "combat-simulator:begin"}, "{ window = \"strategic-combat\" }");  // 4
+    addSim({"combat-simulator:strategies"}, "{ window = \"strategies\" }");                          // 5
+    CHECK(usesWork(sim.steps[4], "combat-simulator"));
+    CHECK_FALSE(usesWork(sim.steps[5], "combat-simulator"));
+    CHECK_FALSE(usesWork(sim.steps[3], "combat-simulator"));
+    CHECK(rewindStep(sim, 4, "combat-simulator") == 1);
+    CHECK(rewindStep(sim, 5, "combat-simulator") == 5);
+    // Resuming a game (every window closed): a step that needs the battle set
+    // up goes back to the setup, and from there to the step opening the simulator.
+    CHECK(resumeStep(sim, 4) == 0);
+    CHECK(resumeStep(sim, 3) == 0);   // a battle is gone too: Begin opened it, in the simulator
     // A Close button is no work in a window.
     Step closer;
     closer.highlight = {"create-design:close"};

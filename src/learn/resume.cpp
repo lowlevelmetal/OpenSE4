@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <span>
 
 namespace opense4::learn {
 
@@ -58,23 +59,97 @@ bool opens(const Step& step, std::string_view window) {
     return false;
 }
 
+namespace {
+
+constexpr Fact kDesignerWork[] = {Fact::DesignComponents, Fact::DesignHullChosen, Fact::DesignTypeChosen, Fact::DesignNamed, Fact::DesignVehicle};
+constexpr Fact kSimulatorWork[] = {Fact::SimulatorOwners, Fact::SimulatorItems, Fact::SimulatorOwner};
+constexpr Fact kMessageWork[] = {Fact::DraftMessageType, Fact::DraftTreaty};
+
+// The buttons of such a window that do not use its work: the simulator's
+// Strategies opens the strategies whatever the battle set up.
+constexpr std::string_view kSimulatorFree[] = {"combat-simulator:strategies"};
+
+bool reads(const Condition& c, std::span<const Fact> facts) {
+    if (c.op != Condition::Op::Fact)
+        return std::any_of(c.children.begin(), c.children.end(), [&](const Condition& x) { return reads(x, facts); });
+    return std::find(facts.begin(), facts.end(), c.fact) != facts.end();
+}
+
+} // namespace
+
+std::span<const Fact> lostWithWindow(std::string_view window) {
+    if (window == "create-design") return kDesignerWork;
+    if (window == "combat-simulator") return kSimulatorWork;
+    if (window == "communicate") return kMessageWork;
+    return {};
+}
+
+bool usesWork(const Step& step, std::string_view window) {
+    if (lostWithWindow(window).empty()) return false;
+    const std::span<const std::string_view> free = window == "combat-simulator" ? std::span<const std::string_view>(kSimulatorFree)
+                                                                                : std::span<const std::string_view>();
+    for (const auto* list : {&step.highlight, &step.allow})
+        for (const std::string& tag : *list)
+            if (!tag.ends_with(":close") && windowOf(tag) == window && std::find(free.begin(), free.end(), tag) == free.end())
+                return true;
+    return false;
+}
+
+bool clientOnly(const Condition& c) {
+    if (c.op != Condition::Op::Fact) return std::all_of(c.children.begin(), c.children.end(), [](const Condition& x) { return clientOnly(x); });
+    switch (c.fact) {
+        case Fact::Window:
+        case Fact::Tab:
+        case Fact::Selected:
+        case Fact::Picking:
+        case Fact::MovementLines:
+        case Fact::DesignComponents:
+        case Fact::DesignHullChosen:
+        case Fact::DesignTypeChosen:
+        case Fact::DesignNamed:
+        case Fact::DesignVehicle:
+        case Fact::SimulatorOwners:
+        case Fact::SimulatorItems:
+        case Fact::SimulatorOwner:
+        case Fact::DraftMessageType:
+        case Fact::DraftTreaty:
+        // A battle in the Combat Simulator is the client's (a real one is fought in turns, which block).
+        case Fact::BattleBegun:
+        case Fact::BattleOrder:
+        case Fact::BattleTurn: return true;
+        default: return false;
+    }
+}
+
 size_t rewindStep(const Lesson& lesson, size_t active, std::string_view window) {
-    if (active >= lesson.steps.size()) return active;
-    size_t at = active;
-    while (at > 0 && worksIn(lesson.steps[at - 1], window) && !opens(lesson.steps[at - 1], window)) --at;
-    if (at > 0 && opens(lesson.steps[at - 1], window)) return at - 1;
-    return active;
+    const std::span<const Fact> lost = lostWithWindow(window);
+    if (active >= lesson.steps.size() || lost.empty() || !usesWork(lesson.steps[active], window)) return active;
+    size_t to = active;
+    for (size_t at = active; at-- > 0;) {
+        const Step& st = lesson.steps[at];
+        if (st.done && !clientOnly(*st.done)) break;   // the game kept what it did
+        if (st.done && reads(*st.done, lost)) to = at;
+    }
+    return to;
 }
 
 size_t resumeStep(const Lesson& lesson, size_t active) {
     if (lesson.steps.empty()) return 0;
     size_t at = std::min(active, lesson.steps.size() - 1);
-    while (at > 0) {
-        const std::vector<std::string_view> windows = stepWindows(lesson.steps[at]);
-        if (windows.empty() || !touches(lesson.steps[at - 1], windows)) break;
-        --at;
+    for (;;) {
+        while (at > 0) {
+            const std::vector<std::string_view> windows = stepWindows(lesson.steps[at]);
+            if (windows.empty() || !touches(lesson.steps[at - 1], windows)) break;
+            --at;
+        }
+        // The work a window held is gone with it: back to the step that set
+        // up what this one uses (a battle in the simulator), and from there
+        // to where the work in that window began.
+        size_t to = at;
+        for (std::string_view w : stepWindows(lesson.steps[at])) to = std::min(to, rewindStep(lesson, at, w));
+        if (to == at) return at;
+        at = to;
     }
-    return at;
 }
 
 uint64_t lessonFingerprint(const Lesson& lesson) {
