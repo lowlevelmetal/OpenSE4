@@ -4203,8 +4203,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       had none against our 12 %. With the original's rule, our computers won 4.1 decided
       battles away from colonies per empire and 25 turns instead of 5.0 and lost 5.9 ships
       in battle instead of 7.8.
-    - Game 10 widens the original's spread: 4.8 decided battles won away from colonies per
-      empire and 25 turns, so the five games with full records range from 2.1 to 4.8.
+    - Within the original's spread: with games 10 and 13, six original games won 2.1, 2.3,
+      3.3, 3.4, 3.4 and 4.8 decided battles away from colonies per empire and 25 turns
+      against our 5.0 (4.1 with the Defend (Short Term) fleet rule), and lost 3.8–8.0
+      attack ships in battle (four games) against our 6.1 (5.9). Defend (Short Term) took
+      62–94 % of turns 51–100 per game (70 % over the earlier five) against our 72 %.
     - The kinds of decided battles are the same: in two original games and 24 of ours,
       half and a third of them (two sides, away from colonies, turns 51–100) were armed
       ships on Seek orders meeting armed ships on Seek orders.
@@ -4230,7 +4233,7 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     1.9–2.2 in three games) and the colonies lost from 1.2 to 1.8 (the original 1.7–3.6 in
     five games). Attacks on strong colonies fail in the original as in ours: game 10 made 49
     that the colony survived, against colonies of a median 13,770 hit points with two unit
-    groups.
+    groups. How colonies change hands is question 77.
 70. **The second attack ship** (question 65). In the original, after the turn-2 redesign
     makes the first Attack Ship design obsolete, the ministers of turns 2 and 3 queue units
     and a colony ship but no attack ship, and the new design's first attack ship is queued
@@ -4286,13 +4289,15 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     rules").
 
     Turns 51–100, and the test's last details (confirmed: binary and observed, 2026-10-03;
-    spec 07 "The computer players' second round under a debugger"): game 10 was over the
-    soft cap in 20 % of turns 51–100 (2 % of turns 26–50), so
-    the three original games with this record have 14, 16 and 20 %, against our median of
-    11 % per game. The test's revenue is worked out afresh from the colonies at the
-    start-of-turn step, not taken from the last income step, and the product with M / 100 is
-    taken in single precision (§7.5, *Revenue* and the soft cap); both are small. What the
-    computers hold in turns 51–100 is question 76.
+    spec 07 "The computer players' second round under a debugger"): four original games
+    were over the soft cap in 14, 16, 20 and 30 % of turns 51–100 and in 0, 0, 2 and 6 % of
+    turns 26–50 (a fifth game, cut short, 13 % of turns 26–50), against our median of 11 %
+    per game in turns 51–100 and 1 % in turns 26–50. The share follows the attack ships an
+    empire holds (9.6 and 11.0 per empire-turn of turns 51–100 in games 10 and 13, ours
+    7.4), which the original's lower losses keep up. The test's revenue is worked out
+    afresh from the colonies at the start-of-turn step, not taken from the last income step,
+    and the product with M / 100 is taken in single precision (§7.5, *Revenue* and the soft
+    cap); both are small.
 72. **Details the scrap and fleet-leader rules leave open** (§7.5 *Scrap*, `AI_Fleets`).
     OpenSE4's choices since 2026-10-02 (inferred):
     - unit groups (fighters, satellites, mines and the like in space) are never scrap
@@ -4374,11 +4379,28 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     2.6–9.2 per empire (4.7). No rule difference is left to find in the first 25 turns
     beyond question 70.
 76. **Colonies after the Defend (Short Term) fleet rule** (spec 07 "The computer players'
-    second round under a debugger"). Per empire and 25 turns of turns 51–100 the original
-    founds or takes 4.5 colonies and loses 2.3 (five games); ours 3.8 and 1.2, and with the
-    original's fleet rule 4.1 and 1.8, so the net gain is the original's (2.3) but the
-    colonies held stay below it (15.3–15.6 at turn 100 against 17.0, 11.0 at turn 50 against
-    12.2), and the rule takes our time in Defend (Short Term) from 72 to 67 % of turns
-    51–100 (the original 70 %). To verify, with more debugger games: the colony ships built,
-    lost and used per empire and 25 turns from turn 26, and the soft-cap share of turns
-    51–100 per game, beside the same in ours with the rule.
+    second round under a debugger"). With the original's fleet rule our computers lose as
+    many colonies as the original's but hold 15.3 at turn 100 against 17.0. To verify:
+    colonies founded and lost per empire and 25 turns, and the colony ships built and used,
+    beside ours with the rule.
+
+    **In part** (observed, 2026-10-03; six original games against 48 + 48 of ours). Every
+    colony the original lost in turns 51–100 went in a battle at its planet (none captured,
+    none lost otherwise; 1.7–3.1 per empire and 25 turns, nearly all of 100M people or
+    less), and nearly every colony it gained was founded on a free planet (2.8–6.3, 4.5 over
+    the six games; under 0.3 on a planet emptied in the five turns before). Ours lost 1.2 and
+    founded 3.8, and with the fleet rule 1.8 and 4.1. Battles at an enemy colony per empire
+    and 25 turns (sector and turn counted once): the original 3.0–4.9, ours 2.0, with the
+    rule 1.8, of which 2.2, 1.9, 1.9 and 2.9 (four games) ended with the colony gone, ours
+    1.0 and with the rule 1.5. Per enemy colony in the defend lists and per turn, the
+    original fought 4–14 % of them (four games), ours 3 % and with the rule 6 %. What is
+    left is the number of enemy colonies inside the territories, question 77.
+77. **Enemy colonies inside the territories** (question 76). The original's defend lists
+    held 1.2–3.3 enemy colony entries per empire-turn of turns 51–100 (four games), ours 2.4
+    and with the Defend (Short Term) fleet rule 1.2 (more of them go); the original founds
+    more colonies (4.5 against 4.1 per empire and 25 turns) from as many colony ships (5.6,
+    5.5 and 4.1 per empire in turns 1–25, 26–50 and per 25 turns of 51–100, four games;
+    ours 5.5, 6.4 and 4.5). To verify: per colony ship of the original, its target (inside
+    our territory, another empire's, or free space), the turns it took and whether it was
+    lost on the way, beside ours; and how often each empire settles inside a neighbour's
+    claimed systems.
