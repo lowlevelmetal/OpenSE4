@@ -309,6 +309,21 @@ std::string colonyTypeName(std::string_view surface);  // "Colony (Rock)"
 // and the game's breathable/home-type options allow it.
 bool canSettle(const Rules& r, const GameState& s, const Empire& e, const SpaceObject& planet);
 bool hasColonyModule(const Rules& r, const Empire& e, std::string_view surface);
+// The empire's queue list (spec 05 §7.5 "Placement", confirmed: binary,
+// question 60): every queue it owns, system by system in system order and,
+// within a system, in the order of the system's own object list: the planets
+// (in the game's object order) before the ships, which follow the order they
+// were placed in or entered the system (Vehicle::arrival; a planet made
+// during play also comes first, inferred, question 64). Every colony has a
+// queue, a ship one only when it carries a Space Yard component (spec 02
+// §6.1). The Defense Base placement and the Scrap minister's scrap place use
+// it (ai_economy.cpp).
+std::vector<cmd::QueueTarget> queueList(const Planner& p);
+// A working space yard at a queue owner (spec 05 §7.5 "Placement",
+// confirmed: binary, question 60): an uncloaked colony's yard facility, or
+// the yard component of an uncloaked ship that is neither destroyed nor
+// mothballed.
+bool workingYard(const Planner& p, const cmd::QueueTarget& t);
 // Builds the design of a template the empire would make now (spec 05 §7.5), or nullopt.
 std::optional<Design> buildDesign(const Rules& r, const GameState& s, const Empire& e, const DesignTemplate& t);
 // Abilities whose parts the Design minister ranks by their Amount 1 (spec

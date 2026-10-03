@@ -16,6 +16,7 @@
 #include <map>
 #include <optional>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace opense4::game::ai::detail {
@@ -271,14 +272,22 @@ void planFleets(Planner& p) {
         }
         keep.push_back(fid);
     }
-    // At most one new fleet per turn, around the newest idle, fit ship outside
-    // fleets among those that may lead one (canLeadFleet; inferred, spec 05 Q72).
+    // At most one new fleet per turn (confirmed: binary, spec 05 Q72): the
+    // search walks the empire's vehicle list backwards from its end (slot
+    // order, objectOrderKey), skips the vehicles already in a fleet, and takes
+    // the first fit one that may lead a fleet (canLeadFleet). Nothing asks
+    // that it be idle: forming the fleet clears its orders.
     if (static_cast<int>(keep.size()) < wanted) {
+        std::vector<VehicleId> list = p.ownVehicles(Minister::Fleets);
+        std::sort(list.begin(), list.end(), [&](VehicleId a, VehicleId b) {
+            return std::pair(objectOrderKey(*p.st.vehicle(a)), a) > std::pair(objectOrderKey(*p.st.vehicle(b)), b);
+        });
         std::optional<VehicleId> leader;
-        for (VehicleId id : p.ownVehicles(Minister::Fleets)) {
+        for (VehicleId id : list) {
             const Vehicle* v = p.st.vehicle(id);
-            if (!v || v->fleet.valid() || !p.idle(*v) || unfit(p, *v) || !canLeadFleet(p, *v)) continue;
-            if (!leader || id > *leader) leader = id;
+            if (!v || v->fleet.valid() || unfit(p, *v) || !canLeadFleet(p, *v)) continue;
+            leader = id;
+            break;
         }
         if (leader && p.emit(cmd::CreateFleet{{}, {*leader}})) {
             const FleetId fid = p.st.fleets.back().id;
@@ -300,10 +309,13 @@ void planFleets(Planner& p) {
     std::vector<uint8_t> attack(keep.size(), 0);
     for (int i = 1; i <= n; ++i) attack[static_cast<size_t>(i - 1)] = (i % 2 == 1) && xmath::Ext((i + 1) / 2) < attackShare;
 
-    // Recruits: idle ships outside fleets whose AI jump count from the fleet
-    // is below 4, so within 1 real jump (spec 05 §7.2 *Jumps*). They join at
-    // once at the fleet's spot; otherwise they get a Join Fleet order, which
-    // chases the fleet until it joins, and count toward its size from then on.
+    // Recruits (confirmed: binary): ships outside fleets and without a Join
+    // Fleet order, fit, that the fleet could take, whose AI jump count from
+    // the fleet is below 4, so within 1 real jump (spec 05 §7.2 *Jumps*).
+    // Nothing asks that they be idle. They join at once at the fleet's spot;
+    // otherwise their orders are cleared and they get a Join Fleet order,
+    // which chases the fleet until it joins, and count toward its size from
+    // then on.
     for (size_t k = 0; k < keep.size(); ++k) {
         const Fleet* f = p.st.fleet(keep[k]);
         const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
@@ -318,7 +330,8 @@ void planFleets(Planner& p) {
         for (VehicleId id : p.ownVehicles(Minister::Fleets)) {
             if (size >= members) break;
             const Vehicle* v = p.st.vehicle(id);
-            if (!v || v->fleet.valid() || !p.idle(*v) || unfit(p, *v)) continue;
+            if (!v || v->fleet.valid() || unfit(p, *v)) continue;
+            if (std::any_of(v->orders.begin(), v->orders.end(), [](const Order& o) { return o.kind == OrderKind::JoinFleet; })) continue;
             if (defenceLed ? p.info(v->design).role != Role::Defense : !attackMaterial(p, *v)) continue;
             if (!(aiJumpCount(jumps[v->location.system.index()]) < 4)) continue;
             if (v->location == at) {
@@ -1550,18 +1563,26 @@ namespace {
 // soft cap. The candidates are the empire's vehicles not of a colony-ship
 // design type: every one that can move (maximum movement above 0, not
 // mothballed), wherever it is, and every one that cannot (bases, mothballed
-// ships) only where the empire has a space yard in its sector. The one whose
-// design has the earliest creation date is scrapped where it stands when a
-// yard is there, else ordered to Move To the nearest sector with a yard of
-// ours, by travel, and then to Scrap; when no yard is found, nothing is
-// scrapped that turn. It gets no other orders that turn.
+// ships) only where the empire has a space yard in its sector. Unit groups
+// have no design and are never candidates. The one whose design has the
+// earliest creation date goes.
 // Ties (confirmed: binary): the dates are whole turns, compared strictly, so
 // the first candidate met wins, and the candidates are met in the empire's
 // vehicle list, which follows the game's one object list by slot
 // (objectOrderKey, spec 03 §19 Q62), not GameState::vehicles. Nothing else
-// breaks a tie. OpenSE4 choices (inferred, spec 05 Q72): unit groups are
-// never candidates; a candidate in a fleet leaves it first, as the Scrap
-// order needs; a cloaked one is not scrapped, and no other is tried.
+// breaks a tie.
+// The scrap place (confirmed: binary) is the nearest of the empire's queue
+// owners with a working space yard (queueList, workingYard), by the
+// ministers' travel distance from the candidate (findPathToNearest), the
+// earlier in the queue list on a tie; with none, nothing is scrapped that
+// turn. The Move To (only when the candidate can move and the place is
+// another sector) and the Scrap go straight onto the candidate's own list
+// (cmd::Scrap with moveFirst), whether or not it is cloaked or busy; the
+// Scrap order makes its own test when it is carried out, so a cloaked one is
+// not scrapped then. It gets no other orders that turn. A candidate in a
+// fleet leaves it first: what a Scrap at the head of a fleet member's list
+// does to its fleet is open (question 74), and OpenSE4 keeps its earlier
+// choice there (inferred).
 void scrapOldest(Planner& p) {
     std::vector<VehicleId> list = p.ownVehicles(Minister::Scrap);
     std::sort(list.begin(), list.end(), [&](VehicleId a, VehicleId b) {
@@ -1584,19 +1605,15 @@ void scrapOldest(Planner& p) {
     }
     if (!oldest) return;
     const VehicleId id = *oldest;
-    const Vehicle& v = *p.st.vehicle(id);
-    if (v.status == VehicleStatus::Cloaked) return;   // the Scrap order's test would fail (spec 03 §15)
-    cmd::Scrap order{id, {}, -1, {}};
-    if (!scrapYardAt(p.r, p.st, p.id, v.location)) {
-        std::vector<Location> goals;
-        for (const Yard& y : ownYards(p))
-            if (y.ship != id) goals.push_back(y.at);
-        const auto near = nearestByTravel(p, v.location, goals);
-        if (!near) return;
-        order.moveFirst = goals[near->goal];
+    std::vector<Location> places;
+    for (const cmd::QueueTarget& t : queueList(p)) {
+        if (!workingYard(p, t)) continue;
+        places.push_back(t.vehicle.valid() ? p.st.vehicle(t.vehicle)->location : locationOf(p.st.galaxy, t.planet));
     }
-    if (v.fleet.valid()) p.emit(cmd::LeaveFleet{id});
-    if (p.emit(order)) p.busy.insert(id);
+    const auto near = nearestByTravel(p, p.st.vehicle(id)->location, places);
+    if (!near) return;
+    if (p.st.vehicle(id)->fleet.valid()) p.emit(cmd::LeaveFleet{id});
+    if (p.emit(cmd::Scrap{id, {}, -1, places[near->goal]})) p.busy.insert(id);
 }
 
 } // namespace

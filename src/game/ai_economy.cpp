@@ -608,7 +608,7 @@ private:
     // (spec 02 §6.1): the commands refuse such an item, so the builder counts
     // it and spends on it without queueing anything.
     bool placeDefenseBase(DesignId design) {
-        const std::vector<cmd::QueueTarget> list = queueList();
+        const std::vector<cmd::QueueTarget> list = queueList(p_);
         if (list.empty()) return false;
         int64_t queuedBases = lostBases_;  // an item counts as many bases as it builds (inferred, spec 05 Q60)
         for (const cmd::QueueTarget& t : list)
@@ -619,7 +619,7 @@ private:
         size_t k = 0;
         bool roomy = false;
         for (const cmd::QueueTarget& t : list) {
-            if (!workingYard(t)) continue;
+            if (!workingYard(p_, t)) continue;
             ++k;
             if (t.planet.valid() && basesAt(locationOf(p_.st.galaxy, t.planet)) + queuedBases <= 2) roomy = true;
         }
@@ -642,47 +642,6 @@ private:
         budget_ -= min(cost, rate);
         count(design, 1);
         return true;
-    }
-
-    // The empire's queue list (spec 05 §7.5 "Placement", confirmed: binary,
-    // question 60): every queue it owns, system by system in system order
-    // and, within a system, in the order of the system's own object list: the
-    // planets (in the game's object order) before the ships, which follow the
-    // order they were placed in or entered the system (Vehicle::arrival; a
-    // planet made during play also comes first, inferred, question 64). Every
-    // colony has a queue, a ship one only when it carries a Space Yard
-    // component (spec 02 §6.1).
-    std::vector<cmd::QueueTarget> queueList() const {
-        std::vector<std::tuple<uint32_t, int, uint64_t, cmd::QueueTarget>> keyed;
-        for (const auto& c : p_.st.colonies)
-            if (c && c->owner == p_.id)
-                keyed.emplace_back(p_.st.galaxy.object(c->planet).system.value, 0, objectOrderKey(p_.st, c->planet), cmd::QueueTarget{c->planet, {}});
-        for (const Vehicle& v : p_.st.vehicles)
-            if (v.owner == p_.id && v.count > 0 && carriesYard(v)) keyed.emplace_back(v.location.system.value, 1, v.arrival, cmd::QueueTarget{{}, v.id});
-        std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) {
-            return std::tuple(std::get<0>(a), std::get<1>(a), std::get<2>(a)) < std::tuple(std::get<0>(b), std::get<1>(b), std::get<2>(b));
-        });
-        std::vector<cmd::QueueTarget> out;
-        for (const auto& k : keyed) out.push_back(std::get<3>(k));
-        return out;
-    }
-
-    bool carriesYard(const Vehicle& v) const {
-        for (const DesignEntry& en : p_.st.design(v.design).entries)
-            if (hasAbility(p_.r.componentAbilities(en.component), AbilityKind::SpaceYard)) return true;
-        return false;
-    }
-
-    // A working space yard (spec 05 §7.5 "Placement", confirmed: binary,
-    // question 60): an uncloaked colony's yard facility, or the yard component
-    // of an uncloaked ship that is neither destroyed nor mothballed.
-    bool workingYard(const cmd::QueueTarget& t) const {
-        if (t.vehicle.valid()) {
-            const Vehicle* v = p_.st.vehicle(t.vehicle);
-            return v && v->status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p_.r, p_.st, *v);
-        }
-        const Colony* c = p_.st.colony(t.planet);
-        return c && colonyHasWorkingYard(p_.r, *c);
     }
 
     const ConstructionQueue* queueOf(const cmd::QueueTarget& t) const {
@@ -755,6 +714,40 @@ private:
 };
 
 } // namespace
+
+namespace {
+
+bool carriesYard(const Planner& p, const Vehicle& v) {
+    for (const DesignEntry& en : p.st.design(v.design).entries)
+        if (hasAbility(p.r.componentAbilities(en.component), AbilityKind::SpaceYard)) return true;
+    return false;
+}
+
+} // namespace
+
+std::vector<cmd::QueueTarget> queueList(const Planner& p) {
+    std::vector<std::tuple<uint32_t, int, uint64_t, cmd::QueueTarget>> keyed;
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id)
+            keyed.emplace_back(p.st.galaxy.object(c->planet).system.value, 0, objectOrderKey(p.st, c->planet), cmd::QueueTarget{c->planet, {}});
+    for (const Vehicle& v : p.st.vehicles)
+        if (v.owner == p.id && v.count > 0 && carriesYard(p, v)) keyed.emplace_back(v.location.system.value, 1, v.arrival, cmd::QueueTarget{{}, v.id});
+    std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) {
+        return std::tuple(std::get<0>(a), std::get<1>(a), std::get<2>(a)) < std::tuple(std::get<0>(b), std::get<1>(b), std::get<2>(b));
+    });
+    std::vector<cmd::QueueTarget> out;
+    for (const auto& k : keyed) out.push_back(std::get<3>(k));
+    return out;
+}
+
+bool workingYard(const Planner& p, const cmd::QueueTarget& t) {
+    if (t.vehicle.valid()) {
+        const Vehicle* v = p.st.vehicle(t.vehicle);
+        return v && v->status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, *v);
+    }
+    const Colony* c = p.st.colony(t.planet);
+    return c && colonyHasWorkingYard(p.r, *c);
+}
 
 void planFacilities(Planner& p, bool firstPass) {
     std::vector<ObjectId> planets;

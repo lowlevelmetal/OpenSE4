@@ -2045,11 +2045,10 @@ binary).
     ships, mine sweepers, a carrier, layers) did so on a turn its empire was over the soft
     cap, and no base was scrapped: an old attack ship far from a yard is chosen before a
     base at a yard.
-    OpenSE4 follows this since 2026-10-02 (`planScrap`, `ai_military.cpp`): a candidate at
-    a yard is scrapped where it stands (`cmd::Scrap`), and one elsewhere gets the Move To
-    and the Scrap in one command (`cmd::Scrap` with `moveFirst`, which only the ministers
-    give); the nearest yard is found as the Repair minister finds it. Its own choices are
-    question 72. The engine used to take only ships already at a yard, so bases, which
+    OpenSE4 follows this since 2026-10-02 (`planScrap`, `ai_military.cpp`): the candidate
+    gets the Move To and the Scrap in one command (`cmd::Scrap` with `moveFirst`, the scrap
+    place, which only the ministers give); since 2026-10-03 the place and the orders follow
+    *Candidates and the scrap place* below (question 72). The engine used to take only ships already at a yard, so bases, which
     always sit at yards, went first: its computers scrapped 0.7 bases per empire in 100
     turns of the 1.0 they built (spec 07 "Pace after the scrap, cap and fleet rules").
     - *Ties* (confirmed: binary). A design's creation date is the game date of the turn it
@@ -2078,11 +2077,15 @@ binary).
       from the candidate, the earlier in that list on a tie; with none, nothing is scrapped
       that turn. The two orders are put straight onto the vehicle's own order list, the Move
       To (only when it can move and the place is another sector) and then the Scrap, without
-      the checks the player's Scrap command makes. The engine differs (question 72): a
-      candidate in a fleet leaves it first (`cmd::LeaveFleet`) and a cloaked one is passed
-      over, since our Scrap command refuses both; the nearest yard is the Repair minister's,
-      in that minister's visiting order. What a Scrap order at the head of a fleet member's
-      list does to the rest of its fleet in the original is question 74.
+      the checks the player's Scrap command makes. OpenSE4 follows this since 2026-10-03
+      (`scrapOldest`, `ai_military.cpp`; the place from `queueList` and `workingYard`,
+      `ai_economy.cpp`, by `findPathToNearest`; `cmd::Scrap` with `moveFirst` sets the list
+      without the window's checks, and the Scrap order makes its test when carried out, so
+      a cloaked candidate gets the orders but is not scrapped, as question 74 reads it), but
+      for one choice: a candidate in a fleet leaves it first (`cmd::LeaveFleet`), since what
+      a Scrap order at the head of a fleet member's list does to the rest of its fleet in
+      the original is question 74 (inferred). It used to pass a cloaked candidate over and
+      take the nearest yard as the Repair minister finds it.
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -2306,10 +2309,10 @@ binary).
     vehicle list backwards from its end (slot order, §7.5 *Scrap*), skips vehicles already
     in a fleet and takes the first that passes either test; "fit" is the unavailability test
     of the fleets (damage, a missing operating part, an armed type with no strength), and
-    nothing asks that the ship be idle (confirmed: binary). The engine differs: `planFleets`
-    (`canLeadFleet`, `ai_military.cpp`) takes the newest by vehicle id (creation order, not
-    slot order) and only an idle ship, so a ship with a Join Fleet or other standing order
-    is never a leader in ours. It used to form a fleet around any fit ship, troop transports
+    nothing asks that the ship be idle (confirmed: binary). OpenSE4 follows this since
+    2026-10-03 (`planFleets`, `canLeadFleet`, `ai_military.cpp`); it used to take the newest
+    idle ship by vehicle id (creation order, not slot order), so a ship with a Join Fleet
+    or other standing order was never a leader. It used to form a fleet around any fit ship, troop transports
     and empty carriers included: 7 % of its fleets were troop transports alone and 6 %
     carriers alone (fleet-turns of turns 51–100), against none and 1 % in one game of the
     original, and such fleets went to fight and draw (spec 07 "Battles, bases and the first
@@ -2333,9 +2336,9 @@ binary).
       is ordered. OpenSE4 follows this since 2026-10-02: the order is `OrderKind::JoinFleet`
       (the fleet in `amount`), and `planFleets` counts the ships that carry one for a fleet
       among its members. A recruit also waits, rather than fails, when a hazard, a busy yard
-      or a blocked way stops its step (inferred from "fails only when"). The engine differs:
-      `planFleets` (`ai_military.cpp`) recruits only idle ships (within 1 jump since
-      2026-10-03, within 3 before).
+      or a blocked way stops its step (inferred from "fails only when"). Since 2026-10-03
+      `planFleets` (`ai_military.cpp`) follows the rest too; it used to recruit only idle
+      ships, within 3 jumps.
     - Observed under a debugger (spec 07 "Pace observed under a debugger"): from turn 41
       on, 74–78 % of the original's attack ships were in fleets, against 44–51 % in ours;
       an empire with 46 ships kept six fleets of 7, 7, 6, 6, 2 and 1 attack ships, while our
@@ -4342,6 +4345,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     the search: it walks the vehicle list from its end, skips ships in fleets and takes the
     first that passes the attack or the defence test, with no idle test (§7.5 `AI_Fleets`).
     What a Scrap at the head of a fleet member's list does to its fleet is question 74.
+    OpenSE4 follows the answer since 2026-10-03, and the recruits' rule of the same round
+    (no idle test, §7.5 `AI_Fleets` *Size*); while question 74 is open a candidate in a
+    fleet still leaves it before it gets its orders (inferred).
 73. **Details the net income rule leaves open** (§7.5 *Net income*). OpenSE4's choices
     since 2026-10-02 (inferred):
     - the start-of-turn step works the figure out when its ministers after Politics start;

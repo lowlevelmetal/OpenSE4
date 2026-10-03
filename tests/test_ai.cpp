@@ -2466,6 +2466,9 @@ TEST_CASE("ai: recruits away from the fleet get a Join Fleet order and count tow
     REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {leader}}).ok);
     const FleetId fleet = s.fleets.back().id;
     for (int i = 0; i < 7; ++i) addTestVehicle(s, r, warship, away);
+    // Supplies for many moves: the Resupply minister leaves them alone.
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == me) v.supply = 1'000'000;
     // 8 vehicles, one fleet with 50 %: four members, so three recruits.
     auto joins = [&](const std::vector<Command>& cmds) {
         int n = 0;
@@ -5927,24 +5930,88 @@ TEST_CASE("ai: over the soft cap the oldest design goes: a ship wherever it is, 
         REQUIRE(applyAll(r, copy, me, cmds).empty());
         CHECK(copy.vehicle(veteran)->orders == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
     }
-    // A base at a yard whose design is older goes first, where it stands.
+    // A base at a yard whose design is older goes first, where it stands: the
+    // scrap place is its own sector, and only the Scrap goes on its list.
     s.design(fortress).createdTurn = 1;
     cmds = plan(true);
     REQUIRE(firstOf<cmd::Scrap>(cmds));
     CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == fort);
-    CHECK_FALSE(firstOf<cmd::Scrap>(cmds)->moveFirst.system.valid());
+    CHECK(firstOf<cmd::Scrap>(cmds)->moveFirst == home);
+    {
+        GameState copy = s;
+        REQUIRE(applyAll(r, copy, me, cmds).empty());
+        CHECK(copy.vehicle(fort)->orders == std::vector<Order>{Order{OrderKind::Scrap, home}});
+    }
     // A base away from a yard is no candidate.
     s.vehicle(fort)->location = away;
     cmds = plan(true);
     REQUIRE(firstOf<cmd::Scrap>(cmds));
     CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == veteran);
-    // A candidate in a fleet leaves it first, as the Scrap order needs (inferred, Q72).
+    // Nothing asks whether the candidate is cloaked or busy (spec 05 Q72): the
+    // orders go straight onto its list, and the Scrap makes its own test when
+    // it is carried out.
+    s.vehicle(veteran)->status = VehicleStatus::Cloaked;
+    s.vehicle(veteran)->orders = {Order{OrderKind::Sentry}};
+    cmds = plan(true);
+    REQUIRE(firstOf<cmd::Scrap>(cmds));
+    CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == veteran);
+    {
+        GameState copy = s;
+        REQUIRE(applyAll(r, copy, me, cmds).empty());
+        CHECK(copy.vehicle(veteran)->orders == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
+    }
+    s.vehicle(veteran)->status = VehicleStatus::Normal;
+    s.vehicle(veteran)->orders.clear();
+    // A candidate in a fleet leaves it first: what a Scrap does to a fleet is
+    // open (spec 05 Q74), so OpenSE4 keeps its choice (inferred).
     REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {veteran}}).ok);
     cmds = plan(true);
     REQUIRE(firstOf<cmd::LeaveFleet>(cmds));
     CHECK(firstOf<cmd::LeaveFleet>(cmds)->vehicle == veteran);
     CHECK(countOf<cmd::Scrap>(cmds) == 1);
     CHECK(applyAll(r, s, me, cmds).empty());
+}
+
+TEST_CASE("ai: the scrap place is the nearest queue owner with a working yard, the earlier in the queue list on a tie") {
+    // Spec 05 §7.5 *Scrap* (confirmed: binary, question 72).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    s.turn = 12;
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const std::initializer_list<std::string_view> crew{"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Laser"};
+    const DesignId oldShip = typedDesign(s, r, me, "Old Hammer", "Test Frigate", crew, "Attack Ship", 2);
+    const DesignId yardShip = typedDesign(s, r, me, "Dock", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Yard Module"},
+                                          "Space Yard Ship", 9);
+    // A yard ship two squares from the candidate, the homeworld's yard farther off.
+    const int dx = home.sector.x < 6 ? 1 : -1;
+    const Location near{home.system, Sector{home.sector.x + 6 * dx, home.sector.y}};
+    const Location candidateAt{home.system, Sector{home.sector.x + 8 * dx, home.sector.y}};
+    const VehicleId dock = addTestVehicle(s, r, yardShip, near).id;
+    const VehicleId veteran = addTestVehicle(s, r, oldShip, candidateAt).id;
+    auto place = [&]() -> std::optional<Location> {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        p.capUpkeep = Resources{1'000'000, 1'000'000, 1'000'000};
+        ai::detail::planScrap(p);
+        const auto cmds = p.report().commands;
+        const cmd::Scrap* c = firstOf<cmd::Scrap>(cmds);
+        if (!c) return std::nullopt;
+        CHECK(c->vehicle == veteran);
+        return c->moveFirst;
+    };
+    CHECK(place() == near);
+    // A yard ship whose yard does not work (mothballed) is no scrap place.
+    s.vehicle(dock)->status = VehicleStatus::Mothballed;
+    CHECK(place() == home);
+    s.vehicle(dock)->status = VehicleStatus::Normal;
+    // Equally near: the homeworld's queue comes first in the queue list
+    // (planets before ships in a system).
+    s.vehicle(dock)->location = home;
+    s.vehicle(veteran)->location = home;
+    CHECK(place() == home);
 }
 
 TEST_CASE("ai: a new fleet forms around a ship that can move and that a fleet could take, never a troop transport or boarding ship") {
@@ -5996,6 +6063,15 @@ TEST_CASE("ai: a new fleet forms around a ship that can move and that a fleet co
     s.removeDeadVehicles();
     const VehicleId hammer = addTestVehicle(s, r, addWarship(s, r, me, "Hammer"), home).id;
     addTestVehicle(s, r, trooper, home);
+    CHECK(leader() == hammer);
+    // The search walks the vehicle list back from its end, in slot order, and
+    // asks nothing about orders (spec 05 Q72): the ship in the later slot
+    // leads, busy or not, whatever the vehicle ids.
+    const VehicleId anvil = addTestVehicle(s, r, addWarship(s, r, me, "Anvil"), home).id;
+    REQUIRE(s.vehicle(anvil)->slot > s.vehicle(hammer)->slot);
+    s.vehicle(anvil)->orders = {ai::detail::moveOrder(home)};
+    CHECK(leader() == anvil);
+    std::swap(s.vehicle(anvil)->slot, s.vehicle(hammer)->slot);
     CHECK(leader() == hammer);
 }
 
