@@ -461,6 +461,61 @@ EmpireDraft draftFromPreset(const game::Rules& r, const ruleset::RacePreset& p, 
     return d;
 }
 
+EmpireDraft blankDraft(const game::Rules& r, const ruleset::RacePreset* style) {
+    EmpireDraft d;
+    if (!style)
+        for (const auto& p : r.racePresets())
+            if (!p.neutral) {
+                style = &p;
+                break;
+            }
+    d.setup.kind = game::PlayerKind::Human;
+    game::Race& race = d.race;   // every characteristic at 100 %, no trait
+    if (style) {
+        d.setup.preset = style->folder;
+        race.style = style->folder;
+        race.designNameFile = style->designNameFile;
+    }
+    auto byName = [](const auto& list, std::string_view name) -> uint32_t {
+        for (uint32_t i = 0; i < list.size(); ++i)
+            if (keysEqual(list[i].name, name)) return i;
+        return 0;
+    };
+    race.culture = byName(r.data().cultures, "Neutral");
+    race.happinessModel = byName(r.data().happinessModels, "Peaceful");
+    const auto& demeanors = r.data().names.demeanors;
+    race.demeanor = demeanors.empty() ? std::string("Neutral") : demeanors.front();
+    for (const std::string& dm : demeanors)
+        if (keysEqual(dm, "Neutral")) race.demeanor = dm;
+    const std::vector<std::string> atm = atmospheresInSetupOrder(r), surf = surfacesInSetupOrder(r);
+    race.atmosphere = atm.empty() ? std::string("Oxygen") : atm.front();
+    for (const std::string& a : atm)
+        if (keysEqual(a, "Oxygen")) race.atmosphere = a;
+    race.nativeSurface = surf.empty() ? std::string("Rock") : surf.front();
+    for (const std::string& s : surf)
+        if (keysEqual(s, "Rock")) race.nativeSurface = s;
+    return d;
+}
+
+namespace {
+
+std::vector<std::string> inOrder(std::vector<std::string> all, std::initializer_list<std::string_view> order) {
+    std::vector<std::string> out;
+    for (std::string_view want : order)
+        for (const std::string& a : all)
+            if (keysEqual(a, want)) addUnique(out, a);
+    for (const std::string& a : all) addUnique(out, a);
+    return out;
+}
+
+} // namespace
+
+std::vector<std::string> atmospheresInSetupOrder(const game::Rules& r) {
+    return inOrder(atmospheres(r), {"None", "Methane", "Oxygen", "Hydrogen", "Carbon Dioxide"});
+}
+
+std::vector<std::string> surfacesInSetupOrder(const game::Rules& r) { return inOrder(planetSurfaces(r), {"Rock", "Ice", "Gas Giant"}); }
+
 EmpireDraft draftFromSetup(const game::Rules& r, const game::EmpireSetup& e) {
     EmpireDraft d;
     d.setup = e;
@@ -481,7 +536,11 @@ std::expected<game::EmpireSetup, std::string> finishDraft(const game::Rules& r, 
     if (left < 0)
         return std::unexpected(std::format("This race costs {} racial points more than the {} available. Lower a characteristic or drop a trait.",
                                            -left, racialPoints));
-    return collapse(r, d);
+    if (!d.race.name.empty()) return collapse(r, d);
+    // A race without a name of its own (an empty Add New) takes the empire's.
+    EmpireDraft named = d;
+    named.race.name = d.setup.name;
+    return collapse(r, named);
 }
 
 std::string hashPassword(std::string_view password) { return game::hashPassword(password); }

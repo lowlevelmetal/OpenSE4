@@ -174,6 +174,17 @@ struct EmpireDraft {
 };
 
 EmpireDraft draftFromPreset(const game::Rules& r, const ruleset::RacePreset& p, int tier);
+// Add New (spec 07 session 5): an empty empire of race style `style` (the
+// first style when null): no name, type, title or leader, every
+// characteristic 100 %, the Neutral culture, Oxygen and Rock, no trait, the
+// Neutral demeanor and the Peaceful happiness type (each the first of its
+// list when the data set lacks it), the style's design name file (inferred).
+EmpireDraft blankDraft(const game::Rules& r, const ruleset::RacePreset* style);
+// The atmospheres and planet types in the order Empire Setup lists them
+// (spec 07 session 5): None, Methane, Oxygen, Hydrogen, Carbon Dioxide; Rock,
+// Ice, Gas Giant; others the data set has after them.
+std::vector<std::string> atmospheresInSetupOrder(const game::Rules& r);
+std::vector<std::string> surfacesInSetupOrder(const game::Rules& r);
 EmpireDraft draftFromSetup(const game::Rules& r, const game::EmpireSetup& e);
 // Create Empire: refused while the racial point balance is negative. The result
 // names the preset tier when the race is unmodified, and carries the custom

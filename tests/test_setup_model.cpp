@@ -839,3 +839,40 @@ TEST_CASE("setup model: the Quick Start picker follows Settings' style list") {
     CHECK(r.racePresets()[styles.front()].folder == "Beta");  // Quick Start Style 1 of the fixture
     for (size_t i : styles) CHECK_FALSE(r.racePresets()[i].neutral);
 }
+
+TEST_CASE("setup model: Add New starts an empty empire of the first race style") {
+    const game::Rules& r = setupRules();
+    const setup::EmpireDraft d = setup::blankDraft(r, nullptr);
+    CHECK(d.setup.name.empty());
+    CHECK(d.setup.empireType.empty());
+    CHECK(d.setup.leaderTitle.empty());
+    CHECK(d.setup.leaderName.empty());
+    CHECK(d.setup.kind == game::PlayerKind::Human);
+    CHECK(d.race.traits.empty());
+    for (int v : d.race.characteristics) CHECK(v == 100);
+    const ruleset::RacePreset* first = nullptr;
+    for (const auto& p : r.racePresets())
+        if (!p.neutral && !first) first = &p;
+    REQUIRE(first != nullptr);
+    CHECK(d.race.style == first->folder);
+    CHECK(d.setup.preset == first->folder);
+    // Oxygen and Rock when the data set has them; the lists in Empire Setup's order.
+    const auto atm = setup::atmospheresInSetupOrder(r);
+    const auto surf = setup::surfacesInSetupOrder(r);
+    REQUIRE_FALSE(atm.empty());
+    REQUIRE_FALSE(surf.empty());
+    CHECK(std::find(atm.begin(), atm.end(), d.race.atmosphere) != atm.end());
+    CHECK(std::find(surf.begin(), surf.end(), d.race.nativeSurface) != surf.end());
+    if (std::find(atm.begin(), atm.end(), "Oxygen") != atm.end()) CHECK(d.race.atmosphere == "Oxygen");
+    if (std::find(surf.begin(), surf.end(), "Rock") != surf.end()) CHECK(surf.front() == "Rock");
+    // A name is needed; the race without one takes the empire's.
+    CHECK_FALSE(setup::finishDraft(r, d, 2000).has_value());
+    setup::EmpireDraft named = d;
+    named.setup.name = "Blank Realm";
+    named.setup.email = "realm@example.org";
+    const auto done = setup::finishDraft(r, named, 2000);
+    REQUIRE(done.has_value());
+    REQUIRE(done->customRace.has_value());
+    CHECK(done->customRace->name == "Blank Realm");
+    CHECK(done->email == "realm@example.org");
+}
