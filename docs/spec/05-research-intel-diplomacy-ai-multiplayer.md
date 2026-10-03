@@ -752,6 +752,9 @@ window, where the ranking shows the result.
   when its turn comes up. Every empire in contact with it is told, all treaties with it
   return to "no contact", intel projects aimed at it are removed, and its remaining objects
   (empty colonies, units) are removed.
+  A human-controlled empire found defeated is marked dead only after its Lose window, at the
+  end of the last turn that began with it defeated (spec 06 §7 Q83, confirmed: binary): our
+  engine spares it at the check that first finds it defeated (`score::checkDestruction`).
 - **OpenSE4 choices** [I]: the game-over screen names the best score as the winner, with
   ties going to the lower empire number, while the game-over message names none. Neutral
   empires neither win nor count toward the last empire standing. When one empire is left

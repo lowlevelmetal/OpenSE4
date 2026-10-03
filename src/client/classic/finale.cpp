@@ -1,5 +1,6 @@
 #include "client/classic/finale.hpp"
 
+#include "game/turn.hpp"
 #include "ruleset/ruleset.hpp"
 
 #include <algorithm>
@@ -16,22 +17,43 @@ constexpr int64_t kMaxFinalePictures = 100;
 
 std::string_view finaleKeyName(FinaleKind k) {
     switch (k) {
-        case FinaleKind::Victory: return "Victory";
+        case FinaleKind::Victory:
+        case FinaleKind::Conquered: return "Victory";
         case FinaleKind::Lose: return "Lose";
         case FinaleKind::HumanDead: return "Human Dead";
     }
     return "Victory";
 }
 
-std::optional<FinaleKind> finaleKind(const game::GameState& s, game::EmpireId player, SessionKind kind) {
-    if (s.gameOver) return FinaleKind::Victory;
+std::string_view finaleArgName(FinaleKind k) {
+    switch (k) {
+        case FinaleKind::Victory: return "victory";
+        case FinaleKind::Lose: return "lose";
+        case FinaleKind::HumanDead: return "human-dead";
+        case FinaleKind::Conquered: return "conquered";
+    }
+    return "victory";
+}
+
+std::vector<FinaleKind> finaleKinds(const game::GameState& s, game::EmpireId player, SessionKind kind) {
+    std::vector<FinaleKind> out;
     if (kind == SessionKind::Local || kind == SessionKind::Hotseat) {
         const bool human = std::any_of(s.empires.begin(), s.empires.end(),
                                        [](const game::Empire& e) { return e.alive && e.kind == game::PlayerKind::Human; });
-        if (!human && !s.empires.empty()) return FinaleKind::HumanDead;
+        if (!human && !s.empires.empty()) return {FinaleKind::HumanDead};
     }
-    if (player.valid() && player.index() < s.empires.size() && !s.empire(player).alive) return FinaleKind::Lose;
-    return std::nullopt;
+    const bool playing = player.valid() && player.index() < s.empires.size() && s.empire(player).alive;
+    if (!playing) {
+        if (s.gameOver && !player.valid()) out.push_back(FinaleKind::Victory);
+        return out;
+    }
+    const bool colony = std::any_of(s.colonies.begin(), s.colonies.end(), [&](const auto& c) { return c && c->owner == player; });
+    const bool vehicle = std::any_of(s.vehicles.begin(), s.vehicles.end(), [&](const game::Vehicle& v) { return v.owner == player && v.count > 0; });
+    if (!colony && !vehicle) out.push_back(FinaleKind::Lose);
+    if (s.gameOver) out.push_back(FinaleKind::Victory);
+    const bool alone = std::none_of(s.empires.begin(), s.empires.end(), [&](const game::Empire& e) { return e.id != player && e.alive; });
+    if (alone) out.push_back(FinaleKind::Conquered);
+    return out;
 }
 
 std::vector<std::string> finalePictures(const ruleset::Settings& data, FinaleKind k) {
@@ -44,11 +66,16 @@ std::vector<std::string> finalePictures(const ruleset::Settings& data, FinaleKin
     return out;
 }
 
-std::optional<FinaleKind> FinaleWatch::update(const game::GameState& s, game::EmpireId player, SessionKind kind) {
-    const std::optional<FinaleKind> now = finaleKind(s, player, kind);
-    if (now == shown_) return std::nullopt;
-    shown_ = now;
-    return now;
+std::vector<FinaleKind> FinaleWatch::update(const game::GameState& s, game::EmpireId player, SessionKind kind) {
+    const Key key{s.turn, player, game::turnBased(s) ? game::activePlayer(s) : game::EmpireId{}};
+    if (key_ == key) return {};
+    key_ = key;
+    std::vector<FinaleKind> due = finaleKinds(s, player, kind);
+    std::vector<FinaleKind> out;
+    for (FinaleKind k : due)
+        if (std::find(due_.begin(), due_.end(), k) == due_.end()) out.push_back(k);
+    due_ = std::move(due);
+    return out;
 }
 
 } // namespace opense4::client::classic

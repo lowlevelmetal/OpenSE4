@@ -1372,18 +1372,21 @@ std::expected<void, std::string> HostSession::setAiControl(game::EmpireId empire
     if (!state_ || phase_ != HostPhase::Playing) return std::unexpected(std::string("No game is running."));
     if (!empire.valid() || empire.index() >= slots_.size()) return std::unexpected(std::string("No such empire."));
     Slot& s = *slots_[empire.index()];
-    if (s.info.kind != SlotKind::Human) return std::unexpected(std::string("That empire is always played by the computer."));
-    // "Toggle Empire AI On/Off" flips only the empire's computer-controlled
-    // mark (spec 05 §9.4, confirmed: binary): its ministers and individual
-    // flags stay. Marked, the empire is played by the computer every turn and
-    // the host waits for no orders from it; handed back, it waits for its
-    // player (or the host's orders) again. A kicked player's stand-in keeps
-    // the mark as it is (Slot::aiControl alone).
+    // "Toggle Empire AI On/Off" works on every empire's row and flips only the
+    // empire's computer-controlled mark (spec 05 §9.4, spec 06 §7 Q84,
+    // confirmed: binary): its ministers and individual flags stay, and a
+    // neutral empire stays neutral. Marked, the empire is played by the
+    // computer every turn and the host waits for no orders from it; handed
+    // back, it waits for its player (or the host's orders) again. An empire
+    // that was a computer player from the start has no player: handed to
+    // human control, the host plays it ("[Host]"). A kicked player's stand-in
+    // keeps the mark as it is (Slot::aiControl alone).
     if (!game::ai::setComputerMark(*state_, empire, ai)) return std::unexpected(std::string("That empire cannot change hands."));
-    s.info.aiControl = ai;
+    if (s.info.kind == SlotKind::Human) s.info.aiControl = ai;
     broadcastLobby();
     broadcastTurnStatus();
-    emit(EventType::Info, std::format("{} is now played by {}.", state_->empire(empire).name, ai ? "the computer" : "its player"));
+    emit(EventType::Info, std::format("{} is now played by {}.", state_->empire(empire).name,
+                                      ai ? "the computer" : s.info.kind == SlotKind::Human ? "its player" : "the host"));
     if (turnBased()) {
         // The computer plays the rest of that empire's turn in progress; a
         // player back at the controls while the host waits starts playing.

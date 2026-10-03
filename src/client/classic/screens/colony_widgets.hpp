@@ -137,8 +137,9 @@ private:
     std::vector<uint8_t> checked_;
 };
 
-// Scraps every facility of one chosen type on a set of colonies (all own
-// colonies when the set is empty).
+// The facility-type check list: scraps every facility of each checked type on
+// a set of colonies (every colony of the empire when the set is empty, as the
+// Colonies window's Scrap Facil Types does, spec 06 §7 Q90).
 class ScrapTypePopup {
 public:
     void open(std::vector<game::ObjectId> colonies);
@@ -147,7 +148,7 @@ public:
 private:
     bool pending_ = false;
     std::vector<game::ObjectId> colonies_;
-    std::optional<uint32_t> chosen_;
+    std::vector<uint32_t> checked_;
 };
 
 // A yes/no question; draw() returns true once when confirmed.

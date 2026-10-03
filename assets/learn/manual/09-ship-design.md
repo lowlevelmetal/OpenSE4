@@ -97,12 +97,14 @@ tabs. You forget an enemy design you have not seen for 50 turns.
 
 [Designs](window:designs) (`F3`) lists your designs on four tabs: **Ship Designs**, **Unit
 Designs**, **Enemy Ship Dsgn** and **Enemy Unit Dsgn**. Your designs are grouped under their
-design types (enemy designs under their empire's name); each row has a lamp (green for the
-selected design), the design's picture, its name and hull, and **Prototype** while it has never
-been built. Select a design to see its size, design type and creation date beside its picture,
-then its cost, movement, shields, cargo space and supply capacity, and its components as a grid of
-icons (click one for its report). Obsolete designs that no vehicle or queue uses any more are
-deleted by themselves, as the note under the list says.
+design types (enemy designs under their empire's name), the groups and the designs in each in
+alphabetical order; each row has a lamp (green for the selected design), the design's picture,
+its name and hull, and **Prototype** while it has never been built. Select a design to see its
+size, design type and creation date beside its picture, then its cost and maintenance cost, its
+movement, shields, cargo space and supply capacity, *(Insufficient technology)* when you could not
+build it yourself, and its components as a grid of icons, eight to a row (click one for its
+report; the big arrows above the grid scroll it when there are more than 32). Obsolete designs
+that no vehicle or queue uses any more are deleted by themselves, as the note under the list says.
 
 | Button | What it does |
 |---|---|
@@ -112,13 +114,14 @@ deleted by themselves, as the note under the list says.
 | `Upgrade` | Make a new design with the newest components. |
 | `Make Obsolete` | Mark the design obsolete, or current again. |
 | `Hide Obsolete` | A check box: show or hide obsolete designs. |
-| `Stats\Strategy` | A check box: show the design's service record (built, in service, lost, enemy tonnage destroyed) and its default strategy, which you can change there. |
+| `Stats\Strategy` | A check box: show the design's service record (constructed, in service, lost, scrapped, enemy tonnage destroyed) and its default strategy, which you can change there. The enemy tabs switch it off. |
 | `Simulator` | Open the [Combat Simulator](window:combat-simulator) (see [Battle windows](combat-windows#the-combat-simulator)). |
 
 ## The Create Design window
 
 [Create Design](window:create-design) is the designer. It is titled after the kind of vehicle
-you chose (**Ship Design**, **Base Design**, ...) and starts without a size or a name.
+you chose (**Ship Design**, **Base Design**, ...) and starts without a size, a design type or a
+name: their boxes read *Size*, *Design Type* and *Design Name*.
 
 1. Press the arrow button beside **Size** and pick the hull. Pick a **Design Type** the same
    way, and type a **Design Name**, or press the arrow button beside it to pick one from your
@@ -128,8 +131,8 @@ you chose (**Ship Design**, **Base Design**, ...) and starts without a size or a
    remove it, and use the strip's arrows when it is longer than the window. **Right-click** a
    component for its full report. Point at a component to see it in **Component Details**.
 3. Watch the figures at the top right (space used, total cost, movement, shields, cargo space,
-   supply capacity) and the **Warnings** box, which lists every rule the design breaks, a
-   missing size or name too.
+   supply capacity) and the **Warnings** box at the bottom left, which lists every rule the
+   design breaks, a missing size or name too, each after a red dot.
 4. Press `Create Design` when the Warnings box has nothing left; `Cancel` closes the designer.
 
 The buttons on the right help:
@@ -138,7 +141,7 @@ The buttons on the right help:
 |---|---|
 | `Comp Type` | Show only one group of components. |
 | `Weap Mount` | Choose the mount for the weapons you add next (once a size is chosen). |
-| `To Hit Modifiers` | A check box: the weapons' tiles show their to-hit modifier, with the chosen mount, instead of their size. |
-| `Condensed View` | A check box: show identical components on the design once, with a count. |
+| `To Hit Modifiers` | A check box: the figures show the design's **Offense Bonus** and **Defense Bonus** (its combat to-hit bonuses) instead of shields, cargo space and supply capacity. It is kept with your empire. |
+| `Condensed View` | A check box: show identical components (the same component and mount) once in the strip, with their count. It is kept with your empire. |
 | `Only Latest` | A check box: hide older versions of each component. |
 | `Weapons Report` | Compare weapons, with the chosen mount. |

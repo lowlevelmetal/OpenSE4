@@ -113,11 +113,44 @@ void ClassicSession::record(game::Command c) {
 }
 
 game::CommandResult ClassicSession::issue(game::Command c) {
-    if (!onIssued) return issueCommand(std::move(c));
+    if (!onIssued && !switchedOwn_) return issueCommand(std::move(c));
     const game::Command copy = c;
     game::CommandResult r = issueCommand(std::move(c));
-    if (r.ok) onIssued(copy);
+    if (r.ok && onIssued) onIssued(copy);
+    if (r.ok) carryFlags(copy);
     return r;
+}
+
+// After a Players-window switch of our own empire on a player's copy, an
+// object changed this turn (given orders) carries its minister flag to the
+// host with the orders (spec 06 §7 Q84, confirmed: binary); a SetMinister
+// (the order panel's minister button) carries its own. Which commands count
+// as a change is ours (inferred, spec 06 §7 Q99).
+void ClassicSession::carryFlags(const game::Command& c) {
+    if (!switchedOwn_ || (kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem)) return;
+    const auto* o = std::get_if<game::cmd::SetOrders>(&c);
+    if (!o) return;
+    std::vector<game::VehicleId> vehicles;
+    if (o->vehicle.valid()) vehicles.push_back(o->vehicle);
+    if (const game::Fleet* f = state_.fleet(o->fleet)) vehicles.insert(vehicles.end(), f->members.begin(), f->members.end());
+    for (game::VehicleId id : vehicles) {
+        const game::Vehicle* v = state_.vehicle(id);
+        if (!v || v->owner != player_ || std::find(flagged_.begin(), flagged_.end(), id) != flagged_.end()) continue;
+        flagged_.push_back(id);
+        issue(game::cmd::SetMinister{id, {}, false, v->minister});
+    }
+    if (const game::Colony* col = o->planet.valid() ? state_.colony(o->planet) : nullptr;
+        col && col->owner == player_ && std::find(flaggedPlanets_.begin(), flaggedPlanets_.end(), o->planet) == flaggedPlanets_.end()) {
+        flaggedPlanets_.push_back(o->planet);
+        issue(game::cmd::SetMinister{{}, o->planet, false, col->minister});
+    }
+}
+
+void ClassicSession::clearOrders() {
+    orders_.clear();
+    switchedOwn_ = false;
+    flagged_.clear();
+    flaggedPlanets_.clear();
 }
 
 game::CommandResult ClassicSession::issueCommand(game::Command c) {
@@ -243,15 +276,21 @@ void ClassicSession::setComputerControl(const std::vector<std::pair<game::Empire
     for (const auto& [empire, computer] : rows) {
         if (!game::ai::setComputerControl(state_, empire, computer)) continue;
         // A player's copy of a game on different machines: the orders carry the
-        // player's own empire's minister switches and its vehicles', fleets'
-        // and colonies' flags (fleets and colonies inferred), never the mark
-        // and nothing about other empires (spec 06 §1.2.1).
+        // empire's own data always (its minister switches, its fleets with
+        // their flags), and of its ships, units and colonies only those changed
+        // this turn, with their flags; never the mark, and nothing about other
+        // empires (spec 06 §1.2.1, §7 Q84, confirmed: binary).
         if ((kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem) && empire == player_) {
             game::cmd::SetMinisters m;
             m.areas = computer ? game::kAllMinisters : 0u;
-            m.individual = computer;
+            m.fleets = computer;
             issue(m);
             issue(game::cmd::SetMinister{{}, {}, true, computer});
+            switchedOwn_ = true;
+            flagged_.clear();
+            flaggedPlanets_.clear();
+            const std::vector<game::Command> earlier = orders_;
+            for (const game::Command& c : earlier) carryFlags(c);
         }
     }
     // A second human makes a local game hotseat: End Turn then passes to the
@@ -346,7 +385,7 @@ void ClassicSession::runCall() {
         case Call::EndTurn:
             nextHuman();
             takeResult(res);
-            orders_.clear();
+            clearOrders();
             waiting_ = false;
             if (state_.turn != callTurn_) autosave();  // the game turn was processed (spec 01 §2.2)
             if (onNewTurn) onNewTurn();
@@ -438,7 +477,7 @@ void ClassicSession::endTurn() {
         for (const game::Empire& e : state_.empires)
             if (e.alive && e.kind == game::PlayerKind::Human && !ended_[e.id.index()]) {
                 setPlayer(e.id);
-                orders_.clear();
+                clearOrders();
                 reloadGame();
                 ++revision_;
                 return;
@@ -515,7 +554,7 @@ void ClassicSession::poll() {
 }
 
 void ClassicSession::beginTurn() {
-    orders_.clear();
+    clearOrders();
     ended_.assign(state_.empires.size(), 0);
     waiting_ = false;
     ++revision_;

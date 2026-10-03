@@ -528,7 +528,7 @@ private:
         return any(g, [&](const Vehicle& v) { return !v.queue.items.empty() && vehicleHasSpaceYard(r_, s_, v); });
     }
     bool neutral(const Group& g) const {
-        return g.owner.valid() && g.owner.index() < s_.empires.size() && s_.empire(g.owner).kind == PlayerKind::Neutral;
+        return g.owner.valid() && g.owner.index() < s_.empires.size() && isNeutral(s_.empire(g.owner));
     }
     // The Mine Sweeper exemption is tested on the group's first member: for a
     // fleet, the first one at its location in object order (spec 03 §6.2).

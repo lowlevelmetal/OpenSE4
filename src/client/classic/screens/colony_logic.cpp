@@ -886,4 +886,10 @@ std::vector<QueueTemplate> parseTemplates(std::string_view text) {
     return out;
 }
 
+std::string shortAmount(int64_t n) {
+    if (n < 10000) return std::to_string(n);
+    if (n <= 99'999'999) return std::format("{}kT", (n + 999) / 1000);
+    return std::format("{}mT", (n + 999'000) / 1'000'000);
+}
+
 } // namespace opense4::client::classic

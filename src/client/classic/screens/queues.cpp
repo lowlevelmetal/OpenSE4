@@ -145,7 +145,7 @@ public:
                 if (shown_ & queueKindBit(r.entry.kind)) rows.push_back(&r);
             sortRows(ui, rows);
 
-            d.beginContent();
+            d.beginContent(576);  // the list spans to x 575, as every list of the original
             statistics(ui);
             ImGui::SetCursorPos(ui.size({290, 3}));
             std::vector<uint8_t> marked(ui.state().galaxy.systems.size(), 0);

@@ -136,15 +136,23 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
 }
 
 std::vector<std::string> orderListLines(const UiContext& ui, OrderOwner owner, game::DesignId design) {
+    std::vector<std::string> lines;
+    if (const auto* orders = ordersOf(ui.state(), owner))
+        for (const game::Order& o : *orders) lines.push_back(describeOrder(ui, o, design));
+    return lines;
+}
+
+std::string orderSortText(const UiContext& ui, OrderOwner owner, game::DesignId design) {
     const auto* orders = ordersOf(ui.state(), owner);
     const bool repeat = repeatOf(ui.state(), owner);
-    if (!orders || orders->empty()) return {repeat ? "REPEAT ORDERS" : "None"};
-    std::vector<std::string> lines;
+    if (!orders || orders->empty()) return repeat ? "REPEAT ORDERS" : "None";
+    std::string out;
     for (size_t i = 0; i < orders->size(); ++i) {
         const std::string d = describeOrder(ui, (*orders)[i], design);
-        lines.push_back(repeat && i == 0 ? "(" + d + ")" : d);
+        out += (i ? ", " : "") + (i == 0 ? "[" + d + "]" : d);
     }
-    return lines;
+    if (repeat) out += ", REPEAT ORDERS";
+    return out;
 }
 
 std::string cargoSummary(const UiContext& ui, const game::Cargo& c) {

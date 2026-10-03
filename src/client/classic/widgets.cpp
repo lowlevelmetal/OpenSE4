@@ -118,4 +118,14 @@ void wrappedDim(const std::string& text) {
     ImGui::PopTextWrapPos();
 }
 
+void textAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text) {
+    const ImVec2 p = d.at({at.x, at.y + lead});
+    ImGui::GetWindowDrawList()->AddText(font, ui.fontPx(size), {std::floor(p.x), std::floor(p.y)}, color, text.data(), text.data() + text.size());
+}
+
+void textRightAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text) {
+    const float w = font->CalcTextSizeA(ui.fontPx(size), FLT_MAX, 0.0f, text.data(), text.data() + text.size()).x / ui.k();
+    textAt(ui, d, font, size, lead, {at.x - w, at.y}, color, text);
+}
+
 } // namespace opense4::client::classic

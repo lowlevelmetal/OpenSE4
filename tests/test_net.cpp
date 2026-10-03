@@ -445,13 +445,30 @@ TEST_CASE("net: reconnecting, forced turns, turn timeout and computer control") 
     CHECK(host.turnStatus().empires[1].aiControl);
     CHECK(g.alice.state()->empire(game::EmpireId{1u}).kind == game::PlayerKind::Computer);  // everyone sees the mark
     CHECK(host.state()->empire(game::EmpireId{1u}).ministers == ministers);
-    CHECK_FALSE(host.setAiControl(game::EmpireId{2u}, false).has_value());  // a computer empire
+    // An empire that was a computer player from the start can be handed to
+    // human control too (spec 06 §7 Q84): no player is connected to it, so the
+    // host plays it ("[Host]") and waits for its orders.
+    const game::EmpireId cpu{2u};
+    REQUIRE(host.state()->empire(cpu).kind == game::PlayerKind::Computer);
+    REQUIRE(host.setAiControl(cpu, false).has_value());
+    CHECK(host.state()->empire(cpu).kind == game::PlayerKind::Human);
+    CHECK(host.turnStatus().empires[2].human);
+    CHECK_FALSE(host.turnStatus().empires[2].connected);
+    REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "with the host")).has_value());
+    for (int i = 0; i < 20; ++i) timed.step();
+    CHECK(host.state()->turn == 3);  // waiting for the host's orders for it
+    REQUIRE(host.submitOrders(game::EmpireOrders{cpu, host.state()->turn, {}}).has_value());
+    REQUIRE(timed.until([&] { return g.alice.state()->turn == 4; }));
+    CHECK(g.alice.state()->empire(cpu).kind == game::PlayerKind::Human);
+    // And back to the computer.
+    REQUIRE(host.setAiControl(cpu, true).has_value());
+    CHECK(host.state()->empire(cpu).kind == game::PlayerKind::Computer);
     // Handed back, the host waits for Bob's orders again.
     REQUIRE(host.setAiControl(game::EmpireId{1u}, false).has_value());
     CHECK(host.state()->empire(game::EmpireId{1u}).kind == game::PlayerKind::Human);
     REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "back")).has_value());
     for (int i = 0; i < 20; ++i) timed.step();
-    CHECK(host.state()->turn == 3);
+    CHECK(host.state()->turn == 4);
 }
 
 TEST_CASE("net: Reset Passwords on the host of a simultaneous game (spec 06 §1.9)") {

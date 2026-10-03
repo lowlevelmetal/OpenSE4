@@ -101,7 +101,7 @@ std::vector<Location> routePoints(const Rules& r, const GameState& s, const Rout
 
 RouteOptions optionsFor(const GameState& s, EmpireId owner, const Vehicle* first) {
     RouteOptions options;
-    options.allowWarp = !(owner.valid() && owner.index() < s.empires.size() && s.empire(owner).kind == PlayerKind::Neutral);
+    options.allowWarp = !(owner.valid() && owner.index() < s.empires.size() && isNeutral(s.empire(owner)));
     options.sweeper = first && leadsSweeperGroup(s, sweeperOf(s, *first));
     return options;
 }

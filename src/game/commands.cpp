@@ -1055,6 +1055,9 @@ struct Applier {
         if (c.useRaceStyle) me.useRaceMinisterStyle = *c.useRaceStyle;
         if (c.newVehicles) me.ministersForNewVehicles = *c.newVehicles;
         if (c.individual) setIndividualMinisters(*c.individual);
+        if (c.fleets)
+            for (Fleet& f : s.fleets)
+                if (f.owner == e) f.minister = *c.fleets;
         return {};
     }
 

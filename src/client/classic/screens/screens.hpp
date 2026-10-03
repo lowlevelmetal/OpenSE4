@@ -52,6 +52,8 @@ std::unique_ptr<Screen> makeComparisons(const ScreenArgs& args);
 std::unique_ptr<Screen> makeHistory(const ScreenArgs& args);
 std::unique_ptr<Screen> makeRaceReport(const ScreenArgs& args);
 std::unique_ptr<Screen> makeVictoryConditions(const ScreenArgs& args);
+// Borders: the systems the empires claim, a window of its own over Empires.
+std::unique_ptr<Screen> makeBorders(const ScreenArgs& args);
 
 // log.cpp
 std::unique_ptr<Screen> makeLog(const ScreenArgs& args);

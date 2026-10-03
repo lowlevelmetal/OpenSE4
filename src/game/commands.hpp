@@ -204,6 +204,7 @@ struct SetMinisters {
     std::optional<bool> useRaceStyle;       // "Use Race Minister Style"
     std::optional<bool> newVehicles;        // new vehicles and launched units start under minister control
     std::optional<bool> individual;         // "Indiv. Ministers On/Off": the flag on every own vehicle, fleet and colony
+    std::optional<bool> fleets;             // the flag on every own fleet (a player's orders after a Players-window switch, spec 06 §7 Q84)
     std::optional<bool> completeAi;         // "Complete AI On/Off": all areas, every flag, the new-vehicle option and ministerAll
 };
 

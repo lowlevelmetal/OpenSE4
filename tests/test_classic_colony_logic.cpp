@@ -851,3 +851,18 @@ TEST_CASE("classic ui: a colony's sort values") {
     empty.population.clear();
     CHECK(colonySortValues(r, s, empty).mood.empty());
 }
+
+TEST_CASE("colony logic: the Colonies summary shortens amounts, rounding up") {
+    // Spec 06 §7 Q90 (confirmed: binary).
+    CHECK(shortAmount(0) == "0");
+    CHECK(shortAmount(9999) == "9999");
+    CHECK(shortAmount(10000) == "10kT");
+    CHECK(shortAmount(50000) == "50kT");
+    CHECK(shortAmount(50001) == "51kT");
+    CHECK(shortAmount(52500) == "53kT");
+    CHECK(shortAmount(99'999'999) == "100000kT");
+    CHECK(shortAmount(100'000'000) == "100mT");
+    CHECK(shortAmount(150'000'000) == "150mT");
+    CHECK(shortAmount(150'000'001) == "150mT");  // truncate(150.000001 + 0.999)
+    CHECK(shortAmount(150'001'000) == "151mT");
+}

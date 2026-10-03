@@ -38,6 +38,7 @@ struct Setup {
     std::optional<int> events;              // event frequency: 0 none .. 3 high
     std::optional<int> aiDifficulty;        // 0 low, 1 medium, 2 high
     std::optional<bool> noTacticalCombat;
+    std::optional<bool> completeTechTree;
     std::optional<bool> allSystemsSeen;
     std::optional<bool> omnipresent;
     std::optional<bool> noRuins;

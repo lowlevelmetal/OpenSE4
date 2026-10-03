@@ -26,19 +26,6 @@ std::string percent(int64_t v) { return std::format("{}%", v); }
 // Conditions show as their band (spec 02 §2).
 std::string conditionsText(game::Conditions conditions) { return std::string(game::economy::conditionsName(game::economy::conditionsBand(conditions))); }
 
-// Selection with Ctrl/Shift toggling (multi-select), plain click selecting one.
-void clickSelect(std::vector<game::ObjectId>& sel, game::ObjectId id) {
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.KeyCtrl || io.KeyShift) {
-        if (auto it = std::find(sel.begin(), sel.end(), id); it != sel.end()) sel.erase(it);
-        else sel.push_back(id);
-    } else {
-        sel.assign(1, id);
-    }
-}
-
-bool contains(const std::vector<game::ObjectId>& v, game::ObjectId id) { return std::find(v.begin(), v.end(), id) != v.end(); }
-
 // ============================================================================================
 // Planets (spec 06 §1.8.1, confirmed: binary)
 // ============================================================================================
@@ -88,7 +75,7 @@ public:
             const bool noAvoid = ui.options().planetsNoSysToAvoid;
             const std::vector<const PlanetInfo*> rows = shown(ui, noAvoid);
 
-            d.beginContent();
+            d.beginContent(576);  // the list spans to x 575, as every list of the original
             statistics(ui);
             ImGui::SetCursorPos(ui.size({290, 3}));
             std::vector<uint8_t> marked(s.galaxy.systems.size(), 0);
@@ -410,7 +397,7 @@ std::vector<ColonyHeading> colonyHeadings(ColonyTab tab) {
 class ColoniesScreen final : public Screen {
 public:
     explicit ColoniesScreen(const ScreenArgs& args) {
-        if (args.planet.valid()) selection_.assign(1, args.planet);
+        if (args.planet.valid()) shown_ = args.planet;
     }
 
     bool draw(UiContext& ui) override {
@@ -419,7 +406,7 @@ public:
         {
             Dialog d(ui, "Colonies", DialogSize::Tall);
             if (!d.open()) return d.keepOpen();
-            d.beginContent();
+            d.beginContent(576);  // the list spans to x 575, as every list of the original
             statistics(ui);
             // The mini-map where Planets has it (inferred, spec 06 §7 Q90).
             ImGui::SetCursorPos(ui.size({290, 3}));
@@ -427,7 +414,7 @@ public:
             for (const ColonyRow& r : rows_) marked[ui.state().galaxy.object(r.planet).system.index()] = 1;
             std::optional<game::SystemId> highlight;
             if (hovered_) highlight = ui.state().galaxy.object(*hovered_).system;
-            else if (!selection_.empty()) highlight = ui.state().galaxy.object(selection_.front()).system;
+            else if (shown_ && ui.state().colony(*shown_)) highlight = ui.state().galaxy.object(*shown_).system;
             quadrantMap(ui, "##map", {262, 190}, marked, highlight);
             hovered_.reset();
             status_.drawAt(ui, {3, 183}, 280);
@@ -439,22 +426,23 @@ public:
                 if (lampButton(d, ui, label, tab_ == tab)) setTab(tab);
                 ui.tagTab(kColonyTabIds[static_cast<size_t>(tab)], tab_ == tab);
             }
-            // The original's column: the nine tabs, two empty slots, the two
-            // actions just above Close in the 14th slot; no Constr. Queue or Goto
-            // (observed, spec 07 session 3; the actions' slots inferred, Q90).
+            // The original's column (spec 06 §7 Q90, confirmed: binary): the nine
+            // tabs, two empty slots, Scrap Facil Types (slot 12) and Set Colony
+            // Type (slot 13), Close; no Constr. Queue or Goto.
             d.spacer();
             d.spacer();
-            if (d.button("Scrap Facil Types")) scrapTypes_.open(selection_.size() > 1 ? selection_ : std::vector<game::ObjectId>{});
-            if (ImGui::IsItemHovered())
-                itemTooltip(selection_.size() > 1 ? "Scrap every facility of one type on the selected colonies"
-                                                  : "Scrap every facility of one type on all colonies");
-            if (d.button("Set Colony Type", !selection_.empty())) {
-                pendingColonyType_ = true;
-                chosenType_ = -1;
+            // Every checked facility type on every colony of the empire.
+            if (d.button("Scrap Facil Types")) scrapTypes_.open({});
+            // The planet first, among the rows as listed, then the colony type.
+            if (d.button("Set Colony Type", !rows_.empty())) {
+                pendingPlanetPick_ = true;
+                pickRow_ = 0;
             }
             if (d.close()) return false;
             report_.draw(ui);
             scrapTypes_.draw(ui, status_);
+            planetPicker(ui);
+            refused_.draw(ui);
             colonyTypePopup(ui);
             keep = d.keepOpen();
         }
@@ -498,15 +486,17 @@ private:
             row.orders = shipui::orderListLines(ui, owner);
             rows_.push_back(std::move(row));
         }
-        std::erase_if(selection_, [&](game::ObjectId id) { return !s.colony(id) || s.colony(id)->owner != me; });
         revision_ = ui.session.revision();
     }
 
+    // The summary in the 284x190 box at (17,38), like Planets' (spec 06 §7 Q90,
+    // confirmed: binary): labels in label blue at x 18; the first four values
+    // white, right-aligned at x 289; the research and intelligence values
+    // right-aligned at x 271 with their icon at x 273; the three amounts of the
+    // two resource labels on the line below, right-aligned at x 68, 138 and 208
+    // in the resource colours, each followed by its icon. Content coordinates
+    // are the window's less (15,35).
     void statistics(UiContext& ui) {
-        // The original's summary (observed, spec 07 session 3), laid out as the
-        // Planets statistics: labels at x 18 one every 16 px, values right-aligned
-        // at x 289, the resource amounts on the line under their label (inferred,
-        // spec 06 §7 Q90).
         const game::GameState& s = ui.state();
         int64_t population = 0, research = 0, intel = 0;
         int blockaded = 0;
@@ -522,46 +512,48 @@ private:
             if (std::find(systems.begin(), systems.end(), sys) == systems.end()) systems.push_back(sys);
         }
         const game::Resources storage = game::economy::storageCapacity(ui.rules(), s, ui.session.player());
-        float y = 5.0f;
-        auto line = [&](const char* label, const std::string& value, std::optional<Icon> icon = std::nullopt) {
-            ImGui::SetCursorPos(ui.size({3, y}));
-            ImGui::TextColored(kLabelBlue, "%s", label);
-            const float iconW = icon ? 18.0f : 0.0f;
-            ImGui::SetCursorPos(ImVec2(ui.px(274 - iconW) - ImGui::CalcTextSize(value.c_str()).x, ui.px(y)));
-            ImGui::TextUnformatted(value.c_str());
-            if (icon) {
-                ImGui::SetCursorPos(ui.size({274 - 16, y}));
-                image(ui, ui.art.icon16(*icon), {16, 16});
-            }
-            y += 16.0f;
+        const ImVec2 origin = ImGui::GetWindowPos();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // Window coordinates: x and y as the spec gives them.
+        auto put = [&](float x, float y, ImU32 color, const std::string& t, bool right) {
+            const float w = right ? ImGui::CalcTextSize(t.c_str()).x : 0.0f;
+            dl->AddText(ImVec2(std::floor(origin.x + ui.px(x - 15) - w), std::floor(origin.y + ui.px(y - 35 + kTextLead))), color, t.c_str());
         };
-        // Three amounts, each in its resource colour with its icon.
-        auto amounts = [&](const std::array<std::string, 3>& v) {
+        auto icon = [&](float x, float y, Icon i) {
+            if (const Sprite sp = ui.art.icon16(i))
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(sp.tex.value)), ImVec2(origin.x + ui.px(x - 15), origin.y + ui.px(y - 35)),
+                             ImVec2(origin.x + ui.px(x + 1), origin.y + ui.px(y - 19)), {sp.uv.min.x, sp.uv.min.y}, {sp.uv.max.x, sp.uv.max.y});
+        };
+        const ImU32 blue = imColor(palette::kLabel), white = IM_COL32_WHITE;
+        put(18, 40, blue, "System with Colonies", false);
+        put(289, 40, white, std::to_string(systems.size()), true);
+        put(18, 56, blue, "Number of Colonies", false);
+        put(289, 56, white, std::to_string(rows_.size()), true);
+        put(18, 72, blue, "Number of Blockaded Colonies", false);
+        put(289, 72, white, std::to_string(blockaded), true);
+        put(18, 88, blue, "Total Population", false);
+        put(289, 88, white, std::format("{}M", formatNumber(population)), true);
+        put(18, 104, blue, "Research Points Produced", false);
+        put(271, 104, white, formatNumber(research), true);
+        icon(273, 105, Icon::Research);
+        put(18, 120, blue, "Intelligence Points Produced", false);
+        put(271, 120, white, formatNumber(intel), true);
+        icon(273, 121, Icon::Intelligence);
+        // The amounts under their label, each followed by its icon.
+        auto amounts = [&](float y, const game::Resources& r) {
             static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
             static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
-            float x = 274.0f;
-            for (size_t i = 3; i-- > 0;) {
-                x -= 16.0f;
-                ImGui::SetCursorPos(ui.size({x, y}));
-                image(ui, ui.art.icon16(kIcons[i]), {16, 16});
-                x -= 2.0f + ImGui::CalcTextSize(v[i].c_str()).x / ui.k();
-                ImGui::SetCursorPos(ui.size({x, y}));
-                ImGui::TextColored(imColorV(kColors[i]), "%s", v[i].c_str());
-                x -= 10.0f;
+            static constexpr std::array<float, 3> kX{68, 138, 208};
+            for (size_t i = 0; i < 3; ++i) {
+                put(kX[i], y, imColor(kColors[i]), shortAmount(r.v[i]), true);
+                icon(kX[i] + 1, y, kIcons[i]);
             }
-            y += 16.0f;
         };
-        line("Systems with Colonies", std::to_string(systems.size()));
-        line("Number of Colonies", std::to_string(rows_.size()));
-        line("Number of Blockaded Colonies", std::to_string(blockaded));
-        line("Total Population", std::format("{}M", formatNumber(population)), Icon::Population);
-        line("Research Points Produced", formatNumber(research), Icon::Research);
-        line("Intelligence Points Produced", formatNumber(intel), Icon::Intelligence);
-        line("Total Resources Produced", {});
-        amounts({formatNumber(production.v[0]), formatNumber(production.v[1]), formatNumber(production.v[2])});
-        line("Maximum Resource Storage", {});
-        // Storage in thousands, as "50kT" (observed; whole thousands, rounded down: inferred, Q90).
-        amounts({std::format("{}kT", storage.v[0] / 1000), std::format("{}kT", storage.v[1] / 1000), std::format("{}kT", storage.v[2] / 1000)});
+        put(18, 152, blue, "Total Resources Produced", false);
+        amounts(168, production);
+        put(18, 184, blue, "Maximum Resource Storage", false);
+        amounts(200, storage);
+        ImGui::Dummy(ImVec2(0, 0));
     }
 
     static std::string cargoText(const game::GameState& s, game::ObjectId planet) {
@@ -594,6 +586,7 @@ private:
         std::vector<ColonySortValues> keys;
         for (const ColonyRow& r : rows_) keys.push_back(r.keys);
         const std::vector<size_t> order = colonyRowOrder(keys, ui.options().coloniesSort);
+        listed_ = order;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         beginList(ui, "##colonyrows", ImVec2(0, listRowsHeight(ui)));
@@ -606,14 +599,15 @@ private:
                 const ColonyRow& row = rows_[order[static_cast<size_t>(i)]];
                 ImGui::PushID(static_cast<int>(row.planet.index()));
                 const ImVec2 a = ImGui::GetCursorScreenPos();
-                const bool clicked = ImGui::Selectable("##row", contains(selection_, row.planet), ImGuiSelectableFlags_AllowDoubleClick,
-                                                       ImVec2(0, rowH - ImGui::GetStyle().ItemSpacing.y));
+                const bool clicked = ImGui::Selectable("##row", false, ImGuiSelectableFlags_None, ImVec2(0, rowH - ImGui::GetStyle().ItemSpacing.y));
                 const bool hovered = ImGui::IsItemHovered();
                 ImGui::PopID();
                 if (hovered) hovered_ = row.planet;
-                if (clicked) clickSelect(selection_, row.planet);
+                // A left click shows the colony in the main window and closes
+                // the window; with Shift it does nothing; a right click opens
+                // the planet report (spec 06 §7 Q90, confirmed: binary).
+                if (clicked && !ImGui::GetIO().KeyShift) goto_ = row.planet;
                 if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) report_.openPlanet(row.planet);
-                if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) goto_ = row.planet;
                 for (size_t k = 0; k < heads.size(); ++k) drawCell(ui, s, row, heads[k].id, a, x[k], x[k + 1] - x[k]);
             }
         if (rows_.empty()) ImGui::TextColored(kTextDim, "No colonies.");
@@ -746,6 +740,50 @@ private:
         }
     }
 
+    // "Select Planet to Set": the colonies as the list shows them, the top
+    // row chosen at first; a homeworld is refused (spec 06 §7 Q90).
+    void planetPicker(UiContext& ui) {
+        const char* id = "Select Planet to Set###colonyplanet";
+        if (pendingPlanetPick_) {
+            ImGui::OpenPopup(id);
+            pendingPlanetPick_ = false;
+        }
+        if (!beginModal(ui, id, {340, 370})) return;
+        const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
+        beginList(ui, "##planets", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+        bool apply = false;
+        for (size_t i = 0; i < listed_.size(); ++i) {
+            if (listed_[i] >= rows_.size()) continue;
+            const ColonyRow& row = rows_[listed_[i]];
+            ImGui::PushID(int(i));
+            if (ImGui::Selectable(row.keys.name.c_str(), pickRow_ == int(i), ImGuiSelectableFlags_AllowDoubleClick)) {
+                pickRow_ = int(i);
+                apply = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+            }
+            ImGui::PopID();
+        }
+        endList(ui);
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        apply = ImGui::Button("OK", ImVec2(w, ui.px(26))) || apply;
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button("Cancel", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        if (apply && pickRow_ >= 0 && size_t(pickRow_) < listed_.size() && listed_[size_t(pickRow_)] < rows_.size()) {
+            const game::ObjectId planet = rows_[listed_[size_t(pickRow_)]].planet;
+            const game::Colony* c = ui.state().colony(planet);
+            if (c && c->homeworld) {
+                refused_.open("A homeworld's colony type cannot be changed.", "Cannot Set Colony Type");
+            } else if (c) {
+                typing_ = planet;
+                pendingColonyType_ = true;
+                chosenType_ = -1;
+            }
+            ImGui::CloseCurrentPopup();
+        } else if (cancel) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     void colonyTypePopup(UiContext& ui) {
         const char* id = "Set Colony Type###colonytype";
         if (pendingColonyType_) {
@@ -754,7 +792,9 @@ private:
         }
         if (!beginModal(ui, id, {380, 480})) return;
         const auto& types = ui.me().colonyTypes;
-        ImGui::TextColored(kTextDim, "Colony type for %zu selected colon%s:", selection_.size(), selection_.size() == 1 ? "y" : "ies");
+        const game::GameState& s = ui.state();
+        if (typing_ && *typing_ != game::ObjectId{} && typing_->index() < s.galaxy.objects.size())
+            ImGui::TextColored(kTextDim, "Colony type for %s:", s.galaxy.object(*typing_).name.c_str());
         const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
         beginList(ui, "##types", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (size_t i = 0; i < types.size(); ++i)
@@ -769,13 +809,14 @@ private:
         ImGui::EndDisabled();
         ImGui::SameLine();
         const bool cancel = ImGui::Button("Cancel", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-        if (apply && chosenType_ >= 0 && static_cast<size_t>(chosenType_) < types.size()) {
+        if (apply && typing_ && chosenType_ >= 0 && static_cast<size_t>(chosenType_) < types.size()) {
             const std::string type = types[static_cast<size_t>(chosenType_)];
-            int done = 0;
-            for (game::ObjectId p : selection_) done += status_.issue(ui, game::cmd::SetColonyType{p, type}) ? 1 : 0;
-            if (done == static_cast<int>(selection_.size())) status_.info(std::format("{} colon{} set to {}", done, done == 1 ? "y" : "ies", type));
+            if (status_.issue(ui, game::cmd::SetColonyType{*typing_, type}))
+                status_.info(std::format("{} set to {}", s.galaxy.object(*typing_).name, type));
+            typing_.reset();
             ImGui::CloseCurrentPopup();
         } else if (cancel) {
+            typing_.reset();
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -785,12 +826,17 @@ private:
     uint64_t revision_ = 0;
     ColonyTab tab_ = ColonyTab::General;
     std::string tableId_ = "##colonies0";
-    std::vector<game::ObjectId> selection_;
+    std::optional<game::ObjectId> shown_;     // the colony the window was opened for (the map rings its system)
+    std::vector<size_t> listed_;              // rows_ in the order the list shows them
     std::optional<game::ObjectId> hovered_;
     std::optional<game::ObjectId> goto_;
     StatusLine status_;
     ReportPopup report_;
     ScrapTypePopup scrapTypes_;
+    NoticePopup refused_;
+    bool pendingPlanetPick_ = false;
+    int pickRow_ = 0;
+    std::optional<game::ObjectId> typing_;    // the planet whose colony type is being chosen
     bool pendingColonyType_ = false;
     int chosenType_ = -1;
 };

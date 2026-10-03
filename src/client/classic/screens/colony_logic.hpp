@@ -157,6 +157,12 @@ int compareNames(std::string_view a, std::string_view b);
 
 // ---- Colonies ------------------------------------------------------------------------------------
 
+// An amount as the Colonies summary writes it (spec 06 §7 Q90, confirmed:
+// binary): under 10,000 as is; up to 99,999,999 in thousands rounded up,
+// truncate(n / 1000 + 0.999), with "kT" (52500 gives "53kT"); above that in
+// millions the same way, truncate(n / 1000000 + 0.999), with "mT".
+std::string shortAmount(int64_t n);
+
 // Status icon numbers (docs/spec/06 §4.4, 1-based) that apply to an own colony.
 std::vector<int> colonyStatusIcons(const game::Rules& r, const game::GameState& s, const game::Colony& c, bool connected);
 

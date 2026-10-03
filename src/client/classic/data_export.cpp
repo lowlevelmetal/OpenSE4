@@ -2,149 +2,110 @@
 
 #include "game/design.hpp"
 
-#include <algorithm>
-#include <array>
 #include <format>
 #include <fstream>
-#include <map>
+#include <span>
 #include <string_view>
 #include <system_error>
-#include <utility>
 
 namespace opense4::client::classic {
 
 namespace {
 
-using ruleset::WeaponKind;
-
 // Ranges the damage columns cover: the Weapons Report's two pages.
 constexpr int kExportRanges = 20;
 
-std::string_view kindName(WeaponKind k) {
-    switch (k) {
-        case WeaponKind::None: return "None";
-        case WeaponKind::DirectFire: return "Direct Fire";
-        case WeaponKind::Seeking: return "Seeking";
-        case WeaponKind::Warhead: return "Warhead";
-        case WeaponKind::PointDefense: return "Point-Defense";
-    }
-    return "None";
-}
+// One fixed-width column: text left-aligned, numbers right-aligned (the
+// alignment is OpenSE4's, inferred); a longer value is written whole.
+struct Column {
+    std::string_view heading;
+    size_t width;
+    bool number = true;
+};
 
-std::string vehicleTypes(ruleset::VehicleTypeMask mask) {
-    static constexpr std::array<std::string_view, static_cast<size_t>(ruleset::VehicleType::Count)> kNames{
-        "Ship", "Base", "Fighter", "Satellite", "Mine", "Troop", "Drone", "Weapon Platform"};
+std::string padded(std::string_view text, size_t width, bool right) {
     std::string out;
-    for (size_t i = 0; i < kNames.size(); ++i)
-        if (mask & ruleset::maskOf(static_cast<ruleset::VehicleType>(i))) out += (out.empty() ? "" : ", ") + std::string(kNames[i]);
-    return out.empty() ? std::string("-") : out;
-}
-
-std::string requirements(const game::Rules& r, const std::vector<ruleset::TechRequirement>& reqs) {
-    std::string out;
-    for (const ruleset::TechRequirement& q : reqs) {
-        const std::string area = q.area.valid() && q.area.index() < r.data().techAreas.size() ? r.tech(q.area).name : std::string("?");
-        out += std::format("{}{} {}", out.empty() ? "" : "; ", area, q.level);
-    }
-    return out.empty() ? std::string("-") : out;
-}
-
-std::string abilities(const std::vector<ruleset::Ability>& list) {
-    std::string out;
-    for (const ruleset::Ability& a : list) out += std::format("{}{} ({}/{})", out.empty() ? "" : "; ", a.type, a.value1, a.value2);
-    return out.empty() ? std::string("-") : out;
-}
-
-// A cell never holds a tab or a line break.
-std::string cell(std::string_view text) {
-    std::string out(text);
-    std::replace(out.begin(), out.end(), '\t', ' ');
-    std::replace(out.begin(), out.end(), '\n', ' ');
-    std::replace(out.begin(), out.end(), '\r', ' ');
+    if (text.size() < width && right) out.append(width - text.size(), ' ');
+    for (char c : text) out += (c == '\n' || c == '\r' || c == '\t') ? ' ' : c;
+    if (text.size() < width && !right) out.append(width - text.size(), ' ');
     return out;
 }
 
-void line(std::string& out, std::initializer_list<std::string> cells) {
-    bool first = true;
-    for (const std::string& c : cells) {
-        if (!first) out += '\t';
-        out += cell(c);
-        first = false;
-    }
-    out += '\n';
+// One line of the columns, then `tail` (a last column without a width).
+std::string row(std::span<const Column> cols, std::span<const std::string> cells, std::string_view tail = {}) {
+    std::string out;
+    for (size_t i = 0; i < cols.size(); ++i) out += padded(i < cells.size() ? std::string_view(cells[i]) : std::string_view{}, cols[i].width, cols[i].number);
+    out += tail;
+    // No trailing blanks.
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    return out + '\n';
 }
 
-// Members of a family, lowest level first (ties in data order). Family 0 is
-// no family: such parts are left out of the family tables.
-std::string memberNames(const game::Rules& r, std::vector<uint32_t> members) {
-    std::stable_sort(members.begin(), members.end(),
-                     [&](uint32_t a, uint32_t b) { return r.component(a).romanNumeral < r.component(b).romanNumeral; });
-    std::string out;
-    for (uint32_t c : members) out += (out.empty() ? "" : ", ") + r.component(c).name;
+// The header line, then dashes as long as it.
+std::string header(std::span<const Column> cols, std::string_view tail = {}) {
+    std::vector<std::string> names;
+    for (const Column& c : cols) names.emplace_back(c.heading);
+    std::string out = row(cols, names, tail);
+    out += std::string(out.size() - 1, '-') + '\n';
     return out;
 }
 
+std::string num(int64_t v) { return std::to_string(v); }
+
+// Weapons: name (40), the damage at ranges 1 to 20 (4 each), reload rate,
+// tonnage and the three costs (6 each), the damage type's name (20).
 ExportTable weaponsTable(const game::Rules& r) {
-    ExportTable t{"weapons.txt", {}};
-    std::string header = "Name\tWeapon Type\tWeapon Family\tLevel\tDamage Type\tTargets\tReload\tTonnage\tStructure\tMinerals\tOrganics\tRadioactives";
-    for (int range = 1; range <= kExportRanges; ++range) header += std::format("\tRange {}", range);
-    t.text = header + '\n';
+    std::vector<Column> cols{{"Name", 40, false}};
+    std::vector<std::string> rangeNames;
+    for (int range = 1; range <= kExportRanges; ++range) rangeNames.push_back(std::to_string(range));
+    for (const std::string& n : rangeNames) cols.push_back({n, 4});
+    for (std::string_view h : {"Reload", "Tons", "Min", "Org", "Rad"}) cols.push_back({h, 6});
+    cols.push_back({" Damage Type", 20, false});
+    ExportTable t{"Weapons.txt", header(cols)};
     const auto& comps = r.data().components;
     for (uint32_t i = 0; i < comps.size(); ++i) {
         const ruleset::Component& c = comps[i];
         if (!c.isWeapon()) continue;
-        std::string targets;
-        for (const std::string& target : c.weapon.targets) targets += (targets.empty() ? "" : ", ") + target;
-        std::string row = cell(c.name);
-        for (const std::string& v :
-             {std::string(kindName(c.weapon.kind)), std::to_string(c.weapon.family), std::to_string(c.romanNumeral), c.weapon.damageType,
-              targets.empty() ? std::string("-") : targets, std::to_string(c.weapon.reloadRate), std::to_string(c.tonnage),
-              std::to_string(c.structure), std::to_string(c.cost.minerals), std::to_string(c.cost.organics), std::to_string(c.cost.radioactives)})
-            row += '\t' + cell(v);
+        std::vector<std::string> cells{c.name};
         const game::DesignEntry unmounted{i, -1};
-        for (int range = 1; range <= kExportRanges; ++range) row += std::format("\t{}", game::weaponDamageAtRange(r, unmounted, range));
-        t.text += row + '\n';
+        for (int range = 1; range <= kExportRanges; ++range) cells.push_back(num(game::weaponDamageAtRange(r, unmounted, range)));
+        for (int64_t v : {int64_t(c.weapon.reloadRate), int64_t(c.tonnage), c.cost.minerals, c.cost.organics, c.cost.radioactives}) cells.push_back(num(v));
+        cells.push_back(" " + c.weapon.damageType);
+        t.text += row(cols, cells);
     }
     return t;
 }
 
+// Comps: name (40), tonnage and structure (6 each), the three costs (8 each),
+// family, level and custom group (6 each), then the abilities' names joined by ", ".
 ExportTable componentsTable(const game::Rules& r) {
-    ExportTable t{"components.txt", {}};
-    line(t.text, {"Name", "Group", "Family", "Level", "Weapon Type", "Tonnage", "Structure", "Minerals", "Organics", "Radioactives",
-                  "Supply Used", "Most Per Vehicle", "Vehicle Types", "Requirements", "Abilities"});
-    for (const ruleset::Component& c : r.data().components)
-        line(t.text, {c.name, c.generalGroup.empty() ? std::string("-") : c.generalGroup, std::to_string(c.family), std::to_string(c.romanNumeral),
-                      std::string(kindName(c.weapon.kind)), std::to_string(c.tonnage), std::to_string(c.structure), std::to_string(c.cost.minerals),
-                      std::to_string(c.cost.organics), std::to_string(c.cost.radioactives), std::to_string(c.supplyUsed),
-                      c.maxPerVehicle > 0 ? std::to_string(c.maxPerVehicle) : std::string("-"), vehicleTypes(c.vehicles),
-                      requirements(r, c.requirements), abilities(c.abilities)});
-    return t;
-}
-
-ExportTable weaponFamiliesTable(const game::Rules& r) {
-    ExportTable t{"weapon_families.txt", {}};
-    line(t.text, {"Weapon Family", "Weapon Type", "Members", "Weapons"});
-    std::map<int, std::vector<uint32_t>> families;
-    const auto& comps = r.data().components;
-    for (uint32_t i = 0; i < comps.size(); ++i)
-        if (comps[i].isWeapon() && comps[i].weapon.family > 0) families[comps[i].weapon.family].push_back(i);
-    for (const auto& [family, members] : families)
-        line(t.text, {std::to_string(family), std::string(kindName(r.component(members.front()).weapon.kind)), std::to_string(members.size()),
-                      memberNames(r, members)});
-    return t;
-}
-
-ExportTable componentFamiliesTable(const game::Rules& r) {
-    ExportTable t{"component_families.txt", {}};
-    line(t.text, {"Family", "Group", "Members", "Components"});
-    std::map<int, std::vector<uint32_t>> families;
-    const auto& comps = r.data().components;
-    for (uint32_t i = 0; i < comps.size(); ++i)
-        if (comps[i].family > 0) families[comps[i].family].push_back(i);
-    for (const auto& [family, members] : families) {
-        const std::string& group = r.component(members.front()).generalGroup;
-        line(t.text, {std::to_string(family), group.empty() ? std::string("-") : group, std::to_string(members.size()), memberNames(r, members)});
+    const std::vector<Column> cols{{"Name", 40, false}, {"Tons", 6},   {"Struct", 6}, {"Min", 8},   {"Org", 8},
+                                   {"Rad", 8},          {"Family", 6}, {"Level", 6},  {"Group", 6}};
+    ExportTable t{"Comps.txt", header(cols, " Abilities")};
+    for (const ruleset::Component& c : r.data().components) {
+        std::string abilities;
+        for (const ruleset::Ability& a : c.abilities) abilities += (abilities.empty() ? "" : ", ") + a.type;
+        const std::vector<std::string> cells{c.name,          num(c.tonnage),      num(c.structure),   num(c.cost.minerals),  num(c.cost.organics),
+                                             num(c.cost.radioactives), num(c.family), num(c.romanNumeral), num(c.customGroup)};
+        t.text += row(cols, cells, abilities.empty() ? std::string{} : " " + abilities);
     }
+    return t;
+}
+
+// WeaponFamilies: name (40), weapon family number (15), vehicle type text (6).
+ExportTable weaponFamiliesTable(const game::Rules& r) {
+    const std::vector<Column> cols{{"Name", 40, false}, {"Weapon Family", 15}, {" Vehicle Type", 6, false}};
+    ExportTable t{"WeaponFamilies.txt", header(cols)};
+    for (const ruleset::Component& c : r.data().components)
+        if (c.isWeapon()) t.text += row(cols, std::vector<std::string>{c.name, num(c.weapon.family), " " + c.vehicleText});
+    return t;
+}
+
+// CompFamilies: name (40), family number (15), vehicle type text (6).
+ExportTable componentFamiliesTable(const game::Rules& r) {
+    const std::vector<Column> cols{{"Name", 40, false}, {"Family", 15}, {" Vehicle Type", 6, false}};
+    ExportTable t{"CompFamilies.txt", header(cols)};
+    for (const ruleset::Component& c : r.data().components) t.text += row(cols, std::vector<std::string>{c.name, num(c.family), " " + c.vehicleText});
     return t;
 }
 

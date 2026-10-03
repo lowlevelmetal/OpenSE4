@@ -181,6 +181,11 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     // Mood events raised after an empire's happiness update last turn (spec 02 §4).
     ctx.moodEvents = std::move(s.pendingMood);
     s.pendingMood.clear();
+    // Human-controlled empires already defeated as this turn began: it is their
+    // last turn, the one the Lose ending announced, and they are destroyed at
+    // its end (spec 06 §7 Q83, confirmed: binary).
+    std::vector<uint8_t> defeatedAtStart(s.empires.size(), 0);
+    for (size_t i = 0; i < s.empires.size(); ++i) defeatedAtStart[i] = s.empires[i].alive && score::defeated(r, s, EmpireId{i}) ? 1 : 0;
 
     // ---- 1. Orders, in player order. A human whose orders are missing is
     // played by the computer for this turn: every minister is switched on and
@@ -283,13 +288,15 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
 
     // ---- 6. End-of-turn processing, one empire at a time in empire order,
     // each followed by its destruction check. An empire founded during it
-    // (a rebel colony) starts its own processing next turn (inferred).
+    // (a rebel colony) starts its own processing next turn (inferred). A
+    // human-controlled empire is destroyed only when it was already defeated
+    // as this turn began, its last turn (spec 06 §7 Q83).
     const size_t processed = s.empires.size();
     for (size_t i = 0; i < processed; ++i) {
         const EmpireId id{i};
         if (!s.empire(id).alive) continue;
         empireEndOfTurn(ctx, id, ministersPlan(s, id, controlOf(i)));
-        score::checkDestruction(ctx, id);
+        score::checkDestruction(ctx, id, i < defeatedAtStart.size() && defeatedAtStart[i]);
     }
 
     // ---- 7. Design cleanup when a new year starts; then, every turn, the
