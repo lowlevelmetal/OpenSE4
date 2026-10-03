@@ -6,6 +6,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -105,6 +110,30 @@ std::optional<std::string_view> windowOf(std::string_view tag) {
 
 bool contains(const std::vector<std::string>& v, std::string_view x) { return std::find(v.begin(), v.end(), x) != v.end(); }
 
+const TaggedArea* findTag(const std::vector<TaggedArea>& tags, std::string_view name) {
+    for (const TaggedArea& t : tags)
+        if (t.name == name) return &t;
+    return nullptr;
+}
+
+// A part with a size (a tag can be registered for something not drawn).
+const TaggedArea* shownTag(const std::vector<TaggedArea>& tags, std::string_view name) {
+    for (const TaggedArea& t : tags)
+        if (t.name == name && t.area.max.x > t.area.min.x && t.area.max.y > t.area.min.y) return &t;
+    return nullptr;
+}
+
+// The lesson panel's own parts and the T button: above every window.
+bool isLessonTag(std::string_view tag) { return tag.starts_with("lesson:") || tag == "status:lesson"; }
+
+bool anyContains(const std::vector<LockArea>& areas, ImVec2 p) {
+    return std::any_of(areas.begin(), areas.end(), [&](const LockArea& a) { return a.contains(p); });
+}
+
+void grow(std::vector<LockArea>& areas, float by) {
+    for (LockArea& a : areas) a = a.grown(by);
+}
+
 } // namespace
 
 std::optional<std::string_view> tagWindowId(std::string_view tag) { return windowOf(tag); }
@@ -147,23 +176,36 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
                 if (!contains(allowed, opener)) allowed.push_back(std::move(opener));
         }
     }
-    for (const TaggedArea& t : tags) {
-        if (contains(allowed, t.name)) st.areas.push_back(t.area);
-        else if (contains(look, t.name)) st.lookAreas.push_back(t.area);
-    }
     // The windows the step says nothing about are the player's.
-    auto constrained = [&](std::string_view window) {
-        auto in = [&](const std::string& tag) { return windowOf(tag) == window; };
-        return std::any_of(allowed.begin(), allowed.end(), in) || std::any_of(look.begin(), look.end(), in);
+    auto named = [](const std::vector<std::string>& list, std::string_view window) {
+        return std::any_of(list.begin(), list.end(), [&](const std::string& tag) { return windowOf(tag) == window; });
     };
-    for (const std::string& w : openWindows) {
-        if (constrained(w)) continue;
-        const std::string windowTag = "window:" + w;
-        for (const TaggedArea& t : tags)
-            if (t.name == windowTag) st.areas.push_back(t.area);
+    auto constrained = [&](std::string_view window) { return named(allowed, window) || named(look, window); };
+    // An outlined part another window the step names covers: that window's
+    // Close button (and its keys), the way back the lesson points at. A window
+    // the step says nothing about can be closed anyway.
+    for (const std::string& tag : step.highlight)
+        if (const auto cover = coveringWindow(tag, tags, openWindows); cover && constrained(*cover))
+            if (std::string close = *cover + ":close"; !contains(allowed, close)) allowed.push_back(std::move(close));
+    // The open windows, front first: where one lies, it decides.
+    for (auto w = openWindows.rbegin(); w != openWindows.rend(); ++w)
+        if (const TaggedArea* t = findTag(tags, "window:" + *w))
+            st.windows.push_back(LockWindow{*w, t->area, constrained(*w), {}, {}});
+    for (const TaggedArea& t : tags) {
+        const bool act = contains(allowed, t.name);
+        if (!act && !contains(look, t.name)) continue;
+        // The lesson panel and the T button lie above every window.
+        if (isLessonTag(t.name)) {
+            if (act) st.top.push_back(t.area);
+            continue;
+        }
+        const auto window = windowOf(t.name);
+        auto in = std::find_if(st.windows.begin(), st.windows.end(), [&](const LockWindow& w) { return window && w.id == *window; });
+        if (in != st.windows.end()) (act ? in->areas : in->lookAreas).push_back(t.area);
+        else (act ? st.areas : st.lookAreas).push_back(t.area);
     }
     st.windowKeys = !openWindows.empty() && !constrained(openWindows.back());
-    st.areas.insert(st.areas.end(), prompts.begin(), prompts.end());
+    st.top.insert(st.top.end(), prompts.begin(), prompts.end());
     st.prompt = !prompts.empty();
     // Keys: the step's, its tags' hotkeys, and the panel's.
     for (const std::string& k : step.keys)
@@ -183,20 +225,145 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
     return st;
 }
 
-bool InputLock::allowedAt(ImVec2 p) const {
-    return std::any_of(state_.areas.begin(), state_.areas.end(), [&](const LockArea& a) { return a.contains(p); });
+bool LockState::allows(ImVec2 p) const {
+    if (anyContains(top, p)) return true;
+    for (const LockWindow& w : windows)
+        if (w.area.contains(p)) return !w.constrained || anyContains(w.areas, p);
+    return anyContains(areas, p);
 }
 
-bool InputLock::lookAt(ImVec2 p) const {
-    return std::any_of(state_.lookAreas.begin(), state_.lookAreas.end(), [&](const LockArea& a) { return a.contains(p); });
+bool LockState::looks(ImVec2 p) const {
+    if (anyContains(top, p)) return false;
+    for (const LockWindow& w : windows)
+        if (w.area.contains(p)) return w.constrained && anyContains(w.lookAreas, p);
+    return anyContains(lookAreas, p);
 }
+
+LockState LockState::grown(float by) const {
+    LockState g = *this;
+    grow(g.areas, by);
+    grow(g.lookAreas, by);
+    for (LockWindow& w : g.windows) {
+        grow(w.areas, by);
+        grow(w.lookAreas, by);
+    }
+    return g;
+}
+
+std::vector<LockArea> LockState::rects() const {
+    std::vector<LockArea> out = top;
+    out.insert(out.end(), areas.begin(), areas.end());
+    out.insert(out.end(), lookAreas.begin(), lookAreas.end());
+    for (const LockWindow& w : windows) {
+        out.push_back(w.area);
+        out.insert(out.end(), w.areas.begin(), w.areas.end());
+        out.insert(out.end(), w.lookAreas.begin(), w.lookAreas.end());
+    }
+    return out;
+}
+
+size_t LockState::parts() const {
+    size_t n = top.size() + areas.size() + lookAreas.size();
+    for (const LockWindow& w : windows) n += w.constrained ? w.areas.size() + w.lookAreas.size() : 1;
+    return n;
+}
+
+std::optional<std::string> coveringWindow(std::string_view tag, const std::vector<TaggedArea>& tags, const std::vector<std::string>& openWindows) {
+    const TaggedArea* t = shownTag(tags, tag);
+    if (!t || isLessonTag(tag)) return std::nullopt;
+    // The windows in front of the one the part is in (all of them for the main window's parts).
+    size_t first = 0;
+    if (const auto own = windowOf(tag))
+        if (const auto at = std::find(openWindows.begin(), openWindows.end(), *own); at != openWindows.end())
+            first = size_t(at - openWindows.begin()) + 1;
+    const ImVec2 middle = t->area.centre();
+    for (size_t i = openWindows.size(); i-- > first;)
+        if (const TaggedArea* w = findTag(tags, "window:" + openWindows[i]); w && w->area.contains(middle)) return openWindows[i];
+    return std::nullopt;
+}
+
+Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& tags, const std::vector<std::string>& openWindows) {
+    std::vector<std::string_view> targets;
+    for (const std::string& t : step.highlight)
+        if (!isLessonTag(t)) targets.push_back(t);
+    // Nothing to do while an outlined part can be used.
+    for (std::string_view t : targets)
+        if (shownTag(tags, t) && !coveringWindow(t, tags, openWindows)) return {};
+    auto uncover = [&](std::string_view target, std::string window) {
+        Recovery r{Recovery::Kind::Uncover, std::string(target), std::move(window), {}, {}};
+        if (std::string close = r.window + ":close"; shownTag(tags, close)) r.press = std::move(close);
+        return r;
+    };
+    // A part on screen that a window covers, or a way to open its window again
+    // that is on screen (two windows deep), in the order the step names them.
+    for (std::string_view t : targets) {
+        if (shownTag(tags, t)) {
+            if (auto cover = coveringWindow(t, tags, openWindows)) return uncover(t, std::move(*cover));
+            continue;
+        }
+        const auto window = windowOf(t);
+        if (!window || contains(openWindows, *window)) continue;
+        const std::vector<std::string> openers = learn::openersOf(*window);
+        for (const std::string& o : openers) {
+            if (!shownTag(tags, o)) continue;
+            if (auto cover = coveringWindow(o, tags, openWindows)) return uncover(t, std::move(*cover));
+            return Recovery{Recovery::Kind::Reopen, std::string(t), std::string(*window), o, {}};
+        }
+        for (const std::string& o : openers) {
+            const auto inner = windowOf(o);
+            if (!inner || contains(openWindows, *inner)) continue;
+            for (const std::string& first : learn::openersOf(*inner)) {
+                if (!shownTag(tags, first)) continue;
+                if (auto cover = coveringWindow(first, tags, openWindows)) return uncover(t, std::move(*cover));
+                return Recovery{Recovery::Kind::Reopen, std::string(t), std::string(*window), first, o};
+            }
+        }
+    }
+    return {};
+}
+
+namespace {
+
+// `negated`: under a `not` (a window closing rather than opening).
+bool waits(const learn::Condition& c, bool negated) {
+    using learn::Fact;
+    if (c.op != learn::Condition::Op::Fact) {
+        const bool inner = negated != (c.op == learn::Condition::Op::Not);
+        return std::any_of(c.children.begin(), c.children.end(), [&](const learn::Condition& x) { return waits(x, inner); });
+    }
+    switch (c.fact) {
+        // What a click or a key brings about at once.
+        case Fact::Selected:
+        case Fact::Command:
+        case Fact::Order:
+        case Fact::Tab:
+        case Fact::DesignComponents:
+        case Fact::DesignHullChosen:
+        case Fact::SimulatorOwners:
+        case Fact::SimulatorItems:
+        case Fact::BattleBegun:
+        case Fact::Option:
+        case Fact::ResearchQueued:
+        case Fact::ConstructionQueued: return false;
+        // A battle window closes once its battle has played out (or been watched).
+        case Fact::Window: return negated && (c.text == "tactical-combat" || c.text == "strategic-combat" || c.text == "ground-combat");
+        // A battle order may wait for the combat turns that bring the enemy in range.
+        case Fact::BattleOrder: return true;
+        // The turns, and what grows with them.
+        default: return true;
+    }
+}
+
+} // namespace
+
+bool waitsOnGame(const learn::Condition& done) { return waits(done, false); }
 
 bool InputLock::anyHeld() const {
     return std::any_of(held_.begin(), held_.end(), [](uint8_t h) { return h != 0; });
 }
 
 InputVerdict InputLock::mouseMove(ImVec2 p) const {
-    if (!state_.active || anyHeld() || allowedAt(p) || lookAt(p)) return InputVerdict::Pass;
+    if (!state_.active || anyHeld() || state_.allows(p) || state_.looks(p)) return InputVerdict::Pass;
     return InputVerdict::PointerAway;
 }
 
@@ -204,7 +371,7 @@ InputVerdict InputLock::mouseButton(ImVec2 p, int button, bool down) {
     const size_t b = slot(button);
     if (down) {
         // A press decides for its drag and its release.
-        if (!state_.active || allowedAt(p)) {
+        if (!state_.active || state_.allows(p)) {
             held_[b] = 1;
             swallowed_[b] = 0;
             return InputVerdict::Pass;
@@ -222,7 +389,7 @@ InputVerdict InputLock::mouseButton(ImVec2 p, int button, bool down) {
 }
 
 InputVerdict InputLock::wheel(ImVec2 p) const {
-    if (!state_.active || allowedAt(p) || lookAt(p)) return InputVerdict::Pass;
+    if (!state_.active || state_.allows(p) || state_.looks(p)) return InputVerdict::Pass;
     return InputVerdict::Drop;
 }
 

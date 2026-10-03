@@ -142,6 +142,7 @@ private:
     // The tutorial input lock, made at the end of each frame for the next.
     classic::InputLock lock_;
     void updateLock(classic::UiContext& ui);
+    std::string refusedKey_;    // a key the lock refused since the last frame (its name)
     // The keyboard goes to the classic window in front (keepFocusOnFrontWindow).
     void keepFocusOnFrontWindow();
     ImGuiID frontWindow_ = 0;   // the Dear ImGui window of the window in front (0: none)

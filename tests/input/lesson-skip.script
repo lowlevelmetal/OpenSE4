@@ -1,0 +1,21 @@
+# Skip, when a step cannot be done and there is no way back (docs/LEARNING.md "The
+# lesson panel"; docs/BUILDING.md "Input scripts"): tutorial 6 at step 6 with no battle to
+# move in. Next turns into Skip only after ten seconds; after a Skip the next step, whose
+# battle is missing too, gets its own ten seconds before Skip comes back (no cascade).
+options --tutorial=combat:6 --layout=1024x768 --size=1280x800
+
+wait-lesson combat
+assert-step 6
+assert-absent item:"recovery:*" in=lesson
+wait 540
+assert-absent item:Skip in=lesson
+wait-for item:Skip in=lesson timeout=120
+click item:Skip in=lesson
+wait-step 7
+wait 5
+assert-absent item:Skip in=lesson
+assert-present item:Next in=lesson
+assert-disabled item:Next in=lesson
+wait 480
+assert-absent item:Skip in=lesson
+wait-for item:Skip in=lesson timeout=200

@@ -243,7 +243,10 @@ EventVerdict ClassicMode::filterEvent(const SDL_Event& e) {
         case SDL_EVENT_KEY_UP: {
             const KeyChord chord{ImGui_ImplSDL3_KeyEventToImGuiKey(e.key.key, e.key.scancode), (e.key.mod & SDL_KMOD_CTRL) != 0,
                                  (e.key.mod & SDL_KMOD_SHIFT) != 0, (e.key.mod & SDL_KMOD_ALT) != 0};
-            return verdict(lock_.key(chord, e.type == SDL_EVENT_KEY_DOWN));
+            const InputVerdict v = lock_.key(chord, e.type == SDL_EVENT_KEY_DOWN);
+            // A key the step does not use: the lesson says so (once per press, not per repeat).
+            if (v == InputVerdict::Drop && e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && !chord.empty()) refusedKey_ = chordName(chord);
+            return verdict(v);
         }
         case SDL_EVENT_TEXT_INPUT:
         case SDL_EVENT_TEXT_EDITING: return verdict(lock_.text());
@@ -260,8 +263,10 @@ void ClassicMode::updateLock(UiContext& ui) {
     std::vector<TaggedArea> tags;
     tags.reserve(ui.tags.size());
     for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}});
+    // The open windows as they are shown, back to front: where they overlap, the front-most one decides.
     std::vector<std::string> open;
     for (const auto& [id, screen] : screens_) open.emplace_back(windowId(id));
+    open = windowsBackToFront(ui, std::move(open));
     // The game's prompts, and every ImGui popup (the prompts windows raise, combo lists).
     std::vector<LockArea> prompts;
     for (const auto& [a, b] : ui.promptAreas) prompts.push_back({a, b});
@@ -327,7 +332,7 @@ void ClassicMode::lessonCheckReport(UiContext& ui) {
         const bool moment = std::find(std::begin(kSituational), std::end(kSituational), tag) != std::end(kSituational);
         (moment ? situational : missing) += " " + tag;
     }
-    const size_t areas = lock_.state().areas.size();
+    const size_t areas = lock_.state().parts();
     std::printf("lesson-check %s:%zu areas=%zu %s%s%s%s%s%s\n", lesson_->lesson().slug.c_str(), lesson_->progress().active() + 1, areas,
                 missing.empty() ? "ok" : "missing:", missing.c_str(), situational.empty() ? "" : " situational:", situational.c_str(),
                 under.empty() ? "" : " under-panel:", under.c_str());
@@ -478,6 +483,11 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
     if (!session) return std::format("The {} '{}' could not start its game: {}", what, slug, session.error());
     startGame(std::move(*session));
     lesson_ = std::make_unique<LessonRunner>(*lesson, *session_);
+    // Free Play is for the lesson it was switched on in: every lesson starts locked.
+    if (settings().learnFreePlay) {
+        settings().learnFreePlay = false;
+        saveSettings();
+    }
     openLogOnTurn_ = false;
     log::info("Started the {} '{}'", what, slug);
     return std::nullopt;
@@ -661,8 +671,10 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     ui.facts = {};
     ui.promptAreas.clear();
     ui.lessonLocked = lock_.active();
-    // A click the tutorial's lock refused: the lesson says why.
+    // A click or a key the tutorial's lock refused: the lesson says why.
     if (const auto refused = lock_.takeRefused(); refused && lesson_) lesson_->refused(*refused, fs.time);
+    if (!refusedKey_.empty() && lesson_) lesson_->refused(std::nullopt, fs.time, refusedKey_);
+    refusedKey_.clear();
     ui.lessonRunning = lesson_ != nullptr;
     session_->poll();
     if (options_.scripted) trackForScripts();

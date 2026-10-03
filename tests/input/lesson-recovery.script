@@ -1,0 +1,29 @@
+# The way back when a step's windows were closed (docs/LEARNING.md "Getting back";
+# docs/BUILDING.md "Input scripts"): tutorial 4 at step 5, "Choose a hull", with no window
+# open. Two windows deep: the Designs button is outlined in the recovery style and the
+# panel says to press it, then Create; once Designs is open, Create is. No Skip meanwhile.
+options --tutorial=designing-ships:5 --open=none --layout=1024x768 --size=1280x800
+
+wait-lesson designing-ships
+assert-step 5
+wait-for item:recovery:command:designs in=lesson
+assert-present item:"hint:The * window was closed. Press the Designs button (F3), then Create, to open it again." in=lesson
+screenshot lesson-recovery-two-deep
+wait 660
+assert-absent item:Skip in=lesson
+# A refused click says the same.
+click tag:panel:system refused
+assert-present item:"note:The * window was closed. Press the Designs button (F3), then Create, to open it again." in=lesson
+# Its key works as the button does.
+key F3
+wait-window designs
+wait-for item:recovery:designs:create in=lesson
+assert-absent item:recovery:command:designs in=lesson
+assert-present item:"hint:*Press Create in Designs to open it again." in=lesson
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+wait-gone item:"recovery:*" in=lesson
+click item:##size in=create-design
+click item:##0 in=create-design
+wait-step 6
