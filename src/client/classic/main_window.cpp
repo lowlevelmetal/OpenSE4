@@ -957,6 +957,11 @@ void MainWindow::drawChooser(UiContext& ui) {
     bool close = false;
     std::function<void()> chosen;
     if (d.open()) {
+        // A question of the main window's: over the classic windows (an order
+        // button can be clicked while one is open), and never covered by a
+        // tutorial's input lock.
+        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+        ui.promptWindow();
         d.beginContent();
         if (!chooser_->note.empty()) ImGui::TextColored(kLabelBlue, "%s", chooser_->note.c_str());
         ImGui::BeginChild("##choices", ImVec2(0, ImGui::GetContentRegionAvail().y - ui.px(34)));

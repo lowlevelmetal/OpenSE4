@@ -1,0 +1,37 @@
+# Keys and clicks the lesson refuses or its questions take (docs/LEARNING.md "The input
+# lock"; docs/BUILDING.md "Input scripts"), on tutorial 1 at step 9:
+# - N answers "Leave the lesson?" and is not also Change Name in the main window;
+# - a refused click or key says what the step waits for; after three refusals in a short
+#   while the note also names Back, Skip and Free Play; with the panel hidden it says how
+#   to show it.
+options --tutorial=first-steps:9 --layout=1024x768 --size=1280x800
+
+wait-lesson first-steps
+assert-step 9
+click tag:lesson:leave
+wait-for item:No in="Leave Lesson"
+key N
+wait-gone item:No in="Leave Lesson"
+wait 5
+assert-no-window rename
+assert-lesson first-steps
+# An explanation step: its outlines are to look at.
+click tag:command:designs refused
+assert-present item:"note:This step explains: press Next in the lesson panel." in=lesson
+key F3 refused
+assert-present item:"note:This step does not use F3. This step explains: press Next in the lesson panel." in=lesson
+assert-absent item:"note:*Stuck?*" in=lesson
+click tag:panel:system refused
+assert-present item:"note:*Stuck? In the lesson panel, Back shows the steps before*Free Play unlocks the whole game." in=lesson
+# The panel hidden: the note says how to show it.
+click item:Hide in=lesson
+click tag:command:designs refused
+assert-present item:"note:*The lesson panel is hidden: Ctrl+H or the T button shows it.*" in=lesson
+key Ctrl+H
+wait-for tag:lesson:panel
+# An action step: the outline.
+click item:Next in=lesson
+wait-step 10
+wait 1000
+click tag:command:designs refused
+assert-present item:"note:Click the pulsing yellow outline." in=lesson

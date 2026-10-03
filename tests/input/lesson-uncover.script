@@ -1,0 +1,19 @@
+# A window that covers the step's outline (docs/LEARNING.md "Getting back";
+# docs/BUILDING.md "Input scripts"): at 800x600 the Colonies window lies over the command
+# buttons. Tutorial 3 at step 13 outlines Empire Status: the lesson outlines Colonies' Close
+# button in the recovery style and says to close it first (Esc); once it is closed the
+# crown button works.
+options --tutorial=research-and-construction:13 --open=colonies --layout=800x600 --size=800x600
+
+wait-lesson research-and-construction
+assert-step 13
+wait-for item:recovery:colonies:close in=lesson
+assert-present item:"hint:Close the Colonies window first (Esc)." in=lesson
+screenshot lesson-uncover
+key Escape
+wait-closed colonies
+wait-gone item:"recovery:*" in=lesson
+assert-absent item:"hint:*" in=lesson
+click tag:command:empire-status
+wait-window empire-status
+wait-step 14

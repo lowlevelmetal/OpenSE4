@@ -10,14 +10,23 @@
 
 #include "client/classic/lesson_lock.hpp"
 #include "client/classic/ui.hpp"
+#include "learn/markdown.hpp"
 #include "learn/progress.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace opense4::client::classic {
+
+// The open classic windows (ids, oldest first) in the order Dear ImGui shows
+// them, back to front: a window the player clicks comes to the front. The
+// input lock and the way back follow what the player sees.
+std::vector<std::string> windowsBackToFront(const UiContext& ui, std::vector<std::string> open);
 
 class LessonRunner {
 public:
@@ -37,8 +46,14 @@ public:
     // the input (a tutorial, Free Play off, not over), and that step.
     bool locking() const;
     const learn::Step* activeStep() const;
-    // A press the lock refused: a hint there, and the outlines flash.
-    void refused(ImVec2 where, double time);
+    // A press the lock refused (`where`), or a key (none; `key` names it): a
+    // note by the pointer or the panel, and the outlines flash.
+    void refused(std::optional<ImVec2> where, double time, std::string key = {});
+    // The way back when the active step's window was closed or another window
+    // covers its outline (docs/LEARNING.md "Getting back"): Markdown for the
+    // panel, under the step's text; empty when there is none. Its part is
+    // outlined in the recovery style meanwhile.
+    const std::string& recoveryHint() const { return recoveryHint_; }
 
     // Tutorials: shows step `step` (0-based) as if the ones before were done
     // (--tutorial=<slug>:<step>, for checking content).
@@ -61,8 +76,15 @@ private:
     void finished();
 
     void drawOutlines(UiContext& ui, const LockState& lock) const;
+    // The note by a refused click or key.
+    void drawRefusedNote(UiContext& ui, const learn::Step& st, double since) const;
     // The active step's condition looks out of reach: Next offers Skip.
     bool stuck(const UiContext& ui) const;
+    // The way back for the active step (lesson_lock.hpp findRecovery), and its hint.
+    void updateRecovery(const UiContext& ui, const learn::ClientFacts& facts);
+    std::string describe(const Recovery& r) const;
+    void drawRecoveryHint(UiContext& ui);
+    std::string recoveryPlain() const;   // the hint without its Markdown
     void drawPanel(UiContext& ui);
     // Hands Dear ImGui's keyboard focus back to the window that had it before a click on the panel.
     void keepKeyboardFocus();
@@ -77,13 +99,20 @@ private:
     bool panelOpen_ = true;
     bool moved_ = false;        // the player moved the panel: it keeps its place
     bool windowsOpen_ = false;  // a classic window is open (the panel's default place)
-    // The active step: since when, and when its targets were last on screen.
+    // The active step: since when, and when its targets were last on screen
+    // (or a way back to them was).
     std::optional<size_t> activeSeen_;
     double activeSince_ = 0;
     double targetsSeen_ = 0;
-    // The last press the lock refused.
+    Recovery recovery_;
+    std::string recoveryHint_;                 // Markdown
+    std::vector<learn::Block> recoveryBlocks_;
+    std::map<std::string, std::string> titles_;   // the windows' titles as last shown, by id
+    // The last press or key the lock refused, and when the recent ones were.
     std::optional<ImVec2> refusedAt_;
+    std::string refusedKey_;
     double refusedTime_ = -10;
+    std::deque<double> refusals_;
     YesNoPrompt leave_;
     Request request_ = Request::None;
     ImGuiID focusBefore_ = 0;   // the window that had the keyboard focus before the panel took it

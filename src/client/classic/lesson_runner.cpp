@@ -1,18 +1,24 @@
 #include "client/classic/lesson_runner.hpp"
 
+#include "client/app_settings.hpp"
 #include "client/audio.hpp"
 #include "client/classic/learn_content.hpp"
+#include "client/classic/screen_id.hpp"
 #include "client/classic/screens/markdown_view.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
+#include "client/script/items.hpp"
 #include "core/hash.hpp"
 
 #include <imgui_internal.h>
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
+#include <cstdint>
 #include <format>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -44,19 +50,33 @@ void dimWrapped(const char* text) {
     ImGui::PopTextWrapPos();
 }
 
-// How long a step's targets may be missing from the screen, and how long a
-// step may last, before Next offers to skip it (seconds of play).
-constexpr double kTargetsGoneSkip = 3.0;
+// How long a step's targets may be missing from the screen with no way back
+// to them, and how long a step that waits on a click may last, before Next
+// offers to skip it (seconds of play). A step that waits on the turns or a
+// battle is never timed (waitsOnGame).
+constexpr double kTargetsGoneSkip = 10.0;
 constexpr double kStepSkip = 120.0;
-// How long the hint after a refused click shows.
-constexpr double kRefusedHint = 2.5;
+// How long the note after a refused click or key shows, and how many
+// refusals in how many seconds bring up Back, Skip and Free Play in it.
+constexpr double kRefusedHint = 3.0;
+constexpr double kRefusedHintLong = 5.0;
+constexpr size_t kStuckRefusals = 3;
+constexpr double kStuckWindow = 15.0;
+// A refused click flashes the outlines white twice, at 2 Hz.
+constexpr double kFlashTime = 1.0;
+constexpr double kFlashPeriod = 0.5;
+// The outlines: the step's pulse in amber, the way back dashed in cyan.
+constexpr uint32_t kOutlineColor = 0xffd040;
+constexpr uint32_t kRecoveryColor = 0x50d8ff;
 
-// Dims everything but `areas` (the spotlight of the input lock): the screen
-// is cut into a grid at the areas' edges, and every cell outside them is
-// filled, row by row.
-void spotlight(ImDrawList* dl, const std::vector<LockArea>& areas, ImVec2 size, ImU32 color) {
+// Dims everything the lock does not let the pointer use (the spotlight of
+// the input lock): the screen is cut into a grid at the edges of every
+// rectangle the lock knows, so each cell lies wholly inside or outside each of
+// them, and every cell the lock refuses is filled, row by row. Windows stacked
+// over each other dim as the lock decides: the front-most one under a cell.
+void spotlight(ImDrawList* dl, const LockState& lock, ImVec2 size, ImU32 color) {
     std::vector<float> xs{0.0f, size.x}, ys{0.0f, size.y};
-    for (const LockArea& a : areas) {
+    for (const LockArea& a : lock.rects()) {
         xs.push_back(std::clamp(a.min.x, 0.0f, size.x));
         xs.push_back(std::clamp(a.max.x, 0.0f, size.x));
         ys.push_back(std::clamp(a.min.y, 0.0f, size.y));
@@ -66,7 +86,7 @@ void spotlight(ImDrawList* dl, const std::vector<LockArea>& areas, ImVec2 size, 
     xs.erase(std::unique(xs.begin(), xs.end()), xs.end());
     std::sort(ys.begin(), ys.end());
     ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
-    auto open = [&](float x, float y) { return std::any_of(areas.begin(), areas.end(), [&](const LockArea& a) { return a.contains({x, y}); }); };
+    auto open = [&](float x, float y) { return lock.allows({x, y}) || lock.looks({x, y}); };
     for (size_t j = 0; j + 1 < ys.size(); ++j) {
         const float cy = (ys[j] + ys[j + 1]) * 0.5f;
         size_t i = 0;
@@ -83,6 +103,53 @@ void spotlight(ImDrawList* dl, const std::vector<LockArea>& areas, ImVec2 size, 
     }
 }
 
+// A rectangle of dashes (the way back's outline). `extend` lengthens each
+// dash at both ends (the dark edge drawn under it).
+void dashedRect(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 color, float thick, float dash, float gap, float extend) {
+    const ImVec2 corners[5] = {a, ImVec2(b.x, a.y), b, ImVec2(a.x, b.y), a};
+    for (size_t side = 0; side < 4; ++side) {
+        const ImVec2 p = corners[side], q = corners[side + 1];
+        const float len = std::hypot(q.x - p.x, q.y - p.y);
+        if (len <= 0.0f) continue;
+        const ImVec2 d((q.x - p.x) / len, (q.y - p.y) / len);
+        for (float at = 0.0f; at < len; at += dash + gap) {
+            const float from = std::max(0.0f, at - extend), to = std::min(len, at + dash + extend);
+            dl->AddLine(ImVec2(p.x + d.x * from, p.y + d.y * from), ImVec2(p.x + d.x * to, p.y + d.y * to), color, thick);
+        }
+    }
+}
+
+// A window's title as Dear ImGui names it ("Finale###finale" shows "Finale").
+std::string shownTitle(const char* name) {
+    std::string_view n(name ? name : "");
+    if (const size_t hashes = n.find("##"); hashes != std::string_view::npos) n = n.substr(0, hashes);
+    return std::string(n);
+}
+
+// "build-queue" -> "Build Queue".
+std::string titleCase(std::string_view id) {
+    std::string out;
+    bool start = true;
+    for (const char c : id) {
+        if (c == '-') {
+            out += ' ';
+            start = true;
+            continue;
+        }
+        out += start && c >= 'a' && c <= 'z' ? char(c - 'a' + 'A') : c;
+        start = false;
+    }
+    return out;
+}
+
+// The keys bound to an action, "F3" or "Ctrl+H or F9"; empty when none is.
+std::string keysOf(Action a) {
+    std::string out;
+    for (const KeyChord& c : appSettings().controls.bindings.chords(a))
+        if (!c.empty()) out += (out.empty() ? "" : " or ") + chordName(c);
+    return out;
+}
+
 } // namespace
 
 LessonRunner::LessonRunner(learn::Lesson lesson, const ClassicSession& session)
@@ -96,9 +163,7 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const L
         activeSeen_ = progress_.active();
         activeSince_ = targetsSeen_ = ui.time;
     }
-    if (const learn::Step* st = activeStep())
-        for (const std::string& tag : st->highlight)
-            if (!tag.starts_with("lesson:") && findTag(ui, tag)) targetsSeen_ = ui.time;
+    updateRecovery(ui, facts);
     drawPanel(ui);
     drawOutlines(ui, lock);
     drawResult(ui);
@@ -114,16 +179,135 @@ const learn::Step* LessonRunner::activeStep() const {
     return progress_.active() < steps.size() ? &steps[progress_.active()] : nullptr;
 }
 
-void LessonRunner::refused(ImVec2 where, double time) {
+void LessonRunner::refused(std::optional<ImVec2> where, double time, std::string key) {
     refusedAt_ = where;
+    refusedKey_ = std::move(key);
     refusedTime_ = time;
+    refusals_.push_back(time);
+    while (!refusals_.empty() && time - refusals_.front() > kStuckWindow) refusals_.pop_front();
 }
 
 bool LessonRunner::stuck(const UiContext& ui) const {
     const learn::Step* st = activeStep();
     if (!st || !st->done || progress_.completed(progress_.active())) return false;
+    // While there is a way back to the step's window, the lesson shows it instead.
+    if (recovery_.kind != Recovery::Kind::None) return false;
     const bool targets = std::any_of(st->highlight.begin(), st->highlight.end(), [](const std::string& t) { return !t.starts_with("lesson:"); });
-    return (targets && ui.time - targetsSeen_ > kTargetsGoneSkip) || ui.time - activeSince_ > kStepSkip;
+    if (targets && ui.time - targetsSeen_ > kTargetsGoneSkip) return true;
+    // A step that waits on the turns or a battle is going as it should, however long it takes.
+    return !waitsOnGame(*st->done) && ui.time - activeSince_ > kStepSkip;
+}
+
+std::vector<std::string> windowsBackToFront(const UiContext& ui, std::vector<std::string> open) {
+    // Dear ImGui keeps its windows in display order, back to front.
+    const ImGuiContext& g = *ImGui::GetCurrentContext();
+    auto place = [&](const std::string& id) {
+        const std::string tag = "window:" + id;
+        for (const UiTag& t : ui.tags)
+            if (t.name == tag && t.window)
+                for (int i = 0; i < g.Windows.Size; ++i)
+                    if (g.Windows[i] == t.window->RootWindow) return i;
+        return -1;   // not drawn with its tag: behind the others
+    };
+    std::vector<std::pair<int, std::string>> keyed;
+    keyed.reserve(open.size());
+    for (std::string& id : open) {
+        const int at = place(id);
+        keyed.emplace_back(at, std::move(id));
+    }
+    std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<std::string> out;
+    out.reserve(keyed.size());
+    for (auto& [at, id] : keyed) out.push_back(std::move(id));
+    return out;
+}
+
+void LessonRunner::updateRecovery(const UiContext& ui, const learn::ClientFacts& facts) {
+    // The windows' titles as shown, for a hint about one once it is closed.
+    for (const UiTag& t : ui.tags)
+        if (t.window && t.name.starts_with("window:")) titles_[t.name.substr(7)] = shownTitle(t.window->Name);
+    const learn::Step* st = lesson().kind == learn::LessonKind::Tutorial ? activeStep() : nullptr;
+    Recovery r;
+    std::vector<std::string> windows;
+    if (st && !progress_.completed(progress_.active()) && progress_.result() == learn::LessonProgress::Result::None) {
+        std::vector<TaggedArea> tags;
+        tags.reserve(ui.tags.size());
+        for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}});
+        windows = windowsBackToFront(ui, facts.openWindows);
+        r = findRecovery(*st, tags, windows);
+        // Its targets on screen, or a way back to them: Skip waits.
+        bool seen = r.kind != Recovery::Kind::None;
+        for (const std::string& tag : st->highlight)
+            if (!tag.starts_with("lesson:") && findTag(ui, tag)) seen = true;
+        if (seen) targetsSeen_ = ui.time;
+    }
+    recovery_ = std::move(r);
+    std::string hint = describe(recovery_);
+    if (recovery_.kind == Recovery::Kind::Uncover && !windows.empty() && windows.back() == recovery_.window) hint += " (Esc)";
+    if (!hint.empty()) hint += ".";
+    if (hint != recoveryHint_) {
+        recoveryHint_ = std::move(hint);
+        recoveryBlocks_ = recoveryHint_.empty() ? std::vector<learn::Block>{} : learn::parseMarkdown(recoveryHint_, {}, false).blocks;
+    }
+}
+
+std::string LessonRunner::describe(const Recovery& r) const {
+    auto title = [&](std::string_view id) {
+        if (const auto it = titles_.find(std::string(id)); it != titles_.end() && !it->second.empty()) return it->second;
+        if (const auto screen = screenFromWindowId(id)) return std::string(screenTitle(*screen));
+        return std::string(id);
+    };
+    // What to press, as the player sees it: the verb, and the button ("the
+    // **Designs** button (F3)", "**Create** in Designs", "the **Build Queue**
+    // order"); `in` names the window a button inside a window is in.
+    struct Press {
+        std::string verb, what;
+    };
+    auto press = [&](std::string_view tag, bool in) -> Press {
+        const size_t colon = tag.find(':');
+        const std::string_view kind = tag.substr(0, colon), id = colon == std::string_view::npos ? std::string_view{} : tag.substr(colon + 1);
+        if (kind == "command") {
+            const std::vector<Action> actions = tagActions(tag);
+            const std::string keys = actions.empty() ? std::string{} : keysOf(actions.front());
+            return {"Press", std::format("the **{}** button{}", title(id), keys.empty() ? "" : " (" + keys + ")")};
+        }
+        if (kind == "order") return {"Press", std::format("the **{}** order", titleCase(id))};
+        if (tag == "panel:galaxy") return {"Right-click", "the galaxy panel"};
+        const std::string where = in ? " in " + title(kind) : std::string{};
+        if (id == "list") return {"Click", "a line of the list" + where};
+        return {"Press", std::format("**{}**{}", titleCase(id), where)};
+    };
+    switch (r.kind) {
+        case Recovery::Kind::None: return {};
+        case Recovery::Kind::Uncover: return std::format("Close the {} window first", title(r.window));
+        case Recovery::Kind::Reopen: {
+            const Press first = press(r.press, true);
+            std::string how = first.verb + " " + first.what;
+            if (!r.then.empty()) how += ", then " + press(r.then, false).what + ",";
+            return std::format("The {} window was closed. {} to open it again", title(r.window), how);
+        }
+    }
+    return {};
+}
+
+std::string LessonRunner::recoveryPlain() const {
+    std::string text = learn::plainText(recoveryBlocks_);
+    while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
+    return text;
+}
+
+void LessonRunner::drawRecoveryHint(UiContext& ui) {
+    // The way back, marked with a bar in the colour of its outline.
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 start = ImGui::GetCursorScreenPos();
+    ImGui::Indent(ui.px(9));
+    MarkdownOptions options;
+    if (auto clicked = drawMarkdown(ui.painter(), recoveryBlocks_, options)) followLink(ui, *clicked);
+    ImGui::Unindent(ui.px(9));
+    const float end = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+    dl->AddRectFilled(start, ImVec2(start.x + ui.px(3), std::max(start.y + ui.px(4), end)), imColor(kRecoveryColor));
+    if (script::collectingItems())   // input scripts: item:"hint:<the text>"
+        script::reportItem("hint:" + recoveryPlain(), start, ImVec2(start.x + ImGui::GetContentRegionAvail().x, end));
 }
 
 void LessonRunner::jumpTo(const UiContext& ui, size_t step) {
@@ -163,7 +347,8 @@ void LessonRunner::drawOutlines(UiContext& ui, const LockState& lock) const {
     const learn::Step* st = lesson().kind == learn::LessonKind::Tutorial ? activeStep() : nullptr;
     if (!st || progress_.result() != learn::LessonProgress::Result::None) return;
     const bool outline = !st->highlight.empty() && !progress_.completed(progress_.active());
-    if (!outline && !lock.active) return;
+    const bool recover = !recovery_.press.empty();
+    if (!outline && !recover && !lock.active) return;
     // The spotlight goes in a see-through window over the classic windows and
     // under the panel. Each outline goes in the layer of the window its part
     // is drawn in, so a prompt, a menu or another window above that window
@@ -176,51 +361,106 @@ void LessonRunner::drawOutlines(UiContext& ui, const LockState& lock) const {
                      ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
     ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
     ImDrawList* under = ImGui::GetWindowDrawList();
-    ImGui::End();
     if (ImGuiWindow* panel = ImGui::FindWindowByName("##lessonpanel"); panel && panelOpen_) ImGui::BringWindowToDisplayFront(panel);
-    // A refused click makes the outlines flash white for a moment.
+    // A refused click or key makes the outlines flash white, twice (2 Hz).
     const double sinceRefused = ui.time - refusedTime_;
-    const bool flash = sinceRefused >= 0 && sinceRefused < 1.0 && std::fmod(sinceRefused, 0.25) < 0.125;
+    const bool flash = sinceRefused >= 0 && sinceRefused < kFlashTime && std::fmod(sinceRefused, kFlashPeriod) < kFlashPeriod * 0.5;
     const float thick = std::max(2.0f, ui.px(flash ? 4.0f : 2.5f));
+    const float edge = std::max(1.0f, ui.px(1.0f));   // the dark edge on either side of the line
     const float pad = ui.px(3);
     // Everything the step does not let the player use is dimmed. The clear
     // areas reach round the outlines, which lie just outside their parts.
     if (lock.active) {
-        std::vector<LockArea> open = lock.areas;
-        open.insert(open.end(), lock.lookAreas.begin(), lock.lookAreas.end());
-        const float ring = pad + std::max(2.0f, ui.px(4.0f));
-        for (LockArea& a : open) a = {ImVec2(a.min.x - ring, a.min.y - ring), ImVec2(a.max.x + ring, a.max.y + ring)};
-        spotlight(under, open, display, IM_COL32(0, 0, 0, 140));
+        const float ring = pad + std::max(2.0f, ui.px(4.0f)) + edge;
+        spotlight(under, lock.grown(ring), display, IM_COL32(0, 0, 0, 140));
     }
+    const ImU32 dark = IM_COL32(0, 0, 0, 230);
+    auto around = [&](const std::string& tag, auto&& draw) {
+        for (const UiTag& t : ui.tags) {
+            if (t.name != tag) continue;
+            // A part drawn outside every window lies on the map, under all of them.
+            ImDrawList* dl = t.window ? t.window->DrawList : ImGui::GetBackgroundDrawList();
+            dl->PushClipRect(ImVec2(0, 0), display, false);
+            dl->PushTexture(ImGui::GetIO().Fonts->TexRef);
+            draw(dl, ImVec2(t.min.x - pad, t.min.y - pad), ImVec2(t.max.x + pad, t.max.y + pad));
+            dl->PopTexture();
+            dl->PopClipRect();
+        }
+    };
     if (outline) {
-        const float pulse = 0.6f + 0.4f * std::sin(float(ui.time) * 5.0f);
-        const ImU32 color = flash ? IM_COL32_WHITE : imColor(0xffd040, pulse);
+        // The step's outlines pulse between 55 % and full strength, an amber
+        // line with a thin dark edge either side that sets it apart from the
+        // game's own amber selection frames.
+        const float pulse = 0.775f + 0.225f * std::sin(float(ui.time) * 5.0f);
+        const ImU32 color = flash ? IM_COL32_WHITE : imColor(kOutlineColor, pulse);
         for (const std::string& tag : st->highlight)
-            for (const UiTag& t : ui.tags) {
-                if (t.name != tag) continue;
-                // A part drawn outside every window lies on the map, under all of them.
-                ImDrawList* dl = t.window ? t.window->DrawList : ImGui::GetBackgroundDrawList();
-                dl->PushClipRect(ImVec2(0, 0), display, false);
-                dl->PushTexture(ImGui::GetIO().Fonts->TexRef);
-                dl->AddRect(ImVec2(t.min.x - pad, t.min.y - pad), ImVec2(t.max.x + pad, t.max.y + pad), color, 0.0f, thick);
-                dl->PopTexture();
-                dl->PopClipRect();
-            }
+            around(tag, [&](ImDrawList* dl, ImVec2 a, ImVec2 b) {
+                dl->AddRect(a, b, dark, 0.0f, thick + 2 * edge);
+                dl->AddRect(a, b, color, 0.0f, thick);
+            });
     }
-    // And a word where the player clicked (outlined or not).
-    if (refusedAt_ && sinceRefused >= 0 && sinceRefused < kRefusedHint) {
-        const char* kHint = st->done ? "The lesson is waiting for the outlined part.\nFree Play in the lesson panel unlocks the game."
-                                     : "This step explains: press Next in the lesson panel.\nFree Play in the lesson panel unlocks the game.";
-        ImDrawList* fg = ImGui::GetForegroundDrawList();
-        const ImVec2 textSize = ImGui::CalcTextSize(kHint);
-        const ImVec2 pad2(ui.px(6), ui.px(4));
-        ImVec2 at(refusedAt_->x + ui.px(14), refusedAt_->y + ui.px(10));
-        at.x = std::min(at.x, display.x - textSize.x - 2 * pad2.x);
-        at.y = std::min(at.y, display.y - textSize.y - 2 * pad2.y);
-        const float alpha = float(std::min(1.0, (kRefusedHint - sinceRefused) * 2.0));
-        fg->AddRectFilled(at, ImVec2(at.x + textSize.x + 2 * pad2.x, at.y + textSize.y + 2 * pad2.y), imColor(0x101c40, 0.95f * alpha));
-        fg->AddRect(at, ImVec2(at.x + textSize.x + 2 * pad2.x, at.y + textSize.y + 2 * pad2.y), imColor(0xffd040, alpha));
-        fg->AddText(ImVec2(at.x + pad2.x, at.y + pad2.y), imColor(0xffffff, alpha), kHint);
+    if (recover) {
+        // The way back to the step's window: dashed, in cyan, and steady.
+        const ImU32 color = flash ? IM_COL32_WHITE : imColor(kRecoveryColor);
+        const float dash = ui.px(7), gap = ui.px(4);
+        around(recovery_.press, [&](ImDrawList* dl, ImVec2 a, ImVec2 b) {
+            dashedRect(dl, a, b, dark, thick + 2 * edge, dash, gap, edge);
+            dashedRect(dl, a, b, color, thick, dash, gap, 0.0f);
+            script::reportItem("recovery:" + recovery_.press, a, b);   // input scripts: item:recovery:<tag>
+        });
+    }
+    drawRefusedNote(ui, *st, sinceRefused);
+    ImGui::End();   // ##lessonoutlines (the items reported for scripts lie in it)
+}
+
+void LessonRunner::drawRefusedNote(UiContext& ui, const learn::Step& st, double since) const {
+    // A word where the player clicked (or by the panel, for a key): what the
+    // step waits for, the way back when there is one, how to show the panel
+    // when it is hidden, and after a few refusals in a short while, the panel's
+    // ways out.
+    if (!refusedAt_ && refusedKey_.empty()) return;
+    const bool stuckLines = refusals_.size() >= kStuckRefusals;
+    const double shows = stuckLines ? kRefusedHintLong : kRefusedHint;
+    if (since < 0 || since >= shows) return;
+    std::string text;
+    if (!refusedKey_.empty()) text = std::format("This step does not use {}. ", refusedKey_);
+    if (!st.done) text += "This step explains: press Next in the lesson panel.";
+    else if (!recoveryBlocks_.empty()) text += recoveryPlain();
+    else text += "Click the pulsing yellow outline.";
+    if (!panelOpen_) {
+        const std::string keys = keysOf(Action::LessonText);
+        text += std::format("\nThe lesson panel is hidden: {}the T button shows it.", keys.empty() ? "" : keys + " or ");
+    }
+    if (stuckLines)
+        text += "\nStuck? In the lesson panel, Back shows the steps before, Skip appears when a step cannot be done any more, "
+                "and Free Play unlocks the whole game.";
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    ImFont* font = ImGui::GetFont();
+    const float size = ImGui::GetFontSize();
+    const float wrap = std::min(display.x * 0.5f, ui.px(380));
+    const ImVec2 textSize = font->CalcTextSizeA(size, FLT_MAX, wrap, text.c_str());
+    const ImVec2 pad(ui.px(6), ui.px(4));
+    const ImVec2 box(textSize.x + 2 * pad.x, textSize.y + 2 * pad.y);
+    // By the click; for a key, just above the panel, or under the T button when the panel is hidden.
+    ImVec2 at(display.x * 0.5f - box.x * 0.5f, display.y * 0.3f);
+    if (refusedAt_) {
+        at = ImVec2(refusedAt_->x + ui.px(14), refusedAt_->y + ui.px(10));
+    } else if (const UiTag* panel = findTag(ui, "lesson:panel"); panel && panelOpen_) {
+        at = ImVec2(panel->min.x, panel->min.y - box.y - ui.px(6));
+    } else if (const UiTag* t = findTag(ui, "status:lesson")) {
+        at = ImVec2(t->max.x - box.x, t->max.y + ui.px(8));
+    }
+    at.x = std::clamp(at.x, 0.0f, std::max(0.0f, display.x - box.x));
+    at.y = std::clamp(at.y, 0.0f, std::max(0.0f, display.y - box.y));
+    const float alpha = float(std::min(1.0, (shows - since) * 2.0));
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    fg->AddRectFilled(at, ImVec2(at.x + box.x, at.y + box.y), imColor(0x101c40, 0.95f * alpha));
+    fg->AddRect(at, ImVec2(at.x + box.x, at.y + box.y), imColor(!st.done || recoveryBlocks_.empty() ? kOutlineColor : kRecoveryColor, alpha));
+    fg->AddText(font, size, ImVec2(at.x + pad.x, at.y + pad.y), imColor(0xffffff, alpha), text.c_str(), nullptr, wrap);
+    if (script::collectingItems()) {   // input scripts: item:"note:<the text>" (its lines joined by spaces)
+        std::string label = "note:" + text;
+        std::replace(label.begin(), label.end(), '\n', ' ');
+        script::reportItem(label, at, ImVec2(at.x + box.x, at.y + box.y));
     }
 }
 
@@ -265,6 +505,7 @@ void LessonRunner::tutorialBody(UiContext& ui) {
     ImGui::Spacing();
     if (progress_.result() == learn::LessonProgress::Result::Done) ImGui::TextColored(kGood, "Lesson complete.");
     else if (st.done && progress_.completed(step)) ImGui::TextColored(kGood, "Done.");
+    else if (step == progress_.active() && !recoveryHint_.empty()) drawRecoveryHint(ui);   // the way back (recoveryHint())
     else if (st.done && stuck(ui)) dimWrapped("If this cannot be done any more, Skip moves on.");
     else if (st.done) dimWrapped("The lesson moves on by itself once you have done this.");
 }

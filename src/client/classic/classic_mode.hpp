@@ -93,8 +93,9 @@ private:
     std::optional<std::string> openAutomationWindow(const std::string& name);
     // --select: a vehicle for the main window to select (automation).
     std::optional<std::string> selectForAutomation(const std::string& what);
-    // The lesson panel and its requests, Ctrl+H and Shift+F1.
-    void updateLesson(classic::UiContext& ui);
+    // The lesson panel and its requests, Ctrl+H and Shift+F1 (not while a
+    // question waits for its answer: `prompted`).
+    void updateLesson(classic::UiContext& ui, bool prompted);
     void contextHelp();
     void endTurn();
     void updateAudio();
@@ -141,6 +142,7 @@ private:
     // The tutorial input lock, made at the end of each frame for the next.
     classic::InputLock lock_;
     void updateLock(classic::UiContext& ui);
+    std::string refusedKey_;    // a key the lock refused since the last frame (its name)
     // The keyboard goes to the classic window in front (keepFocusOnFrontWindow).
     void keepFocusOnFrontWindow();
     ImGuiID frontWindow_ = 0;   // the Dear ImGui window of the window in front (0: none)

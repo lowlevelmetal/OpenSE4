@@ -167,10 +167,13 @@ The reference section at the end lists the exact keys, values and command names.
 
 Windows and widgets that lessons point at register a tag each frame with their screen
 rectangle (`UiContext::tags`) and the window it was drawn in. A step's `highlight`
-outlines the tagged rectangles with a pulsing frame until the step is done. Each frame is
-drawn in its part's own window, so whatever lies above that window covers the frame as
-it covers the part: a prompt such as "Leave the lesson?", the Game Menu and its Quit
-question, or another window. Tags are:
+outlines the tagged rectangles with a pulsing frame until the step is done: an amber line
+whose strength pulses between 55 % and full, with a thin dark edge on either side that
+sets it apart from the game's own amber selection frames. The way back to a closed or
+covered window (see "Getting back") is outlined in another style, dashed in cyan and
+steady. Each frame is drawn in its part's own window, so whatever lies above that window
+covers the frame as it covers the part: a prompt such as "Leave the lesson?", the Game
+Menu and its Quit question, or another window. Tags are:
 
 - `window:<id>` for each window (ids as in `window:` links);
 - `command:<id>` for the main window's command buttons, `order:<id>` for the order
@@ -204,11 +207,20 @@ weighs as much as a large map). Once dragged, it stays where it was put.
   the panel says so). When the active step's condition is met while an earlier step is
   shown, the panel moves on to the next step. **Read more** opens the step's `manual`
   page; **Leave** ends the lesson's game (after asking).
-- **Skip**: when the active step's outlined targets have been off the screen for three
-  seconds, or the step has waited two minutes, Next turns into Skip, which gives the step
-  up and goes on. A lesson can never get stuck on a step whose condition can no longer
-  be met (a scout destroyed, a battle ended early).
-- **Free Play** switches the input lock off (and on again); see the next section.
+- **Skip**: when the active step's outlined targets have been off the screen for ten
+  seconds and there is no way back to them (see "Getting back": while there is one, the
+  lesson shows it instead), or a step that waits for a click has waited two minutes, Next
+  turns into Skip, which gives the step up and goes on. A lesson can never get stuck on a
+  step whose condition can no longer be met (a scout destroyed, a battle ended early). A
+  step whose condition waits on the game is never timed, as it is going as it should
+  however long it takes: the turns (`turn`, `turns_passed`), the empire's counts that grow
+  with them (`systems_explored`, `colonies`, `empires_met`, `treaties`, `techs_researched`,
+  ...) and battles that play out (`battle_order`, a battle window closing). The client
+  tells these from the condition's keys (`waitsOnGame` in `client/classic/lesson_lock.hpp`);
+  lessons need no extra field. After a Skip the next step starts its own wait, with its
+  own way back first, so one Skip never runs into the next.
+- **Free Play** switches the input lock off (and on again) for the lesson being played;
+  see the next section.
 - Training games: the objectives with lamps (green when met, red when a deadline
   passed), the hint that came up last (with OK), and the briefing page with Previous
   and Next through its series. Pages come up at the start of their turn.
@@ -226,6 +238,29 @@ The panel only reads the game. Lessons change the game only through the player's
 commands (every command `ClassicSession::issue()` accepts is reported to the lesson), so
 the engine stays as it is (CLAUDE.md, determinism). `learn::LessonProgress` holds the
 rules that move a lesson on; the client's `LessonRunner` draws it.
+
+### Getting back
+
+A player can close the window a step works in, or leave another window over the part a
+step outlines. The lesson then shows the way back (`findRecovery` in
+`client/classic/lesson_lock.hpp`), checked every frame against the windows as they are
+shown:
+
+- **A window was closed**: the tag that opens it again (`learn::openersOf`, the ones the
+  input lock already allows), when it is on screen, is outlined dashed in cyan, and the
+  panel says so under the step's text: "The Ship Design window was closed. Press
+  **Create** in Designs to open it again." Two windows deep, the first button to press
+  is outlined and both are named ("Press the **Designs** button (F3), then **Create**,
+  to open it again").
+- **A window covers the outline** (the middle of the outlined part lies under a window in
+  front of the one the part is in): that window's Close button is outlined the same way
+  and the panel says "Close the Colonies window first (Esc)" (Esc only when it is the
+  window in front, which Esc closes). When the step names that window, the lock lets its
+  Close button and Esc through.
+
+While a way back is shown, Next never turns into Skip. A refused click says the same.
+The panel draws the line from `LessonRunner::recoveryHint()` (Markdown; empty when there
+is nothing to say).
 
 ## The input lock
 
@@ -253,10 +288,20 @@ What a step allows:
   Enter when it is in front. A window *is* about the step when one of the step's tags
   names it (`research:areas` and `window:research` name the Research window): then only
   the tagged parts of it respond.
+- **Windows over each other**: where the pointer is over a window, the front-most window
+  there decides, as it is the one that gets the click. A window the step names lets only
+  its tagged parts through, even where a window the step says nothing about lies under it
+  (the designer over Designs, Set Construction Queue over Construction Queues, the Combat
+  Simulator over Designs): their Cancel, Fill Queue or Strategies stay locked. A window
+  the step says nothing about lets everything through where it is in front. The main
+  window's parts respond only where no window lies over them. The order is the one the
+  player sees: a window clicked comes to the front. When a window the step names covers
+  an outlined part, its Close button is allowed (see "Getting back").
 - **The game's own questions** always work: the End Turn question, battle notices and
   the Tactical or Strategic question, Colony Type, Attack Sector, Combat Complete,
-  Yes/No boxes and error boxes (every ImGui popup and every window that calls
-  `UiContext::promptWindow()`), with their answer keys (Y, N, T, S, Enter, Esc).
+  Yes/No boxes, error boxes and the main window's pickers (every ImGui popup and every
+  window that calls `UiContext::promptWindow()`), with their answer keys (Y, N, T, S,
+  Enter, Esc). They, the lesson panel and the T button lie above every window.
 - **Text fields**: while one has the keyboard, every key passes.
 
 Keys: a step's `keys` list (`"F12"`, `"Ctrl+L"`, `"Alt+1"`, `"Escape"`; modifiers
@@ -276,14 +321,34 @@ frame every SDL event passes through it (`Mode::filterEvent`) before Dear ImGui 
 main window see it: a press outside the allowed areas is dropped with its release, a
 press inside lets its drag go anywhere (so the panel and sliders can be dragged), and
 pointer motion over a locked area tells ImGui the pointer is nowhere, so nothing there
-lights up. Nothing is disabled in the widgets themselves. A refused click flashes the
-outlines white and shows a short note by the pointer ("the lesson is waiting for the
-outlined part", or "press Next" on an explanation step).
+lights up. Nothing is disabled in the widgets themselves. The lock's rectangles follow
+the windows as they are shown, back to front (`windowsBackToFront`), and the spotlight
+dims by the same rule: the front-most window under each spot decides.
 
-**Free Play**, a check box in the lesson panel, switches the lock off for every
-tutorial (outlines and conditions stay); it is a client setting (`classic_settings.toml`,
-`[learn] free_play`), off by default. The manual's window links are dimmed while the
-lock is on.
+A refused click or key flashes the outlines white twice (at 2 Hz) and shows a short note
+by the pointer (for a key, just above the panel, or under the T button when the panel is
+hidden):
+
+- what the step waits for: "Click the pulsing yellow outline", the way back when there
+  is one ("Close the Colonies window first (Esc)"), or "press Next" on an explanation
+  step; a refused key first says "This step does not use F3";
+- when the panel is hidden, how to show it, with the keys as the player bound them
+  ("Ctrl+H or the T button shows it");
+- only after three refusals within 15 seconds: Back, Skip and Free Play in the panel.
+
+**Questions take the keys**: while a question waits for its answer (the End Turn
+question, Colony Type, Attack Sector, a battle notice, an ImGui popup such as "Leave the
+lesson?" or the lesson's result, a message box), the main window's keys do nothing, so
+the key that answers it is not also a main-window key (N answering "No" is not Change
+Name, Enter closing the result is not End Turn); nor does Shift+F1. The End Turn
+question is modal: it comes up over every window (End Turn can be clicked while a
+window is open) and takes the input until it is answered. The main window's pickers
+come up over the windows too.
+
+**Free Play**, a check box in the lesson panel, switches the lock off for the lesson
+being played (outlines, conditions and the way back stay); it is a client setting
+(`classic_settings.toml`, `[learn] free_play`), and every lesson starts with it off. The
+manual's window links are dimmed while the lock is on.
 
 Writing steps for the lock:
 
@@ -370,8 +435,12 @@ Unit tests cover the Markdown parser, the loaders (with their errors), each cond
 against the engine fixture, a tutorial (with Back, the active step and Skip) and a
 training game played through `learn::LessonProgress`, the step access rules, and the
 input lock (`tests/test_lesson_lock.cpp`: hit-testing, drags, keys, prompts, open and
-closed windows). `tests/test_learn_client.cpp` checks that the client's window
-ids are the ones lessons use.
+closed windows, windows stacked over each other, a window covering an outline, the way
+back, and which conditions wait on the game). `tests/test_learn_client.cpp` checks that
+the client's window ids are the ones lessons use. The input scripts `lesson-*.script` and
+`end-turn-question.script` play the lock with stacked windows, the way back, Skip, the
+notes after refused clicks and keys, the keys of questions and Free Play at a lesson's
+start.
 
 ## Reference
 

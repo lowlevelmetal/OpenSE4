@@ -1,0 +1,30 @@
+# The lesson's result and Free Play (docs/LEARNING.md "The lesson panel", "The input
+# lock"; docs/BUILDING.md "Input scripts"), on tutorial 1 at its last step: Enter closes
+# the result (Keep Playing) and is not also End Turn; Free Play, switched on in this
+# lesson, is off again when the next lesson starts.
+options --tutorial=first-steps:15 --layout=1024x768 --size=1280x800
+
+wait-lesson first-steps
+click tag:lesson:free-play
+click tag:command:designs
+wait-window designs
+key Escape
+wait-closed designs
+click item:Finish in=lesson
+wait-result done
+wait-for item:"Keep Playing"
+key Enter
+wait-gone item:"Keep Playing"
+wait 5
+assert-absent item:Yes in="End Turn"
+assert-turn 0
+# Back to the Learn window, and the next tutorial: locked again.
+click tag:lesson:leave
+wait-screen front
+wait-for item:"Start Lesson" in=front
+click item:"Exploring and colonizing" in=front
+click item:"Start Lesson" in=front
+wait-screen game
+wait-lesson exploring-and-colonizing
+click tag:command:designs refused
+assert-no-window designs

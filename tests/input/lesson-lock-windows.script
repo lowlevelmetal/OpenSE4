@@ -1,0 +1,36 @@
+# The tutorial input lock with windows stacked over each other, and the way back to a
+# closed window (docs/LEARNING.md "The input lock", "Getting back"; docs/BUILDING.md
+# "Input scripts"). Tutorial 4 at step 5, "Choose a hull", with only Designs open: the
+# lesson outlines Create in Designs in the recovery style and says how to open the
+# designer again, and offers no Skip meanwhile. Once open, the designer lies over Designs,
+# which the step says nothing about: where the designer is, only its Size list responds,
+# so its Cancel and Create Design, and Designs' Close under them, are refused.
+options --tutorial=designing-ships:5 --open=designs --layout=1024x768 --size=1280x800
+
+wait-lesson designing-ships
+assert-step 5
+wait-for item:recovery:designs:create in=lesson
+assert-present item:"hint:The * window was closed. Press Create in Designs to open it again." in=lesson
+screenshot lesson-lock-windows-reopen
+# Long after, still no Skip: the way back is shown instead.
+wait 660
+assert-present item:Next in=lesson
+assert-absent item:Skip in=lesson
+# The way back: Create, then Ship.
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+wait-gone item:"recovery:*" in=lesson
+assert-absent item:"hint:*" in=lesson
+# The designer in front: the step's Size list only.
+click item:Cancel in=create-design refused
+click item:"Create Design" in=create-design refused
+click tag:designs:close refused
+assert-window create-design
+assert-window designs
+assert-step 5
+screenshot lesson-lock-windows-designer
+click item:##size in=create-design
+click item:##0 in=create-design
+wait-step 6
+assert { design_hull_chosen = true }
