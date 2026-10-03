@@ -65,14 +65,18 @@ class Rules;
 // GameState::arrivals), the computer players' Seek and Join Fleet orders;
 // happiness events waiting for the next update are no longer saved (spec 05
 // §7.5, spec 02 §4).
-// Version 7: the neutral mark of a neutral empire a human plays
+// Version 7: each empire's e-mail address (Empire::email, EmpireSetup::email
+// and the Change Email command cmd::SetEmail, spec 06 §7 Q95); new-game
+// defaults of the original (Maximum Event Severity Catastrophic, the victory
+// values, spec 01 §2.2, §11) change no layout.
+// Version 8: the neutral mark of a neutral empire a human plays
 // (Empire::neutral) and the fleets' flag in a player's minister switches
 // (cmd::SetMinisters::fleets) (spec 06 §7 Q84); the "Players can see the
 // complete tech tree" option (GameOptions::completeTechTree, spec 06 §7 Q92);
 // the designer's To Hit Modifiers and Condensed View options
 // (InterfaceOptions::designToHit, designCondensed, spec 06 §7 Q94).
-inline constexpr uint32_t kSaveVersion = 7;
-inline constexpr uint32_t kMinSaveVersion = 7;
+inline constexpr uint32_t kSaveVersion = 8;
+inline constexpr uint32_t kMinSaveVersion = 8;
 
 inline constexpr size_t kEnvelopeSize = 32;
 

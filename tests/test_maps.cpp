@@ -370,6 +370,7 @@ TEST_CASE("maps: Game Setup loads and saves maps; loading clears earlier startin
     player.name = "Cartographers";
     s.players.push_back(player);
     s.computers.enabled = false;
+    s.neutrals.enabled = false;
     auto preview = setup::previewQuadrant(r, s.seed, s.options);
     REQUIRE(preview.has_value());
 

@@ -29,6 +29,8 @@ struct EmpireSetup {
     uint32_t color = 0;           // 0: automatic
     PlayerKind kind = PlayerKind::Human;
     std::string passwordHash;
+    // Empire Setup's Email box (spec 06 §7 Q95): becomes Empire::email.
+    std::string email;
     // Empire Setup, General page (spec 02 §9, spec 05 §7.1): the minister
     // style (a folder under Ai/; empty: none, the race's own AI files) and
     // "Use Race Minister Style". They become Empire::ministerStyle and
@@ -98,5 +100,12 @@ uint32_t defaultEmpireColor(size_t index);
 // ("fnv1a64:<hex>"; empty password -> empty). It only keeps hotseat and
 // network players out of each other's empires; it is not a security measure.
 std::string hashPassword(std::string_view password);
+
+// An e-mail address as the game keeps it (Empire::email): control characters
+// dropped, spaces trimmed at both ends, at most kMaxEmailBytes bytes (cut
+// before a UTF-8 sequence that would not fit). The length cap is an OpenSE4
+// choice; the original's box sets none that we know of.
+inline constexpr size_t kMaxEmailBytes = 128;
+std::string cleanEmail(std::string_view address);
 
 } // namespace opense4::game

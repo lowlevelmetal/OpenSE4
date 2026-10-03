@@ -384,7 +384,7 @@ void io(Ar& ar, InterfaceOptions& o) {
 
 template <class Ar>
 void io(Ar& ar, Empire& e) {
-    fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.neutral, e.alive, e.passwordHash,
+    fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.neutral, e.alive, e.passwordHash, e.email,
            e.racialPointsSpent);
     fields(ar, e.stockpile, e.economy);
     fields(ar, e.techLevels, e.research, e.researchEvenly, e.repeatResearch, e.uniqueAreasUnlocked, e.researchPool);
@@ -590,6 +590,7 @@ template <class Ar> void io(Ar& ar, cmd::SetRepairPriorities& c) { fields(ar, c.
 template <class Ar> void io(Ar& ar, cmd::SetDesignTypes& c) { fields(ar, c.designTypes); }
 template <class Ar> void io(Ar& ar, cmd::SetColonyTypes& c) { fields(ar, c.colonyTypes); }
 template <class Ar> void io(Ar& ar, cmd::SetEmpireOptions& c) { fields(ar, c.aiMinimalChanges, c.passwordHash, c.chooseColonyType); }
+template <class Ar> void io(Ar& ar, cmd::SetEmail& c) { fields(ar, c.email); }
 template <class Ar>
 void io(Ar& ar, cmd::SetMinisters& c) {
     fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi, c.fleets);
@@ -613,7 +614,7 @@ template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.tu
 template <class Ar>
 void io(Ar& ar, EmpireSetup& e) {
     fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash,
-           e.ministerStyle, e.useRaceMinisterStyle, e.experience, e.designs, e.strategies);
+           e.email, e.ministerStyle, e.useRaceMinisterStyle, e.experience, e.designs, e.strategies);
 }
 
 template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }

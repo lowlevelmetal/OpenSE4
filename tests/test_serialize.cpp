@@ -272,6 +272,7 @@ GameState busyGame() {
     s.empires[2].knowledge.notes.assign(s.galaxy.systems.size(), "unexplored");
     s.empires[2].race.traits = {1, 4};
     s.empires[0].passwordHash = "0123456789abcdef";
+    s.empires[1].email = "player.two@example.org";
     s.options.victory.score = true;
     s.options.techAreasAllowed.assign(r.data().techAreas.size(), 1);
     s.winner = EmpireId{2u};
@@ -296,6 +297,7 @@ TEST_CASE("serialize: state round trip is byte-identical after several turns") {
     CHECK(stateChecksum(*loaded) == stateChecksum(s));
     CHECK(loaded->rng == s.rng);
     CHECK(loaded->empires[0].passwordHash == "0123456789abcdef");
+    CHECK(loaded->empires[1].email == "player.two@example.org");
     CHECK(loaded->vehicles.size() == s.vehicles.size());
     CHECK(loaded->combats.back().summary.size() == 2);  // the battle added above
 
@@ -397,6 +399,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::Analyze{VehicleId{39u}});
     c.push_back(cmd::SelfDestruct{VehicleId{40u}});
     c.push_back(cmd::FireOn{VehicleId{41u}});
+    c.push_back(cmd::SetEmail{"someone@example.org"});
 
     std::set<size_t> kinds;
     for (const Command& cmd : c) kinds.insert(cmd.index());
@@ -416,6 +419,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(sent.request.front().planet == ObjectId{12u});
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
+    CHECK(std::get<cmd::SetEmail>(loaded->commands.back()).email == "someone@example.org");
 }
 
 // ---- Hostile input ------------------------------------------------------------------------------------
@@ -617,8 +621,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xaa5ae272712feca0ull;
-    constexpr size_t kGoldenSize = 1816;
+    constexpr uint64_t kGoldenChecksum = 0x5cef4d57e3fecc3dull;
+    constexpr size_t kGoldenSize = 1820;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

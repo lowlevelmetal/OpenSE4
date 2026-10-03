@@ -1,10 +1,12 @@
 #pragma once
 
-// Empire Setup (docs/spec/06 §1.1, spec 02 §9): six pages editing one empire
-// draft, opened from Game Setup -> Players -> Add New / Edit.
+// Empire Setup (docs/spec/06 §1.1, spec 02 §9, spec 07 session 5): six pages
+// editing one empire draft in the original's layout, opened from Game Setup
+// -> Players -> Add New (an empty empire) or Edit.
 
 #include "client/classic/frontend.hpp"
 #include "client/classic/screens/setup_model.hpp"
+#include "client/classic/screens/setup_widgets.hpp"
 
 #include <memory>
 #include <optional>
@@ -31,18 +33,24 @@ public:
     void setPage(EmpirePage p) { page_ = p; }
 
 private:
+    // What the open list picker chooses.
+    enum class Pick { None, EmpireName, EmpireType, EmperorTitle, EmperorName, DesignNames, MinisterStyle };
+
     const game::Rules& rules() const { return *rules_; }
     const ruleset::RacePreset* preset() const;
-    void choosePreset(size_t position);
+    void chooseStyle(size_t position);
     void resetToTier(int tier);
-    void pointsLine(MenuContext& ctx);
+    void pointsLine(SetupArea& a, float y);
+    void openPicker(Pick what);
+    void pickerResult(int row);
 
-    void pageGeneral(MenuContext& ctx);
-    void pageEnvironment(MenuContext& ctx);
-    void pageCulture(MenuContext& ctx);
-    void pageCharacteristics(MenuContext& ctx);
-    void pageTraits(MenuContext& ctx);
-    void pageDescription(MenuContext& ctx);
+    void pageGeneral(SetupArea& a);
+    void pageEnvironment(SetupArea& a);
+    void pageCulture(SetupArea& a);
+    void pageCharacteristics(SetupArea& a);
+    void pageTraits(SetupArea& a);
+    void pageDescription(SetupArea& a);
+    void compareCulturesPopup(SetupArea& a);
 
     std::shared_ptr<const game::Rules> rules_;
     EmpireDraft draft_;
@@ -56,6 +64,9 @@ private:
     int hoveredTrait_ = -1;
     game::EmpireSetup result_;
     std::vector<std::string> surfaces_, atmospheres_, designFiles_, ministerStyles_;
+    ListPicker picker_;
+    Pick picking_ = Pick::None;
+    std::vector<std::string> pickRows_;
 };
 
 } // namespace opense4::client::classic::setup

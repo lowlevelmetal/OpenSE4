@@ -439,7 +439,8 @@ candidate wins, and the home is drawn uniformly from it:
   returns one more than the level at which the other system is reached, so it is the number
   of jumps plus two (confirmed: binary; observed in all 243 placements of §3.8, where the
   plain "more than L jumps" fails 36 times). Systems with no warp path count as 999. The
-  same count serves the game's other jump tests (§14 Q45).
+  same count serves the game's other jump tests (§14 Q45). The engine follows this since
+  2026-10-03 (`placeHomeworlds`: a real jump count J passes when J + 2 > L).
 
 If no attempt finds a candidate, the game draws up to 2,000 random systems looking for a
 start-eligible one that is not an earlier player's home system (a test skipped when *Allowed
@@ -450,7 +451,8 @@ asteroid field may share it), a random Planet SectType record with the player's
 atmosphere and planet type (and the home size when *All player planets the same size* is
 on), random values and conditions as for a natural planet, and a name made of the system
 name and the Roman numeral one above the number of sectors that hold a planet (asteroid
-fields do not count).
+fields do not count). The engine skips an earlier player's home system in those draws only
+when *Allowed to start in the same system* is off (since 2026-10-03).
 
 **Starting planets** (confirmed: binary; the full homeworld setup is in spec 02 §9). With
 more than one starting planet (a neutral empire always gets one), further planets are
@@ -587,11 +589,11 @@ with §3.6 from the original's own map, empires and earlier homes shows that eve
 the 236 homeworlds that were not created comes from the first attempt with a candidate,
 **provided the spread test is J + 2 > L** (§3.6): with the plain "more than L jumps", 36 of
 them (22 in attempt 1, 14 in attempt 2) sit at L − 1 or L jumps from an earlier home while
-candidates farther away existed. Our generator uses the plain test, so its homes are spread
-by two more jumps than the original's in attempts 1 and 2: 24 % of our later homes are more
-than L jumps from every earlier one, against 14 % in the original (PARITY_GAPS). The mean
-distances between homes (pairwise jumps, then jumps to the nearest other home) by number
-of empires, original (games) / ours:
+candidates farther away existed. Our generator used the plain test then, so its homes were
+spread by two more jumps than the original's in attempts 1 and 2: 24 % of our later homes
+were more than L jumps from every earlier one, against 14 % in the original. Since
+2026-10-03 it uses J + 2 > L. The mean distances between homes (pairwise jumps, then jumps to
+the nearest other home) by number of empires, original (games) / ours with the plain test:
 
 | Empires | Pairwise jumps | Nearest home |
 |---|---|---|
@@ -650,7 +652,8 @@ binary.
   then `Circle Radius`. Anything else has no defined result in the original; the engine
   places the object on a random sector and warns **(OpenSE4 choice)**.
 - `Ring 0`: a random sector of the inner 11 × 11 square (x and y from 1 to 11), redrawn like
-  a ring below.
+  a ring below. The engine follows this since 2026-10-03; before, it put a `Ring 0` object in
+  the centre.
 - `Ring 1`: the centre sector.
 - `Ring k` for k = 2..7 (a single digit): a sector on the square ring k−1 squares from the
   centre (Chebyshev distance). With side s = 2k − 1 and o = 7 − k: a coin picks a
@@ -658,6 +661,9 @@ binary.
   is o + R(s). Corners can be reached from two sides, so they are twice as likely. The draw
   is repeated while the sector is occupied, up to 101 draws, after which the last one is
   kept anyway.
+- `Ring 8` and `Ring 9` have no rule here: the ring formula would put the object outside
+  the 13 × 13 grid (o = −1 or −2). The engine uses `Ring 7` and warns **(OpenSE4 choice,
+  §14 Q46)**. The stock data uses no ring above 7.
 - `Circle Radius R`: a uniformly random unoccupied sector whose Euclidean distance from
   the centre, **truncated**, equals R. If there is none, the object goes to sector (0,0).
 - `Coord X,Y`: a fixed sector with no randomness and no occupancy check.
@@ -1766,7 +1772,9 @@ highlighted, and an X marks each empire that has met one.
     subsection"), and the host also recalculates the colonies a player's orders name when it
     reads them (spec 05 §9.2).
 
-45. **Jump counts elsewhere.** *Open* (raised 2026-10-03). The routine the original uses to
+45. **Jump counts elsewhere.** *Answered 2026-10-03* (confirmed: binary): spec 05 §7.2
+    *Jumps* gives each test in real jumps; the engine still uses the old numbers (PARITY_GAPS).
+    Raised 2026-10-03: The routine the original uses to
     count warp jumps between two systems returns the number of jumps plus two (§3.6). The
     home placement's spread test is now written with that in mind. The same routine serves
     about a dozen other tests, most of them the computer players' (spec 05 §7: "within 4
@@ -1779,3 +1787,9 @@ highlighted, and an X marks each empire that has met one.
     spec 05 gives as "within 3 jumps", which would then be at most one real jump) and below 5
     (perhaps the "within 4 jumps" strength test, then at most two real jumps) (inferred: not
     traced to their spec 05 rules).
+
+46. **Ring 8 and Ring 9.** *Open* (raised 2026-10-03). A system template's `Ring k` is read as
+    one digit (§4.3), so `Ring 8` and `Ring 9` are possible, but the ring formula (side
+    2k − 1, offset 7 − k) then reaches past the grid's edge. What does the original do with
+    them: place the object off the grid, clamp it, or something else? The stock data never
+    uses them. The engine places them on `Ring 7` with a warning (OpenSE4 choice).

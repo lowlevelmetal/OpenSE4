@@ -178,11 +178,14 @@ public:
     // (empty: none). Local and hotseat games keep game::hashPassword();
     // network and PBEM games keep the verifier the host checks logins and
     // .plr files against (net::passwordVerifier, salted with the game's id),
-    // and so does a network or PBEM game file opened with Load Game.
-    std::string empirePasswordValue(std::string_view password) const;
+    // and so does a network or PBEM game file opened with Load Game. Fails
+    // (in words) when the computer lacks the memory a verifier's Argon2id
+    // work needs (net::PasswordWorkError).
+    std::expected<std::string, std::string> empirePasswordValue(std::string_view password) const;
     // Whether `password` opens the empire's turn (hotseat hand-over), by the
-    // same scheme as empirePasswordValue. True when it has no password.
-    bool passwordMatches(const game::Empire& e, std::string_view password) const;
+    // same scheme as empirePasswordValue. True when it has no password. Fails
+    // as empirePasswordValue does.
+    std::expected<bool, std::string> passwordMatches(const game::Empire& e, std::string_view password) const;
 
     // Messages the engine produced for the player on the last turn (rejected orders).
     const std::vector<std::string>& notices() const { return notices_; }
@@ -221,7 +224,8 @@ public:
     // (inferred).
     bool hasMasterPassword() const { return !masterVerifier_.empty(); }
     // The exact comparison the window makes (letter case and spaces count).
-    bool masterPasswordMatches(std::string_view password) const;
+    // Fails as empirePasswordValue does.
+    std::expected<bool, std::string> masterPasswordMatches(std::string_view password) const;
     // The window's OK: each row clicked at least once, with the lamp's final
     // state (game::ai::setComputerControl). A local or hotseat game changes
     // at once; on a player's copy of a game on different machines only that

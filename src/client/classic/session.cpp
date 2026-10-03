@@ -193,17 +193,27 @@ game::CommandResult ClassicSession::issueCommand(game::Command c) {
     return r;
 }
 
-std::string ClassicSession::empirePasswordValue(std::string_view password) const {
-    if (password.empty()) return {};
-    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0)
-        return net::passwordVerifier(password, multiplayerGameId_);
+std::expected<std::string, std::string> ClassicSession::empirePasswordValue(std::string_view password) const {
+    if (password.empty()) return std::string{};
+    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0) {
+        try {
+            return net::passwordVerifier(password, multiplayerGameId_);
+        } catch (const net::PasswordWorkError& e) {
+            return std::unexpected(std::string(e.what()));
+        }
+    }
     return game::hashPassword(password);
 }
 
-bool ClassicSession::passwordMatches(const game::Empire& e, std::string_view password) const {
+std::expected<bool, std::string> ClassicSession::passwordMatches(const game::Empire& e, std::string_view password) const {
     if (e.passwordHash.empty()) return true;
-    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0)
-        return net::checkPassword(e.passwordHash, password, multiplayerGameId_);
+    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0) {
+        try {
+            return net::checkPassword(e.passwordHash, password, multiplayerGameId_);
+        } catch (const net::PasswordWorkError& error) {
+            return std::unexpected(std::string(error.what()));
+        }
+    }
     return game::hashPassword(password) == e.passwordHash;
 }
 
@@ -252,8 +262,13 @@ bool ClassicSession::humansGone() const {
     return (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) && !game::ai::anyHumanLeft(state_);
 }
 
-bool ClassicSession::masterPasswordMatches(std::string_view password) const {
-    return !masterVerifier_.empty() && net::checkPassword(masterVerifier_, password, multiplayerGameId_);
+std::expected<bool, std::string> ClassicSession::masterPasswordMatches(std::string_view password) const {
+    if (masterVerifier_.empty()) return false;
+    try {
+        return net::checkPassword(masterVerifier_, password, multiplayerGameId_);
+    } catch (const net::PasswordWorkError& e) {
+        return std::unexpected(std::string(e.what()));
+    }
 }
 
 void ClassicSession::setComputerControl(const std::vector<std::pair<game::EmpireId, bool>>& rows) {

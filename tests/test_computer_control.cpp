@@ -13,6 +13,7 @@
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/pbem.hpp"
+#include "net/secure.hpp"
 
 #include <doctest/doctest.h>
 
@@ -262,9 +263,9 @@ TEST_CASE("computer control: a game file with a master password asks for it, exa
     auto session = client::classic::ClassicSession::load(sharedRules(), file);
     REQUIRE(session.has_value());
     CHECK((*session)->hasMasterPassword());
-    CHECK((*session)->masterPasswordMatches("Master Key"));
-    CHECK_FALSE((*session)->masterPasswordMatches("master key"));  // letter case counts
-    CHECK_FALSE((*session)->masterPasswordMatches(" Master Key"));  // so do spaces
+    CHECK((*session)->masterPasswordMatches("Master Key").value());
+    CHECK_FALSE((*session)->masterPasswordMatches("master key").value());  // letter case counts
+    CHECK_FALSE((*session)->masterPasswordMatches(" Master Key").value());  // so do spaces
 }
 
 TEST_CASE("reset passwords: the e-mail host writes them in after reading the orders") {
@@ -280,7 +281,9 @@ TEST_CASE("reset passwords: the e-mail host writes them in after reading the ord
     const fs::path inbox = tmp / "inbox";
     fs::create_directories(inbox);
     net::pbem::ProcessOptions o;
-    o.hostKey = net::crypto::newKeyPair();
+    net::crypto::Key secret{};
+    net::crypto::randomBytes(secret);
+    o.host = net::secure::hostIdentity(secret).pbem;
     o.resetPasswords = {kOther};
     auto rep = net::pbem::processGameFile(r, gam, inbox, o);
     REQUIRE(rep.has_value());

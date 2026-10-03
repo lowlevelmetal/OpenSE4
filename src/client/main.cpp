@@ -60,7 +60,9 @@ Game:
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --seed=N                        Seed for new games (default: random)
   --systems=N                     Number of star systems in a quick game
-  --empires=N                     Number of empires in a quick game, including yours (default 4)
+  --empires=N                     Number of empires in a quick game, including yours: N - 1 computer
+                                  players and no neutral empire (default: as Quick Start, random
+                                  computer and neutral players rolled from the seed)
   --quadrant=NAME                 Quadrant type from the data set (default: the first one)
   --turn-style=simultaneous|turn-based
                                   Turn style of a quick game (default: turn-based)
@@ -271,6 +273,10 @@ int main(int argc, char** argv) {
     }
 
     // A script run is the same every time: a fixed seed unless one is given.
+    // Otherwise the clock's, for local games only: a network game hosted here
+    // draws its seed from the cryptographic random source unless one was
+    // given (multiplayer.cpp), since its players must not guess it.
+    options.seedGiven = options.seed != 0 || options.inputScript;
     if (options.seed == 0) options.seed = options.inputScript ? 1 : static_cast<uint64_t>(std::time(nullptr));
     // The log also goes to opense4.log in the user data folder: on Windows the
     // game has no console, so that file is where a player finds it.

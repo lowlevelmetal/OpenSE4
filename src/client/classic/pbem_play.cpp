@@ -4,6 +4,7 @@
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/pbem.hpp"
+#include "net/secure.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -75,43 +76,34 @@ std::vector<PbemEmpireChoice> pbemEmpires(const PbemGame& g) {
 
 bool pbemNeedsNewPassword(const PbemGame& g) { return net::isLegacyVerifier(g.verifier); }
 
+fs::path pbemKnownHostsFile() { return userDataDir() / net::secure::kKnownHostsFileName; }
+
+net::pbem::HostKeyCheck pbemHostKey(const PbemGame& g, const fs::path& knownHosts) {
+    return net::pbem::checkHostKey(g.file, net::secure::KnownHosts(knownHosts.empty() ? pbemKnownHostsFile() : knownHosts));
+}
+
 std::expected<PbemTurn, std::string> beginPbemTurn(PbemGame& g, game::EmpireId empire, std::string_view password, fs::path ordersDir,
-                                                   std::string_view newPassword) {
+                                                   std::string_view newPassword, const PbemTrust& trust) {
     if (!empire.valid() || empire.index() >= g.info.empires.size()) return std::unexpected(std::string("No such empire in this game."));
     const std::string& name = g.info.empires[empire.index()];
     if (empire != g.empire)
         return std::unexpected(std::format("This turn file is {}'s, not {}'s. Ask the host for your own.", g.info.empires[g.empire.index()], name));
-    // The password: its keys open the view and sign the orders. An empire of
-    // OpenSE4 0.6 shows its old password's hash once and takes a new password,
-    // whose keys come from that password, never from the old hash.
-    std::optional<net::PasswordKeys> keys;
-    std::string legacyHash;
-    if (pbemNeedsNewPassword(g)) {
-        legacyHash = net::legacyPasswordHash(password);
-        if (!net::checkLegacyPassword(g.verifier, legacyHash)) return std::unexpected(std::format("Wrong password for {}.", name));
-        if (newPassword.empty())
-            return std::unexpected(std::format("This game was made by OpenSE4 0.6: choose a new password for {}. This turn's orders file "
-                                               "shows the old one once, so the old one stops counting.",
-                                               name));
-        if (newPassword == password) return std::unexpected(std::string("Choose a new password other than the old one."));
-        keys = net::passwordKeys(newPassword, g.info.gameId);
-    } else if (!g.verifier.empty()) {
-        keys = net::passwordKeys(password, g.info.gameId);
-        if (!keys || !net::constantTimeEquals(keys->verifier(), g.verifier)) return std::unexpected(std::format("Wrong password for {}.", name));
-    }
-    // The view: for this empire's eyes (with a password of the current kind).
-    if (g.viewChecksum == 0 || g.state.empires.empty()) {
-        const std::optional<net::PasswordKeys> opener = pbemNeedsNewPassword(g) ? std::nullopt : keys;
-        auto view = net::pbem::openTurnFile(g.file, opener);
-        if (!view) return std::unexpected(std::format("Wrong password for {}, or the turn file was changed.", name));
-        auto state = game::deserializeState(view->view);
-        if (!state) return std::unexpected("The turn file is damaged: " + state.error());
-        // The player checks the view the host made: a changed one does not match.
-        if (game::stateChecksum(*state) != view->viewChecksum)
-            return std::unexpected(std::string("The turn file is damaged: its game does not match its checksum."));
-        g.state = std::move(*state);
-        g.viewChecksum = view->viewChecksum;
-    }
+    // The host's signature and key, the password, then the view
+    // (net::pbem::openTurnForPlayer); the host's key is trusted from the
+    // first turn file of the game on.
+    net::secure::KnownHosts known(trust.knownHosts.empty() ? pbemKnownHostsFile() : trust.knownHosts);
+    auto opened = net::pbem::openTurnForPlayer(g.file, known, password, newPassword,
+                                               net::pbem::PlayerTrust{trust.trustChangedHostKey, trust.showOldPassword});
+    if (!opened) return std::unexpected(opened.error());
+    auto state = game::deserializeState(opened->view.view);
+    if (!state) return std::unexpected("The turn file is damaged: " + state.error());
+    // The player checks the view the host made: a changed one does not match.
+    if (game::stateChecksum(*state) != opened->view.viewChecksum)
+        return std::unexpected(std::string("The turn file is damaged: its game does not match its checksum."));
+    g.state = std::move(*state);
+    g.viewChecksum = opened->view.viewChecksum;
+    std::optional<net::PasswordKeys> keys = std::move(opened->keys);
+    std::string legacyHash = std::move(opened->legacyPasswordHash);
     const game::GameState& s = g.state;
     if (s.gameOver) return std::unexpected(std::string("The game is over."));
     if (empire.index() >= s.empires.size()) return std::unexpected(std::string("No such empire in this game."));

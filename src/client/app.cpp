@@ -83,6 +83,7 @@ int App::run(const AppOptions& options) {
     ClassicOptions co;
     co.installDir = dataDir->string();
     co.seed = options.seed;
+    co.seedGiven = options.seedGiven;
     co.systemCount = options.systemCount;
     co.empireCount = options.empireCount;
     co.quadrantType = options.quadrantType;

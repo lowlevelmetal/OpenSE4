@@ -3,6 +3,7 @@
 
 #include "client/audio.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/file_dialog.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/pointers.hpp"
 #include "client/classic/screens/setup_model.hpp"
@@ -12,9 +13,9 @@
 #include "ruleset/ruleset.hpp"
 
 #include <algorithm>
-#include <chrono>
-#include <ctime>
+#include <expected>
 #include <format>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,56 +27,11 @@ namespace {
 const ImVec4 kErrorText{1.0f, 0.5f, 0.45f, 1.0f};
 const ImVec4 kGoodText{0.5f, 0.9f, 0.5f, 1.0f};
 
-struct SaveFile {
-    std::filesystem::path path;
-    std::string name;
-    std::filesystem::file_time_type modified;
-};
+using SaveFile = FileEntry;
 
-std::vector<SaveFile> listSaves() {
-    std::vector<SaveFile> out;
-    std::error_code ec;
-    for (const auto& entry : std::filesystem::directory_iterator(savesDir(), ec)) {
-        if (!entry.is_regular_file(ec)) continue;
-        std::string ext = entry.path().extension().string();
-        for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
-        if (ext != ".gam") continue;
-        out.push_back({entry.path(), entry.path().stem().string(), entry.last_write_time(ec)});
-    }
-    // Newest first; saves of the same moment by name (a total order: the
-    // directory's own order differs between platforms).
-    std::sort(out.begin(), out.end(), [](const SaveFile& a, const SaveFile& b) {
-        return a.modified != b.modified ? a.modified > b.modified : a.path.filename() < b.path.filename();
-    });
-    return out;
-}
+std::vector<SaveFile> listSaves() { return listFiles(savesDir(), ".gam"); }
 
-// A file time as system_clock time: what std::chrono::clock_cast gives, which
-// libc++ lacks. Like clock_cast, it uses the file clock's to_sys (libstdc++,
-// libc++) or else its to_utc (MSVC) and the UTC clock's to_sys.
-template <class Clock, class Duration>
-std::chrono::system_clock::time_point toSystemClock(std::chrono::time_point<Clock, Duration> t) {
-    using Sys = std::chrono::system_clock::duration;
-    if constexpr (requires { Clock::to_sys(t); }) {
-        return std::chrono::time_point_cast<Sys>(Clock::to_sys(t));
-    } else {
-        const auto utc = Clock::to_utc(t);
-        return std::chrono::time_point_cast<Sys>(decltype(utc)::clock::to_sys(utc));
-    }
-}
-
-std::string formatTime(std::filesystem::file_time_type t) {
-    const std::time_t tt = std::chrono::system_clock::to_time_t(toSystemClock(t));
-    std::tm tm{};
-#ifdef _WIN32
-    localtime_s(&tm, &tt);
-#else
-    localtime_r(&tt, &tm);
-#endif
-    char buf[32];
-    std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", &tm);
-    return buf;
-}
+std::string formatTime(std::filesystem::file_time_type t) { return fileDate(t); }
 
 // Characters allowed in a save name (it becomes a file name).
 std::string cleanName(std::string_view in) {
@@ -204,7 +160,7 @@ public:
                 ui.requests.quitToIntro = true;
             if (confirmPopup(ui, "Quit Game", "Quit OpenSE4? Anything not saved is lost.")) ui.requests.quitGame = true;
             masterPasswordPopup(ui);
-            notePopup(ui, "Invalid Password", "The Game Master password is not correct.");
+            notePopup(ui, "Invalid Password", masterNote_);
             playersPopup(ui);
             saveMapPopup(ui);
             draftPopup(ui);
@@ -324,8 +280,10 @@ private:
         bool open = false, invalid = false;
         if (ok) {
             // An exact comparison: letter case and spaces count.
-            if (ui.session.masterPasswordMatches(masterInput_)) open = true;
+            const std::expected<bool, std::string> matches = ui.session.masterPasswordMatches(masterInput_);
+            if (matches && *matches) open = true;
             else invalid = true;
+            masterNote_ = matches ? std::string("The Game Master password is not correct.") : matches.error();
         }
         if (ok || cancel) {
             masterInput_.clear();
@@ -397,6 +355,7 @@ private:
     std::vector<uint8_t> lamps_;
     std::vector<uint8_t> clicked_;
     std::string masterInput_;
+    std::string masterNote_ = "The Game Master password is not correct.";
 };
 
 // ---- Save Game -------------------------------------------------------------------------------
@@ -475,74 +434,50 @@ private:
 
 // ---- Load Game / Delete Game ---------------------------------------------------------------------
 
+// Load Game and Delete Game: the original's Load Game dialog (spec 07
+// session 5), the one the intro's Load Game shows (screens/file_dialog.hpp).
 class LoadGameScreen final : public Screen {
 public:
     LoadGameScreen(bool deleteMode, const std::string& loadError)
-        : delete_(deleteMode), error_(loadError.empty() ? std::string{} : "Could not load the game: " + loadError) {}
+        : delete_(deleteMode),
+          dialog_(deleteMode ? "Delete Game" : "Load Game", "Save Game Name", ".gam", loadGameDirectory(), savesDir()) {
+        if (!loadError.empty()) dialog_.setError("Could not load the game: " + loadError);
+    }
 
     bool draw(UiContext& ui) override {
-        const char* title = delete_ ? "Delete Game###files" : "Load Game###files";
-        Dialog d(ui, title, DialogSize::Picker, 150);
-        if (!d.open()) return d.keepOpen();
-        if (!listed_) {
-            saves_ = listSaves();
-            listed_ = true;
-        }
         bool keep = true;
-        bool askDelete = false;
-        d.beginContent();
-        ImGui::TextColored(kLabelBlue, "%s", delete_ ? "Click a saved game to delete it." : "Click a saved game to load it.");
-        if (!error_.empty()) {
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextColored(kErrorText, "%s", error_.c_str());
-            ImGui::PopTextWrapPos();
-        }
-        beginList(ui, "##list", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-        if (ImGui::BeginTable("##saves", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 1.6f);
-            ImGui::TableSetupColumn("Last saved", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-            ImGui::TableHeadersRow();
-            for (size_t i = 0; i < saves_.size(); ++i) {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::PushID(int(i));
-                if (ImGui::Selectable(saves_[i].name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
-                    if (delete_) {
-                        pending_ = i;
-                        askDelete = true;
-                    } else {
-                        ui.requests.loadGame = saves_[i].path;
-                        keep = false;
-                    }
-                }
-                ImGui::PopID();
-                ImGui::TableSetColumnIndex(1);
-                dimText(formatTime(saves_[i].modified).c_str());
+        const char* window = delete_ ? "Delete Game###files" : "Load Game###files";
+        const FileDialog::Result r = dialog_.draw(ui.painter(), window, &ui);
+        if (r == FileDialog::Result::Cancelled) {
+            keep = false;
+        } else if (r == FileDialog::Result::Chosen) {
+            if (delete_) {
+                pending_ = dialog_.chosen();
+                ask_ = true;
+            } else {
+                ui.requests.loadGame = dialog_.chosen().path;
+                keep = false;
             }
-            ImGui::EndTable();
         }
-        if (saves_.empty()) dimText("There are no saved games.");
-        endList(ui);
-        if (askDelete) ImGui::OpenPopup("Delete");
-        if (pending_ < saves_.size() && confirmPopup(ui, "Delete", std::format("Delete the saved game \"{}\"?", saves_[pending_].name))) {
+        if (ask_) {
+            ImGui::OpenPopup("Delete");
+            ask_ = false;
+        }
+        if (pending_ && confirmPopup(ui, "Delete", std::format("Delete the saved game \"{}\"?", pending_->name))) {
             std::error_code ec;
-            std::filesystem::remove(saves_[pending_].path, ec);
-            error_ = ec ? "Could not delete: " + ec.message() : std::string{};
-            saves_ = listSaves();
-            pending_ = SIZE_MAX;
+            std::filesystem::remove(pending_->path, ec);
+            dialog_.setError(ec ? "Could not delete: " + ec.message() : std::string{});
+            dialog_.rescan();
+            pending_.reset();
         }
-        d.beginButtons();
-        dimText(std::format("{} saved games", saves_.size()).c_str());
-        d.close();
-        return keep && d.keepOpen();
+        return keep;
     }
 
 private:
     bool delete_ = false;
-    std::string error_;
-    std::vector<SaveFile> saves_;
-    bool listed_ = false;
-    size_t pending_ = SIZE_MAX;
+    FileDialog dialog_;
+    std::optional<FileEntry> pending_;
+    bool ask_ = false;
 };
 
 } // namespace

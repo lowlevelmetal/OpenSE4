@@ -80,19 +80,37 @@ struct PbemTurn {
     // .plr shows this once.
     std::optional<net::PasswordKeys> keys;
     std::string legacyPasswordHash;
-    net::crypto::Key hostKey{};        // the host's key: the .plr is encrypted to it
+    net::crypto::Key hostKey{};        // the host's PBEM box key (from the signed turn file): the .plr is encrypted to it
     bool turnBased = false;
     uint64_t startChecksum = 0;        // the turn file's view checksum (game::stateChecksum as the turn began)
 };
 
+// Where the host keys of PBEM games are trusted (with those of network
+// hosts): <user data>/known_hosts.txt.
+std::filesystem::path pbemKnownHostsFile();
+// The host key that signed the turn file, against the one this computer
+// trusts for the game (`knownHosts` empty: pbemKnownHostsFile()).
+net::pbem::HostKeyCheck pbemHostKey(const PbemGame& g, const std::filesystem::path& knownHosts = {});
+
+// What the player agreed to on the PBEM screen (net::pbem::PlayerTrust).
+struct PbemTrust {
+    std::filesystem::path knownHosts;     // empty: pbemKnownHostsFile()
+    bool trustChangedHostKey = false;     // a host key other than the one trusted for this game
+    bool showOldPassword = false;         // an OpenSE4 0.6 empire: show the old password's form to this host, once
+};
+
 // Checks that `empire` may play this turn with `password` and opens the
-// turn file's view with it (into g.state): the turn file's empire, living and
-// human, whose password matches, and in a turn-based game the empire whose
-// turn it is. `ordersDir` empty: the turn file's folder (inferred). A game of
-// OpenSE4 0.6 (pbemNeedsNewPassword) also needs a `newPassword`, other than
-// the old one, which counts from this turn on.
+// turn file's view with it (into g.state): signed by the host key trusted for
+// the game (the first turn file of a game: trusted from then on; a changed
+// key only with trust.trustChangedHostKey), the turn file's empire, living
+// and human, whose password matches, and in a turn-based game the empire
+// whose turn it is. `ordersDir` empty: the turn file's folder (inferred). A
+// game of OpenSE4 0.6 (pbemNeedsNewPassword) also needs a `newPassword`,
+// other than the old one, which counts from this turn on, and
+// trust.showOldPassword.
 std::expected<PbemTurn, std::string> beginPbemTurn(PbemGame& g, game::EmpireId empire, std::string_view password,
-                                                   std::filesystem::path ordersDir = {}, std::string_view newPassword = {});
+                                                   std::filesystem::path ordersDir = {}, std::string_view newPassword = {},
+                                                   const PbemTrust& trust = {});
 // The empire's password is of OpenSE4 0.6: this turn moves it to a new one.
 bool pbemNeedsNewPassword(const PbemGame& g);
 

@@ -28,6 +28,8 @@ inline constexpr int kMaxEmpires = 20;
 
 // "Random computer players": a count rolled from Settings
 // `Minimum/Maximum {Computer,Neutral} Player {Low,Medium,High} Setting`.
+// Game Setup's one "Number of Computer Players" choice sets both levels
+// (observed, spec 01 §2.2); the model keeps one per kind.
 struct RandomPlayers {
     bool enabled = false;
     int level = 1;  // 0 low, 1 medium, 2 high
@@ -38,16 +40,29 @@ struct NewGameSettings {
     uint64_t seed = 1;             // quadrant and game seed (the previewed map uses it)
     game::GameOptions options;
     std::vector<game::EmpireSetup> players;  // the explicit empires, in order
+    // A new game has random computer and neutral players, Medium (observed,
+    // spec 01 §2.2, spec 07 session 5).
     RandomPlayers computers{true, 1};
-    RandomPlayers neutrals{false, 0};
+    RandomPlayers neutrals{true, 1};
     // A loaded map (spec 01 §12): the game starts on it instead of a generated
     // quadrant, and its starting points place the empires first.
     std::optional<game::QuadrantMap> map;
 };
 
-// Defaults from the data set: one human empire (the first Quick Start style),
-// medium random computer players, caps from Settings.
+// A new game's settings (spec 01 §2.2, spec 07 session 5): no empire in the
+// list, random computer and neutral players (Medium), the options' defaults,
+// the unit and ship caps from Settings.
 NewGameSettings defaultSettings(const game::Rules& r, uint64_t seed);
+
+// The first Quick Start style (else the first playable race) as an empire of
+// its costliest preset tier within `racialPoints`; nullopt without races.
+// The empire OpenSE4's Game Setup used to start with, kept for tests and tools.
+std::optional<game::EmpireSetup> firstStyleEmpire(const game::Rules& r, int racialPoints);
+
+// The races of the Quick Start picker, in Settings.txt's `Quick Start Style
+// N` order (spec 01 §2.1, spec 07 session 5); without that list, every
+// playable race in the data set's order. Indices into Rules::racePresets().
+std::vector<size_t> quickStartStyles(const game::Rules& r);
 
 // ---- Option lists (spec 01 §2.2, spec 02 §9; confirmed: binary) ----------------------------
 
@@ -106,6 +121,19 @@ std::pair<int, int> randomPlayerRange(const game::Rules& r, bool neutral, int le
 // options as edited. Fails with a message the setup screen shows.
 std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r, const NewGameSettings& s);
 
+// Appends the random computer players, then the neutral ones, to `g` after
+// the empires it holds: counts and races drawn from an Rng seeded from
+// g.seed (so the same seed gives the same players), races not yet in the
+// game, names made unique. Marks them in g.options.randomAiPlayers.
+void addRandomPlayers(const game::Rules& r, game::GameSetup& g, const RandomPlayers& computers, const RandomPlayers& neutrals);
+
+// Quick Start (spec 01 §2.1, §2.2, spec 07 session 5): the player (`preset`,
+// its first tier) in a new game's settings, so with random computer and
+// neutral players at Medium, their numbers and races drawn from the seed.
+// With `opponents` (a lesson's, or --empires): that many computer players of
+// other races, shuffled with the seed, and no neutral one.
+game::GameSetup quickStartGame(const game::Rules& r, std::string_view preset, uint64_t seed, std::optional<int> opponents = std::nullopt);
+
 // ---- Races --------------------------------------------------------------------------------
 
 const ruleset::RacePreset* presetOf(const game::Rules& r, const game::EmpireSetup& e);
@@ -146,6 +174,17 @@ struct EmpireDraft {
 };
 
 EmpireDraft draftFromPreset(const game::Rules& r, const ruleset::RacePreset& p, int tier);
+// Add New (spec 07 session 5): an empty empire of race style `style` (the
+// first style when null): no name, type, title or leader, every
+// characteristic 100 %, the Neutral culture, Oxygen and Rock, no trait, the
+// Neutral demeanor and the Peaceful happiness type (each the first of its
+// list when the data set lacks it), the style's design name file (inferred).
+EmpireDraft blankDraft(const game::Rules& r, const ruleset::RacePreset* style);
+// The atmospheres and planet types in the order Empire Setup lists them
+// (spec 07 session 5): None, Methane, Oxygen, Hydrogen, Carbon Dioxide; Rock,
+// Ice, Gas Giant; others the data set has after them.
+std::vector<std::string> atmospheresInSetupOrder(const game::Rules& r);
+std::vector<std::string> surfacesInSetupOrder(const game::Rules& r);
 EmpireDraft draftFromSetup(const game::Rules& r, const game::EmpireSetup& e);
 // Create Empire: refused while the racial point balance is negative. The result
 // names the preset tier when the race is unmodified, and carries the custom

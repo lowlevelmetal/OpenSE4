@@ -361,7 +361,11 @@ MinGW-w64.
   turn-based ones (2026-10-02): the host's desync check found every Windows copy of the
   game identical to the view it sent. By e-mail, the Windows build opened a turn file
   the Linux host had encrypted to its empire's password and sent orders the Linux host
-  read and accepted: both make the same Argon2id keys.
+  read and accepted: both make the same Argon2id keys. With signed turn files
+  (2026-10-02, again under Wine, with a network game of each turn style first), the
+  Windows build trusted the Linux host's PBEM key on the game's first turn file,
+  recognized it on the next, refused a turn file signed by another key, and both
+  turns' orders were accepted.
 - **Engine code.** It follows the rules of the section above. Serialized and hashed
   values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`, which also takes
   `size_t`, 64 bits everywhere: the Windows and macOS builds reject `long` and
@@ -426,7 +430,9 @@ MinGW-w64.
   as it arrives and sends that player its new view. Everyone gets their view when the
   turn passes on.
 - A play-by-e-mail host keeps the whole game and sends each player the same view as a
-  turn file; the players' orders files come back signed with their passwords.
+  turn file, signed with the host's key (which the player's game trusts per game from
+  the first turn file on); the players' orders files come back signed with their
+  passwords.
 - `src/net` carries this over TCP, encrypted (Monocypher: X25519, XChaCha20-Poly1305,
   BLAKE2b, EdDSA), with UPnP port mapping. A player's copy that drifts from the host's
   view is detected (`game::statePartHashes` names the parts) and replaced.

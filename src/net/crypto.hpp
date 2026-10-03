@@ -91,6 +91,16 @@ void sealTo(const Key& recipient, std::string_view domain, std::span<const uint8
 bool openFrom(const KeyPair& recipient, const Key& ephemeral, std::string_view domain, std::span<const uint8_t> ad, std::span<uint8_t> text,
               const Mac& mac);
 
+// Like sealTo, by a sender with a long-term key pair: the key also mixes in
+// the agreement of the sender's secret half with the recipient's key (as
+// NaCl's crypto_box does, with a fresh key pair besides), so a message that
+// opens was sealed by the holder of `sender`'s secret (or the recipient's).
+// openFromSender() names the sender's public key; false when anything differs.
+void sealFromSender(const KeyPair& sender, const Key& recipient, std::string_view domain, std::span<const uint8_t> ad, std::span<uint8_t> text,
+                    Key& ephemeral, Mac& mac);
+bool openFromSender(const KeyPair& recipient, const Key& sender, const Key& ephemeral, std::string_view domain, std::span<const uint8_t> ad,
+                    std::span<uint8_t> text, const Mac& mac);
+
 // ---- Password hashing (Argon2id) -----------------------------------------------------------------
 
 // Argon2id of `password` with `salt` (16 bytes or more) and the given work:

@@ -365,15 +365,16 @@ On 2026-10-03 the original's generated galaxies were read through a debugger and
 with ours (spec 01 §3.8; 544 quadrants of every type and size, 41 placements): every
 distribution agrees, and the link building, the connectivity pass and the warp point
 sectors come out exactly as the original's. The empire placement showed that the original's
-spread test counts two jumps more than the real number (spec 01 §3.6), the first row below.
+spread test counts two jumps more than the real number (spec 01 §3.6). Since 2026-10-03 the
+engine's spread test does the same (J + 2 > L), the last-resort homeworld may reuse an
+earlier home system when "Allowed to start in the same system" is on, and a template's
+`Ring 0` is any sector of the inner 11 × 11 square (`generate.cpp`). `Ring 8` and `Ring 9`
+stay on `Ring 7` with a warning: the spec has no rule for them (spec 01 §14 Q46).
 
 These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Empire placement spread (`generate.cpp` `placeHomeworlds`, with `warpJumps`) | Attempts 1 and 2 need more than L real jumps from every earlier home (L = trunc(0.8 or 0.5 × (S div P))) | The original's jump count is the real number plus two, so a system at least L − 1 jumps away passes (spec 01 §3.6, confirmed: binary, observed in 243 placements). Ours spreads homes two jumps farther in those attempts | M |
-| Last-resort homeworld (`generate.cpp` `placeHomeworlds`) | Always skips a system that is already another player's home | Skips it only when "Allowed to start in the same system" is off (confirmed: binary; spec 01 §3.6 says only "not used by another player"); off by default | L |
-| System template positions (`generate.cpp` `resolvePosition`) | "Ring 0" goes to the centre; rings above 7 are clamped | "Ring 0" is a random sector of the inner 11 × 11 square (x and y 1–11), redrawn like any ring while taken, up to 101 draws (spec 01 §4.3, confirmed: binary); the stock data uses neither | L |
 | Generation edge cases (`generate.cpp` `drawNames`, the connectivity pass of `buildLinks`, the "warp points anywhere" draw of `placeWarpPoints`, `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
 
 ## Client windows (spec 06)
@@ -422,7 +423,8 @@ Q89–Q98. What remains different (impact visual only unless noted):
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Research (`screens/research.cpp`) | Tech Tree always in slot 12; project boxes with the name, level and an estimate centred, the small box writing "paid / cost" | Tech Tree only when the game lets players see the complete tech tree, a Game Settings check box our setup and `GameOptions` lack (spec 01 §2.2), and the only way to the Tech Tree window; 140×130 boxes with the name, "Research Level N", Completion and Cost Per Turn, the small box a bar of up to 19 green blocks (spec 06 §7 Q92) | L |
-| Empire Status (`screens/empire_status.cpp`) | Change Email dim: the engine keeps no e-mail address for an empire; one table per block, icons on each block's first row, the net as an unlabelled block | The address is the empire's (asked for by Change Email and by Empire Setup's Email box), saved with the game and carried in the orders file but never used to send mail (spec 05 §9.2, spec 06 §7 Q95); needs an `Empire` field. Amounts right-aligned at fixed places, icons only on From Our Colonies, Net Resources Per Turn a labelled row | L |
+| Empire Status (`screens/empire_status.cpp`) | One table per block, icons on each block's first row, the net as an unlabelled block | Amounts right-aligned at fixed places, icons only on From Our Colonies, Net Resources Per Turn a labelled row (spec 06 §7 Q95) | L |
+| E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Every list (`screens/list_widgets.cpp`) | A 16 px column with arrows of our own drawing, no thumb; the wheel scrolls | A 24 px column with the `Arrows.bmp` cells (normal, under the pointer, held, disabled), a thumb as long as the visible share, a click or drag in the track jumps there, holding an arrow repeats every 100 ms (spec 06 §7 Q89) | L |
 | Empires (`screens/empires.cpp`) | Borders a view of the Empires window, one filter at a time, overlaps in white, no claiming | Borders a window of its own: a check box per empire, the claimed systems in their colours, contested ones yellow with a Legend, a click claims a system or gives it up (spec 06 §7 Q96) | L |
 | Weapons Report export (`data_export.cpp`) | Four tab-separated `OpenSE4_*.txt` tables of our own columns | `Weapons.txt`, `Comps.txt`, `WeaponFamilies.txt`, `CompFamilies.txt`, fixed-width, every component of the data set (spec 06 §7 Q83) | L |
@@ -436,19 +438,49 @@ Q89–Q98. What remains different (impact visual only unless noted):
 
 Seen side by side with the running original on 2026-10-03 ([spec 07](spec/07-observations.md),
 session 5, which gives each original layout in full): the setup screens, the front end,
-Help, the Galaxy Map, Intelligence, Combat Replay and Ground Combat. Impact visual only
-unless noted:
+Help, the Galaxy Map, Intelligence, Combat Replay and Ground Combat.
+
+Since 2026-10-03 the setup screens and the front end follow session 5: Game Setup and Empire
+Setup in the setup frame with every page's boxes (`screens/setup.cpp`, `setup_empire.cpp`,
+`setup_widgets.cpp`), Game Setup opening on Players with an empty list and Add New starting
+an empty empire with the Email box and the 340×370 list pickers; the new-game defaults
+(random computer and neutral players at Medium with one count choice, Maximum Event Severity
+Catastrophic, the victory values) and Quick Start keeping them, its opponents rolled from the
+seed (`setup::quickStartGame`); Quick Start's picker in Settings.txt's style order, eight to a
+page, column by column, with the empire's name as written; one Load Game dialog for the intro,
+the Game Menu's Load and Delete and Add Existing's Load Empire (`screens/file_dialog.cpp`);
+the intro's "Loading:" and "Complete". What still differs, and OpenSE4's own additions:
+
+- **Ours, kept** (impact none): the intro's Multiplayer, Settings and Manual buttons at the top
+  right; a status line under the setup frame (errors, a summary); Game Setup's Seed box,
+  system details under the pointer and map facts on Quadrant, the list of possible events on
+  Events, Allow All and Remove All on Technology, Move Up and Move Down and a "Computer" mark
+  on Players, Restore Defaults on Mechanics; Empire Setup's Preset Build and Race Name
+  (General), an enabled Computer Controlled box (a listed empire may be a computer player),
+  the homeworld's picture (Environment), Preset Values and All 100% (Characteristics), why a
+  trait cannot be taken (Advanced Traits); Quick Start's double click and the yellow frame on
+  the chosen portrait; `--quick-start --empires=N` and a lesson's `computer_players`, which
+  give N − 1 (or that many) computer players and no neutral empire.
+- **Dim in ours** (impact L): Game Settings' Game Master Password, Cheat codes allowed and
+  Players can see the complete tech tree (no such options for a game on one computer; network
+  games set a master password in Multiplayer); Mechanics' Different Machines, Multiplayer
+  Game Filename, Save Game Directory Path and Connection Type (network and e-mail games are set
+  up from Multiplayer).
+- **Our choices where the observation is silent** (impact L): the spin controls' steps (5 % a
+  click for characteristics, 100,000 points, one year, 10 % and 5 % for the victory values, 50
+  units and 10 ships) and typing into their value boxes; the characteristics' level words
+  other than "Average" and the effect wording; Begin Game without a chosen portrait asks for
+  one; Change Directory asks for a folder by name (with Default); the Compare Culture
+  Modifiers window is our table; the pictures under the page buttons come from the seed;
+  Victory Conditions keeps whole years; the lists use the shared arrow column (the "Every
+  list" row); loading a game shows no "Login To Game" list of its empires and the Game Master.
+
+Impact visual only unless noted:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Game Setup (`screens/setup.cpp`, `setup_widgets.cpp`) | A layout of our own: title strip, the pages as a column at the right, radio rows with ranges and explanations; opens on Quadrant; Technology Level on the Technology page; a Combat choice on Mechanics; no Game Master Password, Cheat Codes, No Tactical Combat or complete-tech-tree boxes, Multiplayer Game Filename, Save Game Directory Path or Connection Type | The setup frame and the eight page layouts of spec 07 session 5 (an 800×600 area, page buttons at the left, content frame, Begin Game and Cancel under it); opens on Players | L |
-| New-game and Quick Start defaults (`state.hpp` `GameOptions`, `setup_model.cpp` `defaultSettings`, `frontend.cpp` `quickStartSetup`) | Maximum Event Severity High; random neutral players off; victory values 50000 points, 100 years, 200 %, 75 %, 20 years, 10 years; one human empire already in the list; Quick Start gives the player 4 computer opponents and no neutral empire | Catastrophic; random computer and neutral empires both on with one count choice (Medium: 3–7 of each); 5,000,000, 10.0, 300 %, 50 %, 1.0 and 5.0; the list starts empty; Quick Start keeps these defaults, so it rolls 3–7 computer players and 3–7 neutral empires (spec 01 §2.1, §2.2, §11; spec 07 session 5) | M |
-| Empire Setup (`screens/setup_empire.cpp`) | A layout of our own, filled from the race's preset, no Email box, drop-down pickers | The six page layouts of spec 07 session 5; starts empty; an Email box; 340×370 list pickers | L |
-| Quick Start (`frontend.cpp` `QuickStartScreen`) | Every race alphabetically, row by row, scrolled by row with 16 px arrows; Begin Game dim until a portrait is chosen; the Cryslonite named "Cryslonite Imperium Imperium" | Settings.txt's Quick Start Style order, column by column, pages of eight turned by 24×24 arrows; the empire's name as written (spec 07 session 5) | L |
-| Load Game (`frontend.cpp` `LoadGameScreen`, the in-game window) | Two different windows (a 600×540 panel from the intro, a 536 px window in the game), no dates, no Change Directory | One 420×520 dialog with Save Game Name and Date columns, Change Directory and Cancel (spec 07 session 5) | L |
 | Help (`screens/help.cpp`) | Find box, items grouped with pictures and sizes, our own detail lines, no Weap Mount tab or Manual button, Weapons Report in slot 11 | Alphabetical name lists with lamps, the detail layout of spec 07 session 5, Weap Mount tab (slot 2), Weapons Report (slot 12), Manual (slot 13) | L |
 | Galaxy Map (`screens/galaxy_map.cpp`) | Map 5–6 px up and left in a darker frame, a frame round the content, Goto System in slot 8, an extra Show Distances box and a legend | Map frame (144,189)–(687,564), hint under it, Goto System in slot 11, Show Names in slot 13 (spec 07 session 5) | L |
-| Intro (`frontend.cpp`) | Multiplayer, Settings and Manual buttons at the top right; "Data: se4" at the right of the version line | "Loading:" and "Complete" at the right of the version line; no other buttons (our extra buttons are OpenSE4's) | L |
 | Intelligence (`screens/intelligence.cpp`) | Points as a line in the content, a two-column table with the group in orange, the four project boxes stacked at the right, a description box, Divide Evenly, Reorder Projects in slot 7 | The Research layout: points in the title strip, silver group headings, 14 px rows with the cost right-aligned, four 140 px boxes side by side with their small boxes, Divide Pts Evenly, Reorder Projects in slot 13 (spec 07 session 5) | L |
 
 Since 2026-10-03 the battle windows follow session 5 and spec 06 §7 Q86, Q87, Q97 and Q98:
@@ -560,12 +592,12 @@ follows the colony count. What differs:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Jump-count thresholds (`ai*.cpp` with `warpJumps`; spec 01 §14 Q45) | Thresholds such as "within 4 jumps" and "within 3 jumps" compare real jump counts | The original's jump count is the real number plus two (spec 01 §3.6, confirmed: binary); whether spec 05's thresholds already allow for it is not checked yet. If they do not, the original's tests reach two jumps less far than ours | M (to check) |
-| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With five original games the later shares are close; the difference left is the first 25 turns, where ours leave Exploration sooner (spec 05 question 65) | Defend (Short Term) 50 % of all turns, 71 % of turns 51–100 (seeds 1–24, after the rules of 2026-10-02 below); Infrastructure 8 % and 7 %; Exploration 74 % of turns 1–25; 15 % of listed war colonies gone within 10 turns (before those rules) | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 85 %; 18 % (33 % in the first three games) | L |
+| Jump-count thresholds (`ai*.cpp` with `warpJumps`; spec 01 §14 Q45, spec 05 §7.2 *Jumps*) | Fixed thresholds compare real jump counts with the spec's old numbers (the strength test around the targets, fleet recruiting, the drones' distance, Prepare for Attack's "more than one jump" test) | The original's count is the real number plus two, so the strength test reaches at most 2 real jumps, recruiting at most 1, the drones the setting less 2, and Prepare for Attack's test always passes (spec 05 §7.2 *Jumps*, confirmed: binary). 48 scratch games showed no measurable change | L |
+| Time in Defend (Short Term) and Infrastructure (spec 05 questions 53, 75). Within the original's spread in every period once nine original games are counted | Defend (Short Term) 50 % of all turns, 71 % of turns 51–100 (seeds 1–24, after the rules of 2026-10-02 below); Infrastructure 8 % and 7 %; Exploration 74–77 % of turns 1–25 (78 % with the vehicle table's counts below) | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 61–95 % per game, 80 % over nine games | L |
 | Bases. The placement rule is the original's (all 174 placements observed in five games went to the K-th queue, 25 reached a yard; ours 21 % of 742) and every placement is made in Infrastructure; since 2026-10-02 the soft cap, the scrap candidates and their ties are the original's too (below). With the construction budget's queue commitments fewer turns are over the soft cap, so fewer bases are scrapped, but fewer are placed early | 0.30 / 0.37 / 0.35 per empire at turns 50 / 75 / 100 (seeds 1–24; 0.29 / 0.33 / 0.34 over 120 seeds); built 0.51, lost 0.15 per empire in 100 turns | 0.4–0.6 in five games, 1.2 and 0.0 in two more (game 6: built 1.4, lost 0.2) | L |
 | Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 22.5k / 28.9k / 32.5k at turns 50 / 75 / 100; colonies 10.7 / 14.3 / 16.4 (seeds 1–24; 11.0 / 14.6 / 16.4 over 120 seeds, a colony more at turn 100 since the construction budget takes off the queues' commitments) | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |
-| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; ours lose more, in decided battles away from colonies, which ours fight more often (questions 66, 68; drawn battles vary as much in the original). Fewer are scrapped since the soft cap leaves colony ships out; fewer are built in the first 50 turns since the budget takes off the queues' commitments | Ships 3.2 / 7.3 / 12.1 / 13.9 per empire at turns 25 / 50 / 75 / 100 (attack ships 7.1 / 8.2 at 75 / 100; 120 seeds: 3.3 / 7.6 / 12.3 / 15.0); over turns 26–100 23.1 attack ships built and 17.2 lost per empire; 4.3 % lost per attack ship and turn in turns 51–100 (3.9 % over 120 seeds) | 14.1 / 17.4 (8.6 / 10.5); 21.4 built and 12.5 lost; 1.9 % | M |
-| Battles at enemy colonies (spec 05 questions 63, 67, 69): hostile colonies go by bombardment in both, and a battle against a weak colony goes the same way in both; the original fights more of them, while both make failed attacks on strong colonies | Per empire and 25 turns of turns 51–100: battles ending with the enemy colony gone 1.0; colonies lost 1.1 | 1.9–2.2 (two games); 1.8–3.6 (four games) | M |
+| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; ours lose more, in decided battles away from colonies, which ours fight more often (questions 66, 68; drawn battles vary as much in the original; the Defend (Short Term) fleet rule below closes most of it). Fewer are scrapped since the soft cap leaves colony ships out; fewer are built in the first 50 turns since the budget takes off the queues' commitments | Ships 3.2 / 7.3 / 12.1 / 13.9 per empire at turns 25 / 50 / 75 / 100 (attack ships 7.1 / 8.2 at 75 / 100; 120 seeds: 3.3 / 7.6 / 12.3 / 15.0); over turns 26–100 23.1 attack ships built and 17.2 lost per empire; 4.3 % lost per attack ship and turn in turns 51–100 (3.9 % over 120 seeds) | 14.1 / 17.4 (8.6 / 10.5); 21.4 built and 12.5 lost; 1.9 % | M |
+| Colonies changing hands (spec 05 questions 63, 67, 69, 76, 77). In the original every colony lost goes in a battle at its planet (none captured, none destroyed) and nearly every colony gained is founded on a free planet; a battle against a weak colony goes the same way in both. The original fights more of them, each defend-list entry with its own defence fleet (the Defend (Short Term) fleet rule below), and has more enemy colonies inside its territories (question 77) | Per empire and 25 turns of turns 51–100: founded 3.8, lost 1.2; battles at an enemy colony 2.0, ending with the colony gone 1.0; 2.5 attack ships per targeted colony (with the fleet rule: 4.1, 1.8; 1.8, 1.5; 1.9) | Founded 2.8–6.3 (4.5), lost 1.7–3.1 (six games); battles 3.0–4.9, colony gone 1.9–2.9 (four games); 1.1–1.3 ships per targeted colony (games 10, 13) | M |
 
 The rows found on 2026-10-02 (spec 05 §7.2, §7.5, question 60; confirmed: binary) were
 implemented that day; spec 07 "Pace after the movement rules" measures them:
@@ -629,7 +661,9 @@ share the vehicle type, which differ (the queue list details above, implemented 
 2026-10-02). The golden games of `tests/test_determinism.cpp` moved to seed 39 then, to
 seed 19 on 2026-10-02, to seed 42 later that day (the varied battles to seed 19, whose
 invasion still lands), and to seed 35 with the budget rule, whose games still cover
-battles, events, intelligence and politics.
+battles, events, intelligence and politics. The simultaneous golden game moved to seed 39
+with the placement spread of spec 01 §3.6 (2026-10-03): seed 35 placed the homes closer and
+fought no battle.
 
 Found under a debugger on 2026-10-02 (spec 05 §7.2, §7.5, questions 65–71; spec 07
 "Battles, bases and the first turns under a debugger"; confirmed: binary) and implemented
@@ -695,6 +729,47 @@ tie-break and budget rules" measures them (120 seeds, paired):
 Two details of the cap test are not followed and change little: the revenue comes from
 the last income report rather than the production of the moment (within 3 % at the median
 in turns 11–50), and the threshold is not taken in single precision (spec 05 §7.5).
+
+Found under a debugger on 2026-10-03 (spec 05 §7.5, spec 03 §6.3, spec 04 §2, questions
+68–76; spec 07 "The computer players' second round under a debugger"; confirmed: binary),
+not yet implemented, ranked by what they change in 120 scratch games:
+
+- **Fleets in Defend (Short Term)** (`planFleets`, `ai_military.cpp`). With enemies listed,
+  each defend-list entry of the systems to defend, in the fleets' order, gets the nearest
+  idle defence fleet (one entry per fleet, no limit by the threat); then the minister gives
+  no other fleet orders that turn, so attack fleets and leftover fleets stay idle. Ours
+  take the raw enemy objects and then send every leftover fleet, attack fleets included, to
+  the top entries, a patrol or an exploration. With the rule: decided battles won away
+  from colonies 5.0 → 4.1 per empire and 25 turns (the original 2.1–4.8), ships lost in
+  battle 7.8 → 5.9, battles ending with the enemy colony gone 1.0 → 1.6 (1.9–2.2),
+  colonies lost 1.2 → 1.8 (1.7–3.6), Defend (Short Term) 72 → 67 % of turns 51–100 (70 %),
+  colonies at turn 100 16.4 → 15.3 (17.0; question 76).
+- **The vehicle table's counts** (`ShipBuilder::have`, `ai_economy.cpp`). Taken once before
+  the clean-up of obsolete items, so an item removed this turn still counts. Second attack
+  ship on turn 9 instead of 5 and first colony ship on turn 7 instead of 9 (as the
+  original), ships at turn 50 7.5 → 8.0 (8.6).
+- **Idle vehicles in the daily battle check** (`Mover::run`, `movement.cpp`). A vehicle that
+  acts by its movement schedule marks its sector with or without orders. Battles 11.1 →
+  13.2 per empire and 25 turns, the new ones drawn without a shot; decided battles and
+  losses unchanged.
+- **Exploring fleets** (`planFleets`). The player's Move To toward the frontier point and
+  the Warp, lasting until done, instead of a Seek and the Warp; no measurable change.
+- **Fleet leaders** (`canLeadFleet`, `planFleets`). The search walks the vehicle list from
+  its end (slot order) and has no idle test; ours take the newest idle ship by id.
+- **Scrap** (`scrapOldest`). The Move To and Scrap go straight onto the candidate's list,
+  fleet member or cloaked, and the place is the nearest queue owner with a working yard in
+  the empire's queue list order; ours make the candidate leave its fleet, pass over a
+  cloaked one and use the Repair minister's yard search (what the original's Scrap does to
+  a fleet is question 74).
+- **Net income's timing**: the start-of-turn figure is worked out before the AI state update
+  and Politics (ours after Politics); the cap test's revenue comes from the colonies of the
+  moment (ours from the last income report).
+- **Jump counts compared with numbers** (spec 05 §7.2 *Jumps*, spec 01 §14 Q45). The
+  original's count is the jumps plus two, so its tests mean at most 2 jumps for the strength
+  test around the targets, 1 jump for fleet recruiting (which also has no idle test) and the
+  setting less 2 for the drones, and its "more than one jump from the first target" in
+  Prepare for Attack always holds; ours test 4, 3 and the setting in real jumps
+  (`ai_anger.cpp`, `ai_military.cpp`). No measurable change in 48 scratch games.
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state

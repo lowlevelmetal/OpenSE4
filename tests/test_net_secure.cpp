@@ -16,10 +16,12 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -165,6 +167,33 @@ TEST_CASE("net security: the cryptography wrappers") {
     REQUIRE(crypto::open(key, 7, ad, back, mac));
     CHECK(std::string(back.begin(), back.end()) == message);
 
+    // Sealed to a recipient: sealTo from anyone, sealFromSender only from the
+    // holder of the sender's secret (the recipient names the sender).
+    {
+        const crypto::KeyPair host = crypto::newKeyPair(), stranger = crypto::newKeyPair();
+        std::vector<uint8_t> boxed(message.begin(), message.end());
+        crypto::Key ephemeral{};
+        crypto::Mac boxMac{};
+        crypto::sealFromSender(host, bob.publicKey, "test domain", ad, boxed, ephemeral, boxMac);
+        CHECK_FALSE(contains(boxed, "fleet"));
+        auto opensFrom = [&](const crypto::KeyPair& to, const crypto::Key& from, std::string_view domain, std::vector<uint8_t> t) {
+            return crypto::openFromSender(to, from, ephemeral, domain, ad, t, boxMac);
+        };
+        CHECK(opensFrom(bob, host.publicKey, "test domain", boxed));
+        CHECK_FALSE(opensFrom(bob, stranger.publicKey, "test domain", boxed));  // not from the stranger
+        CHECK_FALSE(opensFrom(alice, host.publicKey, "test domain", boxed));    // not for alice
+        CHECK_FALSE(opensFrom(bob, host.publicKey, "other domain", boxed));
+        // The same message sealed anonymously does not pass for the host's.
+        std::vector<uint8_t> anonymous(message.begin(), message.end());
+        crypto::Key anonymousEphemeral{};
+        crypto::Mac anonymousMac{};
+        crypto::sealTo(bob.publicKey, "test domain", ad, anonymous, anonymousEphemeral, anonymousMac);
+        CHECK_FALSE(crypto::openFromSender(bob, host.publicKey, anonymousEphemeral, "test domain", ad, anonymous, anonymousMac));
+        std::vector<uint8_t> opened = boxed;
+        REQUIRE(crypto::openFromSender(bob, host.publicKey, ephemeral, "test domain", ad, opened, boxMac));
+        CHECK(std::string(opened.begin(), opened.end()) == message);
+    }
+
     // Signatures.
     const crypto::SigningKey signer = crypto::signingKey(a);
     CHECK(crypto::signingKey(a).publicKey == signer.publicKey);  // the same seed, the same key
@@ -187,11 +216,17 @@ TEST_CASE("net security: password keys come from the password itself, salted per
     REQUIRE(keys.has_value());
     const std::string verifier = keys->verifier();
     CHECK(verifier == net::passwordVerifier("hunter2", game));
-    CHECK(verifier.starts_with("pk1:"));
-    CHECK(verifier.size() == 4 + 128);  // the signing key, then the box key
+    // "pk2:", the work it was made with, then the signing key and the box key.
+    const net::PasswordWork work = net::passwordWork();
+    const std::string prefix = std::format("pk2:{}:{}:", work.kibibytes, work.passes);
+    CHECK(verifier.starts_with(prefix));
+    CHECK(verifier.size() == prefix.size() + 128);
     REQUIRE(net::verifierKeys(verifier).has_value());
     CHECK(net::verifierKeys(verifier)->signing == keys->signing.publicKey);
     CHECK(net::verifierKeys(verifier)->box == keys->box.publicKey);
+    CHECK(net::verifierKeys(verifier)->work == work);
+    CHECK(keys->work == work);
+    CHECK(net::verifierProblem(verifier).empty());
     CHECK(net::usableVerifier(verifier));
     CHECK(net::usableVerifier(""));
     CHECK(net::checkPassword(verifier, "hunter2", game));
@@ -223,11 +258,31 @@ TEST_CASE("net security: password keys come from the password itself, salted per
     crypto::Key identity{};
     identity[0] = 1;  // the neutral point of Edwards25519
     const std::string box = crypto::hex(keys->box.publicKey), signing = crypto::hex(keys->signing.publicKey);
-    CHECK_FALSE(net::usableVerifier("pk1:" + crypto::hex(identity) + box));
-    CHECK_FALSE(net::usableVerifier("pk1:" + signing + crypto::hex(crypto::Key{})));
-    CHECK_FALSE(net::usableVerifier("pk1:" + signing));
+    CHECK_FALSE(net::usableVerifier(prefix + crypto::hex(identity) + box));
+    CHECK(net::verifierProblem(prefix + crypto::hex(identity) + box).find("small order") != std::string::npos);
+    CHECK_FALSE(net::usableVerifier(prefix + signing + crypto::hex(crypto::Key{})));
+    CHECK_FALSE(net::usableVerifier(prefix + signing));
     CHECK_FALSE(net::usableVerifier(std::string(64, 'a')));  // looks like 0.6's
-    CHECK_FALSE(net::verifierKeys("pk1:zz" + verifier.substr(6)).has_value());
+    CHECK(net::verifierProblem(std::string(64, 'a')).find("OpenSE4 0.6") != std::string::npos);
+    CHECK_FALSE(net::verifierKeys(prefix + "zz" + verifier.substr(prefix.size() + 2)).has_value());
+    // The form before the work was written in (never released) is refused, with words saying what a verifier is.
+    CHECK_FALSE(net::usableVerifier("pk1:" + signing + box));
+    CHECK(net::verifierProblem("pk1:" + signing + box).find("pk2:") != std::string::npos);
+    // The work: decimal, without leading zeros, within bounds.
+    CHECK_FALSE(net::usableVerifier(std::format("pk2:0{}:{}:", work.kibibytes, work.passes) + signing + box));
+    CHECK_FALSE(net::usableVerifier(std::format("pk2:{}::", work.kibibytes) + signing + box));
+    CHECK_FALSE(net::usableVerifier("pk2:4:1:" + signing + box));                  // less memory than Argon2id takes
+    CHECK_FALSE(net::usableVerifier("pk2:2097152:1:" + signing + box));            // 2 GiB: more than a verifier may ask
+    CHECK_FALSE(net::usableVerifier("pk2:8192:17:" + signing + box));              // too many passes
+    CHECK_FALSE(net::usableVerifier("pk2:8192:0:" + signing + box));
+    CHECK_FALSE(net::usableVerifier("pk2:99999999999:1:" + signing + box));        // does not fit
+    CHECK(net::verifierProblem("pk2:2097152:1:" + signing + box).find("out of bounds") != std::string::npos);
+    CHECK(net::usableVerifier("pk2:8:1:" + signing + box));
+    std::string upper = verifier;
+    std::transform(upper.begin() + static_cast<std::ptrdiff_t>(prefix.size()), upper.end(), upper.begin() + static_cast<std::ptrdiff_t>(prefix.size()),
+                   [](char c) { return c >= 'a' && c <= 'f' ? static_cast<char>(c - 'a' + 'A') : c; });
+    CHECK_FALSE(net::usableVerifier(upper));  // one text form only
+    CHECK(net::usableVerifier("pk2:1048576:16:" + signing + box));
 
     // The verifier of OpenSE4 0.6: still checks the password once, but no signature.
     const std::string legacy = net::legacyPasswordVerifier(oldHash);
@@ -258,8 +313,16 @@ TEST_CASE("net security: the real Argon2id work") {
     const auto took = std::chrono::steady_clock::now() - start;
     net::setPasswordWork(tests);
     MESSAGE("one password key with the game's own work took " << std::chrono::duration_cast<std::chrono::milliseconds>(took).count() << " ms");
-    CHECK(real != light);  // the work is part of the key: every computer of a game uses the same
+    CHECK(real != light);  // the work is part of the key
     CHECK(net::usableVerifier(real));
+    CHECK(real.starts_with("pk2:131072:3:"));
+    // Each verifier records its work, so it checks with that work whatever
+    // the work set now (a later version may raise the default).
+    CHECK(net::checkPassword(real, "hunter2", 7));
+    CHECK(net::checkPassword(light, "hunter2", 7));
+    CHECK_FALSE(net::checkPassword(real, "hunter3", 7));
+    CHECK(net::passwordKeysFor(real, "hunter2", 7)->verifier() == real);
+    CHECK(net::passwordKeysFor(light, "hunter2", 7)->verifier() == light);
 }
 
 TEST_CASE("net security: a host's key is kept in a file, and players remember it per host") {
@@ -270,12 +333,38 @@ TEST_CASE("net security: a host's key is kept in a file, and players remember it
     CHECK(std::filesystem::exists(file));
     auto again = net::secure::loadOrCreateHostKey(file);
     REQUIRE(again.has_value());
-    CHECK(again->publicKey == first->publicKey);
+    CHECK(again->keys.network.publicKey == first->keys.network.publicKey);
+    CHECK(again->keys.pbem.box.publicKey == first->keys.pbem.box.publicKey);
+    CHECK(again->keys.pbem.signing.publicKey == first->keys.pbem.signing.publicKey);
+    CHECK(first->warning.empty());
+    // One secret, a key of its own for each use: the network handshake, the
+    // PBEM box key and the PBEM signing key are three different keys.
+    CHECK(first->keys.network.publicKey != first->keys.pbem.box.publicKey);
+    CHECK(first->keys.network.secret != first->keys.pbem.box.secret);
+    CHECK(first->keys.network.publicKey != first->keys.pbem.signing.publicKey);
+    {
+        std::ifstream in(file);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK(text.find(crypto::fingerprint(first->keys.network.publicKey)) != std::string::npos);
+        CHECK(text.find(crypto::fingerprint(first->keys.pbem.signing.publicKey)) != std::string::npos);
+        // The secret is none of the keys used.
+        CHECK(text.find(crypto::hex(first->keys.network.secret)) == std::string::npos);
+        CHECK(text.find(crypto::hex(first->keys.pbem.box.secret)) == std::string::npos);
+    }
 #ifndef _WIN32
     // Readable by its owner only, in a folder only the owner enters.
     namespace fs = std::filesystem;
     CHECK((fs::status(file).permissions() & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
     CHECK((fs::status(file.parent_path()).permissions() & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
+    // A key file others can read is used, with a warning for the host.
+    fs::permissions(file, fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+    auto loose = net::secure::loadOrCreateHostKey(file);
+    REQUIRE(loose.has_value());
+    CHECK(loose->keys.network.publicKey == first->keys.network.publicKey);
+    CHECK(loose->warning.find("other users") != std::string::npos);
+    CHECK(loose->warning.find("644") != std::string::npos);
+    fs::permissions(file, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace);
+    CHECK(net::secure::loadOrCreateHostKey(file)->warning.empty());
 #endif
     // Another program's key made meanwhile is never overwritten: it counts.
     const auto other = tmp / "taken.txt";
@@ -295,9 +384,9 @@ TEST_CASE("net security: a host's key is kept in a file, and players remember it
 
     net::secure::KnownHosts known(tmp / "known_hosts.txt");
     CHECK_FALSE(known.find("Example.org", 6720).has_value());
-    REQUIRE(known.remember("Example.org", 6720, first->publicKey).has_value());
+    REQUIRE(known.remember("Example.org", 6720, first->keys.network.publicKey).has_value());
     REQUIRE(known.remember("other.example", 6721, crypto::newKeyPair().publicKey).has_value());
-    CHECK(known.find("example.ORG", 6720) == first->publicKey);  // host names in any case
+    CHECK(known.find("example.ORG", 6720) == first->keys.network.publicKey);  // host names in any case
     CHECK_FALSE(known.find("example.org", 6721).has_value());
     const crypto::Key newer = crypto::newKeyPair().publicKey;
     REQUIRE(known.remember("example.org", 6720, newer).has_value());
@@ -350,7 +439,7 @@ TEST_CASE("net security: an eavesdropper sees neither the game nor the passwords
         CHECK_FALSE(contains(*stream, "a-secret"));
         CHECK_FALSE(contains(*stream, "master-pw"));
         CHECK_FALSE(contains(*stream, net::legacyPasswordHash("a-secret")));
-        CHECK_FALSE(contains(*stream, net::passwordVerifier("a-secret", host.gameId()).substr(4, 64)));
+        CHECK_FALSE(contains(*stream, crypto::hex(net::verifierKeys(net::passwordVerifier("a-secret", host.gameId()))->signing)));
         CHECK_FALSE(contains(*stream, "Loopback"));  // the game's name
         CHECK_FALSE(contains(*stream, game::dataSetIdentity(engineRules())));
     }
@@ -555,6 +644,10 @@ TEST_CASE("net security: a wrong master password gives no admin rights, and old 
     CHECK(loop.clientSaw(0, EventType::Rejected)->text.find("Wrong password") != std::string::npos);
     CHECK_FALSE(bob.admin());
     CHECK_FALSE(bob.config().sendOldPassword);  // agreed once, for that login
+    // The host's log says so.
+    CHECK(std::any_of(loop.hostEvents.begin(), loop.hostEvents.end(), [](const net::Event& e) {
+        return e.type == EventType::Info && e.text.starts_with("Password migration: bob");
+    }));
     const std::string& upgraded = host.state()->empire(game::EmpireId{1u}).passwordHash;
     CHECK(upgraded == net::passwordVerifier("b-secret", info.gameId));
     CHECK_FALSE(net::checkPassword(upgraded, net::legacyPasswordHash("b-secret"), info.gameId));
@@ -573,6 +666,39 @@ TEST_CASE("net security: a wrong master password gives no admin rights, and old 
     CHECK(host.state()->empire(game::EmpireId{0u}).passwordHash == net::passwordVerifier("a-secret", info.gameId));
 }
 
+TEST_CASE("net security: a host may refuse to move passwords of OpenSE4 0.6") {
+    game::GameSetup setup;
+    setup.seed = 5;
+    setup.options.systemCount = 8;
+    for (int i = 0; i < 2; ++i) {
+        game::EmpireSetup e;
+        e.kind = game::PlayerKind::Human;
+        setup.empires.push_back(e);
+    }
+    auto s = game::createGame(engineRules(), setup);
+    REQUIRE(s.has_value());
+    s->empire(game::EmpireId{0u}).passwordHash = net::legacyPasswordVerifier(net::legacyPasswordHash("a-secret"));
+    game::SaveInfo info;
+    info.gameName = "Old Game";
+    info.gameId = 52;
+    info.dataSet = game::dataSetIdentity(engineRules());
+    info.players = {"alice", "bob"};
+    net::HostConfig cfg = hostConfig(2);
+    cfg.passwordMigration = false;
+    net::HostSession host(engineRules(), cfg);
+    REQUIRE(host.resume(*s, info).has_value());
+    net::ClientConfig aliceCfg = clientConfig(host, "alice", "a-secret");
+    aliceCfg.hostKey = host.hostKey();  // trusted, and the player agreed: still refused
+    aliceCfg.sendOldPassword = true;
+    net::ClientSession alice(aliceCfg);
+    Loop loop(host, {&alice});
+    REQUIRE(alice.connect().has_value());
+    REQUIRE(loop.until([&] { return loop.clientSaw(0, EventType::Rejected) != nullptr; }));
+    CHECK(loop.clientSaw(0, EventType::Rejected)->text.find("reset your password") != std::string::npos);
+    CHECK(net::isLegacyVerifier(host.state()->empire(game::EmpireId{0u}).passwordHash));
+    CHECK_FALSE(std::any_of(loop.hostEvents.begin(), loop.hostEvents.end(), [](const net::Event& e) { return e.text.starts_with("Password migration"); }));
+}
+
 TEST_CASE("net security: a player can set only a password value of the current kind") {
     TwoPlayerGame g;
     net::HostSession& host = g.host;
@@ -580,7 +706,7 @@ TEST_CASE("net security: a player can set only a password value of the current k
     const std::string before = host.state()->empire(g.alice.empire()).passwordHash;
     // A value that looks like OpenSE4 0.6's verifier would make the host ask
     // for the old form of the password, and an unreadable one lock the empire out.
-    for (const std::string& bad : {std::string(64, 'a'), std::string("pk1:nonsense")}) {
+    for (const std::string& bad : {std::string(64, 'a'), std::string("pk2:nonsense")}) {
         loop.clear();
         game::EmpireOrders orders = noteOrders(g.alice, "x");
         orders.commands.push_back(game::cmd::SetEmpireOptions{.passwordHash = bad});
@@ -715,4 +841,59 @@ TEST_CASE("net security: older and newer versions refuse each other with a clear
     REQUIRE(rejected != events.end());
     CHECK(rejected->text.find("network protocol 4") != std::string::npos);
     CHECK(rejected->text.find(std::format("protocol {}", net::kProtocolVersion)) != std::string::npos);
+}
+
+namespace {
+
+// Sets the password work for one test, and back afterwards whatever happens.
+struct WorkFor {
+    net::PasswordWork before = net::passwordWork();
+    explicit WorkFor(net::PasswordWork w) { net::setPasswordWork(w); }
+    ~WorkFor() { net::setPasswordWork(before); }
+    WorkFor(const WorkFor&) = delete;
+    WorkFor& operator=(const WorkFor&) = delete;
+};
+
+} // namespace
+
+TEST_CASE("net security: a password made with another work, or whose key cannot be made, is said so") {
+    TwoPlayerGame g;
+    const net::PasswordWork tests = net::passwordWork();
+    {
+        // Another OpenSE4 with another default: the host names both works
+        // rather than saying "wrong password".
+        WorkFor other({tests.kibibytes * 2, tests.passes});
+        net::ClientSession alice(clientConfig(g.host, "alice", "a-secret"));
+        Loop loop(g.host, {&alice});
+        REQUIRE(alice.connect().has_value());
+        REQUIRE(loop.until([&] { return loop.clientSaw(0, EventType::Rejected) != nullptr; }));
+        const std::string text = loop.clientSaw(0, EventType::Rejected)->text;
+        CHECK(text.find("Argon2id work of " + net::describe(tests)) != std::string::npos);
+        CHECK(text.find(net::describe(net::passwordWork())) != std::string::npos);
+    }
+    {
+        // A key that cannot be made (here: a work no verifier may name; on a
+        // real computer: Argon2id's memory not to be had) ends the attempt
+        // with that said, on the client and on a host starting.
+        WorkFor none({4, 1});
+        CHECK_THROWS_AS(net::passwordKeys("x", 1), net::PasswordWorkError);
+        CHECK_THROWS_AS(net::joinKey("x", crypto::Key{}, 1), net::PasswordWorkError);
+        net::ClientSession alice(clientConfig(g.host, "alice", "a-secret"));
+        Loop loop(g.host, {&alice});
+        REQUIRE(alice.connect().has_value());
+        REQUIRE(loop.until([&] { return loop.clientSaw(0, EventType::Rejected) != nullptr; }));
+        CHECK(loop.clientSaw(0, EventType::Rejected)->text.find("password key") != std::string::npos);
+        net::HostConfig cfg = hostConfig(2);
+        cfg.localPlayer = net::LocalPlayer{"me", "my-secret", {}};
+        net::HostSession host(engineRules(), cfg);
+        const auto started = host.start();
+        REQUIRE_FALSE(started.has_value());
+        CHECK(started.error().find("password key") != std::string::npos);
+        CHECK(host.phase() == net::HostPhase::Stopped);
+        CHECK(g.host.resetPasswords({g.alice.empire()}).error().find("password key") != std::string::npos);
+    }
+    // The cache of Argon2id results can be emptied (and is at exit); keys come out the same.
+    const std::string before = net::passwordVerifier("hunter2", 99);
+    net::forgetPasswordKeys();
+    CHECK(net::passwordVerifier("hunter2", 99) == before);
 }

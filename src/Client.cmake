@@ -87,6 +87,7 @@ add_executable(opense4
     client/classic/screens/setup_empire.cpp
     client/classic/screens/setup_model.cpp
     client/classic/screens/setup_widgets.cpp
+    client/classic/screens/file_dialog.cpp
     client/classic/screens/ships.cpp
     client/classic/screens/ships_common.cpp
     client/classic/screens/ships_logic.cpp

@@ -5,10 +5,13 @@
 // file) and never sends it. Each player whose turn it is gets a turn file
 // (.turn) of their own: the game as their empire knows it
 // (game::redactForEmpire), as the network host sends it, encrypted to the
-// empire's password key (net/auth.hpp). The player sends back an orders file
-// (.plr), signed with the empire's password and encrypted to the host's key
+// empire's password key (net/auth.hpp) with the host's own box key mixed in,
+// and signed with the host's PBEM signing key (secure::PbemHostKeys), which
+// the player's computer trusts on first use per game (KnownHosts) and checks
+// on every later turn file. The player sends back an orders file (.plr),
+// signed with the empire's password and encrypted to the host's box key
 // (named in the turn file), so in a shared folder nobody reads another
-// player's view or orders. The host processes the turn from whatever .plr
+// player's view or orders, and nobody passes a turn file off as the host's. The host processes the turn from whatever .plr
 // files arrived (the computer plays the missing empires), writes the new .gam
 // and the next turn files, and deletes the processed .plr files.
 //
@@ -34,10 +37,14 @@
 #include "game/state.hpp"
 #include "net/auth.hpp"
 #include "net/crypto.hpp"
+#include "net/secure.hpp"
 
 #include <expected>
 #include <filesystem>
+#include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -52,19 +59,23 @@ inline constexpr std::string_view kTurnExtension = ".turn";
 // One empire's view of the game, for the player of that empire.
 struct TurnFile {
     // In the clear: which game and empire it is for, and what the player's
-    // game needs to make the empire's keys.
+    // game needs to make the empire's keys and to check the host's.
     game::SaveInfo info;           // the game's header (without the master password's verifier)
     game::EmpireId empire;         // whose view this is
     bool turnBased = false;        // a turn-based game (the file is for the player whose turn it is)
     std::string verifier;          // that empire's password verifier
-    crypto::Key hostKey{};         // the host's key: the player's orders file is encrypted to it
-    // The view (TurnView), encrypted to the empire's box key and bound to
-    // everything above. In the clear when the empire has no password, or one
-    // of OpenSE4 0.6 (no box key: that empire moves to a new one this turn).
+    crypto::Key hostKey{};         // the host's PBEM box key: the player's orders file is encrypted to it
+    crypto::Key hostSigningKey{};  // the host's PBEM signing key, which signed this file
+    // The view (TurnView), encrypted to the empire's box key with the host's
+    // box key mixed in (crypto::sealFromSender) and bound to everything
+    // above. In the clear only when the empire has no password, or one of
+    // OpenSE4 0.6 (no box key: that empire moves to a new one this turn).
     bool encrypted = false;
     crypto::Key ephemeral{};
     crypto::Mac mac{};
     std::vector<uint8_t> content;
+    // The host's signature (hostSigningKey) of everything above.
+    crypto::Signature signature{};
 };
 
 // What a turn file holds for its player.
@@ -78,8 +89,16 @@ std::vector<uint8_t> encodeTurnView(const TurnView& v);
 std::vector<uint8_t> encodeTurnFile(const TurnFile& f);
 std::expected<TurnFile, std::string> decodeTurnFile(std::span<const uint8_t> bytes);
 std::expected<TurnFile, std::string> readTurnFile(const std::filesystem::path& file);
+// What the host signs, and the signing (it names `key` as hostSigningKey).
+crypto::Key turnFileDigest(const TurnFile& f);
+void signTurnFile(TurnFile& f, const crypto::SigningKey& key);
+// Whether the file is as the holder of its hostSigningKey made it. Whether
+// that is the game's host is for the player's trust (checkHostKey).
+bool turnFileSigned(const TurnFile& f);
 // The view of a turn file, opened with the empire's password keys (none: a
-// file in the clear). Fails for a wrong password or a changed file.
+// file in the clear). Fails for a wrong password, a changed file, a file not
+// signed by its host key, a file in the clear for an empire whose password
+// has a box key, and a view not sealed by the host key named in the file.
 std::expected<TurnView, std::string> openTurnFile(const TurnFile& f, const std::optional<PasswordKeys>& keys);
 
 // "<game>_<NN>.turn" (NN = empire number, from 1).
@@ -99,10 +118,56 @@ std::vector<game::EmpireId> empiresToPlay(const game::GameState& state);
 game::GameState playerView(const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
 
 // Writes the turn files of every empire that plays now from the game file,
-// into `dir`, naming `hostKey` (the public half of the host's key) for the
-// orders; returns each empire and its file.
+// into `dir`: signed with the host's PBEM signing key, sealed with its box
+// key (whose public half the orders are encrypted to); returns each empire
+// and its file.
 std::expected<std::vector<std::pair<game::EmpireId, std::filesystem::path>>, std::string>
-writeTurnFiles(const game::Rules& rules, const std::filesystem::path& gameFile, const std::filesystem::path& dir, const crypto::Key& hostKey);
+writeTurnFiles(const game::Rules& rules, const std::filesystem::path& gameFile, const std::filesystem::path& dir, const secure::PbemHostKeys& host);
+
+// ---- The player's side of a turn file ------------------------------------------------------------
+
+// The key that signed a turn file against the one this computer trusts for
+// the file's game (KnownHosts::findGame).
+enum class HostKeyStatus {
+    First,    // no key trusted for this game yet: trusted on first use
+    Known,    // the one trusted
+    Changed,  // another one: someone else's file, or a host with a new key
+};
+struct HostKeyCheck {
+    HostKeyStatus status = HostKeyStatus::First;
+    std::string fingerprint;   // of the key that signed the file
+    std::string trusted;       // Changed: of the key trusted for the game
+};
+HostKeyCheck checkHostKey(const TurnFile& f, const secure::KnownHosts& known);
+
+// What the player agreed to, each after a second confirmation.
+struct PlayerTrust {
+    // Trust a host key other than the one trusted for this game (the host
+    // said it made a new one, and its fingerprint is the one shown).
+    bool trustChangedHostKey = false;
+    // An empire of OpenSE4 0.6: show the old password's form to the host key
+    // shown, once, in this turn's orders file.
+    bool showOldPassword = false;
+};
+
+// A turn file opened for its player.
+struct PlayerTurn {
+    // The password's keys (none: the empire has no password): they sign the
+    // orders. For an empire of OpenSE4 0.6 the new password's, with the old
+    // password's hash, which the orders file shows this once.
+    std::optional<PasswordKeys> keys;
+    std::string legacyPasswordHash;
+    TurnView view;
+    HostKeyStatus host = HostKeyStatus::First;
+};
+
+// Opens a turn file for its empire's player: the host's signature, the host
+// key against the one trusted for the game (none yet: trusted from now on,
+// remembered once the file opened; another one only with
+// trust.trustChangedHostKey), the password (an OpenSE4 0.6 empire: the old
+// password, a new one, and trust.showOldPassword), then the view.
+std::expected<PlayerTurn, std::string> openTurnForPlayer(const TurnFile& f, secure::KnownHosts& known, std::string_view password,
+                                                         std::string_view newPassword = {}, PlayerTrust trust = {});
 
 // ---- Orders files (player -> host) ---------------------------------------------------------------
 
@@ -158,12 +223,17 @@ std::expected<std::filesystem::path, std::string> writePlayerOrders(const std::f
 // ---- The host's processing -----------------------------------------------------------------------
 
 struct ProcessOptions {
-    crypto::KeyPair hostKey;         // the host's key: opens the orders files, named in the turn files
+    secure::PbemHostKeys host;       // the host's keys: the box key opens the orders files, the signing key signs the turn files
     std::string masterPassword;      // the master password (needed when the game has one)
     bool deleteProcessed = true;     // remove the .plr files that were used (the classic behavior)
     bool allowDataSetMismatch = false;
     // Where the next turn files go (empty: next to the game file).
     std::filesystem::path turnFilesDir;
+    // A game of OpenSE4 0.6: an empire whose password is still in that
+    // version's form moves to a new one with an orders file that shows the
+    // old form's hash once (the player agreed). False: such files are
+    // refused, and the empire gets a password only by Reset Passwords.
+    bool passwordMigration = true;
     // Reset Passwords (spec 06 §1.9, simultaneous games): these empires get a
     // new six-digit password (net::resetPassword), written in once the turn's
     // orders have been read; the report lists them for the host only.
@@ -176,6 +246,7 @@ struct ProcessReport {
     std::vector<std::string> submitted;          // empire names with orders
     std::vector<std::string> playedByComputer;   // human empires without orders
     std::vector<std::string> warnings;           // skipped files and why
+    std::vector<std::string> migratedPasswords;  // empires moved from an OpenSE4 0.6 password to a new one
     std::vector<std::string> rejectedCommands;   // "Empire: Command: reason"
     std::vector<std::filesystem::path> used;     // .plr files that were processed
     // Turn-based games: one player's turn was played (the one in `submitted`
@@ -191,16 +262,18 @@ struct ProcessReport {
 };
 
 // Processes the current turn of `state` (as read: readForTurn) from the
-// .plr files in `ordersDir`, opened with the host's key, checking game, turn,
+// .plr files in `ordersDir`, opened with the host's box key, checking game, turn,
 // empire, the turn file they were made from, the password's signature and
 // the password values the orders set. Of two files for one empire the higher
 // revision counts; two different moves of an OpenSE4 0.6 empire to a new
-// password are both refused. Does not write anything.
+// password are both refused, and every one when `passwordMigration` is false.
+// Does not write anything.
 // Turn-based games: the turn of the player whose turn it is, from its .plr,
 // or played by the computer when none came; then the game plays on to the
 // next human.
 std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, game::GameState& state, const game::SaveInfo& info,
-                                                      const std::filesystem::path& ordersDir, const crypto::KeyPair& hostKey);
+                                                      const std::filesystem::path& ordersDir, const crypto::KeyPair& hostKey,
+                                                      bool passwordMigration = true);
 
 // The whole host step: load the .gam (checking the master password and the
 // data set), process the turn, save the .gam in place, write the turn files

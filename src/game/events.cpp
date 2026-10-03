@@ -688,6 +688,7 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     // computer difficulty (spec 05 §7.1).
     e.kind = PlayerKind::Computer;
     e.passwordHash.clear();
+    e.email.clear();  // the rebels are not the former owner's player (inferred)
     e.ministerAll = true;
     e.aiMinimalChanges = false;
     e.aiDifficulty = difficulty;
