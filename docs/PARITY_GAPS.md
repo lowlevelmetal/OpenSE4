@@ -361,10 +361,19 @@ turns and events are gone. A pair where only one side has met the other (a simul
 Decloak, above) is completed by the next check in a system where both detect each other.
 Whether a timed event's start message also counts is spec 05 question 57.
 
+On 2026-10-03 the original's generated galaxies were read through a debugger and compared
+with ours (spec 01 §3.8; 544 quadrants of every type and size, 41 placements): every
+distribution agrees, and the link building, the connectivity pass and the warp point
+sectors come out exactly as the original's. The empire placement showed that the original's
+spread test counts two jumps more than the real number (spec 01 §3.6), the first row below.
+
 These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
+| Empire placement spread (`generate.cpp` `placeHomeworlds`, with `warpJumps`) | Attempts 1 and 2 need more than L real jumps from every earlier home (L = trunc(0.8 or 0.5 × (S div P))) | The original's jump count is the real number plus two, so a system at least L − 1 jumps away passes (spec 01 §3.6, confirmed: binary, observed in 243 placements). Ours spreads homes two jumps farther in those attempts | M |
+| Last-resort homeworld (`generate.cpp` `placeHomeworlds`) | Always skips a system that is already another player's home | Skips it only when "Allowed to start in the same system" is off (confirmed: binary; spec 01 §3.6 says only "not used by another player"); off by default | L |
+| System template positions (`generate.cpp` `resolvePosition`) | "Ring 0" goes to the centre; rings above 7 are clamped | "Ring 0" is a random sector of the inner 11 × 11 square (x and y 1–11), redrawn like any ring while taken, up to 101 draws (spec 01 §4.3, confirmed: binary); the stock data uses neither | L |
 | Generation edge cases (`generate.cpp` `drawNames`, the connectivity pass of `buildLinks`, the "warp points anywhere" draw of `placeWarpPoints`, `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
 
 ## Client windows (spec 06)
@@ -397,7 +406,9 @@ keys the client ignored followed the specs:
 
 The client's own differences are written in spec 06 beside each answer ("Our client
 differs"). Every one settled on 2026-10-01 is implemented; the client's own choices are
-noted beside each answer, and the open ones are spec 06 §7 Q83–Q88.
+noted beside each answer. Spec 06 §7 Q83–Q98 were settled from the executable and from
+screenshots on 2026-10-03 (the ring's pixels of Q85 match ours); the rows below list what
+our client does differently.
 
 Seen side by side with the running original on 2026-10-01 ([spec 07](spec/07-observations.md),
 session 3, which lists each difference in full). Since 2026-10-01 the client follows what was
@@ -410,10 +421,42 @@ Q89–Q98. What remains different (impact visual only unless noted):
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Research (`screens/research.cpp`) | Tech Tree always in slot 12 | Tech Tree only when the game lets players see the complete tech tree, a Game Settings check box our setup and `GameOptions` lack (spec 01 §2.2) | L |
-| Empire Status (`screens/empire_status.cpp`) | Change Email dim: the engine keeps no e-mail address for an empire | The address is the empire's, saved with the game and carried in the orders file (spec 05 §9.2); needs an `Empire` field | L |
-| Every list | Our own arrow buttons (16 px) | The 24x24 arrows of `Buttons/Arrows.bmp` (Q89) | L |
-| Empires (`screens/empires.cpp`) | Borders a view of the Empires window | Borders a window of its own (spec 06 §1.5, Q96) | L |
+| Research (`screens/research.cpp`) | Tech Tree always in slot 12; project boxes with the name, level and an estimate centred, the small box writing "paid / cost" | Tech Tree only when the game lets players see the complete tech tree, a Game Settings check box our setup and `GameOptions` lack (spec 01 §2.2), and the only way to the Tech Tree window; 140×130 boxes with the name, "Research Level N", Completion and Cost Per Turn, the small box a bar of up to 19 green blocks (spec 06 §7 Q92) | L |
+| Empire Status (`screens/empire_status.cpp`) | Change Email dim: the engine keeps no e-mail address for an empire; one table per block, icons on each block's first row, the net as an unlabelled block | The address is the empire's (asked for by Change Email and by Empire Setup's Email box), saved with the game and carried in the orders file but never used to send mail (spec 05 §9.2, spec 06 §7 Q95); needs an `Empire` field. Amounts right-aligned at fixed places, icons only on From Our Colonies, Net Resources Per Turn a labelled row | L |
+| Every list (`screens/list_widgets.cpp`) | A 16 px column with arrows of our own drawing, no thumb; the wheel scrolls | A 24 px column with the `Arrows.bmp` cells (normal, under the pointer, held, disabled), a thumb as long as the visible share, a click or drag in the track jumps there, holding an arrow repeats every 100 ms (spec 06 §7 Q89) | L |
+| Empires (`screens/empires.cpp`) | Borders a view of the Empires window, one filter at a time, overlaps in white, no claiming | Borders a window of its own: a check box per empire, the claimed systems in their colours, contested ones yellow with a Legend, a click claims a system or gives it up (spec 06 §7 Q96) | L |
+| Weapons Report export (`data_export.cpp`) | Four tab-separated `OpenSE4_*.txt` tables of our own columns | `Weapons.txt`, `Comps.txt`, `WeaponFamilies.txt`, `CompFamilies.txt`, fixed-width, every component of the data set (spec 06 §7 Q83) | L |
+| Ending (`finale_screen.cpp`) | One kind chosen (Victory, Human Dead, Lose); a lone human sees Human Dead at once | Each ending shown as it comes: Lose at the start of a last turn, Human Dead at the next End Turn (spec 06 §7 Q83) | L |
+| Players window, TCP/IP host (`ai.cpp`, `net/host.cpp`) | Neutral empires cannot be switched; the host's toggle refuses empires that were computer players from the start; a player's copy sends every flag | Any empire can be switched (neutrality stays); the host's toggle works on every row ("[Host]"); the orders carry only the flags of objects changed that turn (spec 06 §7 Q84) | L |
+| Movement line during the replay (`movement_line.cpp`) | Hidden while the replay runs | The route stored before the replay keeps being drawn; sector 0 is selected afterwards (spec 06 §7 Q86) | L |
+| Combat Piece Report (`screens/tactical.cpp`) | Page 328 px with tabs and 361 without; the Detail page starts at the page corner | Page always 327 px; the Detail picture 10 px right and down, cut by the page (spec 06 §7 Q87) | L |
+| Orders cells, Ships\Units and Colonies (`screens/ships_common.cpp`) | "None" or "REPEAT ORDERS" for an empty list; the current order in round brackets | One order per line, no brackets, an empty cell when there are none; "REPEAT ORDERS" only in the sort text; the Colonies Orders heading does not sort (spec 06 §7 Q88) | L |
+| Colonies (`screens/planets.cpp`) | "Systems with Colonies"; research and intelligence values at x 289; storage truncated ("52kT"); a click selects, a double click shows the colony; the buttons act on the selection | "System with Colonies"; those values at x 271 with icons; storage rounded up ("53kT"); a click shows the colony and closes the window; Set Colony Type asks for the planet; Scrap Facil Types acts on every colony (spec 06 §7 Q90) | L |
+| Log Goto (`screens/log.cpp`) | Lit whenever no entry is selected | Keeps its last state when nothing is selected (spec 06 §7 Q91) | L |
+| Designs (`screens/designs.cpp`) | Our row places, headings in design-type order, obsolete names grey | The original's row places, headings and designs in alphabetical order (spec 06 §7 Q93) | L |
+| Create Design (`screens/designs.cpp`) | Our places; Weapons Report in slot 7; yellow warnings; To Hit Modifiers changes the tiles; an empty name box and a design type already chosen | The places of spec 06 §7 Q94; Weapons Report in slot 11; white warnings after a red ball; To Hit Modifiers shows Offense and Defense Bonus in the figures box; the boxes read "Design Type" and "Design Name" | L |
+| Tactical Combat (`screens/tactical.cpp`) | Grid at (W−232,104); target panel 216×64 at y 324; three 20×20 navigation buttons; the panel shows the first piece before Begin | Grid at (W−232,102); target panel 216×100 at y 373; two navigation groups (moving, firing) and a closing button; the panel empty before Begin (spec 06 §7 Q97) | L |
+| Report up-arrow (`main_window.cpp`) | 35 px from the right, 2 px down; shown whenever the sector holds several objects | 33×21 at (257,0); the fourth row is the disabled state; shown when the report was reached from the list (inferred) (spec 06 §7 Q98) | L |
+
+Seen side by side with the running original on 2026-10-03 ([spec 07](spec/07-observations.md),
+session 5, which gives each original layout in full): the setup screens, the front end,
+Help, the Galaxy Map, Intelligence, Combat Replay and Ground Combat. Impact visual only
+unless noted:
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| Game Setup (`screens/setup.cpp`, `setup_widgets.cpp`) | A layout of our own: title strip, the pages as a column at the right, radio rows with ranges and explanations; opens on Quadrant; Technology Level on the Technology page; a Combat choice on Mechanics; no Game Master Password, Cheat Codes, No Tactical Combat or complete-tech-tree boxes, Multiplayer Game Filename, Save Game Directory Path or Connection Type | The setup frame and the eight page layouts of spec 07 session 5 (an 800×600 area, page buttons at the left, content frame, Begin Game and Cancel under it); opens on Players | L |
+| New-game and Quick Start defaults (`state.hpp` `GameOptions`, `setup_model.cpp` `defaultSettings`, `frontend.cpp` `quickStartSetup`) | Maximum Event Severity High; random neutral players off; victory values 50000 points, 100 years, 200 %, 75 %, 20 years, 10 years; one human empire already in the list; Quick Start gives the player 4 computer opponents and no neutral empire | Catastrophic; random computer and neutral empires both on with one count choice (Medium: 3–7 of each); 5,000,000, 10.0, 300 %, 50 %, 1.0 and 5.0; the list starts empty; Quick Start keeps these defaults, so it rolls 3–7 computer players and 3–7 neutral empires (spec 01 §2.1, §2.2, §11; spec 07 session 5) | M |
+| Empire Setup (`screens/setup_empire.cpp`) | A layout of our own, filled from the race's preset, no Email box, drop-down pickers | The six page layouts of spec 07 session 5; starts empty; an Email box; 340×370 list pickers | L |
+| Quick Start (`frontend.cpp` `QuickStartScreen`) | Every race alphabetically, row by row, scrolled by row with 16 px arrows; Begin Game dim until a portrait is chosen; the Cryslonite named "Cryslonite Imperium Imperium" | Settings.txt's Quick Start Style order, column by column, pages of eight turned by 24×24 arrows; the empire's name as written (spec 07 session 5) | L |
+| Load Game (`frontend.cpp` `LoadGameScreen`, the in-game window) | Two different windows (a 600×540 panel from the intro, a 536 px window in the game), no dates, no Change Directory | One 420×520 dialog with Save Game Name and Date columns, Change Directory and Cancel (spec 07 session 5) | L |
+| Help (`screens/help.cpp`) | Find box, items grouped with pictures and sizes, our own detail lines, no Weap Mount tab or Manual button, Weapons Report in slot 11 | Alphabetical name lists with lamps, the detail layout of spec 07 session 5, Weap Mount tab (slot 2), Weapons Report (slot 12), Manual (slot 13) | L |
+| Galaxy Map (`screens/galaxy_map.cpp`) | Map 5–6 px up and left in a darker frame, a frame round the content, Goto System in slot 8, an extra Show Distances box and a legend | Map frame (144,189)–(687,564), hint under it, Goto System in slot 11, Show Names in slot 13 (spec 07 session 5) | L |
+| Intro (`frontend.cpp`) | Multiplayer, Settings and Manual buttons at the top right; "Data: se4" at the right of the version line | "Loading:" and "Complete" at the right of the version line; no other buttons (our extra buttons are OpenSE4's) | L |
+| Intelligence (`screens/intelligence.cpp`) | Points as a line in the content, a two-column table with the group in orange, the four project boxes stacked at the right, a description box, Divide Evenly, Reorder Projects in slot 7 | The Research layout: points in the title strip, silver group headings, 14 px rows with the cost right-aligned, four 140 px boxes side by side with their small boxes, Divide Pts Evenly, Reorder Projects in slot 13 (spec 07 session 5) | L |
+| Combat Replay (`screens/combat_replay.cpp`) | A dialog with a header line, a framed map, the overview, an event list and a summary, Options and Next in a button column | The Tactical Combat frame: no panels, an empty 6 × 8 weapon grid at (W − 232,226), Options and Next side by side at y 534, the overview at the bottom (spec 06 §1.6; our event list and summary are an OpenSE4 extension, spec 06 §7 Q39) | L |
+| Combat Replay Options (`screens/combat_replay.cpp`) | Four lamp rows without headings, our list frame | Headings Animation and Tactical Combat in silver over check boxes, the list (15,57) 560×400 with 24×24 arrows (spec 07 session 5) | L |
+| Ground Combat (`screens/strategic_combat.cpp` `GroundCombatScreen`) | The empire's flag and name after each label; facilities as 32 px pictures in a plain box; units as picture-and-count groups, militia as the word "Militia" | The side's 26×18 mark only; a 6 × 4 facility grid and 14 × 2 unit grids of 36 px cells with #617BC2 lines, each count at its cell's bottom right, the level numeral on each facility, the militia drawn with the race's population picture (spec 06 §1.10.6) | L |
 
 ## Computer player (spec 05 §7)
 
@@ -505,6 +548,7 @@ follows the colony count. What differs:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
+| Jump-count thresholds (`ai*.cpp` with `warpJumps`; spec 01 §14 Q45) | Thresholds such as "within 4 jumps" and "within 3 jumps" compare real jump counts | The original's jump count is the real number plus two (spec 01 §3.6, confirmed: binary); whether spec 05's thresholds already allow for it is not checked yet. If they do not, the original's tests reach two jumps less far than ours | M (to check) |
 | Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With five original games the later shares are close; the difference left is the first 25 turns, where ours leave Exploration sooner (spec 05 question 65) | Defend (Short Term) 50 % of all turns, 71 % of turns 51–100 (seeds 1–24, after the rules of 2026-10-02 below); Infrastructure 8 % and 7 %; Exploration 74 % of turns 1–25; 15 % of listed war colonies gone within 10 turns (before those rules) | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 85 %; 18 % (33 % in the first three games) | L |
 | Bases. The placement rule is the original's (all 174 placements observed in five games went to the K-th queue, 25 reached a yard; ours 21 % of 742) and every placement is made in Infrastructure; since 2026-10-02 the soft cap, the scrap candidates and their ties are the original's too (below). With the construction budget's queue commitments fewer turns are over the soft cap, so fewer bases are scrapped, but fewer are placed early | 0.30 / 0.37 / 0.35 per empire at turns 50 / 75 / 100 (seeds 1–24; 0.29 / 0.33 / 0.34 over 120 seeds); built 0.51, lost 0.15 per empire in 100 turns | 0.4–0.6 in five games, 1.2 and 0.0 in two more (game 6: built 1.4, lost 0.2) | L |
 | Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 22.5k / 28.9k / 32.5k at turns 50 / 75 / 100; colonies 10.7 / 14.3 / 16.4 (seeds 1–24; 11.0 / 14.6 / 16.4 over 120 seeds, a colony more at turn 100 since the construction budget takes off the queues' commitments) | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |

@@ -1277,6 +1277,366 @@ turns 51–100 70 → 72 % (+1.5, 1.1), Infrastructure 6.5 → 6.2 %, Exploratio
   about as many from turn 75 (question 62). The bases placed early fall a little (0.29
   against 0.35 at turn 50).
 
+## Session 5: more windows side by side, and generated galaxies (2026-10-03)
+
+Same harness as session 4 (a copy of the install, a Wine prefix of its own, the nested
+display, a read-only debugger for the galaxy census). Our client: `--layout=1024x768
+--size=1024x768`, offscreen, OpenGL, with `--open=` for each screen.
+
+### Side by side, part 2: setup screens, front end, Help, Galaxy Map
+
+Coordinates are screen pixels at 1024×768. The setup screens (Game Setup, Empire Setup,
+Quick Start) lay their contents out in an 800×600 area centred on the screen (spec 06
+§2.1.1); for them "area (x,y)" is relative to that area's top-left corner, which is (112,84)
+at 1024×768. Colours seen everywhere in the original: headings #7D9FFF, list items and
+values white, explanations #A0A0A0, dim text #606060, dim boxes #2D2D2D, box lines 1 px
+#647EC7, the small arrow buttons' frames #617BC2.
+
+**The setup screens' common frame** (Game Setup, Empire Setup and the Quick Start picker).
+The original:
+- covers the screen with a starfield picture. Under the page buttons sit two decorative
+  pictures (Game Setup: a star centred near area (63,341) and a planet near (133,451);
+  Empire Setup: a planet and a ship), which change from one launch to the next;
+- writes the screen's name ("Game Setup", "Empire Setup", "Select Empire") in white in the
+  title font at area (1,1);
+- stacks the page buttons in one column at area x 2–204, each 26 px tall, one every 30 px
+  from area y 22. A button's right end is cut at a slant like a tab, its label is in the
+  large button font (#6C8ADC), and the current page's button has the hatched "pressed"
+  background with a green lamp left of its label;
+- draws the content frame at area (216,0)–(799,549): an outer #647EC7 line, an inner
+  #4F65A2 line 2 px inside it, hatched corner pieces;
+- puts Begin Game (Empire Setup: Create Empire) at area (496,562)–(644,587) and Cancel at
+  (649,562)–(797,587), 149×26, under the frame at its right;
+- inside the frame: each group is a heading in #7D9FFF over a box with a 1 px #647EC7
+  line; a choice is a lamp list (18 px rows, the lamp at the box's x+9, the label at x+21;
+  green = chosen, blue = not), an on/off setting a check list (a 16×17 box at the box's
+  x+2 holding a green lamp when on, the label at x+21). The row last clicked in a lamp list
+  is drawn on the hatched background.
+
+Ours draws none of this: a title strip ("Game Setup - Quadrant"), the content in a frame
+over the left 810 px, the pages as plain rectangles in a column at the right (x 820–1009
+from y 29, the current one filled blue), Begin Game and Cancel at the bottom of that
+column, a summary line at the bottom left, no starfield and no pictures, and every page in
+a layout of its own (radio rows with ranges, explanatory paragraphs, big headings). The
+pages below give the original's layout; all coordinates are area coordinates.
+
+**Game Setup.** The original opens on the **Players** page (ours on Quadrant).
+- *Quadrant.* "Quadrant Type" (231,21) over a lamp list (232,32)–(451,171) with an arrow
+  column at its right (x 425–451): the six quadrant types, the first chosen. "Quadrant Map"
+  (484,21) over a box (484,32)–(759,225), empty until Generate Map Now draws the map in it.
+  "Quadrant Size" (231,193) over a lamp list (232,204)–(451,263): Small, Medium (chosen),
+  Large, without ranges. "General Options" (231,285) over a check list (232,296)–(531,455)
+  with the seven options of spec 01 §2.2 in that order. Generate Map Now (234,506)–(414,531),
+  Load Map (419,506)–(599,531), Save Map (604,506)–(784,531). Ours: the type list without
+  lamps and with a description under it, the sizes as one row with ranges ("Small
+  (20-39)"), the seven options split under "Warp Points" and "Knowledge and Resources",
+  the preview always drawn, a Seed box and a line counting systems and links.
+- *Events.* "Event Frequency" (231,21) over a lamp list (232,32)–(451,111): None, Low
+  (chosen), Medium, High. "Maximum Event Severity" (231,133) over (232,144)–(451,223):
+  Low, Medium, High, Catastrophic, **Catastrophic chosen**. Ours: one row each with the
+  percentages, **High** chosen, and a table of the possible events.
+- *Technology.* "Technology Cost" (231,21) over a lamp list (232,32)–(451,91): Low, Medium
+  (chosen), High. "Technology Areas Allowed" (231,113) over a check list (232,124)–(531,323)
+  with an arrow column: every tech area in alphabetical order, all on, eleven rows visible.
+  Ours: "Starting Technology" here too (the original has it on Player Settings),
+  explanations, Allow All and Remove All, and the areas as lamps in three columns under
+  three group headings.
+- *Player Settings.* "Starting Resources for Player" (231,21) over (232,32)–(401,91): Low
+  (5000), Medium (20000) chosen, High (100000). "Home Planet Value" (418,21) over
+  (418,32)–(587,91): Bad, Average (chosen), Good. "Number of Starting Planets" (604,21)
+  over (604,32)–(773,111): 1 (chosen), 3, 5, 10. "Empire Placement" (231,113) over a check
+  list (232,124)–(531,183): Allowed to start in the same system (off), Evenly distributed
+  through the quadrant (on). "Score Display" (231,205) over (232,216)–(531,275): own score
+  only, all allied players' (chosen), all players'. "Technology Level for New Player"
+  (231,297) over (232,308)–(451,367): Low (chosen), Medium, High. "Racial Points for New
+  Players" (231,389) over (232,400)–(451,479): None (0), Low (2000) chosen, Medium (3000),
+  High (5000). Ours: Racial Points second, Home Planet Value with percentages ("Bad
+  (80%)"), the two placement switches drawn as exclusive lamps, no Technology Level.
+- *Players.* "Players in Game" (231,21) and "Number of Players:" (419,21) with the count
+  right-aligned at x 591 (0 at first). A list (232,35)–(591,324) with a 20 px header row:
+  a lamp column (x 232–253), "Flag" (257), "Empire Name" (293), "Race Age" (434), arrows
+  24×24 at (566,57) and (566,299). The list starts **empty**. Add New, Add Existing, Edit,
+  Remove, Save To File at (603,57)–(783,82) and every 30 px below. "Random Computer
+  Players" (231,346) over a check list (232,357)–(591,396): random computer controlled
+  empires (on) and random computer controlled **neutral** empires (**on**). "Number of
+  Computer Players" (231,418) over (232,429)–(401,488): Low, Medium (chosen), High, one
+  choice for both kinds; "Computer Player Difficulty" (418,418) over (418,429)–(587,488):
+  Low, Medium (chosen), High; "Computer Player Bonus" (604,418) over (604,429)–(773,508):
+  None (chosen), Low, Medium, High. Ours: an "Empires" table (Empire, Race, Leader, Player,
+  Points) that starts with one human empire, the five buttons in a row under it, random
+  neutral players **off**, a Few/Some/Many choice per kind, Difficulty and Bonus as rows.
+- *Victory Conditions.* A two-line explanation in #7D9FFF at (231,18). Six check rows,
+  the box at (234,66) and every 40 px (labels white at x 253, wrapping to two lines): score
+  reached, years elapsed, percent of the second place's score, percent of the tech areas
+  researched, years at peace, and the qualifier (years before the conditions apply). Each
+  has a spin control at its right: ◁ (602,69)–(621,88), value box (626,69)–(727,88), ▷
+  (732,69)–(751,88), dim (#2D2D2D lines, #606060 value) while its box is clear. Values
+  5000000, 10.0, 300%, 50%, 1.0, 5.0 (as spec 01 §11). Ours: lamps instead of check
+  boxes, edit boxes with − and + buttons, explanations after each, and the values 50000,
+  100, 200, 75, 20 and 10.
+- *Game Settings.* "Game Master Password" (231,21) with an edit box (586,16)–(735,35);
+  "Maximum number of units allowed (in space) per player" (231,57) and "Maximum number of
+  ships allowed per player" (231,93), both labels in #7D9FFF, each with a spin control
+  ◁ (586,52)–(605,71), value (610,52)–(711,71), ▷ (716,52)–(735,71) (the ships row 36 px
+  lower): 1000 and 200. Then twelve check rows, the box at (234,126) and every 30 px, in
+  the order of spec 01 §2.2 (the four "Allow" boxes on). Ours: no Game Master Password,
+  no Cheat Codes, No Tactical Combat or complete-tech-tree box, the rest grouped under
+  Diplomacy, Colonization, Maps and Limits, ships before units.
+- *Mechanics.* "Play Style" (231,21) over a box (232,32)–(783,141): Hotseat (chosen) and
+  Different Machines, lamps at y 42 and 86, each with a one-line description in #A0A0A0
+  indented under it. "Turn Style" (231,163) over (232,174)–(783,313): Turn Based Movement
+  (chosen) with one line and Simultaneous Movement with three. "Multiplayer Game
+  Filename" (231,335) over an edit box (232,346)–(431,365); "Save Game Directory Path"
+  (484,335) over (484,346)–(783,365). "Autosave Frequency" (231,387) over a lamp list
+  (232,398)–(431,517): None (chosen), Every Turn, Every 2, 3, 5 and 10 Turns. "Connection
+  Type" (484,387) over a dim lamp list (484,398)–(683,477): Manual File Moving (chosen),
+  TCP/IP Host, TCP/IP Player. Ours: a Combat choice (tactical or strategic only) the
+  original has as Game Settings' No Tactical Combat, Autosave as one row, a "This Game"
+  block (seed, data set, empire folder) and Restore Defaults, and no file name, directory
+  or connection type (network games are set up from our Multiplayer screen).
+
+**Empire Setup** (Players → Add New). The original starts **empty**: no name, type, title
+or leader, the first race style shown, every characteristic 100%, the Neutral culture,
+Oxygen and Rock, no trait, the Neutral demeanor and the Peaceful happiness type. Ours fills
+everything from the race's preset (Preset Build 1–3, an OpenSE4 extension).
+- *General Details.* Labels in #7D9FFF at x 231: Empire Name (y 21), Empire Type (45),
+  Emperor Title (69), Emperor Name (93), Password (117), Email (141), Race Portrait \ Ship
+  Style (165), Design Name File (317), Minister Style (341), Computer Controlled (365), Use
+  Race Minister Style (389), Experience Points (437), Race Age (461). The first four have
+  an edit box (406,y−5)–(561,y+14) and a 20×20 ▽ button at x 566–585 that opens a picker;
+  Password and Email are edit boxes (406,112)–(585,131) and (406,136)–(585,155). The style
+  strip (406,160)–(693,287) holds a left arrow, the race portrait (128×128), the ship
+  picture of the same style (128×128) and a right arrow; the style's folder name in
+  brackets is centred under it at y 297; one click on an arrow moves one style, an arrow
+  that cannot move is dim. Design Name File and Minister Style are only ▽ buttons at
+  (566,312) and (566,336), the choice written to their left. Computer Controlled is a dim
+  check box (408,362) labelled "Controlled by Player"; Use Race Minister Style a check box
+  (408,386) labelled "Using Selected Style". Experience Points "0" and Race Age "Newborn"
+  at x 405. Ours: "Race Style" with arrows and the portrait only, a preset list, Leader
+  Title and Leader Name, Race Name, no **Email**, a Human player / Computer controlled
+  choice, the minister style as a drop-down.
+- *The pickers* (▽ buttons): a 340×370 window centred on the screen, its name in the title
+  font at the top left ("Select Empire Name", "Select Design Name File", "Select Minister
+  Style"), a list (10,36)–(329,319) of the window with a 20 px header ("Empire Names",
+  "Files", "Styles") and 17 px rows, an arrow column with a thumb (§ "Lists" below), and
+  Cancel at (12,332)–(327,357). A click on a row chooses it. Ours: drop-down lists.
+- *Environment.* "Atmosphere Breathed" (231,21) over a lamp list (406,16)–(585,115): None,
+  Methane, Oxygen (chosen), Hydrogen, Carbon Dioxide. "Home Planet Type" (231,145) over
+  (406,140)–(585,199): Rock (chosen), Ice, Gas Giant. Ours: another order (Carbon Dioxide,
+  Oxygen, Methane, Hydrogen, None; Gas Giant, Ice, Rock), the homeworld's picture and an
+  explanation.
+- *Culture.* "Culture" (231,21) over a lamp list (232,36)–(783,487) with an arrow column
+  and thumb; each culture's name in white and its description in #A0A0A0 indented
+  (x 266) below it. "Compare Culture Modifiers" button (234,500)–(535,525). Ours: a table
+  of the modifiers per culture, the chosen row highlighted, its description under the
+  table, no compare button.
+- *Characteristics.* "Physical Characteristics" (235,21); "Racial Points Available:"
+  (571,21) with "2000/2000" right-aligned near x 783. Nine rows (Physical Strength,
+  Intelligence, Cunning, Environmental Resistance, Reproduction, Happiness, Aggressiveness,
+  Defensiveness, Political Savvy) labelled in white at x 255, each with a spin control
+  ◁ (406,45)–(425,64), value (430,45)–(501,64) "100%", ▷ (506,45)–(525,64), every 30 px; the
+  word for the level ("Average") at x 556; the effect ("(0% to Ground Combat)") in #A0A0A0
+  right-aligned near x 790. "Vocational Aptitudes" (235,321) and six more rows from y 345
+  (Mining, Farming, Refining, Construction, Repair, Maintenance Aptitude). Ours: a table
+  (Characteristic, a slider bar, − and +, Points, Per %, Range) and Preset Values / All
+  100% buttons.
+- *Advanced Traits.* "Racial Traits" (231,21) and the points (571,21). A check list
+  (232,36)–(783,517) with a header row ("Name" at x 236, "Cost" at x 686), each trait a
+  check box, its name, its cost at x 686 and a description line in #A0A0A0 indented below;
+  arrow column with thumb. Ours: lamps with Cost, Kind and Rules columns and the
+  description shown on hover.
+- *Description.* Three text boxes with their labels at x 231: Biological Description
+  (406,16)–(775,75), Society Description (406,84)–(775,143), General History
+  (406,152)–(775,211). "Demeanor" (231,225) over a lamp list (406,220)–(585,379) with
+  arrows: Psychotic, Violent, Aggressive, Impulsive, Neutral (chosen), Friendly, Honorable,
+  Serene. "Happiness Type" (231,393) over a lamp list with descriptions (406,388)–(775,527).
+  Ours: Demeanor and Happiness Type as drop-downs at the top, then three large text boxes.
+- *Add Existing* opens "Load Empire": the Load Game dialog below with the columns "Empire
+  Filename" and "Date", rows 32 px apart, the file names in capitals.
+
+**Quick Start.** Heading "Select Empire" (1,1) and a two-line hint in #7D9FFF from about
+(−1,43). The portraits sit in the content frame in pages of eight, two columns of four:
+128×128 frames (1 px #647EC7) at x 230 and 506, y 14, 146, 278 and 410; the empire's name
+in white at the frame's x+134 level with its top, the race's description in small
+#A0A0A0 type under it in a column about 130 px wide. The order is Settings.txt's Quick
+Start Style list, the left column first: page 1 holds styles 1–4 then 5–8. Arrows 24×24
+at (766,9) and (766,516): one click turns a whole page; an arrow that cannot move is dim
+(#2D2D2D). Begin Game is drawn lit before a portrait is chosen. Ours: all races in
+alphabetical order filled row by row, frames 2–3 px left and up (x 227 and 504) with a row
+every 134 px (the fourth cut off at the bottom), frame lines #4F65A2 and a darker double
+outer frame (#273251, #323F63, 2 px each), 16×16 arrows, other wording for the hint,
+Begin Game dim until a portrait is chosen, and "Cryslonite Imperium Imperium" for the
+Cryslonite (the type is added to a name that already holds it).
+
+**Intro.** Ours adds Multiplayer, Settings and Manual buttons at the top right and writes
+"Data: se4" at the right of the version line; the original has "Loading:" and "Complete"
+at (713,687) and (814,687) there.
+
+**Load Game.** The original (Intro → Load Game) shows a 420×520 dialog centred on the
+screen ((302,124) at 1024×768) over the intro picture: "Load Game" in the title font at
+(10,10); a list (10,36)–(409,439) with a 20 px header ("Save Game Name" at x 4, "Date" at
+x 204, divided at x 201) in #7D9FFF, the names in capitals and the file's date and time
+("9/30/2026 1:38:30 PM"), arrows 24×24 at (384,58) and (384,414); Change Directory
+(12,452)–(407,477) and Cancel (12,482)–(407,507). A click on a row loads the game (a
+password game first asks "Login To Game": a list of the empires with flag, empire name and
+emperor name plus a "Game Master (Host)" row, a Password box, Login and Cancel). Ours:
+from the intro a 600×540 panel at (212,120) with one column of names (no date), a line
+naming the folder when it is empty and a Cancel button under the list; in the game (Game
+Menu → Load) a different window, 536 px wide, with a hint line, "Name" and "Last saved"
+columns, a button column holding a count and Close, and a decorative picture. Neither has
+Change Directory. The original uses the one dialog in both places (inferred).
+
+**Help** (F1). The original: the 780×475 dialog; headings "Items" (139,190) and "Item
+Details" (417,190) (screen coordinates from here on); the item list (139,204)–(410,608)
+with arrows 24×24 at (385,206) and (385,583); the detail box (418,204)–(695,608). Every tab
+lists **only names**, in alphabetical order, as a lamp list with 18 px rows (green lamp on
+the shown item), the first item chosen when a tab opens; no pictures, sizes, group
+headings or Find box. The detail box: the 128 px picture at its top left, the name in the
+title font to the right of it (right-aligned for vehicle sizes), a short description in
+small grey type beside the picture, then the figures (Cost with the three resource icons,
+Size, Damage Resistance, Supplies Used, Vehicle Types for a component; Cost, Size, Vehicle
+Type for a size), then "Abilities" with a blue dot before each line ("None" when there is
+none). Tech areas, treaties and intelligence projects show the name and a description,
+with no picture. Formations draw their grid with the position numbers. Hotkeys lists
+groups (All Windows, Main Window - Commands, Main Window - Orders 1, Main Window - Orders
+2, Main Window - Selection, Tactical Combat) and shows the chosen group's keys in two
+columns. Treaties lists the nine treaty types alphabetically, without None. Buttons:
+Components, **Weap Mount** (the weapon mounts: code, cost, tonnage, damage resistance,
+supply, weapon type, damage, to-hit and range modifiers, vehicle type, minimum size),
+Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations,
+Hotkeys, a gap, Weapons Report (slot 12), **Manual** (slot 13), Close. Ours: a Find box,
+items grouped under headings with pictures and sizes (34 px rows), a detail with the
+picture above the name and more lines (Group, Structure, Requires, Design Rules), a
+picture for intelligence projects, treaties in our own order with None, hotkeys as two
+tables of our bindings, no Weap Mount or Manual, Weapons Report in slot 11.
+
+**Galaxy Map** (right-click on the galaxy panel). The original: the map in a frame
+(144,189)–(687,564) (#647EC7), grid lines #15203B every 8 px from (152,197); under it, in
+small #7D9FFF type right-aligned to x 687 at y 573, "(click on a system to set its player
+notes)"; no frame around the content area. Buttons Presence (chosen), Avoid, Ally Claimed,
+Enemy Claimed, Spaceports, Resupply Depots, four gaps, Goto System (slot 11), a gap, Show
+Names with a check box (slot 13), Close. Ours: the map frame 5 px left and 6 px up
+((139,183)–(682,558)) in #4F65A2, an inner frame around the whole content area, a hint of
+our own left-aligned under the map, Goto System in slot 8, an extra Show Distances check
+box (slot 9), Show Names in slot 10 and a legend (unexplored, explored, only us, several
+empires) in slots 12–13.
+
+**Borders** (Empires → Borders): a window of its own, see spec 06 §7 Q96.
+
+### Side by side, part 3: Intelligence, battles, Combat Replay, Ground Combat
+
+A game made for the purpose: Small quadrant, High starting resources, Technology Level High,
+ten starting planets, "Allowed to start in the same system" on and "Evenly distributed" off,
+High random computer players without neutral empires, Complete AI on for the player, new
+games until the player shared a system at the start (the second try: five First Contacts at
+2400.0). Our client: `--quick-start=Terran` with `--open=intelligence`, a search over seeds
+with `--turns=N --open=combat-replay` for a replay with a battle (`--seed=3 --systems=20
+--empires=8 --turns=40` has one), and the source for Ground Combat, which we could not reach
+offscreen.
+
+**Intelligence** (Empires → Intelligence; screen coordinates, the 780×475 window at
+(122,146)). The original: the title strip holds "Intelligence" and, from x 291,
+"Intelligence Points Available:" in #7D9FFF with the amount at x 491 and the intelligence
+icon after it. "Intelligence Projects" (136,193) and "Cost" with the icon right-aligned at
+x 660 over the project list (137,203)–(696,445), the Research window's area list place:
+group headings (Defense, General Espionage, ...) in the large silver (#C0C0C0) type, under
+each the projects as 14 px rows in small white type, name at x 148, cost right-aligned at
+x 662, arrows 24×24 at (671,205) and (671,420); "(click intelligence project to add it as a
+current project)" right-aligned under it at y 451. "0 Current Projects" (136,469) and "(click
+to cancel project)" right-aligned at y 469 over four 140 px project boxes side by side from
+(137,478) to (695,605), "None" centred at the top of an empty one, each with its small box
+(137×26) at the foot from y 579. Buttons: Projects 1 - 4 (chosen), Projects 5 - 8, Projects
+9 - 12, a gap, Repeat Projects and Divide Pts Evenly (check boxes, slots 5 and 6, Divide on),
+gaps, Reorder Projects (slot 13), Close. Ours: no title-strip figure; a line "Intelligence
+Points N available, N per turn" with Defense and Projects counts inside the content; a
+"Projects (click to add)" table with Project and Cost (IP) columns and the group name in
+orange; the four current projects stacked vertically at the right ("1. Empty: click a
+project to add it."); a description box across the bottom; Divide Evenly (not Divide Pts
+Evenly); Reorder Projects in slot 7.
+
+**The battle notice and Select Combat Type.** A computer player attacking the player's
+colony during its own turn first shows a 253×150 notice ("Combat in system Sillinta:", the
+two empires with their flags, Begin), as spec 06 §1.10.5 has it, then "Select Combat Type":
+the Strategic Combat window's layout (forces list with Current and Lost, the small map)
+with only Strategic (slot 13) and Tactical (slot 14) in the button column.
+
+**Tactical Combat, a real battle** (adds to spec 06 §7 Q97): the title strip shows the
+empires' flags (a simulation shows the numbered boxes). The piece panel of a planet shows
+its picture with the colony's flag, the name, "Size" empty and "Move 0/0", and the
+structure in thousands in red at the bar's right end ("21k"). Weapon cells: the component's
+picture on a teal background when ready, the mount's code in white at the top left ("H"),
+the level's numeral at the bottom right, a small red mark at the top when the weapon has
+fired. The **target panel** (pointing at an enemy): picture frame 38×38 at (W − 230,375), name
+at (W − 190,377), "Size" and "Dist" (squares, "25") in #7D9FFF at (W − 185,396) and
+(W − 185,407) with the values at x W − 141, the owner's flag at (W − 42,376), and the bar
+frame (W − 230,415)–(W − 28,434) with the shield row in blue (#0000FF, y 417–423) over the
+structure row in red (y 426–432), blocks 3 px wide every 4 px; no numbers. "Combat
+Complete" / "Combat has ended" with OK closes the battle.
+
+**Combat Replay** (Log → a "Combat in ..." entry → Combat Replay; Space plays the next
+turn). The original uses the Tactical Combat window's frame: title strip "Combat Replay",
+Location, Turn (0 before the first) and the empires' flags, with no navigation buttons; the
+map over the same area; in the right column no piece panel, an empty 6-column weapon grid
+of **eight** rows, 216×289 at (W − 232,226); Options at (W − 232,534) and Next at
+(W − 119,534), 109×26, side by side (Next dims after the last turn); the overview map at the
+bottom as in battle. The view does not follow the action. Ours: a header line ("Battle at
+...", the date, "N of M left" per empire, "Combat Turn 0 of 9"), the map in a framed box at
+the left, the overview, a "Before the battle" event list and a "Summary" box at the right,
+Options and Next at the top of a separate button column (our extension, spec 06 §1.6 Q39).
+
+**Combat Replay Options.** The original: the 780×475 window, "Options In Use" over a list
+(15,57) 560×400 of the window with 24×24 arrows; headings "Animation" and "Tactical Combat"
+in the large silver type; under them check boxes (16×17 at x 21, rows 18 px): Animate ship
+movement in combat replay (on); Fast Tactical Combat (off), Show Viewing Rectangle on Map
+(on), Show Grid (off); Stop Replay in slot 1, Close in slot 14. Ours: the same rows as lamps
+(grey when off) without headings or check boxes, the list (17,52) 552×412, a frame round
+the content area and the button column.
+
+**Ground Combat** (Combat Simulator, Strategic: two troop transports, 110 troops loaded with
+Change Cargo, against a colony without weapon platforms; the window opened over the
+Strategic Combat window when the troops landed). As spec 06 §1.10.6 (every place there
+matched to the pixel), plus: the side's mark right of each label, a 26×18 box (a numbered
+colour box in a simulation; inferred: the flag in a real battle) at (120,259) for Defender
+and (120,373) for Attacker, window coordinates; the facility grid is 6 × 4 cells of 36 px
+with 1 px #617BC2 lines, each facility's picture with its level's numeral at the bottom
+right; each unit grid is 14 × 2 cells of 36 px with the same lines, one stack per cell, the
+count in small white type at the cell's bottom right; the defender's militia is a stack
+drawn with the race's population picture. The fight here ended in round 1 ("1/10"),
+"Victorious!" in yellow beside Attacker, Begin dim and Close lit. Ours (from the source):
+after each label the empire's flag **and name**; the facilities as 32 px pictures 2 px
+apart in a plain bordered box, with no grid lines or level numerals; the units as
+picture-and-count groups 6 px apart in a 504×66 bordered box (the count under the picture,
+not in the cell), the militia as the word "Militia" and its count, "None" when empty.
+
+**The report's up-arrow** (spec 06 §7 Q98). Clicking a sector with several objects shows the
+list; a click on an entry opens that object's report with the arrow at the report's top
+right ((925,110)–(955,128), the cell from (924,109)); a click on it brings the list back. A
+report opened by clicking a sector with one object has no arrow, nor has the report the
+game opens at a turn's start.
+
+**Movement line rings** (spec 06 §7 Q85). With Ctrl+L on and a ship given a Move To three
+squares away, each ring is drawn exactly as our client draws it: from the top, columns 2–5,
+then 1 and 6, then 0 and 7 on four rows, then 1 and 6, then 2–5 of the 8 × 8 box from
+C − (4,4) (Wine 11.18), the numbers in white over them.
+
+**The mouse wheel** (spec 06 §7 Q89) scrolls the Designs list, about one row per notch.
+
+**Defaults of a new game** (observed): Game Setup → Game Menu → New brings back an empty
+player list with random computer and random **neutral** empires both on; a default game
+(one empire file, Begin Game) had 1 + 7 computer players + 5 neutral empires in 47 systems.
+Two Quick Starts (Terran) made Mid-Life Medium quadrants with 1 + 3 computer + 4 neutral and
+1 + 6 computer + 4 neutral empires, so Quick Start keeps the neutral empires too (spec 01
+§2.1). The Log's First Contact entries came at 2400.0 in the game that shared a system.
+
+### The generated galaxies (spec 01 §3.8)
+
+544 quadrants and 41 placements of the original read through the debugger (harness notes)
+against 1,800 quadrants and 500 placements of our generator. Every quadrant distribution
+agrees, the link building, the connectivity pass and the warp point sectors are reproduced
+exactly from the original's own system places, and the placements revealed one rule:
+the original's spread test counts two jumps more than the real number (spec 01 §3.6,
+§3.8).
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
@@ -1323,3 +1683,18 @@ Session 4 (2026-10-02), a debugger on the running game, under the same rules as 
   gathers the empire's totals, and only on every fifth turn, which keeps a turn near 20 s;
   the happiness routine keeps a running total per term, so each colony's terms are the
   differences between consecutive readings.
+
+Session 5 (2026-10-03), the same harness as session 4:
+- Galaxy census: one breakpoint where the quadrant generator starts on a system's contents
+  (it records the system type drawn), one where a finished quadrant is handed back (after
+  Generate Map Now and after a Begin Game that generates), one after the players are placed.
+  Each reads the system list (place, type, warp points in order) and every object's kind,
+  system, sector and SectType record, and writes one line per galaxy; about 0.1–0.3 s per
+  galaxy. A script clicks Generate Map Now for each quadrant type and size and waits for
+  each line, about 1.5 s per galaxy; another begins new games from the Game Menu (New, Yes,
+  Add Existing, the first empire file, neutral empires off, Begin Game), about 30 s each.
+- The setup screens forget everything between games: Game Menu → New brings back the
+  defaults (an empty player list, random computer and neutral empires on).
+- Our client's screens: `--layout=1024x768 --size=1024x768 --open=<window>` (setup pages
+  with `--open=setup:<page>` and `--open=empiresetup:<page>`, Help tabs with
+  `--open=help:<tab>`), offscreen with OpenGL.

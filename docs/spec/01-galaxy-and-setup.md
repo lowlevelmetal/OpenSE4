@@ -119,8 +119,8 @@ Conventions used throughout:
 - **Event Frequency** is None, Low (the default), Medium or High. Low, Medium and High map
   to `Settings: Event Percent Chance Low/Medium/High` (stock 5, 10 and 25); None disables
   new events (confirmed: binary).
-- **Maximum Event Severity** is one of Low, Medium, High or Catastrophic. It filters
-  `Events.txt` by `Severity` (§10).
+- **Maximum Event Severity** is one of Low, Medium, High or Catastrophic (Catastrophic in a
+  new game, observed). It filters `Events.txt` by `Severity` (§10).
 
 **Technology tab**
 
@@ -150,11 +150,15 @@ The choices and defaults below are confirmed: binary.
 **Players tab**
 
 - The list of explicit empires, with Add New, Add Existing, Edit, Remove and Save.
-- **Random computer players** has two checkboxes. *Regular* AIs are full empires;
-  *neutral* AIs stay in their home system.
+- **Random computer players** has two checkboxes, both on in a new game (observed, spec 07
+  session 5). *Regular* AIs are full empires; *neutral* AIs stay in their home system. So a
+  default game, and Quick Start, which keeps the defaults (§2.1), has 3–7 computer players
+  and 3–7 neutral empires (observed: 1 + 7 + 5 in a default New Game, 1 + 3 + 4 and 1 + 6 + 4
+  in two Quick Starts).
 - **Number of Computer Players** (Low, Medium or High; Medium is the default) rolls the
   count within `Minimum/Maximum Computer Player {L,M,H} Setting`. Neutrals use the
-  parallel neutral keys.
+  parallel neutral keys with the same
+  choice (one list serves both, observed).
 - **Difficulty** (Low, Medium or High, default Medium) and **Bonus** (None, Low, Medium or
   High, default None) handicap the AI (confirmed: binary for the lists; the bonus effect
   is in spec 05 §8).
@@ -427,14 +431,20 @@ candidate wins, and the home is drawn uniformly from it:
   *Allowed to start in the same system* is on. It must not be another player's homeworld.
 - In attempts 1 and 2, and in attempt 3 when *All player planets the same size* is on, its
   size must equal the home size.
-- In attempts 1 and 2, with *Evenly distributed*: with S systems and P players, its system
-  must be more than trunc(0.8 · (S div P)) warp jumps (attempt 1) or trunc(0.5 · (S div P))
-  jumps (attempt 2) from the home system of every player placed before. Systems with no
-  warp path count as very far.
+- In attempts 1 and 2, with *Evenly distributed*: with S systems and P players, let L be
+  trunc(0.8 · (S div P)) in attempt 1 and trunc(0.5 · (S div P)) in attempt 2. The system
+  must pass J + 2 > L against the home system of every player placed before, J being the
+  number of warp jumps between the two systems over every link; that is, it must be **at
+  least L − 1 jumps** away. The original's jump count starts at 1 for the system itself and
+  returns one more than the level at which the other system is reached, so it is the number
+  of jumps plus two (confirmed: binary; observed in all 243 placements of §3.8, where the
+  plain "more than L jumps" fails 36 times). Systems with no warp path count as 999. The
+  same count serves the game's other jump tests (§14 Q45).
 
 If no attempt finds a candidate, the game draws up to 2,000 random systems looking for a
-start-eligible one not used by another player (if none turns up, one more random system is
-used whatever its type) and **creates** a homeworld there: a random sector without a
+start-eligible one that is not an earlier player's home system (a test skipped when *Allowed
+to start in the same system* is on; confirmed: binary); if none turns up, one more random
+system is used whatever its type and **creates** a homeworld there: a random sector without a
 planet (any of the 169, redrawn until one has no planet; a star, storm, warp point or
 asteroid field may share it), a random Planet SectType record with the player's
 atmosphere and planet type (and the home size when *All player planets the same size* is
@@ -520,6 +530,84 @@ The original generates a quadrant in this order (confirmed: binary):
 8. Set up the players: technology, the all-seen option, starting planets and the
    stockpile (spec 02 §9).
 
+### 3.8 Generated galaxies compared (observed, 2026-10-03)
+
+The original's generator was watched with read-only breakpoints (spec 07 session 5): after
+each Generate Map Now and after each Begin Game the systems (place, type, links in warp point
+order) and every stellar object (system, sector, SectType record) were read from memory. With
+the default General Options (all warp points connected, every player planet the same size),
+30 galaxies of each quadrant type and size were generated (540; 544 with four more Mid-Life
+Medium ones made by Begin Game), and 40 games were begun with one empire file and the
+default random computer players (Medium, so 3–7) without neutral empires. OpenSE4's
+generator (`generateQuadrant`, then `placeHomeworlds`) made 100 galaxies per quadrant type
+and size with the same options and 100 placements for each number of empires from 4 to 8.
+
+**Result: no difference.** Every distribution agrees within sampling error (judged galaxy by
+galaxy, since the systems of one galaxy are not independent):
+
+| Quadrant type | Galaxies (orig / ours) | Links per system | Systems with one link | Planets per system | Asteroid fields | Stars | Storms | Systems with no object | Nebula systems | Black hole systems | Nearest system (squares, Chebyshev) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Mid-Life | 94 / 300 | 2.60 / 2.57 | 6.3 / 6.4 % | 7.66 / 7.66 | 1.75 / 1.68 | 1.01 / 1.00 | 0.70 / 0.69 | 14.4 / 15.1 % | 9.0 / 9.4 % | 0.8 / 1.0 % | 3.64 / 3.65 |
+| Cluster | 90 / 300 | 2.44 / 2.43 | 10.4 / 10.5 % | 7.67 / 7.62 | 1.70 / 1.75 | 1.01 / 1.00 | 0.69 / 0.69 | 14.7 / 14.8 % | 9.1 / 8.8 % | 0.9 / 1.1 % | 2.54 / 2.53 |
+| Galactic Edge | 90 / 300 | 2.77 / 2.78 | 4.5 / 4.5 % | 7.57 / 7.63 | 1.74 / 1.75 | 1.00 / 1.00 | 0.68 / 0.69 | 15.3 / 14.7 % | 9.2 / 8.8 % | 1.0 / 1.1 % | 4.70 / 4.74 |
+| Spiral Arm | 90 / 300 | 2.59 / 2.59 | 6.9 / 7.0 % | 7.62 / 7.66 | 1.78 / 1.74 | 1.00 / 1.01 | 0.69 / 0.69 | 14.8 / 14.4 % | 9.2 / 8.6 % | 1.2 / 1.0 % | 3.01 / 3.00 |
+| Grid | 90 / 300 | 2.92 / 2.93 | 2.7 / 2.5 % | 7.61 / 7.61 | 1.71 / 1.75 | 1.01 / 1.00 | 0.69 / 0.69 | 14.9 / 15.0 % | 9.1 / 8.9 % | 1.2 / 1.0 % | 5.15 / 5.16 |
+| Ancient | 90 / 300 | 2.57 / 2.58 | 7.0 / 6.5 % | 4.31 / 4.32 | 2.10 / 2.00 | 0.47 / 0.46 | 0.41 / 0.41 | 45.1 / 45.6 % | 24.7 / 25.1 % | 10.6 / 10.0 % | 3.67 / 3.64 |
+
+- **System count** (all quadrant types): Small 29.8 (20–39) / 29.7 (20–39), Medium 59.8
+  (40–79) / 60.3 (40–79), Large 89.9 (80–99) / 89.3 (80–99): the ranges of §2.2, with no
+  galaxy below its size's range.
+- **Layout.** The share of systems in each 10-square column and row, the systems on x = 1 or
+  y = 1 (the clamp of §3.3: about 3 % and 5 % with Random placement), the bounding box and
+  the distance to the nearest system agree for all five placement algorithms; in Large
+  quadrants Grid fills the same 61 × 41 lattice box and Cluster about 55 × 40 in both.
+- **Warp network.** Every galaxy is connected; the link-count histograms (1 to 5 links; never
+  more than 6), the link lengths and the smallest angle between two links of a system agree;
+  angles under 60° occur in 0.1–0.4 % of the systems, all from the connectivity pass.
+- **Exact checks** (observed). Recomputing the links from the original's own system places
+  with §3.5 gives, for every one of the 32,554 systems, exactly the first links the original
+  made, in the same order; in each of the 49 galaxies where the connectivity pass added links
+  (320 links), some start system reproduces every added link and its place in the lists; and
+  the edge-placement rule of §3.5 gives the sector of every one of the 86,238 warp points.
+- **System types and contents.** The share of each system type, the start-eligible share
+  (79 %; Ancient 41 %), the stars by size, colour, age and luminosity, the planets by size,
+  physical type and atmosphere (each combination per system), asteroid fields by size,
+  storms (all Medium, 97 % on ring 4), destroyed stars, unusual warp points (1.0 % / 1.1 % of
+  the warp points; Ancient 10.4 % / 9.8 %), and the ring (distance from the centre) of planets, asteroid fields,
+  stars and storms all agree. No comet is ever made at generation (a template's Comet entry
+  creates nothing, §3.7 step 5, confirmed in 540 galaxies).
+
+**Empire placement** (41 games of the original, 1 + 3 to 7 empires in Mid-Life Medium
+quadrants; 500 of ours, 4 to 8 empires). In both every homeworld is a Medium planet of the
+empire's atmosphere and physical type, an existing one when there is a candidate and never
+converted; a homeworld was created in 7 of the original's 243 placements (2.9 %) and 104 of
+our 3,000 (3.5 %); homes sit in Standard systems 90 % / 90 % of the time (Binary and Trinary
+for the rest) and at the same distances from the system centre. Recomputing each choice
+with §3.6 from the original's own map, empires and earlier homes shows that every one of
+the 236 homeworlds that were not created comes from the first attempt with a candidate,
+**provided the spread test is J + 2 > L** (§3.6): with the plain "more than L jumps", 36 of
+them (22 in attempt 1, 14 in attempt 2) sit at L − 1 or L jumps from an earlier home while
+candidates farther away existed. Our generator uses the plain test, so its homes are spread
+by two more jumps than the original's in attempts 1 and 2: 24 % of our later homes are more
+than L jumps from every earlier one, against 14 % in the original (PARITY_GAPS). The mean
+distances between homes (pairwise jumps, then jumps to the nearest other home) by number
+of empires, original (games) / ours:
+
+| Empires | Pairwise jumps | Nearest home |
+|---|---|---|
+| 4 (12 / 100) | 7.4 / 7.1 | 4.9 / 4.4 |
+| 5 (4 / 100) | 7.6 / 6.9 | 5.1 / 3.8 |
+| 6 (8 / 100) | 6.9 / 7.0 | 4.0 / 3.6 |
+| 7 (9 / 100) | 7.5 / 6.9 | 3.8 / 3.3 |
+| 8 (8 / 100) | 5.8 / 6.9 | 2.7 / 3.1 |
+
+These means vary too much with the few original games (and their system counts) to show
+the two-jump difference; the per-choice check above is the evidence.
+
+What the comparison does not cover: the generation edge cases listed in PARITY_GAPS (they do
+not occur with the stock data), "Warp points located anywhere in system" and "No warp
+points", map files, and the stellar abilities rolled for each object (not read).
+
 ---
 
 ## 4. Star systems
@@ -561,6 +649,8 @@ binary.
 - The specifier is recognised by the word it contains: `Ring`, then `Coord`, then `Same`,
   then `Circle Radius`. Anything else has no defined result in the original; the engine
   places the object on a random sector and warns **(OpenSE4 choice)**.
+- `Ring 0`: a random sector of the inner 11 × 11 square (x and y from 1 to 11), redrawn like
+  a ring below.
 - `Ring 1`: the centre sector.
 - `Ring k` for k = 2..7 (a single digit): a sector on the square ring k−1 squares from the
   centre (Chebyshev distance). With side s = 2k − 1 and o = 7 − k: a coin picks a
@@ -1675,3 +1765,17 @@ highlighted, and an X marks each empire that has met one.
     The engine follows all four since 2026-10-01 (§6.9 "The engine follows this
     subsection"), and the host also recalculates the colonies a player's orders name when it
     reads them (spec 05 §9.2).
+
+45. **Jump counts elsewhere.** *Open* (raised 2026-10-03). The routine the original uses to
+    count warp jumps between two systems returns the number of jumps plus two (§3.6). The
+    home placement's spread test is now written with that in mind. The same routine serves
+    about a dozen other tests, most of them the computer players' (spec 05 §7: "within 4
+    jumps", "within 3 jumps", "within 2 jumps of X's territory", the staging system, the
+    Not Connected test). For each, check whether the spec's number already allows for the two
+    extra jumps (a test written as count < 5 in the original means at most 2 real jumps);
+    correct spec 05 and the engine where it does not. Comparisons between two counts and
+    "is it reachable" (less than 999) are not affected. Two of the computer players' tests
+    compare the count with a constant: below 4 (it looks like the fleet recruiting test that
+    spec 05 gives as "within 3 jumps", which would then be at most one real jump) and below 5
+    (perhaps the "within 4 jumps" strength test, then at most two real jumps) (inferred: not
+    traced to their spec 05 rules).

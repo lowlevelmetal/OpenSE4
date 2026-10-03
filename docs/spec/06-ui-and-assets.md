@@ -68,11 +68,11 @@ sit below; **Close is always the bottom slot** [S].
 |---|---|---|---|
 | Launcher (added in 1.95) | Pick what to start. | The `StartMenu.bmp` picture as a 736x536 window centred on the screen; one column of ten text buttons, 311 px wide, every 31 px from (43,210): Play, Readme, History, Extras, PDF Manual, HTML Manual, Map Editor, two website links, Quit. Play closes it and opens the Intro; Quit exits; the others open a document, a web page or the separate map editor and leave the launcher open (confirmed: binary). | Program start without command-line arguments (the Steam shortcut). Any argument skips it; a fourth argument names a mod folder and overrides `Path.txt` (confirmed: binary). |
 | Intro | Title screen. | First the publisher's logo (4 s), then the developer's logo (4 s); a key or click skips to the intro picture. The picture comes from `Game/Screens/1024X768` when the screen is wider than 800 px, else from `800X600`; data loading starts 2 s after it appears (at once after a skip) (confirmed: binary). Background art, version label, "Loading" progress while data files load (buttons disabled until done); buttons Quick Start, New Game, Resume Game (loads the last saved game, which the game records per computer), Load Game, Tutorial, Scenario, Credits, Quit Game in two rows along the bottom [T][S]. | Launcher → Play, or program start with arguments. |
-| Quick Start | One-click game. | Grid of race portraits (the list of styles comes from `Quick Start Style N` in Settings.txt [M]); Begin Game, Cancel. | Intro. |
-| Game Setup (8 pages) | Configure a new game. Pages: Quadrant, Events, Technology, Player Settings, Players, Victory Conditions, Game Settings, Mechanics. | Full-screen; page buttons plus Begin Game / Cancel on every page. Quadrant page has a map preview with Generate Map Now and Load Map; Players page has Add New, Add Existing, Remove, Save To File [T]. | Intro → New Game; File Menu → New. |
-| Empire Setup (6 pages) | Create an empire. Pages: General, Environment, Culture, Characteristics, Advanced Traits, Description. | Full-screen; page buttons plus Create Empire / Cancel. General page has a race-style picture chooser with arrows, design-name-file picker, minister style [T]. | Game Setup → Players → Add New. |
+| Quick Start | One-click game. | Grid of race portraits (the list of styles comes from `Quick Start Style N` in Settings.txt [M]); Begin Game, Cancel. Pages of eight in two columns of four, in that list's order, the left column first; an arrow click turns a page (observed, spec 07 session 5). | Intro. |
+| Game Setup (8 pages) | Configure a new game. Pages: Quadrant, Events, Technology, Player Settings, Players, Victory Conditions, Game Settings, Mechanics. | Full-screen; page buttons plus Begin Game / Cancel on every page. Quadrant page has a map preview with Generate Map Now and Load Map; Players page has Add New, Add Existing, Remove, Save To File [T]. Opens on the Players page with an empty list and forgets everything between games; every page's layout is in spec 07 session 5 (observed). | Intro → New Game; File Menu → New. |
+| Empire Setup (6 pages) | Create an empire. Pages: General, Environment, Culture, Characteristics, Advanced Traits, Description. | Full-screen; page buttons plus Create Empire / Cancel. General page has a race-style picture chooser with arrows (the race portrait and a ship of the style side by side), design-name-file picker, minister style [T], and Password and Email boxes. It starts empty; the ▽ buttons open 340×370 list pickers; layouts in spec 07 session 5 (observed). | Game Setup → Players → Add New. |
 | Culture Modifiers | Compare cultures. | List; Close. | Empire Setup → Culture. |
-| Load Game | Pick a save. | Two-column list (name without extension, last-modified time), scroll arrows, Cancel. Clicking a row loads it [T][S]. | Intro; File Menu → Load. |
+| Load Game | Pick a save. | Two-column list (name without extension, last-modified time), scroll arrows, Cancel. Clicking a row loads it [T][S]. A 420×520 dialog: "Save Game Name" and "Date" columns, names in capitals, Change Directory and Cancel under the list (observed, spec 07 session 5); Add Existing's "Load Empire" is the same dialog. | Intro; File Menu → Load. |
 | Load Map | Pick a saved map. | (not documented) | Game Setup → Quadrant. |
 | Scenario chooser | Pick a scenario. | (not documented; scenarios listed from `Scenarios/*_Settings.txt`) (inferred) | Intro → Scenario. |
 | Credits | Rolling credits. | — | Intro. |
@@ -108,7 +108,7 @@ sit below; **Close is always the bottom slot** [S].
 | Waypoints | Manage waypoints. | Waypoint list; quadrant map; ships heading there; yards auto-sending there; Set (returns to main window to pick a spot), Delete, Rename [T]. | Empire Status. |
 | Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Launching, Formation); Add [T]. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
-| Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; Weapons Report [T]. Lists only what the empire knows. | F1. |
+| Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. | F1. |
 | Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point-Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. | Help; Create Design. |
 | Galaxy Map | Enlarged strategic map. | See §2.6. | Right-click the galaxy panel. |
 
@@ -287,7 +287,7 @@ reports render inside the right-hand panel (§2.5).
 | Select Package | Build a give/take package from tabs Systems, Planets, Resources, Technology, Ships, Units, Star Charts, Treaty, Comm Channels; Clear Package. | Communicate. |
 | History | Per-empire timeline with galaxy map highlight. | Empires. |
 | Treaty Grid | Empire × empire treaty abbreviations with legend; paged 10 empires at a time. | Empires. |
-| Intelligence | Intel points, project list, current projects in pages of four, Repeat, Divide Evenly, Reorder. | Empires. |
+| Intelligence | Intel points, project list, current projects in pages of four, Repeat, Divide Evenly, Reorder. The Research window's layout: points in the title strip, projects under silver group headings with their cost, four 140 px project boxes side by side, Repeat Projects and Divide Pts Evenly in slots 5 and 6, Reorder Projects in slot 13 (observed, spec 07 session 5). | Empires. |
 | Borders | Map of claimed systems with empire filter (Select All, Allies, Enemies, Us). | Empires. |
 | Victory Conditions | Grid of conditions × empires, paged by 10. | Empires. |
 | Scores | Flags with score, resources, research, intel, tech levels, systems, planets, population, units, ships, bases, rank. | Empires. |
@@ -304,7 +304,7 @@ reports render inside the right-hand panel (§2.5).
 | Combat Piece Report | Movement, shields, damage, supply, max targets, combat group, formation. A full report window with picture and the object's tabs; unit groups and seekers have none (§1.10.1) (confirmed: binary). | Right-click a piece. |
 | Strategic Combat | Watch-only: system, coordinates, combat turn; forces list (flag, then per vehicle size current and lost counts); small map of coloured squares; Begin, Close. Opens before the first combat turn; the battle is then fought live, the map moving step by step and the list updated after each combat turn, with no delay (§1.10.5) (confirmed: binary). | Prompt; simulator. |
 | Ground Combat | Planet details, facilities, defender and attacker lists; Begin, Close. Fought round by round, the counts updated after each round, about 0.9 s per round (§1.10.6) (confirmed: binary). | After troops land; a ground stalemate at the colony owner's end of turn. |
-| Combat Replay | Same layout as tactical, playback only; Options, Next. Space = Next, Esc closes. Title strip: "Combat Replay", the location, the combat turn and the empires' flags; no log, event list or summary of any kind (confirmed: binary). OpenSE4 keeps its own list of the turn's events in words and the battle's summary beside the map, an extension (Q39). | Log → Combat Replay. |
+| Combat Replay | Same layout as tactical, playback only; Options, Next. Space = Next, Esc closes. Title strip: "Combat Replay", the location, the combat turn and the empires' flags; no log, event list or summary of any kind (confirmed: binary). As seen (observed, spec 07 session 5): no navigation buttons, no piece or target panel, an empty weapon grid of eight rows (216×289 at (W − 232,226)), Options and Next side by side at (W − 232,534) and (W − 119,534); Next dims after the last turn. OpenSE4 keeps its own list of the turn's events in words and the battle's summary beside the map, an extension (Q39). | Log → Combat Replay. |
 
 ### 1.7 Multiplayer, tutorial and end of game
 
@@ -586,7 +586,9 @@ Other Settings.txt keys the client must honour (confirmed: binary):
   `src/client/classic/data_export.cpp`): `OpenSE4_weapons.txt`, `OpenSE4_components.txt`,
   `OpenSE4_weapon_families.txt` and `OpenSE4_component_families.txt` in the client's saves
   folder, tab-separated under one header line, in a layout of our own, listing every
-  component of the data set (inferred, Q83).
+  component of the data set. The original's files (`Weapons.txt`, `Comps.txt`,
+  `WeaponFamilies.txt`, `CompFamilies.txt`) also list every component, in fixed-width columns
+  described in §7 Q83 (confirmed: binary).
 - `System Ship Movement Delay Milliseconds`: when the system window animates ship movement and
   the value is above 0, the game pauses after each animated one-square step (stock value 0);
   the original reads the value as seconds, not milliseconds (§2.4 "Moves as they are made").
@@ -604,7 +606,9 @@ Other Settings.txt keys the client must honour (confirmed: binary):
   Close. The main window opens it once when the game ends: Victory once the game is over,
   Human Dead in a local or hotseat game when no living empire is human-controlled, Lose when
   the player's own empire is destroyed (in that order, so a single player's fall shows Human
-  Dead; inferred, Q83).
+  Dead). The original checks in the other order and shows each ending as it comes: a lone
+  human who loses everything sees Lose at the start of a last turn, then Human Dead at the
+  next End Turn (§7 Q83, confirmed: binary).
 - `Use Old Log Political Message Display`: the log layout (§4.1, §7 Q11).
 - `Create Log Text File for Game` is read but never used by the original: nothing to honour.
 
@@ -950,7 +954,12 @@ Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the
   x 170 (y 60, 90, 120, 150, 180) with values at x 180; Population adds "(Domed)" for a
   domed colony. "Facilities" at (350,60) over the facility grid at (350,75), 218×146.
   "Defender" at (40,264) over its units at (40,279), 504×72; "Attacker" at (40,378) over
-  its units at (40,393), 504×72.
+  its units at (40,393), 504×72. As seen (observed, spec 07 session 5, a simulation): the
+  side's mark, a 26×18 box (the numbered colour box in a simulation), at (120,259) and
+  (120,373); the facility grid is 6 × 4 cells of 36 px drawn with 1 px #617BC2 lines, each
+  facility's picture with its level's numeral at the bottom right; each unit grid is 14 × 2
+  such cells, one stack per cell with its count in small white type at the cell's bottom
+  right, the defender's militia as a stack with the race's population picture.
 
 ### 1.11 The windows as observed (spec 07 session 3)
 
@@ -965,7 +974,7 @@ in the code and asked in §7 Q89–Q98.
   as an outlined box with a triangle in the button colours of §5.4, dim when the list cannot
   scroll that way); a click scrolls one row (36 px in the list windows, a text line elsewhere),
   holding the button repeats, and the mouse wheel still scrolls (`beginList`,
-  `beginListTable` in `screens/list_widgets.*`) (inferred, Q89).
+  `beginListTable` in `screens/list_widgets.*`). The original's column is 24 px with a thumb between the arrows (§7 Q89, confirmed: binary).
 - **On/off settings in button columns** (observed): a check box that holds the lamp when on:
   Construction Queues' Ships, Planets, Ship SY and Planet SY, Ships\Units' Show Ships, Show
   Units and Show Fleets, Designs' Hide Obsolete and Stats\Strategy, Planets' No Sys To Avoid.
@@ -984,20 +993,20 @@ in the code and asked in §7 Q89–Q98.
   the mini-map with nothing cut off; no Constr. Queue or Goto button; Close in the 14th slot.
   Ours lays the summary out as Planets' statistics, places the map where Planets has it, puts
   Scrap Facil Types and Set Colony Type in slots 12 and 13, and keeps a double click on a row
-  for showing the colony in the main window (inferred, Q90).
+  for showing the colony in the main window; the original's labels, places and clicks are in §7 Q90 (confirmed: binary).
 - **Construction Queues** (observed): the Rate values carry resource icons; ours gives the Usage
   values icons as well.
 - **Research** (observed): completed areas stay in the list, dimmed (#606060), with "Complete"
   as the cost, and a click on one does nothing; a small box under each project box (ours holds
   the project's progress); Reorder Projects in the 13th slot. The original shows Tech Tree only
   when the game lets players see the complete tech tree (§1.2, spec 01 §2.2), a setting OpenSE4's
-  games do not have yet: ours always shows it, in the 12th slot (inferred, Q92).
+  games do not have yet: ours always shows it, in the 12th slot (§7 Q92, confirmed: binary).
 - **Designs** (observed, and spec 07 §UI): rows under design-type headings, each with a lamp
   (green for the selected design, blue for the others), the picture, the name, the hull and
   "Prototype"; the detail shows Size, Design Type and Date Created by the picture, then Cost,
   Movement, Shields, Cargo Space and Supply Capacity, and the components as a grid of icons, 8
   to a row; a note says obsolete designs are deleted automatically (spec 03 §4.1). Ours puts
-  enemy designs under their empire's name and the note under the list (inferred, Q93).
+  enemy designs under their empire's name and the note under the list; the original's rows, order and grid are in §7 Q93 (confirmed: binary).
 - **Create Design** (observed): Create asks for the vehicle type first, among the types the
   empire has a hull of, and the designer is titled after it ("Ship Design"); it starts with no
   size, and the warnings ask for one. The picture; Size, Design Type and Design Name, each with
@@ -1007,20 +1016,20 @@ in the code and asked in §7 Q89–Q98.
   grid of tiles (icon, name, kT); the Warnings and Component Details boxes; buttons Comp Type,
   Weap Mount, To Hit Modifiers, Condensed View and Only Latest (check boxes), Weapons Report,
   Create Design and Cancel in the 13th and 14th slots. Copy starts with an empty name (spec 03
-  §4.1). Places, sizes and the meaning of To Hit Modifiers are ours (inferred, Q94).
+  §4.1). The original's places, sizes and the meaning of To Hit Modifiers are in §7 Q94 (confirmed: binary); ours differ.
 - **Empire Status** (observed): the blocks Resource Production Per Turn (From Our Colonies, From
   Trade, From Tariffs, From Remote Mining, Total), Resource Expenses Per Turn (Tariffs,
   Maintenance Cost, Construction Queue Usage, Total), Net Resources Per Turn and Resources in
   Treasury (Current Total, Maximum Resource Storage), with icons on the first row; Change Email
   in the 12th slot and Change Password in the 13th. Our engine keeps no e-mail address for an
   empire, so Change Email is dim; the missed-turn switch ("AI should not make changes during a
-  simultaneous game", §1.2.1) is in the Ministers window (inferred, Q95).
+  simultaneous game", §1.2.1) is in the Ministers window. The original's layout and Change Email are in §7 Q95 (confirmed: binary).
 - **Empires** (observed): Treaty, Trade, Tariff, a gap, History, Treaty Grid, Intelligence (dim
   without contact), Borders, Scores, Victory Conditions, Comparisons, a gap, Our Race; Borders
   without a check box; no heading or explanation over the empty strip. Ours keeps Borders as a
-  view of the Empires window that the button shows and hides (inferred, Q96).
+  view of the Empires window that the button shows and hides; in the original it is a window of its own (§7 Q96, confirmed: binary).
 - **Ships\Units and Log** (observed): no hint paragraph; the title "Ships\Units"; the Show check
-  boxes in slots 11–13; an empty Log list stays empty, with Goto lit (Q91).
+  boxes in slots 11–13; an empty Log list stays empty, with Goto lit (§7 Q91, confirmed: binary).
 - **Combat Simulator** (observed): the items in alphabetical order (ours ignores letter case and
   mixes designs and objects); Tactical, Strategic, four gaps, No Obsolete, Strategies, Computer
   Control, Fleets For Plr, Change Cargo, a gap, Begin in the 13th slot, Cancel.
@@ -1031,9 +1040,9 @@ in the code and asked in §7 Q89–Q98.
   target's report below it, Options and Orders, an Auto check box and End Turn as a 2×2 group,
   and the overview map at the bottom (§1.10.1). Ours titles a simulation's battle "Tactical
   Combat" too; the places and sizes the observation and §1.10.1 do not give are ours
-  (inferred, Q97).
+  (the original's places: §7 Q97, confirmed: binary).
 - **The report panel** (observed): no "List" text button; the up-arrow button of §2.5 returns
-  to the list (inferred place and states, Q98).
+  to the list (place and states: §7 Q98, confirmed: binary).
 
 ---
 
@@ -1491,9 +1500,9 @@ differences:
    never takes a number from the game's sequence.
 2. A route that leaves the shown system and comes back is broken there (no joining segment,
    no second number), as allowed above.
-3. The ring's exact pixels are inferred (§7 Q85).
+3. The ring's pixels match the original's under Wine (§7 Q85, observed).
 4. With ships tagged the report panel shows the tag list, so no line is drawn (inferred).
-5. The line is hidden during the movement-log replay (§7 Q86).
+5. The line is hidden during the movement-log replay; the original keeps drawing the route stored before the replay (§7 Q86, confirmed: binary).
 6. Ctrl+L saves the settings at once and shows a short note ("Movement lines on" or "off"), as
    our Ctrl+S does; the original only flips the switch (§3.2). Ours never shows a stale line,
    since it works the route out from the live state.
@@ -1549,7 +1558,12 @@ Distances (light-year distances from the hovered system), Show Names, Close. Cli
 system there edits its free-text player notes; the hovered system's notes show at the
 bottom [T][S].
 
-The window's map is 544x376, and Presence is the default tab. Overlays (confirmed:
+The window's map is 544x376, and Presence is the default tab. As seen in version 1.95
+(observed, spec 07 session 5): the map's frame at (22,43) of the window (144,189 on a
+1024×768 screen), grid lines every 8 px; under it "(click on a system to set its player
+notes)" right-aligned in small #7D9FFF type; the buttons Presence, Avoid, Ally Claimed,
+Enemy Claimed, Spaceports, Resupply Depots in slots 1–6, Goto System in slot 11, Show Names
+(a check box) in slot 13 and Close; there is no Show Distances button. Overlays (confirmed:
 binary):
 
 - **Presence** draws the symbols of the table above. Every other tab draws only the
@@ -3984,6 +3998,38 @@ counterpart:
     so a single player who loses everything sees Human Dead. Which components does the
     original's export list (all, or the empire's), and does a lone human's destruction
     show Lose or Human Dead?
+
+    **Answer:** (confirmed: binary)
+    - *Export.* The Weapons Report's Export button (slot 9, only with `Allow Export of Weapon
+      And Component Data`) writes four plain-text files into the save folder, each followed
+      by an "Export Successful" message naming the file, in this order: `Weapons.txt`,
+      `Comps.txt`, `WeaponFamilies.txt`, `CompFamilies.txt`. They list **every component of
+      the data set** in data order, researched or not, with base values (no empire, no
+      mount): the two weapon files every component that is a weapon, the two component files
+      every component. The files are fixed-width columns padded with spaces, each with a
+      header line and a line of dashes:
+      - Weapons: name (40 wide), the damage at ranges 1 to 20 (4 wide each), reload rate,
+        tonnage, the three costs (6 wide each), the damage type's name (20 wide);
+      - Comps: name (40), tonnage and structure (6 each), the three costs (8 each), family,
+        level (roman numeral value) and custom group (6 each), then the ability names joined
+        by ", ";
+      - WeaponFamilies: name (40), weapon family number (15), vehicle type text (6);
+      - CompFamilies: name (40), family number (15), vehicle type text (6).
+    - *Endings.* Each ending is its own window, shown when a turn starts. After every End
+      Turn of a local or hotseat game the order of the checks is: first "no living
+      human-controlled empire" (Human Dead; the game stops there). Otherwise, for the human
+      whose turn begins and who is not yet marked dead: Lose when its empire owns no colony
+      and no vehicle; then Victory (victory conditions met) when the game has been flagged
+      over; then Victory (conquered the galaxy) when every other empire is dead, followed by
+      "Do you want to continue playing?". Several can show in one turn change. An empire is
+      marked dead only after its Lose window, at the end of that last turn ("This will be
+      your last turn ..."). So a lone human who loses everything sees **Lose first**, plays
+      the last turn, and at the next End Turn sees **Human Dead**, and the game ends.
+    Our client differs: the export writes four tab-separated tables of our own columns named
+    `OpenSE4_weapons.txt`, `OpenSE4_components.txt`, `OpenSE4_weapon_families.txt` and
+    `OpenSE4_component_families.txt` (from the Help window's Weapons Report), with our own
+    message text; the ending picks one kind (Victory before Human Dead before Lose), so a lone
+    human sees Human Dead at once and never Lose.
 84. **Player Computer Control and Reset Passwords: OpenSE4's choices (§1.2.1, §1.9).**
     Marked (inferred) in the code:
     - Our engine keeps neutrality and the computer-controlled mark in one field
@@ -4003,13 +4049,59 @@ counterpart:
     - An empire that was a computer player from the start cannot be handed to a human with
       the TCP/IP host's toggle (its slot has no player).
 
+    **Answer:** (confirmed: binary)
+    - *Neutral empires.* The Players window lists every empire, neutral and dead ones too,
+      and switches a neutral one like any other: only the computer-controlled mark changes.
+      Neutrality is a separate mark that no window changes. A neutral empire handed to a
+      human is then played by hand at its turns (sign-in, its own orders), but stays neutral:
+      its vehicles still cannot use warp points (spec 01 §8) and every other neutral rule
+      keeps applying.
+    - *TCP/IP host.* Once the empires exist, the host's list has one row per empire: the
+      connected players' empires and every computer player made at setup (shown as
+      "[Computer]"). "Toggle Empire AI On/Off" works on any row, so an empire that was a
+      computer player from the start can be handed to human control; its row then reads
+      "[Host]" and the host plays it. The host's Game Master Players window (Game Menu) also
+      lists and switches every empire.
+    - *What a player's orders file carries.* The empire's own data (its 25 minister
+      switches, its fleets with their minister flags) always; of its ships, units and
+      colonies only those marked as changed during the turn. A Players-window switch sets
+      the flags without marking the objects, so a vehicle's or colony's new flag reaches the
+      host only if the player also changed that object that turn (an order, or the order
+      panel's minister button, which marks it).
+    - *Reset Passwords.* The original has no headless processing with Reset Passwords; it is
+      the in-game Machine Options button of the Game Master view only (§1.9).
+    Our client differs: neutral empires are listed but cannot be switched (neutrality and the
+    mark share one field); the TCP/IP host's toggle refuses an empire that was a computer
+    player from the start; a player's copy sends the flags of all its vehicles, fleets and
+    colonies (`cmd::SetMinisters`), not only of the changed ones; our headless server offers
+    Reset Passwords to an admin (an OpenSE4 extension).
+
 Implementing the movement lines (§2.4) on 2026-10-01 left these choices (inferred):
 
 85. **The ring's pixels.** A Windows ellipse with a 1 px pen on an 8 x 8 box: ours sets the
     usual pixels of an 8 px circle (rows from the top: columns 2-5; 1 and 6; 0 and 7 four
     times; 1 and 6; 2-5). Which pixels does the original set?
+
+    **Answer:** (observed, spec 07 session 5) The ring is drawn by the operating system's
+    ellipse routine (1 px solid pen RGB(0,0,255), clear brush, box C − (4,4) to C + (4,4);
+    confirmed: binary), so the game itself does not choose the pixels. Under Wine 11.18 they
+    are, from the top of the 8 × 8 box: columns 2–5; 1 and 6; 0 and 7 on four rows; 1 and 6;
+    2–5. Windows was not seen (inferred: the same).
+    Our client matches.
 86. **Movement lines during the movement-log replay.** Ours draws none while the replay
     runs. Does the original keep the line of the open report during the replay?
+
+    **Answer:** (confirmed: binary) Yes. Starting the replay loads the start of the turn
+    without refreshing the report panel, and nothing during the replay touches the stored
+    route, so the route of the report open when the replay began (worked out from the
+    current turn's state, before the replay) is drawn again at every redraw of the system
+    panel while the days play, over the vehicles moving underneath, whenever the shown system
+    holds points of it (Ctrl+U switches systems, and each system shows its part). When the
+    replay ends the current turn is reloaded, the selected sector becomes sector 0 of the
+    shown system and the selection is refreshed: one visible object there opens its report
+    (and its route, if any); none or several clear the line.
+    Our client differs: it hides the line while the replay runs and shows the open report's
+    line again afterwards, without moving the selection to sector 0.
 
 Settling Q56 and Q78 on 2026-10-01 left these choices (inferred):
 
@@ -4018,12 +4110,38 @@ Settling Q56 and Q78 on 2026-10-01 left these choices (inferred):
     page drawn under the tabs (its last 31 px hidden), or is a page with tabs shorter?
     Our client cuts a page with tabs to 328 px, ending 2 px above the strip, and keeps
     361 px for a seeker's page, which has no tabs (inferred).
+
+    **Answer:** (confirmed: binary) The report window is 310×420 (as §1.10.1); its pages are
+    290×327 areas at (10,10), ending at y 336, 3 px above the tab strip (four 72×30 tabs from
+    (10,340)), with or without tabs: a seeker's page (tabs hidden) is 327 px too, and a unit
+    group's page is cut to 249 px with the unit grid (108 px) at y 263 in the window. The
+    Detail picture of 290×361 is drawn into the page **10 px right and 10 px down** of the
+    page's corner and cut off by the page, so on screen it starts at (20,20) and its last
+    10 columns and its bottom 44 rows (unit group: 122 rows) never show. Close is a 153×30
+    button at (79,380).
+    Our client differs: the page is 328 px with tabs and 361 px without, and the Detail
+    content starts at the page's corner (10,10) instead of (20,20), so everything on it sits
+    10 px higher and further left than in the original and nothing is cut at the right.
 88. **"REPEAT ORDERS" in the order lists.** §1.8.3 names "REPEAT ORDERS" among the
     texts the Ships\Units Orders column sorts by, beside "None" and the joined orders,
     without saying when it is written. Ours writes it for Repeat on an empty list, and the
     orders (the current one in brackets) whenever there are any, in the Ships\Units and
     Colonies Orders columns alike (inferred). When does the original write it, and does
     the Colonies Orders column write its list the same way?
+
+    **Answer:** (confirmed: binary) "REPEAT ORDERS" is never drawn in a list; it is part of
+    the text the Ships\Units Orders column **sorts** by. That sort text is "None" for an
+    empty list with Repeat off, "REPEAT ORDERS" for an empty list with Repeat on, and
+    otherwise the orders joined with ", ", the current order in square brackets and
+    ", REPEAT ORDERS" appended only when Repeat is on. The Orders cells themselves, in
+    Ships\Units and in Colonies alike, draw one order per line (12 px apart from y −1 of the
+    row, small type), no brackets, no "None" and no "REPEAT ORDERS"; an empty list leaves
+    the cell empty. The Colonies Orders heading has no sort key: clicking it leaves the
+    order of the rows to the earlier sort keys (the same is true of its Facilities, Cargo
+    Items and Status headings).
+    Our client differs: its cells write "None" or "REPEAT ORDERS" for an empty list and put
+    the first order in round brackets when Repeat is on (`orderListLines`), in both windows,
+    and its sort text is one line made from the cell lines.
 
 Following the side-by-side observation of spec 07 session 3 on 2026-10-01 (§1.11) left these
 choices (inferred):
@@ -4037,6 +4155,25 @@ choices (inferred):
     rows of the sheet do the lists use; how wide is the column, and is it inside the list's
     box; is there anything between the arrows (a position marker, a page click); how far does
     one click scroll, and does holding the button repeat?
+
+    **Answer:** (confirmed: binary; the thumb also observed in the setup pickers, spec 07)
+    Every standard list control is a box with a 1 px frame in #647EC7; inside it the rows
+    take (2,2) to (W − 28, H − 2) and a 24 px column at the right holds, from x W − 26:
+    - the up arrow, 24×24, at the top (y 2), and the down arrow, 24×24, at the bottom
+      (y H − 26), both from `Game/Buttons/Arrows.bmp`, a sheet of 4×4 cells of 24×24: the
+      down arrow uses column 0 and the up arrow column 1 (columns 2 and 3 are not used by
+      lists); the row is the state: 0 normal, 1 under the pointer, 2 held down, 3 disabled
+      (dim, when the list cannot scroll that way);
+    - between them a track (24 px wide, H − 52 high) with a **thumb**: an outlined box in the
+      frame colour (#2D2D2D when the list is disabled), 24 px wide, its length the visible
+      share of the rows (never under 6 px) and its place the scroll position. Pressing or
+      dragging with the left button anywhere in the track scrolls straight to that position.
+    One click on an arrow scrolls one row (whatever the row height); holding the button down
+    repeats it on a 100 ms timer. Lists without the column (a flag of the control) use the
+    whole box. The mouse wheel scrolls the list too, about one row per notch (observed in
+    Designs, spec 07 session 5).
+    Our client differs: a 16 px column, 16×16 arrows of its own drawing, no thumb and no track
+    click (the wheel scrolls in both).
 90. **The Colonies summary and buttons.** Ours lays the summary out as Planets' statistics
     (labels from x 18 one every 16 px, values right-aligned at x 289), with the lines Systems with
     Colonies, Number of Colonies, Number of Blockaded Colonies, Total Population (with the
@@ -4049,15 +4186,81 @@ choices (inferred):
     two; "System" or "Systems")? How are storage amounts that are not whole thousands written?
     Which slots hold the two buttons? What does a click on a row do in the original, and how
     does the player reach a colony's construction queue from this window, if at all?
+
+    **Answer:** (confirmed: binary)
+    - *Summary*, in the 284×190 box at (17,38) like Planets': labels in #7D9FFF at x 18:
+      "System with Colonies" (singular) y 40, "Number of Colonies" 56, "Number of Blockaded
+      Colonies" 72, "Total Population" 88, "Research Points Produced" 104, "Intelligence
+      Points Produced" 120 (two lines), "Total Resources Produced" 152 and "Maximum Resource
+      Storage" 184. The first four values are white, right-aligned at x 289; the research and
+      intelligence values are right-aligned at x 271 with their 16 px icon at x 273 (y 105
+      and 121). The three resource amounts of the last two labels are on the line below
+      (y 168 and 200): minerals in #4665CC right-aligned at x 68, organics in #008000 at
+      x 138, radioactives in #FF0000 at x 208, each followed by its icon at that x. Amounts
+      are shortened: under 10,000 as is; up to 99,999,999 as thousands rounded **up**
+      (truncate(n / 1000 + 0.999)) with "kT", so 52500 gives "53kT" and 50000 "50kT"; above
+      that as millions rounded up with "mT". The same shortening applies to the production
+      line.
+    - *Buttons:* the tabs General, Value, Production, Facilities, Cargo, Construction,
+      Status, Races, Orders in slots 1–9; Scrap Facil Types in slot 12, Set Colony Type in
+      slot 13, Close in 14.
+    - *Clicks:* a left click on a row shows that colony in the main window and closes the
+      window (as Planets and Ships\Units); Shift+click does nothing; a right click opens the
+      planet report. There is no selection and no way to the construction queue from here.
+    - *Set Colony Type* asks for the planet first ("Select Planet to Set", a picker over the
+      rows as listed, starting at the top row); a homeworld is refused with "Cannot Set
+      Colony Type"; then the colony-type picker. *Scrap Facil Types* opens the facility-type
+      check list and scraps every checked type on **every** colony of the empire, at
+      `Scrap Facility Percent Returned`.
+    Our client differs: "Systems with Colonies"; research and intelligence values at x 289;
+    storage in whole thousands truncated ("52kT"); a click selects rows (Ctrl/Shift for
+    several) and a double click shows the colony; Set Colony Type and Scrap Facil Types work
+    on the selection.
 91. **The Log's Goto with nothing selected.** The original's Goto is lit in an empty Log. Ours
     lights it whenever no entry is selected, and a click then does nothing. Is it lit for any
     other reason, and does a click do anything?
+
+    **Answer:** (confirmed: binary) Goto (slot 13) is created lit. Each time an entry is
+    selected the buttons follow it: Goto lit when the entry has a Goto target, dim when it
+    has none; Send Reply (slot 10) lit only for a political message; Combat Replay (slot 11)
+    lit only when `Create Combat Replay` is on and the entry has a replay; Constr. Queues
+    (slot 12) is always lit. When no entry is selected nothing is changed, so Goto keeps the
+    state it last had (lit if no entry was ever selected). A click on Goto with nothing
+    selected does nothing.
+    Our client differs only in that it lights Goto whenever no entry is selected, even after
+    an entry without a target was selected.
 92. **Research.** Ours keeps Repeat Projects and Divide Pts Evenly in slots 5 and 6, shows the
     project's progress (points paid of the cost) in the small box under each project box, and,
     having no "Players can see the complete tech tree" setting, always shows Tech Tree, in slot
     12. Which slots hold the two check boxes and, when the game allows it, Tech Tree? What does
     the small box show? With the setting off, can the Tech Tree window be reached at all, and
     what does "complete" add to it?
+
+    **Answer:** (confirmed: binary)
+    - *Buttons:* the tabs Projects 1 - 4, 5 - 8, 9 - 12 in slots 1–3; Repeat Projects
+      (check box) in slot 5 and Divide Pts Evenly (check box) in slot 6; Tech Tree in slot 12
+      **only** when the game's "Players can see the complete tech tree" setting is on;
+      Reorder Projects in slot 13; Close in 14.
+    - *Tech Tree:* the Research window is the only way to open it, so with the setting off it
+      cannot be reached at all. The setting adds nothing to the window's content; it only
+      decides whether the button exists. The window (tabs Tech Areas and Tech Levels, Export
+      in slot 13) lists every tech area of the data set, and per level what it makes
+      available (inferred: nothing is hidden for areas the empire has not researched).
+    - *Project boxes:* the area list is at (15,56), 560×243; the four project boxes of the
+      shown page are 140×130 cells side by side from (15,330). Each cell: black (a patterned
+      fill under the pointer when it holds a project), its top, right and bottom edges in
+      #617BC2; the area's name word-wrapped in (3,3)–(138,55) ("None" for an empty slot);
+      for a project "Research Level N" (the level being bought) at (3,54) in small type,
+      "Completion:" at (3,75) with the time left at (82,75) as "N.N years" (whole turns
+      rounded up, at least one, times the turn length), "Cost Per Turn:" at (3,87) with the
+      points this project gets per turn at (82,87). The **small box** is the cell's foot,
+      outlined in #617BC2 from (1,102) to (138,128): a progress bar of up to 19 green
+      (#00FF00) blocks 5×22 px, 7 px apart from x 3, y 104; the number of blocks is
+      truncate(percent paid × 19 / 100), the percent being truncate(points paid × 100 /
+      level cost) held to 0–100.
+    Our client differs: the game has no "complete tech tree" setting, so Tech Tree is always
+    in slot 12; the boxes show the area name with the level and an ETA centred, and the small
+    box writes "paid / cost" with a bar of its own.
 93. **The Designs list and detail.** Ours: 36 px rows with the lamp at (2,11), the 32 px
     picture at (19,2), the name at (55,2), the hull under it in grey small type and "Prototype"
     right-aligned on that line for a design never built; an obsolete design's name in grey; the
@@ -4067,6 +4270,41 @@ choices (inferred):
     component, the mount's code in yellow on the icon. What are the rows' places, the headings'
     order and the enemy tabs' grouping, the note's place, and the grid's cell size; do identical
     components share a cell?
+
+    **Answer:** (confirmed: binary)
+    - *Buttons:* tabs Ship Designs, Unit Designs, Enemy Ship Dsgn, Enemy Unit Dsgn (slots
+      1–4); Create, Copy, Edit, Upgrade, Make Obsolete (6–10); Hide Obsolete and
+      Stats\Strategy check boxes (11, 12); Simulator (13); Close (14). The enemy tabs switch
+      Stats\Strategy off.
+    - *List:* "Designs" at (16,39) and "Design Detail" at (269,39) in #7D9FFF; the list at
+      (16,58), 246×393. Headings are rows 25 px high, their text in the large font, silver
+      #C0C0C0, at x 4 resting on the row's foot. On the own tabs the headings are the design
+      types' names, on the enemy tabs the owners' empire names, each list **sorted
+      alphabetically** (no repeats); under each heading the designs sorted alphabetically by
+      name. Design rows are 36 px: the lamp (General.bmp, 13×13; the selected design's green,
+      the others' blue) at (4,11); the hull's picture at (21,0); the name in white at
+      (61,−2); the hull's name in small type at (71,12); "Prototype" at (71,23), under the
+      hull, for a design never built. An obsolete design looks like any other.
+    - *Note:* "(obsolete designs are deleted automatically)" in small #7D9FFF type at
+      (16,450), just under the list.
+    - *Detail:* a box outlined in #617BC2 from (269,58) to (573,461). Its top part (302×150
+      from (270,59)): the picture frame (#617BC2) from (4,4) to (134,134) in it, the name in
+      the large font at (140,4), then in #7D9FFF / white: "Size" at (140,40) with the value at
+      (152,55), "Design Type" (140,70) / (152,85), "Date Created" (140,100) / (152,115),
+      "(Obsolete)" in yellow #FFFF00 at (202,115); "Cost" at (4,135) and "Maintenance Cost"
+      at (4,150) with their three amounts. The part below (from (270,209)) holds Movement,
+      Shields, Cargo Space and Supply Capacity (labels at x 4, values right-aligned at x 160,
+      15 px apart), "(Insufficient technology)" in grey #A0A0A0 when it applies, and
+      "Components on Design" at (274,291) over the component grid. With Stats\Strategy on the
+      grid is hidden and the part shows Number Constructed, Number In Service, Number Lost,
+      Number Scrapped and Enemy Tonnage Destroyed (labels at x 6, values right-aligned at
+      x 270, 15 px apart from y 97 of that part) and "Default Strategy" with its picker.
+    - *Component grid:* at (276,308), 290×146: 36×36 cells, 8 to a row, 4 rows; **one cell
+      per component** (identical components do not share a cell here); a 64×34 pair of
+      up/down arrows (`BigUpDownArrows.bmp`, 64×17 each) at (501,274) shows when it scrolls.
+    Our client differs: the lamp at (2,11), a 32 px picture at (19,2), the name at (55,2),
+    "Prototype" right-aligned on the hull's line, obsolete names in grey; headings in the
+    empire's design-type order (not alphabetical); its note text and place are its own.
 94. **Create Design.** Ours: the vehicle-type picker is a list window titled "Select Vehicle
     Type", the same from every tab; the designer is a 780x475 window. Places in its content
     area: the picture at (3,3); Size, Design Type and Design Name at x 140 with their boxes
@@ -4081,6 +4319,46 @@ choices (inferred):
     button is gone. What are the original's places and sizes, the picker's title and its list
     from the Unit Designs tab, the starting design type and name, the warnings' colour, the slots
     of Weapons Report, and what do To Hit Modifiers and Condensed View change?
+
+    **Answer:** (confirmed: binary) Positions are in the window (the 780×475 frame of the
+    other main windows).
+    - *Picker:* Create opens the same list window from every tab, titled "Select Vehicle
+      Type", one "Name" column listing the vehicle types (of the eight) for which the empire
+      has a researched hull size. The designer is then titled "<vehicle type> Design" ("Ship
+      Design", "Base Design", ...).
+    - *Buttons:* Comp Type (slot 1), Weap Mount (2), To Hit Modifiers (8, check box), Condensed
+      View (9, check box), Only Latest (10, check box), Weapons Report (11), Create Design
+      (13), Cancel (14).
+    - *Picture:* 131×131 at (19,40), the hull's picture drawn from (1,1).
+    - *Selectors:* labels "Size" at (155,39), "Design Type" (155,79), "Design Name" (155,119)
+      in #7D9FFF; under each a drop-down box 185×20 at x 160, y 55, 95 and 135; only Design
+      Name can be typed in. A design without a name shows the words "Design Name" in its box.
+    - *Figures box:* 223×140 at (349,40), framed in #617BC2; lines 16 px apart from y 4:
+      "Space Used" (used/total), "Total Cost" over three lines (minerals #4665CC, organics
+      #008000, radioactives #FF0000, each with its icon at x 174), "Movement", then
+      "Shields", "Cargo Space", "Supply Capacity"; labels at x 4, values at x 120.
+    - *Components on Design:* label at (19,181), hint "(click to remove component)"
+      right-aligned to x 573 at y 184 in small #7D9FFF; the strip at (25,198), 536×38.
+    - *Components Available:* label "Components Available (<type>)" at (19,238); hint
+      "(click to add component)" right-aligned to x 573 at y 240; the tile grid at (19,254),
+      550×114: tiles 173×38, 3 per row, 3 rows visible.
+    - *Warnings* label at (19,369) over a list at (19,385), 283×76, 3 rows; *Component
+      Details* label at (309,369) over the details box at (309,385), 264×76.
+    - *To Hit Modifiers* (an empire option) changes the figures box: instead of Shields, Cargo
+      Space and Supply Capacity it shows "Offense Bonus" and "Defense Bonus", the design's
+      combat to-hit bonuses as signed percentages ("+10%").
+    - *Condensed View* (an empire option) merges identical components (same component and
+      mount) into one cell of the strip, with the count written on it when above 1.
+    - *Start and warnings* (observed, spec 07 session 3 capture of a new Ship Design,
+      measured in session 5): a new design has no design type, its box showing the words
+      "Design Type" as the name box shows "Design Name". Each warning is a line of white
+      text after a small red ball, 18 px apart from the list's top, one per requirement the
+      design does not meet yet.
+    Our client differs: places and sizes as in the question (picture (3,3), boxes 190 px at
+    x 140, figures box (358,3)-(553,131), 36 px cells, Warnings and Component Details on the
+    right), Weapons Report in slot 7, yellow warnings, and To Hit Modifiers changing the
+    tiles instead of the figures box; a new design's name box is empty and it starts with a
+    design type already chosen; the warnings are yellow, without the red ball.
 95. **Empire Status.** Ours draws one table per block under its silver heading, the amounts in
     the resource colours, each block's first row with the resource icons, Net Resources Per Turn
     as a block of one unlabelled row. Our engine's other income (resources generated by
@@ -4090,10 +4368,58 @@ choices (inferred):
     Ministers. Where does the original count those incomes? What colours do the amounts and
     the net take, and which rows carry icons? What does Change Email ask for, and where is the
     address used?
+
+    **Answer:** (confirmed: binary)
+    - *Layout:* block headings in the large font, silver #C0C0C0, at x 20: "Resource
+      Production Per Turn" y 40, "Resource Expenses Per Turn" y 180, "Resources in Treasury"
+      y 350. Row labels in #7D9FFF at x 30: From Our Colonies 60, From Trade 80, From Tariffs
+      100, From Remote Mining 120, Total 150; Tariffs 200, Maintenance Cost 220, Construction
+      Queue Usage 240, Total 270; Net Resources Per Turn 310 (a labelled row of its own under
+      the expenses block, not a block); Current Total 370, Maximum Resource Storage 390. A
+      #7D9FFF rule from (330,145) to (570,145) and from (330,265) to (570,265) over each
+      Total.
+    - *Amounts:* three columns right-aligned at x 380, 460 and 540, in the resource colours
+      (minerals #4665CC, organics #008000, radioactives #FF0000), written in full (not
+      shortened). Only the first row, From Our Colonies, carries the resource icons (after
+      each number). The net amounts are in the same colours, a positive one with "+".
+    - *Incomes:* From Our Colonies is the colonies' production total (the same figure as
+      Colonies' Total Resources Produced); for a computer-controlled empire it is shown
+      multiplied by the computer players' bonus. From Trade, From Tariffs and From Remote
+      Mining are their own sums; the Total is the four added. Income from abilities and the
+      minimum-income floor have no row of their own (inferred: inside the colonies' total,
+      as spec 02 counts them in production).
+    - *Buttons:* Empire Options, Ministers, Systems to Avoid, Waypoints, Strategies, Repair
+      Priorities (slots 1–6), Change Email (12), Change Password (13), Close (14).
+    - *Change Email* opens an input box "Please Enter Email Address" holding the current
+      address; OK stores it as the empire's address (the password is kept). The address is
+      entered in Empire Setup's "Email" field, saved with the empire in the game file and in
+      every orders file, and shown back there; the game itself never sends mail (it has no
+      mail code), so the address is for the players' own use.
+    Our client differs: one table per block with icons on each block's first row, Net
+    Resources Per Turn as an unlabelled block, our other incomes added to From Our Colonies,
+    and Change Email dim (no address in our `Empire`).
 96. **Borders.** §1.5 lists Borders as a window reached from Empires. Ours keeps it as a view of
     the Empires window that the plain Borders button shows and hides (a tab returns to the
     portraits too). Is it a window of its own in the original, and what are its layout and
     buttons?
+
+    **Answer:** (confirmed: binary; observed, spec 07) A window of its own, titled "Borders",
+    in the same 780×475 frame, opened over Empires by its Borders button; closing it returns
+    to Empires. Places in the window: "Empires" at (17,43) over a narrow list (18,52), 70 px
+    wide and as high as the map, one row per known empire with a check box and the empire's
+    flag; "Systems claimed by Empires" at (94,43) over the galaxy map at (94,52), 476×329
+    (grid and system circles, the systems claimed by the checked empires in their colours,
+    a system claimed by more than one in yellow); the hint "(click on a system to claim it for
+    your empire)" in small #7D9FFF, right-aligned to x 569 at y 390; "Legend" at (94,394)
+    and a yellow dot with "Contested" under it. A click on a system claims it for the
+    player's empire, or gives the claim up. Buttons: Select All (slot 1: checks every
+    empire), Allies (2: the player and its allies), Enemies (3), Us (4, lit at opening: the
+    player only), slots 5–13 empty, Close (14).
+    Our client differs: Borders is a view inside the Empires window, shown and hidden by the
+    Borders button: the map with a heading and an explanation line of our own, overlapping
+    claims in white (the original's yellow, with a Legend), Select All, Allies, Enemies and Us
+    as small buttons beside the map (one filter at a time, not check boxes per empire), a
+    claim count per empire, and no claiming by a click on the map.
 97. **Tactical Combat.** Ours: the weapon grid's 36 px cells at (W−232,104), 6x6; the target
     panel, 216x64, at (W−232,324); each panel shows the 64 px picture with the owner's mark and
     the group badge, the name at x 67, "Size" and "Move" (the target: "Dist") in small type at
@@ -4106,8 +4432,67 @@ choices (inferred):
     left. What are the original's places and contents of the panels and the grid, the buttons'
     x, what do the navigation and stop buttons do, how is a simulation's battle titled, and
     what does the panel show before Begin?
+
+    **Answer:** (confirmed: binary) With W the window's width and H its height:
+    - *Current piece panel:* 216×64 at (W − 232, 36), 2 px above the map's top (y 38); a
+      click on it opens the piece's report.
+    - *Weapon grid:* at (W − 232, 102), 216×217 (36 px less when the screen is narrower than
+      1024): 36×36 cells, 6 to a row, 6 rows; the cells also show the weapon's to-hit
+      percentage. Its up/down arrows (`BigUpDownArrows.bmp`, 64×34) sit just under it, at
+      (W − 232, 319).
+    - *Target panel:* only when the screen is at least 1024 wide: 216×100 at (W − 232, 373),
+      that is the grid's bottom (y 319) plus the arrows' 34 px plus 20.
+    - *Buttons:* a 2×2 group of 113×30 buttons, 226 wide, at (W − 234, H − 266), 70 px above
+      the overview map (218×190 at (W − 230, H − 196)): Options (top left), Orders (top
+      right, dim until Begin), Auto (bottom left, a toggle), Begin (bottom right, which
+      becomes End Turn).
+    - *Navigation:* four 24×24 buttons in a row at (W − 146, 5), left to right: next piece
+      that can still move (as Space and Ctrl+N), previous one that can still move (Ctrl+B),
+      next piece that can still fire (Ctrl+F), previous one that can still fire (Ctrl+D).
+      Then a single 20×20 button at (W − 34, 7) that asks the window to close, which it
+      refuses while the battle is not over (the battle is stopped from Options). The
+      buttons do nothing while an action is being animated.
+    - *As seen* (observed, spec 07 session 3 captures of a simulation at 1024×768, measured
+      in session 5): a simulation's battle is titled "Tactical Combat" in the title strip.
+      Before Begin the piece panel is empty (no picture, name or bars), the weapon grid
+      shows empty cells, Orders is dim and the fourth button reads Begin. The navigation
+      buttons are drawn as two groups of 46×22 at (W − 145,6) and (W − 97,6), each a left
+      arrow, a 22 px picture (a ship for the pieces that can move, a red crosshair for those
+      that can fire) and a right arrow; the closing button is a 20×20 box with a bar at
+      (W − 34,7). With a piece selected the panel shows its picture in a 38×38 frame at
+      (W − 230,38); its name in white at (W − 190,40); "Size" and "Move" in #7D9FFF small type
+      at (W − 185,59) and (W − 185,70) with the values in white at x W − 141 (the hull size's
+      name, and the moves left over the moves of the turn, "0/4"); the side's 26×18 numbered
+      box at (W − 42,39); and a bar frame (#4F65A2) from (W − 230,78) to (W − 28,97) holding
+      the shield row (upper) and the structure row (lower, red blocks 3×7 px, 4 px apart from
+      x W − 228, y 89–95).
+    - *Target panel and a real battle* (observed, spec 07 session 5): pointing at an enemy
+      piece fills the target panel: picture frame 38×38 at (W − 230,375), name at
+      (W − 190,377), "Size" and "Dist" (the distance in squares) at (W − 185,396) and
+      (W − 185,407) with the values at x W − 141, the owner's flag at (W − 42,376), and the
+      bar frame (W − 230,415) to (W − 28,434) with the shield row in blue (#0000FF) over the
+      structure row in red, no numbers. In a real battle the flags replace the numbered
+      boxes, and a planet's panel writes its structure in thousands in red at the bar's
+      right end ("21k").
+    Our client differs: the weapon grid at (W − 232,104); the target panel 216×64 at
+    (W − 232,324); the buttons from x W − 238; three 20×20 navigation buttons at (W − 84,7),
+    (W − 62,7) and (W − 40,7) (previous, stop-and-clear, next) instead of four 24×24 ones at
+    (W − 146,5) and a closing button at (W − 34,7).
 98. **The report's up-arrow button.** Ours draws `DetailUp.bmp` (state rows normal, under the
     pointer, held; the fourth unused) at the report panel's top right, 35 px from its right edge
     and 2 px below its top, whenever the shown object's sector holds more than one object.
     Where exactly is it, which row is which state, and does it show only when the report was
     reached from the list?
+
+    **Answer:** (confirmed: binary, except where marked) Every object report (290×361) has
+    the button: a single 33×21 cell at the report's top right, from (257,0) in the report,
+    so flush with its top and right edges. `Game/Buttons/DetailUp.bmp` is 33×84, four rows of
+    21: row 0 normal, 1 under the pointer, 2 held down, 3 disabled. A click makes the shown
+    object's sector the selected sector of the main window and selects it again: several
+    visible objects there bring the list back, one opens the same report. The button is
+    created hidden. It is shown when the report was opened from the sector's list (a click
+    on an entry of the list a sector with several objects shows); a report opened by a click
+    on a sector with one object, or set up by the game at a turn's start, has none (observed,
+    spec 07 session 5).
+    Our client differs: 35 px from the right edge and 2 px below the top, row 3 unused, and
+    shown whenever the sector holds more than one object, however the report was reached.
