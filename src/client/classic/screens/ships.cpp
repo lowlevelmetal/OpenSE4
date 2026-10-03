@@ -81,7 +81,7 @@ public:
         fleets_ = (kept.shipsShown & 4) != 0;
         refresh(ui);
 
-        d.beginContent();
+        d.beginContent(576);  // the list spans to x 575, as every list of the original
         statistics(ui);
         table(ui);
 

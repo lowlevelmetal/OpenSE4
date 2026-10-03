@@ -75,7 +75,7 @@ public:
             const bool noAvoid = ui.options().planetsNoSysToAvoid;
             const std::vector<const PlanetInfo*> rows = shown(ui, noAvoid);
 
-            d.beginContent();
+            d.beginContent(576);  // the list spans to x 575, as every list of the original
             statistics(ui);
             ImGui::SetCursorPos(ui.size({290, 3}));
             std::vector<uint8_t> marked(s.galaxy.systems.size(), 0);
@@ -406,7 +406,7 @@ public:
         {
             Dialog d(ui, "Colonies", DialogSize::Tall);
             if (!d.open()) return d.keepOpen();
-            d.beginContent();
+            d.beginContent(576);  // the list spans to x 575, as every list of the original
             statistics(ui);
             // The mini-map where Planets has it (inferred, spec 06 §7 Q90).
             ImGui::SetCursorPos(ui.size({290, 3}));
