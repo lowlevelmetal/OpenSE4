@@ -249,8 +249,12 @@ private:
         cfg.turnTimeoutSeconds = timeout_;
         cfg.upnp.enabled = upnp_ && net::PortMapper::supported();
         // This computer's identity as a host: players' games remember it.
-        if (auto key = net::secure::loadOrCreateHostKey(userDataDir() / net::secure::kHostKeyFileName)) cfg.hostKey = *key;
-        else log_.add(key.error() + " Players cannot remember this host from one game to the next.");
+        if (auto key = net::secure::loadOrCreateHostKey(userDataDir() / net::secure::kHostKeyFileName)) {
+            cfg.hostKey = key->keys.network;
+            if (!key->warning.empty()) log_.add(key->warning);
+        } else {
+            log_.add(key.error() + " Players cannot remember this host from one game to the next.");
+        }
         host_ = std::make_unique<net::HostSession>(*ctx.rules, cfg);
         rules_ = ctx.rules;
         if (auto r = host_->start(); !r) {

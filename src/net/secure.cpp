@@ -82,17 +82,35 @@ crypto::Key loginDigest(const crypto::Key& sessionId, std::string_view role, std
 
 namespace {
 
-std::expected<crypto::KeyPair, std::string> readHostKey(const fs::path& file) {
+// The permissions of an existing key file: other users of the computer must
+// not read it (POSIX; Windows keeps a user's files apart by itself).
+std::string permissionWarning(const fs::path& file) {
+#ifdef _WIN32
+    (void)file;
+    return {};
+#else
+    std::error_code ec;
+    const fs::perms p = fs::status(file, ec).permissions();
+    if (ec || (p & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none) return {};
+    return std::format("Warning: {} can be read by other users of this computer (mode {:o}), and whoever reads it can pose as this host. "
+                       "Make it private (chmod 600).",
+                       file.string(), static_cast<unsigned>(p) & 0777u);
+#endif
+}
+
+std::expected<HostKeyFile, std::string> readHostKey(const fs::path& file) {
     std::ifstream in(file, std::ios::binary);
     if (!in) return std::unexpected(std::format("{}: cannot read the host key", file.string()));
     std::string line;
     while (std::getline(in, line)) {
         std::erase(line, '\r');
         if (line.empty() || line.front() == '#') continue;
-        const auto secret = crypto::keyFromHex(line);
+        auto secret = crypto::keyFromHex(line);
         crypto::wipe(line.data(), line.size());
         if (!secret) break;
-        return crypto::keyPairFromSecret(*secret);
+        HostKeyFile out{hostIdentity(*secret), permissionWarning(file)};
+        crypto::wipe(secret->data(), secret->size());
+        return out;
     }
     return std::unexpected(std::format("{}: not a host key file (expected 64 hex digits)", file.string()));
 }
@@ -132,7 +150,21 @@ void closeFile(int fd) {
 
 } // namespace
 
-std::expected<crypto::KeyPair, std::string> loadOrCreateHostKey(const fs::path& file) {
+HostIdentity hostIdentity(const crypto::Key& secret) {
+    crypto::Key network = crypto::Hash(secret).add("OpenSE4 host key: network handshake").finish32();
+    crypto::Key box = crypto::Hash(secret).add("OpenSE4 host key: PBEM box").finish32();
+    crypto::Key signing = crypto::Hash(secret).add("OpenSE4 host key: PBEM signing").finish32();
+    HostIdentity id;
+    id.network = crypto::keyPairFromSecret(network);
+    id.pbem.box = crypto::keyPairFromSecret(box);
+    id.pbem.signing = crypto::signingKey(signing);
+    crypto::wipe(network.data(), network.size());
+    crypto::wipe(box.data(), box.size());
+    crypto::wipe(signing.data(), signing.size());
+    return id;
+}
+
+std::expected<HostKeyFile, std::string> loadOrCreateHostKey(const fs::path& file) {
     std::error_code ec;
     if (fs::exists(file, ec)) return readHostKey(file);
     if (file.has_parent_path() && !fs::exists(file.parent_path(), ec)) {
@@ -147,10 +179,14 @@ std::expected<crypto::KeyPair, std::string> loadOrCreateHostKey(const fs::path& 
         if (fs::exists(file, ec)) return readHostKey(file);
         return std::unexpected(std::format("{}: cannot create the host key", file.string()));
     }
-    crypto::KeyPair k = crypto::newKeyPair();
-    std::string text = std::format("# OpenSE4 host key: the secret half of this machine's identity in network games. Keep it private.\n"
-                                   "# Fingerprint: {}\n{}\n",
-                                   crypto::fingerprint(k.publicKey), crypto::hex(k.secret));
+    crypto::Key secret{};
+    crypto::randomBytes(secret);
+    HostKeyFile out{hostIdentity(secret), {}};
+    std::string text = std::format("# OpenSE4 host key: the secret of this machine's identity in network and play-by-e-mail games. Keep it "
+                                   "private.\n# Network fingerprint: {}\n# Play-by-e-mail fingerprint: {}\n{}\n",
+                                   crypto::fingerprint(out.keys.network.publicKey), crypto::fingerprint(out.keys.pbem.signing.publicKey),
+                                   crypto::hex(secret));
+    crypto::wipe(secret.data(), secret.size());
     const bool ok = writeAll(fd, text);
     crypto::wipe(text.data(), text.size());
     closeFile(fd);
@@ -158,7 +194,7 @@ std::expected<crypto::KeyPair, std::string> loadOrCreateHostKey(const fs::path& 
         fs::remove(file, ec);
         return std::unexpected(std::format("{}: cannot write the host key", file.string()));
     }
-    return k;
+    return out;
 }
 
 // ---- Known hosts -------------------------------------------------------------------------------

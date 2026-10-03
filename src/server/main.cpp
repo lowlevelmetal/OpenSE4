@@ -212,17 +212,24 @@ std::expected<std::unique_ptr<game::Rules>, std::string> loadRules(const std::st
     return std::make_unique<game::Rules>(std::move(*loaded.ruleset), dir->parent_path());
 }
 
-// The host's long-term key: --host-key=FILE, else host_key.txt in OpenSE4's
-// user folder (made on first use). Network players pin it; PBEM players'
-// orders files are encrypted to it.
-std::expected<net::crypto::KeyPair, std::string> loadHostKey(const Options& o) {
+// The host's long-term keys: --host-key=FILE, else host_key.txt in OpenSE4's
+// user folder (made on first use). Network players pin the network key; PBEM
+// players' orders files are encrypted to the PBEM box key, and they pin the
+// PBEM signing key that signs their turn files.
+enum class KeyUse { Network, Pbem };
+std::expected<net::secure::HostIdentity, std::string> loadHostKey(const Options& o, KeyUse use) {
     const std::filesystem::path keyFile = o.has("host-key") ? std::filesystem::path(o.get("host-key"))
                                                             : net::secure::userDataDir() / net::secure::kHostKeyFileName;
-    auto key = net::secure::loadOrCreateHostKey(keyFile);
-    if (key)
-        say(std::format("Host key {} ({}); public key {}", net::crypto::fingerprint(key->publicKey), keyFile.string(),
-                        net::crypto::hex(key->publicKey)));
-    return key;
+    auto file = net::secure::loadOrCreateHostKey(keyFile);
+    if (!file) return std::unexpected(file.error());
+    if (!file->warning.empty()) say(file->warning);
+    if (use == KeyUse::Network)
+        say(std::format("Host key {} ({}); public key {}", net::crypto::fingerprint(file->keys.network.publicKey), keyFile.string(),
+                        net::crypto::hex(file->keys.network.publicKey)));
+    else
+        say(std::format("Play-by-e-mail host key {} ({}): players see it when they open their turn files", net::crypto::fingerprint(file->keys.pbem.signing.publicKey),
+                        keyFile.string()));
+    return std::move(file->keys);
 }
 
 std::string fileSafe(std::string_view name) {
@@ -313,9 +320,9 @@ int runServer(std::span<char*> args) {
     cfg.lanDiscovery = !o.has("no-lan-discovery");
     // The host's identity: players' games remember its key and refuse a host
     // that shows another (docs/MULTIPLAYER.md, "Security").
-    auto hostKey = loadHostKey(o);
+    auto hostKey = loadHostKey(o, KeyUse::Network);
     if (!hostKey) return fail(hostKey.error(), 2);
-    cfg.hostKey = *hostKey;
+    cfg.hostKey = hostKey->network;
     cfg.setup.seed = o.has("seed") ? static_cast<uint64_t>(*seed) : net::randomId();
     cfg.setup.options.systemCount = static_cast<int>(*systems);
     cfg.setup.options.quadrantSize = static_cast<int>(*quadrantSize);
@@ -480,7 +487,7 @@ int pbemNew(std::span<char*> args) {
         gs.empires.push_back(std::move(es));
         info.players.push_back(e.player);
     }
-    auto hostKey = loadHostKey(*o);
+    auto hostKey = loadHostKey(*o, KeyUse::Pbem);
     if (!hostKey) return fail(hostKey.error(), 2);
     auto state = game::createGame(**rules, gs);
     if (!state) return fail("could not create the game: " + state.error(), 1);
@@ -495,7 +502,7 @@ int pbemNew(std::span<char*> args) {
     const std::filesystem::path dir = o->has("turn-files") ? std::filesystem::path(o->get("turn-files"))
                                       : out.has_parent_path() ? out.parent_path()
                                                               : std::filesystem::path(".");
-    auto files = net::pbem::writeTurnFiles(**rules, out, dir, hostKey->publicKey);
+    auto files = net::pbem::writeTurnFiles(**rules, out, dir, hostKey->pbem.box.publicKey);
     if (!files) return fail(files.error(), 1);
     std::printf("Keep %s to yourself: it holds the whole game.\n", out.string().c_str());
     listTurnFiles(*files, info);
@@ -515,9 +522,9 @@ int pbemTurnFiles(std::span<char*> args) {
     const std::filesystem::path dir = o->has("out") ? std::filesystem::path(o->get("out"))
                                       : game.has_parent_path() ? game.parent_path()
                                                                : std::filesystem::path(".");
-    auto hostKey = loadHostKey(*o);
+    auto hostKey = loadHostKey(*o, KeyUse::Pbem);
     if (!hostKey) return fail(hostKey.error(), 2);
-    auto files = net::pbem::writeTurnFiles(**rules, game, dir, hostKey->publicKey);
+    auto files = net::pbem::writeTurnFiles(**rules, game, dir, hostKey->pbem.box.publicKey);
     if (!files) return fail(files.error(), 1);
     if (files->empty()) std::printf("Nobody plays this turn (the game is over, or no human is left).\n");
     listTurnFiles(*files, *info);
@@ -533,9 +540,9 @@ int pbemProcess(std::span<char*> args) {
     if (!rules) return fail(rules.error(), 2);
     net::pbem::ProcessOptions options;
     options.masterPassword = o->get("password");
-    auto hostKey = loadHostKey(*o);
+    auto hostKey = loadHostKey(*o, KeyUse::Pbem);
     if (!hostKey) return fail(hostKey.error(), 2);
-    options.hostKey = *hostKey;
+    options.hostKey = hostKey->pbem.box;
     options.deleteProcessed = !o->has("keep-orders");
     options.allowDataSetMismatch = o->has("allow-data-mismatch");
     if (o->has("turn-files")) options.turnFilesDir = o->get("turn-files");

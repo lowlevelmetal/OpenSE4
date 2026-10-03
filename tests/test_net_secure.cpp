@@ -20,6 +20,7 @@
 #include <format>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -300,12 +301,38 @@ TEST_CASE("net security: a host's key is kept in a file, and players remember it
     CHECK(std::filesystem::exists(file));
     auto again = net::secure::loadOrCreateHostKey(file);
     REQUIRE(again.has_value());
-    CHECK(again->publicKey == first->publicKey);
+    CHECK(again->keys.network.publicKey == first->keys.network.publicKey);
+    CHECK(again->keys.pbem.box.publicKey == first->keys.pbem.box.publicKey);
+    CHECK(again->keys.pbem.signing.publicKey == first->keys.pbem.signing.publicKey);
+    CHECK(first->warning.empty());
+    // One secret, a key of its own for each use: the network handshake, the
+    // PBEM box key and the PBEM signing key are three different keys.
+    CHECK(first->keys.network.publicKey != first->keys.pbem.box.publicKey);
+    CHECK(first->keys.network.secret != first->keys.pbem.box.secret);
+    CHECK(first->keys.network.publicKey != first->keys.pbem.signing.publicKey);
+    {
+        std::ifstream in(file);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK(text.find(crypto::fingerprint(first->keys.network.publicKey)) != std::string::npos);
+        CHECK(text.find(crypto::fingerprint(first->keys.pbem.signing.publicKey)) != std::string::npos);
+        // The secret is none of the keys used.
+        CHECK(text.find(crypto::hex(first->keys.network.secret)) == std::string::npos);
+        CHECK(text.find(crypto::hex(first->keys.pbem.box.secret)) == std::string::npos);
+    }
 #ifndef _WIN32
     // Readable by its owner only, in a folder only the owner enters.
     namespace fs = std::filesystem;
     CHECK((fs::status(file).permissions() & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
     CHECK((fs::status(file.parent_path()).permissions() & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
+    // A key file others can read is used, with a warning for the host.
+    fs::permissions(file, fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+    auto loose = net::secure::loadOrCreateHostKey(file);
+    REQUIRE(loose.has_value());
+    CHECK(loose->keys.network.publicKey == first->keys.network.publicKey);
+    CHECK(loose->warning.find("other users") != std::string::npos);
+    CHECK(loose->warning.find("644") != std::string::npos);
+    fs::permissions(file, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace);
+    CHECK(net::secure::loadOrCreateHostKey(file)->warning.empty());
 #endif
     // Another program's key made meanwhile is never overwritten: it counts.
     const auto other = tmp / "taken.txt";
@@ -325,9 +352,9 @@ TEST_CASE("net security: a host's key is kept in a file, and players remember it
 
     net::secure::KnownHosts known(tmp / "known_hosts.txt");
     CHECK_FALSE(known.find("Example.org", 6720).has_value());
-    REQUIRE(known.remember("Example.org", 6720, first->publicKey).has_value());
+    REQUIRE(known.remember("Example.org", 6720, first->keys.network.publicKey).has_value());
     REQUIRE(known.remember("other.example", 6721, crypto::newKeyPair().publicKey).has_value());
-    CHECK(known.find("example.ORG", 6720) == first->publicKey);  // host names in any case
+    CHECK(known.find("example.ORG", 6720) == first->keys.network.publicKey);  // host names in any case
     CHECK_FALSE(known.find("example.org", 6721).has_value());
     const crypto::Key newer = crypto::newKeyPair().publicKey;
     REQUIRE(known.remember("example.org", 6720, newer).has_value());

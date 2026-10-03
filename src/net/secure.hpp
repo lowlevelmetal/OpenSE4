@@ -55,12 +55,38 @@ crypto::Key loginDigest(const crypto::Key& sessionId, std::string_view role, std
 
 // ---- Long-term host keys and pins --------------------------------------------------------------
 
-// A host's long-term key from `file` (64 hex digits of its secret half, one
-// line). When the file does not exist yet, a new key is made and written
-// there: the file is created exclusively (never over another one made at the
-// same moment) and readable by the owner only, in a folder only the owner
-// can enter when this makes it (POSIX).
-std::expected<crypto::KeyPair, std::string> loadOrCreateHostKey(const std::filesystem::path& file);
+// A host's play-by-e-mail keys: orders files are encrypted to the box key,
+// and turn files are signed with the signing key (players pin its public
+// half per game) and encrypted with the box key's secret half mixed in.
+struct PbemHostKeys {
+    crypto::KeyPair box;
+    crypto::SigningKey signing;
+};
+
+// A host's long-term keys. Its key file holds one secret, from which each use
+// gets a key of its own (BLAKE2b keyed with the secret, one label per use), so
+// no key serves two protocols: the network handshake's (players pin its
+// public half per address), and the PBEM keys.
+struct HostIdentity {
+    crypto::KeyPair network;
+    PbemHostKeys pbem;
+};
+HostIdentity hostIdentity(const crypto::Key& secret);
+
+// A host key file as read.
+struct HostKeyFile {
+    HostIdentity keys;
+    // Not empty when the file may be read by other users of the computer
+    // (POSIX permissions): say it to the host, who should make it private.
+    std::string warning;
+};
+
+// The host's keys from `file` (64 hex digits of the secret, one line). When
+// the file does not exist yet, a new secret is made and written there: the
+// file is created exclusively (never over another one made at the same
+// moment) and readable by the owner only, in a folder only the owner can
+// enter when this makes it (POSIX).
+std::expected<HostKeyFile, std::string> loadOrCreateHostKey(const std::filesystem::path& file);
 
 // The host keys a player has trusted, one "<address>:<port> <64 hex digits>"
 // line each (trust on first use, like ssh's known_hosts).
