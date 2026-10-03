@@ -272,6 +272,7 @@ GameState busyGame() {
     s.empires[2].knowledge.notes.assign(s.galaxy.systems.size(), "unexplored");
     s.empires[2].race.traits = {1, 4};
     s.empires[0].passwordHash = "0123456789abcdef";
+    s.empires[1].email = "player.two@example.org";
     s.options.victory.score = true;
     s.options.techAreasAllowed.assign(r.data().techAreas.size(), 1);
     s.winner = EmpireId{2u};
@@ -296,6 +297,7 @@ TEST_CASE("serialize: state round trip is byte-identical after several turns") {
     CHECK(stateChecksum(*loaded) == stateChecksum(s));
     CHECK(loaded->rng == s.rng);
     CHECK(loaded->empires[0].passwordHash == "0123456789abcdef");
+    CHECK(loaded->empires[1].email == "player.two@example.org");
     CHECK(loaded->vehicles.size() == s.vehicles.size());
     CHECK(loaded->combats.back().summary.size() == 2);  // the battle added above
 
@@ -382,6 +384,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::SetColonyTypes{{"Mining", "Farming"}});
     c.push_back(cmd::SetEmpireOptions{true, std::string("verifier")});
     c.push_back(cmd::SetEmpireOptions{std::nullopt, std::nullopt});
+    c.push_back(cmd::SetEmpireOptions{.email = std::string("someone@example.org")});
     c.push_back(cmd::SetMinisters{kAllMinisters, std::string("Aggressive"), true, false, std::nullopt, true});
     c.push_back(cmd::SetEncounterOptions{EncounterClear::Any});
     c.push_back(cmd::EnterSector{VehicleId{31u}, FleetId{}, {SystemId{32u}, Sector{3, 4}}, false});
@@ -617,8 +620,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xd39d08ce67b87cfcull;
-    constexpr size_t kGoldenSize = 1812;
+    constexpr uint64_t kGoldenChecksum = 0x7470ddeb32d0f8dcull;
+    constexpr size_t kGoldenSize = 1816;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

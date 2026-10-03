@@ -282,6 +282,11 @@ struct Empire {
     PlayerKind kind = PlayerKind::Human;
     bool alive = true;
     std::string passwordHash;
+    // The player's e-mail address (spec 06 §7 Q95, spec 05 §9.2, confirmed:
+    // binary): entered in Empire Setup's Email box, changed with Change Email
+    // (cmd::SetEmpireOptions), saved with the game. Only shown back to its
+    // player; the game never sends mail.
+    std::string email;
     int racialPointsSpent = 0;
 
     Resources stockpile;

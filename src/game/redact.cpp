@@ -38,6 +38,7 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
     for (Empire& e : v.empires) {
         e.passwordHash.clear();
         if (e.id == viewer) continue;
+        e.email.clear();  // another player's address is theirs (spec 06 §7 Q95: shown only to its player)
         const bool partner = treatySharesMaps(s, viewer, e.id);
         e.stockpile = {};
         e.economy = {};

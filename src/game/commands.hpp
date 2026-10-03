@@ -189,6 +189,7 @@ struct SetEmpireOptions {
     std::optional<bool> aiMinimalChanges;
     std::optional<std::string> passwordHash;
     std::optional<bool> chooseColonyType;  // Empire::chooseColonyType (spec 03 §8)
+    std::optional<std::string> email;      // Change Email: Empire::email (spec 06 §7 Q95), kept as game::cleanEmail gives it
 };
 
 // ---- Ministers (spec 02 §10, spec 05 §7.1) -----------------------------------------------------
