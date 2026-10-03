@@ -74,7 +74,7 @@ int App::run(const AppOptions& options) {
     }
     initImGui();
     const bool scripted = options.inputScript || !options.recordInput.empty();
-    if (scripted) script::collectItems(true);   // the widgets scripts name (client/script/items.hpp)
+    if (scripted || options.lessonAudit) script::collectItems(true);   // the widgets scripts name (client/script/items.hpp)
 
     const Platform platform{window_, device_.get(), &fonts_, assetsDir_, rendererInfo_, this};
     // Saved display settings (a screenshot or script run keeps the plain window it asked for).
@@ -104,6 +104,7 @@ int App::run(const AppOptions& options) {
     co.manual = options.manual;
     co.learnDir = options.learnDir;
     co.lessonCheck = options.lessonCheck;
+    co.lessonAudit = options.lessonAudit;
     co.lessonCheckQuits = options.screenshotPath.empty();
     co.scripted = scripted;
     mode_ = ClassicMode::create(platform, co, error);

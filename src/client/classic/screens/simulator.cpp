@@ -310,6 +310,7 @@ private:
             const ImVec2 p = ImGui::GetCursorScreenPos();
             const bool clicked = ImGui::Selectable("##item", false, 0, ImVec2(0, ui.px(24)));
             lessonRow(ui, name, lessonRow_);   // the design a tutorial step names, in view
+            tagNamedRow(ui, "combat-simulator:items", name);
             const bool right = ImGui::IsItemClicked(ImGuiMouseButton_Right);
             const bool hovered = ImGui::IsItemHovered();
             const float rowRight = ImGui::GetItemRectMax().x;
@@ -376,6 +377,7 @@ private:
             const ImVec2 p{top.x, top.y + ui.px(20) * float(k)};
             ImGui::SetCursorScreenPos(p);
             if (lampToggle(ui, setup_.sides[size_t(k)].name.c_str(), &on) && on) current_ = k;
+            ui.tagOption("combat-simulator:owners", std::format("race-{}", k + 1));
             drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(80), p.y + ui.px(1)}, {p.x + ui.px(106), p.y + ui.px(19)}, k + 1);
             ImGui::PopID();
         }

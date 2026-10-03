@@ -76,6 +76,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_audit.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_lock.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_panel.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp

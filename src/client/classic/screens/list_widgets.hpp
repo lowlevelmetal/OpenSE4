@@ -105,6 +105,13 @@ bool arrowButton(const Painter& p, const char* id, ArrowGlyph glyph, Vec2 size, 
 // middle of the list. `done` keeps the step that was done for (one per list),
 // so the player can scroll away again (docs/LEARNING.md "Text tokens").
 void lessonRow(UiContext& ui, std::string_view name, uint64_t& done);
+// Whether the active tutorial step names the row (UiContext::lessonRows): a
+// list tags each row `<list>:named` or `<list>:other` for the input lock
+// (docs/LEARNING.md "Choices").
+bool lessonNamed(const UiContext& ui, std::string_view name);
+inline void tagNamedRow(UiContext& ui, std::string_view list, std::string_view name) {
+    ui.tagOption(list, lessonNamed(ui, name) ? "named" : "other");
+}
 
 // The same in a game's windows, which also tag the column's parts.
 inline Painter listPainter(UiContext& ui) {

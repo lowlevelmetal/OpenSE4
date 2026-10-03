@@ -66,7 +66,7 @@ enum class Op : uint8_t {
     AssertPresent, AssertAbsent, AssertEnabled, AssertDisabled, AssertWindow, AssertNoWindow, AssertStep, Assert, AssertLog,
     AssertNoLog, AssertResult, AssertScreen, AssertLesson, AssertTurn, AssertInside,
     // Other.
-    Screenshot, Echo, Print, Dump,
+    Screenshot, Echo, Print, Dump, Audit,
     // Loops: repeat N [until {condition}] ... end.
     Repeat, End,
 };

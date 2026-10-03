@@ -3,6 +3,7 @@
 // Left-click moves a vehicle into the selected fleet or out of its fleet.
 
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/ships_common.hpp"
 
 #include "game/design.hpp"
@@ -166,6 +167,7 @@ private:
             RowStyle st;
             st.selected = v->id == anchor_;
             const RowClick c = row(ui, static_cast<int>(v->id.value), vehicleMini(ui, *v), v->name, s.design(v->design).name + " Class", st);
+            tagNamedRow(ui, "fleet-transfer:ships", s.design(v->design).name);   // by the design a step names
             if (c.left) join_ = v->id;
             if (c.right) report_.vehicle(v->id);
         }

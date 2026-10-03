@@ -85,6 +85,7 @@ public:
         textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 39}, blue, "Research Areas");
         textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {400, 39}, blue, "Current Level");
         textRightAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {546, 39}, blue, "Cost");
+        ui.tag("research:headings", d.at({15, 39}), d.at({575, 56}));   // for lessons: the columns' headings
         if (const Sprite icon = ui.art.icon16(Icon::Research))
             ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), d.at({548, 39}), d.at({564, 55}),
                                                  {icon.uv.min.x, icon.uv.min.y}, {icon.uv.max.x, icon.uv.max.y});

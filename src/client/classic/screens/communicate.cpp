@@ -4,6 +4,7 @@
 
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
+#include "learn/ids.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 
@@ -216,8 +217,10 @@ private:
         if (replyTo_.valid() && counterType(originalType(ui)) != MessageType::General) types.insert(types.begin(), counterType(originalType(ui)));
         if (std::find(types.begin(), types.end(), draft_.type) == types.end()) setType(types.front());
         if (ImGui::BeginCombo("##type", std::string(game::displayName(draft_.type)).c_str(), ImGuiComboFlags_HeightLarge)) {
-            for (MessageType t : types)
+            for (MessageType t : types) {
                 if (ImGui::Selectable(std::string(game::displayName(t)).c_str(), t == draft_.type)) setType(t);
+                ui.tagOption("communicate:message-type", learn::optionId(game::displayName(t)));   // for lessons
+            }
             ImGui::EndCombo();
         }
         ui.tagItem("communicate:message-type");
@@ -225,10 +228,13 @@ private:
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(kTextBlue, "Tone");
         ImGui::SameLine(labelW);
+        std::optional<ImVec2> tonesMin;
         for (int tone = 0; tone < 3; ++tone) {
             if (tone) ImGui::SameLine();
             if (ImGui::RadioButton(std::string(toneName(tone)).c_str(), draft_.tone == tone)) draft_.tone = tone;
+            if (!tonesMin) tonesMin = ImGui::GetItemRectMin();
         }
+        ui.tag("communicate:tone", *tonesMin, ImGui::GetItemRectMax());   // for lessons
 
         const MessageNeeds n = messageNeeds(draft_.type);
         if (n.treaty) treatyPicker(ui, labelW, fieldW);
@@ -238,6 +244,7 @@ private:
 
         ImGui::TextColored(kTextBlue, "Message");
         inputTextMultiline("##text", draft_.text, ImVec2(-FLT_MIN, ui.px(96)));
+        ui.tagItem("communicate:text");
 
         if (n.offer || n.request) {
             ImGui::Spacing();
@@ -272,12 +279,14 @@ private:
         const auto list = proposableTreaties(relation(ui).treaty);
         if (std::find(list.begin(), list.end(), draft_.treaty) == list.end()) draft_.treaty = firstProposable(ui);
         if (ImGui::BeginCombo("##treaty", std::string(game::displayName(draft_.treaty)).c_str())) {
-            for (Treaty t : list)
+            for (Treaty t : list) {
                 if (ImGui::Selectable(std::string(game::displayName(t)).c_str(), t == draft_.treaty)) {
                     const bool defaultText = draft_.text == defaultMessageText(draft_.type, draft_.treaty);
                     draft_.treaty = t;
                     if (defaultText) draft_.text = defaultMessageText(draft_.type, t);
                 }
+                ui.tagOption("communicate:treaty", learn::optionId(game::displayName(t)));   // for lessons
+            }
             ImGui::EndCombo();
         }
         ui.tagItem("communicate:treaty");

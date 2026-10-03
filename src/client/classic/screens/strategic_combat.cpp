@@ -367,6 +367,7 @@ private:
             for (const ForceRow& r : side.rows) row(r.name, r.current, r.lost);
         }
         endList(ui);
+        ui.tag("strategic-combat:forces", ui.at(o + Vec2{15, 38}), ui.at(o + Vec2{15 + 329, 55 + 400}));   // for lessons: with its headings
     }
 
     // The map at (354,55), 218x191: the whole combat grid in 3 px squares, framed by a #647EC7 line just outside it.

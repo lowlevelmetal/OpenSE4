@@ -204,6 +204,7 @@ constexpr OpInfo kOps[] = {
     {"echo", Op::Echo},
     {"print", Op::Print},
     {"dump", Op::Dump},
+    {"audit", Op::Audit},
     {"repeat", Op::Repeat},
     {"end", Op::End},
 };
@@ -578,6 +579,10 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
                 break;
             case Op::Echo:
                 for (const Token* t : args) st.text += (st.text.empty() ? "" : " ") + t->text;
+                break;
+            case Op::Audit:
+                ok = args.empty();
+                if (!ok) fail("'audit' takes nothing");
                 break;
             case Op::Dump:
                 ok = args.size() <= 1;

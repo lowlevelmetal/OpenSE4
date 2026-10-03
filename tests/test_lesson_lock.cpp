@@ -408,3 +408,144 @@ TEST_CASE("lesson recovery: steps that wait on the game are never timed out") {
     CHECK_FALSE(waits("{ all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }"));
     CHECK(problems.empty());
 }
+
+// ---- Choices, parts shown, windows left open (docs/LEARNING.md "Choices") ----------------------
+
+namespace {
+
+// Designs with its Create button, the Select Vehicle Type picker open over it
+// (a popup: above every window), and a list whose rows are options.
+std::vector<TaggedArea> pickerTags() {
+    return {
+        {"window:designs", box(100, 100, 900, 700)},
+        {"designs:create", box(700, 200, 880, 230)},
+        {"designs:list", box(110, 150, 350, 650)},
+        {"designs:details", box(360, 150, 690, 650)},
+        {"designs:close", box(700, 660, 880, 690)},
+        {"lesson:panel", box(10, 500, 90, 760)},
+        // The picker's rows, drawn in a popup.
+        {"designs:create:ship", box(400, 300, 600, 320), false, true},
+        {"designs:create:base", box(400, 320, 600, 340), false, true},
+        {"designs:create:fighter", box(400, 340, 600, 360), false, true},
+    };
+}
+
+} // namespace
+
+TEST_CASE("lesson lock: a step that names an option lets only that option of the chooser through") {
+    const Bindings keys;
+    learn::Step s = step({"designs:create", "designs:create:ship"}, true);
+    const LockArea picker = box(390, 290, 610, 400);
+    const LockState st = makeLockState(s, pickerTags(), {"designs"}, {picker}, false, keys);
+    // The picker lies above the window: its chosen option passes, the others are refused
+    // (pointing and scrolling still work there: the list scrolls).
+    CHECK(st.allows({500, 310}));
+    CHECK_FALSE(st.allows({500, 330}));
+    CHECK_FALSE(st.allows({500, 350}));
+    CHECK(st.looks({500, 330}));
+    CHECK(st.access({500, 330}) == LockState::Access::Refused);
+    // The rest of the picker (its Cancel) is the prompt's, as always.
+    CHECK(st.allows({500, 390}));
+    // The spotlight dims the refused options and leaves the chosen one clear.
+    CHECK(st.lit({500, 310}));
+    CHECK_FALSE(st.lit({500, 330}));
+    // Grown for the spotlight, the chosen option wins over its refused neighbours.
+    const LockState g = st.grown(6);
+    CHECK(g.lit({500, 322}));
+    CHECK_FALSE(g.lit({500, 335}));
+    // A click on a refused option is refused, with its release.
+    InputLock lock;
+    lock.set(st);
+    CHECK(lock.mouseButton({500, 330}, 1, true) == InputVerdict::Drop);
+    CHECK(lock.mouseButton({500, 330}, 1, false) == InputVerdict::Drop);
+    CHECK(lock.takeRefused());
+    CHECK(lock.wheel({500, 330}) == InputVerdict::Pass);
+    CHECK(lock.mouseButton({500, 310}, 1, true) == InputVerdict::Pass);
+    CHECK(lock.mouseButton({500, 310}, 1, false) == InputVerdict::Pass);
+
+    // "*": every option, by the step's choice.
+    s = step({"designs:create"}, true, {"designs:create:*"});
+    const LockState any = makeLockState(s, pickerTags(), {"designs"}, {picker}, false, keys);
+    CHECK(any.allows({500, 310}));
+    CHECK(any.allows({500, 330}));
+    // A step that names no option leaves the picker as it is: every option passes.
+    s = step({"designs:create"}, true);
+    const LockState none = makeLockState(s, pickerTags(), {"designs"}, {picker}, false, keys);
+    CHECK(none.allows({500, 330}));
+}
+
+TEST_CASE("lesson lock: options inside an allowed list") {
+    const Bindings keys;
+    std::vector<TaggedArea> tags = {
+        {"window:set-queue", box(100, 100, 900, 700)},
+        {"set-queue:available", box(110, 150, 400, 600)},
+        {"set-queue:available:up", box(380, 150, 400, 170)},
+        {"set-queue:available:other", box(110, 170, 380, 190)},
+        {"set-queue:available:named", box(110, 190, 380, 210)},
+        {"set-queue:available:other", box(110, 210, 380, 230)},
+    };
+    const learn::Step s = step({"set-queue:available"}, true, {"set-queue:available:named"});
+    const LockState st = makeLockState(s, tags, {"set-queue"}, {}, false, keys);
+    CHECK(st.allows({200, 200}));                                  // the row the step names
+    CHECK_FALSE(st.allows({200, 180}));                            // the others: refused
+    CHECK_FALSE(st.allows({200, 220}));
+    CHECK(st.looks({200, 220}));                                   // but they scroll
+    CHECK(st.allows({390, 160}));                                  // the list's arrows
+    CHECK(st.allows({200, 500}));                                  // below the rows: the list (nothing to click)
+    REQUIRE(st.windows.size() == 1);
+    CHECK(st.windows[0].choices.refused.size() == 2);
+    CHECK(st.windows[0].choices.chosen.size() == 1);
+}
+
+TEST_CASE("lesson lock: what a step shows is clear of the spotlight, never clicked") {
+    const Bindings keys;
+    learn::Step s = step({"designs:list"}, false, {"designs:list"});
+    s.show = {"designs:details"};
+    const LockState st = makeLockState(s, pickerTags(), {"designs"}, {}, false, keys);
+    CHECK(st.allows({200, 300}));                                  // the list (allowed)
+    CHECK_FALSE(st.allows({500, 300}));                            // the details: shown, not clicked
+    CHECK(st.looks({500, 300}));
+    CHECK(st.lit({500, 300}));
+    CHECK_FALSE(st.lit({790, 215}));                               // Create: dimmed
+    CHECK_FALSE(st.allows({790, 215}));
+    // A window named only by what a step shows is the step's: its other parts are locked.
+    learn::Step only = step({"command:research"}, true);
+    only.show = {"designs:details"};
+    const LockState o = makeLockState(only, pickerTags(), {"designs"}, {}, false, keys);
+    REQUIRE(o.windows.size() == 1);
+    CHECK(o.windows[0].constrained);
+    CHECK_FALSE(o.allows({790, 215}));
+    CHECK(o.lit({500, 300}));
+}
+
+TEST_CASE("lesson lock: a window an earlier step left open can only be closed") {
+    const Bindings keys;
+    const learn::Step s = step({"command:research"}, true);
+    std::vector<TaggedArea> tags = frameTags();
+    tags.push_back({"log:close", box(110, 270, 290, 295)});
+    // The Log opened during this step (a new turn): the player's, all of it.
+    LockState st = makeLockState(s, tags, {"log"}, {}, false, keys);
+    REQUIRE(st.windows.size() == 1);
+    CHECK_FALSE(st.windows[0].constrained);
+    CHECK(st.allows({200, 150}));
+    CHECK(st.windowKeys);
+    // Left open by an earlier step: only its Close button, and Esc and Enter.
+    st = makeLockState(s, tags, {"log"}, {}, false, keys, {"log"});
+    REQUIRE(st.windows.size() == 1);
+    CHECK(st.windows[0].constrained);
+    CHECK_FALSE(st.allows({200, 150}));
+    CHECK(st.allows({200, 280}));
+    CHECK_FALSE(st.windowKeys);
+    CHECK(hasKey(st, KeyChord{ImGuiKey_Escape}));
+    CHECK(hasKey(st, KeyChord{ImGuiKey_Enter}));
+    // A window the step names is the step's, left open or not.
+    const learn::Step logStep = step({"log:close"}, true, {"window:log"});
+    st = makeLockState(logStep, tags, {"log"}, {}, false, keys, {"log"});
+    CHECK(st.allows({200, 150}));
+    // A Close button of a window that is not open asks for no way to open it.
+    st = makeLockState(step({"log:close"}, true), tags, {}, {}, false, keys);
+    CHECK_FALSE(st.allows({25, 25}));   // command:research is not the Log's opener anyway
+    CHECK(std::none_of(st.keys.begin(), st.keys.end(), [&](const KeyChord& c) {
+        return std::find(keys.chords(Action::Log).begin(), keys.chords(Action::Log).end(), c) != keys.chords(Action::Log).end();
+    }));
+}

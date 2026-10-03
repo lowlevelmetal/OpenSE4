@@ -63,6 +63,7 @@ struct AppOptions {
     std::optional<std::string> manual;
     std::string learnDir;
     bool lessonCheck = false;        // --lesson-check: report whether a tutorial step's areas are on screen
+    bool lessonAudit = false;        // --lesson-audit: and what the lock lets through, what the text names
 
     // Input scripts (docs/BUILDING.md "Input scripts"): play one (its
     // screenshots and failure picture go to scriptOutput), or record the

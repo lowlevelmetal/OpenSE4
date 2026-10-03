@@ -123,15 +123,20 @@ public:
         d.spacer();
         if (d.button("History")) ui.open(ScreenId::History);
         if (d.button("Treaty Grid")) ui.open(ScreenId::TreatyGrid);
+        ui.tagItem("empires:treaty-grid");
         if (d.button("Intelligence", !knownEmpires(ui).empty())) ui.open(ScreenId::Intelligence);
         ui.tagItem("empires:intelligence");
         // Borders is a window of its own, over this one (spec 06 §7 Q96).
         if (d.button("Borders")) ui.open(ScreenId::Borders);
         if (d.button("Scores")) ui.open(ScreenId::Scores);
+        ui.tagItem("empires:scores");
         if (d.button("Victory Conditions")) ui.open(ScreenId::VictoryConditions);
+        ui.tagItem("empires:victory-conditions");
         if (d.button("Comparisons")) ui.open(ScreenId::Comparisons);
         d.spacer();
-        if (d.button("Our Race")) {
+        const bool ourRace = d.button("Our Race");
+        ui.tagItem("empires:our-race");
+        if (ourRace) {
             ScreenArgs a;
             a.empire = ui.session.player();
             ui.open(ScreenId::RaceReport, a);

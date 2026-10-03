@@ -101,7 +101,7 @@ void spotlight(ImDrawList* dl, const LockState& lock, ImVec2 size, ImU32 color) 
     xs.erase(std::unique(xs.begin(), xs.end()), xs.end());
     std::sort(ys.begin(), ys.end());
     ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
-    auto open = [&](float x, float y) { return lock.allows({x, y}) || lock.looks({x, y}); };
+    auto open = [&](float x, float y) { return lock.lit({x, y}); };
     for (size_t j = 0; j + 1 < ys.size(); ++j) {
         const float cy = (ys[j] + ys[j + 1]) * 0.5f;
         size_t i = 0;
@@ -177,6 +177,7 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const L
     if (activeSeen_ != progress_.active()) {
         activeSeen_ = progress_.active();
         activeSince_ = targetsSeen_ = ui.time;
+        leftOpen_ = facts.openWindows;
     }
     updateRecovery(ui, facts);
     const Prompts prompts = findPrompts(ui);
@@ -353,7 +354,7 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     h.add(facts.selections);
     for (const std::string& t : facts.tabs) h.add(std::string_view(t));
     h.add(facts.designComponents.value_or(-1)).add(facts.designHullChosen).add(facts.simulatorOwners).add(facts.simulatorItems);
-    h.add(std::string_view(facts.designType)).add(facts.designNamed).add(facts.selectedVehicle.value);
+    h.add(std::string_view(facts.designType)).add(facts.designNamed).add(std::string_view(facts.designVehicle)).add(facts.selectedVehicle.value);
     h.add(facts.battleBegun).add(facts.battleOrders.size()).add(facts.battleTurn);
     if (h.value() == seen_ || progress_.result() != learn::LessonProgress::Result::None) return;
     seen_ = h.value();
@@ -814,6 +815,7 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
             }
         };
         add(st->highlight, avoid.targets);
+        add(st->show, avoid.targets);   // what the text points at, to read
         add(st->allow, avoid.allowed);
     }
     avoid.prompts = prompts.boxes;

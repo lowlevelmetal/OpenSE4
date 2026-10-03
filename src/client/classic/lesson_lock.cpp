@@ -112,6 +112,7 @@ std::optional<std::string_view> windowOf(std::string_view tag) {
 }
 
 bool contains(const std::vector<std::string>& v, std::string_view x) { return std::find(v.begin(), v.end(), x) != v.end(); }
+bool contains(const std::vector<std::string_view>& v, std::string_view x) { return std::find(v.begin(), v.end(), x) != v.end(); }
 
 const TaggedArea* findTag(const std::vector<TaggedArea>& tags, std::string_view name) {
     for (const TaggedArea& t : tags)
@@ -157,32 +158,43 @@ std::vector<Action> tagActions(std::string_view tag) {
 }
 
 LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& tags, const std::vector<std::string>& openWindows,
-                        const std::vector<LockArea>& prompts, bool typing, const Bindings& bindings) {
+                        const std::vector<LockArea>& prompts, bool typing, const Bindings& bindings, const std::vector<std::string>& leftOpen) {
     LockState st;
     st.active = true;
     st.typing = typing;
-    // An action step's outlines are its buttons; an explanation step's are to look at.
+    // An action step's outlines are its buttons; an explanation step's are to
+    // look at, as is what any step shows.
     std::vector<std::string> allowed = step.done ? step.highlight : std::vector<std::string>{};
-    const std::vector<std::string> look = step.done ? std::vector<std::string>{} : step.highlight;
+    const std::vector<std::string> outlinedLook = step.done ? std::vector<std::string>{} : step.highlight;
+    std::vector<std::string> look = outlinedLook;
+    look.insert(look.end(), step.show.begin(), step.show.end());
     allowed.insert(allowed.end(), step.allow.begin(), step.allow.end());
     allowed.emplace_back("lesson:panel");
     allowed.emplace_back("status:lesson");
+    // The windows the step says nothing about.
+    auto named = [](const std::vector<std::string>& list, std::string_view window) {
+        return std::any_of(list.begin(), list.end(), [&](const std::string& tag) { return windowOf(tag) == window; });
+    };
+    // Those an earlier step left open can only be closed: whatever else they
+    // do is not what this step asks for (the queue windows of the step before
+    // "close both queue windows, then open Colonies").
+    for (const std::string& w : openWindows)
+        if (contains(leftOpen, w) && !named(allowed, w) && !named(look, w)) allowed.push_back(w + ":close");
     // A window the step works in that is closed: the ways to open it, two levels deep
     // (the designer's targets wait behind Designs, which waits behind its command button).
+    // A Close button needs no window opened for it.
     for (int depth = 0; depth < 2; ++depth) {
         std::vector<std::string> now = allowed;
         if (depth == 0) now.insert(now.end(), look.begin(), look.end());
         for (const std::string& tag : now) {
+            if (tag.ends_with(":close")) continue;
             const auto window = windowOf(tag);
             if (!window || contains(openWindows, *window)) continue;
             for (std::string& opener : learn::openersOf(*window))
                 if (!contains(allowed, opener)) allowed.push_back(std::move(opener));
         }
     }
-    // The windows the step says nothing about are the player's.
-    auto named = [](const std::vector<std::string>& list, std::string_view window) {
-        return std::any_of(list.begin(), list.end(), [&](const std::string& tag) { return windowOf(tag) == window; });
-    };
+    // The other windows the step says nothing about are the player's.
     auto constrained = [&](std::string_view window) { return named(allowed, window) || named(look, window); };
     // An outlined part another window the step names covers: that window's
     // Close button (and its keys), the way back the lesson points at. A window
@@ -194,10 +206,34 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
     for (auto w = openWindows.rbegin(); w != openWindows.rend(); ++w)
         if (const TaggedArea* t = findTag(tags, "window:" + *w))
             st.windows.push_back(LockWindow{*w, t->area, constrained(*w), {}, {}});
+    // The choosers the step names options of, and those options ("*": all of them).
+    std::vector<std::pair<const learn::ChoiceGroup*, std::vector<std::string_view>>> chosen;
+    for (const auto* list : {&step.highlight, &step.allow})
+        for (const std::string& tag : *list)
+            if (const learn::ChoiceGroup* g = learn::choiceGroupOf(tag)) {
+                auto at = std::find_if(chosen.begin(), chosen.end(), [&](const auto& c) { return c.first == g; });
+                if (at == chosen.end()) at = chosen.insert(chosen.end(), {g, {}});
+                at->second.push_back(std::string_view(tag).substr(g->tag.size() + 1));
+            }
+    auto layerOf = [&](const TaggedArea& t) -> LockChoices& {
+        if (t.top) return st.topChoices;
+        const auto window = windowOf(t.name);
+        auto in = std::find_if(st.windows.begin(), st.windows.end(), [&](const LockWindow& w) { return window && w.id == *window; });
+        return in != st.windows.end() ? in->choices : st.choices;
+    };
+    for (const TaggedArea& t : tags) {
+        const learn::ChoiceGroup* g = learn::choiceGroupOf(t.name);
+        if (!g) continue;
+        const auto picked = std::find_if(chosen.begin(), chosen.end(), [&](const auto& c) { return c.first == g; });
+        if (picked == chosen.end()) continue;
+        const std::string_view option = t.name.substr(g->tag.size() + 1);
+        const bool any = contains(picked->second, "*");
+        (any || contains(picked->second, option) ? layerOf(t).chosen : layerOf(t).refused).push_back(t.area);
+    }
     for (const TaggedArea& t : tags) {
         // A page arrow that stands in for an outlined order only turns the
         // page: it responds on an explanation step too.
-        const bool act = contains(allowed, t.name) || (t.pager && contains(look, t.name));
+        const bool act = contains(allowed, t.name) || (t.pager && contains(outlinedLook, t.name));
         if (!act && !contains(look, t.name)) continue;
         // The lesson panel and the T button lie above every window.
         if (isLessonTag(t.name)) {
@@ -230,39 +266,50 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
     return st;
 }
 
-bool LockState::allows(ImVec2 p) const {
-    if (anyContains(top, p)) return true;
-    for (const LockWindow& w : windows)
-        if (w.area.contains(p)) return !w.constrained || anyContains(w.areas, p);
-    return anyContains(areas, p);
-}
+bool LockChoices::refuses(ImVec2 p) const { return anyContains(refused, p) && !anyContains(chosen, p); }
 
-bool LockState::looks(ImVec2 p) const {
-    if (anyContains(top, p)) return false;
-    for (const LockWindow& w : windows)
-        if (w.area.contains(p)) return w.constrained && anyContains(w.lookAreas, p);
-    return anyContains(lookAreas, p);
+LockState::Access LockState::access(ImVec2 p) const {
+    if (anyContains(top, p)) return topChoices.refuses(p) ? Access::Refused : Access::Act;
+    for (const LockWindow& w : windows) {
+        if (!w.area.contains(p)) continue;
+        if (w.choices.refuses(p)) return Access::Refused;
+        if (!w.constrained || anyContains(w.areas, p)) return Access::Act;
+        return anyContains(w.lookAreas, p) ? Access::Look : Access::None;
+    }
+    if (choices.refuses(p)) return Access::Refused;
+    if (anyContains(areas, p)) return Access::Act;
+    return anyContains(lookAreas, p) ? Access::Look : Access::None;
 }
 
 LockState LockState::grown(float by) const {
     LockState g = *this;
     grow(g.areas, by);
     grow(g.lookAreas, by);
+    grow(g.choices.chosen, by);
+    grow(g.topChoices.chosen, by);
     for (LockWindow& w : g.windows) {
         grow(w.areas, by);
         grow(w.lookAreas, by);
+        grow(w.choices.chosen, by);
     }
     return g;
 }
 
 std::vector<LockArea> LockState::rects() const {
     std::vector<LockArea> out = top;
-    out.insert(out.end(), areas.begin(), areas.end());
-    out.insert(out.end(), lookAreas.begin(), lookAreas.end());
+    auto add = [&](const std::vector<LockArea>& v) { out.insert(out.end(), v.begin(), v.end()); };
+    add(areas);
+    add(lookAreas);
+    for (const LockChoices* c : {&choices, &topChoices}) {
+        add(c->chosen);
+        add(c->refused);
+    }
     for (const LockWindow& w : windows) {
         out.push_back(w.area);
-        out.insert(out.end(), w.areas.begin(), w.areas.end());
-        out.insert(out.end(), w.lookAreas.begin(), w.lookAreas.end());
+        add(w.areas);
+        add(w.lookAreas);
+        add(w.choices.chosen);
+        add(w.choices.refused);
     }
     return out;
 }
@@ -388,6 +435,7 @@ bool waits(const learn::Condition& c, bool negated) {
         case Fact::DesignComponents:
         case Fact::DesignHullChosen:
         case Fact::DesignTypeChosen:
+        case Fact::DesignVehicle:
         case Fact::DesignNamed:
         case Fact::SimulatorOwners:
         case Fact::SimulatorItems:

@@ -83,6 +83,8 @@ Learning to play (see docs/LEARNING.md):
   --lesson-check                  With --tutorial=SLUG:N: open the windows step N works in, report
                                   whether everything it highlights or allows is on screen, and
                                   exit with 1 if not (tools/check_lessons.py runs every step)
+  --lesson-audit                  The same, and print what the input lock lets through and whether
+                                  what the step's text names can be seen (check_lessons.py --audit)
 
 Play by e-mail (see docs/MULTIPLAYER.md):
   --pbem=GAME.gam                 Open the game file the host sent and play your turn; End Turn
@@ -237,6 +239,9 @@ int main(int argc, char** argv) {
             ok = !value.empty();
         } else if (key == "--lesson-check") {
             options.lessonCheck = true;
+        } else if (key == "--lesson-audit") {
+            options.lessonCheck = true;
+            options.lessonAudit = true;
         } else if (key == "--quadrant") {
             options.quadrantType = std::string(value);
         } else if (key == "--turn-style") {

@@ -282,6 +282,12 @@ public:
                 flags.push_back(sides.back() > 0 ? std::string{} : paint.styleOf(e));
             }
             combatTitleStrip(ui, d, sectorName(s, b.record().location, ui.session.player()), std::to_string(std::max(b.round(), 0)), flags, phase);
+            // For lessons: the title strip, with the combat turn and whose phase it is.
+            const auto window = std::find_if(ui.tags.begin(), ui.tags.end(), [](const UiTag& t) { return t.name == "window:tactical-combat"; });
+            if (window != ui.tags.end()) {
+                const ImVec2 min = window->min, max(window->max.x, window->min.y + ui.px(36));
+                ui.tag("tactical-combat:title", min, max);
+            }
             // A simulation's sides: their numbered boxes where a real battle shows flags (spec 04 §17).
             const float flagsX = layoutGeometry().tacticalTitle.flags;
             for (size_t i = 0; i < sides.size() && i < (frameW() < 1024.0f ? 6u : 10u); ++i)

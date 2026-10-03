@@ -37,6 +37,18 @@ struct LockArea {
     LockArea grown(float by) const { return {ImVec2(min.x - by, min.y - by), ImVec2(max.x + by, max.y + by)}; }
 };
 
+// The options of choosers in one layer (the main window, a window, or the
+// prompts and pickers above them) that a step chooses among (docs/LEARNING.md
+// "Choices"): the options it names pass, the others are refused, even inside
+// an allowed list.
+struct LockChoices {
+    std::vector<LockArea> chosen;    // the options the step names
+    std::vector<LockArea> refused;   // the other options of the same choosers
+    // Refused at `p`: a refused option, unless a chosen one is there too (the
+    // spotlight's areas, grown, may overlap their neighbours).
+    bool refuses(ImVec2 p) const;
+};
+
 // An open classic window as the lock sees it.
 struct LockWindow {
     std::string id;                  // its window id ("designs")
@@ -47,27 +59,49 @@ struct LockWindow {
     bool constrained = false;
     std::vector<LockArea> areas;      // where the pointer may act
     std::vector<LockArea> lookAreas;  // where it may only point and scroll
+    LockChoices choices;
 };
 
 struct LockState {
     bool active = false;             // a tutorial step locks the input
     // Above every window and always usable: the game's prompts and Dear
-    // ImGui's popups, the lesson panel and the T button.
+    // ImGui's popups, the lesson panel and the T button (except the options of
+    // their choosers that a step does not choose).
     std::vector<LockArea> top;
+    LockChoices topChoices;
     std::vector<LockWindow> windows; // the open classic windows, front first
     std::vector<LockArea> areas;     // the main window's parts (under every window) where the pointer may act
-    std::vector<LockArea> lookAreas; // where it may only point and scroll (an explanation step's outlines)
+    // Where it may only point and scroll: an explanation step's outlines and
+    // what a step shows (`show`).
+    std::vector<LockArea> lookAreas;
+    LockChoices choices;             // the main window's
     std::vector<KeyChord> keys;      // chords that pass
     bool typing = false;             // a text field has the keyboard: every key passes
     bool prompt = false;             // a prompt or popup is open: its answer keys pass (Y, N, T, S, Enter, Esc)
     bool windowKeys = false;         // the window in front is not locked: Esc and Enter (close it) pass
 
-    // Whether the pointer may act at `p`: a top area, else the front-most
-    // window there (all of it, or its allowed parts), else the main window's
-    // allowed parts.
-    bool allows(ImVec2 p) const;
-    // Whether it may only point and scroll there.
-    bool looks(ImVec2 p) const;
+    // What the pointer may do at a point.
+    enum class Access : uint8_t {
+        Act,      // click, drag, point, scroll
+        Look,     // point and scroll (an explanation step's outline, a part shown)
+        Refused,  // an option the step does not choose: point and scroll, never click; dimmed
+        None,     // nothing; dimmed
+    };
+    // A top area (but a refused option in it), else the front-most window
+    // there (all of it, or its allowed parts), else the main window's allowed parts.
+    Access access(ImVec2 p) const;
+    // Whether the pointer may act at `p`.
+    bool allows(ImVec2 p) const { return access(p) == Access::Act; }
+    // Whether it may only point and scroll there (a refused option too: its list scrolls).
+    bool looks(ImVec2 p) const {
+        const Access a = access(p);
+        return a == Access::Look || a == Access::Refused;
+    }
+    // Whether the spotlight leaves it clear: what the pointer may act on or look at.
+    bool lit(ImVec2 p) const {
+        const Access a = access(p);
+        return a == Access::Act || a == Access::Look;
+    }
     // The same lock with every part grown by `by` on each side (windows and
     // prompts keep their size): the spotlight's clear areas reach round the
     // outlines, which lie just outside their parts.
@@ -85,26 +119,36 @@ struct TaggedArea {
     std::string_view name;
     LockArea area;
     bool pager = false;
+    // Drawn in a prompt or a Dear ImGui popup (a picker, a drop-down list),
+    // which lie above every window.
+    bool top = false;
 };
 
 // The lock for a step, from the frame drawn last:
 // - the areas of the step's allowed tags, and of its highlighted ones when it
 //   waits for an action (a step with `done`); an explanation step's outlines
-//   can be pointed at and scrolled, not clicked, except a page arrow that
-//   stands in for an outlined order (it only turns the page);
+//   and every step's `show` parts can be pointed at and scrolled, not clicked,
+//   except a page arrow that stands in for an outlined order (it only turns the page);
+// - of a chooser the step names an option of (`designs:create:ship`), only the
+//   options it names: the others are refused wherever they are drawn, in a
+//   picker above every window as in an allowed list (`<chooser>:*`: all pass);
 // - the lesson panel and the T button; when a window the step works in is
 //   closed, the tags that open it (so a step never waits behind a closed
 //   window); when another window covers an outlined part, that window's Close
 //   button;
 // - every open window the step says nothing about (the game opened it, or an
-//   allowed click did), and the game's prompts and ImGui popups;
+//   allowed click did), and the game's prompts and ImGui popups; but of a
+//   window that was open already when the step began (`leftOpen`: an earlier
+//   step left it), only its Close button and Esc and Enter;
 // - the step's keys, the hotkeys of its tags (a command button's F-key, End
 //   Turn's F12, an order's letter, Esc and Enter for a `:close` tag), the
 //   panel's keys (Ctrl+H, Next, Back, Skip, Read More) and Shift+F1.
 // `openWindows` are the open windows' ids back to front (the last one is in
-// front); each window's rectangle is its `window:<id>` tag.
+// front); each window's rectangle is its `window:<id>` tag. `leftOpen`: the
+// windows that were open when the step began.
 LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& tags, const std::vector<std::string>& openWindows,
-                        const std::vector<LockArea>& prompts, bool typing, const Bindings& bindings);
+                        const std::vector<LockArea>& prompts, bool typing, const Bindings& bindings,
+                        const std::vector<std::string>& leftOpen = {});
 // The actions whose keys do what a click on the tag does.
 std::vector<Action> tagActions(std::string_view tag);
 // The window a tag is in ("research:areas", "window:research"), if any.

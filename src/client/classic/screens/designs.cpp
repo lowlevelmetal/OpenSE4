@@ -23,6 +23,7 @@
 #include "datafile/datafile.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
+#include "learn/ids.hpp"
 
 #include <algorithm>
 #include <array>
@@ -166,6 +167,7 @@ private:
         textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {16, 450}, blue, "(obsolete designs are deleted automatically)");
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRect(d.at({269, 58}), d.at({574, 462}), imColor(palette::kButton));
+        ui.tag("designs:details", d.at({269, 58}), d.at({574, 462}));   // for lessons: the selected design's figures
         if (selected_.valid()) detail(ui, d, ui.state().design(selected_));
         else
             textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {276, 66}, imColor(palette::kSecondary),
@@ -445,9 +447,13 @@ private:
         }
         typePicker(ui);
         if (d.button("Copy", own != nullptr)) openDesigner("copy");
+        ui.tagItem("designs:copy");
         const bool editable = own && game::designIsPrototype(*own) && !game::designInQueue(ui.state(), ui.me().id, own->id);
         if (d.button("Edit", editable)) openDesigner("edit");
-        if (d.button("Upgrade", own != nullptr)) {
+        ui.tagItem("designs:edit");
+        const bool upgrade = d.button("Upgrade", own != nullptr);
+        ui.tagItem("designs:upgrade");
+        if (upgrade) {
             std::vector<game::DesignEntry> entries = own->entries;
             if (upgradeEntries(ui.rules(), ui.me(), entries)) {
                 openDesigner("upgrade");
@@ -481,8 +487,10 @@ private:
         listHeader(ui, "##typehead", kName, listRowsWidth(ui, ImGui::GetContentRegionAvail().x));
         beginList(ui, "##types", ImVec2(0, -footer), kListLineStep);
         std::optional<ruleset::VehicleType> picked;
-        for (ruleset::VehicleType t : types)
+        for (ruleset::VehicleType t : types) {
             if (ImGui::Selectable(std::string(ruleset::displayName(t)).c_str(), false)) picked = t;
+            ui.tagOption("designs:create", learn::vehicleTypeId(t));   // a lesson may let one kind through
+        }
         if (types.empty()) ImGui::TextColored(kDimText, "No hull is available yet.");
         endList(ui);
         const bool cancel = ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
@@ -687,6 +695,7 @@ private:
         ui.facts.designHullChosen = hullChosen_;
         ui.facts.designType = designType_;
         ui.facts.designNamed = !name().empty() && !designNameTaken(ui.state(), ui.me(), name());
+        ui.facts.designVehicle = learn::vehicleTypeId(type_);
         std::optional<game::DesignStats> st;
         if (hull_) st = game::computeDesignStats(ui.rules(), &ui.me(), *hull_, entries_);
         hovered_.reset();
@@ -743,8 +752,13 @@ private:
         if (dropBox(ui, d, "##size", 55, size, "Size")) ImGui::OpenPopup("##sizes");
         ui.tag("create-design:hull", d.at({cd::kBoxX, 55}), d.at({cd::kBoxX + cd::kBoxW, 55 + cd::kBoxH}));
         if (ImGui::BeginPopup("##sizes")) {
-            for (uint32_t h : hullsOfType(r, ui.me(), type_, hull_))
-                if (ImGui::Selectable(std::format("{} ({} kT)##{}", r.hull(h).name, r.hull(h).tonnage, h).c_str(), hull_ == h)) setHull(ui, h);
+            const std::vector<uint32_t> hulls = hullsOfType(r, ui.me(), type_, hull_);
+            // For lessons: the smallest hull (the first of equals) and the others.
+            const auto smallest = std::min_element(hulls.begin(), hulls.end(), [&](uint32_t a, uint32_t b) { return r.hull(a).tonnage < r.hull(b).tonnage; });
+            for (auto h = hulls.begin(); h != hulls.end(); ++h) {
+                if (ImGui::Selectable(std::format("{} ({} kT)##{}", r.hull(*h).name, r.hull(*h).tonnage, *h).c_str(), hull_ == *h)) setHull(ui, *h);
+                ui.tagOption("create-design:hull", h == smallest ? "smallest" : "other");
+            }
             ImGui::EndPopup();
         }
 
@@ -754,8 +768,10 @@ private:
         ui.tag("create-design:type", d.at({cd::kBoxX, 95}), d.at({cd::kBoxX + cd::kBoxW, 95 + cd::kBoxH}));
         if (ImGui::BeginPopup("##types")) {
             const auto& types = ui.me().designTypes;
-            for (size_t i = 0; i < types.size(); ++i)
+            for (size_t i = 0; i < types.size(); ++i) {
                 if (ImGui::Selectable(std::format("{}##{}", types[i], i).c_str(), types[i] == designType_)) designType_ = types[i];
+                ui.tagOption("create-design:type", learn::optionId(types[i]));
+            }
             ImGui::EndPopup();
         }
 
@@ -786,6 +802,7 @@ private:
 
         // The figures box: lines 16 px apart from y 4, labels at x 4, values at x 120.
         dl->AddRect(d.at(cd::kFigures), d.at(cd::kFigures + cd::kFiguresSize), imColor(palette::kButton));
+        ui.tag("create-design:figures", d.at(cd::kFigures), d.at(cd::kFigures + cd::kFiguresSize));
         auto row = [&](float y, const char* name, const std::string& value, ImU32 color = IM_COL32_WHITE) {
             if (name) label(ui, d, cd::kFigures + Vec2{4, y}, name);
             if (!value.empty()) textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, cd::kFigures + Vec2{120, y}, color, value);

@@ -728,6 +728,7 @@ public:
             ImGui::PopID();
         }
         endList(ui);
+        ui.tagItem("strategies:list");   // for lessons
         ImGui::SameLine();
         ImGui::BeginChild("##page", ImVec2(0, 0), ImGuiChildFlags_Borders);
         if (list.empty()) {
@@ -764,11 +765,16 @@ public:
             if (changed) status_.issue(ui, cmd::SetStrategy{selected_, st});
         }
         ImGui::EndChild();
+        ui.tagItem("strategies:page");   // for lessons: the strategy's settings on the page shown
 
         d.beginButtons();
         static constexpr std::array<const char*, 4> kPages{"Movement", "Firing", "Launching", "Formation"};
-        for (int i = 0; i < 4; ++i)
+        ImVec2 pagesMin;
+        for (int i = 0; i < 4; ++i) {
             if (d.tab(kPages[size_t(i)], page_ == i)) page_ = i;
+            if (i == 0) pagesMin = ImGui::GetItemRectMin();
+        }
+        ui.tag("strategies:pages", pagesMin, ImGui::GetItemRectMax());
         d.spacer();
         if (d.button("Add")) {
             ruleset::CombatStrategy st = !ui.rules().data().combatStrategies.empty() ? ui.rules().data().combatStrategies.front()

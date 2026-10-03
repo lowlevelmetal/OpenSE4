@@ -246,6 +246,10 @@ public:
     void tagListParts(std::string_view base, const ListParts& list);
     // The last ImGui item (a button, a child window).
     void tagItem(std::string_view name) { tag(name, ImGui::GetItemRectMin(), ImGui::GetItemRectMax()); }
+    // The last ImGui item, an option of a chooser (learn/ids.hpp choiceGroups:
+    // a row of a list, an entry of a picker), as `<chooser>:<option>`: only the
+    // part its list shows (nothing for a row scrolled out of view).
+    void tagOption(std::string_view chooser, std::string_view option);
     // The last ImGui item, a page arrow of the order strip, as the stand-in
     // for the order `name` on the page it leads to (UiTag::pager).
     void tagPager(std::string_view name);

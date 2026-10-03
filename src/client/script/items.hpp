@@ -34,6 +34,13 @@ bool labelMatches(std::string_view label, std::string_view wanted);
 // Collecting on or off (and Dear ImGui's hooks with it).
 void collectItems(bool on);
 bool collectingItems();
+// While items are collected, the classic windows' drawn labels are too, in a
+// list of their own that scripts never match (the lesson audit reads them,
+// client/classic/lesson_audit.hpp): a label drawn as text, the last ImGui
+// item, or at a place.
+bool collectingTexts();
+void reportText(std::string_view text);
+void reportText(std::string_view text, ImVec2 min, ImVec2 max);
 
 // A widget of ours, the last ImGui item: its label as shown.
 void reportItem(std::string_view label);
@@ -57,5 +64,6 @@ private:
 // lastItems() returns, until the next frame ends.
 void endItemFrame();
 const std::vector<Item>& lastItems();
+const std::vector<Item>& lastTexts();   // the drawn labels of that frame
 
 } // namespace opense4::client::script

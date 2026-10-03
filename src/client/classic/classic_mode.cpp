@@ -2,6 +2,7 @@
 
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
+#include "client/classic/lesson_audit.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/pointers.hpp"
 #include "client/classic/reports.hpp"
@@ -12,7 +13,9 @@
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
+#include "learn/ids.hpp"
 #include "learn/markdown.hpp"
+#include "learn/tokens.hpp"
 #include "learn/resume.hpp"
 
 #include "core/log.hpp"
@@ -262,20 +265,39 @@ void ClassicMode::updateLock(UiContext& ui) {
         lock_.set({});
         return;
     }
-    std::vector<TaggedArea> tags;
-    tags.reserve(ui.tags.size());
-    for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}, t.pager});
-    // The open windows as they are shown, back to front: where they overlap, the front-most one decides.
-    std::vector<std::string> open;
-    for (const auto& [id, screen] : screens_) open.emplace_back(windowId(id));
-    open = windowsBackToFront(ui, std::move(open));
     // The game's prompts, and every ImGui popup (the prompts windows raise, combo lists).
     std::vector<LockArea> prompts;
     for (const auto& [a, b] : ui.promptAreas) prompts.push_back({a, b});
     for (const ImGuiPopupData& p : ImGui::GetCurrentContext()->OpenPopupStack)
         if (p.Window && (p.Window->Active || p.Window->WasActive))
             prompts.push_back({p.Window->Pos, ImVec2(p.Window->Pos.x + p.Window->Size.x, p.Window->Pos.y + p.Window->Size.y)});
-    lock_.set(makeLockState(*step, tags, open, prompts, ImGui::GetIO().WantTextInput, appSettings().controls.bindings));
+    const std::vector<TaggedArea> tags = lockTags(ui);
+    const std::vector<std::string> open = lockWindows(ui);
+    lock_.set(makeLockState(*step, tags, open, prompts, ImGui::GetIO().WantTextInput, appSettings().controls.bindings,
+                            lesson_->windowsAtStepStart()));
+}
+
+std::vector<TaggedArea> ClassicMode::lockTags(const UiContext& ui) const {
+    // A tag drawn in a popup or a prompt lies above every window, as they do.
+    auto onTop = [&](const UiTag& t) {
+        const ImGuiWindow* root = t.window ? t.window->RootWindow : nullptr;
+        if (!root) return false;
+        if ((root->Flags & ImGuiWindowFlags_Popup) != 0) return true;
+        return std::any_of(ui.promptAreas.begin(), ui.promptAreas.end(), [&](const auto& area) {
+            return std::abs(area.first.x - root->Pos.x) < 1.0f && std::abs(area.first.y - root->Pos.y) < 1.0f;
+        });
+    };
+    std::vector<TaggedArea> tags;
+    tags.reserve(ui.tags.size());
+    for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}, t.pager, onTop(t)});
+    return tags;
+}
+
+std::vector<std::string> ClassicMode::lockWindows(const UiContext& ui) const {
+    // The open windows as they are shown, back to front: where they overlap, the front-most one decides.
+    std::vector<std::string> open;
+    for (const auto& [id, screen] : screens_) open.emplace_back(windowId(id));
+    return windowsBackToFront(ui, std::move(open));
 }
 
 void ClassicMode::prepareLessonCheck() {
@@ -324,6 +346,7 @@ void ClassicMode::lessonCheckReport(UiContext& ui) {
     };
     std::vector<std::string> tags = step->highlight;
     tags.insert(tags.end(), step->allow.begin(), step->allow.end());
+    tags.insert(tags.end(), step->show.begin(), step->show.end());
     std::string missing, situational, under;
     for (const std::string& tag : tags) {
         const auto seen = std::find_if(ui.tags.begin(), ui.tags.end(), [&](const UiTag& t) { return t.name == tag && onScreen(t); });
@@ -331,7 +354,10 @@ void ClassicMode::lessonCheckReport(UiContext& ui) {
             if (covered(*seen) && under.find(" " + tag) == std::string::npos) under += " " + tag;
             continue;
         }
-        const bool moment = std::find(std::begin(kSituational), std::end(kSituational), tag) != std::end(kSituational);
+        // The options of a picker show once it opens (Create's vehicle types), and "<chooser>:*" names no one place.
+        const learn::ChoiceGroup* choice = learn::choiceGroupOf(tag);
+        const bool moment = std::find(std::begin(kSituational), std::end(kSituational), tag) != std::end(kSituational) ||
+                            (choice && (choice->picker || tag.ends_with(":*")));
         (moment ? situational : missing) += " " + tag;
     }
     const size_t areas = lock_.state().parts();
@@ -340,7 +366,47 @@ void ClassicMode::lessonCheckReport(UiContext& ui) {
                 under.empty() ? "" : " under-panel:", under.c_str());
     std::fflush(stdout);
     if (!missing.empty() || !lock_.active()) exitCode_ = 1;
+    if (options_.lessonAudit) lessonAuditReport(ui, *step);
     if (options_.lessonCheckQuits) ui.requests.quitGame = true;
+}
+
+AuditReport ClassicMode::auditStep(const UiContext& ui, const learn::Step& step) const {
+    // What the lock lets through and what the text names (lesson_audit.hpp),
+    // with the frame's tags, the widgets and labels of the frame drawn last,
+    // and the spotlight as LessonRunner::drawOutlines grows it.
+    AuditInput in;
+    in.step = &step;
+    in.text = learn::expandTokens(step.text, ui.state(), ui.session.player());
+    in.tags = lockTags(ui);
+    in.openWindows = lockWindows(ui);
+    in.lock = lock_.state();
+    const float ring = ui.px(3) + std::max(2.0f, ui.px(4.0f)) + std::max(1.0f, ui.px(1.0f));
+    in.spotlight = in.lock.grown(ring);
+    for (const script::Item& item : script::lastItems()) in.items.push_back({item.label, item.scope, {item.min, item.max}, item.disabled});
+    for (const script::Item& text : script::lastTexts()) in.items.push_back({"text:" + text.label, text.scope, {text.min, text.max}, false});
+    for (const UiTag& t : ui.tags)
+        if (t.name == "lesson:panel") in.panel = LockArea{t.min, t.max};
+    in.display = ImGui::GetIO().DisplaySize;
+    return classic::auditStep(in);
+}
+
+std::vector<std::string> ClassicMode::lessonAudit() const {
+    const learn::Step* step = lesson_ && ui_ ? lesson_->activeStep() : nullptr;
+    if (!step) return {};
+    const AuditReport report = auditStep(*ui_, *step);
+    const std::string where = std::format("{}:{}", lesson_->lesson().slug, lesson_->progress().active() + 1);
+    std::vector<std::string> out;
+    for (const std::string& line : report.lines) out.push_back(std::format("lesson-audit {} {}", where, line));
+    out.push_back(std::format("lesson-audit {} end flags={} unmatched={} layout={:.0f}x{:.0f}", where, report.flags, report.unmatched, frameW(), frameH()));
+    return out;
+}
+
+void ClassicMode::lessonAuditReport(UiContext& ui, const learn::Step& step) {
+    const AuditReport report = auditStep(ui, step);
+    const std::string where = std::format("{}:{}", lesson_->lesson().slug, lesson_->progress().active() + 1);
+    for (const std::string& line : report.lines) std::printf("lesson-audit %s %s\n", where.c_str(), line.c_str());
+    std::printf("lesson-audit %s end flags=%d unmatched=%d layout=%.0fx%.0f\n", where.c_str(), report.flags, report.unmatched, frameW(), frameH());
+    std::fflush(stdout);
 }
 
 std::optional<std::string> ClassicMode::selectForAutomation(const std::string& what) {
@@ -1170,9 +1236,11 @@ void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
     ui.promptWindow();   // never covered by a tutorial's input lock
     ImGui::TextWrapped("%s", std::format("A new colony on {}. What kind of colony should it be?", s.galaxy.object(planet).name).c_str());
     ImGui::Spacing();
-    for (const std::string& t : types)
+    for (const std::string& t : types) {
         if (ImGui::Button(std::format("{}{}", t, t == c.colonyType ? " (suggested)" : "").c_str(), ui.size({280, 26})))
             session_->issue(game::cmd::SetColonyType{planet, t});
+        ui.tagOption("colony-type", t == c.colonyType ? "suggested" : "other");   // a lesson may let the suggested one through
+    }
     ImGui::End();
     ImGui::PopFont();
 }

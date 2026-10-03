@@ -808,6 +808,7 @@ private:
         ImGui::SameLine(ui.px(84));
         resources(ui, ui.me().stockpile, true);
         ImGui::EndGroup();
+        ui.tagItem("set-queue:rate");   // for lessons: the queue's build rate and the treasury
 
         // A second column inside the content's 556 px.
         ImGui::SameLine(ui.px(340));
@@ -907,6 +908,7 @@ private:
                 const RowEvents ev = tableRow(ui, static_cast<int>(i), false);
                 script::reportItem(b.name);   // input scripts find an item by its name
                 lessonRow(ui, b.name, lessonRow_);   // the design a tutorial step names, in view
+                tagNamedRow(ui, "set-queue:available", b.name);
                 if (ev.hovered) hoverAvail_ = i;
                 if (ev.clicked || ev.doubleClicked) add(ui, b);
                 if (ev.rightClicked) openItemReport(ui, b.item);

@@ -14,8 +14,8 @@ namespace {
 struct Registry {
     bool on = false;
     std::string scope;
-    std::vector<Item> current;
-    std::vector<Item> last;
+    std::vector<Item> current, currentTexts;
+    std::vector<Item> last, lastTexts;
 };
 
 Registry& registry() {
@@ -43,10 +43,10 @@ bool visiblePart(ImVec2& min, ImVec2& max) {
     return max.x > min.x && max.y > min.y;
 }
 
-void add(std::string_view label, ImVec2 min, ImVec2 max, bool disabled) {
+void add(std::string_view label, ImVec2 min, ImVec2 max, bool disabled, bool text = false) {
     Registry& r = registry();
     if (!visiblePart(min, max)) return;
-    r.current.push_back(Item{std::string(label), r.scope, rootName(), min, max, disabled});
+    (text ? r.currentTexts : r.current).push_back(Item{std::string(label), r.scope, rootName(), min, max, disabled});
 }
 
 // Dear ImGui's hook: a labelled item was just added; LastItemData holds it.
@@ -127,10 +127,26 @@ void collectItems(bool on) {
     if (!on) {
         r.current.clear();
         r.last.clear();
+        r.currentTexts.clear();
+        r.lastTexts.clear();
     }
 }
 
 bool collectingItems() { return registry().on; }
+
+bool collectingTexts() { return registry().on; }
+
+void reportText(std::string_view text) {
+    if (!collectingTexts()) return;
+    const ImGuiContext* g = ImGui::GetCurrentContext();
+    if (!g) return;
+    add(text, g->LastItemData.Rect.Min, g->LastItemData.Rect.Max, false, true);
+}
+
+void reportText(std::string_view text, ImVec2 min, ImVec2 max) {
+    if (!collectingTexts()) return;
+    add(text, min, max, false, true);
+}
 
 void reportItem(std::string_view label) {
     if (!registry().on) return;
@@ -162,9 +178,12 @@ void endItemFrame() {
     if (ImGuiContext* g = ImGui::GetCurrentContext()) g->TestEngineHookItems = true;
     r.last = std::move(r.current);
     r.current.clear();
+    r.lastTexts = std::move(r.currentTexts);
+    r.currentTexts.clear();
     r.scope.clear();
 }
 
 const std::vector<Item>& lastItems() { return registry().last; }
+const std::vector<Item>& lastTexts() { return registry().lastTexts; }
 
 } // namespace opense4::client::script

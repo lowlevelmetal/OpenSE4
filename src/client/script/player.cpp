@@ -250,6 +250,12 @@ Player::Status Player::run(const Step& st, const Probe& probe, FrameOutput& out)
             out.messages.push_back("items:" + list);
             return Status::Done;
         }
+        case Op::Audit: {
+            const std::vector<std::string> lines = probe.lessonAudit();
+            if (lines.empty()) out.messages.push_back("audit: no tutorial step is active");
+            for (const std::string& l : lines) out.messages.push_back(l);
+            return Status::Done;
+        }
         case Op::Print: {
             std::string text;
             for (const std::string& key : st.facts) {

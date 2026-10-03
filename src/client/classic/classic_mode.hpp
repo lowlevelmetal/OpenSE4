@@ -7,6 +7,7 @@
 #include "client/audio.hpp"
 #include "client/classic/frontend.hpp"
 #include "client/classic/learn_content.hpp"
+#include "client/classic/lesson_audit.hpp"
 #include "client/classic/lesson_runner.hpp"
 #include "client/classic/main_window.hpp"
 #include "client/mode.hpp"
@@ -54,6 +55,9 @@ struct ClassicOptions {
     // (at once, or after the screenshot when one is asked for).
     bool lessonCheck = false;
     bool lessonCheckQuits = true;
+    // --lesson-audit: the check, then what the input lock lets through and
+    // whether what the step's text names can be seen (lesson_audit.hpp).
+    bool lessonAudit = false;
     // An input script plays or the session is recorded (docs/BUILDING.md
     // "Input scripts"): the mode tracks what scripts check (probe()).
     bool scripted = false;
@@ -154,6 +158,9 @@ private:
     // The tutorial input lock, made at the end of each frame for the next.
     classic::InputLock lock_;
     void updateLock(classic::UiContext& ui);
+    // The frame's UI tags as the lock reads them, and the open windows back to front.
+    std::vector<classic::TaggedArea> lockTags(const classic::UiContext& ui) const;
+    std::vector<std::string> lockWindows(const classic::UiContext& ui) const;
     std::string refusedKey_;    // a key the lock refused since the last frame (its name)
     // The keyboard goes to the classic window in front (keepFocusOnFrontWindow).
     void keepFocusOnFrontWindow();
@@ -161,6 +168,9 @@ private:
     // --lesson-check: the windows the step works in, and its report.
     void prepareLessonCheck();
     void lessonCheckReport(classic::UiContext& ui);
+    void lessonAuditReport(classic::UiContext& ui, const learn::Step& step);
+    classic::AuditReport auditStep(const classic::UiContext& ui, const learn::Step& step) const;
+    std::vector<std::string> lessonAudit() const override;
     int lessonCheckFrame_ = -1;
     int exitCode_ = 0;
 

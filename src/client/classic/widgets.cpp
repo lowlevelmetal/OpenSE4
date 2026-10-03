@@ -121,6 +121,10 @@ void wrappedDim(const std::string& text) {
 void textAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text) {
     const ImVec2 p = d.at({at.x, at.y + lead});
     ImGui::GetWindowDrawList()->AddText(font, ui.fontPx(size), {std::floor(p.x), std::floor(p.y)}, color, text.data(), text.data() + text.size());
+    if (script::collectingTexts()) {   // the lesson audit reads the labels
+        const ImVec2 sz = font->CalcTextSizeA(ui.fontPx(size), FLT_MAX, 0.0f, text.data(), text.data() + text.size());
+        script::reportText(text, p, ImVec2(p.x + sz.x, p.y + sz.y));
+    }
 }
 
 void textRightAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text) {

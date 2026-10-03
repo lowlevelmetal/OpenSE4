@@ -69,6 +69,8 @@ public:
     virtual bool typing() const = 0;
     // Where the pointer is and the tutorial input lock, described (for dump).
     virtual std::string lockDescription() const { return {}; }
+    // The lesson audit of the active tutorial step as the game is now (for audit).
+    virtual std::vector<std::string> lessonAudit() const { return {}; }
     // A condition (docs/LEARNING.md "Conditions") over the game; "since"
     // counters count from `since`. Nothing (with `error`) without a game.
     virtual std::optional<bool> holds(const learn::Condition& c, const learn::Mark& since, std::string& error) const = 0;

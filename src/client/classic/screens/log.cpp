@@ -114,6 +114,7 @@ public:
         ImGui::BeginChild("##details", ui.size(kDetailsSize), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
         details(ui, sel);
         ImGui::EndChild();
+        ui.tagItem("log:details");   // for lessons: the entry selected, to read
         cannotReplyPopup(ui);
 
         // Button column (spec 06 §4.1): All, the seven filters, an empty slot,

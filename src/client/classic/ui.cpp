@@ -81,6 +81,7 @@ void resources(UiContext& ui, const game::Resources& r, bool compact) {
 
 void labelValue(UiContext& ui, const char* label, const std::string& value, float valueColumn) {
     ImGui::TextColored(kLabelBlue, "%s", label);
+    script::reportText(label);
     ImGui::SameLine(ui.px(valueColumn));
     ImGui::TextUnformatted(value.c_str());
 }
@@ -90,6 +91,7 @@ void heading(UiContext& ui, const char* text) { heading(ui.painter(), text); }
 void heading(const Painter& p, const char* text) {
     ImGui::PushFont(p.fonts.bold, p.fontPx(kTitleSize));
     ImGui::TextColored(imColorV(palette::kHeading), "%s", text);
+    script::reportText(text);
     ImGui::PopFont();
 }
 
@@ -383,6 +385,18 @@ void UiContext::tagListParts(std::string_view base, const ListParts& list) {
         if (std::any_of(tags.begin(), tags.end(), [&](const UiTag& t) { return t.name == name; })) continue;
         tag(name, list.parts[i].first, list.parts[i].second);
     }
+}
+
+void UiContext::tagOption(std::string_view chooser, std::string_view option) {
+    ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+    if (const ImGuiWindow* w = ImGui::GetCurrentWindowRead()) {
+        // Across the window's inner width (a table row's clip is its first
+        // column's), down to what the rows' clip shows (under a table's headings).
+        min = ImVec2(std::max(min.x, w->InnerClipRect.Min.x), std::max(min.y, w->ClipRect.Min.y));
+        max = ImVec2(std::min(max.x, w->InnerClipRect.Max.x), std::min(max.y, w->ClipRect.Max.y));
+    }
+    if (max.x <= min.x || max.y <= min.y) return;
+    tag(std::format("{}:{}", chooser, option), min, max);
 }
 
 void UiContext::tagPager(std::string_view name) {

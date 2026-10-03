@@ -164,6 +164,7 @@ private:
                 ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
                 const bool clicked = ImGui::Selectable(std::format("{}##row", p.name).c_str(), false, ImGuiSelectableFlags_None, ImVec2(w, ui.px(kRowH)));
                 ImGui::PopStyleColor();
+                ui.tagOption("intelligence:projects", intelTargetKind(p) == IntelTarget::None ? "defense" : "other");   // for lessons
                 if (clicked) add(ui, i);
                 if (ImGui::IsItemHovered()) hovered_ = i;
                 // The name at x 11 of the list, the cost right-aligned at x 525.

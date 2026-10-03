@@ -50,6 +50,10 @@ public:
     // the input (a tutorial, Free Play off, not over), and that step.
     bool locking() const;
     const learn::Step* activeStep() const;
+    // The windows that were open when the active step began (left by the
+    // steps before it): the lock lets only their Close buttons through, unless
+    // the step names them.
+    const std::vector<std::string>& windowsAtStepStart() const { return leftOpen_; }
     // A press the lock refused (`where`), or a key (none; `key` names it): a
     // note by the pointer or the panel, and the outlines flash.
     void refused(std::optional<ImVec2> where, double time, std::string key = {});
@@ -138,6 +142,7 @@ private:
     // The active step: since when, and when its targets were last on screen
     // (or a way back to them was).
     std::optional<size_t> activeSeen_;
+    std::vector<std::string> leftOpen_;   // windowsAtStepStart()
     double activeSince_ = 0;
     double targetsSeen_ = 0;
     Recovery recovery_;

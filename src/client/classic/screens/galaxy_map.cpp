@@ -10,6 +10,7 @@
 
 #include <array>
 #include <format>
+#include <optional>
 
 namespace opense4::client::classic {
 
@@ -45,6 +46,7 @@ public:
         if (editing_) opt.highlight.push_back(*editing_);
         ImGui::SetCursorScreenPos(d.at({22, 43}));
         const QuadrantMapResult r = quadrantMap(ui, "##map", {544, 376}, opt);
+        ui.tag("galaxy-map:map", d.at({22, 43}), d.at({566, 419}));   // for lessons
         if (r.clicked) {
             editing_ = *r.clicked;
             draft_ = noteOf(me, *r.clicked);
@@ -100,9 +102,13 @@ public:
                                                                                      {MapOverlay::EnemyClaimed, "Enemy Claimed"},
                                                                                      {MapOverlay::Spaceports, "Spaceports"},
                                                                                      {MapOverlay::ResupplyDepots, "Resupply Depots"}}};
-        for (const auto& [overlay, label] : kOverlays)
+        std::optional<ImVec2> overlaysMin;
+        for (const auto& [overlay, label] : kOverlays) {
             if (d.tab(label, overlay_ == overlay)) overlay_ = overlay;
+            if (!overlaysMin) overlaysMin = ImGui::GetItemRectMin();
+        }
         if (d.check("Show Distances", distances_)) distances_ = !distances_;
+        ui.tag("galaxy-map:overlays", *overlaysMin, ImGui::GetItemRectMax());   // for lessons: what the map shows
         legend(ui, d.skipSlots(3));
         if (d.button("Goto System")) {
             filter_.clear();

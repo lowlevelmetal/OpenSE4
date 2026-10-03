@@ -25,6 +25,10 @@ void lessonRow(UiContext& ui, std::string_view name, uint64_t& done) {
     ImGui::ScrollToRect(rows, row, ImGuiScrollFlags_AlwaysCenterY);
 }
 
+bool lessonNamed(const UiContext& ui, std::string_view name) {
+    return ui.lessonRowsFor != 0 && std::find(ui.lessonRows.begin(), ui.lessonRows.end(), name) != ui.lessonRows.end();
+}
+
 std::vector<float> columnEdges(UiContext& ui, std::span<const ListColumn> cols, float width) {
     std::vector<float> x{0.0f};
     float fixed = 0;
