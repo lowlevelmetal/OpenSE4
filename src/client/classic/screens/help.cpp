@@ -478,6 +478,8 @@ private:
                         {"Y, N", "Answer a Yes/No question (Esc and Enter mean No)"},
                         {"Esc, Enter", "OK in a message box"},
                         {"T, S", "Tactical or Strategic, when a battle asks"}};
+                // OpenSE4's lesson panel: its keys work over every window.
+                for (Hotkey& k : boundKeys({"Lesson panel"})) keys.push_back(std::move(k));
                 break;
             case 1: keys = boundKeys({"Windows"}); break;
             case 2:

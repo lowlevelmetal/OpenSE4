@@ -23,8 +23,12 @@ constexpr std::array<ActionInfo, kActionCount> kActions{{
     {Action::EmpireStatus, "Windows", "Empire status", "empire_status"},
     {Action::EndTurn, "Windows", "End turn", "end_turn"},
     {Action::Settings, "Windows", "Settings", "settings"},
-    {Action::LessonText, "Windows", "Show the lesson or training panel", "lesson_text"},
     {Action::ContextHelp, "Windows", "Manual page of the window in front", "context_help"},
+    {Action::LessonText, "Lesson panel", "Show or hide the lesson or training panel", "lesson_text"},
+    {Action::LessonNext, "Lesson panel", "Next (or Finish)", "lesson_next"},
+    {Action::LessonBack, "Lesson panel", "Back", "lesson_back"},
+    {Action::LessonSkip, "Lesson panel", "Skip, when the panel offers it", "lesson_skip"},
+    {Action::LessonReadMore, "Lesson panel", "Read More", "lesson_read_more"},
     {Action::MoveTo, "Orders", "Move to", "move_to"},
     {Action::Warp, "Orders", "Warp", "warp"},
     {Action::Attack, "Orders", "Attack", "attack"},
@@ -80,6 +84,14 @@ constexpr std::array<ActionInfo, kActionCount> kActions{{
     {Action::Cancel, "Display", "Cancel targeting / clear selection", "cancel"},
     {Action::ToggleFullscreen, "Display", "Toggle fullscreen", "toggle_fullscreen"},
 }};
+
+// actionInfo() indexes the table by the action.
+constexpr bool inEnumOrder() {
+    for (size_t i = 0; i < kActions.size(); ++i)
+        if (static_cast<size_t>(kActions[i].action) != i) return false;
+    return true;
+}
+static_assert(inEnumOrder(), "kActions lists the actions in the order of the Action enum");
 
 KeyChord k(ImGuiKey key, bool ctrl = false, bool shift = false, bool alt = false) { return {key, ctrl, shift, alt}; }
 
@@ -161,8 +173,14 @@ void Bindings::resetAll() {
     def(Action::EmpireStatus, k(ImGuiKey_F11));
     def(Action::EndTurn, k(ImGuiKey_F12), k(ImGuiKey_Enter));
     def(Action::Settings, k(ImGuiKey_Comma, true));
-    def(Action::LessonText, k(ImGuiKey_H, true));
     def(Action::ContextHelp, k(ImGuiKey_F1, false, true));
+    // OpenSE4's lesson panel: Alt and the button's letter, as in a set-up
+    // wizard. No prompt answers to K, B or R, and N there means No.
+    def(Action::LessonText, k(ImGuiKey_H, true));
+    def(Action::LessonNext, k(ImGuiKey_N, false, false, true));
+    def(Action::LessonBack, k(ImGuiKey_B, false, false, true));
+    def(Action::LessonSkip, k(ImGuiKey_K, false, false, true));
+    def(Action::LessonReadMore, k(ImGuiKey_R, false, false, true));
     def(Action::MoveTo, k(ImGuiKey_M));
     def(Action::Warp, k(ImGuiKey_W));
     def(Action::Attack, k(ImGuiKey_A));
