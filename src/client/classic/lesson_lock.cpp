@@ -483,12 +483,14 @@ bool waits(const learn::Condition& c, bool negated) {
         case Fact::SimulatorOwner:
         case Fact::Picking:
         case Fact::MovementLines:
+        case Fact::Route:
         case Fact::DraftMessageType:
         case Fact::DraftTreaty:
         case Fact::BattleBegun:
         case Fact::Option:
         case Fact::ResearchQueued:
-        case Fact::ConstructionQueued: return false;
+        case Fact::ConstructionQueued:
+        case Fact::FleetShips: return false;
         // A battle window closes once its battle has played out (or been watched).
         case Fact::Window: return negated && (c.text == "tactical-combat" || c.text == "strategic-combat" || c.text == "ground-combat");
         // A battle order may wait for the combat turns that bring the enemy in range.

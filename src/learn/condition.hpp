@@ -21,14 +21,14 @@ namespace opense4::learn {
 
 enum class Fact : uint8_t {
     // Client facts.
-    Window, Selected, Command, Order, Tab, Picking, MovementLines,
+    Window, Selected, Command, Order, Tab, Picking, MovementLines, Route,
     // Windows' work in progress.
     DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, DesignVehicle, SimulatorOwners, SimulatorItems, SimulatorOwner,
     DraftMessageType, DraftTreaty, BattleBegun, BattleOrder, BattleTurn,
     // Time.
     Turn, TurnsPassed,
     // The player's empire.
-    Colonies, Population, Ships, Bases, Units, Fleets, Designs, ResearchQueued, ConstructionQueued, TechsResearched,
+    Colonies, Population, Ships, Bases, Units, Fleets, FleetShips, Designs, ResearchQueued, ConstructionQueued, TechsResearched,
     SystemsExplored, EmpiresMet, Treaties, Treaty, EnemyShipsDestroyed, PlanetsCaptured, Score, Minerals, Organics, Radioactives,
     Option,
     Count
@@ -56,8 +56,9 @@ struct Condition {
     Fact fact = Fact::Turn;
     int64_t number = 0;            // numeric facts: at least this; flags: 1 true, 0 false
     std::string text;              // text facts: the window id, kind, command, order, tab, option, treaty or design type
-    // The `design_type` qualifier of `selected`, `order` and `command` (written
-    // beside them in one table): only a vehicle of this design type counts.
+    // The `design_type` qualifier of `selected`, `order`, `command` and
+    // `fleet_ships` (written beside them in one table): only a vehicle of this
+    // design type counts.
     std::string designType;
     // The `message_type` and `message_treaty` qualifiers of `command =
     // "SendMessage"`: only a message of that type (an id of the Message Type

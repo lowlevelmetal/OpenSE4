@@ -58,7 +58,7 @@ The new fleet starts with your selected attack ship.
 """
 highlight = ["fleet-transfer:create-fleet"]
 show = ["fleet-transfer:ships", "fleet-transfer:fleets"]
-done = { command = "CreateFleet", design_type = "Attack Ship" }
+done = { any = [{ command = "CreateFleet", design_type = "Attack Ship" }, { fleet_ships = 1, design_type = "Attack Ship" }] }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
@@ -72,7 +72,7 @@ ship in the fleet's list on the right takes it out again.
 """
 highlight = ["fleet-transfer:ships", "fleet-transfer:ships:named"]
 show = ["fleet-transfer:fleets"]
-done = { command = "JoinFleet", design_type = "Attack Ship" }
+done = { any = [{ command = "JoinFleet", design_type = "Attack Ship" }, { fleet_ships = 2, design_type = "Attack Ship" }] }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
@@ -104,11 +104,13 @@ title = "Where to"
 text = """
 **Click a sector far from the fleet**, at the other end of the system view.
 
-The fleet moves at once, one sector per movement point, and goes on next turn.
+The fleet moves at once, one sector per movement point, and goes on next turn. If it is there
+already, press **Move To** again and pick a sector farther off.
 """
 highlight = ["panel:system"]
+allow = ["order:move-to"]
 show = ["panel:report"]
-done = { order = "move-to", design_type = "Attack Ship" }
+done = { all = [{ order = "move-to", design_type = "Attack Ship" }, { route = true }] }
 manual = "ships-and-fleets#moving-around"
 
 [[step]]

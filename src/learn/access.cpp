@@ -191,6 +191,9 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
             for (const auto& [kind, tag] : kOrderButtons)
                 if (kind == c.text && a.has(tag)) return std::nullopt;
             return missing("its order button");
+        case Fact::Route:
+            if (a.has("order:move-to") || a.has("panel:system")) return std::nullopt;
+            return missing("order:move-to or panel:system");
         case Fact::MovementLines:
             if (a.hasKey("Ctrl+L")) return std::nullopt;
             return missing("the key Ctrl+L");
@@ -221,6 +224,9 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
         case Fact::Fleets:
             if (a.has("fleet-transfer:create-fleet") || endsTurns(a)) return std::nullopt;
             return missing("fleet-transfer:create-fleet");
+        case Fact::FleetShips:
+            if (a.has("fleet-transfer:create-fleet") || a.has("fleet-transfer:ships") || endsTurns(a)) return std::nullopt;
+            return missing("fleet-transfer:create-fleet or fleet-transfer:ships");
         case Fact::Designs:
             if (a.has("create-design:save") || endsTurns(a)) return std::nullopt;
             return missing("create-design:save");

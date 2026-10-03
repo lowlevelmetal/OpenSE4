@@ -136,8 +136,9 @@ public:
             error(n, "an empty condition");
             return std::nullopt;
         }
-        // `design_type` qualifies the `selected`, `order` and `command` keys
-        // beside it: only a vehicle (or design) of that type counts.
+        // `design_type` qualifies the `selected`, `order`, `command` and
+        // `fleet_ships` keys beside it: only a vehicle (or design) of that type
+        // counts.
         std::string designType;
         if (const toml::node* q = t->get("design_type")) {
             const auto* v = q->as_string();
@@ -146,9 +147,9 @@ public:
                 return std::nullopt;
             }
             designType = v->get();
-            const bool qualifies = t->contains("selected") || t->contains("order") || t->contains("command");
+            const bool qualifies = t->contains("selected") || t->contains("order") || t->contains("command") || t->contains("fleet_ships");
             if (!qualifies) {
-                error(q, "'design_type' qualifies a 'selected', 'order' or 'command' key in the same table, such as "
+                error(q, "'design_type' qualifies a 'selected', 'order', 'command' or 'fleet_ships' key in the same table, such as "
                          "{ order = \"explore\", design_type = \"Attack Ship\" }");
                 return std::nullopt;
             }
@@ -165,7 +166,7 @@ public:
                 error(n, std::format("'design_type' qualifies a selected vehicle: 'ship', 'base', 'unit' or 'fleet', not '{}'", c.text));
                 return false;
             }
-            if (c.fact == Fact::Selected || c.fact == Fact::Order || c.fact == Fact::Command) c.designType = designType;
+            if (c.fact == Fact::Selected || c.fact == Fact::Order || c.fact == Fact::Command || c.fact == Fact::FleetShips) c.designType = designType;
             return true;
         };
         // `message_type` and `message_treaty` qualify `command = "SendMessage"`

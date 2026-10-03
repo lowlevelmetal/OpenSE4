@@ -473,7 +473,7 @@ when = { all = [{ tab = "log:nothing" }, { option = "loud" }, { treaty = "friend
     CHECK_MESSAGE(problems.empty(), problemsText(problems));
 }
 
-TEST_CASE("learn: design_type qualifies selected, order and command") {
+TEST_CASE("learn: design_type qualifies selected, order, command and fleet_ships") {
     std::vector<Diagnostic> problems;
     // Beside a key it qualifies, in one table.
     Condition c = condition("{ order = \"explore\", design_type = \"Attack Ship\" }");
@@ -496,7 +496,7 @@ text = "o"
 when = { all = [{ design_type = "Attack Ship" }, { order = "explore", design_type = "Scout" }, { command = "SetResearch", design_type = "Attack Ship" }, { selected = "planet", design_type = "Attack Ship" }, { design_type_chosen = "Warship" }] }
 )";
     CHECK_FALSE(parseLesson(text, "types.toml", LessonKind::Training, problems));
-    CHECK(hasProblem(problems, 4, "'design_type' qualifies a 'selected', 'order' or 'command' key"));
+    CHECK(hasProblem(problems, 4, "'design_type' qualifies a 'selected', 'order', 'command' or 'fleet_ships' key"));
     CHECK(hasProblem(problems, 4, "'design_type' takes a design type"));
     CHECK(hasProblem(problems, 4, "cannot qualify the command 'SetResearch'"));
     CHECK(hasProblem(problems, 4, "qualifies a selected vehicle"));
@@ -918,6 +918,26 @@ TEST_CASE("learn conditions: design_type counts only vehicles and designs of tha
     CHECK_FALSE(ev("{ command = \"JoinFleet\", design_type = \"Attack Ship\" }"));
     ev.tracker.issued(game::cmd::JoinFleet{f.id, a2});
     CHECK(ev("{ command = \"JoinFleet\", design_type = \"Attack Ship\" }"));
+
+    // What a fleet holds now, however it came about (fleet_ships).
+    CHECK(ev("{ fleet_ships = 2 }"));
+    CHECK(ev("{ fleet_ships = 1, design_type = \"Attack Ship\" }"));
+    CHECK_FALSE(ev("{ fleet_ships = 2, design_type = \"Attack Ship\" }"));
+    s.fleets.back().members = {a1, a2, c1};
+    CHECK(ev("{ fleet_ships = 2, design_type = \"Attack Ship\" }"));
+    CHECK_FALSE(ev("{ fleet_ships = 4 }"));
+    CHECK(describe(condition("{ fleet_ships = 2, design_type = \"Attack Ship\" }")) == "fleet_ships = 2, design_type = \"Attack Ship\"");
+
+    // A route: a Move To order of the selected ship (or its fleet) to another sector.
+    ev.client.selectedVehicle = a2;
+    CHECK(ev("{ route = false }"));
+    game::Vehicle& v2 = *s.vehicle(a2);
+    v2.orders = {game::Order{game::OrderKind::MoveTo, v2.location}};
+    CHECK(ev("{ route = false }"));   // to where it is: nothing to draw
+    game::Location away = v2.location;
+    away.sector = game::Sector{away.sector.x == 0 ? 1 : 0, away.sector.y};
+    v2.orders = {game::Order{game::OrderKind::MoveTo, away}};
+    CHECK(ev("{ route = true }"));
 }
 
 TEST_CASE("learn conditions: the design being made: its type and its name") {

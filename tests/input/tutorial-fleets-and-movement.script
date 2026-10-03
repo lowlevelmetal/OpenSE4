@@ -50,10 +50,19 @@ assert { not = { order = "move-to" } }
 click tag:order:move-to
 wait-step 8
 assert { picking = "move-to" }
-# 8 Where to: an empty sector at the far end of the system view (more sectors away than the
-# fleet moves in a turn).
+# 8 Where to: the fleet's own sector first, which ends the pick with no route: the step waits,
+# and Move To picks again. Then an empty sector at the far end of the system view (more sectors
+# away than the fleet moves in a turn).
+click sector:selected
+wait 10
+assert-step 8
+assert { not = { route = true } }
+assert { not = { picking = "move-to" } }
+click tag:order:move-to
+wait-until { picking = "move-to" }
 click sector:empty nth=150
 wait-step 9
+assert { route = true }
 assert { order = "move-to", design_type = "Attack Ship" }
 assert-present tag:panel:system
 # 9 Movement lines: Ctrl+L shows them (a game starts with them off).

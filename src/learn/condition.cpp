@@ -27,6 +27,7 @@ constexpr FactInfo kFacts[] = {
     {Fact::Tab, "tab", T, false, "an open window shows that tab or filter (\"<window>:<tab>\")"},
     {Fact::Picking, "picking", T, false, "the main window waits for the place an order of that kind goes to (\"move-to\", ...)"},
     {Fact::MovementLines, "movement_lines", F, false, "the system view shows the ships' movement lines (Ctrl+L)"},
+    {Fact::Route, "route", F, false, "the selected ship, or its fleet, has a Move To order to somewhere else: a route to draw"},
     {Fact::DesignComponents, "design_components", N, false, "the design being built in the open Create Design window has N components",
      "Components on the design"},
     {Fact::DesignHullChosen, "design_hull_chosen", F, false, "the player picked a hull in the open Create Design window's Size list"},
@@ -49,6 +50,8 @@ constexpr FactInfo kFacts[] = {
     {Fact::Bases, "bases", N, false, "the empire has N bases (mothballed ones not counted)", "Bases"},
     {Fact::Units, "units", N, false, "the empire has N units (fighters, satellites, mines, troops, drones, platforms)", "Units"},
     {Fact::Fleets, "fleets", N, false, "the empire has N fleets", "Fleets"},
+    {Fact::FleetShips, "fleet_ships", N, false, "one of the empire's fleets holds N ships (of the design type beside it, if one is)",
+     "Ships in one fleet"},
     {Fact::Designs, "designs", N, false, "the empire has N designs that are not obsolete", "Designs"},
     {Fact::ResearchQueued, "research_queued", N, false, "N research projects are queued", "Research projects"},
     {Fact::ConstructionQueued, "construction_queued", N, false, "N items wait in the empire's construction queues", "Items in the queues"},
@@ -93,6 +96,18 @@ bool vehicleOfType(const game::GameState& s, game::VehicleId id, std::string_vie
     const game::Vehicle* v = id.valid() ? s.vehicle(id) : nullptr;
     return v && designOfType(s, v->design, wanted);
 }
+// The most ships one of the empire's fleets holds (of a design type, when
+// one is given).
+int64_t fleetShips(const game::GameState& s, game::EmpireId me, std::string_view wanted) {
+    int64_t most = 0;
+    for (const game::Fleet& fl : s.fleets) {
+        if (fl.owner != me) continue;
+        const int64_t n = std::count_if(fl.members.begin(), fl.members.end(),
+                                        [&](game::VehicleId id) { return wanted.empty() ? id.valid() && s.vehicle(id) != nullptr : vehicleOfType(s, id, wanted); });
+        most = std::max(most, n);
+    }
+    return most;
+}
 bool fleetOfType(const game::GameState& s, game::FleetId id, std::string_view wanted) {
     const game::Fleet* f = id.valid() ? s.fleet(id) : nullptr;
     return f && std::any_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return vehicleOfType(s, m, wanted); });
@@ -133,7 +148,8 @@ void collectCounters(const Condition& c, const EvalContext& ctx, size_t limit, s
     const FactInfo& info = factInfo(c.fact);
     if (info.value != FactValue::Number || info.counter.empty() || out.size() >= limit) return;
     if (std::any_of(out.begin(), out.end(), [&](const Counter& k) { return k.fact == c.fact; })) return;
-    out.push_back({c.fact, std::max<int64_t>(0, factValue(c.fact, ctx)), c.number, std::string(info.counter)});
+    const int64_t now = c.fact == Fact::FleetShips ? fleetShips(ctx.state, ctx.empire, c.designType) : factValue(c.fact, ctx);
+    out.push_back({c.fact, std::max<int64_t>(0, now), c.number, std::string(info.counter)});
 }
 
 } // namespace
@@ -241,6 +257,7 @@ int64_t factValue(Fact f, const EvalContext& ctx) {
         case Fact::Bases: return ownVehicles(ruleset::VehicleType::Base);
         case Fact::Units: return game::unitCount(ctx.rules, s, me);
         case Fact::Fleets: return std::count_if(s.fleets.begin(), s.fleets.end(), [&](const game::Fleet& fl) { return fl.owner == me; });
+        case Fact::FleetShips: return fleetShips(s, me, {});
         case Fact::Designs:
             return std::count_if(e.designs.begin(), e.designs.end(),
                                  [&](game::DesignId d) { return d.index() < s.designs.size() && !s.design(d).obsolete; });
@@ -291,6 +308,7 @@ bool holds(const Condition& c, const EvalContext& ctx) {
             return contains(ctx.client.selected, c.text) && ctx.client.selections > ctx.mark.selections &&
                    (c.designType.empty() || vehicleOfType(ctx.state, ctx.client.selectedVehicle, c.designType));
         case Fact::Tab: return contains(ctx.client.tabs, c.text);
+        case Fact::FleetShips: return fleetShips(ctx.state, ctx.empire, c.designType) >= c.number;
         case Fact::BattleBegun: return ctx.client.battleBegun == (c.number != 0);
         case Fact::BattleOrder: {
             const auto& log = ctx.client.battleOrders;
@@ -304,6 +322,17 @@ bool holds(const Condition& c, const EvalContext& ctx) {
         case Fact::SimulatorOwner: return !ctx.client.simulatorOwner.empty() && ctx.client.simulatorOwner == c.text;
         case Fact::Picking: return !ctx.client.picking.empty() && ctx.client.picking == c.text;
         case Fact::MovementLines: return ctx.client.movementLines == (c.number != 0);
+        case Fact::Route: {
+            bool route = false;
+            if (const game::Vehicle* v = ctx.client.selectedVehicle.valid() ? ctx.state.vehicle(ctx.client.selectedVehicle) : nullptr) {
+                const game::Fleet* f = v->fleet.valid() ? ctx.state.fleet(v->fleet) : nullptr;
+                const std::vector<game::Order>& orders = f ? game::fleetOrders(ctx.state, *f) : v->orders;
+                route = std::any_of(orders.begin(), orders.end(), [&](const game::Order& o) {
+                    return (o.kind == game::OrderKind::MoveTo && o.location != v->location) || o.kind == game::OrderKind::MoveToWaypoint;
+                });
+            }
+            return route == (c.number != 0);
+        }
         case Fact::DraftMessageType: return !ctx.client.draftMessageType.empty() && ctx.client.draftMessageType == c.text;
         case Fact::DraftTreaty: return !ctx.client.draftMessageType.empty() && ctx.client.draftTreaty == c.text;
         case Fact::Option: {
@@ -375,6 +404,7 @@ std::string describe(const Condition& c) {
         case FactValue::Flag: return std::format("{} = {}", info.key, c.number != 0 ? "true" : "false");
         case FactValue::Number: break;
     }
+    if (!c.designType.empty()) return std::format("{} = {}, design_type = \"{}\"", info.key, c.number, c.designType);
     return std::format("{} = {}", info.key, c.number);
 }
 

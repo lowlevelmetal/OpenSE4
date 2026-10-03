@@ -1,0 +1,44 @@
+# Closing a window whose work the game keeps does not send the lesson back (docs/LEARNING.md
+# "Getting back"; docs/BUILDING.md "Input scripts"): tutorial 5's fleet. The fleet created at
+# step 4 is the game's, so when Fleet Transfer closes at step 5 (with Free Play on), the lesson
+# stays at step 5 and shows the way back (the Fleet Transfer order); the other attack ship then
+# still joins the fleet. Once joined, a fleet holding both attack ships is what step 5 asks for,
+# however it came about.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --tutorial=fleets-and-movement --layout=1024x768 --size=1280x800
+
+wait-lesson fleets-and-movement
+click item:Next in=lesson
+wait-step 2
+click item:next in=tag:cycle:ship
+wait-step 3
+click tag:order:fleet-transfer
+wait-window fleet-transfer
+wait-step 4
+click tag:fleet-transfer:create-fleet
+click item:OK in="Create Fleet"
+wait-step 5
+# Free Play (at 800x600 More shows it first): Fleet Transfer closes; the fleet stays.
+click item:More in=lesson optional
+click tag:lesson:free-play
+key Escape
+wait-closed fleet-transfer
+click item:More in=lesson optional
+click tag:lesson:free-play
+wait 10
+assert-step 5
+assert-absent item:"hint:The * window was closed and*" in=lesson
+wait-for item:"hint:The Fleet Transfer window was closed*" in=lesson
+# The way back: the Fleet Transfer order; the other attack ship is still outside fleets.
+click tag:order:fleet-transfer
+wait-window fleet-transfer
+wait-for tag:fleet-transfer:ships:named
+click tag:fleet-transfer:ships:other refused
+click tag:fleet-transfer:ships:named
+wait-step 6
+assert { command = "JoinFleet" }
+click tag:fleet-transfer:close
+wait-closed fleet-transfer
+click item:next in=tag:cycle:ship
+wait-step 7
+assert { selected = "fleet", design_type = "Attack Ship" }
