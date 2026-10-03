@@ -48,10 +48,12 @@ wait_port() {
 
 # 1. Simultaneous.
 "$SERVER" --port=0 --players=1 --ai=1 --no-upnp --no-lan-discovery --seed=7 --systems=20 --name=Smoke \
-    --save-dir="$WORK" --max-turns=2 "$@" >"$WORK/server.log" 2>&1 &
+    --save-dir="$WORK" --host-key="$WORK/host_key.txt" --max-turns=2 "$@" >"$WORK/server.log" 2>&1 &
 PID=$!
 PORT=$(wait_port "$WORK/server.log")
-"$SERVER" bot --connect="127.0.0.1:$PORT" --name=smoke --password=secret --turns=2 "$@"
+# The bot refuses any host but the one with this key.
+HOSTKEY=$(sed -n 's/.*public key \([0-9a-f]\{64\}\).*/\1/p' "$WORK/server.log")
+"$SERVER" bot --connect="127.0.0.1:$PORT" --name=smoke --password=secret --turns=2 --host-key="$HOSTKEY" "$@"
 wait "$PID"
 PID=
 cat "$WORK/server.log"
@@ -60,7 +62,7 @@ grep -q "Reached turn 2" "$WORK/server.log"
 
 # 2. Turn-based, over the network.
 "$SERVER" --port=0 --players=2 --ai=1 --turn-based --no-upnp --no-lan-discovery --seed=7 --systems=20 --name=Relay \
-    --save-dir="$WORK" --max-turns=2 "$@" >"$WORK/relay.log" 2>&1 &
+    --save-dir="$WORK" --host-key="$WORK/host_key.txt" --max-turns=2 "$@" >"$WORK/relay.log" 2>&1 &
 PID=$!
 PORT=$(wait_port "$WORK/relay.log")
 "$SERVER" bot --connect="127.0.0.1:$PORT" --name=alice --password=a --turns=2 "$@" >"$WORK/alice.log" 2>&1 &

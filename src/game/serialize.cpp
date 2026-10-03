@@ -7,6 +7,7 @@
 #include <cstring>
 #include <format>
 #include <fstream>
+#include <iterator>
 #include <system_error>
 
 namespace opense4::game {
@@ -280,6 +281,51 @@ std::expected<EmpireOrders, std::string> deserializeOrders(std::span<const uint8
 }
 
 uint64_t stateChecksum(const GameState& s) { return serial::hash(s); }
+
+namespace {
+
+constexpr std::string_view kStatePartNames[] = {
+    "date and options", "galaxy", "colonies", "empires", "designs", "vehicles", "fleets", "messages", "events",
+    "battles", "counters", "random numbers", "player turn", "map",
+};
+
+template <class... T>
+uint64_t hashParts(const T&... parts) {
+    serial::HashWriter w;
+    (serial::io(w, const_cast<T&>(parts)), ...);  // writers never modify
+    return w.value();
+}
+
+} // namespace
+
+std::vector<uint64_t> statePartHashes(const GameState& s) {
+    return {
+        hashParts(s.turn, s.seed, s.options),
+        hashParts(s.galaxy),
+        hashParts(s.colonies),
+        hashParts(s.empires),
+        hashParts(s.designs),
+        hashParts(s.vehicles),
+        hashParts(s.fleets),
+        hashParts(s.messages),
+        hashParts(s.pendingEvents),
+        hashParts(s.combats),
+        hashParts(s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.arrivals),
+        hashParts(s.rng),
+        hashParts(s.playerTurn),
+        hashParts(s.startingPoints, s.leftFacilities),
+    };
+}
+
+std::span<const std::string_view> statePartNames() { return kStatePartNames; }
+
+std::vector<std::string> differingStateParts(std::span<const uint64_t> a, std::span<const uint64_t> b) {
+    if (a.size() != b.size() || a.size() != std::size(kStatePartNames)) return {"everything"};
+    std::vector<std::string> out;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i] != b[i]) out.emplace_back(kStatePartNames[i]);
+    return out;
+}
 
 // ---- Save files ------------------------------------------------------------------------------------
 

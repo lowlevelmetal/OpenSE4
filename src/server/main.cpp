@@ -10,6 +10,7 @@
 #include "net/client.hpp"
 #include "net/host.hpp"
 #include "net/pbem.hpp"
+#include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
 #include "server/setup_file.hpp"
 
@@ -65,6 +66,9 @@ Network game options:
                          (start, kick, add computer empires, force a turn, hand
                          empires to the computer, reset passwords)
   --join-password=PW     Password every player needs to join
+  --host-key=FILE        The host's long-term key, which players' games remember
+                         (default: host_key.txt in OpenSE4's user folder; made on
+                         first use)
   --turn-timeout=SEC     Process the turn after SEC seconds even if orders are missing
                          (turn-based: end a player's turn after SEC seconds)
   --load=GAME.gam        Continue a saved game (players reconnect with name and password)
@@ -91,7 +95,8 @@ bot: a scripted player for tests. It joins, readies up, submits orders for
 --turns turns (default 2) and exits 0 once the turn has advanced that often.
 In a turn-based game it plays one command in each of its turns and ends them.
 Options: --password, --join-password, --master-password (then also --start to
-start the game), --race=PRESET, --data=DIR, --timeout=SEC (default 120).
+start the game), --race=PRESET, --data=DIR, --timeout=SEC (default 120),
+--host-key=HEX (the host's public key: refuse any other host).
 )";
 
 std::atomic<bool> gStop{false};
@@ -238,7 +243,7 @@ std::string turnSummary(const net::TurnStatus& t) {
 int runServer(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
-                             "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns"},
+                             "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key"},
                             {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "verbose", "help", "version"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
@@ -277,6 +282,15 @@ int runServer(std::span<char*> args) {
     cfg.joinPasswordHash = net::hashPassword(o.get("join-password"));
     cfg.upnp.enabled = !o.has("no-upnp");
     cfg.lanDiscovery = !o.has("no-lan-discovery");
+    // The host's identity: players' games remember its key and refuse a host
+    // that shows another (docs/MULTIPLAYER.md, "Security").
+    const std::filesystem::path keyFile = o.has("host-key") ? std::filesystem::path(o.get("host-key"))
+                                                            : net::secure::userDataDir() / net::secure::kHostKeyFileName;
+    auto hostKey = net::secure::loadOrCreateHostKey(keyFile);
+    if (!hostKey) return fail(hostKey.error(), 2);
+    cfg.hostKey = *hostKey;
+    say(std::format("Host key {} ({}); public key {}", net::crypto::fingerprint(hostKey->publicKey), keyFile.string(),
+                    net::crypto::hex(hostKey->publicKey)));
     cfg.setup.seed = o.has("seed") ? static_cast<uint64_t>(*seed) : net::randomId();
     cfg.setup.options.systemCount = static_cast<int>(*systems);
     cfg.setup.options.quadrantSize = static_cast<int>(*quadrantSize);
@@ -546,7 +560,8 @@ int pbemInfo(std::span<char*> args) {
 // ---- Test client ---------------------------------------------------------------------------------------
 
 int runBot(std::span<char*> args) {
-    auto parsed = parseArgs(args, {"connect", "port", "name", "password", "join-password", "master-password", "data", "race", "turns", "timeout"},
+    auto parsed = parseArgs(args,
+                            {"connect", "port", "name", "password", "join-password", "master-password", "data", "race", "turns", "timeout", "host-key"},
                             {"start", "help"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
@@ -576,6 +591,10 @@ int runBot(std::span<char*> args) {
     cfg.joinPasswordHash = net::hashPassword(o.get("join-password"));
     cfg.masterPasswordHash = net::hashPassword(o.get("master-password"));
     cfg.dataSet = game::dataSetIdentity(**rules);
+    if (o.has("host-key")) {
+        cfg.hostKey = net::crypto::keyFromHex(o.get("host-key"));
+        if (!cfg.hostKey) return fail("--host-key must be the host's public key (64 hex digits)", 2);
+    }
     net::ClientSession client(cfg);
     if (auto r = client.connect(); !r) return fail(r.error(), 1);
 
@@ -602,6 +621,7 @@ int runBot(std::span<char*> args) {
             say("bot " + cfg.playerName + ": " + net::describe(e));
             switch (e.type) {
                 case net::EventType::Joined:
+                    if (client.seenHostKey()) say(std::format("bot {}: host key {}", cfg.playerName, net::crypto::fingerprint(*client.seenHostKey())));
                     client.submitSetup(setup);
                     client.setReady(true);
                     if (o.has("start")) client.requestStart();

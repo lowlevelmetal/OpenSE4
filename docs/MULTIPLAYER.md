@@ -46,6 +46,10 @@ everyone else. On top of that it can:
 - reset players' passwords in a simultaneous game ([Reset Passwords](#reset-passwords));
 - give orders for any empire (to play for an absent friend).
 
+The lobby shows the host's key fingerprint (see [Security](#security)). It is this
+computer's identity as a host, kept in `host_key.txt` in OpenSE4's user folder and made
+the first time this computer hosts. Players' games remember it.
+
 ### Dedicated server
 
 `opense4-server` hosts a game without playing in it:
@@ -76,6 +80,7 @@ port forwarding.
 | `--name=NAME` | game name (also the save file's name) |
 | `--password=PW` | master password (see below) |
 | `--join-password=PW` | a password every player needs to join |
+| `--host-key=FILE` | the host's long-term key (default: `host_key.txt` in OpenSE4's user folder, the one the game uses; made on first use). The log names its fingerprint |
 | `--turn-timeout=SEC` | process the turn after SEC seconds even if orders are missing (turn-based: end a player's turn after SEC seconds) |
 | `--load=GAME.gam` | continue a saved game |
 | `--save-dir=DIR`, `--autosave=N` | where and how often to save |
@@ -120,14 +125,26 @@ To join, a player needs:
 
 Both routes then check:
 
+- **The host's identity.** The connection is encrypted, and the host shows its key. The
+  first time a player joins a host (an address and port), their game remembers that key
+  in `known_hosts.txt` in OpenSE4's user folder, and the lobby names its fingerprint:
+  compare it with the one the host sees (its lobby, or the server's log; the LAN list
+  shows it too). From then on a host with another key is refused, with both
+  fingerprints. If the host really has a new key (a new computer, a deleted key file),
+  the player chooses **Trust the New Key and Connect**; otherwise someone may be in
+  between ([Security](#security)).
 - **Same version and data.** The client and the host must speak the same network
   protocol (the same OpenSE4 release) and use the same data set. The data set is
   compared by fingerprint, a hash of every data file plus the loaded tables, so two
   installations of the same game and mods match wherever they live. The host
-  refuses mismatches with a message that names both sides.
+  refuses mismatches with a message that names both sides. Older and newer releases
+  refuse each other the same way, in both directions, and the LAN list marks a host
+  of another version.
 - **The player password** protects the player's slot and empire. Nobody else can
   take over the empire or send orders for it, in network and in PBEM games.
-- **The join password**, if the host set one, is needed by everyone.
+- **The join password**, if the host set one, is needed by everyone. It is part of the
+  connection's keys, so a wrong one is refused before anything else is said. A player
+  who gives a join password refuses a host that does not ask for one.
 
 ### Reconnecting
 
@@ -466,23 +483,90 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 
 ## Security
 
-- **Passwords are hashed.** The game computes a SHA-256 hash of a password on the
-  player's own machine (with an OpenSE4-specific prefix, so it differs from a plain
-  SHA-256 of the same password), and only that hash is ever sent, over the network or
-  in a `.plr` file. Hosts and saved games keep only a verifier, a second hash of that
-  hash. So a copy of the game file, which every PBEM player receives, holds nothing
-  a player could log in with. Weak passwords can still be guessed offline from a
-  verifier, so do not reuse important passwords.
-- **The connection is not encrypted.** Someone who can watch the traffic between a
-  player and the host can see the game and the player's password hash, and could
-  replay it to log in as that player. For games where that matters, play over a VPN.
-  Encryption (for example TLS or a Noise handshake) is future work.
+Network games run over encrypted connections, and passwords prove themselves
+without ever travelling. This is OpenSE4's own design: the classic game has no
+counterpart.
+
+### Threat model
+
+- **Someone who watches the traffic** (a shared Wi-Fi, a provider, a router) sees that
+  two machines talk, how much and when, and the program versions in the first two
+  messages. They see nothing of the game, the chat, the player names or the
+  passwords.
+- **Someone who changes, repeats, drops or reorders the traffic** breaks the
+  connection. Nothing they inject is accepted; the player's game reconnects
+  ([Reconnecting](#reconnecting)).
+- **An impostor host** (someone who makes a player connect to them instead of the
+  host, a "man in the middle"):
+  - fails in a game with a join password unless it knows that password. The password
+    is part of the session keys, so without it the player's login cannot even be
+    read. A player who gives a join password refuses a host that asks for none.
+  - is refused once a player has met the real host: every host has a long-term key,
+    which the player's game remembers per address and port and checks at every later
+    connection ("trust on first use"). The first connection is the weak spot: compare
+    the fingerprint the lobby shows with the host's.
+  - learns, when it does get a player to talk to it (an open game, first contact),
+    the player's name and verifier, and signatures that are worthless on any other
+    connection. It cannot log in as the player with them, only try to guess the
+    password offline.
+- **Passwords never travel**, not even hashed. A player's game proves it knows the
+  password by signing the session it logs in on; hosts and saved games keep only a
+  verifier, which can check such a signature but not make one. A copy of a saved
+  game holds nothing anyone could log in or sign with. Weak passwords can still be guessed offline from a verifier or a
+  signature, and anyone who can reach the host can try join passwords there, one
+  connection at a time: do not reuse important passwords.
+- **Not protected:** the host itself (it sees and decides everything), the host's key
+  file (whoever copies it can pose as the host: it is readable by its owner only), the
+  players' own computers, and the timing and size of the traffic. Anyone who can cut
+  the connection can stop the game.
+
+### How it works
+
+- **Cryptography.** [Monocypher](https://monocypher.org) 4.0.2 (BSD 2-clause or CC0,
+  pinned by hash): X25519 key agreement, XChaCha20-Poly1305 authenticated encryption,
+  BLAKE2b hashing and EdDSA signatures. OpenSE4 implements no primitive itself. Keys
+  come from the operating system's random source (`getrandom`, `arc4random_buf`,
+  `BCryptGenRandom`), never from the game's random numbers.
+- **Handshake** (`net/secure.hpp`), in the Noise pattern NX with the join password's
+  key mixed in last (NXpsk2):
+  1. The client sends a fresh X25519 key (`ClientHello`, in the clear).
+  2. The host answers with a fresh key of its own, its long-term key and whether it
+     has a join password (`ServerHello`, in the clear).
+  3. Both derive the keys with BLAKE2b from the two messages as sent, the agreement of
+     the two fresh keys, the agreement of the client's fresh key with the host's
+     long-term key, and the join password's key (or zeros). Changing either message
+     changes the keys; only the holder of the long-term key's secret half gets them.
+  4. The client checks the host's long-term key against the one it remembers, then
+     sends its `Login`, the first encrypted message.
+- **Frames.** Every frame after the handshake is sealed: the message type and payload
+  are encrypted, and they and the frame's header are authenticated. Each direction has
+  its own key and counts its messages; the count is the nonce. A frame that was
+  changed, repeated, dropped or moved fails to open and ends the connection. A host
+  whose first sealed message from a client does not open (the keys differ: a wrong
+  join password) says so in the clear and closes.
+- **Logins.** A password hash (SHA-256 of the password with an OpenSE4 prefix, made on
+  the player's machine) is the seed of an EdDSA key; the verifier is its public half
+  (`pk1:` and 64 hex digits). The login signs a BLAKE2b hash of the session's id, the
+  role (player or master) and the player's name; the host checks it with the
+  verifier. A new player's login carries the verifier, which the host keeps. The
+  master password works the same way.
+- **Games of OpenSE4 0.6.** Their verifiers (a second SHA-256) cannot check a
+  signature. For such a game the host asks the login for the password hash itself,
+  inside the encrypted connection, checks it and replaces the verifier by the new
+  kind.
+- **Host keys** are files of 64 hex digits (`host_key.txt`), made on first use and
+  readable by their owner only; the players' remembered keys are lines of
+  `<address>:<port> <key>` in `known_hosts.txt`. Delete a line there to meet that
+  host anew.
+### Other rules
+
 - **The host is authoritative.** It checks every order list against the game rules
   and applies only the sender's own empire's orders. In a turn-based game it takes
   commands only from the player whose turn it is. Clients never change the host's
-  game. The host also refuses oversized messages (64 KiB before the handshake,
-  16 MiB after), malformed messages, unknown message types and anything before a
-  valid greeting. Connections that go silent are dropped.
+  game. The host also refuses oversized messages (64 KiB before the login, 16 MiB
+  after), malformed messages, unknown message types, anything before a valid
+  handshake and anything in the clear after it. Connections that go silent are
+  dropped.
 - **Each network player gets only their own view.** Each turn, the host sends every
   player the game as their empire knows it (`game::redactForEmpire`):
   - Removed:
@@ -521,8 +605,8 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 
 ## Future work
 
-- Per-player views for PBEM (a `.gam` per empire).
-- Encrypted connections.
+- Per-player views for PBEM (a `.gam` per empire), and orders files that prove the
+  password without carrying its hash.
 - IPv6 hosting.
 - Sending only the changes between turns instead of the whole game. A turn-based game
   sends the player's whole view after every command.
@@ -540,7 +624,8 @@ in a loop), and handle the `net::Event`s it returns. Neither class is thread-saf
 UPnP runs on a thread of its own inside `net::PortMapper`.
 
 ```cpp
-net::HostConfig cfg;                         // port, slots, passwords, setup (seed, options), UPnP, limits
+net::HostConfig cfg;                         // port, slots, passwords, setup (seed, options), UPnP, limits, hostKey
+cfg.hostKey = *net::secure::loadOrCreateHostKey(file);   // the host's identity (none: a new key per session)
 cfg.localPlayer = net::LocalPlayer{"Host", net::hashPassword(pw), setup};   // in-game hosting
 net::HostSession host(rules, cfg);           // rules must outlive the session
 host.start();                                // or host.resume(state, saveInfo)
@@ -555,13 +640,14 @@ host.save(path);
 for (const net::Event& e : host.poll(0)) { /* e.type, e.text, e.player, e.slot, e.empire, e.turn */ }
 host.lobby();  host.turnStatus();  host.state();  host.portMapping();
 
-net::ClientConfig cc;                        // host, port, name, passwordHash, dataSet = game::dataSetIdentity(rules)
+net::ClientConfig cc;                        // host, port, name, passwordHash, dataSet = game::dataSetIdentity(rules), hostKey (a pin)
 net::ClientSession client(cc);
 client.connect();
 client.submitSetup(setup); client.setReady(true);
 client.submitOrders(orders); client.chat("hi");
 client.play(cmd); client.endTurn();          // turn-based: in our turn (client.myTurn())
 client.questions(); client.pendingRequests(); client.activeEmpire();
+client.seenHostKey(); client.hostKeyChanged();  // the host's key, and a refusal because it is not the pinned one
 client.lobby(); client.turnStatus(); client.state(); client.empire(); client.ordersAccepted();
 client.requestAiControl(empire, true); client.requestPasswordReset({empire});   // administrators
 ```
@@ -576,17 +662,31 @@ client.requestAiControl(empire, true); client.requestPasswordReset({empire});   
 
 TCP, one stream per player. Each message is a frame: a u32 little-endian length, a
 u8 message type, then the payload, which is encoded with the save-format archive.
+After the handshake every frame is sealed: its type byte is `0xf0`, followed by the
+message type and payload encrypted with XChaCha20-Poly1305, then the 16-byte tag
+([How it works](#how-it-works)).
 
-1. The client sends `Hello`: magic, protocol version, program version, data-set
-   fingerprint, player name, and hashes of the player, join and master passwords.
-2. The host answers `Reject` (with a reason and a readable text) or `Welcome` (game
+1. The client sends `ClientHello` in the clear: magic, protocol version, program
+   version and its fresh X25519 key. It is laid out like protocol 4's greeting, so an
+   OpenSE4 0.6 host reads the version and refuses it with a readable `Reject`. Hosts
+   read the magic, version and program version first, whatever follows, and refuse
+   other versions the same way, in the clear.
+2. The host answers `ServerHello` in the clear: its fresh key, its long-term key,
+   whether it has a join password, and whether the game still has OpenSE4 0.6
+   verifiers. Both sides then switch to sealed frames.
+3. The client sends `Login`: data-set fingerprint, player name, a random id of its
+   session object, the player's verifier and signature, and the master password's
+   signature if it has one (and the password hash, only when the host asked for it
+   for an old verifier).
+4. The host answers `Reject` (with a reason and a readable text) or `Welcome` (game
    name and id, the player's slot, admin rights). Then it sends the `Lobby`, and,
    during a game, the `State` and `TurnStatus`.
-3. In the lobby: `SubmitSetup` (the empire setup), `SetReady`, `ChatSend`, and
+5. In the lobby: `SubmitSetup` (the empire setup), `SetReady`, `ChatSend`, and
    `Admin` requests. The host sends `Lobby` after every change.
-4. At the start and after every turn, the host sends `State`: the turn, the
-   player's empire, and a complete `serializeState()` blob with its own checksum.
-5. Each turn the player sends `SubmitOrders`, a `serializeOrders()` blob of an
+6. At the start and after every turn, the host sends `State`: the turn, the
+   player's empire, a complete `serializeState()` blob with its own checksum, and a
+   serial number that grows with every `State` the host sends.
+7. Each turn the player sends `SubmitOrders`, a `serializeOrders()` blob of an
    `EmpireOrders` for the current turn. A later submission replaces an earlier one.
    The host answers `OrdersAck` and sends everyone a `TurnStatus` saying who has
    sent orders.
@@ -597,15 +697,22 @@ u8 message type, then the payload, which is encoded with the save-format archive
    request number and the refused commands. `EndTurn` ends the turn. The host answers
    with a `PlayResult`, then sends everyone their `State` and the new `TurnStatus` once
    the turn has passed to the next player. Anything from a player whose turn it is not
-   gets a `PlayResult` saying so.
-6. `Ping`/`Pong` keep idle connections alive (every 5 s). A peer that sends nothing
+   gets a `PlayResult` saying so. Request numbers grow with every request of a client
+   session (the `Login`'s id): the host answers a number it has already answered
+   again, without carrying anything out twice.
+8. `SubmitOrders` and `PlayCommands` also carry the player's copy of the game as it
+   is when they are sent: the serial of the `State` it came from, its checksum and
+   its part hashes (`game::statePartHashes`). When the serial is the last one the host
+   sent that player and the checksum differs, the host sends `Desync` (the turn, the
+   parts that differ, a text) and the `State` again, marked as a resync.
+9. `Ping`/`Pong` keep idle connections alive (every 5 s). A peer that sends nothing
    for 60 s (host side) or 90 s (client side) is disconnected. `Bye` ends a session
    politely and carries a reason, for example a kick or a shutdown.
 
 `net::kProtocolVersion` must change whenever the messages or the save format
 change; the host refuses any other version and compares nothing else, so releases
-that share it play together. It was 2 from turn-based games on, 3 in 0.5.0 and is 4
-since 0.6.0.
+that share it play together. It was 2 from turn-based games on, 3 in 0.5.0, 4 in
+0.6.0, and is 5 from encrypted connections on (after 0.6.1).
 
 ### Save format
 

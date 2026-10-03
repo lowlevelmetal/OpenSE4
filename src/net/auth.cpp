@@ -1,10 +1,8 @@
 #include "net/auth.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cstring>
 #include <format>
-#include <random>
 
 namespace opense4::net {
 
@@ -23,6 +21,8 @@ constexpr uint32_t rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); 
 // Domain separation: our hashes differ from a plain SHA-256 of the password.
 constexpr std::string_view kPasswordDomain = "OpenSE4 password v1\n";
 constexpr std::string_view kVerifierDomain = "OpenSE4 verifier v1\n";
+constexpr std::string_view kSigningKeyDomain = "OpenSE4 password signing key v1";
+constexpr std::string_view kVerifierPrefix = "pk1:";
 
 } // namespace
 
@@ -115,12 +115,44 @@ std::string hashPassword(std::string_view password) {
     return toHex(h.finish());
 }
 
+crypto::SigningKey passwordKey(std::string_view passwordHash) {
+    crypto::Key seed = crypto::Hash().add(kSigningKeyDomain).add(passwordHash).finish32();
+    crypto::SigningKey key = crypto::signingKey(seed);
+    crypto::wipe(seed.data(), seed.size());
+    return key;
+}
+
 std::string passwordVerifier(std::string_view passwordHash) {
+    if (passwordHash.empty()) return {};
+    return std::string(kVerifierPrefix) + crypto::hex(passwordKey(passwordHash).publicKey);
+}
+
+std::string legacyPasswordVerifier(std::string_view passwordHash) {
     if (passwordHash.empty()) return {};
     Sha256 h;
     h.update(kVerifierDomain);
     h.update(passwordHash);
     return toHex(h.finish());
+}
+
+bool isLegacyVerifier(std::string_view verifier) {
+    return verifier.size() == 64 && std::all_of(verifier.begin(), verifier.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
+}
+
+std::optional<crypto::Key> verifierKey(std::string_view verifier) {
+    if (!verifier.starts_with(kVerifierPrefix)) return std::nullopt;
+    return crypto::keyFromHex(verifier.substr(kVerifierPrefix.size()));
+}
+
+crypto::Signature signWithPassword(std::string_view passwordHash, std::span<const uint8_t> message) {
+    if (passwordHash.empty()) return {};
+    return crypto::sign(passwordKey(passwordHash), message);
+}
+
+bool checkPasswordSignature(std::string_view verifier, std::span<const uint8_t> message, const crypto::Signature& signature) {
+    if (verifier.empty()) return true;
+    const std::optional<crypto::Key> key = verifierKey(verifier);
+    return key && crypto::verify(signature, *key, message);
 }
 
 bool constantTimeEquals(std::string_view a, std::string_view b) {
@@ -136,6 +168,8 @@ bool constantTimeEquals(std::string_view a, std::string_view b) {
 
 bool checkPassword(std::string_view verifier, std::string_view passwordHash) {
     if (verifier.empty()) return true;
+    if (passwordHash.empty()) return false;
+    if (isLegacyVerifier(verifier)) return constantTimeEquals(verifier, legacyPasswordVerifier(passwordHash));
     return constantTimeEquals(verifier, passwordVerifier(passwordHash));
 }
 
@@ -147,14 +181,14 @@ std::string resetPassword() {
 }
 
 uint64_t randomId() {
-    std::random_device rd;
-    const uint64_t a = (static_cast<uint64_t>(rd()) << 32) ^ rd();
-    const auto t = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
-    uint64_t z = a ^ (t * 0x9e3779b97f4a7c15ull);
-    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
-    z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
-    z ^= z >> 31;
-    return z == 0 ? 1 : z;
+    std::array<uint8_t, 8> bytes{};
+    uint64_t z = 0;
+    while (z == 0) {
+        crypto::randomBytes(bytes);
+        z = 0;
+        for (size_t i = 0; i < bytes.size(); ++i) z |= static_cast<uint64_t>(bytes[i]) << (8 * i);
+    }
+    return z;
 }
 
 } // namespace opense4::net

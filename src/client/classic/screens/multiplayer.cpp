@@ -12,18 +12,23 @@
 #include "game/serialize.hpp"
 #include "net/auth.hpp"
 #include "net/discovery.hpp"
+#include "net/secure.hpp"
 #include "net/socket.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
-#include <utility>
 #include <format>
+#include <optional>
+#include <string>
+#include <utility>
 
 namespace opense4::client::classic {
 
 namespace {
+
+namespace crypto = net::crypto;
 
 enum class Mode { Choose, Host, Join, Lobby };
 
@@ -194,7 +199,8 @@ private:
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(g.started ? "In progress" : "Lobby");
                 ImGui::TableNextColumn();
-                if (g.dataSet != mine) ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "Different game data");
+                if (g.protocol != net::kProtocolVersion) ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "Other OpenSE4 version");
+                else if (g.dataSet != mine) ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "Different game data");
                 else if (g.password) ImGui::TextUnformatted("Password needed");
                 ImGui::PopID();
             }
@@ -242,6 +248,9 @@ private:
         cfg.joinPasswordHash = net::hashPassword(joinPassword_);
         cfg.turnTimeoutSeconds = timeout_;
         cfg.upnp.enabled = upnp_ && net::PortMapper::supported();
+        // This computer's identity as a host: players' games remember it.
+        if (auto key = net::secure::loadOrCreateHostKey(userDataDir() / net::secure::kHostKeyFileName)) cfg.hostKey = *key;
+        else log_.add(key.error() + " Players cannot remember this host from one game to the next.");
         host_ = std::make_unique<net::HostSession>(*ctx.rules, cfg);
         rules_ = ctx.rules;
         if (auto r = host_->start(); !r) {
@@ -271,6 +280,9 @@ private:
         cfg.passwordHash = net::hashPassword(password_);
         cfg.joinPasswordHash = net::hashPassword(joinPassword_);
         cfg.dataSet = game::dataSetIdentity(*ctx.rules);
+        // The host's key as trusted before (none: trusted on this first connection).
+        cfg.hostKey = knownHosts().find(address_, static_cast<uint16_t>(port_));
+        keyChanged_.reset();
         client_ = std::make_unique<net::ClientSession>(cfg);
         rules_ = ctx.rules;
         if (auto r = client_->connect(); !r) {
@@ -280,6 +292,25 @@ private:
         }
         setupSent_ = false;
         mode_ = Mode::Lobby;
+    }
+
+    static net::secure::KnownHosts knownHosts() { return net::secure::KnownHosts(userDataDir() / net::secure::kKnownHostsFileName); }
+
+    // After joining: remember the host's key, or say it is the one remembered.
+    void noteHostKey() {
+        const std::optional<crypto::Key>& seen = client_->seenHostKey();
+        if (!seen) return;
+        const std::string fp = crypto::fingerprint(*seen);
+        auto known = knownHosts();
+        const auto port = static_cast<uint16_t>(port_);
+        if (known.find(address_, port) == seen) {
+            log_.add(std::format("The host's key is the one this computer knows: {}", fp));
+        } else if (auto r = known.remember(address_, port, *seen); r) {
+            log_.add(std::format("First connection to this host: its key {} is now remembered. Check it against the one the host sees.", fp));
+        } else {
+            log_.add("Could not remember the host's key: " + r.error());
+        }
+        hostKey_ = fp;
     }
 
     void leave() {
@@ -296,6 +327,8 @@ private:
         std::vector<net::Event> events = host_ ? host_->poll(0) : client_ ? client_->poll(0) : std::vector<net::Event>{};
         for (const net::Event& e : events) {
             if (e.type != net::EventType::LobbyChanged && e.type != net::EventType::TurnStatusChanged) log_.add(net::describe(e));
+            if (e.type == net::EventType::Joined && client_) noteHostKey();
+            if (e.type == net::EventType::Rejected && client_ && client_->hostKeyChanged()) keyChanged_ = client_->seenHostKey();
             if (e.type == net::EventType::Joined && client_ && !setupSent_) {
                 client_->submitSetup(mySetup(ctx));
                 setupSent_ = true;
@@ -351,11 +384,26 @@ private:
             if (pm.state != net::PortMapState::Mapped && !pm.message.empty()) ImGui::TextColored(col, "%s", pm.message.c_str());
             ImGui::PopTextWrapPos();
             if (host_->lanDiscoveryRunning()) ImGui::TextDisabled("Players on your local network see this game in their Join list.");
+            ImGui::TextDisabled("Host key: %s (players see it when they join)", host_->hostFingerprint().c_str());
         } else {
-            const char* phase = client_->phase() == net::ClientPhase::Lobby ? "In the lobby" : client_->phase() == net::ClientPhase::Playing
-                                                                                                    ? "Playing"
-                                                                                                    : "Connecting...";
+            const char* phase = client_->phase() == net::ClientPhase::Lobby     ? "In the lobby"
+                                : client_->phase() == net::ClientPhase::Playing   ? "Playing"
+                                : client_->phase() == net::ClientPhase::Disconnected ? "Not connected"
+                                                                                     : "Connecting...";
             ImGui::Text("%s - %s:%u", phase, client_->config().host.c_str(), unsigned(client_->config().port));
+            if (!hostKey_.empty()) ImGui::TextDisabled("Encrypted. Host key: %s", hostKey_.c_str());
+            if (keyChanged_) {
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1),
+                                   "This host now shows the key %s. Trust it only if the host says it made a new key (a new computer, or "
+                                   "a deleted key file).",
+                                   crypto::fingerprint(*keyChanged_).c_str());
+                ImGui::PopTextWrapPos();
+                if (ImGui::Button("Trust the New Key and Connect", ctx.size({300, 30}))) {
+                    if (auto r = knownHosts().remember(address_, static_cast<uint16_t>(port_), *keyChanged_); !r) error_ = r.error();
+                    else connect(ctx);
+                }
+            }
         }
         ImGui::TextDisabled("%s", info.options.simultaneous ? "Simultaneous turns: everyone gives orders, then the host runs the turn."
                                                              : "Turn-based: players take their turns one after another.");
@@ -482,6 +530,8 @@ private:
     std::string error_;
     bool setupSent_ = false;
     bool autoReady_ = false;  // automation: ready as soon as we joined
+    std::string hostKey_;     // fingerprint of the host we joined
+    std::optional<crypto::Key> keyChanged_;  // the host showed another key than the one trusted
     NetLog log_;
     std::shared_ptr<const game::Rules> rules_;
     std::unique_ptr<net::HostSession> host_;

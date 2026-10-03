@@ -90,6 +90,16 @@ std::string validateState(const GameState& s, const Rules* rules = nullptr);
 // serializeState's envelope.
 uint64_t stateChecksum(const GameState& s);
 
+// The state in named parts (the date and options, the galaxy, the colonies,
+// the empires, ...), each hashed as stateChecksum() hashes the whole: when two
+// copies of a game differ, the parts whose hashes differ say where. Always
+// the same parts in the same order (statePartNames()).
+std::vector<uint64_t> statePartHashes(const GameState& s);
+std::span<const std::string_view> statePartNames();
+// The names of the parts whose hashes differ ("everything" when the lists
+// do not even have the same length).
+std::vector<std::string> differingStateParts(std::span<const uint64_t> a, std::span<const uint64_t> b);
+
 // Save files carry a small header (data set identity, turn, empire names).
 struct SaveInfo {
     std::string gameName;
