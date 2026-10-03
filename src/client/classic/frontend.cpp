@@ -156,7 +156,7 @@ private:
         ImGui::PushFont(ctx.fonts.regular, p.fontPx(kTextSize));
         const ImVec2 text = ImGui::CalcTextSize(kText);
         const ImVec2 inner(ctx.px(8), ctx.px(5));
-        const float bottom = buttonMin.y - ctx.px(errorShown ? 98 : 52);   // clear of the version line and the error lines
+        const float bottom = buttonMin.y - ctx.px(errorShown ? 98.0f : 52.0f);   // clear of the version line and the error lines
         const ImVec2 a(buttonMin.x, bottom - text.y - 2 * inner.y), b(buttonMin.x + text.x + 2 * inner.x, bottom);
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
         bg->AddRectFilled(a, b, imColor(0x101c40, 0.92f));
