@@ -989,11 +989,15 @@ target always passes, so every ship it plans outside the staging system is sent 
 (the fleets' leaders, and ships outside fleets while there is none). Choices of the nearest
 or the fewest jumps, the orders of the lists and the reachability test (below 999) are not
 affected; the territory's one jump, Secure Holdings' neighbours and the Politics minister's
-"within 2 jumps of X's territory" use the warp links directly and count real jumps. The
-engine differs: it counts real jumps throughout and tests at most 4, 3 and the setting
-(`ai_anger.cpp`, `planFleets` and the drones in `ai_military.cpp`); with the three tests
-corrected, 48 scratch games showed no measurable change (Attack 2 → 1 % of turns 51–100,
-Defend (Short Term) 70 → 72 %).
+"within 2 jumps of X's territory" use the warp links directly and count real jumps.
+OpenSE4 follows this since 2026-10-03: `aiJumpCount` (`ai_planner.hpp`) gives the
+original's count from the real one, and the strength test (`ai_anger.cpp`), recruiting,
+the drones and the Attack minister in Prepare for Attack (`ai_military.cpp`) compare it as
+above; a ship outside fleets already in the staging system gets no order from that
+routine (inferred). The engine used to count real jumps throughout and test at most 4, 3
+and the setting, and its Attack minister gave no orders in Prepare for Attack; with the
+three tests corrected, 48 scratch games showed no measurable change (Attack 2 → 1 % of
+turns 51–100, Defend (Short Term) 70 → 72 %).
 
 **Strength.** Each turn the AI adds up a strength per system and per empire. It counts
 every owned object, including those it cannot see:
@@ -2330,7 +2334,8 @@ binary).
       (the fleet in `amount`), and `planFleets` counts the ships that carry one for a fleet
       among its members. A recruit also waits, rather than fails, when a hazard, a busy yard
       or a blocked way stops its step (inferred from "fails only when"). The engine differs:
-      `planFleets` (`ai_military.cpp`) recruits only idle ships, within 3 jumps.
+      `planFleets` (`ai_military.cpp`) recruits only idle ships (within 1 jump since
+      2026-10-03, within 3 before).
     - Observed under a debugger (spec 07 "Pace observed under a debugger"): from turn 41
       on, 74–78 % of the original's attack ships were in fleets, against 44–51 % in ours;
       an empire with 46 ships kept six fleets of 7, 7, 6, 6, 2 and 1 attack ships, while our
@@ -2518,8 +2523,9 @@ binary).
     Anti-planet targets are planets of such empires among the attack candidates.
   - Idle drones in space within `Maximum Anti-Ship` (or `Anti-Planet`) `Drone Target
     System Distance` less 2 jumps (3 with the stock 5; the setting is compared with the
-    jumps plus two, §7.2 *Jumps*) are then sent after the targets, per-target times. The
-    engine differs: it compares the setting with the real jumps.
+    jumps plus two, §7.2 *Jumps*) are then sent after the targets, per-target times.
+    OpenSE4 follows this since 2026-10-03; it used to compare the setting with the real
+    jumps.
 - **`AI_Settings`** (confirmed: binary):
   - `Turns to Wait until next attack` is the attack gap of §7.2;
   - `Maximum Systems to Defend at a Time` caps the defend list;

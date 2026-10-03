@@ -2737,6 +2737,30 @@ TEST_CASE("ai: the Attack minister's ships attack where they stand, otherwise se
     CHECK(fromHome->location == target);
 }
 
+TEST_CASE("ai: in Prepare for Attack the Attack minister sends the ships outside the staging system there") {
+    // Spec 05 §7.2 *Jumps* (confirmed: binary): the routine's test that a ship
+    // is more than one jump from the first target compares the AI's jump
+    // count (the jumps plus two) with 1, so it always passes.
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, enemy{1u};
+    meet(s, me, enemy);
+    s.empire(me).relation(enemy).treaty = s.empire(enemy).relation(me).treaty = Treaty::War;
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location target = locationOf(s.galaxy, homeworld(s, enemy).planet);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::PrepareForAttack);
+    s.empire(me).aiMemory.targets = {target.system};
+    s.empire(me).aiMemory.staging = home.system;
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    const VehicleId atTarget = addTestVehicle(s, r, warship, target).id;   // no jump from the first target at all
+    const VehicleId staged = addTestVehicle(s, r, warship, {home.system, Sector{kSystemCenter, kSystemCenter}}).id;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planAttack(p);
+    CHECK(p.st.vehicle(atTarget)->orders == std::vector<Order>{ai::detail::seekOrder(home)});
+    CHECK(p.st.vehicle(staged)->orders.empty());
+}
+
 TEST_CASE("ai: the ministers' movement orders are gone at each start of turn") {
     // Spec 05 §7.5 (confirmed: binary): every Seek lasts one movement phase, so
     // the computer players' warships are free again at every start of turn.
@@ -3074,6 +3098,76 @@ TEST_CASE("ai: idle drones in range go after the targets, a set number per targe
             ++sent;
         }
     CHECK(sent == p.prof.settings.antiShipDronesPerTarget);
+}
+
+TEST_CASE("ai: drones go after targets whose AI jump count is at most the setting, so the setting less 2 jumps") {
+    // Spec 05 §7.5 *Mines, satellites and drones*, §7.2 *Jumps* (confirmed: binary).
+    TempTree t("dronereach");
+    t.write("Ai/Default_AI_Settings.txt", "Maximum Anti-Ship Drone Target System Distance := 3\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = newEngineGame(13, 2, 12, false);
+    exploreEverything(s);
+    const EmpireId enemy{0u}, cpu{1u};
+    meet(s, enemy, cpu);
+    s.empire(cpu).relation(enemy).treaty = Treaty::War;
+    s.empire(enemy).relation(cpu).treaty = Treaty::War;
+    const Location home = locationOf(s.galaxy, homeworld(s, cpu).planet);
+    const VehicleId intruder = addTestVehicle(s, r, addWarship(s, r, enemy, "Raider"), home).id;
+    const DesignId hunter = addTestDesign(s, r, cpu, "Hunter", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    s.design(hunter).designType = "Anti-Ship Drone";
+    const std::vector<int> jumps = ai::detail::jumpsOver(s, home.system);
+    std::optional<SystemId> one, two;
+    for (size_t i = 0; i < jumps.size(); ++i) {
+        if (jumps[i] == 1 && !one) one = SystemId{i};
+        if (jumps[i] == 2 && !two) two = SystemId{i};
+    }
+    REQUIRE(one);
+    REQUIRE(two);
+    const VehicleId far = addTestVehicle(s, r, hunter, {*two, Sector{kSystemCenter, kSystemCenter}}).id;
+    const VehicleId near = addTestVehicle(s, r, hunter, {*one, Sector{kSystemCenter, kSystemCenter}}).id;
+    sight::updateKnowledge(r, s);
+    Empire& e = s.empire(cpu);
+    if (std::find(e.knowledge.visibleVehicles.begin(), e.knowledge.visibleVehicles.end(), intruder) == e.knowledge.visibleVehicles.end()) {
+        e.knowledge.visibleVehicles.push_back(intruder);
+        std::sort(e.knowledge.visibleVehicles.begin(), e.knowledge.visibleVehicles.end());
+    }
+    ai::detail::Planner p(r, s, cpu, ai::detail::Mode::Computer, 3);
+    REQUIRE(p.prof.settings.antiShipDroneRange == 3);
+    ai::detail::planMinesSatellitesDrones(p);
+    CHECK(p.st.vehicle(far)->orders.empty());          // 2 jumps: a count of 4
+    REQUIRE(p.st.vehicle(near)->orders.size() == 1);   // 1 jump: a count of 3
+    CHECK(p.st.vehicle(near)->orders.front().vehicle == intruder);
+}
+
+TEST_CASE("ai: recruits come from within 1 jump of the fleet (an AI jump count below 4)") {
+    // Spec 05 §7.5 AI_Fleets *Size*, §7.2 *Jumps* (confirmed: binary).
+    TempTree t("recruitreach");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 1\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    const VehicleId leader = addTestVehicle(s, r, warship, home).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {leader}}).ok);
+    const std::vector<int> jumps = ai::detail::jumpsOver(s, home.system);
+    std::optional<SystemId> one, two;
+    for (size_t i = 0; i < jumps.size(); ++i) {
+        if (jumps[i] == 1 && !one) one = SystemId{i};
+        if (jumps[i] == 2 && !two) two = SystemId{i};
+    }
+    REQUIRE(one);
+    REQUIRE(two);
+    const VehicleId far = addTestVehicle(s, r, warship, {*two, Sector{kSystemCenter, kSystemCenter}}).id;
+    const VehicleId near = addTestVehicle(s, r, warship, {*one, Sector{kSystemCenter, kSystemCenter}}).id;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planFleets(p);
+    CHECK(p.st.vehicle(near)->orders == std::vector<Order>{ai::detail::joinFleetOrder(s.fleets.back().id)});
+    CHECK(p.st.vehicle(far)->orders.empty());
 }
 
 TEST_CASE("ai: acknowledgements get a chatter reply from the response pools") {
@@ -3730,7 +3824,10 @@ TEST_CASE("ai: defend entries are ordered by jumps, our population at stake, pla
     CHECK(order(true) == std::vector<uint32_t>{3, 2, 4, 5, 1});
 }
 
-TEST_CASE("ai: the 4-jump test starts on the 6th turn in the state and counts per target") {
+TEST_CASE("ai: the strength test around the targets starts on the 6th turn in the state, reaches 2 jumps and counts per target") {
+    // Spec 05 §7.2 Prepare for Attack step 4 and *Jumps* (confirmed: binary):
+    // the AI's jump count is the jumps plus two, and the test takes the
+    // systems whose count is below 5.
     GameState s = computerGame(13, 2, 0, 12);
     exploreEverything(s);
     const EmpireId me{0u}, enemy{1u};
@@ -3739,32 +3836,48 @@ TEST_CASE("ai: the 4-jump test starts on the 6th turn in the state and counts pe
     s.vehicles.clear();
     const SystemId home = ai::detail::homeSystem(s, me);
     const SystemId enemyHome = ai::detail::homeSystem(s, enemy);
-    const std::vector<int> fromHome = ai::detail::jumpsOver(s, home);
-    REQUIRE(fromHome[enemyHome.index()] <= 4);
     AiMemory& m = s.empire(me).aiMemory;
     m.targets = {enemyHome};
     m.staging = home;
     s.empire(me).aiState = static_cast<int>(ai::AiState::PrepareForAttack);
     const Rules& r = engineRules();
-    // Our strength near the target (our home colony, 1) is not above 3 × theirs
-    // (2: their homeworld, and once more as an attack candidate, spec 05 §7.2).
+    // Their strength in the target is 2 (their homeworld, and once more as an
+    // attack candidate, spec 05 §7.2): ours near it must be above 6.
     s.empire(me).aiTurnsInState = 4;
     CHECK(ai::nextState(r, s, me) == ai::AiState::PrepareForAttack);
     s.empire(me).aiTurnsInState = 5;
     CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
-    // Five points at home (two satellite groups of one, 2 each), and a second
-    // target near home: home counts once per target (10 > 6).
+    // Systems exactly 2 and 3 jumps from the target, over every link.
+    const std::vector<int> fromTarget = ai::detail::jumpsOver(s, enemyHome);
+    std::optional<SystemId> two, three;
+    for (size_t i = 0; i < fromTarget.size(); ++i) {
+        if (SystemId{i} == home) continue;
+        if (fromTarget[i] == 2 && !two) two = SystemId{i};
+        if (fromTarget[i] == 3 && !three) three = SystemId{i};
+    }
+    REQUIRE(two);
+    REQUIRE(three);
+    CHECK(ai::detail::aiJumpCount(2) == 4);
+    CHECK(ai::detail::aiJumpCount(ai::detail::kUnreachable) == ai::detail::kUnreachable);
+    // Eight points (a satellite group of seven) 2 jumps away count; 3 jumps away they do not.
     const DesignId sat = addTestDesign(s, r, me, "Buoy", "Test Satellite Hull", {"Test Satellite Gun"});
-    for (int i = 0; i < 2; ++i) addTestVehicle(s, r, sat, {home, Sector{kSystemCenter, kSystemCenter}}).count = 1;
+    const VehicleId group = addTestVehicle(s, r, sat, {*two, Sector{kSystemCenter, kSystemCenter}}).id;
+    s.vehicle(group)->count = 7;
+    CHECK(ai::nextState(r, s, me) == ai::AiState::PrepareForAttack);
+    s.vehicle(group)->location = {*three, Sector{kSystemCenter, kSystemCenter}};
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
+    // Four points 2 jumps away are not enough for one target, but count once
+    // per target: a second target within 2 jumps of them makes eight.
+    s.vehicle(group)->location = {*two, Sector{kSystemCenter, kSystemCenter}};
+    s.vehicle(group)->count = 3;
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
+    const std::vector<int> fromTwo = ai::detail::jumpsOver(s, *two);
     std::optional<SystemId> second;
-    for (size_t i = 0; i < fromHome.size() && !second; ++i)
-        if (SystemId{i} != home && SystemId{i} != enemyHome && fromHome[i] <= 4) second = SystemId{i};
+    for (size_t i = 0; i < fromTwo.size() && !second; ++i)
+        if (SystemId{i} != home && SystemId{i} != enemyHome && fromTwo[i] <= 2 && ai::detail::jumpsOver(s, home)[i] > 0) second = SystemId{i};
     REQUIRE(second);
-    const std::vector<int> fromSecond = ai::detail::jumpsOver(s, *second);
-    REQUIRE(fromSecond[home.index()] <= 4);
-    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);  // one target: 5 is not above 6
     m.targets = {enemyHome, *second};
-    CHECK(ai::nextState(r, s, me) == ai::AiState::Attack);  // 5 + 5 > 6, and the staging system is stronger
+    CHECK(ai::nextState(r, s, me) == ai::AiState::PrepareForAttack);
 }
 
 TEST_CASE("ai: design names count the Design minister's designs and skip names any empire uses") {

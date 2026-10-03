@@ -121,6 +121,10 @@ bool canLeadFleet(Planner& p, const Vehicle& v) {
 
 // The goal of the attack fleets in the current state (spec 05 §7.5): a Seek
 // that lasts one movement phase, so the fleet heads for it again every turn.
+// In Prepare for Attack the routine's test that a fleet's leader is more than
+// one jump from the first target always passes (the AI's jump count is the
+// jumps plus two, spec 05 §7.2 *Jumps*), so every attack fleet is sent to the
+// staging system.
 std::vector<Order> stateGoal(Planner& p) {
     const AiMemory& m = p.emp().aiMemory;
     switch (p.state) {
@@ -296,9 +300,10 @@ void planFleets(Planner& p) {
     std::vector<uint8_t> attack(keep.size(), 0);
     for (int i = 1; i <= n; ++i) attack[static_cast<size_t>(i - 1)] = (i % 2 == 1) && xmath::Ext((i + 1) / 2) < attackShare;
 
-    // Recruits: idle ships outside fleets within 3 jumps. They join at once
-    // at the fleet's spot; otherwise they get a Join Fleet order, which chases
-    // the fleet until it joins, and count toward its size from then on.
+    // Recruits: idle ships outside fleets whose AI jump count from the fleet
+    // is below 4, so within 1 real jump (spec 05 §7.2 *Jumps*). They join at
+    // once at the fleet's spot; otherwise they get a Join Fleet order, which
+    // chases the fleet until it joins, and count toward its size from then on.
     for (size_t k = 0; k < keep.size(); ++k) {
         const Fleet* f = p.st.fleet(keep[k]);
         const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
@@ -315,8 +320,7 @@ void planFleets(Planner& p) {
             const Vehicle* v = p.st.vehicle(id);
             if (!v || v->fleet.valid() || !p.idle(*v) || unfit(p, *v)) continue;
             if (defenceLed ? p.info(v->design).role != Role::Defense : !attackMaterial(p, *v)) continue;
-            const int j = jumps[v->location.system.index()];
-            if (j > 3) continue;
+            if (!(aiJumpCount(jumps[v->location.system.index()]) < 4)) continue;
             if (v->location == at) {
                 if (p.emit(cmd::JoinFleet{keep[k], id})) ++size;
             } else if (p.setOrders(id, {joinFleetOrder(keep[k])})) {
@@ -465,6 +469,24 @@ void planDefense(Planner& p) {
 
 void planAttack(Planner& p) {
     if (!p.on(Minister::Attack) || anyFleet(p)) return;
+    if (p.state == AiState::PrepareForAttack) {
+        // Prepare for Attack (spec 05 §7.2 *Jumps*, confirmed: binary): a ship
+        // outside the staging system goes there when its AI jump count from
+        // the first target is above 1, which always holds (the count is the
+        // jumps plus two). A ship already in the staging system gets no order
+        // from this routine (inferred: the spec names only those outside it).
+        const AiMemory& m = p.emp().aiMemory;
+        if (!m.staging.valid() || m.targets.empty()) return;
+        const std::vector<int> fromTarget = p.jumpsFrom(m.targets.front());
+        const Location goal = spotIn(p, m.staging);
+        for (VehicleId id : p.ownVehicles(Minister::Attack)) {
+            const Vehicle* v = p.st.vehicle(id);
+            if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).role != Role::Attack || p.info(v->design).stats.movement <= 0) continue;
+            if (v->location.system == m.staging) continue;
+            if (aiJumpCount(fromTarget[v->location.system.index()]) > 1) p.setOrders(id, {seekOrder(goal)});
+        }
+        return;
+    }
     // The target system of the state (spec 05 §7.5), as for the fleets.
     SystemId target;
     const AiMemory& m = p.emp().aiMemory;
@@ -1224,8 +1246,10 @@ void launchFromPlanets(Planner& p) {
     }
 }
 
-// Idle drones in space within the target distance are sent after the
-// targets, per-target times (spec 05 §7.5).
+// Idle drones in space whose AI jump count to the target is at most the
+// target distance setting, so within the setting less 2 real jumps (spec 05
+// §7.2 *Jumps*, confirmed: binary), are sent after the targets, per-target
+// times (spec 05 §7.5).
 void sendDrones(Planner& p) {
     const SettingsTable& set = p.prof.settings;
     std::map<SystemId, std::vector<int>> jumps;
@@ -1249,7 +1273,7 @@ void sendDrones(Planner& p) {
             for (VehicleId id : drones) {
                 if (sent >= perTarget) break;
                 const Vehicle* v = p.st.vehicle(id);
-                if (!v || p.busy.contains(id) || jumpsTo(v->location.system, target.location.system) > range) continue;
+                if (!v || p.busy.contains(id) || aiJumpCount(jumpsTo(v->location.system, target.location.system)) > range) continue;
                 if (p.setOrders(id, {target})) ++sent;
             }
         }

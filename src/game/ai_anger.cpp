@@ -171,15 +171,16 @@ Decision decide(const GameState& s, EmpireId id, const Situation& sit, const AiP
             return AiState::Infrastructure;
         }
         // Once 5 full turns have been spent in this state (from the 6th turn):
-        // our strength within 4 jumps of each target, counted per target, so a
-        // system near two targets counts twice (confirmed: binary).
+        // our strength in every system whose AI jump count from a target is
+        // below 5, so within 2 real jumps (spec 05 §7.2 *Jumps*), counted per
+        // target, so a system near two targets counts twice (confirmed: binary).
         if (inState >= 5) {
             int64_t theirs = 0, mine = 0;
             for (SystemId t : m.targets) {
                 theirs += hostile(t);
                 const std::vector<int> j = jumpsOver(s, t);
                 for (size_t i = 0; i < j.size(); ++i)
-                    if (j[i] <= 4) mine += sit.ours[i];
+                    if (aiJumpCount(j[i]) < 5) mine += sit.ours[i];
             }
             if (!(mine > 3 * theirs)) return AiState::Infrastructure;
         }

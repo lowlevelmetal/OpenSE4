@@ -161,28 +161,28 @@ TEST_CASE("determinism: a simultaneous game gives the golden checksums") {
         {5, 0x95800d070b7ba158ull},
         {10, 0xbeee64fc3bf9fdf2ull},
         {20, 0xe0dd94c0f07f3bcbull},
-        {40, 0x650f83ff9779978aull},
-        {60, 0x25398f8351c42462ull},
-        {80, 0x81aa53943b7a353cull},
-        {100, 0x01247c3621aa0c17ull},
+        {40, 0x060b06eba9eb6420ull},
+        {60, 0x60feb6709f5307e4ull},
+        {80, 0xae144738f63d5678ull},
+        {100, 0xc842b17630adf880ull},
     }};
     checkCoverage(playGolden("simultaneous", 39, true, kGolden));
 }
 
 TEST_CASE("determinism: a turn-based game gives the golden checksums") {
     static constexpr std::array<Milestone, 10> kGolden{{
-        {0, 0x0649cdbac073528bull},
-        {1, 0xfa1d2b306c3f2c0full},
-        {2, 0xa97c3049b3586c6dull},
-        {5, 0xcd9c29b38076cc05ull},
-        {10, 0xcbe7dfa74c620ec7ull},
-        {20, 0xdd84255161d24518ull},
-        {40, 0xfd5d3c16fca44fccull},
-        {60, 0x4171232b9eacc743ull},
-        {80, 0x68cb535843f30f8dull},
-        {100, 0xf148289a1d2ffdb9ull},
+        {0, 0x426e868b34035f8bull},
+        {1, 0xb531bfc4779487faull},
+        {2, 0xad7545420d64bb68ull},
+        {5, 0xd4683d9800d9c571ull},
+        {10, 0x9c32da003225fd01ull},
+        {20, 0x96d0ff316d9d9b93ull},
+        {40, 0xe6e4ec8c161953e0ull},
+        {60, 0x413a347bc377f341ull},
+        {80, 0xb09e79b4b4740424ull},
+        {100, 0x570632747db6e1d5ull},
     }};
-    checkCoverage(playGolden("turn-based", 35, false, kGolden));
+    checkCoverage(playGolden("turn-based", 39, false, kGolden));
 }
 
 // ---- Battles ---------------------------------------------------------------------------------------

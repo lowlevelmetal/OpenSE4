@@ -42,6 +42,17 @@ enum class Role : uint8_t {
 inline constexpr int64_t kStrengthScale = 10;
 // Every AI jump count (spec 05 §7.2): an unreachable system is 999 jumps away.
 inline constexpr int kUnreachable = 999;
+// The jump count the original's AI compares with numbers and settings (spec
+// 05 §7.2 *Jumps*, spec 01 §3.6, confirmed: binary): its routine returns the
+// warp jumps between two systems over every link plus two, and 999 when no
+// route joins them. `jumps` is the real count (jumpsOver, Planner::jumpsFrom).
+// The choices of the nearest or the fewest jumps compare real jumps, which
+// orders them the same; the fixed tests compare this count: the strength
+// test around the targets (below 5, so at most 2 real jumps), fleet
+// recruiting (below 4: at most 1), the drones (at most the setting: the
+// setting less 2) and Prepare for Attack's "more than one jump from the
+// first target" (above 1, which always holds).
+constexpr int aiJumpCount(int jumps) { return jumps >= kUnreachable ? kUnreachable : jumps + 2; }
 
 struct DesignInfo {
     bool ready = false;
