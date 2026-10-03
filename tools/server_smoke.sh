@@ -96,15 +96,16 @@ password = "b"
 kind = "computer"
 EOF
 mkdir "$WORK/inbox"
-"$SERVER" pbem new --setup="$WORK/mail.toml" --out="$WORK/mail.gam" "$@" | tee "$WORK/new.log"
+# The PBEM host's key: the turn files name it, the orders files are encrypted to it.
+"$SERVER" pbem new --setup="$WORK/mail.toml" --out="$WORK/mail.gam" --host-key="$WORK/host_key.txt" "$@" | tee "$WORK/new.log"
 grep -q "Send .*Mail_Relay_01.turn to empire 1" "$WORK/new.log"
 "$SERVER" pbem info --game="$WORK/Mail_Relay_01.turn"
 "$SERVER" pbem orders --turn="$WORK/Mail_Relay_01.turn" --password=a --out="$WORK/inbox"
-"$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" "$@" | tee "$WORK/process1.log"
+"$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" --host-key="$WORK/host_key.txt" "$@" | tee "$WORK/process1.log"
 grep -q "Next: empire 2" "$WORK/process1.log"
 grep -q "Send .*Mail_Relay_02.turn to empire 2" "$WORK/process1.log"
 "$SERVER" pbem orders --turn="$WORK/Mail_Relay_02.turn" --password=b --out="$WORK/inbox"
-"$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" "$@" | tee "$WORK/process2.log"
+"$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" --host-key="$WORK/host_key.txt" "$@" | tee "$WORK/process2.log"
 grep -q "the game is now at turn 1" "$WORK/process2.log"
 grep -q "Next: empire 1" "$WORK/process2.log"
 "$SERVER" pbem info --game="$WORK/mail.gam"
@@ -119,7 +120,7 @@ if [[ -x $CLIENT && ${SMOKE_CLIENT:-1} != 0 ]]; then
     SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio --pbem="$WORK/Mail_Relay_01.turn" --pbem-password=a --pbem-orders="$WORK/inbox" \
         --pbem-end-turn "${CLIENT_ARGS[@]}" | tee "$WORK/client.log"
     grep -q "Orders saved to .*Mail_Relay_01.plr" "$WORK/client.log"
-    "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" "$@" | tee "$WORK/process3.log"
+    "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" --host-key="$WORK/host_key.txt" "$@" | tee "$WORK/process3.log"
     grep -q "orders: " "$WORK/process3.log"
     grep -q "Next: empire 2" "$WORK/process3.log"
 fi

@@ -550,6 +550,9 @@ computer, not in the game, except the autosave choice, which belongs to the game
   host the player number and the new password, one message per empire. The numbers come from
   a clock-seeded draw, and the game's random sequence is saved before and restored after, so
   the game's random numbers are not disturbed (OpenSE4 simply uses a separate source).
+  OpenSE4 writes six such numbers, twelve digits (an OpenSE4 choice): its password
+  verifiers can be guessed offline, and six digits would fall to that at once
+  (docs/MULTIPLAYER.md, "Security").
 - **When it takes effect.** Not at once: the new passwords are written into the empires when
   the host next processes a turn, right after every orders file has been read and the host has
   chosen to go on. An orders file carries the player's own password, so applying the reset
