@@ -10,6 +10,7 @@
 #include "client/classic/lesson_runner.hpp"
 #include "client/classic/main_window.hpp"
 #include "client/mode.hpp"
+#include "client/script/player.hpp"
 
 #include <chrono>
 #include <deque>
@@ -52,13 +53,16 @@ struct ClassicOptions {
     // (at once, or after the screenshot when one is asked for).
     bool lessonCheck = false;
     bool lessonCheckQuits = true;
+    // An input script plays or the session is recorded (docs/BUILDING.md
+    // "Input scripts"): the mode tracks what scripts check (probe()).
+    bool scripted = false;
 };
 
 // What to tell the player when no installed copy of the game is found:
 // auto-detection failed (`installDir` empty) or `installDir` holds no data set.
 std::string missingInstallMessage(const std::string& installDir);
 
-class ClassicMode final : public Mode {
+class ClassicMode final : public Mode, private script::Probe {
 public:
     static std::unique_ptr<ClassicMode> create(const Platform& platform, const ClassicOptions& options, std::string& error);
     ~ClassicMode() override;
@@ -71,6 +75,7 @@ public:
     // The tutorial input lock (lesson_lock.hpp).
     EventVerdict filterEvent(const SDL_Event& event) override;
     int exitCode() const override { return exitCode_; }
+    const script::Probe* probe() const override { return options_.scripted ? this : nullptr; }
 
 private:
     explicit ClassicMode(const Platform& platform) : platform_(platform) {}
@@ -135,11 +140,41 @@ private:
     // The tutorial input lock, made at the end of each frame for the next.
     classic::InputLock lock_;
     void updateLock(classic::UiContext& ui);
+    // The keyboard goes to the classic window in front (keepFocusOnFrontWindow).
+    void keepFocusOnFrontWindow();
+    ImGuiID frontWindow_ = 0;   // the Dear ImGui window of the window in front (0: none)
     // --lesson-check: the windows the step works in, and its report.
     void prepareLessonCheck();
     void lessonCheckReport(classic::UiContext& ui);
     int lessonCheckFrame_ = -1;
     int exitCode_ = 0;
+
+    // Input scripts (script::Probe, classic_probe.cpp): what the frame drawn
+    // last showed, and the game's counters since it began.
+    std::vector<script::Box> tagBoxes(std::string_view name) const override;
+    std::vector<std::string> tagNames() const override;
+    ImVec2 framePoint(float x, float y) const override;
+    float frameScale() const override;
+    std::vector<script::Box> sectors(const script::Target& t, std::string& error) const override;
+    std::vector<script::Box> systems(const script::Target& t, std::string& error) const override;
+    std::string targetAt(ImVec2 p) const override;
+    std::string screen() const override { return session_ ? "game" : "front"; }
+    std::vector<std::string> openWindows() const override;
+    std::optional<script::LessonInfo> lesson() const override;
+    std::optional<uint32_t> turn() const override;
+    std::vector<std::string> logLines() const override;
+    bool typing() const override;
+    std::string lockDescription() const override;
+    std::optional<bool> holds(const learn::Condition& c, const learn::Mark& since, std::string& error) const override;
+    learn::Mark mark(bool gameStart) const override;
+    std::optional<int64_t> factValue(learn::Fact f, const learn::Mark& since) const override;
+    // Each frame: the commands and battles since the game began.
+    void trackForScripts();
+    learn::ClientFacts lastFacts_;
+    learn::Tracker scriptTracker_;
+    learn::Mark gameMark_;
+    uint64_t trackedRevision_ = UINT64_MAX;
+    float fbScale_ = 1.0f;
 
     // Network games: status strip and chat.
     void drawNetwork(classic::UiContext& ui);

@@ -482,6 +482,16 @@ which the original draws in the system's Small Fonts.
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |
 | `screens/learn_screens.*`, `screens/markdown_view.*` | The Learn window and the manual viewer, in the front end and in a game, and the Markdown they draw |
+| `classic_probe.cpp` | What input scripts see of the client (`script::Probe`): the UI tags and widgets of the frame drawn last, the main window's sectors and systems, the windows, the lesson and the game's counters |
+
+`src/client/script` plays input scripts (docs/BUILDING.md "Input scripts"): `script.*`
+is the format and its parser, `player.*` turns each step into the frame's input events and
+checks over a `Probe` (headless, so the tests drive it with one of their own),
+`sdl_input.*` makes those events into the SDL events a mouse and keyboard send, `items.*`
+collects the widgets of each frame by label (Dear ImGui's item hooks, `imgui_item_hook.*`
+in `src/third_party_config`, turned on only for a script or a recording) and
+`recorder.*` writes a script from a session. The app handles a script's events exactly as
+a player's: `Mode::filterEvent` (the tutorial input lock) first, then Dear ImGui.
 
 ### Learning to play
 

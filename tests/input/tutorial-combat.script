@@ -1,0 +1,80 @@
+# Tutorial 6, "Combat", played through under the input lock (docs/BUILDING.md "Input scripts").
+options --tutorial=combat --layout=1024x768 --size=1280x800
+
+wait-lesson combat
+# 1 Battles.
+click item:Next in=lesson
+wait-step 2
+# 2 Open the simulator: Designs, then Simulator.
+click tag:command:designs
+wait-window designs
+click tag:designs:simulator
+wait-window combat-simulator
+wait-step 3
+# 3 Set up the sides: Race 1 gets two attack ships (the first item, alphabetical in the stock
+# data set), Race 2 the defense base (the second item).
+click item:"Race 1" in=combat-simulator
+click item:##item in=combat-simulator nth=1
+click item:##item in=combat-simulator nth=1
+click item:"Race 2" in=combat-simulator
+click item:##item in=combat-simulator nth=2
+wait-step 4
+assert { all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }
+# 4 Begin, on the Tactical tab.
+click tag:combat-simulator:tactical
+click tag:combat-simulator:begin
+wait-window tactical-combat
+wait-step 5
+# 5 The battlefield: Begin.
+click tag:tactical-combat:end-turn
+wait-step 6
+assert { battle_begun = true }
+# 6 Move: zoom the map out with the wheel (five notches) until the base shows, select a ship, and click the
+# square above the base: the ship moves toward it as far as it can this turn.
+wheel tag:tactical-combat:map -5
+wait-for item:piece:enemy in=tactical-combat
+click item:piece:own in=tactical-combat nth=1
+click item:piece:enemy@50%,-50% in=tactical-combat
+wait-step 7
+# 7 Fire: each combat turn, every ship fires at the base when it can, else moves closer, and
+# End Turn (E) ends the phase; until a shot was fired.
+repeat 15 until { battle_order = "fire" }
+  click item:piece:own in=tactical-combat nth=1 optional
+  click item:piece:enemy in=tactical-combat
+  click item:piece:enemy@50%,-50% in=tactical-combat
+  click item:piece:own in=tactical-combat nth=2 optional
+  click item:piece:enemy in=tactical-combat
+  click item:piece:enemy@50%,-50% in=tactical-combat
+  key E
+  wait 30
+end
+wait-step 8
+# 8 End the phase: Auto lets every side follow its strategies; each combat turn then waits for
+# End Turn (E), until the battle is over: Combat Complete, OK, and the window closes.
+click item:Auto in=tactical-combat
+repeat 100 until { not = { window = "tactical-combat" } }
+  key E
+  wait 30
+  click item:OK in="Combat Complete" optional
+end
+wait-window combat-simulator
+wait-step 9
+# 9 A strategic battle: the Strategic tab, Begin.
+click tag:combat-simulator:strategic
+click tag:combat-simulator:begin
+wait-window strategic-combat
+wait-step 10
+# 10 Watching: Begin in Strategic Combat; Close lights up when the battle is over.
+click item:Begin in=strategic-combat
+click item:Close in=strategic-combat timeout=7200
+wait-closed strategic-combat
+wait-step 11
+# 11 Strategies, in the simulator.
+click tag:combat-simulator:strategies
+wait-window strategies
+wait-step 12
+# 12 Well done: Finish.
+click item:Finish in=lesson
+wait-result done
+click item:"Keep Playing"
+wait-gone item:"Keep Playing"

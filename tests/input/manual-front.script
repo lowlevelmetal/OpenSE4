@@ -1,0 +1,58 @@
+# The manual on its own, from the front end (docs/LEARNING.md "The Learn window and the
+# manual"): links to pages and anchors, Back and Forward (buttons and Alt+arrows), the
+# contents tree, search, Contents, and window links dimmed outside a game
+# (docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --manual=research --layout=1024x768 --size=1280x800
+
+wait-for item:page:research in=front
+assert-present item:anchor:research-points
+assert-disabled item:Back in=front
+assert-disabled item:Forward in=front
+# A link to a section of another page: that page, scrolled to the section.
+click item:link:economy#how-a-colony-produces in=front
+wait-for item:page:economy in=front
+wait-for item:anchor:how-a-colony-produces in=front
+assert-enabled item:Back in=front
+assert-disabled item:Forward in=front
+# Back and Forward, then the same with Alt+Left and Alt+Right.
+click item:Back in=front
+wait-for item:page:research in=front
+assert-enabled item:Forward in=front
+click item:Forward in=front
+wait-for item:page:economy in=front
+key Alt+LeftArrow
+wait-for item:page:research in=front
+key Alt+RightArrow
+wait-for item:page:economy in=front
+# The contents tree: a chapter, then one of its sections.
+click item:Construction in=front
+wait-for item:page:construction in=front
+click item:Research in=front
+wait-for item:page:research in=front
+click item:"##the-research-queue" in=front
+wait-for item:anchor:the-research-queue in=front
+assert-absent item:anchor:research-points in=front
+# Links within the page: the window links lie further down; outside a game they are dimmed
+# and open nothing.
+wait-for item:link:window:research in=front
+click item:link:window:research in=front
+wait 5
+assert-screen front
+assert-present item:page:research in=front
+# Search: every word must appear in a section; a result opens its page at the section.
+click item:##search in=front
+type "warp point"
+wait-for item:"*: *" in=front
+click item:"*: *" in=front nth=1
+wait-gone item:page:research in=front
+assert-present item:"##search" in=front
+# Contents goes to the first page and clears the search.
+click item:Contents in=front
+wait-for item:page:getting-started in=front
+assert-present item:"The galaxy" in=front
+# The page scrolls with the wheel; Close goes back to the intro.
+wheel item:page:getting-started in=front -5
+wait 3
+click item:Close in=front
+wait-for item:"Quick Start" in=front

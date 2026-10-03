@@ -64,6 +64,8 @@ private:
     // The active step's condition looks out of reach: Next offers Skip.
     bool stuck(const UiContext& ui) const;
     void drawPanel(UiContext& ui);
+    // Hands Dear ImGui's keyboard focus back to the window that had it before a click on the panel.
+    void keepKeyboardFocus();
     void tutorialBody(UiContext& ui);
     void trainingBody(UiContext& ui);
     void drawResult(UiContext& ui);
@@ -84,6 +86,7 @@ private:
     double refusedTime_ = -10;
     YesNoPrompt leave_;
     Request request_ = Request::None;
+    ImGuiID focusBefore_ = 0;   // the window that had the keyboard focus before the panel took it
 };
 
 } // namespace opense4::client::classic

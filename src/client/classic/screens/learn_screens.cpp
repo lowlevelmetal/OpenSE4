@@ -7,8 +7,10 @@
 #include "client/classic/frontend.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
+#include "client/script/items.hpp"
 
 #include <SDL3/SDL.h>
+#include <imgui_internal.h>
 
 #include <algorithm>
 #include <format>
@@ -91,6 +93,7 @@ void LearnView::lessons(const Painter& p, LearnHost& host, learn::LessonKind kin
             sel = l.slug;
             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) host.start(kind, l.slug);
         }
+        script::reportItem(l.title);   // input scripts find a lesson by its title
         const ImVec2 min = ImGui::GetItemRectMin();
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddText(ImVec2(min.x + p.px(4), min.y + p.px(2)), IM_COL32_WHITE, l.title.c_str());
@@ -279,6 +282,11 @@ bool ManualView::draw(const Painter& p, Dialog& d, LearnHost& host) {
         };
         options_.cannotFollow = host.locked ? "Not while a lesson step locks the game (Free Play in the lesson panel unlocks it)" : "Only during a game";
         if (auto clicked = drawMarkdown(p, page->doc.blocks, options_)) follow(*clicked, host);
+        // Input scripts see which page is shown (page:<slug>).
+        if (script::collectingItems()) {
+            const ImGuiWindow* w = ImGui::GetCurrentWindow();
+            script::reportItem("page:" + page_, w->InnerRect.Min, w->InnerRect.Max);
+        }
         if (!options_.scrollTo.empty()) {
             // No such section on the page: its top.
             options_.scrollTo.clear();

@@ -226,6 +226,7 @@ public:
     // first Dialog registers `window:<id>`.
     std::optional<ScreenId> drawing;
     bool windowTagged = false;
+    ImGuiID drawingWindow = 0;   // and the Dear ImGui window of that Dialog
     void tagWindow(ImVec2 min, ImVec2 max);
     // A tab or filter button of the window being drawn, just drawn: tags it
     // `<window>:<tab>` and, when it is the one shown, reports it to lessons

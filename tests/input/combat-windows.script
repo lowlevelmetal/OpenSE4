@@ -1,0 +1,60 @@
+# The Tactical Combat window's mouse-only parts on a sample battle (--open=tactical: the
+# player's warships against copies of them): the wheel zooms the map, a right-click on a
+# piece shows its Combat Piece Report, the Options and Orders windows (docs/BUILDING.md
+# "Input scripts").
+options --quick-start --seed=7 --open=tactical --layout=1024x768 --size=1280x800
+
+wait-window tactical-combat
+wait-for item:Begin in=tactical-combat
+click item:Begin in=tactical-combat
+wait-for item:"End Turn" in=tactical-combat
+# Zoom all the way out: the whole map shows.
+wheel tag:tactical-combat:map -9
+wait-for item:piece:enemy in=tactical-combat
+# The middle button drags the map; zoomed in again, then out.
+drag tag:tactical-combat:map@50%,50% to tag:tactical-combat:map@40%,45% middle
+wheel tag:tactical-combat:map 2
+wheel tag:tactical-combat:map -2
+# A right-click on a piece: its report.
+right-click item:piece:own in=tactical-combat
+wait-window combat-piece-report
+click item:Comps in=combat-piece-report
+click item:Ability in=combat-piece-report
+click item:Close in=combat-piece-report
+wait-closed combat-piece-report
+# And on an enemy piece; Esc closes the report.
+right-click item:piece:enemy in=tactical-combat
+wait-window combat-piece-report
+key Escape
+wait-closed combat-piece-report
+# Combat Options (the grid on and off again, Fast Tactical Combat on) and Orders, each its own window.
+click tag:tactical-combat:options
+wait-window tactical-options
+click item:"Show Grid" in=tactical-options
+click item:"Show Grid" in=tactical-options
+click item:"Fast Tactical Combat" in=tactical-options
+key Escape
+wait-closed tactical-options
+click item:piece:own in=tactical-combat
+click tag:tactical-combat:orders
+wait-window tactical-orders
+# The menu takes no keys (spec 06 §3.4); Cancel closes it.
+click item:Cancel in=tactical-orders
+wait-closed tactical-orders
+# Resolve Combat, from the menu, asks first; No leaves the battle as it is.
+click tag:tactical-combat:orders
+wait-window tactical-orders
+click item:"Resolve Combat" in=tactical-orders
+wait-closed tactical-orders
+wait-for item:"window:Resolve Combat"
+click item:No in="Resolve Combat"
+wait-gone item:"window:Resolve Combat"
+assert-window tactical-combat
+# Yes lets the strategies fight the battle to its end: Combat Complete, OK.
+click tag:tactical-combat:orders
+wait-window tactical-orders
+click item:"Resolve Combat" in=tactical-orders
+wait-for item:"window:Resolve Combat"
+click item:Yes in="Resolve Combat"
+click item:OK in="Combat Complete" timeout=7200
+wait-closed tactical-combat

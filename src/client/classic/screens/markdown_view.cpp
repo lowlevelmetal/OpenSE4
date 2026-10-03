@@ -1,5 +1,7 @@
 #include "client/classic/screens/markdown_view.hpp"
 
+#include "client/script/items.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <format>
@@ -89,6 +91,8 @@ private:
         const float w = width() - indent;
         const float h = flow(b.text, font, size, imColor(color), b.level == 3, Align::Left, pos.x + indent, w, pos.y);
         ImGui::Dummy(ImVec2(w, h));
+        // Input scripts see which sections are in view (anchor:<id>).
+        if (!b.anchor.empty() && script::collectingItems()) script::reportItem("anchor:" + b.anchor);
         if (b.level == 1) {
             const ImVec2 at = ImGui::GetCursorScreenPos();
             ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x + indent, at.y), ImVec2(at.x + indent + w, at.y), imColor(palette::kFrame), 1.0f);
@@ -268,6 +272,11 @@ private:
                 }
             }
         }
+        // Input scripts find a link by its target ("link:economy#minerals").
+        if (script::collectingItems())
+            for (const Word& w : ws)
+                for (const Frag& f : w.frags)
+                    if (!f.span->link.empty()) script::reportItem("link:" + f.span->link, f.at, ImVec2(f.at.x + f.width, f.at.y + lineH));
         const std::string* hot = nullptr;
         if (ImGui::IsWindowHovered())
             for (const Word& w : ws)

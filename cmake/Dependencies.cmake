@@ -116,7 +116,9 @@ add_library(imgui STATIC
     "${imgui_SOURCE_DIR}/imgui_tables.cpp"
     "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
     "${imgui_SOURCE_DIR}/imgui_demo.cpp"
-    "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp")
+    "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
+    # Our item hooks (IMGUI_ENABLE_TEST_ENGINE in imconfig_opense4.h): input scripts.
+    "${CMAKE_SOURCE_DIR}/src/third_party_config/imgui_item_hook.cpp")
 target_include_directories(imgui SYSTEM PUBLIC
     "${imgui_SOURCE_DIR}"
     "${imgui_SOURCE_DIR}/backends"

@@ -1,0 +1,104 @@
+# The four list windows (docs/spec/06 §1.8): their sortable headings, their filters and tabs,
+# and the arrow column every list scrolls with; and a design's report from a right-click
+# (docs/BUILDING.md "Input scripts"). The computer plays 15 turns first, so the lists fill.
+options --quick-start --seed=7 --turns=15 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait-for tag:command:planets
+# New colonies of the computer's turns ask for their type: the suggested one.
+repeat 5
+  click item:"*(suggested)" in="Colony Type" optional
+end
+
+# Planets: a click on a heading sorts by it (an interface option of the empire, saved with
+# the game), a second click the other way round.
+key F4
+wait-window planets
+click tag:planets:all
+repeat 3 until { command = "SetInterfaceOptions" }
+  click item:Name in=planets
+end
+repeat 3 until { command = "SetInterfaceOptions" }
+  click item:Name in=planets
+end
+repeat 3 until { command = "SetInterfaceOptions" }
+  click item:Atmosphere in=planets
+end
+# The arrows: up is dim at the top; down scrolls a row, then up can scroll back.
+assert-disabled item:##up in=planets
+click item:##down in=planets
+wait-for item:##up in=planets
+assert-enabled item:##up in=planets
+click item:##down in=planets
+click item:##up in=planets
+click item:##up in=planets
+assert-disabled item:##up in=planets
+# The wheel scrolls the list too.
+wheel item:Name in=planets -1
+wheel tag:planets:list -3
+assert-enabled item:##up in=planets
+# A filter with its own rows, and back.
+click tag:planets:colonizable
+wait-until { tab = "planets:colonizable" }
+click tag:planets:all
+key Escape
+wait-closed planets
+
+# Colonies: its tabs choose the columns; its headings sort.
+key F5
+wait-window colonies
+repeat 3 until { command = "SetInterfaceOptions" }
+  click item:Name in=colonies
+end
+repeat 3 until { command = "SetInterfaceOptions" }
+  click item:Pop in=colonies
+end
+click item:Production in=colonies
+wait-until { tab = "colonies:production" }
+click item:General in=colonies
+key Escape
+wait-closed colonies
+
+# Ships: headings sort, tabs choose the columns.
+key F6
+wait-window ships
+repeat 3 until { command = "SetInterfaceOptions" }
+  click item:Type in=ships
+end
+repeat 3 until { command = "SetInterfaceOptions" }
+  click item:Name in=ships
+end
+click item:Orders in=ships
+wait-until { tab = "ships:orders" }
+key Escape
+wait-closed ships
+
+# Construction Queues: headings sort. A queue's row opens Set Construction Queue: a right-click
+# on an item shows its report, a click closes it; on the Ships tab of a queue that builds ships,
+# a right-click on a design shows the Design Report.
+key F7
+wait-window queues
+repeat 3 until { command = "SetInterfaceOptions" }
+  click item:Name in=queues
+end
+click item:##row in=queues
+wait-window set-queue
+click item:Facilities in=set-queue
+right-click item:##row in=set-queue nth=1
+wait-for item:window:##itemreport in=set-queue
+click item:window:##itemreport in=set-queue
+wait-gone item:window:##itemreport
+key Escape
+wait-closed set-queue
+click item:##row in=queues nth=2
+wait-window set-queue
+click item:Ships in=set-queue
+right-click item:##row in=set-queue nth=1
+wait-for item:"window:Design Report"
+assert-present item:Close in="Design Report"
+click item:Close in="Design Report"
+wait-gone item:"window:Design Report"
+key Escape
+wait-closed set-queue
+key Escape
+wait-closed queues

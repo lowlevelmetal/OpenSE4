@@ -28,6 +28,7 @@ add_executable(opense4_tests
     test_generate.cpp
     test_hidden_colonies.cpp
     test_history.cpp
+    test_input_script.cpp
     test_integration.cpp
     test_intel.cpp
     test_learn.cpp
@@ -62,6 +63,11 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/app_settings.cpp
     ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/script/items.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/script/player.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/script/recorder.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/script/script.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/script/sdl_input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
