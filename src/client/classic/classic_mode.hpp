@@ -83,8 +83,10 @@ private:
 
     void startGame(std::unique_ptr<classic::ClassicSession> session);
     // Starts a lesson's game from its [setup] through the quick start; on
-    // failure returns why.
-    std::optional<std::string> startLesson(learn::LessonKind kind, const std::string& slug);
+    // failure returns why. `chosen`: the player chose it (the Learn window,
+    // the lesson panel), so leaving it keeps its place; false on the command
+    // line, which checks content.
+    std::optional<std::string> startLesson(learn::LessonKind kind, const std::string& slug, bool chosen = true);
     // Resumes a tutorial at the place the player left it (docs/LEARNING.md
     // "Resuming a lesson"); a place that cannot be resumed any more starts the
     // lesson afresh, with a note. On failure returns why.
@@ -146,8 +148,7 @@ private:
     // The tutorial or training game being played, if any.
     std::unique_ptr<classic::LessonRunner> lesson_;
     std::string lessonError_;   // a lesson that could not start
-    // The lesson was chosen in the Learn window or the lesson panel (not on
-    // the command line, which checks content): leaving it keeps its place.
+    // The lesson was chosen by the player (startLesson): leaving it keeps its place.
     bool lessonResumable_ = false;
     // The tutorial input lock, made at the end of each frame for the next.
     classic::InputLock lock_;

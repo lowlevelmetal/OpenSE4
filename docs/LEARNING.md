@@ -214,8 +214,9 @@ buttons are on the right). When that place would hide what the active step outli
 allows, or an open prompt, it takes the system view's top left or a corner of the screen
 instead: the place that hides the smallest share wins. Each tag counts by the share of it
 hidden, so a small button weighs as much as a large map; an allowed tag counts half; a
-prompt or pop-up counts as much as an outlined tag. The place taken stays while it is about
-as good as the best, so the panel does not jump as its height settles.
+prompt or pop-up counts as much as an outlined tag. When every place hides something, the
+place taken stays while it is about as good as the best, so the panel does not jump between
+near-equal places as its height settles.
 
 **Dragged**, it stays where it was put (kept on the screen as its size changes), until a
 later step would have more than half of what it outlines under it: then it places itself
@@ -285,10 +286,11 @@ were done (`LessonProgress::jumpTo`: the step's "since" counters start again).
   (`learn::lessonFingerprint`: their number, tags, keys and conditions; rewording keeps
   it). If the lesson's steps changed since, or its game is missing, the Learn window says
   so and offers only Start; if the game cannot be read, Resume starts the lesson afresh
-  with a note. Starting the lesson forgets such a place.
+  with a note. Starting the lesson from the Learn window forgets such a place.
 - Leaving at step 1 keeps an older place of the same lesson. Finishing the lesson forgets
   it. Lessons started on the command line (`--tutorial`, for checking content) keep no
-  place; neither do training games, which the player can save like any game.
+  place and do not count as a first lesson for the intro's hint; training games keep no
+  place either (the player can save them like any game).
 
 The panel only reads the game. Lessons change the game only through the player's own
 commands (every command `ClassicSession::issue()` accepts is reported to the lesson), so

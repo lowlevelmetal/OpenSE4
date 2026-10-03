@@ -162,11 +162,10 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             step = static_cast<size_t>(std::max(1, std::atoi(slug.c_str() + colon + 1))) - 1;
             slug.resize(colon);
         }
-        if (auto problem = mode->startLesson(training ? learn::LessonKind::Training : learn::LessonKind::Tutorial, slug)) {
+        if (auto problem = mode->startLesson(training ? learn::LessonKind::Training : learn::LessonKind::Tutorial, slug, false)) {
             error = *problem;
             return nullptr;
         }
-        mode->lessonResumable_ = false;   // checking content: leaving keeps no place
         // Automation, as with a quick start: the computer plays every empire
         // for a while, then a window (or a sample battle) opens.
         mode->session_->simulateTurns(options.autoTurns);
@@ -454,7 +453,7 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     front_.reset();
 }
 
-std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, const std::string& slug) {
+std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, const std::string& slug, bool chosen) {
     const learn::Library& lib = learn_->library;
     const learn::Lesson* lesson = lib.lesson(kind, slug);
     const char* what = kind == learn::LessonKind::Tutorial ? "tutorial" : "training game";
@@ -482,12 +481,12 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
     auto session = startLocalGame(rules_, setup, extras);
     if (!session) return std::format("The {} '{}' could not start its game: {}", what, slug, session.error());
     // A place left in an older version of the lesson is of no use any more.
-    if (const auto place = lessonPlace(kind, slug); place && lessonPlaceProblem(*lesson, *place)) forgetLessonPlace(kind, slug);
+    if (const auto place = lessonPlace(kind, slug); chosen && place && lessonPlaceProblem(*lesson, *place)) forgetLessonPlace(kind, slug);
     startGame(std::move(*session));
     lesson_ = std::make_unique<LessonRunner>(*lesson, *session_);
-    lessonResumable_ = true;
+    lessonResumable_ = chosen;
     openLogOnTurn_ = false;
-    markLessonsStarted();
+    if (chosen) markLessonsStarted();
     log::info("Started the {} '{}'", what, slug);
     return std::nullopt;
 }
