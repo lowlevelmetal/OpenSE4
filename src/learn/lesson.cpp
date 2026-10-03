@@ -336,6 +336,31 @@ void applySetup(const Setup& s, game::GameSetup& g, game::StartExtras& extras) {
     }
 }
 
+std::optional<Condition> parseCondition(std::string_view text, std::string_view file, int line, std::vector<Diagnostic>& problems) {
+    // "{ ... }" is the value of a key; "key = value" a table of its own.
+    size_t start = 0;
+    while (start < text.size() && (text[start] == ' ' || text[start] == '\t')) ++start;
+    const bool inline_ = start < text.size() && text[start] == '{';
+    const std::string source = inline_ ? "condition = " + std::string(text) : "[condition]\n" + std::string(text);
+    toml::table root;
+    try {
+        root = toml::parse(source, std::string(file));
+    } catch (const toml::parse_error& e) {
+        problems.push_back({std::string(file), line, std::string(e.description())});
+        return std::nullopt;
+    }
+    std::vector<Diagnostic> found;
+    Reader rd(file, found);
+    std::optional<Condition> c;
+    if (const toml::node* n = root.get("condition")) c = rd.condition(*n);
+    for (Diagnostic& d : found) {
+        d.line = line;
+        problems.push_back(std::move(d));
+    }
+    if (!found.empty()) return std::nullopt;
+    return c;
+}
+
 std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, LessonKind kind, std::vector<Diagnostic>& problems) {
     toml::table root;
     try {

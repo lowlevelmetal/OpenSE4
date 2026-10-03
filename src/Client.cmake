@@ -23,6 +23,7 @@ add_executable(opense4
     client/audio_playlist.cpp
     client/classic/art.cpp
     client/classic/classic_mode.cpp
+    client/classic/classic_probe.cpp
     client/classic/data_export.cpp
     client/classic/finale.cpp
     client/classic/frontend.cpp
@@ -100,6 +101,11 @@ add_executable(opense4
     client/input.cpp
     client/settings_window.cpp
     client/main.cpp
+    client/script/items.cpp
+    client/script/player.cpp
+    client/script/recorder.cpp
+    client/script/script.cpp
+    client/script/sdl_input.cpp
     client/ui/bitmap_font.cpp
     client/ui/theme.cpp)
 target_link_libraries(opense4 PRIVATE opense4_game opense4_learn opense4_net opense4_assets opense4_gfx opense4_embedded imgui tomlplusplus drlibs opense4_warnings)

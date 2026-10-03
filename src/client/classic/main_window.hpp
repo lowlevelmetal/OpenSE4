@@ -40,6 +40,19 @@ public:
     std::vector<std::string> selectionKinds(const UiContext& ui) const;
     uint64_t selections() const { return selections_; }
 
+    // Input scripts (docs/BUILDING.md "Input scripts"): the sectors of the
+    // shown system that a query names, as frame rectangles in row order
+    // ("3,4", or words joined by + and negated by !: empty, home, colony,
+    // planet, colonizable, star, warp-point, ship, enemy, selected, any),
+    // and the sector at a frame point; the galaxy panel's systems a query
+    // names ("12", home, shown, explored, any, joined and negated the same
+    // way), as frame points, in the order of their ids.
+    std::vector<Rect> findSectors(const UiContext& ui, std::string_view query, std::string& error) const;
+    std::optional<game::Sector> sectorAtFrame(Vec2 p) const;
+    std::vector<Vec2> findSystems(const UiContext& ui, std::string_view query, std::string& error) const;
+    std::optional<game::SystemId> systemAtFrame(const UiContext& ui, Vec2 p) const;
+    float galaxyCellSize() const;
+
 private:
     enum class Pick { None, MoveTo, Warp, Colonize, Attack, Patrol, LoadCargo, DropCargo, LaunchRemote, RecoverRemote, Callback };
     // Who an order goes to: a vehicle, a fleet or a colony.

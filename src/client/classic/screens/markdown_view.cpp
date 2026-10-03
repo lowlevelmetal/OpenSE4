@@ -1,5 +1,7 @@
 #include "client/classic/screens/markdown_view.hpp"
 
+#include "client/script/items.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <format>
@@ -268,6 +270,11 @@ private:
                 }
             }
         }
+        // Input scripts find a link by its target ("link:economy#minerals").
+        if (script::collectingItems())
+            for (const Word& w : ws)
+                for (const Frag& f : w.frags)
+                    if (!f.span->link.empty()) script::reportItem("link:" + f.span->link, f.at, ImVec2(f.at.x + f.width, f.at.y + lineH));
         const std::string* hot = nullptr;
         if (ImGui::IsWindowHovered())
             for (const Word& w : ws)

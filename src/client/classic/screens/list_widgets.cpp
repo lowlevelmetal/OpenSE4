@@ -1,5 +1,7 @@
 #include "client/classic/screens/list_widgets.hpp"
 
+#include "client/script/items.hpp"
+
 #include <imgui_internal.h>
 
 #include <algorithm>
@@ -65,6 +67,7 @@ int listHeader(UiContext& ui, const char* id, std::span<const ListColumn> cols, 
         bool hovered = false, held = false;
         if (cols[i].sortable) {
             if (ImGui::InvisibleButton("##head", size)) clicked = int(i);
+            if (cols[i].label) script::reportItem(cols[i].label);   // input scripts find a heading by its label
             hovered = ImGui::IsItemHovered();
             held = ImGui::IsItemActive();
         } else {
@@ -95,6 +98,7 @@ int tableHeadings(UiContext& ui, std::span<const ListColumn> cols) {
         bool hovered = false, held = false;
         if (cols[i].sortable) {
             if (ImGui::InvisibleButton("##head", ImVec2(w, std::max(1.0f, h - 2 * padY)))) clicked = int(i);
+            if (cols[i].label) script::reportItem(cols[i].label);
             hovered = ImGui::IsItemHovered();
             held = ImGui::IsItemActive();
         } else {

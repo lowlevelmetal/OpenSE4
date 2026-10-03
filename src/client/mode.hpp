@@ -19,6 +19,10 @@ union SDL_Event;
 
 namespace opense4::client {
 
+namespace script {
+class Probe;
+}
+
 struct DisplayModeInfo {
     int width = 0;
     int height = 0;
@@ -89,6 +93,9 @@ public:
     // scale): a mode with its own look applies it again.
     virtual void restyle() {}
     virtual Color clearColor() const { return Color::hex(0x05070d); }
+    // Input scripts (client/script/player.hpp): what the frame drawn last
+    // showed, for a script to act on and check; nothing if the mode offers none.
+    virtual const script::Probe* probe() const { return nullptr; }
 };
 
 } // namespace opense4::client

@@ -3,6 +3,8 @@
 #include "client/audio.hpp"
 
 #include "client/classic/classic_mode.hpp"
+#include "client/script/items.hpp"
+#include "client/script/sdl_input.hpp"
 #include "client/ui/theme.hpp"
 #include "core/log.hpp"
 #include "ruleset/ruleset.hpp"
@@ -13,6 +15,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdio>
 #include <format>
 
 namespace opense4::client {
@@ -70,10 +73,12 @@ int App::run(const AppOptions& options) {
         return 1;
     }
     initImGui();
+    const bool scripted = options.inputScript || !options.recordInput.empty();
+    if (scripted) script::collectItems(true);   // the widgets scripts name (client/script/items.hpp)
 
     const Platform platform{window_, device_.get(), &fonts_, assetsDir_, rendererInfo_, this};
-    // Saved display settings (a screenshot run keeps the plain window it asked for).
-    if (options.screenshotPath.empty()) applyGraphics();
+    // Saved display settings (a screenshot or script run keeps the plain window it asked for).
+    if (options.screenshotPath.empty() && !options.inputScript) applyGraphics();
     std::string error;
     ClassicOptions co;
     co.installDir = dataDir->string();
@@ -81,7 +86,7 @@ int App::run(const AppOptions& options) {
     co.systemCount = options.systemCount;
     co.empireCount = options.empireCount;
     co.quadrantType = options.quadrantType;
-    co.skipIntro = options.quickStart || !options.screenshotPath.empty();
+    co.skipIntro = options.quickStart || (!options.screenshotPath.empty() && !options.inputScript);
     co.race = options.race;
     co.autoTurns = options.autoTurns;
     co.select = options.select;
@@ -99,20 +104,52 @@ int App::run(const AppOptions& options) {
     co.learnDir = options.learnDir;
     co.lessonCheck = options.lessonCheck;
     co.lessonCheckQuits = options.screenshotPath.empty();
+    co.scripted = scripted;
     mode_ = ClassicMode::create(platform, co, error);
     if (!mode_) {
         fatal(error);
         shutdown();
         return 1;
     }
-    // Sound needs a real session: not with --no-audio, and not for screenshots.
-    if (!options.noAudio && options.screenshotPath.empty()) audio().open();
+    // Sound needs a real session: not with --no-audio, and not for screenshots or scripts.
+    if (!options.noAudio && options.screenshotPath.empty() && !options.inputScript) audio().open();
+    if (options.inputScript) {
+        std::filesystem::path out = options.scriptOutput;
+        if (out.empty()) {
+            std::error_code ec;
+            out = std::filesystem::temp_directory_path(ec) / "opense4-scripts";
+        }
+        std::error_code ec;
+        std::filesystem::create_directories(out, ec);
+        player_ = std::make_unique<script::Player>(*options.inputScript, out);
+        log::info("Input script {} ({} steps)", options.inputScript->file, options.inputScript->steps.size());
+    }
+    if (!options.recordInput.empty()) recorder_ = std::make_unique<script::Recorder>(options.recordInput, options.recordOptions);
 
     SDL_ShowWindow(window_);
     lastTicks_ = SDL_GetTicksNS();
     while (frame()) {
     }
-    const int code = mode_->exitCode();
+    int code = mode_->exitCode();
+    if (player_) {
+        // The script's verdict: every step done, or where it stopped.
+        const script::Script& sc = player_->script();
+        if (player_->finished() && !player_->failed()) {
+            std::printf("input-script %s: passed (%zu steps, %llu frames)\n", sc.file.c_str(), sc.steps.size(),
+                        static_cast<unsigned long long>(player_->frame()));
+        } else {
+            const std::string why = player_->failed() ? player_->failure() : "the game quit before the script ended";
+            std::printf("input-script %s: FAILED\n%s\n", sc.file.c_str(), why.c_str());
+            if (player_->failed()) std::printf("  picture: %s\n", player_->failureShot().string().c_str());
+            code = 1;
+        }
+        std::fflush(stdout);
+    }
+    if (recorder_) {
+        std::string problem;
+        if (recorder_->save(problem)) log::info("Recorded the session as {}", recorder_->file().string());
+        else log::error("{}", problem);
+    }
     mode_.reset();
     shutdown();
     return code;
@@ -234,21 +271,62 @@ void App::updateUiScale() {
     if (mode_) mode_->restyle();
 }
 
+EventVerdict App::handleEvent(SDL_Event& event, bool& running) {
+    if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) event.key.mod = altGrAsAlt(event.key.mod);
+    // The mode may hold input back (a tutorial's input lock) before ImGui sees it.
+    const EventVerdict verdict = mode_->filterEvent(event);
+    switch (verdict) {
+        case EventVerdict::Pass: ImGui_ImplSDL3_ProcessEvent(&event); break;
+        case EventVerdict::Drop: break;
+        case EventVerdict::PointerAway: ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX); break;
+    }
+    if (event.type == SDL_EVENT_QUIT) running = false;
+    if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window_)) running = false;
+    if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) updateUiScale();
+    return verdict;
+}
+
 bool App::frame() {
     bool running = true;
     audio().update();
+    // An input script: this frame's events, from what the frame drawn last
+    // showed (docs/BUILDING.md "Input scripts").
+    const script::Probe* probe = mode_->probe();
+    script::FrameOutput scripted;
+    if (player_ && probe) {
+        scripted = player_->tick(*probe);
+        for (const std::string& m : scripted.messages) {
+            if (m.starts_with("FAILED")) log::error("{}", m);
+            else log::info("script{}", m.starts_with("  ") ? m.substr(1) : ": " + m);
+        }
+        captures_ = std::move(scripted.captures);
+    }
+    if (recorder_ && probe) recorder_->frame(*probe, time_);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) event.key.mod = altGrAsAlt(event.key.mod);
-        // The mode may hold input back (a tutorial's input lock) before ImGui sees it.
-        switch (mode_->filterEvent(event)) {
-            case EventVerdict::Pass: ImGui_ImplSDL3_ProcessEvent(&event); break;
-            case EventVerdict::Drop: break;
-            case EventVerdict::PointerAway: ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX); break;
+        if (player_ && script::isUserInput(event)) continue;   // a script plays alone
+        if (recorder_ && probe && script::isUserInput(event)) recorder_->event(event, *probe, time_);
+        handleEvent(event, running);
+    }
+    // The script's events go the same way as a player's.
+    if (player_) {
+        std::vector<script::Verdict> verdicts;
+        const SDL_WindowID window = SDL_GetWindowID(window_);
+        for (const script::InputEvent& e : scripted.events) {
+            SDL_Event ev = script::toSdlEvent(e, window);
+            if (recorder_ && probe) recorder_->event(ev, *probe, time_);   // recording a script run tests the recorder
+            switch (handleEvent(ev, running)) {
+                case EventVerdict::Pass: verdicts.push_back(script::Verdict::Pass); break;
+                case EventVerdict::Drop: verdicts.push_back(script::Verdict::Drop); break;
+                case EventVerdict::PointerAway: verdicts.push_back(script::Verdict::PointerAway); break;
+            }
         }
-        if (event.type == SDL_EVENT_QUIT) running = false;
-        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window_)) running = false;
-        if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) updateUiScale();
+        player_->verdicts(verdicts);
+        // Done or failed: this frame is the last (with its picture).
+        if (player_->finished() || player_->failed()) {
+            if (player_->finished() && !options_.screenshotPath.empty()) captures_.emplace_back(options_.screenshotPath);
+            running = false;
+        }
     }
     if (SDL_GetWindowFlags(window_) & SDL_WINDOW_MINIMIZED) {
         // Windows reports minimizing (Wayland mostly does not): keep the game's
@@ -259,11 +337,11 @@ bool App::frame() {
         return running;
     }
 
-    // A screenshot run (automation) must give the same picture on every
-    // machine: a fixed frame time instead of the wall clock, and no pointer
-    // over the window (the desktop's pointer would hover over whatever is
-    // under it).
-    const bool automation = !options_.screenshotPath.empty();
+    // A screenshot or script run (automation) must give the same picture on
+    // every machine: a fixed frame time instead of the wall clock, and no
+    // pointer over the window but the script's (the desktop's pointer would
+    // hover over whatever is under it).
+    const bool automation = !options_.screenshotPath.empty() || player_;
     const uint64_t now = SDL_GetTicksNS();
     const float dt = automation ? 1.0f / 60.0f : std::min(static_cast<float>(now - lastTicks_) * 1e-9f, 0.1f);
     lastTicks_ = now;
@@ -272,7 +350,7 @@ bool App::frame() {
     ImGui_ImplSDL3_NewFrame();
     if (automation) {
         ImGui::GetIO().DeltaTime = dt;
-        ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+        if (!player_) ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX);
     }
     ImGui::NewFrame();
     const AppSettings& prefs = appSettings();
@@ -296,6 +374,7 @@ bool App::frame() {
                   ww > 0 ? static_cast<float>(pw) / static_cast<float>(ww) : 1.0f, uiScale_, time_, dt};
 
     if (!mode_->update(fs)) running = false;
+    script::endItemFrame();
     ImGui::Render();
 
     // Frame limit when vsync is off.
@@ -312,19 +391,23 @@ bool App::frame() {
         imguiRenderer_->render(ImGui::GetDrawData());
 
         ++frameCount_;
-        const bool screenshotFrame = !options_.screenshotPath.empty() && frameCount_ == options_.screenshotFrames;
-        if (screenshotFrame) device_->requestCapture();
+        // --screenshot: frame N; with a script, the pictures it asks for (and the last frame).
+        const bool screenshotFrame = !player_ && !options_.screenshotPath.empty() && frameCount_ == options_.screenshotFrames;
+        if (screenshotFrame) captures_.emplace_back(options_.screenshotPath);
+        const bool capture = !captures_.empty();
+        if (capture) device_->requestCapture();
         device_->endFrame();
         if (auto image = device_->takeCapture()) {
-            if (gfx::writePng(options_.screenshotPath, *image))
-                log::info("Saved screenshot {} ({}x{})", options_.screenshotPath, image->width, image->height);
-            else
-                log::error("Could not write {}", options_.screenshotPath);
-            running = false;
-        } else if (screenshotFrame) {
+            for (const std::filesystem::path& file : captures_) {
+                if (gfx::writePng(file.string(), *image)) log::info("Saved screenshot {} ({}x{})", file.string(), image->width, image->height);
+                else log::error("Could not write {}", file.string());
+            }
+            if (screenshotFrame) running = false;
+        } else if (capture) {
             log::error("Screenshot capture is not supported by this backend/surface");
-            running = false;
+            if (screenshotFrame) running = false;
         }
+        captures_.clear();
     }
     return running;
 }
