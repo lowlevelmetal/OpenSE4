@@ -106,9 +106,16 @@ void addRef(std::vector<std::string>& out, std::string ref) {
 // starts a run is dropped.
 void capitalised(std::string_view text, std::vector<std::string>& out) {
     std::vector<std::string> run;
-    std::string pending;   // a connector waiting for the next capitalised word
+    std::string pending;     // a connector waiting for the next capitalised word
+    bool sentenceStart = true;   // the next word starts a sentence
+    bool runAtStart = false;     // the run began a sentence
     auto flush = [&] {
-        while (!run.empty() && isStopWord(run.front())) run.erase(run.begin());
+        while (!run.empty() && isStopWord(run.front())) {
+            run.erase(run.begin());
+            runAtStart = false;
+        }
+        // One capitalised word that begins a sentence is how sentences begin ("Ships cost upkeep").
+        if (run.size() == 1 && runAtStart) run.clear();
         if (!run.empty()) {
             std::string s;
             for (const std::string& w : run) s += (s.empty() ? "" : " ") + w;
@@ -132,7 +139,10 @@ void capitalised(std::string_view text, std::vector<std::string>& out) {
         std::string core = bare;
         while (!core.empty() && (core.front() == '(' || core.front() == '"')) core.erase(core.begin());
         const bool cap = !core.empty() && core.front() >= 'A' && core.front() <= 'Z' && core != "KEY";
+        const bool atStart = sentenceStart;
+        sentenceStart = sentenceEnd && word.back() != ',' && word.back() != ')';
         if (cap) {
+            if (run.empty()) runAtStart = atStart;
             if (!pending.empty() && !run.empty()) run.push_back(pending);
             pending.clear();
             run.push_back(core);
