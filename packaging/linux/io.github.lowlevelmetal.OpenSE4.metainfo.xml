@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.8.1" date="2026-10-03" type="development">
+      <description>
+        <p>Tutorials that accept only the action each step asks for and keep what it points at in view, at both screen layouts; plays together with 0.7 and 0.8 and reads their saves.</p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-10-03" type="development">
       <description>
         <p>Reworked tutorials: a lock that follows the window in front, a way back when a window is closed, shorter steps that lead with the action, your own design names, progress lines, a lesson panel that stays clear of questions and follows the text size, keys for its buttons, and resuming a lesson where you left it.</p>
