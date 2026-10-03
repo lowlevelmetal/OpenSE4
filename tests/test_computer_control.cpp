@@ -217,9 +217,9 @@ TEST_CASE("computer control: a game file with a master password asks for it, exa
     auto session = client::classic::ClassicSession::load(sharedRules(), file);
     REQUIRE(session.has_value());
     CHECK((*session)->hasMasterPassword());
-    CHECK((*session)->masterPasswordMatches("Master Key"));
-    CHECK_FALSE((*session)->masterPasswordMatches("master key"));  // letter case counts
-    CHECK_FALSE((*session)->masterPasswordMatches(" Master Key"));  // so do spaces
+    CHECK((*session)->masterPasswordMatches("Master Key").value());
+    CHECK_FALSE((*session)->masterPasswordMatches("master key").value());  // letter case counts
+    CHECK_FALSE((*session)->masterPasswordMatches(" Master Key").value());  // so do spaces
 }
 
 TEST_CASE("reset passwords: the e-mail host writes them in after reading the orders") {

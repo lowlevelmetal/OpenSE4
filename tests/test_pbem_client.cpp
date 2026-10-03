@@ -144,7 +144,7 @@ TEST_CASE("pbem client: a simultaneous turn file is opened with the empire's pas
     CHECK_FALSE(session->issue(game::cmd::SetSystemNote{game::SystemId{999u}, "nowhere"}).ok);
     CHECK(noteOf(session->state(), game::EmpireId{0u}) == "by mail");  // shown at once
     // A new password is stored as the verifier the host checks .plr files against.
-    REQUIRE(session->issue(game::cmd::SetEmpireOptions{.passwordHash = session->empirePasswordValue("new0")}).ok);
+    REQUIRE(session->issue(game::cmd::SetEmpireOptions{.passwordHash = session->empirePasswordValue("new0").value()}).ok);
     CHECK(session->state().empire(game::EmpireId{0u}).passwordHash == net::passwordVerifier("new0", 99));
     session->simulateTurns(2);                                            // only the host plays PBEM turns
     CHECK(session->state().turn == 0);
@@ -356,15 +356,27 @@ TEST_CASE("pbem client: Load Game opens a PBEM game file as a local game whose p
     CHECK(s.kind() == SessionKind::Hotseat);
     const game::Empire& first = s.state().empire(game::EmpireId{0u});
     // The empire passwords are the host's verifiers, not local hashes.
-    CHECK(s.passwordMatches(first, "pw0"));
-    CHECK_FALSE(s.passwordMatches(first, "pw1"));
-    CHECK(s.empirePasswordValue("new") == net::passwordVerifier("new", 0x1234u));
+    CHECK(s.passwordMatches(first, "pw0").value());
+    CHECK_FALSE(s.passwordMatches(first, "pw1").value());
+    CHECK(s.empirePasswordValue("new").value() == net::passwordVerifier("new", 0x1234u));
+    {
+        // A key that cannot be made (Argon2id's memory not to be had) is said so, not taken for a wrong password.
+        const net::PasswordWork work = net::passwordWork();
+        net::setPasswordWork({4, 1});
+        const auto value = s.empirePasswordValue("newer");
+        const auto matches = s.passwordMatches(s.state().empire(game::EmpireId{1u}), "pw1");
+        net::setPasswordWork(work);
+        REQUIRE_FALSE(value.has_value());
+        CHECK(value.error().find("password key") != std::string::npos);
+        // pw1's verifier names its own work, which can be made.
+        CHECK(matches.value());
+    }
     // Saved again, it stays a game with verifier passwords.
     const fs::path again = dir.path() / "again.gam";
     REQUIRE(s.save(again, "Post Game").has_value());
     auto reloaded = ClassicSession::load(sharedRules(), again);
     REQUIRE(reloaded.has_value());
-    CHECK((*reloaded)->passwordMatches((*reloaded)->state().empire(game::EmpireId{1u}), "pw1"));
+    CHECK((*reloaded)->passwordMatches((*reloaded)->state().empire(game::EmpireId{1u}), "pw1").value());
     // A player's turn file is no saved game.
     CHECK_FALSE(ClassicSession::load(sharedRules(), turnFile(dir.path(), game::EmpireId{0u})).has_value());
 }

@@ -64,8 +64,8 @@ TEST_CASE("net: SHA-256 and password hashing") {
     // The current kind: per game.
     CHECK(net::passwordVerifier("", 1).empty());
     const std::string v = net::passwordVerifier("hunter2", 1);
-    CHECK(v.starts_with("pk1:"));
-    CHECK(v.size() == 4 + 128);
+    CHECK(v.starts_with("pk2:"));
+    CHECK(net::verifierKeys(v).has_value());
     CHECK(net::checkPassword(v, "hunter2", 1));
     CHECK_FALSE(net::checkPassword(v, "nope", 1));
     CHECK_FALSE(net::checkPassword(v, "", 1));
@@ -1003,7 +1003,9 @@ tier = 2
     auto oldHash = server::parseSetup("[[empire]]\npassword_hash = \"0123\"\n", "o.toml", r);
     REQUIRE_FALSE(oldHash.has_value());
     CHECK(oldHash.error().find("no longer used") != std::string::npos);
-    CHECK_FALSE(server::parseSetup("game_id = 1\n[[empire]]\npassword_verifier = \"pk1:00\"\n", "p.toml", r).has_value());
+    auto malformed = server::parseSetup("game_id = 1\n[[empire]]\npassword_verifier = \"pk2:00\"\n", "p.toml", r);
+    REQUIRE_FALSE(malformed.has_value());
+    CHECK(malformed.error().find("a password verifier is \"pk2:\"") != std::string::npos);
     // Three difficulty levels (spec 05 §7.1); 0 systems means "rolled from the quadrant size".
     CHECK_FALSE(server::parseSetup("[options]\nai_difficulty = 3\n", "d.toml", r).has_value());
     auto rolled = server::parseSetup("[options]\nsystems = 0\n", "z.toml", r);

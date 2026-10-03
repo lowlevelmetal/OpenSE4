@@ -493,8 +493,10 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
     return rep;
 }
 
-std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rules, const fs::path& gameFile, const fs::path& ordersDir,
-                                                          const ProcessOptions& options) {
+namespace {
+
+std::expected<ProcessReport, std::string> processGameFileWithKeys(const game::Rules& rules, const fs::path& gameFile, const fs::path& ordersDir,
+                                                                  const ProcessOptions& options) {
     auto loaded = game::loadGame(gameFile);
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& state = loaded->first;
@@ -543,6 +545,19 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
         for (const fs::path& p : rep->used)
             if (!fs::remove(p, ec) && ec) rep->warnings.push_back(std::format("{}: could not delete: {}", p.filename().string(), ec.message()));
     return rep;
+}
+
+} // namespace
+
+std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rules, const fs::path& gameFile, const fs::path& ordersDir,
+                                                          const ProcessOptions& options) {
+    // The master password's check and the new passwords run Argon2id, which
+    // needs its memory at once; nothing is written before they are done.
+    try {
+        return processGameFileWithKeys(rules, gameFile, ordersDir, options);
+    } catch (const PasswordWorkError& e) {
+        return std::unexpected(std::string(e.what()));
+    }
 }
 
 } // namespace opense4::net::pbem

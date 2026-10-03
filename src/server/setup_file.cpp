@@ -246,7 +246,9 @@ private:
 
     // A verifier made in advance: of the current kind, and for a game whose id the file fixes.
     std::string verifier(const toml::table& t, std::string_view key, const std::string& value) {
-        if (!net::usableVerifier(value) || value.empty()) error(*t.get(key), std::format("'{}' is not a password verifier (opense4-server password-verifier)", key));
+        if (value.empty() || !net::usableVerifier(value))
+            error(*t.get(key), std::format("'{}' is not a password verifier (opense4-server password-verifier): {}", key,
+                                           value.empty() ? std::string("it is empty") : net::verifierProblem(value)));
         else if (!out_.gameId) error(*t.get(key), std::format("'{}' needs 'game_id': a verifier belongs to one game", key));
         return value;
     }

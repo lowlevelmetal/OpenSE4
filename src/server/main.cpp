@@ -593,7 +593,7 @@ int pbemOrders(std::span<char*> args) {
         if (o->get("new-password") == password) return fail("--new-password must differ from the old password", 2);
         keys = net::passwordKeys(o->get("new-password"), turnFile->info.gameId);
     } else if (!turnFile->verifier.empty()) {
-        keys = net::passwordKeys(password, turnFile->info.gameId);
+        keys = net::passwordKeysFor(turnFile->verifier, password, turnFile->info.gameId);
         if (!keys || keys->verifier() != turnFile->verifier) return fail("wrong password for this turn file's empire", 1);
     }
     auto view = net::pbem::openTurnFile(*turnFile, legacy.empty() ? keys : std::nullopt);
@@ -783,10 +783,24 @@ int runBot(std::span<char*> args) {
     return fail("timed out", 1);
 }
 
+int run(std::span<char*> args);
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::span<char*> args(argv + 1, static_cast<size_t>(std::max(argc - 1, 0)));
+    // A password key that cannot be made (Argon2id's memory not to be had)
+    // ends the command with that said, wherever no step reported it itself.
+    try {
+        return run(args);
+    } catch (const net::PasswordWorkError& e) {
+        return fail(e.what(), 1);
+    }
+}
+
+namespace {
+
+int run(std::span<char*> args) {
     const std::string_view mode = args.empty() ? std::string_view{} : std::string_view(args[0]);
     if (mode == "pbem") {
         const std::string_view sub = args.size() > 1 ? std::string_view(args[1]) : std::string_view{};
@@ -809,3 +823,5 @@ int main(int argc, char** argv) {
     }
     return runServer(args);
 }
+
+} // namespace

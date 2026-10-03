@@ -86,18 +86,22 @@ std::expected<PbemTurn, std::string> beginPbemTurn(PbemGame& g, game::EmpireId e
     // whose keys come from that password, never from the old hash.
     std::optional<net::PasswordKeys> keys;
     std::string legacyHash;
-    if (pbemNeedsNewPassword(g)) {
-        legacyHash = net::legacyPasswordHash(password);
-        if (!net::checkLegacyPassword(g.verifier, legacyHash)) return std::unexpected(std::format("Wrong password for {}.", name));
-        if (newPassword.empty())
-            return std::unexpected(std::format("This game was made by OpenSE4 0.6: choose a new password for {}. This turn's orders file "
-                                               "shows the old one once, so the old one stops counting.",
-                                               name));
-        if (newPassword == password) return std::unexpected(std::string("Choose a new password other than the old one."));
-        keys = net::passwordKeys(newPassword, g.info.gameId);
-    } else if (!g.verifier.empty()) {
-        keys = net::passwordKeys(password, g.info.gameId);
-        if (!keys || !net::constantTimeEquals(keys->verifier(), g.verifier)) return std::unexpected(std::format("Wrong password for {}.", name));
+    try {
+        if (pbemNeedsNewPassword(g)) {
+            legacyHash = net::legacyPasswordHash(password);
+            if (!net::checkLegacyPassword(g.verifier, legacyHash)) return std::unexpected(std::format("Wrong password for {}.", name));
+            if (newPassword.empty())
+                return std::unexpected(std::format("This game was made by OpenSE4 0.6: choose a new password for {}. This turn's orders file "
+                                                   "shows the old one once, so the old one stops counting.",
+                                                   name));
+            if (newPassword == password) return std::unexpected(std::string("Choose a new password other than the old one."));
+            keys = net::passwordKeys(newPassword, g.info.gameId);
+        } else if (!g.verifier.empty()) {
+            keys = net::passwordKeysFor(g.verifier, password, g.info.gameId);
+            if (!keys || !net::constantTimeEquals(keys->verifier(), g.verifier)) return std::unexpected(std::format("Wrong password for {}.", name));
+        }
+    } catch (const net::PasswordWorkError& e) {
+        return std::unexpected(std::string(e.what()));
     }
     // The view: for this empire's eyes (with a password of the current kind).
     if (g.viewChecksum == 0 || g.state.empires.empty()) {

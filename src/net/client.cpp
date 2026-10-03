@@ -205,8 +205,18 @@ void ClientSession::handleServerHello(std::span<const uint8_t> payload) {
         return;
     }
     // The game's keys (Argon2id: a moment of work, then kept in this process).
-    const crypto::Key psk = joinKey(config_.joinPassword, h.hostKey, h.gameId);
+    crypto::Key psk{};
+    std::optional<PasswordKeys> mine, master;
+    try {
+        psk = joinKey(config_.joinPassword, h.hostKey, h.gameId);
+        mine = passwordKeys(config_.password, h.gameId);
+        if (!config_.masterPassword.empty()) master = passwordKeys(config_.masterPassword, h.gameId);
+    } catch (const PasswordWorkError& e) {
+        closeConnection(e.what(), true);
+        return;
+    }
     auto keys = secure::clientKeys(*impl_->ephemeral, h.ephemeralKey, h.hostKey, psk, impl_->hello, payload);
+    crypto::wipe(psk.data(), psk.size());
     crypto::wipe(impl_->ephemeral->secret.data(), impl_->ephemeral->secret.size());
     impl_->ephemeral.reset();
     if (!keys) {
@@ -218,7 +228,6 @@ void ClientSession::handleServerHello(std::span<const uint8_t> payload) {
     crypto::wipe(keys->send.data(), keys->send.size());
     crypto::wipe(keys->receive.data(), keys->receive.size());
     // Who we are, sealed. The proofs sign this session only.
-    const std::optional<PasswordKeys> mine = passwordKeys(config_.password, h.gameId);
     proto::Login login;
     login.dataSet = config_.dataSet;
     login.player = config_.playerName;
@@ -227,7 +236,7 @@ void ClientSession::handleServerHello(std::span<const uint8_t> payload) {
     login.passwordProof = signWith(mine, secure::loginDigest(keys->sessionId, "player", config_.playerName));
     login.master = !config_.masterPassword.empty();
     if (login.master)
-        login.masterProof = signWith(passwordKeys(config_.masterPassword, h.gameId), secure::loginDigest(keys->sessionId, "master", config_.playerName));
+        login.masterProof = signWith(master, secure::loginDigest(keys->sessionId, "master", config_.playerName));
     if (config_.sendOldPassword) login.legacyPasswordHash = legacyPasswordHash(config_.password);
     c.send(MsgType::Login, login);
 }
