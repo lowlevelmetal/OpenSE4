@@ -153,7 +153,7 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     for (const std::string& t : facts.tabs) h.add(std::string_view(t));
     h.add(facts.designComponents.value_or(-1)).add(facts.designHullChosen).add(facts.simulatorOwners).add(facts.simulatorItems);
     h.add(std::string_view(facts.designType)).add(facts.designNamed).add(facts.selectedVehicle.value);
-    h.add(facts.battleBegun).add(facts.battleOrders.size());
+    h.add(facts.battleBegun).add(facts.battleOrders.size()).add(facts.battleTurn);
     if (h.value() == seen_ || progress_.result() != learn::LessonProgress::Result::None) return;
     seen_ = h.value();
     const learn::LessonProgress::Changes ch = progress_.update(ui.rules(), ui.state(), session.player(), facts);

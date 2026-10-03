@@ -862,6 +862,8 @@ TEST_CASE("learn conditions: counters tell how far a count or a wait has come") 
     CHECK(list[1].text() == "Turns: 5 of 8");
     CHECK(count("{ window = \"research\" }").empty());
     CHECK(count("{ all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }").size() == 2);
+    ev.client.battleTurn = 4;
+    CHECK(count("{ battle_turn = 6 }").front().text() == "Combat turn: 4 of 6");
     // Every numeric fact has a name for the progress line.
     for (const FactInfo& f : facts())
         if (f.value == FactValue::Number) CHECK_MESSAGE(!f.counter.empty(), f.key);
@@ -1313,6 +1315,52 @@ TEST_CASE("learn progress: the active step's counters") {
     p.update(r, s, me, client);
     CHECK(p.result() == LessonProgress::Result::Done);
     CHECK(p.counters(r, s, me, client).empty());
+}
+
+TEST_CASE("learn progress: a step's progress list counts without a target") {
+    std::vector<Diagnostic> problems;
+    const char* text = R"(title = "Counts"
+[[step]]
+title = "Meet someone"
+text = "**End turns.**"
+highlight = ["button:end-turn"]
+done = { empires_met = 1 }
+progress = ["turns_passed", "empires_met"]
+
+[[step]]
+title = "Fight"
+text = "**Fight.**"
+highlight = ["tactical-combat:end-turn"]
+done = { battle_order = "end-turn" }
+progress = "battle_turn"
+)";
+    auto l = parseLesson(text, "c.toml", LessonKind::Tutorial, problems);
+    REQUIRE_MESSAGE(l.has_value(), problemsText(problems));
+    CHECK(l->steps[0].progress == std::vector<Fact>{Fact::TurnsPassed, Fact::EmpiresMet});
+    CHECK(l->steps[1].progress == std::vector<Fact>{Fact::BattleTurn});
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(7, 2, 12, true);
+    const game::EmpireId me{0u};
+    for (size_t i = 0; i < s.empires[0].relations.size(); ++i) s.empires[0].relations[i].contact = false;
+    LessonProgress p(*l, r, s, me);
+    ClientFacts client;
+    s.turn += 2;
+    p.update(r, s, me, client);
+    // The condition's counters first, then the list's (each fact once).
+    auto list = p.counters(r, s, me, client);
+    REQUIRE(list.size() == 2);
+    CHECK(list[0].text() == "Empires met: 0 of 1");
+    CHECK(list[1].text() == "Turns: 2");
+    p.skip(r, s, me);
+    client.battleTurn = 3;
+    list = p.counters(r, s, me, client);
+    REQUIRE(list.size() == 1);
+    CHECK(list[0].text() == "Combat turn: 3");
+
+    problems.clear();
+    CHECK_FALSE(parseLesson("title = \"t\"\n[[step]]\ntitle = \"s\"\ntext = \"t\"\nprogress = [\"window\", \"turns\"]\n", "c.toml",
+                            LessonKind::Tutorial, problems));
+    CHECK(hasProblem(problems, 5, "'progress' lists condition keys that count"));
 }
 
 TEST_CASE("learn progress: training objectives, pages, hints and the result") {

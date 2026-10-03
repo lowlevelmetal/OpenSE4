@@ -81,6 +81,8 @@ constexpr std::pair<std::string_view, std::string_view> kCommandWidgets[] = {
     {"SetResearch", "research:divide-evenly"},
     {"SetResearch", "research:repeat"},
     {"SetIntel", "window:intelligence"},
+    {"SetIntel", "intelligence:projects"},
+    {"SetIntel", "intelligence:queue"},
     {"CreateDesign", "create-design:save"},
     {"EditDesign", "create-design:save"},
     {"SendMessage", "communicate:send"},
@@ -178,6 +180,9 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
         case Fact::BattleBegun:
             if (a.has("tactical-combat:end-turn")) return std::nullopt;   // Begin is the button that becomes End Turn
             return missing("tactical-combat:end-turn (its Begin button)");
+        case Fact::BattleTurn:
+            if (a.has("tactical-combat:end-turn") || a.hasKey("E")) return std::nullopt;
+            return missing("tactical-combat:end-turn");
         case Fact::BattleOrder:
             if (c.text == "move" && a.has("tactical-combat:map")) return std::nullopt;
             if (c.text == "fire" && (a.has("tactical-combat:map") || a.has("tactical-combat:target"))) return std::nullopt;

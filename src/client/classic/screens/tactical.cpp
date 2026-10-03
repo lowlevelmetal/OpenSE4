@@ -254,7 +254,8 @@ public:
         if (!f || !f->battle) return false;
         TacticalUi& u = stateFor(f);
         TacticalBattle& b = *f->battle;
-        ui.facts.battleBegun = u.begun;   // for the lessons (battle_begun)
+        ui.facts.battleBegun = u.begun;   // for the lessons (battle_begun, battle_turn)
+        ui.facts.battleTurn = u.begun ? b.round() : 0;
         if (u.stop) {
             // Stop Combat (simulator only): the battle ends and the window closes.
             u.stop = false;

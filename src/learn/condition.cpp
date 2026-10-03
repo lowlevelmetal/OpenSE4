@@ -34,6 +34,7 @@ constexpr FactInfo kFacts[] = {
     {Fact::SimulatorItems, "simulator_items", N, false, "the open Combat Simulator has N items in the battle", "Items in the battle"},
     {Fact::BattleBegun, "battle_begun", F, false, "the open Tactical Combat window's battle has begun (Begin was pressed)"},
     {Fact::BattleOrder, "battle_order", T, true, "the player gave an order of that kind in a tactical battle"},
+    {Fact::BattleTurn, "battle_turn", N, false, "the open Tactical Combat window's battle has begun and reached combat turn N", "Combat turn"},
     {Fact::Turn, "turn", N, false, "the game has reached turn N (the first turn is 0)", "Turn"},
     {Fact::TurnsPassed, "turns_passed", N, true, "N turns have ended", "Turns"},
     {Fact::Colonies, "colonies", N, false, "the empire has N colonies", "Colonies"},
@@ -202,6 +203,7 @@ int64_t factValue(Fact f, const EvalContext& ctx) {
     if (f == Fact::DesignComponents) return ctx.client.designComponents.value_or(-1);
     if (f == Fact::SimulatorOwners) return ctx.client.simulatorOwners;
     if (f == Fact::SimulatorItems) return ctx.client.simulatorItems;
+    if (f == Fact::BattleTurn) return ctx.client.battleTurn;
     if (!validEmpire(s, me)) return 0;
     const game::Empire& e = s.empire(me);
     auto ownVehicles = [&](ruleset::VehicleType type) {
@@ -313,7 +315,14 @@ bool holds(const Condition& c, const EvalContext& ctx) {
     }
 }
 
-std::string Counter::text() const { return std::format("{}: {} of {}", label, std::min(current, target), target); }
+std::string Counter::text() const {
+    if (target <= 0) return std::format("{}: {}", label, current);
+    return std::format("{}: {} of {}", label, std::min(current, target), target);
+}
+
+Counter counterOf(Fact f, const EvalContext& ctx) {
+    return {f, std::max<int64_t>(0, factValue(f, ctx)), 0, std::string(factInfo(f).counter)};
+}
 
 std::vector<Counter> counters(const Condition& c, const EvalContext& ctx, size_t limit) {
     std::vector<Counter> out;

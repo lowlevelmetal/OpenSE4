@@ -450,7 +450,7 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
 
     if (kind == LessonKind::Tutorial) {
         for (const toml::table* t : rd.tables(root, "step")) {
-            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "keys", "done", "manual"});
+            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "keys", "done", "manual", "progress"});
             Step s;
             s.line = static_cast<int>(t->source().begin.line);
             s.title = rd.string(*t, "title", "a [[step]]", true).value_or(std::string{});
@@ -479,6 +479,13 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
                 if (isKeyChord(chord)) return std::nullopt;
                 return std::format("unknown key '{}' (keys are written as \"F12\", \"Ctrl+L\", \"Alt+1\", \"Escape\")", chord);
             }, s.keys);
+            std::vector<std::string> progress;
+            strings("progress", [](const std::string& key) -> std::optional<std::string> {
+                const FactInfo* f = findFact(key);
+                if (f && f->value == FactValue::Number && !f->counter.empty()) return std::nullopt;
+                return std::format("'progress' lists condition keys that count, such as \"turns_passed\" or \"battle_turn\", not '{}'", key);
+            }, progress);
+            for (const std::string& key : progress) s.progress.push_back(findFact(key)->fact);
             s.done = rd.conditionKey(*t, "done", "a [[step]]", false);
             s.manual = rd.string(*t, "manual", "a [[step]]", false).value_or(std::string{});
             l.steps.push_back(std::move(s));

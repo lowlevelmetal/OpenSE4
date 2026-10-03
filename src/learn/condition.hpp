@@ -23,7 +23,7 @@ enum class Fact : uint8_t {
     // Client facts.
     Window, Selected, Command, Order, Tab,
     // Windows' work in progress.
-    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, SimulatorOwners, SimulatorItems, BattleBegun, BattleOrder,
+    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, SimulatorOwners, SimulatorItems, BattleBegun, BattleOrder, BattleTurn,
     // Time.
     Turn, TurnsPassed,
     // The player's empire.
@@ -108,6 +108,8 @@ struct ClientFacts {
     // first, as battle order kinds (learn/ids.hpp battleOrderKinds).
     bool battleBegun = false;
     std::vector<std::string> battleOrders;
+    // Its battle's combat turn once it has begun (1 the first), else 0.
+    int64_t battleTurn = 0;
 };
 
 // The player's commands and the enemy losses seen during a lesson: what the
@@ -172,10 +174,13 @@ struct Counter {
     int64_t current = 0;
     int64_t target = 0;
     std::string label;   // FactInfo::counter
-    // "Systems explored: 3 of 5" (the current value never shows above the target).
+    // "Systems explored: 3 of 5" (the current value never shows above the
+    // target); without a target (0), "Turns: 2".
     std::string text() const;
 };
 std::vector<Counter> counters(const Condition& c, const EvalContext& ctx, size_t limit = 3);
+// The counter of one numeric fact without a target (a step's `progress`).
+Counter counterOf(Fact f, const EvalContext& ctx);
 
 // "colonies = 5", "all = [...]" (for messages and tests).
 std::string describe(const Condition& c);

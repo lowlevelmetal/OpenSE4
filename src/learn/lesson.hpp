@@ -69,6 +69,10 @@ struct Step {
     std::vector<std::string> keys;          // key chords: "F12", "Ctrl+L", "Alt+1"
     std::optional<Condition> done;          // none: the player presses Next
     std::string manual;                     // "slug#anchor" for Read more
+    // More counts for the panel's progress line, without a target ("Turns:
+    // 2", "Combat turn: 3"): numeric facts, for a step whose `done` is not
+    // itself a count, such as "end turns until you meet someone".
+    std::vector<Fact> progress;
 };
 
 // A training game's objective; it counts once its condition held (before the deadline).

@@ -89,7 +89,11 @@ std::vector<Counter> LessonProgress::counters(const game::Rules& rules, const ga
     if (lesson_.kind != LessonKind::Tutorial || result_ != Result::None || step_ != frontier_ || frontier_ >= lesson_.steps.size()) return {};
     const Step& st = lesson_.steps[frontier_];
     if (!st.done || completed_[frontier_] || !stepMarks_[frontier_]) return {};
-    return learn::counters(*st.done, EvalContext{rules, state, empire, client, tracker_, *stepMarks_[frontier_]});
+    const EvalContext ctx{rules, state, empire, client, tracker_, *stepMarks_[frontier_]};
+    std::vector<Counter> out = learn::counters(*st.done, ctx);
+    for (const Fact f : st.progress)
+        if (std::none_of(out.begin(), out.end(), [&](const Counter& c) { return c.fact == f; })) out.push_back(counterOf(f, ctx));
+    return out;
 }
 
 std::vector<size_t> LessonProgress::series() const {
