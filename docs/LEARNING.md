@@ -101,6 +101,7 @@ text = """Markdown, as in the manual."""
 highlight = ["panel:system"]     # UI tags to outline (see "UI tags")
 allow = ["panel:report"]         # more UI tags the player may use (see "The input lock")
 show = ["panel:galaxy"]          # UI tags the text points at, to read: clear, not outlined, not clicked
+right_click = ["panel:galaxy"]   # where a right click passes in the main window (see "The input lock")
 keys = ["Ctrl+L"]                # more keys the player may press
 done = { selected = "planet" }   # omitted: the player presses Next
 progress = ["turns_passed"]      # more counts for the progress line (see "The lesson panel")
@@ -164,6 +165,14 @@ among the commands it qualifies `SetOrders`, `QueueAdd` (a ship or base of that 
 `CreateDesign`, `JoinFleet` (the ship that joined) and `CreateFleet` (one of its ships). Anywhere else it is a load error. Prefer it whenever a step names a kind of ship:
 a step that any ship can do can be done with the wrong one.
 
+**`message_type` and `message_treaty`** qualify `command = "SendMessage"` the same way: only a
+message of that type (an id of Communicate's Message Type list) naming that treaty counts, so a
+General Message sent by mistake does not pass a step that asks for a proposal:
+
+```toml
+done = { command = "SendMessage", message_type = "propose-treaty", message_treaty = "non-aggression" }
+```
+
 | Key | Holds when |
 |---|---|
 | `window = "<id>"` | that window is open |
@@ -176,6 +185,9 @@ a step that any ship can do can be done with the wrong one.
 | `design_vehicle = "<vehicle type>"` | the open Create Design window designs that vehicle type (`ship`, `base`, ...: what Create's picker chose) |
 | `simulator_owners = N`, `simulator_items = N` | the open Combat Simulator has items for N races; N items |
 | `simulator_owner = "race-N"` | the open Combat Simulator's Owner for item is Race N (the side the next items go to) |
+| `picking = "<order>"` | the main window waits for the place an order goes to (`move-to`, `colonize`, ...: its order button was pressed) |
+| `movement_lines = true` | the system view shows the ships' movement lines (`Ctrl+L`) |
+| `draft_message_type = "<type>"`, `draft_treaty = "<treaty>"` | the message being written in Communicate is of that type (`propose-treaty`) and names that treaty |
 | `option = "<name>"` | that setting of the empire is on (`research-evenly`, `planet-names`, ...; `not` for off) |
 | `treaty = "<kind>"` | the empire holds that treaty with another empire (`war`: is at war with one) |
 | `turn = N` | the game has reached turn N (the first turn is 0) |
@@ -283,9 +295,11 @@ is wide enough for one (1920x1080: the space left and right of a centred window)
 the bottom left of the system view, where it hides the least of the classic windows (their
 buttons are on the right). When that place would hide what the active step outlines or
 allows, or an open prompt, it takes the system view's top left or a corner of the screen
-instead: the place that hides the smallest share wins. Each tag counts by the share of it
-hidden, so a small button weighs as much as a large map; an allowed tag counts half; a
-prompt or pop-up counts as much as an outlined tag. When every place hides something, the
+instead (or the middle of an edge of the screen): the place that hides the smallest share wins.
+Each tag counts by the share of it hidden, so a small button weighs as much as a large map; a
+part the step shows and the way back's outlined button count as much as an outlined tag, an
+allowed tag half; a prompt or pop-up counts as much as an outlined tag. Each new step chooses
+afresh. When every place hides something, the
 place taken stays while it is about as good as the best, so the panel does not jump between
 near-equal places as its height settles.
 
@@ -417,6 +431,15 @@ shown:
   in the amber of the step's outlines, not the cyan of a way back. A way back comes first
   when both apply (a window over the arrow: "Close the Planets window first").
 
+- **A window closed before the step was done, and its work with it** (a design being built, a
+  battle being set up): when a window the active step works in, open when the step began, has
+  closed (and the step does not wait for that), the lesson goes back to the step that opens it,
+  through the steps that work in it (`learn::rewindStep`), and says so above the panel's
+  buttons: "The Ship Design window was closed, and what was done in it with it: the lesson went
+  back to the step that opens it." Those steps are done again (`LessonProgress::rewind`; their
+  "since" counters start afresh). Battle windows, which close when the battle ends, are left
+  out. The lock keeps such windows open (no Esc, no Cancel), so it takes Free Play or the game.
+
 While a way back is shown, Next never turns into Skip. A refused click says the same (and
 the page arrow's hint). The panel draws the line from `LessonRunner::recoveryHint()`
 (Markdown; empty when there is nothing to say).
@@ -438,6 +461,13 @@ What a step allows:
   window by mistake. Only its `allow` tags can be clicked (the report's tabs, a design
   list to browse, a name box to type in), and a page arrow of the order strip that stands
   in for an outlined order (it only turns the page, so the player can see the order).
+- **Mouse buttons**: only the left button follows the step's parts. A right click in a window
+  opens a report and the middle button pans a battle map, so they pass wherever the pointer may
+  point in a window (and wherever it is the player's). In the main window a right click gives
+  orders (Move To on a sector, with a ship selected) and opens the Galaxy Map (on the galaxy
+  panel): it passes only on the parts the step lists in `right_click`. A highlighted part listed
+  there and not in `allow` takes right clicks only (tutorial 1 opens the Galaxy Map so, where a
+  left click would show another system).
 - **What a step shows** (`show`, any step): the parts its text points the player at, to
   read (a design's details, the Warnings box, the report): clear of the spotlight, not
   outlined, and like an explanation step's outlines they can be pointed at and scrolled,
@@ -453,9 +483,10 @@ What a step allows:
   opened (a component report, the waypoint list, the Log a turn opened), with Esc and
   Enter when it is in front. A window *is* about the step when one of the step's tags
   names it (`research:areas` and `window:research` name the Research window): then only
-  the tagged parts of it respond. **A window an earlier step left open** (open when the
-  step began) that the step says nothing about can only be closed: its Close button, and
-  Esc and Enter. So "close both queue windows, then open Colonies" cannot be used to queue
+  the tagged parts of it respond; so does a step that names the window's command button
+  (`command:log`): the Log it opens takes only the Log's parts the step names. **A window an
+  earlier step left open** (open when the step began) that the step says nothing about can
+  only be closed: its Close button, and Esc and Enter while it is the window in front. So "close both queue windows, then open Colonies" cannot be used to queue
   something else, and a Log left open does not take the step's clicks.
 - **Windows over each other**: where the pointer is over a window, the front-most window
   there decides, as it is the one that gets the click. A window the step names lets only
@@ -480,7 +511,9 @@ Keys: a step's `keys` list (`"F12"`, `"Ctrl+L"`, `"Alt+1"`, `"Escape"`; modifier
 `Slash`). Besides those, an allowed tag brings the key that does what a click on it
 does, as the player has bound it: a command button its F-key, `button:end-turn` F12,
 an order button its letter, `cycle:ship` Space and the ship keys, and a `<window>:close`
-tag Esc and Enter. The panel's keys always pass: Ctrl+H, Alt+N, Alt+B, Alt+K and Alt+R
+tag Esc and Enter, but only while its window is open and in front: with it closed they would
+reach the main window (Enter ends the turn, Esc clears the selection), and with another window
+in front they would close that one. The panel's keys always pass: Ctrl+H, Alt+N, Alt+B, Alt+K and Alt+R
 (as the player has bound them), and so does Shift+F1, the manual page of the window in
 front. Keys of tags inside windows (the Tactical Combat window's E) are not known to the
 lock: list them in `keys`.
@@ -739,7 +772,8 @@ Shift+F1 under the lock, the step a tutorial resumes at, the lesson fingerprint 
 resume records in the settings. The input scripts `lesson-*.script` and
 `end-turn-question.script` play the lock with stacked windows, the way back, Skip, the
 notes after refused clicks and keys, the keys of questions and Free Play at a lesson's
-start.
+start; `lesson-rewind` and `lesson-rewind-simulator` close tutorial 4's designer and tutorial
+6's Combat Simulator with Free Play and play the steps the lesson goes back to.
 
 Three input scripts play tutorials of our own (`tests/input/learn/tutorials`), so they do
 not change with the built-in lessons: `lesson-panel.script` (800x600: prompts over a panel
@@ -773,7 +807,7 @@ command names come from `src/game/commands.hpp`.
 | `learned` | top | a list of short sentences: the result's recap (tokens allowed) |
 | `suggest` | top | `"tutorial:<slug>"` or `"training:<slug>"`: what the result offers next, instead of the next one in the list (checked) |
 | `[setup]` | top | how the game is created (below) |
-| `[[step]]` | tutorials | `title` and `text` (required), `highlight` (a UI tag or a list of them), `allow` (the same), `show` (the same, no option of a chooser), `keys` (a key chord or a list of them), `done` (a condition), `progress` (a numeric condition key or a list of them, shown without a target), `manual` (`"slug"` or `"slug#anchor"`) |
+| `[[step]]` | tutorials | `title` and `text` (required), `highlight` (a UI tag or a list of them), `allow` (the same), `show` (the same, no option of a chooser), `right_click` (the same), `keys` (a key chord or a list of them), `done` (a condition), `progress` (a numeric condition key or a list of them, shown without a target), `manual` (`"slug"` or `"slug#anchor"`) |
 | `[[objective]]` | training | `text` and `when` (required), `by_turn` |
 | `[[page]]` | training | `title` and `text` (required), `turn` (default 0), `series` (default none) |
 | `[[hint]]` | training | `text` and `when` (required), `title` (default "Hint") |
@@ -846,6 +880,10 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`, and the `design_type` qu
 | `simulator_owners` | N | the Combat Simulator is open and N races ("Owner for item") have items in the battle (an unowned object is a neutral obstacle and counts for none) |
 | `simulator_items` | N | the Combat Simulator is open and the battle has N items |
 | `simulator_owner` | `race-1` to `race-10` | the Combat Simulator is open and its Owner for item is that race: the items clicked next go to it |
+| `picking` | `move-to`, `warp`, `colonize`, `attack`, `patrol`, `load-cargo`, `drop-cargo`, `launch-units`, `recover-units`, `location` (a window asked for a place) | the main window waits for the place that order goes to: its button was pressed, the sector not yet clicked |
+| `movement_lines` | true or false | the system view shows the ships' movement lines (`Ctrl+L`, a client setting) |
+| `draft_message_type` | a message type id (`propose-treaty`, `gift`, ...) | the Communicate window is writing a message of that type |
+| `draft_treaty` | a treaty kind, or `none` | the Communicate window's message names that treaty |
 | `battle_begun` | true or false | the Tactical Combat window is open and its battle has begun (Begin was pressed) |
 | `battle_order` | a battle order kind (below) | since: the player gave an order of that kind in a tactical battle that the battle accepted |
 | `battle_turn` | N | the Tactical Combat window is open, its battle has begun and it has reached combat turn N |
@@ -1000,7 +1038,7 @@ the Weapons Report.
 | `sector:home`, `report:colony` | the homeworld's sector in the system view (while the home system is shown); the player's colony in the report's list of a sector |
 | `cycle:ship`, `cycle:fleet`, `cycle:colony` | the previous and next selectors |
 | `research:areas`, `research:queue`, `research:tech-tree` | Research: the list of areas (a click adds a project), the current projects, Tech Tree |
-| `research:headings` | Research: the headings of the areas' columns (Current Level, Cost) |
+| `research:headings`, `research:points` | Research: the headings of the areas' columns (Current Level, Cost); the research points in its title strip |
 | `set-queue:available`, `set-queue:queue` | Set Construction Queue: what can be built (a click adds it), the queue |
 | `set-queue:rate` | Set Construction Queue: the queue's build rate and the treasury |
 | `queues:list` | Construction Queues: the list of queues |
@@ -1012,7 +1050,7 @@ the Weapons Report.
 | `create-design:on-design`, `create-design:components` | the Components on Design strip, the Components Available grid |
 | `create-design:warnings`, `create-design:save` | the Warnings box, Create Design (Save Design when editing) |
 | `fleet-transfer:ships`, `fleet-transfer:fleets`, `fleet-transfer:create-fleet` | Fleet Transfer: the ships outside fleets, the fleets, Create Fleet |
-| `combat-simulator:vehicles`, `combat-simulator:items`, `combat-simulator:owners` | Combat Simulator: the Combat Vehicles list, the Items to choose list (a click adds the item for the chosen race), the Owner for item list (Race 1 to Race 10) |
+| `combat-simulator:vehicles`, `combat-simulator:items`, `combat-simulator:owners` | Combat Simulator: the Combat Vehicles list's rows in use (at least one row's height), the Items to choose list (a click adds the item for the chosen race), the Owner for item list (Race 1 to Race 10) |
 | `combat-simulator:strategies`, `combat-simulator:begin` | its Strategies and Begin buttons (its Tactical and Strategic tabs: `combat-simulator:tactical`, `combat-simulator:strategic`) |
 | `tactical-combat:map`, `tactical-combat:piece`, `tactical-combat:target` | Tactical Combat: the battle map, the selected piece's panel, the target's panel |
 | `tactical-combat:weapons` | the selected piece's weapon list (a click switches a weapon on or off) |
