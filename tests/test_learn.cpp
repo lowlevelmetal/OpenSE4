@@ -1183,6 +1183,36 @@ TEST_CASE("learn: every built-in tutorial step can be done with what the lock al
     }
 }
 
+TEST_CASE("learn: every built-in tutorial step is short and starts with its action") {
+    // docs/LEARNING.md "Writing steps": the panel shows about 60 words without
+    // scrolling. A step may have 75 at most (above 60 is reported); a step
+    // that waits for an action starts with that action, in bold.
+    constexpr size_t kMaxWords = 75, kWarnWords = 60;
+    const DirectorySource source(std::filesystem::path(OPENSE4_ASSETS_DIR) / "learn");
+    const Library lib = loadLibrary(source);
+    size_t total = 0, steps = 0, longest = 0;
+    for (const Lesson& lesson : lib.tutorials) {
+        for (size_t i = 0; i < lesson.steps.size(); ++i) {
+            const Step& st = lesson.steps[i];
+            const std::string where = std::format("{} step {} \"{}\"", lesson.slug, i + 1, st.title);
+            std::istringstream in(tokensAsWords(plainText(st.text)));
+            size_t words = 0;
+            for (std::string w; in >> w;) ++words;
+            total += words;
+            ++steps;
+            longest = std::max(longest, words);
+            CHECK_MESSAGE(words <= kMaxWords, where, ": ", words, " words, more than ", kMaxWords);
+            if (words > kWarnWords) MESSAGE(where, ": ", words, " words (aim for about 50)");
+            if (!st.done) continue;
+            const bool boldFirst = !st.text.empty() && st.text.front().kind == Block::Kind::Paragraph && !st.text.front().text.empty() &&
+                                   st.text.front().text.front().bold;
+            CHECK_MESSAGE(boldFirst, where, ": a step that waits for an action starts with it, in bold");
+        }
+    }
+    MESSAGE(std::format("tutorials: {} steps, {} words, {:.1f} a step, the longest {}", steps, total, steps ? double(total) / double(steps) : 0.0,
+                        longest));
+}
+
 // ---- Progress through a lesson ---------------------------------------------------------------------
 
 namespace {

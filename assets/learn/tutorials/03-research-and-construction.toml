@@ -2,6 +2,12 @@
 title = "Research and construction"
 summary = "Choose research projects, build facilities and ships in a construction queue, and read your budget."
 minutes = 15
+learned = [
+    "Queuing research projects, and Divide Pts Evenly",
+    "Planning ahead with the Tech Tree",
+    "Adding ships and facilities to a construction queue, and how a queue builds",
+    "Reading your budget in Empire Status",
+]
 
 [setup]
 seed = 404
@@ -13,8 +19,8 @@ complete_tech_tree = true
 [[step]]
 title = "Research and building"
 text = """
-Two things decide how fast your empire grows: what you **research** and what you **build**. This
-lesson shows you both. Press **Next**.
+**Two things decide how fast your empire grows:** what you **research** and what you **build**.
+This lesson shows you both. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "research"
@@ -22,7 +28,8 @@ manual = "research"
 [[step]]
 title = "The Research window"
 text = """
-Open the **Research** window with its command button (the flask) or `F8`.
+**Open the Research window** with its command button (the flask) or `F8`. It is where your
+empire chooses what to learn next.
 """
 highlight = ["command:research"]
 done = { window = "research" }
@@ -31,11 +38,10 @@ manual = "research#the-research-window"
 [[step]]
 title = "Research points"
 text = """
-The top line shows the **research points** available this turn. Your colonies produced them at
-the end of the last turn, and they are all spent at the end of this one. Points that no project
-can use are lost, so keep the queue full.
+**The top line shows this turn's research points.** Your colonies made them last turn, and they
+are all spent at the end of this one: points no project can use are lost, so keep the queue full.
 
-At the start you also have a large stock of points: put it to work. Press **Next**.
+You also start with a large stock of points. Press **Next**.
 """
 highlight = ["window:research"]
 manual = "research#research-points"
@@ -43,12 +49,10 @@ manual = "research#research-points"
 [[step]]
 title = "Choose projects"
 text = """
-The list shows every technology area you can research now, with your level and the cost of the
-next level. Hover over an area to see what its next level unlocks.
+**Click three areas** in the list to queue them as projects.
 
-Click areas to add them to your projects: queue at least **three**. Look at the **Cost** column:
-some levels cost a few turns of research, others a hundred turns. Start with one or two cheap
-ones, then add a long-term goal, such as colonizing another planet type.
+Point at an area to see what its next level unlocks, and check the **Cost** column: some levels
+take a few turns, others a hundred. Start with one or two cheap ones, then add a long-term goal.
 """
 highlight = ["research:areas"]
 done = { research_queued = 3 }
@@ -57,26 +61,20 @@ manual = "research#technology-areas-and-levels"
 [[step]]
 title = "Your projects"
 text = """
-Your projects appear here, four to a page, each with a progress bar and an estimate of when it
-finishes.
+**Switch Divide Pts Evenly off** (outlined).
 
-- Click a project to cancel it. The game asks first, because its progress is lost.
-- **Reorder Projects** changes the order, and **Repeat Projects** keeps researching an area level
-  after level.
-- **Divide Pts Evenly** is on at the start: every project gets an equal share. Switch it off and
-  the points go to the first project until it is paid for, then to the next, so the project you
-  need most finishes first.
-
-Switch **Divide Pts Evenly** off now.
+Then your points go to the first project until it is paid for, then to the next, so the project
+you need most finishes first. Your projects are listed below, four to a page, each with an
+estimate of when it finishes.
 """
-highlight = ["research:queue", "research:divide-evenly"]
+highlight = ["research:divide-evenly"]
 done = { not = { option = "research-evenly" } }
 manual = "research#the-research-queue"
 
 [[step]]
 title = "The Tech Tree"
 text = """
-Press **Tech Tree**. It shows every technology area of the game, what each needs and what each
+**Press Tech Tree.** It shows every technology area of the game, what each one needs and what it
 leads to, so you can plan several steps ahead.
 """
 highlight = ["research:tech-tree"]
@@ -86,7 +84,7 @@ manual = "research#the-tech-tree-window"
 [[step]]
 title = "Close the windows"
 text = """
-Close the Tech Tree and the Research window (**Close** or `Esc`).
+**Close the Tech Tree and the Research window** with their **Close** buttons, or `Esc` twice.
 """
 highlight = ["window:tech-tree", "window:research"]
 keys = ["Escape"]
@@ -96,8 +94,10 @@ manual = "research#the-tech-tree-window"
 [[step]]
 title = "Your construction queues"
 text = """
-Now construction. Every colony with people has a **construction queue**. Open **Construction
-Queues** with its command button (the wrench) or `F7`.
+**Open Construction Queues** with its command button (the wrench) or `F7`.
+
+Every colony with people has a **construction queue**. This window lists them all, what each is
+building and when it will be done.
 """
 highlight = ["command:queues"]
 done = { window = "queues" }
@@ -106,8 +106,7 @@ manual = "construction#who-can-build"
 [[step]]
 title = "Open a queue"
 text = """
-The window lists every queue of your empire, what each is building and when it will be done.
-Click your homeworld's row to open its construction queue.
+**Click your homeworld's row** to open its construction queue.
 """
 highlight = ["queues:list"]
 done = { window = "set-queue" }
@@ -116,24 +115,22 @@ manual = "construction#the-set-construction-queue-window"
 [[step]]
 title = "Build something"
 text = """
-The list on the left shows what this queue can build. Its tabs choose **Ships**, **Facilities**,
-**Units** and **Upgrades**. Hover over an item to see its cost and build time.
+**Click {design:Colony}**, your colony ship design, on the **Ships** tab to add it to the queue.
+Each design's type shows at the right of its row.
 
-Click an item to add it to the queue. A **colony ship** is a good choice: more colonies mean
-more of everything. A game starts without ships, so your first colony ships and the attack ships
-that explore for them all come from queues like this one.
+More colonies mean more of everything. A game starts without ships, so your colony ships and
+explorers all come from queues like this one. Point at an item to see its cost.
 """
 highlight = ["set-queue:available"]
 allow = ["set-queue:ships", "set-queue:facilities", "set-queue:units", "set-queue:upgrades"]
-done = { command = "QueueAdd" }
+done = { command = "QueueAdd", design_type = "Colony" }
 manual = "construction#the-set-construction-queue-window"
 
 [[step]]
 title = "How a queue builds"
 text = """
-Each turn, only the **top item** of a queue makes progress. The queue spends up to its build
-rate, and only when your treasury can pay for all three resources at once. It finishes at most
-one item per turn.
+**Only the top item of a queue makes progress.** Each turn the queue spends up to its build rate,
+only when your treasury can pay all three resources at once, and it finishes at most one item.
 
 So keep every queue busy, and give long jobs to your best yards. Press **Next**.
 """
@@ -143,9 +140,11 @@ manual = "construction#how-a-queue-builds"
 [[step]]
 title = "Your colonies"
 text = """
-Close the queue and Construction Queues, and open the **Colonies** window with its command button
-or `F5`. It lists your colonies with their population, production and facilities; its tabs choose
-the columns, and a click on a heading sorts by that column.
+**Close both queue windows** (`Esc`, twice), **then open Colonies** with its command button or
+`F5`.
+
+It lists your colonies with their people, production and facilities. Its tabs choose the columns,
+and a click on a heading sorts the list by that column.
 """
 highlight = ["command:colonies"]
 done = { window = "colonies" }
@@ -154,9 +153,10 @@ manual = "planets-and-colonies#the-colonies-window"
 [[step]]
 title = "Your budget"
 text = """
-Open **Empire Status** with the crown button or `F11`. It shows your production and expenses for
-each resource, and **Net Resources Per Turn**: what your treasury gains or loses each turn. Ships
-cost upkeep, so watch this number as your fleet grows.
+**Close Colonies (`Esc`), then open Empire Status** with the crown button or `F11`.
+
+It shows each resource's production and expenses, and **Net Resources Per Turn**: what your
+treasury gains or loses each turn. Ships cost upkeep, so watch it as your fleet grows.
 """
 highlight = ["command:empire-status"]
 done = { window = "empire-status" }
@@ -165,26 +165,26 @@ manual = "economy#the-empire-status-window"
 [[step]]
 title = "End the turn"
 text = """
-Close the window and end the turn (**End Turn**, then **Yes**). At the end of the turn your
-colonies produce, your queues build and your research projects are paid.
+**Close the window (`Esc`), then press End Turn** and **Yes**.
 
-A project that reaches its cost gains your empire a level in its area. With a cheap project
-first, that happens at the end of this turn; otherwise end turns until your first project is done.
+At the end of a turn your colonies produce, your queues build and your projects are paid. A
+project that reaches its cost gives your empire a new level in its area: end turns until the
+first one is done.
 """
 highlight = ["button:end-turn"]
 done = { techs_researched = 1 }
+progress = ["turns_passed"]
 manual = "turns#what-happens-at-the-end-of-a-turn"
 
 [[step]]
 title = "New technology"
 text = """
-Your first project is done: your empire has a new level in its area. The **Log** (`F10`) lists
-what the new level unlocks: components and facilities you can now design and build. Read it at
-the start of every turn.
+**Your first project is done.** The Log opened by itself at the new turn: click its **Research**
+category to read what the new level unlocks, the components and facilities you can now use.
+(`F10` opens the Log again.)
 
-That is research and construction. The next lesson designs a warship with what you know. Press
-**Finish** to end this one.
+The next lesson designs a warship. Press **Finish**.
 """
-highlight = ["command:log"]
-allow = ["command:log"]
+highlight = ["log:research"]
+allow = ["log:research", "log:messages", "log:close"]
 manual = "research#the-research-queue"

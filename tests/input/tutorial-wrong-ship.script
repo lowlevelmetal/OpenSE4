@@ -1,0 +1,56 @@
+# Tutorial 2, "Exploring and colonizing": the colony ship given the Explore order meant for an
+# attack ship. Before the design_type qualifier any ship's Explore order moved the lesson on,
+# so one extra click on the ship arrows sent the colony ship away and no colony could be
+# founded. Now the colony ship goes first, an Explore order counts only for an attack ship,
+# and the colony is still founded (docs/LEARNING.md "Conditions", docs/BUILDING.md
+# "Input scripts").
+options --tutorial=exploring-and-colonizing --layout=1024x768 --size=1280x800
+
+wait-lesson exploring-and-colonizing
+click item:Next in=lesson
+wait-step 2
+click tag:command:planets
+wait-window planets
+wait-step 3
+click tag:planets:colonizable-breathable
+wait-step 4
+# 4 The colony ship gets its Colonize order first.
+click tag:planets:send-colony-ship
+click item:* in="Select Planet to Colonize"
+click item:Colonize in="Select Planet to Colonize"
+wait-step 5
+# 5 Select an attack ship: the next ship after the colony ship is the first attack ship.
+click item:next in=tag:cycle:ship
+wait-step 6
+# 6 Explore: the arrows move on to the second attack ship, then to the colony ship, and the
+# Explore order goes to the colony ship. The step does not count it.
+click item:next in=tag:cycle:ship
+click item:next in=tag:cycle:ship
+assert { selected = "ship", design_type = "Colony" }
+click tag:order:explore
+wait 30
+assert { order = "explore" }
+assert-step 6
+# The step stays where it is until an attack ship explores: the next ship is one.
+click item:next in=tag:cycle:ship
+assert { selected = "ship", design_type = "Attack Ship" }
+click tag:order:explore
+wait-step 7
+# 7 The second attack ship: Explore again on the colony ship does not count either.
+click item:next in=tag:cycle:ship
+click item:next in=tag:cycle:ship
+click tag:order:explore
+wait 30
+assert-step 7
+click item:prev in=tag:cycle:ship
+assert { selected = "ship", design_type = "Attack Ship" }
+click tag:order:explore
+wait-step 8
+click item:Next in=lesson
+wait-step 9
+# 9 The colony ship kept its Colonize order: the colony is founded at the end of the turn.
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 1
+wait-step 10
+assert { colonies = 2 }

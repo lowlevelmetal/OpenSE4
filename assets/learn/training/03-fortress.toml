@@ -2,6 +2,11 @@
 title = "Fortress"
 summary = "Two neighbours share a crowded little quadrant with you. Build defenses and a fleet, and hold on to what you settle."
 minutes = 60
+learned = [
+    "Guarding your homeworld with bases",
+    "Building a fleet your budget can keep",
+    "Holding your colonies when neighbours come for them",
+]
 
 [setup]
 seed = 83
@@ -45,7 +50,8 @@ series = "briefing"
 title = "Building defenses"
 text = """
 - A **base** cannot move, but it never runs out of supplies and pays half the upkeep of a ship.
-  Your **Defense Base** design is ready: build it at your homeworld (select it and press `Q`).
+  Your defense base design, **{design:Defense Base}**, is ready: build it at your homeworld
+  (select it and press `Q`).
 - Design better warships as your technology grows, and test them in the
   [Combat Simulator](window:combat-simulator) before you build many.
 - Watch your budget in [Empire Status](window:empire-status): every ship and base costs upkeep
@@ -76,8 +82,8 @@ angry neighbour is a dangerous one.
 title = "Bases"
 when = { all = [{ turn = 10 }, { not = { bases = 1 } }] }
 text = """
-No base yet. Select your homeworld, press `Q` and click **Defense Base** on the Ships tab, once
-for each base you want.
+No base yet. Select your homeworld, press `Q` and click **{design:Defense Base}**, your defense
+base, on the Ships tab, once for each base you want.
 """
 
 [[hint]]

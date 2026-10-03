@@ -2,6 +2,11 @@
 title = "Research sprint"
 summary = "A rich start and cheap research: turn your head start into eight new technology levels."
 minutes = 40
+learned = [
+    "Spending a rich start on research",
+    "Ordering projects so that cheap levels finish first",
+    "Growing your research with more colonies and research facilities",
+]
 
 [setup]
 seed = 52

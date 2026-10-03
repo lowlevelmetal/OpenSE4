@@ -2,6 +2,11 @@
 title = "Land rush"
 summary = "Explore your corner of the quadrant and found five colonies before your neighbour takes the best planets."
 minutes = 45
+learned = [
+    "Building your first attack ships and colony ships from a normal start",
+    "Keeping explorers moving and finding planets to settle",
+    "Settling the best planets before a rival does",
+]
 
 [setup]
 seed = 31
@@ -43,8 +48,8 @@ title = "How to do it"
 text = """
 - Your empire starts with no ships, only the designs your Design minister made (the
   [Designs](window:designs) window, `F3`, shows each one's type). Select your homeworld, press
-  `Q` and queue your **Attack Ship** design once or twice on the Ships tab, then your **Colony**
-  ship design.
+  `Q` and queue **{design:Attack Ship}**, your attack ship, once or twice on the Ships tab, then
+  **{design:Colony}**, your colony ship.
 - Send the attack ships out with **Explore** (`E`) as soon as they are built, and give them the
   order again each time they arrive.
 - Use each colony ship at once: the [Planets](window:planets) window (`F4`) shows the planets
@@ -69,9 +74,9 @@ until that system has a **spaceport**.
 title = "An idle yard"
 when = { all = [{ turn = 1 }, { not = { construction_queued = 1 } }] }
 text = """
-Nothing is being built, and you have no ships yet. Select your homeworld, press `Q`, and add an
-**Attack Ship** to explore with and your colony ship design on the Ships tab. **Repeat Build**
-keeps colony ships coming.
+Nothing is being built, and you have no ships yet. Select your homeworld, press `Q`, and add
+**{design:Attack Ship}** to explore with and **{design:Colony}**, your colony ship, on the Ships
+tab. **Repeat Build** keeps colony ships coming.
 """
 
 [[hint]]

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Render every step of every built-in tutorial with the input lock on.
+"""Check every step of every built-in tutorial: its length, and how it looks with the input lock on.
 
-For each step this runs, headless,
+First the words of each step's text are counted, as the panel shows them
+(a {design:<type>} token counts as one word): above 75 a step fails, above
+60 it is reported (docs/LEARNING.md "Writing steps"; tests/test_learn.cpp
+checks the same). --words stops there; it needs no game.
+
+Then, for each step, this runs headless
 
     opense4 --tutorial=<slug>:<n> --lesson-check [--screenshot=<dir>/<slug>-<n>.png]
 
@@ -19,7 +24,7 @@ The installed game data must be found (as for opense4 itself). Screenshots
 are written only when --screenshots names a directory; keep them out of the
 repository (docs/CLEANROOM.md).
 
-    python3 tools/check_lessons.py [--exe build/debug/opense4] [--screenshots DIR] [slug ...]
+    python3 tools/check_lessons.py [--exe build/debug/opense4] [--screenshots DIR] [--words] [slug ...]
 """
 
 import argparse
@@ -32,6 +37,35 @@ import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LINE = re.compile(r"^lesson-check (\S+):(\d+) areas=(\d+) (.*)$")
+MAX_WORDS, WARN_WORDS = 75, 60
+TOKEN = re.compile(r"\{[a-z-]+:[^{}\n]*\}")
+LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+MARKER = re.compile(r"^\s*(?:[-*]|\d+\.)\s+", re.M)
+
+
+def words(text):
+    """The words of a step's Markdown as the panel shows them."""
+    text = TOKEN.sub("Name", text)
+    text = LINK.sub(r"\1", text)
+    text = MARKER.sub("", text)
+    text = text.replace("**", "").replace("`", "").replace("|", " ")
+    return len(text.split())
+
+
+def check_words(only):
+    """Prints each tutorial's words per step; returns the number of steps above the limit."""
+    too_long = 0
+    for slug, steps in tutorials(only):
+        counts = [words(step.get("text", "")) for step in steps]
+        total = sum(counts)
+        print(f"words {slug}: {len(steps)} steps, {total} words, {total / max(1, len(steps)):.1f} a step, the longest {max(counts, default=0)}")
+        for n, (step, count) in enumerate(zip(steps, counts), 1):
+            if count > MAX_WORDS:
+                too_long += 1
+                print(f"FAIL {slug}:{n} {step.get('title', '')}: {count} words, more than {MAX_WORDS}")
+            elif count > WARN_WORDS:
+                print(f"warn {slug}:{n} {step.get('title', '')}: {count} words (aim for about 50)")
+    return too_long
 
 
 def tutorials(only):
@@ -68,8 +102,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--exe", default=str(ROOT / "build" / "debug" / "opense4"))
     ap.add_argument("--screenshots", help="directory for one screenshot per step (outside the repository)")
+    ap.add_argument("--words", action="store_true", help="only count the words of each step (no game needed)")
     ap.add_argument("slugs", nargs="*", help="only these tutorials")
     a = ap.parse_args()
+
+    too_long = check_words(set(a.slugs))
+    if a.words:
+        return 1 if too_long else 0
 
     exe = pathlib.Path(a.exe)
     if not exe.exists():
@@ -92,7 +131,9 @@ def main():
             print(f"{'ok  ' if ok else 'FAIL'} {slug}:{n} {title}: {what}")
             failed += 0 if ok else 1
     print(f"{total - failed} of {total} steps ok")
-    return 1 if failed else 0
+    if too_long:
+        print(f"{too_long} steps have more than {MAX_WORDS} words")
+    return 1 if failed or too_long else 0
 
 
 if __name__ == "__main__":

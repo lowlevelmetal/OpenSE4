@@ -9,6 +9,7 @@ wait-step 2
 # 2 Select an attack ship: the ship arrows (the first ship is an attack ship).
 click item:next in=tag:cycle:ship
 wait-step 3
+assert { selected = "ship", design_type = "Attack Ship" }
 # 3 Fleet Transfer, with its order button.
 click tag:order:fleet-transfer
 wait-window fleet-transfer
@@ -33,10 +34,10 @@ click sector:empty nth=150
 wait-step 8
 print turn
 assert-present tag:panel:system
-# 8 Movement points: Ctrl+L shows the route, again hides it.
+# 8 Movement points: the route is shown; Ctrl+L hides it, and again shows it.
+screenshot t5-route.png
 key Ctrl+L
 wait 10
-screenshot t5-route.png
 key Ctrl+L
 click item:Next in=lesson
 wait-step 9
@@ -67,5 +68,6 @@ wait-step 15
 # 15 Well done: Finish.
 click item:Finish in=lesson
 wait-result done
+assert-present item:"Next: Combat*"
 click item:"Keep Playing"
 wait-gone item:"Keep Playing"

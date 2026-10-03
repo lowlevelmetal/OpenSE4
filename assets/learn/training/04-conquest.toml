@@ -2,6 +2,11 @@
 title = "Conquest"
 summary = "One rival, six star systems and a rich treasury: build a war fleet, destroy the enemy's ships and take its planets."
 minutes = 90
+learned = [
+    "Finding the enemy and destroying its ships",
+    "Taking a planet with troops",
+    "Keeping your economy going while you fight",
+]
 
 [setup]
 seed = 94
@@ -47,8 +52,8 @@ turn = 0
 series = "briefing"
 title = "The plan"
 text = """
-1. Find the enemy: your empire starts with no ships, so build an attack ship or two at your
-   homeworld (`Q`) and send them exploring (`E`).
+1. Find the enemy: your empire starts with no ships, so build an attack ship or two
+   (**{design:Attack Ship}**) at your homeworld (`Q`) and send them exploring (`E`).
 2. Design a warship with your best weapons and armor, and test it in the
    [Combat Simulator](window:combat-simulator) against the enemy designs you have seen.
 3. Build a fleet of them, and keep it supplied.
@@ -89,9 +94,10 @@ back for repair with the **Repair** order (`R`).
 title = "Invasion"
 when = { enemy_ships_destroyed = 3 }
 text = """
-The enemy fleet is thinning. Time to take planets: build troops on the **Units** tab of a
-construction queue, load them into a ship with cargo space, and drop them during a battle at
-the enemy colony. Bring more troops than you think you need.
+The enemy fleet is thinning. Time to take planets: build troops (**{design:Troop}**) on the
+**Units** tab of a construction queue, load them into a ship with cargo space such as
+**{design:Troop Transport}**, and drop them during a battle at the enemy colony. Bring more troops
+than you think you need.
 """
 
 [fail]
