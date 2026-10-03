@@ -16,6 +16,9 @@ wait-step 4
 # 4 Your homeworld: the outlined homeworld; its sector lists everything there, then the
 # homeworld in that list (outlined too once it shows).
 click tag:sector:home
+# The report shows the whole list; only the homeworld's row can be clicked.
+wait-for tag:report:colony
+click item:report:ship in=main refused
 click tag:report:colony
 wait-step 5
 # 5 The planet report: its tabs, then Next.
@@ -31,7 +34,11 @@ wait-step 7
 right-click tag:panel:galaxy
 wait-window galaxy-map
 wait-step 8
-# 8 Close it with its Close button.
+# 8 The overlays switch; the map's notes and Goto System are not this step's. Then Close.
+click item:Spaceports in=galaxy-map
+click item:"Goto System" in=galaxy-map refused
+click tag:galaxy-map:map refused
+click item:Presence in=galaxy-map
 click tag:galaxy-map:close
 wait-closed galaxy-map
 wait-step 9

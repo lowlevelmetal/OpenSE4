@@ -34,7 +34,7 @@ text = """
 Check its report: the **Class** must say **{design:Attack Ship}**, not {design:Colony}.
 """
 highlight = ["cycle:ship"]
-allow = ["panel:report"]
+show = ["panel:report"]
 done = { selected = "ship", design_type = "Attack Ship" }
 manual = "main-window#selecting-things"
 
@@ -57,6 +57,7 @@ text = """
 The new fleet starts with your selected attack ship.
 """
 highlight = ["fleet-transfer:create-fleet"]
+show = ["fleet-transfer:ships", "fleet-transfer:fleets"]
 done = { command = "CreateFleet", design_type = "Attack Ship" }
 manual = "ships-and-fleets#fleets"
 
@@ -66,10 +67,11 @@ text = """
 **Click your other attack ship** in the list of ships outside fleets: its name begins with
 **{design:Attack Ship}**. It joins the selected fleet.
 
-Leave the colony ship out: a fleet moves at the speed of its slowest ship. A click on a ship in
-the fleet's list takes it out again.
+Leave the colony ship out: a fleet moves at the speed of its slowest ship. Later, a click on a
+ship in the fleet's list on the right takes it out again.
 """
-highlight = ["fleet-transfer:ships", "fleet-transfer:fleets"]
+highlight = ["fleet-transfer:ships", "fleet-transfer:ships:named"]
+show = ["fleet-transfer:fleets"]
 done = { command = "JoinFleet", design_type = "Attack Ship" }
 manual = "ships-and-fleets#fleets"
 
@@ -82,7 +84,7 @@ The report now shows the **fleet** above the ship: its speed, supplies, formatio
 members. Orders you give now go to the whole fleet.
 """
 highlight = ["fleet-transfer:close", "cycle:ship"]
-allow = ["panel:report"]
+show = ["panel:report"]
 done = { all = [{ not = { window = "fleet-transfer" } }, { selected = "fleet", design_type = "Attack Ship" }] }
 manual = "ships-and-fleets#fleets"
 
@@ -126,15 +128,25 @@ done = { command = "SetWaypoint" }
 manual = "ships-and-fleets#waypoints"
 
 [[step]]
+title = "Your fleet again"
+text = """
+**Select your fleet again**: an attack ship, with the ship arrows. The report shows the fleet
+above the ship.
+"""
+highlight = ["cycle:ship"]
+show = ["panel:report"]
+done = { selected = "fleet", design_type = "Attack Ship" }
+manual = "ships-and-fleets#fleets"
+
+[[step]]
 title = "Go to the waypoint"
 text = """
-**Select your fleet again** (an attack ship, with the ship arrows), **then press `Ctrl+1`**, or
-the **Move To Waypoint** order and waypoint 1.
+**Press `Ctrl+1`**, or the **Move To Waypoint** order and waypoint 1.
 
 The fleet adds the trip to its orders.
 """
-highlight = ["order:move-to-waypoint", "cycle:ship"]
-allow = ["panel:report"]
+highlight = ["order:move-to-waypoint"]
+show = ["panel:report"]
 keys = ["Ctrl+1"]
 done = { order = "move-to-waypoint", design_type = "Attack Ship" }
 manual = "ships-and-fleets#waypoints"
@@ -157,7 +169,8 @@ text = """
 Here you can move orders up and down, delete one or clear them all, and **Repeat Orders** makes
 the fleet repeat its list forever. An order that fails clears the whole list.
 """
-highlight = ["window:view-orders"]
+highlight = ["view-orders:close"]
+show = ["window:view-orders"]
 keys = ["Escape"]
 done = { not = { window = "view-orders" } }
 manual = "ships-and-fleets#orders"
@@ -172,7 +185,7 @@ Ships use **supplies** to move, fire and cloak. One that runs out crawls a secto
 cannot fire. Depots, such as your homeworld's, refill them for free.
 """
 highlight = ["order:resupply"]
-allow = ["cycle:ship"]
+show = ["panel:report"]
 done = { order = "resupply", design_type = "Attack Ship" }
 manual = "logistics#supply"
 
@@ -195,4 +208,5 @@ text = """
 forever. Press **Finish**.
 """
 highlight = ["order:sentry", "order:patrol"]
+allow = ["log:close"]
 manual = "ships-and-fleets#orders"

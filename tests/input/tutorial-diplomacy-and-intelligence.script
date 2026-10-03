@@ -46,7 +46,11 @@ click item:##portrait in=empires
 wait-window communicate
 wait-step 8
 # 8 Propose a treaty: Propose Treaty in the Message Type list, Non-Aggression, Send Message.
+# Another message type (a declaration of war) and the window's other buttons are refused.
+click item:Report in=communicate refused
 click tag:communicate:message-type
+wait-for tag:communicate:message-type:propose-treaty
+click tag:communicate:message-type:declare-war refused
 click item:"Propose Treaty" in=communicate
 wait-for tag:communicate:treaty
 click tag:communicate:treaty
@@ -55,8 +59,10 @@ click item:Pleading in=communicate
 click tag:communicate:send
 wait-step 9
 assert { command = "SendMessage" }
-# 9 Wait for the answer: sending closed Communicate; Esc closes Empires; End Turn and Yes.
+# 9 Wait for the answer: sending closed Communicate; Esc closes Empires, which the steps before
+# left open and which nothing else of responds now; End Turn and Yes.
 wait-closed communicate
+click item:Scores in=empires refused
 key Escape
 wait-closed empires
 click tag:button:end-turn
@@ -70,7 +76,9 @@ click tag:log:politics
 click item:##row in=log nth=2
 click item:Next in=lesson
 wait-step 11
-# 11 A treaty: close the Log, end turns until a treaty is signed or three turns have passed.
+# 11 A treaty: close the Log (nothing else of it responds), end turns until a treaty is signed or
+# three turns have passed.
+click tag:log:all refused
 key Escape
 wait-closed log
 repeat 4 until { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns_passed = 3 }] }
@@ -84,6 +92,8 @@ wait-step 12
 # Our Race, each closed again; then Next.
 click tag:command:empires
 wait-window empires
+click item:Intelligence in=empires refused
+click item:History in=empires refused
 click item:"Treaty Grid" in=empires
 wait-window treaty-grid
 key Escape
@@ -106,8 +116,11 @@ wait-step 13
 click tag:empires:intelligence
 wait-window intelligence
 wait-step 14
-# 14 A first project: the defense project, the first row of the list (its first item).
-click item:* in=tag:intelligence:projects nth=1
+# 14 A first project: a defense project; the others (none yet with this game's technology) are
+# refused.
+wait-for tag:intelligence:projects:defense
+click tag:intelligence:projects:other refused optional
+click tag:intelligence:projects:defense
 wait-step 15
 assert { command = "SetIntel" }
 # 15 Well done: Finish. The last lesson offers the first training game, which starts from here.

@@ -55,6 +55,7 @@ Point at an area to see what its next level unlocks, and check the **Cost** colu
 take a few turns, others a hundred. Start with one or two cheap ones, then add a long-term goal.
 """
 highlight = ["research:areas"]
+show = ["research:headings"]
 done = { research_queued = 3 }
 manual = "research#technology-areas-and-levels"
 
@@ -68,6 +69,7 @@ you need most finishes first. Your projects are listed below, four to a page, ea
 estimate of when it finishes.
 """
 highlight = ["research:divide-evenly"]
+show = ["research:queue"]
 done = { not = { option = "research-evenly" } }
 manual = "research#the-research-queue"
 
@@ -86,7 +88,7 @@ title = "Close the windows"
 text = """
 **Close the Tech Tree and the Research window** with their **Close** buttons, or `Esc` twice.
 """
-highlight = ["window:tech-tree", "window:research"]
+highlight = ["tech-tree:close", "research:close"]
 keys = ["Escape"]
 done = { all = [{ not = { window = "tech-tree" } }, { not = { window = "research" } }] }
 manual = "research#the-tech-tree-window"
@@ -122,7 +124,7 @@ More colonies mean more of everything. A game starts without ships, so your colo
 explorers all come from queues like this one.
 """
 highlight = ["set-queue:available"]
-allow = ["set-queue:ships", "set-queue:facilities", "set-queue:units", "set-queue:upgrades"]
+allow = ["set-queue:ships", "set-queue:available:named"]
 done = { command = "QueueAdd", design_type = "Colony" }
 manual = "construction#the-set-construction-queue-window"
 
@@ -135,6 +137,7 @@ only when your treasury can pay all three resources at once, and it finishes at 
 So keep every queue busy, and give long jobs to your best yards. Press **Next**.
 """
 highlight = ["set-queue:queue"]
+show = ["set-queue:rate"]
 manual = "construction#how-a-queue-builds"
 
 [[step]]
@@ -142,24 +145,42 @@ title = "Your colonies"
 text = """
 **Close both queue windows** (`Esc`, twice), **then open Colonies** with its command button or
 `F5`.
-
-It lists your colonies with their people, production and facilities. Its tabs choose the columns,
-and a click on a heading sorts the list by that column.
 """
 highlight = ["command:colonies"]
 done = { window = "colonies" }
 manual = "planets-and-colonies#the-colonies-window"
 
 [[step]]
-title = "Your budget"
+title = "The Colonies window"
+text = """
+**It lists your colonies** with their people, production and facilities.
+
+Its tabs on the right choose the columns: try them. Later, a click on a column's heading sorts
+the list by that column, and a click on a colony shows it in the main window. Press **Next**.
+"""
+highlight = ["colonies:list"]
+allow = ["colonies:general", "colonies:value", "colonies:production", "colonies:facilities", "colonies:cargo",
+         "colonies:construction", "colonies:status", "colonies:races", "colonies:orders"]
+manual = "planets-and-colonies#the-colonies-window"
+
+[[step]]
+title = "Empire Status"
 text = """
 **Close Colonies (`Esc`), then open Empire Status** with the crown button or `F11`.
-
-It shows each resource's production and expenses, and **Net Resources Per Turn**: what your
-treasury gains or loses each turn. Ships cost upkeep, so watch it as your fleet grows.
 """
 highlight = ["command:empire-status"]
 done = { window = "empire-status" }
+manual = "economy#the-empire-status-window"
+
+[[step]]
+title = "Your budget"
+text = """
+**Empire Status shows each resource's production and expenses**, and **Net Resources Per Turn**:
+what your treasury gains or loses each turn.
+
+Ships cost upkeep, so watch it as your fleet grows. Press **Next**.
+"""
+highlight = ["window:empire-status"]
 manual = "economy#the-empire-status-window"
 
 [[step]]
@@ -167,11 +188,12 @@ title = "End the turn"
 text = """
 **Close the window (`Esc`), then press End Turn** and **Yes**.
 
-At the end of a turn your colonies produce, your queues build and your projects are paid. A
-project that reaches its cost gives your empire a new level in its area: end turns until the
-first one is done (after five turns the lesson goes on anyway).
+Then your colonies produce, your queues build and your projects are paid. A project that reaches
+its cost gives your empire a new level: end turns until the first one is done (after five turns
+the lesson goes on anyway), closing the Log (`Esc`) before each End Turn.
 """
 highlight = ["button:end-turn"]
+allow = ["log:close"]
 done = { any = [{ techs_researched = 1 }, { turns_passed = 5 }] }
 manual = "turns#what-happens-at-the-end-of-a-turn"
 
@@ -186,4 +208,5 @@ The next lesson designs a warship. Press **Finish**.
 """
 highlight = ["log:research"]
 allow = ["log:research", "log:messages", "log:close"]
+show = ["log:details"]
 manual = "research#the-research-queue"

@@ -51,7 +51,7 @@ Those make the best colonies: a domed colony holds far fewer people and faciliti
 **Colonizable** lists every planet you can settle, domed ones included.
 """
 highlight = ["planets:colonizable-breathable"]
-allow = ["planets:colonizable"]
+show = ["planets:colonizable", "planets:list"]
 done = { tab = "planets:colonizable-breathable" }
 manual = "planets-and-colonies#what-a-planet-is-like"
 
@@ -64,6 +64,7 @@ Your colony ship gets its orders and the window closes. Another time you can als
 colony ship, press `C` and click a planet marked with a green star.
 """
 highlight = ["planets:send-colony-ship"]
+show = ["planets:list"]
 done = { order = "colonize" }
 manual = "planets-and-colonies#colonizing"
 
@@ -76,34 +77,47 @@ an attack ship: its **Class** must say **{design:Attack Ship}**, not {design:Col
 The colony ship already has its orders; give it no others.
 """
 highlight = ["cycle:ship"]
-allow = ["panel:report"]
+show = ["panel:report"]
 done = { selected = "ship", design_type = "Attack Ship" }
 manual = "main-window#selecting-things"
 
 [[step]]
 title = "Explore"
 text = """
-**Press the Explore order** (point at the order buttons to find it), or `E`, while the report's
-**Class** says **{design:Attack Ship}**.
+**Press the Explore order** (point at the order buttons to find it), or `E`. The report's
+**Class** says **{design:Attack Ship}**: the order goes to this ship.
 
 The ship flies at once to the nearest warp point that leads somewhere unexplored, and jumps
 through. Any ship that can move can explore; there is no special scout.
 """
 highlight = ["order:explore"]
-allow = ["cycle:ship", "panel:report"]
+show = ["panel:report", "panel:orders"]
 done = { order = "explore", design_type = "Attack Ship" }
 manual = "ships-and-fleets#orders"
 
 [[step]]
 title = "The second attack ship"
 text = """
-**Click the right arrow once more** to select your other attack ship, check that its **Class**
-says **{design:Attack Ship}**, **and press Explore** too.
+**Click the right arrow once more** to select your other attack ship: its **Class** must say
+**{design:Attack Ship}** too.
 
-Two ships with Explore orders never pick the same warp point.
+The colony ship already has its orders; give it no others.
 """
-highlight = ["cycle:ship", "order:explore"]
-allow = ["panel:report"]
+highlight = ["cycle:ship"]
+show = ["panel:report"]
+done = { selected = "ship", design_type = "Attack Ship" }
+manual = "main-window#selecting-things"
+
+[[step]]
+title = "A second explorer"
+text = """
+**Press Explore** (`E`) for this ship too.
+
+Two ships with Explore orders never pick the same warp point, so together they find new systems
+twice as fast.
+"""
+highlight = ["order:explore"]
+show = ["panel:report"]
 done = { order = "explore", design_type = "Attack Ship" }
 manual = "galaxy#exploring"
 
@@ -140,6 +154,7 @@ The Log opened by itself at the new turn. If the game asks for the new colony's 
 closes, pick the suggested type: it only guides your ministers.
 """
 highlight = ["command:colonies"]
+allow = ["log:close", "colony-type:suggested"]
 done = { window = "colonies" }
 manual = "planets-and-colonies#the-colonies-window"
 
@@ -166,7 +181,7 @@ Each time a ship has arrived, select it with the ship arrows and press **Explore
 Close the Log (`Esc`) before you end a turn.
 """
 highlight = ["button:end-turn", "order:explore"]
-allow = ["cycle:ship", "panel:report"]
+allow = ["cycle:ship", "panel:report", "log:close"]
 done = { systems_explored = 5 }
 progress = ["turns_passed"]
 manual = "galaxy#warp-points"

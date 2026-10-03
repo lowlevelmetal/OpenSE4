@@ -19,8 +19,13 @@ wait-step 4
 click tag:fleet-transfer:create-fleet
 click item:OK in="Create Fleet"
 wait-step 5
-# 5 Add the second attack ship: the first ship left outside fleets (the colony ship stays out).
-click item:##row in=fleet-transfer nth=1
+# 5 Add the second attack ship: the attack ship left outside fleets, as the step names it. The
+# colony ship's row is refused, and so is the fleet's list (taking its first ship out).
+wait-for tag:fleet-transfer:ships:named
+click tag:fleet-transfer:ships:other refused
+click tag:fleet-transfer:fleets refused
+assert-step 5
+click tag:fleet-transfer:ships:named
 wait-step 6
 assert { command = "JoinFleet" }
 # 6 Your fleet: close Fleet Transfer, select an attack ship again.
@@ -46,33 +51,38 @@ wait-step 9
 click sector:warp-point
 key Alt+1
 wait-step 10
-# 10 Go to the waypoint: select the fleet again, Ctrl+1.
+# 10 Your fleet again: the ship arrows. Ctrl+1 is the next step's.
+key Ctrl+1 refused
 click item:next in=tag:cycle:ship
-key Ctrl+1
 wait-step 11
-# 11 The order list: View Orders. At 800x600 it is two pages of the order strip away: the
+# 11 Go to the waypoint: Ctrl+1. The ship arrows are refused: the order goes to the fleet.
+click item:next in=tag:cycle:ship refused
+key Ctrl+1
+wait-step 12
+# 12 The order list: View Orders. At 800x600 it is two pages of the order strip away: the
 # outlined page arrow, twice, then the order.
 repeat 3 until { window = "view-orders" }
   click tag:order:view-orders
 end
 wait-window view-orders
-wait-step 12
-# 12 Editing orders: close it with Esc.
+wait-step 13
+# 13 Editing orders: the window is to look at; close it with Esc.
+click item:"Repeat Orders" in=view-orders refused
 key Escape
 wait-closed view-orders
-wait-step 13
-# 13 Supplies: the Resupply order (the fleet is still selected); at 800x600 the page arrow
-# first, as on step 11.
+wait-step 14
+# 14 Supplies: the Resupply order (the fleet is still selected); at 800x600 the page arrow
+# first, as on step 12.
 repeat 3 until { order = "resupply" }
   click tag:order:resupply
 end
-wait-step 14
-# 14 End the turn.
+wait-step 15
+# 15 End the turn.
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1
-wait-step 15
-# 15 Well done: Finish.
+wait-step 16
+# 16 Well done: Finish.
 click item:Finish in=lesson
 wait-result done
 assert-present item:"Next: Combat*"

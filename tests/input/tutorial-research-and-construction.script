@@ -30,7 +30,9 @@ assert { not = { option = "research-evenly" } }
 click tag:research:tech-tree
 wait-window tech-tree
 wait-step 7
-# 7 Close the windows: Esc closes the Tech Tree, then the Research window.
+# 7 Close the windows: nothing else in them responds (the research areas, Divide Pts Evenly);
+# Esc closes the Tech Tree, then the Research window.
+click tag:research:areas refused
 key Escape
 wait-closed tech-tree
 key Escape
@@ -44,9 +46,12 @@ wait-step 9
 click item:##row in=queues
 wait-window set-queue
 wait-step 10
-# 10 Build something: the colony ship design (the third row of the Ships tab; the step
-# counts only a colony ship).
-click item:##row in=set-queue nth=3
+# 10 Build something: the colony ship design the step names, on the Ships tab. Another
+# design's row and the other tabs are refused.
+wait-for tag:set-queue:available:named
+click tag:set-queue:available:other refused
+click tag:set-queue:facilities refused
+click tag:set-queue:available:named
 wait-step 11
 assert { construction_queued = 1 }
 assert { command = "QueueAdd", design_type = "Colony" }
@@ -54,7 +59,9 @@ assert { command = "QueueAdd", design_type = "Colony" }
 click item:Next in=lesson
 wait-step 12
 # 12 Your colonies: close the queue and Construction Queues (Esc; the lesson panel covers
-# their Close buttons), then the Colonies command button.
+# their Close buttons), then the Colonies command button. Left open by the steps before, the
+# queue windows can only be closed.
+click tag:set-queue:available refused
 key Escape
 wait-closed set-queue
 key Escape
@@ -62,22 +69,36 @@ wait-closed queues
 click tag:command:colonies
 wait-window colonies
 wait-step 13
-# 13 Your budget: close Colonies (Esc), then Empire Status.
+# 13 The Colonies window: its tabs choose the columns; a colony's row is not this step's (it
+# would close the window). Next.
+click tag:colonies:value
+click tag:colonies:production
+click tag:colonies:general
+click tag:colonies:list refused
+click item:Next in=lesson
+wait-step 14
+# 14 Empire Status: close Colonies (Esc), then Empire Status. Colonies can only be closed now.
+click tag:colonies:value refused
 key Escape
 wait-closed colonies
 click tag:command:empire-status
 wait-window empire-status
-wait-step 14
-# 14 End the turn: close the window, End Turn and Yes. The cheap first project is done at the
-# end of this turn.
+wait-step 15
+# 15 Your budget: an explanation; the window's buttons are only to look at.
+click item:Ministers in=empire-status refused
+click item:Next in=lesson
+wait-step 16
+# 16 End the turn: close the window, End Turn and Yes. The cheap first project is done at the
+# end of this turn. Empire Status can only be closed (not Ministers).
+click item:Ministers in=empire-status refused
 key Escape
 wait-closed empire-status
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1
-wait-step 15
+wait-step 17
 assert { techs_researched = 1 }
-# 15 New technology: the Log the turn opened tells it; read it, close it, Finish.
+# 17 New technology: the Log the turn opened tells it; read it, close it, Finish.
 wait-window log
 click tag:log:research
 click tag:log:close

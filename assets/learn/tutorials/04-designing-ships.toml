@@ -48,6 +48,7 @@ to unit designs and to the enemy designs you have seen. Press **Next**.
 """
 highlight = ["designs:list"]
 allow = ["designs:list", "designs:ship-designs", "designs:unit-designs", "designs:enemy-ship-designs", "designs:enemy-unit-designs"]
+show = ["designs:details"]
 manual = "ship-design#the-designs-window"
 
 [[step]]
@@ -57,19 +58,19 @@ text = """
 
 The designer opens with an empty ship design.
 """
-highlight = ["designs:create"]
-done = { window = "create-design" }
+highlight = ["designs:create", "designs:create:ship"]
+done = { design_vehicle = "ship" }
 manual = "ship-design#the-create-design-window"
 
 [[step]]
 title = "Choose a hull"
 text = """
-**Press the arrow beside Size** and pick a hull.
+**Press the arrow beside Size** and pick the smallest hull, the one with the fewest kT.
 
 The hull sets how many kT of components fit in the ship. A larger hull holds more, but costs more
-and needs more crew; for a first warship, choose one of the smaller ones.
+and needs more crew; a small one suits a first warship.
 """
-highlight = ["create-design:hull"]
+highlight = ["create-design:hull", "create-design:hull:smallest"]
 done = { design_hull_chosen = true }
 manual = "ship-design#hulls-and-components"
 
@@ -81,7 +82,7 @@ text = """
 The type sorts the design in your lists and tells your ministers what it is for. A design without
 one lands under No Type.
 """
-highlight = ["create-design:type"]
+highlight = ["create-design:type", "create-design:type:attack-ship"]
 done = { design_type_chosen = "Attack Ship" }
 manual = "ship-design#the-create-design-window"
 
@@ -95,6 +96,7 @@ Add at least five: a **bridge**, **life support**, **crew quarters**, an **engin
 what is still missing.
 """
 highlight = ["create-design:components", "create-design:on-design"]
+show = ["create-design:warnings", "create-design:figures"]
 done = { design_components = 5 }
 manual = "ship-design#design-rules"
 
@@ -108,6 +110,7 @@ Fix them with components now; the name comes next. Press **Next**.
 """
 highlight = ["create-design:warnings"]
 allow = ["create-design:components", "create-design:on-design"]
+show = ["create-design:figures"]
 manual = "ship-design#design-rules"
 
 [[step]]
@@ -131,6 +134,7 @@ If the game refuses, **Warnings** still names a rule the design breaks: fix that
 """
 highlight = ["create-design:save"]
 allow = ["create-design:components", "create-design:on-design", "create-design:name", "create-design:suggest"]
+show = ["create-design:warnings"]
 done = { command = "CreateDesign", design_type = "Attack Ship" }
 manual = "ship-design#the-create-design-window"
 
@@ -144,6 +148,7 @@ one, and **Upgrade** puts in the newest version of every component.
 """
 highlight = ["designs:close"]
 allow = ["designs:list"]
+show = ["designs:edit", "designs:copy", "designs:upgrade"]
 done = { not = { window = "designs" } }
 manual = "ship-design#prototypes-editing-and-upgrading"
 
@@ -168,7 +173,7 @@ it is out of sight, scroll the list with the mouse wheel or its arrows.
 Its type shows at the right of the row, and the list shows how many turns it takes to build.
 """
 highlight = ["set-queue:available"]
-allow = ["set-queue:ships"]
+allow = ["set-queue:ships", "set-queue:available:named"]
 done = { command = "QueueAdd", design_type = "Attack Ship" }
 manual = "construction#the-set-construction-queue-window"
 

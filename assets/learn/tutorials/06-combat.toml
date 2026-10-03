@@ -42,26 +42,39 @@ manual = "combat-windows#the-combat-simulator"
 [[step]]
 title = "Your side"
 text = """
-**Choose Race 1 in Owner for item, then click {design:Attack Ship} twice** in **Items to
-choose**. Two attack ships join your side, one row each in **Combat Vehicles**.
+**Click {design:Attack Ship} twice** in **Items to choose**, with **Race 1** chosen in **Owner
+for item**. Two attack ships join your side, one row each in **Combat Vehicles**.
 
 Race 1 is yours to command; the computer plays the others. Each design's type shows at the right
 of its row.
 """
-highlight = ["combat-simulator:owners", "combat-simulator:items"]
-allow = ["combat-simulator:vehicles"]
+highlight = ["combat-simulator:items", "combat-simulator:items:named"]
+allow = ["combat-simulator:owners", "combat-simulator:owners:race-1"]
+show = ["combat-simulator:vehicles"]
 done = { simulator_items = 2 }
 manual = "combat-windows#the-combat-simulator"
 
 [[step]]
 title = "The other side"
 text = """
-**Choose Race 2, then click {design:Defense Base}**, to give the other side something to defend.
-
-A click on a row in Combat Vehicles removes it, and a right-click on an item shows its report.
+**Choose Race 2 in Owner for item.** The items you click next go to the other side, which the
+computer plays.
 """
-highlight = ["combat-simulator:owners", "combat-simulator:items"]
-allow = ["combat-simulator:vehicles"]
+highlight = ["combat-simulator:owners", "combat-simulator:owners:race-2"]
+show = ["combat-simulator:vehicles"]
+done = { simulator_owner = "race-2" }
+manual = "combat-windows#the-combat-simulator"
+
+[[step]]
+title = "Something to defend"
+text = """
+**Click {design:Defense Base}** to give the other side a base to defend.
+
+Later, a click on a row in **Combat Vehicles** removes it, and a right-click on an item shows its
+report.
+"""
+highlight = ["combat-simulator:items", "combat-simulator:items:named"]
+show = ["combat-simulator:vehicles", "combat-simulator:owners"]
 done = { all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }
 manual = "combat-windows#the-combat-simulator"
 
@@ -86,6 +99,7 @@ This is the **Tactical Combat** window. Your ships start at one edge, the base w
 middle, and the title strip shows the combat turn and whose phase it is.
 """
 highlight = ["tactical-combat:end-turn"]
+show = ["tactical-combat:map", "tactical-combat:title", "tactical-combat:auto"]
 done = { battle_begun = true }
 manual = "combat-windows#tactical-combat"
 
@@ -177,6 +191,7 @@ The forces list on the left shows what each side has and what it has lost. **Clo
 when the fighting ends.
 """
 highlight = ["strategic-combat:begin", "strategic-combat:close"]
+show = ["strategic-combat:forces"]
 done = { not = { window = "strategic-combat" } }
 manual = "combat-windows#strategic-combat"
 
@@ -195,12 +210,13 @@ manual = "combat#strategies"
 [[step]]
 title = "Well done"
 text = """
-**Look through the window's pages** to see what a strategy can say. Each design has a default
-strategy, and a fleet's own strategy overrides it.
+**Look through the window's pages** (the buttons on the right) and its strategies to see what a
+strategy can say. Each design has a default strategy, and a fleet's own strategy overrides it.
 
 Before you build many ships of a new design, test it here against the enemy designs you have
 seen. Press **Finish**.
 """
-highlight = ["window:strategies"]
-allow = ["window:strategies"]
+highlight = ["strategies:pages", "strategies:list"]
+allow = ["strategies:pages", "strategies:list"]
+show = ["strategies:page"]
 manual = "combat#strategies"

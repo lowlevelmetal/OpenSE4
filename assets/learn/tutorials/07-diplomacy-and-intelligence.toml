@@ -65,7 +65,7 @@ When a ship has arrived, select it and press **Explore** again. Your neighbours'
 you first.
 """
 highlight = ["button:end-turn", "order:explore", "cycle:ship"]
-allow = ["panel:report"]
+allow = ["panel:report", "log:close"]
 done = { empires_met = 1 }
 progress = ["turns_passed"]
 manual = "diplomacy#meeting-other-empires"
@@ -114,7 +114,7 @@ text if you like.
 You can send each empire one message a turn. The computer player reads it in its own turn.
 """
 highlight = ["communicate:message-type", "communicate:treaty", "communicate:send"]
-allow = ["window:communicate"]
+allow = ["communicate:message-type:propose-treaty", "communicate:treaty:non-aggression", "communicate:tone", "communicate:text"]
 done = { command = "SendMessage" }
 manual = "diplomacy#messages"
 
@@ -140,6 +140,7 @@ Press **Next** when you have read the answer.
 """
 highlight = ["log:politics", "log:send-reply"]
 allow = ["log:politics", "log:messages"]
+show = ["log:details"]
 manual = "diplomacy#messages"
 
 [[step]]
@@ -148,11 +149,11 @@ text = """
 **End turns until a treaty is signed**; after three turns the lesson goes on anyway. Close the
 Log (`Esc`) before each End Turn.
 
-A computer player accepts only when its anger toward you is low. If it refused, propose again
-from the Empires window in a later turn, or send a **Gift** first.
+A computer player accepts only when its anger toward you is low. Another time, when one refuses,
+propose again a few turns later, or send a **Gift** first.
 """
 highlight = ["button:end-turn"]
-allow = ["command:empires"]
+allow = ["log:close"]
 done = { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns_passed = 3 }] }
 manual = "diplomacy#how-computer-players-feel-about-you"
 
@@ -166,7 +167,7 @@ Race**.
 Open it (`F9`) to look, then press **Next**.
 """
 highlight = ["command:empires"]
-allow = ["command:empires"]
+allow = ["command:empires", "empires:treaty-grid", "empires:scores", "empires:victory-conditions", "empires:our-race", "empires:close"]
 manual = "diplomacy#the-empires-window"
 
 [[step]]
@@ -189,7 +190,7 @@ aimed at you.
 Your intelligence points come from intelligence facilities, which you build like any other
 facility. Without them the project waits.
 """
-highlight = ["intelligence:projects"]
+highlight = ["intelligence:projects", "intelligence:projects:defense"]
 done = { command = "SetIntel" }
 manual = "intelligence#defense-projects"
 

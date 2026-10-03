@@ -38,7 +38,7 @@ The game starts in 2400.0, and each turn adds 0.1. The three numbers on the righ
 **minerals**, **organics** and **radioactives**, which pay for everything you build. Press
 **Next**.
 """
-highlight = ["status:empire", "status:date", "status:resources"]
+highlight = ["status:empire", "status:leader", "status:date", "status:resources"]
 manual = "main-window#the-layout"
 
 [[step]]
@@ -63,6 +63,7 @@ Your ships share its sector, so the report first lists everything there: **click
 in that list**. Later, the up arrow at the top right of a report brings such a list back.
 """
 highlight = ["sector:home", "report:colony"]
+show = ["panel:report"]
 done = { selected = "colony" }
 manual = "main-window#selecting-things"
 
@@ -109,10 +110,13 @@ title = "The Galaxy Map"
 text = """
 **Close the Galaxy Map** with its **Close** button or `Esc` once you have looked.
 
-It shows the same quadrant, larger, with overlays: where empires are, the systems they claim, and
-your spaceports and supply depots. At the start you know only your home system.
+It shows the same quadrant, larger. The buttons on the right switch its overlays: where empires
+are, the systems they claim, and your spaceports and supply depots. At the start you know only your
+home system.
 """
-highlight = ["window:galaxy-map"]
+highlight = ["galaxy-map:close"]
+allow = ["galaxy-map:overlays"]
+show = ["galaxy-map:map"]
 keys = ["Escape"]
 done = { not = { window = "galaxy-map" } }
 manual = "galaxy#the-galaxy-panel-and-the-galaxy-map"
@@ -165,6 +169,7 @@ A normal game starts with no ships, only designs. This lesson gives you two **at
 a **colony ship** to learn with.
 """
 highlight = ["cycle:ship"]
+show = ["panel:report", "panel:orders"]
 done = { selected = "ship" }
 manual = "main-window#order-buttons"
 
@@ -178,6 +183,7 @@ use most. Every order button shows its name and key this way. You give your firs
 next lesson. Press **Next**.
 """
 highlight = ["order:move-to", "order:explore"]
+show = ["panel:orders", "panel:report"]
 manual = "ships-and-fleets#orders"
 
 [[step]]

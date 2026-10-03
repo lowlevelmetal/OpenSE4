@@ -12,40 +12,53 @@ wait-window designs
 click tag:designs:simulator
 wait-window combat-simulator
 wait-step 3
-# 3 Your side: Race 1 gets two attack ships (the first item, alphabetical in the stock data
-# set; the panel names it).
+# 3 Your side: Race 1 (chosen already) gets two attack ships, the design the panel names. Another
+# race and another item are refused.
+click tag:combat-simulator:owners:race-2 refused
+wait-for tag:combat-simulator:items:named
+click tag:combat-simulator:items:other refused
+assert { not = { simulator_items = 1 } }
 click item:"Race 1" in=combat-simulator
-click item:##item in=combat-simulator nth=1
-click item:##item in=combat-simulator nth=1
+click tag:combat-simulator:items:named
+click tag:combat-simulator:items:named
 wait-step 4
 assert { simulator_items = 2 }
-# 4 The other side: Race 2 gets the defense base (the second item).
+# 4 The other side: Race 2; the items wait for the next step, and the other races are refused.
+click tag:combat-simulator:items:other refused
+click tag:combat-simulator:owners:race-3 refused
 click item:"Race 2" in=combat-simulator
-click item:##item in=combat-simulator nth=2
 wait-step 5
+# 5 Something to defend: the defense base the panel names, for Race 2. Another item, another
+# race and the rows of Combat Vehicles are refused.
+wait-for tag:combat-simulator:items:named
+click tag:combat-simulator:items:other refused
+click tag:combat-simulator:owners:race-1 refused
+click tag:combat-simulator:vehicles refused
+click tag:combat-simulator:items:named
+wait-step 6
 assert { all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }
-# 5 Begin, on the Tactical tab.
+# 6 Begin, on the Tactical tab.
 click tag:combat-simulator:tactical
 click tag:combat-simulator:begin
 wait-window tactical-combat
-wait-step 6
-# 6 The battlefield: Begin.
-click tag:tactical-combat:end-turn
 wait-step 7
+# 7 The battlefield: Begin.
+click tag:tactical-combat:end-turn
+wait-step 8
 assert { battle_begun = true }
-# 7 Find the enemy: zoom the map out with the wheel (twelve notches) until the base shows; Next.
+# 8 Find the enemy: zoom the map out with the wheel (twelve notches) until the base shows; Next.
 wheel tag:tactical-combat:map -12
 wait-for item:piece:enemy in=tactical-combat
 click item:Next in=lesson
-wait-step 8
-# 8 Move: select a ship and click the square above the base: the ship moves toward it as far
+wait-step 9
+# 9 Move: select a ship and click the square above the base: the ship moves toward it as far
 # as it can this turn.
 click item:piece:own in=tactical-combat nth=1
 click item:piece:enemy@50%,-50% in=tactical-combat
-wait-step 9
-# 9 Fire: each combat turn, every ship fires at the base when it can, else moves closer, and
+wait-step 10
+# 10 Fire: each combat turn, every ship fires at the base when it can, else moves closer, and
 # End Turn (E) ends the phase; until a shot was fired. The shot moves the lesson on to
-# 10 End the phase, which the pass's End Turn (E) then does.
+# 11 End the phase, which the pass's End Turn (E) then does.
 repeat 15 until { battle_order = "fire" }
   click item:piece:own in=tactical-combat nth=1 optional
   click item:piece:enemy in=tactical-combat
@@ -56,8 +69,8 @@ repeat 15 until { battle_order = "fire" }
   key E
   wait 30
 end
-wait-step 11
-# 11 Fight it out: Auto lets every side follow its strategies; each combat turn then waits for
+wait-step 12
+# 12 Fight it out: Auto lets every side follow its strategies; each combat turn then waits for
 # End Turn (E), until the battle is over: Combat Complete, OK, and the window closes.
 click item:Auto in=tactical-combat
 repeat 100 until { not = { window = "tactical-combat" } }
@@ -66,22 +79,27 @@ repeat 100 until { not = { window = "tactical-combat" } }
   click item:OK in="Combat Complete" optional
 end
 wait-window combat-simulator
-wait-step 12
-# 12 A strategic battle: the Strategic tab, Begin.
+wait-step 13
+# 13 A strategic battle: the Strategic tab, Begin.
 click tag:combat-simulator:strategic
 click tag:combat-simulator:begin
 wait-window strategic-combat
-wait-step 13
-# 13 Watching: Begin in Strategic Combat; Close lights up when the battle is over.
+wait-step 14
+# 14 Watching: Begin in Strategic Combat; Close lights up when the battle is over.
 click tag:strategic-combat:begin
 click tag:strategic-combat:close timeout=7200
 wait-closed strategic-combat
-wait-step 14
-# 14 Strategies, in the simulator.
+wait-step 15
+# 15 Strategies, in the simulator.
 click tag:combat-simulator:strategies
 wait-window strategies
-wait-step 15
-# 15 Well done: Finish.
+wait-step 16
+# 16 Well done: the pages and the strategies are to look through; Add and the settings are not
+# this step's.
+click item:Firing in=strategies
+click item:Add in=strategies refused
+click tag:strategies:page refused
+click item:Movement in=strategies
 click item:Finish in=lesson
 wait-result done
 assert-present item:"Next: Diplomacy and intelligence*"

@@ -1,9 +1,8 @@
-# Tutorial 2, "Exploring and colonizing": the colony ship given the Explore order meant for an
-# attack ship. Before the design_type qualifier any ship's Explore order moved the lesson on,
-# so one extra click on the ship arrows sent the colony ship away and no colony could be
-# founded. Now the colony ship goes first, an Explore order counts only for an attack ship,
-# and the colony is still founded (docs/LEARNING.md "Conditions", docs/BUILDING.md
-# "Input scripts").
+# Tutorial 2, "Exploring and colonizing": the Explore order meant for an attack ship cannot go to
+# the colony ship. The steps that give the order keep the selection (the ship arrows are refused),
+# and the step that selects the second attack ship waits while the colony ship is selected and
+# refuses Explore meanwhile; the colony is still founded (docs/LEARNING.md "Conditions" and "The
+# input lock", docs/BUILDING.md "Input scripts").
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=exploring-and-colonizing --layout=1024x768 --size=1280x800
 
@@ -23,38 +22,38 @@ wait-step 5
 # 5 Select an attack ship: the next ship after the colony ship is the first attack ship.
 click item:next in=tag:cycle:ship
 wait-step 6
-# 6 Explore: the arrows move on to the second attack ship, then to the colony ship, and the
-# Explore order goes to the colony ship. The step does not count it.
-click item:next in=tag:cycle:ship
-click item:next in=tag:cycle:ship
-assert { selected = "ship", design_type = "Colony" }
+assert { selected = "ship", design_type = "Attack Ship" }
+# 6 Explore: the ship arrows are refused, so the order goes to the attack ship selected.
+click item:next in=tag:cycle:ship refused
+click item:prev in=tag:cycle:ship refused
+assert { selected = "ship", design_type = "Attack Ship" }
+assert-step 6
 # (At 800x600 the first click turns the order strip's page to Explore.)
-repeat 2 until { order = "explore", design_type = "Colony" }
+repeat 2 until { order = "explore" }
   click tag:order:explore
 end
-wait 30
-assert { order = "explore" }
-assert-step 6
-# The step stays where it is until an attack ship explores: the next ship is one.
-click item:next in=tag:cycle:ship
-assert { selected = "ship", design_type = "Attack Ship" }
-click tag:order:explore
 wait-step 7
-# 7 The second attack ship: Explore again on the colony ship does not count either.
-click item:next in=tag:cycle:ship
-click item:next in=tag:cycle:ship
-click tag:order:explore
+assert { order = "explore", design_type = "Attack Ship" }
+# 7 The second attack ship: the arrows go back to the colony ship by mistake. The step waits, and
+# Explore is refused while it does.
+click item:prev in=tag:cycle:ship
+assert { selected = "ship", design_type = "Colony" }
+click tag:order:explore refused
 wait 30
 assert-step 7
+assert { not = { order = "explore", design_type = "Colony" } }
+# Back once more: the second attack ship.
 click item:prev in=tag:cycle:ship
-assert { selected = "ship", design_type = "Attack Ship" }
-click tag:order:explore
 wait-step 8
-click item:Next in=lesson
+assert { selected = "ship", design_type = "Attack Ship" }
+# 8 A second explorer.
+click tag:order:explore
 wait-step 9
-# 9 The colony ship kept its Colonize order: the colony is founded at the end of the turn.
+click item:Next in=lesson
+wait-step 10
+# 10 The colony ship kept its Colonize order: the colony is founded at the end of the turn.
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1
-wait-step 10
+wait-step 11
 assert { colonies = 2 }
