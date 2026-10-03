@@ -43,7 +43,7 @@ are all spent at the end of this one: points no project can use are lost, so kee
 
 You also start with a large stock of points. Press **Next**.
 """
-highlight = ["window:research"]
+highlight = ["research:points"]
 manual = "research#research-points"
 
 [[step]]
@@ -175,10 +175,8 @@ manual = "economy#the-empire-status-window"
 [[step]]
 title = "Your budget"
 text = """
-**Empire Status shows each resource's production and expenses**, and **Net Resources Per Turn**:
-what your treasury gains or loses each turn.
-
-Ships cost upkeep, so watch it as your fleet grows. Press **Next**.
+**Empire Status shows what you produce and spend each turn.** **Net Resources Per Turn** is what
+your treasury gains or loses; ships cost upkeep, so watch it. Press **Next**.
 """
 highlight = ["empire-status:net"]
 show = ["empire-status:budget"]

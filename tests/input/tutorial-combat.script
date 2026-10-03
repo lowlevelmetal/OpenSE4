@@ -15,6 +15,9 @@ wait-step 3
 # 3 Your side: Race 1 (chosen already) gets two attack ships, the design the panel names. Another
 # race and another item are refused.
 click tag:combat-simulator:owners:race-2 refused
+# Esc would close the simulator (Designs lies under it) and lose its setup: refused.
+key Escape refused
+assert-window combat-simulator
 wait-for tag:combat-simulator:items:named
 click tag:combat-simulator:items:other refused
 assert { not = { simulator_items = 1 } }
@@ -26,6 +29,7 @@ assert { simulator_items = 2 }
 # 4 The other side: Race 2; the items wait for the next step, and the other races are refused.
 click tag:combat-simulator:items:other refused
 click tag:combat-simulator:owners:race-3 refused
+key Escape refused
 click item:"Race 2" in=combat-simulator
 wait-step 5
 # 5 Something to defend: the defense base the panel names, for Race 2. Another item, another
@@ -34,10 +38,13 @@ wait-for tag:combat-simulator:items:named
 click tag:combat-simulator:items:other refused
 click tag:combat-simulator:owners:race-1 refused
 click tag:combat-simulator:vehicles refused
+key Escape refused
 click tag:combat-simulator:items:named
 wait-step 6
 assert { all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }
-# 6 Begin, on the Tactical tab.
+# 6 Begin, on the Tactical tab (Esc still refused).
+key Escape refused
+assert { simulator_items = 3 }
 click tag:combat-simulator:tactical
 click tag:combat-simulator:begin
 wait-window tactical-combat

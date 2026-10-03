@@ -76,6 +76,7 @@ public:
         const std::string points = std::to_string(game::research::availablePoints(ui.state(), e));
         d.titleText(356, IM_COL32_WHITE, points);
         d.titleIcon(360 + ImGui::CalcTextSize(points.c_str()).x / ui.k(), ui.art.icon16(Icon::Research));
+        ui.tag("research:points", d.at({165, 6}), d.at({380 + ImGui::CalcTextSize(points.c_str()).x / ui.k(), 30}));   // for lessons
         // The original's places (spec 06 §7 Q92, confirmed: binary): the area
         // list at (15,56), 560×243; the four project boxes of the page side by
         // side from (15,330).

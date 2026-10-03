@@ -19,7 +19,10 @@ click item:next in=tag:cycle:ship
 click tag:order:explore
 wait-step 4
 # 4 First contact: end turns, sending ships that have arrived exploring again, until an empire
-# is met.
+# is met. With no window open, Esc (which would clear the selection) does nothing, though the
+# step lets the Log be closed.
+key Escape refused
+assert { selected = "ship" }
 repeat 20 until { empires_met = 1 }
   click item:next in=tag:cycle:ship
   click tag:order:explore
@@ -45,21 +48,29 @@ wait-step 7
 click item:##portrait in=empires
 wait-window communicate
 wait-step 8
-# 8 Propose a treaty: Propose Treaty in the Message Type list, Non-Aggression, Send Message.
-# Another message type (a declaration of war) and the window's other buttons are refused.
+# 8 Propose a treaty: Propose Treaty in the Message Type list (its Treaty list then offers
+# Non-Aggression). Sending is the next step's, so the default General Message cannot go out; Esc
+# (which would close the window and lose the draft), another message type (a declaration of war)
+# and the window's other buttons are refused.
+click tag:communicate:send refused
+key Escape refused
 click item:Report in=communicate refused
+assert-window communicate
+assert { not = { command = "SendMessage" } }
 click tag:communicate:message-type
 wait-for tag:communicate:message-type:propose-treaty
 click tag:communicate:message-type:declare-war refused
 click item:"Propose Treaty" in=communicate
-wait-for tag:communicate:treaty
-click tag:communicate:treaty
-click item:Non-Aggression in=communicate
+wait-step 9
+assert { draft_message_type = "propose-treaty" }
+assert { draft_treaty = "non-aggression" }
+# 9 Send it: the type and the treaty are only to look at now; a tone, then Send Message.
+click tag:communicate:message-type refused
 click item:Pleading in=communicate
 click tag:communicate:send
-wait-step 9
-assert { command = "SendMessage" }
-# 9 Wait for the answer: sending closed Communicate; Esc closes Empires, which the steps before
+wait-step 10
+assert { command = "SendMessage", message_type = "propose-treaty", message_treaty = "non-aggression" }
+# 10 Wait for the answer: sending closed Communicate; Esc closes Empires, which the steps before
 # left open and which nothing else of responds now; End Turn and Yes.
 wait-closed communicate
 click item:Scores in=empires refused
@@ -68,31 +79,32 @@ wait-closed empires
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 2
-# 10 Politics: the Log opened by itself at the start of the turn, with the answer in it; the
+# 11 Politics: the Log opened by itself at the start of the turn, with the answer in it; the
 # category, the message in it, Next.
 wait-window log
-wait-step 10
+wait-step 11
 click tag:log:politics
 click item:##row in=log nth=2
 click item:Next in=lesson
-wait-step 11
-# 11 A treaty: close the Log (nothing else of it responds), end turns until a treaty is signed or
+wait-step 12
+# 12 A treaty: close the Log (nothing else of it responds), end turns until a treaty is signed or
 # three turns have passed.
 click tag:log:all refused
 key Escape
 wait-closed log
+key Escape refused
 repeat 4 until { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns_passed = 3 }] }
   click tag:button:end-turn
   click item:Yes in="End Turn"
   wait 5
   click tag:log:close optional
 end
-wait-step 12
-# 12 The Empires window again.
+wait-step 13
+# 13 The Empires window again.
 click tag:command:empires
 wait-window empires
-wait-step 13
-# 13 More about other empires: the Empires window's Treaty Grid, Scores, Victory Conditions and
+wait-step 14
+# 14 More about other empires: the Empires window's Treaty Grid, Scores, Victory Conditions and
 # Our Race, each closed again; the window's other buttons are refused. Then Next.
 click item:Intelligence in=empires refused
 click item:History in=empires refused
@@ -113,19 +125,19 @@ wait-window race-report
 key Escape
 wait-closed race-report
 click item:Next in=lesson
-wait-step 14
-# 14 Intelligence: the button in the Empires window.
+wait-step 15
+# 15 Intelligence: the button in the Empires window.
 click tag:empires:intelligence
 wait-window intelligence
-wait-step 15
-# 15 A first project: a defense project; the others (none yet with this game's technology) are
+wait-step 16
+# 16 A first project: a defense project; the others (none yet with this game's technology) are
 # refused.
 wait-for tag:intelligence:projects:defense
 click tag:intelligence:projects:other refused optional
 click tag:intelligence:projects:defense
-wait-step 16
+wait-step 17
 assert { command = "SetIntel" }
-# 16 Well done: Finish. The last lesson offers the first training game, which starts from here.
+# 17 Well done: Finish. The last lesson offers the first training game, which starts from here.
 click item:Finish in=lesson
 wait-result done
 assert-present item:"Next, a training game: Land rush*"

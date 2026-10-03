@@ -182,6 +182,7 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const L
         activeSince_ = targetsSeen_ = ui.time;
         leftOpen_ = facts.openWindows;
         closedFrames_ = 0;
+        spot_.reset();   // a new step chooses its place afresh (the old one is kept only against jitter)
         // A note about a click the step before refused is not about this one.
         refusedAt_.reset();
         refusedKey_.clear();

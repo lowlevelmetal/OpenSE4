@@ -108,14 +108,26 @@ manual = "diplomacy#the-communicate-window"
 [[step]]
 title = "Propose a treaty"
 text = """
-**Choose Propose Treaty and Non-Aggression, then press Send Message.** Pick a tone and edit the
-text if you like.
+**Choose Propose Treaty in the Message Type list**, then Non-Aggression in the Treaty list under
+it, if another treaty shows.
+
+Non-Aggression means your ships no longer fight on sight.
+"""
+highlight = ["communicate:message-type", "communicate:message-type:propose-treaty", "communicate:treaty", "communicate:treaty:non-aggression"]
+done = { all = [{ draft_message_type = "propose-treaty" }, { draft_treaty = "non-aggression" }] }
+manual = "diplomacy#messages"
+
+[[step]]
+title = "Send it"
+text = """
+**Press Send Message.** Pick a tone and edit the text first if you like.
 
 You can send each empire one message a turn. The computer player reads it in its own turn.
 """
-highlight = ["communicate:message-type", "communicate:treaty", "communicate:send"]
-allow = ["communicate:message-type:propose-treaty", "communicate:treaty:non-aggression", "communicate:tone", "communicate:text"]
-done = { command = "SendMessage" }
+highlight = ["communicate:send"]
+allow = ["communicate:tone", "communicate:text"]
+show = ["communicate:message-type", "communicate:treaty"]
+done = { command = "SendMessage", message_type = "propose-treaty", message_treaty = "non-aggression" }
 manual = "diplomacy#messages"
 
 [[step]]

@@ -80,34 +80,53 @@ title = "Your fleet"
 text = """
 **Close Fleet Transfer (`Esc`), then select an attack ship again** with the ship arrows.
 
-The report now shows the **fleet** above the ship: its speed, supplies, formation, strategy and
-members. Orders you give now go to the whole fleet.
+The new fleet's ships are selected as one from now on.
 """
 highlight = ["fleet-transfer:close", "cycle:ship"]
-show = ["panel:report"]
 done = { all = [{ not = { window = "fleet-transfer" } }, { selected = "fleet", design_type = "Attack Ship" }] }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
 title = "Move the fleet"
 text = """
-**Press the Move To order** (or `M`), **then click a sector** in the system view.
+**Press the Move To order** (or `M`). The fleet then waits for you to pick where it goes.
 
-To go to another explored system, click it in the galaxy panel first. With a ship selected, a
-right-click on a sector also gives a Move To order.
+The report now shows the **fleet** above the ship: its speed, supplies, formation, strategy and
+members. Orders you give now go to the whole fleet.
 """
-highlight = ["order:move-to", "panel:system"]
-allow = ["panel:galaxy"]
+highlight = ["order:move-to"]
+show = ["panel:report"]
+done = { picking = "move-to" }
+manual = "ships-and-fleets#moving-around"
+
+[[step]]
+title = "Where to"
+text = """
+**Click a sector far from the fleet**, at the other end of the system view.
+
+The fleet moves at once, one sector per movement point, and goes on next turn.
+"""
+highlight = ["panel:system"]
+show = ["panel:report"]
 done = { order = "move-to", design_type = "Attack Ship" }
 manual = "ships-and-fleets#moving-around"
 
 [[step]]
-title = "Movement points"
+title = "Movement lines"
 text = """
-**The fleet moved at once**, one sector per movement point, and goes on next turn.
+**Press `Ctrl+L`** to show the ships' movement lines, unless they show already.
+"""
+highlight = ["lesson:panel"]
+show = ["panel:system"]
+keys = ["Ctrl+L"]
+done = { movement_lines = true }
+manual = "ships-and-fleets#moving-around"
 
-The blue line is its route; the numbers on it say in which turn it reaches each sector. `Ctrl+L`
-hides and shows these lines. Press **Next**.
+[[step]]
+title = "The route"
+text = """
+**A blue line shows the fleet's route** while it has further to go: the numbers on it say in which
+turn it reaches each sector. `Ctrl+L` hides and shows these lines. Press **Next**.
 """
 highlight = ["panel:system"]
 keys = ["Ctrl+L"]

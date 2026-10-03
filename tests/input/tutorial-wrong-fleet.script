@@ -41,6 +41,7 @@ wait-closed fleet-transfer
 click item:next in=tag:cycle:ship
 wait-step 7
 click tag:order:move-to
-click sector:empty nth=150
 wait-step 8
+click sector:empty nth=150
+wait-step 9
 assert { order = "move-to", design_type = "Attack Ship" }

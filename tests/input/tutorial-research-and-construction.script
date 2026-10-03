@@ -51,11 +51,16 @@ wait-step 10
 wait-for tag:set-queue:available:named
 click tag:set-queue:available:other refused
 click tag:set-queue:facilities refused
+# Esc would close the queue window (Construction Queues lies under it): refused.
+key Escape refused
+assert-window set-queue
 click tag:set-queue:available:named
 wait-step 11
 assert { construction_queued = 1 }
 assert { command = "QueueAdd", design_type = "Colony" }
-# 11 How a queue builds: an explanation.
+# 11 How a queue builds: an explanation. Esc is refused here too.
+key Escape refused
+assert-window set-queue
 click item:Next in=lesson
 wait-step 12
 # 12 Your colonies: close the queue and Construction Queues (Esc; the lesson panel covers
@@ -95,6 +100,8 @@ wait-step 16
 click item:Ministers in=empire-status refused
 key Escape
 wait-closed empire-status
+# Empire Status closed: Esc does nothing more (it would clear the selection).
+key Escape refused
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1
@@ -105,6 +112,10 @@ wait-window log
 click tag:log:research
 click tag:log:close
 wait-closed log
+# With the Log closed, Enter (End Turn) and Esc do nothing.
+key Enter refused
+key Escape refused
+assert-turn 1
 click item:Finish in=lesson
 wait-result done
 assert-present item:"Next: Designing ships*"

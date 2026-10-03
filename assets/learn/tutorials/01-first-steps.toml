@@ -50,7 +50,7 @@ It shows your home system: its star, its planets, and the warp points at its edg
 other systems. The report panel on the right then describes the whole system.
 """
 highlight = ["panel:system"]
-allow = ["panel:report"]
+show = ["panel:report"]
 done = { selected = "system" }
 manual = "main-window#selecting-things"
 
@@ -89,7 +89,7 @@ Some planets carry a small **green or red star**: you could settle those. Green 
 can breathe the air there; red means they would live under domes. The next lesson settles one.
 """
 highlight = ["panel:system"]
-allow = ["panel:report"]
+show = ["panel:report"]
 done = { all = [{ selected = "planet" }, { not = { selected = "colony" } }] }
 manual = "planets-and-colonies#colonizing"
 
@@ -102,6 +102,7 @@ The galaxy panel shows every star system of the quadrant, and the warp links you
 A ring marks the system you are looking at.
 """
 highlight = ["panel:galaxy"]
+right_click = ["panel:galaxy"]
 done = { window = "galaxy-map" }
 manual = "galaxy#the-galaxy-panel-and-the-galaxy-map"
 
@@ -209,5 +210,6 @@ found and what happened to your ships. Read it at the start of every turn.
 The next lesson sends your ships exploring and founds a colony. Press **Finish**.
 """
 highlight = ["command:log"]
-allow = ["command:log"]
+allow = ["command:log", "log:messages", "log:categories", "log:close"]
+show = ["log:details"]
 manual = "turns#the-log"

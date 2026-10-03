@@ -28,61 +28,92 @@ assert-step 5
 click tag:fleet-transfer:ships:named
 wait-step 6
 assert { command = "JoinFleet" }
-# 6 Your fleet: close Fleet Transfer, select an attack ship again.
+# 6 Your fleet: close Fleet Transfer; once it is closed, Enter (End Turn in the main window) and
+# Esc (which would clear the selection) do nothing. Then select an attack ship again.
 click tag:fleet-transfer:close
 wait-closed fleet-transfer
+key Enter refused
+key Escape refused
+assert-turn 0
 click item:next in=tag:cycle:ship
 wait-step 7
-# 7 Move the fleet: Move To, then an empty sector at the far end of the system view (more
-# sectors away than the fleet moves in a turn).
+# 7 Move the fleet: Move To. A click on the system view or the galaxy panel first (which would
+# lose the fleet) is refused, and so is a right-click on a sector (Move To at once) or on the
+# galaxy panel (the Galaxy Map).
+click sector:empty nth=150 refused
+click system:home refused
+right-click sector:empty nth=150 refused
+right-click system:home refused
+assert-no-window galaxy-map
+assert { selected = "fleet", design_type = "Attack Ship" }
+assert { not = { order = "move-to" } }
 click tag:order:move-to
-click sector:empty nth=150
 wait-step 8
-print turn
+assert { picking = "move-to" }
+# 8 Where to: an empty sector at the far end of the system view (more sectors away than the
+# fleet moves in a turn).
+click sector:empty nth=150
+wait-step 9
+assert { order = "move-to", design_type = "Attack Ship" }
 assert-present tag:panel:system
-# 8 Movement points: the route is shown; Ctrl+L hides it, and again shows it.
+# 9 Movement lines: Ctrl+L shows them (a game starts with them off).
+assert { not = { movement_lines = true } }
+key Ctrl+L
+wait-step 10
+assert { movement_lines = true }
+# 10 The route: the blue line shows; Ctrl+L hides it and shows it again; Next.
 screenshot t5-route.png
 key Ctrl+L
 wait 10
 key Ctrl+L
+wait 5
+assert { movement_lines = true }
 click item:Next in=lesson
-wait-step 9
-# 9 Set a waypoint: click the sector with a warp point, then Alt+1.
+wait-step 11
+# 11 Set a waypoint: click the sector with a warp point, then Alt+1. A right-click there (a Move
+# To order for the selected fleet) is refused.
+right-click sector:warp-point refused
 click sector:warp-point
 key Alt+1
-wait-step 10
-# 10 Your fleet again: the ship arrows. Ctrl+1 is the next step's.
+wait-step 12
+# 12 Your fleet again: the ship arrows. Ctrl+1 is the next step's.
 key Ctrl+1 refused
 click item:next in=tag:cycle:ship
-wait-step 11
-# 11 Go to the waypoint: Ctrl+1. The ship arrows are refused: the order goes to the fleet.
+wait-step 13
+# 13 Go to the waypoint: Ctrl+1. The ship arrows are refused: the order goes to the fleet.
 click item:next in=tag:cycle:ship refused
 key Ctrl+1
-wait-step 12
-# 12 The order list: View Orders. At 800x600 it is two pages of the order strip away: the
+wait-step 14
+# 14 The order list: View Orders. At 800x600 it is two pages of the order strip away: the
 # outlined page arrow, twice, then the order.
 repeat 3 until { window = "view-orders" }
   click tag:order:view-orders
 end
 wait-window view-orders
-wait-step 13
-# 13 Editing orders: the window is to look at; close it with Esc.
+wait-step 15
+# 15 Editing orders: the window is to look at; close it with Esc.
 click item:"Repeat Orders" in=view-orders refused
 key Escape
 wait-closed view-orders
-wait-step 14
-# 14 Supplies: the Resupply order (the fleet is still selected); at 800x600 the page arrow
-# first, as on step 12.
+wait-step 16
+# 16 Supplies: the Resupply order (the fleet is still selected); at 800x600 the page arrow
+# first, as on step 14.
 repeat 3 until { order = "resupply" }
   click tag:order:resupply
 end
-wait-step 15
-# 15 End the turn.
+wait-step 17
+# 17 End the turn.
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1
-wait-step 16
-# 16 Well done: Finish.
+wait-step 18
+# 18 Well done: the Log the turn opened can be closed; then Enter (End Turn) and Esc do nothing.
+wait 5
+click tag:log:close optional
+wait 5
+key Enter refused
+key Escape refused
+assert-turn 1
 click item:Finish in=lesson
 wait-result done
 assert-present item:"Next: Combat*"

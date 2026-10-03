@@ -87,17 +87,17 @@ On Tactical you command Race 1 yourself. The simulator closes while you fight, a
 afterwards.
 """
 highlight = ["combat-simulator:tactical", "combat-simulator:begin"]
-show = ["combat-simulator:owners", "combat-simulator:vehicles"]
+show = ["combat-simulator:owners"]
 done = { window = "tactical-combat" }
 manual = "combat-windows#tactical-combat"
 
 [[step]]
 title = "The battlefield"
 text = """
-**Press Begin** at the bottom right, beside **Auto**, to start the battle.
+**Press Begin**, beside **Auto**, to start the battle.
 
-This is the **Tactical Combat** window. Your ships start at one edge, the base waits in the
-middle, and the title strip shows the combat turn and whose phase it is.
+This is the **Tactical Combat** window. Your ships start at one edge and the enemy base waits
+further off, out of sight; the title strip shows the combat turn and whose phase it is.
 """
 highlight = ["tactical-combat:end-turn"]
 show = ["tactical-combat:map", "tactical-combat:title", "tactical-combat:auto"]

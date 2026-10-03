@@ -10,7 +10,15 @@ click item:Next in=lesson
 wait-step 2
 click item:Next in=lesson
 wait-step 3
-# 3 Your home system: an empty part of the system view.
+# 3 Your home system: an empty part of the system view. The report is only to read: a ship of
+# its list (in the homeworld's sector) cannot be selected or tagged from it, nor given a Move To
+# with a right-click on the system view.
+click tag:sector:home
+wait-for item:report:ship in=main
+click item:report:ship in=main refused
+click item:report:ship in=main shift refused
+right-click sector:planet+!colony refused
+assert { not = { order = "move-to" } }
 click sector:empty
 wait-step 4
 # 4 Your homeworld: the outlined homeworld; its sector lists everything there, then the
@@ -27,10 +35,17 @@ click item:Ability in=main
 click item:Detail in=main
 click item:Next in=lesson
 wait-step 6
-# 6 Other planets.
+# 6 Other planets. The report's list and right-clicks on the system view are refused.
+click tag:sector:home
+wait-for item:report:ship in=main
+click item:report:ship in=main refused
+right-click sector:empty nth=40 refused
+assert { not = { order = "move-to" } }
 click sector:planet+!colony
 wait-step 7
-# 7 The galaxy panel: a right click opens the Galaxy Map.
+# 7 The galaxy panel: a right click opens the Galaxy Map; a left click (which would show another
+# system and clear the selection) is refused.
+click tag:panel:galaxy refused
 right-click tag:panel:galaxy
 wait-window galaxy-map
 wait-step 8
@@ -69,7 +84,15 @@ click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1
 wait-step 15
-# 15 Well done: Finish.
+# 15 Well done: the Log opens with its button, its categories and messages can be read, and the
+# rest of it (Constr. Queues, which leads to a queue) is refused; Close.
+click tag:command:log
+wait-window log
+wait 3
+click item:"Constr. Queues" in=log refused
+assert-no-window queues
+click tag:log:close
+wait-closed log
 assert-present item:Finish in=lesson
 click item:Finish in=lesson
 wait-result done

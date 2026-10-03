@@ -28,6 +28,8 @@
 
 #include "game/design.hpp"
 #include "game/query.hpp"
+
+#include <imgui_internal.h>
 #include "game/simulator.hpp"
 
 #include <algorithm>
@@ -239,6 +241,7 @@ private:
         ImGui::PopStyleVar();
         const std::vector<SimulatorRow> rows = simulatorRows(ui.rules(), s, setup_);
         std::optional<size_t> remove;
+        const ImVec2 rowsTop = ImGui::GetCursorScreenPos();
         ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
         const float smallSize = ui.px(kSmallSize);
         for (size_t k = 0; k < rows.size(); ++k) {
@@ -267,8 +270,13 @@ private:
             }
             ImGui::PopID();
         }
+        // For lessons: the rows in use (at least one), within what the list shows: the
+        // lesson panel may lie over the empty part below them.
+        const ImVec2 rowsEnd(rowsTop.x + ImGui::GetContentRegionAvail().x, std::max(ImGui::GetCursorScreenPos().y, rowsTop.y + ui.px(36)));
+        const ImRect shown = ImGui::GetCurrentWindow()->InnerClipRect;
         endList(ui);
-        ui.tagItem("combat-simulator:vehicles");
+        ui.tag("combat-simulator:vehicles", ImVec2(std::max(rowsTop.x, shown.Min.x), std::max(rowsTop.y, shown.Min.y)),
+               ImVec2(std::min(rowsEnd.x, shown.Max.x), std::min(rowsEnd.y, shown.Max.y)));
         hint(ui, o + Vec2{17, 447}, 295, "(click combat vehicle to remove it)");
         if (remove) {
             simulatorRemove(setup_, rows[*remove]);

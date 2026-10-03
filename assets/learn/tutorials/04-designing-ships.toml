@@ -71,6 +71,7 @@ The hull sets how many kT of components fit in the ship. A larger hull holds mor
 and needs more crew; a small one suits a first warship.
 """
 highlight = ["create-design:hull", "create-design:hull:smallest"]
+allow = ["designs:create:ship"]
 done = { design_hull_chosen = true }
 manual = "ship-design#hulls-and-components"
 
@@ -83,6 +84,7 @@ The type sorts the design in your lists and tells your ministers what it is for.
 one lands under No Type.
 """
 highlight = ["create-design:type", "create-design:type:attack-ship"]
+allow = ["designs:create:ship"]
 done = { design_type_chosen = "Attack Ship" }
 manual = "ship-design#the-create-design-window"
 
@@ -96,6 +98,7 @@ Add at least five: a **bridge**, **life support**, **crew quarters**, an **engin
 what is still missing.
 """
 highlight = ["create-design:components", "create-design:on-design"]
+allow = ["designs:create:ship"]
 show = ["create-design:warnings", "create-design:figures"]
 done = { design_components = 5 }
 manual = "ship-design#design-rules"
@@ -109,7 +112,7 @@ crew quarters and so on.
 Fix them with components now; the name comes next. Press **Next**.
 """
 highlight = ["create-design:warnings"]
-allow = ["create-design:components", "create-design:on-design"]
+allow = ["create-design:components", "create-design:on-design", "designs:create:ship"]
 show = ["create-design:figures"]
 manual = "ship-design#design-rules"
 
@@ -122,6 +125,7 @@ race's list.
 Names must be unique in the whole game.
 """
 highlight = ["create-design:name", "create-design:suggest"]
+allow = ["designs:create:ship"]
 done = { design_named = true }
 manual = "ship-design#the-create-design-window"
 
@@ -133,7 +137,7 @@ text = """
 If the game refuses, **Warnings** still names a rule the design breaks: fix that first.
 """
 highlight = ["create-design:save"]
-allow = ["create-design:components", "create-design:on-design", "create-design:name", "create-design:suggest"]
+allow = ["create-design:components", "create-design:on-design", "create-design:name", "create-design:suggest", "designs:create:ship"]
 show = ["create-design:warnings"]
 done = { command = "CreateDesign", design_type = "Attack Ship" }
 manual = "ship-design#the-create-design-window"
@@ -187,5 +191,5 @@ The **Weapons Report** in the Help window (`F1`) compares every weapon you know.
 **Finish**.
 """
 highlight = ["command:help"]
-allow = ["command:help"]
+allow = ["command:help", "window:help"]
 manual = "ship-design#combat-numbers-worth-knowing"

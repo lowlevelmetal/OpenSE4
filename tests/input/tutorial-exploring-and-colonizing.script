@@ -56,6 +56,10 @@ wait-for tag:colony-type:suggested
 click tag:colony-type:other refused optional
 click item:"*(suggested)" in="Colony Type"
 wait-gone item:"*(suggested)"
+# With the Log closed, Enter (End Turn in the main window) and Esc do nothing.
+key Enter refused
+key Escape refused
+assert-turn 1
 click tag:command:colonies
 wait-window colonies
 wait-step 12
@@ -63,9 +67,11 @@ wait-step 12
 click item:Next in=lesson
 wait-step 13
 # 13 Keep exploring: close the window (Esc), then end turns, sending each ship that has arrived
-# exploring again, until five systems are explored.
+# exploring again, until five systems are explored. Once Colonies is closed, Esc does nothing
+# more (it would clear the selection).
 key Escape
 wait-closed colonies
+key Escape refused
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 2

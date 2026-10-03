@@ -132,7 +132,7 @@ constexpr std::string_view kOtherTags[] = {
     // report's list of a sector.
     "sector:home", "report:colony",
     // Widgets inside windows.
-    "research:areas", "research:headings", "research:queue", "research:tech-tree",
+    "research:areas", "research:headings", "research:points", "research:queue", "research:tech-tree",
     "set-queue:available", "set-queue:queue", "set-queue:rate",
     "queues:list",
     "designs:list", "designs:details", "designs:create", "designs:copy", "designs:edit", "designs:upgrade", "designs:simulator",

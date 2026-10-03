@@ -27,7 +27,11 @@ assert-step 4
 click item:Ship in=designs
 wait-window create-design
 wait-step 5
-# 5 Choose a hull: the arrow beside Size, then the smallest hull; a larger one is refused.
+# 5 Choose a hull: the arrow beside Size, then the smallest hull; a larger one is refused. Esc
+# (which would close the designer: Designs lies under it) and the designer's Cancel are refused.
+key Escape refused
+click tag:create-design:close refused
+assert-window create-design
 click item:##size in=create-design
 wait-for tag:create-design:hull:smallest
 click tag:create-design:hull:other refused
@@ -41,8 +45,10 @@ click tag:create-design:type:defense-base refused
 click item:"Attack Ship"
 wait-step 7
 assert { design_type_chosen = "Attack Ship" }
-# 7 Add components: the tiles of Components Available, by their place in the stock data set:
+# 7 Add components (Esc still refused): the tiles of Components Available, by their place in the stock data set:
 # bridge (2), life support (3), crew quarters (4), two engines (8), then two weapons (14, 15).
+key Escape refused
+assert-window create-design
 click item:##tile in=create-design nth=2
 click item:##tile in=create-design nth=3
 click item:##tile in=create-design nth=4
@@ -65,7 +71,16 @@ click tag:create-design:name
 type "Lesson Warship"
 wait-step 10
 assert { design_named = true }
-# 10 Create it.
+# 10 Create it. The name box still has the keyboard: a first Esc leaves it and takes back what was
+# typed (keys pass while one types); the next, which would close the designer, is refused. The
+# name is typed again.
+key Escape
+wait 3
+key Escape refused
+assert-window create-design
+click tag:create-design:name
+type "Lesson Warship"
+wait 3
 click tag:create-design:save
 wait-closed create-design
 wait-step 11
