@@ -26,7 +26,9 @@ constexpr KnownMagic kKnownMagics[] = {
     {kStateMagic, "game state"},
     {kOrdersMagic, "order list"},
     {kSaveMagic, "saved game"},
-    {"OSE4PLRF", "orders file (.plr)"},
+    {"OSE4PLR2", "orders file (.plr)"},
+    {"OSE4PLRF", "orders file (.plr) of OpenSE4 0.6"},
+    {"OSE4TURN", "player turn file (.turn)"},
 };
 
 void putU32(uint8_t* p, uint32_t v) {

@@ -5,9 +5,10 @@ OpenSE4 plays games with several people in two ways:
 - **Network games.** One machine hosts. Players connect over TCP, set up their
   empires in a lobby, and send their orders each turn. The host processes the turn
   and sends everyone the new game.
-- **Play by e-mail (PBEM).** The host keeps the game file. Each turn, every player
-  sends in an orders file by any means (e-mail, a shared folder, a chat upload), and
-  the host processes the turn from whatever arrived.
+- **Play by e-mail (PBEM).** The host keeps the game file and sends each player a turn
+  file holding only that player's view of the game. Each turn, every player sends in
+  an orders file by any means (e-mail, a shared folder, a chat upload), and the host
+  processes the turn from whatever arrived.
 
 Both play either turn style of the classic game (spec 05 §8, §9):
 
@@ -286,27 +287,34 @@ The host runs the game. Choose "Turn-based" as the turn style in the host form, 
 
 ### By e-mail
 
-The game file goes from player to player through the host:
+The classic game passes the whole game file from player to player. That would show each
+player everyone's secrets, so OpenSE4 keeps the game with the host and has the host
+process each player's turn in between; the players exchange only their own views and
+orders:
 
 1. `pbem new` with `simultaneous = false` in the setup file creates the game. The
-   computer players before the first human take their turns, and the command names the
-   empire to send the game to.
-2. That player opens the `.gam` in the game ([Playing your turn](#playing-your-turn))
+   computer players before the first human take their turns, and the command writes the
+   turn file of the player whose turn it is and names the empire to send it to.
+2. That player opens their turn file in the game ([Playing your turn](#playing-your-turn))
    and plays their turn on it. Every command is carried out at once on the player's
-   copy. At End Turn the game writes a `.plr` holding every command in the order it was
-   given (Attack Sector answers and refused commands included), and checksums of the
-   game before the first command and after the last one (`net::pbem::writePlayerTurn`).
-   `opense4-server pbem orders` writes a turn without commands.
-3. `pbem process` checks the `.plr` like any other: game, turn, empire and password. It
-   also checks that the file is for the player whose turn it is and that it was made
-   from the current game file. It then replays the commands, ends the player's turn (the
-   computer players move) and writes the new `.gam`. It names the empire whose turn is
-   next, and it warns if the replay differs from the player's own game. Files for another
-   player, or made from an older copy of the game, are reported and kept.
+   copy, as a preview: the copy is the player's own view, so it lacks what the player
+   cannot see and has other random numbers, and battles in it may end differently. At
+   End Turn the game writes a `.plr` holding every command in the order it was given
+   (Attack Sector answers and refused commands included), with the checksum of the turn
+   file it was made from. `opense4-server pbem orders` writes a turn without commands.
+3. `pbem process` checks the `.plr` like any other: game, turn, empire, the turn file it
+   was made from and the password's signature. It also checks that the file is for the
+   player whose turn it is. It then carries the commands out one after another on the
+   whole game, ends the player's turn (the computer players move), writes the new `.gam`
+   and the next player's turn file, and names the empire whose turn is next. Files for
+   another player, or made from another turn file, are reported and kept.
 4. If no file for the player whose turn it is has arrived, `pbem process` has the
    computer play that turn, as for missing orders (inferred).
 
-`pbem info` says whose turn it is.
+The whole game decides: a battle, an enemy the player could not see, or a ship lost in a
+battle that ended otherwise can make the host's result differ from the preview, and
+commands that no longer fit are refused. The next turn file shows what happened, and
+`pbem process` lists the refused commands. `pbem info` says whose turn it is.
 
 ## UPnP and port forwarding
 
@@ -365,8 +373,11 @@ Players need no incoming ports: they only connect out.
 
 ## Play by e-mail
 
-A PBEM game is a `.gam` file that stays with the host, and `.plr` order files that
-the players send in. One round goes like this:
+A PBEM game is a `.gam` file that stays with the host, a turn file (`.turn`) for each
+player, and the `.plr` orders files the players send in. The `.gam` holds the whole game,
+every empire's secrets included: never send it to a player. A turn file holds what one
+empire knows of the game, exactly what a network host sends that player
+([Security](#security)). One round goes like this:
 
 1. **Create the game** from a [setup file](#setup-files):
 
@@ -374,15 +385,21 @@ the players send in. One round goes like this:
    opense4-server pbem new --setup=campaign.toml --out=campaign.gam
    ```
 
-2. **Send `campaign.gam` to every player.** Each player opens it in the game, plays
+   This also writes the turn files of the players who play first, named
+   `<game>_<NN>.turn` (NN is the empire's number), next to the game (or in
+   `--turn-files=DIR`), and lists which file goes to which player.
+
+2. **Send each player their own turn file.** Each player opens it in the game, plays
    their turn, and End Turn saves their orders as a `.plr` file
    ([Playing your turn](#playing-your-turn); the game uses
-   `net::pbem::writePlayerOrders`). The file is named `<game>_<NN>.plr`, where NN is
-   the empire's number. It holds only that empire's orders, marked with the game, the
-   turn, the empire and the player's password hash.
+   `net::pbem::writePlayerOrders`). The file is named `<game>_<NN>.plr`. It holds only
+   that empire's orders, marked with the game, the turn, the empire and the checksum of
+   the turn file they were made from, and signed with the empire's password. It holds
+   no password, nor any hash of one: a copy of it lets nobody send orders for that
+   empire, or for another turn.
 
    A player who wants to end the turn without changes can make an empty orders file:
-   `opense4-server pbem orders --game=campaign.gam --empire=2 --password=... --out=DIR`.
+   `opense4-server pbem orders --turn=campaign_02.turn --password=... --out=DIR`.
 
 3. **Collect the `.plr` files** in one directory, then process the turn:
 
@@ -393,61 +410,70 @@ the players send in. One round goes like this:
    `--reset-passwords=2,5` gives empires 2 and 5 new passwords once their orders have been
    read; they are printed for the host to pass on.
 
-   For every `.plr` file the host checks the game, the turn, the empire and the
-   password. It reports and skips files that fail a check: another game, out of date,
-   wrong password, damaged. If two files are for the same empire, the newer one
-   counts. The computer plays human empires that sent nothing. The turn is
-   processed, `campaign.gam` is replaced (the previous turn is kept as
-   `campaign.gam.bak`), and the `.plr` files that were used are deleted
-   (`--keep-orders` keeps them). Files that were skipped stay where they are.
+   For every `.plr` file the host checks the game, the turn, the empire, that it was
+   made from the turn file the host would make now from its own game, and the
+   password's signature. It reports and skips files that fail a check: another game,
+   out of date, made from another turn file, wrong password or changed after signing,
+   damaged. If two files are for the same empire, the newer one counts. The computer
+   plays human empires that sent nothing. The turn is processed, `campaign.gam` is
+   replaced (the previous turn is kept as `campaign.gam.bak`), the new turn files are
+   written, and the `.plr` files that were used are deleted (`--keep-orders` keeps
+   them). Files that were skipped stay where they are.
 
-4. **Send out the new `campaign.gam`** and repeat.
+4. **Send out the new turn files** and repeat.
 
 `opense4-server pbem info --game=campaign.gam` shows the turn, the empires, their
-players and whether a master password is set.
+players and whether a master password is set; given a turn file, it shows that player's
+view. `opense4-server pbem turn-files --game=campaign.gam` writes the current turn files
+again, for a lost file, or to go on with a game made by OpenSE4 0.6.
+
+**Games of OpenSE4 0.6** go on after `pbem turn-files`. Their password verifiers are of
+the old kind, which cannot check a signature: the turn file says so, and the player's
+next `.plr` carries the password hash once, as 0.6 did. The host checks it and keeps a
+verifier of the new kind from then on.
 
 ### Playing your turn
 
 In the game, choose **Multiplayer**, then **Play by E-mail**:
 
-1. Open the game file the host sent. The window lists the `.gam` files in the `pbem`
-   folder of your OpenSE4 user data (on Linux `~/.local/share/OpenSE4/pbem`), or you
-   type the file's path. The game must have been made with the same data set as yours,
-   as the host checks too.
-2. Choose your empire and enter its password. It is checked against the game file the
-   way the host checks your `.plr`, so a wrong password is caught at once. In a
-   turn-based game only the empire whose turn it is can play. A turn-based file saved
-   between player turns first plays on to the next human, exactly as the host does.
-3. Choose where the orders file goes: by default next to the game file.
+1. Open the turn file the host sent you. The window lists the `.turn` files in the
+   `pbem` folder of your OpenSE4 user data (on Linux `~/.local/share/OpenSE4/pbem`), or
+   you type the file's path. The game must have been made with the same data set as
+   yours, as the host checks too, and the file's view must match its checksum. A host's
+   `.gam` is refused: it is not meant for players.
+2. Enter your empire's password. It is checked against the turn file the way the host
+   checks your `.plr`, so a wrong password is caught at once. In a turn-based game only
+   the player whose turn it is gets a turn file.
+3. Choose where the orders file goes: by default next to the turn file.
 4. Play the turn. A simultaneous game works like a local one: you give orders and they
    are carried out when the host processes the turn. In a turn-based game every order
-   is carried out at once, as in a local turn-based game.
-5. **End Turn** writes `<game>_<NN>.plr` and ends the turn on your machine; the status
-   line names the file. Send it to the host.
+   is carried out at once on your copy, as a preview of what the host will carry out on
+   the whole game ([By e-mail](#by-e-mail)).
+5. **End Turn** writes `<game>_<NN>.plr`, signed with your password, and ends the turn on
+   your machine; the status line names the file. Send it to the host.
 
-**Save Game** in the Game Menu keeps the turn so far, in the `pbem/drafts` folder (not
-with the orders, so it cannot be sent by mistake). Open the same game file and empire
+**Save Game** in the Game Menu keeps the turn so far, unsigned, in the `pbem/drafts`
+folder (not with the orders, so it cannot be sent by mistake). Open the same turn file
 again later, and the orders given so far come back. End Turn removes the draft. A
 password changed during the turn (Empire Status, Change Password) counts from the next
-turn; this turn's `.plr` still carries the password you opened it with.
+turn; this turn's `.plr` is still signed with the password you opened it with.
 
 From the command line:
 
 ```sh
-opense4 --pbem=campaign.gam --pbem-empire=2 --pbem-password=PW [--pbem-orders=DIR]
+opense4 --pbem=campaign_02.turn --pbem-password=PW [--pbem-orders=DIR]
 ```
 
-`--pbem-empire` may be left out when only one empire can play (a turn-based game), and
 `--pbem-end-turn` ends the turn at once, writes the `.plr`, prints where and quits (for
-scripts). `--open=pbem:campaign.gam` opens the Play by E-mail window with that file.
+scripts). `--open=pbem:campaign_02.turn` opens the Play by E-mail window with that file.
 The choices the rules leave open are listed in spec 05 open question 36.
 
 Battles in a PBEM game are always fought strategically; the Tactical or Strategic
 question is only asked in local and hotseat turn-based games.
 
-**Load Game** (not Play by E-mail) opens a PBEM game file or a network host's save as an
-ordinary local or hotseat game on your machine, for instance to go on without the other
-players. The empire passwords keep working as they did in the multiplayer game, and the
+**Load Game** (not Play by E-mail) opens a host's PBEM game file or network save as an
+ordinary local or hotseat game on the host's machine, for instance to go on without the
+other players. The empire passwords keep working as they did in the multiplayer game, and the
 game saved from there keeps them that way.
 
 ## Setup files
@@ -543,9 +569,10 @@ counterpart.
     connection. It cannot log in as the player with them, only try to guess the
     password offline.
 - **Passwords never travel**, not even hashed. A player's game proves it knows the
-  password by signing the session it logs in on; hosts and saved games keep only a
-  verifier, which can check such a signature but not make one. A copy of a saved
-  game holds nothing anyone could log in or sign with. Weak passwords can still be guessed offline from a verifier or a
+  password by signing (the session it logs in on, or a PBEM orders file); hosts and
+  saved games keep only a verifier, which can check such a signature but not make one.
+  A copy of a saved game, a turn file or an orders file holds nothing anyone could log
+  in or sign with, and an orders file cannot be changed or used for another turn. Weak passwords can still be guessed offline from a verifier or a
   signature, and anyone who can reach the host can try join passwords there, one
   connection at a time: do not reuse important passwords.
 - **Not protected:** the host itself (it sees and decides everything), the host's key
@@ -586,7 +613,10 @@ counterpart.
 - **Games of OpenSE4 0.6.** Their verifiers (a second SHA-256) cannot check a
   signature. For such a game the host asks the login for the password hash itself,
   inside the encrypted connection, checks it and replaces the verifier by the new
-  kind.
+  kind. A PBEM orders file does the same once, when the turn file says the empire's
+  verifier is of the old kind.
+- **Orders files** sign a BLAKE2b hash of the game, the turn, the empire, the orders,
+  the checksum of the turn file they were made from and the signer's verifier.
 - **Host keys** are files of 64 hex digits (`host_key.txt`), made on first use and
   readable by their owner only; the players' remembered keys are lines of
   `<address>:<port> <key>` in `known_hosts.txt`. Delete a line there to meet that
@@ -628,12 +658,14 @@ counterpart.
   - Shared: a Partnership gives its partner the maps and tech levels, as in the rules.
 
   The host's own player sees the same view. In a turn-based game the other players get
-  that view when the turn passes on, not after every command. A PBEM `.gam`, however,
-  is the complete game, because every player processes it with the same program. Play
-  PBEM with people you trust not to peek.
+  that view when the turn passes on, not after every command. A PBEM player's turn file
+  is the same view, made by the same function; the host's `.gam` never leaves the host.
+  A turn file also carries the game's header (name, empires' and players' names, the
+  game's id and data set) and its own empire's password verifier, so the player's game
+  can check the password. The master password's verifier stays with the host.
 - **The host itself must be trusted.** It sees and decides everything.
-- **Files are checked before use.** Save, orders and `.plr` files start with a type
-  tag, a format version and a checksum. Loading rejects wrong types, newer or
+- **Files are checked before use.** Save, turn, orders and `.plr` files start with a
+  type tag, a format version and a checksum. Loading rejects wrong types, newer or
   retired versions, truncation, corruption and internal inconsistencies (for example
   a ship whose design does not exist), and always reports what is wrong. Hosts also
   refuse games whose data-set fingerprint differs from their own, and check that
@@ -641,8 +673,6 @@ counterpart.
 
 ## Future work
 
-- Per-player views for PBEM (a `.gam` per empire), and orders files that prove the
-  password without carrying its hash.
 - IPv6 hosting.
 - Sending only the changes between turns instead of the whole game. A turn-based game
   sends the player's whole view after every command.
@@ -688,10 +718,12 @@ client.lobby(); client.turnStatus(); client.state(); client.empire(); client.ord
 client.requestAiControl(empire, true); client.requestPasswordReset({empire});   // administrators
 ```
 
-`net::describe(event)` gives a one-line log text. `net::pbem::*` reads and writes
-`.plr` files and processes PBEM turns. The player's side in the client is
-`client/classic/pbem_play.hpp` (open a `.gam`, check the empire and password, write the
-`.plr` or a draft) and `ClassicSession` with `SessionKind::Pbem`. `game::saveGame`, `loadGame` and
+`net::describe(event)` gives a one-line log text. `net::pbem::*` reads and writes turn
+files (`writeTurnFiles`, `readTurnFile`) and `.plr` files (`writePlayerOrders`,
+`signOrdersFile`) and processes PBEM turns (`processGameFile`). The player's side in the
+client is `client/classic/pbem_play.hpp` (open a turn file, check the empire and
+password, write the signed `.plr` or a draft) and `ClassicSession` with
+`SessionKind::Pbem`. `game::saveGame`, `loadGame` and
 `readSaveInfo` handle `.gam` files.
 
 ### Protocol

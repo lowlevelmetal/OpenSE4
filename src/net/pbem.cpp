@@ -1,6 +1,7 @@
 #include "net/pbem.hpp"
 
 #include "game/diplomacy.hpp"
+#include "game/redact.hpp"
 #include "game/serialize_io.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <format>
+#include <map>
 #include <optional>
 
 namespace opense4::net::pbem {
@@ -17,8 +19,10 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr std::string_view kPlrMagic = "OSE4PLRF";
+constexpr std::string_view kPlrMagic = "OSE4PLR2";
+constexpr std::string_view kTurnMagic = "OSE4TURN";
 constexpr std::string_view kWhat = "orders file (.plr)";
+constexpr std::string_view kTurnWhat = "player turn file (.turn)";
 
 std::string lowerExtension(const fs::path& p) {
     std::string ext = p.extension().string();
@@ -26,12 +30,106 @@ std::string lowerExtension(const fs::path& p) {
     return ext;
 }
 
+std::string fileBase(const game::SaveInfo& info) {
+    std::string base;
+    for (char c : info.gameName) {
+        const auto u = static_cast<unsigned char>(c);
+        base.push_back(std::isalnum(u) || c == '-' || c == '_' ? c : '_');
+    }
+    return base.empty() ? std::string("game") : base;
+}
+
 } // namespace
 
 template <class Ar>
 void io(Ar& ar, OrdersFile& f) {
-    game::serial::fields(ar, f.gameName, f.gameId, f.empire, f.turn, f.passwordHash, f.orders, f.startChecksum, f.endChecksum);
+    game::serial::fields(ar, f.gameName, f.gameId, f.empire, f.turn, f.orders, f.startChecksum, f.verifier, f.signature, f.legacyPasswordHash);
 }
+
+template <class Ar>
+void io(Ar& ar, TurnFile& f) {
+    game::serial::fields(ar, f.info, f.empire, f.verifier, f.viewChecksum, f.view);
+}
+
+// ---- Turn files ----------------------------------------------------------------------------------
+
+std::vector<uint8_t> encodeTurnFile(const TurnFile& f) { return game::wrapEnvelope(kTurnMagic, game::serial::encode(f)); }
+
+std::expected<TurnFile, std::string> decodeTurnFile(std::span<const uint8_t> bytes) {
+    auto env = game::unwrapEnvelope(bytes, kTurnMagic, kTurnWhat);
+    if (!env) return std::unexpected(env.error());
+    TurnFile f;
+    std::string error;
+    if (!game::serial::decode(env->payload, f, error, env->version))
+        return std::unexpected(std::format("the {} is corrupt: {}", kTurnWhat, error));
+    return f;
+}
+
+std::expected<TurnFile, std::string> readTurnFile(const fs::path& file) {
+    auto bytes = game::readFileBytes(file);
+    if (!bytes) return std::unexpected(bytes.error());
+    auto f = decodeTurnFile(*bytes);
+    if (!f) return std::unexpected(std::format("{}: {}", file.filename().string(), f.error()));
+    return f;
+}
+
+std::string turnFileName(const game::SaveInfo& info, game::EmpireId empire) {
+    return std::format("{}_{:02}{}", fileBase(info), empire.value + 1, kTurnExtension);
+}
+
+void readForTurn(const game::Rules& rules, game::GameState& state) { game::diplomacy::recalculateColonies(rules, state); }
+
+std::vector<game::EmpireId> empiresToPlay(const game::GameState& state) {
+    std::vector<game::EmpireId> out;
+    if (state.gameOver) return out;
+    if (game::turnBased(state)) {
+        const game::EmpireId active = game::activePlayer(state);
+        if (state.playerTurn.started && active.valid() && active.index() < state.empires.size() &&
+            state.empire(active).kind == game::PlayerKind::Human && state.empire(active).alive)
+            out.push_back(active);
+        return out;
+    }
+    for (const game::Empire& e : state.empires)
+        if (e.alive && e.kind == game::PlayerKind::Human) out.push_back(e.id);
+    return out;
+}
+
+game::GameState playerView(const game::Rules& rules, const game::GameState& state, game::EmpireId empire) {
+    return game::redactForEmpire(rules, state, empire);
+}
+
+std::expected<std::vector<std::pair<game::EmpireId, fs::path>>, std::string> writeTurnFiles(const game::Rules& rules, const fs::path& gameFile,
+                                                                                            const fs::path& dir) {
+    // From the file as saved, exactly as the next processing will read it.
+    auto loaded = game::loadGame(gameFile);
+    if (!loaded) return std::unexpected(loaded.error());
+    game::GameState& s = loaded->first;
+    game::SaveInfo info = loaded->second;
+    readForTurn(rules, s);
+    // A turn-based game between player turns plays on to the next human, as processTurn does first.
+    if (game::turnBased(s) && !s.gameOver && !s.playerTurn.started) game::resumeTurnBased(rules, s);
+    info.turn = s.turn;
+    info.empires.clear();
+    for (const game::Empire& e : s.empires) info.empires.push_back(e.name);
+    // The host's master password stays with the host, as with a network player's copy.
+    info.masterPasswordVerifier.clear();
+    std::vector<std::pair<game::EmpireId, fs::path>> written;
+    for (game::EmpireId e : empiresToPlay(s)) {
+        const game::GameState view = playerView(rules, s, e);
+        TurnFile f;
+        f.info = info;
+        f.empire = e;
+        f.verifier = s.empire(e).passwordHash;
+        f.view = game::serializeState(view);
+        f.viewChecksum = game::stateChecksum(view);
+        const fs::path file = dir / turnFileName(info, e);
+        if (auto r = game::writeFileAtomic(file, encodeTurnFile(f)); !r) return std::unexpected(r.error());
+        written.emplace_back(e, file);
+    }
+    return written;
+}
+
+// ---- Orders files ------------------------------------------------------------------------------------
 
 std::vector<uint8_t> encodeOrdersFile(const OrdersFile& f) { return game::wrapEnvelope(kPlrMagic, game::serial::encode(f)); }
 
@@ -56,45 +154,45 @@ std::expected<OrdersFile, std::string> readOrdersFile(const fs::path& file) {
     return f;
 }
 
+crypto::Key ordersDigest(const OrdersFile& f) {
+    return crypto::Hash()
+        .add("OpenSE4 orders file v1")
+        .add(f.gameName)
+        .add(f.gameId)
+        .add(static_cast<uint64_t>(f.empire.value))
+        .add(static_cast<uint64_t>(f.turn))
+        .add(game::serializeOrders(f.orders))
+        .add(f.startChecksum)
+        .add(f.verifier)
+        .finish32();
+}
+
+void signOrdersFile(OrdersFile& f, std::string_view passwordHash, bool legacyPassword) {
+    f.verifier = passwordVerifier(passwordHash);
+    f.signature = signWithPassword(passwordHash, ordersDigest(f));
+    f.legacyPasswordHash = legacyPassword ? std::string(passwordHash) : std::string{};
+}
+
 std::string ordersFileName(const game::SaveInfo& info, game::EmpireId empire) {
-    std::string base;
-    for (char c : info.gameName) {
-        const auto u = static_cast<unsigned char>(c);
-        base.push_back(std::isalnum(u) || c == '-' || c == '_' ? c : '_');
-    }
-    if (base.empty()) base = "game";
-    return std::format("{}_{:02}{}", base, empire.value + 1, kOrdersExtension);
+    return std::format("{}_{:02}{}", fileBase(info), empire.value + 1, kOrdersExtension);
 }
 
 std::expected<fs::path, std::string> writePlayerOrders(const fs::path& dir, const game::SaveInfo& info, const game::EmpireOrders& orders,
-                                                       std::string_view passwordHash) {
+                                                       uint64_t startChecksum, std::string_view passwordHash, bool legacyPassword) {
     OrdersFile f;
     f.gameName = info.gameName;
     f.gameId = info.gameId;
     f.empire = orders.empire;
     f.turn = orders.turn;
-    f.passwordHash = std::string(passwordHash);
     f.orders = orders;
+    f.startChecksum = startChecksum;
+    signOrdersFile(f, passwordHash, legacyPassword);
     const fs::path file = dir / ordersFileName(info, orders.empire);
     if (auto r = writeOrdersFile(file, f); !r) return std::unexpected(r.error());
     return file;
 }
 
-std::expected<fs::path, std::string> writePlayerTurn(const fs::path& dir, const game::SaveInfo& info, uint64_t startChecksum,
-                                                     const game::EmpireOrders& commands, uint64_t endChecksum, std::string_view passwordHash) {
-    OrdersFile f;
-    f.gameName = info.gameName;
-    f.gameId = info.gameId;
-    f.empire = commands.empire;
-    f.turn = commands.turn;
-    f.passwordHash = std::string(passwordHash);
-    f.orders = commands;
-    f.startChecksum = startChecksum;
-    f.endChecksum = endChecksum;
-    const fs::path file = dir / ordersFileName(info, commands.empire);
-    if (auto r = writeOrdersFile(file, f); !r) return std::unexpected(r.error());
-    return file;
-}
+// ---- The host's processing ---------------------------------------------------------------------------
 
 std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, game::GameState& state, const game::SaveInfo& info,
                                                       const fs::path& ordersDir) {
@@ -108,7 +206,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
     };
     const bool turnBased = game::turnBased(state);
     // A turn-based game file between player turns goes on to the next human
-    // first; players make their .plr from that game.
+    // first; that player's turn file was made from that game.
     bool resumed = false;
     if (turnBased && !state.gameOver && !state.playerTurn.started) {
         refused(game::resumeTurnBased(rules, state));
@@ -116,9 +214,16 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
     }
     const game::EmpireId active = turnBased ? game::activePlayer(state) : game::EmpireId{};
     const bool playerTurn = turnBased && active.valid() && state.playerTurn.started;
-    const uint64_t startChecksum = turnBased ? game::stateChecksum(state) : 0;
     std::error_code ec;
     if (!fs::is_directory(ordersDir, ec)) return std::unexpected(std::format("{}: no such directory", ordersDir.string()));
+
+    // The checksum of the view each empire's turn file holds, made as needed.
+    std::map<uint32_t, uint64_t> views;
+    auto viewChecksum = [&](game::EmpireId e) {
+        auto it = views.find(e.value);
+        if (it == views.end()) it = views.emplace(e.value, game::stateChecksum(playerView(rules, state, e))).first;
+        return it->second;
+    };
 
     std::vector<fs::path> files;
     for (const fs::directory_entry& entry : fs::directory_iterator(ordersDir, ec))
@@ -129,6 +234,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
         fs::path path;
         OrdersFile file;
         fs::file_time_type time;
+        std::string upgrade;  // the verifier to keep instead of an OpenSE4 0.6 one
     };
     std::vector<std::optional<Candidate>> best(state.empires.size());
     for (const fs::path& path : files) {
@@ -152,10 +258,6 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
                                                                                                              : std::string("?")));
             continue;
         }
-        if (turnBased && f->startChecksum != startChecksum) {
-            rep.warnings.push_back(std::format("{}: made from another copy of the game (not the current game file)", name));
-            continue;
-        }
         if (!f->empire.valid() || f->empire.index() >= state.empires.size()) {
             rep.warnings.push_back(std::format("{}: names an empire that does not exist", name));
             continue;
@@ -169,15 +271,33 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
             rep.warnings.push_back(std::format("{}: {} has been destroyed", name, e.name));
             continue;
         }
-        if (!checkPassword(e.passwordHash, f->passwordHash)) {
-            rep.warnings.push_back(std::format("{}: wrong password for {}", name, e.name));
-            continue;
-        }
         if (f->orders.empire != f->empire || f->orders.turn != f->turn) {
             rep.warnings.push_back(std::format("{}: its orders do not match its header", name));
             continue;
         }
-        Candidate c{path, std::move(*f), fs::last_write_time(path, ec)};
+        // Made from the turn file of this very game and turn (the host's own view of it).
+        if (f->startChecksum != viewChecksum(f->empire)) {
+            rep.warnings.push_back(std::format("{}: made from another turn file than {}'s current one", name, e.name));
+            continue;
+        }
+        // The password: its signature of the file, or for a verifier of
+        // OpenSE4 0.6 the hash itself, once.
+        std::string upgrade;
+        if (isLegacyVerifier(e.passwordHash)) {
+            if (!checkPassword(e.passwordHash, f->legacyPasswordHash)) {
+                rep.warnings.push_back(std::format("{}: wrong password for {}", name, e.name));
+                continue;
+            }
+            upgrade = passwordVerifier(f->legacyPasswordHash);
+            if (!checkPasswordSignature(upgrade, ordersDigest(*f), f->signature)) {
+                rep.warnings.push_back(std::format("{}: the file was changed after it was signed", name));
+                continue;
+            }
+        } else if (!checkPasswordSignature(e.passwordHash, ordersDigest(*f), f->signature)) {
+            rep.warnings.push_back(std::format("{}: wrong password for {}, or the file was changed after it was signed", name, e.name));
+            continue;
+        }
+        Candidate c{path, std::move(*f), fs::last_write_time(path, ec), std::move(upgrade)};
         auto& slot = best[c.file.empire.index()];
         if (!slot) {
             slot = std::move(c);
@@ -190,11 +310,18 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
             rep.used.push_back(path);
         }
     }
+    // Verifiers of OpenSE4 0.6 are replaced once their password was shown.
+    for (auto& c : best)
+        if (c && !c->upgrade.empty()) {
+            state.empire(c->file.empire).passwordHash = c->upgrade;
+            rep.warnings.push_back(std::format("{}'s password is now kept in the current form", state.empire(c->file.empire).name));
+        }
 
     if (turnBased) {
         rep.turnBased = true;
         // One player's turn: its commands one after another, as the player
-        // gave them, then the end of its turn (spec 05 §8).
+        // gave them, then the end of its turn (spec 05 §8). The player's copy
+        // previewed them on its own view; the whole game decides.
         if (playerTurn) {
             const std::string name = state.empire(active).name;
             game::LiveOptions options;
@@ -202,9 +329,6 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
                 rep.submitted.push_back(name);
                 rep.used.push_back(chosen->path);
                 for (const game::Command& c : chosen->file.orders.commands) refused(game::applyLive(rules, state, active, c));
-                if (game::stateChecksum(state) != chosen->file.endChecksum)
-                    rep.warnings.push_back(std::format("{}: the replay of {}'s turn differs from the player's own game; the host's result counts",
-                                                       chosen->path.filename().string(), name));
             } else {
                 rep.playedByComputer.push_back(name);
                 options.computerPlays.push_back(active);
@@ -252,9 +376,7 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
     }
     if (std::string problem = game::validateState(state, &rules); !problem.empty())
         return std::unexpected("The game does not fit this data set: " + problem);
-    // Reading the game file to process the turn recalculates every colony, as
-    // the players' copies do when they open it (spec 01 §6.9, §14 Q44).
-    game::diplomacy::recalculateColonies(rules, state);
+    readForTurn(rules, state);
     if (state.gameOver) return std::unexpected(std::string("The game is over."));
     if (!options.resetPasswords.empty() && game::turnBased(state))
         return std::unexpected(std::string("Reset Passwords is for simultaneous games."));
@@ -276,6 +398,12 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
     backup += ".bak";
     fs::copy_file(gameFile, backup, fs::copy_options::overwrite_existing, ec);
     if (auto saved = game::saveGame(gameFile, state, info); !saved) return std::unexpected(saved.error());
+
+    // Each player of the new turn gets their own view, never the whole game.
+    const fs::path turnDir = !options.turnFilesDir.empty() ? options.turnFilesDir : gameFile.has_parent_path() ? gameFile.parent_path() : fs::path(".");
+    auto turnFiles = writeTurnFiles(rules, gameFile, turnDir);
+    if (!turnFiles) return std::unexpected("The turn was processed and saved, but the turn files could not be written: " + turnFiles.error());
+    rep->turnFiles = std::move(*turnFiles);
 
     if (options.deleteProcessed)
         for (const fs::path& p : rep->used)

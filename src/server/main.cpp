@@ -38,11 +38,13 @@ constexpr std::string_view kUsage = R"(opense4-server: host OpenSE4 network and 
 
 Usage:
   opense4-server [options]                      host a network game (lobby, turns, autosave)
-  opense4-server pbem new --setup=FILE.toml --out=GAME.gam
+  opense4-server pbem new --setup=FILE.toml --out=GAME.gam [--turn-files=DIR]
   opense4-server pbem process --game=GAME.gam --orders=DIR [--password=PW] [--keep-orders]
                               [--reset-passwords=N,M]  (new passwords, shown here only)
-  opense4-server pbem orders --game=GAME.gam --empire=N --out=DIR [--password=PW]
-  opense4-server pbem info --game=GAME.gam
+                              [--turn-files=DIR]
+  opense4-server pbem turn-files --game=GAME.gam [--out=DIR]
+  opense4-server pbem orders --turn=FILE.turn [--password=PW] [--out=DIR]
+  opense4-server pbem info --game=GAME.gam|FILE.turn
   opense4-server bot --name=NAME [--connect=HOST[:PORT]] [--turns=N]
   opense4-server hash-password PASSWORD
 
@@ -84,12 +86,18 @@ computer for that turn. In a turn-based game the server waits for the player
 whose turn it is; when the time limit runs out the computer plays the rest of
 that turn. Stop the server with Ctrl+C; it saves first.
 
-pbem: the host keeps GAME.gam; players send one .plr file per turn. "process"
-reads every .plr in DIR, checks game, turn, empire and password, processes the
-turn, rewrites GAME.gam (the previous turn is kept as GAME.gam.bak) and deletes
-the .plr files it used (--keep-orders keeps them). In a turn-based game (setup
-file: simultaneous = false) "process" plays one player's turn from that
-player's .plr and names the player to send the game to next.
+pbem: the host keeps GAME.gam, the whole game, and never sends it. "new" and
+"process" write a turn file per player who plays next (<game>_<NN>.turn, next
+to GAME.gam or in --turn-files): the game as that player's empire knows it.
+Send each player their own. Players send back one .plr file per turn, signed
+with their password. "process" reads every .plr in DIR, checks game, turn,
+empire, the turn file it was made from and the password, processes the turn,
+rewrites GAME.gam (the previous turn is kept as GAME.gam.bak), writes the new
+turn files and deletes the .plr files it used (--keep-orders keeps them). In a
+turn-based game (setup file: simultaneous = false) "process" plays one
+player's turn from that player's .plr and names the player whose turn file to
+send next. "turn-files" writes the current turn files again (a game of OpenSE4
+0.6, or a lost file). "orders" writes an empty .plr from a turn file.
 
 bot: a scripted player for tests. It joins, readies up, submits orders for
 --turns turns (default 2) and exits 0 once the turn has advanced that often.
@@ -416,8 +424,16 @@ int runServer(std::span<char*> args) {
 
 // ---- Play by e-mail ---------------------------------------------------------------------------------
 
+// Prints the turn files to send, each to its empire's player.
+void listTurnFiles(const std::vector<std::pair<game::EmpireId, std::filesystem::path>>& files, const game::SaveInfo& info) {
+    for (const auto& [empire, file] : files) {
+        const std::string player = empire.index() < info.players.size() ? info.players[empire.index()] : std::string{};
+        std::printf("Send %s to empire %u%s%s.\n", file.string().c_str(), empire.value + 1, player.empty() ? "" : ", player ", player.c_str());
+    }
+}
+
 int pbemNew(std::span<char*> args) {
-    auto o = parseArgs(args, {"setup", "out", "data"}, {"help"});
+    auto o = parseArgs(args, {"setup", "out", "data", "turn-files"}, {"help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("setup") || !o->has("out")) return fail("pbem new needs --setup=FILE.toml and --out=GAME.gam", 2);
@@ -451,15 +467,38 @@ int pbemNew(std::span<char*> args) {
     for (const game::Empire& e : state->empires)
         std::printf("  empire %u: %s (%s)%s\n", e.id.value + 1, e.name.c_str(), kindName(e.kind),
                     e.passwordHash.empty() ? "" : ", password set");
-    if (game::turnBased(*state)) {
-        const game::EmpireId first = game::activePlayer(*state);
-        if (first.valid()) std::printf("Turn-based: send the game to empire %u (%s) first.\n", first.value + 1, state->empire(first).name.c_str());
-    }
+    const std::filesystem::path dir = o->has("turn-files") ? std::filesystem::path(o->get("turn-files"))
+                                      : out.has_parent_path() ? out.parent_path()
+                                                              : std::filesystem::path(".");
+    auto files = net::pbem::writeTurnFiles(**rules, out, dir);
+    if (!files) return fail(files.error(), 1);
+    std::printf("Keep %s to yourself: it holds the whole game.\n", out.string().c_str());
+    listTurnFiles(*files, info);
+    return 0;
+}
+
+int pbemTurnFiles(std::span<char*> args) {
+    auto o = parseArgs(args, {"game", "out", "data"}, {"help"});
+    if (!o) return fail(o.error(), 2);
+    if (o->has("help")) return usage();
+    if (!o->has("game")) return fail("pbem turn-files needs --game=GAME.gam", 2);
+    auto rules = loadRules(o->get("data"));
+    if (!rules) return fail(rules.error(), 2);
+    const std::filesystem::path game = o->get("game");
+    auto info = game::readSaveInfo(game);
+    if (!info) return fail(info.error(), 1);
+    const std::filesystem::path dir = o->has("out") ? std::filesystem::path(o->get("out"))
+                                      : game.has_parent_path() ? game.parent_path()
+                                                               : std::filesystem::path(".");
+    auto files = net::pbem::writeTurnFiles(**rules, game, dir);
+    if (!files) return fail(files.error(), 1);
+    if (files->empty()) std::printf("Nobody plays this turn (the game is over, or no human is left).\n");
+    listTurnFiles(*files, *info);
     return 0;
 }
 
 int pbemProcess(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords"}, {"keep-orders", "allow-data-mismatch", "help"});
+    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords", "turn-files"}, {"keep-orders", "allow-data-mismatch", "help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game") || !o->has("orders")) return fail("pbem process needs --game=GAME.gam and --orders=DIR", 2);
@@ -469,6 +508,7 @@ int pbemProcess(std::span<char*> args) {
     options.masterPasswordHash = net::hashPassword(o->get("password"));
     options.deleteProcessed = !o->has("keep-orders");
     options.allowDataSetMismatch = o->has("allow-data-mismatch");
+    if (o->has("turn-files")) options.turnFilesDir = o->get("turn-files");
     // --reset-passwords=2,5: Reset Passwords for those empires (numbers from 1).
     const std::string resets = o->get("reset-passwords");
     for (std::string_view rest = resets; !rest.empty();) {
@@ -494,7 +534,8 @@ int pbemProcess(std::span<char*> args) {
     for (const auto& s : rep->warnings) std::printf("  warning: %s\n", s.c_str());
     for (const auto& s : rep->rejectedCommands) std::printf("  refused: %s\n", s.c_str());
     if (options.deleteProcessed && !rep->used.empty()) std::printf("  deleted %zu processed .plr files\n", rep->used.size());
-    if (!rep->next.empty()) std::printf("Next: empire %u (%s); send the game there.\n", rep->nextEmpire.value + 1, rep->next.c_str());
+    if (!rep->next.empty()) std::printf("Next: empire %u (%s).\n", rep->nextEmpire.value + 1, rep->next.c_str());
+    if (auto info = game::readSaveInfo(o->get("game"))) listTurnFiles(rep->turnFiles, *info);
     // Shown to the host only: nothing tells the players (spec 06 §1.9).
     for (const auto& [empire, password] : rep->passwordResets)
         std::printf("Password Reset: empire %u gets the password %s.\n", empire.value + 1, password.c_str());
@@ -502,44 +543,49 @@ int pbemProcess(std::span<char*> args) {
 }
 
 int pbemOrders(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "empire", "password", "out"}, {"help"});
+    auto o = parseArgs(args, {"turn", "game", "password", "out"}, {"help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
-    if (!o->has("game") || !o->has("empire")) return fail("pbem orders needs --game=GAME.gam and --empire=N", 2);
-    auto game = game::loadGame(o->get("game"));
-    if (!game) return fail(game.error(), 1);
-    auto empire = o->integer("empire", 1, 1, static_cast<int64_t>(game->first.empires.size()));
-    if (!empire) return fail(empire.error(), 2);
+    if (!o->has("turn") && !o->has("game")) return fail("pbem orders needs --turn=FILE.turn (the player's turn file)", 2);
+    const std::filesystem::path path = o->has("turn") ? o->get("turn") : o->get("game");
+    auto turnFile = net::pbem::readTurnFile(path);
+    if (!turnFile) return fail(turnFile.error() + " (pbem orders needs the player's turn file)", 1);
+    auto view = game::deserializeState(turnFile->view);
+    if (!view) return fail(view.error(), 1);
+    const game::GameState& state = *view;
+    const game::EmpireId empire = turnFile->empire;
+    const std::string hash = net::hashPassword(o->get("password"));
+    if (!net::checkPassword(turnFile->verifier, hash)) return fail("wrong password for this turn file's empire", 1);
+    if (game::turnBased(state) && (!state.playerTurn.started || game::activePlayer(state) != empire))
+        return fail("it is not this empire's turn in this turn file", 1);
     // An order list without commands: "end turn" (the empire keeps its standing orders).
-    const game::GameState& state = game->first;
-    game::EmpireOrders orders{game::EmpireId{static_cast<uint32_t>(*empire - 1)}, state.turn, {}};
-    std::expected<std::filesystem::path, std::string> file;
-    if (game::turnBased(state)) {
-        // The player's turn made from this very game file, without commands.
-        const game::EmpireId active = game::activePlayer(state);
-        if (!state.playerTurn.started || !active.valid())
-            return fail("no player's turn is in progress in this game file; process it first", 1);
-        if (active != orders.empire)
-            return fail(std::format("it is empire {}'s turn ({}), not empire {}'s", active.value + 1, state.empire(active).name, *empire), 1);
-        const uint64_t checksum = game::stateChecksum(state);
-        file = net::pbem::writePlayerTurn(o->get("out", "."), game->second, checksum, orders, checksum, net::hashPassword(o->get("password")));
-    } else {
-        file = net::pbem::writePlayerOrders(o->get("out", "."), game->second, orders, net::hashPassword(o->get("password")));
-    }
+    const game::EmpireOrders orders{empire, state.turn, {}};
+    auto file = net::pbem::writePlayerOrders(o->get("out", "."), turnFile->info, orders, turnFile->viewChecksum, hash,
+                                             net::isLegacyVerifier(turnFile->verifier));
     if (!file) return fail(file.error(), 1);
-    std::printf("Wrote %s (turn %u, empire %lld).\n", file->string().c_str(), orders.turn, static_cast<long long>(*empire));
+    std::printf("Wrote %s (turn %u, empire %u).\n", file->string().c_str(), orders.turn, empire.value + 1);
     return 0;
 }
 
 int pbemInfo(std::span<char*> args) {
     auto o = parseArgs(args, {"game"}, {"help"});
     if (!o) return fail(o.error(), 2);
-    if (!o->has("game")) return fail("pbem info needs --game=GAME.gam", 2);
-    auto game = game::loadGame(o->get("game"));
-    if (!game) return fail(game.error(), 1);
+    if (!o->has("game")) return fail("pbem info needs --game=GAME.gam (or a player's FILE.turn)", 2);
+    std::optional<game::EmpireId> viewOf;
+    std::expected<std::pair<game::GameState, game::SaveInfo>, std::string> game = game::loadGame(o->get("game"));
+    if (!game) {
+        // A player's turn file: its empire's view.
+        auto turnFile = net::pbem::readTurnFile(o->get("game"));
+        if (!turnFile) return fail(game.error(), 1);
+        auto view = game::deserializeState(turnFile->view);
+        if (!view) return fail(view.error(), 1);
+        viewOf = turnFile->empire;
+        game = std::pair{std::move(*view), turnFile->info};
+    }
     const auto& [state, info] = *game;
     std::printf("Game '%s' (id %016llx), turn %u, year %d.%u\n", info.gameName.c_str(), static_cast<unsigned long long>(info.gameId), state.turn,
                 state.year(), state.turn % 10);
+    if (viewOf) std::printf("A player's turn file: the game as empire %u knows it.\n", viewOf->value + 1);
     std::printf("Data set: %s\nMaster password: %s\n", info.dataSet.c_str(), info.masterPasswordVerifier.empty() ? "none" : "set");
     for (const game::Empire& e : state.empires) {
         const std::string player = e.id.index() < info.players.size() ? info.players[e.id.index()] : std::string{};
@@ -700,7 +746,8 @@ int main(int argc, char** argv) {
         if (sub == "process") return pbemProcess(rest);
         if (sub == "orders") return pbemOrders(rest);
         if (sub == "info") return pbemInfo(rest);
-        return fail("pbem needs a command: new, process, orders or info (see --help)", 2);
+        if (sub == "turn-files") return pbemTurnFiles(rest);
+        return fail("pbem needs a command: new, process, turn-files, orders or info (see --help)", 2);
     }
     if (mode == "bot") return runBot(args.subspan(1));
     if (mode == "hash-password") {

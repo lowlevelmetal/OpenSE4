@@ -4,11 +4,12 @@
 #      and a scripted client (the server's "bot" mode) that plays two turns;
 #   2. a turn-based game with two bots and a computer empire, each bot playing
 #      one command in each of its turns (commands carried out at once);
-#   3. a turn-based play-by-e-mail game: each player's (empty) turn file is
-#      processed in turn, and the game goes on to the next player;
+#   3. a turn-based play-by-e-mail game: each player's (empty) orders, made
+#      from their own turn file, are processed in turn, and the game goes on to
+#      the next player;
 #   4. when the game client was built (and SMOKE_CLIENT is not 0), it plays the
-#      next turn of that game offscreen (--pbem ... --pbem-end-turn), and the
-#      server processes the .plr it wrote.
+#      next turn of that game offscreen from the player's turn file (--pbem ...
+#      --pbem-end-turn), and the server processes the .plr it wrote.
 # Needs a data set (the installed classic game is found automatically, or pass
 # --data=DIR).
 #
@@ -95,11 +96,14 @@ password = "b"
 kind = "computer"
 EOF
 mkdir "$WORK/inbox"
-"$SERVER" pbem new --setup="$WORK/mail.toml" --out="$WORK/mail.gam" "$@"
-"$SERVER" pbem orders --game="$WORK/mail.gam" --empire=1 --password=a --out="$WORK/inbox"
+"$SERVER" pbem new --setup="$WORK/mail.toml" --out="$WORK/mail.gam" "$@" | tee "$WORK/new.log"
+grep -q "Send .*Mail_Relay_01.turn to empire 1" "$WORK/new.log"
+"$SERVER" pbem info --game="$WORK/Mail_Relay_01.turn"
+"$SERVER" pbem orders --turn="$WORK/Mail_Relay_01.turn" --password=a --out="$WORK/inbox"
 "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" "$@" | tee "$WORK/process1.log"
 grep -q "Next: empire 2" "$WORK/process1.log"
-"$SERVER" pbem orders --game="$WORK/mail.gam" --empire=2 --password=b --out="$WORK/inbox"
+grep -q "Send .*Mail_Relay_02.turn to empire 2" "$WORK/process1.log"
+"$SERVER" pbem orders --turn="$WORK/Mail_Relay_02.turn" --password=b --out="$WORK/inbox"
 "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" "$@" | tee "$WORK/process2.log"
 grep -q "the game is now at turn 1" "$WORK/process2.log"
 grep -q "Next: empire 1" "$WORK/process2.log"
@@ -112,7 +116,7 @@ if [[ -x $CLIENT && ${SMOKE_CLIENT:-1} != 0 ]]; then
     for a in "$@"; do
         [[ $a == --data=* ]] && CLIENT_ARGS+=("--classic-dir=${a#--data=}")
     done
-    SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio --pbem="$WORK/mail.gam" --pbem-password=a --pbem-orders="$WORK/inbox" \
+    SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio --pbem="$WORK/Mail_Relay_01.turn" --pbem-password=a --pbem-orders="$WORK/inbox" \
         --pbem-end-turn "${CLIENT_ARGS[@]}" | tee "$WORK/client.log"
     grep -q "Orders saved to .*Mail_Relay_01.plr" "$WORK/client.log"
     "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" "$@" | tee "$WORK/process3.log"

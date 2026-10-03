@@ -664,7 +664,7 @@ TEST_CASE("net: host saves and resumes a network game") {
 
 // ---- Play by e-mail ------------------------------------------------------------------------------------
 
-TEST_CASE("net: PBEM turn processing from .plr files") {
+TEST_CASE("net: PBEM turn processing from turn files and signed .plr files") {
     namespace fs = std::filesystem;
     const game::Rules& r = engineRules();
     const TempDir tmp("pbem");
@@ -693,19 +693,52 @@ TEST_CASE("net: PBEM turn processing from .plr files") {
     const fs::path gam = dir / "mail.gam";
     REQUIRE(game::saveGame(gam, *state, info).has_value());
 
+    // Each human player gets a turn file: its own view of the host's game.
+    auto turnFiles = net::pbem::writeTurnFiles(r, gam, dir);
+    REQUIRE_MESSAGE(turnFiles.has_value(), (turnFiles ? std::string{} : turnFiles.error()));
+    REQUIRE(turnFiles->size() == 2);
+    CHECK(turnFiles->at(0).second.filename() == "Mail_Game_01.turn");
+    std::vector<uint64_t> start;
+    for (const auto& [empire, file] : *turnFiles) {
+        auto tf = net::pbem::readTurnFile(file);
+        REQUIRE(tf.has_value());
+        CHECK(tf->empire == empire);
+        CHECK(tf->verifier == state->empire(empire).passwordHash);
+        game::GameState host = *state;
+        net::pbem::readForTurn(r, host);
+        const game::GameState view = game::redactForEmpire(r, host, empire);
+        CHECK(tf->viewChecksum == game::stateChecksum(view));
+        CHECK(tf->view == game::serializeState(view));
+        start.push_back(tf->viewChecksum);
+    }
+    CHECK(start[0] != start[1]);
+
     auto make = [&](game::EmpireId e, uint32_t turn, const std::string& note) {
         return game::EmpireOrders{e, turn, {game::cmd::SetSystemNote{game::SystemId{0u}, note}}};
     };
+    auto signedFile = [&](game::EmpireId e, uint32_t turn, uint64_t from, const std::string& note, const std::string& password) {
+        net::pbem::OrdersFile f{info.gameName, info.gameId, e, turn, make(e, turn, note), from};
+        net::pbem::signOrdersFile(f, net::hashPassword(password), false);
+        return f;
+    };
     // Empire 1: valid.
-    auto file1 = net::pbem::writePlayerOrders(orders, info, make(game::EmpireId{0u}, 0, "mailed"), net::hashPassword("pw0"));
+    auto file1 = net::pbem::writePlayerOrders(orders, info, make(game::EmpireId{0u}, 0, "mailed"), start[0], net::hashPassword("pw0"));
     REQUIRE(file1.has_value());
     CHECK(file1->filename() == "Mail_Game_01.plr");
-    // Empire 2: wrong password.
-    REQUIRE(net::pbem::writePlayerOrders(orders, info, make(game::EmpireId{1u}, 0, "forged"), net::hashPassword("pw0")).has_value());
+    // Empire 2: signed with another password.
+    REQUIRE(net::pbem::writePlayerOrders(orders, info, make(game::EmpireId{1u}, 0, "forged"), start[1], net::hashPassword("pw0")).has_value());
+    // Empire 2 again: rightly signed, then changed.
+    net::pbem::OrdersFile changed = signedFile(game::EmpireId{1u}, 0, start[1], "honest", "pw1");
+    changed.orders.commands[0] = game::cmd::SetSystemNote{game::SystemId{0u}, "changed on the way"};
+    REQUIRE(net::pbem::writeOrdersFile(orders / "changed.plr", changed).has_value());
+    // Empire 2 once more: made from another turn file.
+    REQUIRE(net::pbem::writeOrdersFile(orders / "elsewhere.plr", signedFile(game::EmpireId{1u}, 0, 12345, "from elsewhere", "pw1")).has_value());
     // Stale turn and another game.
-    net::pbem::OrdersFile stale{info.gameName, info.gameId, game::EmpireId{1u}, 7, net::hashPassword("pw1"), make(game::EmpireId{1u}, 7, "old")};
+    net::pbem::OrdersFile stale = signedFile(game::EmpireId{1u}, 7, start[1], "old", "pw1");
     REQUIRE(net::pbem::writeOrdersFile(orders / "stale.plr", stale).has_value());
-    net::pbem::OrdersFile other{"Other", 1, game::EmpireId{1u}, 0, net::hashPassword("pw1"), make(game::EmpireId{1u}, 0, "other")};
+    net::pbem::OrdersFile other = signedFile(game::EmpireId{1u}, 0, start[1], "other", "pw1");
+    other.gameName = "Other";
+    other.gameId = 1;
     REQUIRE(net::pbem::writeOrdersFile(orders / "other.plr", other).has_value());
     REQUIRE(game::writeFileAtomic(orders / "garbage.plr", std::vector<uint8_t>{1, 2, 3}).has_value());
 
@@ -720,34 +753,91 @@ TEST_CASE("net: PBEM turn processing from .plr files") {
     REQUIRE(rep->submitted.size() == 1);
     CHECK(rep->submitted[0] == "Empire 1");
     CHECK(rep->playedByComputer == std::vector<std::string>{"Empire 2"});
-    CHECK(rep->warnings.size() == 4);
+    CHECK(rep->warnings.size() == 6);
     auto warned = [&](std::string_view what) {
         return std::any_of(rep->warnings.begin(), rep->warnings.end(), [&](const std::string& w) { return w.find(what) != std::string::npos; });
     };
     CHECK(warned("wrong password"));
+    CHECK(warned("changed after it was signed"));
+    CHECK(warned("another turn file"));
     CHECK(warned("out of date"));
     CHECK(warned("another game"));
     CHECK(warned("garbage.plr"));
     CHECK_FALSE(fs::exists(*file1));           // used: deleted
     CHECK(fs::exists(orders / "stale.plr"));   // not used: kept
     CHECK(fs::exists(dir / "mail.gam.bak"));
+    // The new turn files, one per human player.
+    REQUIRE(rep->turnFiles.size() == 2);
+    CHECK(net::pbem::readTurnFile(rep->turnFiles[1].second)->info.turn == 1);
 
     auto after = game::loadGame(gam);
     REQUIRE(after.has_value());
     CHECK(after->first.turn == 1);
     CHECK(after->second.gameId == 4242);
     CHECK(noteOf(after->first, game::EmpireId{0u}) == "mailed");
-    CHECK(noteOf(after->first, game::EmpireId{1u}) != "forged");
+    CHECK(noteOf(after->first, game::EmpireId{1u}).empty());
 
     // Round trip of the file format itself.
     auto read = net::pbem::readOrdersFile(orders / "stale.plr");
     REQUIRE(read.has_value());
     CHECK(read->turn == 7);
     CHECK(read->orders.commands.size() == 1);
+    CHECK(read->verifier == net::passwordVerifier(net::hashPassword("pw1")));
     CHECK_FALSE(net::pbem::decodeOrdersFile(game::serializeOrders(stale.orders)).has_value());
+    CHECK(net::pbem::decodeOrdersFile(game::wrapEnvelope("OSE4PLRF", std::vector<uint8_t>{})).error().find("OpenSE4 0.6") != std::string::npos);
 
     std::error_code ec;
     fs::remove_all(dir, ec);
+}
+
+TEST_CASE("net: a PBEM game of OpenSE4 0.6 moves to the new passwords with its players' first orders") {
+    namespace fs = std::filesystem;
+    const game::Rules& r = engineRules();
+    const TempDir tmp("pbem_legacy");
+    game::GameSetup setup;
+    setup.seed = 4;
+    setup.options.systemCount = 8;
+    setup.options.simultaneous = true;
+    for (int i = 0; i < 2; ++i) {
+        game::EmpireSetup e;
+        e.name = std::format("Empire {}", i + 1);
+        e.kind = game::PlayerKind::Human;
+        e.passwordHash = net::legacyPasswordVerifier(net::hashPassword(std::format("pw{}", i)));
+        setup.empires.push_back(e);
+    }
+    auto state = game::createGame(r, setup);
+    REQUIRE(state.has_value());
+    game::SaveInfo info;
+    info.gameName = "Old Mail";
+    info.gameId = 66;
+    info.dataSet = game::dataSetIdentity(r);
+    const fs::path gam = tmp / "old.gam";
+    REQUIRE(game::saveGame(gam, *state, info).has_value());
+    // "pbem turn-files" for a game in progress.
+    auto files = net::pbem::writeTurnFiles(r, gam, tmp.path());
+    REQUIRE(files.has_value());
+    auto tf = net::pbem::readTurnFile(files->at(0).second);
+    REQUIRE(tf.has_value());
+    CHECK(net::isLegacyVerifier(tf->verifier));
+    // The player's orders file shows the hash this once.
+    const game::EmpireOrders orders{game::EmpireId{0u}, 0, {}};
+    REQUIRE(net::pbem::writePlayerOrders(tmp.path(), info, orders, tf->viewChecksum, net::hashPassword("pw0"), true).has_value());
+    auto plr = net::pbem::readOrdersFile(tmp / "Old_Mail_01.plr");
+    REQUIRE(plr.has_value());
+    CHECK(plr->legacyPasswordHash == net::hashPassword("pw0"));
+    auto rep = net::pbem::processGameFile(r, gam, tmp.path(), {});
+    REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
+    CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
+    auto after = game::loadGame(gam);
+    REQUIRE(after.has_value());
+    const std::string& upgraded = after->first.empire(game::EmpireId{0u}).passwordHash;
+    CHECK(upgraded.starts_with("pk1:"));
+    CHECK(net::checkPassword(upgraded, net::hashPassword("pw0")));
+    CHECK(net::isLegacyVerifier(after->first.empire(game::EmpireId{1u}).passwordHash));
+    // The next turn file carries the new verifier: from now on the orders are signed only.
+    auto next = net::pbem::readTurnFile(tmp / "Old_Mail_01.turn");
+    REQUIRE(next.has_value());
+    CHECK(next->verifier == upgraded);
 }
 
 // ---- Server setup files ----------------------------------------------------------------------------------
@@ -1151,16 +1241,22 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
     info.dataSet = game::dataSetIdentity(r);
     const fs::path gam = dir / "relay.gam";
     REQUIRE(game::saveGame(gam, *created, info).has_value());
+    auto first = net::pbem::writeTurnFiles(r, gam, dir);
+    REQUIRE(first.has_value());
+    REQUIRE(first->size() == 1);  // only the player whose turn it is
+    CHECK(first->at(0).first == game::EmpireId{0u});
 
-    // A player's turn on their own copy of the game: commands carried out at
-    // once and recorded in order, Attack Sector answers included.
+    // A player's turn on their own turn file: commands carried out at once on
+    // the view and recorded in order, Attack Sector answers included.
     auto playTurnAt = [&](game::EmpireId e, const std::string& note) {
-        auto copy = game::loadGame(gam);
-        REQUIRE(copy.has_value());
-        game::GameState& s = copy->first;
+        auto tf = net::pbem::readTurnFile(dir / std::format("Relay_{:02}.turn", e.value + 1));
+        REQUIRE(tf.has_value());
+        REQUIRE(tf->empire == e);
+        auto view = game::deserializeState(tf->view);
+        REQUIRE(view.has_value());
+        game::GameState& s = *view;
         REQUIRE(game::activePlayer(s) == e);
         REQUIRE(s.playerTurn.started);
-        const uint64_t before = game::stateChecksum(s);
         game::EmpireOrders played{e, s.turn, {}};
         auto give = [&](game::Command c) {
             game::applyLive(r, s, e, c);
@@ -1182,23 +1278,32 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
                 give(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, true});
             }
         }
-        auto file = net::pbem::writePlayerTurn(inbox, info, before, played, game::stateChecksum(s), net::hashPassword(std::format("pw{}", e.value)));
+        auto file = net::pbem::writePlayerOrders(inbox, info, played, tf->viewChecksum, net::hashPassword(std::format("pw{}", e.value)));
         REQUIRE(file.has_value());
-        return std::pair{*file, s};
+        return std::pair{*file, played};
+    };
+    // What the host's whole game becomes from those commands.
+    auto expect = [&](const game::EmpireOrders& played) {
+        auto loaded = game::loadGame(gam);
+        REQUIRE(loaded.has_value());
+        game::GameState s = loaded->first;
+        net::pbem::readForTurn(r, s);
+        for (const game::Command& c : played.commands) game::applyLive(r, s, played.empire, c);
+        game::endPlayerTurn(r, s, played.empire);
+        return s;
     };
 
     // Empire 1's turn. Empire 2 also sends a file, but it is not its turn, and
-    // an old file of Empire 1 made from another copy of the game is skipped.
+    // a file of Empire 1 made from another turn file is skipped.
     auto [file1, played1] = playTurnAt(game::EmpireId{0u}, "first move");
-    net::pbem::OrdersFile stray{info.gameName, info.gameId, game::EmpireId{0u}, 0, net::hashPassword("pw0"),
-                                game::EmpireOrders{game::EmpireId{0u}, 0, {}}, 12345, 12345};
+    net::pbem::OrdersFile stray{info.gameName, info.gameId, game::EmpireId{0u}, 0, game::EmpireOrders{game::EmpireId{0u}, 0, {}}, 12345};
+    net::pbem::signOrdersFile(stray, net::hashPassword("pw0"), false);
     REQUIRE(net::pbem::writeOrdersFile(inbox / "stray.plr", stray).has_value());
-    net::pbem::OrdersFile early{info.gameName, info.gameId, game::EmpireId{1u}, 0, net::hashPassword("pw1"),
-                                game::EmpireOrders{game::EmpireId{1u}, 0, {}}, 1, 1};
+    net::pbem::OrdersFile early{info.gameName, info.gameId, game::EmpireId{1u}, 0, game::EmpireOrders{game::EmpireId{1u}, 0, {}}, 1};
+    net::pbem::signOrdersFile(early, net::hashPassword("pw1"), false);
     REQUIRE(net::pbem::writeOrdersFile(inbox / "early.plr", early).has_value());
 
-    game::GameState expected1 = played1;
-    game::endPlayerTurn(r, expected1, game::EmpireId{0u});
+    const game::GameState expected1 = expect(played1);
     auto rep = net::pbem::processGameFile(r, gam, inbox, {});
     REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
     CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
@@ -1207,12 +1312,13 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
     CHECK(rep->turnAfter == 0);
     CHECK(rep->next == "Empire 2");
     CHECK(rep->nextEmpire == game::EmpireId{1u});
+    REQUIRE(rep->turnFiles.size() == 1);
+    CHECK(rep->turnFiles[0].first == game::EmpireId{1u});
     auto warned = [&](std::string_view what) {
         return std::any_of(rep->warnings.begin(), rep->warnings.end(), [&](const std::string& w) { return w.find(what) != std::string::npos; });
     };
     CHECK(warned("not Empire 2's"));
-    CHECK(warned("another copy"));
-    CHECK_FALSE(warned("differs"));  // the replay matched the player's game
+    CHECK(warned("another turn file"));
     CHECK_FALSE(fs::exists(file1));
     CHECK(fs::exists(inbox / "stray.plr"));
     CHECK(fs::exists(inbox / "early.plr"));
@@ -1224,12 +1330,20 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
         CHECK(game::stateChecksum(after->first) == game::stateChecksum(expected1));
         CHECK(noteOf(after->first, game::EmpireId{0u}) == "first move");
         CHECK(game::activePlayer(after->first) == game::EmpireId{1u});
+        // Empire 2's turn file shows nothing of Empire 1's turn but what Empire 2 may see.
+        auto tf = net::pbem::readTurnFile(rep->turnFiles[0].second);
+        REQUIRE(tf.has_value());
+        auto view = game::deserializeState(tf->view);
+        REQUIRE(view.has_value());
+        CHECK(noteOf(*view, game::EmpireId{0u}).empty());
+        CHECK(view->empire(game::EmpireId{0u}).stockpile.isZero());
+        CHECK(view->empire(game::EmpireId{0u}).passwordHash.empty());
+        CHECK(game::stateChecksum(*view) == game::stateChecksum(game::redactForEmpire(r, after->first, game::EmpireId{1u})));
     }
 
     // Empire 2's turn: after it the computer player moves and the game turn ends.
     auto [file2, played2] = playTurnAt(game::EmpireId{1u}, "second move");
-    game::GameState expected2 = played2;
-    game::endPlayerTurn(r, expected2, game::EmpireId{1u});
+    const game::GameState expected2 = expect(played2);
     rep = net::pbem::processGameFile(r, gam, inbox, {});
     REQUIRE(rep.has_value());
     CHECK(rep->turnAfter == 1);
@@ -1249,12 +1363,11 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
     CHECK(rep->turnAfter == 1);
     (void)file2;
 
-    // The .plr format keeps the checksums.
+    // The .plr format keeps the turn file's checksum.
     REQUIRE(net::pbem::writeOrdersFile(inbox / "check.plr", early).has_value());
     auto back = net::pbem::readOrdersFile(inbox / "check.plr");
     REQUIRE(back.has_value());
     CHECK(back->startChecksum == 1);
-    CHECK(back->endChecksum == 1);
 
     std::error_code ec;
     fs::remove_all(dir, ec);

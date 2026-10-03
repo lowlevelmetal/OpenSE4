@@ -1,7 +1,8 @@
 // Play by e-mail from the front end (docs/MULTIPLAYER.md, "Play by e-mail"):
-// open the game file the host sent, choose the empire, give its password and
-// play the turn. End Turn then saves the orders file (.plr) for the host
-// (ClassicSession, SessionKind::Pbem; the logic is in pbem_play.hpp).
+// open the turn file the host sent (the game as the player's empire knows
+// it), give the empire's password and play the turn. End Turn then saves the
+// signed orders file (.plr) for the host (ClassicSession, SessionKind::Pbem;
+// the logic is in pbem_play.hpp).
 
 #include "client/classic/frontend.hpp"
 #include "client/classic/screens/list_widgets.hpp"
@@ -31,7 +32,7 @@ public:
         if (!scanned_) {
             scanned_ = true;
             folder_ = pbemDir();
-            files_ = listGameFiles(folder_);
+            files_ = listTurnFiles(folder_);
         }
         if (std::exchange(openAtOnce_, false)) open(ctx);
 
@@ -40,15 +41,16 @@ public:
         ImGui::PushFont(ctx.fonts.regular, kTextSize * ctx.k());
         ImGui::Begin("Play by E-mail", nullptr,
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-        ImGui::TextWrapped("The host of a play-by-e-mail game sends every player the game file (.gam). Open it here, choose your "
-                           "empire and play your turn. End Turn saves your orders file (.plr); send that file back to the host.");
+        ImGui::TextWrapped("The host of a play-by-e-mail game sends each player a turn file (.turn): the game as your empire knows "
+                           "it. Open yours here, give your password and play your turn. End Turn saves your orders file (.plr), "
+                           "signed with your password; send that file back to the host.");
         ImGui::Spacing();
-        pathField("Game file", file_, ctx.px(600), ImGuiInputTextFlags_None);
+        pathField("Turn file", file_, ctx.px(600), ImGuiInputTextFlags_None);
         ImGui::SameLine();
         if (ImGui::Button("Open", ctx.size({90, 0}))) open(ctx);
-        ImGui::TextDisabled("Game files in %s:", folder_.string().c_str());
+        ImGui::TextDisabled("Turn files in %s:", folder_.string().c_str());
         beginList(ctx.painter(), "##files", ImVec2(0, ctx.px(120)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-        if (files_.empty()) ImGui::TextDisabled("None. Put the game file there, or type its full path above.");
+        if (files_.empty()) ImGui::TextDisabled("None. Put the turn file there, or type its full path above.");
         for (const auto& f : files_)
             if (ImGui::Selectable(f.filename().string().c_str(), game_ && game_->gameFile == f)) {
                 file_ = f.string();
@@ -72,7 +74,7 @@ private:
         choices_.clear();
         chosen_ = -1;
         if (file_.empty()) {
-            error_ = "Choose a game file.";
+            error_ = "Choose a turn file.";
             return;
         }
         auto loaded = loadPbemGame(*ctx.rules, file_);
@@ -102,6 +104,8 @@ private:
             ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s",
                                active.valid() ? std::format("Turn-based: it is {}'s turn.", s.empire(active).name).c_str()
                                               : "Turn-based: nobody's turn (the host plays on first).");
+            ImGui::TextWrapped("Your orders are carried out at once on your copy, as a preview. The host carries them out on the whole "
+                               "game, which decides battles and what you cannot see; your next turn file shows the result.");
         } else {
             ImGui::TextUnformatted("Simultaneous turns: every player sends orders for this turn.");
         }
@@ -110,7 +114,7 @@ private:
             const PbemEmpireChoice& c = choices_[i];
             std::string label = c.name;
             if (!c.player.empty()) label += std::format(" (player {})", c.player);
-            if (!c.playable) label += "  - computer or destroyed";
+            if (!c.playable) label += "  - not yours to play";
             else if (!c.yourTurn) label += "  - not its turn";
             ImGui::BeginDisabled(!c.playable || !c.yourTurn);
             if (ImGui::RadioButton(std::format("{}##e{}", label, i).c_str(), chosen_ == static_cast<int>(i))) chosen_ = static_cast<int>(i);

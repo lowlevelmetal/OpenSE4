@@ -37,10 +37,12 @@
 // their battles are shown afterwards (takeStrategicBattles()), and so is
 // nothing for an automated run (simulateTurns).
 //
-// Play by e-mail (SessionKind::Pbem, pbem_play.hpp): the game file the host
-// sent, played by one empire. Orders are given as in a local game (turn-based:
-// carried out at once), and End Turn writes the orders file for the host
-// instead of processing the turn; the session then waits for good.
+// Play by e-mail (SessionKind::Pbem, pbem_play.hpp): the turn file the host
+// sent, the game as one empire knows it, played by that empire. Orders are
+// given as in a local game (turn-based: carried out at once, as a preview of
+// what the host will carry out on the whole game), and End Turn writes the
+// orders file for the host instead of processing the turn; the session then
+// waits for good.
 
 #include "client/classic/pbem_play.hpp"
 #include "game/commands.hpp"
@@ -211,8 +213,9 @@ public:
 
     // ---- Player Computer Control (spec 06 §1.2.1, confirmed: binary) ----
     // Whether the game has a master password the window asks for first: a
-    // network or e-mail game file opened here keeps its host's (SaveInfo);
-    // local games and a network player's copy hold none (inferred).
+    // network or e-mail host's game file opened here keeps its host's
+    // (SaveInfo); local games and a network or e-mail player's copy hold none
+    // (inferred).
     bool hasMasterPassword() const { return !masterVerifier_.empty(); }
     // The exact comparison the window makes (letter case and spaces count).
     bool masterPasswordMatches(std::string_view password) const;

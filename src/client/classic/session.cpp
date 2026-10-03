@@ -92,7 +92,7 @@ std::expected<std::filesystem::path, std::string> ClassicSession::savePbemDraft(
     if (!pbem_) return std::unexpected(std::string("This is not a play-by-e-mail game."));
     if (!ordersFile_.empty()) return std::unexpected(std::string("The orders of this turn are already saved for the host."));
     if (pbemDrafts_.empty()) return std::unexpected(std::string("No folder to save the turn in."));
-    return writePbemDraft(*pbem_, pbemDrafts_, state_, orders_);
+    return writePbemDraft(*pbem_, pbemDrafts_, orders_);
 }
 
 bool ClassicSession::myTurn() const {
@@ -300,7 +300,9 @@ void ClassicSession::runCall() {
     answers_.clear();
     // A PBEM game never stops: the battles the player's order started are
     // shown afterwards (spec 06 §1.10.5, "different machines"). Local and
-    // hotseat games showed theirs as they happened.
+    // hotseat games showed theirs as they happened. The PBEM copy is the
+    // player's own view, so its battles are a preview: the host fights them
+    // again with the whole game (docs/MULTIPLAYER.md, "Play by e-mail").
     if (kind_ == SessionKind::Pbem && call == Call::Issue)
         for (size_t i = std::min(callBattles_, state_.combats.size()); i < state_.combats.size(); ++i) {
             const auto& who = state_.combats[i].participants;
@@ -383,7 +385,7 @@ void ClassicSession::endTurn() {
     if (kind_ == SessionKind::Pbem) {
         // The host processes the turn: write the orders file for it and wait.
         if (!pbem_ || (turnBased() && !myTurn())) return;
-        auto file = writePbemOrders(*pbem_, state_, orders_);
+        auto file = writePbemOrders(*pbem_, orders_);
         if (!file) {
             pbemError_ = file.error();
             log::warn("PBEM: {}", pbemError_);
