@@ -109,8 +109,10 @@ Conventions:
 **Simultaneous games** (confirmed: binary). Tactical combat is never offered, and the
 computer resolves every battle. The manual's older rule (combat only on every 5th day) was
 replaced (history 1.15, 1.42). After each of the 30 daily steps of the movement phase,
-every sector where an object (a vehicle or a colony) carried out an order that day is
-checked, whatever the order: a Sentry that just waits counts too. The check passes when an
+every sector where an object acted that day is checked: a vehicle on each day its movement
+schedule makes it act, whether or not it has orders (so an idle ship counts), and a colony
+that acted with orders (spec 03 §6.3 steps 3 and 6; confirmed: binary). The engine differs:
+only an action that carries out an order marks the sector (`Mover::run`). The check passes when an
 empire with a vehicle or unit group in the sector that is not flagged as cloaked sees an
 object of an empire it is hostile to. Only the flag counts: a fighter, satellite or drone
 group whose cloak hides it all the same still counts as a side that sees, and so does a
