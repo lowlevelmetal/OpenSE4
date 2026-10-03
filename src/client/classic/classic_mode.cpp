@@ -383,6 +383,11 @@ std::optional<std::string> ClassicMode::openAutomationWindow(const std::string& 
         if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) ui_->open(*id, ScreenArgs{.index = 0});
         return std::nullopt;
     }
+    if (*id == ScreenId::GroundCombat) {
+        // A sample ground combat: troops land on the homeworld in a strategic simulation.
+        if (std::string problem = startDemoGroundCombat(*ui_); !problem.empty()) return problem;
+        return std::nullopt;
+    }
     ScreenArgs args;
     if (*id == ScreenId::CombatSimulator) args.text = "demo";
     if (colon != std::string::npos) args.text = name.substr(colon + 1);

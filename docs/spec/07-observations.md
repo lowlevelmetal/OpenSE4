@@ -1628,6 +1628,13 @@ Two Quick Starts (Terran) made Mid-Life Medium quadrants with 1 + 3 computer + 4
 1 + 6 computer + 4 neutral empires, so Quick Start keeps the neutral empires too (spec 01
 §2.1). The Log's First Contact entries came at 2400.0 in the game that shared a system.
 
+Since 2026-10-03 our client follows these observations for Tactical Combat, Combat Replay,
+Combat Replay Options, Ground Combat and the report's up-arrow (spec 06 §1.6, §1.10.3,
+§1.10.6, §7 Q97, Q98); the replay's list of events is an OpenSE4 option, off by default (Q39).
+Our Ground Combat can now be captured offscreen: `--open=ground-combat` (after `--turns=60`,
+so that the player has a troop design) lands the player's troop transports on its homeworld
+in a strategic simulation, and `tests/input/ground-combat.script` plays it.
+
 ### The generated galaxies (spec 01 §3.8)
 
 544 quadrants and 41 placements of the original read through the debugger (harness notes)

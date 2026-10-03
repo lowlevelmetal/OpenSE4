@@ -429,15 +429,11 @@ Q89–Q98. What remains different (impact visual only unless noted):
 | Weapons Report export (`data_export.cpp`) | Four tab-separated `OpenSE4_*.txt` tables of our own columns | `Weapons.txt`, `Comps.txt`, `WeaponFamilies.txt`, `CompFamilies.txt`, fixed-width, every component of the data set (spec 06 §7 Q83) | L |
 | Ending (`finale_screen.cpp`) | One kind chosen (Victory, Human Dead, Lose); a lone human sees Human Dead at once | Each ending shown as it comes: Lose at the start of a last turn, Human Dead at the next End Turn (spec 06 §7 Q83) | L |
 | Players window, TCP/IP host (`ai.cpp`, `net/host.cpp`) | Neutral empires cannot be switched; the host's toggle refuses empires that were computer players from the start; a player's copy sends every flag | Any empire can be switched (neutrality stays); the host's toggle works on every row ("[Host]"); the orders carry only the flags of objects changed that turn (spec 06 §7 Q84) | L |
-| Movement line during the replay (`movement_line.cpp`) | Hidden while the replay runs | The route stored before the replay keeps being drawn; sector 0 is selected afterwards (spec 06 §7 Q86) | L |
-| Combat Piece Report (`screens/tactical.cpp`) | Page 328 px with tabs and 361 without; the Detail page starts at the page corner | Page always 327 px; the Detail picture 10 px right and down, cut by the page (spec 06 §7 Q87) | L |
 | Orders cells, Ships\Units and Colonies (`screens/ships_common.cpp`) | "None" or "REPEAT ORDERS" for an empty list; the current order in round brackets | One order per line, no brackets, an empty cell when there are none; "REPEAT ORDERS" only in the sort text; the Colonies Orders heading does not sort (spec 06 §7 Q88) | L |
 | Colonies (`screens/planets.cpp`) | "Systems with Colonies"; research and intelligence values at x 289; storage truncated ("52kT"); a click selects, a double click shows the colony; the buttons act on the selection | "System with Colonies"; those values at x 271 with icons; storage rounded up ("53kT"); a click shows the colony and closes the window; Set Colony Type asks for the planet; Scrap Facil Types acts on every colony (spec 06 §7 Q90) | L |
 | Log Goto (`screens/log.cpp`) | Lit whenever no entry is selected | Keeps its last state when nothing is selected (spec 06 §7 Q91) | L |
 | Designs (`screens/designs.cpp`) | Our row places, headings in design-type order, obsolete names grey | The original's row places, headings and designs in alphabetical order (spec 06 §7 Q93) | L |
 | Create Design (`screens/designs.cpp`) | Our places; Weapons Report in slot 7; yellow warnings; To Hit Modifiers changes the tiles; an empty name box and a design type already chosen | The places of spec 06 §7 Q94; Weapons Report in slot 11; white warnings after a red ball; To Hit Modifiers shows Offense and Defense Bonus in the figures box; the boxes read "Design Type" and "Design Name" | L |
-| Tactical Combat (`screens/tactical.cpp`) | Grid at (W−232,104); target panel 216×64 at y 324; three 20×20 navigation buttons; the panel shows the first piece before Begin | Grid at (W−232,102); target panel 216×100 at y 373; two navigation groups (moving, firing) and a closing button; the panel empty before Begin (spec 06 §7 Q97) | L |
-| Report up-arrow (`main_window.cpp`) | 35 px from the right, 2 px down; shown whenever the sector holds several objects | 33×21 at (257,0); the fourth row is the disabled state; shown when the report was reached from the list (inferred) (spec 06 §7 Q98) | L |
 
 Seen side by side with the running original on 2026-10-03 ([spec 07](spec/07-observations.md),
 session 5, which gives each original layout in full): the setup screens, the front end,
@@ -455,9 +451,25 @@ unless noted:
 | Galaxy Map (`screens/galaxy_map.cpp`) | Map 5–6 px up and left in a darker frame, a frame round the content, Goto System in slot 8, an extra Show Distances box and a legend | Map frame (144,189)–(687,564), hint under it, Goto System in slot 11, Show Names in slot 13 (spec 07 session 5) | L |
 | Intro (`frontend.cpp`) | Multiplayer, Settings and Manual buttons at the top right; "Data: se4" at the right of the version line | "Loading:" and "Complete" at the right of the version line; no other buttons (our extra buttons are OpenSE4's) | L |
 | Intelligence (`screens/intelligence.cpp`) | Points as a line in the content, a two-column table with the group in orange, the four project boxes stacked at the right, a description box, Divide Evenly, Reorder Projects in slot 7 | The Research layout: points in the title strip, silver group headings, 14 px rows with the cost right-aligned, four 140 px boxes side by side with their small boxes, Divide Pts Evenly, Reorder Projects in slot 13 (spec 07 session 5) | L |
-| Combat Replay (`screens/combat_replay.cpp`) | A dialog with a header line, a framed map, the overview, an event list and a summary, Options and Next in a button column | The Tactical Combat frame: no panels, an empty 6 × 8 weapon grid at (W − 232,226), Options and Next side by side at y 534, the overview at the bottom (spec 06 §1.6; our event list and summary are an OpenSE4 extension, spec 06 §7 Q39) | L |
-| Combat Replay Options (`screens/combat_replay.cpp`) | Four lamp rows without headings, our list frame | Headings Animation and Tactical Combat in silver over check boxes, the list (15,57) 560×400 with 24×24 arrows (spec 07 session 5) | L |
-| Ground Combat (`screens/strategic_combat.cpp` `GroundCombatScreen`) | The empire's flag and name after each label; facilities as 32 px pictures in a plain box; units as picture-and-count groups, militia as the word "Militia" | The side's 26×18 mark only; a 6 × 4 facility grid and 14 × 2 unit grids of 36 px cells with #617BC2 lines, each count at its cell's bottom right, the level numeral on each facility, the militia drawn with the race's population picture (spec 06 §1.10.6) | L |
+
+Since 2026-10-03 the battle windows follow session 5 and spec 06 §7 Q86, Q87, Q97 and Q98:
+Tactical Combat's places, panels, weapon cells and title-strip buttons, the Combat Piece
+Report's pages, Combat Replay in the Tactical Combat frame, Combat Replay Options' headings
+and check boxes (and Combat Options' alike, inferred), Ground Combat's grids and side marks,
+the movement line during the movement log replay with sector 0 selected after it, and the
+report's up-arrow. Their remaining choices are noted in spec 06 beside each answer; the
+lists' 24 px arrow column is the "Every list" row above. OpenSE4's additions there, which
+change nothing in the original's layout:
+
+- **Combat Replay's events and summary** (spec 06 §7 Q39): an option of Combat Replay Options
+  under an "OpenSE4" heading, off by default and kept per computer, that lists each combat
+  turn's events in words, and the battle's summary at the end, in the replay's empty weapon
+  grid.
+- **The battle maps' view**: the wheel zooms and the middle button drags the Tactical Combat
+  and Combat Replay maps; the replay's view opens on the player's pieces; hovering a weapon
+  cell shows the weapon's figures.
+- **`--open=ground-combat`**: a sample strategic simulation in which the player's troop
+  transports land on its homeworld, to reach Ground Combat headless.
 
 ## Computer player (spec 05 §7)
 

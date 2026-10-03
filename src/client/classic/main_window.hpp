@@ -147,6 +147,10 @@ private:
     std::optional<game::VehicleId> vehicle_;
     std::optional<game::FleetId> fleet_;
     bool listMode_ = false;
+    // The report was opened from the sector's list (a click on one of its
+    // entries): only then does it show the up-arrow back to the list (spec 06
+    // §7 Q98). Every other selection clears it.
+    bool reportFromList_ = false;
     std::vector<game::VehicleId> tagged_;
     ReportTab tab_ = ReportTab::Detail;
 
@@ -178,6 +182,7 @@ private:
     FinaleWatch finale_;   // the ending window opens once when the game ends
     std::set<game::VehicleId> replaySeen_;          // the vehicles of the log the player sees
     std::optional<game::SystemId> replayShownBefore_;
+    std::optional<game::movement::PlannedRoute> replayLine_;   // the movement line stored when the replay began
     std::map<game::VehicleId, game::Location> beforeTurn_;  // where we saw everything before this turn
     std::map<game::VehicleId, int> beforeTurnHeadings_;     // and the headings then
     uint32_t beforeTurnFor_ = UINT32_MAX;

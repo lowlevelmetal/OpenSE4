@@ -67,8 +67,8 @@ title = "The battlefield"
 text = """
 This is the **Tactical Combat** window. Your ships start on one edge of the map, the base in the
 middle. The title strip at the top shows the location, the combat turn and the empires, the one
-whose phase it is framed in yellow. On the right, the panel shows your selected ship (its size,
-movement, shields and damage) with its weapons below it.
+whose phase it is framed in yellow. On the right, once the battle has begun, the panel shows your
+selected ship (its size, movement, shields and structure) with its weapons below it.
 
 Press **Begin** at the bottom right, beside **Auto**, to start the battle.
 """

@@ -43,6 +43,10 @@ struct ClassicSettings {
 
     // OpenSE4's own.
     float soundVolume = 0.8f;            // effects volume (the original has none)
+    // Combat Replay lists each combat turn's events in words, and the battle's
+    // summary at its end, in place of its empty weapon grid (Combat Replay
+    // Options; the original has no such list, spec 06 §7 Q39). Off by default.
+    bool replayEvents = false;
 
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;

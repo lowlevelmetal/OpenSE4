@@ -71,7 +71,9 @@ Game:
                                   or start on a front-end screen: intro, quickstart, setup[:PAGE],
                                   empiresetup[:PAGE], multiplayer, pbem[:GAME.gam] (e.g. --open=setup:players).
                                   tactical: a sample tactical battle (your warships against copies);
-                                  simulator: the Combat Simulator with that battle set up
+                                  simulator: the Combat Simulator with that battle set up;
+                                  ground-combat: your troop transports land on your homeworld in a
+                                  sample strategic battle (needs a troop design: add --turns=60)
 
 Learning to play (see docs/LEARNING.md):
   --tutorial=SLUG                 Start a tutorial (a guided lesson) at once

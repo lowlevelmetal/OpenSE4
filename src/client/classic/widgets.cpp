@@ -54,6 +54,28 @@ bool lampToggle(UiContext& ui, const char* label, bool* value, bool enabled) {
     return clicked && enabled;
 }
 
+bool checkRow(UiContext& ui, const char* label, bool* value, float indent, bool enabled) {
+    ImGui::PushID(label);
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float h = ui.px(18);
+    const bool clicked = ImGui::Selectable("##row", false, enabled ? 0 : ImGuiSelectableFlags_Disabled, ImVec2(0, h));
+    script::reportItem(label);   // input scripts find the row by its label
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 b0{p.x + ui.px(indent), p.y + std::floor((h - ui.px(17)) * 0.5f)};
+    const ImVec2 b1{b0.x + ui.px(16), b0.y + ui.px(17)};
+    dl->AddRect(b0, b1, imColor(enabled ? palette::kSecondary : palette::kDisabled), 0.0f, std::max(1.0f, ui.px(1)));
+    if (*value)
+        if (const Sprite s = ui.art.region("Pictures/Game/General.bmp", 191, 0, 13, 13)) {
+            const ImVec2 l0{std::floor((b0.x + b1.x - ui.px(13)) * 0.5f), std::floor((b0.y + b1.y - ui.px(13)) * 0.5f)};
+            drawSprite(dl, s, l0, {l0.x + ui.px(13), l0.y + ui.px(13)}, enabled ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 110));
+        }
+    const ImU32 text = ImGui::GetColorU32(enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+    dl->AddText({b1.x + ui.px(6), p.y + (h - ImGui::GetTextLineHeight()) * 0.5f}, text, label);
+    ImGui::PopID();
+    if (clicked && enabled) *value = !*value;
+    return clicked && enabled;
+}
+
 bool inputString(const char* label, std::string& value, size_t maxLength, ImGuiInputTextFlags flags) {
     return inputImpl(label, value, maxLength, flags, false, {});
 }
