@@ -189,10 +189,20 @@ void arrowColumn(const Painter& ui, const OpenList& list, float scroll, float ma
     const float arrow = std::min(kListArrowW, std::floor(h * 0.5f));
     const float step = ui.px(list.step);
     ImGui::PushID(list.rows ? static_cast<int>(list.rows->ID) : 0);
-    if (listArrow(ui, "##up", true, {kListArrowW, arrow}, scroll > 0.5f)) ImGui::SetScrollY(list.rows, std::max(0.0f, scroll - step));
+    // Dear ImGui keeps scroll positions in whole pixels and a step need not be
+    // one: each click goes to the next whole row from the nearest one, and to
+    // the end when that is within a pixel, or rounding would build up (a few
+    // rows down and as many back up left the list short of its top).
+    const float rows = step > 0.0f ? std::round(scroll / step) : 0.0f;
+    if (listArrow(ui, "##up", true, {kListArrowW, arrow}, scroll > 0.5f)) {
+        const float up = std::min(scroll - 1.0f, (rows - 1.0f) * step);
+        ImGui::SetScrollY(list.rows, up < 1.0f ? 0.0f : up);
+    }
     ImGui::SetCursorScreenPos({at.x, at.y + ui.px(h - arrow)});
-    if (listArrow(ui, "##down", false, {kListArrowW, arrow}, scroll < maxScroll - 0.5f))
-        ImGui::SetScrollY(list.rows, std::min(maxScroll, scroll + step));
+    if (listArrow(ui, "##down", false, {kListArrowW, arrow}, scroll < maxScroll - 0.5f)) {
+        const float down = std::max(scroll + 1.0f, (rows + 1.0f) * step);
+        ImGui::SetScrollY(list.rows, down > maxScroll - 1.0f ? maxScroll : down);
+    }
     ImGui::PopID();
 }
 
