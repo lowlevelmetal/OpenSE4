@@ -210,6 +210,16 @@ plain text. The Combat Simulator's item list and Set Construction Queue's lists 
 design's type at the right of its row (and the simulator in a tooltip), an OpenSE4 addition,
 so the player can check the name against the type.
 
+**The named row comes into view.** The designs the active step's tokens name are the rows it
+wants clicked. When Set Construction Queue's Available list or the Combat Simulator's Items to
+choose shows such a row out of view (the 800x600 layout shows fewer rows, a larger Text size
+too), the list scrolls it to its middle, once: the first time the list shows the row during
+that step (`lessonRow` in `client/classic/screens/list_widgets.hpp`; the runner fills
+`UiContext::lessonRows`). The player may scroll away again, so the step still says how to find
+the row ("If it is out of sight, scroll the list"). This keeps the step at one click at every
+layout and text size; outlining the list's arrows instead would give the player one more
+thing to do first.
+
 ## UI tags
 
 Windows and widgets that lessons point at register a tag each frame with their screen
@@ -224,7 +234,11 @@ Menu and its Quit question, or another window. Tags are:
 
 - `window:<id>` for each window (ids as in `window:` links);
 - `command:<id>` for the main window's command buttons, `order:<id>` for the order
-  strip, `button:end-turn`, `status:<item>` for the status bar;
+  strip, `button:end-turn`, `status:<item>` for the status bar. In the 800x600 layout the
+  order strip shows five of its twenty columns at a time, on four pages: the tag of an order
+  on another page lies on the page arrow that leads there, the shorter way round
+  (`UiContext::tagPager`, `UiTag::pager`), so the lesson outlines that arrow (see "Getting
+  back");
 - `panel:system`, `panel:report`, `panel:galaxy` and a few more parts of the main
   window, and single things in it: `sector:home` (the homeworld's sector) and
   `report:colony` (the player's colony in the report's list of a sector);
@@ -252,8 +266,8 @@ apart from drawing, for the tests):
   row ends where the next one no longer fits, and each row fills the panel's width (equal
   widths when every label fits in one). Buttons never overlap at any text size. The title
   fits the title strip at every text size.
-- A line above the buttons is kept for a hint about getting back on track (when the
-  lesson has one to show).
+- A line above the buttons is kept for a hint about getting back on track, or about the
+  page arrow to press (when the lesson has one to show).
 
 **Its place**, until the player drags it: over the galaxy panel while only the main
 window shows; while a window is open, in a free column beside that window when the screen
@@ -386,9 +400,18 @@ shown:
   window in front, which Esc closes). When the step names that window, the lock lets its
   Close button and Esc through.
 
-While a way back is shown, Next never turns into Skip. A refused click says the same.
-The panel draws the line from `LessonRunner::recoveryHint()` (Markdown; empty when there
-is nothing to say).
+- **An outlined order is on another page of the order strip** (800x600; the step's text
+  names the order, but its outline lies on a page arrow): with no way back to show, the
+  panel's hint line says "Press the outlined arrow to show more order buttons: **Explore**
+  is on another page." (`pagerHint` in `lesson_lock.hpp`, from the tags registered as page
+  arrow stand-ins). Each click turns one page, so an order two pages away keeps the hint
+  until the second; once the order's own button shows, the hint goes. Its line is marked
+  in the amber of the step's outlines, not the cyan of a way back. A way back comes first
+  when both apply (a window over the arrow: "Close the Planets window first").
+
+While a way back is shown, Next never turns into Skip. A refused click says the same (and
+the page arrow's hint). The panel draws the line from `LessonRunner::recoveryHint()`
+(Markdown; empty when there is nothing to say).
 
 ## The input lock
 
@@ -405,7 +428,8 @@ What a step allows:
 - **An explanation step** (no `done`): its `highlight` tags can be pointed at (tooltips
   show) and scrolled, but not clicked, so "hover over the buttons" never opens a
   window by mistake. Only its `allow` tags can be clicked (the report's tabs, a design
-  list to browse, a name box to type in).
+  list to browse, a name box to type in), and a page arrow of the order strip that stands
+  in for an outlined order (it only turns the page, so the player can see the order).
 - Always: the lesson panel (Back, Next or Skip, Read More, More, Hide, Free Play, Leave)
   and the status bar's **T** button.
 - **Windows the step works in that are closed**: the tags that open them, two levels
@@ -493,7 +517,9 @@ Writing steps:
   two steps.
 - **Name the thing on the screen.** Lists show design names, not types: write
   `{design:Attack Ship}` (see "Text tokens"), and tell the player what to check ("its
-  **Class** must say **{design:Attack Ship}**").
+  **Class** must say **{design:Attack Ship}**"). A step that asks for a row of a list that
+  may be out of sight (800x600 shows fewer rows) says how to find it: "If it is out of
+  sight, scroll the list with the mouse wheel or its arrows."
 - **Guard against the plausible wrong action.** A condition that the wrong ship, the wrong
   item or an earlier click can satisfy moves on too early or leaves the lesson stuck: use
   `design_type`, order the steps so that the thing that could be misused is used up first (the
@@ -607,7 +633,8 @@ progress line, `learned` and `suggest`, a tutorial (with Back, the active step a
 training game played through `learn::LessonProgress`, the step access rules, and the
 input lock (`tests/test_lesson_lock.cpp`: hit-testing, drags, keys, prompts, open and
 closed windows, windows stacked over each other, a window covering an outline, the way
-back, and which conditions wait on the game). `tests/test_learn_client.cpp` checks that
+back, an outlined order on another page of the order strip, and which conditions wait on
+the game). `tests/test_learn_client.cpp` checks that
 the client's window ids are the ones lessons use. `tests/test_lesson_panel.cpp` checks the
 panel's layout (buttons in rows, the place that hides the least, prompts), its keys and
 Shift+F1 under the lock, the step a tutorial resumes at, the lesson fingerprint and the
@@ -616,10 +643,20 @@ resume records in the settings. The input scripts `lesson-*.script` and
 notes after refused clicks and keys, the keys of questions and Free Play at a lesson's
 start.
 
-Two input scripts play tutorials of our own (`tests/input/learn/tutorials`), so they do
+Three input scripts play tutorials of our own (`tests/input/learn/tutorials`), so they do
 not change with the built-in lessons: `lesson-panel.script` (800x600: prompts over a panel
-dragged under them, the compact panel, the panel's keys) and `learn-resume.script` (the
-intro's hint, the Learn window's choice and marks, resuming in and out of a window).
+dragged under them, the compact panel, the panel's keys), `lesson-pager.script` (800x600:
+the page arrow's hint, the way back before it, the arrow on an explanation step) and
+`learn-resume.script` (the intro's hint, the Learn window's choice and marks, resuming in and
+out of a window).
+
+The tutorial scripts play at both layouts, 1024x768 and the original's 800x600, where the
+order strip has pages and lists show fewer rows: an order on another page is given with
+`repeat 2 until { order = "explore" }`, `click tag:order:explore`, `end` (a click on the
+outlined arrow, then on the order; once at 1024x768), a row of a list after `wait-for` (the
+list brings it into view).
+`python3 tools/run_input_tests.py --small` plays every script marked `# layouts: both` in
+both (docs/BUILDING.md "Tests").
 
 ## Reference
 

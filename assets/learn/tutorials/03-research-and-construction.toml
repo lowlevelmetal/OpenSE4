@@ -116,10 +116,10 @@ manual = "construction#the-set-construction-queue-window"
 title = "Build something"
 text = """
 **Click {design:Colony}**, your colony ship design, on the **Ships** tab to add it to the queue.
-Each design's type shows at the right of its row.
+Each row shows its design's type at the right; scroll the list if the design is out of sight.
 
 More colonies mean more of everything. A game starts without ships, so your colony ships and
-explorers all come from queues like this one. Point at an item to see its cost.
+explorers all come from queues like this one.
 """
 highlight = ["set-queue:available"]
 allow = ["set-queue:ships", "set-queue:facilities", "set-queue:units", "set-queue:upgrades"]

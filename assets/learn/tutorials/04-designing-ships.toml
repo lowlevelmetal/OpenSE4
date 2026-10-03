@@ -162,7 +162,8 @@ manual = "construction#who-can-build"
 [[step]]
 title = "Queue your warship"
 text = """
-**Click {design:Attack Ship}**, your new design, on the **Ships** tab to add it to the queue.
+**Click {design:Attack Ship}**, your new design, on the **Ships** tab to add it to the queue. If
+it is out of sight, scroll the list with the mouse wheel or its arrows.
 
 Its type shows at the right of the row, and the list shows how many turns it takes to build.
 """
