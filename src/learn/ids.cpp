@@ -145,7 +145,7 @@ constexpr std::string_view kOtherTags[] = {
     "intelligence:projects", "intelligence:queue",
     "communicate:message-type", "communicate:treaty", "communicate:send",
     // The lesson panel itself.
-    "lesson:panel", "lesson:next", "lesson:read-more", "lesson:free-play", "lesson:leave",
+    "lesson:panel", "lesson:back", "lesson:next", "lesson:read-more", "lesson:more", "lesson:hide", "lesson:free-play", "lesson:leave",
     "help:tabs",
 };
 

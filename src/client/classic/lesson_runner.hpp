@@ -9,6 +9,7 @@
 // reports each command here.
 
 #include "client/classic/lesson_lock.hpp"
+#include "client/classic/lesson_panel.hpp"
 #include "client/classic/ui.hpp"
 #include "learn/progress.hpp"
 
@@ -16,6 +17,10 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
+
+struct ImGuiWindow;
 
 namespace opense4::client::classic {
 
@@ -63,7 +68,24 @@ private:
     void drawOutlines(UiContext& ui, const LockState& lock) const;
     // The active step's condition looks out of reach: Next offers Skip.
     bool stuck(const UiContext& ui) const;
-    void drawPanel(UiContext& ui);
+
+    // The game's prompts and the pop-ups open this frame (and last frame's,
+    // for those drawn after the panel): the panel stays under them, avoids
+    // them, and its keys wait while one is open.
+    struct Prompts {
+        std::vector<panel::Box> boxes;
+        ImGuiWindow* lowest = nullptr;   // the one furthest back in display order
+    };
+    static Prompts findPrompts(const UiContext& ui);
+    // Above the classic windows, under every prompt and pop-up.
+    void raisePanel(const Prompts& prompts) const;
+    // The panel's buttons, and what pressing one (or its key) does.
+    enum class Button : uint8_t { Back, Next, Skip, ReadMore, Previous, PageNext, ClosePage, More, Hide, FreePlay, Leave };
+    void press(UiContext& ui, Button b);
+    // Small screens show an action step's panel compact (its start and one row
+    // of buttons) until the player asks for More.
+    bool compact() const;
+    void drawPanel(UiContext& ui, const Prompts& prompts);
     // Hands Dear ImGui's keyboard focus back to the window that had it before a click on the panel.
     void keepKeyboardFocus();
     void tutorialBody(UiContext& ui);
@@ -76,7 +98,16 @@ private:
     bool showResult_ = false;
     bool panelOpen_ = true;
     bool moved_ = false;        // the player moved the panel: it keeps its place
+    std::optional<size_t> movedOn_;   // the active step then (a later step may place it again)
     bool windowsOpen_ = false;  // a classic window is open (the panel's default place)
+    // The panel's layout: the height its text needs (frame pixels, measured
+    // last frame at `bodyWidth_`; 0 until measured), the spot it took, what
+    // its text was last scrolled to the top for, and the step whose compact
+    // panel the player opened (More) or closed (Less).
+    float bodyNeed_ = 0, bodyWidth_ = 0;
+    std::optional<int> spot_;
+    std::optional<size_t> scrolledFor_;
+    std::optional<std::pair<size_t, bool>> compactChoice_;
     // The active step: since when, and when its targets were last on screen.
     std::optional<size_t> activeSeen_;
     double activeSince_ = 0;

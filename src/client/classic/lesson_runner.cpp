@@ -3,6 +3,7 @@
 #include "client/audio.hpp"
 #include "client/classic/learn_content.hpp"
 #include "client/classic/screens/markdown_view.hpp"
+#include "client/app_settings.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 #include "core/hash.hpp"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <format>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -21,12 +23,24 @@ namespace opense4::client::classic {
 
 namespace {
 
-// The panel: a classic window, movable. Until the player moves it, it sits
-// over the galaxy panel while only the main window shows, and at the bottom
-// left of the system view while a window is open, where it hides the least
-// of the classic windows (their buttons are on the right).
-constexpr Vec2 kPanelSize{330, 280};
-constexpr float kButtonsH = 66.0f;
+// The panel: a classic window, movable, in frame pixels at text size 1. It
+// grows with the Text size setting and with its text (docs/LEARNING.md "The
+// lesson panel"): as wide as kPanelW times the text size, at most
+// kMaxWidthShare of the screen; as tall as its text needs, at most
+// kMaxHeightShare of the screen, past which the text scrolls.
+constexpr float kPanelW = 330.0f;
+constexpr float kTitleH = 36.0f;          // the title strip and the gap below it
+constexpr float kSide = 15.0f;            // left and right of the text and the buttons
+constexpr float kBottom = 6.0f;           // below the buttons
+constexpr float kButtonGap = 4.0f;        // between buttons in a row
+constexpr float kRowGap = 5.0f;           // between rows of buttons
+constexpr float kMaxWidthShare = 0.45f;
+constexpr float kMaxHeightShare = 0.55f;
+// A compact panel shows about this many lines of the step.
+constexpr float kCompactLines = 4.5f;
+// Below this frame height (the 800x600 layout) a tutorial's action step shows
+// a compact panel.
+constexpr float kSmallFrameH = 700.0f;
 
 const UiTag* findTag(const UiContext& ui, std::string_view name) {
     for (const UiTag& t : ui.tags)
@@ -99,8 +113,10 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const L
     if (const learn::Step* st = activeStep())
         for (const std::string& tag : st->highlight)
             if (!tag.starts_with("lesson:") && findTag(ui, tag)) targetsSeen_ = ui.time;
-    drawPanel(ui);
+    const Prompts prompts = findPrompts(ui);
+    drawPanel(ui, prompts);
     drawOutlines(ui, lock);
+    raisePanel(prompts);
     drawResult(ui);
 }
 
@@ -177,7 +193,6 @@ void LessonRunner::drawOutlines(UiContext& ui, const LockState& lock) const {
     ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
     ImDrawList* under = ImGui::GetWindowDrawList();
     ImGui::End();
-    if (ImGuiWindow* panel = ImGui::FindWindowByName("##lessonpanel"); panel && panelOpen_) ImGui::BringWindowToDisplayFront(panel);
     // A refused click makes the outlines flash white for a moment.
     const double sinceRefused = ui.time - refusedTime_;
     const bool flash = sinceRefused >= 0 && sinceRefused < 1.0 && std::fmod(sinceRefused, 0.25) < 0.125;
@@ -337,64 +352,292 @@ void LessonRunner::keepKeyboardFocus() {
     }
 }
 
-void LessonRunner::drawPanel(UiContext& ui) {
+LessonRunner::Prompts LessonRunner::findPrompts(const UiContext& ui) {
+    Prompts out;
+    for (const auto& [a, b] : ui.promptAreas) out.boxes.push_back({a, b});
+    const ImGuiWindow* panel = ImGui::FindWindowByName("##lessonpanel");
+    auto listed = [&](const ImGuiWindow* w) {
+        return std::any_of(ui.promptAreas.begin(), ui.promptAreas.end(), [&](const auto& area) {
+            return std::abs(area.first.x - w->Pos.x) < 1.0f && std::abs(area.first.y - w->Pos.y) < 1.0f;
+        });
+    };
+    // Back to front. A prompt is a pop-up (the lesson's own Leave question and
+    // result, combo lists, the windows' Yes/No boxes) or a window drawn with
+    // kPromptFlags; a window that takes no input at all (the outlines' layer) is none.
+    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows) {
+        if (w == panel || w->RootWindow != w || !(w->Active || w->WasActive)) continue;
+        const ImGuiWindowFlags f = w->Flags;
+        if ((f & (ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_Tooltip)) != 0) continue;
+        const bool popup = (f & ImGuiWindowFlags_Popup) != 0;
+        const bool prompt = (f & ImGuiWindowFlags_NoNavInputs) != 0 && (f & ImGuiWindowFlags_NoMouseInputs) == 0;
+        const bool known = listed(w);
+        if (!popup && !prompt && !known) continue;
+        if (!out.lowest) out.lowest = w;
+        if (!known) out.boxes.push_back({w->Pos, ImVec2(w->Pos.x + w->Size.x, w->Pos.y + w->Size.y)});
+    }
+    return out;
+}
+
+void LessonRunner::raisePanel(const Prompts& prompts) const {
+    // Above the classic windows, which take the focus (and the front) when
+    // they open; under every prompt and pop-up, so that their buttons are
+    // never under the panel (it used to be raised over them every frame).
+    ImGuiWindow* panel = ImGui::FindWindowByName("##lessonpanel");
+    if (!panel || !panelOpen_ || !panel->Active) return;
+    ImGui::BringWindowToDisplayFront(panel);
+    if (prompts.lowest) ImGui::BringWindowToDisplayBehind(panel, prompts.lowest);
+}
+
+bool LessonRunner::compact() const {
+    if (lesson().kind != learn::LessonKind::Tutorial || frameH() >= kSmallFrameH || progress_.result() != learn::LessonProgress::Result::None)
+        return false;
+    const size_t step = progress_.step();
+    if (compactChoice_ && compactChoice_->first == step) return compactChoice_->second;
+    // An action step the lesson is at: the window it is about matters more
+    // than the reading. Explanation steps and steps read again show whole.
+    const learn::Step* st = activeStep();
+    return st && step == progress_.active() && st->done && !progress_.completed(step);
+}
+
+void LessonRunner::press(UiContext& ui, Button b) {
+    const learn::Lesson& l = lesson();
+    switch (b) {
+        case Button::Back: progress_.goBack(); break;
+        case Button::Next:
+        case Button::Skip:
+            if (b == Button::Skip) progress_.skip(ui.rules(), ui.state(), ui.session.player());
+            else progress_.goNext(ui.rules(), ui.state(), ui.session.player());
+            seen_ = 0;
+            if (progress_.result() != learn::LessonProgress::Result::None) finished();
+            break;
+        case Button::ReadMore:
+            if (const size_t step = progress_.step(); step < l.steps.size() && !l.steps[step].manual.empty()) {
+                ScreenArgs a;
+                a.text = l.steps[step].manual;
+                ui.open(ScreenId::Manual, a);
+            }
+            break;
+        case Button::Previous:
+        case Button::PageNext: {
+            // Previous and next browse the shown page's series.
+            const std::vector<size_t> series = progress_.series();
+            const auto shown = progress_.page() ? std::find(series.begin(), series.end(), *progress_.page()) : series.end();
+            if (shown == series.end()) break;
+            if (b == Button::Previous && shown != series.begin()) progress_.showPage(*(shown - 1));
+            if (b == Button::PageNext && shown + 1 != series.end()) progress_.showPage(*(shown + 1));
+            break;
+        }
+        case Button::ClosePage: progress_.showPage(std::nullopt); break;
+        case Button::More: compactChoice_ = std::pair{progress_.step(), !compact()}; break;
+        case Button::Hide: panelOpen_ = false; break;
+        case Button::FreePlay:
+            settings().learnFreePlay = !settings().learnFreePlay;
+            saveSettings();
+            break;
+        case Button::Leave:
+            if (progress_.result() != learn::LessonProgress::Result::None) request_ = Request::Leave;
+            else leave_.open("Leave the lesson? Its game ends; anything not saved is lost.", "Leave Lesson");
+            break;
+    }
+}
+
+void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
     keepKeyboardFocus();
     if (!panelOpen_) return;
     const Painter p = ui.painter();
+    const learn::Lesson& l = lesson();
+    const bool tutorial = l.kind == learn::LessonKind::Tutorial;
+    const bool over = progress_.result() != learn::LessonProgress::Result::None;
+    const bool smallScreen = tutorial && !over && frameH() < kSmallFrameH;   // More and Less switch the compact panel
+    const bool tight = compact();
+    const Bindings& keys = appSettings().controls.bindings;
+    auto keyName = [&](Action a) {
+        const KeyChord& c = keys.chords(a)[0];
+        return c.empty() ? std::string{} : std::format(" ({})", chordName(c));
+    };
+    // One line for the lesson's recovery hint above the buttons
+    // (LessonRunner::recoveryHint(), wired in at the merge).
+    const std::string hint;
+
+    // The buttons, in two groups: moving through the lesson, then the panel
+    // itself (a compact panel leaves the second group to More).
+    struct Spec {
+        Button what;
+        std::string label;
+        bool enabled = true;
+        const char* tag = nullptr;
+        std::string tip;
+        int style = 0;
+        bool on = false;
+    };
+    std::vector<Spec> moving, own;
+    bool skip = false;
+    if (tutorial) {
+        const size_t step = progress_.step();
+        const learn::Step* st = step < l.steps.size() ? &l.steps[step] : nullptr;
+        const bool last = step + 1 >= l.steps.size();
+        // On an active step that looks impossible now, Next offers to skip it.
+        skip = step == progress_.active() && !progress_.canGoNext() && stuck(ui);
+        moving.push_back({Button::Back, "Back", progress_.canGoBack(), "lesson:back", "The step before, to read it again" + keyName(Action::LessonBack)});
+        if (skip)
+            moving.push_back({Button::Skip, "Skip##next", true, "lesson:next",
+                              "Moves on without this step, for when it cannot be done any more" + keyName(Action::LessonSkip)});
+        else
+            moving.push_back({Button::Next, last ? "Finish##next" : "Next##next", progress_.canGoNext(), "lesson:next",
+                              std::string(last ? "Ends the lesson" : "On to the next step") + keyName(Action::LessonNext)});
+        moving.push_back({Button::ReadMore, "Read More", st && !st->manual.empty(), "lesson:read-more",
+                          "This step's page in the manual" + keyName(Action::LessonReadMore)});
+    } else {
+        const std::vector<size_t> series = progress_.series();
+        const auto shown = progress_.page() ? std::find(series.begin(), series.end(), *progress_.page()) : series.end();
+        const bool hasPrev = shown != series.end() && shown != series.begin();
+        const bool hasNext = shown != series.end() && shown + 1 != series.end();
+        moving.push_back({Button::Previous, "Previous", hasPrev, nullptr, "The page before" + keyName(Action::LessonBack)});
+        moving.push_back({Button::PageNext, "Next##next", hasNext, "lesson:next", "The next page" + keyName(Action::LessonNext)});
+        moving.push_back({Button::ClosePage, "Close Page", progress_.page().has_value()});
+    }
+    if (!tight) {
+        // Hide, Free Play (tutorials only: training games are never locked), Leave.
+        own.push_back({Button::Hide, "Hide", true, "lesson:hide", std::format("{} or the T button shows the panel again", chordName(keys.chords(Action::LessonText)[0]))});
+        if (tutorial)
+            own.push_back({Button::FreePlay, "Free Play", true, "lesson:free-play",
+                           "Off: the lesson lets you use only what each step is about.\nOn: the whole game works while the lesson guides you.", 2,
+                           settings().learnFreePlay});
+        own.push_back({Button::Leave, over ? "Learn" : tutorial ? "Leave" : "Leave Game", true, "lesson:leave", over ? "" : "Leave the lesson"});
+    }
+
+    // Sizes from the text: the buttons' labels, the reading font's lines.
+    const float k = ui.k();
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const Vec2 screen{display.x / k, display.y / k};   // in frame pixels
+    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+    std::vector<float> movingW, ownW;
+    for (const Spec& s : moving) movingW.push_back(std::ceil(ImGui::CalcTextSize(s.label.c_str(), nullptr, true).x / k + 16.0f));
+    for (const Spec& s : own) ownW.push_back(std::ceil(ImGui::CalcTextSize(s.label.c_str(), nullptr, true).x / k + (s.style == 2 ? 32.0f : 16.0f)));
+    const float rowH = std::max(26.0f, std::ceil(ImGui::GetFontSize() / k + 6.0f));
+    ImGui::PopFont();
+    ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
+    const float line = ImGui::GetTextLineHeightWithSpacing() / k;
+    auto hintHeight = [&](float inner) { return hint.empty() ? 0.0f : std::ceil(ImGui::CalcTextSize(hint.c_str(), nullptr, false, ui.px(inner - 8)).y / k) + 4.0f; };
+
+    struct Layout {
+        float w = 0, h = 0, body = 0, hint = 0, buttons = 0;
+        std::vector<panel::Slot> moving, own;
+    };
+    auto layoutFor = [&](float w, float maxH) {
+        Layout L;
+        L.w = w;
+        const float inner = w - 2 * kSide;
+        L.moving = panel::flowButtons(movingW, inner, kButtonGap);
+        L.own = panel::flowButtons(ownW, inner, kButtonGap);
+        const int rows = panel::rowCount(L.moving) + panel::rowCount(L.own);
+        L.buttons = float(rows) * rowH + float(std::max(0, rows - 1)) * kRowGap;
+        L.hint = hintHeight(inner);
+        const float fixed = kTitleH + L.hint + 6.0f + L.buttons + kBottom;
+        const float bodyMax = tight ? std::ceil(kCompactLines * line) + 4.0f : std::max(std::ceil(3 * line) + 4.0f, maxH - fixed);
+        const float bodyMin = std::min(bodyMax, std::ceil(3 * line) + 4.0f);
+        // The height the text needed last frame, rewrapped to this width.
+        const float need = bodyNeed_ > 0 ? bodyNeed_ * std::max(1.0f, bodyWidth_ - 8.0f) / std::max(1.0f, inner - 8.0f) : bodyMax;
+        L.body = std::clamp(std::ceil(need), bodyMin, bodyMax);
+        L.h = fixed + L.body;
+        return L;
+    };
+    const float width = std::max(std::min(kPanelW, screen.x - 8.0f), std::min(std::round(kPanelW * std::max(1.0f, ui.textScale)), std::floor(screen.x * kMaxWidthShare)));
+    const Layout standard = layoutFor(width, std::floor(screen.y * kMaxHeightShare));
+
+    // What the panel should not hide: what the active step outlines and
+    // allows, and the prompts that are open.
+    panel::Avoid avoid;
+    if (const learn::Step* st = tutorial ? activeStep() : nullptr) {
+        auto add = [&](const std::vector<std::string>& tags, std::vector<panel::Box>& into) {
+            for (const std::string& tag : tags) {
+                if (tag.starts_with("lesson:")) continue;
+                for (const UiTag& t : ui.tags)
+                    if (t.name == tag) into.push_back({t.min, t.max});
+            }
+        };
+        add(st->highlight, avoid.targets);
+        add(st->allow, avoid.allowed);
+    }
+    avoid.prompts = prompts.boxes;
+
+    // Dragged: it keeps its place, until a later step would have more than
+    // half of what it outlines under the panel.
+    ImGuiWindow* existing = ImGui::FindWindowByName("##lessonpanel");
+    if (moved_ && existing && movedOn_ != progress_.active() && !avoid.targets.empty()) {
+        const panel::Box now{existing->Pos, ImVec2(existing->Pos.x + existing->Size.x, existing->Pos.y + existing->Size.y)};
+        if (panel::hiddenShare(now, avoid.targets) > 0.5f * float(avoid.targets.size())) {
+            moved_ = false;
+            movedOn_.reset();
+        }
+    }
+
+    const panel::Box screenBox{ImVec2(0, 0), display};
+    Layout chosen = standard;
     if (!moved_) {
         // Its places, best first: over the galaxy panel while only the main
-        // window shows, at the bottom left of the system view while a window
-        // is open, at the system view's top left, then the corners of the
-        // screen. The first one that hides the least of what the active step
-        // outlines and allows wins: each tag counts by the share of it that
-        // is hidden, so a small button weighs as much as a large map.
-        const ImVec2 size = ui.size(kPanelSize);
+        // window shows; while a window is open, in a free column beside it
+        // (wide screens), at the bottom left of the system view (where it
+        // hides the least of the classic windows: their buttons are on the
+        // right), at the system view's top left; then the corners of the
+        // screen. The first that hides the least of the step's tags and of
+        // the prompts wins (panel::bestSpot).
+        const ImVec2 size = ui.size({standard.w, standard.h});
         const float gap = ui.px(4);
-        std::vector<ImVec2> spots;
+        std::vector<panel::Spot> spots;
+        std::vector<Layout> layouts;
+        auto spot = [&](int id, ImVec2 at, const Layout& L) {
+            const ImVec2 sz = ui.size({L.w, L.h});
+            spots.push_back({id, panel::keepInside({at, ImVec2(at.x + sz.x, at.y + sz.y)}, screenBox)});
+            layouts.push_back(L);
+        };
         const UiTag* galaxy = findTag(ui, "panel:galaxy");
         const UiTag* system = findTag(ui, "panel:system");
-        if (galaxy && !windowsOpen_) spots.emplace_back(galaxy->max.x - size.x, galaxy->max.y - size.y);
-        if (system) {
-            spots.emplace_back(system->min.x + gap, system->max.y - size.y - gap);
-            spots.emplace_back(system->min.x + gap, system->min.y + ui.px(26));
-        }
-        if (galaxy && windowsOpen_) spots.emplace_back(galaxy->max.x - size.x, galaxy->max.y - size.y);
-        if (spots.empty()) spots.push_back(ui.at({ui.map.left + 6, frameH() - kPanelSize.y - 6}));
-        const ImVec2 display = ImGui::GetIO().DisplaySize;
-        spots.emplace_back(gap, display.y - size.y - gap);
-        spots.emplace_back(display.x - size.x - gap, display.y - size.y - gap);
-        spots.emplace_back(display.x - size.x - gap, ui.px(40));
-        spots.emplace_back(gap, ui.px(40));
-        auto hidden = [&](ImVec2 at) {
-            float share = 0;
-            auto add = [&](const std::vector<std::string>& tags, float weight) {
-                for (const std::string& tag : tags) {
-                    if (tag.starts_with("lesson:")) continue;
-                    for (const UiTag& t : ui.tags) {
-                        if (t.name != tag) continue;
-                        const float w = std::min(t.max.x, at.x + size.x) - std::max(t.min.x, at.x);
-                        const float h = std::min(t.max.y, at.y + size.y) - std::max(t.min.y, at.y);
-                        const float all = (t.max.x - t.min.x) * (t.max.y - t.min.y);
-                        if (w > 0 && h > 0 && all > 0) share += weight * w * h / all;
-                    }
+        if (galaxy && !windowsOpen_) spot(0, {galaxy->max.x - size.x, galaxy->max.y - size.y}, standard);
+        if (windowsOpen_) {
+            // The open windows and the main window's bars across the top.
+            float left = display.x, right = 0, top = 0;
+            for (const UiTag& t : ui.tags) {
+                if (t.name.starts_with("window:")) {
+                    left = std::min(left, t.min.x);
+                    right = std::max(right, t.max.x);
+                } else if (t.name.starts_with("status:") || t.name == "panel:commands" || t.name == "panel:orders") {
+                    top = std::max(top, t.max.y);
                 }
-            };
-            if (const learn::Step* st = activeStep()) {
-                add(st->highlight, 1.0f);
-                add(st->allow, 0.5f);
             }
-            return share;
-        };
-        ImVec2 best = spots.front();
-        float bestHidden = hidden(best);
-        for (const ImVec2& at : spots)
-            if (const float h = hidden(at); h < bestHidden) {
-                best = at;
-                bestHidden = h;
+            const float minW = std::max(240.0f, 0.8f * width);
+            const float maxH = (display.y - top) / k - 8.0f;
+            for (const auto& [id, x0, x1] : {std::tuple{1, 0.0f, left}, std::tuple{2, right, display.x}}) {
+                const float room = (x1 - x0) / k - 8.0f;
+                if (x1 <= x0 || room < minW) continue;
+                const Layout column = layoutFor(std::floor(std::min(room, width)), maxH);
+                spot(id, {(x0 + x1 - ui.px(column.w)) * 0.5f, display.y - ui.px(column.h) - gap}, column);
             }
-        ImGui::SetNextWindowPos(best, ImGuiCond_Always);
+        }
+        if (system) {
+            spot(3, {system->min.x + gap, system->max.y - size.y - gap}, standard);
+            spot(4, {system->min.x + gap, system->min.y + ui.px(26)}, standard);
+        }
+        if (galaxy && windowsOpen_) spot(5, {galaxy->max.x - size.x, galaxy->max.y - size.y}, standard);
+        if (!galaxy && !system) spot(6, ui.at({ui.map.left + 6, frameH() - standard.h - 6}), standard);
+        spot(7, {gap, display.y - size.y - gap}, standard);
+        spot(8, {display.x - size.x - gap, display.y - size.y - gap}, standard);
+        spot(9, {display.x - size.x - gap, ui.px(40)}, standard);
+        spot(10, {gap, ui.px(40)}, standard);
+        const size_t best = panel::bestSpot(spots, avoid, spot_);
+        spot_ = spots[best].id;
+        chosen = layouts[best];
+        ImGui::SetNextWindowPos(spots[best].box.min, ImGuiCond_Always);
+    } else if (existing && ImGui::GetCurrentContext()->MovingWindow != existing) {
+        // Where the player put it, kept on the screen as its size changes.
+        const ImVec2 sz = ui.size({chosen.w, chosen.h});
+        const panel::Box kept = panel::keepInside({existing->Pos, ImVec2(existing->Pos.x + sz.x, existing->Pos.y + sz.y)}, screenBox);
+        if (kept.min.x != existing->Pos.x || kept.min.y != existing->Pos.y) ImGui::SetNextWindowPos(kept.min, ImGuiCond_Always);
     }
-    ImGui::SetNextWindowSize(ui.size(kPanelSize), ImGuiCond_Always);
+    ImGui::PopFont();
+    const Layout& L = chosen;
+
+    ImGui::SetNextWindowSize(ui.size({L.w, L.h}), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
@@ -402,100 +645,117 @@ void LessonRunner::drawPanel(UiContext& ui) {
                                    ImGuiWindowFlags_NoScrollWithMouse;
     const bool open = ImGui::Begin("##lessonpanel", nullptr, flags);
     ImGui::PopStyleVar(2);
+    std::optional<Button> pressed;
     if (open) {
-        // Above the classic windows, which take the focus when they open.
         ImGuiWindow* window = ImGui::GetCurrentWindow();
-        ImGui::BringWindowToDisplayFront(window);
-        // Once the player drags it, it stays where they put it.
-        if (ImGui::GetCurrentContext()->MovingWindow == window) moved_ = true;
+        // Once the player drags it, it stays where they put it (above).
+        if (ImGui::GetCurrentContext()->MovingWindow == window) {
+            moved_ = true;
+            movedOn_ = progress_.active();
+        }
         const ImVec2 pos = ImGui::GetWindowPos();
         const Vec2 at = ui.map.fromFb(Vec2{pos.x, pos.y} * ui.fbScale);
-        drawWindowFrame(p, ImGui::GetWindowDrawList(), Rect{at, at + kPanelSize}, lesson().title.c_str(), 0);
-        ui.tag("lesson:panel", pos, ImVec2(pos.x + ui.px(kPanelSize.x), pos.y + ui.px(kPanelSize.y)));
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // The frame with an empty title strip; the title is drawn below, at a
+        // size that fits the strip at every text size.
+        drawWindowFrame(p, dl, Rect{at, at + Vec2{L.w, L.h}}, "", 0);
+        ui.tag("lesson:panel", pos, ImVec2(pos.x + ui.px(L.w), pos.y + ui.px(L.h)));
+        float titleEnd = L.w - 12.0f;
+        if (smallScreen) {
+            // More shows the whole step and every button; Less the compact panel.
+            Painter q = p;
+            q.textScale = std::min(p.textScale, 1.2f);
+            const char* label = tight ? "More" : "Less";
+            ImGui::PushFont(q.fonts.bold, q.fontPx(kTitleSize));
+            const float w = std::ceil(ImGui::CalcTextSize(label).x / k + 14.0f);
+            ImGui::PopFont();
+            ImGui::SetCursorPos(ui.size({L.w - 13.0f - w, 6}));
+            if (classicButton(q, label, {w, 23})) {
+                audio().play("button");
+                pressed = Button::More;
+            }
+            ui.tagItem("lesson:more");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", tight ? "Shows the whole step and every button of the panel" : "A smaller panel: the start of the step, Back and Next");
+            titleEnd = L.w - 13.0f - w - 6.0f;
+        }
+        {
+            const float size = std::min(kTitleSize * ui.textScale, 23.0f);
+            const float y = std::max(5.0f, 11.0f - (size - kTitleSize) * 0.75f);
+            ImGui::PushFont(ui.fonts.bold, ui.px(size));
+            dl->PushClipRect(ui.at(at + Vec2{12, 4}), ui.at(at + Vec2{titleEnd, 31}), true);
+            dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ui.at(at + Vec2{17, y + kTitleLead}), IM_COL32_WHITE, l.title.c_str());
+            dl->PopClipRect();
+            ImGui::PopFont();
+        }
 
-        ImGui::SetCursorPos(ui.size({15, 36}));
+        ImGui::SetCursorPos(ui.size({kSide, kTitleH}));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({4, 2}));
-        ImGui::BeginChild("##body", ui.size({kPanelSize.x - 30, kPanelSize.y - 36 - kButtonsH - 6}), ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::BeginChild("##body", ui.size({L.w - 2 * kSide, L.body}), ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PopStyleVar();
+        // A new step (or page) starts at the top of its text.
+        const size_t scrollKey = tutorial ? progress_.step() : progress_.page().value_or(SIZE_MAX);
+        if (scrolledFor_ != scrollKey) {
+            ImGui::SetScrollY(0.0f);
+            scrolledFor_ = scrollKey;
+        }
         // OpenSE4's own panel: its own text font (docs/spec/06 §5.4).
         ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
-        if (lesson().kind == learn::LessonKind::Tutorial) tutorialBody(ui);
+        if (tutorial) tutorialBody(ui);
         else trainingBody(ui);
         ImGui::PopFont();
+        // How tall the text is, for the next frame's size.
+        if (const ImGuiWindow* body = ImGui::GetCurrentWindow()) {
+            bodyNeed_ = (body->DC.CursorMaxPos.y - body->DC.CursorStartPos.y) / k + 4.0f;
+            bodyWidth_ = L.w - 2 * kSide;
+        }
         ImGui::EndChild();
 
-        // Two rows of buttons.
-        const float y0 = kPanelSize.y - kButtonsH - 2;
-        const float inner = kPanelSize.x - 30;
-        auto button = [&](const char* label, float x, float w, float y, bool enabled) {
-            ImGui::SetCursorPos(ui.size({15 + x, y}));
-            const bool clicked = classicButton(p, label, {w, 26}, 0, false, enabled);
-            if (clicked) audio().play("button");
-            return clicked;
+        if (!hint.empty()) {
+            ImGui::SetCursorPos(ui.size({kSide + 4, kTitleH + L.body + 2}));
+            ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui.px(L.w - 2 * kSide - 8));
+            ImGui::TextColored(kGold, "%s", hint.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::PopFont();
+        }
+
+        // The buttons, row by row (panel::flowButtons): never overlapping, at any text size.
+        const float y0 = L.h - kBottom - L.buttons;
+        auto row = [&](const std::vector<Spec>& specs, const std::vector<panel::Slot>& slots, float top) {
+            for (size_t i = 0; i < specs.size() && i < slots.size(); ++i) {
+                const Spec& s = specs[i];
+                ImGui::SetCursorPos(ui.size({kSide + slots[i].x, top + float(slots[i].row) * (rowH + kRowGap)}));
+                if (classicButton(p, s.label.c_str(), {slots[i].w, rowH}, s.style, s.on, s.enabled)) {
+                    audio().play("button");
+                    pressed = s.what;
+                }
+                if (s.tag) ui.tagItem(s.tag);
+                if (!s.tip.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.tip.c_str());
+            }
         };
-        const float third = (inner - 8) / 3;
-        const learn::Lesson& l = lesson();
-        const bool over = progress_.result() != learn::LessonProgress::Result::None;
-        if (l.kind == learn::LessonKind::Tutorial) {
-            const size_t step = progress_.step();
-            const learn::Step* st = step < l.steps.size() ? &l.steps[step] : nullptr;
-            if (button("Back", 0, third, y0, progress_.canGoBack())) progress_.goBack();
-            const bool last = step + 1 >= l.steps.size();
-            // On an active step that looks impossible now, Next offers to skip it.
-            const bool skip = step == progress_.active() && !progress_.canGoNext() && stuck(ui);
-            const char* next = skip ? "Skip##next" : last ? "Finish##next" : "Next##next";
-            if (button(next, third + 4, third, y0, progress_.canGoNext() || skip)) {
-                if (skip) progress_.skip(ui.rules(), ui.state(), ui.session.player());
-                else progress_.goNext(ui.rules(), ui.state(), ui.session.player());
-                seen_ = 0;
-                if (progress_.result() != learn::LessonProgress::Result::None) finished();
-            }
-            if (skip && ImGui::IsItemHovered()) ImGui::SetTooltip("Moves on without this step, for when it cannot be done any more");
-            ui.tagItem("lesson:next");
-            if (button("Read More", 2 * (third + 4), third, y0, st && !st->manual.empty())) {
-                ScreenArgs a;
-                a.text = st->manual;
-                ui.open(ScreenId::Manual, a);
-            }
-            ui.tagItem("lesson:read-more");
-        } else {
-            // Previous and next browse the shown page's series.
-            const std::vector<size_t> series = progress_.series();
-            const auto shown = progress_.page() ? std::find(series.begin(), series.end(), *progress_.page()) : series.end();
-            const bool hasPrev = shown != series.end() && shown != series.begin();
-            const bool hasNext = shown != series.end() && shown + 1 != series.end();
-            if (button("Previous", 0, third, y0, hasPrev)) progress_.showPage(*(shown - 1));
-            if (button("Next##next", third + 4, third, y0, hasNext)) progress_.showPage(*(shown + 1));
-            ui.tagItem("lesson:next");
-            if (button("Close Page", 2 * (third + 4), third, y0, progress_.page().has_value())) progress_.showPage(std::nullopt);
+        row(moving, L.moving, y0);
+        row(own, L.own, y0 + float(panel::rowCount(L.moving)) * (rowH + kRowGap));
+
+        // The keys of the panel's buttons (Settings, Controls), while no
+        // prompt is open: Next, Back, Skip when it is offered, Read More.
+        if (!pressed && !prompts.lowest) {
+            auto enabled = [&](Button b) {
+                return std::any_of(moving.begin(), moving.end(), [&](const Spec& s) { return s.what == b && s.enabled; });
+            };
+            const std::pair<Action, Button> keyed[] = {
+                {Action::LessonNext, tutorial ? Button::Next : Button::PageNext}, {Action::LessonSkip, Button::Skip},
+                {Action::LessonBack, tutorial ? Button::Back : Button::Previous}, {Action::LessonReadMore, Button::ReadMore}};
+            for (const auto& [action, button] : keyed)
+                if (keys.pressed(action) && enabled(button)) {
+                    audio().play("button");
+                    pressed = button;
+                    break;
+                }
         }
-        // Hide, Free Play (tutorials only: training games are never locked), Leave.
-        const bool tutorial = l.kind == learn::LessonKind::Tutorial;
-        const float hideW = tutorial ? 78.0f : (inner - 4) / 2;
-        const float freeW = tutorial ? inner - 2 * 78.0f - 8 : 0.0f;
-        if (button("Hide", 0, hideW, y0 + 31, true)) panelOpen_ = false;
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ctrl+H or the T button shows the panel again");
-        if (tutorial) {
-            ImGui::SetCursorPos(ui.size({15 + hideW + 4, y0 + 31}));
-            if (classicButton(p, "Free Play", {freeW, 26}, 2, settings().learnFreePlay, true)) {
-                audio().play("button");
-                settings().learnFreePlay = !settings().learnFreePlay;
-                saveSettings();
-            }
-            ui.tagItem("lesson:free-play");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Off: the lesson lets you use only what each step is about.\nOn: the whole game works while the lesson guides you.");
-        }
-        const char* leave = over ? "Learn" : tutorial ? "Leave" : "Leave Game";
-        const float leaveX = tutorial ? hideW + freeW + 8 : hideW + 4;
-        if (button(leave, leaveX, tutorial ? 78.0f : hideW, y0 + 31, true)) {
-            if (over) request_ = Request::Leave;
-            else leave_.open("Leave the lesson? Its game ends; anything not saved is lost.", "Leave Lesson");
-        }
-        if (!over && ImGui::IsItemHovered()) ImGui::SetTooltip("Leave the lesson");
-        ui.tagItem("lesson:leave");
     }
     ImGui::End();
+    if (pressed) press(ui, *pressed);
 
     // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
     if (leave_.draw(ui)) request_ = Request::Leave;
