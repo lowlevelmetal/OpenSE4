@@ -84,6 +84,8 @@ std::string requirementsText(const game::Rules& r, std::span<const ruleset::Tech
 // or its identifier and values.
 std::string abilityText(const ruleset::Ability& a, int shieldPercent = 100);
 std::string mountLabel(const game::Rules& r, int32_t mount);  // "" when unmounted
+// What a treaty means, in our words.
+std::string_view treatyDescription(game::Treaty t);
 bool containsNoCase(std::string_view haystack, std::string_view needle);
 
 // Colours shared by these windows.

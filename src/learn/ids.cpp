@@ -33,7 +33,7 @@ constexpr WindowInfo kWindows[] = {
 };
 
 // The Help window's tabs (screens/help.cpp), and its Weapons Report.
-constexpr std::array<std::string_view, 10> kHelpTabs{"components", "facilities", "ship-sizes", "unit-sizes", "tech-areas",
+constexpr std::array<std::string_view, 11> kHelpTabs{"components", "weap-mount", "facilities", "ship-sizes", "unit-sizes", "tech-areas",
                                                      "treaties",   "intel-projects", "formations", "hotkeys", "weapons"};
 
 constexpr std::array<std::string_view, 10> kSelectionKinds{"planet", "colony", "ship", "base", "unit",

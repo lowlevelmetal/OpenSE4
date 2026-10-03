@@ -585,7 +585,7 @@ A `window:` link cannot open the battle windows (`combat-replay`, `tactical-comb
 `abandon-planet`, `jettison-cargo` and `convert-resources`, which need a planet or a ship. Front matter may also
 name `main`, the main window.
 
-**Help tabs** (`help:` links): `components`, `facilities`, `ship-sizes`, `unit-sizes`,
+**Help tabs** (`help:` links): `components`, `weap-mount`, `facilities`, `ship-sizes`, `unit-sizes`,
 `tech-areas`, `treaties`, `intel-projects`, `formations`, `hotkeys`, and `weapons` for
 the Weapons Report.
 
