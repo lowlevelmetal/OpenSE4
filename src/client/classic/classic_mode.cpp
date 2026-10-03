@@ -333,7 +333,7 @@ void ClassicMode::lessonCheckReport(UiContext& ui) {
     const learn::Step* step = lesson_->activeStep();
     if (!step) return;
     static constexpr std::string_view kSituational[] = {"tactical-combat:weapons", "communicate:message-type", "communicate:treaty",
-                                                        "communicate:send", "report:colony"};
+                                                        "communicate:tone", "communicate:text", "communicate:send", "report:colony"};
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     auto onScreen = [&](const UiTag& t) {
         return t.max.x > t.min.x && t.max.y > t.min.y && t.max.x > 0 && t.max.y > 0 && t.min.x < display.x && t.min.y < display.y;

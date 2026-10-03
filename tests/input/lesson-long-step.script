@@ -1,15 +1,15 @@
 # A step that waits on the turns (docs/LEARNING.md "The lesson panel"; docs/BUILDING.md
-# "Input scripts"): tutorial 2 at step 12, "Keep exploring", waits for five systems
+# "Input scripts"): tutorial 2 at step 13, "Keep exploring", waits for five systems
 # explored. It is going as it should however long it takes: after two minutes Next is
 # still Next, not Skip. Then End Turn with the Colonies window open: its question comes up
 # over the window and takes the click.
 # 1024x768 only: at 800x600 the Colonies window covers End Turn (lesson-uncover.script plays
 # a covered outline there).
-options --tutorial=exploring-and-colonizing:12 --open=colonies --layout=1024x768 --size=1280x800
+options --tutorial=exploring-and-colonizing:13 --open=colonies --layout=1024x768 --size=1280x800
 timeout 9000
 
 wait-lesson exploring-and-colonizing
-assert-step 12
+assert-step 13
 wait 7300
 assert-present item:Next in=lesson
 assert-absent item:Skip in=lesson
