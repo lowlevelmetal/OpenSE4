@@ -876,8 +876,8 @@ private:
                 if (ImGui::InvisibleButton("##arrow", ui.size({64, 17})) && can) weaponTop_ += down ? 1 : -1;
                 ImGui::EndDisabled();
                 ImGui::PopID();
-                const int state = !can ? 3 : ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
-                if (const Sprite arrow = ui.art.region("Pictures/Game/Buttons/BigUpDownArrows.bmp", down * 64, state * 17, 64, 17, false))
+                const int look = !can ? 3 : ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+                if (const Sprite arrow = ui.art.region("Pictures/Game/Buttons/BigUpDownArrows.bmp", down * 64, look * 17, 64, 17, false))
                     drawSprite(dl, arrow, d.at(aAt), d.at(aAt + Vec2{64, 17}));
             }
         }
