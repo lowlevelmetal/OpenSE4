@@ -241,7 +241,10 @@ private:
         cfg.port = static_cast<uint16_t>(port_);
         cfg.humanSlots = humans_;
         cfg.localPlayer = net::LocalPlayer{name_, password_, mySetup(ctx)};
-        cfg.setup.seed = ctx.seed;
+        // The galaxy's seed from the cryptographic random source: players
+        // must not guess it (the views they get leave it out). A seed the
+        // player gave (--seed) is used as given.
+        cfg.setup.seed = ctx.seedGiven ? ctx.seed : net::randomId();
         cfg.setup.options.systemCount = 0;  // rolled from the quadrant size
         cfg.setup.options.quadrantSize = quadrantSize_;
         cfg.setup.options.simultaneous = turnStyle_ == 0;

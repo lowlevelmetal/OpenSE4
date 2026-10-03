@@ -28,6 +28,7 @@ struct MenuContext {
     float fbScale = 1.0f;
     double time = 0.0;
     uint64_t seed = 1;
+    bool seedGiven = false;  // the player gave `seed` (--seed, or a script run); else it is the clock's
     AppControl* app = nullptr;
 
     // Starts a game (the mode switches to the main window).
