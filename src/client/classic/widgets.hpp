@@ -14,6 +14,11 @@ namespace opense4::client::classic {
 void lamp(UiContext& ui, bool on, float frameSize = 13.0f);
 // A full-width row with a lamp and a label; clicking toggles *value. Returns true when toggled.
 bool lampToggle(UiContext& ui, const char* label, bool* value, bool enabled = true);
+// An on/off row of an options list as Combat Replay Options draws them (spec
+// 07 session 5, observed): an 18 px row with a 16 x 17 check box at `indent`
+// frame pixels from the row's left, holding the green lamp when on, and the
+// label after it. A click on the row flips `value`; true when it did.
+bool checkRow(UiContext& ui, const char* label, bool* value, float indent = 5.0f, bool enabled = true);
 
 // ImGui::InputText on a std::string (up to maxLength bytes).
 bool inputString(const char* label, std::string& value, size_t maxLength = 200, ImGuiInputTextFlags flags = 0);

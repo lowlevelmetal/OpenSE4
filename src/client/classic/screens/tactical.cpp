@@ -1315,7 +1315,10 @@ private:
 // ---- Combat Options (spec 06 §1.10.3) ---------------------------------------------------------------------------
 
 // Per computer, shared with the Options window where the rows are the same;
-// Stop Combat only in the simulator.
+// Stop Combat only in the simulator. "Options In Use" at (15,38) over the
+// list at (15,56), 560 x 400 (spec 06 §1.10.3); its headings and check boxes
+// as Combat Replay Options shows them (spec 07 session 5; inferred: the same
+// rows in this window).
 class TacticalOptionsScreen final : public Screen {
 public:
     bool modal() const override { return true; }
@@ -1323,30 +1326,31 @@ public:
     bool draw(UiContext& ui) override {
         Dialog d(ui, screenTitle(ScreenId::TacticalOptions), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
-        d.beginContent();
         ClassicSettings& prefs = settings();
         bool changed = false;
+        ImGui::SetCursorScreenPos(d.at({15, 38}));
         ImGui::TextColored(kLabelBlue, "Options In Use");
-        beginList(ui, "##options", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::SetCursorScreenPos(d.at({15, 56}));
+        beginList(ui, "##options", ui.size({560, 400}), 18);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0));
         heading(ui, "Animation");
-        changed |= lampToggle(ui, "Animate ship movement in combat", &prefs.animateCombatMovement);
-        ImGui::Spacing();
+        changed |= checkRow(ui, "Animate ship movement in combat", &prefs.animateCombatMovement);
         heading(ui, "Sound");
-        changed |= lampToggle(ui, "Sound On", &prefs.soundOn);
+        changed |= checkRow(ui, "Sound On", &prefs.soundOn);
         // Lit only when music is on and Settings.txt `Allow CD Music` allows it (spec 06 §1.10.3).
         bool music = musicLampLit(prefs, musicAllowed(ui.rules().data().settings));
-        if (lampToggle(ui, "Music On", &music)) {
+        if (checkRow(ui, "Music On", &music)) {
             prefs.musicOn = music;
             changed = true;
         }
-        ImGui::Spacing();
         heading(ui, "Tactical Combat");
-        changed |= lampToggle(ui, "Fast Tactical Combat", &prefs.fastTacticalCombat);
-        changed |= lampToggle(ui, "Show Group Identifiers", &prefs.showGroupIdentifiers);
-        changed |= lampToggle(ui, "Show Viewing Rectangle on Map", &prefs.showViewingRectangle);
-        changed |= lampToggle(ui, "Center Map on Current Ship", &prefs.centerOnCurrentShip);
-        changed |= lampToggle(ui, "Show Weapon To Hit Chances", &prefs.showToHitChances);
-        changed |= lampToggle(ui, "Show Grid", &prefs.tacticalGrid);
+        changed |= checkRow(ui, "Fast Tactical Combat", &prefs.fastTacticalCombat);
+        changed |= checkRow(ui, "Show Group Identifiers", &prefs.showGroupIdentifiers);
+        changed |= checkRow(ui, "Show Viewing Rectangle on Map", &prefs.showViewingRectangle);
+        changed |= checkRow(ui, "Center Map on Current Ship", &prefs.centerOnCurrentShip);
+        changed |= checkRow(ui, "Show Weapon To Hit Chances", &prefs.showToHitChances);
+        changed |= checkRow(ui, "Show Grid", &prefs.tacticalGrid);
+        ImGui::PopStyleVar();
         endList(ui);
         if (changed) saveSettings();
         d.beginButtons();
