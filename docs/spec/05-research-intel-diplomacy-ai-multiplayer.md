@@ -2362,16 +2362,16 @@ binary).
       remaining defence fleets stay idle. (A step meant to cancel the orders of fleets
       bound for a warp point looks only at idle fleets and so never acts.) Observed under a
       debugger (2026-10-03, game 10): in such turns 13 % of the fleets had no orders after
-      the start-of-turn ministers. The engine differs: `planFleets` (`ai_military.cpp`)
-      takes the raw enemy-in-territory objects, in their own order and whatever their
-      system, each with the nearest idle non-attack fleet, and then gives every fleet left
-      over, attack fleets included, the next defend-list entry from the top, a patrol or an
-      exploration; 2 % of our fleets were idle in such turns. In 120 scratch games with the
-      original's rule, our computers won 4.1 decided battles away from colonies per empire
-      and 25 turns of turns 51–100 instead of 5.0 (the original 2.1–3.4), lost 5.9 ships in
-      battles instead of 7.8 and 1.8 colonies instead of 1.2 (the original 1.8–3.6), and
-      spent 67 % of turns 51–100 in Defend (Short Term) instead of 72 % (70 %) (questions
-      68, 69).
+      the start-of-turn ministers. OpenSE4 follows this since 2026-10-03 (`planFleets`,
+      `ai_military.cpp`). It used to take the raw enemy-in-territory objects, in their own
+      order and whatever their system, each with the nearest idle non-attack fleet, and then
+      give every fleet left over, attack fleets included, the next defend-list entry from the
+      top, a patrol or an exploration; 2 % of its fleets were idle in such turns. In 120
+      scratch games with the original's rule, our computers won 4.1 decided battles away
+      from colonies per empire and 25 turns of turns 51–100 instead of 5.0 (the original
+      2.1–3.4), lost 5.9 ships in battles instead of 7.8 and 1.8 colonies instead of 1.2 (the
+      original 1.8–3.6), and spent 67 % of turns 51–100 in Defend (Short Term) instead of
+      72 % (70 %) (questions 68, 69; spec 07 "Pace after the second debugger round").
     - Otherwise fleets head for the state's goal: the staging system in Prepare for
       Attack, the target with the most candidates in Attack, and the secured system in
       Secure Holdings. In other states they go to the top attack candidate if its owner

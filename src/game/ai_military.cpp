@@ -332,24 +332,54 @@ void planFleets(Planner& p) {
         if (const Fleet* f = p.st.fleet(keep[k]); f && fleetOrders(p.st, *f).empty() && !f->members.empty()) idleFleets.push_back(k);
         else if (f) p.busyFleets.insert(keep[k]);
     std::vector<uint8_t> done(keep.size(), 0);
-    if (p.state == AiState::DefendShortTerm) {
-        for (const Threat& threat : p.sit.enemyInTerritory) {
+    // The defend list's entries in the systems to defend, in the fleets'
+    // order (the defend list's: strongest threat first after the jump,
+    // population and planet keys, spec 05 §7.2).
+    std::vector<const DefendEntry*> toDefend;
+    for (const DefendEntry& d : p.sit.defendEntries)
+        if (std::find(p.sit.defend.begin(), p.sit.defend.end(), d.where.system) != p.sit.defend.end()) toDefend.push_back(&d);
+    if (p.state == AiState::DefendShortTerm && !p.sit.enemyInTerritory.empty()) {
+        // Defend (Short Term) with enemies listed (confirmed: binary): each
+        // entry gets the nearest idle defence fleet (never an attack fleet)
+        // with members at its location, by jumps from the fleet's system to
+        // the entry's, the earlier in the fleet list on a tie. Each fleet
+        // takes one entry and no limit by the entry's threat applies, so the
+        // entry's assigned strength plays no part. The order is the stored
+        // Attack when the fleet stands in the entry's sector, otherwise a
+        // Seek to that sector, or in a simultaneous game after the entry's
+        // latest object.
+        std::map<SystemId, std::vector<int>> jumpsFromFleet;
+        for (const DefendEntry* d : toDefend) {
             std::optional<size_t> best;
             int bestJ = 0;
             for (size_t k : idleFleets) {
                 if (done[k] || attack[k]) continue;
-                const Vehicle* leader = fleetLeader(p.st, *p.st.fleet(keep[k]));
-                const int j = p.jumpsFrom(leader->location.system)[threat.system.index()];
+                const Fleet& f = *p.st.fleet(keep[k]);
+                if (fleetMembersAt(p.st, f).empty()) continue;
+                auto it = jumpsFromFleet.find(f.location.system);
+                if (it == jumpsFromFleet.end()) it = jumpsFromFleet.emplace(f.location.system, p.jumpsFrom(f.location.system)).first;
+                const int j = it->second[d->where.system.index()];
                 if (!best || j < bestJ) {
                     best = k;
                     bestJ = j;
                 }
             }
-            if (!best) continue;
-            auto orders = engage(p, threat);
-            if (!orders.empty() && p.setFleetOrders(keep[*best], std::move(orders))) done[*best] = 1;
+            if (!best) break;  // every defence fleet has an entry
+            const Fleet& f = *p.st.fleet(keep[*best]);
+            const Threat& latest = d->latest;
+            const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
+            const Order order = f.location == d->where                             ? attackHere()
+                                : p.st.options.simultaneous && target              ? seekAfter(*target)
+                                : p.st.options.simultaneous && latest.planet.valid() ? seekPlanet(p.st, latest.planet)
+                                                                                     : seekOrder(d->where);
+            if (p.setFleetOrders(keep[*best], {order})) done[*best] = 1;
         }
-    } else {
+        // Then the minister gives no other fleet orders this turn: no state
+        // goal, patrol or exploration; the attack fleets and the defence
+        // fleets left over stay idle (confirmed: binary).
+        return;
+    }
+    {
         const std::vector<Order> goal = stateGoal(p);
         if (!goal.empty())
             for (size_t k : idleFleets)
@@ -357,9 +387,6 @@ void planFleets(Planner& p) {
     }
     // Leftover fleets defend (the defend list's entries, strongest threat
     // first), then patrol (defence-led) or explore.
-    std::vector<const DefendEntry*> toDefend;
-    for (const DefendEntry& d : p.sit.defendEntries)
-        if (std::find(p.sit.defend.begin(), p.sit.defend.end(), d.where.system) != p.sit.defend.end()) toDefend.push_back(&d);
     size_t defendAt = 0;
     for (size_t k : idleFleets) {
         if (done[k]) continue;

@@ -2471,6 +2471,82 @@ TEST_CASE("ai: a fleet whose leader is unfit is disbanded") {
     CHECK(disbanded());
 }
 
+TEST_CASE("ai: in Defend (Short Term) each entry gets the nearest idle defence fleet, and the fleets get no other orders") {
+    // Spec 05 §7.5 AI_Fleets *Orders* (confirmed: binary, questions 68, 69).
+    TempTree t("defendfleets");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 3\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 50\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u}, enemy{1u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    // Two empty sectors of the home system.
+    std::vector<Location> empty;
+    for (int x = 0; x < kSystemSize && empty.size() < 2; ++x)
+        for (int y = 0; y < kSystemSize && empty.size() < 2; ++y) {
+            const Location at{home.system, Sector{x, y}};
+            bool taken = false;
+            for (ObjectId o : s.galaxy.system(home.system).objects) taken = taken || s.galaxy.object(o).sector == at.sector;
+            if (!taken) empty.push_back(at);
+        }
+    REQUIRE(empty.size() == 2);
+    const Location side = empty[0], corner = empty[1];
+    const Location next{s.galaxy.neighbors(home.system).front(), Sector{kSystemCenter, kSystemCenter}};
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    auto fleetAt = [&](Location at) {
+        const VehicleId v = addTestVehicle(s, r, warship, at).id;
+        REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {v}}).ok);
+        return s.fleets.back().id;
+    };
+    // Three fleets, half for defence: fleet 1 attacks, fleets 2 and 3 defend.
+    const FleetId strike = fleetAt(home);
+    const FleetId far = fleetAt(next);
+    const FleetId guard = fleetAt(home);
+    // Intruders in the home system: the entry at the homeworld comes first
+    // (our population at stake), then the strongest of the other two.
+    const DesignId raider = addWarship(s, r, enemy, "Raider");
+    addTestVehicle(s, r, raider, home);
+    VehicleId sideLatest;
+    for (int i = 0; i < 3; ++i) sideLatest = addTestVehicle(s, r, raider, side).id;
+    addTestVehicle(s, r, raider, corner);
+    sight::updateKnowledge(r, s);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::DefendShortTerm);
+
+    auto plan = [&]() {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        REQUIRE(p.sit.defendEntries.size() == 3);
+        REQUIRE(p.sit.defendEntries[0].where == home);
+        REQUIRE(p.sit.defendEntries[1].where == side);
+        REQUIRE(p.sit.defendEntries[1].latest.vehicle == sideLatest);
+        ai::detail::planFleets(p);
+        std::map<FleetId, std::vector<Order>> orders;
+        for (FleetId f : {strike, far, guard}) orders[f] = fleetOrders(p.st, *p.st.fleet(f));
+        return orders;
+    };
+    auto orders = plan();
+    // The homeworld's entry: the defence fleet standing there attacks at once
+    // (the stored Attack). The next entry gets the other defence fleet, a jump
+    // away, a Seek after the entry's latest object, whatever the threat; the
+    // third entry gets none.
+    CHECK(orders[guard] == std::vector<Order>{ai::detail::attackHere()});
+    REQUIRE(orders[far].size() == 1);
+    CHECK(orders[far].front().kind == OrderKind::Seek);
+    CHECK(orders[far].front().vehicle == sideLatest);
+    // The attack fleet stays idle: no goal, patrol or exploration.
+    CHECK(orders[strike].empty());
+    // In a turn-based game the Seek goes to the entry's sector.
+    s.options.simultaneous = false;
+    orders = plan();
+    REQUIRE(orders[far].size() == 1);
+    CHECK(orders[far].front().kind == OrderKind::Seek);
+    CHECK_FALSE(orders[far].front().vehicle.valid());
+    CHECK(orders[far].front().location == side);
+    CHECK(orders[strike].empty());
+}
+
 TEST_CASE("ai: troop transports reload at the nearest colony with troops") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(13, 2, 12, true);
