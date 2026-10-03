@@ -4092,7 +4092,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       frontier point and the Warp through it, which lasts until done. In scratch runs the
       explorers' rule for them (the Warp only when the fleet's movement reaches the
       distance) kept our computers in Exploration 22 % of turns 51–100 instead of 13 %
-      (spec 07 "Pace after the movement rules");
+      (spec 07 "Pace after the movement rules"); settled since: the player's Move To and the
+      Warp (§7.5 `AI_Fleets` *Orders*, confirmed: binary, followed since 2026-10-03);
     - in a turn-based game the explorer's movement points "at that moment" are those of
       this turn's run: the points come back only after the ministers (§8 step 3), so what
       the last movement left is usually 0, and no explorer that moved the turn before

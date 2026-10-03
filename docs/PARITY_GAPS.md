@@ -654,7 +654,8 @@ implemented that day; spec 07 "Pace after the movement rules" measures them:
 
 OpenSE4 choices where the text leaves room are spec 05 question 64: a turn-based Seek's
 end, the Exploration minister's stop when no point is free, an explorer on its point, the
-movement a turn-based explorer compares, the fleets' Seek and Warp when they explore, the
+movement a turn-based explorer compares, the fleets' Seek and Warp when they explore (a Move
+To and the Warp since 2026-10-03, confirmed), the
 borrowed targets' settle test, and where a planet made during play goes on its system's
 list.
 
