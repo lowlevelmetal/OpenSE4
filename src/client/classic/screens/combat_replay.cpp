@@ -47,10 +47,11 @@ CombatPace replayPace(const game::Rules& r, const game::InterfaceOptions& o) { r
 // 5): the grid of eight rows, 216 x 289 at (W-232,226), and the 109 x 26
 // buttons Options at (W-232,534) and Next at (W-119,534). Placed from the
 // frame's bottom, so they keep their distance to the overview map on every
-// frame (inferred for 800 x 600).
-constexpr int kGridRows = 8;
+// frame; on a shorter frame the grid has the rows that fit under the piece
+// panel (inferred for 800 x 600: six).
 float buttonsY() { return frameH() - 234; }
-float gridY() { return buttonsY() - 19 - kCell * float(kGridRows) - 1; }
+int gridRows() { return std::clamp(int((buttonsY() - 19 - 1 - (kPanelY + kPanelH + 2)) / kCell), 1, 8); }
+float gridY() { return buttonsY() - 19 - kCell * float(gridRows()) - 1; }
 
 class CombatReplayScreen final : public Screen {
 public:
@@ -100,7 +101,7 @@ public:
         if (hovered) piecePanel(ui, d, paint, *hovered);
         const Vec2 grid{sideX(), gridY()};
         if (settings().replayEvents) eventList(ui, d, paint, grid);
-        else weaponGridLines(ui, d, grid, kGridRows);
+        else weaponGridLines(ui, d, grid, gridRows());
         // Options and Next side by side; Next dims after the last combat turn.
         ImGui::SetCursorScreenPos(d.at({sideX(), buttonsY()}));
         if (classicButton(ui, "Options", {109, 26})) ui.open(ScreenId::CombatReplayOptions);
@@ -229,7 +230,7 @@ private:
     // the battle's summary, in the weapon grid's place (spec 06 §7 Q39).
     void eventList(UiContext& ui, const Dialog& d, const CombatMapPainter& paint, Vec2 at) {
         ImGui::SetCursorScreenPos(d.at(at));
-        beginList(ui, "##events", ui.size({kSideW, kCell * float(kGridRows) + 1}), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+        beginList(ui, "##events", ui.size({kSideW, kCell * float(gridRows()) + 1}), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(kLabelBlue, "%s", playback_.round() > 0 ? std::format("Combat Turn {}", playback_.round()).c_str() : "Before the battle");
         const int round = playback_.round();

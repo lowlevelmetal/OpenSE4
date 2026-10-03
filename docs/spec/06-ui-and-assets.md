@@ -3103,7 +3103,9 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     Tactical Combat frame) and the list is an option, off by default: "List each combat
     turn's events and the summary" under an "OpenSE4" heading in Combat Replay Options,
     kept per computer, puts it in the empty weapon grid's place, the summary at its end
-    once the last combat turn has played.
+    once the last combat turn has played. The places were seen at 1024×768; on an 800×600
+    frame ours keeps the buttons 234 px above the bottom and the grid the rows that fit
+    under the piece panel, six (inferred).
 40. **Pointers.** Ours draws its own move arrows and crosshairs: no loader for the
     install's `.cur` files exists yet. **Answer:** the game loads all twelve `.cur` files
     at start-up and uses no other pointer. `Normal` is the pointer of every window,
