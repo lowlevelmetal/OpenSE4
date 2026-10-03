@@ -7,17 +7,17 @@ wait-lesson diplomacy-and-intelligence
 click item:Next in=lesson
 wait-step 2
 # 2 Send out an explorer: the first attack ship, Explore.
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 click tag:order:explore
 wait-step 3
 # 3 First contact: the second ship explores too; end turns, sending ships that have arrived
 # exploring again, until an empire is met.
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 click tag:order:explore
 repeat 20 until { empires_met = 1 }
-  click tag:cycle:ship@75%,50%
+  click item:next in=tag:cycle:ship
   click tag:order:explore
-  click tag:cycle:ship@75%,50%
+  click item:next in=tag:cycle:ship
   click tag:order:explore
   click tag:button:end-turn
   click item:Yes in="End Turn"

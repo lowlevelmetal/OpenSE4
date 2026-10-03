@@ -292,8 +292,10 @@ WINEDLLOVERRIDES="winemenubuilder.exe=d" wine build/dist-windows/tests/opense4_t
 client. Its events are made into SDL events at each frame boundary and handled exactly like
 a player's mouse and keyboard: the mode's filter first (a tutorial's input lock), then Dear
 ImGui. During a run the frame time is fixed (1/60 s), the seed is fixed (1 unless the script
-or the command line gives one), the player's own mouse and keyboard are ignored and no sound
-plays, so a script does the same thing every time. When a step fails, the client prints the
+or the command line gives one), the player's own mouse and keyboard are ignored (the desktop
+pointer too, which Dear ImGui's SDL backend otherwise reads while the window has the focus)
+and no sound plays, so a script does the same thing every time, on every platform: the
+Windows build plays the same scripts in the same number of frames. When a step fails, the client prints the
 script line, why it failed and where the game was, saves a picture of that frame and exits
 with 1; a script that ends exits with 0 and prints
 `input-script FILE: passed (N steps, M frames)`.
@@ -345,8 +347,10 @@ Targets name what a pointer step points at:
 
 After a target, `@x,y` picks a point in its rectangle in frame pixels from the left and top
 (negative: from the right and bottom) or as `x%,y%`; `in=<scope>` keeps to widgets drawn by a
-window (its id, `main`, `lesson`, `front`) or in a Dear ImGui window of that name; `nth=N`
-takes the N-th match. A pointer step waits for its target (and for a widget to be enabled),
+window (its id, `main`, `lesson`, `front`), in a Dear ImGui window of that name, or inside a
+UI tag (`item:next in=tag:cycle:ship`, the ship selector's right arrow); `nth=N` takes the
+N-th match. Prefer tags and labels to places: other windows' layouts move, their tags and
+labels stay. A pointer step waits for its target (and for a widget to be enabled),
 aims again if it moved just before the press, and keeps separate clicks at one place apart
 from a double click.
 

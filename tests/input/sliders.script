@@ -21,7 +21,7 @@ repeat 2 until { command = "SetStrategy" }
 end
 # The Firing page's sliders lie below its table: the wheel scrolls to them.
 click item:Firing in=strategies
-wheel item:window:Strategies@60%,60% -10
+wheel item:"Rank (1 = first)" in=strategies -10
 wait-for item:"Damage Percent Per Ship" in=strategies
 repeat 2 until { command = "SetStrategy" }
   drag item:"Damage Percent Per Ship"@-3,50% in=strategies to item:"Damage Percent Per Ship"@50%,50% in=strategies

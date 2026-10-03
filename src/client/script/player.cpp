@@ -34,8 +34,16 @@ std::string joined(const std::vector<std::string>& list, size_t most = 30) {
     return out.empty() ? "none" : out;
 }
 
-bool scopeMatches(const Item& item, std::string_view scope) {
+// in=<scope>: the window that drew the widget (its id, main, lesson, front), a
+// Dear ImGui window by name, or tag:<name>, a UI tag the widget lies in.
+bool scopeMatches(const Item& item, std::string_view scope, const Probe& probe) {
     if (scope.empty()) return true;
+    if (scope.starts_with("tag:")) {
+        const ImVec2 c((item.min.x + item.max.x) * 0.5f, (item.min.y + item.max.y) * 0.5f);
+        for (const Box& b : probe.tagBoxes(scope.substr(4)))
+            if (c.x >= b.min.x && c.x < b.max.x && c.y >= b.min.y && c.y < b.max.y) return true;
+        return false;
+    }
     return item.scope == scope || labelMatches(item.window, scope);
 }
 
@@ -225,11 +233,11 @@ Player::Status Player::run(const Step& st, const Probe& probe, FrameOutput& out)
         case Op::Dump: {
             // What a script can name now: the UI tags, and the widgets (of one scope) in their order.
             out.messages.push_back("tags: " + joined(probe.tagNames(), 500));
-            if (const std::string lock = probe.lockDescription(); !lock.empty()) out.messages.push_back("lock: " + lock);
+            if (const std::string lock = probe.lockDescription(); !lock.empty()) out.messages.push_back(lock);
             std::map<std::string, int> seen;
             std::string list;
             for (const Item& item : probe.items()) {
-                if (!st.text.empty() && !scopeMatches(item, st.text)) continue;
+                if (!st.text.empty() && !scopeMatches(item, st.text, probe)) continue;
                 const int n = ++seen[item.scope + "\n" + item.label];
                 // Where it is, in frame pixels.
                 const ImVec2 o = probe.framePoint(0, 0);
@@ -605,7 +613,7 @@ std::optional<Player::Resolved> Player::resolve(const Target& t, const Probe& pr
         case TargetKind::Item: {
             std::vector<std::string> labels;
             for (const Item& item : probe.items()) {
-                if (!scopeMatches(item, t.scope)) continue;
+                if (!scopeMatches(item, t.scope, probe)) continue;
                 if (labelMatches(item.label, t.name)) {
                     boxes.push_back({item.min, item.max});
                     dim.push_back(item.disabled);

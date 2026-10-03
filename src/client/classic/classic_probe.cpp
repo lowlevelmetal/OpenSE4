@@ -4,6 +4,8 @@
 
 #include "client/classic/classic_mode.hpp"
 
+#include <imgui_internal.h>
+
 #include <algorithm>
 #include <format>
 
@@ -111,11 +113,20 @@ std::vector<std::string> ClassicMode::logLines() const {
 bool ClassicMode::typing() const { return ImGui::GetIO().WantTextInput; }
 
 std::string ClassicMode::lockDescription() const {
+    // Where Dear ImGui has the pointer, in frame pixels, then the lock.
+    const ImVec2 m = ImGui::GetIO().MousePos;
+    std::string pointer = "pointer away; ";
+    if (ImGui::IsMousePosValid(&m)) {
+        const Vec2 f = mapping_.fromFb(Vec2{m.x, m.y} * fbScale_);
+        pointer = std::format("pointer at {:.0f},{:.0f}", f.x, f.y);
+        if (const ImGuiWindow* w = ImGui::GetCurrentContext()->HoveredWindow) pointer += std::format(" over {}", w->Name);
+        pointer += "; ";
+    }
     const LockState& l = lock_.state();
-    if (!l.active) return "off";
+    if (!l.active) return pointer + "lock off";
     std::string keys;
     for (const KeyChord& k : l.keys) keys += (keys.empty() ? "" : " ") + chordName(k);
-    return std::format("on: {} areas, {} to look at; keys: {}{}{}{}", l.areas.size(), l.lookAreas.size(), keys.empty() ? "none" : keys,
+    return pointer + std::format("lock on: {} areas, {} to look at; keys: {}{}{}{}", l.areas.size(), l.lookAreas.size(), keys.empty() ? "none" : keys,
                        l.windowKeys ? "; Esc and Enter for the window in front" : "", l.prompt ? "; a prompt's keys" : "", l.typing ? "; typing" : "");
 }
 

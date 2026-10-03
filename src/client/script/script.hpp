@@ -49,7 +49,7 @@ struct Offset {
 struct Target {
     TargetKind kind = TargetKind::Tag;
     std::string name;     // the tag, label, window id, or query
-    std::string scope;    // items: in=<scope> (a window id, "main", "lesson", "front", or a Dear ImGui window's name)
+    std::string scope;    // items: in=<scope> (a window id, "main", "lesson", "front", a Dear ImGui window's name, or tag:<name>)
     int nth = 1;          // the n-th match (1-based)
     Offset offset;        // @x,y
     float x = 0, y = 0;   // at:x,y and sector:x,y

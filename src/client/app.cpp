@@ -293,7 +293,10 @@ bool App::frame() {
     // showed (docs/BUILDING.md "Input scripts").
     const script::Probe* probe = mode_->probe();
     script::FrameOutput scripted;
-    if (player_ && probe) {
+    if (player_ && !probe) {
+        log::error("This mode cannot play input scripts");
+        running = false;
+    } else if (player_) {
         scripted = player_->tick(*probe);
         for (const std::string& m : scripted.messages) {
             if (m.starts_with("FAILED")) log::error("{}", m);
@@ -315,7 +318,13 @@ bool App::frame() {
         for (const script::InputEvent& e : scripted.events) {
             SDL_Event ev = script::toSdlEvent(e, window);
             if (recorder_ && probe) recorder_->event(ev, *probe, time_);   // recording a script run tests the recorder
-            switch (handleEvent(ev, running)) {
+            const EventVerdict verdict = handleEvent(ev, running);
+            // Where Dear ImGui has the pointer now: the event's place, or nowhere when the lock said so.
+            const bool pointer = e.kind == script::InputEvent::Kind::Motion || e.kind == script::InputEvent::Kind::ButtonDown ||
+                                 e.kind == script::InputEvent::Kind::ButtonUp || e.kind == script::InputEvent::Kind::Wheel;
+            if (pointer && verdict == EventVerdict::PointerAway) scriptPointer_ = ImVec2(-FLT_MAX, -FLT_MAX);
+            else if (pointer && verdict == EventVerdict::Pass) scriptPointer_ = e.pos;
+            switch (verdict) {
                 case EventVerdict::Pass: verdicts.push_back(script::Verdict::Pass); break;
                 case EventVerdict::Drop: verdicts.push_back(script::Verdict::Drop); break;
                 case EventVerdict::PointerAway: verdicts.push_back(script::Verdict::PointerAway); break;
@@ -350,7 +359,12 @@ bool App::frame() {
     ImGui_ImplSDL3_NewFrame();
     if (automation) {
         ImGui::GetIO().DeltaTime = dt;
-        if (!player_) ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+        // The pointer is the script's, or none: while the window has the focus and
+        // no button is down, the SDL backend puts the desktop's pointer in on the
+        // video drivers that report it (Windows, X11, macOS), which would move
+        // the script's pointer to wherever the real mouse is.
+        const ImVec2 p = player_ ? scriptPointer_ : ImVec2(-FLT_MAX, -FLT_MAX);
+        ImGui::GetIO().AddMousePosEvent(p.x, p.y);
     }
     ImGui::NewFrame();
     const AppSettings& prefs = appSettings();

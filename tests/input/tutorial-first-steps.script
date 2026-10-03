@@ -48,7 +48,7 @@ click tag:help:close
 wait-closed help
 wait-step 12
 # 12 Your ships: the right arrow of the ship selector.
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 wait-step 13
 # 13 The orders: an explanation.
 click item:Next in=lesson

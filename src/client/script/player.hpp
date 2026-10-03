@@ -67,7 +67,7 @@ public:
     virtual std::vector<std::string> logLines() const = 0;    // the player's log, "title: text"
     // A text field has the keyboard (typed text goes there).
     virtual bool typing() const = 0;
-    // The tutorial input lock, described (for dump).
+    // Where the pointer is and the tutorial input lock, described (for dump).
     virtual std::string lockDescription() const { return {}; }
     // A condition (docs/LEARNING.md "Conditions") over the game; "since"
     // counters count from `since`. Nothing (with `error`) without a game.

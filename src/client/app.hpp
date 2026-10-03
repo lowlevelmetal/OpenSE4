@@ -9,6 +9,9 @@
 #include "gfx/imgui_renderer.hpp"
 #include "gfx/renderer2d.hpp"
 
+#include <imgui.h>
+
+#include <cfloat>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -118,6 +121,7 @@ private:
     std::unique_ptr<script::Player> player_;
     std::unique_ptr<script::Recorder> recorder_;
     std::vector<std::filesystem::path> captures_;   // this frame's picture goes to these files
+    ImVec2 scriptPointer_{-FLT_MAX, -FLT_MAX};      // where the script has the pointer
     double time_ = 0.0;
     uint64_t lastTicks_ = 0;
     int frameCount_ = 0;

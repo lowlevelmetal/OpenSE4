@@ -7,7 +7,7 @@ wait-lesson fleets-and-movement
 click item:Next in=lesson
 wait-step 2
 # 2 Select an attack ship: the ship arrows (the first ship is an attack ship).
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 wait-step 3
 # 3 Fleet Transfer, with its order button.
 click tag:order:fleet-transfer
@@ -24,7 +24,7 @@ assert { command = "JoinFleet" }
 # 6 Your fleet: close Fleet Transfer, select an attack ship again.
 click tag:fleet-transfer:close
 wait-closed fleet-transfer
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 wait-step 7
 # 7 Move the fleet: Move To, then an empty sector at the far end of the system view (more
 # sectors away than the fleet moves in a turn).
@@ -45,7 +45,7 @@ click sector:warp-point
 key Alt+1
 wait-step 10
 # 10 Go to the waypoint: select the fleet again, Ctrl+1.
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 key Ctrl+1
 wait-step 11
 # 11 The order list: View Orders.

@@ -272,6 +272,19 @@ TEST_CASE("input script: offsets, items, scopes and the n-th match") {
     CHECK(events[6].pos.y == 110);
 }
 
+TEST_CASE("input script: widgets inside a UI tag") {
+    FakeProbe probe;
+    probe.tags["cycle:ship"] = {Box{ImVec2(0, 0), ImVec2(60, 20)}};
+    probe.tags["cycle:fleet"] = {Box{ImVec2(0, 20), ImVec2(60, 40)}};
+    probe.itemList = {item("prev", "main", ImVec2(0, 0), ImVec2(20, 20)), item("next", "main", ImVec2(40, 0), ImVec2(60, 20)),
+                      item("prev", "main", ImVec2(0, 20), ImVec2(20, 40)), item("next", "main", ImVec2(40, 20), ImVec2(60, 40))};
+    Player p(parse("click item:next in=tag:cycle:fleet\n"), "/tmp");
+    const auto events = play(p, probe);
+    REQUIRE(p.finished());
+    CHECK(events[0].pos.x == 50);
+    CHECK(events[0].pos.y == 30);
+}
+
 TEST_CASE("input script: a press the input lock refuses fails the step") {
     FakeProbe probe;
     probe.tags["command:help"] = {Box{ImVec2(0, 0), ImVec2(10, 10)}};

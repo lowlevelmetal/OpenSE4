@@ -57,7 +57,7 @@ click tag:designs:close
 wait-closed designs
 wait-step 11
 # 11 Build it: the homeworld (colony arrows), then the Build Queue order.
-click tag:cycle:colony@75%,50%
+click item:next in=tag:cycle:colony
 click tag:order:build-queue
 wait-window set-queue
 wait-step 12

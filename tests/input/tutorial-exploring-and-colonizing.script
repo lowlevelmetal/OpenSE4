@@ -7,13 +7,13 @@ wait-lesson exploring-and-colonizing
 click item:Next in=lesson
 wait-step 2
 # 2 Select an attack ship: the right arrow of the ship selector.
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 wait-step 3
 # 3 Explore.
 click tag:order:explore
 wait-step 4
 # 4 The second attack ship: the next ship, and Explore.
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 click tag:order:explore
 wait-step 5
 # 5 New systems: an explanation.
@@ -57,9 +57,9 @@ click item:Yes in="End Turn"
 wait-turn 2
 wait 3
 click tag:log:close optional
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 click tag:order:explore
-click tag:cycle:ship@75%,50%
+click item:next in=tag:cycle:ship
 click tag:order:explore
 click tag:button:end-turn
 click item:Yes in="End Turn"
