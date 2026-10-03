@@ -61,6 +61,12 @@ public:
     void skip(const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
     // Shows a step as if the ones before it were done (checking content).
     void jumpTo(size_t step, const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
+    // How far the active step has come, while it waits for something that
+    // can be counted (systems explored, turns, items): its condition's
+    // counters (learn::counters). Empty for a step without a condition, one
+    // that is done, and while an earlier step is shown.
+    std::vector<Counter> counters(const game::Rules& rules, const game::GameState& state, game::EmpireId empire,
+                                  const ClientFacts& client) const;
 
     // ---- Training games ----
     bool objectiveDone(size_t i) const { return i < objectiveDone_.size() && objectiveDone_[i] != 0; }

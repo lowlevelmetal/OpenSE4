@@ -177,9 +177,13 @@ public:
             const bool tactical = d.button("Tactical") || key == true;
             if (strategic) start(ui);
             else if (tactical) return answerTactical(ui);
-        } else if (d.button("Begin", !begun_)) {
-            if (index_ == kStrategicQuestion) start(ui);
-            else begun_ = true;
+        } else {
+            const bool begin = d.button("Begin", !begun_);
+            ui.tagItem("strategic-combat:begin");
+            if (begin) {
+                if (index_ == kStrategicQuestion) start(ui);
+                else begun_ = true;
+            }
         }
         if (d.close(over) || !d.keepOpen()) {
             // A simulation is dropped; a game battle fought here answers its question.

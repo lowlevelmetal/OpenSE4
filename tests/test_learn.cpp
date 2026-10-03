@@ -14,12 +14,14 @@
 #include "learn/ids.hpp"
 #include "learn/library.hpp"
 #include "learn/progress.hpp"
+#include "learn/tokens.hpp"
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
 #include <filesystem>
 #include <format>
+#include <sstream>
 
 using namespace opense4;
 using namespace opense4::learn;
@@ -298,6 +300,96 @@ TEST_CASE("learn: starting_ships gives the lesson's player ships of its Quick St
     CHECK(problemsText(problems).find("starting_ships") != std::string::npos);
 }
 
+TEST_CASE("learn: a lesson's recap and what it suggests next") {
+    std::vector<Diagnostic> problems;
+    const auto l = parseLesson("title = \"t\"\nlearned = [\"Found a colony\", \"Send {design:Attack Ship} exploring\"]\n"
+                               "suggest = \"training:land-rush\"\n[[step]]\ntitle = \"s\"\ntext = \"Press **Finish**.\"\n",
+                               "r.toml", LessonKind::Tutorial, problems);
+    REQUIRE_MESSAGE(l.has_value(), problemsText(problems));
+    CHECK(l->learned == std::vector<std::string>{"Found a colony", "Send {design:Attack Ship} exploring"});
+    CHECK(l->suggest == "training:land-rush");
+    const auto ref = parseLessonRef(l->suggest);
+    REQUIRE(ref);
+    CHECK(ref->kind == LessonKind::Training);
+    CHECK(ref->slug == "land-rush");
+    CHECK_FALSE(parseLessonRef("land-rush"));
+    CHECK_FALSE(parseLessonRef("training:"));
+
+    problems.clear();
+    CHECK_FALSE(parseLesson("title = \"t\"\nlearned = \"all of it\"\nsuggest = \"land-rush\"\n[[step]]\ntitle = \"s\"\ntext = \"x\"\n", "r.toml",
+                            LessonKind::Tutorial, problems));
+    CHECK(hasProblem(problems, 2, "'learned' must be a list"));
+    CHECK(hasProblem(problems, 3, "'suggest' names a lesson"));
+    problems.clear();
+    CHECK_FALSE(parseLesson("title = \"t\"\nlearned = [\"\", \"{design:Warship}\"]\n[[step]]\ntitle = \"s\"\ntext = \"x\"\n", "r.toml",
+                            LessonKind::Tutorial, problems));
+    CHECK(hasProblem(problems, 2, "each of 'learned' must be a sentence"));
+    CHECK(hasProblem(problems, 2, "unknown design type 'Warship'"));
+
+    // validate() checks that the suggestion exists; following() prefers it to the next in the list.
+    MemorySource source;
+    source.add("tutorials/01-a.toml", std::string_view("title = \"A\"\n[[step]]\ntitle = \"s\"\ntext = \"Press **Finish**.\"\n"));
+    source.add("tutorials/02-b.toml",
+               std::string_view("title = \"B\"\nsuggest = \"training:c\"\n[[step]]\ntitle = \"s\"\ntext = \"Press **Finish**.\"\n"));
+    source.add("tutorials/03-d.toml",
+               std::string_view("title = \"D\"\nsuggest = \"training:nowhere\"\n[[step]]\ntitle = \"s\"\ntext = \"Press **Finish**.\"\n"));
+    source.add("training/01-c.toml", std::string_view("title = \"C\"\n[[objective]]\ntext = \"o\"\nwhen = { turn = 3 }\n"));
+    Library lib = loadLibrary(source);
+    const auto found = validate(lib);
+    CHECK(found.size() == 1);
+    CHECK(hasProblem(found, 0, "'suggest' names no lesson: 'training:nowhere'"));
+    CHECK(lib.following(*lib.lesson(LessonKind::Tutorial, "a"))->slug == "b");
+    CHECK(lib.following(*lib.lesson(LessonKind::Tutorial, "b"))->slug == "c");
+    CHECK(lib.following(*lib.lesson(LessonKind::Tutorial, "d")) == nullptr);
+    CHECK(lib.following(*lib.lesson(LessonKind::Training, "c")) == nullptr);
+}
+
+TEST_CASE("learn: {design:<type>} tokens show the player's design names") {
+    CHECK(tokenProblems("Click {design:Attack Ship} twice.").empty());
+    CHECK(tokenProblems("Braces { like these } and {Capital:x} are text.").empty());
+    CHECK(tokenProblems("{design:Warship}").front().find("unknown design type 'Warship'") != std::string::npos);
+    CHECK(tokenProblems("{colour:red}").front().find("unknown token") != std::string::npos);
+    CHECK(tokenProblems("{design:Attack Ship").front().find("no closing brace") != std::string::npos);
+    CHECK(tokensAsWords("Click {design:Attack Ship} twice.") == "Click Name twice.");
+
+    // In a lesson's text, a bad token is an error with its line.
+    std::vector<Diagnostic> problems;
+    CHECK_FALSE(parseLesson("title = \"t\"\n[[step]]\ntitle = \"s\"\ntext = \"Pick **{design:Scout}**.\"\n", "tok.toml", LessonKind::Tutorial,
+                            problems));
+    CHECK(hasProblem(problems, 4, "unknown design type 'Scout'"));
+
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(7, 2, 12, true);
+    const game::EmpireId me{0u};
+    // No such design: the type itself.
+    CHECK(designNameOfType(s, me, "Attack Ship").empty());
+    CHECK(expandTokens("Click {design:Attack Ship}.", s, me) == "Click Attack Ship.");
+    const game::DesignId first = addTestDesign(s, r, me, "Lancer", "Test Frigate", {"Test Bridge", "Test Engine"});
+    s.designs[first.index()].designType = "Attack Ship";
+    CHECK(expandTokens("Click {design:Attack Ship} twice.", s, me) == "Click Lancer twice.");
+    // The newest design wins; of one turn's designs, the last made; obsolete ones never.
+    const game::DesignId second = addTestDesign(s, r, me, "Pike", "Test Frigate", {"Test Bridge", "Test Engine"});
+    s.designs[second.index()].designType = "Attack Ship";
+    CHECK(designNameOfType(s, me, "attack ship") == "Pike");
+    s.designs[second.index()].obsolete = true;
+    CHECK(designNameOfType(s, me, "Attack Ship") == "Lancer");
+    CHECK(designNameOfType(s, game::EmpireId{1u}, "Attack Ship").empty());   // another empire's designs are not ours
+    // "Colony": the race's own colony ship first.
+    const game::DesignId ice = addTestDesign(s, r, me, "Frost", "Test Frigate", {"Test Bridge", "Test Engine"});
+    const game::DesignId rock = addTestDesign(s, r, me, "Stone", "Test Frigate", {"Test Bridge", "Test Engine"});
+    s.designs[ice.index()].designType = "Colony (Ice)";
+    s.designs[rock.index()].designType = "Colony (Rock)";
+    s.empires[0].race.nativeSurface = "Ice";
+    CHECK(designNameOfType(s, me, "Colony") == "Frost");
+    s.empires[0].race.nativeSurface = "Rock";
+    CHECK(designNameOfType(s, me, "Colony") == "Stone");
+    // Every span of every block.
+    Document doc = parseMarkdown("Click **{design:Attack Ship}**.\n\n- then {design:Colony}\n", "t", false);
+    const std::vector<Block> out = expandTokens(doc.blocks, s, me);
+    CHECK(plainText(out).find("Click Lancer.") != std::string::npos);
+    CHECK(plainText(out).find("then Stone") != std::string::npos);
+}
+
 TEST_CASE("learn: lesson errors name the file and line") {
     std::vector<Diagnostic> problems;
     const char* text = R"(title = "Bad"
@@ -372,6 +464,46 @@ when = { all = [{ tab = "log:nothing" }, { option = "loud" }, { treaty = "friend
                       "treaty = \"non-aggression\", design_hull_chosen = true, design_components = 2, planets_captured = 1 }\n",
                       "ok.toml", LessonKind::Training, problems));
     CHECK_MESSAGE(problems.empty(), problemsText(problems));
+}
+
+TEST_CASE("learn: design_type qualifies selected, order and command") {
+    std::vector<Diagnostic> problems;
+    // Beside a key it qualifies, in one table.
+    Condition c = condition("{ order = \"explore\", design_type = \"Attack Ship\" }");
+    CHECK(c.op == Condition::Op::Fact);
+    CHECK(c.fact == Fact::Order);
+    CHECK(c.designType == "Attack Ship");
+    CHECK(describe(c) == "order = \"explore\", design_type = \"Attack Ship\"");
+    c = condition("{ selected = \"ship\", design_type = \"Colony\" }");
+    CHECK(c.fact == Fact::Selected);
+    CHECK(c.designType == "Colony");
+    // With more keys every qualifying key takes it; the others do not.
+    c = condition("{ command = \"QueueAdd\", window = \"set-queue\", design_type = \"Defense Base\" }");
+    REQUIRE(c.op == Condition::Op::All);
+    REQUIRE(c.children.size() == 2);
+    for (const Condition& x : c.children) CHECK(x.designType == (x.fact == Fact::Command ? "Defense Base" : ""));
+
+    const char* text = R"(title = "Types"
+[[objective]]
+text = "o"
+when = { all = [{ design_type = "Attack Ship" }, { order = "explore", design_type = "Scout" }, { command = "SetResearch", design_type = "Attack Ship" }, { selected = "planet", design_type = "Attack Ship" }, { design_type_chosen = "Warship" }] }
+)";
+    CHECK_FALSE(parseLesson(text, "types.toml", LessonKind::Training, problems));
+    CHECK(hasProblem(problems, 4, "'design_type' qualifies a 'selected', 'order' or 'command' key"));
+    CHECK(hasProblem(problems, 4, "'design_type' takes a design type"));
+    CHECK(hasProblem(problems, 4, "cannot qualify the command 'SetResearch'"));
+    CHECK(hasProblem(problems, 4, "qualifies a selected vehicle"));
+    CHECK(hasProblem(problems, 4, "unknown design type 'Warship'"));
+
+    CHECK(isDesignTypeName("Attack Ship"));
+    CHECK(isDesignTypeName("attack ship"));
+    CHECK(isDesignTypeName("Colony"));
+    CHECK_FALSE(isDesignTypeName("Scout"));
+    CHECK(designTypeMatches("Colony (Rock)", "Colony"));
+    CHECK(designTypeMatches("Attack Ship", "attack ship"));
+    CHECK_FALSE(designTypeMatches("Colony (Rock)", "Colony (Ice)"));
+    CHECK_FALSE(designTypeMatches("Colony", "Colony (Ice)"));
+    CHECK_FALSE(designTypeMatches("Attack Ship", "Colony"));
 }
 
 TEST_CASE("learn: a step's allow list and keys") {
@@ -618,6 +750,123 @@ TEST_CASE("learn conditions: a tactical battle begun and its orders") {
     CHECK_FALSE(ev("{ battle_order = \"fire\" }"));
 }
 
+TEST_CASE("learn conditions: design_type counts only vehicles and designs of that type") {
+    Eval ev;
+    game::GameState& s = ev.state;
+    const game::Rules& r = ev.rules;
+    const game::Location home{ev.empire().homeSystem, s.galaxy.object(homeworld(s, ev.me).planet).sector};
+    const game::DesignId attack = addTestDesign(s, r, ev.me, "Lancer", "Test Frigate", {"Test Bridge", "Test Engine"});
+    const game::DesignId colony = addTestDesign(s, r, ev.me, "Seeder", "Test Frigate", {"Test Bridge", "Test Engine"});
+    s.designs[attack.index()].designType = "Attack Ship";
+    s.designs[colony.index()].designType = "Colony (Rock)";
+    const game::VehicleId a1 = addTestVehicle(s, r, attack, home).id;
+    const game::VehicleId a2 = addTestVehicle(s, r, attack, home).id;
+    const game::VehicleId c1 = addTestVehicle(s, r, colony, home).id;
+
+    // A selection: the selected vehicle's design decides.
+    ev.client.selected = {"ship"};
+    ev.client.selections = 1;
+    ev.client.selectedVehicle = c1;
+    CHECK(ev("{ selected = \"ship\" }"));
+    CHECK_FALSE(ev("{ selected = \"ship\", design_type = \"Attack Ship\" }"));
+    CHECK(ev("{ selected = \"ship\", design_type = \"Colony\" }"));
+    ev.client.selectedVehicle = a1;
+    CHECK(ev("{ selected = \"ship\", design_type = \"Attack Ship\" }"));
+
+    // An order: the ship (or every ship of the fleet) it went to.
+    auto explore = [](game::VehicleId v, game::FleetId f = {}) {
+        game::cmd::SetOrders o;
+        o.vehicle = v;
+        o.fleet = f;
+        o.orders.push_back(game::Order{game::OrderKind::Explore});
+        return o;
+    };
+    ev.tracker.issued(explore(c1));
+    CHECK(ev("{ order = \"explore\" }"));
+    CHECK_FALSE(ev("{ order = \"explore\", design_type = \"Attack Ship\" }"));
+    CHECK_FALSE(ev("{ command = \"SetOrders\", design_type = \"Attack Ship\" }"));
+    ev.tracker.issued(explore(a2));
+    CHECK(ev("{ order = \"explore\", design_type = \"Attack Ship\" }"));
+    CHECK(ev("{ command = \"SetOrders\", design_type = \"Attack Ship\" }"));
+    game::Fleet f;
+    f.id = game::FleetId{static_cast<uint32_t>(s.fleets.size())};
+    f.owner = ev.me;
+    f.members = {a1, c1};
+    s.fleets.push_back(f);
+    ev.mark = markNow(r, s, ev.me, ev.tracker);
+    ev.tracker.issued(explore({}, f.id));
+    CHECK_FALSE(ev("{ order = \"explore\", design_type = \"Attack Ship\" }"));   // not every member is one
+    s.fleets.back().members = {a1, a2};
+    CHECK(ev("{ order = \"explore\", design_type = \"Attack Ship\" }"));
+
+    // Commands that name designs and vehicles.
+    ev.mark = markNow(r, s, ev.me, ev.tracker);
+    game::cmd::QueueAdd add;
+    add.item.kind = game::QueueItem::Kind::Facility;
+    ev.tracker.issued(add);
+    CHECK(ev("{ command = \"QueueAdd\" }"));
+    CHECK_FALSE(ev("{ command = \"QueueAdd\", design_type = \"Colony\" }"));
+    add.item.kind = game::QueueItem::Kind::Vehicle;
+    add.item.design = colony;
+    ev.tracker.issued(add);
+    CHECK(ev("{ command = \"QueueAdd\", design_type = \"Colony\" }"));
+    CHECK_FALSE(ev("{ command = \"QueueAdd\", design_type = \"Attack Ship\" }"));
+    game::cmd::CreateDesign made;
+    made.design.designType = "Attack Ship";
+    ev.tracker.issued(made);
+    CHECK(ev("{ command = \"CreateDesign\", design_type = \"Attack Ship\" }"));
+    ev.tracker.issued(game::cmd::JoinFleet{f.id, c1});
+    CHECK_FALSE(ev("{ command = \"JoinFleet\", design_type = \"Attack Ship\" }"));
+    ev.tracker.issued(game::cmd::JoinFleet{f.id, a2});
+    CHECK(ev("{ command = \"JoinFleet\", design_type = \"Attack Ship\" }"));
+}
+
+TEST_CASE("learn conditions: the design being made: its type and its name") {
+    Eval ev;
+    // Only while the Create Design window is open.
+    ev.client.designType = "Attack Ship";
+    ev.client.designNamed = true;
+    CHECK_FALSE(ev("{ design_type_chosen = \"Attack Ship\" }"));
+    CHECK_FALSE(ev("{ design_named = true }"));
+    ev.client.designComponents = 0;
+    CHECK(ev("{ design_type_chosen = \"Attack Ship\" }"));
+    CHECK_FALSE(ev("{ design_type_chosen = \"Defense Base\" }"));
+    CHECK(ev("{ design_named = true }"));
+    ev.client.designNamed = false;
+    CHECK(ev("{ design_named = false }"));
+    ev.client.designType.clear();
+    CHECK_FALSE(ev("{ design_type_chosen = \"Attack Ship\" }"));
+    CHECK(describe(condition("{ design_type_chosen = \"Attack Ship\" }")) == "design_type_chosen = \"Attack Ship\"");
+}
+
+TEST_CASE("learn conditions: counters tell how far a count or a wait has come") {
+    Eval ev;
+    const int64_t explored = ev.value(Fact::SystemsExplored);
+    auto count = [&](std::string_view table) { return counters(condition(table), EvalContext{ev.rules, ev.state, ev.me, ev.client, ev.tracker, ev.mark}); };
+    auto list = count(std::format("{{ systems_explored = {} }}", explored + 4));
+    REQUIRE(list.size() == 1);
+    CHECK(list[0].fact == Fact::SystemsExplored);
+    CHECK(list[0].current == explored);
+    CHECK(list[0].target == explored + 4);
+    CHECK(list[0].text() == std::format("Systems explored: {} of {}", explored, explored + 4));
+    // Turns since the step began; the value never shows above its target.
+    ev.state.turn += 5;
+    list = count("{ turns_passed = 3 }");
+    REQUIRE(list.size() == 1);
+    CHECK(list[0].text() == "Turns: 3 of 3");
+    // Every counted fact of all and any, each once; nothing under not, nothing that is not a number.
+    list = count("{ any = [{ treaty = \"non-aggression\" }, { treaties = 1 }, { turns_passed = 8 }, { not = { colonies = 9 } }, "
+                 "{ turns_passed = 9 }] }");
+    REQUIRE(list.size() == 2);
+    CHECK(list[0].label == "Treaties");
+    CHECK(list[1].text() == "Turns: 5 of 8");
+    CHECK(count("{ window = \"research\" }").empty());
+    CHECK(count("{ all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }").size() == 2);
+    // Every numeric fact has a name for the progress line.
+    for (const FactInfo& f : facts())
+        if (f.value == FactValue::Number) CHECK_MESSAGE(!f.counter.empty(), f.key);
+}
+
 TEST_CASE("learn access: a done condition needs the tags that bring it about") {
     auto access = [](std::vector<std::string> tags, std::vector<std::string> keys = {}) {
         StepAccess a;
@@ -656,6 +905,13 @@ TEST_CASE("learn access: a done condition needs the tags that bring it about") {
     CHECK(ok("{ not = { window = \"tactical-combat\" } }", access({"tactical-combat:end-turn"})));   // the battle played out
     CHECK(ok("{ battle_order = \"move\" }", access({"tactical-combat:map"})));
     CHECK_FALSE(ok("{ battle_order = \"move\" }", access({"tactical-combat:end-turn"})));
+    // The design being made: its type box, its name box (or the list of names).
+    CHECK(ok("{ design_type_chosen = \"Attack Ship\" }", access({"create-design:type"})));
+    CHECK_FALSE(ok("{ design_type_chosen = \"Attack Ship\" }", access({"create-design:hull"})));
+    CHECK(ok("{ design_named = true }", access({"create-design:suggest"})));
+    CHECK_FALSE(ok("{ design_named = true }", access({"create-design:save"})));
+    // The homeworld's sector and its row in the report select the colony.
+    CHECK(ok("{ selected = \"colony\" }", access({"sector:home", "report:colony"})));
     // All needs every part, any one of them.
     CHECK_FALSE(ok("{ all = [{ window = \"research\" }, { turns_passed = 1 }] }", access({"command:research"})));
     CHECK(ok("{ any = [{ window = \"research\" }, { turns_passed = 1 }] }", access({"command:research"})));
@@ -1033,6 +1289,30 @@ TEST_CASE("learn progress: jumping to a step marks the ones before done") {
     CHECK_FALSE(p.completed(2));
     p.jumpTo(99, r, s, game::EmpireId{0u});
     CHECK(p.step() == 3);
+}
+
+TEST_CASE("learn progress: the active step's counters") {
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(7, 2, 12, true);
+    const game::EmpireId me{0u};
+    LessonProgress p(fixtureLesson(LessonKind::Tutorial, "tutorials/01-first-steps.toml"), r, s, me);
+    const ClientFacts client;
+    // Step 1 waits for Next, step 2 for a window: nothing to count.
+    CHECK(p.counters(r, s, me, client).empty());
+    CHECK(p.goNext(r, s, me));
+    CHECK(p.counters(r, s, me, client).empty());
+    // The last step waits for a turn; its counter counts from where it began, and only while it is shown.
+    p.jumpTo(3, r, s, me);
+    auto list = p.counters(r, s, me, client);
+    REQUIRE(list.size() == 1);
+    CHECK(list[0].text() == "Turns: 0 of 1");
+    p.goBack();
+    CHECK(p.counters(r, s, me, client).empty());
+    CHECK(p.goNext(r, s, me));
+    s.turn += 1;
+    p.update(r, s, me, client);
+    CHECK(p.result() == LessonProgress::Result::Done);
+    CHECK(p.counters(r, s, me, client).empty());
 }
 
 TEST_CASE("learn progress: training objectives, pages, hints and the result") {

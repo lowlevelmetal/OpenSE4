@@ -124,7 +124,7 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
             return missing(std::format("the tag '{}'", c.text));
         case Fact::Selected:
             if (c.text == "colony" || c.text == "planet") {
-                if (anyOf(a, {"panel:system", "panel:report", "cycle:colony"})) return std::nullopt;
+                if (anyOf(a, {"panel:system", "panel:report", "cycle:colony", "sector:home", "report:colony"})) return std::nullopt;
             } else if (c.text == "ship" || c.text == "base" || c.text == "unit" || c.text == "fleet") {
                 if (anyOf(a, {"panel:system", "panel:report", "cycle:ship", "cycle:fleet"})) return std::nullopt;
             } else if (anyOf(a, {"panel:system", "panel:galaxy"})) {
@@ -163,6 +163,12 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
         case Fact::DesignHullChosen:
             if (a.has("create-design:hull")) return std::nullopt;
             return missing("create-design:hull");
+        case Fact::DesignTypeChosen:
+            if (a.has("create-design:type")) return std::nullopt;
+            return missing("create-design:type");
+        case Fact::DesignNamed:
+            if (a.has("create-design:name") || a.has("create-design:suggest")) return std::nullopt;
+            return missing("create-design:name or create-design:suggest");
         case Fact::SimulatorOwners:
             if (a.has("combat-simulator:owners") && a.has("combat-simulator:items")) return std::nullopt;
             return missing("combat-simulator:owners and combat-simulator:items");

@@ -940,6 +940,11 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     ui.tagFrame("panel:system", geo.systemPanel);
     ui.tagFrame("panel:report", geo.reportPanel);
     ui.tagFrame("panel:galaxy", geo.galaxyPanel);
+    // And the homeworld's sector, while its system is shown.
+    for (const auto& c : ui.state().colonies)
+        if (c && c->owner == ui.session.player() && c->homeworld)
+            if (const game::Location at = game::locationOf(ui.state().galaxy, c->planet); at.system == shown_)
+                ui.tagFrame("sector:home", Rect::fromPosSize(cellOrigin(at.sector), {geo.cell, geo.cell}));
     // The picker takes the keys while it is open (Esc closes it and nothing else).
     const bool choosing = chooser_.has_value();
     if (choosing) drawChooser(ui);
@@ -1255,6 +1260,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 reportFromList_ = true;
                 ++selections_;
             }
+            if (const game::Colony* col = s.colony(id); col && col->owner == me) ui.tagItem("report:colony");   // for lessons
             if (script::collectingItems()) {
                 // Input scripts name the rows by kind: report:colony (the player's), report:planet, report:object.
                 const game::Colony* col = s.colony(id);

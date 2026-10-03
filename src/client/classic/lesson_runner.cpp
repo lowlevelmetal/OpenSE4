@@ -5,7 +5,9 @@
 #include "client/classic/screens/markdown_view.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
+#include "client/script/items.hpp"
 #include "core/hash.hpp"
+#include "learn/tokens.hpp"
 
 #include <imgui_internal.h>
 #include <SDL3/SDL.h>
@@ -150,10 +152,15 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     h.add(facts.selections);
     for (const std::string& t : facts.tabs) h.add(std::string_view(t));
     h.add(facts.designComponents.value_or(-1)).add(facts.designHullChosen).add(facts.simulatorOwners).add(facts.simulatorItems);
+    h.add(std::string_view(facts.designType)).add(facts.designNamed).add(facts.selectedVehicle.value);
     h.add(facts.battleBegun).add(facts.battleOrders.size());
     if (h.value() == seen_ || progress_.result() != learn::LessonProgress::Result::None) return;
     seen_ = h.value();
     const learn::LessonProgress::Changes ch = progress_.update(ui.rules(), ui.state(), session.player(), facts);
+    // The active step's progress line ("Systems explored: 3 of 5").
+    counters_.clear();
+    for (const learn::Counter& c : progress_.counters(ui.rules(), ui.state(), session.player(), facts))
+        counters_ += (counters_.empty() ? "" : "   ") + c.text();
     if (ch.stepChanged) audio().play("button");
     if (ch.stepChanged || ch.pageShown || ch.hintShown) panelOpen_ = true;
     if (ch.finished) finished();
@@ -255,13 +262,17 @@ void LessonRunner::tutorialBody(UiContext& ui) {
         ImGui::TextColored(kGold, "(reading back: Next returns to step %zu)", progress_.active() + 1);
     }
     heading(ui, st.title.c_str());
+    // The progress line: what the active step counts while it waits (turns, systems, items).
+    if (step == progress_.active() && !counters_.empty()) ImGui::TextColored(kGold, "%s", counters_.c_str());
     ImGui::Spacing();
     // While the game is locked to the step, a link cannot open a window around it.
     MarkdownOptions options;
     const bool locked = locking();
     options.canFollow = [locked](const learn::Link& link) { return !locked || link.kind != learn::Link::Kind::Window; };
     options.cannotFollow = "Use the outlined button: the lesson locks the game (Free Play unlocks it)";
-    if (auto clicked = drawMarkdown(ui.painter(), st.text, options)) followLink(ui, *clicked);
+    // {design:<type>} tokens show the player's own design names.
+    const std::vector<learn::Block> text = learn::expandTokens(st.text, ui.state(), ui.session.player());
+    if (auto clicked = drawMarkdown(ui.painter(), text, options)) followLink(ui, *clicked);
     ImGui::Spacing();
     if (progress_.result() == learn::LessonProgress::Result::Done) ImGui::TextColored(kGood, "Lesson complete.");
     else if (st.done && progress_.completed(step)) ImGui::TextColored(kGood, "Done.");
@@ -276,7 +287,7 @@ void LessonRunner::trainingBody(UiContext& ui) {
         const learn::Hint& h = l.hints[*hint];
         ImGui::TextColored(kGold, "%s", h.title.c_str());
         MarkdownOptions options;
-        if (auto clicked = drawMarkdown(p, h.text, options)) followLink(ui, *clicked);
+        if (auto clicked = drawMarkdown(p, learn::expandTokens(h.text, ui.state(), ui.session.player()), options)) followLink(ui, *clicked);
         if (ImGui::SmallButton("OK")) progress_.dismissHint();
         ImGui::Separator();
     }
@@ -303,7 +314,7 @@ void LessonRunner::trainingBody(UiContext& ui) {
         if (series.size() > 1) ImGui::TextColored(imColorV(palette::kSecondary), "%zu of %zu", index + 1, series.size());
         ImGui::Spacing();
         MarkdownOptions options;
-        if (auto clicked = drawMarkdown(p, pg.text, options)) followLink(ui, *clicked);
+        if (auto clicked = drawMarkdown(p, learn::expandTokens(pg.text, ui.state(), ui.session.player()), options)) followLink(ui, *clicked);
     }
 }
 
@@ -512,22 +523,48 @@ void LessonRunner::drawResult(UiContext& ui) {
     if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | kPromptFlags))
         return;
     using Result = learn::LessonProgress::Result;
+    const learn::Lesson& l = lesson();
     const Result result = progress_.result();
     const bool won = result == Result::Done || result == Result::Won;
+    const bool tutorial = l.kind == learn::LessonKind::Tutorial;
     const char* title = result == Result::Done ? "Lesson complete" : result == Result::Won ? "Training game won" : "Training game lost";
     ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
     ImGui::TextColored(won ? kGood : kBad, "%s", title);
     ImGui::PopFont();
-    ImGui::TextUnformatted(lesson().title.c_str());
+    ImGui::TextUnformatted(l.title.c_str());
     ImGui::Spacing();
     if (!progress_.why().empty()) ImGui::TextWrapped("%s", progress_.why().c_str());
+    // The recap: what the lesson taught.
+    if (won && !l.learned.empty()) {
+        ImGui::TextColored(kLabelBlue, "%s", tutorial ? "What you learned" : "What you practised");
+        ImGui::PushTextWrapPos(0.0f);
+        for (const std::string& item : l.learned) {
+            ImGui::Bullet();
+            ImGui::TextUnformatted(learn::expandTokens(item, ui.state(), ui.session.player()).c_str());
+        }
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+    }
     if (won) dimWrapped("The Learn window marks it done. You can keep playing this game.");
+    // What to play next: the lesson's suggestion, else the next one of its kind.
+    const learn::Lesson* next = won && ui.learn ? ui.learn->library.following(l) : nullptr;
+    if (next) {
+        const bool training = next->kind == learn::LessonKind::Training;
+        const std::string line = std::format("Next{}: {} ({} min)", training && tutorial ? ", a training game" : "", next->title, next->minutes);
+        ImGui::TextColored(kGold, "%s", line.c_str());
+        script::reportItem(line);   // input scripts check it by its text
+        if (!next->summary.empty()) dimWrapped(next->summary.c_str());
+    } else if (won) {
+        dimWrapped(tutorial ? "That was the last lesson. The Training tab of the Learn window has practice games."
+                            : "That was the last training game. Start a new game from the intro screen when you are ready.");
+    }
     ImGui::Spacing();
     const ImVec2 size(ui.px(118), ui.px(26));
-    const learn::Lesson* next = ui.learn ? ui.learn->library.next(lesson().kind, lesson().slug) : nullptr;
-    if (won && next) {
-        if (ImGui::Button("Next Lesson", size)) {
-            request_ = Request::Next;
+    if (next) {
+        // "Next Lesson" only for a lesson; a training game is a game.
+        const char* label = next->kind == learn::LessonKind::Tutorial ? "Next Lesson" : tutorial ? "Training Game" : "Next Game";
+        if (ImGui::Button(label, size)) {
+            ui.requests.startLesson = {next->kind, next->slug};
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();

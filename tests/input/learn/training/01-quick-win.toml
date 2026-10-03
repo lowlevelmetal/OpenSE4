@@ -3,6 +3,8 @@
 title = "Quick win"
 summary = "Queue one research project to win."
 minutes = 1
+# The result dialog's recap.
+learned = ["Queue a research project from the Research window"]
 
 [setup]
 seed = 404

@@ -125,18 +125,24 @@ constexpr std::string_view kOtherTags[] = {
     // The main window's panels, the report's tabs and the selection cycles.
     "panel:system", "panel:report", "panel:galaxy", "panel:commands", "panel:orders", "panel:report-tabs",
     "cycle:ship", "cycle:fleet", "cycle:colony",
+    // Single things in the main window: the homeworld's sector in the system
+    // view (while the home system is shown), the player's colony in the
+    // report's list of a sector.
+    "sector:home", "report:colony",
     // Widgets inside windows.
     "research:areas", "research:queue", "research:tech-tree",
     "set-queue:available", "set-queue:queue",
     "queues:list",
     "designs:list", "designs:create", "designs:simulator",
-    "create-design:hull", "create-design:name", "create-design:suggest", "create-design:on-design", "create-design:components",
+    "create-design:hull", "create-design:type", "create-design:name", "create-design:suggest", "create-design:on-design",
+    "create-design:components",
     "create-design:warnings", "create-design:save",
     "fleet-transfer:ships", "fleet-transfer:fleets", "fleet-transfer:create-fleet",
     "combat-simulator:vehicles", "combat-simulator:items", "combat-simulator:owners", "combat-simulator:strategies",
     "combat-simulator:begin",
     "tactical-combat:map", "tactical-combat:piece", "tactical-combat:weapons", "tactical-combat:target",
     "tactical-combat:options", "tactical-combat:orders", "tactical-combat:auto", "tactical-combat:end-turn",
+    "strategic-combat:begin",
     "planets:list", "planets:filters", "planets:no-sys-to-avoid", "planets:send-colony-ship",
     "colonies:list",
     "research:divide-evenly", "research:repeat",

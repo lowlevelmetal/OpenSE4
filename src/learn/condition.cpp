@@ -1,6 +1,8 @@
 #include "learn/condition.hpp"
 
 #include "core/hash.hpp"
+#include "datafile/datafile.hpp"
+#include "game/ai_data.hpp"
 #include "game/design.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
@@ -23,35 +25,38 @@ constexpr FactInfo kFacts[] = {
     {Fact::Command, "command", T, true, "the player gave a command of that type (game/commands.hpp)"},
     {Fact::Order, "order", T, true, "the player gave a ship, fleet or planet an order of that kind"},
     {Fact::Tab, "tab", T, false, "an open window shows that tab or filter (\"<window>:<tab>\")"},
-    {Fact::DesignComponents, "design_components", N, false, "the design being built in the open Create Design window has N components"},
+    {Fact::DesignComponents, "design_components", N, false, "the design being built in the open Create Design window has N components",
+     "Components on the design"},
     {Fact::DesignHullChosen, "design_hull_chosen", F, false, "the player picked a hull in the open Create Design window's Size list"},
-    {Fact::SimulatorOwners, "simulator_owners", N, false, "the open Combat Simulator has items for N races"},
-    {Fact::SimulatorItems, "simulator_items", N, false, "the open Combat Simulator has N items in the battle"},
+    {Fact::DesignTypeChosen, "design_type_chosen", T, false, "the open Create Design window's Design Type box shows that design type"},
+    {Fact::DesignNamed, "design_named", F, false, "the open Create Design window's Design Name box holds a name no other design has"},
+    {Fact::SimulatorOwners, "simulator_owners", N, false, "the open Combat Simulator has items for N races", "Races with items"},
+    {Fact::SimulatorItems, "simulator_items", N, false, "the open Combat Simulator has N items in the battle", "Items in the battle"},
     {Fact::BattleBegun, "battle_begun", F, false, "the open Tactical Combat window's battle has begun (Begin was pressed)"},
     {Fact::BattleOrder, "battle_order", T, true, "the player gave an order of that kind in a tactical battle"},
-    {Fact::Turn, "turn", N, false, "the game has reached turn N (the first turn is 0)"},
-    {Fact::TurnsPassed, "turns_passed", N, true, "N turns have ended"},
-    {Fact::Colonies, "colonies", N, false, "the empire has N colonies"},
-    {Fact::Population, "population", N, false, "the empire's colonies hold N million people"},
-    {Fact::Ships, "ships", N, false, "the empire has N ships (mothballed ones not counted)"},
-    {Fact::Bases, "bases", N, false, "the empire has N bases (mothballed ones not counted)"},
-    {Fact::Units, "units", N, false, "the empire has N units (fighters, satellites, mines, troops, drones, platforms)"},
-    {Fact::Fleets, "fleets", N, false, "the empire has N fleets"},
-    {Fact::Designs, "designs", N, false, "the empire has N designs that are not obsolete"},
-    {Fact::ResearchQueued, "research_queued", N, false, "N research projects are queued"},
-    {Fact::ConstructionQueued, "construction_queued", N, false, "N items wait in the empire's construction queues"},
-    {Fact::TechsResearched, "techs_researched", N, true, "N tech levels have been researched"},
-    {Fact::SystemsExplored, "systems_explored", N, false, "the empire has explored N systems (its home system included)"},
-    {Fact::EmpiresMet, "empires_met", N, false, "the empire has met N other empires"},
-    {Fact::Treaties, "treaties", N, false, "the empire holds N treaties (Non-Aggression or better)"},
+    {Fact::Turn, "turn", N, false, "the game has reached turn N (the first turn is 0)", "Turn"},
+    {Fact::TurnsPassed, "turns_passed", N, true, "N turns have ended", "Turns"},
+    {Fact::Colonies, "colonies", N, false, "the empire has N colonies", "Colonies"},
+    {Fact::Population, "population", N, false, "the empire's colonies hold N million people", "Population (millions)"},
+    {Fact::Ships, "ships", N, false, "the empire has N ships (mothballed ones not counted)", "Ships"},
+    {Fact::Bases, "bases", N, false, "the empire has N bases (mothballed ones not counted)", "Bases"},
+    {Fact::Units, "units", N, false, "the empire has N units (fighters, satellites, mines, troops, drones, platforms)", "Units"},
+    {Fact::Fleets, "fleets", N, false, "the empire has N fleets", "Fleets"},
+    {Fact::Designs, "designs", N, false, "the empire has N designs that are not obsolete", "Designs"},
+    {Fact::ResearchQueued, "research_queued", N, false, "N research projects are queued", "Research projects"},
+    {Fact::ConstructionQueued, "construction_queued", N, false, "N items wait in the empire's construction queues", "Items in the queues"},
+    {Fact::TechsResearched, "techs_researched", N, true, "N tech levels have been researched", "Tech levels researched"},
+    {Fact::SystemsExplored, "systems_explored", N, false, "the empire has explored N systems (its home system included)", "Systems explored"},
+    {Fact::EmpiresMet, "empires_met", N, false, "the empire has met N other empires", "Empires met"},
+    {Fact::Treaties, "treaties", N, false, "the empire holds N treaties (Non-Aggression or better)", "Treaties"},
     {Fact::Treaty, "treaty", T, false, "the empire holds a treaty of that kind with another empire (\"war\": is at war with one)"},
     {Fact::EnemyShipsDestroyed, "enemy_ships_destroyed", N, true,
-     "N ships or bases of other empires were destroyed in battles the empire fought"},
-    {Fact::PlanetsCaptured, "planets_captured", N, true, "the empire took N colonies from empires it is hostile to"},
-    {Fact::Score, "score", N, false, "the empire's score is N"},
-    {Fact::Minerals, "minerals", N, false, "the empire has N minerals stored"},
-    {Fact::Organics, "organics", N, false, "the empire has N organics stored"},
-    {Fact::Radioactives, "radioactives", N, false, "the empire has N radioactives stored"},
+     "N ships or bases of other empires were destroyed in battles the empire fought", "Enemy ships destroyed"},
+    {Fact::PlanetsCaptured, "planets_captured", N, true, "the empire took N colonies from empires it is hostile to", "Planets captured"},
+    {Fact::Score, "score", N, false, "the empire's score is N", "Score"},
+    {Fact::Minerals, "minerals", N, false, "the empire has N minerals stored", "Minerals"},
+    {Fact::Organics, "organics", N, false, "the empire has N organics stored", "Organics"},
+    {Fact::Radioactives, "radioactives", N, false, "the empire has N radioactives stored", "Radioactives"},
     {Fact::Option, "option", T, false, "that setting of the empire is on"},
 };
 static_assert(std::size(kFacts) == static_cast<size_t>(Fact::Count));
@@ -71,6 +76,50 @@ std::span<const game::Command> commandsSince(const EvalContext& ctx) {
     return std::span<const game::Command>(all).subspan(from);
 }
 
+// The design type of a design, a vehicle and a fleet (every member must have
+// it), checked against a `design_type` qualifier; nothing to check passes.
+bool designOfType(const game::GameState& s, game::DesignId d, std::string_view wanted) {
+    return d.valid() && d.index() < s.designs.size() && designTypeMatches(s.design(d).designType, wanted);
+}
+bool vehicleOfType(const game::GameState& s, game::VehicleId id, std::string_view wanted) {
+    const game::Vehicle* v = id.valid() ? s.vehicle(id) : nullptr;
+    return v && designOfType(s, v->design, wanted);
+}
+bool fleetOfType(const game::GameState& s, game::FleetId id, std::string_view wanted) {
+    const game::Fleet* f = id.valid() ? s.fleet(id) : nullptr;
+    return f && !f->members.empty() &&
+           std::all_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return vehicleOfType(s, m, wanted); });
+}
+// Whether a command went to (or made) a vehicle or design of the wanted type.
+bool commandOfType(const game::GameState& s, const game::Command& cmd, std::string_view wanted) {
+    if (wanted.empty()) return true;
+    if (const auto* o = std::get_if<game::cmd::SetOrders>(&cmd))
+        return o->vehicle.valid() ? vehicleOfType(s, o->vehicle, wanted) : fleetOfType(s, o->fleet, wanted);
+    if (const auto* q = std::get_if<game::cmd::QueueAdd>(&cmd))
+        return q->item.kind == game::QueueItem::Kind::Vehicle && designOfType(s, q->item.design, wanted);
+    if (const auto* d = std::get_if<game::cmd::CreateDesign>(&cmd)) return designTypeMatches(d->design.designType, wanted);
+    if (const auto* j = std::get_if<game::cmd::JoinFleet>(&cmd)) return vehicleOfType(s, j->vehicle, wanted);
+    if (const auto* f = std::get_if<game::cmd::CreateFleet>(&cmd))
+        return !f->members.empty() &&
+               std::all_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return vehicleOfType(s, m, wanted); });
+    return false;
+}
+
+void collectCounters(const Condition& c, const EvalContext& ctx, size_t limit, std::vector<Counter>& out) {
+    switch (c.op) {
+        case Condition::Op::All:
+        case Condition::Op::Any:
+            for (const Condition& x : c.children) collectCounters(x, ctx, limit, out);
+            return;
+        case Condition::Op::Not: return;   // "fewer than" counts nothing up
+        case Condition::Op::Fact: break;
+    }
+    const FactInfo& info = factInfo(c.fact);
+    if (info.value != FactValue::Number || info.counter.empty() || out.size() >= limit) return;
+    if (std::any_of(out.begin(), out.end(), [&](const Counter& k) { return k.fact == c.fact; })) return;
+    out.push_back({c.fact, std::max<int64_t>(0, factValue(c.fact, ctx)), c.number, std::string(info.counter)});
+}
+
 } // namespace
 
 std::span<const FactInfo> facts() { return kFacts; }
@@ -82,6 +131,19 @@ const FactInfo* findFact(std::string_view key) {
 }
 
 const FactInfo& factInfo(Fact f) { return kFacts[static_cast<size_t>(f)]; }
+
+bool isDesignTypeName(std::string_view type) { return game::ai::isAiDesignType(type) || datafile::keysEqual(type, "Colony"); }
+
+bool designTypeMatches(std::string_view actual, std::string_view wanted) {
+    if (datafile::keysEqual(actual, wanted)) return true;
+    constexpr std::string_view kColony = "Colony (";
+    return datafile::keysEqual(wanted, "Colony") && actual.size() > kColony.size() &&
+           datafile::keysEqual(actual.substr(0, kColony.size()), kColony);
+}
+
+bool commandTakesDesignType(std::string_view command) {
+    return command == "SetOrders" || command == "QueueAdd" || command == "CreateDesign" || command == "JoinFleet" || command == "CreateFleet";
+}
 
 void Tracker::observe(const game::GameState& state, game::EmpireId empire) {
     // Colonies that came to us from an empire we are hostile to were taken
@@ -208,7 +270,9 @@ bool holds(const Condition& c, const EvalContext& ctx) {
         case Fact::Window: return contains(ctx.client.openWindows, c.text);
         // Only a selection the player made since the step began: the one a
         // game starts with, or one made for an earlier step, does not count.
-        case Fact::Selected: return contains(ctx.client.selected, c.text) && ctx.client.selections > ctx.mark.selections;
+        case Fact::Selected:
+            return contains(ctx.client.selected, c.text) && ctx.client.selections > ctx.mark.selections &&
+                   (c.designType.empty() || vehicleOfType(ctx.state, ctx.client.selectedVehicle, c.designType));
         case Fact::Tab: return contains(ctx.client.tabs, c.text);
         case Fact::BattleBegun: return ctx.client.battleBegun == (c.number != 0);
         case Fact::BattleOrder: {
@@ -216,6 +280,9 @@ bool holds(const Condition& c, const EvalContext& ctx) {
             return std::find(log.begin() + std::ptrdiff_t(std::min(ctx.mark.battleOrders, log.size())), log.end(), c.text) != log.end();
         }
         case Fact::DesignHullChosen: return ctx.client.designComponents.has_value() && ctx.client.designHullChosen == (c.number != 0);
+        case Fact::DesignTypeChosen:
+            return ctx.client.designComponents.has_value() && !ctx.client.designType.empty() && designTypeMatches(ctx.client.designType, c.text);
+        case Fact::DesignNamed: return ctx.client.designComponents.has_value() && ctx.client.designNamed == (c.number != 0);
         case Fact::Option: {
             if (!validEmpire(ctx.state, ctx.empire)) return false;
             return optionValue(ctx.state.empire(ctx.empire), c.text).value_or(false);
@@ -230,19 +297,28 @@ bool holds(const Condition& c, const EvalContext& ctx) {
         }
         case Fact::Command:
             for (const game::Command& cmd : commandsSince(ctx))
-                if (game::commandName(cmd) == c.text) return true;
+                if (game::commandName(cmd) == c.text && commandOfType(ctx.state, cmd, c.designType)) return true;
             return false;
         case Fact::Order: {
             const auto kind = orderKindFromId(c.text);
             if (!kind) return false;
             for (const game::Command& cmd : commandsSince(ctx))
                 if (const auto* o = std::get_if<game::cmd::SetOrders>(&cmd))
-                    for (const game::Order& order : o->orders)
-                        if (order.kind == *kind) return true;
+                    if (std::any_of(o->orders.begin(), o->orders.end(), [&](const game::Order& order) { return order.kind == *kind; }) &&
+                        commandOfType(ctx.state, cmd, c.designType))
+                        return true;
             return false;
         }
         default: return factValue(c.fact, ctx) >= c.number;
     }
+}
+
+std::string Counter::text() const { return std::format("{}: {} of {}", label, std::min(current, target), target); }
+
+std::vector<Counter> counters(const Condition& c, const EvalContext& ctx, size_t limit) {
+    std::vector<Counter> out;
+    collectCounters(c, ctx, limit, out);
+    return out;
 }
 
 std::string describe(const Condition& c) {
@@ -259,7 +335,9 @@ std::string describe(const Condition& c) {
     }
     const FactInfo& info = factInfo(c.fact);
     switch (info.value) {
-        case FactValue::Text: return std::format("{} = \"{}\"", info.key, c.text);
+        case FactValue::Text:
+            if (!c.designType.empty()) return std::format("{} = \"{}\", design_type = \"{}\"", info.key, c.text, c.designType);
+            return std::format("{} = \"{}\"", info.key, c.text);
         case FactValue::Flag: return std::format("{} = {}", info.key, c.number != 0 ? "true" : "false");
         case FactValue::Number: break;
     }

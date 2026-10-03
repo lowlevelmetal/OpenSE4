@@ -23,7 +23,7 @@ enum class Fact : uint8_t {
     // Client facts.
     Window, Selected, Command, Order, Tab,
     // Windows' work in progress.
-    DesignComponents, DesignHullChosen, SimulatorOwners, SimulatorItems, BattleBegun, BattleOrder,
+    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, SimulatorOwners, SimulatorItems, BattleBegun, BattleOrder,
     // Time.
     Turn, TurnsPassed,
     // The player's empire.
@@ -43,6 +43,7 @@ struct FactInfo {
     FactValue value;
     bool sinceMark;                // counts from the step's (or the game's) start
     std::string_view description;  // for the reference (docs/LEARNING.md)
+    std::string_view counter = {}; // numbers: what the panel's progress line calls it ("Systems explored")
 };
 std::span<const FactInfo> facts();
 const FactInfo* findFact(std::string_view key);
@@ -53,10 +54,23 @@ struct Condition {
     Op op = Op::All;
     Fact fact = Fact::Turn;
     int64_t number = 0;            // numeric facts: at least this; flags: 1 true, 0 false
-    std::string text;              // text facts: the window id, kind, command, order, tab, option or treaty
+    std::string text;              // text facts: the window id, kind, command, order, tab, option, treaty or design type
+    // The `design_type` qualifier of `selected`, `order` and `command` (written
+    // beside them in one table): only a vehicle of this design type counts.
+    std::string designType;
     std::vector<Condition> children;  // All, Any: any number; Not: one
     int line = 0;                  // where it is written (diagnostics)
 };
+
+// Design types for `design_type` and `design_type_chosen`, and for the
+// `{design:<type>}` text token: the 39 AI design types (spec 05 §7.7, such as
+// "Attack Ship"), or "Colony" for any colony ship type.
+bool isDesignTypeName(std::string_view type);
+// Whether a design of type `actual` is one of `wanted` (letter case ignored;
+// "Colony" takes every "Colony (...)" type).
+bool designTypeMatches(std::string_view actual, std::string_view wanted);
+// The commands `design_type` can qualify: those that name vehicles or designs.
+bool commandTakesDesignType(std::string_view command);
 
 // What the client knows beyond the game, gathered each frame.
 struct ClientFacts {
@@ -67,6 +81,9 @@ struct ClientFacts {
     // "warp-point"; "sector" while the report lists everything in a sector;
     // "system" when nothing is selected and the report shows the system.
     std::vector<std::string> selected;
+    // The vehicle the main window has selected (invalid when none): a
+    // `design_type` beside `selected` reads its design.
+    game::VehicleId selectedVehicle;
     // Selections the player made in the main window so far (the selection
     // a game starts with is not one): `selected` holds only for a selection
     // made since the step began.
@@ -78,6 +95,10 @@ struct ClientFacts {
     // design being built, and whether the player picked a hull in its Size list.
     std::optional<int64_t> designComponents;
     bool designHullChosen = false;
+    // And its Design Type box (empty: none chosen), and whether its Design
+    // Name box holds a name no other design has.
+    std::string designType;
+    bool designNamed = false;
     // The Combat Simulator, while it is open: the races ("owners") that have
     // items in the battle, and the items.
     int64_t simulatorOwners = 0;
@@ -141,6 +162,20 @@ struct EvalContext {
 // The value of a numeric fact now (for progress displays); 0 for text facts.
 int64_t factValue(Fact f, const EvalContext& ctx);
 bool holds(const Condition& c, const EvalContext& ctx);
+
+// What a condition waits for that can be counted: each numeric fact in it
+// (not under `not`), with its value now and its target, for the lesson
+// panel's progress line ("Systems explored: 3 of 5", "Turns: 1 of 3"). At
+// most `limit`, each fact once, in the order written.
+struct Counter {
+    Fact fact = Fact::Turn;
+    int64_t current = 0;
+    int64_t target = 0;
+    std::string label;   // FactInfo::counter
+    // "Systems explored: 3 of 5" (the current value never shows above the target).
+    std::string text() const;
+};
+std::vector<Counter> counters(const Condition& c, const EvalContext& ctx, size_t limit = 3);
 
 // "colonies = 5", "all = [...]" (for messages and tests).
 std::string describe(const Condition& c);

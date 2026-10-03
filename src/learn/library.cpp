@@ -213,6 +213,14 @@ const Lesson* Library::next(LessonKind kind, std::string_view slug) const {
     return nullptr;
 }
 
+const Lesson* Library::following(const Lesson& from) const {
+    if (!from.suggest.empty()) {
+        const auto ref = parseLessonRef(from.suggest);
+        return ref ? lesson(ref->kind, ref->slug) : nullptr;
+    }
+    return next(from.kind, from.slug);
+}
+
 const ManualPage* Library::pageForWindow(std::string_view windowId) const {
     for (const ManualPage& p : manual)
         if (std::find(p.doc.windows.begin(), p.doc.windows.end(), windowId) != p.doc.windows.end()) return &p;
@@ -290,6 +298,13 @@ std::vector<Diagnostic> validate(Library& lib) {
         for (const Hint& h : l.hints) links(h.text, l.file, {});
         if (l.fail) links(l.fail->text, l.file, {});
     }
+    for (const auto* list : {&lib.tutorials, &lib.training})
+        for (const Lesson& l : *list) {
+            if (l.suggest.empty()) continue;
+            const auto ref = parseLessonRef(l.suggest);
+            if (!ref || !lib.lesson(ref->kind, ref->slug)) out.push_back({l.file, 0, std::format("'suggest' names no lesson: '{}'", l.suggest)});
+            else if (ref->kind == l.kind && ref->slug == l.slug) out.push_back({l.file, 0, "'suggest' names the lesson itself"});
+        }
     lib.problems.insert(lib.problems.end(), out.begin(), out.end());
     return out;
 }

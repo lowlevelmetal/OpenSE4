@@ -84,6 +84,14 @@ void LessonProgress::jumpTo(size_t step, const game::Rules& rules, const game::G
     frontier_ = step;
 }
 
+std::vector<Counter> LessonProgress::counters(const game::Rules& rules, const game::GameState& state, game::EmpireId empire,
+                                              const ClientFacts& client) const {
+    if (lesson_.kind != LessonKind::Tutorial || result_ != Result::None || step_ != frontier_ || frontier_ >= lesson_.steps.size()) return {};
+    const Step& st = lesson_.steps[frontier_];
+    if (!st.done || completed_[frontier_] || !stepMarks_[frontier_]) return {};
+    return learn::counters(*st.done, EvalContext{rules, state, empire, client, tracker_, *stepMarks_[frontier_]});
+}
+
 std::vector<size_t> LessonProgress::series() const {
     std::vector<size_t> out;
     if (!page_) return out;
