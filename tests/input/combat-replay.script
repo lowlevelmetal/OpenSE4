@@ -1,8 +1,9 @@
 # Combat Replay on a battle of the last turn (seed 3, 20 systems, 8 empires, 40 turns has
 # one): the Tactical Combat frame with Options and Next; a click on the overview moves the
 # view; Combat Replay Options' check boxes (Fast Tactical Combat, and OpenSE4's list of
-# events, on and off again); Next plays the combat turns until it dims; Stop Replay closes
-# the replay (docs/BUILDING.md "Input scripts").
+# events, on and off again); Next plays the combat turns until it dims (at most the 30
+# combat turns of the stock data); Stop Replay closes the replay (docs/BUILDING.md "Input
+# scripts").
 options --quick-start=Terran --seed=3 --systems=20 --empires=8 --turns=40 --open=combat-replay --layout=1024x768 --size=1280x800
 
 wait-window combat-replay
@@ -17,7 +18,7 @@ click item:"Fast Tactical Combat" in=combat-replay-options
 click item:"List each combat turn's events and the summary" in=combat-replay-options
 click item:Close in=combat-replay-options
 wait-closed combat-replay-options
-repeat 12
+repeat 30
   click item:Next in=combat-replay optional
   wait 240
 end
