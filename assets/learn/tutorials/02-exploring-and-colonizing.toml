@@ -153,13 +153,13 @@ manual = "economy#spaceports"
 [[step]]
 title = "Keep exploring"
 text = """
-Close the window and end turns until your ships have explored at least three systems, your home
+Close the window and end turns until your ships have explored at least five systems, your home
 system included. Remember to give each ship that has arrived a new Explore order: select it with
 the ship arrows, then press **Explore** or `E`.
 """
 highlight = ["button:end-turn", "order:explore"]
 allow = ["cycle:ship", "panel:report"]
-done = { systems_explored = 3 }
+done = { systems_explored = 5 }
 manual = "galaxy#warp-points"
 
 [[step]]

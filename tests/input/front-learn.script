@@ -1,0 +1,43 @@
+# The front end's Learn window (docs/LEARNING.md "The Learn window and the manual"):
+# the intro's Tutorial and Scenario buttons, the tabs, starting a lesson, and Leave with
+# its question (docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --layout=1024x768 --size=1280x800
+
+wait-screen front
+# Tutorial opens the Learn window on its Tutorials tab.
+click item:Tutorial in=front
+wait-for item:"Start Lesson" in=front
+assert-present item:"First steps" in=front
+assert-present item:"Diplomacy and intelligence" in=front
+# The Training and Manual tabs, and back.
+click item:Training in=front
+wait-for item:"Start Game" in=front
+assert-present item:"Land rush" in=front
+click item:Manual in=front
+wait-for item:Read in=front
+click item:Tutorials in=front
+wait-for item:"Start Lesson" in=front
+# Pick a lesson and start it.
+click item:"Exploring and colonizing" in=front
+click item:"Start Lesson" in=front
+wait-screen game
+wait-lesson exploring-and-colonizing
+assert-step 1
+# Leave asks first: No keeps the lesson, Yes goes back to the Learn window.
+click tag:lesson:leave
+click item:No in="Leave Lesson"
+wait-gone item:No in="Leave Lesson"
+assert-lesson exploring-and-colonizing
+click tag:lesson:leave
+click item:Yes in="Leave Lesson"
+wait-screen front
+assert-lesson none
+wait-for item:"Start Lesson" in=front
+# Close goes back to the intro; its Scenario button opens the Training tab.
+click item:Close in=front
+wait-for item:Scenario in=front
+click item:Scenario in=front
+wait-for item:"Start Game" in=front
+click item:Close in=front
+wait-for item:"Quick Start" in=front

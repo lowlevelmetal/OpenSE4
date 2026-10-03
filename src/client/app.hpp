@@ -3,17 +3,24 @@
 #include "client/app_settings.hpp"
 #include "client/fonts.hpp"
 #include "client/mode.hpp"
+#include "client/script/player.hpp"
+#include "client/script/recorder.hpp"
 #include "gfx/device.hpp"
 #include "gfx/imgui_renderer.hpp"
 #include "gfx/renderer2d.hpp"
 
+#include <imgui.h>
+
+#include <cfloat>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 struct SDL_Window;
+union SDL_Event;
 
 namespace opense4::client {
 
@@ -56,6 +63,14 @@ struct AppOptions {
     std::string learnDir;
     bool lessonCheck = false;        // --lesson-check: report whether a tutorial step's areas are on screen
 
+    // Input scripts (docs/BUILDING.md "Input scripts"): play one (its
+    // screenshots and failure picture go to scriptOutput), or record the
+    // session as one (`recordOptions`: the command line, for its options line).
+    std::optional<script::Script> inputScript;
+    std::string scriptOutput;
+    std::string recordInput;
+    std::vector<std::string> recordOptions;
+
     // Automation: render a few frames, save a PNG and exit.
     std::string screenshotPath;
     int screenshotFrames = 10;
@@ -82,6 +97,8 @@ private:
     void initImGui();
     void updateUiScale();
     bool frame();
+    // One input event: the mode's filter (a tutorial's input lock), then Dear ImGui.
+    EventVerdict handleEvent(SDL_Event& event, bool& running);
     void shutdown();
 
     AppOptions options_;
@@ -101,6 +118,10 @@ private:
     std::string rendererInfo_;
 
     std::unique_ptr<Mode> mode_;
+    std::unique_ptr<script::Player> player_;
+    std::unique_ptr<script::Recorder> recorder_;
+    std::vector<std::filesystem::path> captures_;   // this frame's picture goes to these files
+    ImVec2 scriptPointer_{-FLT_MAX, -FLT_MAX};      // where the script has the pointer
     double time_ = 0.0;
     uint64_t lastTicks_ = 0;
     int frameCount_ = 0;

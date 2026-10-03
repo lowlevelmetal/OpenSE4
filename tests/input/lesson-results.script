@@ -1,0 +1,73 @@
+# The result dialog of a training game, won and lost, with its buttons, using two quick
+# training games of our own (tests/input/learn; docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --learn-dir=tests/input/learn --training=quick-win --layout=1024x768 --size=1280x800
+
+wait-lesson quick-win
+wait-for tag:lesson:panel
+# The panel is dragged by its title strip; it stays where it is put.
+assert-inside tag:lesson:panel tag:panel:galaxy
+drag tag:lesson:panel@60,12 to tag:panel:system@80,40
+assert-inside tag:lesson:panel tag:panel:system
+key F8
+wait-window research
+assert-inside tag:lesson:panel tag:panel:system
+key Escape
+wait-closed research
+# The briefing page's link opens the Research window; a project there wins the game.
+click item:link:window:research in=lesson
+wait-window research
+click item:* in=research nth=1
+wait-result won
+# Won: Next Lesson, Keep Playing and Learn; no Try Again.
+wait-for item:"Keep Playing"
+assert-present item:"Next Lesson"
+assert-present item:Learn in=##lessonresult
+assert-absent item:"Try Again"
+screenshot result-won.png
+# Keep Playing: the game goes on, and the panel's last button now leads to the Learn window.
+click item:"Keep Playing"
+wait-gone item:"Keep Playing"
+assert-lesson quick-win
+key Escape
+wait-closed research
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 1
+assert-result won
+click item:Learn in=lesson
+wait-screen front
+assert-present item:"Quick win" in=front
+# From the Learn window: the next training game, with a double click.
+double-click item:"Quick loss" in=front
+wait-lesson quick-loss
+wait-screen game
+# Lost: after two turns the deadline has passed.
+repeat 3 until { turn = 2 }
+  click tag:button:end-turn
+  click item:Yes in="End Turn"
+  wait 5
+  click tag:log:close optional
+end
+wait-result lost
+wait-for item:"Try Again"
+assert-present item:"Keep Playing"
+assert-present item:Learn in=##lessonresult
+assert-absent item:"Next Lesson"
+screenshot result-lost.png
+# Try Again starts the game afresh.
+click item:"Try Again"
+wait-turn 0
+wait-result none
+assert-lesson quick-loss
+repeat 3 until { turn = 2 }
+  click tag:button:end-turn
+  click item:Yes in="End Turn"
+  wait 5
+  click tag:log:close optional
+end
+wait-result lost
+# The result's Learn (the panel has a Learn button too, behind the dialog) leaves the game.
+click item:Learn in=##lessonresult
+wait-screen front
+assert-lesson none

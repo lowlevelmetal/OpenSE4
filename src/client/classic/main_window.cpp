@@ -9,6 +9,7 @@
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/status_icons.hpp"
+#include "client/script/items.hpp"
 
 #include "game/abilities.hpp"
 #include "game/design.hpp"
@@ -17,7 +18,10 @@
 #include "game/sight.hpp"
 #include "learn/ids.hpp"
 
+#include <imgui_internal.h>
+
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <format>
 #include <map>
@@ -1246,6 +1250,12 @@ void MainWindow::reportPanel(UiContext& ui) {
                 object_ = id;
                 ++selections_;
             }
+            if (script::collectingItems()) {
+                // Input scripts name the rows by kind: report:colony (the player's), report:planet, report:object.
+                const game::Colony* col = s.colony(id);
+                const bool planet = o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids;
+                script::reportItem(col && col->owner == me ? "report:colony" : planet ? "report:planet" : "report:object");
+            }
             iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
             ImGui::PopID();
         }
@@ -1259,6 +1269,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 if (ImGui::GetIO().KeyShift) toggleTag(ui, v->id);
                 else selectVehicle(ui, v->id);
             }
+            script::reportItem(v->owner == me ? "report:ship" : "report:other");   // input scripts: rows by kind
             if (v->owner == me) iconStrip(ui, dl, vehicleStatusCells(r, s, *v), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
             if (tagged(v->id)) {
                 // The tag: a green arrow on the row.
@@ -2093,6 +2104,167 @@ void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {
         if (current) r.ring(c, radius + 2.0f, 1.0f, col);
         if (galaxyHover_ && *galaxyHover_ == sys.id) r.ring(c, radius + 2.0f, 1.0f, rgb(map_style::kHover));
     }
+}
+
+// ---- Input scripts ---------------------------------------------------------------------------
+
+namespace {
+
+// "a+!b+c": the words, each with whether it is negated; false on an empty word.
+bool queryWords(std::string_view query, std::vector<std::pair<std::string, bool>>& out) {
+    size_t start = 0;
+    while (start <= query.size()) {
+        const size_t plus = query.find('+', start);
+        std::string_view w = query.substr(start, plus == std::string_view::npos ? std::string_view::npos : plus - start);
+        const bool negated = !w.empty() && w.front() == '!';
+        if (negated) w.remove_prefix(1);
+        if (w.empty()) return false;
+        out.emplace_back(std::string(w), negated);
+        if (plus == std::string_view::npos) break;
+        start = plus + 1;
+    }
+    return !out.empty();
+}
+
+bool wholeNumbers(std::string_view s, std::vector<int>& out) {
+    size_t start = 0;
+    while (start <= s.size()) {
+        const size_t comma = s.find(',', start);
+        const std::string_view part = s.substr(start, comma == std::string_view::npos ? std::string_view::npos : comma - start);
+        int v = 0;
+        const auto [p, ec] = std::from_chars(part.data(), part.data() + part.size(), v);
+        if (part.empty() || ec != std::errc{} || p != part.data() + part.size()) return false;
+        out.push_back(v);
+        if (comma == std::string_view::npos) break;
+        start = comma + 1;
+    }
+    return true;
+}
+
+} // namespace
+
+std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view query, std::string& error) const {
+    std::vector<Rect> out;
+    if (!shown_.valid()) {
+        error = "the system view shows no system";
+        return out;
+    }
+    auto rectOf = [](game::Sector sec) { return Rect::fromPosSize(cellOrigin(sec), {geo.cell, geo.cell}); };
+    if (std::vector<int> xy; wholeNumbers(query, xy)) {
+        const game::Sector sec{xy.size() == 2 ? xy[0] : -1, xy.size() == 2 ? xy[1] : -1};
+        if (!sec.valid()) error = std::format("sector {} is outside the system (0,0 to 12,12)", query);
+        else out.push_back(rectOf(sec));
+        return out;
+    }
+    std::vector<std::pair<std::string, bool>> words;
+    if (!queryWords(query, words)) {
+        error = std::format("'{}' is not a sector query", query);
+        return out;
+    }
+    const game::GameState& s = ui.state();
+    const game::Rules& r = ui.rules();
+    const game::EmpireId me = ui.session.player();
+    const ColonizeTech tech = colonizeTech(r, ui.me());
+    for (int y = 0; y < 13; ++y)
+        for (int x = 0; x < 13; ++x) {
+            const game::Sector sec{x, y};
+            const std::vector<game::ObjectId> objects = objectsAt(ui, sec);
+            const std::vector<const game::Vehicle*> vehicles = vehiclesAt(ui, {shown_, sec});
+            bool all = true;
+            for (const auto& [word, negated] : words) {
+                bool holds = false;
+                auto anyObject = [&](auto&& pred) { return std::any_of(objects.begin(), objects.end(), [&](game::ObjectId id) { return pred(s.galaxy.object(id)); }); };
+                if (word == "any") holds = true;
+                else if (word == "empty") holds = objects.empty() && vehicles.empty();
+                else if (word == "home")
+                    holds = anyObject([&](const game::SpaceObject& o) {
+                        const game::Colony* c = s.colony(o.id);
+                        return c && c->owner == me && c->homeworld;
+                    });
+                else if (word == "colony")
+                    holds = anyObject([&](const game::SpaceObject& o) {
+                        const game::Colony* c = s.colony(o.id);
+                        return c && c->owner == me;
+                    });
+                else if (word == "planet")
+                    holds = anyObject([](const game::SpaceObject& o) { return o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids; });
+                else if (word == "colonizable")
+                    holds = anyObject([&](const game::SpaceObject& o) {
+                        return o.kind == game::ObjectKind::Planet && !s.colony(o.id) && colonizeProblem(r, s, me, o.id, tech).empty();
+                    });
+                else if (word == "star") holds = anyObject([](const game::SpaceObject& o) { return o.kind == game::ObjectKind::Star; });
+                else if (word == "warp-point") holds = anyObject([](const game::SpaceObject& o) { return o.kind == game::ObjectKind::WarpPoint; });
+                else if (word == "ship") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner == me; });
+                else if (word == "enemy") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner != me; });
+                else if (word == "selected") holds = sector_ && *sector_ == sec;
+                else {
+                    error = std::format("unknown sector word '{}' (empty, home, colony, planet, colonizable, star, warp-point, ship, enemy, "
+                                        "selected, any; joined with +, negated with !)",
+                                        word);
+                    return {};
+                }
+                if (holds == negated) {
+                    all = false;
+                    break;
+                }
+            }
+            if (all) out.push_back(rectOf(sec));
+        }
+    return out;
+}
+
+std::optional<game::Sector> MainWindow::sectorAtFrame(Vec2 p) const { return sectorAt(p); }
+
+bool MainWindow::ownsWindow(ImGuiID window) {
+    for (const char* name : {"##commands", "##report", "##statusbuttons"})
+        if (ImHashStr(name) == window) return true;
+    return false;
+}
+
+float MainWindow::galaxyCellSize() const {
+    const GalaxyGrid g = galaxyGrid();
+    return std::max(g.cw, g.ch);
+}
+
+std::vector<Vec2> MainWindow::findSystems(const UiContext& ui, std::string_view query, std::string& error) const {
+    std::vector<Vec2> out;
+    const GalaxyGrid grid = galaxyGrid();
+    const game::GameState& s = ui.state();
+    if (std::vector<int> id; wholeNumbers(query, id) && id.size() == 1) {
+        if (id[0] < 0 || size_t(id[0]) >= s.galaxy.systems.size()) error = std::format("there is no system {}", query);
+        else out.push_back(galaxyCenter(grid, s.galaxy.systems[size_t(id[0])]));
+        return out;
+    }
+    std::vector<std::pair<std::string, bool>> words;
+    if (!queryWords(query, words)) {
+        error = std::format("'{}' is not a system query", query);
+        return out;
+    }
+    for (const game::StarSystem& sys : s.galaxy.systems) {
+        bool all = true;
+        for (const auto& [word, negated] : words) {
+            bool holds = false;
+            if (word == "any") holds = true;
+            else if (word == "home") holds = sys.id == ui.me().homeSystem;
+            else if (word == "shown") holds = sys.id == shown_;
+            else if (word == "explored") holds = ui.me().hasExplored(sys.id);
+            else {
+                error = std::format("unknown system word '{}' (home, shown, explored, any, or a system's number; joined with +, negated with !)", word);
+                return {};
+            }
+            if (holds == negated) {
+                all = false;
+                break;
+            }
+        }
+        if (all) out.push_back(galaxyCenter(grid, sys));
+    }
+    return out;
+}
+
+std::optional<game::SystemId> MainWindow::systemAtFrame(const UiContext& ui, Vec2 p) const {
+    if (!geo.galaxyPanel.contains(p)) return std::nullopt;
+    return galaxySystemAt(ui, p, false);
 }
 
 } // namespace opense4::client::classic

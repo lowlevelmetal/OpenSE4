@@ -6,6 +6,7 @@
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/script/items.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/ai_data.hpp"
 
@@ -656,6 +657,7 @@ bool intSlider(const char* id, std::string& value, int lo, int hi, const char* f
     const int current = toInt(value);
     int v = storage->GetBool(activeKey, false) ? storage->GetInt(draftKey, current) : current;
     ImGui::SliderInt("##v", &v, lo, hi, format, ImGuiSliderFlags_AlwaysClamp);
+    script::reportItem(id);   // input scripts find the slider by its setting
     storage->SetInt(draftKey, v);
     storage->SetBool(activeKey, ImGui::IsItemActive());
     const bool commit = ImGui::IsItemDeactivatedAfterEdit() && v != current;

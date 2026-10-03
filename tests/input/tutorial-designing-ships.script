@@ -1,0 +1,72 @@
+# Tutorial 4, "Designing ships", played through under the input lock
+# (docs/BUILDING.md "Input scripts").
+options --tutorial=designing-ships --layout=1024x768 --size=1280x800
+
+wait-lesson designing-ships
+# 1 Your own ships.
+click item:Next in=lesson
+wait-step 2
+# 2 The Designs window.
+click tag:command:designs
+wait-window designs
+wait-step 3
+# 3 Your designs: click one of them, look at the unit designs, back to ships, Next.
+click item:##row in=designs nth=2
+click tag:designs:unit-designs
+click tag:designs:ship-designs
+click item:Next in=lesson
+wait-step 4
+# 4 A new design: Create, then Ship.
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+wait-step 5
+# 5 Choose a hull: the arrow beside Size, then a small ship hull.
+click item:##size in=create-design
+click item:##0 in=create-design
+wait-step 6
+assert { design_hull_chosen = true }
+# 6 Add components: the tiles of Components Available, by their place in the stock data set:
+# bridge (2), life support (3), crew quarters (4), two engines (8), then two weapons (14, 15).
+click item:##tile in=create-design nth=2
+click item:##tile in=create-design nth=3
+click item:##tile in=create-design nth=4
+click item:##tile in=create-design nth=8
+click item:##tile in=create-design nth=8
+wait-step 7
+# 7 Check the rules: more components, then Next.
+click item:##tile in=create-design nth=14
+click item:##tile in=create-design nth=15
+assert { design_components = 7 }
+click item:Next in=lesson
+wait-step 8
+# 8 Name it: type a name into the Design Name box.
+click tag:create-design:name
+type "Lesson Warship"
+click item:Next in=lesson
+wait-step 9
+# 9 Create it.
+click tag:create-design:save
+wait-closed create-design
+wait-step 10
+assert { command = "CreateDesign" }
+# 10 Managing designs: the new design is in the list; close the window.
+assert-present item:"Lesson Warship" in=designs
+click item:"Lesson Warship" in=designs
+click tag:designs:close
+wait-closed designs
+wait-step 11
+# 11 Build it: the homeworld (colony arrows), then the Build Queue order.
+click item:next in=tag:cycle:colony
+click tag:order:build-queue
+wait-window set-queue
+wait-step 12
+# 12 Queue your warship: the new design on the Ships tab.
+click item:"Lesson Warship" in=set-queue
+wait-step 13
+assert { construction_queued = 1 }
+# 13 Well done: Finish.
+click item:Finish in=lesson
+wait-result done
+click item:"Keep Playing"
+wait-gone item:"Keep Playing"

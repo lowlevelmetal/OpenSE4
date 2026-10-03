@@ -297,7 +297,38 @@ void LessonRunner::trainingBody(UiContext& ui) {
     }
 }
 
+void LessonRunner::keepKeyboardFocus() {
+    // A click on the panel (Next, Back) gives it Dear ImGui's focus, and the
+    // classic window in front would no longer close with Esc or Enter
+    // (Dialog::close): once the click is over, the window that had the focus
+    // gets it back. Dragging the panel keeps it until the drag ends.
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImGuiWindow* panel = ImGui::FindWindowByName("##lessonpanel");
+    ImGuiWindow* nav = g.NavWindow ? g.NavWindow->RootWindow : nullptr;
+    if (!nav) return;
+    if (nav != panel) {
+        focusBefore_ = nav->ID;
+        return;
+    }
+    if (g.MovingWindow == panel || g.ActiveId != 0 || ImGui::IsAnyMouseDown() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) return;
+    if (ImGuiWindow* back = ImGui::FindWindowByID(focusBefore_); back && back != panel && back->WasActive) {
+        ImGui::FocusWindow(back);
+        return;
+    }
+    // That window has closed (Dear ImGui then focuses the one before it in
+    // focus order, which can be the panel): the front-most other window.
+    for (int i = g.WindowsFocusOrder.Size - 1; i >= 0; --i) {
+        ImGuiWindow* w = g.WindowsFocusOrder[i];
+        if (w == panel || !w->WasActive ||
+            (w->Flags & (ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_Tooltip | ImGuiWindowFlags_Popup | ImGuiWindowFlags_NoNavFocus)) != 0)
+            continue;
+        ImGui::FocusWindow(w);
+        return;
+    }
+}
+
 void LessonRunner::drawPanel(UiContext& ui) {
+    keepKeyboardFocus();
     if (!panelOpen_) return;
     const Painter p = ui.painter();
     if (!moved_) {

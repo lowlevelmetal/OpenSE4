@@ -1,0 +1,59 @@
+# Training game "Land rush": its briefing pages, its first turns with a hint, Hide and the T
+# button, and Leave Game with its question (docs/BUILDING.md "Input scripts").
+options --training=land-rush --layout=1024x768 --size=1280x800
+
+wait-lesson land-rush
+wait-for tag:lesson:panel
+assert-result none
+# The briefing: two pages; Previous is dim on the first, Next on the last.
+assert-disabled item:Previous in=lesson
+click item:Next in=lesson
+wait-for item:Previous in=lesson
+assert-disabled item:Next in=lesson
+click item:Previous in=lesson
+wait-for item:Next in=lesson
+assert-disabled item:Previous in=lesson
+click item:Next in=lesson
+# The second page links to the Designs window: training games are not locked, so it opens.
+click item:link:window:designs in=lesson
+wait-window designs
+key Escape
+wait-closed designs
+# Close Page leaves the objectives.
+click item:"Close Page" in=lesson
+wait-gone item:link:window:designs in=lesson
+assert-disabled item:"Close Page" in=lesson
+# Hide puts the panel away; the status bar's T button and Ctrl+H bring it back.
+click item:Hide in=lesson
+wait-gone tag:lesson:panel
+click tag:status:lesson
+wait-for tag:lesson:panel
+key Ctrl+H
+wait-gone tag:lesson:panel
+key Ctrl+H
+wait-for tag:lesson:panel
+# The first turns: at turn 1 with nothing being built, a hint comes up; OK dismisses it.
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 1
+wait 3
+click tag:log:close optional
+wait-for item:OK in=lesson
+click item:OK in=lesson
+wait-gone item:OK in=lesson
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 2
+wait 3
+click tag:log:close optional
+assert-result none
+# Leave Game asks first: No keeps the game, Yes goes back to the Learn window.
+click item:"Leave Game" in=lesson
+click item:No in="Leave Lesson"
+wait-gone item:No
+assert-lesson land-rush
+click item:"Leave Game" in=lesson
+click item:Yes in="Leave Lesson"
+wait-screen front
+assert-present item:"Land rush" in=front
+assert-present item:"Start Game" in=front

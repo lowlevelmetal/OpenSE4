@@ -1,0 +1,40 @@
+# Training game "Fortress": its briefing pages, its first turns and Leave Game
+# (docs/BUILDING.md "Input scripts").
+options --training=fortress --layout=1024x768 --size=1280x800
+
+wait-lesson fortress
+wait-for tag:lesson:panel
+assert-result none
+# The briefing: two pages, browsed with Next and Previous, then closed.
+assert-disabled item:Previous in=lesson
+click item:Next in=lesson
+wait-for item:Previous in=lesson
+assert-disabled item:Next in=lesson
+click item:Previous in=lesson
+wait-for item:Next in=lesson
+click item:"Close Page" in=lesson
+assert-disabled item:"Close Page" in=lesson
+# The first turn's work: the homeworld's queue, opened from Construction Queues.
+click tag:command:queues
+wait-window queues
+click item:##row in=queues
+wait-window set-queue
+key Escape
+wait-closed set-queue
+key Escape
+wait-closed queues
+# Three turns; a hint that comes up is dismissed with OK.
+repeat 3
+  click tag:button:end-turn
+  click item:Yes in="End Turn"
+  wait 5
+  click tag:log:close optional
+  click item:OK in=lesson optional
+end
+assert-turn 3
+assert-result none
+# Leave Game, Yes: back to the Learn window's training games.
+click item:"Leave Game" in=lesson
+click item:Yes in="Leave Lesson"
+wait-screen front
+assert-present item:"Fortress" in=front
