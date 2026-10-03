@@ -2593,6 +2593,41 @@ TEST_CASE("ai: in Defend (Short Term) each entry gets the nearest idle defence f
     CHECK(orders[strike].empty());
 }
 
+TEST_CASE("ai: a leftover fleet explores with the player's Move To and the Warp, kept until it has warped") {
+    // Spec 05 §7.5 AI_Fleets *Orders* (confirmed: binary).
+    TempTree t("fleetexplore");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 1\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    const VehicleId leader = addTestVehicle(s, r, warship, home).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {leader}}).ok);
+    const FleetId fleet = s.fleets.back().id;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    REQUIRE(p.state == ai::AiState::Exploration);
+    REQUIRE_FALSE(p.sit.freeFrontier.empty());
+    const ObjectId wp = p.sit.freeFrontier.front();
+    ai::detail::planFleets(p);
+    const std::vector<Order> orders = fleetOrders(p.st, *p.st.fleet(fleet));
+    REQUIRE(orders.size() == 2);
+    CHECK(orders[0] == ai::detail::moveOrder(locationOf(s.galaxy, wp)));
+    CHECK(orders[1].kind == OrderKind::Warp);
+    CHECK(orders[1].object == wp);
+    // Under way, the fleet is not idle: the next turn plans nothing for it,
+    // and the point stays taken.
+    GameState next = p.st;
+    ai::detail::Planner q(r, next, me, ai::detail::Mode::Computer, 2);
+    CHECK(std::find(q.sit.freeFrontier.begin(), q.sit.freeFrontier.end(), wp) == q.sit.freeFrontier.end());
+    ai::detail::planFleets(q);
+    CHECK(fleetOrders(q.st, *q.st.fleet(fleet)) == orders);
+}
+
 TEST_CASE("ai: troop transports reload at the nearest colony with troops") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(13, 2, 12, true);

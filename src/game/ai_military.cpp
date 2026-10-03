@@ -416,14 +416,16 @@ void planFleets(Planner& p) {
             }
             if (best && leader->location != locationOf(p.st.galaxy, *best)) p.setFleetOrders(keep[k], {seekOrder(locationOf(p.st.galaxy, *best))});
         } else if (!p.sit.freeFrontier.empty() && !p.neutral) {
-            // Explore: a Seek toward the first free frontier point, then the
-            // Warp through it, which lasts until done (inferred, spec 05 Q64).
+            // Explore: the player's Move To toward the first free frontier
+            // point and the Warp through it (confirmed: binary). The Move To
+            // lasts until it arrives, so the fleet is not idle, and is not
+            // planned again, until it has warped.
             const ObjectId wp = p.sit.freeFrontier.front();
             Order warp;
             warp.kind = OrderKind::Warp;
             warp.object = wp;
             warp.location = locationOf(p.st.galaxy, wp);
-            p.setFleetOrders(keep[k], {seekOrder(warp.location), warp});
+            p.setFleetOrders(keep[k], {moveOrder(warp.location), warp});
         }
     }
 }

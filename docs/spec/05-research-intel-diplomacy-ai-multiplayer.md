@@ -2388,12 +2388,12 @@ binary).
       fleet is not idle and is not planned again until it has warped. Of the attack ships of
       game 10 in turns 26–50, 42 % were in fleets whose first order after the start-of-turn
       ministers was such a Move To, and 27 % carried the same Move To as the turn before
-      (observed, spec 07 "The computer players' second round under a debugger"). The engine
-      differs: `planFleets` (`ai_military.cpp`) gives a Seek and the Warp (question 64), so
-      the Warp waits behind the Seek and is left as the first order after the movement phase
-      (24 % of our attack ships at the start of turns 26–50 against 1 % in the original). In
-      120 scratch games with the Move To, battles, losses and colonies did not change
-      measurably.
+      (observed, spec 07 "The computer players' second round under a debugger"). OpenSE4
+      follows this since 2026-10-03 (`planFleets`, `ai_military.cpp`). It used to give a Seek
+      and the Warp (question 64), so the Warp waited behind the Seek and was left as the
+      first order after the movement phase (24 % of our attack ships at the start of turns
+      26–50 against 1 % in the original). In 120 scratch games with the Move To, battles,
+      losses and colonies did not change measurably.
   - Ships outside fleets get individual attack and defence orders only while the empire
     has no active fleet.
 - **How long the ministers' movement orders last** (confirmed: binary). Wherever this
@@ -2472,8 +2472,8 @@ binary).
     point no route reaches is never taken). Its choices where the text leaves room are in
     question 64: the minister stops at once while no point is free, so the 3× rule never
     applies; an explorer on its point keeps the point in the list; a turn-based explorer
-    compares the movement of this turn's run; the fleets that explore (§7.5 `AI_Fleets`,
-    leftover fleets) keep the Seek toward the first free point and the Warp.
+    compares the movement of this turn's run. The fleets that explore (§7.5 `AI_Fleets`,
+    leftover fleets) get the Move To toward the first free point and the Warp.
     The engine used to plan only idle ships, without the supply and half-full cargo tests,
     to count the explorers for the 3×, 5× and 8× tests, to pick by jumps and then sector
     distance, and to give a Move To and a Warp that lasted until done.
