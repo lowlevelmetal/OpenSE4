@@ -389,21 +389,27 @@ keys the client ignored followed the specs:
   its first action; designs keep Number Scrapped. The window shows the last selected vehicle's
   research potential word and lights each button only when every selected vehicle qualifies.
   Our choices are spec 03 §19 Q78 (the computer players' Scrap and Retrofit go the same way).
-- **Player Computer Control** (spec 06 §1.2.1; `ai::setComputerControl`): the check list
-  behind a master password, the mark with all ministers and flags; local and hotseat games end
-  when no human is left; a player's copy of a game on different machines changes only there and
-  sends the player's own minister switches. The TCP/IP host's toggle flips only the mark
-  (`ai::setComputerMark`). Our choices are spec 06 §7 Q84.
+- **Player Computer Control** (spec 06 §1.2.1, §7 Q84; `ai::setComputerControl`): the check
+  list behind a master password, the mark with all ministers and flags; local and hotseat games
+  end when no human is left. Since 2026-10-03 every empire can be switched, neutral ones too:
+  neutrality is a mark of its own (`Empire::neutral` while a human plays a neutral empire,
+  `isNeutral()` for the rules), so a neutral empire handed to a human keeps the neutral rules.
+  A player's copy of a game on different machines changes only there; its orders carry the
+  minister switches and the fleets' flag (`cmd::SetMinisters::fleets`) and, of the ships,
+  units and colonies, only the flags of those given orders that turn (`ClassicSession::carryFlags`).
+  The TCP/IP host's toggle flips only the mark (`ai::setComputerMark`) on every row, an empire
+  that was a computer player from the start included, which the host then plays ("[Host]").
 - **Reset Passwords** (spec 06 §1.9): six digits from a source apart from the game's, shown to
   the host only and written in after the next turn's orders are read, never saved; on the
   in-game host's Options window, by an admin of a headless server and by the e-mail host
   (`pbem process --reset-passwords`).
 - **Settings.txt keys** (spec 06 §1.9, Q83): `Allow CD Music` (the Options music rows and the
-  Combat Options lamp), `Allow Export of Weapon And Component Data` (a Weapons Report Export
-  button writing four tables of our own layout), `System Ship Movement Delay Milliseconds` (a
-  wait after each animated step, read as seconds as the original does; none in the movement
-  log replay, spec 06 §7 Q62) and the Finale picture lists (the ending window: Victory,
-  Lose, Human Dead).
+  Combat Options lamp), `Allow Export of Weapon And Component Data` (the Weapons Report's
+  Export button writing `Weapons.txt`, `Comps.txt`, `WeaponFamilies.txt` and
+  `CompFamilies.txt` in the original's fixed-width columns since 2026-10-03),
+  `System Ship Movement Delay Milliseconds` (a wait after each animated step, read as seconds
+  as the original does; none in the movement log replay, spec 06 §7 Q62) and the Finale
+  picture lists (the ending windows: Victory, Lose, Human Dead).
 
 The client's own differences are written in spec 06 beside each answer ("Our client
 differs"). Every one settled on 2026-10-01 is implemented; the client's own choices are
@@ -413,28 +419,55 @@ our client does differently.
 
 Seen side by side with the running original on 2026-10-01 ([spec 07](spec/07-observations.md),
 session 3, which lists each difference in full). Since 2026-10-01 the client follows what was
-observed (spec 06 §1.11): every list scrolls with an arrow column and heads picture columns
-"Pic"; on/off settings in button columns are check boxes; Planets, Colonies, Construction
-Queues, Research, Designs, Create Design, Empire Status, Empires, Ships\Units, the Log, the
-Combat Simulator, Tactical Combat and the report panel have the original's labels, blocks,
-button order and slots. The details the observation does not give are our choices, spec 06 §7
-Q89–Q98. What remains different (impact visual only unless noted):
+observed (spec 06 §1.11): every list heads picture columns "Pic"; on/off settings in button
+columns are check boxes; Planets, Colonies, Construction Queues, Research, Designs, Create
+Design, Empire Status, Empires, Ships\Units, the Log, the Combat Simulator, Tactical Combat
+and the report panel have the original's labels, blocks, button order and slots.
+
+Since 2026-10-03 the management windows follow the answers of spec 06 §7 Q83, Q84 and
+Q88–Q96 (their remaining choices are noted beside each answer):
+
+- **Every list** (`screens/list_widgets.cpp`, Q89): the 24 px arrow column with the
+  `Arrows.bmp` cells in their four states, a thumb as long as the visible share, a press or
+  drag in the track scrolling there, a held arrow repeating every 100 ms and the wheel a row
+  per notch. The column's parts are UI tags (`<list>:up`, `:down`, `:track`, `:thumb`).
+- **Research** (Q92): the project boxes with the name, Research Level N, Completion, Cost Per
+  Turn and the bar of green blocks; Tech Tree only with the new game option "Players can see
+  the complete tech tree" (`GameOptions::completeTechTree`, off in a new game; the Game
+  Settings box, a lesson's `complete_tech_tree` and a server setup file's key set it).
+- **Intelligence** (spec 07 session 5): the Research layout, the points in the title strip,
+  silver group headings over 14 px rows, the same boxes, Divide Pts Evenly and Reorder Projects
+  in their slots.
+- **Empire Status** (Q95): the original's places, the amounts in full and right-aligned, icons
+  on From Our Colonies only, Net Resources Per Turn a labelled row.
+- **Colonies** (Q90): the summary's labels and places, amounts rounded up in thousands or
+  millions, a click showing the colony, Set Colony Type asking for the planet, Scrap Facil
+  Types on every colony.
+- **Designs** and **Create Design** (Q93, Q94): the original's rows, alphabetical order,
+  detail, component grid and places; a new design without a design type; the warnings after a
+  red ball; To Hit Modifiers and Condensed View kept with the empire, the first changing the
+  figures box (`game::designToHit`).
+- **Borders** (Q96): a window of its own (`borders`), with a check box per empire, the
+  contested systems in yellow, Legend, and claiming by a click.
+- **Orders cells** (Q88), **Log Goto** (Q91), the **Weapons Report export** and the
+  **endings** (Q83): the original's behaviour. A human-controlled empire found defeated plays a
+  last turn (the Lose ending) and is marked dead at its end (`score::checkDestruction`), so a
+  lone human sees Lose, then Human Dead at the next End Turn; the conquest of the galaxy shows
+  the Victory picture and asks whether to play on.
+- **Help** and the **Galaxy Map** (spec 07 session 5): the original's layout, frame, places and
+  button slots; Help's Weap Mount tab and Manual button.
+
+OpenSE4's own additions in these windows, none of which moves an original control: the Find
+box in Help's heading row; the Galaxy Map's Show Distances (in an empty slot), the legend (in
+three empty slots) and the notes line under the map's hint; the target pickers of an
+intelligence project (the original's are not described); the Designs window's note in its
+title strip, the scroll to a design just made and its Make Current label for an obsolete
+design; the hover tooltips of the Research and Intelligence lists. What remains different:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Research (`screens/research.cpp`) | Tech Tree always in slot 12; project boxes with the name, level and an estimate centred, the small box writing "paid / cost" | Tech Tree only when the game lets players see the complete tech tree, a Game Settings check box our setup and `GameOptions` lack (spec 01 §2.2), and the only way to the Tech Tree window; 140×130 boxes with the name, "Research Level N", Completion and Cost Per Turn, the small box a bar of up to 19 green blocks (spec 06 §7 Q92) | L |
-| Empire Status (`screens/empire_status.cpp`) | One table per block, icons on each block's first row, the net as an unlabelled block | Amounts right-aligned at fixed places, icons only on From Our Colonies, Net Resources Per Turn a labelled row (spec 06 §7 Q95) | L |
 | E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
-| Every list (`screens/list_widgets.cpp`) | A 16 px column with arrows of our own drawing, no thumb; the wheel scrolls | A 24 px column with the `Arrows.bmp` cells (normal, under the pointer, held, disabled), a thumb as long as the visible share, a click or drag in the track jumps there, holding an arrow repeats every 100 ms (spec 06 §7 Q89) | L |
-| Empires (`screens/empires.cpp`) | Borders a view of the Empires window, one filter at a time, overlaps in white, no claiming | Borders a window of its own: a check box per empire, the claimed systems in their colours, contested ones yellow with a Legend, a click claims a system or gives it up (spec 06 §7 Q96) | L |
-| Weapons Report export (`data_export.cpp`) | Four tab-separated `OpenSE4_*.txt` tables of our own columns | `Weapons.txt`, `Comps.txt`, `WeaponFamilies.txt`, `CompFamilies.txt`, fixed-width, every component of the data set (spec 06 §7 Q83) | L |
-| Ending (`finale_screen.cpp`) | One kind chosen (Victory, Human Dead, Lose); a lone human sees Human Dead at once | Each ending shown as it comes: Lose at the start of a last turn, Human Dead at the next End Turn (spec 06 §7 Q83) | L |
-| Players window, TCP/IP host (`ai.cpp`, `net/host.cpp`) | Neutral empires cannot be switched; the host's toggle refuses empires that were computer players from the start; a player's copy sends every flag | Any empire can be switched (neutrality stays); the host's toggle works on every row ("[Host]"); the orders carry only the flags of objects changed that turn (spec 06 §7 Q84) | L |
-| Orders cells, Ships\Units and Colonies (`screens/ships_common.cpp`) | "None" or "REPEAT ORDERS" for an empty list; the current order in round brackets | One order per line, no brackets, an empty cell when there are none; "REPEAT ORDERS" only in the sort text; the Colonies Orders heading does not sort (spec 06 §7 Q88) | L |
-| Colonies (`screens/planets.cpp`) | "Systems with Colonies"; research and intelligence values at x 289; storage truncated ("52kT"); a click selects, a double click shows the colony; the buttons act on the selection | "System with Colonies"; those values at x 271 with icons; storage rounded up ("53kT"); a click shows the colony and closes the window; Set Colony Type asks for the planet; Scrap Facil Types acts on every colony (spec 06 §7 Q90) | L |
-| Log Goto (`screens/log.cpp`) | Lit whenever no entry is selected | Keeps its last state when nothing is selected (spec 06 §7 Q91) | L |
-| Designs (`screens/designs.cpp`) | Our row places, headings in design-type order, obsolete names grey | The original's row places, headings and designs in alphabetical order (spec 06 §7 Q93) | L |
-| Create Design (`screens/designs.cpp`) | Our places; Weapons Report in slot 7; yellow warnings; To Hit Modifiers changes the tiles; an empty name box and a design type already chosen | The places of spec 06 §7 Q94; Weapons Report in slot 11; white warnings after a red ball; To Hit Modifiers shows Offense and Defense Bonus in the figures box; the boxes read "Design Type" and "Design Name" | L |
+| Last turn of a human defeated in its own turn-based turn (`turn_based.cpp` `finishPlayerTurn`) | Marked dead at the end of that turn, without a Lose ending first | Marked dead only after its Lose window (spec 06 §7 Q83); the original's check when a human loses everything during its own turn is not described (inferred) | L |
 
 Seen side by side with the running original on 2026-10-03 ([spec 07](spec/07-observations.md),
 session 5, which gives each original layout in full): the setup screens, the front end,
@@ -461,9 +494,9 @@ the intro's "Loading:" and "Complete". What still differs, and OpenSE4's own add
   trait cannot be taken (Advanced Traits); Quick Start's double click and the yellow frame on
   the chosen portrait; `--quick-start --empires=N` and a lesson's `computer_players`, which
   give N − 1 (or that many) computer players and no neutral empire.
-- **Dim in ours** (impact L): Game Settings' Game Master Password, Cheat codes allowed and
-  Players can see the complete tech tree (no such options for a game on one computer; network
-  games set a master password in Multiplayer); Mechanics' Different Machines, Multiplayer
+- **Dim in ours** (impact L): Game Settings' Game Master Password and Cheat codes allowed (no
+  such options for a game on one computer; network games set a master password in
+  Multiplayer); Mechanics' Different Machines, Multiplayer
   Game Filename, Save Game Directory Path and Connection Type (network and e-mail games are set
   up from Multiplayer).
 - **Our choices where the observation is silent** (impact L): the spin controls' steps (5 % a
@@ -472,16 +505,7 @@ the intro's "Loading:" and "Complete". What still differs, and OpenSE4's own add
   other than "Average" and the effect wording; Begin Game without a chosen portrait asks for
   one; Change Directory asks for a folder by name (with Default); the Compare Culture
   Modifiers window is our table; the pictures under the page buttons come from the seed;
-  Victory Conditions keeps whole years; the lists use the shared arrow column (the "Every
-  list" row); loading a game shows no "Login To Game" list of its empires and the Game Master.
-
-Impact visual only unless noted:
-
-| Where | Client now | Original | Impact |
-|---|---|---|---|
-| Help (`screens/help.cpp`) | Find box, items grouped with pictures and sizes, our own detail lines, no Weap Mount tab or Manual button, Weapons Report in slot 11 | Alphabetical name lists with lamps, the detail layout of spec 07 session 5, Weap Mount tab (slot 2), Weapons Report (slot 12), Manual (slot 13) | L |
-| Galaxy Map (`screens/galaxy_map.cpp`) | Map 5–6 px up and left in a darker frame, a frame round the content, Goto System in slot 8, an extra Show Distances box and a legend | Map frame (144,189)–(687,564), hint under it, Goto System in slot 11, Show Names in slot 13 (spec 07 session 5) | L |
-| Intelligence (`screens/intelligence.cpp`) | Points as a line in the content, a two-column table with the group in orange, the four project boxes stacked at the right, a description box, Divide Evenly, Reorder Projects in slot 7 | The Research layout: points in the title strip, silver group headings, 14 px rows with the cost right-aligned, four 140 px boxes side by side with their small boxes, Divide Pts Evenly, Reorder Projects in slot 13 (spec 07 session 5) | L |
+  Victory Conditions keeps whole years; the lists use the shared arrow column; loading a game shows no "Login To Game" list of its empires and the Game Master.
 
 Since 2026-10-03 the battle windows follow session 5 and spec 06 §7 Q86, Q87, Q97 and Q98:
 Tactical Combat's places, panels, weapon cells and title-strip buttons, the Combat Piece
@@ -489,7 +513,7 @@ Report's pages, Combat Replay in the Tactical Combat frame, Combat Replay Option
 and check boxes (and Combat Options' alike, inferred), Ground Combat's grids and side marks,
 the movement line during the movement log replay with sector 0 selected after it, and the
 report's up-arrow. Their remaining choices are noted in spec 06 beside each answer; the
-lists' 24 px arrow column is the "Every list" row above. OpenSE4's additions there, which
+lists' 24 px arrow column is described above. OpenSE4's additions there, which
 change nothing in the original's layout:
 
 - **Combat Replay's events and summary** (spec 06 §7 Q39): an option of Combat Replay Options
