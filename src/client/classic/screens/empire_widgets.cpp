@@ -183,6 +183,107 @@ void projectPageButtons(Dialog& d, int& page) {
     }
 }
 
+void textAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text) {
+    const ImVec2 p = d.at({at.x, at.y + lead});
+    ImGui::GetWindowDrawList()->AddText(font, ui.fontPx(size), {std::floor(p.x), std::floor(p.y)}, color, text.data(), text.data() + text.size());
+}
+
+void textRightAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text) {
+    const float w = font->CalcTextSizeA(ui.fontPx(size), FLT_MAX, 0.0f, text.data(), text.data() + text.size()).x / ui.k();
+    textAt(ui, d, font, size, lead, {at.x - w, at.y}, color, text);
+}
+
+std::string completionText(int64_t remaining, int64_t perTurn) {
+    if (perTurn <= 0) return "Never";
+    const int64_t turns = std::max<int64_t>(1, (std::max<int64_t>(0, remaining) + perTurn - 1) / perTurn);
+    return std::format("{}.{} years", turns / 10, turns % 10);
+}
+
+namespace {
+
+// Words of `text` in lines no wider than `width` ImGui units.
+std::vector<std::string> wrapWords(ImFont* font, float size, std::string_view text, float width) {
+    std::vector<std::string> lines;
+    std::string line;
+    size_t i = 0;
+    while (i < text.size()) {
+        while (i < text.size() && text[i] == ' ') ++i;
+        size_t j = i;
+        while (j < text.size() && text[j] != ' ') ++j;
+        if (j == i) break;
+        const std::string word(text.substr(i, j - i));
+        const std::string longer = line.empty() ? word : line + " " + word;
+        if (!line.empty() && font->CalcTextSizeA(size, FLT_MAX, 0.0f, longer.c_str()).x > width) {
+            lines.push_back(line);
+            line = word;
+        } else {
+            line = longer;
+        }
+        i = j;
+    }
+    if (!line.empty()) lines.push_back(line);
+    return lines;
+}
+
+} // namespace
+
+int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<ProjectBox>& boxes, int* hovered) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImU32 edge = imColor(palette::kButton), white = IM_COL32_WHITE, label = imColor(palette::kLabel);
+    const float px = ui.px(1);
+    int clicked = -1;
+    if (hovered) *hovered = -1;
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        const ProjectBox& b = boxes[i];
+        const Vec2 o{at.x + 140.0f * float(i), at.y};
+        const ImVec2 a = d.at(o), z = d.at(o + Vec2{140, 130});
+        const bool filled = !b.name.empty();
+        ImGui::SetCursorScreenPos(a);
+        ImGui::PushID(int(i));
+        bool over = false;
+        if (filled) {
+            if (ImGui::InvisibleButton("##box", ImVec2(z.x - a.x, z.y - a.y))) clicked = int(i);
+            over = ImGui::IsItemHovered();
+            if (over && hovered) *hovered = int(i);
+        } else {
+            ImGui::Dummy(ImVec2(z.x - a.x, z.y - a.y));
+        }
+        ImGui::PopID();
+        dl->AddRectFilled(a, z, IM_COL32_BLACK);
+        if (over)
+            if (Sprite grid = ui.art.region("Pictures/Game/Dialogs/RowGrid.bmp", 0, 0, 140, 130, false))
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(grid.tex.value)), a, z, {grid.uv.min.x, grid.uv.min.y}, {grid.uv.max.x, grid.uv.max.y});
+        // Its top, right and bottom edges.
+        dl->AddRectFilled(a, {z.x, a.y + px}, edge);
+        dl->AddRectFilled({z.x - px, a.y}, z, edge);
+        dl->AddRectFilled({a.x, z.y - px}, z, edge);
+        // The name, word-wrapped in (3,3)-(138,55), each line centred (inferred).
+        const std::string name = filled ? b.name : std::string("None");
+        const float bodySize = ui.fontPx(kTextSize);
+        const auto lines = wrapWords(ui.fonts.regular, bodySize, name, ui.px(135));
+        for (size_t l = 0; l < lines.size() && l < 3; ++l) {
+            const float w = ui.fonts.regular->CalcTextSizeA(bodySize, FLT_MAX, 0.0f, lines[l].c_str()).x / ui.k();
+            textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, o + Vec2{3 + std::floor((135 - w) * 0.5f), 3 + 16.0f * float(l)}, white, lines[l]);
+        }
+        // The small box at its foot.
+        const ImVec2 sa = d.at(o + Vec2{1, 102}), sz = d.at(o + Vec2{139, 129});
+        dl->AddRectFilled(sa, {sz.x, sa.y + px}, edge);
+        dl->AddRectFilled({sa.x, sz.y - px}, sz, edge);
+        dl->AddRectFilled(sa, {sa.x + px, sz.y}, edge);
+        dl->AddRectFilled({sz.x - px, sa.y}, sz, edge);
+        if (!filled) continue;
+        if (!b.level.empty()) textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{3, 54}, white, b.level);
+        textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{3, 75}, label, "Completion:");
+        textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{82, 75}, white, completionText(b.remaining, b.perTurn));
+        textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{3, 87}, label, "Cost Per Turn:");
+        textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{82, 87}, white, std::to_string(b.perTurn));
+        // truncate(percent × 19 / 100) green blocks.
+        const int blocks = std::clamp(b.percent, 0, 100) * 19 / 100;
+        for (int k = 0; k < blocks; ++k) dl->AddRectFilled(d.at(o + Vec2{3.0f + 7.0f * float(k), 104}), d.at(o + Vec2{8.0f + 7.0f * float(k), 126}), IM_COL32(0, 255, 0, 255));
+    }
+    return clicked;
+}
+
 void ReorderPopup::open(std::vector<std::string> rows) {
     rows_ = std::move(rows);
     order_.resize(rows_.size());

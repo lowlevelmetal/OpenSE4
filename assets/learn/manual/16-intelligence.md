@@ -69,10 +69,12 @@ fill up there. Repeat is useful for them.
 The [Intelligence](window:intelligence) window opens from the **Intelligence** button of the
 [Empires](window:empires) window (`F9`).
 
-- The top shows the points available this turn, the points produced per turn, the points held by your defenses, how many projects run (at most 12) and how points are shared.
-- The left list shows the projects you can start, grouped, with their cost. **Left-click** a project to add it. Point at it to read its description, cost and kind of target in the panel at the bottom; **right-click** it to keep it there.
-- The right side shows your projects, four at a time. Each slot has a **Remove** button (it asks first, while the Empire Option for it is on), the target choices and a progress bar.
-- `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch pages. `Repeat Projects`, `Divide Evenly` and `Reorder Projects` work as in the [Research](research#the-research-queue) window. Divide Evenly is on for a new empire.
+It is laid out like the [Research](research#the-research-window) window.
+
+- The title strip shows the **Intelligence Points Available** this turn.
+- The list fills the top of the window: the projects you can start, under their groups, with their cost. **Click a project** to add it. One that needs a target then asks for the empire, and after that for the planet, ship, technology area or third empire (or **Any**). Point at a project to read its description.
+- Below the list, your current projects appear four at a time: each box shows the project, its target, when it will finish, the points it gets each turn and its progress in the small box under it. **Click a project** to cancel it; the game asks first while the Empire Option for it is on.
+- `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch pages. `Repeat Projects`, `Divide Pts Evenly` and `Reorder Projects` work as in the [Research](research#the-research-queue) window. Divide Pts Evenly is on for a new empire.
 
 ## Intelligence advice
 

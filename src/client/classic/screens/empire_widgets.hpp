@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -61,6 +62,36 @@ inline constexpr int kProjectsPerPage = 4;
 inline constexpr int kMaxProjects = 12;
 // "Projects 1-4", "Projects 5-8", "Projects 9-12" tab buttons in the button column.
 void projectPageButtons(Dialog& d, int& page);
+
+// One project box of the Research and Intelligence windows (spec 06 §7 Q92,
+// confirmed: binary; Intelligence uses the Research layout, spec 07 session 5).
+struct ProjectBox {
+    std::string name;        // the area or project; empty: an empty slot ("None")
+    std::string level;       // "Research Level N" under the name, or empty
+    int64_t remaining = 0;   // points it still needs
+    int64_t perTurn = 0;     // the points it gets this turn
+    int percent = 0;         // points paid of the cost, 0..100
+};
+// Where the four boxes of a page start, in the window (140×130 each, side by side).
+inline constexpr Vec2 kProjectBoxesAt{15, 330};
+// The four boxes of the shown page from `at` (window coordinates of `d`): a
+// black cell (the RowGrid pattern under the pointer when it holds a project)
+// with its top, right and bottom edges in #617BC2; the name word-wrapped in
+// (3,3)-(138,55) ("None" for an empty slot), the level at (3,54) in small
+// type, "Completion:" and "Cost Per Turn:" at (3,75) and (3,87) with their
+// values at x 82; at its foot the small box (1,102)-(138,128) holding a bar of
+// up to 19 green 5×22 blocks, 7 px apart from x 3. Returns the box clicked
+// (one holding a project), or -1; `hovered` gets the one under the pointer.
+int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<ProjectBox>& boxes, int* hovered = nullptr);
+// Completion as the boxes write it: the whole turns left, rounded up and at
+// least one, times the turn length ("0.3 years"); "Never" without points
+// (OpenSE4's word, inferred).
+std::string completionText(int64_t remaining, int64_t perTurn);
+// Text with its glyph cell's top at `at` (window coordinates of `d`) in a font
+// of `size` frame pixels whose face has `lead` (ui.hpp kTextLead ...).
+void textAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text);
+// The same, right-aligned to x.
+void textRightAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text);
 
 // The last command result or notice, shown under a window's content.
 class StatusLine {

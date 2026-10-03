@@ -5,6 +5,7 @@
 #include "client/classic/screens/screens.hpp"
 
 #include "game/design.hpp"
+#include "game/research.hpp"
 #include "game/events.hpp"
 #include "game/intel.hpp"
 #include "game/query.hpp"
@@ -12,11 +13,17 @@
 
 #include <algorithm>
 #include <format>
+#include <functional>
 
 namespace opense4::client::classic {
 
 namespace {
 
+// The Research window's layout (spec 07 session 5, Intelligence; spec 06 §7
+// Q92): the points in the title strip, the project list at (15,56) 560×243
+// under group headings in the large silver type, the projects as 14 px rows of
+// small white type with the cost right-aligned, then the four project boxes
+// of the page side by side from (15,330).
 class IntelligenceScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
@@ -25,33 +32,48 @@ public:
         const game::Empire& e = ui.me();
         const bool allowed = ui.state().options.allowIntel;
 
-        d.beginContent();
-        header(ui);
-        if (!allowed) {
-            ImGui::Spacing();
-            wrappedText("Intelligence projects are disabled in this game (Game Settings: Allow Intelligence Projects).", kTextWarn);
-        } else {
-            const float bottom = ui.px(118);
-            const float listH = ImGui::GetContentRegionAvail().y - bottom - ImGui::GetStyle().ItemSpacing.y;
-            const float leftW = ImGui::GetContentRegionAvail().x * 0.42f;
-            hovered_.reset();
-            ImGui::BeginChild("##list", ImVec2(leftW, listH));
-            projectList(ui);
-            ImGui::EndChild();
-            ImGui::SameLine();
-            ImGui::BeginChild("##queue", ImVec2(0, listH));
-            queue(ui);
-            ImGui::EndChild();
-            ImGui::BeginChild("##detail", ImVec2(0, 0), ImGuiChildFlags_Borders);
-            detail(ui);
-            ImGui::EndChild();
-        }
+        // The points available this turn (the pool) in the title strip, from x 169.
+        d.titleText(169, imColor(palette::kLabel), "Intelligence Points Available:");
+        const std::string points = formatNumber(e.intelPool);
+        d.titleText(369, IM_COL32_WHITE, points);
+        d.titleIcon(373 + ImGui::CalcTextSize(points.c_str()).x / ui.k(), ui.art.icon16(Icon::Intelligence));
 
+        d.beginContent(576);
+        hovered_.reset();
+        const ImU32 blue = imColor(palette::kLabel);
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 39}, blue, "Intelligence Projects");
+        textRightAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {520, 39}, blue, "Cost");
+        if (const Sprite icon = ui.art.icon16(Icon::Intelligence))
+            ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), d.at({522, 39}), d.at({538, 55}),
+                                                 {icon.uv.min.x, icon.uv.min.y}, {icon.uv.max.x, icon.uv.max.y});
+        ImGui::SetCursorScreenPos(d.at({15, 56}));
+        projectList(ui, allowed);
+        ui.tagItem("intelligence:projects");
+        if (hovered_) {
+            ImGui::SetNextWindowSize(ui.size({380, 0}));
+            if (ImGui::BeginTooltip()) {
+                detail(ui);
+                ImGui::EndTooltip();
+            }
+        }
+        ImGui::SetCursorScreenPos(d.at({17, 303}));
+        if (!allowed) wrappedText("Intelligence projects are disabled in this game (Allow Intelligence Projects).", kTextWarn);
+        else status_.draw();
+        textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {575, 305}, blue, "(click intelligence project to add it as a current project)");
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 316}, blue, std::format("{} Current Projects", e.intel.size()));
+        textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {575, 318}, blue, "(click to cancel project)");
+        queue(ui, d);
+        ui.tag("intelligence:queue", d.at(kProjectBoxesAt), d.at(kProjectBoxesAt + Vec2{560, 130}));
+        targetPicker(ui);
+
+        // The buttons: the three pages, a gap, Repeat Projects and Divide Pts
+        // Evenly (slots 5 and 6), gaps, Reorder Projects (slot 13), Close.
         d.beginButtons();
         projectPageButtons(d, page_);
         d.spacer();
         if (d.check("Repeat Projects", e.repeatIntel, allowed)) set(ui, e.intel, e.intelEvenly, !e.repeatIntel);
-        if (d.check("Divide Evenly", e.intelEvenly, allowed)) set(ui, e.intel, !e.intelEvenly, e.repeatIntel);
+        if (d.check("Divide Pts Evenly", e.intelEvenly, allowed)) set(ui, e.intel, !e.intelEvenly, e.repeatIntel);
+        for (int gap = 0; gap < 6; ++gap) d.spacer();
         if (d.button("Reorder Projects", allowed && e.intel.size() > 1)) {
             std::vector<std::string> rows;
             for (const auto& p : e.intel) rows.push_back(orderLabel(ui, p));
@@ -83,30 +105,8 @@ private:
         return out;
     }
 
-    void header(UiContext& ui) {
-        const game::Empire& e = ui.me();
-        if (Sprite icon = ui.art.icon32(Icon::Intelligence)) {
-            image(ui, icon, {24, 24});
-            ImGui::SameLine();
-        }
-        ImGui::AlignTextToFramePadding();
-        heading(ui, "Intelligence Points");
-        ImGui::SameLine();
-        ImGui::Text("%s available, %s per turn", formatNumber(e.intelPool).c_str(), formatNumber(e.economy.intelligence).c_str());
-        ImGui::SameLine(ui.px(330));
-        ImGui::TextColored(kTextBlue, "Defense");
-        ImGui::SameLine();
-        ImGui::Text("%s", formatNumber(game::intel::defensePoints(ui.rules(), ui.state(), e.id)).c_str());
-        ImGui::SameLine(ui.px(470));
-        ImGui::TextColored(kTextBlue, "Projects");
-        ImGui::SameLine();
-        ImGui::Text("%zu of %d", e.intel.size(), kMaxProjects);
-        ImGui::SameLine(ui.px(610));
-        ImGui::TextColored(kTextDim, "%s", e.intelEvenly ? "Divided evenly" : "In queue order");
-        status_.draw();
-        ImGui::Separator();
-    }
-
+    // A click on a project adds it; one with a target first asks for the
+    // empire, then for the specific target or "Any" (spec 05 §2.1).
     void add(UiContext& ui, uint32_t index) {
         const game::Empire& e = ui.me();
         if (static_cast<int>(e.intel.size()) >= kMaxProjects) {
@@ -115,66 +115,66 @@ private:
         }
         game::IntelProjectOrder o;
         o.project = index;
-        const IntelTarget kind = intelTargetKind(project(ui, index));
-        if (kind != IntelTarget::None) {
-            const auto known = knownEmpires(ui);
-            if (known.empty()) {
-                status_.set("This project needs a target empire, and we have not met anyone yet.", true);
-                return;
-            }
-            o.target = known.front();
-            if (kind == IntelTarget::ThirdEmpire)
-                for (game::EmpireId k : known)
-                    if (k != o.target) {
-                        o.thirdEmpire = k;
-                        break;
-                    }
+        if (intelTargetKind(project(ui, index)) == IntelTarget::None) {
+            commit(ui, o);
+            return;
         }
+        if (knownEmpires(ui).empty()) {
+            status_.set("This project needs a target empire, and we have not met anyone yet.", true);
+            return;
+        }
+        picking_ = Picking{o, 0};
+    }
+
+    void commit(UiContext& ui, const game::IntelProjectOrder& o) {
+        const game::Empire& e = ui.me();
         auto q = e.intel;
         q.push_back(o);
         set(ui, q, e.intelEvenly, e.repeatIntel);
         if (status_.empty()) page_ = std::min(kMaxProjects / kProjectsPerPage - 1, static_cast<int>(q.size() - 1) / kProjectsPerPage);
     }
 
-    void projectList(UiContext& ui) {
+    void projectList(UiContext& ui, bool allowed) {
         const game::Rules& r = ui.rules();
-        heading(ui, "Projects");
-        ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "(click to add)");
-        const auto list = availableIntelProjects(r, ui.me());
-        if (list.empty()) {
-            ImGui::TextColored(kTextDim, "No projects are available yet.");
-            return;
-        }
-        // Grouped by Group, in order of first appearance.
+        const auto list = allowed ? availableIntelProjects(r, ui.me()) : std::vector<uint32_t>{};
+        // The groups in alphabetical order (observed: Defense, General Espionage, ...).
         std::vector<std::string> groups;
         for (uint32_t i : list)
             if (std::find(groups.begin(), groups.end(), project(ui, i).group) == groups.end()) groups.push_back(project(ui, i).group);
-        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV;
-        if (!beginListTable(ui, "##projects", 2, flags, ImVec2(0, 0), kListLineStep)) return;
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Project", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Cost (IP)", ImGuiTableColumnFlags_WidthFixed, ui.px(72));
-        ImGui::TableHeadersRow();
+        std::sort(groups.begin(), groups.end());
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        beginList(ui, "##projects", ui.size({560, 243}), kRowH);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float w = ImGui::GetContentRegionAvail().x;
         for (const std::string& g : groups) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::TextColored(kTextWarn, "%s", g.empty() ? "Other" : g.c_str());
+            ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            dl->AddText(ImVec2(at.x + ui.px(2), at.y + ui.px(kTitleLead)), imColor(palette::kHeading), g.empty() ? "Other" : g.c_str());
+            ImGui::PopFont();
+            ImGui::Dummy(ImVec2(w, ui.px(kHeadingH)));
+            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
             for (uint32_t i : list) {
                 const ruleset::IntelProject& p = project(ui, i);
                 if (p.group != g) continue;
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(int(i));
-                if (ImGui::Selectable(p.name.c_str(), pinned_ && *pinned_ == i, ImGuiSelectableFlags_SpanAllColumns)) add(ui, i);
+                const ImVec2 row = ImGui::GetCursorScreenPos();
+                // Named after the project (input scripts find it so); the text is drawn below.
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
+                const bool clicked = ImGui::Selectable(std::format("{}##row", p.name).c_str(), false, ImGuiSelectableFlags_None, ImVec2(w, ui.px(kRowH)));
+                ImGui::PopStyleColor();
+                if (clicked) add(ui, i);
                 if (ImGui::IsItemHovered()) hovered_ = i;
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) pinned_ = i;
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(formatNumber(p.cost).c_str());
+                // The name at x 11 of the list, the cost right-aligned at x 525.
+                dl->AddText(ImVec2(row.x + ui.px(9), row.y + ui.px(1 + kSmallLead)), IM_COL32_WHITE, p.name.c_str());
+                const std::string cost = formatNumber(p.cost);
+                dl->AddText(ImVec2(row.x + ui.px(523) - ImGui::CalcTextSize(cost.c_str()).x, row.y + ui.px(1 + kSmallLead)), IM_COL32_WHITE, cost.c_str());
                 ImGui::PopID();
             }
+            ImGui::PopFont();
         }
-        endListTable(ui);
+        endList(ui);
+        ImGui::PopStyleVar(2);
     }
 
     // Known planets of `owner` (colonies in systems we have explored).
@@ -198,151 +198,118 @@ private:
         return out;
     }
 
-    // Research - Steal may name the area to steal (spec 05 §2.3). "Any" keeps
-    // the original's pick, which only finds areas where we already lead.
-    bool techTarget(UiContext& ui, game::IntelProjectOrder& o) {
-        if (game::effects::parseEffect(project(ui, o.project).type) != game::effects::Effect::ResearchSteal) return false;
-        const auto& areas = ui.rules().data().techAreas;
-        bool changed = false;
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        const bool named = o.targetTech.valid() && o.targetTech.index() < areas.size();
-        const std::string label = named ? areas[o.targetTech.index()].name : std::string("Any technology");
-        if (ImGui::BeginCombo("##tech", label.c_str())) {
-            if (ImGui::Selectable("Any technology", !named)) {
-                changed = named;
-                o.targetTech = {};
-            }
-            ImGui::SetItemTooltip("Our agents choose, and they only pick areas where we already lead: the theft fails.");
-            for (uint32_t i = 0; i < areas.size(); ++i) {
-                if (areas[i].racialArea > 0 || areas[i].uniqueArea > 0) continue;  // never stolen
-                const ruleset::TechAreaId a{i};
-                if (ImGui::Selectable(areas[i].name.c_str(), a == o.targetTech) && a != o.targetTech) {
-                    o.targetTech = a;
-                    changed = true;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        return changed;
-    }
-
-    // Target pickers for one queued project; returns true when the order changed.
-    bool targets(UiContext& ui, game::IntelProjectOrder& o) {
+    // The pickers after a click on a project that needs a target (spec 05
+    // §2.1): the empire, among those we are in contact with; then, by the
+    // project's kind, a planet or a ship of it, a third empire, or the area a
+    // Research - Steal takes, each with "Any" where the rules allow it. A list
+    // window of our own (the original's pickers are not described; inferred).
+    void targetPicker(UiContext& ui) {
+        if (!picking_) return;
         const game::GameState& s = ui.state();
+        game::IntelProjectOrder& o = picking_->order;
         const IntelTarget kind = intelTargetKind(project(ui, o.project));
-        if (kind == IntelTarget::None) {
-            ImGui::TextColored(kTextDim, "Protects our empire while it runs.");
-            return false;
-        }
-        bool changed = false;
-        const auto known = knownEmpires(ui);
-        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        ImGui::SetNextItemWidth(w);
-        const std::string empireName = o.target.valid() ? s.empire(o.target).name : std::string("Choose an empire");
-        if (ImGui::BeginCombo("##target", empireName.c_str())) {
-            for (game::EmpireId k : known)
-                if (ImGui::Selectable(s.empire(k).name.c_str(), k == o.target) && k != o.target) {
-                    o.target = k;
-                    o.targetPlanet = {};
-                    o.targetVehicle = {};
-                    if (o.thirdEmpire == k) o.thirdEmpire = {};
-                    changed = true;
-                }
-            ImGui::EndCombo();
-        }
-        if (kind == IntelTarget::Empire) return techTarget(ui, o) || changed;
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (kind == IntelTarget::Planet) {
-            const std::string label = o.targetPlanet.valid() ? s.galaxy.object(o.targetPlanet).name : std::string("Any planet");
-            if (ImGui::BeginCombo("##planet", label.c_str())) {
-                if (ImGui::Selectable("Any planet", !o.targetPlanet.valid())) {
-                    changed = o.targetPlanet.valid();
-                    o.targetPlanet = {};
-                }
-                for (game::ObjectId p : knownPlanets(ui, o.target))
-                    if (ImGui::Selectable(s.galaxy.object(p).name.c_str(), p == o.targetPlanet) && p != o.targetPlanet) {
-                        o.targetPlanet = p;
-                        changed = true;
-                    }
-                ImGui::EndCombo();
-            }
+        const bool steal = game::effects::parseEffect(project(ui, o.project).type) == game::effects::Effect::ResearchSteal;
+        struct Choice {
+            std::string label;
+            std::function<void()> pick;
+        };
+        std::vector<Choice> choices;
+        const char* title = "Select Empire";
+        bool last = true;
+        if (picking_->stage == 0) {
+            for (game::EmpireId k : knownEmpires(ui))
+                choices.push_back({s.empire(k).name, [&o, k] { o.target = k; }});
+            last = kind == IntelTarget::Empire && !steal;
+        } else if (kind == IntelTarget::Planet) {
+            title = "Select Planet";
+            choices.push_back({"Any", [&o] { o.targetPlanet = {}; }});
+            for (game::ObjectId p : knownPlanets(ui, o.target)) choices.push_back({s.galaxy.object(p).name, [&o, p] { o.targetPlanet = p; }});
         } else if (kind == IntelTarget::Vehicle) {
-            const game::Vehicle* tv = o.targetVehicle.valid() ? s.vehicle(o.targetVehicle) : nullptr;
-            const std::string label = tv ? tv->name : std::string("Any ship");
-            if (ImGui::BeginCombo("##vehicle", label.c_str())) {
-                if (ImGui::Selectable("Any ship", !o.targetVehicle.valid())) {
-                    changed = o.targetVehicle.valid();
-                    o.targetVehicle = {};
-                }
-                for (game::VehicleId id : knownVehicles(ui, o.target)) {
-                    const game::Vehicle* v = s.vehicle(id);
-                    const std::string name = std::format("{} ({})", v->name, s.design(v->design).name);
-                    if (ImGui::Selectable(name.c_str(), id == o.targetVehicle) && id != o.targetVehicle) {
-                        o.targetVehicle = id;
-                        changed = true;
-                    }
-                }
-                ImGui::EndCombo();
+            title = "Select Ship";
+            choices.push_back({"Any", [&o] { o.targetVehicle = {}; }});
+            for (game::VehicleId id : knownVehicles(ui, o.target)) {
+                const game::Vehicle* v = s.vehicle(id);
+                choices.push_back({std::format("{} ({})", v->name, s.design(v->design).name), [&o, id] { o.targetVehicle = id; }});
             }
         } else if (kind == IntelTarget::ThirdEmpire) {
-            const std::string label = o.thirdEmpire.valid() ? s.empire(o.thirdEmpire).name : std::string("Choose a third empire");
-            if (ImGui::BeginCombo("##third", label.c_str())) {
-                for (game::EmpireId k : known)
-                    if (k != o.target && ImGui::Selectable(s.empire(k).name.c_str(), k == o.thirdEmpire) && k != o.thirdEmpire) {
-                        o.thirdEmpire = k;
-                        changed = true;
-                    }
-                ImGui::EndCombo();
-            }
+            title = "Select Third Empire";
+            for (game::EmpireId k : knownEmpires(ui))
+                if (k != o.target) choices.push_back({s.empire(k).name, [&o, k] { o.thirdEmpire = k; }});
+        } else if (steal) {
+            // "Any" keeps the original's pick, which only finds areas where we already lead.
+            title = "Select Technology";
+            choices.push_back({"Any", [&o] { o.targetTech = {}; }});
+            const auto& areas = ui.rules().data().techAreas;
+            for (uint32_t i = 0; i < areas.size(); ++i)
+                if (areas[i].racialArea == 0 && areas[i].uniqueArea == 0)  // never stolen
+                    choices.push_back({areas[i].name, [&o, i] { o.targetTech = ruleset::TechAreaId{i}; }});
         }
-        return changed;
-    }
-
-    void queue(UiContext& ui) {
-        const game::Empire& e = ui.me();
-        heading(ui, std::format("Current Projects {}-{}", page_ * kProjectsPerPage + 1, (page_ + 1) * kProjectsPerPage).c_str());
-        const float slotH = (ImGui::GetContentRegionAvail().y - 3 * ImGui::GetStyle().ItemSpacing.y) / kProjectsPerPage;
-        std::optional<size_t> remove;
-        std::optional<std::pair<size_t, game::IntelProjectOrder>> change;
-        for (int slot = 0; slot < kProjectsPerPage; ++slot) {
-            const size_t i = size_t(page_ * kProjectsPerPage + slot);
-            ImGui::PushID(slot);
-            ImGui::BeginChild("##slot", ImVec2(0, slotH), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
-            if (i >= e.intel.size()) {
-                ImGui::TextColored(kTextDim, "%zu.", i + 1);
-                ImGui::SameLine();
-                ImGui::TextColored(kTextDim, "Empty: click a project to add it.");
-            } else {
-                game::IntelProjectOrder o = e.intel[i];
-                const ruleset::IntelProject& p = project(ui, o.project);
-                ImGui::Text("%zu.", i + 1);
-                ImGui::SameLine();
-                ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
-                ImGui::TextUnformatted(p.name.c_str());
-                ImGui::PopFont();
-                if (ImGui::IsItemHovered()) hovered_ = o.project;
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - ui.px(64));
-                if (ImGui::SmallButton("Remove")) remove = i;
-                if (targets(ui, o)) change = std::pair{i, o};
-                const float frac = p.cost > 0 ? float(double(o.progress) / double(p.cost)) : 0.0f;
-                progressBar(ui, frac, std::format("{} / {} IP", formatNumber(o.progress), formatNumber(p.cost)));
+        const std::string id = std::string(title) + "###intelTarget";
+        if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
+        ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ui.size({340, 370}), ImGuiCond_Always);
+        if (!ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) return;
+        bool done = false, cancel = false;
+        beginList(ui, "##targets", ImVec2(0, -ui.px(36)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+        for (size_t i = 0; i < choices.size(); ++i) {
+            ImGui::PushID(int(i));
+            if (ImGui::Selectable(choices[i].label.c_str())) {
+                choices[i].pick();
+                done = true;
             }
-            ImGui::EndChild();
             ImGui::PopID();
         }
-        if (remove) {
+        if (choices.empty()) ImGui::TextColored(kTextDim, "Nothing to choose.");
+        endList(ui);
+        if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape)) cancel = true;
+        if (done || cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        if (cancel) {
+            picking_.reset();
+        } else if (done) {
+            if (picking_->stage == 0 && !last) {
+                picking_->stage = 1;
+            } else {
+                const game::IntelProjectOrder order = picking_->order;
+                picking_.reset();
+                commit(ui, order);
+            }
+        }
+    }
+
+    // The boxes of the shown page; a click on one cancels its project.
+    void queue(UiContext& ui, const Dialog& d) {
+        const game::Empire& e = ui.me();
+        const game::GameState& s = ui.state();
+        std::vector<int64_t> need;
+        for (const game::IntelProjectOrder& o : e.intel) need.push_back(std::max<int64_t>(0, project(ui, o.project).cost - o.progress));
+        const std::vector<int64_t> shares = game::research::allocate(e.intelPool, need, e.intelEvenly);
+        std::vector<ProjectBox> boxes(kProjectsPerPage);
+        for (int slot = 0; slot < kProjectsPerPage; ++slot) {
+            const size_t i = size_t(page_ * kProjectsPerPage + slot);
+            if (i >= e.intel.size()) continue;
+            const game::IntelProjectOrder& o = e.intel[i];
+            const ruleset::IntelProject& p = project(ui, o.project);
+            ProjectBox& b = boxes[size_t(slot)];
+            b.name = p.name;
+            // Under the name, the target (the original's line here is not
+            // described; inferred).
+            if (o.target.valid()) b.level = std::format("vs {}", s.empire(o.target).name);
+            b.remaining = need[i];
+            b.perTurn = i < shares.size() ? shares[i] : 0;
+            b.percent = p.cost > 0 ? int(std::clamp<int64_t>(o.progress * 100 / p.cost, 0, 100)) : 0;
+        }
+        int over = -1;
+        const int clicked = projectBoxes(ui, d, kProjectBoxesAt, boxes, &over);
+        if (over >= 0) hovered_ = e.intel[size_t(page_ * kProjectsPerPage + over)].project;
+        if (clicked >= 0) {
             // Asks first while the Empire Options' "confirm deleting an
             // intelligence project" is on (spec 06 §1.9).
-            removing_ = *remove;
-            removingOrder_ = e.intel[*remove];
-            if (ui.options().confirmDeleteIntel) confirm_.open(std::format("Cancel the intelligence project {}?", orderLabel(ui, e.intel[*remove])));
+            const size_t i = size_t(page_ * kProjectsPerPage + clicked);
+            removing_ = i;
+            removingOrder_ = e.intel[i];
+            if (ui.options().confirmDeleteIntel) confirm_.open(std::format("Cancel the intelligence project {}?", orderLabel(ui, e.intel[i])));
             else cancelProject(ui);
-        } else if (change) {
-            auto q = e.intel;
-            q[change->first] = change->second;
-            set(ui, q, e.intelEvenly, e.repeatIntel);
         }
         if (confirm_.draw(ui)) cancelProject(ui);
     }
@@ -364,7 +331,7 @@ private:
     void detail(UiContext& ui) {
         const std::optional<uint32_t> i = hovered_ ? hovered_ : pinned_;
         if (!i) {
-            ImGui::TextColored(kTextDim, "Point at a project to see what it does. Targets are chosen in the project slots.");
+            ImGui::TextColored(kTextDim, "Point at a project to see what it does.");
             return;
         }
         const ruleset::IntelProject& p = project(ui, *i);
@@ -390,9 +357,18 @@ private:
         if (!p.description.empty()) wrappedText(p.description, kTextDim);
     }
 
+    // Rows of the project list: 14 px, under headings of the large type (inferred: 18 px).
+    static constexpr float kRowH = 14.0f;
+    static constexpr float kHeadingH = 18.0f;
+    struct Picking {
+        game::IntelProjectOrder order;
+        int stage = 0;   // 0: the empire; 1: the specific target
+    };
+
     int page_ = 0;
     std::optional<uint32_t> hovered_;
     std::optional<uint32_t> pinned_;
+    std::optional<Picking> picking_;
     std::optional<size_t> removing_;
     game::IntelProjectOrder removingOrder_;
     YesNoPrompt confirm_;

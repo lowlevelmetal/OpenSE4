@@ -337,7 +337,10 @@ public:
     // Extra text or a picture in the title strip (e.g. Research's points), at x frame pixels from the window's left.
     void titleText(float x, ImU32 color, std::string_view text);
     void titleIcon(float x, const Sprite& icon);
-    void beginContent();
+    // The content area: from (15,35) to the left of the button column (x 571),
+    // or to `right` (window coordinates) for windows whose original layout
+    // reaches further (lists to x 575).
+    void beginContent(float right = 0.0f);
     void beginButtons();
     // Right-column buttons (180 × 28, one slot per 31 px). A plain action button;
     bool button(const char* label, bool enabled = true);

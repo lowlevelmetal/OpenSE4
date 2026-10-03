@@ -162,8 +162,8 @@ manual = "intelligence#the-intelligence-window"
 [[step]]
 title = "A first project"
 text = """
-The list on the left shows the projects your technology allows. Click a **defense** project to add
-it: it stores points in your queue and stops enemy projects aimed at you.
+The list shows the projects your technology allows, under their groups. Click a **defense** project
+to add it: it stores points in your queue and stops enemy projects aimed at you.
 
 Your intelligence points come from intelligence facilities, which you build like any other
 facility. Without them the project waits.

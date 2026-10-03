@@ -621,6 +621,7 @@ the Weapons Report.
 | `research:divide-evenly`, `research:repeat` | Research: Divide Pts Evenly, Repeat Projects |
 | `log:messages`, `log:categories`, `log:send-reply` | the Log's messages, its category buttons (All to Misc; each one is `log:<category>`, above), Send Reply |
 | `empires:list`, `empires:intelligence` | the Empires window's empires, its Intelligence button |
+| `intelligence:projects`, `intelligence:queue` | Intelligence: the list of projects (a click adds one, asking for its target), the current projects |
 | `communicate:message-type`, `communicate:treaty`, `communicate:send` | Communicate: the Message Type list, the treaty list (for treaty messages), Send Message |
 | `<window>:<tab>` | a tab or filter button of the windows above (window tabs) |
 | `<list>:up`, `<list>:down`, `<list>:track`, `<list>:thumb` | the arrow column of a list: its up and down arrows, the track between them and the thumb in it. `<list>` is the list's tag above (`planets:list:down`) or, for every list of a window, `<window>:<list id>` (`log:list:down`; the list id is the client's, without its `##`) |

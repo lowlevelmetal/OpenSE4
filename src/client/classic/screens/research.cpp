@@ -75,16 +75,19 @@ public:
         const std::string points = std::to_string(game::research::availablePoints(ui.state(), e));
         d.titleText(356, IM_COL32_WHITE, points);
         d.titleIcon(360 + ImGui::CalcTextSize(points.c_str()).x / ui.k(), ui.art.icon16(Icon::Research));
-        d.beginContent();
-        status_.draw();
+        // The original's places (spec 06 §7 Q92, confirmed: binary): the area
+        // list at (15,56), 560×243; the four project boxes of the page side by
+        // side from (15,330).
+        d.beginContent(576);
         hovered_.reset();
-        ImGui::TextColored(kTextBlue, "Research Areas");
-        ImGui::SameLine(ui.px(372));
-        ImGui::TextColored(kTextBlue, "Current Level");
-        ImGui::SameLine(ui.px(470));
-        image(ui, ui.art.icon16(Icon::Research), {12, 12});
-        ImGui::SameLine(0, ui.px(2));
-        ImGui::TextColored(kTextBlue, "Cost");
+        const ImU32 blue = imColor(palette::kLabel);
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 39}, blue, "Research Areas");
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {400, 39}, blue, "Current Level");
+        textRightAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {546, 39}, blue, "Cost");
+        if (const Sprite icon = ui.art.icon16(Icon::Research))
+            ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), d.at({548, 39}), d.at({564, 55}),
+                                                 {icon.uv.min.x, icon.uv.min.y}, {icon.uv.max.x, icon.uv.max.y});
+        ImGui::SetCursorScreenPos(d.at({15, 56}));
         areaList(ui);
         ui.tagItem("research:areas");
         if (hovered_) {
@@ -94,14 +97,13 @@ public:
                 ImGui::EndTooltip();
             }
         }
-        note(ui, "(click a research area to add it as a project)", false);
-        ImGui::TextColored(kTextBlue, "%zu Current Projects", e.research.size());
-        ImGui::SameLine();
-        note(ui, "(click a project to cancel it)");
-        ImGui::BeginGroup();
-        projects(ui);
-        ImGui::EndGroup();
-        ui.tagItem("research:queue");
+        ImGui::SetCursorScreenPos(d.at({17, 303}));
+        status_.draw();
+        textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {575, 305}, blue, "(click a research area to add it as a project)");
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 316}, blue, std::format("{} Current Projects", e.research.size()));
+        textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {575, 318}, blue, "(click a project to cancel it)");
+        projects(ui, d);
+        ui.tag("research:queue", d.at(kProjectBoxesAt), d.at(kProjectBoxesAt + Vec2{560, 130}));
 
         // The original's column (spec 06 §7 Q92, confirmed: binary): the three
         // pages, a gap, Repeat Projects and Divide Pts Evenly (slots 5 and 6),
@@ -145,31 +147,6 @@ private:
         status_.result(ui.session.issue(std::move(c)));
     }
 
-    void header(UiContext& ui) {
-        const game::Empire& e = ui.me();
-        if (Sprite icon = ui.art.icon32(Icon::Research)) {
-            image(ui, icon, {24, 24});
-            ImGui::SameLine();
-        }
-        ImGui::AlignTextToFramePadding();
-        heading(ui, "Research Points");
-        ImGui::SameLine();
-        ImGui::Text("%s per turn", formatNumber(e.economy.research).c_str());
-        const auto [owned, total] = techProgress(ui.rules(), ui.state(), e);
-        ImGui::SameLine(ui.px(330));
-        ImGui::TextColored(kTextBlue, "Projects");
-        ImGui::SameLine();
-        ImGui::Text("%zu of %d", e.research.size(), kMaxProjects);
-        ImGui::SameLine(ui.px(470));
-        ImGui::TextColored(kTextBlue, "Tech Levels");
-        ImGui::SameLine();
-        ImGui::Text("%d of %d", owned, total);
-        ImGui::SameLine(ui.px(640));
-        ImGui::TextColored(kTextDim, "%s", e.researchEvenly ? "Divided evenly" : "In queue order");
-        status_.draw();
-        ImGui::Separator();
-    }
-
     bool queued(const game::Empire& e, TechAreaId a) const {
         return std::any_of(e.research.begin(), e.research.end(), [&](const game::ResearchProject& p) { return p.area == a; });
     }
@@ -203,7 +180,7 @@ private:
         auto complete = [&](TechAreaId a) {
             return std::any_of(areas.begin(), areas.end(), [&](const ResearchListArea& x) { return x.area == a && x.complete; });
         };
-        if (!beginListTable(ui, "##areaTable", 3, ImGuiTableFlags_BordersOuter, ImVec2(0, ui.px(245)), kListLineStep)) return;
+        if (!beginListTable(ui, "##areaTable", 3, ImGuiTableFlags_None, ui.size({560, 243}), kListLineStep)) return;
         ImGui::TableSetupColumn("Area", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(70));
         ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, ui.px(96));
@@ -244,72 +221,40 @@ private:
         endListTable(ui);
     }
 
-    // Small blue hint text, right-aligned on the current line.
-    static void note(UiContext& ui, const char* text, bool sameLine = true) {
-        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-        const float w = ImGui::CalcTextSize(text).x;
-        if (sameLine) ImGui::SameLine();
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - w));
-        ImGui::TextColored(kTextBlue, "%s", text);
-        ImGui::PopFont();
-    }
-
-    void projects(UiContext& ui) {
+    void projects(UiContext& ui, const Dialog& d) {
         const game::Rules& r = ui.rules();
         const game::GameState& s = ui.state();
         const game::Empire& e = ui.me();
-        const float gap = ImGui::GetStyle().ItemSpacing.x;
-        const float boxW = (ImGui::GetContentRegionAvail().x - 3 * gap) / kProjectsPerPage;
-        // Under each project box a small box (observed, spec 07 session 3); ours
-        // holds the project's progress (inferred, spec 06 §7 Q92).
-        const float smallH = ui.px(22), smallGap = ui.px(3);
-        const float boxH = ImGui::GetContentRegionAvail().y - smallH - smallGap;
-        std::optional<size_t> remove;
+        // What each project still needs and gets this turn (spec 05 §1.4).
+        std::vector<int64_t> need;
+        for (size_t i = 0; i < e.research.size(); ++i) {
+            const game::ResearchProject& p = e.research[i];
+            need.push_back(std::max<int64_t>(0, game::research::levelCost(r, s, p.area, e.techLevel(p.area) + 1) - p.progress));
+        }
+        const std::vector<int64_t> shares = game::research::allocate(game::research::availablePoints(s, e), need, e.researchEvenly);
+        std::vector<ProjectBox> boxes(kProjectsPerPage);
         for (int slot = 0; slot < kProjectsPerPage; ++slot) {
             const size_t i = size_t(page_ * kProjectsPerPage + slot);
-            if (slot > 0) ImGui::SameLine(0, gap);
-            ImGui::PushID(slot);
-            ImGui::BeginGroup();
-            ImGui::BeginChild("##slot", ImVec2(boxW, boxH), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
-            std::optional<std::pair<float, std::string>> progress;
-            auto centred = [](const std::string& text, ImVec4 color) {
-                ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(text.c_str()).x) * 0.5f));
-                ImGui::TextColored(color, "%s", text.c_str());
-            };
-            if (i >= e.research.size()) {
-                centred("None", ImVec4(1, 1, 1, 1));
-            } else {
-                const game::ResearchProject& p = e.research[i];
-                const ruleset::TechArea& t = r.tech(p.area);
-                const int next = e.techLevel(p.area) + 1;
-                const int64_t cost = game::research::levelCost(r, s, p.area, next);
-                ImGui::PushTextWrapPos(0.0f);
-                centred(std::format("{} {}", t.name, next), ImVec4(1, 1, 1, 1));
-                ImGui::PopTextWrapPos();
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = p.area;
-                centred(etaText(game::research::etaTurns(r, s, e, i)), kTextDim);
-                const float frac = cost > 0 ? float(double(p.progress) / double(cost)) : 0.0f;
-                progress.emplace(frac, std::format("{} / {}", p.progress, cost));
-                // Clicking a project cancels it, as in the original.
-                ImGui::SetCursorPos(ImVec2(0, 0));
-                if (ImGui::InvisibleButton("##cancel", ImVec2(boxW, boxH))) remove = i;
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = p.area;
-            }
-            ImGui::EndChild();
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().ItemSpacing.y + smallGap);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(2), ui.px(2)));
-            ImGui::BeginChild("##progress", ImVec2(boxW, smallH), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
-                              ImGuiWindowFlags_NoScrollbar);
-            ImGui::PopStyleVar();
-            if (progress) progressBar(ui, progress->first, progress->second, 0.0f, 16.0f);
-            ImGui::EndChild();
-            ImGui::EndGroup();
-            ImGui::PopID();
+            if (i >= e.research.size()) continue;
+            const game::ResearchProject& p = e.research[i];
+            const int next = e.techLevel(p.area) + 1;
+            const int64_t cost = game::research::levelCost(r, s, p.area, next);
+            ProjectBox& b = boxes[size_t(slot)];
+            b.name = r.tech(p.area).name;
+            b.level = std::format("Research Level {}", next);
+            b.remaining = need[i];
+            b.perTurn = i < shares.size() ? shares[i] : 0;
+            // truncate(points paid × 100 / level cost), within 0 and 100.
+            b.percent = cost > 0 ? int(std::clamp<int64_t>(p.progress * 100 / cost, 0, 100)) : 0;
         }
-        if (remove) {
-            // Asks first while the Empire Options' "confirm deleting a research
-            // project" is on (spec 06 §1.9).
-            removing_ = e.research[*remove].area;
+        int over = -1;
+        const int clicked = projectBoxes(ui, d, kProjectBoxesAt, boxes, &over);
+        if (over >= 0) hovered_ = e.research[size_t(page_ * kProjectsPerPage + over)].area;
+        if (clicked >= 0) {
+            // Clicking a project cancels it, asking first while the Empire
+            // Options' "confirm deleting a research project" is on (spec 06 §1.9).
+            const size_t i = size_t(page_ * kProjectsPerPage + clicked);
+            removing_ = e.research[i].area;
             if (ui.options().confirmDeleteResearch)
                 confirm_.open(std::format("Cancel the research project {} {}?", r.tech(*removing_).name, e.techLevel(*removing_) + 1));
             else cancelProject(ui);

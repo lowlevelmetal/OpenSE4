@@ -455,10 +455,10 @@ void Dialog::endChild() {
     inChild_ = false;
 }
 
-void Dialog::beginContent() {
+void Dialog::beginContent(float contentRight) {
     endChild();
     const float w = rect_.size().x, h = rect_.size().y;
-    const float right = buttonColumn_ > 0 ? w - 15 - buttonColumn_ - 14 : w - 15;
+    const float right = contentRight > 0 ? contentRight : buttonColumn_ > 0 ? w - 15 - buttonColumn_ - 14 : w - 15;
     ImGui::SetCursorPos(ui_.size({15, kPanelTop}));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui_.size({2, 2}));
     ImGui::BeginChild("##content", ui_.size({right - 15, h - kPanelTop - kPanelBottom}), ImGuiChildFlags_AlwaysUseWindowPadding);
