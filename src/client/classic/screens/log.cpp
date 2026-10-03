@@ -152,12 +152,14 @@ public:
             ui.open(ScreenId::CombatReplay, a);
         }
         if (d.button("Constr. Queues")) ui.open(ScreenId::Queues);
-        // Goto follows the target the entry was made with (spec 06 §7 Q41); with no
-        // entry selected (an empty list) it stays lit and does nothing (observed,
-        // spec 07 session 3; spec 06 §7 Q91).
+        // Goto follows the target of the selected entry (spec 06 §7 Q41): lit
+        // when it has one, dim when not. With no entry selected nothing changes,
+        // so it keeps the state it last had, lit when no entry was ever
+        // selected, and a click does nothing (spec 06 §7 Q91, confirmed: binary).
         const game::LogGoto target = sel && sel->entry ? sel->entry->target : game::LogGoto::None;
+        if (sel) gotoLit_ = target != game::LogGoto::None;
         bool close = false;
-        if (d.button("Goto", target != game::LogGoto::None || !sel)) {
+        if (d.button("Goto", gotoLit_) && sel) {
             remember(ui);
             if (target == game::LogGoto::Location) {
                 // A location closes the Log and shows the sector in the main window
@@ -428,6 +430,7 @@ private:
     bool opened_ = false;
     uint8_t startFilter_ = 0;     // automation's filter for the first opening (0: the stored one)
     uint8_t filter_ = 0;          // 0 All, else the category + 1
+    bool gotoLit_ = true;         // Goto is created lit and follows the entries selected (spec 06 §7 Q91)
     int selected_ = 0;            // row of the filtered list (-1: none)
     int scrollRows_ = 0;
     bool restoreScroll_ = false;

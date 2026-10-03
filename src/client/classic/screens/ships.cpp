@@ -64,13 +64,6 @@ std::vector<Column> columnsOf(ShipsTab tab) {
     return {};
 }
 
-// The same written as one line, the Orders column's sort key.
-std::string oneLine(const std::vector<std::string>& lines) {
-    std::string out;
-    for (const std::string& l : lines) out += (out.empty() ? "" : ", ") + l;
-    return out;
-}
-
 class ShipsScreen final : public Screen {
 public:
     // Opened with kViewOnly (Fleet Transfer's Existing Fleets, spec 06 §7
@@ -190,7 +183,7 @@ private:
             ShipSortValues k = shipSortValues(r, s, v);
             k.type = roleOf(ui, v);
             k.designName = classOf(ui, v);
-            k.orders = oneLine(row.orderLines);
+            k.orders = orderSortText(ui, orderOwner(s, v.id), v.design);
             k.cargo = cargoWords(ui, v);
             row.cells = vehicleCells(ui, v, k);
             vehicles.push_back(std::move(row));
