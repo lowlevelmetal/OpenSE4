@@ -25,6 +25,8 @@ constexpr FactInfo kFacts[] = {
     {Fact::Command, "command", T, true, "the player gave a command of that type (game/commands.hpp)"},
     {Fact::Order, "order", T, true, "the player gave a ship, fleet or planet an order of that kind"},
     {Fact::Tab, "tab", T, false, "an open window shows that tab or filter (\"<window>:<tab>\")"},
+    {Fact::Picking, "picking", T, false, "the main window waits for the place an order of that kind goes to (\"move-to\", ...)"},
+    {Fact::MovementLines, "movement_lines", F, false, "the system view shows the ships' movement lines (Ctrl+L)"},
     {Fact::DesignComponents, "design_components", N, false, "the design being built in the open Create Design window has N components",
      "Components on the design"},
     {Fact::DesignHullChosen, "design_hull_chosen", F, false, "the player picked a hull in the open Create Design window's Size list"},
@@ -34,6 +36,8 @@ constexpr FactInfo kFacts[] = {
     {Fact::SimulatorOwners, "simulator_owners", N, false, "the open Combat Simulator has items for N races", "Races with items"},
     {Fact::SimulatorItems, "simulator_items", N, false, "the open Combat Simulator has N items in the battle", "Items in the battle"},
     {Fact::SimulatorOwner, "simulator_owner", T, false, "the open Combat Simulator's Owner for item is that race (\"race-1\" to \"race-10\")"},
+    {Fact::DraftMessageType, "draft_message_type", T, false, "the message being written in Communicate is of that type (\"propose-treaty\", ...)"},
+    {Fact::DraftTreaty, "draft_treaty", T, false, "the message being written in Communicate names that treaty (\"non-aggression\", ...)"},
     {Fact::BattleBegun, "battle_begun", F, false, "the open Tactical Combat window's battle has begun (Begin was pressed)"},
     {Fact::BattleOrder, "battle_order", T, true, "the player gave an order of that kind in a tactical battle"},
     {Fact::BattleTurn, "battle_turn", N, false, "the open Tactical Combat window's battle has begun and reached combat turn N", "Combat turn"},
@@ -93,6 +97,16 @@ bool fleetOfType(const game::GameState& s, game::FleetId id, std::string_view wa
     const game::Fleet* f = id.valid() ? s.fleet(id) : nullptr;
     return f && std::any_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return vehicleOfType(s, m, wanted); });
 }
+// Whether a message is of the type and names the treaty a condition asks for.
+bool messageOfKind(const game::Command& cmd, const Condition& c) {
+    if (c.messageType.empty() && c.messageTreaty.empty()) return true;
+    const auto* m = std::get_if<game::cmd::SendMessage>(&cmd);
+    if (!m) return false;
+    if (!c.messageType.empty() && optionId(game::displayName(m->message.type)) != c.messageType) return false;
+    if (!c.messageTreaty.empty() && optionId(game::displayName(m->message.treaty)) != c.messageTreaty) return false;
+    return true;
+}
+
 // Whether a command went to (or made) a vehicle or design of the wanted type.
 bool commandOfType(const game::GameState& s, const game::Command& cmd, std::string_view wanted) {
     if (wanted.empty()) return true;
@@ -288,6 +302,10 @@ bool holds(const Condition& c, const EvalContext& ctx) {
         case Fact::DesignNamed: return ctx.client.designComponents.has_value() && ctx.client.designNamed == (c.number != 0);
         case Fact::DesignVehicle: return ctx.client.designComponents.has_value() && ctx.client.designVehicle == c.text;
         case Fact::SimulatorOwner: return !ctx.client.simulatorOwner.empty() && ctx.client.simulatorOwner == c.text;
+        case Fact::Picking: return !ctx.client.picking.empty() && ctx.client.picking == c.text;
+        case Fact::MovementLines: return ctx.client.movementLines == (c.number != 0);
+        case Fact::DraftMessageType: return !ctx.client.draftMessageType.empty() && ctx.client.draftMessageType == c.text;
+        case Fact::DraftTreaty: return !ctx.client.draftMessageType.empty() && ctx.client.draftTreaty == c.text;
         case Fact::Option: {
             if (!validEmpire(ctx.state, ctx.empire)) return false;
             return optionValue(ctx.state.empire(ctx.empire), c.text).value_or(false);
@@ -302,7 +320,7 @@ bool holds(const Condition& c, const EvalContext& ctx) {
         }
         case Fact::Command:
             for (const game::Command& cmd : commandsSince(ctx))
-                if (game::commandName(cmd) == c.text && commandOfType(ctx.state, cmd, c.designType)) return true;
+                if (game::commandName(cmd) == c.text && commandOfType(ctx.state, cmd, c.designType) && messageOfKind(cmd, c)) return true;
             return false;
         case Fact::Order: {
             const auto kind = orderKindFromId(c.text);
@@ -347,9 +365,13 @@ std::string describe(const Condition& c) {
     }
     const FactInfo& info = factInfo(c.fact);
     switch (info.value) {
-        case FactValue::Text:
-            if (!c.designType.empty()) return std::format("{} = \"{}\", design_type = \"{}\"", info.key, c.text, c.designType);
-            return std::format("{} = \"{}\"", info.key, c.text);
+        case FactValue::Text: {
+            std::string out = std::format("{} = \"{}\"", info.key, c.text);
+            if (!c.designType.empty()) out += std::format(", design_type = \"{}\"", c.designType);
+            if (!c.messageType.empty()) out += std::format(", message_type = \"{}\"", c.messageType);
+            if (!c.messageTreaty.empty()) out += std::format(", message_treaty = \"{}\"", c.messageTreaty);
+            return out;
+        }
         case FactValue::Flag: return std::format("{} = {}", info.key, c.number != 0 ? "true" : "false");
         case FactValue::Number: break;
     }

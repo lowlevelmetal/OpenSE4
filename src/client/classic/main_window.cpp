@@ -563,6 +563,23 @@ void MainWindow::replaceOrders(UiContext& ui, std::vector<game::Order> orders, b
 
 void MainWindow::orderDone() { tagged_.clear(); }
 
+std::string_view MainWindow::pickingId() const {
+    switch (pick_) {
+        case Pick::None: return {};
+        case Pick::MoveTo: return "move-to";
+        case Pick::Warp: return "warp";
+        case Pick::Colonize: return "colonize";
+        case Pick::Attack: return "attack";
+        case Pick::Patrol: return "patrol";
+        case Pick::LoadCargo: return "load-cargo";
+        case Pick::DropCargo: return "drop-cargo";
+        case Pick::LaunchRemote: return "launch-units";
+        case Pick::RecoverRemote: return "recover-units";
+        case Pick::Callback: return "location";
+    }
+    return {};
+}
+
 void MainWindow::startPick(UiContext&, Pick p, std::string prompt) {
     pick_ = p;
     pickPrompt_ = std::move(prompt);

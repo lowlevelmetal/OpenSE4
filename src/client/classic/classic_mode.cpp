@@ -662,6 +662,8 @@ void ClassicMode::updateLesson(UiContext& ui, bool prompted) {
     for (const auto& [id, screen] : screens_) facts.openWindows.emplace_back(windowId(id));
     facts.selected = main_.selectionKinds(ui);
     facts.selections = main_.selections();
+    facts.picking = std::string(main_.pickingId());
+    facts.movementLines = settings().showMovementLines;
     if (const auto vehicle = main_.selectedVehicleId()) facts.selectedVehicle = *vehicle;
     facts.battleOrders = tacticalOrderLog();
     if (options_.scripted) lastFacts_ = facts;   // for input scripts' conditions

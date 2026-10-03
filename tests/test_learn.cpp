@@ -14,6 +14,7 @@
 #include "learn/ids.hpp"
 #include "learn/library.hpp"
 #include "learn/progress.hpp"
+#include "learn/resume.hpp"
 #include "learn/tokens.hpp"
 
 #include <doctest/doctest.h>
@@ -1451,6 +1452,131 @@ TEST_CASE("learn progress: jumping to a step marks the ones before done") {
     CHECK_FALSE(p.completed(2));
     p.jumpTo(99, r, s, game::EmpireId{0u});
     CHECK(p.step() == 3);
+}
+
+TEST_CASE("learn progress: going back to an earlier step when a window closed") {
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(7, 2, 12, true);
+    const game::EmpireId me{0u};
+    // A designer run: Designs opens it (step 1), three steps work in it (2 to 4).
+    Lesson l;
+    l.kind = LessonKind::Tutorial;
+    auto add = [&](std::vector<std::string> highlight, std::optional<Condition> done = std::nullopt) {
+        Step st;
+        st.title = "s";
+        st.highlight = std::move(highlight);
+        st.done = std::move(done);
+        l.steps.push_back(std::move(st));
+    };
+    add({"command:designs"}, condition("{ window = \"designs\" }"));                  // 0
+    add({"designs:create"}, condition("{ design_vehicle = \"ship\" }"));               // 1: opens the designer
+    add({"create-design:hull"}, condition("{ design_hull_chosen = true }"));          // 2
+    add({"create-design:type"}, condition("{ design_type_chosen = \"Attack Ship\" }"));  // 3
+    add({"create-design:components", "create-design:close"});                          // 4 (Next)
+    add({"designs:close"}, condition("{ not = { window = \"designs\" } }"));            // 5
+    CHECK(worksIn(l.steps[3], "create-design"));
+    CHECK_FALSE(worksIn(l.steps[5], "designs"));   // a Close button is no work in a window
+    CHECK_FALSE(worksIn(l.steps[0], "designs"));   // its command button lies in the main window
+    CHECK(opens(l.steps[1], "create-design"));
+    CHECK(opens(l.steps[0], "designs"));
+    CHECK(rewindStep(l, 4, "create-design") == 1);
+    CHECK(rewindStep(l, 2, "create-design") == 1);
+    CHECK(rewindStep(l, 1, "create-design") == 1);   // nothing before it opens it: stays
+    CHECK(rewindStep(l, 5, "designs") == 5);          // steps 1 to 4 do not work in Designs: none opened it before 5
+    // A Close button is no work in a window.
+    Step closer;
+    closer.highlight = {"create-design:close"};
+    CHECK_FALSE(worksIn(closer, "create-design"));
+
+    LessonProgress p(l, r, s, me);
+    p.jumpTo(3, r, s, me);
+    CHECK(p.active() == 3);
+    p.rewind(1, r, s, me);
+    CHECK(p.active() == 1);
+    CHECK(p.step() == 1);
+    CHECK(p.completed(0));
+    CHECK_FALSE(p.completed(1));
+    CHECK_FALSE(p.completed(2));
+    // Only back: a later step is no rewind.
+    p.rewind(4, r, s, me);
+    CHECK(p.active() == 1);
+}
+
+TEST_CASE("learn: right_click, and the message qualifiers of SendMessage") {
+    std::vector<Diagnostic> problems;
+    const char* text = R"(title = "Clicks"
+[[step]]
+title = "One"
+text = "t"
+highlight = ["panel:galaxy"]
+right_click = ["panel:galaxy"]
+done = { command = "SendMessage", message_type = "propose-treaty", message_treaty = "non-aggression" }
+
+[[step]]
+title = "Two"
+text = "t"
+right_click = ["panel:nowhere"]
+done = { command = "QueueAdd", message_type = "gift" }
+
+[[step]]
+title = "Three"
+text = "t"
+done = { command = "SendMessage", message_type = "war-cry", message_treaty = "friendship" }
+)";
+    CHECK_FALSE(parseLesson(text, "clicks.toml", LessonKind::Tutorial, problems).has_value());
+    CHECK(hasProblem(problems, 12, "unknown UI tag 'panel:nowhere'"));
+    CHECK(hasProblem(problems, 13, "'message_type' qualifies a command = \"SendMessage\""));
+    CHECK(hasProblem(problems, 18, "'message_type' takes a message type"));
+
+    problems.clear();
+    const std::string good(text, std::string_view(text).find("\n[[step]]\ntitle = \"Two\""));
+    const auto l = parseLesson(good, "clicks.toml", LessonKind::Tutorial, problems);
+    REQUIRE_MESSAGE(l.has_value(), problemsText(problems));
+    CHECK(l->steps[0].rightClick == std::vector<std::string>{"panel:galaxy"});
+    const Condition& c = *l->steps[0].done;
+    CHECK(c.messageType == "propose-treaty");
+    CHECK(c.messageTreaty == "non-aggression");
+    CHECK(describe(c) == "command = \"SendMessage\", message_type = \"propose-treaty\", message_treaty = \"non-aggression\"");
+}
+
+TEST_CASE("learn conditions: a message of a type, naming a treaty") {
+    Eval ev;
+    game::cmd::SendMessage general;
+    general.message.type = game::MessageType::General;
+    ev.tracker.issued(general);
+    CHECK(ev("{ command = \"SendMessage\" }"));
+    CHECK_FALSE(ev("{ command = \"SendMessage\", message_type = \"propose-treaty\" }"));
+    game::cmd::SendMessage alliance;
+    alliance.message.type = game::MessageType::ProposeTreaty;
+    alliance.message.treaty = game::Treaty::TradeAlliance;
+    ev.tracker.issued(alliance);
+    CHECK(ev("{ command = \"SendMessage\", message_type = \"propose-treaty\" }"));
+    CHECK_FALSE(ev("{ command = \"SendMessage\", message_type = \"propose-treaty\", message_treaty = \"non-aggression\" }"));
+    game::cmd::SendMessage peace = alliance;
+    peace.message.treaty = game::Treaty::NonAggression;
+    ev.tracker.issued(peace);
+    CHECK(ev("{ command = \"SendMessage\", message_type = \"propose-treaty\", message_treaty = \"non-aggression\" }"));
+}
+
+TEST_CASE("learn conditions: an order's place being picked, the movement lines, the message being written") {
+    Eval ev;
+    CHECK_FALSE(ev("{ picking = \"move-to\" }"));
+    ev.client.picking = "move-to";
+    CHECK(ev("{ picking = \"move-to\" }"));
+    CHECK_FALSE(ev("{ picking = \"colonize\" }"));
+    CHECK(ev("{ movement_lines = false }"));
+    ev.client.movementLines = true;
+    CHECK(ev("{ movement_lines = true }"));
+    CHECK_FALSE(ev("{ draft_message_type = \"propose-treaty\" }"));
+    ev.client.draftMessageType = "propose-treaty";
+    ev.client.draftTreaty = "non-aggression";
+    CHECK(ev("{ draft_message_type = \"propose-treaty\" }"));
+    CHECK(ev("{ draft_treaty = \"non-aggression\" }"));
+    CHECK_FALSE(ev("{ draft_treaty = \"trade-alliance\" }"));
+    std::vector<Diagnostic> problems;
+    CHECK_FALSE(parseLesson("title = \"t\"\n[[objective]]\ntext = \"o\"\nwhen = { picking = \"dance\" }\n", "o.toml", LessonKind::Training, problems)
+                    .has_value());
+    CHECK(hasProblem(problems, 4, "unknown order pick"));
 }
 
 TEST_CASE("learn progress: the active step's counters") {

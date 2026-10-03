@@ -39,6 +39,9 @@ public:
     // with is not counted).
     std::vector<std::string> selectionKinds(const UiContext& ui) const;
     uint64_t selections() const { return selections_; }
+    // The order whose place the player is picking ("move-to", "patrol",
+    // "location" for a window's request), as lessons name it; empty when none.
+    std::string_view pickingId() const;
     // The selected vehicle, if any (lessons read its design type).
     std::optional<game::VehicleId> selectedVehicleId() const { return vehicle_; }
 

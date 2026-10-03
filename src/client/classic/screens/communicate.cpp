@@ -238,6 +238,9 @@ private:
 
         const MessageNeeds n = messageNeeds(draft_.type);
         if (n.treaty) treatyPicker(ui, labelW, fieldW);
+        // For lessons: the message being written.
+        ui.facts.draftMessageType = learn::optionId(game::displayName(draft_.type));
+        ui.facts.draftTreaty = n.treaty ? learn::optionId(game::displayName(draft_.treaty)) : std::string{};
         if (n.thirdEmpire) thirdEmpirePicker(ui, labelW, fieldW);
         if (n.system) systemPicker(ui, labelW, fieldW, draft_.type == MessageType::RequestAttackEmpire);
         if (n.planet || n.ownPlanet) planetPicker(ui, labelW, fieldW, n.ownPlanet);

@@ -21,10 +21,10 @@ namespace opense4::learn {
 
 enum class Fact : uint8_t {
     // Client facts.
-    Window, Selected, Command, Order, Tab,
+    Window, Selected, Command, Order, Tab, Picking, MovementLines,
     // Windows' work in progress.
-    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, DesignVehicle, SimulatorOwners, SimulatorItems, SimulatorOwner, BattleBegun,
-    BattleOrder, BattleTurn,
+    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, DesignVehicle, SimulatorOwners, SimulatorItems, SimulatorOwner,
+    DraftMessageType, DraftTreaty, BattleBegun, BattleOrder, BattleTurn,
     // Time.
     Turn, TurnsPassed,
     // The player's empire.
@@ -59,6 +59,11 @@ struct Condition {
     // The `design_type` qualifier of `selected`, `order` and `command` (written
     // beside them in one table): only a vehicle of this design type counts.
     std::string designType;
+    // The `message_type` and `message_treaty` qualifiers of `command =
+    // "SendMessage"`: only a message of that type (an id of the Message Type
+    // list, "propose-treaty"), naming that treaty, counts.
+    std::string messageType;
+    std::string messageTreaty;
     std::vector<Condition> children;  // All, Any: any number; Not: one
     int line = 0;                  // where it is written (diagnostics)
 };
@@ -92,6 +97,16 @@ struct ClientFacts {
     // The tabs (and filters) the open windows show, as "<window>:<tab>"
     // (learn/ids.hpp windowTabs).
     std::vector<std::string> tabs;
+    // The main window waits for the player to pick where an order goes: the
+    // order's kind ("move-to", "colonize", ...; "patrol"; "location" for a
+    // window that asked for a place). Empty when it does not.
+    std::string picking;
+    // The ships' movement lines are shown in the system view (Ctrl+L).
+    bool movementLines = false;
+    // The Communicate window's message being written: its type (an id of the
+    // Message Type list) and the treaty it names; empty while none is open.
+    std::string draftMessageType;
+    std::string draftTreaty;
     // The Create Design window, while it is open: the components on the
     // design being built, and whether the player picked a hull in its Size list.
     std::optional<int64_t> designComponents;
