@@ -71,8 +71,37 @@ std::span<const std::string_view> fixedUiTags();
 // The id of an order-strip slot ("Move" -> "move-to"); empty for an empty slot.
 std::string_view orderStripId(std::string_view slotKey);
 // True for a tag the client registers: a fixed tag, `window:<id>`, or
-// `<id>:close` (the Close button at the bottom of most windows).
+// `<id>:close` (the Close button at the bottom of most windows), or an option
+// of a chooser (`designs:create:ship`, below).
 bool isUiTag(std::string_view tag);
+
+// ---- Choices (docs/LEARNING.md "Choices") ----------------------------------------------------
+
+// A chooser whose options a tutorial step can name one by one: the tag of the
+// chooser (a list, a drop-down box, or the button that opens a picker) and its
+// options, each tagged `<chooser>:<option>` where it is drawn. A step that
+// names an option (`allow = ["designs:create:ship"]`) lets only the options it
+// names through the input lock; `<chooser>:*` names them all ("any will do").
+struct ChoiceGroup {
+    std::string_view tag;                       // "designs:create"
+    std::vector<std::string_view> options;      // "ship", "base", ...
+    // Its options show only once the chooser is pressed (a picker or a
+    // drop-down list) or the game asks (Colony Type): not on screen when a step
+    // begins.
+    bool picker = false;
+    std::string_view what;                      // for the reference: "the vehicle types Create asks for"
+};
+std::span<const ChoiceGroup> choiceGroups();
+// The chooser a tag is an option of (`designs:create:ship`, `designs:create:*`).
+const ChoiceGroup* choiceGroupOf(std::string_view tag);
+// A name as an option id: lower case, letters and digits kept, every other run
+// of characters one hyphen ("Attack Ship" "attack-ship", "Colony (Rock)"
+// "colony-rock", "Trade & Research Alliance" "trade-research-alliance").
+std::string optionId(std::string_view name);
+// The vehicle types of Create's picker and of `design_vehicle` ("ship", "base",
+// "fighter", ..., "weapon-platform").
+std::string_view vehicleTypeId(ruleset::VehicleType t);
+std::span<const std::string_view> vehicleTypeIds();
 
 // Key chords for a tutorial step's `keys`: optional "Ctrl+", "Shift+" and
 // "Alt+" (in that order), then a key named as Dear ImGui names it: "A".."Z",

@@ -24,7 +24,7 @@ bool contains(const std::vector<std::string_view>& v, std::string_view x) { retu
 
 // The step works in one of `windows`, or one of its tags opens one.
 bool touches(const Step& step, const std::vector<std::string_view>& windows) {
-    for (const auto* list : {&step.highlight, &step.allow})
+    for (const auto* list : {&step.highlight, &step.allow, &step.show})
         for (const std::string& tag : *list) {
             if (const auto w = windowOf(tag); w && contains(windows, *w)) return true;
             for (std::string_view opened : windowsOpenedBy(tag))
@@ -37,7 +37,7 @@ bool touches(const Step& step, const std::vector<std::string_view>& windows) {
 
 std::vector<std::string_view> stepWindows(const Step& step) {
     std::vector<std::string_view> out;
-    for (const auto* list : {&step.highlight, &step.allow})
+    for (const auto* list : {&step.highlight, &step.allow, &step.show})
         for (const std::string& tag : *list)
             if (const auto w = windowOf(tag); w && !contains(out, *w)) out.push_back(*w);
     return out;
@@ -61,6 +61,11 @@ uint64_t lessonFingerprint(const Lesson& lesson) {
         for (const auto* list : {&st.highlight, &st.allow, &st.keys}) {
             h.add(list->size());
             for (const std::string& s : *list) h.add(std::string_view(s));
+        }
+        // What a step shows counts once there is some (older places of lessons without it still fit).
+        if (!st.show.empty()) {
+            h.add(std::string_view("show")).add(st.show.size());
+            for (const std::string& s : st.show) h.add(std::string_view(s));
         }
         h.add(std::string_view(st.done ? describe(*st.done) : std::string("-")));
     }

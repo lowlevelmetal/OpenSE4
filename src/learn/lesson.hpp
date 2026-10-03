@@ -66,6 +66,9 @@ struct Step {
     // highlighted tags, these tags too, and these keys (docs/LEARNING.md
     // "The input lock").
     std::vector<std::string> allow;         // more UI tags (`window:<id>`: the whole window)
+    // What the text points the player at, to read (a detail pane, a column): clear
+    // of the spotlight, neither outlined nor clicked; the panel keeps off it.
+    std::vector<std::string> show;
     std::vector<std::string> keys;          // key chords: "F12", "Ctrl+L", "Alt+1"
     std::optional<Condition> done;          // none: the player presses Next
     std::string manual;                     // "slug#anchor" for Read more

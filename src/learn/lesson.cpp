@@ -252,6 +252,11 @@ private:
                 case Fact::Treaty: what = treatyFromId(c.text) ? nullptr : "treaty kind"; break;
                 case Fact::BattleOrder: what = isBattleOrderKind(c.text) ? nullptr : "battle order kind"; break;
                 case Fact::DesignTypeChosen: what = isDesignTypeName(c.text) ? nullptr : "design type"; break;
+                case Fact::DesignVehicle: {
+                    const auto ids = vehicleTypeIds();
+                    what = std::find(ids.begin(), ids.end(), c.text) != ids.end() ? nullptr : "vehicle type";
+                    break;
+                }
                 default: break;
             }
             if (what) {
@@ -450,7 +455,7 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
 
     if (kind == LessonKind::Tutorial) {
         for (const toml::table* t : rd.tables(root, "step")) {
-            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "keys", "done", "manual", "progress"});
+            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "show", "keys", "done", "manual", "progress"});
             Step s;
             s.line = static_cast<int>(t->source().begin.line);
             s.title = rd.string(*t, "title", "a [[step]]", true).value_or(std::string{});
@@ -475,6 +480,12 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
             };
             strings("highlight", uiTag, s.highlight);
             strings("allow", uiTag, s.allow);
+            // What the step's text points at, shown but not used: an option of a chooser is never one.
+            strings("show", [&](const std::string& tag) -> std::optional<std::string> {
+                if (auto problem = uiTag(tag)) return problem;
+                if (choiceGroupOf(tag)) return std::format("'show' names parts to read, not the option '{}' (allow it instead)", tag);
+                return std::nullopt;
+            }, s.show);
             strings("keys", [](const std::string& chord) -> std::optional<std::string> {
                 if (isKeyChord(chord)) return std::nullopt;
                 return std::format("unknown key '{}' (keys are written as \"F12\", \"Ctrl+L\", \"Alt+1\", \"Escape\")", chord);

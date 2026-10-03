@@ -23,7 +23,7 @@ enum class Fact : uint8_t {
     // Client facts.
     Window, Selected, Command, Order, Tab,
     // Windows' work in progress.
-    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, SimulatorOwners, SimulatorItems, BattleBegun, BattleOrder, BattleTurn,
+    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, DesignVehicle, SimulatorOwners, SimulatorItems, BattleBegun, BattleOrder, BattleTurn,
     // Time.
     Turn, TurnsPassed,
     // The player's empire.
@@ -99,6 +99,9 @@ struct ClientFacts {
     // Name box holds a name no other design has.
     std::string designType;
     bool designNamed = false;
+    // And the vehicle type it designs, as learn/ids.hpp vehicleTypeId names
+    // it ("ship", "base", ...; Create's picker chose it).
+    std::string designVehicle;
     // The Combat Simulator, while it is open: the races ("owners") that have
     // items in the battle, and the items.
     int64_t simulatorOwners = 0;

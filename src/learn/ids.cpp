@@ -1,9 +1,11 @@
 #include "learn/ids.hpp"
 
+#include "game/ai_data.hpp"
 #include "game/commands.hpp"
 
 #include <algorithm>
 #include <array>
+#include <deque>
 #include <initializer_list>
 #include <iterator>
 #include <optional>
@@ -130,26 +132,28 @@ constexpr std::string_view kOtherTags[] = {
     // report's list of a sector.
     "sector:home", "report:colony",
     // Widgets inside windows.
-    "research:areas", "research:queue", "research:tech-tree",
-    "set-queue:available", "set-queue:queue",
+    "research:areas", "research:headings", "research:queue", "research:tech-tree",
+    "set-queue:available", "set-queue:queue", "set-queue:rate",
     "queues:list",
-    "designs:list", "designs:create", "designs:simulator",
-    "create-design:hull", "create-design:type", "create-design:name", "create-design:suggest", "create-design:on-design",
-    "create-design:components",
+    "designs:list", "designs:details", "designs:create", "designs:copy", "designs:edit", "designs:upgrade", "designs:simulator",
+    "create-design:hull", "create-design:type", "create-design:name", "create-design:suggest", "create-design:figures",
+    "create-design:on-design", "create-design:components",
     "create-design:warnings", "create-design:save",
     "fleet-transfer:ships", "fleet-transfer:fleets", "fleet-transfer:create-fleet",
     "combat-simulator:vehicles", "combat-simulator:items", "combat-simulator:owners", "combat-simulator:strategies",
     "combat-simulator:begin",
-    "tactical-combat:map", "tactical-combat:piece", "tactical-combat:weapons", "tactical-combat:target",
+    "tactical-combat:map", "tactical-combat:title", "tactical-combat:piece", "tactical-combat:weapons", "tactical-combat:target",
     "tactical-combat:options", "tactical-combat:orders", "tactical-combat:auto", "tactical-combat:end-turn",
-    "strategic-combat:begin",
+    "strategic-combat:begin", "strategic-combat:forces",
+    "galaxy-map:map", "galaxy-map:overlays",
     "planets:list", "planets:filters", "planets:no-sys-to-avoid", "planets:send-colony-ship",
     "colonies:list",
     "research:divide-evenly", "research:repeat",
-    "log:messages", "log:categories", "log:send-reply",
-    "empires:list", "empires:intelligence",
+    "log:messages", "log:details", "log:categories", "log:send-reply",
+    "empires:list", "empires:intelligence", "empires:treaty-grid", "empires:scores", "empires:victory-conditions", "empires:our-race",
     "intelligence:projects", "intelligence:queue",
-    "communicate:message-type", "communicate:treaty", "communicate:send",
+    "strategies:list", "strategies:pages", "strategies:page",
+    "communicate:message-type", "communicate:treaty", "communicate:tone", "communicate:text", "communicate:send",
     // The lesson panel itself.
     "lesson:panel", "lesson:back", "lesson:next", "lesson:read-more", "lesson:more", "lesson:hide", "lesson:free-play", "lesson:leave",
     "help:tabs",
@@ -350,8 +354,100 @@ std::optional<game::Treaty> treatyFromId(std::string_view id) {
     return std::nullopt;
 }
 
+namespace {
+
+constexpr std::array<std::string_view, static_cast<size_t>(ruleset::VehicleType::Count)> kVehicleTypeIds{
+    "ship", "base", "fighter", "satellite", "mine", "troop", "drone", "weapon-platform"};
+
+// The option ids made at start-up, kept for the views to them (a deque never
+// moves what it holds).
+std::vector<std::string_view> owned(std::vector<std::string> ids) {
+    static std::deque<std::string> kept;
+    std::vector<std::string_view> out;
+    for (std::string& id : ids) out.emplace_back(kept.emplace_back(std::move(id)));
+    return out;
+}
+
+std::vector<std::string_view> numbered(std::string_view prefix, int count) {
+    std::vector<std::string> ids;
+    for (int i = 1; i <= count; ++i) ids.push_back(std::string(prefix) + std::to_string(i));
+    return owned(std::move(ids));
+}
+
+std::vector<ChoiceGroup> buildChoiceGroups() {
+    // Option ids of the game's own vocabularies (functional identifiers).
+    std::vector<std::string> designTypes;
+    for (std::string_view t : game::ai::aiDesignTypes()) designTypes.push_back(optionId(t));
+    std::vector<std::string> messageTypes;
+    for (size_t i = 0; i < static_cast<size_t>(game::MessageType::Count); ++i)
+        messageTypes.push_back(optionId(game::displayName(static_cast<game::MessageType>(i))));
+    std::vector<std::string> treaties{"none"};
+    for (const auto& [treaty, id] : kTreaties) treaties.emplace_back(id);
+    // Rows of a list a step's {design:<type>} token names, and the others.
+    const std::vector<std::string_view> named{"named", "other"};
+    std::vector<ChoiceGroup> out;
+    out.push_back({"designs:create", {kVehicleTypeIds.begin(), kVehicleTypeIds.end()}, true,
+                   "Designs: the vehicle types Create asks for (Select Vehicle Type)"});
+    out.push_back({"create-design:hull", {"smallest", "other"}, true,
+                   "Create Design: the Size list's hulls, the smallest (the least kT, the first of equals) and the others"});
+    out.push_back({"create-design:type", owned(std::move(designTypes)), true,
+                   "Create Design: the Design Type list, by design type (`attack-ship`, `colony-rock`, ...)"});
+    out.push_back({"set-queue:available", named, false, "Set Construction Queue: the rows of what can be built"});
+    out.push_back({"fleet-transfer:ships", named, false, "Fleet Transfer: the ships outside fleets (by their design)"});
+    out.push_back({"combat-simulator:items", named, false, "Combat Simulator: the rows of Items to choose"});
+    out.push_back({"combat-simulator:owners", numbered("race-", 10), false, "Combat Simulator: Race 1 to Race 10 of Owner for item"});
+    out.push_back({"communicate:message-type", owned(std::move(messageTypes)), true,
+                   "Communicate: the Message Type list (`propose-treaty`, `gift`, `declare-war`, ...)"});
+    out.push_back({"communicate:treaty", owned(std::move(treaties)), true, "Communicate: the treaty list (`non-aggression`, ...)"});
+    out.push_back({"intelligence:projects", {"defense", "other"}, false,
+                   "Intelligence: the projects, those of the Intelligence Defense type and the others"});
+    out.push_back({"colony-type", {"suggested", "other"}, true, "the Colony Type question: the suggested type and the others"});
+    return out;
+}
+
+} // namespace
+
+std::span<const ChoiceGroup> choiceGroups() {
+    static const std::vector<ChoiceGroup> groups = buildChoiceGroups();
+    return groups;
+}
+
+const ChoiceGroup* choiceGroupOf(std::string_view tag) {
+    for (const ChoiceGroup& g : choiceGroups()) {
+        if (tag.size() <= g.tag.size() + 1 || !tag.starts_with(g.tag) || tag[g.tag.size()] != ':') continue;
+        const std::string_view option = tag.substr(g.tag.size() + 1);
+        if (option == "*" || std::find(g.options.begin(), g.options.end(), option) != g.options.end()) return &g;
+    }
+    return nullptr;
+}
+
+std::string optionId(std::string_view name) {
+    std::string out;
+    bool gap = false;
+    for (const char c : name) {
+        const bool letter = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+        const bool upper = c >= 'A' && c <= 'Z';
+        if (!letter && !upper) {
+            gap = !out.empty();
+            continue;
+        }
+        if (gap) out += '-';
+        gap = false;
+        out += upper ? char(c - 'A' + 'a') : c;
+    }
+    return out;
+}
+
+std::string_view vehicleTypeId(ruleset::VehicleType t) {
+    const auto i = static_cast<size_t>(t);
+    return i < kVehicleTypeIds.size() ? kVehicleTypeIds[i] : std::string_view{};
+}
+
+std::span<const std::string_view> vehicleTypeIds() { return kVehicleTypeIds; }
+
 bool isUiTag(std::string_view tag) {
     if (tag.starts_with("window:")) return findWindow(tag.substr(7)) != nullptr;
+    if (choiceGroupOf(tag)) return true;
     if (tag.ends_with(":close")) return findWindow(tag.substr(0, tag.size() - 6)) != nullptr;
     // A list's arrow column: `<list tag>:up` (and down, track, thumb) for a
     // tagged list, `<window id>:<list id>:up` for every list of a window.

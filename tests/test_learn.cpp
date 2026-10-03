@@ -566,6 +566,93 @@ TEST_CASE("learn: key chords and Close tags") {
     CHECK(battleOrderId(game::combat::TacticalOrder::Kind::Move) == "move");
 }
 
+TEST_CASE("learn: the options of choosers are UI tags a step can name") {
+    // The vocabularies: vehicle types, design types, message types, treaties, races, named rows.
+    CHECK(isUiTag("designs:create:ship"));
+    CHECK(isUiTag("designs:create:base"));
+    CHECK(isUiTag("designs:create:weapon-platform"));
+    CHECK(isUiTag("designs:create:*"));
+    CHECK_FALSE(isUiTag("designs:create:boat"));
+    CHECK(isUiTag("create-design:type:attack-ship"));
+    CHECK(isUiTag("create-design:type:colony-rock"));
+    CHECK_FALSE(isUiTag("create-design:type:warship"));
+    CHECK(isUiTag("create-design:hull:smallest"));
+    CHECK(isUiTag("set-queue:available:named"));
+    CHECK(isUiTag("set-queue:available:other"));
+    CHECK(isUiTag("fleet-transfer:ships:named"));
+    CHECK(isUiTag("combat-simulator:items:named"));
+    CHECK(isUiTag("combat-simulator:owners:race-1"));
+    CHECK(isUiTag("combat-simulator:owners:race-10"));
+    CHECK_FALSE(isUiTag("combat-simulator:owners:race-11"));
+    CHECK(isUiTag("communicate:message-type:propose-treaty"));
+    CHECK(isUiTag("communicate:message-type:declare-war"));
+    CHECK(isUiTag("communicate:treaty:non-aggression"));
+    CHECK(isUiTag("communicate:treaty:trade-research-alliance"));
+    CHECK(isUiTag("intelligence:projects:defense"));
+    CHECK(isUiTag("colony-type:suggested"));
+    CHECK_FALSE(isUiTag("colony-type"));
+    // A list's arrow column is no option of its rows.
+    CHECK(isUiTag("set-queue:available:up"));
+    CHECK(choiceGroupOf("set-queue:available:up") == nullptr);
+    const ChoiceGroup* g = choiceGroupOf("designs:create:ship");
+    REQUIRE(g != nullptr);
+    CHECK(g->tag == "designs:create");
+    CHECK(g->picker);
+    CHECK(choiceGroupOf("designs:create:*") == g);
+    CHECK(choiceGroupOf("designs:create") == nullptr);
+    CHECK_FALSE(choiceGroupOf("set-queue:available:named")->picker);
+    // Option ids from names.
+    CHECK(optionId("Attack Ship") == "attack-ship");
+    CHECK(optionId("Colony (Rock)") == "colony-rock");
+    CHECK(optionId("Trade & Research Alliance") == "trade-research-alliance");
+    CHECK(optionId("Non-Aggression") == "non-aggression");
+    CHECK(optionId("  General Message ") == "general-message");
+    CHECK(vehicleTypeId(ruleset::VehicleType::Ship) == "ship");
+    CHECK(vehicleTypeId(ruleset::VehicleType::WeaponPlatform) == "weapon-platform");
+    CHECK(vehicleTypeIds().size() == static_cast<size_t>(ruleset::VehicleType::Count));
+}
+
+TEST_CASE("learn: a step shows parts to read with 'show'") {
+    std::vector<Diagnostic> problems;
+    const char* text = R"(title = "Show"
+[[step]]
+title = "One"
+text = "t"
+highlight = ["designs:list"]
+show = ["designs:details", "create-design:warnings"]
+
+[[step]]
+title = "Two"
+text = "t"
+show = ["designs:nowhere", "designs:create:ship", 4]
+)";
+    CHECK_FALSE(parseLesson(text, "show.toml", LessonKind::Tutorial, problems).has_value());
+    CHECK(hasProblem(problems, 11, "unknown UI tag 'designs:nowhere'"));
+    CHECK(hasProblem(problems, 11, "not the option 'designs:create:ship'"));
+    CHECK(hasProblem(problems, 11, "'show' takes strings"));
+
+    problems.clear();
+    const std::string good(text, std::string_view(text).find("\n[[step]]\ntitle = \"Two\""));
+    const auto l = parseLesson(good, "show.toml", LessonKind::Tutorial, problems);
+    REQUIRE_MESSAGE(l.has_value(), problemsText(problems));
+    CHECK(l->steps[0].show == std::vector<std::string>{"designs:details", "create-design:warnings"});
+}
+
+TEST_CASE("learn: design_vehicle names a vehicle type") {
+    std::vector<Diagnostic> problems;
+    const char* text = R"(title = "t"
+[[objective]]
+text = "o"
+when = { design_vehicle = "boat" }
+)";
+    CHECK_FALSE(parseLesson(text, "vehicle.toml", LessonKind::Training, problems).has_value());
+    CHECK(hasProblem(problems, 4, "unknown vehicle type 'boat'"));
+    const Condition c = condition("{ design_vehicle = \"weapon-platform\" }");
+    CHECK(c.fact == Fact::DesignVehicle);
+    CHECK(c.text == "weapon-platform");
+    CHECK(describe(c) == "design_vehicle = \"weapon-platform\"");
+}
+
 TEST_CASE("learn: slugs drop the order number and the extension") {
     CHECK(slugOf("03-first-colony.toml") == "first-colony");
     CHECK(slugOf("manual/10-ship-design.md") == "ship-design");
@@ -845,6 +932,21 @@ TEST_CASE("learn conditions: the design being made: its type and its name") {
     CHECK(describe(condition("{ design_type_chosen = \"Attack Ship\" }")) == "design_type_chosen = \"Attack Ship\"");
 }
 
+TEST_CASE("learn conditions: the kind of vehicle being designed") {
+    Eval ev;
+    // The designer tells the vehicle type it designs, while it is open.
+    ev.client.designVehicle = "ship";
+    CHECK_FALSE(ev("{ design_vehicle = \"ship\" }"));
+    ev.client.designComponents = 0;
+    CHECK(ev("{ design_vehicle = \"ship\" }"));
+    CHECK_FALSE(ev("{ design_vehicle = \"base\" }"));
+    ev.client.designVehicle = "base";
+    CHECK(ev("{ design_vehicle = \"base\" }"));
+    CHECK_FALSE(ev("{ design_vehicle = \"ship\" }"));
+    ev.client.designComponents.reset();
+    CHECK_FALSE(ev("{ design_vehicle = \"base\" }"));
+}
+
 TEST_CASE("learn conditions: counters tell how far a count or a wait has come") {
     Eval ev;
     const int64_t explored = ev.value(Fact::SystemsExplored);
@@ -889,6 +991,8 @@ TEST_CASE("learn access: a done condition needs the tags that bring it about") {
     CHECK(ok("{ window = \"research\" }", access({"command:research"})));
     CHECK_FALSE(ok("{ window = \"research\" }", access({"command:designs"})));
     CHECK(ok("{ window = \"create-design\" }", access({"designs:create"})));
+    CHECK(ok("{ design_vehicle = \"ship\" }", access({"designs:create", "designs:create:ship"})));
+    CHECK_FALSE(ok("{ design_vehicle = \"ship\" }", access({"designs:list"})));
     CHECK(ok("{ window = \"galaxy-map\" }", access({"panel:galaxy"})));
     CHECK(ok("{ not = { window = \"designs\" } }", access({"designs:close"})));
     CHECK(ok("{ not = { window = \"designs\" } }", access({}, {"Escape"})));

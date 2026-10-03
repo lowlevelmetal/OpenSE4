@@ -168,6 +168,10 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
         case Fact::DesignTypeChosen:
             if (a.has("create-design:type")) return std::nullopt;
             return missing("create-design:type");
+        case Fact::DesignVehicle:
+            // Create asks for the vehicle type, and the designer opens for it.
+            if (a.has("designs:create")) return std::nullopt;
+            return missing("designs:create");
         case Fact::DesignNamed:
             if (a.has("create-design:name") || a.has("create-design:suggest")) return std::nullopt;
             return missing("create-design:name or create-design:suggest");

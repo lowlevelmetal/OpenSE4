@@ -30,6 +30,7 @@ constexpr FactInfo kFacts[] = {
     {Fact::DesignHullChosen, "design_hull_chosen", F, false, "the player picked a hull in the open Create Design window's Size list"},
     {Fact::DesignTypeChosen, "design_type_chosen", T, false, "the open Create Design window's Design Type box shows that design type"},
     {Fact::DesignNamed, "design_named", F, false, "the open Create Design window's Design Name box holds a name no other design has"},
+    {Fact::DesignVehicle, "design_vehicle", T, false, "the open Create Design window designs that vehicle type (\"ship\", \"base\", ...)"},
     {Fact::SimulatorOwners, "simulator_owners", N, false, "the open Combat Simulator has items for N races", "Races with items"},
     {Fact::SimulatorItems, "simulator_items", N, false, "the open Combat Simulator has N items in the battle", "Items in the battle"},
     {Fact::BattleBegun, "battle_begun", F, false, "the open Tactical Combat window's battle has begun (Begin was pressed)"},
@@ -284,6 +285,7 @@ bool holds(const Condition& c, const EvalContext& ctx) {
         case Fact::DesignTypeChosen:
             return ctx.client.designComponents.has_value() && !ctx.client.designType.empty() && designTypeMatches(ctx.client.designType, c.text);
         case Fact::DesignNamed: return ctx.client.designComponents.has_value() && ctx.client.designNamed == (c.number != 0);
+        case Fact::DesignVehicle: return ctx.client.designComponents.has_value() && ctx.client.designVehicle == c.text;
         case Fact::Option: {
             if (!validEmpire(ctx.state, ctx.empire)) return false;
             return optionValue(ctx.state.empire(ctx.empire), c.text).value_or(false);

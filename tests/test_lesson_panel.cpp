@@ -185,6 +185,18 @@ TEST_CASE("resume: the fingerprint follows the steps, not their wording") {
     learn::Lesson reordered = l;
     std::swap(reordered.steps[1], reordered.steps[2]);
     CHECK(learn::lessonFingerprint(reordered) != learn::lessonFingerprint(l));
+    // What a step shows counts too, once there is some.
+    learn::Lesson shows = l;
+    shows.steps[2].show = {"designs:details"};
+    CHECK(learn::lessonFingerprint(shows) != learn::lessonFingerprint(l));
+    // ... and its window is one the step works in.
+    CHECK(learn::stepWindows(shows.steps[2]) == learn::stepWindows(l.steps[2]));
+    learn::Lesson mainShows = l;
+    mainShows.steps[7].show = {"panel:report"};
+    CHECK(learn::stepWindows(mainShows.steps[7]).empty());
+    learn::Lesson windowShows = l;
+    windowShows.steps[7].show = {"log:details"};
+    CHECK(learn::stepWindows(windowShows.steps[7]) == std::vector<std::string_view>{"log"});
 }
 
 TEST_CASE("resume: places and the first-lesson flag are kept with the client settings") {
