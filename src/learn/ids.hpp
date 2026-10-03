@@ -90,10 +90,15 @@ struct ChoiceGroup {
     // begins.
     bool picker = false;
     std::string_view what;                      // for the reference: "the vehicle types Create asks for"
+    // Its options are names from the data set (the race's design types, which
+    // need not be the AI's): every `<chooser>:<id>` drawn is an option of it,
+    // while a step names one of `options`.
+    bool open = false;
 };
 std::span<const ChoiceGroup> choiceGroups();
 // The chooser a tag is an option of (`designs:create:ship`, `designs:create:*`).
-const ChoiceGroup* choiceGroupOf(std::string_view tag);
+// `drawn`: a tag the client drew, which for an open chooser may be any id.
+const ChoiceGroup* choiceGroupOf(std::string_view tag, bool drawn = false);
 // A name as an option id: lower case, letters and digits kept, every other run
 // of characters one hyphen ("Attack Ship" "attack-ship", "Colony (Rock)"
 // "colony-rock", "Trade & Research Alliance" "trade-research-alliance").

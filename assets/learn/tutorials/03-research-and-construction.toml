@@ -123,8 +123,8 @@ Each row shows its design's type at the right; scroll the list if the design is 
 More colonies mean more of everything. A game starts without ships, so your colony ships and
 explorers all come from queues like this one.
 """
-highlight = ["set-queue:available"]
-allow = ["set-queue:ships", "set-queue:available:named"]
+highlight = ["set-queue:available", "set-queue:available:named"]
+allow = ["set-queue:ships"]
 done = { command = "QueueAdd", design_type = "Colony" }
 manual = "construction#the-set-construction-queue-window"
 
@@ -180,7 +180,8 @@ what your treasury gains or loses each turn.
 
 Ships cost upkeep, so watch it as your fleet grows. Press **Next**.
 """
-highlight = ["window:empire-status"]
+highlight = ["empire-status:net"]
+show = ["empire-status:budget"]
 manual = "economy#the-empire-status-window"
 
 [[step]]

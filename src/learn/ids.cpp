@@ -153,6 +153,7 @@ constexpr std::string_view kOtherTags[] = {
     "empires:list", "empires:intelligence", "empires:treaty-grid", "empires:scores", "empires:victory-conditions", "empires:our-race",
     "intelligence:projects", "intelligence:queue",
     "strategies:list", "strategies:pages", "strategies:page",
+    "empire-status:budget", "empire-status:net",
     "communicate:message-type", "communicate:treaty", "communicate:tone", "communicate:text", "communicate:send",
     // The lesson panel itself.
     "lesson:panel", "lesson:back", "lesson:next", "lesson:read-more", "lesson:more", "lesson:hide", "lesson:free-play", "lesson:leave",
@@ -391,7 +392,7 @@ std::vector<ChoiceGroup> buildChoiceGroups() {
     out.push_back({"create-design:hull", {"smallest", "other"}, true,
                    "Create Design: the Size list's hulls, the smallest (the least kT, the first of equals) and the others"});
     out.push_back({"create-design:type", owned(std::move(designTypes)), true,
-                   "Create Design: the Design Type list, by design type (`attack-ship`, `colony-rock`, ...)"});
+                   "Create Design: the Design Type list, by design type (`attack-ship`, `colony-rock`, ...)", true});
     out.push_back({"set-queue:available", named, false, "Set Construction Queue: the rows of what can be built"});
     out.push_back({"fleet-transfer:ships", named, false, "Fleet Transfer: the ships outside fleets (by their design)"});
     out.push_back({"combat-simulator:items", named, false, "Combat Simulator: the rows of Items to choose"});
@@ -412,11 +413,12 @@ std::span<const ChoiceGroup> choiceGroups() {
     return groups;
 }
 
-const ChoiceGroup* choiceGroupOf(std::string_view tag) {
+const ChoiceGroup* choiceGroupOf(std::string_view tag, bool drawn) {
     for (const ChoiceGroup& g : choiceGroups()) {
         if (tag.size() <= g.tag.size() + 1 || !tag.starts_with(g.tag) || tag[g.tag.size()] != ':') continue;
         const std::string_view option = tag.substr(g.tag.size() + 1);
         if (option == "*" || std::find(g.options.begin(), g.options.end(), option) != g.options.end()) return &g;
+        if (drawn && g.open && option.find(':') == std::string_view::npos) return &g;
     }
     return nullptr;
 }

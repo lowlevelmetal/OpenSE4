@@ -99,7 +99,7 @@ text = """
 **Right-click the galaxy panel** at the bottom right to open the larger **Galaxy Map**.
 
 The galaxy panel shows every star system of the quadrant, and the warp links you know as lines.
-The system in the system view has a ring around it.
+A ring marks the system you are looking at.
 """
 highlight = ["panel:galaxy"]
 done = { window = "galaxy-map" }
@@ -196,6 +196,7 @@ text = """
 builds, the computer players move, and a new turn begins.
 """
 highlight = ["button:end-turn"]
+show = ["panel:commands"]
 done = { turns_passed = 1 }
 manual = "turns#turn-based-play"
 

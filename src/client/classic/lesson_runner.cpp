@@ -178,6 +178,10 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const L
         activeSeen_ = progress_.active();
         activeSince_ = targetsSeen_ = ui.time;
         leftOpen_ = facts.openWindows;
+        // A note about a click the step before refused is not about this one.
+        refusedAt_.reset();
+        refusedKey_.clear();
+        refusals_.clear();
     }
     updateRecovery(ui, facts);
     const Prompts prompts = findPrompts(ui);

@@ -158,26 +158,34 @@ done = { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns_passed 
 manual = "diplomacy#how-computer-players-feel-about-you"
 
 [[step]]
-title = "More about other empires"
+title = "The Empires window again"
 text = """
-**The Empires window has more on its right side**: the **Treaty Grid** of who is at peace with
-whom, the **Scores**, this game's **Victory Conditions**, and your own race report under **Our
-Race**.
-
-Open it (`F9`) to look, then press **Next**.
+**Open the Empires window** again, with its command button or `F9`.
 """
 highlight = ["command:empires"]
-allow = ["command:empires", "empires:treaty-grid", "empires:scores", "empires:victory-conditions", "empires:our-race", "empires:close"]
+done = { window = "empires" }
+manual = "diplomacy#the-empires-window"
+
+[[step]]
+title = "More about other empires"
+text = """
+**The buttons on the right open more reports**: the **Treaty Grid** of who is at peace with whom,
+the **Scores**, this game's **Victory Conditions**, and your own race report under **Our Race**.
+
+Open them to look, closing each with `Esc`, then press **Next**.
+"""
+highlight = ["empires:treaty-grid", "empires:scores", "empires:victory-conditions", "empires:our-race"]
+allow = ["empires:treaty-grid", "empires:scores", "empires:victory-conditions", "empires:our-race"]
 manual = "diplomacy#the-empires-window"
 
 [[step]]
 title = "Intelligence"
 text = """
-**Open the Empires window and press Intelligence.**
+**Press Intelligence** in the Empires window.
 
 Intelligence projects spy on other empires and sabotage them, and protect you from their agents.
 """
-highlight = ["command:empires", "empires:intelligence"]
+highlight = ["empires:intelligence"]
 done = { window = "intelligence" }
 manual = "intelligence#the-intelligence-window"
 

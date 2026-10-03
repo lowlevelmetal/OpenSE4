@@ -172,8 +172,8 @@ it is out of sight, scroll the list with the mouse wheel or its arrows.
 
 Its type shows at the right of the row, and the list shows how many turns it takes to build.
 """
-highlight = ["set-queue:available"]
-allow = ["set-queue:ships", "set-queue:available:named"]
+highlight = ["set-queue:available", "set-queue:available:named"]
+allow = ["set-queue:ships"]
 done = { command = "QueueAdd", design_type = "Attack Ship" }
 manual = "construction#the-set-construction-queue-window"
 

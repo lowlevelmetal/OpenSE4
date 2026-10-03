@@ -88,10 +88,12 @@ repeat 4 until { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns
   click tag:log:close optional
 end
 wait-step 12
-# 12 More about other empires: the Empires window's Treaty Grid, Scores, Victory Conditions and
-# Our Race, each closed again; then Next.
+# 12 The Empires window again.
 click tag:command:empires
 wait-window empires
+wait-step 13
+# 13 More about other empires: the Empires window's Treaty Grid, Scores, Victory Conditions and
+# Our Race, each closed again; the window's other buttons are refused. Then Next.
 click item:Intelligence in=empires refused
 click item:History in=empires refused
 click item:"Treaty Grid" in=empires
@@ -111,19 +113,19 @@ wait-window race-report
 key Escape
 wait-closed race-report
 click item:Next in=lesson
-wait-step 13
-# 13 Intelligence: the button in the Empires window.
+wait-step 14
+# 14 Intelligence: the button in the Empires window.
 click tag:empires:intelligence
 wait-window intelligence
-wait-step 14
-# 14 A first project: a defense project; the others (none yet with this game's technology) are
+wait-step 15
+# 15 A first project: a defense project; the others (none yet with this game's technology) are
 # refused.
 wait-for tag:intelligence:projects:defense
 click tag:intelligence:projects:other refused optional
 click tag:intelligence:projects:defense
-wait-step 15
+wait-step 16
 assert { command = "SetIntel" }
-# 15 Well done: Finish. The last lesson offers the first training game, which starts from here.
+# 16 Well done: Finish. The last lesson offers the first training game, which starts from here.
 click item:Finish in=lesson
 wait-result done
 assert-present item:"Next, a training game: Land rush*"

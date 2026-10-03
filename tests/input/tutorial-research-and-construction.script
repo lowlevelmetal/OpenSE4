@@ -84,7 +84,9 @@ wait-closed colonies
 click tag:command:empire-status
 wait-window empire-status
 wait-step 15
-# 15 Your budget: an explanation; the window's buttons are only to look at.
+# 15 Your budget: an explanation; the window's buttons are only to look at (once the panel has
+# moved off them: at 800x600 the step before's lay over Ministers).
+wait 10
 click item:Ministers in=empire-status refused
 click item:Next in=lesson
 wait-step 16

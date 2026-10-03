@@ -222,7 +222,7 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
         return in != st.windows.end() ? in->choices : st.choices;
     };
     for (const TaggedArea& t : tags) {
-        const learn::ChoiceGroup* g = learn::choiceGroupOf(t.name);
+        const learn::ChoiceGroup* g = learn::choiceGroupOf(t.name, true);
         if (!g) continue;
         const auto picked = std::find_if(chosen.begin(), chosen.end(), [&](const auto& c) { return c.first == g; });
         if (picked == chosen.end()) continue;

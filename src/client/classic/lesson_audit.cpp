@@ -292,7 +292,7 @@ AuditReport auditStep(const AuditInput& in) {
         const bool top = inTop(p);
         const LockWindow* front = top ? nullptr : windowAt(p);
         for (const TaggedArea& t : in.tags) {
-            if (!t.area.contains(p) || isLessonTag(t.name) || isListPart(t.name) || learn::choiceGroupOf(t.name)) continue;
+            if (!t.area.contains(p) || isLessonTag(t.name) || isListPart(t.name) || learn::choiceGroupOf(t.name, true)) continue;
             if (t.name.starts_with("window:") && !has(named, t.name)) continue;
             const auto own = tagWindowId(t.name);
             if (t.top != top || (!top && (front ? !own || *own != front->id : own.has_value()))) continue;
@@ -355,7 +355,7 @@ AuditReport auditStep(const AuditInput& in) {
     // and the step's own; another tag only where it is let through for itself
     // (a way to a closed window), not as a part of one the step names.
     for (const TaggedArea& t : in.tags) {
-        if (isLessonTag(t.name) || t.name.starts_with("window:") || isListPart(t.name) || learn::choiceGroupOf(t.name)) continue;
+        if (isLessonTag(t.name) || t.name.starts_with("window:") || isListPart(t.name) || learn::choiceGroupOf(t.name, true)) continue;
         if (!onScreen(t.area, in.display) || !letThrough(t)) continue;
         if (!has(named, t.name)) {
             // Let through for itself where its middle is, not as a part of one the step names,
@@ -396,7 +396,11 @@ AuditReport auditStep(const AuditInput& in) {
         if (learn::isWindowTab(tag)) {
             std::string label = g.labels.empty() ? std::string(widgetOf(tag)) : g.labels.front();
             const bool doneTab = st.done && learn::describe(*st.done).find(tag) != std::string::npos;
-            if (!doneTab && !textNames(label) && !textHasWords(widgetOf(tag))) {
+            // "Its tabs choose the columns: try them": every tab of a window the step names.
+            const bool tabsNamed = has(textWords, "tabs") && std::any_of(named.begin(), named.end(), [&](const std::string& t) {
+                return t != tag && tagWindowId(t) && tagWindowId(t) == tagWindowId(tag);
+            });
+            if (!doneTab && !tabsNamed && !textNames(label) && !textHasWords(widgetOf(tag))) {
                 line(head, "another tab the text does not ask for");
                 continue;
             }
@@ -414,7 +418,7 @@ AuditReport auditStep(const AuditInput& in) {
         // Its options on screen, and which the lock lets through.
         std::vector<std::string> passing, refused;
         for (const TaggedArea& t : in.tags) {
-            if (learn::choiceGroupOf(t.name) != &g || !onScreen(t.area, in.display)) continue;
+            if (learn::choiceGroupOf(t.name, true) != &g || !onScreen(t.area, in.display)) continue;
             const std::string option(t.name.substr(g.tag.size() + 1));
             auto& into = in.lock.allows(t.area.centre()) ? passing : refused;
             if (!has(into, option)) into.push_back(option);
@@ -523,7 +527,7 @@ AuditReport auditStep(const AuditInput& in) {
         }
         for (const TaggedArea& t : in.tags) {
             if (option) break;
-            if (isLessonTag(t.name) || isListPart(t.name) || learn::choiceGroupOf(t.name)) continue;
+            if (isLessonTag(t.name) || isListPart(t.name) || learn::choiceGroupOf(t.name, true)) continue;
             const std::vector<std::string> tw = wordsOf(widgetOf(t.name));
             if (tw.empty() || rw.empty()) continue;
             // Every word of the widget's id is in the reference ("Warnings" create-design:warnings), and
@@ -548,8 +552,16 @@ AuditReport auditStep(const AuditInput& in) {
             line(std::format("B ref \"{}\": not matched (check by hand)", ref));
             continue;
         }
-        // A window the text names to have it closed ("Close the Log", "close Colonies") need not be read.
-        if (text.find("close " + lref) != std::string::npos || text.find("close the " + lref) != std::string::npos) {
+        // A window the text names to have it closed ("Close the Log", "close the Tech Tree and the
+        // Research window", "closing the Log") need not be read: the sentence it is in closes it.
+        bool closing = false;
+        for (size_t at = text.find(lref); at != std::string::npos && !closing; at = text.find(lref, at + 1)) {
+            size_t start = text.find_last_of(".\n:", at);
+            start = start == std::string::npos ? 0 : start + 1;
+            const std::string_view before = std::string_view(text).substr(start, at - start);
+            closing = before.find("close") != std::string_view::npos || before.find("closing") != std::string_view::npos;
+        }
+        if (closing) {
             line(std::format("B ref \"{}\": named to be closed", ref));
             continue;
         }

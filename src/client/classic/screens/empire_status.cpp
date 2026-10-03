@@ -110,6 +110,9 @@ public:
         amountRow(ui, origin, 240, "Construction Queue Usage", eco.construction);
         amountRow(ui, origin, 270, "Total", expenses);
         amountRow(ui, origin, 310, "Net Resources Per Turn", income - expenses, false, true);
+        // For lessons: the production and expenses, and the net row.
+        ui.tag("empire-status:budget", d.at({15, 38}), d.at({575, 290}));
+        ui.tag("empire-status:net", d.at({15, 306}), d.at({575, 330}));
         statusText(ui, origin, ui.fonts.bold, kTitleSize, kTitleLead, {20, 350}, silver, "Resources in Treasury");
         amountRow(ui, origin, 370, "Current Total", me.stockpile);
         amountRow(ui, origin, 390, "Maximum Resource Storage", eco.storageCap);

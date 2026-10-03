@@ -361,7 +361,7 @@ void UiContext::tag(std::string_view name, ImVec2 min, ImVec2 max) {
 #ifndef NDEBUG
     // Every tag a window registers must be one lessons can name (learn/ids.cpp).
     static std::vector<std::string> reported;
-    if (!learn::isUiTag(name) && std::find(reported.begin(), reported.end(), name) == reported.end()) {
+    if (!learn::isUiTag(name) && !learn::choiceGroupOf(name, true) && std::find(reported.begin(), reported.end(), name) == reported.end()) {
         reported.emplace_back(name);
         log::warn("UI tag '{}' is not listed in learn/ids.cpp", name);
     }
