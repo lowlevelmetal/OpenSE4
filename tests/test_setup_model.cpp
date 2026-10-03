@@ -136,6 +136,16 @@ Race Opt 3 Adv Trait 1 := Night Eyes)";
     return *r.rules;
 }
 
+// A new game's settings with the empire Game Setup used to start with (the
+// first Quick Start style) and no random neutral players: the scenario these
+// tests were written for.
+setup::NewGameSettings withFirstStyle(const game::Rules& r, uint64_t seed) {
+    setup::NewGameSettings s = setup::defaultSettings(r, seed);
+    if (auto first = setup::firstStyleEmpire(r, s.options.racialPoints)) s.players.push_back(*first);
+    s.neutrals.enabled = false;
+    return s;
+}
+
 uint32_t traitIndex(const game::Rules& r, std::string_view name) {
     for (uint32_t i = 0; i < r.data().racialTraits.size(); ++i)
         if (r.data().racialTraits[i].name == name) return i;
@@ -145,20 +155,38 @@ uint32_t traitIndex(const game::Rules& r, std::string_view name) {
 
 } // namespace
 
-TEST_CASE("setup model: defaults start one human empire from the first Quick Start style") {
+TEST_CASE("setup model: a new game starts with no empire and random computer and neutral players") {
     const game::Rules& r = setupRules();
     REQUIRE(r.racePresets().size() == 6);
     const setup::NewGameSettings s = setup::defaultSettings(r, 42);
     CHECK(s.seed == 42);
     CHECK(s.options.quadrantType == r.data().quadrantTypes.front().name);
     CHECK(s.options.maxShipsPerPlayer == 150);
-    REQUIRE(s.players.size() == 1);
-    CHECK(s.players[0].kind == game::PlayerKind::Human);
-    CHECK(s.players[0].preset == "Beta");
-    CHECK(s.players[0].name == "Betan League");
-    CHECK_FALSE(s.players[0].customRace.has_value());
-    CHECK(s.players[0].presetTier == 1);  // the costliest tier within the default 2000 points
+    // The list starts empty; random computer and neutral players are on, Medium (spec 07 session 5).
+    CHECK(s.players.empty());
+    CHECK(s.computers.enabled);
+    CHECK(s.computers.level == 1);
+    CHECK(s.neutrals.enabled);
+    CHECK(s.neutrals.level == 1);
+    // The empire OpenSE4 used to start with: the first Quick Start style at its costliest tier.
+    const auto first = setup::firstStyleEmpire(r, s.options.racialPoints);
+    REQUIRE(first.has_value());
+    CHECK(first->kind == game::PlayerKind::Human);
+    CHECK(first->preset == "Beta");
+    CHECK(first->name == "Betan League");
+    CHECK_FALSE(first->customRace.has_value());
+    CHECK(first->presetTier == 1);  // the costliest tier within the default 2000 points
     CHECK(setup::maxSystems(r) == 60);
+    // Maximum Event Severity Catastrophic and the Victory Conditions page's values (spec 01 §2.2, §11).
+    CHECK(s.options.maxEventSeverity == 3);
+    CHECK(s.options.victory.scoreValue == 5'000'000);
+    CHECK(s.options.victory.yearsValue == 10);
+    CHECK(s.options.victory.percentOfSecondValue == 300);
+    CHECK(s.options.victory.techPercentValue == 50);
+    CHECK(s.options.victory.peaceYears == 1);
+    CHECK(s.options.victory.delayYears == 5);
+    CHECK_FALSE(s.options.victory.score);
+    CHECK_FALSE(s.options.victory.delay);
     // The original's defaults (spec 01 §2.2, spec 02 §9).
     CHECK(s.options.systemCount == 0);  // rolled from the Quadrant Size
     CHECK(s.options.quadrantSize == 1);  // Medium
@@ -186,7 +214,7 @@ TEST_CASE("setup model: defaults start one human empire from the first Quick Sta
 
 TEST_CASE("setup model: options, seed and players map into the game setup") {
     const game::Rules& r = setupRules();
-    setup::NewGameSettings s = setup::defaultSettings(r, 7);
+    setup::NewGameSettings s = withFirstStyle(r, 7);
     s.options.systemCount = 20;
     s.options.quadrantSize = 2;
     s.options.allPlanetsSameSize = false;
@@ -313,7 +341,7 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
 
 TEST_CASE("setup model: the preview is the map the game starts with") {
     const game::Rules& r = setupRules();
-    setup::NewGameSettings s = setup::defaultSettings(r, 99);
+    setup::NewGameSettings s = withFirstStyle(r, 99);
     s.options.quadrantSize = 0;  // Small: 12 to 23 systems
     s.computers.enabled = false;
     auto preview = setup::previewQuadrant(r, s.seed, s.options);
@@ -541,7 +569,7 @@ TEST_CASE("setup model: empire files keep the designs saved with them, and a new
     // The new game: the file's designs replace the empire's, which has none
     // of its own (spec 01 §3.6), under a free name, with their strategy among
     // the saved strategies; a design that breaks the design rules is dropped.
-    setup::NewGameSettings s = setup::defaultSettings(r, 5);
+    setup::NewGameSettings s = withFirstStyle(r, 5);
     s.options.systemCount = 12;
     REQUIRE_FALSE(s.players.empty());
     game::Design broken = saved;
@@ -595,7 +623,7 @@ TEST_CASE("setup model: the minister style of Empire Setup reaches the game and 
     CHECK(missing->warnings.size() == 1);
 
     // The game: the explicit empires get their style (a computer-controlled one too); random computer players never do.
-    setup::NewGameSettings s = setup::defaultSettings(r, 5);
+    setup::NewGameSettings s = withFirstStyle(r, 5);
     s.options.systemCount = 12;
     REQUIRE_FALSE(s.players.empty());
     s.players[0].ministerStyle = "Bold";
@@ -651,7 +679,7 @@ TEST_CASE("setup model: experience travels in the empire file into the game") {
     CHECK(back->empire.experience == 123'456);
     CHECK(game::economy::raceAge(back->empire.experience) == "Moderate");
 
-    setup::NewGameSettings s = setup::defaultSettings(r, 5);
+    setup::NewGameSettings s = withFirstStyle(r, 5);
     s.options.systemCount = 12;
     REQUIRE_FALSE(s.players.empty());
     s.players[0] = back->empire;
@@ -687,7 +715,7 @@ TEST_CASE("setup model: installed data set: defaults, presets and empire files (
     REQUIRE(loaded.ruleset.has_value());
     const game::Rules r(std::move(*loaded.ruleset), dir->parent_path());
 
-    setup::NewGameSettings s = setup::defaultSettings(r, 7);
+    setup::NewGameSettings s = withFirstStyle(r, 7);
     REQUIRE(s.players.size() == 1);
     s.computers = {true, 2};
     s.neutrals = {true, 0};
@@ -761,4 +789,53 @@ TEST_CASE("setup model: the autosave choice can be changed during a local or hot
         CHECK_FALSE(session.setAutosaveTurns(4));  // not one of the choices
         CHECK(session.state().options.autosaveTurns == (local ? 5 : 0));
     }
+}
+
+TEST_CASE("setup model: Quick Start keeps a new game's random players, rolled from the seed") {
+    const game::Rules& r = setupRules();
+    const auto styles = setup::quickStartStyles(r);
+    REQUIRE_FALSE(styles.empty());
+    const std::string player = r.racePresets()[styles.front()].folder;
+    const auto [cLo, cHi] = setup::randomPlayerRange(r, false, 1);
+    const auto [nLo, nHi] = setup::randomPlayerRange(r, true, 1);
+    for (uint64_t seed = 1; seed <= 6; ++seed) {
+        const game::GameSetup g = setup::quickStartGame(r, player, seed);
+        // The same seed always gives the same players (no wall clock).
+        CHECK(setup::quickStartGame(r, player, seed).empires.size() == g.empires.size());
+        REQUIRE_FALSE(g.empires.empty());
+        CHECK(g.empires[0].kind == game::PlayerKind::Human);
+        CHECK(g.empires[0].preset == player);
+        int computers = 0, neutrals = 0;
+        for (size_t i = 1; i < g.empires.size(); ++i) {
+            if (g.empires[i].kind == game::PlayerKind::Computer) ++computers;
+            if (g.empires[i].kind == game::PlayerKind::Neutral) ++neutrals;
+            CHECK(g.empires[i].preset != player);  // another race than the player's
+            REQUIRE(g.options.randomAiPlayers.size() > i);
+            CHECK(g.options.randomAiPlayers[i] == 1);
+        }
+        CHECK(computers >= cLo);
+        CHECK(computers <= cHi);
+        CHECK(neutrals <= nHi);
+        CHECK(g.options.maxEventSeverity == 3);
+        CHECK(g.options.maxShipsPerPlayer == 150);  // the caps from Settings, as a new game
+        for (size_t i = 0; i < g.empires.size(); ++i) {
+            const auto other = setup::quickStartGame(r, player, seed);
+            CHECK(other.empires[i].name == g.empires[i].name);
+            CHECK(other.empires[i].kind == g.empires[i].kind);
+        }
+    }
+    // A lesson's (or --empires) opponents: exactly that many computer players, no neutral one.
+    const game::GameSetup lesson = setup::quickStartGame(r, player, 3, 2);
+    REQUIRE(lesson.empires.size() == 3);
+    CHECK(lesson.empires[1].kind == game::PlayerKind::Computer);
+    CHECK(lesson.empires[2].kind == game::PlayerKind::Computer);
+    CHECK(lesson.options.randomAiPlayers.empty());
+}
+
+TEST_CASE("setup model: the Quick Start picker follows Settings' style list") {
+    const game::Rules& r = setupRules();
+    const auto styles = setup::quickStartStyles(r);
+    REQUIRE_FALSE(styles.empty());
+    CHECK(r.racePresets()[styles.front()].folder == "Beta");  // Quick Start Style 1 of the fixture
+    for (size_t i : styles) CHECK_FALSE(r.racePresets()[i].neutral);
 }

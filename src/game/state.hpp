@@ -839,13 +839,16 @@ struct PendingEvent {
     uint32_t fireTurn = 0;
 };
 
+// The values a new game's Victory Conditions page shows, every condition
+// off (observed, spec 01 §11, spec 07 sessions 3 and 5). Years are whole
+// years here; the original keeps them in turns and shows one decimal.
 struct VictoryConditions {
-    bool score = false;             int64_t scoreValue = 50000;
-    bool years = false;             int yearsValue = 100;
-    bool percentOfSecond = false;   int percentOfSecondValue = 200;
-    bool techPercent = false;       int techPercentValue = 75;
-    bool peace = false;             int peaceYears = 20;
-    bool delay = false;             int delayYears = 10;
+    bool score = false;             int64_t scoreValue = 5'000'000;
+    bool years = false;             int yearsValue = 10;
+    bool percentOfSecond = false;   int percentOfSecondValue = 300;
+    bool techPercent = false;       int techPercentValue = 50;
+    bool peace = false;             int peaceYears = 1;
+    bool delay = false;             int delayYears = 5;
 };
 
 struct GameOptions {
@@ -861,7 +864,7 @@ struct GameOptions {
     bool finiteResources = false;
     // Events.
     int eventFrequency = 1;              // 0 none, 1 low (the default, spec 01 §2.2), 2 medium, 3 high
-    int maxEventSeverity = 2;            // 0 low .. 3 catastrophic
+    int maxEventSeverity = 3;            // 0 low .. 3 catastrophic (the default, observed: spec 01 §2.2)
     // Technology.
     int techCost = 1;                    // Technology Cost: 0 low, 1 medium (the default), 2 high (spec 05 §1.3)
     int startTechLevel = 0;              // 0 low, 1 medium, 2 high

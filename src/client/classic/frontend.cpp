@@ -4,6 +4,7 @@
 
 #include "client/app_settings.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "client/settings_window.hpp"
 #include "datafile/datafile.hpp"
@@ -391,26 +392,8 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::
     return std::make_unique<ClassicSession>(std::move(rules), std::move(*state), player, humans > 1 ? SessionKind::Hotseat : SessionKind::Local);
 }
 
-game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed, int opponents) {
-    game::GameSetup setup;
-    setup.seed = seed;  // every other setting keeps its default (a rolled Medium quadrant)
-    game::EmpireSetup me;
-    me.preset = std::string(playerPreset);
-    me.kind = game::PlayerKind::Human;
-    setup.empires.push_back(me);
-    // Opponents: other non-neutral presets, picked deterministically from the seed.
-    std::vector<std::string> pool;
-    for (const auto& p : rules.racePresets())
-        if (!p.neutral && !datafile::keysEqual(p.folder, playerPreset)) pool.push_back(p.folder);
-    Rng rng(seed ^ 0x9e3779b97f4a7c15ull);
-    rng.shuffle(pool);
-    for (int i = 0; i < opponents && size_t(i) < pool.size(); ++i) {
-        game::EmpireSetup e;
-        e.preset = pool[size_t(i)];
-        e.kind = game::PlayerKind::Computer;
-        setup.empires.push_back(e);
-    }
-    return setup;
+game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed, std::optional<int> opponents) {
+    return setup::quickStartGame(rules, playerPreset, seed, opponents);
 }
 
 game::StartExtras quickStartExtras() {

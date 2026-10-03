@@ -41,7 +41,7 @@ struct AppOptions {
     // New games.
     uint64_t seed = 0;               // 0 = from the clock
     int systemCount = 0;             // a quick game's star systems; 0 = the default
-    int empireCount = 4;             // a quick game's empires, the player's included
+    int empireCount = 0;             // a quick game's empires, the player's included; 0: as Quick Start (random computer and neutral players)
     std::string quadrantType;
     bool quickStart = false;         // skip the intro and start a quick game
     std::string race;                // race preset for the quick game

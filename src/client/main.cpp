@@ -60,7 +60,9 @@ Game:
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --seed=N                        Seed for new games (default: random)
   --systems=N                     Number of star systems in a quick game
-  --empires=N                     Number of empires in a quick game, including yours (default 4)
+  --empires=N                     Number of empires in a quick game, including yours: N - 1 computer
+                                  players and no neutral empire (default: as Quick Start, random
+                                  computer and neutral players rolled from the seed)
   --quadrant=NAME                 Quadrant type from the data set (default: the first one)
   --turn-style=simultaneous|turn-based
                                   Turn style of a quick game (default: turn-based)
