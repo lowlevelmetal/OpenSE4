@@ -1,0 +1,81 @@
+# The front end's setup screens in the original's layouts (spec 07 session 5): Load Game
+# with Change Directory and Cancel; Quick Start's picker; New Game opening on Players with an
+# empty list and random computer and neutral players; the pages; Add New's empty empire, a
+# name from the list picker and an Email address; Create Empire; Begin Game; and Change Email
+# in Empire Status (docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --layout=1024x768 --size=1280x800
+
+wait-screen front
+# Load Game: the 420x520 dialog, its Change Directory box, Cancel back to the intro.
+click item:"Load Game" in=front
+wait-for item:"Change Directory" in=front
+screenshot load-game.png
+click item:"Change Directory" in=front
+wait-for item:Default in="Change Directory"
+click item:Cancel in="Change Directory"
+wait-gone item:Default in="Change Directory"
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front
+# Quick Start: Begin Game is lit before a portrait is chosen; Cancel goes back.
+click item:"Quick Start" in=front
+wait-for item:"Begin Game" in=front
+assert-enabled item:"Begin Game" in=front
+click item:Cancel in=front
+wait-for item:"New Game" in=front
+
+# New Game opens on Players: nothing listed yet, so Edit is dim; random players are on.
+click item:"New Game" in=front
+wait-for item:"Add New" in=front
+assert-disabled item:Edit in=front
+assert-present item:"Random computer controlled neutral empires" in=front
+# The other pages.
+click item:Quadrant in=front
+wait-for item:"Generate Map Now" in=front
+click item:"Generate Map Now" in=front
+click item:Events in=front
+wait-for item:Catastrophic in=front
+click item:Technology in=front
+wait-for item:"Allow All" in=front
+click item:"Player Settings" in=front
+wait-for item:"Evenly distributed through the quadrant" in=front
+click item:"Victory Conditions" in=front
+wait-for item:"This many years have passed" in=front
+click item:"Game Settings" in=front
+wait-for item:"No Tactical Combat" in=front
+assert-disabled item:"Cheat codes allowed" in=front
+click item:Mechanics in=front
+wait-for item:"Simultaneous Movement" in=front
+click item:Players in=front
+wait-for item:"Add New" in=front
+
+# Add New: an empty empire; the first picker fills its name; an e-mail address.
+click item:"Add New" in=front
+wait-for item:"Create Empire" in=front
+click item:##pick in=front nth=1
+wait-for item:##pick in=##listpicker
+screenshot list-picker.png
+click item:##pick in=##listpicker nth=1
+wait-gone item:##pick in=##listpicker
+click item:##email in=front
+type "player@example.org"
+screenshot empire-general.png
+click item:Environment in=front
+wait-for item:Oxygen in=front
+click item:"Create Empire" in=front
+wait-for item:"Add New" in=front
+assert-enabled item:Edit in=front
+click item:"Begin Game" in=front
+wait-screen game
+
+# Empire Status: Change Email holds the address; OK gives the Change Email command.
+key F11
+wait-window empire-status
+click item:"Change Email" in=empire-status
+wait-for item:OK in="Change Email"
+screenshot change-email.png
+key Ctrl+A
+type "new@example.org"
+click item:OK in="Change Email"
+wait-gone item:OK in="Change Email"
+assert { command = "SetEmail" }
