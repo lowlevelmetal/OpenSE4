@@ -33,6 +33,12 @@ struct QuadrantMapOptions {
     std::vector<game::SystemId> highlight;         // extra marker ring (e.g. waypoints)
     std::vector<std::pair<game::SystemId, std::string>> tags;  // short labels above a system
     bool avoidRings = false;  // also ring avoided systems (in our colour) on other overlays
+    // With a value: the systems claimed by these empires in their colours, a
+    // system claimed by several of them in yellow (the Borders window), in
+    // place of the overlay.
+    std::optional<std::vector<game::EmpireId>> claimsOf;
+    uint32_t frameColor = palette::kFrame;  // the map's frame line
+    bool warpLines = true;                  // false: the grid and the systems only (Borders)
 };
 
 struct QuadrantMapResult {

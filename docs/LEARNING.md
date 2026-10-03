@@ -510,7 +510,7 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 | `queues` | `rate`, `usage`, `planet-value`, `facilities`, `cargo` |
 | `set-queue` | `ships`, `facilities`, `units`, `upgrades` |
 | `tech-tree` | `tech-areas`, `tech-levels` |
-| `empires` | `treaty`, `trade`, `tariff` (none while Borders is on) |
+| `empires` | `treaty`, `trade`, `tariff` |
 | `log` (its categories) | `all`, `construction`, `research`, `intelligence`, `events`, `politics`, `combat`, `misc` |
 | `combat-simulator` | `tactical`, `strategic` |
 
@@ -571,7 +571,7 @@ The kebab-case of the client's `ScreenId` names (`client/classic/screen_id.hpp`)
 `strategies`, `repair-priorities`, `fleet-transfer`, `cargo-transfer`,
 `launch-recover`, `scrap`, `view-orders`, `select-waypoint`, `stellar-manipulation`,
 `rename`, `abandon-planet`, `jettison-cargo`, `convert-resources`, `communicate`, `intelligence`, `treaty-grid`, `scores`,
-`comparisons`, `history`, `race-report`, `victory-conditions`, `combat-replay`,
+`comparisons`, `history`, `race-report`, `victory-conditions`, `borders`, `combat-replay`,
 `tactical-combat`, `tactical-orders`, `tactical-options` (Combat Options),
 `tactical-launch` (Launch Units), `combat-piece-report`, `combat-replay-options`,
 `combat-simulator`, `strategic-combat`, `ground-combat`, `finale` (the ending window),

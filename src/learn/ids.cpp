@@ -24,7 +24,7 @@ constexpr WindowInfo kWindows[] = {
     {"fleet-transfer"}, {"cargo-transfer"}, {"launch-recover"}, {"scrap"}, {"view-orders"}, {"select-waypoint"},
     {"stellar-manipulation"}, {"rename"}, {"abandon-planet", false}, {"jettison-cargo", false}, {"convert-resources", false},
     {"communicate"}, {"intelligence"}, {"treaty-grid"}, {"scores"}, {"comparisons"}, {"history"}, {"race-report"},
-    {"victory-conditions"},
+    {"victory-conditions"}, {"borders"},
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},
     {"tactical-launch", false}, {"combat-piece-report", false}, {"combat-replay-options", false},
     {"combat-simulator"}, {"strategic-combat", false}, {"ground-combat", false}, {"finale", false},

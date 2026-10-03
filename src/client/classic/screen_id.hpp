@@ -20,7 +20,7 @@ enum class ScreenId {
     FleetTransfer, CargoTransfer, LaunchRecover, Scrap, ViewOrders, SelectWaypoint, StellarManipulation, Rename, AbandonPlanet,
     JettisonCargo, ConvertResources,
     // Diplomacy and comparisons (§1.5).
-    Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
+    Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions, Borders,
     // Combat (§1.6).
     CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, TacticalLaunch, CombatPieceReport, CombatReplayOptions, CombatSimulator,
     StrategicCombat, GroundCombat,
