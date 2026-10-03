@@ -239,34 +239,53 @@ TEST_CASE("settings keys: the movement delay waits after each animated step") {
     CHECK(replay.day() == 2);
 }
 
-TEST_CASE("settings keys: which ending the game shows, once") {
+TEST_CASE("settings keys: which endings the game shows, each as it comes") {
+    // Spec 06 §7 Q83 (confirmed: binary).
+    using K = FinaleKind;
+    using List = std::vector<FinaleKind>;
     GameState s = newEngineGame(7, 2, 12, true);
-    CHECK_FALSE(finaleKind(s, kMe, SessionKind::Local));
+    CHECK(finaleKinds(s, kMe, SessionKind::Local).empty());
     // Every living empire handed to the computer: the local and hotseat games end.
     for (Empire& e : s.empires) e.kind = PlayerKind::Computer;
-    CHECK(finaleKind(s, kMe, SessionKind::Local) == FinaleKind::HumanDead);
-    CHECK(finaleKind(s, kMe, SessionKind::Hotseat) == FinaleKind::HumanDead);
-    CHECK_FALSE(finaleKind(s, kMe, SessionKind::NetworkClient));   // a host on different machines has no such check
-    // A dead human does not count as one.
+    CHECK(finaleKinds(s, kMe, SessionKind::Local) == List{K::HumanDead});
+    CHECK(finaleKinds(s, kMe, SessionKind::Hotseat) == List{K::HumanDead});
+    CHECK(finaleKinds(s, kMe, SessionKind::NetworkClient).empty());   // a host on different machines has no such check
     s.empires[0].kind = PlayerKind::Human;
-    CHECK_FALSE(finaleKind(s, kMe, SessionKind::Local));
+    CHECK(finaleKinds(s, kMe, SessionKind::Local).empty());
+    // The player's empire owns nothing but is not yet marked dead: Lose, the
+    // start of its last turn; on any kind of machine.
+    for (auto& c : s.colonies)
+        if (c && c->owner == kMe) c.reset();
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == kMe) v.count = 0;
+    s.removeDeadVehicles();
+    CHECK(finaleKinds(s, kMe, SessionKind::Local) == List{K::Lose});
+    CHECK(finaleKinds(s, kMe, SessionKind::NetworkClient) == List{K::Lose});
+    // Marked dead at the end of that turn: in a local game no human is left.
     s.empires[0].alive = false;
-    CHECK(finaleKind(s, kMe, SessionKind::Local) == FinaleKind::HumanDead);
-    // On a player's machine of a game on different machines, its own empire's fall.
-    CHECK(finaleKind(s, kMe, SessionKind::NetworkClient) == FinaleKind::Lose);
-    CHECK(finaleKind(s, kMe, SessionKind::Pbem) == FinaleKind::Lose);
-    // The end by victory conditions comes first.
+    CHECK(finaleKinds(s, kMe, SessionKind::Local) == List{K::HumanDead});
+    CHECK(finaleKinds(s, kMe, SessionKind::Pbem).empty());
+    // Several in one turn change, in order: Lose, Victory, then the conquest.
+    s.empires[0].alive = true;
+    s.empires[1].alive = false;
     s.gameOver = true;
-    CHECK(finaleKind(s, kMe, SessionKind::Local) == FinaleKind::Victory);
-    CHECK(finaleKind(s, EmpireId{}, SessionKind::NetworkClient) == FinaleKind::Victory);
+    CHECK(finaleKinds(s, kMe, SessionKind::Local) == List{K::Lose, K::Victory, K::Conquered});
+    CHECK(finaleKinds(s, EmpireId{}, SessionKind::NetworkClient) == List{K::Victory});
 
-    // Shown once per occurrence.
+    // Each shown once, at a turn's start, while it keeps holding.
     GameState g = newEngineGame(7, 2, 12, true);
     FinaleWatch watch;
-    CHECK_FALSE(watch.update(g, kMe, SessionKind::Local));
+    CHECK(watch.update(g, kMe, SessionKind::Local).empty());
     g.gameOver = true;
-    CHECK(watch.update(g, kMe, SessionKind::Local) == FinaleKind::Victory);
-    CHECK_FALSE(watch.update(g, kMe, SessionKind::Local));
-    CHECK_FALSE(watch.update(g, kMe, SessionKind::Local));
+    CHECK(watch.update(g, kMe, SessionKind::Local).empty());  // not a new turn
+    ++g.turn;
+    CHECK(watch.update(g, kMe, SessionKind::Local) == List{K::Victory});
+    CHECK(watch.update(g, kMe, SessionKind::Local).empty());
+    g.empires[1].alive = false;
+    ++g.turn;
+    CHECK(watch.update(g, kMe, SessionKind::Local) == List{K::Conquered});  // Victory still holds: not again
+    ++g.turn;
+    CHECK(watch.update(g, kMe, SessionKind::Local).empty());
     CHECK(finaleKeyName(FinaleKind::HumanDead) == "Human Dead");
+    CHECK(finaleKeyName(FinaleKind::Conquered) == "Victory");
 }

@@ -160,7 +160,7 @@ private:
 
     ShipGlides glides_;
     MovementReplay replay_;
-    FinaleWatch finale_;   // the ending window opens once when the game ends
+    FinaleWatch finale_;   // the ending windows, each as it comes at a turn's start
     std::set<game::VehicleId> replaySeen_;          // the vehicles of the log the player sees
     std::optional<game::SystemId> replayShownBefore_;
     std::map<game::VehicleId, game::Location> beforeTurn_;  // where we saw everything before this turn

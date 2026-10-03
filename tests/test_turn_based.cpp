@@ -245,7 +245,11 @@ TEST_CASE("turn-based: each player's end-of-turn processing runs when it ends it
     CHECK(hasRejection(applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {}))));
 }
 
-TEST_CASE("turn-based: an empire with nothing left is destroyed when its turn comes up, and the turn passes on") {
+TEST_CASE("turn-based: a human with nothing left plays a last turn, then is destroyed") {
+    // Spec 05 §6, spec 06 §7 Q83 (confirmed: binary): the destruction check
+    // comes when a human's turn comes up, but the human found defeated then
+    // plays that turn (the Lose ending announces it) and is marked dead at
+    // its end; the turn then passes on.
     Duel d;
     for (Vehicle& v : d.s().vehicles)
         if (v.owner == kB) v.count = 0;
@@ -253,11 +257,29 @@ TEST_CASE("turn-based: an empire with nothing left is destroyed when its turn co
     resumeTurnBased(d.r(), d.s());
     CHECK(d.s().empire(kB).alive);  // not before its own turn
     endPlayerTurn(d.r(), d.s(), kA);
+    // B's last turn: it is alive and it is its turn.
+    REQUIRE(d.s().empire(kB).alive);
+    CHECK(activePlayer(d.s()) == kB);
+    CHECK(d.s().turn == 0);
+    endPlayerTurn(d.r(), d.s(), kB);
     CHECK_FALSE(d.s().empire(kB).alive);
-    // B had no turn: the game turn ended and A plays again, the last empire standing.
+    // The game turn ended and A plays again, the last empire standing.
     CHECK(d.s().turn == 1);
     CHECK(activePlayer(d.s()) == kA);
     CHECK(d.w.logged(kA, "Last Empire Standing"));
+}
+
+TEST_CASE("turn-based: a computer player with nothing left is destroyed when its turn comes up") {
+    Duel d;
+    d.s().empire(kB).kind = PlayerKind::Computer;
+    for (Vehicle& v : d.s().vehicles)
+        if (v.owner == kB) v.count = 0;
+    d.s().removeDeadVehicles();
+    resumeTurnBased(d.r(), d.s());
+    endPlayerTurn(d.r(), d.s(), kA);
+    CHECK_FALSE(d.s().empire(kB).alive);
+    CHECK(d.s().turn == 1);
+    CHECK(activePlayer(d.s()) == kA);
 }
 
 TEST_CASE("turn-based: computer players take their turns in sequence") {

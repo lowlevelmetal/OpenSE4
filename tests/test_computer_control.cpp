@@ -164,7 +164,8 @@ TEST_CASE("computer control: the local session switches empires and ends with th
         const uint32_t turn = session.state().turn;
         session.endTurn();
         CHECK(session.state().turn == turn);
-        CHECK(client::classic::finaleKind(session.state(), kMe, session.kind()) == client::classic::FinaleKind::HumanDead);
+        CHECK(client::classic::finaleKinds(session.state(), kMe, session.kind()) ==
+              std::vector<client::classic::FinaleKind>{client::classic::FinaleKind::HumanDead});
         // Handed back, the game goes on.
         session.setComputerControl({{kMe, false}});
         CHECK_FALSE(session.humansGone());

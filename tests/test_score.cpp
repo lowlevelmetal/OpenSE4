@@ -390,6 +390,33 @@ TEST_CASE("score: the turn pipeline keeps history and stops at game over") {
     CHECK(a.turn == 4);
 }
 
+TEST_CASE("score: a human player who lost everything plays a last turn before it is destroyed") {
+    // Spec 06 §7 Q83 (confirmed: binary): the Lose ending comes at the start of
+    // a last turn, and the empire is marked dead at that turn's end; a
+    // computer player is destroyed at once (spec 05 §6).
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 3, 12, false);
+    REQUIRE(s.empire(kA).kind == PlayerKind::Human);
+    REQUIRE(s.empire(kB).kind == PlayerKind::Computer);
+    wipeOut(s, kA);
+    wipeOut(s, kB);
+    {
+        // Found defeated for the first time (during the turn that took
+        // everything): the human is spared, the computer player is not.
+        TurnContext ctx = turnContext(r, s);
+        score::checkDestruction(ctx, kA, false);
+        score::checkDestruction(ctx, kB, false);
+        CHECK(s.empire(kA).alive);
+        CHECK_FALSE(s.empire(kB).alive);
+    }
+    // The next turn starts with the human defeated: its last turn. At its end
+    // the empire is marked dead.
+    std::vector<EmpireOrders> orders{{kA, s.turn, {}}};
+    processTurn(r, s, orders);
+    CHECK_FALSE(s.empire(kA).alive);
+    CHECK(hasLog(s, kA, "Empire Destroyed"));
+}
+
 TEST_CASE("score: a human player's statistics, history and log text files") {
     // Spec 05 §3.4, §5, §8 step 2 (open question 40): written for human
     // players at the start of their end-of-turn processing; the engine makes

@@ -577,7 +577,9 @@ void YesNoPrompt::open(std::string question, std::string title) {
     pending_ = true;
 }
 
-bool YesNoPrompt::draw(UiContext& ui) {
+bool YesNoPrompt::draw(UiContext& ui) { return answer(ui) == true; }
+
+std::optional<bool> YesNoPrompt::answer(UiContext& ui) {
     const std::string id = title_ + "###yesno";
     if (pending_) {
         ImGui::OpenPopup(id.c_str());
@@ -588,7 +590,7 @@ bool YesNoPrompt::draw(UiContext& ui) {
     if (!ImGui::BeginPopupModal(id.c_str(), nullptr,
                                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                     ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags))
-        return false;
+        return std::nullopt;
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextUnformatted(question_.c_str());
     ImGui::PopTextWrapPos();
@@ -600,7 +602,9 @@ bool YesNoPrompt::draw(UiContext& ui) {
     const bool no = ImGui::Button("No", ImVec2(w, ui.px(26))) || key == false;
     if (yes || no) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
-    return yes;
+    if (yes) return true;
+    if (no) return false;
+    return std::nullopt;
 }
 
 bool UiContext::setOptions(const game::InterfaceOptions& o) {

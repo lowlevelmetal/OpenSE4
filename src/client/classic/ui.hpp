@@ -302,6 +302,8 @@ class YesNoPrompt {
 public:
     void open(std::string question, std::string title = "Confirm");
     bool draw(UiContext& ui);
+    // The same, telling No apart: true for Yes, false for No, nothing until answered.
+    std::optional<bool> answer(UiContext& ui);
 
 private:
     std::string question_, title_;

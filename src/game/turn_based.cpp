@@ -246,9 +246,12 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     s.playerTurn.started = true;
     s.playerTurn.questions.clear();
     const bool human = s.empire(e).kind == PlayerKind::Human;
-    // 1. A human's turn starts with the destruction check (spec 05 §6).
+    // 1. A human's turn starts with the destruction check (spec 05 §6). One
+    // found defeated now is not destroyed: this is its last turn, the one the
+    // Lose ending announces, and it is marked dead when the turn ends (spec 06
+    // §7 Q83, confirmed: binary).
     if (human) {
-        score::checkDestruction(ctx, e);
+        score::checkDestruction(ctx, e, false);
         if (!living(s, e)) return false;
     }
     // 2. The start-of-turn step. The Politics minister rewrites the claims
@@ -332,6 +335,10 @@ void finishPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     GameState& s = ctx.state;
     empireEndOfTurn(ctx, e, ministersPlan(s, e, control));
     s.removeDeadVehicles();
+    // A human defeated at the end of its turn has played its last turn (spec
+    // 06 §7 Q83). One that lost everything during its own turn ends with it
+    // too, without a turn start of its own in between (inferred).
+    if (e.index() < s.empires.size() && s.empire(e).kind == PlayerKind::Human) score::checkDestruction(ctx, e);
     sight::updateKnowledge(ctx.rules, s);
     passTurn(ctx, e);
 }

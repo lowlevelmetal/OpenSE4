@@ -108,10 +108,12 @@ bool defeated(const Rules& r, const GameState& s, EmpireId e) {
     return true;
 }
 
-void checkDestruction(TurnContext& ctx, EmpireId id) {
+void checkDestruction(TurnContext& ctx, EmpireId id, bool lastTurnPlayed) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!validEmpire(s, id) || !s.empire(id).alive || !defeated(r, s, id)) return;
+    // A human plays one last turn first (spec 06 §7 Q83).
+    if (s.empire(id).kind == PlayerKind::Human && !lastTurnPlayed) return;
     Empire& e = s.empire(id);
     e.alive = false;
     e.research.clear();
