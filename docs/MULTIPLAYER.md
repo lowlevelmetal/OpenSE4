@@ -5,9 +5,10 @@ OpenSE4 plays games with several people in two ways:
 - **Network games.** One machine hosts. Players connect over TCP, set up their
   empires in a lobby, and send their orders each turn. The host processes the turn
   and sends everyone the new game.
-- **Play by e-mail (PBEM).** The host keeps the game file. Each turn, every player
-  sends in an orders file by any means (e-mail, a shared folder, a chat upload), and
-  the host processes the turn from whatever arrived.
+- **Play by e-mail (PBEM).** The host keeps the game file and sends each player a turn
+  file holding only that player's view of the game. Each turn, every player sends in
+  an orders file by any means (e-mail, a shared folder, a chat upload), and the host
+  processes the turn from whatever arrived.
 
 Both play either turn style of the classic game (spec 05 §8, §9):
 
@@ -46,6 +47,10 @@ everyone else. On top of that it can:
 - reset players' passwords in a simultaneous game ([Reset Passwords](#reset-passwords));
 - give orders for any empire (to play for an absent friend).
 
+The lobby shows the host's key fingerprint (see [Security](#security)). It is this
+computer's identity as a host, kept in `host_key.txt` in OpenSE4's user folder and made
+the first time this computer hosts. Players' games remember it.
+
 ### Dedicated server
 
 `opense4-server` hosts a game without playing in it:
@@ -76,6 +81,7 @@ port forwarding.
 | `--name=NAME` | game name (also the save file's name) |
 | `--password=PW` | master password (see below) |
 | `--join-password=PW` | a password every player needs to join |
+| `--host-key=FILE` | the host's long-term key (default: `host_key.txt` in OpenSE4's user folder, the one the game uses; made on first use). The log names its fingerprint. The `pbem` commands take it too: the orders files are encrypted to it |
 | `--turn-timeout=SEC` | process the turn after SEC seconds even if orders are missing (turn-based: end a player's turn after SEC seconds) |
 | `--load=GAME.gam` | continue a saved game |
 | `--save-dir=DIR`, `--autosave=N` | where and how often to save |
@@ -120,26 +126,78 @@ To join, a player needs:
 
 Both routes then check:
 
+- **The host's identity.** The connection is encrypted, and the host shows its key. The
+  first time a player joins a host (an address and port), their game remembers that key
+  in `known_hosts.txt` in OpenSE4's user folder, and the lobby names its fingerprint:
+  compare it with the one the host sees (its lobby, or the server's log; the LAN list
+  shows it too). From then on a host with another key is refused, with both
+  fingerprints. If the host really has a new key (a new computer, a deleted key file),
+  the player chooses **Trust the New Key**, sees both fingerprints, and confirms with
+  **Yes, and Connect**; otherwise someone may be in between ([Security](#security)).
+- **A game saved by OpenSE4 0.6.** A player whose password is still in 0.6's form is
+  asked, once, whether to show the host that old form so that it moves to the new one.
+  The game asks for two confirmations, and sends it only to a host whose key the player
+  trusts ([Security](#security)). The bot's `--old-password` does the same, with
+  `--host-key`.
 - **Same version and data.** The client and the host must speak the same network
   protocol (the same OpenSE4 release) and use the same data set. The data set is
   compared by fingerprint, a hash of every data file plus the loaded tables, so two
   installations of the same game and mods match wherever they live. The host
-  refuses mismatches with a message that names both sides.
+  refuses mismatches with a message that names both sides. Older and newer releases
+  refuse each other the same way, in both directions, and the LAN list marks a host
+  of another version.
 - **The player password** protects the player's slot and empire. Nobody else can
   take over the empire or send orders for it, in network and in PBEM games.
-- **The join password**, if the host set one, is needed by everyone.
+- **The join password**, if the host set one, is needed by everyone. It is part of the
+  connection's keys, so a wrong one is refused before anything else is said. A player
+  who gives a join password refuses a host that does not ask for one. Making its key
+  (and the player's password keys) takes the player's computer a moment when it
+  connects; the host makes its own when it starts.
 
 ### Reconnecting
 
 A player who drops out (crash, network trouble, closed laptop) reconnects with the
-same name and password. The host sends the current turn at once, and any orders the
-player had already sent for it still count. A new connection with the right password
-replaces an old one that is still open, so a half-dead connection never locks a
-player out. Names are not case-sensitive.
+same name and password; the game tries again every few seconds by itself. The host
+sends the current turn at once, and nothing of the turn is lost:
+
+- **Simultaneous games.** Orders the host had stored still count. Orders sent just
+  before the drop, which may never have arrived, go out again, and so do orders
+  given (End Turn) while the connection was down. A later copy replaces an earlier
+  one, so sending twice changes nothing.
+- **Turn-based games.** The player goes on with their turn where the host has it,
+  including the questions still open. Commands and End Turn that got no answer, sent
+  before the drop or given while the connection was down, go out again in order. Each
+  carries a number the host remembers, so one it had already carried out is answered
+  again but not carried out twice.
+
+A new connection with the right password replaces an old one that is still open, so
+a half-dead connection never locks a player out. Names are not case-sensitive.
 
 While a player is away, the host keeps waiting for their orders. It stops waiting
 when the turn time limit runs out, when the host processes the turn by hand, or when
 the empire is handed to the computer.
+
+### When a player's game differs from the host's
+
+Each player holds a copy of the game: the view the host sent. When the player sends
+orders or a command, the game says what that copy looks like (its checksum, and a
+hash of each part of it: the date and options, the galaxy, the colonies, the empires,
+the designs, the vehicles, the fleets, the messages, the events, the battles, the
+counters, the random numbers, the player turn and the map). If it is no longer what
+the host sent, the copies have drifted apart (a desync), and the host:
+
+- tells the player, naming the turn and the parts that differ, for example
+  "Turn 12: your copy of the game differed from the host's (vehicles, empires). The
+  host sent its game again.";
+- logs the same, with the player's name, in its own log (the server's output, or the
+  host's `opense4.log`);
+- sends its game again. The player's game replaces its copy and gives the orders of
+  the turn so far again on the new copy; an End Turn already given stays given. The
+  orders that reached the host still count, checked against the host's game as always.
+
+The player's game shows the message on the network status strip and in the Chat
+window's log, and writes it to `opense4.log`. A desync is never silent. It means a bug, for example two platforms
+reading the game differently, so a report with both logs helps.
 
 ### Computer control
 
@@ -160,9 +218,10 @@ the host still counts the empire as a human that must send orders.
 ### Reset Passwords
 
 The host of a simultaneous game can give players new passwords between turns (spec 06 §1.9):
-Game Menu, `Options`, `Reset Passwords`, then pick the empires. Each gets six digits (three
+Game Menu, `Options`, `Reset Passwords`, then pick the empires. Each gets twelve digits (six
 random numbers from 11 to 99, drawn from a source apart from the game's random numbers), shown
-to the host only. The new passwords take effect when the next turn is processed, after the
+to the host only. The original gives six digits; OpenSE4 gives more because its verifiers can
+be guessed offline. The new passwords take effect when the next turn is processed, after the
 players' orders (which may carry a password change of their own) have been read. They are kept
 in memory only: a new `Reset Passwords` discards earlier ones not applied yet, and stopping the
 host loses them.
@@ -236,27 +295,34 @@ The host runs the game. Choose "Turn-based" as the turn style in the host form, 
 
 ### By e-mail
 
-The game file goes from player to player through the host:
+The classic game passes the whole game file from player to player. That would show each
+player everyone's secrets, so OpenSE4 keeps the game with the host and has the host
+process each player's turn in between; the players exchange only their own views and
+orders:
 
 1. `pbem new` with `simultaneous = false` in the setup file creates the game. The
-   computer players before the first human take their turns, and the command names the
-   empire to send the game to.
-2. That player opens the `.gam` in the game ([Playing your turn](#playing-your-turn))
+   computer players before the first human take their turns, and the command writes the
+   turn file of the player whose turn it is and names the empire to send it to.
+2. That player opens their turn file in the game ([Playing your turn](#playing-your-turn))
    and plays their turn on it. Every command is carried out at once on the player's
-   copy. At End Turn the game writes a `.plr` holding every command in the order it was
-   given (Attack Sector answers and refused commands included), and checksums of the
-   game before the first command and after the last one (`net::pbem::writePlayerTurn`).
-   `opense4-server pbem orders` writes a turn without commands.
-3. `pbem process` checks the `.plr` like any other: game, turn, empire and password. It
-   also checks that the file is for the player whose turn it is and that it was made
-   from the current game file. It then replays the commands, ends the player's turn (the
-   computer players move) and writes the new `.gam`. It names the empire whose turn is
-   next, and it warns if the replay differs from the player's own game. Files for another
-   player, or made from an older copy of the game, are reported and kept.
+   copy, as a preview: the copy is the player's own view, so it lacks what the player
+   cannot see and has other random numbers, and battles in it may end differently. At
+   End Turn the game writes a `.plr` holding every command in the order it was given
+   (Attack Sector answers and refused commands included), with the checksum of the turn
+   file it was made from. `opense4-server pbem orders` writes a turn without commands.
+3. `pbem process` checks the `.plr` like any other: game, turn, empire, the turn file it
+   was made from and the password's signature. It also checks that the file is for the
+   player whose turn it is. It then carries the commands out one after another on the
+   whole game, ends the player's turn (the computer players move), writes the new `.gam`
+   and the next player's turn file, and names the empire whose turn is next. Files for
+   another player, or made from another turn file, are reported and kept.
 4. If no file for the player whose turn it is has arrived, `pbem process` has the
    computer play that turn, as for missing orders (inferred).
 
-`pbem info` says whose turn it is.
+The whole game decides: a battle, an enemy the player could not see, or a ship lost in a
+battle that ended otherwise can make the host's result differ from the preview, and
+commands that no longer fit are refused. The next turn file shows what happened, and
+`pbem process` lists the refused commands. `pbem info` says whose turn it is.
 
 ## UPnP and port forwarding
 
@@ -315,89 +381,120 @@ Players need no incoming ports: they only connect out.
 
 ## Play by e-mail
 
-A PBEM game is a `.gam` file that stays with the host, and `.plr` order files that
-the players send in. One round goes like this:
+A PBEM game is a `.gam` file that stays with the host, a turn file (`.turn`) for each
+player, and the `.plr` orders files the players send in. The `.gam` holds the whole game,
+every empire's secrets included: never send it to a player. A turn file holds what one
+empire knows of the game, exactly what a network host sends that player, encrypted so
+that only that empire's password opens it ([Security](#security)). The `.plr` files are
+encrypted to the host's key (`host_key.txt` in OpenSE4's user folder, or
+`--host-key=FILE`, as for network games): keep that file, or the orders sent to it can
+no longer be read. A shared folder is therefore fine: nobody reads another player's
+view or orders. One round goes like this:
 
 1. **Create the game** from a [setup file](#setup-files):
 
    ```sh
-   opense4-server pbem new --setup=campaign.toml --out=campaign.gam
+   opense4-server pbem new --setup=campaign.toml --out=campaign.gam [--host-key=FILE]
    ```
 
-2. **Send `campaign.gam` to every player.** Each player opens it in the game, plays
+   This also writes the turn files of the players who play first, named
+   `<game>_<NN>.turn` (NN is the empire's number), next to the game (or in
+   `--turn-files=DIR`), and lists which file goes to which player.
+
+2. **Send each player their own turn file.** Each player opens it in the game, plays
    their turn, and End Turn saves their orders as a `.plr` file
    ([Playing your turn](#playing-your-turn); the game uses
-   `net::pbem::writePlayerOrders`). The file is named `<game>_<NN>.plr`, where NN is
-   the empire's number. It holds only that empire's orders, marked with the game, the
-   turn, the empire and the player's password hash.
+   `net::pbem::writePlayerOrders`). The file is named `<game>_<NN>.plr`. It holds only
+   that empire's orders, marked with the game, the turn, the empire and the checksum of
+   the turn file they were made from, signed with the empire's password and encrypted to
+   the host's key. It holds no password, nor any hash of one: a copy of it lets nobody
+   read the orders, or send orders for that empire or for another turn.
 
    A player who wants to end the turn without changes can make an empty orders file:
-   `opense4-server pbem orders --game=campaign.gam --empire=2 --password=... --out=DIR`.
+   `opense4-server pbem orders --turn=campaign_02.turn --password=... --out=DIR`.
 
 3. **Collect the `.plr` files** in one directory, then process the turn:
 
    ```sh
-   opense4-server pbem process --game=campaign.gam --orders=inbox --password=boss
+   opense4-server pbem process --game=campaign.gam --orders=inbox --password=boss [--host-key=FILE]
    ```
 
    `--reset-passwords=2,5` gives empires 2 and 5 new passwords once their orders have been
    read; they are printed for the host to pass on.
 
-   For every `.plr` file the host checks the game, the turn, the empire and the
-   password. It reports and skips files that fail a check: another game, out of date,
-   wrong password, damaged. If two files are for the same empire, the newer one
-   counts. The computer plays human empires that sent nothing. The turn is
-   processed, `campaign.gam` is replaced (the previous turn is kept as
-   `campaign.gam.bak`), and the `.plr` files that were used are deleted
-   (`--keep-orders` keeps them). Files that were skipped stay where they are.
+   For every `.plr` file the host checks the game, the turn, the empire, that it was
+   made from the turn file the host would make now from its own game, and the
+   password's signature. It reports and skips files that fail a check: another game,
+   out of date, made from another turn file, wrong password or changed after signing,
+   for another host's key, setting a password of the wrong kind, damaged. If two files
+   are for the same empire, the one made later counts (by the revision number signed in
+   it, not by the file's date). The computer
+   plays human empires that sent nothing. The turn is processed, `campaign.gam` is
+   replaced (the previous turn is kept as `campaign.gam.bak`), the new turn files are
+   written, and the `.plr` files that were used are deleted (`--keep-orders` keeps
+   them). Files that were skipped stay where they are.
 
-4. **Send out the new `campaign.gam`** and repeat.
+4. **Send out the new turn files** and repeat.
 
 `opense4-server pbem info --game=campaign.gam` shows the turn, the empires, their
-players and whether a master password is set.
+players and whether a master password is set; given a turn file, it shows its header
+(the view itself opens with the empire's password only). `opense4-server pbem turn-files --game=campaign.gam` writes the current turn files
+again, for a lost file, or to go on with a game made by OpenSE4 0.6.
+
+**Games of OpenSE4 0.6** go on after `pbem turn-files`. Their password verifiers are of
+the old kind, which cannot check a signature: the turn file says so, and the player
+chooses a new password with their next turn (the Play by E-mail window asks for it;
+`pbem orders --new-password`). That turn file is in the clear (an old verifier has no
+key to encrypt to). The `.plr` carries the old password's hash once, as 0.6 did, and is
+signed with the new password. The host checks the old one and keeps the new one's
+verifier from then on, so the old hash, which anyone reading that mail (or the 0.6
+mails) could see, is worth nothing afterwards. If two different moves to a new password
+arrive for one empire, the host takes neither and says so: ask the player which is
+theirs, or reset the password (`--reset-passwords`).
 
 ### Playing your turn
 
 In the game, choose **Multiplayer**, then **Play by E-mail**:
 
-1. Open the game file the host sent. The window lists the `.gam` files in the `pbem`
-   folder of your OpenSE4 user data (on Linux `~/.local/share/OpenSE4/pbem`), or you
-   type the file's path. The game must have been made with the same data set as yours,
-   as the host checks too.
-2. Choose your empire and enter its password. It is checked against the game file the
-   way the host checks your `.plr`, so a wrong password is caught at once. In a
-   turn-based game only the empire whose turn it is can play. A turn-based file saved
-   between player turns first plays on to the next human, exactly as the host does.
-3. Choose where the orders file goes: by default next to the game file.
+1. Open the turn file the host sent you. The window lists the `.turn` files in the
+   `pbem` folder of your OpenSE4 user data (on Linux `~/.local/share/OpenSE4/pbem`), or
+   you type the file's path. The game must have been made with the same data set as
+   yours, as the host checks too, and the file's view must match its checksum. A host's
+   `.gam` is refused: it is not meant for players.
+2. Enter your empire's password. It opens the turn file's view (nothing else does), so a
+   wrong password is caught at once. In a turn-based game only the player whose turn it
+   is gets a turn file.
+3. Choose where the orders file goes: by default next to the turn file.
 4. Play the turn. A simultaneous game works like a local one: you give orders and they
    are carried out when the host processes the turn. In a turn-based game every order
-   is carried out at once, as in a local turn-based game.
-5. **End Turn** writes `<game>_<NN>.plr` and ends the turn on your machine; the status
-   line names the file. Send it to the host.
+   is carried out at once on your copy, as a preview of what the host will carry out on
+   the whole game ([By e-mail](#by-e-mail)).
+5. **End Turn** writes `<game>_<NN>.plr`, signed with your password and encrypted to the
+   host's key, and ends the turn on your machine; the status line names the file. Send
+   it to the host.
 
-**Save Game** in the Game Menu keeps the turn so far, in the `pbem/drafts` folder (not
-with the orders, so it cannot be sent by mistake). Open the same game file and empire
+**Save Game** in the Game Menu keeps the turn so far, unsigned, in the `pbem/drafts`
+folder (not with the orders, so it cannot be sent by mistake). Open the same turn file
 again later, and the orders given so far come back. End Turn removes the draft. A
 password changed during the turn (Empire Status, Change Password) counts from the next
-turn; this turn's `.plr` still carries the password you opened it with.
+turn; this turn's `.plr` is still signed with the password you opened it with.
 
 From the command line:
 
 ```sh
-opense4 --pbem=campaign.gam --pbem-empire=2 --pbem-password=PW [--pbem-orders=DIR]
+opense4 --pbem=campaign_02.turn --pbem-password=PW [--pbem-orders=DIR]
 ```
 
-`--pbem-empire` may be left out when only one empire can play (a turn-based game), and
 `--pbem-end-turn` ends the turn at once, writes the `.plr`, prints where and quits (for
-scripts). `--open=pbem:campaign.gam` opens the Play by E-mail window with that file.
+scripts). `--open=pbem:campaign_02.turn` opens the Play by E-mail window with that file.
 The choices the rules leave open are listed in spec 05 open question 36.
 
 Battles in a PBEM game are always fought strategically; the Tactical or Strategic
 question is only asked in local and hotseat turn-based games.
 
-**Load Game** (not Play by E-mail) opens a PBEM game file or a network host's save as an
-ordinary local or hotseat game on your machine, for instance to go on without the other
-players. The empire passwords keep working as they did in the multiplayer game, and the
+**Load Game** (not Play by E-mail) opens a host's PBEM game file or network save as an
+ordinary local or hotseat game on the host's machine, for instance to go on without the
+other players. The empire passwords keep working as they did in the multiplayer game, and the
 game saved from there keeps them that way.
 
 ## Setup files
@@ -408,7 +505,8 @@ optional, and an unknown key is an error, to catch typos:
 ```toml
 name = "Campaign"              # game name
 seed = 1234                    # galaxy seed; random when missing
-master_password = "boss"       # or master_password_hash = "<opense4-server hash-password output>"
+game_id = 4711                 # the game's id, which salts its passwords; random when missing
+master_password = "boss"       # or master_password_verifier = "<password-verifier output>" (needs game_id)
 
 [options]
 quadrant_size = 1              # 0 small, 1 medium (the default), 2 large: the number of systems is rolled
@@ -447,7 +545,7 @@ race = "RaceFolder"            # a race preset of the data set; default: presets
 tier = 0                       # the preset's build tier, 0 to 2
 kind = "human"                 # human, computer or neutral
 player = "alice"               # the player's name, shown in logs and used to log in
-password = "alices-password"   # or password_hash = "<opense4-server hash-password output>"
+password = "alices-password"   # or password_verifier = "<password-verifier output>" (needs game_id)
 color = 0x3070ff
 empire_type = ""
 leader = ""
@@ -456,34 +554,158 @@ minister_style = "Aggressive"  # a folder under Ai/ of the install; default: non
 use_race_minister_style = false
 ```
 
-The network server takes the name, seed, options, master password and computer
+The network server takes the name, seed, game id, options, master password and computer
 empires from the file. Human players join through the lobby, so it ignores human
 `[[empire]]` entries.
 
-Setup files hold passwords in plain text. To avoid that, a player can run
-`opense4-server hash-password PW` and send the host only the output, which goes into
-`password_hash`.
+Setup files hold passwords in plain text. To avoid that, the host fixes the game's id
+(`game_id`) and tells the players; each runs
+`opense4-server password-verifier --game-id=4711 PW` and sends the host only the output,
+which goes into `password_verifier`. A verifier holds nothing anyone could log in with,
+so it may travel by any means; it belongs to that one game. The `password_hash` and
+`master_password_hash` of OpenSE4 0.6 setup files are refused: they made the same key
+in every game.
 
 ## Security
 
-- **Passwords are hashed.** The game computes a SHA-256 hash of a password on the
-  player's own machine (with an OpenSE4-specific prefix, so it differs from a plain
-  SHA-256 of the same password), and only that hash is ever sent, over the network or
-  in a `.plr` file. Hosts and saved games keep only a verifier, a second hash of that
-  hash. So a copy of the game file, which every PBEM player receives, holds nothing
-  a player could log in with. Weak passwords can still be guessed offline from a
-  verifier, so do not reuse important passwords.
-- **The connection is not encrypted.** Someone who can watch the traffic between a
-  player and the host can see the game and the player's password hash, and could
-  replay it to log in as that player. For games where that matters, play over a VPN.
-  Encryption (for example TLS or a Noise handshake) is future work.
+Network games run over encrypted connections; play-by-e-mail players get only their own
+view, readable by them alone, and send orders only the host can read; passwords prove
+themselves without ever travelling. This is OpenSE4's own design: the classic game has
+no counterpart.
+
+### Threat model
+
+- **Someone who watches the traffic** (a shared Wi-Fi, a provider, a router) sees that
+  two machines talk, how much and when, the program versions in the first two
+  messages, the host's public key and the game's id. They see nothing of the game, the
+  chat, the player names or the passwords.
+- **Someone who changes, repeats, drops or reorders the traffic** breaks the
+  connection. Nothing they inject is accepted; the player's game reconnects
+  ([Reconnecting](#reconnecting)). A refusal sent before the connection is secured is
+  shown as "the host said, before the connection was secured", as anyone could have
+  sent it.
+- **An impostor host** (someone who makes a player connect to them instead of the
+  host, a "man in the middle"):
+  - fails in a game with a join password unless it knows that password. The password
+    is part of the session keys, so without it the player's login cannot even be
+    read. A player who gives a join password refuses a host that asks for none. But an
+    impostor who wins a player's first connection can try to guess a weak join
+    password offline (one Argon2id run per guess, see below): choose one that is not
+    easy to guess.
+  - is refused once a player has met the real host: every host has a long-term key,
+    which the player's game remembers per address and port and checks at every later
+    connection ("trust on first use"). The first connection is the weak spot: compare
+    the fingerprint the lobby shows with the host's. A changed key is trusted only after
+    the player saw both fingerprints and confirmed twice.
+  - learns, when it does get a player to talk to it (an open game, first contact),
+    the player's name and verifier, and signatures that are worthless on any other
+    connection. It cannot log in as the player with them, only try to guess the
+    password offline.
+- **Passwords never travel**, not even hashed. In each game a password stands for keys
+  made from the password itself with Argon2id, salted with the game's id: a player's
+  game proves the password by signing (the session it logs in on, or a PBEM orders
+  file), and PBEM turn files are encrypted to it. Hosts and saved games keep only a
+  verifier, which can check a signature and encrypt, but not sign or decrypt. A copy of
+  a saved game, a turn file or an orders file holds nothing anyone could log in or sign
+  with, and an orders file cannot be changed or used for another turn. A password can
+  still be guessed offline from a verifier or a signature, but each guess costs an
+  Argon2id run (128 MiB of memory) and helps with that one game only: do not use weak
+  passwords, and do not reuse important ones.
+- **Other players of an e-mail game**, even with access to the same shared folder, read
+  neither another's turn file (encrypted to that empire's password) nor another's
+  orders (encrypted to the host's key). Nor does any player's copy of the game hold the
+  galaxy's seed, from which the whole map could be rebuilt.
+- **Games of OpenSE4 0.6** sent their password hashes in the clear (logins and orders
+  files). Nothing new is ever made of such a hash: a player whose empire still has 0.6's
+  kind of verifier moves to the new kind once, showing the old hash to the host
+  ([How it works](#how-it-works)). Anyone who recorded those 0.6 games knows that hash
+  too and could make the move first; if that matters, the host resets the passwords
+  instead ([Reset Passwords](#reset-passwords)).
+- **Not protected:** the host itself (it sees and decides everything), the host's key
+  file (whoever copies it can pose as the host and read the PBEM orders: it is readable
+  by its owner only), the players' own computers, and the timing and size of the
+  traffic. Anyone who can cut the connection can stop the game.
+
+### How it works
+
+- **Cryptography.** [Monocypher](https://monocypher.org) 4.0.2 (BSD 2-clause or CC0,
+  pinned by hash): X25519 key agreement, XChaCha20-Poly1305 authenticated encryption,
+  BLAKE2b hashing, EdDSA signatures and Argon2id. OpenSE4 implements no primitive
+  itself. Keys come from the operating system's random source (`getrandom`,
+  `arc4random_buf`, `BCryptGenRandom`), never from the game's random numbers. Secrets
+  that are no longer needed (fresh key halves, session keys) are wiped.
+- **Password keys** (`net/auth.hpp`). Argon2id of the password (128 MiB, three passes,
+  salted with the game's id) is the seed of two key pairs: an EdDSA key that signs, and
+  an X25519 key that opens the empire's turn files. The verifier is their public halves
+  (`pk1:` and 128 hex digits); a verifier with a key of small order is refused. Argon2id
+  runs on the players' machines (a moment, once per game: the result is kept while the
+  program runs) and when a host starts (its own player, the master and join passwords);
+  a host otherwise only checks signatures.
+- **Handshake** (`net/secure.hpp`), in the Noise pattern NX with the join password's
+  key mixed in last (NXpsk2):
+  1. The client sends a fresh X25519 key (`ClientHello`, in the clear).
+  2. The host answers with a fresh key of its own, its long-term key, whether it has a
+     join password, and the game's id (`ServerHello`, in the clear).
+  3. Both derive the keys with BLAKE2b from the two messages as sent, the agreement of
+     the two fresh keys, the agreement of the client's fresh key with the host's
+     long-term key, and the join password's key (Argon2id salted with the host's key
+     and the game's id; zeros without one). Changing either message changes the keys;
+     only the holder of the long-term key's secret half gets them.
+  4. The client checks the host's long-term key against the one it remembers, then
+     sends its `Login`, the first encrypted message. Until the host's `Welcome` (sealed)
+     it reads only frames of 64 KiB or less.
+- **Frames.** Every frame after the handshake is sealed: the message type and payload
+  are encrypted, and they and the frame's header are authenticated. Each direction has
+  its own key and counts its messages; the count is the nonce. A frame that was
+  changed, repeated, dropped or moved fails to open and ends the connection. A host
+  whose first sealed message from a client does not open (the keys differ: a wrong
+  join password) says so in the clear and closes.
+- **Logins.** The login signs a BLAKE2b hash of the session's id, the role (player or
+  master) and the player's name with the password's key in this game; the host checks
+  it with the verifier. A new player's login carries the verifier, which the host keeps.
+  The master password works the same way.
+- **Password values in orders.** A player's orders may set the empire's password
+  (Empire Status, Change Password) only to nothing or to a verifier of the current kind;
+  hosts refuse anything else, over the network and by e-mail, so no player can lock an
+  empire out or make it look like one of OpenSE4 0.6.
+- **Games of OpenSE4 0.6.** Their verifiers (a second SHA-256 of 0.6's password hash)
+  cannot check a signature. When such a player logs in, the host refuses once and says
+  so (`OldPassword`): that player's game asks whether to show the host the old hash,
+  once. It sends it only after the player agreed twice and only to a host whose key the
+  player trusted beforehand (remembered from an earlier game, or confirmed after
+  comparing fingerprints); a join password vouches for nothing here. The same login
+  carries the verifier made from the password itself, which the host keeps from then
+  on. A PBEM empire of the old kind moves to a new password with its next turn instead
+  ([Play by e-mail](#play-by-e-mail)), because its old hash travels by mail.
+- **PBEM files.** A turn file's view is encrypted to the empire's X25519 key with a
+  fresh key pair of the host's (XChaCha20-Poly1305 under a BLAKE2b hash of the
+  agreement and both keys), bound to the file's readable header (game, empire, turn
+  style, the empire's verifier and the host's key). An empire without a password, or
+  with one of 0.6's kind (moving this turn), gets its view in the clear. An orders file
+  is signed over the game, the turn, the empire, the orders, the checksum of the turn
+  file it was made from, a revision number (the time it was made) and the signer's
+  verifier, then encrypted the same way to the host's key named in the turn file. Of
+  two files for one empire the higher revision counts; two different moves of a 0.6
+  empire to a new password are both refused, and the host is told.
+- **Host keys** are files of 64 hex digits (`host_key.txt`), made on first use without
+  ever replacing another, readable by their owner only and, where the folder is made
+  for them, in a folder only the owner can enter. The players' remembered keys are
+  lines of `<address>:<port> <key>` in `known_hosts.txt`. Delete a line there to meet
+  that host anew.
+
+### Other rules
+
 - **The host is authoritative.** It checks every order list against the game rules
   and applies only the sender's own empire's orders. In a turn-based game it takes
   commands only from the player whose turn it is. Clients never change the host's
-  game. The host also refuses oversized messages (64 KiB before the handshake,
-  16 MiB after), malformed messages, unknown message types and anything before a
-  valid greeting. Connections that go silent are dropped.
-- **Each network player gets only their own view.** Each turn, the host sends every
+  game. Garbage, a stale turn or a repeated message never reaches the host's turn
+  processing: unreadable orders and orders for another turn or empire are refused, a
+  repeat replaces (orders) or is answered again (commands), and a malformed message
+  ends that connection only. The host also refuses oversized messages (64 KiB before the login, 16 MiB
+  after), malformed messages, unknown message types, anything before a valid
+  handshake and anything in the clear after it. Connections that go silent are
+  dropped.
+- **Each player gets only their own view.** Each turn, the host sends every
   player the game as their empire knows it (`game::redactForEmpire`):
   - Removed:
     - other empires' treasuries, research and intelligence queues, logs, history
@@ -503,17 +725,20 @@ Setup files hold passwords in plain text. To avoid that, a player can run
     - battles the player was not in;
     - in a turn-based game, what the player whose turn it is has done in that turn (the
       moves of its ships, its launches and its open questions), for everyone else;
-    - the random-number state.
+    - the random-number state, and the galaxy's seed (from which the whole map and the
+      computer players' choices could be rebuilt; the lobby does not show it either).
   - Kept: what diplomacy and the score screens show.
   - Shared: a Partnership gives its partner the maps and tech levels, as in the rules.
 
   The host's own player sees the same view. In a turn-based game the other players get
-  that view when the turn passes on, not after every command. A PBEM `.gam`, however,
-  is the complete game, because every player processes it with the same program. Play
-  PBEM with people you trust not to peek.
+  that view when the turn passes on, not after every command. A PBEM player's turn file
+  is the same view, made by the same function; the host's `.gam` never leaves the host.
+  A turn file also carries the game's header (name, empires' and players' names, the
+  game's id and data set) and its own empire's password verifier, so the player's game
+  can check the password. The master password's verifier stays with the host.
 - **The host itself must be trusted.** It sees and decides everything.
-- **Files are checked before use.** Save, orders and `.plr` files start with a type
-  tag, a format version and a checksum. Loading rejects wrong types, newer or
+- **Files are checked before use.** Save, turn, orders and `.plr` files start with a
+  type tag, a format version and a checksum. Loading rejects wrong types, newer or
   retired versions, truncation, corruption and internal inconsistencies (for example
   a ship whose design does not exist), and always reports what is wrong. Hosts also
   refuse games whose data-set fingerprint differs from their own, and check that
@@ -521,8 +746,6 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 
 ## Future work
 
-- Per-player views for PBEM (a `.gam` per empire).
-- Encrypted connections.
 - IPv6 hosting.
 - Sending only the changes between turns instead of the whole game. A turn-based game
   sends the player's whole view after every command.
@@ -540,8 +763,9 @@ in a loop), and handle the `net::Event`s it returns. Neither class is thread-saf
 UPnP runs on a thread of its own inside `net::PortMapper`.
 
 ```cpp
-net::HostConfig cfg;                         // port, slots, passwords, setup (seed, options), UPnP, limits
-cfg.localPlayer = net::LocalPlayer{"Host", net::hashPassword(pw), setup};   // in-game hosting
+net::HostConfig cfg;                         // port, slots, passwords, setup (seed, options), UPnP, limits, hostKey
+cfg.hostKey = *net::secure::loadOrCreateHostKey(file);   // the host's identity (none: a new key per session)
+cfg.localPlayer = net::LocalPlayer{"Host", pw, setup};   // in-game hosting (passwords as typed: they never leave)
 net::HostSession host(rules, cfg);           // rules must outlive the session
 host.start();                                // or host.resume(state, saveInfo)
 host.addComputerEmpire(setup); host.kick(slot, "reason"); host.setLocalReady(true);
@@ -555,38 +779,57 @@ host.save(path);
 for (const net::Event& e : host.poll(0)) { /* e.type, e.text, e.player, e.slot, e.empire, e.turn */ }
 host.lobby();  host.turnStatus();  host.state();  host.portMapping();
 
-net::ClientConfig cc;                        // host, port, name, passwordHash, dataSet = game::dataSetIdentity(rules)
+net::ClientConfig cc;                        // host, port, name, password, dataSet = game::dataSetIdentity(rules), hostKey (a pin)
 net::ClientSession client(cc);
 client.connect();
 client.submitSetup(setup); client.setReady(true);
 client.submitOrders(orders); client.chat("hi");
 client.play(cmd); client.endTurn();          // turn-based: in our turn (client.myTurn())
 client.questions(); client.pendingRequests(); client.activeEmpire();
+client.seenHostKey(); client.hostKeyChanged(); client.hostAskedOldPassword();  // after a refusal: why (cc.sendOldPassword: consent)
 client.lobby(); client.turnStatus(); client.state(); client.empire(); client.ordersAccepted();
 client.requestAiControl(empire, true); client.requestPasswordReset({empire});   // administrators
 ```
 
-`net::describe(event)` gives a one-line log text. `net::pbem::*` reads and writes
-`.plr` files and processes PBEM turns. The player's side in the client is
-`client/classic/pbem_play.hpp` (open a `.gam`, check the empire and password, write the
-`.plr` or a draft) and `ClassicSession` with `SessionKind::Pbem`. `game::saveGame`, `loadGame` and
+`net::describe(event)` gives a one-line log text. `net::pbem::*` reads and writes turn
+files (`writeTurnFiles`, `readTurnFile`) and `.plr` files (`writePlayerOrders`,
+`signOrdersFile`) and processes PBEM turns (`processGameFile`). The player's side in the
+client is `client/classic/pbem_play.hpp` (open a turn file, check the empire and
+password, write the signed `.plr` or a draft) and `ClassicSession` with
+`SessionKind::Pbem`. `game::saveGame`, `loadGame` and
 `readSaveInfo` handle `.gam` files.
 
 ### Protocol
 
 TCP, one stream per player. Each message is a frame: a u32 little-endian length, a
 u8 message type, then the payload, which is encoded with the save-format archive.
+After the handshake every frame is sealed: its type byte is `0xf0`, followed by the
+message type and payload encrypted with XChaCha20-Poly1305, then the 16-byte tag
+([How it works](#how-it-works)).
 
-1. The client sends `Hello`: magic, protocol version, program version, data-set
-   fingerprint, player name, and hashes of the player, join and master passwords.
-2. The host answers `Reject` (with a reason and a readable text) or `Welcome` (game
+1. The client sends `ClientHello` in the clear: magic, protocol version, program
+   version and its fresh X25519 key. It is laid out like protocol 4's greeting, so an
+   OpenSE4 0.6 host reads the version and refuses it with a readable `Reject`. Hosts
+   read the magic, version and program version first, whatever follows, and refuse
+   other versions the same way, in the clear.
+2. The host answers `ServerHello` in the clear: its fresh key, its long-term key,
+   whether it has a join password, and the game's id (which salts the passwords). Both
+   sides then switch to sealed frames.
+3. The client sends `Login`: data-set fingerprint, player name, a random id of its
+   session object, the player's verifier in this game and its signature, and the master
+   password's signature if it has one. The host refuses a player whose empire still has
+   an OpenSE4 0.6 verifier with `OldPassword`; that player's game then asks the player,
+   and only with the player's consent and a host key trusted beforehand does the next
+   `Login` also carry the password's 0.6 hash.
+4. The host answers `Reject` (with a reason and a readable text) or `Welcome` (game
    name and id, the player's slot, admin rights). Then it sends the `Lobby`, and,
    during a game, the `State` and `TurnStatus`.
-3. In the lobby: `SubmitSetup` (the empire setup), `SetReady`, `ChatSend`, and
+5. In the lobby: `SubmitSetup` (the empire setup), `SetReady`, `ChatSend`, and
    `Admin` requests. The host sends `Lobby` after every change.
-4. At the start and after every turn, the host sends `State`: the turn, the
-   player's empire, and a complete `serializeState()` blob with its own checksum.
-5. Each turn the player sends `SubmitOrders`, a `serializeOrders()` blob of an
+6. At the start and after every turn, the host sends `State`: the turn, the
+   player's empire, a complete `serializeState()` blob with its own checksum, and a
+   serial number that grows with every `State` the host sends.
+7. Each turn the player sends `SubmitOrders`, a `serializeOrders()` blob of an
    `EmpireOrders` for the current turn. A later submission replaces an earlier one.
    The host answers `OrdersAck` and sends everyone a `TurnStatus` saying who has
    sent orders.
@@ -597,15 +840,22 @@ u8 message type, then the payload, which is encoded with the save-format archive
    request number and the refused commands. `EndTurn` ends the turn. The host answers
    with a `PlayResult`, then sends everyone their `State` and the new `TurnStatus` once
    the turn has passed to the next player. Anything from a player whose turn it is not
-   gets a `PlayResult` saying so.
-6. `Ping`/`Pong` keep idle connections alive (every 5 s). A peer that sends nothing
+   gets a `PlayResult` saying so. Request numbers grow with every request of a client
+   session (the `Login`'s id): the host answers a number it has already answered
+   again, without carrying anything out twice.
+8. `SubmitOrders` and `PlayCommands` also carry the player's copy of the game as it
+   is when they are sent: the serial of the `State` it came from, its checksum and
+   its part hashes (`game::statePartHashes`). When the serial is the last one the host
+   sent that player and the checksum differs, the host sends `Desync` (the turn, the
+   parts that differ, a text) and the `State` again, marked as a resync.
+9. `Ping`/`Pong` keep idle connections alive (every 5 s). A peer that sends nothing
    for 60 s (host side) or 90 s (client side) is disconnected. `Bye` ends a session
    politely and carries a reason, for example a kick or a shutdown.
 
 `net::kProtocolVersion` must change whenever the messages or the save format
 change; the host refuses any other version and compares nothing else, so releases
-that share it play together. It was 2 from turn-based games on, 3 in 0.5.0 and is 4
-since 0.6.0.
+that share it play together. It was 2 from turn-based games on, 3 in 0.5.0, 4 in
+0.6.0, and is 5 from encrypted connections on (after 0.6.1).
 
 ### Save format
 

@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
+#include "net/auth.hpp"
 #include "temp_dir.hpp"
 
 #include <cstdlib>
@@ -17,6 +18,9 @@ int main(int argc, char** argv) {
 #else
     setenv("OPENSE4_USER_DIR", dir.c_str(), 1);
 #endif
+    // Password keys take a moment of Argon2id each (net/auth.hpp); the tests
+    // make hundreds, so they use less work. One test checks the real work.
+    opense4::net::setPasswordWork({8 * 1024, 1});
     doctest::Context context(argc, argv);
     return context.run();
 }

@@ -232,8 +232,9 @@ newly built vehicles" and "AI should not make changes during a simultaneous game
 OpenSE4's own choices, (inferred):
 - Neutral empires are listed but cannot be switched: our engine keeps neutrality in the same
   field as the computer-controlled mark (`Empire::kind`).
-- Local games keep no master password; a network or e-mail game file opened here keeps its
-  host's (`SaveInfo::masterPasswordVerifier`). A network player's copy holds none, and the
+- Local games keep no master password; a network or e-mail host's game file opened here
+  keeps its host's (`SaveInfo::masterPasswordVerifier`). A network or e-mail player's copy
+  holds none (an e-mail player gets a turn file, not the host's game file), and the
   in-game host's Players window works on its own player's copy like any player's; the host
   hands empires over with the toggle.
 - A human empire that never had a stored difficulty gets Medium when it is handed to the
@@ -549,6 +550,9 @@ computer, not in the game, except the autosave choice, which belongs to the game
   host the player number and the new password, one message per empire. The numbers come from
   a clock-seeded draw, and the game's random sequence is saved before and restored after, so
   the game's random numbers are not disturbed (OpenSE4 simply uses a separate source).
+  OpenSE4 writes six such numbers, twelve digits (an OpenSE4 choice): its password
+  verifiers can be guessed offline, and six digits would fall to that at once
+  (docs/MULTIPLAYER.md, "Security").
 - **When it takes effect.** Not at once: the new passwords are written into the empires when
   the host next processes a turn, right after every orders file has been read and the host has
   chosen to go on. An orders file carries the player's own password, so applying the reset
@@ -4036,8 +4040,9 @@ counterpart:
       (`Empire::kind`), so the Players window lists neutral empires but cannot switch them.
       Can the original's window hand a neutral empire to a human, and how does that empire
       then play?
-    - A local game keeps no master password; a network or e-mail game file opened here keeps
-      its host's, and a network player's copy holds none (the host keeps it). The in-game
+    - A local game keeps no master password; a network or e-mail host's game file opened
+      here keeps its host's, and a network or e-mail player's copy holds none (the host
+      keeps it). The in-game
       host's Players window works on its own player's copy; it hands empires over with the
       toggle of spec 05 §9.4. Which empires' rows does the original's Game Master view list
       as switchable on a TCP/IP host?

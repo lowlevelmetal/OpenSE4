@@ -131,10 +131,13 @@ questions are what the observation sessions still have to settle.
   - the in-game lobby, including hosting with UPnP port mapping;
   - reconnect and chat;
   - the computer taking over empires that are missing.
-- [x] Dedicated server `opense4-server`, and PBEM (`pbem new|process|orders|info`); the
-      game client plays a PBEM turn and writes the `.plr` (Multiplayer, Play by E-mail).
+- [x] Dedicated server `opense4-server`, and PBEM (`pbem new|process|turn-files|orders|info`);
+      the game client plays a PBEM turn from the player's own turn file and writes the
+      signed `.plr` (Multiplayer, Play by E-mail).
 - [x] Turn-based games over the network and by e-mail.
-- [x] Fog of war in network games: each player receives only their empire's view.
+- [x] Fog of war in network and PBEM games: each player receives only their empire's view.
+- [x] Encrypted network connections with pinned host keys and signed logins; reconnects
+      that keep the turn's orders; desyncs detected, named and repaired.
 - [x] Tutorials, training games and the manual: OpenSE4's own, in our own words
       ([LEARNING.md](LEARNING.md)). The original's tutorial cannot be played: its starting
       game is a binary `.gam`.
@@ -168,4 +171,3 @@ questions are what the observation sessions still have to settle.
    agrees, research and bases stay behind, and spec 05 questions 53–56 ask the analyst for
    the original's AI states, enemy-in-territory list, empty colony types and research
    inputs.
-4. Encrypted connections, and per-player views for PBEM.

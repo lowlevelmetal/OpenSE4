@@ -158,8 +158,11 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
     // Facilities left on abandoned planets are seen only by whoever colonizes them.
     v.leftFacilities.clear();
 
-    // The random stream would let a client predict the next turn.
+    // The random stream would let a client predict the next turn, and the
+    // galaxy's seed rebuild the whole map (home systems included) and the
+    // computer players' choices.
     v.rng = Rng(0);
+    v.seed = 0;
     return v;
 }
 
