@@ -481,6 +481,8 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
     learn::applySetup(lesson->setup, setup, extras);
     auto session = startLocalGame(rules_, setup, extras);
     if (!session) return std::format("The {} '{}' could not start its game: {}", what, slug, session.error());
+    // A place left in an older version of the lesson is of no use any more.
+    if (const auto place = lessonPlace(kind, slug); place && lessonPlaceProblem(*lesson, *place)) forgetLessonPlace(kind, slug);
     startGame(std::move(*session));
     lesson_ = std::make_unique<LessonRunner>(*lesson, *session_);
     lessonResumable_ = true;
@@ -500,8 +502,12 @@ std::optional<std::string> ClassicMode::resumeLesson(learn::LessonKind kind, con
     if (!problem) {
         const BusyPointer busy;
         auto session = ClassicSession::load(rules_, lessonPlaceFile(kind, slug));
-        if (session) loaded = std::move(*session);
-        else problem = std::format("Its saved game could not be read ({})", session.error());
+        if (session) {
+            loaded = std::move(*session);
+        } else {
+            log::warn("{}", session.error());
+            problem = "Its saved game could not be read";
+        }
     }
     if (problem) {
         log::warn("The tutorial '{}' cannot resume at step {}: {}", slug, place->resumeAt + 1, *problem);

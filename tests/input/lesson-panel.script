@@ -1,0 +1,96 @@
+# The lesson panel at 800x600 (docs/LEARNING.md "The lesson panel"), on a tutorial of our own
+# (tests/input/learn), under the input lock: the game's prompts and the panel's own Leave
+# question stay over the panel even when it is dragged under them; a dragged panel places
+# itself again when it would hide the next step's outline; the compact panel and More; the
+# panel's keys and Shift+F1 (docs/BUILDING.md "Input scripts").
+options --learn-dir=tests/input/learn --tutorial=panel-check --layout=800x600 --size=800x600
+
+wait-lesson panel-check
+wait-for tag:lesson:panel
+# 1 An explanation step shows the whole panel (its Less button makes it compact).
+assert-present tag:lesson:leave
+# Its Leave question: the panel dragged over the middle of the screen, the question over it.
+drag tag:lesson:panel@60,12 to at:250,200
+click tag:lesson:leave
+wait-for item:No in="Leave Lesson"
+assert-inside item:No in="Leave Lesson" tag:lesson:panel
+screenshot leave-over-panel.png
+click item:No in="Leave Lesson"
+wait-gone item:No in="Leave Lesson"
+assert-lesson panel-check
+# Next by key (Alt+N); Back by key shows step 1 again (Back is dim there), Alt+N returns.
+key Alt+N
+wait-step 2
+key Alt+B
+wait 2
+assert-disabled item:Back in=lesson
+key Alt+N
+wait 2
+assert-enabled item:Back in=lesson
+assert-step 2
+# 2 An action step on a small screen: the compact panel, without Hide, Free Play and Leave.
+assert-present tag:lesson:more
+assert-absent tag:lesson:leave
+screenshot compact.png
+# More shows the whole panel; Less the compact one again.
+click tag:lesson:more
+wait-for tag:lesson:leave
+screenshot more.png
+click tag:lesson:more
+wait-gone tag:lesson:leave
+# Shift+F1 opens the manual under the lock; Esc closes it. Alt+R opens the step's page.
+key Shift+F1
+wait-window manual
+key Escape
+wait-closed manual
+key Alt+R
+wait-window manual
+assert-present item:page:notes
+key Escape
+wait-closed manual
+click item:next in=tag:cycle:ship
+wait-step 3
+# 3 Fleet Transfer.
+click tag:order:fleet-transfer
+wait-window fleet-transfer
+wait-step 4
+# 4 The whole panel, dragged over the middle of the screen, where Create Fleet asks for a name:
+# the prompt lies over the panel, and its OK works.
+click tag:lesson:more
+wait-for tag:lesson:leave
+drag tag:lesson:panel@60,12 to at:250,300
+click tag:fleet-transfer:create-fleet
+wait-for item:OK in="Create Fleet"
+assert-inside item:OK in="Create Fleet" tag:lesson:panel
+screenshot create-fleet-over-panel.png
+click item:OK in="Create Fleet"
+wait-step 5
+# The panel keeps the place it was dragged to: it hides nothing step 5 outlines.
+assert-inside at:300,350 tag:lesson:panel
+# 5 Dragged over step 6's button (Planets, top left): when step 6 comes, the panel places
+# itself again, and the button can be clicked.
+drag tag:lesson:panel@60,12 to at:150,20
+assert-inside tag:command:planets tag:lesson:panel
+key Escape
+wait-closed fleet-transfer
+wait-step 6
+wait 3
+click tag:command:planets
+wait-window planets
+wait-step 7
+# 7 Colonizable.
+click tag:planets:colonizable
+wait-step 8
+# 8 Send Colony Ship: the panel dragged under where the list's Colonize comes; it lies over it.
+click tag:lesson:more
+wait-for tag:lesson:leave
+drag tag:lesson:panel@60,12 to at:250,420
+click tag:planets:send-colony-ship
+click item:* in="Select Planet to Colonize"
+assert-inside item:Colonize in="Select Planet to Colonize" tag:lesson:panel
+screenshot colonize-over-panel.png
+click item:Colonize in="Select Planet to Colonize"
+wait-step 9
+# 9 Finish by key.
+key Alt+N
+wait-result done

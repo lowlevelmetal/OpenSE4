@@ -1,0 +1,88 @@
+# The Learn window and resuming a tutorial (docs/LEARNING.md "The Learn window and the
+# manual", "Resuming a lesson"), on tutorials of our own (tests/input/learn): the intro's
+# hint by Tutorial until a first lesson starts; "N of 2 done" and the first lesson not done
+# chosen and marked Next; a tutorial left before its end resumes in its game, at the step
+# where the work in its window began (docs/BUILDING.md "Input scripts").
+options --learn-dir=tests/input/learn --layout=1024x768 --size=1280x800
+
+wait-screen front
+# No lesson started yet: the hint points at Tutorial.
+wait-for item:tutorial-hint in=front
+screenshot intro-hint.png
+click item:Tutorial in=front
+wait-for item:"Start Lesson" in=front
+# Nothing done: the first lesson is chosen and marked Next; nothing to resume.
+assert-present item:"0 of 2 done" in=front
+assert-present item:Next:quick-lesson in=front
+assert-absent item:"Resume*" in=front
+click item:"Start Lesson" in=front
+wait-screen game
+wait-lesson quick-lesson
+# Its one step, finished with the panel's key; Keep Playing (Esc), then the panel's last
+# button goes back to the Learn window.
+key Alt+N
+wait-result done
+key Escape
+wait 3
+click tag:lesson:leave
+click item:Yes in="Leave Lesson" optional
+wait-screen front
+# One done: the next one is chosen and marked Next.
+wait-for item:"1 of 2 done" in=front
+assert-present item:Done:quick-lesson in=front
+assert-present item:Next:panel-check in=front
+screenshot learn-one-done.png
+click item:"Start Lesson" in=front
+wait-screen game
+wait-lesson panel-check
+# The 1024x768 layout has no compact panel.
+assert-absent tag:lesson:more
+click item:Next in=lesson
+wait-step 2
+click item:next in=tag:cycle:ship
+wait-step 3
+click tag:order:fleet-transfer
+wait-window fleet-transfer
+wait-step 4
+# Left at step 4, which works in Fleet Transfer: windows are not kept, so it resumes at
+# step 3, which opens it. The lesson left is the one chosen.
+click tag:lesson:leave
+click item:Yes in="Leave Lesson"
+wait-screen front
+wait-for item:"Resume (step 3)" in=front
+assert-present item:"Step 3:panel-check" in=front
+screenshot learn-resume.png
+click item:"Resume (step 3)" in=front
+wait-screen game
+wait-lesson panel-check
+wait-step 3
+assert-no-window fleet-transfer
+click item:next in=tag:cycle:ship
+click tag:order:fleet-transfer
+wait-window fleet-transfer
+wait-step 4
+click tag:fleet-transfer:create-fleet
+click item:OK in="Create Fleet"
+wait-step 5
+key Escape
+wait-closed fleet-transfer
+wait-step 6
+assert { fleets = 1 }
+# Left at step 6, in the main window: it resumes there, in the game as it was (its fleet).
+click tag:lesson:leave
+click item:Yes in="Leave Lesson"
+wait-screen front
+wait-for item:"Resume (step 6)" in=front
+double-click item:"Panel check" in=front
+wait-screen game
+wait-lesson panel-check
+wait-step 6
+assert { fleets = 1 }
+# Leaving again keeps step 6; the intro no longer shows the hint.
+click tag:lesson:leave
+click item:Yes in="Leave Lesson"
+wait-screen front
+wait-for item:"Resume (step 6)" in=front
+click item:Close in=front
+wait-for item:"Quick Start" in=front
+assert-absent item:tutorial-hint in=front
