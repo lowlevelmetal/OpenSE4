@@ -203,7 +203,7 @@ private:
     // §2.1): the empire, among those we are in contact with; then, by the
     // project's kind, a planet or a ship of it, a third empire, or the area a
     // Research - Steal takes, each with "Any" where the rules allow it. A list
-    // window of our own (the original's pickers are not described; inferred).
+    // window of our own (the original's pickers are not described; inferred, spec 06 §7 Q99).
     void targetPicker(UiContext& ui) {
         if (!picking_) return;
         const game::GameState& s = ui.state();

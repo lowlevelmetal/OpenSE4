@@ -117,7 +117,7 @@ private:
     }
 
     // The question after the conquest: Yes plays on, No leaves the game for
-    // the intro (inferred, spec 06 §7 Q83).
+    // the intro (inferred, spec 06 §7 Q99).
     bool askToContinue(UiContext& ui) {
         const std::optional<bool> yes = question_.answer(ui);
         if (!yes) return true;

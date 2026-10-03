@@ -124,7 +124,8 @@ game::CommandResult ClassicSession::issue(game::Command c) {
 // After a Players-window switch of our own empire on a player's copy, an
 // object changed this turn (given orders) carries its minister flag to the
 // host with the orders (spec 06 §7 Q84, confirmed: binary); a SetMinister
-// (the order panel's minister button) carries its own.
+// (the order panel's minister button) carries its own. Which commands count
+// as a change is ours (inferred, spec 06 §7 Q99).
 void ClassicSession::carryFlags(const game::Command& c) {
     if (!switchedOwn_ || (kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem)) return;
     const auto* o = std::get_if<game::cmd::SetOrders>(&c);

@@ -337,7 +337,7 @@ void finishPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     s.removeDeadVehicles();
     // A human defeated at the end of its turn has played its last turn (spec
     // 06 §7 Q83). One that lost everything during its own turn ends with it
-    // too, without a turn start of its own in between (inferred).
+    // too, without a turn start of its own in between (inferred, spec 06 §7 Q99).
     if (e.index() < s.empires.size() && s.empire(e).kind == PlayerKind::Human) score::checkDestruction(ctx, e);
     sight::updateKnowledge(ctx.rules, s);
     passTurn(ctx, e);
