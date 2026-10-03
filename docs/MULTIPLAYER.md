@@ -149,14 +149,47 @@ Both routes then check:
 ### Reconnecting
 
 A player who drops out (crash, network trouble, closed laptop) reconnects with the
-same name and password. The host sends the current turn at once, and any orders the
-player had already sent for it still count. A new connection with the right password
-replaces an old one that is still open, so a half-dead connection never locks a
-player out. Names are not case-sensitive.
+same name and password; the game tries again every few seconds by itself. The host
+sends the current turn at once, and nothing of the turn is lost:
+
+- **Simultaneous games.** Orders the host had stored still count. Orders sent just
+  before the drop, which may never have arrived, go out again, and so do orders
+  given (End Turn) while the connection was down. A later copy replaces an earlier
+  one, so sending twice changes nothing.
+- **Turn-based games.** The player goes on with their turn where the host has it,
+  including the questions still open. Commands and End Turn that got no answer, sent
+  before the drop or given while the connection was down, go out again in order. Each
+  carries a number the host remembers, so one it had already carried out is answered
+  again but not carried out twice.
+
+A new connection with the right password replaces an old one that is still open, so
+a half-dead connection never locks a player out. Names are not case-sensitive.
 
 While a player is away, the host keeps waiting for their orders. It stops waiting
 when the turn time limit runs out, when the host processes the turn by hand, or when
 the empire is handed to the computer.
+
+### When a player's game differs from the host's
+
+Each player holds a copy of the game: the view the host sent. When the player sends
+orders or a command, the game says what that copy looks like (its checksum, and a
+hash of each part of it: the date and options, the galaxy, the colonies, the empires,
+the designs, the vehicles, the fleets, the messages, the events, the battles, the
+counters, the random numbers, the player turn and the map). If it is no longer what
+the host sent, the copies have drifted apart (a desync), and the host:
+
+- tells the player, naming the turn and the parts that differ, for example
+  "Turn 12: your copy of the game differed from the host's (vehicles, empires). The
+  host sent its game again.";
+- logs the same, with the player's name, in its own log (the server's output, or the
+  host's `opense4.log`);
+- sends its game again. The player's game replaces its copy and gives the orders of
+  the turn so far again on the new copy; an End Turn already given stays given. The
+  orders that reached the host still count, checked against the host's game as always.
+
+The player's game shows the message on the network status strip and in the Chat
+window's log, and writes it to `opense4.log`. A desync is never silent. It means a bug, for example two platforms
+reading the game differently, so a report with both logs helps.
 
 ### Computer control
 
@@ -561,7 +594,10 @@ counterpart.
 ### Other rules
 
 - **The host is authoritative.** It checks every order list against the game rules
-  and applies only the sender's own empire's orders. In a turn-based game it takes
+  and applies only the sender's own empire's orders. Garbage, a stale turn or a
+  repeated message never reaches the host's turn processing: unreadable orders and
+  orders for another turn or empire are refused, a repeat replaces (orders) or is
+  answered again (commands), and a malformed message ends that connection only. In a turn-based game it takes
   commands only from the player whose turn it is. Clients never change the host's
   game. The host also refuses oversized messages (64 KiB before the login, 16 MiB
   after), malformed messages, unknown message types, anything before a valid

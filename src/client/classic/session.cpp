@@ -462,6 +462,17 @@ void ClassicSession::poll() {
     auto s = transport_->pollState();
     if (!s) return;
     if (!game::turnBased(*s)) {
+        if (s->turn == state_.turn) {
+            // The host sent this turn's game again (our copy differed from
+            // its, a desync): our orders so far go onto the new copy, and an
+            // End Turn already given stays given.
+            state_ = std::move(*s);
+            std::vector<game::Command> again = std::exchange(orders_, {});
+            for (game::Command& c : again)
+                if (game::apply(*rules_, state_, player_, c).ok) record(std::move(c));
+            ++revision_;
+            return;
+        }
         state_ = std::move(*s);
         strategic_.clear();
         queueTurnBattles();
