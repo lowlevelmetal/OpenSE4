@@ -339,6 +339,8 @@ bool waits(const learn::Condition& c, bool negated) {
         case Fact::Tab:
         case Fact::DesignComponents:
         case Fact::DesignHullChosen:
+        case Fact::DesignTypeChosen:
+        case Fact::DesignNamed:
         case Fact::SimulatorOwners:
         case Fact::SimulatorItems:
         case Fact::BattleBegun:

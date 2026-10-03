@@ -1,7 +1,7 @@
 # The tutorial input lock with the Combat Simulator over Designs (docs/LEARNING.md "The
-# input lock"; docs/BUILDING.md "Input scripts"): tutorial 6, steps 3 and 4. Designs lies
+# input lock"; docs/BUILDING.md "Input scripts"): tutorial 6, steps 3 to 5. Designs lies
 # under the simulator and the step says nothing about it, but where the simulator lies it
-# decides: its Strategies button (step 3) and its Strategic tab (step 4) are refused,
+# decides: its Strategies button (step 3) and its Strategic tab (step 5) are refused,
 # while the parts each step names work.
 options --tutorial=combat:2 --layout=1024x768 --size=1280x800
 
@@ -11,19 +11,21 @@ wait-window designs
 click tag:designs:simulator
 wait-window combat-simulator
 wait-step 3
-# 3 Set up the sides; Strategies is another step's.
+# 3 Your side; Strategies is another step's.
 click item:Strategies in=combat-simulator refused
 assert-no-window strategies
 click item:"Race 1" in=combat-simulator
 click item:##item in=combat-simulator nth=1
 click item:##item in=combat-simulator nth=1
+wait-step 4
+# 4 The other side.
 click item:"Race 2" in=combat-simulator
 click item:##item in=combat-simulator nth=2
-wait-step 4
-# 4 Begin, on the Tactical tab; the Strategic tab is a later step's.
+wait-step 5
+# 5 Begin, on the Tactical tab; the Strategic tab is a later step's.
 click tag:combat-simulator:strategic refused
 click tag:combat-simulator:tactical
 click tag:combat-simulator:begin
 wait-window tactical-combat
-wait-step 5
+wait-step 6
 assert-no-window strategic-combat
