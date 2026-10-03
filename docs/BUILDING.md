@@ -317,7 +317,7 @@ recorder is tested.
 
 | Scripts | What they play |
 |---|---|
-| `tutorial-*.script` | Each of the seven tutorials from its first step to its result, under the input lock: every step done by clicking what it tells the player to click; Next only on steps that explain, never Skip or Free Play (the runner checks). `tutorial-wrong-ship.script` gives tutorial 2's Explore order to the colony ship: the step waits for an attack ship, and the colony is still founded |
+| `tutorial-*.script` | Each of the seven tutorials from its first step to its result, under the input lock: every step done by clicking what it tells the player to click; Next only on steps that explain, never Skip or Free Play (the runner checks). `tutorial-wrong-ship.script` gives tutorial 2's Explore order to the colony ship: the step waits for an attack ship, and the colony is still founded; `tutorial-wrong-fleet.script` adds the colony ship to tutorial 5's fleet: the step waits, and the fleet's later orders still count |
 | `training-*.script` | Each training game's briefing pages (Previous, Next, Close Page), its first turns with their hints, Hide, the T button and Ctrl+H, Leave Game with its question |
 | `lesson-results.script` | The result dialog, won and lost (its recap and the next game, Next Game, Keep Playing, Try Again, Learn), on two quick training games of our own in `tests/input/learn` |
 | `front-learn.script` | The intro's Tutorial and Scenario buttons, the Learn window's tabs, starting a lesson and leaving it |

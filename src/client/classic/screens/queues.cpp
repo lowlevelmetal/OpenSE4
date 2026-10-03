@@ -1043,6 +1043,9 @@ private:
         // For the item under construction, the time left for what remains (spec 02 §11).
         if (remaining && *remaining >= 0 && *remaining != turns) time += std::format(" ({} left)", turnsText(*remaining));
         labelValue(ui, "Build time", time, 90);
+        // The design type (OpenSE4: lessons name it; the row shows it only when there is room).
+        if (item->kind == game::QueueItem::Kind::Vehicle && !s.design(item->design).designType.empty())
+            labelValue(ui, "Design type", s.design(item->design).designType, 90);
         if (!problem.empty()) ImGui::TextColored(kTextWarn, "Cannot build: %s", problem.c_str());
         ImGui::PushTextWrapPos(0.0f);
         if (item->kind == game::QueueItem::Kind::Vehicle) {

@@ -77,8 +77,9 @@ std::span<const game::Command> commandsSince(const EvalContext& ctx) {
     return std::span<const game::Command>(all).subspan(from);
 }
 
-// The design type of a design, a vehicle and a fleet (every member must have
-// it), checked against a `design_type` qualifier; nothing to check passes.
+// The design type of a design, a vehicle and a fleet (one of its ships must
+// have it: a ship added by mistake must not make a step impossible), checked
+// against a `design_type` qualifier; nothing to check passes.
 bool designOfType(const game::GameState& s, game::DesignId d, std::string_view wanted) {
     return d.valid() && d.index() < s.designs.size() && designTypeMatches(s.design(d).designType, wanted);
 }
@@ -88,8 +89,7 @@ bool vehicleOfType(const game::GameState& s, game::VehicleId id, std::string_vie
 }
 bool fleetOfType(const game::GameState& s, game::FleetId id, std::string_view wanted) {
     const game::Fleet* f = id.valid() ? s.fleet(id) : nullptr;
-    return f && !f->members.empty() &&
-           std::all_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return vehicleOfType(s, m, wanted); });
+    return f && std::any_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return vehicleOfType(s, m, wanted); });
 }
 // Whether a command went to (or made) a vehicle or design of the wanted type.
 bool commandOfType(const game::GameState& s, const game::Command& cmd, std::string_view wanted) {
@@ -101,8 +101,7 @@ bool commandOfType(const game::GameState& s, const game::Command& cmd, std::stri
     if (const auto* d = std::get_if<game::cmd::CreateDesign>(&cmd)) return designTypeMatches(d->design.designType, wanted);
     if (const auto* j = std::get_if<game::cmd::JoinFleet>(&cmd)) return vehicleOfType(s, j->vehicle, wanted);
     if (const auto* f = std::get_if<game::cmd::CreateFleet>(&cmd))
-        return !f->members.empty() &&
-               std::all_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return vehicleOfType(s, m, wanted); });
+        return std::any_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return vehicleOfType(s, m, wanted); });
     return false;
 }
 

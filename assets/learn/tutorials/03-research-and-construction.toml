@@ -169,18 +169,17 @@ text = """
 
 At the end of a turn your colonies produce, your queues build and your projects are paid. A
 project that reaches its cost gives your empire a new level in its area: end turns until the
-first one is done.
+first one is done (after five turns the lesson goes on anyway).
 """
 highlight = ["button:end-turn"]
-done = { techs_researched = 1 }
-progress = ["turns_passed"]
+done = { any = [{ techs_researched = 1 }, { turns_passed = 5 }] }
 manual = "turns#what-happens-at-the-end-of-a-turn"
 
 [[step]]
 title = "New technology"
 text = """
-**Your first project is done.** The Log opened by itself at the new turn: click its **Research**
-category to read what the new level unlocks, the components and facilities you can now use.
+**The Log opened by itself at the new turn.** Click its **Research** category: a finished
+project's entry says what its new level unlocks, the components and facilities you can now use.
 (`F10` opens the Log again.)
 
 The next lesson designs a warship. Press **Finish**.

@@ -91,8 +91,10 @@ std::vector<Counter> LessonProgress::counters(const game::Rules& rules, const ga
     if (!st.done || completed_[frontier_] || !stepMarks_[frontier_]) return {};
     const EvalContext ctx{rules, state, empire, client, tracker_, *stepMarks_[frontier_]};
     std::vector<Counter> out = learn::counters(*st.done, ctx);
+    // The step's own counts show once they have begun ("Turns: 0" says nothing).
     for (const Fact f : st.progress)
-        if (std::none_of(out.begin(), out.end(), [&](const Counter& c) { return c.fact == f; })) out.push_back(counterOf(f, ctx));
+        if (std::none_of(out.begin(), out.end(), [&](const Counter& c) { return c.fact == f; }))
+            if (Counter c = counterOf(f, ctx); c.current > 0) out.push_back(std::move(c));
     return out;
 }
 

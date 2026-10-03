@@ -155,10 +155,10 @@ done = { command = "QueueAdd", design_type = "Colony" }     # a colony ship was 
 The value is one of the 39 AI design types of spec 05 §7.7 (`"Attack Ship"`, `"Defense
 Base"`, ...), or `"Colony"` for every colony ship type (`"Colony (Rock)"` and the others);
 letter case does not matter. An order counts when it went to a vehicle of that type, or to a
-fleet whose ships all are; `selected` reads the selected vehicle's design (`ship`, `base`,
-`unit` or `fleet` only); among the commands it qualifies `SetOrders`, `QueueAdd` (a ship or
-base of that type), `CreateDesign`, `JoinFleet` (the ship that joined) and `CreateFleet` (all
-its ships). Anywhere else it is a load error. Prefer it whenever a step names a kind of ship:
+fleet with one in it (so a ship added to a fleet by mistake never blocks a later step);
+`selected` reads the selected vehicle's design (`ship`, `base`, `unit` or `fleet` only);
+among the commands it qualifies `SetOrders`, `QueueAdd` (a ship or base of that type),
+`CreateDesign`, `JoinFleet` (the ship that joined) and `CreateFleet` (one of its ships). Anywhere else it is a load error. Prefer it whenever a step names a kind of ship:
 a step that any ship can do can be done with the wrong one.
 
 | Key | Holds when |
@@ -245,8 +245,8 @@ weighs as much as a large map). Once dragged, it stays where it was put.
 - Tutorials: the step's title, and under it the **progress line** while the active step
   waits for something that can be counted: each numeric fact of its `done` condition with
   its value and target ("Systems explored: 3 of 5", "Turns: 1 of 3"; facts under `not`
-  are left out), then the step's `progress` facts without a target ("Turns: 2", "Combat
-  turn: 3"), for a step whose `done` is not a count ("end turns until you meet someone").
+  are left out), then the step's `progress` facts without a target once they are above 0 ("Turns: 2",
+  "Combat turn: 3"), for a step whose `done` is not a count ("end turns until you meet someone").
   `learn::LessonProgress::counters` makes it.
 - Tutorials: Back and Next. A step with a `done` condition moves on by itself the
   moment its condition holds (at once if it already holds when it is shown); Next stays
@@ -449,7 +449,9 @@ tutorial from its first step to its result through the client's own input, under
 input lock: each step done by clicking what it tells the player to click, Next only on
 steps that explain, never Skip or Free Play; `tutorial-wrong-ship.script` gives the colony ship the Explore
 order that tutorial 2 asks of an attack ship, and checks that the step waits for an attack
-ship and the colony is still founded. Others play each training game's briefing,
+ship and the colony is still founded; `tutorial-wrong-fleet.script` adds the colony ship to
+tutorial 5's fleet by mistake, and checks that the step waits and the fleet's orders still
+count. Others play each training game's briefing,
 first turns and Leave Game, the result dialog won and lost, the Learn window and the
 manual. They need your installed game:
 `OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py`. A lesson whose steps

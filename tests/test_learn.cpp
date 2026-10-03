@@ -791,12 +791,12 @@ TEST_CASE("learn conditions: design_type counts only vehicles and designs of tha
     game::Fleet f;
     f.id = game::FleetId{static_cast<uint32_t>(s.fleets.size())};
     f.owner = ev.me;
-    f.members = {a1, c1};
+    f.members = {c1};
     s.fleets.push_back(f);
     ev.mark = markNow(r, s, ev.me, ev.tracker);
     ev.tracker.issued(explore({}, f.id));
-    CHECK_FALSE(ev("{ order = \"explore\", design_type = \"Attack Ship\" }"));   // not every member is one
-    s.fleets.back().members = {a1, a2};
+    CHECK_FALSE(ev("{ order = \"explore\", design_type = \"Attack Ship\" }"));   // no attack ship in it
+    s.fleets.back().members = {a1, c1};   // one is enough: a ship added by mistake blocks nothing
     CHECK(ev("{ order = \"explore\", design_type = \"Attack Ship\" }"));
 
     // Commands that name designs and vehicles.
@@ -1374,6 +1374,8 @@ progress = "battle_turn"
     for (size_t i = 0; i < s.empires[0].relations.size(); ++i) s.empires[0].relations[i].contact = false;
     LessonProgress p(*l, r, s, me);
     ClientFacts client;
+    // A count without a target shows once it has begun.
+    REQUIRE(p.counters(r, s, me, client).size() == 1);
     s.turn += 2;
     p.update(r, s, me, client);
     // The condition's counters first, then the list's (each fact once).
@@ -1382,6 +1384,7 @@ progress = "battle_turn"
     CHECK(list[0].text() == "Empires met: 0 of 1");
     CHECK(list[1].text() == "Turns: 2");
     p.skip(r, s, me);
+    CHECK(p.counters(r, s, me, client).empty());   // no battle yet
     client.battleTurn = 3;
     list = p.counters(r, s, me, client);
     REQUIRE(list.size() == 1);

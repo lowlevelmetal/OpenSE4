@@ -66,7 +66,8 @@ text = """
 **Click your other attack ship** in the list of ships outside fleets: its name begins with
 **{design:Attack Ship}**. It joins the selected fleet.
 
-Leave the colony ship out: a fleet moves at the speed of its slowest ship.
+Leave the colony ship out: a fleet moves at the speed of its slowest ship. A click on a ship in
+the fleet's list takes it out again.
 """
 highlight = ["fleet-transfer:ships", "fleet-transfer:fleets"]
 done = { command = "JoinFleet", design_type = "Attack Ship" }
