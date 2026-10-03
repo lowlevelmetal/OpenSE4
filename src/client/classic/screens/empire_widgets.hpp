@@ -87,11 +87,7 @@ int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<Proj
 // least one, times the turn length ("0.3 years"); "Never" without points
 // (OpenSE4's word, inferred).
 std::string completionText(int64_t remaining, int64_t perTurn);
-// Text with its glyph cell's top at `at` (window coordinates of `d`) in a font
-// of `size` frame pixels whose face has `lead` (ui.hpp kTextLead ...).
-void textAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text);
-// The same, right-aligned to x.
-void textRightAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text);
+
 
 // The last command result or notice, shown under a window's content.
 class StatusLine {

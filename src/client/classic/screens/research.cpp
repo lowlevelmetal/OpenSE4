@@ -2,6 +2,7 @@
 
 #include "client/classic/screens/empire_logic.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/pointers.hpp"
 #include "client/classic/screens/screens.hpp"

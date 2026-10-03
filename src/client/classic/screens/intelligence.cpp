@@ -1,6 +1,7 @@
 // Intelligence window (docs/spec/06 §1.5, docs/spec/05 §2).
 
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 

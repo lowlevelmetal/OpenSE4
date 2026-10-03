@@ -1,4 +1,5 @@
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 
 #include <algorithm>
@@ -181,16 +182,6 @@ void projectPageButtons(Dialog& d, int& page) {
         const std::string label = std::format("Projects {}-{}", p * kProjectsPerPage + 1, (p + 1) * kProjectsPerPage);
         if (d.tab(label.c_str(), page == p)) page = p;
     }
-}
-
-void textAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text) {
-    const ImVec2 p = d.at({at.x, at.y + lead});
-    ImGui::GetWindowDrawList()->AddText(font, ui.fontPx(size), {std::floor(p.x), std::floor(p.y)}, color, text.data(), text.data() + text.size());
-}
-
-void textRightAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text) {
-    const float w = font->CalcTextSizeA(ui.fontPx(size), FLT_MAX, 0.0f, text.data(), text.data() + text.size()).x / ui.k();
-    textAt(ui, d, font, size, lead, {at.x - w, at.y}, color, text);
 }
 
 std::string completionText(int64_t remaining, int64_t perTurn) {
