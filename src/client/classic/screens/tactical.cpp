@@ -27,6 +27,7 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
+#include "client/script/items.hpp"
 
 #include "game/abilities.hpp"
 #include "game/combat.hpp"
@@ -576,6 +577,8 @@ private:
             }
         }
 
+        if (script::collectingItems()) reportPieces(b, v, paint, sel);
+
         // What a click would do, shown by the pointer.
         const bool ours = u.begun && sel && side.valid() && sel->owner == side && b.awaitingOrders();
         const TacticalPiece* over = hovered && *hovered < b.pieces().size() ? &b.pieces()[*hovered] : nullptr;
@@ -632,6 +635,27 @@ private:
         }
         // Right-click: the Combat Piece Report (spec 06 §1.10.1).
         if (hoveredBox && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && hovered) openReport(ui, int(*hovered));
+    }
+
+    // Input scripts (docs/BUILDING.md "Input scripts"): the pieces on the map as
+    // piece:own (the player's), piece:enemy and piece:other (obstacles), and the
+    // squares around the selected piece as square:dx,dy.
+    void reportPieces(const TacticalBattle& b, const CombatView& v, const CombatMapPainter& paint, const TacticalPiece* sel) const {
+        for (size_t i = 0; i < b.pieces().size() && i < playback_.pieces().size(); ++i) {
+            const TacticalPiece& p = b.pieces()[i];
+            if (!p.alive || !playback_.pieces()[i].onMap) continue;
+            const ImVec2 c = paint.piecePos(v, uint32_t(i));
+            const float h = std::max(2.0f, v.cell * float(p.size) * 0.5f);
+            const char* kind = b.isPlayer(p.owner) ? "piece:own" : p.kind == PieceKind::Obstacle ? "piece:other" : "piece:enemy";
+            script::reportItem(kind, ImVec2(c.x - h, c.y - h), ImVec2(c.x + h, c.y + h));
+        }
+        if (!sel) return;
+        for (int dy = -4; dy <= 4; ++dy)
+            for (int dx = -4; dx <= 4; ++dx) {
+                const int x = sel->x + dx, y = sel->y + dy;
+                if ((dx == 0 && dy == 0) || x < 0 || y < 0 || x >= game::combat::kCombatMapWidth || y >= game::combat::kCombatMapHeight) continue;
+                script::reportItem(std::format("square:{},{}", dx, dy), v.at(float(x), float(y)), v.at(float(x + 1), float(y + 1)));
+            }
     }
 
     static void openReport(UiContext& ui, int piece) {

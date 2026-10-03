@@ -1,5 +1,7 @@
 #include "client/classic/widgets.hpp"
 
+#include "client/script/items.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -39,6 +41,7 @@ bool lampToggle(UiContext& ui, const char* label, bool* value, bool enabled) {
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const float h = std::max(ImGui::GetTextLineHeight(), ui.px(16));
     const bool clicked = ImGui::Selectable("##row", false, enabled ? 0 : ImGuiSelectableFlags_Disabled, ImVec2(0, h));
+    script::reportItem(label);   // input scripts find the row by its label
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float ls = ui.px(13);
     const ImVec2 l0{p.x + ui.px(3), p.y + (h - ls) * 0.5f};

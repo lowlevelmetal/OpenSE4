@@ -79,8 +79,10 @@ manual = "combat-windows#tactical-combat"
 [[step]]
 title = "Move"
 text = """
-Click one of your ships on the map to select it, then click an empty square to move it there. A
-ship moves half its normal speed each combat turn.
+The base is out of sight at first: turn the mouse wheel over the map to zoom out until you see
+it. Then click one of your ships on the map to select it, and click an empty square on the way to
+the base to move it there. A ship moves half its normal speed each combat turn: it goes as far
+toward the square as it can, and in the next turn you send it on.
 
 The chance to hit falls by 10 points for every square of distance, so get close.
 """

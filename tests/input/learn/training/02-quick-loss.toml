@@ -1,0 +1,22 @@
+# A training game for the input scripts (docs/BUILDING.md "Input scripts"): lost when its
+# deadline passes, after the second turn.
+title = "Quick loss"
+summary = "An objective nobody can meet in time."
+minutes = 1
+
+[setup]
+seed = 404
+computer_players = 1
+quadrant_size = "small"
+events = "none"
+
+[[objective]]
+text = "Hold 20 colonies"
+when = { colonies = 20 }
+by_turn = 1
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "No chance"
+text = "Twenty colonies by 2400.1 cannot be done: end two turns to see the game lost."
