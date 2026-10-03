@@ -163,6 +163,8 @@ def main():
     runs = [] if a.only_small else [(s, None) for s in chosen]
     if a.small or a.only_small:
         runs += [(s, SMALL) for s in chosen if marked(s, BOTH_MARK)]
+    if not runs:
+        sys.exit(f"nothing to play: none of the scripts chosen is marked '{BOTH_MARK}'")
 
     problems = [p for s in chosen for p in lint(s)]
     for p in problems:

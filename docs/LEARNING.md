@@ -212,13 +212,13 @@ so the player can check the name against the type.
 
 **The named row comes into view.** The designs the active step's tokens name are the rows it
 wants clicked. When Set Construction Queue's Available list or the Combat Simulator's Items to
-choose shows such a row out of view (the 800x600 layout shows fewer rows, a larger Text size
-too), the list scrolls it to its middle, once: the first time the list shows the row during
-that step (`lessonRow` in `client/classic/screens/list_widgets.hpp`; the runner fills
-`UiContext::lessonRows`). The player may scroll away again, so the step still says how to find
-the row ("If it is out of sight, scroll the list"). This keeps the step at one click at every
-layout and text size; outlining the list's arrows instead would give the player one more
-thing to do first.
+choose shows such a row out of view (the 800x600 layout shows fewer rows, and a long list may
+hold it far down), the list scrolls it to its middle, once: the first time the list shows the
+row during that step (`lessonRow` in `client/classic/screens/list_widgets.hpp`; the runner
+fills `UiContext::lessonRows`). The player may scroll away again, so the step still says how
+to find the row ("If it is out of sight, scroll the list"). This keeps the step at one click
+at either layout; outlining the list's arrows instead would give the player one more thing to
+do first.
 
 ## UI tags
 
