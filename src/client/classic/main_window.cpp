@@ -912,9 +912,13 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
 void MainWindow::update(UiContext& ui, bool blocked) {
     layOut(ui.map.left, ui.map.right);
     trackMovement(ui);
-    // The ending window, once when the game ends for this player (finale.hpp).
-    if (const auto ending = finale_.update(ui.state(), ui.session.player(), ui.session.kind()))
-        ui.open(ScreenId::Finale, ScreenArgs{.index = static_cast<int>(*ending)});
+    // The ending windows, each as it comes at a turn's start, one after
+    // another (finale.hpp, spec 06 §7 Q83).
+    if (const auto endings = finale_.update(ui.state(), ui.session.player(), ui.session.kind()); !endings.empty()) {
+        ScreenArgs args;
+        for (FinaleKind k : endings) args.text += (args.text.empty() ? "" : ",") + std::string(finaleArgName(k));
+        ui.open(ScreenId::Finale, std::move(args));
+    }
     prepareSectors(ui);
     if (!shown_.valid() && !ui.state().galaxy.systems.empty()) reset(ui);
     // Selections can vanish when a turn is processed.

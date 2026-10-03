@@ -470,6 +470,11 @@ void ItemReportPopup::draw(UiContext& ui) {
     ImGui::PopFont();
 }
 
+std::string_view treatyDescription(game::Treaty t) {
+    const auto i = static_cast<size_t>(t);
+    return i < kTreatyText.size() ? kTreatyText[i] : std::string_view{};
+}
+
 // ---- Widgets --------------------------------------------------------------------------------
 
 void drawSprite(const Sprite& s, ImVec2 min, ImVec2 max, ImU32 tint) {

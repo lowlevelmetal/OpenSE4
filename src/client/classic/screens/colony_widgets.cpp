@@ -454,7 +454,7 @@ void ScrapFacilitiesPopup::draw(UiContext& ui, StatusLine& status) {
 
 void ScrapTypePopup::open(std::vector<game::ObjectId> colonies) {
     colonies_ = std::move(colonies);
-    chosen_.reset();
+    checked_.clear();
     pending_ = true;
 }
 
@@ -489,8 +489,8 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
             for (int k = 0; k < n; ++k) t.refund += game::Resources::from(r.facility(f).cost).percentRounded(pct);
         }
     }
-    ImGui::TextColored(kTextDim, colonies_.empty() ? "Every facility of the chosen type on all %d colonies is scrapped."
-                                                   : "Every facility of the chosen type on the %d selected colonies is scrapped.",
+    ImGui::TextColored(kTextDim, colonies_.empty() ? "Every facility of each checked type on all %d colonies is scrapped."
+                                                   : "Every facility of each checked type on the %d chosen colonies is scrapped.",
                        colonyCount);
     const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
     if (beginListTable(ui, "##types", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter, ImVec2(0, -footer), kRowHeight)) {
@@ -501,8 +501,12 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
         for (const auto& [f, t] : types) {
-            const RowEvents ev = tableRow(ui, static_cast<int>(f), chosen_ == f);
-            if (ev.clicked || ev.doubleClicked) chosen_ = f;
+            const bool on = std::find(checked_.begin(), checked_.end(), f) != checked_.end();
+            const RowEvents ev = tableRow(ui, static_cast<int>(f), on);
+            if (ev.clicked || ev.doubleClicked) {
+                if (on) std::erase(checked_, f);
+                else checked_.push_back(f);
+            }
             cellImage(ui, ui.art.facility(r.facility(f).picture));
             ImGui::TableSetColumnIndex(1);
             cellText(ui, r.facility(f).name);
@@ -513,14 +517,16 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
         }
         endListTable(ui);
     }
-    if (chosen_ && !types.contains(*chosen_)) chosen_.reset();
-    const int b = popupButtons(ui, {{"Scrap All Of Type", chosen_.has_value()}, {"Cancel", true}});
-    if (b == 0 && chosen_) {
-        const auto commands = scrapFacilityType(s, me, *chosen_, colonies_);
-        const std::string name = r.facility(*chosen_).name;
-        int done = 0;
-        for (const auto& c : commands) done += status.issue(ui, c) ? 1 : 0;
-        if (done == static_cast<int>(commands.size())) status.info(std::format("Scrapped {} x {}", done, name));
+    std::erase_if(checked_, [&](uint32_t f) { return !types.contains(f); });
+    const int b = popupButtons(ui, {{"Scrap Checked Types", !checked_.empty()}, {"Cancel", true}});
+    if (b == 0 && !checked_.empty()) {
+        int done = 0, all = 0;
+        for (uint32_t f : checked_) {
+            const auto commands = scrapFacilityType(s, me, f, colonies_);
+            all += static_cast<int>(commands.size());
+            for (const auto& c : commands) done += status.issue(ui, c) ? 1 : 0;
+        }
+        if (done == all) status.info(std::format("Scrapped {} facilit{} of {} type{}", done, done == 1 ? "y" : "ies", checked_.size(), checked_.size() == 1 ? "" : "s"));
         ImGui::CloseCurrentPopup();
     }
     if (b == 1 || escapePressed()) ImGui::CloseCurrentPopup();

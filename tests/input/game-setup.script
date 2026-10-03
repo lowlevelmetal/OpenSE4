@@ -67,6 +67,10 @@ wait-for item:"Add New" in=front
 assert-enabled item:Edit in=front
 click item:"Begin Game" in=front
 wait-screen game
+# A game whose other empires are all gone (on the fixtures, the player's alone) shows the
+# conquest ending at once, then asks whether to play on (spec 05 §6, spec 06 §7 Q83).
+click item:Close in=finale optional
+click item:Yes in=finale optional
 
 # Empire Status: Change Email holds the address; OK gives the Change Email command.
 key F11

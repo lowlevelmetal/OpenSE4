@@ -24,7 +24,7 @@ constexpr WindowInfo kWindows[] = {
     {"fleet-transfer"}, {"cargo-transfer"}, {"launch-recover"}, {"scrap"}, {"view-orders"}, {"select-waypoint"},
     {"stellar-manipulation"}, {"rename"}, {"abandon-planet", false}, {"jettison-cargo", false}, {"convert-resources", false},
     {"communicate"}, {"intelligence"}, {"treaty-grid"}, {"scores"}, {"comparisons"}, {"history"}, {"race-report"},
-    {"victory-conditions"},
+    {"victory-conditions"}, {"borders"},
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},
     {"tactical-launch", false}, {"combat-piece-report", false}, {"combat-replay-options", false},
     {"combat-simulator"}, {"strategic-combat", false}, {"ground-combat", false}, {"finale", false},
@@ -33,7 +33,7 @@ constexpr WindowInfo kWindows[] = {
 };
 
 // The Help window's tabs (screens/help.cpp), and its Weapons Report.
-constexpr std::array<std::string_view, 10> kHelpTabs{"components", "facilities", "ship-sizes", "unit-sizes", "tech-areas",
+constexpr std::array<std::string_view, 11> kHelpTabs{"components", "weap-mount", "facilities", "ship-sizes", "unit-sizes", "tech-areas",
                                                      "treaties",   "intel-projects", "formations", "hotkeys", "weapons"};
 
 constexpr std::array<std::string_view, 10> kSelectionKinds{"planet", "colony", "ship", "base", "unit",
@@ -142,6 +142,7 @@ constexpr std::string_view kOtherTags[] = {
     "research:divide-evenly", "research:repeat",
     "log:messages", "log:categories", "log:send-reply",
     "empires:list", "empires:intelligence",
+    "intelligence:projects", "intelligence:queue",
     "communicate:message-type", "communicate:treaty", "communicate:send",
     // The lesson panel itself.
     "lesson:panel", "lesson:next", "lesson:read-more", "lesson:free-play", "lesson:leave",
@@ -210,6 +211,8 @@ constexpr OptionInfo kOptions[] = {
     {"replay-fast", [](const game::Empire& e) { return e.interfaceOptions.replayFast; }},
     {"replay-view-rect", [](const game::Empire& e) { return e.interfaceOptions.replayViewRect; }},
     {"replay-grid", [](const game::Empire& e) { return e.interfaceOptions.replayGrid; }},
+    {"design-to-hit", [](const game::Empire& e) { return e.interfaceOptions.designToHit; }},
+    {"design-condensed", [](const game::Empire& e) { return e.interfaceOptions.designCondensed; }},
 };
 
 constexpr std::pair<game::Treaty, std::string_view> kTreaties[] = {
@@ -344,6 +347,16 @@ std::optional<game::Treaty> treatyFromId(std::string_view id) {
 bool isUiTag(std::string_view tag) {
     if (tag.starts_with("window:")) return findWindow(tag.substr(7)) != nullptr;
     if (tag.ends_with(":close")) return findWindow(tag.substr(0, tag.size() - 6)) != nullptr;
+    // A list's arrow column: `<list tag>:up` (and down, track, thumb) for a
+    // tagged list, `<window id>:<list id>:up` for every list of a window.
+    for (std::string_view part : {":up", ":down", ":track", ":thumb"}) {
+        if (!tag.ends_with(part)) continue;
+        const std::string_view list = tag.substr(0, tag.size() - part.size());
+        if (isUiTag(list)) return true;
+        const size_t colon = list.find(':');
+        return colon != std::string_view::npos && colon + 1 < list.size() && list.find(':', colon + 1) == std::string_view::npos &&
+               findWindow(list.substr(0, colon)) != nullptr;
+    }
     const auto tags = fixedUiTags();
     return std::find(tags.begin(), tags.end(), tag) != tags.end();
 }

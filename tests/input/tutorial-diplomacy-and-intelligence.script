@@ -100,8 +100,8 @@ wait-step 13
 click tag:empires:intelligence
 wait-window intelligence
 wait-step 14
-# 14 A first project: the defense project, the only row of the list (after the two headings).
-click item:* in=intelligence nth=3
+# 14 A first project: the defense project, the first row of the list (its first item).
+click item:* in=tag:intelligence:projects nth=1
 wait-step 15
 assert { command = "SetIntel" }
 # 15 Well done: Finish.

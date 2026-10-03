@@ -1,11 +1,15 @@
-// Help (F1): the in-game encyclopedia (docs/spec/06 §1.2). Tabs list what the
-// empire knows — researched components, facilities and vehicle sizes,
-// visible tech areas, available intelligence projects — plus treaties,
-// formations and the main-window hotkeys. The Weapons Report is a second
+// Help (F1): the in-game encyclopedia (docs/spec/06 §1.2), in the original's
+// layout (spec 07 session 5): "Items" over a lamp list of names in
+// alphabetical order at (17,58), 271x404, the first chosen when a tab opens;
+// "Item Details" over the detail box (296,58)-(573,462). Tabs list what the
+// empire knows: researched components, weapon mounts, facilities and vehicle
+// sizes, visible tech areas, available intelligence projects, plus the
+// treaties, formations and the hotkey groups. The Weapons Report is a second
 // mode of the same window: a damage-by-range grid of the known weapons.
+// Ours: a Find box in the heading row over the list.
 //
 // Opening arguments (ScreenArgs::text): a tab name ("components",
-// "facilities", "shipsizes", "unitsizes", "techareas", "treaties",
+// "weapmount", "facilities", "shipsizes", "unitsizes", "techareas", "treaties",
 // "intelprojects", "formations", "hotkeys") with `index` selecting an item, or
 // "weapons" for the Weapons Report with `index` as the initial weapon mount.
 
@@ -15,6 +19,8 @@
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/widgets.hpp"
+#include "client/script/items.hpp"
 
 #include "game/design.hpp"
 
@@ -32,10 +38,16 @@ namespace {
 using Kind = ItemRef::Kind;
 using ruleset::WeaponKind;
 
-enum class HelpTab : uint8_t { Components, Facilities, ShipSizes, UnitSizes, TechAreas, Treaties, IntelProjects, Formations, Hotkeys, Count };
+enum class HelpTab : uint8_t {
+    Components, WeapMounts, Facilities, ShipSizes, UnitSizes, TechAreas, Treaties, IntelProjects, Formations, Hotkeys, Count
+};
 constexpr size_t kTabCount = static_cast<size_t>(HelpTab::Count);
-constexpr std::array<const char*, kTabCount> kTabLabels{"Components", "Facilities",     "Ship Sizes", "Unit Sizes", "Tech Areas",
-                                                        "Treaties",   "Intel Projects", "Formations", "Hotkeys"};
+constexpr std::array<const char*, kTabCount> kTabLabels{"Components", "Weap Mount",     "Facilities", "Ship Sizes", "Unit Sizes",
+                                                        "Tech Areas", "Treaties", "Intel Projects", "Formations", "Hotkeys"};
+
+// The Hotkeys tab's groups (spec 07 session 5).
+constexpr std::array<const char*, 6> kHotkeyGroups{"All Windows", "Main Window - Commands", "Main Window - Orders 1",
+                                                   "Main Window - Orders 2", "Main Window - Selection", "Tactical Combat"};
 
 // ---- Hotkeys (docs/spec/06 §3) ---------------------------------------------------------------
 // The main window's keys as they are bound now (Settings -> Controls), in our
@@ -61,11 +73,13 @@ std::vector<Hotkey> boundKeys(std::initializer_list<std::string_view> groups) {
     return out;
 }
 
+// One row of the item list: a catalogue item, or (`special` from 0) a weapon
+// mount or a hotkey group.
 struct Entry {
     ItemRef ref;
+    int special = -1;
     std::string name;
-    std::string group;
-    std::string right;
+    bool operator==(const Entry& o) const { return ref == o.ref && special == o.special; }
 };
 
 std::string squash(std::string_view in) {
@@ -105,10 +119,9 @@ private:
     bool drawDialog(UiContext& ui) {
         Dialog d(ui, weapons_ ? "Weapons Report###help" : "Help###help", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
-        d.beginContent();
+        d.beginContent(weapons_ ? 0.0f : 576.0f);
         if (weapons_) weaponsReport(ui);
-        else if (tab_ == HelpTab::Hotkeys) hotkeys(ui);
-        else topics(ui);
+        else topics(ui, d);
         d.beginButtons();
         if (weapons_) weaponButtons(ui, d);
         else topicButtons(ui, d);
@@ -126,163 +139,413 @@ private:
         switch (tab_) {
             case HelpTab::Components:
                 for (uint32_t i = 0; i < data.components.size(); ++i)
-                    if (r.componentAvailable(me, i))
-                        out.push_back({{Kind::Component, i}, data.components[i].name, data.components[i].generalGroup,
-                                       std::format("{} kT", data.components[i].tonnage)});
+                    if (r.componentAvailable(me, i)) out.push_back({{Kind::Component, i}, -1, data.components[i].name});
+                break;
+            case HelpTab::WeapMounts:
+                for (uint32_t i = 0; i < data.weaponMounts.size(); ++i)
+                    if (r.mountAvailable(me, i)) out.push_back({{}, int(i), data.weaponMounts[i].longName});
                 break;
             case HelpTab::Facilities:
                 for (uint32_t i = 0; i < data.facilities.size(); ++i)
-                    if (r.facilityAvailable(me, i)) out.push_back({{Kind::Facility, i}, data.facilities[i].name, data.facilities[i].group, {}});
+                    if (r.facilityAvailable(me, i)) out.push_back({{Kind::Facility, i}, -1, data.facilities[i].name});
                 break;
             case HelpTab::ShipSizes:
             case HelpTab::UnitSizes:
                 for (uint32_t i = 0; i < data.vehicleSizes.size(); ++i) {
                     const auto& h = data.vehicleSizes[i];
                     if (isUnitHull(h.type) != (tab_ == HelpTab::UnitSizes) || !r.hullAvailable(me, i)) continue;
-                    out.push_back({{Kind::Hull, i}, h.name, std::string(ruleset::displayName(h.type)), std::format("{} kT", h.tonnage)});
+                    out.push_back({{Kind::Hull, i}, -1, h.name});
                 }
                 break;
             case HelpTab::TechAreas:
-                for (uint32_t i = 0; i < data.techAreas.size(); ++i) {
-                    const ruleset::TechAreaId id{i};
-                    if (!r.techVisible(ui.state(), me, id)) continue;
-                    out.push_back({{Kind::TechArea, i}, data.techAreas[i].name, data.techAreas[i].group,
-                                   std::format("{}/{}", me.techLevel(id), data.techAreas[i].maxLevel)});
-                }
+                for (uint32_t i = 0; i < data.techAreas.size(); ++i)
+                    if (r.techVisible(ui.state(), me, ruleset::TechAreaId{i})) out.push_back({{Kind::TechArea, i}, -1, data.techAreas[i].name});
                 break;
             case HelpTab::Treaties:
+                // The nine treaty types, without None.
                 for (uint32_t i = 0; i < static_cast<uint32_t>(game::Treaty::Count); ++i)
-                    out.push_back({{Kind::Treaty, i}, std::string(game::displayName(static_cast<game::Treaty>(i))), {}, {}});
+                    if (static_cast<game::Treaty>(i) != game::Treaty::None)
+                        out.push_back({{Kind::Treaty, i}, -1, std::string(game::displayName(static_cast<game::Treaty>(i)))});
                 break;
             case HelpTab::IntelProjects:
                 for (uint32_t i = 0; i < data.intelProjects.size(); ++i)
-                    if (r.meets(me, data.intelProjects[i].requirements))
-                        out.push_back({{Kind::IntelProject, i}, data.intelProjects[i].name, data.intelProjects[i].group,
-                                       formatNumber(data.intelProjects[i].cost)});
+                    if (r.meets(me, data.intelProjects[i].requirements)) out.push_back({{Kind::IntelProject, i}, -1, data.intelProjects[i].name});
                 break;
             case HelpTab::Formations:
-                for (uint32_t i = 0; i < data.formations.size(); ++i)
-                    out.push_back({{Kind::Formation, i}, data.formations[i].name, {}, std::to_string(data.formations[i].positions.size())});
+                for (uint32_t i = 0; i < data.formations.size(); ++i) out.push_back({{Kind::Formation, i}, -1, data.formations[i].name});
                 break;
             case HelpTab::Hotkeys:
+                // The groups in their own order, not sorted.
+                for (size_t i = 0; i < kHotkeyGroups.size(); ++i) out.push_back({{}, int(i), kHotkeyGroups[i]});
+                return out;
             case HelpTab::Count: break;
         }
-        // Groups alphabetically (vehicle sizes by class); data order inside a group, which
-        // follows each family's numerals and the hull sizes.
-        if (tab_ == HelpTab::ShipSizes || tab_ == HelpTab::UnitSizes)
-            std::stable_sort(out.begin(), out.end(), [&](const Entry& a, const Entry& b) {
-                return data.vehicleSizes[a.ref.index].type < data.vehicleSizes[b.ref.index].type;
+        // Only names, in alphabetical order (spec 07 session 5).
+        std::stable_sort(out.begin(), out.end(), [](const Entry& a, const Entry& b) {
+            return std::lexicographical_compare(a.name.begin(), a.name.end(), b.name.begin(), b.name.end(), [](char x, char y) {
+                return std::tolower(static_cast<unsigned char>(x)) < std::tolower(static_cast<unsigned char>(y));
             });
-        else std::stable_sort(out.begin(), out.end(), [](const Entry& a, const Entry& b) { return a.group < b.group; });
+        });
         return out;
     }
 
-    float iconSize() const {
-        switch (tab_) {
-            case HelpTab::TechAreas:
-            case HelpTab::IntelProjects: return 16.0f;
-            case HelpTab::Treaties: return 0.0f;
-            case HelpTab::Formations: return 20.0f;
-            default: return 28.0f;
-        }
-    }
-
-    void topics(UiContext& ui) {
+    void topics(UiContext& ui, const Dialog& d) {
         const size_t t = static_cast<size_t>(tab_);
         std::vector<Entry> all = entries(ui);
         std::vector<const Entry*> shown;
         for (const Entry& e : all)
             if (containsNoCase(e.name, filter_.data())) shown.push_back(&e);
-
         if (pendingSelect_) {
             for (const Entry& e : all)
-                if (e.ref.index == *pendingSelect_) selection_[t] = e.ref;
+                if (e.ref.valid() ? e.ref.index == *pendingSelect_ : e.special == int(*pendingSelect_)) selection_[t] = e;
             pendingSelect_.reset();
         }
-        const bool selectionShown = std::any_of(shown.begin(), shown.end(), [&](const Entry* e) { return e->ref == selection_[t]; });
-        if (!selectionShown && !shown.empty()) selection_[t] = shown.front()->ref;
+        const bool selectionShown = std::any_of(shown.begin(), shown.end(), [&](const Entry* e) { return *e == selection_[t]; });
+        if (!selectionShown && !shown.empty()) selection_[t] = *shown.front();
 
-        // Left: the item list with a find box.
-        const float listW = ui.px(290);
-        ImGui::BeginGroup();
-        ImGui::SetNextItemWidth(listW);
+        const ImU32 blue = imColor(palette::kLabel);
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {17, 39}, blue, "Items");
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {295, 39}, blue, "Item Details");
+        // Ours: the Find box, in the heading row beside "Items".
+        ImGui::SetCursorScreenPos(d.at({62, 37}));
+        ImGui::SetNextItemWidth(ui.px(226));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ui.px(3), 0));
         ImGui::InputTextWithHint("##find", "Find...", filter_.data(), filter_.size());
-        beginList(ui, "##items", ImVec2(listW, 0), 26, ImGuiChildFlags_AlwaysUseWindowPadding);
-        std::string lastGroup;
+        ImGui::PopStyleVar();
+
+        // The list: 18 px rows, a lamp (green for the item shown) and the name.
+        ImGui::SetCursorScreenPos(d.at({17, 58}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        beginList(ui, "##items", ui.size({271, 404}), kRowH);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float w = ImGui::GetContentRegionAvail().x;
+        const Sprite green = ui.art.region("Pictures/Game/General.bmp", 190, 0, 13, 13);
+        const Sprite blueLamp = ui.art.region("Pictures/Game/General.bmp", 177, 0, 13, 13);
         for (size_t i = 0; i < shown.size(); ++i) {
             const Entry& e = *shown[i];
-            if (!e.group.empty() && (i == 0 || e.group != lastGroup)) listHeading(ui, e.group);
-            lastGroup = e.group;
-            const bool selected = e.ref == selection_[t];
-            RowStyle style;
-            style.icon = iconSize();
-            style.right = e.right;
-            const RowResult row = itemRow(ui, static_cast<int>(i), itemIcon(ui, e.ref), e.name, selected, style);
+            const bool selected = e == selection_[t];
+            ImGui::PushID(static_cast<int>(i));
+            const ImVec2 a = ImGui::GetCursorScreenPos();
+            if (ImGui::InvisibleButton("##row", ImVec2(w, ui.px(kRowH)))) selection_[t] = e;
+            script::reportItem(e.name);   // input scripts find a row by its name
+            if (e.ref.valid() && ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open(e.ref);
+            ImGui::PopID();
             if (selected && scrollToSelection_) {
                 ImGui::SetScrollHereY(0.3f);
                 scrollToSelection_ = false;
             }
-            if (row.clicked) selection_[t] = e.ref;
-            if (row.rightClicked) popup_.open(e.ref);
+            if (const Sprite& lamp = selected ? green : blueLamp) drawSprite(lamp, {a.x + ui.px(3), a.y + ui.px(3)}, {a.x + ui.px(16), a.y + ui.px(16)});
+            dl->PushClipRect(a, {a.x + w, a.y + ui.px(kRowH)}, true);
+            dl->AddText({a.x + ui.px(21), a.y + ui.px(1 + kTextLead - 2)}, IM_COL32_WHITE, e.name.c_str());
+            dl->PopClipRect();
         }
         scrollToSelection_ = false;
         if (shown.empty()) ImGui::TextColored(kDimText, all.empty() ? "Nothing known yet." : "No match.");
         endList(ui);
-        ImGui::EndGroup();
+        ImGui::PopStyleVar(2);
 
-        // Right: everything about the selected item.
-        ImGui::SameLine();
-        ImGui::BeginChild("##detail", ImVec2(0, 0), ImGuiChildFlags_Borders);
-        if (!shown.empty()) itemDetail(ui, selection_[t], DetailStyle::Full);
+        // The detail box.
+        ImGui::SetCursorScreenPos(d.at({296, 58}));
+        ImGui::PushStyleColor(ImGuiCol_Border, imColorV(palette::kFrameLight));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::BeginChild("##detail", ui.size({277, 404}), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        if (!shown.empty()) detail(ui, selection_[t]);
         ImGui::EndChild();
     }
 
-    void hotkeys(UiContext& ui) {
-        auto table = [&](const char* id, const char* heading, const std::vector<Hotkey>& keys) {
-            listHeading(ui, heading);
-            if (ImGui::BeginTable(id, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
-                ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthFixed, ui.px(120));
-                ImGui::TableSetupColumn("action", ImGuiTableColumnFlags_WidthStretch);
-                for (const Hotkey& k : keys) {
-                    ImGui::TableNextRow();
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(ImVec4(1.0f, 0.86f, 0.45f, 1.0f), "%s", k.keys.c_str());
-                    ImGui::TableNextColumn();
-                    ImGui::PushTextWrapPos(0.0f);
-                    ImGui::TextUnformatted(k.action.c_str());
-                    ImGui::PopTextWrapPos();
-                }
-                ImGui::EndTable();
+    // ---- The detail box (spec 07 session 5) ----------------------------------------------------
+    // A component or facility: the 128 px picture at its top left, the name in
+    // the title font beside it (right-aligned for a vehicle size), a short
+    // description in small grey type under the name, then the figures and
+    // "Abilities" with a blue dot before each line. Tech areas, treaties and
+    // intelligence projects: the name and a description. Formations: the grid.
+
+    void detail(UiContext& ui, const Entry& e) {
+        if (tab_ == HelpTab::Hotkeys) {
+            hotkeyGroup(ui, e.special);
+            return;
+        }
+        if (tab_ == HelpTab::WeapMounts) {
+            mountDetail(ui, e.special);
+            return;
+        }
+        const game::Rules& r = ui.rules();
+        switch (e.ref.kind) {
+            case Kind::Component: {
+                const ruleset::Component& c = r.component(e.ref.index);
+                Sprite pic = ui.art.componentPortrait(c.picture);
+                if (!pic) pic = ui.art.component(c.picture);
+                header(ui, pic, c.name, c.description, false);
+                figure(ui, "Cost", {});
+                costLine(ui, game::Resources::from(c.cost));
+                figure(ui, "Size", std::format("{} kT", c.tonnage));
+                figure(ui, "Damage Resistance", std::to_string(c.structure));
+                figure(ui, "Supplies Used", std::to_string(c.supplyUsed));
+                figure(ui, "Vehicle Types", vehicleTypesText(c));
+                abilities(ui, c.abilities);
+                break;
             }
-        };
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(kDimText, "The main window's keys as bound now (Settings, Controls). An order key works while its button is lit.");
-        ImGui::PopTextWrapPos();
-        std::vector<Hotkey> orders = boundKeys({"Orders"});
-        orders.push_back({"Ctrl+0..9", "Move to waypoint 0..9"});
-        orders.push_back({"Alt+0..9", "Set waypoint 0..9 at the selected sector"});
-        std::vector<Hotkey> selection = boundKeys({"Selection", "Display"});
-        selection.push_back({"Shift+click", "Tag a ship in the list (a fleet is tagged whole)"});
-        selection.push_back({"Left or right click", "Select in the system view; a list row opens its report"});
-        selection.push_back({"Right click (galaxy)", "Open the Galaxy Map"});
-        const float colW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        beginList(ui, "##keysA", ImVec2(colW, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-        table("##windows", "Windows", boundKeys({"Windows"}));
-        ImGui::Spacing();
-        table("##selection", "Selection, Display and Mouse", selection);
-        endList(ui);
-        ImGui::SameLine();
-        beginList(ui, "##keysB", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-        table("##orders", "Orders", orders);
-        ImGui::Spacing();
-        table("##replay", "Movement Log (simultaneous games)", boundKeys({"Movement log"}));
-        endList(ui);
+            case Kind::Facility: {
+                const ruleset::Facility& f = r.facility(e.ref.index);
+                Sprite pic = ui.art.facilityPortrait(f.picture);
+                if (!pic) pic = ui.art.facility(f.picture);
+                header(ui, pic, f.name, f.description, false);
+                figure(ui, "Cost", {});
+                costLine(ui, game::Resources::from(f.cost));
+                abilities(ui, f.abilities);
+                break;
+            }
+            case Kind::Hull: {
+                const ruleset::VehicleSize& h = r.hull(e.ref.index);
+                header(ui, ui.art.shipPortrait(ui.me().race.style, h), h.name, h.description, true);
+                figure(ui, "Cost", {});
+                costLine(ui, game::Resources::from(h.cost));
+                figure(ui, "Size", std::format("{} kT", h.tonnage));
+                figure(ui, "Vehicle Type", std::string(ruleset::displayName(h.type)));
+                abilities(ui, h.abilities);
+                break;
+            }
+            case Kind::TechArea: {
+                const ruleset::TechArea& a = r.tech(ruleset::TechAreaId{e.ref.index});
+                nameAndText(ui, a.name, a.description);
+                break;
+            }
+            case Kind::Treaty:
+                nameAndText(ui, e.name, std::string(treatyDescription(static_cast<game::Treaty>(e.ref.index))));
+                break;
+            case Kind::IntelProject: {
+                const ruleset::IntelProject& p = r.data().intelProjects[e.ref.index];
+                nameAndText(ui, p.name, p.description);
+                break;
+            }
+            case Kind::Formation:
+                ImGui::SetCursorPos(ui.size({4, 4}));
+                ImGui::BeginGroup();
+                itemDetail(ui, e.ref, DetailStyle::Full);
+                ImGui::EndGroup();
+                break;
+            case Kind::None: break;
+        }
     }
 
+    // The picture and the name, with the description beside the picture
+    // (a vehicle size's name right-aligned); the figures start under it.
+    void header(UiContext& ui, const Sprite& pic, const std::string& name, const std::string& description, bool nameRight) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 o = ImGui::GetWindowPos();
+        if (pic) drawSprite(pic, {o.x + ui.px(2), o.y + ui.px(2)}, {o.x + ui.px(130), o.y + ui.px(130)});
+        // The name in the title font; a name too long for one line is
+        // word-wrapped (ours: the original's long names are not described).
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+        std::vector<std::string> lines;
+        {
+            std::string line;
+            size_t i = 0;
+            while (i < name.size()) {
+                const size_t j = std::min(name.find(' ', i), name.size());
+                const std::string word = name.substr(i, j - i);
+                const std::string longer = line.empty() ? word : line + " " + word;
+                if (!line.empty() && ImGui::CalcTextSize(longer.c_str()).x > ui.px(140)) {
+                    lines.push_back(line);
+                    line = word;
+                } else {
+                    line = longer;
+                }
+                i = j + 1;
+            }
+            if (!line.empty()) lines.push_back(line);
+        }
+        float y = 4.0f;
+        dl->PushClipRect({o.x + ui.px(134), o.y}, {o.x + ui.px(276), o.y + ui.px(128)}, true);
+        for (const std::string& l : lines) {
+            const float nw = ImGui::CalcTextSize(l.c_str()).x;
+            const float nx = nameRight ? std::max(o.x + ui.px(134), o.x + ui.px(273) - nw) : o.x + ui.px(134);
+            dl->AddText({nx, o.y + ui.px(y + kTitleLead)}, IM_COL32_WHITE, l.c_str());
+            y += 18.0f;
+        }
+        dl->PopClipRect();
+        ImGui::PopFont();
+        ImGui::SetCursorPos(ui.size({134, y + 4}));
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        ImGui::PushTextWrapPos(ui.px(273));
+        ImGui::TextColored(imColorV(palette::kSecondary), "%s", description.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+        figureY_ = std::max(136.0f, ImGui::GetCursorPosY() / ui.k() + 4.0f);
+    }
+
+    void nameAndText(UiContext& ui, const std::string& name, const std::string& text) {
+        ImGui::SetCursorPos(ui.size({4, 4}));
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+        ImGui::TextUnformatted(name.c_str());
+        ImGui::PopFont();
+        ImGui::SetCursorPosX(ui.px(4));
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        ImGui::PushTextWrapPos(ui.px(271));
+        ImGui::TextColored(imColorV(palette::kSecondary), "%s", text.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+    }
+
+    // A figure: the label in label blue at x 4, the value at x 120.
+    void figure(UiContext& ui, const char* label, const std::string& value) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 o = ImGui::GetWindowPos();
+        dl->AddText({o.x + ui.px(4), o.y + ui.px(figureY_ + kTextLead - 3)}, imColor(palette::kLabel), label);
+        if (!value.empty()) {
+            dl->PushClipRect({o.x + ui.px(120), o.y}, {o.x + ui.px(276), o.y + ui.px(404)}, true);
+            dl->AddText({o.x + ui.px(120), o.y + ui.px(figureY_ + kTextLead - 3)}, IM_COL32_WHITE, value.c_str());
+            dl->PopClipRect();
+        }
+        figureY_ += 16.0f;
+    }
+
+    // The three amounts of a cost on the line under its label, each with its icon.
+    void costLine(UiContext& ui, const game::Resources& cost) {
+        static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
+        static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 o = ImGui::GetWindowPos();
+        figureY_ -= 16.0f;   // on the label's line, from x 120
+        float x = 120.0f;
+        for (size_t i = 0; i < 3; ++i) {
+            const std::string v = formatNumber(cost.v[i]);
+            dl->AddText({o.x + ui.px(x), o.y + ui.px(figureY_ + kTextLead - 3)}, imColor(kColors[i]), v.c_str());
+            x += ImGui::CalcTextSize(v.c_str()).x / ui.k() + 1.0f;
+            drawSprite(ui.art.icon16(kIcons[i]), {o.x + ui.px(x), o.y + ui.px(figureY_)}, {o.x + ui.px(x + 14), o.y + ui.px(figureY_ + 14)});
+            x += 18.0f;
+        }
+        figureY_ += 16.0f;
+    }
+
+    // "Abilities", then a blue dot before each line, "None" without any.
+    void abilities(UiContext& ui, std::span<const ruleset::Ability> list) {
+        figureY_ += 4.0f;
+        figure(ui, "Abilities", {});
+        ImGui::SetCursorPos(ui.size({4, figureY_}));
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        auto line = [&](const std::string& text) {
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            dl->AddCircleFilled({at.x + ui.px(5), at.y + ImGui::GetTextLineHeight() * 0.5f}, ui.px(2.5f), imColor(palette::kLabel));
+            ImGui::SetCursorPosX(ui.px(14));
+            ImGui::PushTextWrapPos(ui.px(273));
+            ImGui::TextUnformatted(text.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::SetCursorPosX(ui.px(4));
+        };
+        if (list.empty()) line("None");
+        for (const ruleset::Ability& a : list) line(abilityText(a));
+        ImGui::Dummy(ImVec2(0, 0));
+        ImGui::PopFont();
+    }
+
+    // A weapon mount: its code, cost, size, damage resistance, supply, the
+    // weapon type it takes, damage, to-hit and range modifiers, the vehicle
+    // type and the minimum size (spec 07 session 5).
+    void mountDetail(UiContext& ui, int index) {
+        const auto& mounts = ui.rules().data().weaponMounts;
+        if (index < 0 || static_cast<size_t>(index) >= mounts.size()) return;
+        const ruleset::WeaponMount& m = mounts[static_cast<size_t>(index)];
+        nameAndText(ui, m.longName, m.description);
+        figureY_ = ImGui::GetCursorPosY() / ui.k() + 6.0f;
+        figure(ui, "Code", m.code);
+        figure(ui, "Cost", std::format("{}%", m.costPercent));
+        figure(ui, "Size", std::format("{}%", m.tonnagePercent));
+        figure(ui, "Damage Resistance", std::format("{}%", m.structurePercent));
+        figure(ui, "Supply", std::format("{}%", m.supplyPercent));
+        figure(ui, "Weapon Type", m.weaponTypeRequirement.empty() ? std::string("Any") : m.weaponTypeRequirement);
+        figure(ui, "Damage", std::format("{}%", m.damagePercent));
+        figure(ui, "To Hit", std::format("{:+}%", m.toHitModifier));
+        figure(ui, "Range", std::format("{:+}", m.rangeModifier));
+        figure(ui, "Vehicle Type", m.vehicleType.empty() ? std::string("Any") : m.vehicleType);
+        figure(ui, "Minimum Size", std::format("{} kT", m.minimumVehicleSize));
+        ImGui::SetCursorPos(ui.size({4, figureY_}));
+        ImGui::Dummy(ImVec2(0, 0));
+    }
+
+    // The keys of one hotkey group in two columns, the keys and what they do:
+    // the main window's as bound now (Settings, Controls), in our own words.
+    void hotkeyGroup(UiContext& ui, int group) {
+        std::vector<Hotkey> keys;
+        switch (group) {
+            case 0:
+                keys = {{"Esc, Enter", "Close a window whose bottom button is Close"},
+                        {"Esc", "Close a window whose bottom button is Cancel"},
+                        {"Y, N", "Answer a Yes/No question (Esc and Enter mean No)"},
+                        {"Esc, Enter", "OK in a message box"},
+                        {"T, S", "Tactical or Strategic, when a battle asks"}};
+                break;
+            case 1: keys = boundKeys({"Windows"}); break;
+            case 2:
+            case 3: {
+                const std::vector<Hotkey> orders = boundKeys({"Orders"});
+                const size_t half = (orders.size() + 1) / 2;
+                if (group == 2) keys.assign(orders.begin(), orders.begin() + std::ptrdiff_t(half));
+                else {
+                    keys.assign(orders.begin() + std::ptrdiff_t(half), orders.end());
+                    keys.push_back({"Ctrl+0..9", "Move to waypoint 0..9"});
+                    keys.push_back({"Alt+0..9", "Set waypoint 0..9 at the selected sector"});
+                    for (Hotkey& k : boundKeys({"Movement log"})) keys.push_back(std::move(k));
+                }
+                break;
+            }
+            case 4:
+                keys = boundKeys({"Selection", "Display"});
+                keys.push_back({"Shift+click", "Tag a ship in the list (a fleet is tagged whole)"});
+                keys.push_back({"Right click (galaxy)", "Open the Galaxy Map"});
+                break;
+            case 5:
+                keys = {{"Alt+1..9", "Make the selected ship the leader of that group"},
+                        {"Ctrl+1..9", "Make the selected ship a member of that group"},
+                        {"Alt+0, Ctrl+0", "Clear the selected ship's group marks"},
+                        {"L", "Launch units from the selected ship"},
+                        {"T", "Drop troops on the adjacent colony"},
+                        {"R", "Ram a ship (then click it)"},
+                        {"C", "Capture a ship (then click it)"},
+                        {"E", "End the combat turn"},
+                        {"Space, Ctrl+N", "Next ship that can move"},
+                        {"Ctrl+B", "Previous ship that can move"},
+                        {"Ctrl+F, Ctrl+D", "Next, previous ship that can fire"},
+                        {"Shift+A, Shift+C", "Select all weapons, clear the weapons"}};
+                break;
+            default: break;
+        }
+        ImGui::SetCursorPos(ui.size({4, 4}));
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+        ImGui::TextUnformatted(group >= 0 && size_t(group) < kHotkeyGroups.size() ? kHotkeyGroups[size_t(group)] : "");
+        ImGui::PopFont();
+        ImGui::SetCursorPosX(ui.px(4));
+        if (ImGui::BeginTable("##keys", 2, ImGuiTableFlags_SizingFixedFit, ImVec2(ui.px(269), 0))) {
+            ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthFixed, ui.px(96));
+            ImGui::TableSetupColumn("action", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+            for (const Hotkey& k : keys) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextColored(kLabelBlue, "%s", k.keys.c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::TableNextColumn();
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextUnformatted(k.action.c_str());
+                ImGui::PopTextWrapPos();
+            }
+            ImGui::PopFont();
+            ImGui::EndTable();
+        }
+    }
+
+    // The original's column: the ten tabs, a gap, Weapons Report (slot 12),
+    // Manual (slot 13), Close (spec 07 session 5).
     void topicButtons(UiContext& ui, Dialog& d) {
         ImVec2 first, last;
         for (size_t i = 0; i < kTabCount; ++i) {
             if (lampButton(ui, d, kTabLabels[i], tab_ == static_cast<HelpTab>(i))) {
+                if (tab_ != static_cast<HelpTab>(i)) selection_[i] = {};   // the first item, as the tab opens
                 tab_ = static_cast<HelpTab>(i);
                 scrollToSelection_ = true;
             }
@@ -292,6 +555,7 @@ private:
         ui.tag("help:tabs", first, last);
         d.spacer();
         if (d.button("Weapons Report")) weapons_ = true;
+        if (d.button("Manual")) ui.open(ScreenId::Manual);
     }
 
     // ---- Weapons Report ----------------------------------------------------------------------
@@ -384,21 +648,22 @@ private:
         if (lampButton(ui, d, "Dmg 11-20", page_ == 1)) page_ = 1;
         d.spacer();
         // With Settings.txt `Allow Export of Weapon And Component Data` TRUE:
-        // four tables written to the saves folder, each followed by its
-        // "Export Successful" message (spec 06 §1.9, confirmed: binary).
+        // Weapons.txt, Comps.txt, WeaponFamilies.txt and CompFamilies.txt written
+        // to the saves folder, each followed by its "Export Successful" message
+        // naming the file (spec 06 §1.9, §7 Q83, confirmed: binary).
         if (exportAllowed(r.data().settings) && d.button("Export")) exportTables(ui);
         if (d.button("Help Topics")) weapons_ = false;
     }
 
     void exportTables(UiContext& ui) {
         exportQueue_.clear();
-        const auto written = writeExportTables(savesDir(), "OpenSE4_", weaponAndComponentTables(ui.rules()));
+        const auto written = writeExportTables(savesDir(), "", weaponAndComponentTables(ui.rules()));
         if (!written) {
             exportQueue_.emplace_back("Export Failed", written.error());
             return;
         }
         for (const std::filesystem::path& file : *written)
-            exportQueue_.emplace_back("Export Successful", std::format("The table was written to {}.", file.string()));
+            exportQueue_.emplace_back("Export Successful", std::format("Exported to {}.", file.string()));
     }
 
     // The export's messages, one after another.
@@ -419,8 +684,10 @@ private:
         }
     }
 
+    static constexpr float kRowH = 18.0f;   // the item list's rows
     HelpTab tab_ = HelpTab::Components;
-    std::array<ItemRef, kTabCount> selection_{};
+    std::array<Entry, kTabCount> selection_{};
+    float figureY_ = 136.0f;                 // the detail box's next figure line
     std::optional<uint32_t> pendingSelect_;
     bool scrollToSelection_ = false;
     std::array<char, 64> filter_{};

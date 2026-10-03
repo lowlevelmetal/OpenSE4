@@ -215,7 +215,9 @@ newly built vehicles" and "AI should not make changes during a simultaneous game
   clicked at least once.
 - `game::ai::setComputerControl` (`src/game/ai.cpp`) is the switch, a local or host-side
   change rather than a player command: to computer, kind Computer, every minister and every
-  own vehicle's, fleet's and colony's flag on; to human, all off. It keeps `ministerStyle`,
+  own vehicle's, fleet's and colony's flag on; to human, all off. Since 2026-10-03 it works on
+  every empire: a neutral empire handed to a human keeps neutrality in a mark of its own
+  (`Empire::neutral`; `isNeutral()` is what the neutral rules read), as §7 Q84 answers. It keeps `ministerStyle`,
   `aiMinimalChanges`, `ministersForNewVehicles`, `passwordHash` and a stored `aiDifficulty`.
   A human empire whose ministers act stores Medium each turn (`ai::recordAiDecisions`), so a
   round trip plays at Medium as in the original.
@@ -224,14 +226,16 @@ newly built vehicles" and "AI should not make changes during a simultaneous game
   "Human Dead" ending; hosts and automated runs play on.
 - On a player's copy of a game on different machines (network or e-mail), the window
   changes only that copy; for the player's own empire the session also gives
-  `cmd::SetMinisters` (every area, every flag) and `cmd::SetMinister` (complete control), so
-  the orders carry the minister switches and flags, never the mark.
+  `cmd::SetMinisters` (every area and the fleets' flag) and `cmd::SetMinister` (complete
+  control), and, of its ships, units and colonies, a `cmd::SetMinister` for each one given
+  orders during the turn, before or after the switch (`ClassicSession::carryFlags`), so the
+  orders carry what §7 Q84 lists, never the mark.
 - The TCP/IP host's toggle (`HostSession::setAiControl`, the in-game host's Empires list)
-  flips only the mark (`ai::setComputerMark`), spec 05 §9.4.
+  flips only the mark (`ai::setComputerMark`), spec 05 §9.4, on every row: the list holds
+  every empire but the host's own, and an empire that was a computer player from the start,
+  handed to human control, is the host's to play ("[Host]").
 
 OpenSE4's own choices, (inferred):
-- Neutral empires are listed but cannot be switched: our engine keeps neutrality in the same
-  field as the computer-controlled mark (`Empire::kind`).
 - Local games keep no master password; a network or e-mail host's game file opened here
   keeps its host's (`SaveInfo::masterPasswordVerifier`). A network or e-mail player's copy
   holds none (an e-mail player gets a turn file, not the host's game file), and the
@@ -586,13 +590,11 @@ Other Settings.txt keys the client must honour (confirmed: binary):
 - `Allow Export of Weapon And Component Data`: when TRUE the Weapons Report gets an Export
   button, which writes four plain-text tables (weapons, components, weapon families,
   component families) to the SaveGame folder, each followed by a message titled "Export
-  Successful" naming the path. Ours does the same since 2026-10-01 (`help.cpp`,
-  `src/client/classic/data_export.cpp`): `OpenSE4_weapons.txt`, `OpenSE4_components.txt`,
-  `OpenSE4_weapon_families.txt` and `OpenSE4_component_families.txt` in the client's saves
-  folder, tab-separated under one header line, in a layout of our own, listing every
-  component of the data set. The original's files (`Weapons.txt`, `Comps.txt`,
-  `WeaponFamilies.txt`, `CompFamilies.txt`) also list every component, in fixed-width columns
-  described in §7 Q83 (confirmed: binary).
+  Successful" naming the path. The original's files are `Weapons.txt`, `Comps.txt`,
+  `WeaponFamilies.txt` and `CompFamilies.txt`, every component of the data set in fixed-width
+  columns described in §7 Q83 (confirmed: binary). Ours writes the same four files with those
+  columns since 2026-10-03 (`help.cpp`, `src/client/classic/data_export.cpp`), into the
+  client's saves folder.
 - `System Ship Movement Delay Milliseconds`: when the system window animates ship movement and
   the value is above 0, the game pauses after each animated one-square step (stock value 0);
   the original reads the value as seconds, not milliseconds (§2.4 "Moves as they are made").
@@ -604,15 +606,14 @@ Other Settings.txt keys the client must honour (confirmed: binary):
   and `Finale <Kind> Picture N`: the ending window's pictures, from `Pictures/Game/Finale/`.
   All humans eliminated uses Human Dead; "your empire was destroyed" uses Lose; galaxy
   conquered and victory conditions met use Victory. One picture is drawn uniformly from the
-  list; the original uses the game's random numbers, OpenSE4 must use a separate source. Ours
-  has the ending window since 2026-10-01 (`screens/finale_screen.cpp`, `finale.hpp`): one
-  picture of the kind's list drawn with a source of its own, a few words of ours, Scores and
-  Close. The main window opens it once when the game ends: Victory once the game is over,
-  Human Dead in a local or hotseat game when no living empire is human-controlled, Lose when
-  the player's own empire is destroyed (in that order, so a single player's fall shows Human
-  Dead). The original checks in the other order and shows each ending as it comes: a lone
-  human who loses everything sees Lose at the start of a last turn, then Human Dead at the
-  next End Turn (§7 Q83, confirmed: binary).
+  list; the original uses the game's random numbers, OpenSE4 must use a separate source. The
+  original shows each ending as it comes, at a turn's start: a lone human who loses
+  everything sees Lose at the start of a last turn, then Human Dead at the next End Turn (§7
+  Q83, confirmed: binary). Ours does the same since 2026-10-03 (`screens/finale_screen.cpp`,
+  `finale.hpp`): one picture of the kind's list drawn with a source of its own, a few words of
+  ours, Scores and Close, the endings due at a turn's start one after another in the order of
+  §7 Q83; the engine marks a human-controlled empire dead only at the end of the last turn
+  that began with it defeated (`score::checkDestruction`).
 - `Use Old Log Political Message Display`: the log layout (§4.1, §7 Q11).
 - `Create Log Text File for Game` is read but never used by the original: nothing to honour.
 
@@ -983,12 +984,10 @@ was observed; details the observation does not give are OpenSE4's choices, marke
 in the code and asked in §7 Q89–Q98.
 
 - **Lists** (observed). Every list scrolls with an up arrow and a down arrow in a narrow column
-  at its right, not a scroll bar, and a picture column is headed "Pic". Ours: a 16 px column
-  inside the list's box, the up arrow at its top and the down arrow at its bottom (16×16, drawn
-  as an outlined box with a triangle in the button colours of §5.4, dim when the list cannot
-  scroll that way); a click scrolls one row (36 px in the list windows, a text line elsewhere),
-  holding the button repeats, and the mouse wheel still scrolls (`beginList`,
-  `beginListTable` in `screens/list_widgets.*`). The original's column is 24 px with a thumb between the arrows (§7 Q89, confirmed: binary).
+  at its right, not a scroll bar, and a picture column is headed "Pic". Ours follows
+  §7 Q89 since 2026-10-03 (`beginList`, `beginListTable` in `screens/list_widgets.*`): the 24 px
+  column of `Arrows.bmp` cells with the thumb and the track, a row a click, a held arrow
+  repeating every 100 ms, and the wheel a row per notch.
 - **On/off settings in button columns** (observed): a check box that holds the lamp when on:
   Construction Queues' Ships, Planets, Ship SY and Planet SY, Ships\Units' Show Ships, Show
   Units and Show Fleets, Designs' Hide Obsolete and Stats\Strategy, Planets' No Sys To Avoid.
@@ -1005,22 +1004,21 @@ in the code and asked in §7 Q89–Q98.
   Blockaded Colonies, Total Population, the research and intelligence points produced, Total
   Resources Produced and Maximum Resource Storage (with icons, the storage as "50kT"), beside
   the mini-map with nothing cut off; no Constr. Queue or Goto button; Close in the 14th slot.
-  Ours lays the summary out as Planets' statistics, places the map where Planets has it, puts
-  Scrap Facil Types and Set Colony Type in slots 12 and 13, and keeps a double click on a row
-  for showing the colony in the main window; the original's labels, places and clicks are in §7 Q90 (confirmed: binary).
+  The original's labels, places and clicks are in §7 Q90 (confirmed: binary), which ours
+  follows since 2026-10-03.
 - **Construction Queues** (observed): the Rate values carry resource icons; ours gives the Usage
   values icons as well.
 - **Research** (observed): completed areas stay in the list, dimmed (#606060), with "Complete"
   as the cost, and a click on one does nothing; a small box under each project box (ours holds
   the project's progress); Reorder Projects in the 13th slot. The original shows Tech Tree only
-  when the game lets players see the complete tech tree (§1.2, spec 01 §2.2), a setting OpenSE4's
-  games do not have yet: ours always shows it, in the 12th slot (§7 Q92, confirmed: binary).
+  when the game lets players see the complete tech tree (§1.2, spec 01 §2.2), and the project
+  boxes of §7 Q92 (confirmed: binary); ours too since 2026-10-03 (`GameOptions::completeTechTree`).
 - **Designs** (observed, and spec 07 §UI): rows under design-type headings, each with a lamp
   (green for the selected design, blue for the others), the picture, the name, the hull and
   "Prototype"; the detail shows Size, Design Type and Date Created by the picture, then Cost,
   Movement, Shields, Cargo Space and Supply Capacity, and the components as a grid of icons, 8
-  to a row; a note says obsolete designs are deleted automatically (spec 03 §4.1). Ours puts
-  enemy designs under their empire's name and the note under the list; the original's rows, order and grid are in §7 Q93 (confirmed: binary).
+  to a row; a note says obsolete designs are deleted automatically (spec 03 §4.1). The original's
+  rows, order and grid are in §7 Q93 (confirmed: binary), which ours follows since 2026-10-03.
 - **Create Design** (observed): Create asks for the vehicle type first, among the types the
   empire has a hull of, and the designer is titled after it ("Ship Design"); it starts with no
   size, and the warnings ask for one. The picture; Size, Design Type and Design Name, each with
@@ -1030,20 +1028,22 @@ in the code and asked in §7 Q89–Q98.
   grid of tiles (icon, name, kT); the Warnings and Component Details boxes; buttons Comp Type,
   Weap Mount, To Hit Modifiers, Condensed View and Only Latest (check boxes), Weapons Report,
   Create Design and Cancel in the 13th and 14th slots. Copy starts with an empty name (spec 03
-  §4.1). The original's places, sizes and the meaning of To Hit Modifiers are in §7 Q94 (confirmed: binary); ours differ.
+  §4.1). The original's places, sizes and the meaning of To Hit Modifiers are in §7 Q94 (confirmed: binary), which ours follows since 2026-10-03.
 - **Empire Status** (observed): the blocks Resource Production Per Turn (From Our Colonies, From
   Trade, From Tariffs, From Remote Mining, Total), Resource Expenses Per Turn (Tariffs,
   Maintenance Cost, Construction Queue Usage, Total), Net Resources Per Turn and Resources in
   Treasury (Current Total, Maximum Resource Storage), with icons on the first row; Change Email
   in the 12th slot and Change Password in the 13th. Change Email asks for the empire's
   address and keeps it (`cmd::SetEmail`, since 2026-10-03); the missed-turn switch ("AI should
-  not make changes during a simultaneous game", §1.2.1) is in the Ministers window. The original's layout and Change Email are in §7 Q95 (confirmed: binary).
+  not make changes during a simultaneous game", §1.2.1) is in the Ministers window. The original's layout and Change Email are in §7 Q95 (confirmed: binary); ours follows the
+  layout since 2026-10-03.
 - **Empires** (observed): Treaty, Trade, Tariff, a gap, History, Treaty Grid, Intelligence (dim
   without contact), Borders, Scores, Victory Conditions, Comparisons, a gap, Our Race; Borders
-  without a check box; no heading or explanation over the empty strip. Ours keeps Borders as a
-  view of the Empires window that the button shows and hides; in the original it is a window of its own (§7 Q96, confirmed: binary).
+  without a check box; no heading or explanation over the empty strip. Borders is a window of its
+  own (§7 Q96, confirmed: binary), in ours too since 2026-10-03.
 - **Ships\Units and Log** (observed): no hint paragraph; the title "Ships\Units"; the Show check
-  boxes in slots 11–13; an empty Log list stays empty, with Goto lit (§7 Q91, confirmed: binary).
+  boxes in slots 11–13; an empty Log list stays empty, with Goto lit (§7 Q91, confirmed: binary; ours keeps Goto's
+  last state since 2026-10-03).
 - **Combat Simulator** (observed): the items in alphabetical order (ours ignores letter case and
   mixes designs and objects); Tactical, Strategic, four gaps, No Obsolete, Strategies, Computer
   Control, Fleets For Plr, Change Cargo, a gap, Begin in the 13th slot, Cancel.
@@ -4043,11 +4043,13 @@ counterpart:
       marked dead only after its Lose window, at the end of that last turn ("This will be
       your last turn ..."). So a lone human who loses everything sees **Lose first**, plays
       the last turn, and at the next End Turn sees **Human Dead**, and the game ends.
-    Our client differs: the export writes four tab-separated tables of our own columns named
-    `OpenSE4_weapons.txt`, `OpenSE4_components.txt`, `OpenSE4_weapon_families.txt` and
-    `OpenSE4_component_families.txt` (from the Help window's Weapons Report), with our own
-    message text; the ending picks one kind (Victory before Human Dead before Lose), so a lone
-    human sees Human Dead at once and never Lose.
+    Our client follows the answer since 2026-10-03: the four files and their columns (the
+    alignment inside a column is ours: names left, numbers right; our header words and
+    message text), and the endings at a turn's start in that order, one after another, a
+    human-controlled empire marked dead at the end of its last turn (`score::checkDestruction`).
+    Our client differs: a human who loses everything during its own turn of a turn-based game
+    is marked dead at the end of that turn, without a Lose ending first (inferred); after the
+    conquest's question, No leaves the game for the intro (inferred).
 84. **Player Computer Control and Reset Passwords: OpenSE4's choices (§1.2.1, §1.9).**
     Marked (inferred) in the code:
     - Our engine keeps neutrality and the computer-controlled mark in one field
@@ -4089,11 +4091,13 @@ counterpart:
       panel's minister button, which marks it).
     - *Reset Passwords.* The original has no headless processing with Reset Passwords; it is
       the in-game Machine Options button of the Game Master view only (§1.9).
-    Our client differs: neutral empires are listed but cannot be switched (neutrality and the
-    mark share one field); the TCP/IP host's toggle refuses an empire that was a computer
-    player from the start; a player's copy sends the flags of all its vehicles, fleets and
-    colonies (`cmd::SetMinisters`), not only of the changed ones; our headless server offers
-    Reset Passwords to an admin (an OpenSE4 extension).
+    Our client follows the answer since 2026-10-03: neutral empires switch and stay neutral
+    (`Empire::neutral`, `isNeutral()`); the TCP/IP host's list and toggle cover every empire
+    but the host's own; a player's copy sends its minister switches, the fleets' flag
+    (`cmd::SetMinisters::fleets`) and the flags of the ships, units and colonies given orders
+    that turn (`ClassicSession::carryFlags`; "changed" means given orders, or the order panel's
+    minister button, inferred). Our client differs: our headless server offers Reset Passwords
+    to an admin (an OpenSE4 extension).
 
 Implementing the movement lines (§2.4) on 2026-10-01 left these choices (inferred):
 
@@ -4158,9 +4162,8 @@ Settling Q56 and Q78 on 2026-10-01 left these choices (inferred):
     the cell empty. The Colonies Orders heading has no sort key: clicking it leaves the
     order of the rows to the earlier sort keys (the same is true of its Facilities, Cargo
     Items and Status headings).
-    Our client differs: its cells write "None" or "REPEAT ORDERS" for an empty list and put
-    the first order in round brackets when Repeat is on (`orderListLines`), in both windows,
-    and its sort text is one line made from the cell lines.
+    Our client follows the answer since 2026-10-03 (`orderListLines` for the cells,
+    `orderSortText` for the Ships\Units sort text).
 
 Following the side-by-side observation of spec 07 session 3 on 2026-10-01 (§1.11) left these
 choices (inferred):
@@ -4191,8 +4194,10 @@ choices (inferred):
     repeats it on a 100 ms timer. Lists without the column (a flag of the control) use the
     whole box. The mouse wheel scrolls the list too, about one row per notch (observed in
     Designs, spec 07 session 5).
-    Our client differs: a 16 px column, 16×16 arrows of its own drawing, no thumb and no track
-    click (the wheel scrolls in both).
+    Our client follows the answer since 2026-10-03, for every list (`list_widgets.cpp`). Our
+    choices: a press in the track centres the thumb on the pointer and stops on a whole row;
+    scroll steps are whole rows from the nearest one (Dear ImGui keeps whole pixels); the
+    column's parts are UI tags for lessons and input scripts.
 90. **The Colonies summary and buttons.** Ours lays the summary out as Planets' statistics
     (labels from x 18 one every 16 px, values right-aligned at x 289), with the lines Systems with
     Colonies, Number of Colonies, Number of Blockaded Colonies, Total Population (with the
@@ -4231,10 +4236,10 @@ choices (inferred):
       Colony Type"; then the colony-type picker. *Scrap Facil Types* opens the facility-type
       check list and scraps every checked type on **every** colony of the empire, at
       `Scrap Facility Percent Returned`.
-    Our client differs: "Systems with Colonies"; research and intelligence values at x 289;
-    storage in whole thousands truncated ("52kT"); a click selects rows (Ctrl/Shift for
-    several) and a double click shows the colony; Set Colony Type and Scrap Facil Types work
-    on the selection.
+    Our client follows the answer since 2026-10-03. Our choices: Total Population is written
+    "2000M"; Select Planet to Set and the colony-type picker are list windows of ours, the
+    homeworld's refusal in our words; the facility-type check list shows each type's count and
+    refund.
 91. **The Log's Goto with nothing selected.** The original's Goto is lit in an empty Log. Ours
     lights it whenever no entry is selected, and a click then does nothing. Is it lit for any
     other reason, and does a click do anything?
@@ -4246,8 +4251,8 @@ choices (inferred):
     (slot 12) is always lit. When no entry is selected nothing is changed, so Goto keeps the
     state it last had (lit if no entry was ever selected). A click on Goto with nothing
     selected does nothing.
-    Our client differs only in that it lights Goto whenever no entry is selected, even after
-    an entry without a target was selected.
+    Our client follows the answer since 2026-10-03 for Goto; Send Reply and Combat Replay
+    still follow the selection only while an entry is selected (as before, dim with none).
 92. **Research.** Ours keeps Repeat Projects and Divide Pts Evenly in slots 5 and 6, shows the
     project's progress (points paid of the cost) in the small box under each project box, and,
     having no "Players can see the complete tech tree" setting, always shows Tech Tree, in slot
@@ -4277,9 +4282,11 @@ choices (inferred):
       (#00FF00) blocks 5×22 px, 7 px apart from x 3, y 104; the number of blocks is
       truncate(percent paid × 19 / 100), the percent being truncate(points paid × 100 /
       level cost) held to 0–100.
-    Our client differs: the game has no "complete tech tree" setting, so Tech Tree is always
-    in slot 12; the boxes show the area name with the level and an ETA centred, and the small
-    box writes "paid / cost" with a bar of its own.
+    Our client follows the answer since 2026-10-03 (`GameOptions::completeTechTree`, off in a
+    new game; the boxes of `projectBoxes`, shared with Intelligence). Our choices: each line of
+    the wrapped name is centred; Completion reads "Never" for a project that gets no points;
+    the Tech Tree window can also be opened from the manual's window links (an OpenSE4
+    extension).
 93. **The Designs list and detail.** Ours: 36 px rows with the lamp at (2,11), the 32 px
     picture at (19,2), the name at (55,2), the hull under it in grey small type and "Prototype"
     right-aligned on that line for a design never built; an obsolete design's name in grey; the
@@ -4321,9 +4328,12 @@ choices (inferred):
     - *Component grid:* at (276,308), 290×146: 36×36 cells, 8 to a row, 4 rows; **one cell
       per component** (identical components do not share a cell here); a 64×34 pair of
       up/down arrows (`BigUpDownArrows.bmp`, 64×17 each) at (501,274) shows when it scrolls.
-    Our client differs: the lamp at (2,11), a 32 px picture at (19,2), the name at (55,2),
-    "Prototype" right-aligned on the hull's line, obsolete names in grey; headings in the
-    empire's design-type order (not alphabetical); its note text and place are its own.
+    Our client follows the answer since 2026-10-03. Our choices: the letter case is ignored in
+    the alphabetical order; the hull's picture is drawn 36 px; the three amounts of Cost and
+    Maintenance Cost right-aligned at x 172, 225 and 278 of the top part, each with its icon;
+    an enemy design shows its owner in place of its design type; the default strategy is a
+    drop-down; an obsolete design's button reads Make Current; a design just made is selected
+    and scrolled into view, and our notes (a design made, a refusal) go in the title strip.
 94. **Create Design.** Ours: the vehicle-type picker is a list window titled "Select Vehicle
     Type", the same from every tab; the designer is a 780x475 window. Places in its content
     area: the picture at (3,3); Size, Design Type and Design Name at x 140 with their boxes
@@ -4373,11 +4383,11 @@ choices (inferred):
       "Design Type" as the name box shows "Design Name". Each warning is a line of white
       text after a small red ball, 18 px apart from the list's top, one per requirement the
       design does not meet yet.
-    Our client differs: places and sizes as in the question (picture (3,3), boxes 190 px at
-    x 140, figures box (358,3)-(553,131), 36 px cells, Warnings and Component Details on the
-    right), Weapons Report in slot 7, yellow warnings, and To Hit Modifiers changing the
-    tiles instead of the figures box; a new design's name box is empty and it starts with a
-    design type already chosen; the warnings are yellow, without the red ball.
+    Our client follows the answer since 2026-10-03 (To Hit Modifiers and Condensed View kept
+    with the empire, `InterfaceOptions::designToHit`, `designCondensed`; the bonuses from
+    `game::designToHit`). Our choices: the strip's arrows are the small left and right arrows
+    (`SmallLeftRightArrows.bmp`), 16 × 38, at its ends; a tile holds the 36 px picture, the
+    name and the size in small type; the Component Details box shows our compact report.
 95. **Empire Status.** Ours draws one table per block under its silver heading, the amounts in
     the resource colours, each block's first row with the resource icons, Net Resources Per Turn
     as a block of one unlabelled row. Our engine's other income (resources generated by
@@ -4414,9 +4424,9 @@ choices (inferred):
       entered in Empire Setup's "Email" field, saved with the empire in the game file and in
       every orders file, and shown back there; the game itself never sends mail (it has no
       mail code), so the address is for the players' own use.
-    Our client differs: one table per block with icons on each block's first row, Net
-    Resources Per Turn as an unlabelled block, our other incomes added to From Our Colonies.
-    Change Email follows the answer since 2026-10-03 (`Empire::email`, set in Empire Setup's
+    Our client follows the layout since 2026-10-03; our engine keeps the income of abilities,
+    the minimum-income floor and the computer players' bonus apart (`otherIncome`) and adds it
+    to From Our Colonies, where the original's colony total holds it (inferred). Change Email follows the answer since 2026-10-03 (`Empire::email`, set in Empire Setup's
     Email box and by `cmd::SetEmail`, saved with the game); the address travels in a player's
     orders only as that command, empire files do not keep it, and a player's view and the
     network lobby leave out other players' addresses (OpenSE4 choices: no window shows another
@@ -4438,11 +4448,9 @@ choices (inferred):
     player's empire, or gives the claim up. Buttons: Select All (slot 1: checks every
     empire), Allies (2: the player and its allies), Enemies (3), Us (4, lit at opening: the
     player only), slots 5–13 empty, Close (14).
-    Our client differs: Borders is a view inside the Empires window, shown and hidden by the
-    Borders button: the map with a heading and an explanation line of our own, overlapping
-    claims in white (the original's yellow, with a Legend), Select All, Allies, Enemies and Us
-    as small buttons beside the map (one filter at a time, not check boxes per empire), a
-    claim count per empire, and no claiming by a click on the map.
+    Our client follows the answer since 2026-10-03 (the window `borders`). Our choices: the
+    list's rows are 20 px with the small flag; any system can be claimed by a click, explored
+    or not; the filter buttons act as tabs, the last one pressed lit.
 97. **Tactical Combat.** Ours: the weapon grid's 36 px cells at (W−232,104), 6x6; the target
     panel, 216x64, at (W−232,324); each panel shows the 64 px picture with the owner's mark and
     the group badge, the name at x 67, "Size" and "Move" (the target: "Dist") in small type at
@@ -4524,3 +4532,18 @@ choices (inferred):
     spec 07 session 5).
     Our client follows this since 2026-10-03; it draws the disabled row while the movement
     log replays, when the selectors are disabled too (inferred).
+
+Implementing Q83, Q84, Q88–Q96 and the session 5 windows on 2026-10-03 left these choices
+(inferred):
+
+99. **Endings, targets and changed objects.** (a) A human who loses its last colony and
+    vehicle during its own turn of a turn-based game: ours marks the empire dead at the end of
+    that turn, without a Lose window at a turn's start first. Does the original wait for the
+    next start of its turn? (b) After the conquest's "Do you want to continue playing?", No
+    leaves the game for the intro in ours. What does the original do? (c) An intelligence
+    project that needs a target asks for the empire, then for the planet, ship, technology
+    area or third empire, in list windows of ours; each box of the page shows "vs <empire>"
+    under the project's name. What are the original's pickers and the box's lines for an
+    intelligence project? (d) "Changed during the turn" (Q84) is, in ours, a ship, unit group,
+    fleet member or colony given orders, or whose minister button was pressed. Do other
+    commands (a rename, a construction queue change) mark an object too?

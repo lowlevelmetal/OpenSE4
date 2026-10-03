@@ -51,11 +51,15 @@ void pickLocationForOrder(UiContext& ui, OrderOwner owner, game::Order order, st
 // ---- Text ---------------------------------------------------------------------------------
 
 std::string describeOrder(const UiContext& ui, const game::Order& o, game::DesignId design = {});
-// An order list as the Ships\Units and Colonies windows show it, one order a
-// line (spec 06 §1.8.3): the current one in brackets when Repeat is on;
-// "None" without orders, "REPEAT ORDERS" for Repeat on an empty list
-// (inferred, spec 06 §7 Q88).
+// An order list as the Ships\Units and Colonies Orders cells draw it: one
+// order a line, no brackets, nothing for an empty list (spec 06 §7 Q88,
+// confirmed: binary).
 std::vector<std::string> orderListLines(const UiContext& ui, OrderOwner owner, game::DesignId design = {});
+// The text the Ships\Units Orders column sorts by (spec 06 §7 Q88, confirmed:
+// binary): "None" for an empty list with Repeat off, "REPEAT ORDERS" for an
+// empty list with Repeat on, else the orders joined with ", ", the current
+// one in square brackets, and ", REPEAT ORDERS" after them when Repeat is on.
+std::string orderSortText(const UiContext& ui, OrderOwner owner, game::DesignId design = {});
 std::string cargoSummary(const UiContext& ui, const game::Cargo& c);
 std::string ownerName(const UiContext& ui, OrderOwner o);
 

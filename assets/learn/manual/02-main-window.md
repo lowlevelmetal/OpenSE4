@@ -124,16 +124,18 @@ a list.
 ## The Help window
 
 The [Help](window:help) window (`F1`) is the game's encyclopedia. It covers only what your
-empire knows. Its tabs:
+empire knows. Each tab lists names in alphabetical order on the left (a green lamp marks the one
+shown); the box on the right shows the chosen item: its picture, name and description, its
+figures (cost, size and so on) and its abilities. Its tabs:
 
-- [Components](help:components), [Facilities](help:facilities), [Ship Sizes](help:ship-sizes) and [Unit Sizes](help:unit-sizes): every part, building and hull, with its cost, size, abilities and technology requirements;
-- [Tech Areas](help:tech-areas): each area and what its levels bring;
-- [Treaties](help:treaties) and [Intel Projects](help:intel-projects);
+- [Components](help:components), [Weap Mount](help:weap-mount), [Facilities](help:facilities), [Ship Sizes](help:ship-sizes) and [Unit Sizes](help:unit-sizes): every part, weapon mount, building and hull;
+- [Tech Areas](help:tech-areas), [Treaties](help:treaties) and [Intel Projects](help:intel-projects): what each one is;
 - [Formations](help:formations): the shape of each fleet formation;
-- [Hotkeys](help:hotkeys): the keys as they are bound now, including any you changed in [Settings](settings#controls) (see also [Hotkeys](hotkeys)).
+- [Hotkeys](help:hotkeys): the keys of each group (all windows, the main window's commands, orders and selection, tactical combat), the main window's as they are bound now, including any you changed in [Settings](settings#controls) (see also [Hotkeys](hotkeys)).
 
-The `Find` box filters the list. The [Weapons Report](help:weapons) compares weapons: their size,
-reload time and damage at each range, with filters by weapon type and a choice of weapon mount.
+The `Find` box beside **Items** filters the list. The [Weapons Report](help:weapons) compares
+weapons: their size, reload time and damage at each range, with filters by weapon type and a
+choice of weapon mount. `Manual` opens this manual. Right-click an item for its full report.
 
 `Shift+F1` opens this manual at the page about the window in front.
 

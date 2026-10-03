@@ -265,7 +265,7 @@ private:
 Setup readSetup(Reader& rd, const toml::table& t) {
     rd.allowOnly(t, "[setup]",
                  {"seed", "race", "computer_players", "systems", "quadrant", "quadrant_size", "turn_style", "tech_level", "tech_cost",
-                  "starting_resources", "starting_planets", "events", "ai_difficulty", "no_tactical_combat", "all_systems_seen",
+                  "starting_resources", "starting_planets", "events", "ai_difficulty", "no_tactical_combat", "complete_tech_tree", "all_systems_seen",
                   "omnipresent", "no_ruins", "starting_ships"});
     Setup s;
     if (auto v = rd.integer(t, "seed", 0, std::numeric_limits<int64_t>::max())) s.seed = static_cast<uint64_t>(*v);
@@ -287,6 +287,7 @@ Setup readSetup(Reader& rd, const toml::table& t) {
     s.events = rd.choice(t, "events", kEvents);
     s.aiDifficulty = rd.choice(t, "ai_difficulty", kLowMediumHigh);
     s.noTacticalCombat = rd.boolean(t, "no_tactical_combat");
+    s.completeTechTree = rd.boolean(t, "complete_tech_tree");
     s.allSystemsSeen = rd.boolean(t, "all_systems_seen");
     s.omnipresent = rd.boolean(t, "omnipresent");
     s.noRuins = rd.boolean(t, "no_ruins");
@@ -321,6 +322,7 @@ void applySetup(const Setup& s, game::GameSetup& g, game::StartExtras& extras) {
     if (s.startingPlanets) o.startingPlanets = *s.startingPlanets;
     if (s.events) o.eventFrequency = *s.events;
     if (s.noTacticalCombat) o.noTacticalCombat = *s.noTacticalCombat;
+    if (s.completeTechTree) o.completeTechTree = *s.completeTechTree;
     if (s.allSystemsSeen) o.allSystemsSeen = *s.allSystemsSeen;
     if (s.omnipresent) o.omnipresent = *s.omnipresent;
     if (s.noRuins) o.noRuins = *s.noRuins;

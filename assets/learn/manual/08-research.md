@@ -88,13 +88,14 @@ Open [Research](window:research) with `F8` or the flask button.
 
 - The title strip shows the **Research Points Available** this turn.
 - The list fills the top of the window: every area you can research now, grouped by kind, with your current level and the cost of the next level. Areas you have completed stay in the list, dimmed, with **Complete** as their cost. Hover over an area to see its description and what its next level unlocks. **Click an area** to add it to the end of the queue.
-- Below the list, your current projects appear four at a time, each with an estimate of when it will finish, and its progress in the small box under it. The page buttons `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch between them. **Click a project** to cancel it; the game asks first (switch this off with the Empire Option *Confirm deleting a research project*), because its progress is lost.
+- Below the list, your current projects appear four at a time. Each box shows the area, the level being researched, when it will finish (**Completion**), the points it gets this turn (**Cost Per Turn**) and, in the small box under it, a bar of up to 19 green blocks for the share of the level already paid. The page buttons `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch between them. **Click a project** to cancel it; the game asks first (switch this off with the Empire Option *Confirm deleting a research project*), because its progress is lost.
 - The check boxes `Repeat Projects` and `Divide Pts Evenly` switch the two options above.
-- `Tech Tree` opens the [Tech Tree](window:tech-tree).
+- `Tech Tree` opens the [Tech Tree](window:tech-tree). It is there only when the game lets players see the complete tech tree (a Game Settings check box when the game is set up).
 - `Reorder Projects`, just above `Close` (with at least two projects), opens a window where you move projects up, down, to the top or to the bottom.
 
-The estimate uses this turn's points and your current production for the turns after. It reads
-*This turn*, a number of years (0.1 years is one turn) or *Never*.
+Completion divides what the level still needs by this turn's points for it, rounded up to whole
+turns (at least one), and reads a number of years (0.1 years is one turn), or *Never* while the
+project gets no points.
 
 ## The Tech Tree window
 

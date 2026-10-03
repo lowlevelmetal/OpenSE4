@@ -17,6 +17,7 @@
 
 #include <imgui.h>
 
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -142,6 +143,7 @@ struct UiTag {
 };
 
 struct LearnContent;
+class UiContext;
 
 // What the classic widgets need to draw: the pictures, the fonts and the frame
 // scale. The in-game UiContext and the front end's MenuContext both provide one.
@@ -151,6 +153,8 @@ struct Painter {
     FrameMapping map;
     float fbScale = 1.0f;
     float textScale = 1.0f;
+    // In a game: where widgets register their UI tags (the lists' arrow column); null elsewhere.
+    UiContext* tagger = nullptr;
 
     float k() const { return map.scale / fbScale; }
     float px(float framePixels) const { return framePixels * k(); }
@@ -219,6 +223,16 @@ public:
     // a few widgets inside windows (learn/ids.hpp lists them all).
     std::vector<UiTag> tags;
     void tag(std::string_view name, ImVec2 min, ImVec2 max);
+    // The parts of the arrow column of the list drawn last (list_widgets.hpp):
+    // a tag given to that list (`planets:list`) also tags its parts
+    // (`planets:list:up`, `:down`, `:track`, `:thumb`).
+    struct ListParts {
+        ImVec2 min, max;
+        std::array<std::pair<ImVec2, ImVec2>, 4> parts;  // up, down, track, thumb
+        bool valid = false;
+    };
+    ListParts lastList;
+    void tagListParts(std::string_view base, const ListParts& list);
     // The last ImGui item (a button, a child window).
     void tagItem(std::string_view name) { tag(name, ImGui::GetItemRectMin(), ImGui::GetItemRectMax()); }
     void tagFrame(std::string_view name, const Rect& frameRect) { tag(name, at(frameRect.min), at(frameRect.max)); }
@@ -289,6 +303,8 @@ class YesNoPrompt {
 public:
     void open(std::string question, std::string title = "Confirm");
     bool draw(UiContext& ui);
+    // The same, telling No apart: true for Yes, false for No, nothing until answered.
+    std::optional<bool> answer(UiContext& ui);
 
 private:
     std::string question_, title_;
@@ -305,8 +321,9 @@ enum class DialogSize { Large, Tall, Report, Picker, Prompt, Full };
 //   return d.keepOpen();
 class Dialog {
 public:
-    // In a game: also registers the window's UI tag.
-    Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn = 190.0f);
+    // In a game: also registers the window's UI tag. `contentFrame` false
+    // leaves out the box around the content area (the Galaxy Map's).
+    Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn = 190.0f, bool contentFrame = true);
     // A window of its own size (frame pixels), centred.
     Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn = 190.0f);
     // Anywhere (the front end's Learn and Manual windows).
@@ -321,8 +338,14 @@ public:
     // Extra text or a picture in the title strip (e.g. Research's points), at x frame pixels from the window's left.
     void titleText(float x, ImU32 color, std::string_view text);
     void titleIcon(float x, const Sprite& icon);
-    void beginContent();
+    // The content area: from (15,35) to the left of the button column (x 571),
+    // or to `right` (window coordinates) for windows whose original layout
+    // reaches further (lists to x 575).
+    void beginContent(float right = 0.0f);
     void beginButtons();
+    // Leaves `n` slots of the button column to the window, which draws in them
+    // (its own content, as a legend); returns their top left (ImGui screen units).
+    ImVec2 skipSlots(int n);
     // Right-column buttons (180 × 28, one slot per 31 px). A plain action button;
     bool button(const char* label, bool enabled = true);
     // a page or filter tab (chamfered corner, green lamp when selected);
@@ -339,7 +362,7 @@ public:
     void requestClose() { keep_ = false; }
 
 private:
-    Dialog(const Painter& painter, const char* title, const Rect& rect, float buttonColumn);
+    Dialog(const Painter& painter, const char* title, const Rect& rect, float buttonColumn, bool contentFrame = true);
     void endChild();
     bool slot(const char* label, int style, bool on, bool enabled);
     Painter ui_;
@@ -374,7 +397,7 @@ inline bool classicButton(UiContext& ui, const char* label, Vec2 frameSize, int 
 void emptySlot(const Painter& p, Vec2 frameSize);
 // The classic frame around a window: pipes at the sides, rails, a title strip
 // (none when `title` is null) and, with a button column, a second box for it.
-void drawWindowFrame(const Painter& p, ImDrawList* dl, const Rect& frameRect, const char* title, float buttonColumn);
+void drawWindowFrame(const Painter& p, ImDrawList* dl, const Rect& frameRect, const char* title, float buttonColumn, bool contentFrame = true);
 
 // Applies the classic look (black, 1 px blue lines) to ImGui; call once.
 void applyClassicStyle();

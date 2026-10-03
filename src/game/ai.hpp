@@ -259,9 +259,10 @@ void restoreMinisters(Empire& e, const MinisterSettings& saved);
 // password and the options "use individual ministers for newly built
 // vehicles" and "AI should not make changes" stay. A human empire that never
 // had a stored difficulty gets Medium, the level a human's ministers play at
-// (inferred: ours stores none until needed). A neutral empire keeps its kind:
-// OpenSE4 keeps neutrality in the same field as the mark (inferred). False
-// when nothing was switched (no such empire, or a neutral one).
+// (inferred: ours stores none until needed). Any empire can be switched,
+// neutral and destroyed ones too: a neutral empire stays neutral, whoever
+// plays it (Empire::neutral, spec 06 §7 Q84, confirmed: binary). False when
+// there is no such empire.
 bool setComputerControl(GameState& s, EmpireId e, bool computer);
 // The TCP/IP host's toggle (spec 05 §9.4): only the mark changes; ministers
 // and individual flags are untouched. Same conditions as above.

@@ -25,19 +25,25 @@ class GalaxyMapScreen final : public Screen {
 public:
 
     bool draw(UiContext& ui) override {
-        Dialog d(ui, "Galaxy Map", DialogSize::Large);
+        // The original's frame (spec 07 session 5): no box around the content
+        // area; the map in a #647EC7 frame (22,43)-(565,418) of the window, its
+        // grid every 8 px; under it, in small label-blue type right-aligned to
+        // x 565, the hint. Ours: the notes of the hovered or edited system on
+        // the line under the hint.
+        Dialog d(ui, "Galaxy Map", DialogSize::Large, 190.0f, false);
         if (!d.open()) return d.keepOpen();
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();
         bool keep = true;
-        d.beginContent();
+        d.beginContent(576);
 
-        // The window's map is 544×376 (§2.6); the hovered or edited system's notes go below it.
         QuadrantMapOptions opt;
         opt.overlay = overlay_;
         opt.names = names_;
         opt.distances = distances_;
+        opt.frameColor = palette::kFrameLight;
         if (editing_) opt.highlight.push_back(*editing_);
+        ImGui::SetCursorScreenPos(d.at({22, 43}));
         const QuadrantMapResult r = quadrantMap(ui, "##map", {544, 376}, opt);
         if (r.clicked) {
             editing_ = *r.clicked;
@@ -45,16 +51,20 @@ public:
             focusNote_ = true;
         }
         if (r.hovered) hovered_ = r.hovered;
+        textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {565, 427}, imColor(palette::kLabel), "(click on a system to set its player notes)");
 
-        // Notes: the system being edited, else the hovered one.
-        ImGui::BeginChild("##notes", ImVec2(ui.px(544), 0));
+        // Notes: the system being edited, else the hovered one (ours).
+        ImGui::SetCursorScreenPos(d.at({22, 441}));
+        ImGui::BeginChild("##notes", ui.size({544, 22}), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
         if (editing_) {
-            ImGui::TextColored(kLabelBlue, "Notes on %s", s.galaxy.system(*editing_).name.c_str());
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(kLabelBlue, "%s", s.galaxy.system(*editing_).name.c_str());
+            ImGui::SameLine();
             if (focusNote_) {
                 ImGui::SetKeyboardFocusHere();
                 focusNote_ = false;
             }
-            const float bw = ui.px(70);
+            const float bw = ui.px(60);
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 2 * (bw + ImGui::GetStyle().ItemSpacing.x));
             const bool enter = inputString("##note", draft_, 400, ImGuiInputTextFlags_EnterReturnsTrue);
             ImGui::SameLine();
@@ -65,19 +75,24 @@ public:
             }
             ImGui::SameLine();
             if (ImGui::Button("Cancel", ImVec2(bw, 0))) editing_.reset();
+        } else if (!error_.empty()) {
+            ImGui::TextColored(ImVec4(1, 0.5f, 0.45f, 1), "%s", error_.c_str());
         } else if (hovered_) {
             const game::StarSystem& sys = s.galaxy.system(*hovered_);
-            ImGui::TextColored(kLabelBlue, "%s", sys.name.c_str());
-            ImGui::SameLine();
             const std::string note = noteOf(me, sys.id);
-            if (note.empty()) dimText(me.hasExplored(sys.id) ? "No notes. Click the system to write some." : "Unexplored");
+            if (me.hasExplored(sys.id)) {
+                ImGui::TextColored(kLabelBlue, "%s", sys.name.c_str());
+                ImGui::SameLine();
+            }
+            if (note.empty()) dimText(me.hasExplored(sys.id) ? "No notes." : "Unexplored");
             else ImGui::TextUnformatted(note.c_str());
-        } else {
-            dimText("Point at a system to read its notes; click it to edit them.");
         }
-        if (!error_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.45f, 1), "%s", error_.c_str());
         ImGui::EndChild();
 
+        // The original's column: Presence (chosen), Avoid, Ally Claimed, Enemy
+        // Claimed, Spaceports, Resupply Depots, four gaps, Goto System (slot
+        // 11), a gap, Show Names (slot 13), Close. Ours in the gaps: Show
+        // Distances (slot 7) and a legend (slots 8 to 10).
         d.beginButtons();
         static constexpr std::array<std::pair<MapOverlay, const char*>, 6> kOverlays{{{MapOverlay::Presence, "Presence"},
                                                                                      {MapOverlay::Avoid, "Avoid"},
@@ -87,7 +102,8 @@ public:
                                                                                      {MapOverlay::ResupplyDepots, "Resupply Depots"}}};
         for (const auto& [overlay, label] : kOverlays)
             if (d.tab(label, overlay_ == overlay)) overlay_ = overlay;
-        d.spacer();
+        if (d.check("Show Distances", distances_)) distances_ = !distances_;
+        legend(ui, d.skipSlots(3));
         if (d.button("Goto System")) {
             filter_.clear();
             ImGui::OpenPopup("Goto System");
@@ -96,10 +112,8 @@ public:
             ui.requests.showSystem = *sys;
             keep = false;
         }
-        if (d.check("Show Distances", distances_)) distances_ = !distances_;
-        if (d.check("Show Names", names_)) names_ = !names_;
         d.spacer();
-        legend(ui);
+        if (d.check("Show Names", names_)) names_ = !names_;
         d.close();
         return keep && d.keepOpen();
     }
@@ -138,18 +152,20 @@ private:
         return picked;
     }
 
-    void legend(UiContext& ui) {
-        // Our own key to the symbols (the original has none).
+    // Our own key to the symbols (the original has none), in three empty
+    // slots of the button column from `at`.
+    void legend(UiContext& ui, ImVec2 at) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float r = ui.px(4);
+        float y = at.y + ui.px(4);
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
         auto row = [&](auto&& symbol, const char* text) {
-            const ImVec2 p = ImGui::GetCursorScreenPos();
-            const float h = ImGui::GetTextLineHeight();
-            symbol(ImVec2{p.x + ui.px(8), p.y + h * 0.5f});
-            ImGui::SetCursorScreenPos({p.x + ui.px(20), p.y});
-            dimText(text);
+            const float h = ui.px(15);
+            symbol(ImVec2{at.x + ui.px(10), y + h * 0.5f});
+            dl->AddText({at.x + ui.px(22), y + ui.px(2 + kSmallLead)}, imColor(palette::kSecondary), text);
+            y += h;
         };
-        auto ring = [&](ImU32 c) { return [&, c](ImVec2 at) { dl->AddCircle(at, r, c, 0, ui.px(1.5f)); }; };
+        auto ring = [&](ImU32 c) { return [&, c](ImVec2 p) { dl->AddCircle(p, r, c, 0, ui.px(1.5f)); }; };
         const ImU32 own = empireColor(ui.state(), ui.me().id);
         row(ring(imColor(map_style::kUnexplored)), "Unexplored");
         row(ring(imColor(map_style::kExplored)), "Explored");
@@ -172,6 +188,7 @@ private:
                 row(ring(imColor(map_style::kYellow)), "Colony without");
                 break;
         }
+        ImGui::PopFont();
     }
 
     std::optional<game::SystemId> hovered_;

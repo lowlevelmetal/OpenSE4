@@ -7,6 +7,7 @@
 #include "client/classic/ui.hpp"
 
 #include <string>
+#include <string_view>
 
 namespace opense4::client::classic {
 
@@ -31,6 +32,12 @@ void drawSprite(ImDrawList* dl, const Sprite& s, ImVec2 min, ImVec2 max, ImU32 t
 void drawSpriteRotated(ImDrawList* dl, const Sprite& s, ImVec2 c, float w, float h, float angle, ImU32 tint = IM_COL32_WHITE);
 // A sprite stretched from a to b (its vertical axis along the segment), `width` wide.
 void drawSpriteAlong(ImDrawList* dl, const Sprite& s, ImVec2 a, ImVec2 b, float width, ImU32 tint = IM_COL32_WHITE);
+
+// Text with its glyph cell's top at `at` (window coordinates of `d`) in a font
+// of `size` frame pixels whose face has `lead` (ui.hpp kTextLead ...).
+void textAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text);
+// The same, right-aligned to x.
+void textRightAt(UiContext& ui, const Dialog& d, ImFont* font, float size, float lead, Vec2 at, ImU32 color, std::string_view text);
 
 // Text in the classic label blue / dim grey.
 void dimText(const char* text);

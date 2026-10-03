@@ -563,6 +563,14 @@ int64_t vehicleToHitDefense(const Rules& r, const GameState& s, const Vehicle& v
     return toHitTerms(r, s, v, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus);
 }
 
+std::pair<int64_t, int64_t> designToHit(const Rules& r, uint32_t hull, std::span<const DesignEntry> entries) {
+    std::vector<ParsedAbility> list;
+    for (const auto& a : r.hullAbilities(hull)) list.push_back(a);
+    for (const DesignEntry& e : entries) appendComponent(r, e, list);
+    return {abilityPerFamily(list, AbilityKind::CombatToHitOffensePlus) - abilityPerFamily(list, AbilityKind::CombatToHitOffenseMinus),
+            abilityPerFamily(list, AbilityKind::CombatToHitDefensePlus) - abilityPerFamily(list, AbilityKind::CombatToHitDefenseMinus)};
+}
+
 // ---- Supply -------------------------------------------------------------------------------------
 
 bool vehicleHasUnlimitedSupply(const Rules& r, const GameState& s, const Vehicle& v) {

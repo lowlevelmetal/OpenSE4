@@ -266,6 +266,10 @@ struct InterfaceOptions {
     bool replayFast = false;
     bool replayViewRect = true;
     bool replayGrid = false;
+    // The designer's To Hit Modifiers and Condensed View check boxes, options
+    // of the empire (spec 06 §7 Q94).
+    bool designToHit = false;
+    bool designCondensed = false;
 
     bool operator==(const InterfaceOptions&) const = default;
 };
@@ -280,6 +284,11 @@ struct Empire {
     Race race;
     uint32_t color = 0xffffff;
     PlayerKind kind = PlayerKind::Human;
+    // A neutral empire handed to a human player (kind Human): neutrality is a
+    // mark of its own that no window changes, so it stays neutral while a
+    // human plays it (spec 06 §7 Q84, confirmed: binary). Computer-controlled
+    // neutral empires have kind Neutral and this false. isNeutral() reads both.
+    bool neutral = false;
     bool alive = true;
     std::string passwordHash;
     // The player's e-mail address (spec 06 §7 Q95, spec 05 §9.2, confirmed:
@@ -378,6 +387,10 @@ struct Empire {
     Relation& relation(EmpireId e) { return relations[e.index()]; }
     bool hasExplored(SystemId s) const { return s.index() < knowledge.explored.size() && knowledge.explored[s.index()]; }
 };
+
+// A neutral empire (spec 01 §8): computer-controlled ones have kind Neutral, a
+// neutral empire a human plays keeps the mark Empire::neutral (spec 06 §7 Q84).
+inline bool isNeutral(const Empire& e) { return e.kind == PlayerKind::Neutral || e.neutral; }
 
 // ---- Orders (spec 03 §8) -------------------------------------------------------------------------
 
@@ -882,6 +895,10 @@ struct GameOptions {
     // default, so turn-based games ask (inferred: an opt-out check box).
     // Simultaneous games never offer tactical combat either way.
     bool noTacticalCombat = false;
+    // "Players can see the complete tech tree" (spec 01 §2.2), off by default:
+    // with it on the Research window has its Tech Tree button, the only way to
+    // the Tech Tree window; it changes nothing else (spec 06 §7 Q92, confirmed: binary).
+    bool completeTechTree = false;
     bool allowGifts = true;
     bool allowTechTrades = true;
     bool allowIntel = true;

@@ -3345,6 +3345,13 @@ TEST_CASE("movement: warp links work both ways; only the first 10 warp points of
     w.move();
     CHECK(w.v(drifter).location == at(a, 12, 6));
     CHECK(w.logged(kB, "Neutral empires cannot use warp points"));
+    // A neutral empire a human plays stays neutral (spec 06 §7 Q84).
+    REQUIRE(ai::setComputerMark(w.s, kB, false));
+    REQUIRE(w.s.empire(kB).kind == PlayerKind::Human);
+    const VehicleId wanderer = w.spawn(w.ship(kB, "Still Home", 2), at(a, 12, 7));
+    w.order(wanderer, mk(OrderKind::Warp, {}, ab));
+    w.move();
+    CHECK(w.v(wanderer).location == at(a, 12, 7));
     (void)ba;
 }
 

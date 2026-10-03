@@ -5,6 +5,10 @@ options --learn-dir=tests/input/learn --training=quick-win --layout=1024x768 --s
 
 wait-lesson quick-win
 wait-for tag:lesson:panel
+# A game whose other empires are all gone (on the fixtures, the player's alone) shows the
+# conquest ending at once, then asks whether to play on (spec 05 §6, spec 06 §7 Q83).
+click item:Close in=finale optional
+click item:Yes in=finale optional
 # The panel is dragged by its title strip; it stays where it is put.
 assert-inside tag:lesson:panel tag:panel:galaxy
 drag tag:lesson:panel@60,12 to tag:panel:system@80,40
@@ -42,6 +46,8 @@ assert-present item:"Quick win" in=front
 double-click item:"Quick loss" in=front
 wait-lesson quick-loss
 wait-screen game
+click item:Close in=finale optional
+click item:Yes in=finale optional
 # Lost: after two turns the deadline has passed.
 repeat 3 until { turn = 2 }
   click tag:button:end-turn
@@ -59,6 +65,8 @@ screenshot result-lost.png
 click item:"Try Again"
 wait-turn 0
 wait-result none
+click item:Close in=finale optional
+click item:Yes in=finale optional
 assert-lesson quick-loss
 repeat 3 until { turn = 2 }
   click tag:button:end-turn

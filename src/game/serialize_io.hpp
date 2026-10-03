@@ -379,11 +379,12 @@ void io(Ar& ar, InterfaceOptions& o) {
     fields(ar, o.planetsSort, o.coloniesSort, o.shipsSort, o.queuesSort);
     fields(ar, o.replayAnimate, o.replayFast, o.replayViewRect, o.replayGrid);
     fields(ar, o.shipsTab, o.shipsShown);
+    fields(ar, o.designToHit, o.designCondensed);
 }
 
 template <class Ar>
 void io(Ar& ar, Empire& e) {
-    fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.alive, e.passwordHash, e.email,
+    fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.neutral, e.alive, e.passwordHash, e.email,
            e.racialPointsSpent);
     fields(ar, e.stockpile, e.economy);
     fields(ar, e.techLevels, e.research, e.researchEvenly, e.repeatResearch, e.uniqueAreasUnlocked, e.researchPool);
@@ -514,6 +515,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.randomAiPlayers);
     fields(ar, o.quadrantSize, o.allPlanetsSameSize);
     fields(ar, o.playersCanSaveMap, o.autosaveTurns);
+    fields(ar, o.completeTechTree);
     fields(ar, o.allowSurrender);
 }
 
@@ -591,7 +593,7 @@ template <class Ar> void io(Ar& ar, cmd::SetEmpireOptions& c) { fields(ar, c.aiM
 template <class Ar> void io(Ar& ar, cmd::SetEmail& c) { fields(ar, c.email); }
 template <class Ar>
 void io(Ar& ar, cmd::SetMinisters& c) {
-    fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi);
+    fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi, c.fleets);
 }
 template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) {
     fields(ar, c.clearOrdersOnEncounter, c.avoidTaggedMinefields, c.avoidRestrictedSystems);

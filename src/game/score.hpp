@@ -4,7 +4,8 @@
 //
 // Entry points for the spec 05 §8 turn order (turn.cpp):
 // - recordStatistics(ctx, e): step 2 of each empire's end-of-turn processing.
-// - checkDestruction(ctx, e): after each empire's end-of-turn processing.
+// - checkDestruction(ctx, e): after each empire's end-of-turn processing
+//   (a human-controlled empire's after its last turn, spec 06 §7 Q83).
 // - checkVictory(ctx, date): once per game turn, after every empire's
 //   end-of-turn processing and before the event step, with the date already
 //   advanced for this turn.
@@ -56,7 +57,12 @@ bool defeated(const Rules& r, const GameState& s, EmpireId e);
 // defeated empire is destroyed; every empire in contact with it is told, all
 // treaties with it return to "no contact", intelligence projects aimed at it
 // are removed and its remaining objects (empty colonies, units) go.
-void checkDestruction(TurnContext& ctx, EmpireId e);
+// A human-controlled empire is marked dead only at the end of a last turn,
+// the turn whose start found it defeated and showed it the Lose ending
+// (spec 06 §7 Q83, confirmed: binary): `lastTurnPlayed` false spares a
+// defeated human found so for the first time, which then plays that turn.
+// Computer players are destroyed at once.
+void checkDestruction(TurnContext& ctx, EmpireId e, bool lastTurnPlayed = true);
 // Step 2 of an empire's end-of-turn processing (spec 05 §5, §8): appends this
 // turn's statistics to a living empire's history, and for a human player
 // adds the lines of its files to TurnContext::records.

@@ -175,7 +175,7 @@ The buttons on the right open more windows:
 | History | A dated record of your empire's and others' main events. |
 | Treaty Grid | The treaty between each pair of empires. You see treaties of your allies only; the rest show `??`. |
 | Intelligence | Your [intelligence](intelligence) projects (dim until you have met another empire). |
-| Borders | Switches the view to the systems each empire claims, with filters `Select All`, `Allies`, `Enemies` and `Us`; press it again, or a tab, for the portraits. |
+| Borders | Opens the [Borders](window:borders) window over this one: the systems the empires you check in its list claim, in their colours, and those several of them claim in yellow (contested). `Select All`, `Allies`, `Enemies` and `Us` check those empires. Click a system on its map to claim it for your empire, or to give the claim up. |
 | Scores | The score table (see [Score and victory](score-and-victory#the-scores-window)). |
 | Victory Conditions | Progress toward the game's [victory conditions](score-and-victory). |
 | Comparisons | Graphs of the score table over time. |

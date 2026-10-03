@@ -419,6 +419,7 @@ start, the player's empire gets the designs of one Design minister run and no sh
 | `events` | `"none"`, `"low"`, `"medium"`, `"high"` | low |
 | `ai_difficulty` | `"low"`, `"medium"`, `"high"`: the level of the lesson's computer empires | medium |
 | `no_tactical_combat` | true or false | false |
+| `complete_tech_tree` | true or false: "Players can see the complete tech tree", the Research window's Tech Tree button | false |
 | `all_systems_seen` | true or false | false |
 | `omnipresent` | true or false | false |
 | `no_ruins` | true or false | false |
@@ -509,7 +510,7 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 | `queues` | `rate`, `usage`, `planet-value`, `facilities`, `cargo` |
 | `set-queue` | `ships`, `facilities`, `units`, `upgrades` |
 | `tech-tree` | `tech-areas`, `tech-levels` |
-| `empires` | `treaty`, `trade`, `tariff` (none while Borders is on) |
+| `empires` | `treaty`, `trade`, `tariff` |
 | `log` (its categories) | `all`, `construction`, `research`, `intelligence`, `events`, `politics`, `combat`, `misc` |
 | `combat-simulator` | `tactical`, `strategic` |
 
@@ -527,7 +528,8 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
   `system-grid`, `coordinate-location`, `galaxy-grid-lines`, `galaxy-warp-lines`,
   `latest-construction-only`, `latest-components-only`, `auto-claim-colonized`;
 - what windows remember: `planets-no-sys-to-avoid`, `simulator-no-obsolete`,
-  `replay-animate`, `replay-fast`, `replay-view-rect`, `replay-grid`.
+  `replay-animate`, `replay-fast`, `replay-view-rect`, `replay-grid`, and the designer's
+  `design-to-hit` (To Hit Modifiers) and `design-condensed` (Condensed View).
 
 **Treaty kinds** (`treaty`): `war`, `non-intercourse`, `non-aggression`,
 `subjugation`, `protectorate`, `trade-alliance`, `trade-research-alliance`,
@@ -569,7 +571,7 @@ The kebab-case of the client's `ScreenId` names (`client/classic/screen_id.hpp`)
 `strategies`, `repair-priorities`, `fleet-transfer`, `cargo-transfer`,
 `launch-recover`, `scrap`, `view-orders`, `select-waypoint`, `stellar-manipulation`,
 `rename`, `abandon-planet`, `jettison-cargo`, `convert-resources`, `communicate`, `intelligence`, `treaty-grid`, `scores`,
-`comparisons`, `history`, `race-report`, `victory-conditions`, `combat-replay`,
+`comparisons`, `history`, `race-report`, `victory-conditions`, `borders`, `combat-replay`,
 `tactical-combat`, `tactical-orders`, `tactical-options` (Combat Options),
 `tactical-launch` (Launch Units), `combat-piece-report`, `combat-replay-options`,
 `combat-simulator`, `strategic-combat`, `ground-combat`, `finale` (the ending window),
@@ -583,7 +585,7 @@ A `window:` link cannot open the battle windows (`combat-replay`, `tactical-comb
 `abandon-planet`, `jettison-cargo` and `convert-resources`, which need a planet or a ship. Front matter may also
 name `main`, the main window.
 
-**Help tabs** (`help:` links): `components`, `facilities`, `ship-sizes`, `unit-sizes`,
+**Help tabs** (`help:` links): `components`, `weap-mount`, `facilities`, `ship-sizes`, `unit-sizes`,
 `tech-areas`, `treaties`, `intel-projects`, `formations`, `hotkeys`, and `weapons` for
 the Weapons Report.
 
@@ -621,8 +623,10 @@ the Weapons Report.
 | `research:divide-evenly`, `research:repeat` | Research: Divide Pts Evenly, Repeat Projects |
 | `log:messages`, `log:categories`, `log:send-reply` | the Log's messages, its category buttons (All to Misc; each one is `log:<category>`, above), Send Reply |
 | `empires:list`, `empires:intelligence` | the Empires window's empires, its Intelligence button |
+| `intelligence:projects`, `intelligence:queue` | Intelligence: the list of projects (a click adds one, asking for its target), the current projects |
 | `communicate:message-type`, `communicate:treaty`, `communicate:send` | Communicate: the Message Type list, the treaty list (for treaty messages), Send Message |
 | `<window>:<tab>` | a tab or filter button of the windows above (window tabs) |
+| `<list>:up`, `<list>:down`, `<list>:track`, `<list>:thumb` | the arrow column of a list: its up and down arrows, the track between them and the thumb in it. `<list>` is the list's tag above (`planets:list:down`) or, for every list of a window, `<window>:<list id>` (`log:list:down`; the list id is the client's, without its `##`) |
 | `help:tabs` | the Help window's tabs |
 | `lesson:panel`, `lesson:next`, `lesson:read-more` | the lesson panel, its Next and Read More |
 | `lesson:free-play`, `lesson:leave` | its Free Play and Leave buttons |

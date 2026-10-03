@@ -8,6 +8,7 @@ seed = 404
 computer_players = 2
 quadrant_size = "small"
 events = "none"
+complete_tech_tree = true
 
 [[step]]
 title = "Research and building"

@@ -130,7 +130,7 @@ QuadrantMapResult quadrantMap(UiContext& ui, const char* id, Vec2 frameSize, con
     // Warp lines from explored systems; a link to an unexplored one is a stub two cells long.
     const ImU32 warp = col(map_style::kWarpLine);
     for (const game::SpaceObject& w : g.objects) {
-        if (w.kind != game::ObjectKind::WarpPoint || !w.destination.valid() || !me.hasExplored(w.system)) continue;
+        if (!opt.warpLines || w.kind != game::ObjectKind::WarpPoint || !w.destination.valid() || !me.hasExplored(w.system)) continue;
         const game::SystemId to = g.object(w.destination).system;
         const ImVec2 a = pos(w.system), b = pos(to);
         if (me.hasExplored(to)) {
@@ -173,7 +173,15 @@ QuadrantMapResult quadrantMap(UiContext& ui, const char* id, Vec2 frameSize, con
         const ImVec2 cell = cellOf(sys.id);
         const ImVec2 p = pos(sys.id);
         const bool current = opt.current && *opt.current == sys.id;
-        const map_style::Symbol sym = systemSymbol(ui, sys.id, opt.overlay, presence);
+        map_style::Symbol sym = systemSymbol(ui, sys.id, opt.overlay, presence);
+        if (opt.claimsOf) {
+            std::vector<game::EmpireId> by;
+            for (game::EmpireId e : *opt.claimsOf)
+                if (e.index() < s.empires.size() &&
+                    std::binary_search(s.empire(e).claimedSystems.begin(), s.empire(e).claimedSystems.end(), sys.id))
+                    by.push_back(e);
+            sym = map_style::claimedSymbol(me.hasExplored(sys.id), by);
+        }
         const ImU32 c = sym.empire ? empireColor(s, *sym.empire) : col(sym.rgb);
         switch (sym.shape) {
             case map_style::Shape::Triangle:
@@ -218,7 +226,7 @@ QuadrantMapResult quadrantMap(UiContext& ui, const char* id, Vec2 frameSize, con
     }
 
     dl->PopClipRect();
-    dl->AddRect(o, {o.x + size.x, o.y + size.y}, imColor(palette::kFrame), 0.0f, ui.px(1));
+    dl->AddRect(o, {o.x + size.x, o.y + size.y}, imColor(opt.frameColor), 0.0f, ui.px(1));
     return out;
 }
 

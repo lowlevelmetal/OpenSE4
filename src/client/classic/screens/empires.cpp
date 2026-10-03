@@ -2,9 +2,11 @@
 // Comparisons, History, Race Report and Victory Conditions (docs/spec/06 §1.2,
 // §1.5; docs/spec/05 §3, §5, §6). Communicate lives in communicate.cpp.
 
+#include "client/classic/quadrant_map.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/widgets.hpp"
 
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
@@ -103,22 +105,18 @@ public:
         Dialog d(ui, "Empires", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         d.beginContent();
-        if (borders_) {
-            bordersView(ui);
-        } else {
-            ImGui::BeginGroup();
-            portraits(ui);
-            ImGui::EndGroup();
-            ui.tagItem("empires:list");
-        }
+        ImGui::BeginGroup();
+        portraits(ui);
+        ImGui::EndGroup();
+        ui.tagItem("empires:list");
 
         d.beginButtons();
-        if (d.tab("Treaty", !borders_ && tab_ == Tab::Treaty)) select(Tab::Treaty);
-        ui.tagTab("treaty", !borders_ && tab_ == Tab::Treaty);
-        if (d.tab("Trade", !borders_ && tab_ == Tab::Trade)) select(Tab::Trade);
-        ui.tagTab("trade", !borders_ && tab_ == Tab::Trade);
-        if (d.tab("Tariff", !borders_ && tab_ == Tab::Tariff)) select(Tab::Tariff);
-        ui.tagTab("tariff", !borders_ && tab_ == Tab::Tariff);
+        if (d.tab("Treaty", tab_ == Tab::Treaty)) select(Tab::Treaty);
+        ui.tagTab("treaty", tab_ == Tab::Treaty);
+        if (d.tab("Trade", tab_ == Tab::Trade)) select(Tab::Trade);
+        ui.tagTab("trade", tab_ == Tab::Trade);
+        if (d.tab("Tariff", tab_ == Tab::Tariff)) select(Tab::Tariff);
+        ui.tagTab("tariff", tab_ == Tab::Tariff);
         // The original's order (observed, spec 07 session 3): the tabs, a gap,
         // History, Treaty Grid, Intelligence (dim before any contact), Borders,
         // Scores, Victory Conditions, Comparisons, a gap, Our Race in the 13th slot.
@@ -127,8 +125,8 @@ public:
         if (d.button("Treaty Grid")) ui.open(ScreenId::TreatyGrid);
         if (d.button("Intelligence", !knownEmpires(ui).empty())) ui.open(ScreenId::Intelligence);
         ui.tagItem("empires:intelligence");
-        // A plain button: it shows the borders map, and again the portraits (ours: a view of this window, Q96).
-        if (d.button("Borders")) borders_ = !borders_;
+        // Borders is a window of its own, over this one (spec 06 §7 Q96).
+        if (d.button("Borders")) ui.open(ScreenId::Borders);
         if (d.button("Scores")) ui.open(ScreenId::Scores);
         if (d.button("Victory Conditions")) ui.open(ScreenId::VictoryConditions);
         if (d.button("Comparisons")) ui.open(ScreenId::Comparisons);
@@ -144,13 +142,9 @@ public:
 
 private:
     enum class Tab { Treaty, Trade, Tariff };
-    enum class Filter { All, Allies, Enemies, Us };
     static constexpr int kPerPage = 4;
 
-    void select(Tab t) {
-        tab_ = t;
-        borders_ = false;
-    }
+    void select(Tab t) { tab_ = t; }
 
     void header(UiContext& ui, size_t known) {
         const game::Empire& me = ui.me();
@@ -273,7 +267,7 @@ private:
         switch (tab_) {
             case Tab::Treaty: {
                 statLine(ui, "Race", them.race.name);
-                statLine(ui, "Player", them.kind == game::PlayerKind::Human ? "Human" : them.kind == game::PlayerKind::Neutral ? "Neutral" : "Computer");
+                statLine(ui, "Player", game::isNeutral(them) ? "Neutral" : them.kind == game::PlayerKind::Human ? "Human" : "Computer");
                 if (rel.treaty != Treaty::None) statLine(ui, "Since", formatDate(rel.treatyTurn));
                 statLine(ui, "Last war", rel.lastWarTurn >= 0 ? formatDate(uint32_t(rel.lastWarTurn)) : "Never");
                 if (them.kind != game::PlayerKind::Human) {
@@ -316,73 +310,120 @@ private:
         }
     }
 
-    bool passes(const UiContext& ui, EmpireId e) const {
-        const EmpireId me = ui.session.player();
-        switch (filter_) {
-            case Filter::All: return true;
-            case Filter::Us: return e == me;
-            case Filter::Allies: return e != me && !game::treatyIsHostile(ui.me().relation(e).treaty);
-            case Filter::Enemies:
-                return e != me && (ui.me().relation(e).treaty == Treaty::War || ui.me().relation(e).treaty == Treaty::NonIntercourse);
-        }
-        return true;
-    }
-
-    void bordersView(UiContext& ui) {
-        const game::GameState& s = ui.state();
-        heading(ui, "Borders");
-        ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "Systems each empire claims. Overlapping claims are drawn in white.");
-        const std::array<std::pair<Filter, const char*>, 4> filters{{{Filter::All, "Select All"}, {Filter::Allies, "Allies"},
-                                                                     {Filter::Enemies, "Enemies"}, {Filter::Us, "Us"}}};
-        MiniMapStyle style;
-        style.owners = false;
-        std::map<uint32_t, std::vector<EmpireId>> claims;
-        const auto shown = usAndKnown(ui);
-        for (EmpireId e : shown)
-            if (passes(ui, e))
-                for (game::SystemId sys : s.empire(e).claimedSystems) claims[sys.value].push_back(e);
-        for (const auto& [sys, who] : claims)
-            style.fills.push_back({game::SystemId{sys}, who.size() > 1 ? IM_COL32(255, 255, 255, 255) : empireColor(s, who.front())});
-        const float mapSize = std::min(ImGui::GetContentRegionAvail().y, ui.px(500));
-        const auto hit = miniMap(ui, "##borders", {mapSize / ui.k(), mapSize / ui.k()}, style);
-        ImGui::SameLine();
-        ImGui::BeginChild("##claims", ImVec2(0, mapSize));
-        for (const auto& [f, label] : filters) {
-            if (f != Filter::All) ImGui::SameLine();
-            const bool active = filter_ == f;
-            if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.36f, 0.75f, 1));
-            if (ImGui::Button(label)) filter_ = f;
-            if (active) ImGui::PopStyleColor();
-        }
-        ImGui::Separator();
-        for (EmpireId e : shown) {
-            if (!passes(ui, e)) continue;
-            empireLabel(ui, e);
-            ImGui::SameLine();
-            const size_t n = s.empire(e).claimedSystems.size();
-            ImGui::TextColored(kTextDim, "%zu %s", n, n == 1 ? "system" : "systems");
-        }
-        if (hit.hovered) {
-            ImGui::Separator();
-            const bool explored = ui.me().hasExplored(*hit.hovered);
-            ImGui::TextUnformatted(explored ? s.galaxy.system(*hit.hovered).name.c_str() : "Unexplored system");
-            auto it = claims.find(hit.hovered->value);
-            if (it == claims.end()) ImGui::TextColored(kTextDim, "Not claimed");
-            else
-                for (EmpireId e : it->second) {
-                    ImGui::TextColored(kTextDim, "Claimed by");
-                    ImGui::SameLine();
-                    empireLabel(ui, e);
-                }
-        }
-        ImGui::EndChild();
-    }
-
     Tab tab_ = Tab::Treaty;
-    bool borders_ = false;
-    Filter filter_ = Filter::All;
     int page_ = 0;
+};
+
+// ---- Borders ------------------------------------------------------------------------------------
+
+// A window of its own over Empires (spec 06 §7 Q96, confirmed: binary): the
+// known empires in a narrow list at (18,52), 70 px wide, each with a check box
+// and its flag; the galaxy map at (94,52), 476x329, with the systems the
+// checked empires claim in their colours and those several of them claim in
+// yellow; a click on a system claims it for the player's empire or gives the
+// claim up. Select All, Allies (the player and its allies), Enemies and Us
+// (lit at opening: the player alone) check those empires.
+class BordersScreen final : public Screen {
+public:
+    bool draw(UiContext& ui) override {
+        Dialog d(ui, "Borders", DialogSize::Large);
+        if (!d.open()) return d.keepOpen();
+        const game::GameState& s = ui.state();
+        const auto shown = usAndKnown(ui);
+        if (!opened_) {
+            apply(ui, Filter::Us);
+            opened_ = true;
+        }
+        d.beginContent(576);
+        const ImU32 blue = imColor(palette::kLabel);
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {17, 36}, blue, "Empires");
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {94, 36}, blue, "Systems claimed by Empires");
+
+        // The empires: a check box and the flag on each row.
+        ImGui::SetCursorScreenPos(d.at({18, 52}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        beginList(ui, "##empires", ui.size({70, 329}), kRowH);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float w = ImGui::GetContentRegionAvail().x;
+        const Sprite lamp = ui.art.region("Pictures/Game/General.bmp", 190, 0, 13, 13);
+        for (EmpireId e : shown) {
+            ImGui::PushID(int(e.index()));
+            const ImVec2 a = ImGui::GetCursorScreenPos();
+            const bool on = std::find(checked_.begin(), checked_.end(), e) != checked_.end();
+            if (ImGui::InvisibleButton(s.empire(e).name.c_str(), ImVec2(w, ui.px(kRowH)))) {
+                if (on) std::erase(checked_, e);
+                else checked_.push_back(e);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.empire(e).name.c_str());
+            ImGui::PopID();
+            const ImVec2 box{a.x + ui.px(1), a.y + ui.px(1)};
+            dl->AddRect(box, {box.x + ui.px(16), box.y + ui.px(17)}, imColor(palette::kButton));
+            if (on && lamp) drawSprite(dl, lamp, {box.x + ui.px(2), box.y + ui.px(2)}, {box.x + ui.px(15), box.y + ui.px(15)});
+            if (const Sprite flag = ui.art.flag(s.empire(e).race.style, false))
+                drawSprite(dl, flag, {a.x + ui.px(20), a.y + ui.px(3)}, {a.x + ui.px(38), a.y + ui.px(16)});
+            else
+                dl->AddRectFilled({a.x + ui.px(20), a.y + ui.px(3)}, {a.x + ui.px(38), a.y + ui.px(16)}, empireColor(s, e));
+        }
+        endList(ui);
+        ImGui::PopStyleVar(2);
+
+        // The map.
+        ImGui::SetCursorScreenPos(d.at({94, 52}));
+        QuadrantMapOptions opt;
+        opt.claimsOf = checked_;
+        opt.frameColor = palette::kFrameLight;
+        opt.warpLines = false;
+        const QuadrantMapResult r = quadrantMap(ui, "##borders", {476, 329}, opt);
+        if (r.clicked) {
+            const auto& mine = ui.me().claimedSystems;
+            const bool claimed = std::binary_search(mine.begin(), mine.end(), *r.clicked);
+            const game::CommandResult res = ui.session.issue(game::cmd::SetSystemFlags{*r.clicked, std::nullopt, !claimed});
+            error_ = res.ok ? std::string{} : res.error;
+        }
+        textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {569, 390}, blue, "(click on a system to claim it for your empire)");
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {94, 394}, blue, "Legend");
+        dl = ImGui::GetWindowDrawList();
+        dl->AddCircleFilled(d.at({100, 418}), ui.px(3.5f), imColor(map_style::kYellow));
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {108, 410}, IM_COL32_WHITE, "Contested");
+        if (!error_.empty()) textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {200, 410}, imColor(0xff8070), error_);
+        ImGui::SetCursorScreenPos(d.at({17, 52}));
+        ImGui::Dummy(ImVec2(0, 0));
+
+        d.beginButtons();
+        static constexpr std::array<std::pair<Filter, const char*>, 4> kFilters{
+            {{Filter::All, "Select All"}, {Filter::Allies, "Allies"}, {Filter::Enemies, "Enemies"}, {Filter::Us, "Us"}}};
+        for (const auto& [f, label] : kFilters)
+            if (d.tab(label, filter_ == f)) apply(ui, f);
+        d.close();
+        return d.keepOpen();
+    }
+
+private:
+    enum class Filter { All, Allies, Enemies, Us };
+    static constexpr float kRowH = 20.0f;   // the list's rows (inferred)
+
+    void apply(const UiContext& ui, Filter f) {
+        filter_ = f;
+        const game::GameState& s = ui.state();
+        const EmpireId me = ui.session.player();
+        checked_.clear();
+        for (EmpireId e : usAndKnown(ui)) {
+            bool in = false;
+            switch (f) {
+                case Filter::All: in = true; break;
+                case Filter::Us: in = e == me; break;
+                case Filter::Allies: in = e == me || game::allied(s, me, e); break;
+                case Filter::Enemies: in = e != me && game::hostile(s, me, e); break;
+            }
+            if (in) checked_.push_back(e);
+        }
+    }
+
+    bool opened_ = false;
+    Filter filter_ = Filter::Us;
+    std::vector<EmpireId> checked_;
+    std::string error_;
 };
 
 // ---- Treaty Grid -----------------------------------------------------------------------------------
@@ -826,7 +867,7 @@ private:
         // The race age for every race, the experience behind it only for our own (spec 02 §9, §11).
         labelValue(ui, "Age", std::string(game::economy::raceAge(e.experience)));
         if (e.id == ui.session.player()) labelValue(ui, "Experience", formatNumber(e.experience));
-        labelValue(ui, "Player", e.kind == game::PlayerKind::Human ? "Human" : e.kind == game::PlayerKind::Computer ? "Computer" : "Neutral");
+        labelValue(ui, "Player", game::isNeutral(e) ? "Neutral" : e.kind == game::PlayerKind::Human ? "Human" : "Computer");
         if (e.id != ui.session.player()) {
             const game::Relation& rel = ui.me().relation(e.id);
             labelValue(ui, "Treaty", rel.contact ? treatyText(rel) : "No contact");
@@ -1038,6 +1079,7 @@ private:
 } // namespace
 
 std::unique_ptr<Screen> makeEmpires(const ScreenArgs&) { return std::make_unique<EmpiresScreen>(); }
+std::unique_ptr<Screen> makeBorders(const ScreenArgs&) { return std::make_unique<BordersScreen>(); }
 std::unique_ptr<Screen> makeTreatyGrid(const ScreenArgs&) { return std::make_unique<TreatyGridScreen>(); }
 std::unique_ptr<Screen> makeScores(const ScreenArgs&) { return std::make_unique<ScoresScreen>(); }
 std::unique_ptr<Screen> makeComparisons(const ScreenArgs&) { return std::make_unique<ComparisonsScreen>(); }

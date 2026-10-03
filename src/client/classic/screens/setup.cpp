@@ -766,9 +766,9 @@ private:
         if (a.spin("##units", {586, 52}, 101, units, 50, 1, 32767, std::to_string(units))) o.maxUnitsPerPlayer = static_cast<int>(units);
         a.heading({231, 93}, "Maximum number of ships allowed per player");
         if (a.spin("##ships", {586, 88}, 101, ships, 10, 1, 32767, std::to_string(ships))) o.maxShipsPerPlayer = static_cast<int>(ships);
-        // Twelve check rows in the order of spec 01 §2.2. Cheat codes and the
-        // complete tech tree are not in our game options: dim (PARITY_GAPS).
-        bool cheats = false, techTree = false;
+        // Twelve check rows in the order of spec 01 §2.2. Cheat codes are not
+        // in our game options: dim (PARITY_GAPS).
+        bool cheats = false;
         struct Row {
             const char* label;
             bool* value;
@@ -778,7 +778,7 @@ private:
             {"Cheat codes allowed", &cheats, false},
             {"Team Mode", &o.teamMode, true},
             {"No Tactical Combat", &o.noTacticalCombat, true},
-            {"Players can see the complete tech tree", &techTree, false},
+            {"Players can see the complete tech tree", &o.completeTechTree, true},
             {"Allow gifts/tributes", &o.allowGifts, true},
             {"Allow technology gifts, tributes and trades", &o.allowTechTrades, true},
             {"Allow surrender", &o.allowSurrender, true},
