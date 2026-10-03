@@ -51,9 +51,10 @@ struct Spot {
     int id = 0;
     Box box;
 };
-// The spot with the lowest score, the first of equals. The spot taken last
-// frame (`previous`) stays while it is about as good, so the panel does not
-// jump between near-equal places as its height settles.
+// The spot with the lowest score, the first of equals. When every spot hides
+// something, the spot taken last frame (`previous`) stays while it is about
+// as good, so the panel does not jump between near-equal places as its
+// height settles.
 size_t bestSpot(std::span<const Spot> spots, const Avoid& avoid, std::optional<int> previous);
 
 // Moves `box` inside `bounds` (as far as it fits), keeping its size.

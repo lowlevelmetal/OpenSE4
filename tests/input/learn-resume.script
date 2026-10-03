@@ -78,7 +78,32 @@ wait-screen game
 wait-lesson panel-check
 wait-step 6
 assert { fleets = 1 }
-# Leaving again keeps step 6; the intro no longer shows the hint.
+# Leaving again keeps step 6.
+click tag:lesson:leave
+click item:Yes in="Leave Lesson"
+wait-screen front
+wait-for item:"Resume (step 6)" in=front
+# During another game (a training game: no input lock), the game's own Learn window offers
+# Resume too, and asks first.
+click item:Training in=front
+wait-for item:"Start Game" in=front
+double-click item:"Quick win" in=front
+wait-screen game
+wait-lesson quick-win
+click item:Close in=finale optional
+click item:Yes in=finale optional
+key F2
+wait-window game-menu
+click item:Learn in=game-menu
+wait-window learn
+click item:Tutorials in=learn
+wait-for item:"Resume (step 6)" in=learn
+click item:"Resume (step 6)" in=learn
+click item:Yes in="Resume Lesson"
+wait-lesson panel-check
+wait-step 6
+assert { fleets = 1 }
+# Leaving it goes back to the front end's Learn window; the intro no longer shows the hint.
 click tag:lesson:leave
 click item:Yes in="Leave Lesson"
 wait-screen front

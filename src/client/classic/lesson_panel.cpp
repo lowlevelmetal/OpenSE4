@@ -60,7 +60,9 @@ size_t bestSpot(std::span<const Spot> spots, const Avoid& avoid, std::optional<i
             best = i;
             bestScore = s;
         }
-    if (previous)
+    // A place that hides nothing is taken by its order; among places that all
+    // hide something, the one taken last frame stays while it is about as good.
+    if (previous && bestScore > 1e-4f)
         for (size_t i = 0; i < spots.size(); ++i)
             if (spots[i].id == *previous && spotScore(spots[i].box, avoid) <= bestScore + 0.02f) return i;
     return best;

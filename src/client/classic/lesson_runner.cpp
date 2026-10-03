@@ -513,8 +513,9 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
     const Vec2 screen{display.x / k, display.y / k};   // in frame pixels
     ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
     std::vector<float> movingW, ownW;
-    for (const Spec& s : moving) movingW.push_back(std::ceil(ImGui::CalcTextSize(s.label.c_str(), nullptr, true).x / k + 16.0f));
-    for (const Spec& s : own) ownW.push_back(std::ceil(ImGui::CalcTextSize(s.label.c_str(), nullptr, true).x / k + (s.style == 2 ? 32.0f : 16.0f)));
+    // A label and 6 frame pixels on each side; Free Play's check box takes 24 more on the left.
+    for (const Spec& s : moving) movingW.push_back(std::ceil(ImGui::CalcTextSize(s.label.c_str(), nullptr, true).x / k + 12.0f));
+    for (const Spec& s : own) ownW.push_back(std::ceil(ImGui::CalcTextSize(s.label.c_str(), nullptr, true).x / k + (s.style == 2 ? 30.0f : 12.0f)));
     const float rowH = std::max(26.0f, std::ceil(ImGui::GetFontSize() / k + 6.0f));
     ImGui::PopFont();
     ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
@@ -684,9 +685,10 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
             const float size = std::min(kTitleSize * ui.textScale, 23.0f);
             const float y = std::max(5.0f, 11.0f - (size - kTitleSize) * 0.75f);
             ImGui::PushFont(ui.fonts.bold, ui.px(size));
-            dl->PushClipRect(ui.at(at + Vec2{12, 4}), ui.at(at + Vec2{titleEnd, 31}), true);
-            dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ui.at(at + Vec2{17, y + kTitleLead}), IM_COL32_WHITE, l.title.c_str());
-            dl->PopClipRect();
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32_WHITE);
+            const ImVec2 from = ui.at(at + Vec2{17, y + kTitleLead}), to = ui.at(at + Vec2{titleEnd, 31});
+            ImGui::RenderTextEllipsis(dl, from, to, to.x, l.title.c_str(), nullptr, nullptr);   // a long title ends in "..."
+            ImGui::PopStyleColor();
             ImGui::PopFont();
         }
 

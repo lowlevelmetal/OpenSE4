@@ -104,10 +104,14 @@ TEST_CASE("lesson panel: its place hides prompts as little as the step's targets
     avoid.targets = {box(500, 400, 600, 450)};
     avoid.allowed = {box(100, 400, 300, 500)};
     CHECK(panel::bestSpot(spots, avoid, std::nullopt) == 0);
-    // The place taken last frame stays while it is as good.
+    // A place that hides nothing goes by its order, whatever was taken last frame.
     avoid = {};
+    CHECK(panel::bestSpot(spots, avoid, 8) == 0);
+    // When both hide something about as much, the place taken last frame stays...
+    avoid.targets = {box(300, 400, 340, 420), box(460, 400, 500, 420)};
     CHECK(panel::bestSpot(spots, avoid, 8) == 1);
-    // But not when it hides more.
+    CHECK(panel::bestSpot(spots, avoid, 3) == 0);
+    // ... but not when it hides clearly more.
     avoid.targets.push_back(box(500, 400, 600, 450));
     CHECK(panel::bestSpot(spots, avoid, 8) == 0);
     // Places are kept on the screen.
