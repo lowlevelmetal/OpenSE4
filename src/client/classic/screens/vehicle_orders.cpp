@@ -115,6 +115,7 @@ public:
         const game::GameState& s = ui.state();
         Dialog d(ui, screenTitle(ScreenId::SelectWaypoint), DialogSize::Picker, 0.0f);
         if (!d.open()) return d.keepOpen();
+        d.beginContent();   // under the title strip
         const OrderOwner owner = queue_ ? OrderOwner{} : ownerFromArgs(ui, vehicle_, fleet_);
         if (queue_) ImGui::TextColored(kDim, "New vehicles from this queue will move to the waypoint you pick.");
         else if (owner.valid()) ImGui::TextColored(kDim, "Move %s to:", ownerName(ui, owner).c_str());
