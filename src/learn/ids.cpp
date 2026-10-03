@@ -152,7 +152,7 @@ constexpr std::string_view kOtherTags[] = {
     "log:messages", "log:details", "log:categories", "log:send-reply",
     "empires:list", "empires:intelligence", "empires:treaty-grid", "empires:scores", "empires:victory-conditions", "empires:our-race",
     "intelligence:projects", "intelligence:queue",
-    "strategies:list", "strategies:pages", "strategies:page",
+    "strategies:list", "strategies:pages", "strategies:page", "view-orders:list",
     "empire-status:budget", "empire-status:net",
     "communicate:message-type", "communicate:treaty", "communicate:tone", "communicate:text", "communicate:send",
     // The lesson panel itself.

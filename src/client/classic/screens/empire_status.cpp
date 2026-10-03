@@ -764,11 +764,13 @@ public:
                 case 2: changed |= launchingPage(ui, st); break;
                 default: changed |= formationPage(ui, st); break;
             }
+            pageEnd_ = ImGui::GetCursorScreenPos().y;
             ImGui::EndChild();
             if (changed) status_.issue(ui, cmd::SetStrategy{selected_, st});
         }
         ImGui::EndChild();
-        ui.tagItem("strategies:page");   // for lessons: the strategy's settings on the page shown
+        // For lessons: the strategy's settings on the page shown, down to the last of them.
+        ui.tag("strategies:page", ImGui::GetItemRectMin(), ImVec2(ImGui::GetItemRectMax().x, std::min(ImGui::GetItemRectMax().y, pageEnd_ + ui.px(4))));
 
         d.beginButtons();
         static constexpr std::array<const char*, 4> kPages{"Movement", "Firing", "Launching", "Formation"};
@@ -803,6 +805,7 @@ public:
     }
 
 private:
+    float pageEnd_ = 0;   // where the page's settings end (for lessons)
     bool movementPage(UiContext& ui, ruleset::CombatStrategy& st) {
         bool changed = false;
         for (const char* key : {"Primary Movement Strategy", "Secondary Movement Strategy"}) {

@@ -87,7 +87,7 @@ On Tactical you command Race 1 yourself. The simulator closes while you fight, a
 afterwards.
 """
 highlight = ["combat-simulator:tactical", "combat-simulator:begin"]
-show = ["combat-simulator:owners"]
+show = ["combat-simulator:owners", "combat-simulator:vehicles"]
 done = { window = "tactical-combat" }
 manual = "combat-windows#tactical-combat"
 

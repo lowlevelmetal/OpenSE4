@@ -709,8 +709,10 @@ bool LessonRunner::compact() const {
     const size_t step = progress_.step();
     if (compactChoice_ && compactChoice_->first == step) return compactChoice_->second;
     // An action step the lesson is at: the window it is about matters more
-    // than the reading. Explanation steps and steps read again show whole.
+    // than the reading. Explanation steps and steps read again show whole,
+    // unless the whole panel would hide part of what the step outlines or shows.
     const learn::Step* st = activeStep();
+    if (st && step == progress_.active() && !st->done && compactForRoom_ == step) return true;
     return st && step == progress_.active() && st->done && !progress_.completed(step);
 }
 
@@ -954,6 +956,11 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
         spot(14, {display.x - size.x - gap, (display.y - size.y) * 0.5f}, standard);
         const size_t best = panel::bestSpot(spots, avoid, spot_);
         spot_ = spots[best].id;
+        // A whole panel that hides some of an explanation step's parts on a small
+        // screen: from the next frame the step shows compact (its text scrolls, More shows it whole).
+        if (smallScreen && !tight && progress_.step() == progress_.active() && activeStep() && !activeStep()->done &&
+            panel::hiddenShare(spots[best].box, avoid.targets) > 0.02f)
+            compactForRoom_ = progress_.step();
         chosen = layouts[best];
         ImGui::SetNextWindowPos(spots[best].box.min, ImGuiCond_Always);
     } else if (existing && ImGui::GetCurrentContext()->MovingWindow != existing) {

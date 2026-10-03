@@ -316,7 +316,9 @@ result. Their buttons are never under it, wherever it was dragged.
 *compact* panel, so that the window the step is about stays in view: the start of the
 step (about four lines, which scroll) and Back, Next and Read More. **More**, in the title
 strip, shows the whole step and every button for that step; **Less** makes any step's panel
-compact. Explanation steps, and steps read again with Back, show whole.
+compact. Explanation steps, and steps read again with Back, show whole, unless the whole panel
+would hide part of what the step outlines or shows wherever it goes (a window that fills the
+screen): then it is compact too, its text scrolling.
 
 - Tutorials: the step's title, and under it the **progress line** while the active step
   waits for something that can be counted: each numeric fact of its `done` condition with

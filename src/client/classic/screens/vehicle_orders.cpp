@@ -4,6 +4,8 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 
+#include <imgui_internal.h>
+
 #include <algorithm>
 #include <format>
 
@@ -46,6 +48,7 @@ public:
         if (!owner.valid()) {
             ImGui::TextColored(kDim, "You have no ships.");
         } else {
+            const ImVec2 top = ImGui::GetCursorScreenPos();
             heading(ui, ownerName(ui, owner).c_str());
             if (auto where = ownerLocation(s, owner)) ImGui::TextColored(kDim, "At %s", sectorName(s, *where, ui.session.player()).c_str());
             if (owner.fleet.valid()) ImGui::TextColored(kDim, "Fleet orders: every member follows them.");
@@ -59,7 +62,11 @@ public:
                 ImGui::PopID();
             }
             if (orders.empty()) ImGui::TextColored(kDim, "No orders.");
+            // For lessons: who the orders are for and the orders in the list (at least one row).
+            const float rowsEnd = ImGui::GetCursorScreenPos().y + (orders.empty() ? ui.px(24) : 0.0f);
+            const float right = ImGui::GetCurrentWindowRead()->InnerClipRect.Max.x;
             endPanel(ui, "Orders run from the top. With Repeat on, a finished order moves to the end.");
+            ui.tag("view-orders:list", top, ImVec2(right, std::min(rowsEnd, ImGui::GetItemRectMax().y)));
             ImGui::TextColored(kLabelBlue, "Repeat Orders:");
             ImGui::SameLine();
             ImGui::TextUnformatted(repeat ? "On" : "Off");

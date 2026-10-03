@@ -40,11 +40,10 @@ manual = "ship-design#the-designs-window"
 [[step]]
 title = "Your designs"
 text = """
-**Your designs are listed under their design types**: attack ships, colony ships, bases and more.
-Their names come from your race's list.
+**Your designs are listed under their design types**, named from your race's list.
 
-Click one to see its size, cost, movement, shields and components on the right. The tabs switch
-to unit designs and to the enemy designs you have seen. Press **Next**.
+Click one to see its size, cost, movement and components on the right; the tabs switch to unit
+and enemy designs. Press **Next**.
 """
 highlight = ["designs:list"]
 allow = ["designs:list", "designs:ship-designs", "designs:unit-designs", "designs:enemy-ship-designs", "designs:enemy-unit-designs"]

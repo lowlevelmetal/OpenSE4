@@ -167,11 +167,13 @@ private:
         textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {16, 450}, blue, "(obsolete designs are deleted automatically)");
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRect(d.at({269, 58}), d.at({574, 462}), imColor(palette::kButton));
-        ui.tag("designs:details", d.at({269, 58}), d.at({574, 462}));   // for lessons: the selected design's figures
+        detailBottom_ = 100;
         if (selected_.valid()) detail(ui, d, ui.state().design(selected_));
         else
             textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {276, 66}, imColor(palette::kSecondary),
                    enemyTab(tab_) ? "No enemy designs of this kind seen yet." : "No designs of this kind yet.");
+        // For lessons: the selected design's figures, down to what is drawn of them.
+        ui.tag("designs:details", d.at({269, 58}), d.at({574, std::min(462.0f, detailBottom_ + 6.0f)}));
         ImGui::SetCursorScreenPos(d.at({16, 40}));
         ImGui::Dummy(ImVec2(0, 0));
         d.beginButtons();
@@ -341,6 +343,7 @@ private:
         textAt(ui, dlg, ui.fonts.regular, kTextSize, kTextLead, {274, 291}, imColor(palette::kLabel), "Components on Design");
         const int rows = (static_cast<int>(d.entries.size()) + kColumns - 1) / kColumns;
         const int hidden = std::max(0, rows - kRows);
+        detailBottom_ = 308.0f + kGridCell * float(std::clamp(rows, 1, kRows));
         gridTop_ = std::clamp(gridTop_, 0, hidden);
         if (hidden > 0) {
             // BigUpDownArrows.bmp: the up arrow (column 0) over the down arrow (column 1), 64 x 17 each, a row per state.
@@ -399,7 +402,9 @@ private:
         row(127, "Number Lost", std::to_string(d.lost));
         row(142, "Number Scrapped", std::to_string(d.scrapped));
         row(157, "Enemy Tonnage Destroyed", std::to_string(d.enemyTonnageDestroyed));
+        detailBottom_ = low.y + 172;
         if (!own) return;
+        detailBottom_ = low.y + 216;
         textAt(ui, dlg, ui.fonts.regular, kTextSize, kTextLead, low + Vec2{6, 177}, blue, "Default Strategy");
         const auto& strategies = ui.me().strategies;
         const std::string current = d.strategy < strategies.size() ? strategies[d.strategy].name : std::string("Default");
@@ -511,6 +516,7 @@ private:
     bool hideObsolete_ = false;
     bool statsView_ = false;
     int gridTop_ = 0;   // the component grid's first row shown
+    float detailBottom_ = 462;   // where the detail's content ends (window frame pixels), for lessons
     bool scrollToSelected_ = false;
     std::string note_;
     bool noteIsError_ = false;

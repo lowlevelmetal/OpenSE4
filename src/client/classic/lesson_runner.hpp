@@ -144,6 +144,9 @@ private:
     std::optional<int> spot_;
     std::optional<size_t> scrolledFor_;
     std::optional<std::pair<size_t, bool>> compactChoice_;
+    // The explanation step whose whole panel would hide part of what it outlines
+    // or shows on a small screen: it shows compact, as an action step does.
+    std::optional<size_t> compactForRoom_;
     // The active step: since when, and when its targets were last on screen
     // (or a way back to them was).
     std::optional<size_t> activeSeen_;

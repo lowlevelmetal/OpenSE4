@@ -189,7 +189,7 @@ Here you can move orders up and down, delete one or clear them all, and **Repeat
 the fleet repeat its list forever. An order that fails clears the whole list.
 """
 highlight = ["view-orders:close"]
-show = ["window:view-orders"]
+show = ["view-orders:list"]
 keys = ["Escape"]
 done = { not = { window = "view-orders" } }
 manual = "ships-and-fleets#orders"

@@ -13,6 +13,7 @@
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
+#include "learn/access.hpp"
 #include "learn/ids.hpp"
 #include "learn/markdown.hpp"
 #include "learn/tokens.hpp"
@@ -306,7 +307,9 @@ void ClassicMode::prepareLessonCheck() {
     if (!step) return;
     std::vector<std::string> tags = step->highlight;
     tags.insert(tags.end(), step->allow.begin(), step->allow.end());
+    tags.insert(tags.end(), step->show.begin(), step->show.end());
     bool battle = false;
+    std::vector<std::string_view> windows;   // to open, a window under those it opens (Designs, then the designer)
     for (const std::string& tag : tags) {
         const auto window = tagWindowId(tag);
         if (!window) continue;
@@ -318,8 +321,17 @@ void ClassicMode::prepareLessonCheck() {
             if (*id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions) ui_->open(*id, ScreenArgs{.index = 0});
             continue;
         }
-        if (std::none_of(screens_.begin(), screens_.end(), [&](const auto& s) { return s.first == *id; })) openScreen(*id, {});
+        if (std::find(windows.begin(), windows.end(), *window) != windows.end()) continue;
+        // Before the first window it opens.
+        auto at = std::find_if(windows.begin(), windows.end(), [&](std::string_view other) {
+            const std::vector<std::string> openers = learn::openersOf(other);
+            return std::any_of(openers.begin(), openers.end(), [&](const std::string& o) { return tagWindowId(o) == *window; });
+        });
+        windows.insert(at, *window);
     }
+    for (std::string_view w : windows)
+        if (const auto id = screenFromWindowId(w); id && std::none_of(screens_.begin(), screens_.end(), [&](const auto& s) { return s.first == *id; }))
+            openScreen(*id, {});
     openLogOnTurn_ = false;
     lessonCheckFrame_ = 0;
 }
