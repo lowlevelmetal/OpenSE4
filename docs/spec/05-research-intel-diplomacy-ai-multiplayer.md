@@ -4242,6 +4242,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - The kinds of decided battles are the same: in two original games and 24 of ours,
       half and a third of them (two sides, away from colonies, turns 51–100) were armed
       ships on Seek orders meeting armed ships on Seek orders.
+
+    OpenSE4 follows both rules since 2026-10-03 (spec 03 §6.3, §7.5 `AI_Fleets` *Orders*);
+    with every rule of the round, 240 seeds won 3.8 decided battles away from colonies per
+    empire and 25 turns and lost 4.4 attack ships in battle (spec 07 "Pace after the second
+    debugger round").
 69. **Which enemy colonies the computer players attack** (question 67). The original ends
     1.9–2.2 battles per empire and 25 turns with an enemy colony gone, ours 0.9, for
     battles that go the same way once fought. To verify: per turn in the original, the
@@ -4283,7 +4288,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     for the homeworld's queue to fall below 5 turns of backlog. Ours count after the
     clean-up. In 120 scratch games with the original's rule the second attack ship came on
     turn 9 (median) instead of 5 and the first colony ship on turn 7 instead of 9, as in the
-    original, with 1.1 attack ships per empire at turn 5 instead of 2.0 (1.05).
+    original, with 1.1 attack ships per empire at turn 5 instead of 2.0 (1.05). OpenSE4
+    follows this since 2026-10-03 (§7.5 `AI_Construction_Vehicles`).
 71. **The soft cap in turns 26–50.** With colony ships left out of the maintenance (§7.5),
     our computer players are over the soft cap in 4 % of turns 26–50 and 14 % of turns
     51–100 (scratch run); the original in none of turns 26–50 and 14–16 % of turns 51–100
@@ -4328,7 +4334,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     7.4), which the original's lower losses keep up. The test's revenue is worked out
     afresh from the colonies at the start-of-turn step, not taken from the last income step,
     and the product with M / 100 is taken in single precision (§7.5, *Revenue* and the soft
-    cap); both are small.
+    cap); both are small. OpenSE4 follows both since 2026-10-03; with every rule of the
+    round, 240 seeds were over the soft cap in 1.3 % of turns 26–50 and 13.2 % of turns
+    51–100 (median 12 % per game; spec 07 "Pace after the second debugger round").
 72. **Details the scrap and fleet-leader rules leave open** (§7.5 *Scrap*, `AI_Fleets`).
     OpenSE4's choices since 2026-10-02 (inferred):
     - unit groups (fighters, satellites, mines and the like in space) are never scrap
@@ -4430,7 +4438,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     rule 1.8, of which 2.2, 1.9, 1.9 and 2.9 (four games) ended with the colony gone, ours
     1.0 and with the rule 1.5. Per enemy colony in the defend lists and per turn, the
     original fought 4–14 % of them (four games), ours 3 % and with the rule 6 %. What is
-    left is the number of enemy colonies inside the territories, question 77.
+    left is the number of enemy colonies inside the territories, question 77. With all the
+    rules of the second round (OpenSE4 since 2026-10-03; 240 seeds, spec 07 "Pace after the
+    second debugger round"), ours found or take 4.1 colonies and lose 1.9 per empire and 25
+    turns, fight 2.6 battles at an enemy colony, 1.8 of them ending with the colony gone, and
+    hold 15.7 colonies at turn 100 (before them 3.8, 1.2, 2.2, 1.1 and 16.6).
 77. **Enemy colonies inside the territories** (question 76). The original's defend lists
     held 1.2–3.3 enemy colony entries per empire-turn of turns 51–100 (four games), ours 2.4
     and with the Defend (Short Term) fleet rule 1.2 (more of them go); the original founds

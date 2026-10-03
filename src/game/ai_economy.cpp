@@ -10,7 +10,9 @@
 #include <algorithm>
 #include <map>
 #include <optional>
+#include <string>
 #include <tuple>
+#include <vector>
 
 namespace opense4::game::ai {
 

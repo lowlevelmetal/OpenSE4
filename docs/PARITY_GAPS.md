@@ -616,12 +616,11 @@ follows the colony count. What differs:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Jump-count thresholds (`ai*.cpp` with `warpJumps`; spec 01 §14 Q45, spec 05 §7.2 *Jumps*) | Fixed thresholds compare real jump counts with the spec's old numbers (the strength test around the targets, fleet recruiting, the drones' distance, Prepare for Attack's "more than one jump" test) | The original's count is the real number plus two, so the strength test reaches at most 2 real jumps, recruiting at most 1, the drones the setting less 2, and Prepare for Attack's test always passes (spec 05 §7.2 *Jumps*, confirmed: binary). 48 scratch games showed no measurable change | L |
-| Time in Defend (Short Term) and Infrastructure (spec 05 questions 53, 75). Within the original's spread in every period once nine original games are counted | Defend (Short Term) 50 % of all turns, 71 % of turns 51–100 (seeds 1–24, after the rules of 2026-10-02 below); Infrastructure 8 % and 7 %; Exploration 74–77 % of turns 1–25 (78 % with the vehicle table's counts below) | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 61–95 % per game, 80 % over nine games | L |
+| Time in Defend (Short Term) and Infrastructure (spec 05 questions 53, 75). Within the original's spread in every period once nine original games are counted | Defend (Short Term) 47 % of all turns, 67 % of turns 51–100 (240 seeds, after the rules of 2026-10-03 below; 48 and 70 % before them); Infrastructure 7 % and 7 %; Exploration 79 % of turns 1–25 | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 61–95 % per game, 80 % over nine games | L |
 | Bases. The placement rule is the original's (all 174 placements observed in five games went to the K-th queue, 25 reached a yard; ours 21 % of 742) and every placement is made in Infrastructure; since 2026-10-02 the soft cap, the scrap candidates and their ties are the original's too (below). With the construction budget's queue commitments fewer turns are over the soft cap, so fewer bases are scrapped, but fewer are placed early | 0.30 / 0.37 / 0.35 per empire at turns 50 / 75 / 100 (seeds 1–24; 0.29 / 0.33 / 0.34 over 120 seeds); built 0.51, lost 0.15 per empire in 100 turns | 0.4–0.6 in five games, 1.2 and 0.0 in two more (game 6: built 1.4, lost 0.2) | L |
-| Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 22.5k / 28.9k / 32.5k at turns 50 / 75 / 100; colonies 10.7 / 14.3 / 16.4 (seeds 1–24; 11.0 / 14.6 / 16.4 over 120 seeds, a colony more at turn 100 since the construction budget takes off the queues' commitments) | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |
-| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; ours lose more, in decided battles away from colonies, which ours fight more often (questions 66, 68; drawn battles vary as much in the original; the Defend (Short Term) fleet rule below closes most of it). Fewer are scrapped since the soft cap leaves colony ships out; fewer are built in the first 50 turns since the budget takes off the queues' commitments | Ships 3.2 / 7.3 / 12.1 / 13.9 per empire at turns 25 / 50 / 75 / 100 (attack ships 7.1 / 8.2 at 75 / 100; 120 seeds: 3.3 / 7.6 / 12.3 / 15.0); over turns 26–100 23.1 attack ships built and 17.2 lost per empire; 4.3 % lost per attack ship and turn in turns 51–100 (3.9 % over 120 seeds) | 14.1 / 17.4 (8.6 / 10.5); 21.4 built and 12.5 lost; 1.9 % | M |
-| Colonies changing hands (spec 05 questions 63, 67, 69, 76, 77). In the original every colony lost goes in a battle at its planet (none captured, none destroyed) and nearly every colony gained is founded on a free planet; a battle against a weak colony goes the same way in both. The original fights more of them, each defend-list entry with its own defence fleet (the Defend (Short Term) fleet rule below), and has more enemy colonies inside its territories (question 77) | Per empire and 25 turns of turns 51–100: founded 3.8, lost 1.2; battles at an enemy colony 2.0, ending with the colony gone 1.0; 2.5 attack ships per targeted colony (with the fleet rule: 4.1, 1.8; 1.8, 1.5; 1.9) | Founded 2.8–6.3 (4.5), lost 1.7–3.1 (six games); battles 3.0–4.9, colony gone 1.9–2.9 (four games); 1.1–1.3 ships per targeted colony (games 10, 13) | M |
+| Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 22.8k / 29.0k / 32.4k at turns 50 / 75 / 100; colonies 11.2 / 14.5 / 15.7 (240 seeds, after the rules of 2026-10-03 below; 22.6k / 29.4k / 33.2k and 11.2 / 15.0 / 16.6 before them: the Defend (Short Term) fleet rule loses more colonies, question 76) | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |
+| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; since the Defend (Short Term) fleet rule of 2026-10-03 ours fight as many decided battles away from colonies as the original (3.8 won per empire and 25 turns of turns 51–100, the original 2.1–4.8) and lose 4.4 attack ships in battle (3.8–8.0 in four games), and they keep more ships; the gap at turn 100 is within the original's spread | Ships 3.4 / 8.0 / 13.2 / 16.4 per empire at turns 25 / 50 / 75 / 100 (240 seeds, after the rules of 2026-10-03; 3.2 / 7.7 / 12.4 / 15.6 before them) | 3.5 / 8.6 / 14.1 / 17.4 (6.6–11.8 per game at turn 50) | L |
+| Colonies changing hands (spec 05 questions 63, 67, 69, 76, 77). In the original every colony lost goes in a battle at its planet (none captured, none destroyed) and nearly every colony gained is founded on a free planet; a battle against a weak colony goes the same way in both. Since the Defend (Short Term) fleet rule of 2026-10-03 ours send one defence fleet to each defend-list entry, as the original does; what is left is the number of enemy colonies inside the territories (question 77) and the colonies held at turn 100 (question 76) | Per empire and 25 turns of turns 51–100 (240 seeds): founded or taken 4.1, lost 1.9; battles at an enemy colony 2.6, ending with the colony gone 1.8 (before the rules of 2026-10-03: 3.8, 1.2; 2.2, 1.1); colonies at turn 100 15.7 | Founded 2.8–6.3 (4.5), lost 1.7–3.1 (six games); battles 3.0–4.9, colony gone 1.9–2.9 (four games); 17.0 | M |
 
 The rows found on 2026-10-02 (spec 05 §7.2, §7.5, question 60; confirmed: binary) were
 implemented that day; spec 07 "Pace after the movement rules" measures them:
@@ -744,56 +743,70 @@ tie-break and budget rules" measures them (120 seeds, paired):
   vehicles of the moment and less what each colony queue will spend this turn on its first
   item (its cost less what was paid, at most the queue's rate; yard ships' queues not
   counted); the facility upgrades spend the figure of the start-of-turn step
-  (`TurnContext::aiStartNet`). The engine's own choices are spec 05 question 73. Turns over
+  (`TurnContext::aiStartNet`, now `aiStartFigures`). The engine's own choices were spec 05 question 73. Turns over
   the soft cap fell from 3.5 to 1.2 % of turns 26–50 (the original none) and from 16 to
   11 % of turns 51–100 (the original 14 and 16 % in two games, at our upper quartile per
   game); colonies at turn 100 rose from 15.4 to 16.4 and resources from 30.8k to 33.2k
   (the original 17.0 and 36.9k).
 
-Two details of the cap test are not followed and change little: the revenue comes from
-the last income report rather than the production of the moment (within 3 % at the median
-in turns 11–50), and the threshold is not taken in single precision (spec 05 §7.5).
-
-Found under a debugger on 2026-10-03 (spec 05 §7.5, spec 03 §6.3, spec 04 §2, questions
-68–76; spec 07 "The computer players' second round under a debugger"; confirmed: binary),
-not yet implemented, ranked by what they change in 120 scratch games:
+Found under a debugger on 2026-10-03 (spec 05 §7.2, §7.5, spec 03 §6.3, spec 04 §2,
+questions 68–73; spec 07 "The computer players' second round under a debugger"; confirmed:
+binary) and implemented the same day; spec 07 "Pace after the second debugger round"
+measures them (240 seeds, paired, per empire and 25 turns of turns 51–100 unless marked):
 
 - **Fleets in Defend (Short Term)** (`planFleets`, `ai_military.cpp`). With enemies listed,
   each defend-list entry of the systems to defend, in the fleets' order, gets the nearest
-  idle defence fleet (one entry per fleet, no limit by the threat); then the minister gives
-  no other fleet orders that turn, so attack fleets and leftover fleets stay idle. Ours
-  take the raw enemy objects and then send every leftover fleet, attack fleets included, to
-  the top entries, a patrol or an exploration. With the rule: decided battles won away
-  from colonies 5.0 → 4.1 per empire and 25 turns (the original 2.1–4.8), ships lost in
-  battle 7.8 → 5.9, battles ending with the enemy colony gone 1.0 → 1.6 (1.9–2.2),
-  colonies lost 1.2 → 1.8 (1.7–3.6), Defend (Short Term) 72 → 67 % of turns 51–100 (70 %),
-  colonies at turn 100 16.4 → 15.3 (17.0; question 76).
-- **The vehicle table's counts** (`ShipBuilder::have`, `ai_economy.cpp`). Taken once before
-  the clean-up of obsolete items, so an item removed this turn still counts. Second attack
-  ship on turn 9 instead of 5 and first colony ship on turn 7 instead of 9 (as the
-  original), ships at turn 50 7.5 → 8.0 (8.6).
-- **Idle vehicles in the daily battle check** (`Mover::run`, `movement.cpp`). A vehicle that
-  acts by its movement schedule marks its sector with or without orders. Battles 11.1 →
-  13.2 per empire and 25 turns, the new ones drawn without a shot; decided battles and
-  losses unchanged.
+  idle defence fleet with members at its location (one entry per fleet, no limit by the
+  threat); then the minister gives no other fleet orders that turn, so attack fleets and
+  leftover fleets stay idle. It used to take the raw enemy objects and then send every
+  leftover fleet, attack fleets included, to the top entries, a patrol or an exploration.
+- **The vehicle table's counts** (`ShipBuilder::takeCounts`, `ai_economy.cpp`). Taken once
+  before the clean-up of obsolete items, so an item removed this turn still counts: the
+  second attack ship comes on turn 9 (median) instead of 5 and the first colony ship on
+  turn 7 instead of 9, as in the original; 1.1 attack ships per empire at turn 5 (the
+  original 1.05).
+- **Idle vehicles in the daily battle check** (`Mover::run`, `movement.cpp`). A vehicle with
+  movement acts on its counter's days with or without orders and marks its sector.
 - **Exploring fleets** (`planFleets`). The player's Move To toward the frontier point and
-  the Warp, lasting until done, instead of a Seek and the Warp; no measurable change.
-- **Fleet leaders** (`canLeadFleet`, `planFleets`). The search walks the vehicle list from
-  its end (slot order) and has no idle test; ours take the newest idle ship by id.
-- **Scrap** (`scrapOldest`). The Move To and Scrap go straight onto the candidate's list,
-  fleet member or cloaked, and the place is the nearest queue owner with a working yard in
-  the empire's queue list order; ours make the candidate leave its fleet, pass over a
-  cloaked one and use the Repair minister's yard search (what the original's Scrap does to
-  a fleet is question 74).
-- **Net income's timing**: the start-of-turn figure is worked out before the AI state update
-  and Politics (ours after Politics); the cap test's revenue comes from the colonies of the
-  moment (ours from the last income report).
-- **Jump counts compared with numbers** (spec 05 §7.2 *Jumps*, spec 01 §14 Q45). The
-  original's count is the jumps plus two, so its tests mean at most 2 jumps for the strength
-  test around the targets, 1 jump for fleet recruiting (which also has no idle test) and the
-  setting less 2 for the drones, and its "more than one jump from the first target" in
-  Prepare for Attack always holds; ours test 4, 3 and the setting in real jumps
-  (`ai_anger.cpp`, `ai_military.cpp`). No measurable change in 48 scratch games.
+  the Warp, kept until done, instead of a Seek and the Warp.
+- **Fleet leaders and recruits** (`planFleets`). The leader search walks the vehicle list
+  back from its end in slot order, with no idle test; recruits are ships outside fleets
+  without a Join Fleet order, within 1 jump, with no idle test.
+- **Scrap** (`scrapOldest`, `cmd::Scrap` with `moveFirst`). The place is the nearest queue
+  owner with a working yard, in the empire's queue list order (`queueList`, `workingYard`);
+  the Move To (only for a candidate that can move and stands elsewhere) and the Scrap go
+  straight onto the candidate's list without the Scrap window's checks, so a cloaked or
+  busy candidate gets them too and the Scrap makes its test when carried out.
+- **The start-of-turn figures** (`ai::startOfTurnFigures`, `TurnContext::aiStartFigures`).
+  The net income is worked out first thing, before the AI state update and Politics, and
+  so is the caps' revenue, afresh from the colonies (`economy::incomeReport`); the
+  economy step reuses both.
+- **The caps' threshold in single precision** (`aboveSingleShare`, `ai.cpp`): M / 100 and the
+  product with the revenue rounded as 32-bit floats are, worked out exactly in integers
+  (spec 05 §7.5 explains why it agrees with the original's float arithmetic for every
+  value a game reaches).
+- **Jump counts compared with numbers** (`aiJumpCount`, spec 05 §7.2 *Jumps*). The
+  original's count is the jumps plus two: the strength test around the targets reaches 2
+  jumps, recruiting 1, the drones the setting less 2, and the Attack minister's "more than
+  one jump from the first target" in Prepare for Attack always holds, so its ships outside
+  fleets go to the staging system.
+
+Together: battles 10.3 → 8.8, decided battles won away from colonies 4.6 → 3.8 (the
+original 2.1–4.8), attack ships lost in battle 5.7 → 4.4 (3.8–8.0), battles at an enemy
+colony 2.2 → 2.6 (3.0–4.9) and ending with the colony gone 1.1 → 1.8 (1.9–2.9), colonies
+founded or taken 3.8 → 4.1 (4.5) and lost 1.2 → 1.9 (1.7–3.6), Defend (Short Term) 70 → 67 %
+of turns 51–100 (70 %), Exploration 76 → 79 % of turns 1–25 (80 %), ships at turns 50 /
+100 7.7 / 15.6 → 8.0 / 16.4 (8.6 / 17.4), colonies at turn 100 16.6 → 15.7 (17.0), turns
+over the soft cap 1.2 / 12.4 → 1.3 / 13.2 % of turns 26–50 / 51–100 (0–6 / 14–30 % in four
+games). The rows above give what remains.
+
+| Where | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| A Scrap order on a fleet member (`scrapOldest`; spec 05 question 74) | The candidate leaves its fleet before it gets the Move To and the Scrap (inferred) | The orders go onto the member's own list; its fleet's group carries them out, so the Move To takes the whole fleet and the Scrap takes the group's first member (read in the executable, not traced) | L |
+| Attack minister in Prepare for Attack (`planAttack`) | A ship outside fleets already in the staging system gets no order from the routine (inferred) | Every ship outside the staging system is sent there; the spec names nothing for those inside it | L |
+
+The turn-based golden game of `tests/test_determinism.cpp` moved to seed 39 with these
+rules (2026-10-03): seed 35 fought only four battles, below the coverage check's five.
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state
