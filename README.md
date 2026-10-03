@@ -70,10 +70,12 @@ OpenSE4 reads your installed copy of Space Empires IV Deluxe in place.
 Games are hosted from the client or with the dedicated `opense4-server`.
 
 - **TCP:** direct play over the network, with simultaneous turns or one player after
-  another. The default port is 6720, and the router is forwarded automatically over
-  UPnP when the router allows it.
+  another. Connections are encrypted, the game remembers each host's key, and a
+  dropped player reconnects without losing the turn. The default port is 6720, and the
+  router is forwarded automatically over UPnP when the router allows it.
 - **Hotseat:** several players on one machine.
-- **PBEM:** turn files passed by mail or a shared folder.
+- **PBEM:** turn files passed by mail or a shared folder. Each player's turn file holds
+  only their own view, encrypted for them and signed by the host.
 
 See [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 

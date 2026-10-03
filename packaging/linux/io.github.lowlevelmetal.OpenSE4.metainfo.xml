@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.7.0" date="2026-10-02" type="development">
+      <description>
+        <p>Encrypted network games and private play-by-e-mail turn files, reconnecting after a dropped connection, the setup, management and battle windows in the original's layouts, and computer players that defend and take colonies as the original's do.</p>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-10-02" type="development">
       <description>
         <p>A build fix for Visual Studio 2022; plays together with 0.6.0 and reads its saves.</p>
