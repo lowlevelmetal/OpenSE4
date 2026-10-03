@@ -800,11 +800,12 @@ over a **30-day** month (confirmed: binary):
    days; a vehicle carried along by a group member does not act itself), and the sector of a
    colony that acted with orders (confirmed: binary; observed 2026-10-03: in game 10 a
    little under half of the ships' daily actions were made with an empty list, spec 07 "The
-   computer players' second round under a debugger"). The engine differs: `Mover::run`
-   (`movement.cpp`) skips a vehicle with no orders, so only an action that carries out an
-   order marks a sector; in 120 scratch games with idle vehicles marking theirs, battles
-   went from 11.1 to 13.2 per empire and 25 turns of turns 51–100, nearly all of the new
-   ones drawn without a shot, and decided battles and losses did not change. When an empire
+   computer players' second round under a debugger"). OpenSE4 follows this since
+   2026-10-03 (`Mover::run`, `movement.cpp`); it used to skip a vehicle with no orders, so
+   only an action that carried out an order marked a sector. In 120 scratch games with idle
+   vehicles marking theirs, battles went from 11.1 to 13.2 per empire and 25 turns of turns
+   51–100, nearly all of the new ones drawn without a shot, and decided battles and losses
+   did not change. When an empire
    with an uncloaked vehicle there sees an object, not a minefield, of an empire it is
    hostile to (spec 04 §2; a colony never counts as the side that sees), a combat is fought,
    unless the location already had a battle this turn and both of these hold for the latest

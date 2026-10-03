@@ -111,8 +111,9 @@ computer resolves every battle. The manual's older rule (combat only on every 5t
 replaced (history 1.15, 1.42). After each of the 30 daily steps of the movement phase, every
 sector where an object acted that day is checked: a vehicle on each day its movement
 schedule makes it act, whether or not it has orders (so an idle ship counts), and a colony
-that acted with orders (spec 03 §6.3 steps 3 and 6; confirmed: binary). The engine differs:
-only an action that carries out an order marks the sector (`Mover::run`). The check passes
+that acted with orders (spec 03 §6.3 steps 3 and 6; confirmed: binary). OpenSE4 follows
+this since 2026-10-03 (`Mover::run`); it used to mark only an action that carried out an
+order. The check passes
 when an empire with a vehicle or unit group in the sector that is not flagged as cloaked
 sees an object of an empire it is hostile to. Only the flag counts: a fighter, satellite or
 drone group whose cloak hides it all the same still counts as a side that sees, and so does
