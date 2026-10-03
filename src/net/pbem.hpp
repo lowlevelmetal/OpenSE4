@@ -73,6 +73,8 @@ struct TurnView {
     std::vector<uint8_t> view;     // game::serializeState() of the view
 };
 
+// A TurnView as the turn file's content holds it (before any encryption).
+std::vector<uint8_t> encodeTurnView(const TurnView& v);
 std::vector<uint8_t> encodeTurnFile(const TurnFile& f);
 std::expected<TurnFile, std::string> decodeTurnFile(std::span<const uint8_t> bytes);
 std::expected<TurnFile, std::string> readTurnFile(const std::filesystem::path& file);

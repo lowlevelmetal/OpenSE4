@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -180,33 +181,85 @@ TEST_CASE("net security: the cryptography wrappers") {
     CHECK(fp != crypto::fingerprint(bob.publicKey));
 }
 
-TEST_CASE("net security: password verifiers check signatures, and those of OpenSE4 0.6 still work") {
-    const std::string hash = net::hashPassword("hunter2");
-    const std::string verifier = net::passwordVerifier(hash);
+TEST_CASE("net security: password keys come from the password itself, salted per game, never from 0.6's hash") {
+    const uint64_t game = 0x5eed;
+    const auto keys = net::passwordKeys("hunter2", game);
+    REQUIRE(keys.has_value());
+    const std::string verifier = keys->verifier();
+    CHECK(verifier == net::passwordVerifier("hunter2", game));
     CHECK(verifier.starts_with("pk1:"));
-    CHECK(verifier.size() == 4 + 64);
-    CHECK(net::verifierKey(verifier).has_value());
-    CHECK(net::checkPassword(verifier, hash));
-    CHECK_FALSE(net::checkPassword(verifier, net::hashPassword("hunter3")));
-    CHECK_FALSE(net::checkPassword(verifier, ""));
-    CHECK(net::checkPassword("", hash));
+    CHECK(verifier.size() == 4 + 128);  // the signing key, then the box key
+    REQUIRE(net::verifierKeys(verifier).has_value());
+    CHECK(net::verifierKeys(verifier)->signing == keys->signing.publicKey);
+    CHECK(net::verifierKeys(verifier)->box == keys->box.publicKey);
+    CHECK(net::usableVerifier(verifier));
+    CHECK(net::usableVerifier(""));
+    CHECK(net::checkPassword(verifier, "hunter2", game));
+    CHECK_FALSE(net::checkPassword(verifier, "hunter3", game));
+    CHECK_FALSE(net::checkPassword(verifier, "", game));
+    CHECK(net::checkPassword("", "anything", game));
+    // Another game: another salt, another verifier (a verifier of one game helps with no other).
+    CHECK(net::passwordVerifier("hunter2", game + 1) != verifier);
+    CHECK_FALSE(net::checkPassword(verifier, "hunter2", game + 1));
+    CHECK_FALSE(net::passwordKeys("", game).has_value());
+
+    // OpenSE4 0.6 sent its hash of the password in the clear. Nothing made
+    // from that hash opens or signs anything of the current kind.
+    const std::string oldHash = net::legacyPasswordHash("hunter2");
+    CHECK(net::passwordVerifier(oldHash, game) != verifier);
+    CHECK_FALSE(net::checkPassword(verifier, oldHash, game));
 
     // A login or an orders file proves the password by signing.
     const auto message = bytesOf("session 42");
-    const crypto::Signature sig = net::signWithPassword(hash, message);
+    const crypto::Signature sig = net::signWith(keys, message);
     CHECK(net::checkPasswordSignature(verifier, message, sig));
     CHECK_FALSE(net::checkPasswordSignature(verifier, bytesOf("session 43"), sig));
-    CHECK_FALSE(net::checkPasswordSignature(verifier, message, net::signWithPassword(net::hashPassword("guess"), message)));
+    CHECK_FALSE(net::checkPasswordSignature(verifier, message, net::signWith(net::passwordKeys("guess", game), message)));
+    CHECK_FALSE(net::checkPasswordSignature(verifier, message, net::signWith(net::passwordKeys(oldHash, game), message)));
     CHECK(net::checkPasswordSignature("", message, crypto::Signature{}));  // no password set
-    CHECK(net::signWithPassword("", message) == crypto::Signature{});
+    CHECK(net::signWith(std::nullopt, message) == crypto::Signature{});
 
-    // The verifier of OpenSE4 0.6: still checks the hash, but no signature.
-    const std::string legacy = net::legacyPasswordVerifier(hash);
+    // Verifiers a player cannot have made: malformed, or with a key of small order.
+    crypto::Key identity{};
+    identity[0] = 1;  // the neutral point of Edwards25519
+    const std::string box = crypto::hex(keys->box.publicKey), signing = crypto::hex(keys->signing.publicKey);
+    CHECK_FALSE(net::usableVerifier("pk1:" + crypto::hex(identity) + box));
+    CHECK_FALSE(net::usableVerifier("pk1:" + signing + crypto::hex(crypto::Key{})));
+    CHECK_FALSE(net::usableVerifier("pk1:" + signing));
+    CHECK_FALSE(net::usableVerifier(std::string(64, 'a')));  // looks like 0.6's
+    CHECK_FALSE(net::verifierKeys("pk1:zz" + verifier.substr(6)).has_value());
+
+    // The verifier of OpenSE4 0.6: still checks the password once, but no signature.
+    const std::string legacy = net::legacyPasswordVerifier(oldHash);
     CHECK(net::isLegacyVerifier(legacy));
     CHECK_FALSE(net::isLegacyVerifier(verifier));
-    CHECK(net::checkPassword(legacy, hash));
-    CHECK_FALSE(net::checkPassword(legacy, net::hashPassword("nope")));
+    CHECK(net::checkPassword(legacy, "hunter2", game));
+    CHECK(net::checkLegacyPassword(legacy, oldHash));
+    CHECK_FALSE(net::checkPassword(legacy, "nope", game));
     CHECK_FALSE(net::checkPasswordSignature(legacy, message, sig));
+
+    // Join keys: per host key and game; none without a password.
+    const crypto::Key hostA = crypto::newKeyPair().publicKey, hostB = crypto::newKeyPair().publicKey;
+    CHECK(net::joinKey("", hostA, game) == crypto::Key{});
+    CHECK(net::joinKey("letmein", hostA, game) == net::joinKey("letmein", hostA, game));
+    CHECK(net::joinKey("letmein", hostA, game) != net::joinKey("letmein", hostB, game));
+    CHECK(net::joinKey("letmein", hostA, game) != net::joinKey("letmein", hostA, game + 1));
+}
+
+TEST_CASE("net security: the real Argon2id work") {
+    // The tests run with less work (tests/main.cpp); the game's own is 128 MiB, three passes.
+    const net::PasswordWork tests = net::passwordWork();
+    CHECK(net::PasswordWork{}.kibibytes == 128 * 1024);
+    CHECK(net::PasswordWork{}.passes == 3);
+    const std::string light = net::passwordVerifier("hunter2", 7);
+    net::setPasswordWork(net::PasswordWork{});
+    const auto start = std::chrono::steady_clock::now();
+    const std::string real = net::passwordVerifier("hunter2", 7);
+    const auto took = std::chrono::steady_clock::now() - start;
+    net::setPasswordWork(tests);
+    MESSAGE("one password key with the game's own work took " << std::chrono::duration_cast<std::chrono::milliseconds>(took).count() << " ms");
+    CHECK(real != light);  // the work is part of the key: every computer of a game uses the same
+    CHECK(net::usableVerifier(real));
 }
 
 TEST_CASE("net security: a host's key is kept in a file, and players remember it per host") {
@@ -218,6 +271,22 @@ TEST_CASE("net security: a host's key is kept in a file, and players remember it
     auto again = net::secure::loadOrCreateHostKey(file);
     REQUIRE(again.has_value());
     CHECK(again->publicKey == first->publicKey);
+#ifndef _WIN32
+    // Readable by its owner only, in a folder only the owner enters.
+    namespace fs = std::filesystem;
+    CHECK((fs::status(file).permissions() & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
+    CHECK((fs::status(file.parent_path()).permissions() & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
+#endif
+    // Another program's key made meanwhile is never overwritten: it counts.
+    const auto other = tmp / "taken.txt";
+    {
+        std::ofstream made(other);
+        made << crypto::hex(crypto::newKeyPair().secret) << "\n";
+    }
+    const auto before = std::filesystem::last_write_time(other);
+    auto read = net::secure::loadOrCreateHostKey(other);
+    REQUIRE(read.has_value());
+    CHECK(std::filesystem::last_write_time(other) == before);
     {
         std::ofstream broken(tmp / "broken.txt");
         broken << "not a key\n";
@@ -240,13 +309,13 @@ TEST_CASE("net security: a host's key is kept in a file, and players remember it
 
 TEST_CASE("net security: an eavesdropper sees neither the game nor the passwords") {
     net::HostConfig cfg = hostConfig(1);
-    cfg.masterPasswordHash = net::hashPassword("master-pw");
+    cfg.masterPassword = "master-pw";
     net::HostSession host(engineRules(), cfg);
     REQUIRE(host.start().has_value());
     REQUIRE(host.addComputerEmpire().has_value());
     Relay relay(host.port());
     net::ClientConfig cc = viaRelay(relay, host, "alice", "a-secret");
-    cc.masterPasswordHash = net::hashPassword("master-pw");
+    cc.masterPassword = "master-pw";
     net::ClientSession alice(cc);
     Loop loop(host, {&alice});
     REQUIRE(alice.connect().has_value());
@@ -278,9 +347,10 @@ TEST_CASE("net security: an eavesdropper sees neither the game nor the passwords
         CHECK_FALSE(contains(*stream, "the secret plan"));
         CHECK_FALSE(contains(*stream, "our secret chat"));
         CHECK_FALSE(contains(*stream, "alice"));
-        CHECK_FALSE(contains(*stream, net::hashPassword("a-secret")));
-        CHECK_FALSE(contains(*stream, net::hashPassword("master-pw")));
-        CHECK_FALSE(contains(*stream, net::passwordVerifier(net::hashPassword("a-secret")).substr(4)));
+        CHECK_FALSE(contains(*stream, "a-secret"));
+        CHECK_FALSE(contains(*stream, "master-pw"));
+        CHECK_FALSE(contains(*stream, net::legacyPasswordHash("a-secret")));
+        CHECK_FALSE(contains(*stream, net::passwordVerifier("a-secret", host.gameId()).substr(4, 64)));
         CHECK_FALSE(contains(*stream, "Loopback"));  // the game's name
         CHECK_FALSE(contains(*stream, game::dataSetIdentity(engineRules())));
     }
@@ -358,13 +428,13 @@ TEST_CASE("net security: changed, repeated and reordered messages end the connec
 
 TEST_CASE("net security: the host's key is pinned, and an impostor without the join password gets nothing") {
     net::HostConfig cfg = hostConfig(2);
-    cfg.joinPasswordHash = net::hashPassword("letmein");
+    cfg.joinPassword = "letmein";
     net::HostSession real(engineRules(), cfg);
     REQUIRE(real.start().has_value());
 
     // First contact: the client trusts the key it sees, and keeps it.
     net::ClientConfig first = clientConfig(real, "alice", "a-secret");
-    first.joinPasswordHash = net::hashPassword("letmein");
+    first.joinPassword = "letmein";
     net::ClientSession alice(first);
     Loop loop(real, {&alice});
     REQUIRE(alice.connect().has_value());
@@ -376,19 +446,20 @@ TEST_CASE("net security: the host's key is pinned, and an impostor without the j
 
     // A wrong join password: the handshake itself fails.
     net::ClientConfig wrong = clientConfig(real, "bob", "b-secret");
-    wrong.joinPasswordHash = net::hashPassword("guess");
+    wrong.joinPassword = "guess";
     net::ClientSession guesser(wrong);
     Loop loop2(real, {&guesser});
     REQUIRE(guesser.connect().has_value());
     REQUIRE(loop2.until([&] { return loop2.clientSaw(0, EventType::Rejected) != nullptr; }));
-    CHECK(loop2.clientSaw(0, EventType::Rejected)->text == "Wrong game password.");
+    // Said in the clear, before anything was secured: shown as the host's word only.
+    CHECK(loop2.clientSaw(0, EventType::Rejected)->text == "The host said, before the connection was secured: Wrong game password.");
 
     // Impostors, at another address the player was sent to.
     net::HostConfig openCfg = hostConfig(2);
     net::HostSession open(engineRules(), openCfg);       // asks for no join password
     REQUIRE(open.start().has_value());
     net::HostConfig guessCfg = hostConfig(2);
-    guessCfg.joinPasswordHash = net::hashPassword("a guess");
+    guessCfg.joinPassword = "a guess";
     net::HostSession guessing(engineRules(), guessCfg);  // does not know the real one
     REQUIRE(guessing.start().has_value());
     auto tryJoin = [&](net::HostSession& at, std::optional<crypto::Key> pin) {
@@ -408,7 +479,7 @@ TEST_CASE("net security: the host's key is pinned, and an impostor without the j
     // Claiming no join password does not get around it...
     CHECK(tryJoin(open, std::nullopt).first.find("does not ask for a game password") != std::string::npos);
     // ... and without the right one the login cannot be read: the impostor learns no name or proof.
-    CHECK(tryJoin(guessing, std::nullopt).first == "Wrong game password.");
+    CHECK(tryJoin(guessing, std::nullopt).first.ends_with("Wrong game password."));
     // With the real host's key pinned, any other key is refused before anything is sent.
     auto [text, changed] = tryJoin(guessing, real.hostKey());
     CHECK(changed);
@@ -422,38 +493,60 @@ TEST_CASE("net security: the host's key is pinned, and an impostor without the j
     REQUIRE(loop.until([&] { return alice.phase() == net::ClientPhase::Lobby; }));
 }
 
-TEST_CASE("net security: a wrong master password gives no admin rights, and old verifiers are replaced at login") {
+TEST_CASE("net security: a wrong master password gives no admin rights, and old verifiers move only with the player's consent") {
     // A game saved by OpenSE4 0.6: its verifiers are of the old kind.
     game::GameState s = newEngineGame(13, 2, 10, true);
-    s.empire(game::EmpireId{0u}).passwordHash = net::legacyPasswordVerifier(net::hashPassword("a-secret"));
-    s.empire(game::EmpireId{1u}).passwordHash = net::legacyPasswordVerifier(net::hashPassword("b-secret"));
+    s.empire(game::EmpireId{0u}).passwordHash = net::legacyPasswordVerifier(net::legacyPasswordHash("a-secret"));
+    s.empire(game::EmpireId{1u}).passwordHash = net::legacyPasswordVerifier(net::legacyPasswordHash("b-secret"));
     game::SaveInfo info;
     info.gameName = "Old Game";
+    info.gameId = 51;
     info.dataSet = game::dataSetIdentity(engineRules());
     info.players = {"alice", "bob"};
     net::HostConfig cfg = hostConfig(2);
-    cfg.masterPasswordHash = net::hashPassword("boss");
+    cfg.masterPassword = "boss";
+    cfg.joinPassword = "letmein";
     net::HostSession host(engineRules(), cfg);
     REQUIRE(host.resume(s, info).has_value());
+    auto bobConfig = [&] {
+        net::ClientConfig c = clientConfig(host, "bob", "b-secret");
+        c.joinPassword = "letmein";
+        return c;
+    };
 
-    // The password hash such a game needs goes only to a host the player
-    // trusted beforehand: met for the first time, it could be anyone claiming
-    // an old game to collect it.
-    net::ClientSession firstMeeting(clientConfig(host, "bob", "b-secret"));
-    Loop first(host, {&firstMeeting});
-    REQUIRE(firstMeeting.connect().has_value());
+    // The host asks this player (and only when this player logs in) for the old form.
+    net::ClientSession asked(bobConfig());
+    Loop first(host, {&asked});
+    REQUIRE(asked.connect().has_value());
     REQUIRE(first.until([&] { return first.clientSaw(0, EventType::Rejected) != nullptr; }));
-    CHECK(firstMeeting.hostKeyUnconfirmed());
-    CHECK(first.clientSaw(0, EventType::Rejected)->text.find(host.hostFingerprint()) != std::string::npos);
-    CHECK_FALSE(first.hostSaw(EventType::PlayerReconnected));
+    CHECK(asked.hostAskedOldPassword());
+    CHECK(first.clientSaw(0, EventType::Rejected)->text.find("OpenSE4 0.6") != std::string::npos);
     CHECK(net::isLegacyVerifier(host.state()->empire(game::EmpireId{1u}).passwordHash));
 
+    // The player agrees, but has not trusted the host's key beforehand: a host
+    // met for the first time could be anyone claiming an old game, and the join
+    // password vouches for nothing. Nothing is sent.
+    net::ClientConfig unpinned = bobConfig();
+    unpinned.sendOldPassword = true;
+    net::ClientSession careless(unpinned);
+    Loop second(host, {&careless});
+    REQUIRE(careless.connect().has_value());
+    REQUIRE(second.until([&] { return second.clientSaw(0, EventType::Rejected) != nullptr; }));
+    CHECK(careless.hostKeyUnconfirmed());
+    CHECK(second.clientSaw(0, EventType::Rejected)->text.find(host.hostFingerprint()) != std::string::npos);
+    CHECK(net::isLegacyVerifier(host.state()->empire(game::EmpireId{1u}).passwordHash));
+
+    // A trusted key and the player's consent: the password moves to the new
+    // kind, made from the password itself (not from the old hash).
     net::ClientConfig wrongCfg = clientConfig(host, "alice", "nope");
+    wrongCfg.joinPassword = "letmein";
     wrongCfg.hostKey = host.hostKey();
+    wrongCfg.sendOldPassword = true;
     net::ClientSession wrongPw(wrongCfg);
-    net::ClientConfig bobCfg = clientConfig(host, "bob", "b-secret");
-    bobCfg.masterPasswordHash = net::hashPassword("not the boss");
+    net::ClientConfig bobCfg = bobConfig();
+    bobCfg.masterPassword = "not the boss";
     bobCfg.hostKey = host.hostKey();  // compared with the host's and trusted
+    bobCfg.sendOldPassword = true;
     net::ClientSession bob(bobCfg);
     Loop loop(host, {&wrongPw, &bob});
     REQUIRE(wrongPw.connect().has_value());
@@ -461,21 +554,81 @@ TEST_CASE("net security: a wrong master password gives no admin rights, and old 
     REQUIRE(loop.until([&] { return loop.clientSaw(0, EventType::Rejected) && bob.state() != nullptr; }));
     CHECK(loop.clientSaw(0, EventType::Rejected)->text.find("Wrong password") != std::string::npos);
     CHECK_FALSE(bob.admin());
-    // Bob's verifier is now of the current kind, and still his password's.
+    CHECK_FALSE(bob.config().sendOldPassword);  // agreed once, for that login
     const std::string& upgraded = host.state()->empire(game::EmpireId{1u}).passwordHash;
-    CHECK(upgraded.starts_with("pk1:"));
-    CHECK(net::checkPassword(upgraded, net::hashPassword("b-secret")));
+    CHECK(upgraded == net::passwordVerifier("b-secret", info.gameId));
+    CHECK_FALSE(net::checkPassword(upgraded, net::legacyPasswordHash("b-secret"), info.gameId));
     CHECK(net::isLegacyVerifier(host.state()->empire(game::EmpireId{0u}).passwordHash));
 
     net::ClientConfig aliceCfg = clientConfig(host, "alice", "a-secret");
-    aliceCfg.masterPasswordHash = net::hashPassword("boss");
+    aliceCfg.joinPassword = "letmein";
+    aliceCfg.masterPassword = "boss";
     aliceCfg.hostKey = host.hostKey();
+    aliceCfg.sendOldPassword = true;
     net::ClientSession alice(aliceCfg);
     Loop loop2(host, {&alice});
     REQUIRE(alice.connect().has_value());
     REQUIRE(loop2.until([&] { return alice.state() != nullptr; }));
     CHECK(alice.admin());
-    CHECK(host.state()->empire(game::EmpireId{0u}).passwordHash.starts_with("pk1:"));
+    CHECK(host.state()->empire(game::EmpireId{0u}).passwordHash == net::passwordVerifier("a-secret", info.gameId));
+}
+
+TEST_CASE("net security: a player can set only a password value of the current kind") {
+    TwoPlayerGame g;
+    net::HostSession& host = g.host;
+    Loop& loop = *g.loop;
+    const std::string before = host.state()->empire(g.alice.empire()).passwordHash;
+    // A value that looks like OpenSE4 0.6's verifier would make the host ask
+    // for the old form of the password, and an unreadable one lock the empire out.
+    for (const std::string& bad : {std::string(64, 'a'), std::string("pk1:nonsense")}) {
+        loop.clear();
+        game::EmpireOrders orders = noteOrders(g.alice, "x");
+        orders.commands.push_back(game::cmd::SetEmpireOptions{.passwordHash = bad});
+        REQUIRE(g.alice.submitOrders(orders).has_value());
+        REQUIRE(loop.until([&] { return loop.clientSaw(0, EventType::OrdersRejected) != nullptr; }));
+        CHECK(loop.clientSaw(0, EventType::OrdersRejected)->text.find("password") != std::string::npos);
+    }
+    CHECK_FALSE(host.submitOrders(game::EmpireOrders{g.bob.empire(), 0, {game::cmd::SetEmpireOptions{.passwordHash = std::string(64, 'b')}}})
+                    .has_value());
+    // A verifier of the current kind is fine.
+    game::EmpireOrders good = noteOrders(g.alice, "y");
+    good.commands.push_back(game::cmd::SetEmpireOptions{.passwordHash = net::passwordVerifier("fresh", host.gameId())});
+    REQUIRE(g.alice.submitOrders(good).has_value());
+    REQUIRE(g.bob.submitOrders(noteOrders(g.bob, "z")).has_value());
+    REQUIRE(loop.until([&] { return host.state()->turn == 1; }));
+    CHECK(host.state()->empire(g.alice.empire()).passwordHash != before);
+    CHECK(net::checkPassword(host.state()->empire(g.alice.empire()).passwordHash, "fresh", host.gameId()));
+}
+
+TEST_CASE("net security: the client reads only small frames before the host has shown its keys") {
+    // A "host" that answers the greeting with a frame claiming 400 MiB.
+    auto listener = net::listenTcp("127.0.0.1", 0);
+    REQUIRE(listener.has_value());
+    net::ClientConfig cc;
+    cc.port = listener->localPort();
+    cc.playerName = "careful";
+    cc.dataSet = game::dataSetIdentity(engineRules());
+    net::ClientSession client(cc);
+    REQUIRE(client.connect().has_value());
+    net::Socket server;
+    std::vector<net::Event> events;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    bool sent = false;
+    while (std::chrono::steady_clock::now() < deadline && client.phase() != net::ClientPhase::Disconnected) {
+        for (auto& e : client.poll(1)) events.push_back(std::move(e));
+        if (!server.valid()) server = net::acceptConnection(*listener);
+        if (server.valid() && !sent) {
+            const uint32_t length = 400u << 20;
+            const uint8_t frame[] = {static_cast<uint8_t>(length), static_cast<uint8_t>(length >> 8), static_cast<uint8_t>(length >> 16),
+                                     static_cast<uint8_t>(length >> 24), static_cast<uint8_t>(net::proto::MsgType::ServerHello)};
+            sent = server.send(frame).status == net::IoStatus::Ok;
+        }
+    }
+    CHECK(client.phase() == net::ClientPhase::Disconnected);
+    const auto closed = std::find_if(events.begin(), events.end(), [](const net::Event& e) { return e.type == EventType::Disconnected; });
+    REQUIRE(closed != events.end());
+    CHECK(closed->text.find("too large") != std::string::npos);
+    CHECK(closed->text.find(std::to_string(net::proto::kMaxHandshakeBytes)) != std::string::npos);
 }
 
 // ---- Versions ------------------------------------------------------------------------------------------------

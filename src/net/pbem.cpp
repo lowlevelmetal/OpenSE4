@@ -102,6 +102,8 @@ std::vector<uint8_t> routeBytes(const SealedOrders& o) {
 
 // ---- Turn files ----------------------------------------------------------------------------------
 
+std::vector<uint8_t> encodeTurnView(const TurnView& v) { return game::serial::encode(v); }
+
 std::vector<uint8_t> encodeTurnFile(const TurnFile& f) { return game::wrapEnvelope(kTurnMagic, game::serial::encode(f)); }
 
 std::expected<TurnFile, std::string> decodeTurnFile(std::span<const uint8_t> bytes) {

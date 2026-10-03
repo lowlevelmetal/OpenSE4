@@ -47,7 +47,7 @@ inline net::ClientConfig clientConfig(const net::HostSession& host, std::string 
     net::ClientConfig c;
     c.port = host.port();
     c.playerName = std::move(name);
-    c.passwordHash = net::hashPassword(password);
+    c.password = std::move(password);
     c.dataSet = game::dataSetIdentity(engineRules());
     return c;
 }
@@ -232,9 +232,9 @@ struct RawPeer {
         login.dataSet = game::dataSetIdentity(engineRules());
         login.player = name;
         login.clientId = clientId;
-        const std::string hash = net::hashPassword(password);
-        login.passwordVerifier = net::passwordVerifier(hash);
-        login.passwordProof = net::signWithPassword(hash, net::secure::loginDigest(keys->sessionId, "player", name));
+        const auto passwordKeys = net::passwordKeys(password, answer.gameId);
+        login.passwordVerifier = passwordKeys ? passwordKeys->verifier() : std::string{};
+        login.passwordProof = net::signWith(passwordKeys, net::secure::loginDigest(keys->sessionId, "player", name));
         conn->send(net::proto::MsgType::Login, login);
         frames.clear();
         return waitFor(loop, net::proto::MsgType::Welcome);
