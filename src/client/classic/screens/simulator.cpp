@@ -398,6 +398,7 @@ private:
         }
         ui.facts.simulatorOwners = static_cast<int64_t>(sides.size());
         ui.facts.simulatorItems = static_cast<int64_t>(setup_.items.size());
+        ui.facts.simulatorOwner = std::format("race-{}", current_ + 1);
     }
 
     void add(UiContext& ui, SimulatorItem item) {

@@ -947,6 +947,19 @@ TEST_CASE("learn conditions: the kind of vehicle being designed") {
     CHECK_FALSE(ev("{ design_vehicle = \"base\" }"));
 }
 
+TEST_CASE("learn conditions: the race the simulator's items go to") {
+    Eval ev;
+    CHECK_FALSE(ev("{ simulator_owner = \"race-2\" }"));   // no simulator open
+    ev.client.simulatorOwner = "race-1";
+    CHECK_FALSE(ev("{ simulator_owner = \"race-2\" }"));
+    ev.client.simulatorOwner = "race-2";
+    CHECK(ev("{ simulator_owner = \"race-2\" }"));
+    std::vector<Diagnostic> problems;
+    CHECK_FALSE(parseLesson("title = \"t\"\n[[objective]]\ntext = \"o\"\nwhen = { simulator_owner = \"race-11\" }\n", "o.toml",
+                            LessonKind::Training, problems).has_value());
+    CHECK(hasProblem(problems, 4, "unknown race"));
+}
+
 TEST_CASE("learn conditions: counters tell how far a count or a wait has come") {
     Eval ev;
     const int64_t explored = ev.value(Fact::SystemsExplored);
@@ -992,6 +1005,8 @@ TEST_CASE("learn access: a done condition needs the tags that bring it about") {
     CHECK_FALSE(ok("{ window = \"research\" }", access({"command:designs"})));
     CHECK(ok("{ window = \"create-design\" }", access({"designs:create"})));
     CHECK(ok("{ design_vehicle = \"ship\" }", access({"designs:create", "designs:create:ship"})));
+    CHECK(ok("{ simulator_owner = \"race-2\" }", access({"combat-simulator:owners", "combat-simulator:owners:race-2"})));
+    CHECK_FALSE(ok("{ simulator_owner = \"race-2\" }", access({"combat-simulator:items"})));
     CHECK_FALSE(ok("{ design_vehicle = \"ship\" }", access({"designs:list"})));
     CHECK(ok("{ window = \"galaxy-map\" }", access({"panel:galaxy"})));
     CHECK(ok("{ not = { window = \"designs\" } }", access({"designs:close"})));

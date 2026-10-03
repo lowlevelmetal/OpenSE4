@@ -252,6 +252,7 @@ private:
                 case Fact::Treaty: what = treatyFromId(c.text) ? nullptr : "treaty kind"; break;
                 case Fact::BattleOrder: what = isBattleOrderKind(c.text) ? nullptr : "battle order kind"; break;
                 case Fact::DesignTypeChosen: what = isDesignTypeName(c.text) ? nullptr : "design type"; break;
+                case Fact::SimulatorOwner: what = choiceGroupOf("combat-simulator:owners:" + c.text) && c.text != "*" ? nullptr : "race (\"race-1\" to \"race-10\")"; break;
                 case Fact::DesignVehicle: {
                     const auto ids = vehicleTypeIds();
                     what = std::find(ids.begin(), ids.end(), c.text) != ids.end() ? nullptr : "vehicle type";

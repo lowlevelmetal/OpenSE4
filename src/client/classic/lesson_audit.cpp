@@ -548,6 +548,11 @@ AuditReport auditStep(const AuditInput& in) {
             line(std::format("B ref \"{}\": not matched (check by hand)", ref));
             continue;
         }
+        // A window the text names to have it closed ("Close the Log", "close Colonies") need not be read.
+        if (text.find("close " + lref) != std::string::npos || text.find("close the " + lref) != std::string::npos) {
+            line(std::format("B ref \"{}\": named to be closed", ref));
+            continue;
+        }
         // Fine when one match is on the screen, clear and not under the panel.
         bool anyOk = false;
         std::string where;

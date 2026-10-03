@@ -33,6 +33,7 @@ constexpr FactInfo kFacts[] = {
     {Fact::DesignVehicle, "design_vehicle", T, false, "the open Create Design window designs that vehicle type (\"ship\", \"base\", ...)"},
     {Fact::SimulatorOwners, "simulator_owners", N, false, "the open Combat Simulator has items for N races", "Races with items"},
     {Fact::SimulatorItems, "simulator_items", N, false, "the open Combat Simulator has N items in the battle", "Items in the battle"},
+    {Fact::SimulatorOwner, "simulator_owner", T, false, "the open Combat Simulator's Owner for item is that race (\"race-1\" to \"race-10\")"},
     {Fact::BattleBegun, "battle_begun", F, false, "the open Tactical Combat window's battle has begun (Begin was pressed)"},
     {Fact::BattleOrder, "battle_order", T, true, "the player gave an order of that kind in a tactical battle"},
     {Fact::BattleTurn, "battle_turn", N, false, "the open Tactical Combat window's battle has begun and reached combat turn N", "Combat turn"},
@@ -286,6 +287,7 @@ bool holds(const Condition& c, const EvalContext& ctx) {
             return ctx.client.designComponents.has_value() && !ctx.client.designType.empty() && designTypeMatches(ctx.client.designType, c.text);
         case Fact::DesignNamed: return ctx.client.designComponents.has_value() && ctx.client.designNamed == (c.number != 0);
         case Fact::DesignVehicle: return ctx.client.designComponents.has_value() && ctx.client.designVehicle == c.text;
+        case Fact::SimulatorOwner: return !ctx.client.simulatorOwner.empty() && ctx.client.simulatorOwner == c.text;
         case Fact::Option: {
             if (!validEmpire(ctx.state, ctx.empire)) return false;
             return optionValue(ctx.state.empire(ctx.empire), c.text).value_or(false);

@@ -176,11 +176,15 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
             if (a.has("create-design:name") || a.has("create-design:suggest")) return std::nullopt;
             return missing("create-design:name or create-design:suggest");
         case Fact::SimulatorOwners:
-            if (a.has("combat-simulator:owners") && a.has("combat-simulator:items")) return std::nullopt;
-            return missing("combat-simulator:owners and combat-simulator:items");
+            // Items go to the race chosen in Owner for item: an earlier step may have chosen it.
+            if (a.has("combat-simulator:items")) return std::nullopt;
+            return missing("combat-simulator:items");
         case Fact::SimulatorItems:
             if (a.has("combat-simulator:items")) return std::nullopt;
             return missing("combat-simulator:items");
+        case Fact::SimulatorOwner:
+            if (a.has("combat-simulator:owners")) return std::nullopt;
+            return missing("combat-simulator:owners");
         case Fact::BattleBegun:
             if (a.has("tactical-combat:end-turn")) return std::nullopt;   // Begin is the button that becomes End Turn
             return missing("tactical-combat:end-turn (its Begin button)");

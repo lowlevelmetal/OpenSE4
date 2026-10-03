@@ -23,7 +23,8 @@ enum class Fact : uint8_t {
     // Client facts.
     Window, Selected, Command, Order, Tab,
     // Windows' work in progress.
-    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, DesignVehicle, SimulatorOwners, SimulatorItems, BattleBegun, BattleOrder, BattleTurn,
+    DesignComponents, DesignHullChosen, DesignTypeChosen, DesignNamed, DesignVehicle, SimulatorOwners, SimulatorItems, SimulatorOwner, BattleBegun,
+    BattleOrder, BattleTurn,
     // Time.
     Turn, TurnsPassed,
     // The player's empire.
@@ -106,6 +107,9 @@ struct ClientFacts {
     // items in the battle, and the items.
     int64_t simulatorOwners = 0;
     int64_t simulatorItems = 0;
+    // And the race its Owner for item list has chosen ("race-1" to "race-10"):
+    // the side the items clicked next go to.
+    std::string simulatorOwner;
     // The Tactical Combat window, while it is open: whether its battle has
     // begun. And every order the player gave in tactical battles so far, oldest
     // first, as battle order kinds (learn/ids.hpp battleOrderKinds).
