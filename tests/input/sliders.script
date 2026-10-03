@@ -4,6 +4,10 @@
 options --quick-start --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
 
 wait-for tag:command:empire-status
+# A game whose other empires are all gone (on the fixtures, the player's alone) shows the
+# conquest ending at once, then asks whether to play on (spec 05 §6, spec 06 §7 Q83).
+click item:Close in=finale optional
+click item:Yes in=finale optional
 # Empire Status, Strategies: a copy of a strategy can be edited.
 key F11
 wait-window empire-status
