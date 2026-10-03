@@ -1,0 +1,35 @@
+# Tutorial 5, "Fleets, movement and supply": the colony ship added to the new fleet by mistake.
+# The step waits for an attack ship, and the fleet's later orders still count: a fleet counts for
+# design_type "Attack Ship" when one of its ships is an attack ship, so a ship added by mistake
+# never blocks a later step (docs/LEARNING.md "Conditions", docs/BUILDING.md "Input scripts").
+options --tutorial=fleets-and-movement --layout=1024x768 --size=1280x800
+
+wait-lesson fleets-and-movement
+click item:Next in=lesson
+wait-step 2
+click item:next in=tag:cycle:ship
+wait-step 3
+click tag:order:fleet-transfer
+wait-window fleet-transfer
+wait-step 4
+click tag:fleet-transfer:create-fleet
+click item:OK in="Create Fleet"
+wait-step 5
+# 5 The colony ship (the second ship outside fleets) joins: the step waits.
+click item:##row in=fleet-transfer nth=2
+wait 30
+assert { command = "JoinFleet", design_type = "Colony" }
+assert-step 5
+# The other attack ship (now the only ship outside fleets) joins: the step is done.
+click item:##row in=fleet-transfer nth=1
+wait-step 6
+assert { command = "JoinFleet", design_type = "Attack Ship" }
+click tag:fleet-transfer:close
+wait-closed fleet-transfer
+click item:next in=tag:cycle:ship
+wait-step 7
+# 7 Move the fleet, colony ship and all: the order counts.
+click tag:order:move-to
+click sector:empty nth=150
+wait-step 8
+assert { order = "move-to", design_type = "Colony" }

@@ -6,39 +6,41 @@ wait-lesson exploring-and-colonizing
 # 1 Explore and expand.
 click item:Next in=lesson
 wait-step 2
-# 2 Select an attack ship: the right arrow of the ship selector.
-click item:next in=tag:cycle:ship
-wait-step 3
-# 3 Explore.
-click tag:order:explore
-wait-step 4
-# 4 The second attack ship: the next ship, and Explore.
-click item:next in=tag:cycle:ship
-click tag:order:explore
-wait-step 5
-# 5 New systems: an explanation.
-click item:Next in=lesson
-wait-step 6
-# 6 The Planets window.
+# 2 The Planets window.
 click tag:command:planets
 wait-window planets
-wait-step 7
-# 7 Coloniz\Breathe.
-click tag:planets:colonizable
+wait-step 3
+# 3 Coloniz\Breathe.
 click tag:planets:colonizable-breathable
-wait-step 8
-# 8 Send Colony Ship: pick the first planet of the list and Colonize.
+wait-step 4
+# 4 Send Colony Ship: pick the first planet of the list and Colonize.
 click tag:planets:send-colony-ship
 click item:* in="Select Planet to Colonize"
 click item:Colonize in="Select Planet to Colonize"
+wait-step 5
+assert { order = "colonize" }
+# 5 Select an attack ship: the right arrow of the ship selector (the colony ship, selected
+# when it got its orders, is the last ship: the next one is an attack ship).
+click item:next in=tag:cycle:ship
+wait-step 6
+# 6 Explore.
+click tag:order:explore
+wait-step 7
+# 7 The second attack ship: the next ship, and Explore.
+click item:next in=tag:cycle:ship
+click tag:order:explore
+wait-step 8
+# 8 New systems: an explanation.
+click item:Next in=lesson
 wait-step 9
-# 9 Founding the colony: end turns (Yes to the question) until it is founded.
+# 9 Founding the colony: End Turn and Yes; the colony ship arrives and settles.
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1
 wait-step 10
+assert { colonies = 2 }
 # 10 Your new colony: the Log the new turn opened is closed, and the new colony's type chosen
-# (the suggested one, as step 9 says); then the Colonies window.
+# (the suggested one, as the step says); then the Colonies window.
 click tag:log:close
 click item:"*(suggested)" in="Colony Type"
 wait-gone item:"*(suggested)"
@@ -65,12 +67,13 @@ click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 3
 wait-step 13
-assert { systems_explored = 5 }
 wait 3
 click tag:log:close optional
+assert { systems_explored = 5 }
 # 13 Well done: Finish, then the result's Next Lesson starts lesson 3.
 click item:Finish in=lesson
 wait-result done
+assert-present item:"Next: Research and construction*"
 click item:"Next Lesson"
 wait-lesson research-and-construction
 assert-step 1

@@ -69,6 +69,10 @@ struct Step {
     std::vector<std::string> keys;          // key chords: "F12", "Ctrl+L", "Alt+1"
     std::optional<Condition> done;          // none: the player presses Next
     std::string manual;                     // "slug#anchor" for Read more
+    // More counts for the panel's progress line, without a target ("Turns:
+    // 2", "Combat turn: 3"): numeric facts, for a step whose `done` is not
+    // itself a count, such as "end turns until you meet someone".
+    std::vector<Fact> progress;
 };
 
 // A training game's objective; it counts once its condition held (before the deadline).
@@ -117,7 +121,19 @@ struct Lesson {
     std::vector<BriefingPage> pages;
     std::vector<Hint> hints;
     std::optional<FailRule> fail;
+    // The result dialog: a short recap of what the lesson taught, and what
+    // it offers to play next instead of the next one in the list
+    // ("training:land-rush", "tutorial:combat"; checked by validate()).
+    std::vector<std::string> learned;
+    std::string suggest;
 };
+
+// "training:land-rush" as a kind and a slug; nothing when it is not one.
+struct LessonRef {
+    LessonKind kind = LessonKind::Tutorial;
+    std::string slug;
+};
+std::optional<LessonRef> parseLessonRef(std::string_view ref);
 
 // Reads a lesson or training game. Problems are appended to `problems`;
 // returns nothing when the file cannot be used at all.

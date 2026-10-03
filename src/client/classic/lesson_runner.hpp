@@ -116,6 +116,7 @@ private:
 
     learn::LessonProgress progress_;
     uint64_t seen_ = 0;   // what the conditions read when they were last checked
+    std::string counters_;   // the active step's progress line, made when the conditions were checked
     bool showResult_ = false;
     bool panelOpen_ = true;
     bool moved_ = false;        // the player moved the panel: it keeps its place

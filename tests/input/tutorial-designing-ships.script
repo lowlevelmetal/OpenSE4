@@ -26,15 +26,20 @@ click item:##size in=create-design
 click item:##0 in=create-design
 wait-step 6
 assert { design_hull_chosen = true }
-# 6 Add components: the tiles of Components Available, by their place in the stock data set:
+# 6 Choose a type: the arrow beside Design Type, then Attack Ship.
+click item:##type in=create-design
+click item:"Attack Ship"
+wait-step 7
+assert { design_type_chosen = "Attack Ship" }
+# 7 Add components: the tiles of Components Available, by their place in the stock data set:
 # bridge (2), life support (3), crew quarters (4), two engines (8), then two weapons (14, 15).
 click item:##tile in=create-design nth=2
 click item:##tile in=create-design nth=3
 click item:##tile in=create-design nth=4
 click item:##tile in=create-design nth=8
 click item:##tile in=create-design nth=8
-wait-step 7
-# 7 Check the rules: more components, then Next. The grid shows three rows of three: two
+wait-step 8
+# 8 Check the rules: more components, then Next. The grid shows three rows of three: two
 # clicks on its down arrow bring tiles 7 to 15 into view, so the weapons (14, 15) are the
 # eighth and ninth tiles shown.
 click item:##down in=tag:create-design:components
@@ -43,34 +48,38 @@ click item:##tile in=create-design nth=8
 click item:##tile in=create-design nth=9
 assert { design_components = 7 }
 click item:Next in=lesson
-wait-step 8
-# 8 Name it: type a name into the Design Name box.
+wait-step 9
+# 9 Name it: type a name into the Design Name box; the step moves on once the box holds a name
+# no other design has, and the name can be finished in the next step.
 click tag:create-design:name
 type "Lesson Warship"
-click item:Next in=lesson
-wait-step 9
-# 9 Create it.
+wait-step 10
+assert { design_named = true }
+# 10 Create it.
 click tag:create-design:save
 wait-closed create-design
-wait-step 10
-assert { command = "CreateDesign" }
-# 10 Managing designs: the new design is in the list; close the window.
+wait-step 11
+assert { command = "CreateDesign", design_type = "Attack Ship" }
+# 11 Managing designs: the new design is in the list; close the window.
 assert-present item:"Lesson Warship" in=designs
 click item:"Lesson Warship" in=designs
 click tag:designs:close
 wait-closed designs
-wait-step 11
-# 11 Build it: the homeworld (colony arrows), then the Build Queue order.
+wait-step 12
+# 12 Build it: the homeworld (colony arrows), then the Build Queue order.
 click item:next in=tag:cycle:colony
 click tag:order:build-queue
 wait-window set-queue
-wait-step 12
-# 12 Queue your warship: the new design on the Ships tab.
-click item:"Lesson Warship" in=set-queue
 wait-step 13
+# 13 Queue your warship: the new design on the Ships tab, as the panel names it.
+assert-present item:"Lesson Warship" in=set-queue
+click item:"Lesson Warship" in=set-queue
+wait-step 14
 assert { construction_queued = 1 }
-# 13 Well done: Finish.
+assert { command = "QueueAdd", design_type = "Attack Ship" }
+# 14 Well done: Finish.
 click item:Finish in=lesson
 wait-result done
+assert-present item:"Next: Fleets, movement and supply*"
 click item:"Keep Playing"
 wait-gone item:"Keep Playing"

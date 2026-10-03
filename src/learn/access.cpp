@@ -81,6 +81,8 @@ constexpr std::pair<std::string_view, std::string_view> kCommandWidgets[] = {
     {"SetResearch", "research:divide-evenly"},
     {"SetResearch", "research:repeat"},
     {"SetIntel", "window:intelligence"},
+    {"SetIntel", "intelligence:projects"},
+    {"SetIntel", "intelligence:queue"},
     {"CreateDesign", "create-design:save"},
     {"EditDesign", "create-design:save"},
     {"SendMessage", "communicate:send"},
@@ -124,7 +126,7 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
             return missing(std::format("the tag '{}'", c.text));
         case Fact::Selected:
             if (c.text == "colony" || c.text == "planet") {
-                if (anyOf(a, {"panel:system", "panel:report", "cycle:colony"})) return std::nullopt;
+                if (anyOf(a, {"panel:system", "panel:report", "cycle:colony", "sector:home", "report:colony"})) return std::nullopt;
             } else if (c.text == "ship" || c.text == "base" || c.text == "unit" || c.text == "fleet") {
                 if (anyOf(a, {"panel:system", "panel:report", "cycle:ship", "cycle:fleet"})) return std::nullopt;
             } else if (anyOf(a, {"panel:system", "panel:galaxy"})) {
@@ -163,6 +165,12 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
         case Fact::DesignHullChosen:
             if (a.has("create-design:hull")) return std::nullopt;
             return missing("create-design:hull");
+        case Fact::DesignTypeChosen:
+            if (a.has("create-design:type")) return std::nullopt;
+            return missing("create-design:type");
+        case Fact::DesignNamed:
+            if (a.has("create-design:name") || a.has("create-design:suggest")) return std::nullopt;
+            return missing("create-design:name or create-design:suggest");
         case Fact::SimulatorOwners:
             if (a.has("combat-simulator:owners") && a.has("combat-simulator:items")) return std::nullopt;
             return missing("combat-simulator:owners and combat-simulator:items");
@@ -172,6 +180,9 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
         case Fact::BattleBegun:
             if (a.has("tactical-combat:end-turn")) return std::nullopt;   // Begin is the button that becomes End Turn
             return missing("tactical-combat:end-turn (its Begin button)");
+        case Fact::BattleTurn:
+            if (a.has("tactical-combat:end-turn") || a.hasKey("E")) return std::nullopt;
+            return missing("tactical-combat:end-turn");
         case Fact::BattleOrder:
             if (c.text == "move" && a.has("tactical-combat:map")) return std::nullopt;
             if (c.text == "fire" && (a.has("tactical-combat:map") || a.has("tactical-combat:target"))) return std::nullopt;

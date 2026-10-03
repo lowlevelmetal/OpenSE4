@@ -39,6 +39,8 @@ public:
     // with is not counted).
     std::vector<std::string> selectionKinds(const UiContext& ui) const;
     uint64_t selections() const { return selections_; }
+    // The selected vehicle, if any (lessons read its design type).
+    std::optional<game::VehicleId> selectedVehicleId() const { return vehicle_; }
 
     // Input scripts (docs/BUILDING.md "Input scripts"): the sectors of the
     // shown system that a query names, as frame rectangles in row order

@@ -87,6 +87,8 @@ Both are TOML files.
 title = "First steps"
 summary = "The main window, your home system and your first turn."
 minutes = 10
+learned = ["Selecting planets and ships", "Ending a turn"]   # the result's recap
+suggest = "training:land-rush"   # what the result offers next (default: the next in the list)
 
 [setup]                     # how the lesson's game is created
 seed = 12345                # fixed, so the galaxy is the same every time
@@ -100,6 +102,7 @@ highlight = ["panel:system"]     # UI tags to outline (see "UI tags")
 allow = ["panel:report"]         # more UI tags the player may use (see "The input lock")
 keys = ["Ctrl+L"]                # more keys the player may press
 done = { selected = "planet" }   # omitted: the player presses Next
+progress = ["turns_passed"]      # more counts for the progress line (see "The lesson panel")
 manual = "colonies#your-homeworld"   # Read more
 
 # Training games use objectives, pages and hints instead of steps:
@@ -141,6 +144,25 @@ them: it holds only for a selection the player made since the step began, so the
 homeworld a game starts with, or a ship selected for an earlier step, does not count
 until the player selects it again.
 
+**`design_type`** qualifies the `selected`, `order` and `command` keys written beside it in
+one table: only a vehicle (or design) of that design type counts, so a step about an attack
+ship is not done by the colony ship next to it:
+
+```toml
+done = { order = "explore", design_type = "Attack Ship" }   # Explore, given to an attack ship
+done = { selected = "ship", design_type = "Attack Ship" }   # an attack ship is selected
+done = { command = "QueueAdd", design_type = "Colony" }     # a colony ship was queued
+```
+
+The value is one of the 39 AI design types of spec 05 §7.7 (`"Attack Ship"`, `"Defense
+Base"`, ...), or `"Colony"` for every colony ship type (`"Colony (Rock)"` and the others);
+letter case does not matter. An order counts when it went to a vehicle of that type, or to a
+fleet with one in it (so a ship added to a fleet by mistake never blocks a later step);
+`selected` reads the selected vehicle's design (`ship`, `base`, `unit` or `fleet` only);
+among the commands it qualifies `SetOrders`, `QueueAdd` (a ship or base of that type),
+`CreateDesign`, `JoinFleet` (the ship that joined) and `CreateFleet` (one of its ships). Anywhere else it is a load error. Prefer it whenever a step names a kind of ship:
+a step that any ship can do can be done with the wrong one.
+
 | Key | Holds when |
 |---|---|
 | `window = "<id>"` | that window is open |
@@ -149,6 +171,7 @@ until the player selects it again.
 | `command = "<name>"` | since: the player gave a command of that type |
 | `order = "<kind>"` | since: the player gave a ship, fleet or planet an order of that kind |
 | `design_components = N`, `design_hull_chosen = true` | the open Create Design window's design has N components; the player picked its hull |
+| `design_type_chosen = "<type>"`, `design_named = true` | the open Create Design window's Design Type box shows that type; its Design Name box holds a name no other design has |
 | `simulator_owners = N`, `simulator_items = N` | the open Combat Simulator has items for N races; N items |
 | `option = "<name>"` | that setting of the empire is on (`research-evenly`, `planet-names`, ...; `not` for off) |
 | `treaty = "<kind>"` | the empire holds that treaty with another empire (`war`: is at war with one) |
@@ -161,9 +184,31 @@ until the player selects it again.
 | `enemy_ships_destroyed = N` | since: N enemy ships or bases destroyed in the empire's battles |
 | `planets_captured = N` | since: the empire took N colonies from empires it is hostile to |
 | `battle_begun = true`, `battle_order = "<kind>"` | the open Tactical Combat window's battle has begun; since: the player gave a tactical order of that kind (`move`, `fire`, `end-turn`, ...) |
+| `battle_turn = N` | the open Tactical Combat window's battle has begun and reached combat turn N |
 | `score`, `population`, `minerals`, `organics`, `radioactives` `= N` | as named |
 
 The reference section at the end lists the exact keys, values and command names.
+
+## Text tokens
+
+Lessons name design types ("your attack ship"), but the game's windows list designs by
+their names, which come from the race's list and differ from game to game. A text token in
+a step, a briefing page, a hint or a `learned` line is filled in from the player's game when
+the panel shows it:
+
+| Token | Shows |
+|---|---|
+| `{design:<type>}` | the name of the player's newest design of that design type that is not obsolete (of designs made in one turn, the one made last); `{design:Colony}` the colony ship of the race's own planet type first. Without such a design, the type itself |
+
+```toml
+text = """**Click {design:Attack Ship} twice** in **Items to choose**."""
+```
+
+The type is checked when the file is read, like `design_type` (an unknown token or type is a
+load error with its line). A brace that is not followed by a lower-case word and a colon is
+plain text. The Combat Simulator's item list and Set Construction Queue's lists show each
+design's type at the right of its row (and the simulator in a tooltip), an OpenSE4 addition,
+so the player can check the name against the type.
 
 ## UI tags
 
@@ -181,7 +226,8 @@ Menu and its Quit question, or another window. Tags are:
 - `command:<id>` for the main window's command buttons, `order:<id>` for the order
   strip, `button:end-turn`, `status:<item>` for the status bar;
 - `panel:system`, `panel:report`, `panel:galaxy` and a few more parts of the main
-  window;
+  window, and single things in it: `sector:home` (the homeworld's sector) and
+  `report:colony` (the player's colony in the report's list of a sector);
 - `<window id>:<widget>` for a few widgets inside windows that lessons need,
   `<window id>:<tab>` for the tabs and filters of some windows (the same names `tab`
   conditions use), and `lesson:<button>` for the lesson panel's own (all listed in
@@ -236,6 +282,12 @@ step (about four lines, which scroll) and Back, Next and Read More. **More**, in
 strip, shows the whole step and every button for that step; **Less** makes any step's panel
 compact. Explanation steps, and steps read again with Back, show whole.
 
+- Tutorials: the step's title, and under it the **progress line** while the active step
+  waits for something that can be counted: each numeric fact of its `done` condition with
+  its value and target ("Systems explored: 3 of 5", "Turns: 1 of 3"; facts under `not`
+  are left out), then the step's `progress` facts without a target once they are above 0 ("Turns: 2",
+  "Combat turn: 3"), for a step whose `done` is not a count ("end turns until you meet someone").
+  `learn::LessonProgress::counters` makes it.
 - Tutorials: Back and Next. A step with a `done` condition moves on by itself the
   moment its condition holds (at once if it already holds when it is shown); Next stays
   dim until then. A step without one waits for Next. Back shows earlier steps again for
@@ -272,8 +324,14 @@ compact. Explanation steps, and steps read again with Back, show whole.
 - Leave Lesson and Start (in the Learn window) ask with a Yes/No box: Y means Yes; N,
   Esc and Enter mean No (spec 06 §3.4). Esc or Enter in the result box is Keep Playing.
 
-Finishing a lesson or winning a training game shows the result (Next Lesson, Keep
-Playing, Learn); losing one offers Try Again. The Learn window then marks it done.
+Finishing a lesson or winning a training game shows the result: the lesson's `learned`
+lines as a recap ("What you learned"; "What you practised" for a training game), and what
+comes next, "Next: <title> (<minutes> min)" with its summary: the lesson's `suggest`, else the
+next one of its kind in the list (`Library::following`). Its button says **Next Lesson** for a
+tutorial, **Training Game** for a training game after a tutorial (the last tutorial suggests
+the first training game) and **Next Game** after a training game; with nothing next the
+dialog says so and has no such button. Then **Keep Playing** and **Learn**. Losing a training
+game offers Try Again. The Learn window then marks it done.
 Progress is stored with the client settings (`classic_settings.toml`, `[learn]
 done`), never in the game; so is the place a tutorial was left at (next section).
 
@@ -422,6 +480,31 @@ being played (outlines, conditions and the way back stay); it is a client settin
 (`classic_settings.toml`, `[learn] free_play`), and every lesson starts with it off. The
 manual's window links are dimmed while the lock is on.
 
+Writing steps:
+
+- **The action first, in bold**, then a short why: "**Open the Planets window** with its
+  command button or `F4`. It lists every planet you have seen." A step that waits for an
+  action starts with it in bold (the content test checks this); an explanation step starts
+  with its point and ends with "Press **Next**".
+- **Short.** The panel shows about 60 words without scrolling. Aim for about 50; a tutorial
+  step may have **75 words at most** (the content test fails above that and reports steps
+  above 60; `python3 tools/check_lessons.py --words` prints the counts). Move details into
+  the manual page that **Read More** opens, and split a step that asks for two actions in
+  two steps.
+- **Name the thing on the screen.** Lists show design names, not types: write
+  `{design:Attack Ship}` (see "Text tokens"), and tell the player what to check ("its
+  **Class** must say **{design:Attack Ship}**").
+- **Guard against the plausible wrong action.** A condition that the wrong ship, the wrong
+  item or an earlier click can satisfy moves on too early or leaves the lesson stuck: use
+  `design_type`, order the steps so that the thing that could be misused is used up first (the
+  colony ship gets its orders before the attack ships are selected), and check every step for
+  a wrong action that makes a later one impossible.
+- **Say what happens by itself.** The Log opens at the start of a turn and the Colony Type
+  question comes when it closes: a step after End Turn says so. A step whose outlined button
+  lies under an open window says "Close the window (`Esc`), then press **End Turn**".
+- **Count what takes time.** A step that waits for turns, systems or combat turns has a
+  numeric `done` or a `progress` list, so the panel shows how far it has come.
+
 Writing steps for the lock:
 
 - An action step's `highlight` and `allow` must include what its `done` needs: a tag
@@ -474,10 +557,12 @@ They combine with `--screenshot` for headless checks. `--lesson-check` (with
 battle windows), and a few frames later prints
 `lesson-check <slug>:<N> areas=<k> ok` or `missing: <tags>` for highlighted or allowed
 tags that are not on the screen, and exits with 1 when some are (or the lock is off).
-A few tags that depend on the moment (a selected piece's weapons, Communicate's lists)
-only warn (`situational:`), as do outlines the panel covers (`under-panel:`).
-`tools/check_lessons.py` runs this for every step of every tutorial, headless
-(`--screenshots <dir>` saves one picture per step; keep them out of the repository). With `--tutorial` and
+A few tags that depend on the moment (a selected piece's weapons, Communicate's lists, the
+colony's row in the report's list of a sector) only warn (`situational:`), as do outlines the panel covers (`under-panel:`).
+`tools/check_lessons.py` first counts the words of every tutorial step (above 75 fails,
+above 60 is reported; `--words` stops there and needs no game), then runs this for every
+step of every tutorial, headless (`--screenshots <dir>` saves one picture per step; keep
+them out of the repository). With `--tutorial` and
 `--training`, `--turns=N` lets the computer play every empire for N turns first (the
 lesson's counters still start at its first turn), and `--open` shows a window over the
 lesson as with a quick start, `--open=tactical` (and the other battle windows) a sample
@@ -499,19 +584,26 @@ page from `assets/learn` and checks:
 A second content test checks every tutorial step against the input lock: a step
 without `done` says Next (or Finish), one with `done` does not, outlines something, and
 its `done` can be reached with only its highlighted and allowed tags and keys
-(`learn::reachProblems`).
+(`learn::reachProblems`). A third keeps the steps short: at most 75 words of text each (a
+token counts as one word; above 60 is reported), and a step with `done` starts with its
+action in bold.
 
 The input scripts of `tests/input` (docs/BUILDING.md "Input scripts") play every
 tutorial from its first step to its result through the client's own input, under the
 input lock: each step done by clicking what it tells the player to click, Next only on
-steps that explain, never Skip or Free Play. Others play each training game's briefing,
+steps that explain, never Skip or Free Play; `tutorial-wrong-ship.script` gives the colony ship the Explore
+order that tutorial 2 asks of an attack ship, and checks that the step waits for an attack
+ship and the colony is still founded; `tutorial-wrong-fleet.script` adds the colony ship to
+tutorial 5's fleet by mistake, and checks that the step waits and the fleet's orders still
+count. Others play each training game's briefing,
 first turns and Leave Game, the result dialog won and lost, the Learn window and the
 manual. They need your installed game:
 `OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py`. A lesson whose steps
 change needs its script changed with it.
 
 Unit tests cover the Markdown parser, the loaders (with their errors), each condition
-against the engine fixture, a tutorial (with Back, the active step and Skip) and a
+against the engine fixture (`design_type` among them), the text tokens, the counters of the
+progress line, `learned` and `suggest`, a tutorial (with Back, the active step and Skip) and a
 training game played through `learn::LessonProgress`, the step access rules, and the
 input lock (`tests/test_lesson_lock.cpp`: hit-testing, drags, keys, prompts, open and
 closed windows, windows stacked over each other, a window covering an outline, the way
@@ -543,14 +635,17 @@ command names come from `src/game/commands.hpp`.
 | `title` | top, required | the name in the Learn window and the panel |
 | `summary` | top | one or two sentences for the Learn window |
 | `minutes` | top | about how long it takes |
+| `learned` | top | a list of short sentences: the result's recap (tokens allowed) |
+| `suggest` | top | `"tutorial:<slug>"` or `"training:<slug>"`: what the result offers next, instead of the next one in the list (checked) |
 | `[setup]` | top | how the game is created (below) |
-| `[[step]]` | tutorials | `title` and `text` (required), `highlight` (a UI tag or a list of them), `allow` (the same), `keys` (a key chord or a list of them), `done` (a condition), `manual` (`"slug"` or `"slug#anchor"`) |
+| `[[step]]` | tutorials | `title` and `text` (required), `highlight` (a UI tag or a list of them), `allow` (the same), `keys` (a key chord or a list of them), `done` (a condition), `progress` (a numeric condition key or a list of them, shown without a target), `manual` (`"slug"` or `"slug#anchor"`) |
 | `[[objective]]` | training | `text` and `when` (required), `by_turn` |
 | `[[page]]` | training | `title` and `text` (required), `turn` (default 0), `series` (default none) |
 | `[[hint]]` | training | `text` and `when` (required), `title` (default "Hint") |
 | `[fail]` | training | `when` (required), `text` |
 
-Texts are Markdown as in the manual; their links are checked like the manual's.
+Texts are Markdown as in the manual; their links are checked like the manual's, and their
+tokens like `design_type`.
 
 ### Setup keys
 
@@ -598,7 +693,8 @@ without them. The training games do not use it: they are played from a normal st
 
 ### Condition keys
 
-Besides `all = [...]`, `any = [...]` and `not = {...}`:
+Besides `all = [...]`, `any = [...]` and `not = {...}`, and the `design_type` qualifier of
+`selected`, `order` and `command` (see "Conditions"):
 
 | Key | Value | Holds when |
 |---|---|---|
@@ -609,10 +705,13 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`:
 | `order` | an order kind | since: the player gave a ship, fleet or planet an order of that kind |
 | `design_components` | N | the Create Design window is open and its design has N components |
 | `design_hull_chosen` | true or false | the Create Design window is open and the player picked a hull in its Size list (`false`: has not yet) |
+| `design_type_chosen` | a design type | the Create Design window is open and its Design Type box shows that type (`"Colony"`: any colony ship type) |
+| `design_named` | true or false | the Create Design window is open and its Design Name box holds a name no other design has |
 | `simulator_owners` | N | the Combat Simulator is open and N races ("Owner for item") have items in the battle (an unowned object is a neutral obstacle and counts for none) |
 | `simulator_items` | N | the Combat Simulator is open and the battle has N items |
 | `battle_begun` | true or false | the Tactical Combat window is open and its battle has begun (Begin was pressed) |
 | `battle_order` | a battle order kind (below) | since: the player gave an order of that kind in a tactical battle that the battle accepted |
+| `battle_turn` | N | the Tactical Combat window is open, its battle has begun and it has reached combat turn N |
 | `option` | an option (below) | that setting of the empire is on; write `not = { option = "..." }` for off |
 | `treaty` | a treaty kind (below) | the empire holds that treaty with another empire it has met that is still alive (`war`: is at war with one; `subjugation` and `protectorate` hold for either side) |
 | `turn` | N | the game has reached turn N (the first turn is 0) |
@@ -761,12 +860,14 @@ the Weapons Report.
 | `status:lesson` | the T button (only during a lesson) |
 | `panel:system`, `panel:report`, `panel:galaxy` | the system view, the report panel, the galaxy panel |
 | `panel:commands`, `panel:orders`, `panel:report-tabs` | the command buttons, the order strip, the report's tabs |
+| `sector:home`, `report:colony` | the homeworld's sector in the system view (while the home system is shown); the player's colony in the report's list of a sector |
 | `cycle:ship`, `cycle:fleet`, `cycle:colony` | the previous and next selectors |
 | `research:areas`, `research:queue`, `research:tech-tree` | Research: the list of areas (a click adds a project), the current projects, Tech Tree |
 | `set-queue:available`, `set-queue:queue` | Set Construction Queue: what can be built (a click adds it), the queue |
 | `queues:list` | Construction Queues: the list of queues |
 | `designs:list`, `designs:create`, `designs:simulator` | Designs: the list, Create (it asks the vehicle type first), Simulator |
-| `create-design:hull`, `create-design:name`, `create-design:suggest` | Create Design: the Size box with its list button, the Design Name box, and the button beside it that lists names |
+| `create-design:hull`, `create-design:type` | Create Design: the Size box with its list button, the Design Type box with its list button |
+| `create-design:name`, `create-design:suggest` | the Design Name box, and the button beside it that lists names |
 | `create-design:on-design`, `create-design:components` | the Components on Design strip, the Components Available grid |
 | `create-design:warnings`, `create-design:save` | the Warnings box, Create Design (Save Design when editing) |
 | `fleet-transfer:ships`, `fleet-transfer:fleets`, `fleet-transfer:create-fleet` | Fleet Transfer: the ships outside fleets, the fleets, Create Fleet |
@@ -775,6 +876,7 @@ the Weapons Report.
 | `tactical-combat:map`, `tactical-combat:piece`, `tactical-combat:target` | Tactical Combat: the battle map, the selected piece's panel, the target's panel |
 | `tactical-combat:weapons` | the selected piece's weapon list (a click switches a weapon on or off) |
 | `tactical-combat:options`, `tactical-combat:orders`, `tactical-combat:auto`, `tactical-combat:end-turn` | its Options, Orders and Auto buttons, and Begin (End Turn once the battle has begun) |
+| `strategic-combat:begin` | Strategic Combat's Begin |
 | `planets:list`, `planets:send-colony-ship` | Planets: the list, Send Colony Ship |
 | `planets:filters`, `planets:no-sys-to-avoid` | the Planets filters (each one is `planets:<filter>`, above), No Sys To Avoid |
 | `colonies:list` | Colonies: the list |

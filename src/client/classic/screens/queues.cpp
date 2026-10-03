@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -44,6 +45,26 @@ Sprite targetSprite(UiContext& ui, const game::cmd::QueueTarget& t) {
         return v ? vehicleMini(ui, *v) : Sprite{};
     }
     return objectSprite(ui, ui.state().galaxy.object(t.planet));
+}
+
+// The name of a buildable or queued item in its table cell, with a ship's or
+// base's design type at the right of the cell in the small font when there
+// is room (OpenSE4: lessons name design types, while designs have names).
+void itemNameCell(UiContext& ui, const game::QueueItem& item, const std::string& name, const ImVec4& color) {
+    const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+    cellText(ui, name, color);
+    const game::GameState& s = ui.state();
+    if (item.kind != game::QueueItem::Kind::Vehicle || !item.design.valid() || item.design.index() >= s.designs.size()) return;
+    const std::string& type = s.design(item.design).designType;
+    if (type.empty()) return;
+    ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+    const float size = ui.px(kSmallSize);
+    const float width = small->CalcTextSizeA(size, FLT_MAX, 0.0f, type.c_str()).x;
+    const ImVec2 nameMin = ImGui::GetItemRectMin(), nameMax = ImGui::GetItemRectMax();
+    const float x = right - width - ui.px(2);
+    if (x < nameMax.x + ui.px(8)) return;
+    ImGui::GetWindowDrawList()->AddText(small, size, ImVec2(x, nameMin.y + (nameMax.y - nameMin.y - size) * 0.5f), imColor(palette::kSecondary),
+                                        type.c_str());
 }
 
 // Opens the planet or ship report for a queue owner.
@@ -890,7 +911,7 @@ private:
                 if (ev.rightClicked) openItemReport(ui, b.item);
                 cellImage(ui, queueItemSprite(ui, b.item), 22);
                 ImGui::TableSetColumnIndex(1);
-                cellText(ui, b.name, ok ? ImVec4(1, 1, 1, 1) : kTextDim);
+                itemNameCell(ui, b.item, b.name, ok ? ImVec4(1, 1, 1, 1) : kTextDim);
                 ImGui::TableSetColumnIndex(2);
                 cellText(ui, ok && !multi_ ? turnsText(b.turns) : "-", kTextDim);
             }
@@ -937,7 +958,7 @@ private:
                 if (ev.rightClicked) openItemReport(ui, item);
                 cellImage(ui, queueItemSprite(ui, item), 22);
                 ImGui::TableSetColumnIndex(1);
-                cellText(ui, queueItemName(r, s, item), i == 0 ? kTextHighlight : ImVec4(1, 1, 1, 1));
+                itemNameCell(ui, item, queueItemName(r, s, item), i == 0 ? kTextHighlight : ImVec4(1, 1, 1, 1));
                 ImGui::TableSetColumnIndex(2);
                 const int64_t total = est[i].cost.total();
                 const float frac = total > 0 ? float(item.spent.total()) / float(total) : 0.0f;
@@ -1022,6 +1043,9 @@ private:
         // For the item under construction, the time left for what remains (spec 02 §11).
         if (remaining && *remaining >= 0 && *remaining != turns) time += std::format(" ({} left)", turnsText(*remaining));
         labelValue(ui, "Build time", time, 90);
+        // The design type (OpenSE4: lessons name it; the row shows it only when there is room).
+        if (item->kind == game::QueueItem::Kind::Vehicle && !s.design(item->design).designType.empty())
+            labelValue(ui, "Design type", s.design(item->design).designType, 90);
         if (!problem.empty()) ImGui::TextColored(kTextWarn, "Cannot build: %s", problem.c_str());
         ImGui::PushTextWrapPos(0.0f);
         if (item->kind == game::QueueItem::Kind::Vehicle) {

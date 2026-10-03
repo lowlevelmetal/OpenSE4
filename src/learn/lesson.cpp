@@ -1,6 +1,7 @@
 #include "learn/lesson.hpp"
 
 #include "learn/ids.hpp"
+#include "learn/tokens.hpp"
 
 #include "datafile/datafile.hpp"
 #include "game/ai_data.hpp"
@@ -114,6 +115,7 @@ public:
             ++errors_;
         }
         offsetLines(doc.blocks, base - 1);
+        for (std::string& p : tokenProblems(doc.blocks)) error(n, std::move(p));
         return std::move(doc.blocks);
     }
 
@@ -134,18 +136,60 @@ public:
             error(n, "an empty condition");
             return std::nullopt;
         }
+        // `design_type` qualifies the `selected`, `order` and `command` keys
+        // beside it: only a vehicle (or design) of that type counts.
+        std::string designType;
+        if (const toml::node* q = t->get("design_type")) {
+            const auto* v = q->as_string();
+            if (!v || !isDesignTypeName(v->get())) {
+                error(q, "'design_type' takes a design type, such as \"Attack Ship\" or \"Colony\" (the AI design types of spec 05 §7.7)");
+                return std::nullopt;
+            }
+            designType = v->get();
+            const bool qualifies = t->contains("selected") || t->contains("order") || t->contains("command");
+            if (!qualifies) {
+                error(q, "'design_type' qualifies a 'selected', 'order' or 'command' key in the same table, such as "
+                         "{ order = \"explore\", design_type = \"Attack Ship\" }");
+                return std::nullopt;
+            }
+        }
+        auto qualify = [&](Condition& c) -> bool {
+            if (designType.empty() || c.op != Condition::Op::Fact) return true;
+            if (c.fact == Fact::Command && !commandTakesDesignType(c.text)) {
+                error(n, std::format("'design_type' cannot qualify the command '{}' (it can: SetOrders, QueueAdd, CreateDesign, JoinFleet, "
+                                     "CreateFleet)",
+                                     c.text));
+                return false;
+            }
+            if (c.fact == Fact::Selected && c.text != "ship" && c.text != "base" && c.text != "unit" && c.text != "fleet") {
+                error(n, std::format("'design_type' qualifies a selected vehicle: 'ship', 'base', 'unit' or 'fleet', not '{}'", c.text));
+                return false;
+            }
+            if (c.fact == Fact::Selected || c.fact == Fact::Order || c.fact == Fact::Command) c.designType = designType;
+            return true;
+        };
+        const size_t keys = t->size() - (designType.empty() ? 0 : 1);
         // Several keys in one table must all hold.
-        if (t->size() > 1) {
+        if (keys > 1) {
             Condition all;
             all.op = Condition::Op::All;
             all.line = static_cast<int>(n.source().begin.line);
-            for (const auto& [key, value] : *t)
-                if (auto c = single(key.str(), value)) all.children.push_back(std::move(*c));
+            bool ok = true;
+            for (const auto& [key, value] : *t) {
+                if (key.str() == "design_type") continue;
+                if (auto c = single(key.str(), value); c && qualify(*c)) all.children.push_back(std::move(*c));
+                else ok = false;
+            }
+            if (!ok) return std::nullopt;
             return all;
         }
-        const auto first = t->begin();   // toml++ iterators own the pair they point at
-        const auto& [key, value] = *first;
-        return single(key.str(), value);
+        for (const auto& [key, value] : *t) {
+            if (key.str() == "design_type") continue;
+            auto c = single(key.str(), value);
+            if (!c || !qualify(*c)) return std::nullopt;
+            return c;
+        }
+        return std::nullopt;
     }
 
 private:
@@ -207,6 +251,7 @@ private:
                 case Fact::Option: what = isOptionName(c.text) ? nullptr : "option"; break;
                 case Fact::Treaty: what = treatyFromId(c.text) ? nullptr : "treaty kind"; break;
                 case Fact::BattleOrder: what = isBattleOrderKind(c.text) ? nullptr : "battle order kind"; break;
+                case Fact::DesignTypeChosen: what = isDesignTypeName(c.text) ? nullptr : "design type"; break;
                 default: break;
             }
             if (what) {
@@ -375,11 +420,29 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
     Lesson l;
     l.kind = kind;
     l.file = std::string(file);
-    if (kind == LessonKind::Tutorial) rd.allowOnly(root, "", {"title", "summary", "minutes", "setup", "step"});
-    else rd.allowOnly(root, "", {"title", "summary", "minutes", "setup", "objective", "page", "hint", "fail"});
+    if (kind == LessonKind::Tutorial) rd.allowOnly(root, "", {"title", "summary", "minutes", "setup", "step", "learned", "suggest"});
+    else rd.allowOnly(root, "", {"title", "summary", "minutes", "setup", "objective", "page", "hint", "fail", "learned", "suggest"});
     l.title = rd.string(root, "title", "the file", true).value_or(std::string{});
     l.summary = rd.string(root, "summary", "the file", false).value_or(std::string{});
     l.minutes = static_cast<int>(rd.integer(root, "minutes", 0, 600).value_or(0));
+    if (const toml::node* n = root.get("learned")) {
+        const auto* list = n->as_array();
+        if (!list) rd.error(n, "'learned' must be a list of short sentences, such as [\"Found a colony\"]");
+        else
+            for (const toml::node& item : *list) {
+                const auto* v = item.as_string();
+                if (!v || v->get().empty()) {
+                    rd.error(item, "each of 'learned' must be a sentence");
+                    continue;
+                }
+                for (std::string& p : tokenProblems(v->get())) rd.error(item, std::move(p));
+                l.learned.push_back(v->get());
+            }
+    }
+    if (auto v = rd.string(root, "suggest", "the file", false)) {
+        if (parseLessonRef(*v)) l.suggest = *v;
+        else rd.error(root.get("suggest"), "'suggest' names a lesson as \"tutorial:<slug>\" or \"training:<slug>\"");
+    }
     if (const toml::node* n = root.get("setup")) {
         if (const auto* t = n->as_table()) l.setup = readSetup(rd, *t);
         else rd.error(n, "[setup] must be a table");
@@ -387,7 +450,7 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
 
     if (kind == LessonKind::Tutorial) {
         for (const toml::table* t : rd.tables(root, "step")) {
-            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "keys", "done", "manual"});
+            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "keys", "done", "manual", "progress"});
             Step s;
             s.line = static_cast<int>(t->source().begin.line);
             s.title = rd.string(*t, "title", "a [[step]]", true).value_or(std::string{});
@@ -416,6 +479,13 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
                 if (isKeyChord(chord)) return std::nullopt;
                 return std::format("unknown key '{}' (keys are written as \"F12\", \"Ctrl+L\", \"Alt+1\", \"Escape\")", chord);
             }, s.keys);
+            std::vector<std::string> progress;
+            strings("progress", [](const std::string& key) -> std::optional<std::string> {
+                const FactInfo* f = findFact(key);
+                if (f && f->value == FactValue::Number && !f->counter.empty()) return std::nullopt;
+                return std::format("'progress' lists condition keys that count, such as \"turns_passed\" or \"battle_turn\", not '{}'", key);
+            }, progress);
+            for (const std::string& key : progress) s.progress.push_back(findFact(key)->fact);
             s.done = rd.conditionKey(*t, "done", "a [[step]]", false);
             s.manual = rd.string(*t, "manual", "a [[step]]", false).value_or(std::string{});
             l.steps.push_back(std::move(s));
@@ -466,6 +536,14 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
     }
     if (rd.errors() > 0) return std::nullopt;
     return l;
+}
+
+std::optional<LessonRef> parseLessonRef(std::string_view ref) {
+    for (const LessonKind kind : {LessonKind::Tutorial, LessonKind::Training}) {
+        const std::string prefix = std::string(kindName(kind)) + ":";
+        if (ref.starts_with(prefix) && ref.size() > prefix.size()) return LessonRef{kind, std::string(ref.substr(prefix.size()))};
+    }
+    return std::nullopt;
 }
 
 std::string slugOf(std::string_view name) {

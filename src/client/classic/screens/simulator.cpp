@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <format>
 #include <map>
 #include <optional>
@@ -299,14 +300,29 @@ private:
         beginList(ui, "##items", ui.size({250, 230}), 24);
         ImGui::PopStyleVar();
         const bool noObsolete = ui.options().simulatorNoObsolete;
-        auto row = [&](const std::string& id, const Sprite& pic, const std::string& name) -> int {
+        ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+        const float smallSize = ui.px(kSmallSize);
+        // `type`: a design's design type, which lessons name (OpenSE4: the
+        // original shows the name alone). It goes at the right of the row, in
+        // the small font, when the name leaves room, and in a tooltip.
+        auto row = [&](const std::string& id, const Sprite& pic, const std::string& name, const std::string& type) -> int {
             ImGui::PushID(id.c_str());
             const ImVec2 p = ImGui::GetCursorScreenPos();
             const bool clicked = ImGui::Selectable("##item", false, 0, ImVec2(0, ui.px(24)));
             const bool right = ImGui::IsItemClicked(ImGuiMouseButton_Right);
+            const bool hovered = ImGui::IsItemHovered();
+            const float rowRight = ImGui::GetItemRectMax().x;
             ImDrawList* dl = ImGui::GetWindowDrawList();
             if (pic) drawSprite(dl, pic, {p.x + ui.px(2), p.y}, {p.x + ui.px(26), p.y + ui.px(24)});
-            dl->AddText({p.x + ui.px(30), p.y + (ui.px(24) - ImGui::GetTextLineHeight()) * 0.5f}, IM_COL32_WHITE, name.c_str());
+            const float nameX = p.x + ui.px(30);
+            dl->AddText({nameX, p.y + (ui.px(24) - ImGui::GetTextLineHeight()) * 0.5f}, IM_COL32_WHITE, name.c_str());
+            if (!type.empty()) {
+                const float typeW = small->CalcTextSizeA(smallSize, FLT_MAX, 0.0f, type.c_str()).x;
+                const float x = rowRight - ui.px(4) - typeW;
+                if (x > nameX + ImGui::CalcTextSize(name.c_str()).x + ui.px(8))
+                    dl->AddText(small, smallSize, {x, p.y + (ui.px(24) - smallSize) * 0.5f}, imColor(palette::kSecondary), type.c_str());
+                if (hovered) ImGui::SetTooltip("%s: %s", name.c_str(), type.c_str());
+            }
             ImGui::PopID();
             return clicked ? 1 : right ? 2 : 0;
         };
@@ -327,11 +343,11 @@ private:
         std::stable_sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) { return compareNames(a.name, b.name) < 0; });
         for (const Entry& e : entries) {
             if (e.design.valid()) {
-                const int click = row(std::format("d{}", e.design.value), designSprite(ui, e.design), e.name);
+                const int click = row(std::format("d{}", e.design.value), designSprite(ui, e.design), e.name, s.design(e.design).designType);
                 if (click == 1) add(ui, SimulatorItem{SimulatorItem::Kind::Design, e.design, {}, current_});
                 if (click == 2) designReport_.open(e.design);
             } else {
-                const int click = row(std::format("o{}", e.object.value), objectSprite(ui, s.galaxy.object(e.object)), e.name);
+                const int click = row(std::format("o{}", e.object.value), objectSprite(ui, s.galaxy.object(e.object)), e.name, {});
                 if (click == 1) add(ui, SimulatorItem{SimulatorItem::Kind::Planet, {}, e.object, current_});
                 if (click == 2) report_.openPlanet(e.object);
             }

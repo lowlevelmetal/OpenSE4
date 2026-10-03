@@ -685,6 +685,8 @@ private:
         // For lessons: the design being built.
         ui.facts.designComponents = static_cast<int64_t>(entries_.size());
         ui.facts.designHullChosen = hullChosen_;
+        ui.facts.designType = designType_;
+        ui.facts.designNamed = !name().empty() && !designNameTaken(ui.state(), ui.me(), name());
         std::optional<game::DesignStats> st;
         if (hull_) st = game::computeDesignStats(ui.rules(), &ui.me(), *hull_, entries_);
         hovered_.reset();
@@ -749,6 +751,7 @@ private:
         // Design Type: a new design has none, its box reading "Design Type".
         label(ui, d, {cd::kLabelX, 79}, "Design Type");
         if (dropBox(ui, d, "##type", 95, designType_, "Design Type")) ImGui::OpenPopup("##types");
+        ui.tag("create-design:type", d.at({cd::kBoxX, 95}), d.at({cd::kBoxX + cd::kBoxW, 95 + cd::kBoxH}));
         if (ImGui::BeginPopup("##types")) {
             const auto& types = ui.me().designTypes;
             for (size_t i = 0; i < types.size(); ++i)

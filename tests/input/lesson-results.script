@@ -23,9 +23,10 @@ click item:link:window:research in=lesson
 wait-window research
 click item:* in=research nth=1
 wait-result won
-# Won: Next Lesson, Keep Playing and Learn; no Try Again.
+# Won: Next Game (the next training game, named in the dialog), Keep Playing and Learn; no Try Again.
 wait-for item:"Keep Playing"
-assert-present item:"Next Lesson"
+assert-present item:"Next Game"
+assert-present item:"Next: Quick loss*"
 assert-present item:Learn in=##lessonresult
 assert-absent item:"Try Again"
 screenshot result-won.png
@@ -59,7 +60,7 @@ wait-result lost
 wait-for item:"Try Again"
 assert-present item:"Keep Playing"
 assert-present item:Learn in=##lessonresult
-assert-absent item:"Next Lesson"
+assert-absent item:"Next Game"
 screenshot result-lost.png
 # Try Again starts the game afresh.
 click item:"Try Again"

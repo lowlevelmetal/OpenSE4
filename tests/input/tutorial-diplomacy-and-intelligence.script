@@ -10,10 +10,12 @@ wait-step 2
 click item:next in=tag:cycle:ship
 click tag:order:explore
 wait-step 3
-# 3 First contact: the second ship explores too; end turns, sending ships that have arrived
-# exploring again, until an empire is met.
+# 3 A second explorer: the next ship, Explore.
 click item:next in=tag:cycle:ship
 click tag:order:explore
+wait-step 4
+# 4 First contact: end turns, sending ships that have arrived exploring again, until an empire
+# is met.
 repeat 20 until { empires_met = 1 }
   click item:next in=tag:cycle:ship
   click tag:order:explore
@@ -24,22 +26,22 @@ repeat 20 until { empires_met = 1 }
   wait 5
   click tag:log:close optional
 end
-wait-step 4
-# 4 The Empires window.
+wait-step 5
+# 5 The Empires window.
 click tag:command:empires
 wait-window empires
-wait-step 5
-# 5 The empires you know: the Trade and Tariff columns, back to Treaty, Next.
+wait-step 6
+# 6 The empires you know: the Trade and Tariff columns, back to Treaty, Next.
 click tag:empires:trade
 click tag:empires:tariff
 click tag:empires:treaty
 click item:Next in=lesson
-wait-step 6
-# 6 Open a channel: left-click the portrait.
+wait-step 7
+# 7 Open a channel: left-click the portrait.
 click item:##portrait in=empires
 wait-window communicate
-wait-step 7
-# 7 Propose a treaty: Propose Treaty in the Message Type list, Non-Aggression, Send Message.
+wait-step 8
+# 8 Propose a treaty: Propose Treaty in the Message Type list, Non-Aggression, Send Message.
 click tag:communicate:message-type
 click item:"Propose Treaty" in=communicate
 wait-for tag:communicate:treaty
@@ -47,19 +49,19 @@ click tag:communicate:treaty
 click item:Non-Aggression in=communicate
 click item:Pleading in=communicate
 click tag:communicate:send
-wait-step 8
+wait-step 9
 assert { command = "SendMessage" }
-# 8 Wait for the answer: sending closed the windows; End Turn and Yes.
+# 9 Wait for the answer: sending closed Communicate; Esc closes Empires; End Turn and Yes.
 wait-closed communicate
 key Escape
 wait-closed empires
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 2
-# 9 Read the answer: the Log opens by itself at the start of the turn, with the answer in it.
+# 10 Politics: the Log opened by itself at the start of the turn, with the answer in it; the
+# category, the message in it, Next.
 wait-window log
 wait-step 10
-# 10 Politics: the category, the message in it, Next.
 click tag:log:politics
 click item:##row in=log nth=2
 click item:Next in=lesson
@@ -104,8 +106,10 @@ wait-step 14
 click item:* in=tag:intelligence:projects nth=1
 wait-step 15
 assert { command = "SetIntel" }
-# 15 Well done: Finish.
+# 15 Well done: Finish. The last lesson offers the first training game, which starts from here.
 click item:Finish in=lesson
 wait-result done
-click item:"Keep Playing"
-wait-gone item:"Keep Playing"
+assert-present item:"Next, a training game: Land rush*"
+assert-present item:"Training Game"
+click item:"Training Game"
+wait-lesson land-rush

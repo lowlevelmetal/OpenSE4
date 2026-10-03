@@ -317,9 +317,9 @@ recorder is tested.
 
 | Scripts | What they play |
 |---|---|
-| `tutorial-*.script` | Each of the seven tutorials from its first step to its result, under the input lock: every step done by clicking what it tells the player to click; Next only on steps that explain, never Skip or Free Play (the runner checks) |
+| `tutorial-*.script` | Each of the seven tutorials from its first step to its result, under the input lock: every step done by clicking what it tells the player to click; Next only on steps that explain, never Skip or Free Play (the runner checks). `tutorial-wrong-ship.script` gives tutorial 2's Explore order to the colony ship: the step waits for an attack ship, and the colony is still founded; `tutorial-wrong-fleet.script` adds the colony ship to tutorial 5's fleet: the step waits, and the fleet's later orders still count |
 | `training-*.script` | Each training game's briefing pages (Previous, Next, Close Page), its first turns with their hints, Hide, the T button and Ctrl+H, Leave Game with its question |
-| `lesson-results.script` | The result dialog, won and lost (Next Lesson, Keep Playing, Try Again, Learn), on two quick training games of our own in `tests/input/learn` |
+| `lesson-results.script` | The result dialog, won and lost (its recap and the next game, Next Game, Keep Playing, Try Again, Learn), on two quick training games of our own in `tests/input/learn` |
 | `lesson-lock-windows.script`, `lesson-lock-simulator.script` | The tutorial input lock with windows over each other: the designer over Designs, the Combat Simulator over Designs; what the window in front does not allow is refused (docs/LEARNING.md "The input lock") |
 | `lesson-recovery.script`, `lesson-uncover.script` | The way back to a closed window (one and two windows deep) and past a window that covers the outline, with no Skip meanwhile (docs/LEARNING.md "Getting back") |
 | `lesson-skip.script`, `lesson-long-step.script` | Skip only after ten seconds without a way back, and no cascade after it; no Skip on a step that waits on the turns |

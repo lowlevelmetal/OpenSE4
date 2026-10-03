@@ -2,6 +2,12 @@
 title = "Fleets, movement and supply"
 summary = "Form a fleet, move it, use waypoints and the order list, and keep your ships supplied."
 minutes = 15
+learned = [
+    "Forming a fleet in Fleet Transfer",
+    "Moving with Move To, movement points and route lines (Ctrl+L)",
+    "Setting a waypoint (Alt+1) and going there (Ctrl+1)",
+    "Reading and editing an order list, and keeping ships supplied",
+]
 
 [setup]
 seed = 404
@@ -14,9 +20,8 @@ starting_ships = ["Attack Ship", "Attack Ship", "Colony"]
 [[step]]
 title = "Ships on the move"
 text = """
-Ships do their work far from home. This lesson shows you how to group them into a **fleet**, how
-to move them, and how to keep them supplied. You will use the two attack ships this lesson's
-game gives you. Press **Next**.
+**Ships do their work far from home.** In this lesson you group your two attack ships into a
+**fleet**, move it, and keep it supplied. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "ships-and-fleets"
@@ -24,74 +29,83 @@ manual = "ships-and-fleets"
 [[step]]
 title = "Select an attack ship"
 text = """
-Select one of your attack ships with the ship arrows at the top right, or `Space`.
+**Select one of your attack ships** with the ship arrows at the top right, or `Space`.
+
+Check its report: the **Class** must say **{design:Attack Ship}**, not {design:Colony}.
 """
 highlight = ["cycle:ship"]
-done = { selected = "ship" }
+allow = ["panel:report"]
+done = { selected = "ship", design_type = "Attack Ship" }
 manual = "main-window#selecting-things"
 
 [[step]]
 title = "Fleet Transfer"
 text = """
-Open **Fleet Transfer** with its order button or `F`. It lists the ships in this sector that are
-not in a fleet, and the fleets already there.
+**Press the Fleet Transfer order** (or `F`).
+
+The window lists the ships in this sector that are not in a fleet, and the fleets already here.
 """
 highlight = ["order:fleet-transfer"]
-allow = ["cycle:ship"]
 done = { window = "fleet-transfer" }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
 title = "Create a fleet"
 text = """
-Press **Create Fleet** and give the fleet a name (or keep the one offered). The fleet starts with
-your selected attack ship.
+**Press Create Fleet**, keep the name offered (or type your own) and press **OK**.
+
+The new fleet starts with your selected attack ship.
 """
 highlight = ["fleet-transfer:create-fleet"]
-done = { command = "CreateFleet" }
+done = { command = "CreateFleet", design_type = "Attack Ship" }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
 title = "Add the second attack ship"
 text = """
-With the new fleet selected, click your other **attack ship** in the list of ships outside fleets
-to add it. (Leave the colony ship out: a fleet moves at the speed of its slowest member.)
+**Click your other attack ship** in the list of ships outside fleets: its name begins with
+**{design:Attack Ship}**. It joins the selected fleet.
+
+Leave the colony ship out: a fleet moves at the speed of its slowest ship. A click on a ship in
+the fleet's list takes it out again.
 """
 highlight = ["fleet-transfer:ships", "fleet-transfer:fleets"]
-done = { command = "JoinFleet" }
+done = { command = "JoinFleet", design_type = "Attack Ship" }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
 title = "Your fleet"
 text = """
-Close Fleet Transfer (**Close** or `Esc`). Then select an attack ship again with the ship
-arrows: the report panel now shows the **fleet** above the ship, with its speed, supplies,
-formation, strategy and members. Orders you give now go to the whole fleet.
+**Close Fleet Transfer (`Esc`), then select an attack ship again** with the ship arrows.
+
+The report now shows the **fleet** above the ship: its speed, supplies, formation, strategy and
+members. Orders you give now go to the whole fleet.
 """
 highlight = ["fleet-transfer:close", "cycle:ship"]
 allow = ["panel:report"]
-done = { all = [{ not = { window = "fleet-transfer" } }, { selected = "fleet" }] }
+done = { all = [{ not = { window = "fleet-transfer" } }, { selected = "fleet", design_type = "Attack Ship" }] }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
 title = "Move the fleet"
 text = """
-Press the **Move To** order (or `M`), then click a sector in the system view. You can also click
-a system in the galaxy panel first to pick a sector in another system you have explored.
+**Press the Move To order** (or `M`), **then click a sector** in the system view.
 
-(Shortcut: with a ship selected, right-clicking a sector also gives a Move To order.)
+To go to another explored system, click it in the galaxy panel first. With a ship selected, a
+right-click on a sector also gives a Move To order.
 """
 highlight = ["order:move-to", "panel:system"]
 allow = ["panel:galaxy"]
-done = { order = "move-to" }
+done = { order = "move-to", design_type = "Attack Ship" }
 manual = "ships-and-fleets#moving-around"
 
 [[step]]
 title = "Movement points"
 text = """
-The fleet moved at once, one sector per **movement point**, and stopped when its points ran out;
-the rest of the move continues next turn. Press `Ctrl+L` to see its route as a dashed line, and
-again to hide it. Press **Next**.
+**The fleet moved at once**, one sector per movement point, and goes on next turn.
+
+The blue line is its route; the numbers on it say in which turn it reaches each sector. `Ctrl+L`
+hides and shows these lines. Press **Next**.
 """
 highlight = ["panel:system"]
 keys = ["Ctrl+L"]
@@ -100,9 +114,11 @@ manual = "ships-and-fleets#moving-around"
 [[step]]
 title = "Set a waypoint"
 text = """
-**Waypoints** are ten places you can send ships to quickly. Click a sector in the system view
-(for example the one with a warp point), then press `Alt+1`: that sector becomes waypoint 1, and
-a cyan frame with the number marks it.
+**Click a sector in the system view, then press `Alt+1`**: that sector becomes waypoint 1, and a
+cyan frame with the number marks it.
+
+**Waypoints** are ten places you can send ships to quickly. The sector with a warp point is a
+good choice.
 """
 highlight = ["panel:system"]
 keys = ["Alt+1"]
@@ -112,20 +128,22 @@ manual = "ships-and-fleets#waypoints"
 [[step]]
 title = "Go to the waypoint"
 text = """
-Select your fleet again: an attack ship, with the ship arrows. Then press `Ctrl+1`, or the **Move To
-Waypoint** order button and pick waypoint 1 from the list.
+**Select your fleet again** (an attack ship, with the ship arrows), **then press `Ctrl+1`**, or
+the **Move To Waypoint** order and waypoint 1.
+
+The fleet adds the trip to its orders.
 """
 highlight = ["order:move-to-waypoint", "cycle:ship"]
 allow = ["panel:report"]
 keys = ["Ctrl+1"]
-done = { order = "move-to-waypoint" }
+done = { order = "move-to-waypoint", design_type = "Attack Ship" }
 manual = "ships-and-fleets#waypoints"
 
 [[step]]
 title = "The order list"
 text = """
-New orders are **added to the end** of the list. Press **View Orders** (or `V`) to see the fleet's
-whole list.
+**Press View Orders** (or `V`) to see the fleet's whole order list. New orders are **added to the
+end** of it.
 """
 highlight = ["order:view-orders"]
 done = { window = "view-orders" }
@@ -134,10 +152,10 @@ manual = "ships-and-fleets#orders"
 [[step]]
 title = "Editing orders"
 text = """
-Here you can move orders up and down, delete one, or clear them all; the **Repeat Orders** box
-makes the fleet repeat its list forever. An order that fails clears the whole list.
+**Close the window** (**Close** or `Esc`) once you have looked.
 
-Close the window (**Close** or `Esc`) when you are done.
+Here you can move orders up and down, delete one or clear them all, and **Repeat Orders** makes
+the fleet repeat its list forever. An order that fails clears the whole list.
 """
 highlight = ["window:view-orders"]
 keys = ["Escape"]
@@ -147,22 +165,23 @@ manual = "ships-and-fleets#orders"
 [[step]]
 title = "Supplies"
 text = """
-Ships use **supplies** to move, fire and cloak. A ship that runs out crawls one sector a turn and
-cannot fire. Your ships are refilled for free in any sector with a **resupply depot**, such as
-the one on your homeworld.
+**Press the Resupply At Nearest order** (or `S`): the fleet adds a trip to the nearest resupply
+depot.
 
-Give the fleet the **Resupply** order (or `S`): it adds a move to the nearest depot.
+Ships use **supplies** to move, fire and cloak. One that runs out crawls a sector a turn and
+cannot fire. Depots, such as your homeworld's, refill them for free.
 """
 highlight = ["order:resupply"]
 allow = ["cycle:ship"]
-done = { order = "resupply" }
+done = { order = "resupply", design_type = "Attack Ship" }
 manual = "logistics#supply"
 
 [[step]]
 title = "End the turn"
 text = """
-End the turn (**End Turn**, then **Yes**). Your fleet carries on with its orders at the start of your next turn, before you
-get control.
+**Press End Turn**, then **Yes**.
+
+Your fleet carries on with its orders at the start of your next turn, before you get control.
 """
 highlight = ["button:end-turn"]
 done = { turns_passed = 1 }
@@ -171,9 +190,9 @@ manual = "turns#turn-based-play"
 [[step]]
 title = "Well done"
 text = """
-You can now form fleets and move them, use waypoints, and read and edit order lists. Two orders
-to remember for guards: **Sentry** (`Y`) waits until an enemy appears in the system, and **Set
-Patrol** (`P`) moves between several sectors forever. Press **Finish** to end the lesson.
+**You can now form fleets, move them and edit their orders.** Two orders for guards: **Sentry**
+(`Y`) waits until an enemy appears in the system, and **Set Patrol** (`P`) moves between sectors
+forever. Press **Finish**.
 """
 highlight = ["order:sentry", "order:patrol"]
 manual = "ships-and-fleets#orders"

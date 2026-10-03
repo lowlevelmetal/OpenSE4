@@ -311,7 +311,7 @@ void ClassicMode::lessonCheckReport(UiContext& ui) {
     const learn::Step* step = lesson_->activeStep();
     if (!step) return;
     static constexpr std::string_view kSituational[] = {"tactical-combat:weapons", "communicate:message-type", "communicate:treaty",
-                                                        "communicate:send"};
+                                                        "communicate:send", "report:colony"};
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     auto onScreen = [&](const UiTag& t) {
         return t.max.x > t.min.x && t.max.y > t.min.y && t.max.x > 0 && t.max.y > 0 && t.min.x < display.x && t.min.y < display.y;
@@ -596,6 +596,7 @@ void ClassicMode::updateLesson(UiContext& ui, bool prompted) {
     for (const auto& [id, screen] : screens_) facts.openWindows.emplace_back(windowId(id));
     facts.selected = main_.selectionKinds(ui);
     facts.selections = main_.selections();
+    if (const auto vehicle = main_.selectedVehicleId()) facts.selectedVehicle = *vehicle;
     facts.battleOrders = tacticalOrderLog();
     if (options_.scripted) lastFacts_ = facts;   // for input scripts' conditions
     if (!lesson_) return;

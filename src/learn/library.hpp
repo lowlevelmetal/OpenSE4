@@ -113,6 +113,8 @@ struct Library {
     const std::vector<Lesson>& lessons(LessonKind kind) const { return kind == LessonKind::Tutorial ? tutorials : training; }
     // The next lesson of the same kind after `slug`, if any.
     const Lesson* next(LessonKind kind, std::string_view slug) const;
+    // What the result of `lesson` offers next: its `suggest`, else the next one of its kind.
+    const Lesson* following(const Lesson& from) const;
     // The page whose front matter names this window (`main`: the main window).
     const ManualPage* pageForWindow(std::string_view windowId) const;
 

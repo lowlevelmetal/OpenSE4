@@ -43,10 +43,12 @@ wait-step 9
 click item:##row in=queues
 wait-window set-queue
 wait-step 10
-# 10 Build something: the colony ship design (the third row of the Ships tab).
+# 10 Build something: the colony ship design (the third row of the Ships tab; the step
+# counts only a colony ship).
 click item:##row in=set-queue nth=3
 wait-step 11
 assert { construction_queued = 1 }
+assert { command = "QueueAdd", design_type = "Colony" }
 # 11 How a queue builds: an explanation.
 click item:Next in=lesson
 wait-step 12
@@ -59,16 +61,16 @@ wait-closed queues
 click tag:command:colonies
 wait-window colonies
 wait-step 13
-# 13 Your budget: Empire Status (over the Colonies window).
+# 13 Your budget: close Colonies (Esc), then Empire Status.
+key Escape
+wait-closed colonies
 click tag:command:empire-status
 wait-window empire-status
 wait-step 14
-# 14 End the turn: close the windows, End Turn and Yes. The cheap first project is done at the
+# 14 End the turn: close the window, End Turn and Yes. The cheap first project is done at the
 # end of this turn.
 key Escape
 wait-closed empire-status
-key Escape
-wait-closed colonies
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1
@@ -81,5 +83,6 @@ click tag:log:close
 wait-closed log
 click item:Finish in=lesson
 wait-result done
+assert-present item:"Next: Designing ships*"
 click item:"Keep Playing"
 wait-gone item:"Keep Playing"

@@ -12,9 +12,10 @@ wait-step 3
 # 3 Your home system: an empty part of the system view.
 click sector:empty
 wait-step 4
-# 4 Your homeworld: its sector lists everything there; then the homeworld in that list.
-click sector:home
-click item:report:colony
+# 4 Your homeworld: the outlined homeworld; its sector lists everything there, then the
+# homeworld in that list (outlined too once it shows).
+click tag:sector:home
+click tag:report:colony
 wait-step 5
 # 5 The planet report: its tabs, then Next.
 click item:Facil in=main
@@ -50,7 +51,9 @@ wait-step 12
 # 12 Your ships: the right arrow of the ship selector.
 click item:next in=tag:cycle:ship
 wait-step 13
-# 13 The orders: an explanation.
+# 13 The orders: an explanation; point at the outlined orders.
+move tag:order:move-to
+move tag:order:explore
 click item:Next in=lesson
 wait-step 14
 # 14 End the turn, and answer Yes.
@@ -64,6 +67,7 @@ click item:Finish in=lesson
 wait-result done
 assert-present item:"Keep Playing"
 assert-present item:"Next Lesson"
+assert-present item:"Next: Exploring and colonizing*"
 click item:"Keep Playing"
 wait-gone item:"Keep Playing"
 assert-result done

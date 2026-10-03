@@ -2,6 +2,14 @@
 title = "Diplomacy and intelligence"
 summary = "Meet your neighbours, propose a treaty, read their answer and start your first intelligence project."
 minutes = 20
+learned = [
+    "Exploring until you meet another empire",
+    "Reading the Empires window: treaties and moods",
+    "Proposing a treaty, and reading the answer in the Log",
+    "Starting an intelligence project",
+]
+# The last lesson: its result offers the first training game.
+suggest = "training:land-rush"
 
 [setup]
 seed = 11
@@ -14,11 +22,11 @@ starting_ships = ["Attack Ship", "Attack Ship"]
 [[step]]
 title = "Neighbours"
 text = """
-This quadrant is small and crowded: three other empires live close by. In this lesson you meet
+**Three other empires live close by** in this small, crowded quadrant. In this lesson you meet
 them, talk to them and start an intelligence project.
 
-First you have to find them. You make **contact** with an empire when your ships and theirs are
-in the same system and each side can see the other. Press **Next**.
+You make **contact** with an empire when your ships and theirs are in the same system and see
+each other. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "diplomacy#meeting-other-empires"
@@ -26,32 +34,48 @@ manual = "diplomacy#meeting-other-empires"
 [[step]]
 title = "Send out an explorer"
 text = """
-This lesson's game gives you two attack ships to explore with. Select one with the ship arrows
-(or `Space`) and give it the **Explore** order (`E`).
+**Select an attack ship with the ship arrows** (or `Space`), **then press Explore** (`E`).
+
+This lesson's game gives you two attack ships to explore with.
 """
 highlight = ["cycle:ship", "order:explore"]
 allow = ["panel:report"]
-done = { order = "explore" }
+done = { order = "explore", design_type = "Attack Ship" }
+manual = "galaxy#exploring"
+
+[[step]]
+title = "A second explorer"
+text = """
+**Select your other attack ship and press Explore too.**
+
+Two explorers find your neighbours twice as fast, and never pick the same warp point.
+"""
+highlight = ["cycle:ship", "order:explore"]
+allow = ["panel:report"]
+done = { order = "explore", design_type = "Attack Ship" }
 manual = "galaxy#exploring"
 
 [[step]]
 title = "First contact"
 text = """
-Send your second attack ship exploring too: select it with the ship arrows and press
-**Explore**. Then end turns until you meet another empire: the Log reports a **first contact**.
-Give each ship a new Explore order when it arrives. Your neighbours' ships may also find you
-first.
+**Press End Turn and Yes until you meet another empire**: the Log then reports a **first
+contact**. Close the Log (`Esc`) before each End Turn.
+
+When a ship has arrived, select it and press **Explore** again. Your neighbours' ships may find
+you first.
 """
 highlight = ["button:end-turn", "order:explore", "cycle:ship"]
 allow = ["panel:report"]
 done = { empires_met = 1 }
+progress = ["turns_passed"]
 manual = "diplomacy#meeting-other-empires"
 
 [[step]]
 title = "The Empires window"
 text = """
-You have met a neighbour. Open the **Empires** window with its command button (the alien face) or
-`F9`.
+**Open the Empires window** with its command button (the alien face) or `F9`.
+
+You have met a neighbour, and this window shows every empire you know.
 """
 highlight = ["command:empires"]
 done = { window = "empires" }
@@ -60,12 +84,11 @@ manual = "diplomacy#the-empires-window"
 [[step]]
 title = "The empires you know"
 text = """
-Each empire you have met has a portrait and a column of facts: your **treaty** with it, whether a
-human or the computer plays it, and for computer players their **mood** toward you, from
-Brotherly to Murderous.
+**Each empire you have met has a portrait and a column of facts**: your treaty with it, who plays
+it, and a computer player's **mood** toward you, from Brotherly to Murderous.
 
-You start with no treaty, and ships of empires without a treaty of **Non-Aggression** or better
-fight on sight. The tabs on the right show other columns: **Trade** and **Tariff**. Press **Next**.
+Without a treaty of **Non-Aggression** or better, your ships fight on sight. The tabs show the
+**Trade** and **Tariff** columns. Press **Next**.
 """
 highlight = ["empires:list", "empires:treaty", "empires:trade", "empires:tariff"]
 allow = ["empires:treaty", "empires:trade", "empires:tariff"]
@@ -74,8 +97,9 @@ manual = "diplomacy#treaties"
 [[step]]
 title = "Open a channel"
 text = """
-Left-click a portrait to open the **Communicate** window with that empire. (Right-clicking a
-portrait shows its race report.)
+**Click a portrait** to open the **Communicate** window with that empire.
+
+A right-click on a portrait shows that race's report instead.
 """
 highlight = ["empires:list"]
 done = { window = "communicate" }
@@ -84,11 +108,10 @@ manual = "diplomacy#the-communicate-window"
 [[step]]
 title = "Propose a treaty"
 text = """
-Choose **Propose Treaty** as the message type and **Non-Aggression** as the treaty. Pick a tone,
-edit the text if you like, and press **Send Message**.
+**Choose Propose Treaty and Non-Aggression, then press Send Message.** Pick a tone and edit the
+text if you like.
 
-You can send each empire one message per turn. In a turn-based game a message takes effect the
-moment it is sent; an answer comes in the other empire's turn.
+You can send each empire one message a turn. The computer player reads it in its own turn.
 """
 highlight = ["communicate:message-type", "communicate:treaty", "communicate:send"]
 allow = ["window:communicate"]
@@ -98,26 +121,20 @@ manual = "diplomacy#messages"
 [[step]]
 title = "Wait for the answer"
 text = """
-Close the windows and end the turn (**End Turn**, then **Yes**). The computer player answers during its own turn.
+**Close the Empires window (`Esc`), then press End Turn** and **Yes**.
+
+The computer player answers during its turn, and its answer waits for you in the Log.
 """
 highlight = ["button:end-turn"]
 done = { turns_passed = 1 }
 manual = "diplomacy#how-computer-players-feel-about-you"
 
 [[step]]
-title = "Read the answer"
-text = """
-Open the **Log** (`F10`).
-"""
-highlight = ["command:log"]
-done = { window = "log" }
-manual = "turns#the-log"
-
-[[step]]
 title = "Politics"
 text = """
-Messages from other empires are listed under **Politics**: click that category. (It is dim when
-nobody wrote to you this turn.) Select a message to read it; **Send Reply** answers it.
+**The Log opened by itself at the new turn.** Click its **Politics** category to see only the
+messages of other empires (it is dim when nobody wrote), then select a message to read it.
+**Send Reply** answers one. (`F10` opens the Log again.)
 
 Press **Next** when you have read the answer.
 """
@@ -128,22 +145,25 @@ manual = "diplomacy#messages"
 [[step]]
 title = "A treaty"
 text = """
-If they accepted, you now hold a treaty of **Non-Aggression**, and your ships no longer fight.
+**End turns until a treaty is signed**; after three turns the lesson goes on anyway. Close the
+Log (`Esc`) before each End Turn.
 
-A computer player accepts a treaty only when its anger toward you is low enough. If it refused,
-propose again in a later turn, or soften it with a **Gift** first. End turns until a treaty is
-signed; after three turns the lesson goes on anyway.
+A computer player accepts only when its anger toward you is low. If it refused, propose again
+from the Empires window in a later turn, or send a **Gift** first.
 """
-highlight = ["command:empires", "button:end-turn"]
+highlight = ["button:end-turn"]
+allow = ["command:empires"]
 done = { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns_passed = 3 }] }
 manual = "diplomacy#how-computer-players-feel-about-you"
 
 [[step]]
 title = "More about other empires"
 text = """
-The Empires window has more on its right side: the **Treaty Grid** of who is at peace with whom,
-the **Scores**, the **Victory Conditions** of this game, and your own race report under **Our
-Race**. Open it with its command button to look, then press **Next**.
+**The Empires window has more on its right side**: the **Treaty Grid** of who is at peace with
+whom, the **Scores**, this game's **Victory Conditions**, and your own race report under **Our
+Race**.
+
+Open it (`F9`) to look, then press **Next**.
 """
 highlight = ["command:empires"]
 allow = ["command:empires"]
@@ -152,8 +172,9 @@ manual = "diplomacy#the-empires-window"
 [[step]]
 title = "Intelligence"
 text = """
-Open the Empires window again and press **Intelligence**. Intelligence projects let you spy on
-other empires and sabotage them, and protect you from their agents.
+**Open the Empires window and press Intelligence.**
+
+Intelligence projects spy on other empires and sabotage them, and protect you from their agents.
 """
 highlight = ["command:empires", "empires:intelligence"]
 done = { window = "intelligence" }
@@ -162,24 +183,23 @@ manual = "intelligence#the-intelligence-window"
 [[step]]
 title = "A first project"
 text = """
-The list shows the projects your technology allows, under their groups. Click a **defense** project
-to add it: it stores points in your queue and stops enemy projects aimed at you.
+**Click a defense project** in the list to add it: it stores up points and stops enemy projects
+aimed at you.
 
 Your intelligence points come from intelligence facilities, which you build like any other
 facility. Without them the project waits.
 """
-highlight = ["window:intelligence"]
+highlight = ["intelligence:projects"]
 done = { command = "SetIntel" }
 manual = "intelligence#defense-projects"
 
 [[step]]
 title = "Well done"
 text = """
-You have met a neighbour, proposed a treaty and started an intelligence project.
+**You met a neighbour, proposed a treaty and started an intelligence project.**
 
-A few tips: sign Non-Aggression with neighbours you are not ready to fight, sign trade treaties
-for free income, and keep a small defense project running once a neighbour turns hostile. Press
-**Finish** to end the lesson.
+Sign Non-Aggression with neighbours you are not ready to fight, trade treaties for free income,
+and keep a defense project running once a neighbour turns hostile. Press **Finish**.
 """
 highlight = ["lesson:panel"]
 manual = "diplomacy#diplomacy-advice"

@@ -2,6 +2,12 @@
 title = "Combat"
 summary = "Fight a test battle in the Combat Simulator: move, fire, use Auto, then watch a strategic battle."
 minutes = 20
+learned = [
+    "Setting up a test battle in the Combat Simulator",
+    "Moving and firing in Tactical Combat, and why range matters",
+    "Ending your phase, or handing the battle to Auto",
+    "Watching a strategic battle, and where the strategies are",
+]
 
 [setup]
 seed = 404
@@ -12,12 +18,11 @@ events = "none"
 [[step]]
 title = "Battles"
 text = """
-Ships fight when they meet an empire they are hostile to: at war, or with no treaty of
-Non-Aggression or better. In a turn-based game you choose to fight each battle yourself
-(**Tactical**) or to let your ships follow their strategies (**Strategic**).
+**Ships fight when they meet an empire they are hostile to**: at war, or without a treaty of
+Non-Aggression or better. In a turn-based game you fight each battle yourself (**Tactical**) or
+let your ships follow their strategies (**Strategic**).
 
-In this lesson you fight a test battle in the **Combat Simulator**, where nothing is really lost.
-Press **Next**.
+Here you fight a test battle in the **Combat Simulator**, where nothing is lost. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "combat#when-battles-happen"
@@ -25,38 +30,48 @@ manual = "combat#when-battles-happen"
 [[step]]
 title = "Open the simulator"
 text = """
-Open the **Designs** window (`F3`). Its list groups your designs under their design types: note
-the names of your **Attack Ship** and your **Defense Base**, which your Design minister made at
-the start. Then press **Simulator**.
+**Open Designs (`F3`), then press Simulator.**
+
+The simulator fights imaginary battles between your designs, the enemy designs you have seen and
+the planets of your home system.
 """
 highlight = ["command:designs", "designs:simulator"]
 done = { window = "combat-simulator" }
 manual = "combat-windows#the-combat-simulator"
 
 [[step]]
-title = "Set up the sides"
+title = "Your side"
 text = """
-The simulator fights between ten imaginary races. **Race 1** is yours to command; the computer
-plays the others.
+**Choose Race 1 in Owner for item, then click {design:Attack Ship} twice** in **Items to
+choose**. Two attack ships join your side, one row each in **Combat Vehicles**.
 
-1. In **Owner for item** at the bottom right, choose **Race 1**. Then click your **Attack Ship**
-   design in **Items to choose** (in alphabetical order) twice: two attack ships join your side,
-   one row each in **Combat Vehicles** on the left.
-2. Choose **Race 2** and click your **Defense Base** design, to give the other side something to
-   defend.
-
-Clicking a row in Combat Vehicles removes it, and right-clicking an item shows its report. The
-lesson goes on when both races have their items.
+Race 1 is yours to command; the computer plays the others. Each design's type shows at the right
+of its row.
 """
-highlight = ["combat-simulator:owners", "combat-simulator:items", "combat-simulator:vehicles"]
+highlight = ["combat-simulator:owners", "combat-simulator:items"]
+allow = ["combat-simulator:vehicles"]
+done = { simulator_items = 2 }
+manual = "combat-windows#the-combat-simulator"
+
+[[step]]
+title = "The other side"
+text = """
+**Choose Race 2, then click {design:Defense Base}**, to give the other side something to defend.
+
+A click on a row in Combat Vehicles removes it, and a right-click on an item shows its report.
+"""
+highlight = ["combat-simulator:owners", "combat-simulator:items"]
+allow = ["combat-simulator:vehicles"]
 done = { all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }
 manual = "combat-windows#the-combat-simulator"
 
 [[step]]
 title = "Begin"
 text = """
-Make sure the **Tactical** tab on the right is chosen, so that you command Race 1 yourself, and
-press **Begin**. The simulator closes while you fight, and comes back afterwards.
+**Check that the Tactical tab is chosen, then press Begin.**
+
+On Tactical you command Race 1 yourself. The simulator closes while you fight, and comes back
+afterwards.
 """
 highlight = ["combat-simulator:tactical", "combat-simulator:begin"]
 done = { window = "tactical-combat" }
@@ -65,26 +80,33 @@ manual = "combat-windows#tactical-combat"
 [[step]]
 title = "The battlefield"
 text = """
-This is the **Tactical Combat** window. Your ships start on one edge of the map, the base in the
-middle. The title strip at the top shows the location, the combat turn and the empires, the one
-whose phase it is framed in yellow. On the right, once the battle has begun, the panel shows your
-selected ship (its size, movement, shields and structure) with its weapons below it.
+**Press Begin** at the bottom right, beside **Auto**, to start the battle.
 
-Press **Begin** at the bottom right, beside **Auto**, to start the battle.
+This is the **Tactical Combat** window. Your ships start at one edge, the base waits in the
+middle, and the title strip shows the combat turn and whose phase it is.
 """
 highlight = ["tactical-combat:end-turn"]
 done = { battle_begun = true }
 manual = "combat-windows#tactical-combat"
 
 [[step]]
+title = "Find the enemy"
+text = """
+**Turn the mouse wheel over the map to zoom out** until you see the enemy base.
+
+Your ships start out of range: the chance to hit falls by 10 points for every square of distance,
+so you have to get close. Press **Next**.
+"""
+highlight = ["tactical-combat:map"]
+manual = "combat#movement-in-combat"
+
+[[step]]
 title = "Move"
 text = """
-The base is out of sight at first: turn the mouse wheel over the map to zoom out until you see
-it. Then click one of your ships on the map to select it, and click an empty square on the way to
-the base to move it there. A ship moves half its normal speed each combat turn: it goes as far
-toward the square as it can, and in the next turn you send it on.
+**Click one of your ships, then click an empty square** on the way to the base.
 
-The chance to hit falls by 10 points for every square of distance, so get close.
+A ship moves half its normal speed each combat turn: it goes as far toward the square as it can,
+and next turn you send it on.
 """
 highlight = ["tactical-combat:map", "tactical-combat:piece"]
 done = { battle_order = "move" }
@@ -93,40 +115,54 @@ manual = "combat#movement-in-combat"
 [[step]]
 title = "Fire"
 text = """
-Point at the enemy: the pointer shows whether your ship can fire at it, and its report appears
-under your ship's weapons. Hover over a weapon in your ship's weapon grid to see its chance to hit
-and its damage. Click the enemy to fire every weapon that is switched on.
+**Click the enemy base to fire** every weapon that is switched on. Point at it first: the pointer
+shows whether your ship can reach it.
 
-If it is still out of range, move closer, or press **End Turn** (`E`) to end your phase and fire
-in the next one. Shields absorb damage first, then armor is destroyed, then everything else.
+Out of range? Move closer, or press **End Turn** (`E`) and try in the next combat turn. Shields
+take the damage first, then armor, then everything else.
 """
 highlight = ["tactical-combat:map", "tactical-combat:weapons", "tactical-combat:target"]
 allow = ["tactical-combat:piece", "tactical-combat:end-turn"]
 keys = ["E"]
 done = { battle_order = "fire" }
+progress = ["battle_turn"]
 manual = "combat#hitting-the-target"
 
 [[step]]
 title = "End the phase"
 text = """
-When your ships have moved and fired, press **End Turn** (or `E`) to end your phase. The other
-side then acts, and a new combat turn begins.
+**Press End Turn (`E`)** once your ships have moved and fired.
 
-The **Auto** check box lets every side follow its strategies; click it again to take control back. Play on
-until the battle ends: **Combat Complete** appears, and after **OK** the window closes by itself
-and the simulator comes back.
+The other side then acts, and a new combat turn begins.
+"""
+highlight = ["tactical-combat:end-turn"]
+allow = ["tactical-combat:map", "tactical-combat:piece", "tactical-combat:weapons", "tactical-combat:target"]
+keys = ["E"]
+done = { battle_order = "end-turn" }
+progress = ["battle_turn"]
+manual = "combat-windows#tactical-combat"
+
+[[step]]
+title = "Fight it out"
+text = """
+**Play on until the battle ends**: move, fire and press **End Turn** each combat turn, or click
+**Auto** to let every side follow its strategies.
+
+When **Combat Complete** appears, press **OK**: the window closes and the simulator comes back.
 """
 highlight = ["tactical-combat:end-turn", "tactical-combat:auto"]
 allow = ["tactical-combat:map", "tactical-combat:piece", "tactical-combat:weapons", "tactical-combat:target"]
 keys = ["E"]
 done = { not = { window = "tactical-combat" } }
+progress = ["battle_turn"]
 manual = "combat-windows#tactical-combat"
 
 [[step]]
 title = "A strategic battle"
 text = """
-Back in the simulator, choose the **Strategic** tab and press **Begin** again. This time every
-ship follows its **strategy**, and you watch.
+**Choose the Strategic tab and press Begin** again.
+
+This time every ship follows its **strategy**, and you watch.
 """
 highlight = ["combat-simulator:strategic", "combat-simulator:begin"]
 done = { window = "strategic-combat" }
@@ -135,20 +171,22 @@ manual = "combat-windows#strategic-combat"
 [[step]]
 title = "Watching"
 text = """
-Press **Begin** in the Strategic Combat window. The battle is then fought while you watch, and
-the forces list on the left shows what each side has and has lost. **Close** lights up when
-the battle is over: press it then.
+**Press Begin, then Close once the battle is over.**
+
+The forces list on the left shows what each side has and what it has lost. **Close** lights up
+when the fighting ends.
 """
-highlight = ["window:strategic-combat"]
+highlight = ["strategic-combat:begin", "strategic-combat:close"]
 done = { not = { window = "strategic-combat" } }
 manual = "combat-windows#strategic-combat"
 
 [[step]]
 title = "Strategies"
 text = """
-How a ship fights on its own depends on its **strategy**: where it moves, what it shoots first,
-and when it leaves its formation. Press **Strategies** in the simulator. (In a game it also opens
-from **Empire Status**, `F11`.)
+**Press Strategies** in the simulator.
+
+A ship's **strategy** decides how it fights on its own: where it moves, what it shoots first and
+when it leaves its formation. In a game, Strategies also opens from **Empire Status** (`F11`).
 """
 highlight = ["combat-simulator:strategies"]
 done = { window = "strategies" }
@@ -157,11 +195,11 @@ manual = "combat#strategies"
 [[step]]
 title = "Well done"
 text = """
-Each design has a default strategy, and a fleet's own strategy overrides it. Look through the
-pages of the window to see what a strategy can say.
+**Look through the window's pages** to see what a strategy can say. Each design has a default
+strategy, and a fleet's own strategy overrides it.
 
-Remember: use the simulator to test a new design against the enemy designs you have seen before
-you build a fleet of it. Press **Finish** to end the lesson.
+Before you build many ships of a new design, test it here against the enemy designs you have
+seen. Press **Finish**.
 """
 highlight = ["window:strategies"]
 allow = ["window:strategies"]
