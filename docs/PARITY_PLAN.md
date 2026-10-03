@@ -20,8 +20,8 @@ distributed, without the original.
    over many runs.
 5. **The executable** (since 2026-09-29, see [CLEANROOM.md](CLEANROOM.md)). Every rule in
    specs 01–05 has been checked against it and marked "(confirmed: binary)", and the
-   engine follows the corrected specs. [PARITY_GAPS.md](PARITY_GAPS.md) lists the two
-   deliberate differences that remain.
+   engine follows the corrected specs. [PARITY_GAPS.md](PARITY_GAPS.md) lists what still
+   differs.
 
 ## Milestones
 
@@ -121,7 +121,9 @@ questions are what the observation sessions still have to settle.
 - [x] Sounds (UI, weapons, explosions; remastered set) and the three music playlists.
 - [x] The original's `.fon` fonts and `.cur` pointers, read from the install, and the
       800×600 layout (spec 06 §5.4, §5.8, §2.1.1).
-- [ ] Screenshot comparisons against the original through the harness.
+- [x] Screenshot comparisons against the original through the harness: every window
+      side by side (spec 07 sessions 3 and 5), and the setup screens, the management
+      windows and the battle windows rebuilt in the original's layouts (2026-10-03).
 
 ### M8: Persistence and multiplayer (done)
 - [x] Save and load: a versioned, checksummed format with validation on load; autosave
@@ -149,25 +151,25 @@ questions are what the observation sessions still have to settle.
 
 ## Next steps
 
-1. **Implement the last round of answers.** Every open question of specs 01–06 has been
-   settled from the executable (2026-10-01, in three passes). The third pass answered the
-   engine's last choices: spec 01 §14 Q44, spec 03 §19 Q77, spec 04 §19.4 Q87–Q89, spec 05
-   Q52 and spec 06 §7 Q38, Q56, Q61, Q62, Q64, Q70, Q72, Q73, Q76–Q80 and Q82 (Q63, Q71,
-   Q74, Q75 and Q81 are OpenSE4 choices with no counterpart). It also found that the
-   original gives no starting designs or ships (spec 01 §3.6) and checks first contact
-   only at set moments (spec 05 §3.1). All of these are implemented since 2026-10-01; the
-   choices they left are spec 05 questions 57 and 58 and spec 06 §7 Q83–Q88, and the rows
-   still open are in [PARITY_GAPS.md](PARITY_GAPS.md). Implement from the spec text, not
-   from any listing.
-2. **Observation.** Done on 2026-10-01 (spec 07 session 3): the starting assets were
-   confirmed, Q60 was measured under Wine, Q73 and Q77 were measured, and the computer
-   players' pace and the main windows were compared with ours. Their differences are the
-   rows "Seen side by side" and "Observed pace" in [PARITY_GAPS.md](PARITY_GAPS.md). Still
-   open: Windows' own Small Fonts size (Q60, needs a Windows machine) and more original
-   games for the pace rows.
-3. **Side-by-side checks** of the windows not yet compared (Ground Combat, Combat Replay,
-   Intelligence, the setup pages). The starting assets follow the spec since 2026-10-01 and
-   the pace was measured again (spec 07 "Pace after the starting assets"): the early game
-   agrees, research and bases stay behind, and spec 05 questions 53–56 ask the analyst for
-   the original's AI states, enemy-in-territory list, empty colony types and research
-   inputs.
+1. **Computer players: enemy colonies inside the territories.** The second debugger round
+   (spec 07, 2026-10-03) and its rules leave every pace figure within the original's
+   spread except two, which both follow how many enemy colonies lie inside an empire's
+   territory: colonies at turn 100 (15.7 against 17.0) and battles at enemy colonies
+   (2.6 against 3.0–4.9 per empire and 25 turns). See spec 05 questions 76 and 77; question
+   74 (a Scrap order on a fleet member) is not traced yet.
+2. **The interface's last open choices:**
+   - spec 06 §7 Q99: endings when a human loses during its own turn, intelligence targets,
+     changed objects;
+   - Q60: Windows' own Small Fonts size, which needs a Windows machine;
+   - spec 01 Q46: Ring 8 and Ring 9;
+   - the OpenSE4 choices the setup screens listed in [PARITY_GAPS.md](PARITY_GAPS.md): spin
+     steps, characteristic words, Compare Culture Modifiers, Login To Game.
+3. **Keep the interface covered by input scripts.**
+   - `tools/run_input_tests.py` plays 23 scripts through the client's own input, covering
+     every tutorial and training game and the mouse-only features. Six of them run in CI on
+     fixture data ([BUILDING.md](BUILDING.md) "Input scripts").
+   - A new window or lesson gets a script.
+4. **Multiplayer.** Protocol 5's security design was reviewed twice ([MULTIPLAYER.md](MULTIPLAYER.md)
+   "Security"). Two improvements are left:
+   - a password-authenticated key exchange, for the first connection to an open game;
+   - Argon2 off the interface thread.

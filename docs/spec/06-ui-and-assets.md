@@ -3510,7 +3510,8 @@ Raised while implementing the answers above (inferred, open):
     follow every ship and unit row in the empire's fleet order, unsorted. A right-click
     on a queued ship, base or unit opens the design's Design Report
     (`DesignReportPopup`, `colony_widgets.hpp`), which the buildable list and the Combat
-    Simulator open too. Our own choices (inferred): Supplies reads "now/capacity"; a
+    Simulator open too. Our own choices (inferred): Supplies reads "now/capacity", or "now"
+    alone when that is wider than the column; a
     fleet's number is its place in the game's fleet list, counted from 1; a mixed unit
     group's Type is "N designs"; the second lines are grey in the small font; "REPEAT
     ORDERS" stands for Repeat on an empty list (question 88).

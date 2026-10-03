@@ -358,15 +358,20 @@ private:
                                                          ImVec2(row.picture.uv.min.x, row.picture.uv.min.y),
                                                          ImVec2(row.picture.uv.max.x, row.picture.uv.max.y));
                 }
-                auto cell = [&](int column, const std::string& str) {
+                // `shorten`: a "now/capacity" too wide for its column shows "now" alone.
+                auto cell = [&](int column, const std::string& str, bool shorten = false) {
                     ImGui::TableSetColumnIndex(column);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (inner - textH) * 0.5f);
-                    ImGui::TextUnformatted(str.c_str());
+                    const size_t slash = str.find('/');
+                    if (shorten && slash != std::string::npos && ImGui::CalcTextSize(str.c_str()).x > ImGui::GetContentRegionAvail().x)
+                        ImGui::TextUnformatted(str.c_str(), str.c_str() + slash);
+                    else
+                        ImGui::TextUnformatted(str.c_str());
                 };
                 cell(1, row.name);
                 for (size_t c = 0; c < row.cells.size() && c < cols.size(); ++c) {
                     if (cols[c].id != ShipColumn::Orders) {
-                        cell(static_cast<int>(c) + 2, row.cells[c].text);
+                        cell(static_cast<int>(c) + 2, row.cells[c].text, cols[c].id == ShipColumn::Supplies);
                         continue;
                     }
                     // One order per 12 px line.
