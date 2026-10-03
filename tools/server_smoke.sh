@@ -107,7 +107,8 @@ grep -q "Send .*Mail_Relay_01.turn to empire 1" "$WORK/new.log"
 "$SERVER" pbem info --game="$WORK/Mail_Relay_01.turn"
 grep -q "Play-by-e-mail host key" "$WORK/new.log"
 # A turn file signed by another host key is refused once the game's key is trusted.
-"$SERVER" pbem turn-files --game="$WORK/mail.gam" --out="$WORK/other" --host-key="$WORK/other_key.txt" "$@" >/dev/null 2>&1 || mkdir -p "$WORK/other"
+mkdir "$WORK/other"
+"$SERVER" pbem turn-files --game="$WORK/mail.gam" --out="$WORK/other" --host-key="$WORK/other_key.txt" "$@" >/dev/null
 "$SERVER" pbem orders --turn="$WORK/Mail_Relay_01.turn" --password=a --out="$WORK/inbox" | tee "$WORK/orders1.log"
 grep -q "First turn file of this game" "$WORK/orders1.log"
 if "$SERVER" pbem orders --turn="$WORK/other/Mail_Relay_01.turn" --password=a --out="$WORK/elsewhere" >"$WORK/forged.log" 2>&1; then

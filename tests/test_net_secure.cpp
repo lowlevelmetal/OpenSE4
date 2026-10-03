@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -277,6 +278,10 @@ TEST_CASE("net security: password keys come from the password itself, salted per
     CHECK_FALSE(net::usableVerifier("pk2:99999999999:1:" + signing + box));        // does not fit
     CHECK(net::verifierProblem("pk2:2097152:1:" + signing + box).find("out of bounds") != std::string::npos);
     CHECK(net::usableVerifier("pk2:8:1:" + signing + box));
+    std::string upper = verifier;
+    std::transform(upper.begin() + static_cast<std::ptrdiff_t>(prefix.size()), upper.end(), upper.begin() + static_cast<std::ptrdiff_t>(prefix.size()),
+                   [](char c) { return c >= 'a' && c <= 'f' ? static_cast<char>(c - 'a' + 'A') : c; });
+    CHECK_FALSE(net::usableVerifier(upper));  // one text form only
     CHECK(net::usableVerifier("pk2:1048576:16:" + signing + box));
 
     // The verifier of OpenSE4 0.6: still checks the password once, but no signature.

@@ -122,8 +122,9 @@ std::optional<VerifierKeys> parseVerifier(std::string_view verifier, std::string
     rest = rest.substr(b + 1);
     const auto signing = crypto::keyFromHex(rest.substr(0, 64));
     const auto box = crypto::keyFromHex(rest.substr(64, 64));
-    if (!signing || !box) {
-        why = std::string(kForm);
+    // One text form per verifier (hosts and players compare them as text): lower-case hex.
+    if (!signing || !box || rest != crypto::hex(*signing) + crypto::hex(*box)) {
+        why = std::string(kForm) + " (lower case)";
         return std::nullopt;
     }
     if (crypto::smallOrderEdDsa(*signing) || crypto::smallOrderX25519(*box)) {

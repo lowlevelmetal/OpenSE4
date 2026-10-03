@@ -144,7 +144,10 @@ void signTurnFile(TurnFile& f, const crypto::SigningKey& key) {
     f.signature = crypto::sign(key, turnFileDigest(f));
 }
 
-bool turnFileSigned(const TurnFile& f) { return crypto::verify(f.signature, f.hostSigningKey, turnFileDigest(f)); }
+bool turnFileSigned(const TurnFile& f) {
+    // A key of small order is no host's (it would pass signatures of anything).
+    return !crypto::smallOrderEdDsa(f.hostSigningKey) && crypto::verify(f.signature, f.hostSigningKey, turnFileDigest(f));
+}
 
 std::expected<TurnView, std::string> openTurnFile(const TurnFile& f, const std::optional<PasswordKeys>& keys) {
     if (!turnFileSigned(f)) return std::unexpected(std::string("the turn file was changed after its host made it (its signature does not match)"));

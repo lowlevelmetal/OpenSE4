@@ -397,8 +397,14 @@ TEST_CASE("pbem client: a turn file counts only as its game's host made it") {
         CHECK(pbemHostKey(*g, trust.knownHosts).status == net::pbem::HostKeyStatus::Known);
     }
 
-    // Changed on its way, not signed again: refused.
+    // A "signature" by a key of small order (the neutral point verifies anything of that form): refused.
     net::pbem::TurnFile f = original;
+    f.hostSigningKey = {};
+    f.hostSigningKey[0] = 1;
+    CHECK_FALSE(net::pbem::turnFileSigned(f));
+
+    // Changed on its way, not signed again: refused.
+    f = original;
     f.turnBased = !f.turnBased;
     rewrite(f);
     CHECK(begin().error().find("changed") != std::string::npos);
