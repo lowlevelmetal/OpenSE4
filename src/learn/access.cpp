@@ -185,6 +185,21 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
         case Fact::SimulatorOwner:
             if (a.has("combat-simulator:owners")) return std::nullopt;
             return missing("combat-simulator:owners");
+        case Fact::Picking:
+            if (c.text == "location") return std::nullopt;   // a window asks for it
+            if (c.text == "patrol" && a.has("order:patrol")) return std::nullopt;
+            for (const auto& [kind, tag] : kOrderButtons)
+                if (kind == c.text && a.has(tag)) return std::nullopt;
+            return missing("its order button");
+        case Fact::MovementLines:
+            if (a.hasKey("Ctrl+L")) return std::nullopt;
+            return missing("the key Ctrl+L");
+        case Fact::DraftMessageType:
+            if (a.has("communicate:message-type")) return std::nullopt;
+            return missing("communicate:message-type");
+        case Fact::DraftTreaty:
+            if (a.has("communicate:treaty")) return std::nullopt;
+            return missing("communicate:treaty");
         case Fact::BattleBegun:
             if (a.has("tactical-combat:end-turn")) return std::nullopt;   // Begin is the button that becomes End Turn
             return missing("tactical-combat:end-turn (its Begin button)");
@@ -269,6 +284,7 @@ StepAccess stepAccess(const Step& step) {
     StepAccess a;
     a.tags = step.highlight;
     a.tags.insert(a.tags.end(), step.allow.begin(), step.allow.end());
+    a.tags.insert(a.tags.end(), step.rightClick.begin(), step.rightClick.end());
     a.keys = step.keys;
     return a;
 }

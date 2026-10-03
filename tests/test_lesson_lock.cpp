@@ -88,9 +88,81 @@ TEST_CASE("lesson lock: clicks, drags and the wheel only over the allowed areas"
     CHECK(lock.mouseMove({300, 300}) == InputVerdict::Pass);
     CHECK(lock.mouseButton({300, 300}, 1, false) == InputVerdict::Pass);
     CHECK(lock.mouseMove({300, 300}) == InputVerdict::PointerAway);
-    // Right clicks follow the same rule.
+    // A right click in the main window gives orders: only where the step lists it (rightAreas).
+    CHECK(lock.mouseButton({20, 20}, 3, true) == InputVerdict::Drop);
+    CHECK(lock.mouseButton({20, 20}, 3, false) == InputVerdict::Drop);
+    CHECK(lock.takeRefused());
+    s.rightAreas = {box(10, 10, 40, 40)};
+    lock.set(s);
     CHECK(lock.mouseButton({20, 20}, 3, true) == InputVerdict::Pass);
     CHECK(lock.mouseButton({20, 20}, 3, false) == InputVerdict::Pass);
+    CHECK(lock.mouseButton({20, 20}, 2, true) == InputVerdict::Pass);   // the middle button too
+    CHECK(lock.mouseButton({20, 20}, 2, false) == InputVerdict::Pass);
+}
+
+TEST_CASE("lesson lock: right clicks pass in windows where the pointer may point, and in the main window where the step lists them") {
+    const Bindings keys;
+    // Research's areas (allowed), its queue (shown) and the rest of the window (locked).
+    std::vector<TaggedArea> tags = frameTags();
+    tags.push_back({"research:queue", box(130, 450, 700, 580)});
+    learn::Step s = step({"research:areas"}, true);
+    s.show = {"research:queue"};
+    LockState st = makeLockState(s, tags, {"research"}, {}, false, keys);
+    CHECK(st.allowsButton({300, 300}, 3));    // an allowed list: a right click shows a report
+    CHECK(st.allowsButton({300, 500}, 3));    // a part shown: the same
+    CHECK_FALSE(st.allowsButton({800, 200}, 3));   // the window's other parts: no
+    CHECK_FALSE(st.allowsButton({300, 500}, 1));   // and a left click on the part shown: no
+    CHECK_FALSE(st.allowsButton({50, 650}, 3));    // the system view: a right click is a Move To
+    // A window the step says nothing about is the player's, right clicks too.
+    st = makeLockState(step({"command:research"}, true), tags, {"log"}, {}, false, keys);
+    CHECK(st.allowsButton({200, 200}, 3));
+    // An outline listed for right clicks only (the galaxy panel opens the Galaxy Map with one).
+    tags.push_back({"panel:galaxy", box(650, 650, 1000, 760)});
+    learn::Step g = step({"panel:galaxy"}, true);
+    g.rightClick = {"panel:galaxy"};
+    st = makeLockState(g, tags, {}, {}, false, keys);
+    CHECK(st.allowsButton({660, 700}, 3));
+    CHECK_FALSE(st.allowsButton({660, 700}, 1));   // a left click would show another system
+    CHECK(st.lit({660, 700}));                     // still clear of the spotlight
+    // Listed in `allow` too: both buttons.
+    g.allow = {"panel:galaxy"};
+    st = makeLockState(g, tags, {}, {}, false, keys);
+    CHECK(st.allowsButton({660, 700}, 1));
+    CHECK(st.allowsButton({660, 700}, 3));
+}
+
+TEST_CASE("lesson lock: a Close button brings Esc and Enter only while its window is open and in front") {
+    const Bindings keys;
+    std::vector<TaggedArea> tags = frameTags();
+    tags.push_back({"log:close", box(110, 270, 290, 295)});
+    tags.push_back({"window:designs", box(300, 100, 800, 600)});
+    tags.push_back({"designs:close", box(600, 560, 780, 590)});
+    auto escape = [](const LockState& st) { return hasKey(st, KeyChord{ImGuiKey_Escape}) || hasKey(st, KeyChord{ImGuiKey_Enter}); };
+    // The Log is in front: Esc and Enter close it.
+    LockState st = makeLockState(step({"command:research"}, true, {"log:close"}), tags, {"log"}, {}, false, keys);
+    CHECK(escape(st));
+    // Once it is closed they would end the turn (Enter) or clear the selection (Esc): no.
+    st = makeLockState(step({"command:research"}, true, {"log:close"}), tags, {}, {}, false, keys);
+    CHECK_FALSE(escape(st));
+    // A window left open behind the one in front: its Close button, never the keys (they would close the front one).
+    st = makeLockState(step({"research:areas"}, true), tags, {"designs", "research"}, {}, false, keys, {"designs", "research"});
+    CHECK_FALSE(escape(st));
+    CHECK_FALSE(st.windowKeys);
+    st = makeLockState(step({"research:areas"}, true), tags, {"research", "designs"}, {}, false, keys, {"research", "designs"});
+    CHECK(escape(st));   // Designs in front, left open: its Close and keys
+}
+
+TEST_CASE("lesson lock: a command button the step names names its window") {
+    const Bindings keys;
+    std::vector<TaggedArea> tags = frameTags();
+    tags.push_back({"log:close", box(110, 270, 290, 295)});
+    // The Log opened with the step's own command:log: only the Log's parts the step names.
+    learn::Step s = step({"command:log"}, false, {"command:log", "log:close"});
+    LockState st = makeLockState(s, tags, {"log"}, {}, false, keys);
+    REQUIRE(st.windows.size() == 1);
+    CHECK(st.windows[0].constrained);
+    CHECK_FALSE(st.allows({200, 150}));
+    CHECK(st.allows({200, 280}));
 }
 
 TEST_CASE("lesson lock: keys") {

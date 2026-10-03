@@ -74,6 +74,9 @@ struct LockState {
     // Where it may only point and scroll: an explanation step's outlines and
     // what a step shows (`show`).
     std::vector<LockArea> lookAreas;
+    // Where a right-click (or another button than the left) passes in the main
+    // window: the parts the step lists for it (`right_click`).
+    std::vector<LockArea> rightAreas;
     LockChoices choices;             // the main window's
     std::vector<KeyChord> keys;      // chords that pass
     bool typing = false;             // a text field has the keyboard: every key passes
@@ -92,6 +95,14 @@ struct LockState {
     Access access(ImVec2 p) const;
     // Whether the pointer may act at `p`.
     bool allows(ImVec2 p) const { return access(p) == Access::Act; }
+    // Whether a press of `button` (SDL's numbers: 1 left, 2 middle, 3 right)
+    // passes at `p`. Only the left button acts as `allows` says. A right-click
+    // in a window opens a report (and the middle button pans a battle map), so
+    // it passes wherever the pointer may point; in the main window, where it
+    // gives orders and opens the Galaxy Map, only on the parts the step lists
+    // for it.
+    static constexpr int kLeftButton = 1;
+    bool allowsButton(ImVec2 p, int button) const;
     // Whether it may only point and scroll there (a refused option too: its list scrolls).
     bool looks(ImVec2 p) const {
         const Access a = access(p);

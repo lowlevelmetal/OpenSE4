@@ -163,17 +163,27 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
     st.active = true;
     st.typing = typing;
     // An action step's outlines are its buttons; an explanation step's are to
-    // look at, as is what any step shows.
-    std::vector<std::string> allowed = step.done ? step.highlight : std::vector<std::string>{};
+    // look at, as is what any step shows. An outline the step lists for
+    // right-clicks only (the galaxy panel) takes no left-click.
+    auto rightOnly = [&](const std::string& tag) { return contains(step.rightClick, tag) && !contains(step.allow, tag); };
+    std::vector<std::string> allowed;
+    if (step.done)
+        for (const std::string& tag : step.highlight)
+            if (!rightOnly(tag)) allowed.push_back(tag);
     const std::vector<std::string> outlinedLook = step.done ? std::vector<std::string>{} : step.highlight;
     std::vector<std::string> look = outlinedLook;
     look.insert(look.end(), step.show.begin(), step.show.end());
+    for (const std::string& tag : step.rightClick)
+        if (rightOnly(tag) && !contains(look, tag)) look.push_back(tag);
     allowed.insert(allowed.end(), step.allow.begin(), step.allow.end());
     allowed.emplace_back("lesson:panel");
     allowed.emplace_back("status:lesson");
-    // The windows the step says nothing about.
+    // The windows the step names: one of its tags lies in it, or opens it from
+    // the command buttons (the Log that `command:log` opens is the step's too).
     auto named = [](const std::vector<std::string>& list, std::string_view window) {
-        return std::any_of(list.begin(), list.end(), [&](const std::string& tag) { return windowOf(tag) == window; });
+        return std::any_of(list.begin(), list.end(), [&](const std::string& tag) {
+            return windowOf(tag) == window || (tag.starts_with("command:") && std::string_view(tag).substr(8) == window);
+        });
     };
     // Those an earlier step left open can only be closed: whatever else they
     // do is not what this step asks for (the queue windows of the step before
@@ -257,16 +267,35 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
     };
     for (const std::string& tag : allowed) {
         for (const Action a : tagActions(tag)) addAction(a);
-        if (tag.ends_with(":close")) {
+        // Esc and Enter close the window in front; in the main window Enter is
+        // End Turn and Esc clears the selection. So a Close button brings them
+        // only while its window is open and in front.
+        if (tag.ends_with(":close") && !openWindows.empty() && tag == openWindows.back() + ":close") {
             st.keys.push_back(KeyChord{ImGuiKey_Escape});
             st.keys.push_back(KeyChord{ImGuiKey_Enter});
         }
     }
+    // Right-clicks in the main window: only where the step lists them.
+    for (const TaggedArea& t : tags)
+        if (contains(step.rightClick, t.name) && !windowOf(t.name)) st.rightAreas.push_back(t.area);
     for (const Action a : {Action::LessonText, Action::LessonNext, Action::LessonBack, Action::LessonSkip, Action::LessonReadMore, Action::ContextHelp}) addAction(a);
     return st;
 }
 
 bool LockChoices::refuses(ImVec2 p) const { return anyContains(refused, p) && !anyContains(chosen, p); }
+
+bool LockState::allowsButton(ImVec2 p, int button) const {
+    if (button == kLeftButton) return allows(p);
+    // Above every window: the prompts, the pop-ups and the lesson panel.
+    if (anyContains(top, p)) return true;
+    // In a window a right-click opens a report and the middle button pans a
+    // battle map: wherever the pointer may at least point.
+    for (const LockWindow& w : windows)
+        if (w.area.contains(p)) return !w.constrained || access(p) != Access::None;
+    // In the main window it gives orders (Move To on a sector) and opens the
+    // Galaxy Map: only where the step lists it.
+    return anyContains(rightAreas, p) && access(p) != Access::Refused;
+}
 
 LockState::Access LockState::access(ImVec2 p) const {
     if (anyContains(top, p)) return topChoices.refuses(p) ? Access::Refused : Access::Act;
@@ -300,6 +329,7 @@ std::vector<LockArea> LockState::rects() const {
     auto add = [&](const std::vector<LockArea>& v) { out.insert(out.end(), v.begin(), v.end()); };
     add(areas);
     add(lookAreas);
+    add(rightAreas);
     for (const LockChoices* c : {&choices, &topChoices}) {
         add(c->chosen);
         add(c->refused);
@@ -440,6 +470,10 @@ bool waits(const learn::Condition& c, bool negated) {
         case Fact::SimulatorOwners:
         case Fact::SimulatorItems:
         case Fact::SimulatorOwner:
+        case Fact::Picking:
+        case Fact::MovementLines:
+        case Fact::DraftMessageType:
+        case Fact::DraftTreaty:
         case Fact::BattleBegun:
         case Fact::Option:
         case Fact::ResearchQueued:
@@ -470,7 +504,7 @@ InputVerdict InputLock::mouseButton(ImVec2 p, int button, bool down) {
     const size_t b = slot(button);
     if (down) {
         // A press decides for its drag and its release.
-        if (!state_.active || state_.allows(p)) {
+        if (!state_.active || state_.allowsButton(p, button)) {
             held_[b] = 1;
             swallowed_[b] = 0;
             return InputVerdict::Pass;

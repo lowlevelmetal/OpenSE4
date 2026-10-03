@@ -43,6 +43,29 @@ std::vector<std::string_view> stepWindows(const Step& step) {
     return out;
 }
 
+bool worksIn(const Step& step, std::string_view window) {
+    for (const auto* list : {&step.highlight, &step.allow, &step.show})
+        for (const std::string& tag : *list)
+            if (!tag.ends_with(":close") && windowOf(tag) == window) return true;
+    return false;
+}
+
+bool opens(const Step& step, std::string_view window) {
+    for (const auto* list : {&step.highlight, &step.allow})
+        for (const std::string& tag : *list)
+            for (std::string_view opened : windowsOpenedBy(tag))
+                if (opened == window) return true;
+    return false;
+}
+
+size_t rewindStep(const Lesson& lesson, size_t active, std::string_view window) {
+    if (active >= lesson.steps.size()) return active;
+    size_t at = active;
+    while (at > 0 && worksIn(lesson.steps[at - 1], window) && !opens(lesson.steps[at - 1], window)) --at;
+    if (at > 0 && opens(lesson.steps[at - 1], window)) return at - 1;
+    return active;
+}
+
 size_t resumeStep(const Lesson& lesson, size_t active) {
     if (lesson.steps.empty()) return 0;
     size_t at = std::min(active, lesson.steps.size() - 1);
@@ -66,6 +89,10 @@ uint64_t lessonFingerprint(const Lesson& lesson) {
         if (!st.show.empty()) {
             h.add(std::string_view("show")).add(st.show.size());
             for (const std::string& s : st.show) h.add(std::string_view(s));
+        }
+        if (!st.rightClick.empty()) {
+            h.add(std::string_view("right_click")).add(st.rightClick.size());
+            for (const std::string& s : st.rightClick) h.add(std::string_view(s));
         }
         h.add(std::string_view(st.done ? describe(*st.done) : std::string("-")));
     }

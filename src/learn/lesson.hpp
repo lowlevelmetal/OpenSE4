@@ -69,6 +69,10 @@ struct Step {
     // What the text points the player at, to read (a detail pane, a column): clear
     // of the spotlight, neither outlined nor clicked; the panel keeps off it.
     std::vector<std::string> show;
+    // Where a right-click passes in the main window (the galaxy panel opens the
+    // Galaxy Map with one). A highlighted tag listed here and not in `allow`
+    // takes right-clicks only.
+    std::vector<std::string> rightClick;
     std::vector<std::string> keys;          // key chords: "F12", "Ctrl+L", "Alt+1"
     std::optional<Condition> done;          // none: the player presses Next
     std::string manual;                     // "slug#anchor" for Read more

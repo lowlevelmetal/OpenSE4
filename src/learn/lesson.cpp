@@ -168,7 +168,33 @@ public:
             if (c.fact == Fact::Selected || c.fact == Fact::Order || c.fact == Fact::Command) c.designType = designType;
             return true;
         };
-        const size_t keys = t->size() - (designType.empty() ? 0 : 1);
+        // `message_type` and `message_treaty` qualify `command = "SendMessage"`
+        // beside them: only a message of that type, naming that treaty, counts.
+        std::string messageType, messageTreaty;
+        for (const auto& [key, ids] : {std::pair<std::string_view, std::vector<std::string_view>>{"message_type", messageTypeIds()},
+                                       {"message_treaty", treatyIds()}}) {
+            const toml::node* q = t->get(key);
+            if (!q) continue;
+            const auto* v = q->as_string();
+            if (!v || std::find(ids.begin(), ids.end(), v->get()) == ids.end()) {
+                error(q, std::format("'{}' takes {}", key, key == "message_type" ? "a message type as an id, such as \"propose-treaty\" or \"gift\""
+                                                                                   : "a treaty kind, such as \"non-aggression\""));
+                return std::nullopt;
+            }
+            const toml::node* command = t->get("command");
+            if (!command || !command->as_string() || command->as_string()->get() != "SendMessage") {
+                error(q, std::format("'{}' qualifies a command = \"SendMessage\" in the same table", key));
+                return std::nullopt;
+            }
+            (key == "message_type" ? messageType : messageTreaty) = v->get();
+        }
+        auto qualifyMessage = [&](Condition& c) {
+            if (c.op == Condition::Op::Fact && c.fact == Fact::Command) {
+                c.messageType = messageType;
+                c.messageTreaty = messageTreaty;
+            }
+        };
+        const size_t keys = t->size() - (designType.empty() ? 0 : 1) - (messageType.empty() ? 0 : 1) - (messageTreaty.empty() ? 0 : 1);
         // Several keys in one table must all hold.
         if (keys > 1) {
             Condition all;
@@ -176,23 +202,40 @@ public:
             all.line = static_cast<int>(n.source().begin.line);
             bool ok = true;
             for (const auto& [key, value] : *t) {
-                if (key.str() == "design_type") continue;
-                if (auto c = single(key.str(), value); c && qualify(*c)) all.children.push_back(std::move(*c));
-                else ok = false;
+                if (isQualifier(key.str())) continue;
+                if (auto c = single(key.str(), value); c && qualify(*c)) {
+                    qualifyMessage(*c);
+                    all.children.push_back(std::move(*c));
+                } else {
+                    ok = false;
+                }
             }
             if (!ok) return std::nullopt;
             return all;
         }
         for (const auto& [key, value] : *t) {
-            if (key.str() == "design_type") continue;
+            if (isQualifier(key.str())) continue;
             auto c = single(key.str(), value);
             if (!c || !qualify(*c)) return std::nullopt;
+            qualifyMessage(*c);
             return c;
         }
         return std::nullopt;
     }
 
 private:
+    static bool isQualifier(std::string_view key) { return key == "design_type" || key == "message_type" || key == "message_treaty"; }
+    static std::vector<std::string_view> messageTypeIds() {
+        for (const ChoiceGroup& g : choiceGroups())
+            if (g.tag == "communicate:message-type") return g.options;
+        return {};
+    }
+    static std::vector<std::string_view> treatyIds() {
+        std::vector<std::string_view> out = treatyKinds();
+        out.push_back("none");
+        return out;
+    }
+
     std::optional<Condition> single(std::string_view key, const toml::node& value) {
         Condition c;
         c.line = static_cast<int>(value.source().begin.line);
@@ -252,6 +295,22 @@ private:
                 case Fact::Treaty: what = treatyFromId(c.text) ? nullptr : "treaty kind"; break;
                 case Fact::BattleOrder: what = isBattleOrderKind(c.text) ? nullptr : "battle order kind"; break;
                 case Fact::DesignTypeChosen: what = isDesignTypeName(c.text) ? nullptr : "design type"; break;
+                case Fact::Picking: {
+                    static constexpr std::string_view kPicks[] = {"move-to", "warp", "colonize", "attack", "patrol", "load-cargo",
+                                                                  "drop-cargo", "launch-units", "recover-units", "location"};
+                    what = std::find(std::begin(kPicks), std::end(kPicks), c.text) != std::end(kPicks) ? nullptr : "order pick";
+                    break;
+                }
+                case Fact::DraftMessageType: {
+                    const auto ids = messageTypeIds();
+                    what = std::find(ids.begin(), ids.end(), c.text) != ids.end() ? nullptr : "message type";
+                    break;
+                }
+                case Fact::DraftTreaty: {
+                    const auto ids = treatyIds();
+                    what = std::find(ids.begin(), ids.end(), c.text) != ids.end() ? nullptr : "treaty kind";
+                    break;
+                }
                 case Fact::SimulatorOwner: what = choiceGroupOf("combat-simulator:owners:" + c.text) && c.text != "*" ? nullptr : "race (\"race-1\" to \"race-10\")"; break;
                 case Fact::DesignVehicle: {
                     const auto ids = vehicleTypeIds();
@@ -456,7 +515,7 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
 
     if (kind == LessonKind::Tutorial) {
         for (const toml::table* t : rd.tables(root, "step")) {
-            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "show", "keys", "done", "manual", "progress"});
+            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "show", "right_click", "keys", "done", "manual", "progress"});
             Step s;
             s.line = static_cast<int>(t->source().begin.line);
             s.title = rd.string(*t, "title", "a [[step]]", true).value_or(std::string{});
@@ -487,6 +546,7 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
                 if (choiceGroupOf(tag)) return std::format("'show' names parts to read, not the option '{}' (allow it instead)", tag);
                 return std::nullopt;
             }, s.show);
+            strings("right_click", uiTag, s.rightClick);
             strings("keys", [](const std::string& chord) -> std::optional<std::string> {
                 if (isKeyChord(chord)) return std::nullopt;
                 return std::format("unknown key '{}' (keys are written as \"F12\", \"Ctrl+L\", \"Alt+1\", \"Escape\")", chord);
