@@ -992,11 +992,15 @@ target always passes, so every ship it plans outside the staging system is sent 
 (the fleets' leaders, and ships outside fleets while there is none). Choices of the nearest
 or the fewest jumps, the orders of the lists and the reachability test (below 999) are not
 affected; the territory's one jump, Secure Holdings' neighbours and the Politics minister's
-"within 2 jumps of X's territory" use the warp links directly and count real jumps. The
-engine differs: it counts real jumps throughout and tests at most 4, 3 and the setting
-(`ai_anger.cpp`, `planFleets` and the drones in `ai_military.cpp`); with the three tests
-corrected, 48 scratch games showed no measurable change (Attack 2 → 1 % of turns 51–100,
-Defend (Short Term) 70 → 72 %).
+"within 2 jumps of X's territory" use the warp links directly and count real jumps.
+OpenSE4 follows this since 2026-10-03: `aiJumpCount` (`ai_planner.hpp`) gives the
+original's count from the real one, and the strength test (`ai_anger.cpp`), recruiting,
+the drones and the Attack minister in Prepare for Attack (`ai_military.cpp`) compare it as
+above; a ship outside fleets already in the staging system gets no order from that
+routine (inferred). The engine used to count real jumps throughout and test at most 4, 3
+and the setting, and its Attack minister gave no orders in Prepare for Attack; with the
+three tests corrected, 48 scratch games showed no measurable change (Attack 2 → 1 % of
+turns 51–100, Defend (Short Term) 70 → 72 %).
 
 **Strength.** Each turn the AI adds up a strength per system and per empire. It counts
 every owned object, including those it cannot see:
@@ -1675,8 +1679,10 @@ binary).
     of the vehicles of the moment (`economy::maintenanceCost`) and less the queues'
     commitments (`queueCommitments`); the vehicle list and the units step work it out when
     they start, and the facility upgrades spend the figure the start-of-turn step worked out
-    (`Planner::startOfTurnNet`, handed to the economy step through `TurnContext::aiStartNet`).
-    Its own choices are question 73. The engine used to take the maintenance last paid and
+    first thing, before the AI state update (`ai::startOfTurnFigures`, handed to the economy
+    step through `TurnContext::aiStartFigures` as `Planner::startOfTurnNet`; since
+    2026-10-03, question 73: it used to be worked out after Politics). The engine used to
+    take the maintenance last paid and
     nothing for the queues, so its computers queued more while their queues were busy
     (question 71).
   - *Revenue*: production × income factor + income from other empires, rounded, worked
@@ -1686,17 +1692,29 @@ binary).
     empire minimum stands in when a total is 0), worked out afresh from the colonies as
     they stand at the start-of-turn step with the output rule of spec 02 §5.1 (the same
     per-system totals the empire's status figures use), so a colony founded, grown, lost or
-    made unhappy since the last income step already counts (confirmed: binary). The engine
-    differs: `Planner::revenue` takes the last income report; the minerals revenue of the
-    two agreed within 3 % at the median in turns 11–50 (scratch comparison with two original
-    games).
+    made unhappy since the last income step already counts (confirmed: binary). OpenSE4
+    follows this since 2026-10-03: the start-of-turn step works the caps' revenue out first
+    thing, with the net income (`ai::startOfTurnFigures`, `capRevenueOf` over
+    `economy::incomeReport`, the income part of the report the turn's end projects), and its
+    ministers and the economy step's compare it (`Planner::capRevenue`). It used to take the
+    last income report (`Planner::revenue`, which the net income still reads); the minerals
+    revenue of the two agreed within 3 % at the median in turns 11–50 (scratch comparison
+    with two original games).
   - With M = `Maximum Maintenance Percent of Revenue`, the empire is over the soft cap
     when, for any one of minerals, organics or radioactives, that resource's maintenance
     > its revenue × M / 100. It is over the hard cap when the same holds with M + 20. The
     product is taken in single precision (M / 100 as a 32-bit float, so with the stock 80
-    the threshold is a hair above 80 %) (confirmed: binary). The engine compares in its
-    extended precision (`Planner::overCap`); the two differ only when the maintenance lies
-    within a float's rounding of the threshold.
+    the threshold is a hair above 80 %) (confirmed: binary). OpenSE4 follows this since
+    2026-10-03 without floating point (`aboveSingleShare`, `ai.cpp`): M / 100 rounded to 24
+    significant bits is F × 2^-k for an integer F, the product with the revenue is the
+    integer revenue × F rounded to 24 significant bits (to nearest, ties to even) times
+    2^-k, and the maintenance is compared with it exactly in 128-bit integers. That agrees
+    with the float computation, the x87's rounding of the quotient and the product to its
+    64-bit format before the store included, for every M (M / 100 is exact or has a binary
+    period dividing 20, so it never lies on a midpoint) and every revenue below 2^40 (the product
+    is then exact in 64 bits); the unit test checks it against the engine's x87 emulation
+    for M from 0 to 300. It used to compare in extended precision, which differed only when
+    the maintenance lay within a float's rounding of the threshold.
   - The maintenance in that test (confirmed: binary) is the sum, over the empire's ships
     and bases, of each one's maintenance by spec 02 §7, leaving out every vehicle whose hull
     has `Requirement Pct Colony Mods` above 0 (in the stock data the Colony Ship hull):
@@ -1747,13 +1765,14 @@ binary).
          the homeworld's queue falls below 5 turns of backlog (observed under a debugger,
          2026-10-03: every empire of game 10 counted two attack ships on turn 2, both
          queued, and queued weapon platforms, satellites and a colony ship instead; spec 07
-         "The computer players' second round under a debugger"). The engine differs:
-         `ShipBuilder::have` (`ai_economy.cpp`) counts live after `cleanUp`, so our
-         computers queue the new Attack Ship on turn 2. In 120 scratch games with the
-         counts taken before the clean-up, the second attack ship came on turn 9 (median)
-         instead of 5 and the first colony ship on turn 7 instead of 9, as in the original
-         (9 and 7), with 1.1 attack ships per empire at turn 5 instead of 2.0 (the original
-         1.05) and 8.0 ships at turn 50 instead of 7.5 (8.6) (question 70).
+         "The computer players' second round under a debugger"). OpenSE4 follows this
+         since 2026-10-03 (`ShipBuilder::takeCounts`, `ai_economy.cpp`); it used to count
+         live after `cleanUp`, so its computers queued the new Attack Ship on turn 2. In 120
+         scratch games with the counts taken before the clean-up, the second attack ship
+         came on turn 9 (median) instead of 5 and the first colony ship on turn 7 instead
+         of 9, as in the original (9 and 7), with 1.1 attack ships per empire at turn 5
+         instead of 2.0 (the original 1.05) and 8.0 ships at turn 50 instead of 7.5 (8.6)
+         (question 70).
        - Under-supplied: count < `Must Have At Least`, or `Planet Per Item` > 0 and count
          < colonies × 10 / `Planet Per Item`, compared exactly (not rounded).
        - Over the hard cap, only "Open Warp Point" designs qualify. Over the soft cap, only
@@ -2043,11 +2062,10 @@ binary).
     ships, mine sweepers, a carrier, layers) did so on a turn its empire was over the soft
     cap, and no base was scrapped: an old attack ship far from a yard is chosen before a
     base at a yard.
-    OpenSE4 follows this since 2026-10-02 (`planScrap`, `ai_military.cpp`): a candidate at
-    a yard is scrapped where it stands (`cmd::Scrap`), and one elsewhere gets the Move To
-    and the Scrap in one command (`cmd::Scrap` with `moveFirst`, which only the ministers
-    give); the nearest yard is found as the Repair minister finds it. Its own choices are
-    question 72. The engine used to take only ships already at a yard, so bases, which
+    OpenSE4 follows this since 2026-10-02 (`planScrap`, `ai_military.cpp`): the candidate
+    gets the Move To and the Scrap in one command (`cmd::Scrap` with `moveFirst`, the scrap
+    place, which only the ministers give); since 2026-10-03 the place and the orders follow
+    *Candidates and the scrap place* below (question 72). The engine used to take only ships already at a yard, so bases, which
     always sit at yards, went first: its computers scrapped 0.7 bases per empire in 100
     turns of the 1.0 they built (spec 07 "Pace after the scrap, cap and fleet rules").
     - *Ties* (confirmed: binary). A design's creation date is the game date of the turn it
@@ -2076,11 +2094,15 @@ binary).
       from the candidate, the earlier in that list on a tie; with none, nothing is scrapped
       that turn. The two orders are put straight onto the vehicle's own order list, the Move
       To (only when it can move and the place is another sector) and then the Scrap, without
-      the checks the player's Scrap command makes. The engine differs (question 72): a
-      candidate in a fleet leaves it first (`cmd::LeaveFleet`) and a cloaked one is passed
-      over, since our Scrap command refuses both; the nearest yard is the Repair minister's,
-      in that minister's visiting order. What a Scrap order at the head of a fleet member's
-      list does to the rest of its fleet in the original is question 74.
+      the checks the player's Scrap command makes. OpenSE4 follows this since 2026-10-03
+      (`scrapOldest`, `ai_military.cpp`; the place from `queueList` and `workingYard`,
+      `ai_economy.cpp`, by `findPathToNearest`; `cmd::Scrap` with `moveFirst` sets the list
+      without the window's checks, and the Scrap order makes its test when carried out, so
+      a cloaked candidate gets the orders but is not scrapped, as question 74 reads it), but
+      for one choice: a candidate in a fleet leaves it first (`cmd::LeaveFleet`), since what
+      a Scrap order at the head of a fleet member's list does to the rest of its fleet in
+      the original is question 74 (inferred). It used to pass a cloaked candidate over and
+      take the nearest yard as the Repair minister finds it.
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -2304,10 +2326,10 @@ binary).
     vehicle list backwards from its end (slot order, §7.5 *Scrap*), skips vehicles already
     in a fleet and takes the first that passes either test; "fit" is the unavailability test
     of the fleets (damage, a missing operating part, an armed type with no strength), and
-    nothing asks that the ship be idle (confirmed: binary). The engine differs: `planFleets`
-    (`canLeadFleet`, `ai_military.cpp`) takes the newest by vehicle id (creation order, not
-    slot order) and only an idle ship, so a ship with a Join Fleet or other standing order
-    is never a leader in ours. It used to form a fleet around any fit ship, troop transports
+    nothing asks that the ship be idle (confirmed: binary). OpenSE4 follows this since
+    2026-10-03 (`planFleets`, `canLeadFleet`, `ai_military.cpp`); it used to take the newest
+    idle ship by vehicle id (creation order, not slot order), so a ship with a Join Fleet
+    or other standing order was never a leader. It used to form a fleet around any fit ship, troop transports
     and empty carriers included: 7 % of its fleets were troop transports alone and 6 %
     carriers alone (fleet-turns of turns 51–100), against none and 1 % in one game of the
     original, and such fleets went to fight and draw (spec 07 "Battles, bases and the first
@@ -2331,8 +2353,9 @@ binary).
       is ordered. OpenSE4 follows this since 2026-10-02: the order is `OrderKind::JoinFleet`
       (the fleet in `amount`), and `planFleets` counts the ships that carry one for a fleet
       among its members. A recruit also waits, rather than fails, when a hazard, a busy yard
-      or a blocked way stops its step (inferred from "fails only when"). The engine differs:
-      `planFleets` (`ai_military.cpp`) recruits only idle ships, within 3 jumps.
+      or a blocked way stops its step (inferred from "fails only when"). Since 2026-10-03
+      `planFleets` (`ai_military.cpp`) follows the rest too; it used to recruit only idle
+      ships, within 3 jumps.
     - Observed under a debugger (spec 07 "Pace observed under a debugger"): from turn 41
       on, 74–78 % of the original's attack ships were in fleets, against 44–51 % in ours;
       an empire with 46 ships kept six fleets of 7, 7, 6, 6, 2 and 1 attack ships, while our
@@ -2365,16 +2388,16 @@ binary).
       remaining defence fleets stay idle. (A step meant to cancel the orders of fleets
       bound for a warp point looks only at idle fleets and so never acts.) Observed under a
       debugger (2026-10-03, game 10): in such turns 13 % of the fleets had no orders after
-      the start-of-turn ministers. The engine differs: `planFleets` (`ai_military.cpp`)
-      takes the raw enemy-in-territory objects, in their own order and whatever their
-      system, each with the nearest idle non-attack fleet, and then gives every fleet left
-      over, attack fleets included, the next defend-list entry from the top, a patrol or an
-      exploration; 2 % of our fleets were idle in such turns. In 120 scratch games with the
-      original's rule, our computers won 4.1 decided battles away from colonies per empire
-      and 25 turns of turns 51–100 instead of 5.0 (the original 2.1–3.4), lost 5.9 ships in
-      battles instead of 7.8 and 1.8 colonies instead of 1.2 (the original 1.8–3.6), and
-      spent 67 % of turns 51–100 in Defend (Short Term) instead of 72 % (70 %) (questions
-      68, 69).
+      the start-of-turn ministers. OpenSE4 follows this since 2026-10-03 (`planFleets`,
+      `ai_military.cpp`). It used to take the raw enemy-in-territory objects, in their own
+      order and whatever their system, each with the nearest idle non-attack fleet, and then
+      give every fleet left over, attack fleets included, the next defend-list entry from the
+      top, a patrol or an exploration; 2 % of its fleets were idle in such turns. In 120
+      scratch games with the original's rule, our computers won 4.1 decided battles away
+      from colonies per empire and 25 turns of turns 51–100 instead of 5.0 (the original
+      2.1–3.4), lost 5.9 ships in battles instead of 7.8 and 1.8 colonies instead of 1.2 (the
+      original 1.8–3.6), and spent 67 % of turns 51–100 in Defend (Short Term) instead of
+      72 % (70 %) (questions 68, 69; spec 07 "Pace after the second debugger round").
     - Otherwise fleets head for the state's goal: the staging system in Prepare for
       Attack, the target with the most candidates in Attack, and the secured system in
       Secure Holdings. In other states they go to the top attack candidate if its owner
@@ -2385,12 +2408,12 @@ binary).
       fleet is not idle and is not planned again until it has warped. Of the attack ships of
       game 10 in turns 26–50, 42 % were in fleets whose first order after the start-of-turn
       ministers was such a Move To, and 27 % carried the same Move To as the turn before
-      (observed, spec 07 "The computer players' second round under a debugger"). The engine
-      differs: `planFleets` (`ai_military.cpp`) gives a Seek and the Warp (question 64), so
-      the Warp waits behind the Seek and is left as the first order after the movement phase
-      (24 % of our attack ships at the start of turns 26–50 against 1 % in the original). In
-      120 scratch games with the Move To, battles, losses and colonies did not change
-      measurably.
+      (observed, spec 07 "The computer players' second round under a debugger"). OpenSE4
+      follows this since 2026-10-03 (`planFleets`, `ai_military.cpp`). It used to give a Seek
+      and the Warp (question 64), so the Warp waited behind the Seek and was left as the
+      first order after the movement phase (24 % of our attack ships at the start of turns
+      26–50 against 1 % in the original). In 120 scratch games with the Move To, battles,
+      losses and colonies did not change measurably.
   - Ships outside fleets get individual attack and defence orders only while the empire
     has no active fleet.
 - **How long the ministers' movement orders last** (confirmed: binary). Wherever this
@@ -2469,8 +2492,8 @@ binary).
     point no route reaches is never taken). Its choices where the text leaves room are in
     question 64: the minister stops at once while no point is free, so the 3× rule never
     applies; an explorer on its point keeps the point in the list; a turn-based explorer
-    compares the movement of this turn's run; the fleets that explore (§7.5 `AI_Fleets`,
-    leftover fleets) keep the Seek toward the first free point and the Warp.
+    compares the movement of this turn's run. The fleets that explore (§7.5 `AI_Fleets`,
+    leftover fleets) get the Move To toward the first free point and the Warp.
     The engine used to plan only idle ships, without the supply and half-full cargo tests,
     to count the explorers for the 3×, 5× and 8× tests, to pick by jumps and then sector
     distance, and to give a Move To and a Warp that lasted until done.
@@ -2520,8 +2543,9 @@ binary).
     Anti-planet targets are planets of such empires among the attack candidates.
   - Idle drones in space within `Maximum Anti-Ship` (or `Anti-Planet`) `Drone Target
     System Distance` less 2 jumps (3 with the stock 5; the setting is compared with the
-    jumps plus two, §7.2 *Jumps*) are then sent after the targets, per-target times. The
-    engine differs: it compares the setting with the real jumps.
+    jumps plus two, §7.2 *Jumps*) are then sent after the targets, per-target times.
+    OpenSE4 follows this since 2026-10-03; it used to compare the setting with the real
+    jumps.
 - **`AI_Settings`** (confirmed: binary):
   - `Turns to Wait until next attack` is the attack gap of §7.2;
   - `Maximum Systems to Defend at a Time` caps the defend list;
@@ -4068,7 +4092,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       frontier point and the Warp through it, which lasts until done. In scratch runs the
       explorers' rule for them (the Warp only when the fleet's movement reaches the
       distance) kept our computers in Exploration 22 % of turns 51–100 instead of 13 %
-      (spec 07 "Pace after the movement rules");
+      (spec 07 "Pace after the movement rules"); settled since: the player's Move To and the
+      Warp (§7.5 `AI_Fleets` *Orders*, confirmed: binary, followed since 2026-10-03);
     - in a turn-based game the explorer's movement points "at that moment" are those of
       this turn's run: the points come back only after the ministers (§8 step 3), so what
       the last movement left is usually 0, and no explorer that moved the turn before
@@ -4218,6 +4243,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - The kinds of decided battles are the same: in two original games and 24 of ours,
       half and a third of them (two sides, away from colonies, turns 51–100) were armed
       ships on Seek orders meeting armed ships on Seek orders.
+
+    OpenSE4 follows both rules since 2026-10-03 (spec 03 §6.3, §7.5 `AI_Fleets` *Orders*);
+    with every rule of the round, 240 seeds won 3.8 decided battles away from colonies per
+    empire and 25 turns and lost 4.4 attack ships in battle (spec 07 "Pace after the second
+    debugger round").
 69. **Which enemy colonies the computer players attack** (question 67). The original ends
     1.9–2.2 battles per empire and 25 turns with an enemy colony gone, ours 0.9, for
     battles that go the same way once fought. To verify: per turn in the original, the
@@ -4259,7 +4289,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     for the homeworld's queue to fall below 5 turns of backlog. Ours count after the
     clean-up. In 120 scratch games with the original's rule the second attack ship came on
     turn 9 (median) instead of 5 and the first colony ship on turn 7 instead of 9, as in the
-    original, with 1.1 attack ships per empire at turn 5 instead of 2.0 (1.05).
+    original, with 1.1 attack ships per empire at turn 5 instead of 2.0 (1.05). OpenSE4
+    follows this since 2026-10-03 (§7.5 `AI_Construction_Vehicles`).
 71. **The soft cap in turns 26–50.** With colony ships left out of the maintenance (§7.5),
     our computer players are over the soft cap in 4 % of turns 26–50 and 14 % of turns
     51–100 (scratch run); the original in none of turns 26–50 and 14–16 % of turns 51–100
@@ -4304,7 +4335,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     7.4), which the original's lower losses keep up. The test's revenue is worked out
     afresh from the colonies at the start-of-turn step, not taken from the last income step,
     and the product with M / 100 is taken in single precision (§7.5, *Revenue* and the soft
-    cap); both are small.
+    cap); both are small. OpenSE4 follows both since 2026-10-03; with every rule of the
+    round, 240 seeds were over the soft cap in 1.3 % of turns 26–50 and 13.2 % of turns
+    51–100 (median 12 % per game; spec 07 "Pace after the second debugger round").
 72. **Details the scrap and fleet-leader rules leave open** (§7.5 *Scrap*, `AI_Fleets`).
     OpenSE4's choices since 2026-10-02 (inferred):
     - unit groups (fighters, satellites, mines and the like in space) are never scrap
@@ -4338,6 +4371,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     the search: it walks the vehicle list from its end, skips ships in fleets and takes the
     first that passes the attack or the defence test, with no idle test (§7.5 `AI_Fleets`).
     What a Scrap at the head of a fleet member's list does to its fleet is question 74.
+    OpenSE4 follows the answer since 2026-10-03, and the recruits' rule of the same round
+    (no idle test, §7.5 `AI_Fleets` *Size*); while question 74 is open a candidate in a
+    fleet still leaves it before it gets its orders (inferred).
 73. **Details the net income rule leaves open** (§7.5 *Net income*). OpenSE4's choices
     since 2026-10-02 (inferred):
     - the start-of-turn step works the figure out when its ministers after Politics start;
@@ -4359,7 +4395,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     vehicle list works its budget out after its clean-up, as ours does. A queue's commitment
     is its first item's cost times the item's count, less what was paid, capped at the rate
     the queue spends at that turn (its owner's rate, raised by an emergency build and
-    lowered in the slow turns after one), as ours does (§7.5 *Net income*).
+    lowered in the slow turns after one), as ours does (§7.5 *Net income*). OpenSE4 works
+    the start-of-turn figure out first thing too since 2026-10-03 (`ai::startOfTurnFigures`,
+    called before `ai::updateAiState`).
 74. **A Scrap order on a fleet member** (§7.5 *Scrap*, question 72). The original puts the
     Move To and the Scrap straight onto the candidate's own list, also when it is in a fleet
     or cloaked; a fleet member's list is run through its fleet's group (spec 03 §8). To
@@ -4401,7 +4439,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     rule 1.8, of which 2.2, 1.9, 1.9 and 2.9 (four games) ended with the colony gone, ours
     1.0 and with the rule 1.5. Per enemy colony in the defend lists and per turn, the
     original fought 4–14 % of them (four games), ours 3 % and with the rule 6 %. What is
-    left is the number of enemy colonies inside the territories, question 77.
+    left is the number of enemy colonies inside the territories, question 77. With all the
+    rules of the second round (OpenSE4 since 2026-10-03; 240 seeds, spec 07 "Pace after the
+    second debugger round"), ours found or take 4.1 colonies and lose 1.9 per empire and 25
+    turns, fight 2.6 battles at an enemy colony, 1.8 of them ending with the colony gone, and
+    hold 15.7 colonies at turn 100 (before them 3.8, 1.2, 2.2, 1.1 and 16.6).
 77. **Enemy colonies inside the territories** (question 76). The original's defend lists
     held 1.2–3.3 enemy colony entries per empire-turn of turns 51–100 (four games), ours 2.4
     and with the Defend (Short Term) fleet rule 1.2 (more of them go); the original founds

@@ -408,22 +408,21 @@ struct Applier {
         return {};
     }
 
-    // The Scrap minister's Move To and Scrap (spec 05 §7.5 *Scrap*): the
-    // vehicle passes the Scrap test as it would at `to`, which holds an own
-    // space yard, and can move. Its list becomes the two orders in either turn
-    // style; movement makes the test again when it reaches the Scrap.
+    // The Scrap minister's Move To and Scrap (spec 05 §7.5 *Scrap*, confirmed:
+    // binary): the Move To to the scrap place `to` only when the vehicle can
+    // move and stands elsewhere, then the Scrap, put straight onto its own
+    // list in either turn style, without the Scrap window's checks (a cloaked
+    // vehicle or a fleet member gets them too). Movement makes the Scrap test
+    // when it reaches the Scrap, where the vehicle then stands.
     R scrapAfterMove(VehicleId id, Location to) {
         Vehicle* v = ownVehicle(s, e, id);
         if (!v || v->count <= 0) return R::fail("Not your vehicle");
         if (!knownSystem(s, to.system) || !to.sector.valid()) return R::fail("Invalid destination");
-        if (!scrapYardAt(r, s, e, to)) return R::fail("Scrapping needs a space yard in the sector");
-        Vehicle there = *v;
-        there.location = to;
-        if (auto why = scrapActionProblem(r, s, e, there, ScrapAction::Scrap); !why.empty()) return R::fail(why);
-        if (v->status == VehicleStatus::Mothballed || vehicleMaxMovement(r, s, *v) <= 0) return R::fail("It cannot move");
-        const Order goThere{OrderKind::MoveTo, to};
-        const Order scrapThere{scrapOrderKind(ScrapAction::Scrap), to};
-        v->orders = {goThere, scrapThere};
+        const bool moves = v->location != to && v->status != VehicleStatus::Mothballed && vehicleMaxMovement(r, s, *v) > 0;
+        std::vector<Order> list;
+        if (moves) list.push_back(Order{OrderKind::MoveTo, to});
+        list.push_back(Order{scrapOrderKind(ScrapAction::Scrap), moves ? to : v->location});
+        v->orders = std::move(list);
         v->repeatOrders = false;
         return {};
     }

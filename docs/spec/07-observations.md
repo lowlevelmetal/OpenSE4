@@ -1405,6 +1405,85 @@ bombardment in battles and by founding on free planets; what is left of the diff
 number of enemy colonies inside the territories (question 77). Open: what a Scrap does to a
 fleet (question 74).
 
+### Pace after the second debugger round (OpenSE4, 2026-10-03)
+
+Measured once the engine followed the rules "The computer players' second round under a
+debugger" settled (spec 05 questions 68–73, §7.2 *Jumps*; commits d6d009e to d2a06db): the
+Defend (Short Term) fleet rule, the vehicle table's counts taken before the clean-up, idle
+vehicles in the daily battle check, the jump counts, the exploring fleets' Move To, the
+fleet leaders, recruits and scrap orders of question 72, the start-of-turn net income
+before the state update, and the caps' revenue from the colonies of the moment with the
+single-precision threshold. Set-up as in "Pace observed under a debugger": a Small quadrant,
+simultaneous turns, the Terran preset and four random computer races, five computer
+players, 100 `processTurn` calls, the waiting happiness events dropped after each turn;
+seeds 1–240, a scratch program (not tracked). Records: each empire's AI state after every
+turn; the engine's own soft-cap test by a planner made at the start of every turn; each
+empire's statistics rows; every colony's owner after every turn; every battle's pieces and
+their survivors. Battles count each battle once, per empire (five) and 25 turns of turns
+51–100. A battle is "away from colonies" when no planet is among its pieces, and it is won,
+lost or drawn for each empire that took part by the verdict of spec 04 §15. A battle at an
+enemy colony is counted once per sector and turn, and ends with the colony gone when the
+planet is not its owner's at the end. A colony founded or taken, or lost, is a change of a
+planet's owner from one turn to the next. Before: the engine at 12905b7; after: at c1b8827
+(d2a06db with the merge of the client's management windows, which plays identically).
+
+| | Original | Before | After |
+|---|---|---|---|
+| Battles | 6.1–19.1 (three games) | 10.3 | 8.8 |
+| Decided battles won away from colonies | 2.1–4.8 (five games) | 4.6 | 3.8 |
+| Drawn battles away from colonies, per empire | 0.0–21.5 (five games) | 5.8 | 4.2 |
+| Attack ships lost in battle; all ships and bases | 3.8–8.0 (four games); 5.1–9.0 (five) | 5.7; 7.2 | 4.4; 5.7 |
+| Battles at an enemy colony; ending with the colony gone | 3.0–4.9; 1.9–2.9 (four games) | 2.2; 1.1 | 2.6; 1.8 |
+| Colonies founded or taken; lost | 2.8–6.3 (4.5); 1.7–3.1 (six games) | 3.8; 1.2 | 4.1; 1.9 |
+| Colonies at turns 50 / 75 / 100 | 12.2 / 16.6 / 17.0 (five games) | 11.2 / 15.0 / 16.6 | 11.2 / 14.5 / 15.7 |
+| Ships at turns 25 / 50 / 75 / 100 | 3.5 / 8.6 / 14.1 / 17.4 (five games; 6.6–11.8 per game at turn 50) | 3.2 / 7.7 / 12.4 / 15.6 | 3.4 / 8.0 / 13.2 / 16.4 |
+| Resources produced at turns 50 / 75 / 100 | 25.6k / 34.5k / 36.9k | 22.6k / 29.4k / 33.2k | 22.8k / 29.0k / 32.4k |
+| Bases at turns 50 / 100 | 0.5 / 0.6 (three games) | 0.31 / 0.41 | 0.25 / 0.41 |
+| Defend (Short Term), turns 51–100 / all | 70 % (62–94 % per game) / 48 % | 70 / 48 % | 67 / 47 % |
+| Infrastructure, turns 51–100 | 11 % (0–30 %) | 6 % | 7 % |
+| Exploration, turns 1–25 | 80 % (61–95 % per game) | 76 % | 79 % |
+| Over the soft cap, turns 26–50 / 51–100 | 0–6 / 14–30 % (four games) | 1.2 / 12.4 % | 1.3 / 13.2 % (median per game 0 / 12 %) |
+| Second attack ship; first colony ship (median turn) | 9; 7 | 5; 9 | 9; 7 |
+| Attack ships per empire at turn 5 | 1.05 | 2.0 | 1.1 |
+
+Standard errors of the paired changes over the 240 seeds: battles 0.4, decided battles
+won away 0.12, attack ships lost 0.15, colonies gone at the end of a battle 0.05, colonies
+lost 0.05, colonies at turn 100 0.16, ships at turn 50 0.09, Defend (Short Term) 1 point.
+On seeds 1–120 alone the changes are the same within those errors (decided battles won away
+4.8 → 3.9, colonies lost 1.2 → 1.9, Defend (Short Term) 71 → 66 %).
+
+**Rule by rule** (240 seeds, each commit adding one rule to the one before; paired changes,
+standard errors in brackets; a dash: below 0.05, or no change):
+
+| | Battles | Decided won away | Drawn away | Attack ships lost in battle | Colony gone | Colonies lost | Colonies at turn 100 | Ships at turn 50 | Defend (Short Term), 51–100 (points) | Exploration, 1–25 (points) | Second attack ship (median turn) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Before | 10.3 | 4.6 | 5.8 | 5.7 | 1.1 | 1.2 | 16.6 | 7.7 | 70 % | 76 % | 5 |
+| Defend (Short Term) fleet rule | −2.6 (0.3) | −1.0 (0.1) | −3.0 (0.5) | −1.6 (0.1) | +0.6 (0.04) | +0.6 (0.05) | −0.9 (0.1) | — | −4.8 (0.7) | — | 5 |
+| Vehicle table counts | +0.1 | +0.1 | +0.1 | +0.1 | +0.1 | +0.1 | −0.3 (0.15) | +0.3 (0.1) | +0.9 | +3.2 (0.5) | 9 |
+| Idle vehicles mark their sector | +1.0 (0.2) | +0.1 | +1.3 (0.3) | +0.1 | — | −0.1 | +0.1 | — | — | — | 9 |
+| Jump counts | −0.3 | −0.1 | −0.2 | — | — | — | +0.1 | — | — | — | 9 |
+| Exploring fleets on a Move To | +0.1 | +0.1 | — | — | — | — | +0.1 | — | — | — | 9 |
+| Leaders, recruits, scrap (question 72) | +0.2 | +0.1 | +0.2 | +0.1 | — | — | — | — | — | — | 9 |
+| Net income first thing (question 73) | identical | | | | | | | | | | |
+| Caps' revenue and single precision (question 71) | — | — | — | — | — | — | — | — | — | — | 9 |
+| After | 8.8 | 3.8 | 4.2 | 4.4 | 1.8 | 1.9 | 15.7 | 8.0 | 67 % | 79 % | 9 |
+
+- **As the scratch rules predicted.** The Defend (Short Term) fleet rule is the lever: it
+  brings the decided battles away from colonies, the ships lost in them and the colonies
+  lost into the original's range, and the battles at enemy colonies ending with the colony
+  gone close to it. The vehicle table's counts give the original's first ships (the second
+  attack ship on turn 9, the first colony ship on turn 7, 1.1 attack ships at turn 5) and
+  three more points of Exploration in turns 1–25. Idle vehicles add a battle per empire and
+  25 turns, all drawn. The other rules move nothing measurable; the net income's timing
+  changed no game, since in our engine nothing the state update or the Politics minister
+  does changes the revenue of the last report, the maintenance or the queues in these games.
+- **What remains**: colonies at turn 100 (15.7 against 17.0, a colony fewer than before the
+  fleet rule, spec 05 question 76) and the battles at enemy colonies (2.6 against 3.0–4.9),
+  which follow the number of enemy colonies inside the territories (question 77); resources
+  produced at turn 100 (12 % below), which follow the colonies (question 61). Ships at turns
+  50 and 100, the soft cap, the time in each state and the first turns now lie within the
+  original's spread. What a Scrap does to a fleet is still question 74.
+
 ## Session 5: more windows side by side, and generated galaxies (2026-10-03)
 
 Same harness as session 4 (a copy of the install, a Wine prefix of its own, the nested

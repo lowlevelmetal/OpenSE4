@@ -49,15 +49,15 @@ void resetCameFrom(const Rules& r, GameState& s, EmpireId e) {
     }
 }
 
-void keepStartNet(TurnContext& ctx, EmpireId e, const std::optional<Resources>& net) {
-    if (ctx.aiStartNet.size() <= e.index()) ctx.aiStartNet.resize(e.index() + 1);
-    ctx.aiStartNet[e.index()] = net;
+void keepStartFigures(TurnContext& ctx, EmpireId e, const std::optional<ai::StartOfTurnFigures>& figures) {
+    if (ctx.aiStartFigures.size() <= e.index()) ctx.aiStartFigures.resize(e.index() + 1);
+    ctx.aiStartFigures[e.index()] = figures;
 }
 
 } // namespace detail
 
 using detail::applyCommands;
-using detail::keepStartNet;
+using detail::keepStartFigures;
 using detail::Control;
 using detail::living;
 using detail::ministersPlan;
@@ -88,10 +88,10 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     if (ministers) {
         const std::optional<std::vector<ObjectId>> lists = std::move(ctx.aiColonyTargets);
         ctx.aiColonyTargets.reset();
-        std::optional<Resources> startNet;
-        if (e.index() < ctx.aiStartNet.size()) startNet = std::exchange(ctx.aiStartNet[e.index()], std::nullopt);
+        std::optional<ai::StartOfTurnFigures> figures;
+        if (e.index() < ctx.aiStartFigures.size()) figures = std::exchange(ctx.aiStartFigures[e.index()], std::nullopt);
         applyCommands(ctx, e, ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0, lists ? &*lists : nullptr,
-                                                  startNet ? &*startNet : nullptr));
+                                                  figures ? &*figures : nullptr));
         if (living(s, e) && ai::ministerOn(s.empire(e), Minister::ShipConstruction)) ctx.unitReserve = ai::unitReserveLeft(r, s.empire(e));
     }
     // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5;
@@ -250,6 +250,11 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
         if (!s.empire(id).alive) continue;
+        // First thing, before the AI state update and the Politics minister,
+        // the step works out the figures its ministers and the economy step
+        // use (spec 05 §7.5 *Net income*, confirmed: binary).
+        std::optional<ai::StartOfTurnFigures> figures;
+        if (ministersPlan(s, id, controlOf(i))) figures = ai::startOfTurnFigures(r, s, id);
         ai::updateAiState(ctx, id);
         const std::vector<SystemId> territory = s.empire(id).claimedSystems;
         if (controlOf(i) != Control::Absent) {
@@ -262,10 +267,9 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
             applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id));
             diplomacy::deliverMessages(ctx, date);
             std::vector<ObjectId> targets;
-            std::optional<Resources> net;
-            applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets, &net));
+            applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets, figures ? &*figures : nullptr));
             ctx.aiColonyTargets = std::move(targets);  // the step's lists stay in place
-            keepStartNet(ctx, id, net);
+            keepStartFigures(ctx, id, figures);
             diplomacy::deliverMessages(ctx, date);
         }
     }

@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <deque>
 #include <format>
 #include <tuple>
@@ -462,6 +463,7 @@ Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uin
 
     scores = politicalScores(r, st);
     capUpkeep = capMaintenance(r, st, id);
+    capRevenue = capRevenueOf(r, st, id);   // unless a start-of-turn step hands its own over
     if (territory) st.empire(id).claimedSystems = *territory;
     sit = assess(r, st, id, prof);
     for (const auto& c : st.colonies)
@@ -599,18 +601,27 @@ bool Planner::idle(const Vehicle& v) const {
 // Spec 05 §7.5 (confirmed: binary): production × the computer-player income
 // factor, plus income from other empires (trade and tariffs received). The
 // tariffs the empire pays are not subtracted.
-Resources Planner::revenue() const {
-    const EconomyReport& eco = emp().economy;
+Resources revenueFrom(const GameState& s, EmpireId e, const EconomyReport& eco) {
     // The report's otherIncome holds the bonus on what was left after tariffs:
     // (production - tariffs) x (factor - 1). Production x factor is the
     // report's income plus tariffs x (factor - 1).
-    const int64_t extra = incomeBonusFactor(st, id) - 1;
+    const int64_t extra = incomeBonusFactor(s, e) - 1;
     const Resources& t = eco.tariffsOut;
     return eco.colonies + eco.remoteMining + eco.otherIncome + Resources{t.v[0] * extra, t.v[1] * extra, t.v[2] * extra} + eco.trade +
            eco.tariffsIn;
 }
 
-Resources Planner::netIncome() const { return revenue() - economy::maintenanceCost(r, st, id) - queueCommitments(r, st, id); }
+Resources revenueOf(const GameState& s, EmpireId e) { return revenueFrom(s, e, s.empire(e).economy); }
+
+Resources capRevenueOf(const Rules& r, const GameState& s, EmpireId e) { return revenueFrom(s, e, economy::incomeReport(r, s, e)); }
+
+Resources netIncomeOf(const Rules& r, const GameState& s, EmpireId e) {
+    return revenueOf(s, e) - economy::maintenanceCost(r, s, e) - queueCommitments(r, s, e);
+}
+
+Resources Planner::revenue() const { return revenueOf(st, id); }
+
+Resources Planner::netIncome() const { return netIncomeOf(r, st, id); }
 
 Resources queueCommitments(const Rules& r, const GameState& s, EmpireId e) {
     Resources sum;
@@ -627,13 +638,109 @@ Resources queueCommitments(const Rules& r, const GameState& s, EmpireId e) {
 // Over the soft cap (extraPercent 0) or the hard cap (20) when, for any one
 // resource, the maintenance of the empire's vehicles other than colony ships
 // exceeds that resource's revenue × (Maximum Maintenance Percent of Revenue +
-// extraPercent) / 100 (spec 05 §7.5, confirmed: binary).
+// extraPercent) / 100 (spec 05 §7.5, confirmed: binary), in single precision.
 bool Planner::overCap(int extraPercent) const {
-    const Resources rev = revenue();
     const int64_t m = prof.settings.maxMaintenancePercent + extraPercent;
     for (Resource k : kResources)
-        if (xmath::Ext(capUpkeep[k]) > xmath::Ext(rev[k]) * xmath::percent(m)) return true;
+        if (aboveSingleShare(capUpkeep[k], capRevenue[k], m)) return true;
     return false;
+}
+
+namespace {
+
+using xmath::detail::U128;
+
+bool lessU128(U128 a, U128 b) { return a.hi != b.hi ? a.hi < b.hi : a.lo < b.lo; }
+
+uint64_t magnitude(int64_t v) { return v < 0 ? uint64_t{0} - static_cast<uint64_t>(v) : static_cast<uint64_t>(v); }
+
+// A non-negative integer rounded to 24 significant bits, to nearest with ties
+// to even, as the store to a 32-bit float rounds: the result is q × 2^shift
+// with q at most 2^24.
+struct Rounded24 {
+    uint64_t q = 0;
+    int shift = 0;
+};
+Rounded24 roundTo24(U128 v) {
+    if (v.isZero()) return {};
+    const int length = 128 - xmath::detail::leadingZeros(v);
+    if (length <= xmath::kSingleBits) return {v.lo, 0};
+    const int shift = length - xmath::kSingleBits;
+    bool lost = false;
+    uint64_t q = xmath::detail::shiftRight(v, shift, lost).lo;
+    const U128 rest = xmath::detail::sub(v, xmath::detail::shiftLeft(U128{0, q}, shift));
+    const U128 half = xmath::detail::shiftLeft(U128{0, 1}, shift - 1);
+    if (lessU128(half, rest) || (!lessU128(rest, half) && (q & 1) != 0)) ++q;
+    return {q, shift};
+}
+
+} // namespace
+
+// The caps' single-precision test without floating point (spec 05 §7.5,
+// confirmed: binary). The original forms f = percent / 100 as a 32-bit
+// float, multiplies base by it and keeps the product as a float, then
+// compares value with it. Here:
+//  1. f is percent / 100 rounded to 24 significant bits, ties to even, and
+//     that is F × 2^-k exactly for an integer F in [2^23, 2^24]: F is the
+//     quotient of |percent| × 2^k by 100 (or of |percent| by 100 × 2^-k),
+//     rounded by its remainder, with k chosen so that F has 24 bits.
+//  2. base × f = |base| × F × 2^-k exactly, |base| × F an integer of at most
+//     88 bits (formed in 128); rounding it to 24 significant bits gives the
+//     float product q × 2^(shift - k) exactly, q and shift integers.
+//  3. value > ±q × 2^(shift - k) is decided on integers by shifting the
+//     smaller side's exponent away, in 128 bits.
+// Every step is the exact real result rounded once, as a float operation
+// rounds. The original's x87 forms the quotient and the product in its
+// 64-bit format before the store to a float, so each is rounded twice; that
+// agrees with one rounding unless the 64-bit result lies exactly on a
+// midpoint between two floats. It never does here: percent / 100 is either
+// exact in 24 bits or has a periodic binary expansion whose period divides 20
+// (the order of 2 modulo 25), which cannot hold the 39 equal bits a midpoint
+// needs, and the
+// product |base| × F has at most 64 bits, so is exact, while |base| is below
+// 2^40 (a turn's revenue is far smaller). The test in tests/test_ai.cpp
+// checks this against xmath::Ext's emulation of the x87 for every percent
+// from 0 to 300 and a range of bases. The value itself is compared exactly;
+// were it stored as a float first, the two would differ only from 2^24
+// (16.7 million) up, which no maintenance reaches.
+bool aboveSingleShare(int64_t value, int64_t base, int64_t percent) {
+    const bool negative = (base < 0) != (percent < 0);
+    const uint64_t a = magnitude(percent), b = magnitude(base);
+    // 1. f = F × 2^-k.
+    uint64_t F = 0;
+    int k = 0;
+    if (a != 0) {
+        uint64_t num = a, den = 100;
+        while (num / den < (uint64_t{1} << 23)) {
+            num <<= 1;
+            ++k;
+        }
+        while (num / den >= (uint64_t{1} << 24)) {
+            den <<= 1;
+            --k;
+        }
+        F = num / den;
+        const uint64_t rem = num % den;
+        if (2 * rem > den || (2 * rem == den && (F & 1) != 0)) ++F;
+    }
+    // 2. The product q × 2^e.
+    const Rounded24 p = roundTo24(xmath::detail::mul(b, F));
+    const int e = p.shift - k;
+    if (p.q == 0) return value > 0;
+    // 3. value > (negative ? -1 : 1) × q × 2^e.
+    if (negative && value >= 0) return true;
+    if (!negative && value <= 0) return false;
+    // Compare |value| with q × 2^e: above for a positive threshold, below for a negative one.
+    const uint64_t v = magnitude(value);
+    U128 lhs{0, v}, rhs{0, p.q};
+    if (e >= 0) {
+        if (e >= 100) return negative;   // q × 2^e is beyond any int64
+        rhs = xmath::detail::shiftLeft(rhs, e);
+    } else {
+        if (-e >= 64) return !negative;  // q × 2^e is below 1, |value| at least 1
+        lhs = xmath::detail::shiftLeft(lhs, -e);
+    }
+    return negative ? lessU128(lhs, rhs) : lessU128(rhs, lhs);
 }
 
 Resources capMaintenance(const Rules& r, const GameState& s, EmpireId e) {
@@ -669,7 +776,6 @@ void Planner::runOrders(bool politics, bool others) {
     capUpkeep = capMaintenance(r, st, id);   // the vehicles as the start-of-turn ministers find them
     if (politics && on(Minister::Politics)) planPolitics(*this);
     if (!others) return;
-    startOfTurnNet = netIncome();   // kept for the economy step's facility upgrades
     planTroops(*this);
     planTransports(*this);
     planColonization(*this);
@@ -949,27 +1055,38 @@ std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, Empi
     return p.report().commands;
 }
 
+StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, EmpireId e) {
+    if (!planFor(s, e)) return {};
+    return {detail::netIncomeOf(r, s, e), detail::capRevenueOf(r, s, e)};
+}
+
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory,
-                                             std::vector<ObjectId>* colonyTargets, std::optional<Resources>* startNet) {
+                                             std::vector<ObjectId>* colonyTargets, const StartOfTurnFigures* figures) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltOrders, territory);
+    if (figures) {
+        p.startOfTurnNet = figures->net;
+        p.capRevenue = figures->revenue;
+    }
     if (colonyTargets) {
         colonyTargets->clear();
         for (const detail::ColonyTarget& t : p.sit.colonyTargets) colonyTargets->push_back(t.planet);
     }
     p.runOrders(false, true);
-    if (startNet) *startNet = p.startOfTurnNet;
     return p.report().commands;
 }
 
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve,
-                                     const std::vector<ObjectId>* colonyTargets, const Resources* startNet) {
+                                     const std::vector<ObjectId>* colonyTargets, const StartOfTurnFigures* figures) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltEconomy);
     p.unitReserve = unitReserve;
-    if (startNet) p.startOfTurnNet = *startNet;
+    if (figures) {
+        p.startOfTurnNet = figures->net;
+        p.capRevenue = figures->revenue;
+    }
     // The lists another step left (spec 05 §7.2 "Whose lists the economy step
     // reads"): of them the economy step reads only the colonization targets.
     if (colonyTargets) {

@@ -10,7 +10,9 @@
 #include <algorithm>
 #include <map>
 #include <optional>
+#include <string>
 #include <tuple>
+#include <vector>
 
 namespace opense4::game::ai {
 
@@ -327,6 +329,7 @@ public:
 
     void run() {
         const VehicleQueue* table = p_.prof.vehicleQueue(p_.state);
+        takeCounts();  // before the clean-up (confirmed: binary)
         cleanUp();
         // One turn of net income less the unit reserve (the reserve quirk, unitReserve()).
         budget_ = p_.netIncome().percent(100 - std::clamp<int64_t>(unitReserve(), 0, 100));
@@ -473,40 +476,43 @@ private:
         return out;
     }
 
-    // Existing vehicles of a type (units one by one) plus items in all
-    // queues; the three colony-ship types share one count.
-    int64_t have(std::string_view type, bool colonyShips) {
-        std::vector<int8_t> known(p_.st.designs.size(), -1);
-        auto test = [&](DesignId d) {
-            const DesignInfo& di = p_.info(d);
-            return colonyShips ? colonyShipType(di.aiType) : di.aiType == type;
+    // The vehicle table's counts (spec 05 §7.5, confirmed: binary): per AI
+    // design type, the existing vehicles (units one by one) plus the items in
+    // all queues, taken once before the clean-up and grown only by what the
+    // loop places (count()), so an item the clean-up removes this turn still
+    // counts for its type until the next turn.
+    std::map<std::string, int64_t> counts_;
+
+    void takeCounts() {
+        counts_.clear();
+        auto add = [&](DesignId d, int64_t n) {
+            if (d.valid() && d.index() < p_.st.designs.size()) counts_[p_.info(d).aiType] += n;
         };
-        auto match = [&](DesignId d) {
-            if (d.index() >= known.size()) return test(d);
-            int8_t& m = known[d.index()];
-            if (m < 0) m = test(d) ? 1 : 0;
-            return m == 1;
-        };
-        int64_t n = 0;
         for (const Vehicle& v : p_.st.vehicles) {
             if (v.owner != p_.id) continue;
             if (v.mixed.empty()) {
-                if (match(v.design)) n += std::max(1, v.count);
+                add(v.design, std::max(1, v.count));
             } else {
-                for (const UnitStack& u : v.mixed)
-                    if (match(u.design)) n += u.count;
+                for (const UnitStack& u : v.mixed) add(u.design, u.count);
             }
-            for (const UnitStack& u : v.cargo.units)
-                if (match(u.design)) n += u.count;
+            for (const UnitStack& u : v.cargo.units) add(u.design, u.count);
         }
         for (const auto& c : p_.st.colonies)
             if (c && c->owner == p_.id)
-                for (const UnitStack& u : c->cargo.units)
-                    if (match(u.design)) n += u.count;
+                for (const UnitStack& u : c->cargo.units) add(u.design, u.count);
         for (const auto& [target, q] : queues())
             for (const QueueItem& item : q->items)
-                if (item.kind == QueueItem::Kind::Vehicle && match(item.design)) n += std::max(1, item.count);
-        if (!colonyShips && type == "Defense Base") n += lostBases_;
+                if (item.kind == QueueItem::Kind::Vehicle) add(item.design, std::max(1, item.count));
+    }
+
+    // An item the loop placed (or a Defense Base it spent on without a yard).
+    void count(DesignId design, int64_t n) { counts_[p_.info(design).aiType] += n; }
+
+    // The count of a type; the three colony-ship types share one count.
+    int64_t have(std::string_view type, bool colonyShips) const {
+        int64_t n = 0;
+        for (const auto& [t, c] : counts_)
+            if (colonyShips ? colonyShipType(t) : t == type) n += c;
         return n;
     }
 
@@ -591,6 +597,7 @@ private:
         const Resources cost = economy::itemCost(p_.r, p_.st, p_.id, o.target, item);
         if (!p_.emit(cmd::QueueAdd{o.target, item, -1})) return false;
         budget_ -= min(cost, o.rate);  // what the item takes from that queue this turn
+        count(design, std::max(1, item.count));
         return true;
     }
 
@@ -603,7 +610,7 @@ private:
     // (spec 02 §6.1): the commands refuse such an item, so the builder counts
     // it and spends on it without queueing anything.
     bool placeDefenseBase(DesignId design) {
-        const std::vector<cmd::QueueTarget> list = queueList();
+        const std::vector<cmd::QueueTarget> list = queueList(p_);
         if (list.empty()) return false;
         int64_t queuedBases = lostBases_;  // an item counts as many bases as it builds (inferred, spec 05 Q60)
         for (const cmd::QueueTarget& t : list)
@@ -614,7 +621,7 @@ private:
         size_t k = 0;
         bool roomy = false;
         for (const cmd::QueueTarget& t : list) {
-            if (!workingYard(t)) continue;
+            if (!workingYard(p_, t)) continue;
             ++k;
             if (t.planet.valid() && basesAt(locationOf(p_.st.galaxy, t.planet)) + queuedBases <= 2) roomy = true;
         }
@@ -635,48 +642,8 @@ private:
             ++lostBases_;  // queued without a yard: dropped at the construction step
         }
         budget_ -= min(cost, rate);
+        count(design, 1);
         return true;
-    }
-
-    // The empire's queue list (spec 05 §7.5 "Placement", confirmed: binary,
-    // question 60): every queue it owns, system by system in system order
-    // and, within a system, in the order of the system's own object list: the
-    // planets (in the game's object order) before the ships, which follow the
-    // order they were placed in or entered the system (Vehicle::arrival; a
-    // planet made during play also comes first, inferred, question 64). Every
-    // colony has a queue, a ship one only when it carries a Space Yard
-    // component (spec 02 §6.1).
-    std::vector<cmd::QueueTarget> queueList() const {
-        std::vector<std::tuple<uint32_t, int, uint64_t, cmd::QueueTarget>> keyed;
-        for (const auto& c : p_.st.colonies)
-            if (c && c->owner == p_.id)
-                keyed.emplace_back(p_.st.galaxy.object(c->planet).system.value, 0, objectOrderKey(p_.st, c->planet), cmd::QueueTarget{c->planet, {}});
-        for (const Vehicle& v : p_.st.vehicles)
-            if (v.owner == p_.id && v.count > 0 && carriesYard(v)) keyed.emplace_back(v.location.system.value, 1, v.arrival, cmd::QueueTarget{{}, v.id});
-        std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) {
-            return std::tuple(std::get<0>(a), std::get<1>(a), std::get<2>(a)) < std::tuple(std::get<0>(b), std::get<1>(b), std::get<2>(b));
-        });
-        std::vector<cmd::QueueTarget> out;
-        for (const auto& k : keyed) out.push_back(std::get<3>(k));
-        return out;
-    }
-
-    bool carriesYard(const Vehicle& v) const {
-        for (const DesignEntry& en : p_.st.design(v.design).entries)
-            if (hasAbility(p_.r.componentAbilities(en.component), AbilityKind::SpaceYard)) return true;
-        return false;
-    }
-
-    // A working space yard (spec 05 §7.5 "Placement", confirmed: binary,
-    // question 60): an uncloaked colony's yard facility, or the yard component
-    // of an uncloaked ship that is neither destroyed nor mothballed.
-    bool workingYard(const cmd::QueueTarget& t) const {
-        if (t.vehicle.valid()) {
-            const Vehicle* v = p_.st.vehicle(t.vehicle);
-            return v && v->status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p_.r, p_.st, *v);
-        }
-        const Colony* c = p_.st.colony(t.planet);
-        return c && colonyHasWorkingYard(p_.r, *c);
     }
 
     const ConstructionQueue* queueOf(const cmd::QueueTarget& t) const {
@@ -749,6 +716,40 @@ private:
 };
 
 } // namespace
+
+namespace {
+
+bool carriesYard(const Planner& p, const Vehicle& v) {
+    for (const DesignEntry& en : p.st.design(v.design).entries)
+        if (hasAbility(p.r.componentAbilities(en.component), AbilityKind::SpaceYard)) return true;
+    return false;
+}
+
+} // namespace
+
+std::vector<cmd::QueueTarget> queueList(const Planner& p) {
+    std::vector<std::tuple<uint32_t, int, uint64_t, cmd::QueueTarget>> keyed;
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id)
+            keyed.emplace_back(p.st.galaxy.object(c->planet).system.value, 0, objectOrderKey(p.st, c->planet), cmd::QueueTarget{c->planet, {}});
+    for (const Vehicle& v : p.st.vehicles)
+        if (v.owner == p.id && v.count > 0 && carriesYard(p, v)) keyed.emplace_back(v.location.system.value, 1, v.arrival, cmd::QueueTarget{{}, v.id});
+    std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) {
+        return std::tuple(std::get<0>(a), std::get<1>(a), std::get<2>(a)) < std::tuple(std::get<0>(b), std::get<1>(b), std::get<2>(b));
+    });
+    std::vector<cmd::QueueTarget> out;
+    for (const auto& k : keyed) out.push_back(std::get<3>(k));
+    return out;
+}
+
+bool workingYard(const Planner& p, const cmd::QueueTarget& t) {
+    if (t.vehicle.valid()) {
+        const Vehicle* v = p.st.vehicle(t.vehicle);
+        return v && v->status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, *v);
+    }
+    const Colony* c = p.st.colony(t.planet);
+    return c && colonyHasWorkingYard(p.r, *c);
+}
 
 void planFacilities(Planner& p, bool firstPass) {
     std::vector<ObjectId> planets;

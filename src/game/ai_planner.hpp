@@ -42,6 +42,17 @@ enum class Role : uint8_t {
 inline constexpr int64_t kStrengthScale = 10;
 // Every AI jump count (spec 05 §7.2): an unreachable system is 999 jumps away.
 inline constexpr int kUnreachable = 999;
+// The jump count the original's AI compares with numbers and settings (spec
+// 05 §7.2 *Jumps*, spec 01 §3.6, confirmed: binary): its routine returns the
+// warp jumps between two systems over every link plus two, and 999 when no
+// route joins them. `jumps` is the real count (jumpsOver, Planner::jumpsFrom).
+// The choices of the nearest or the fewest jumps compare real jumps, which
+// orders them the same; the fixed tests compare this count: the strength
+// test around the targets (below 5, so at most 2 real jumps), fleet
+// recruiting (below 4: at most 1), the drones (at most the setting: the
+// setting less 2) and Prepare for Attack's "more than one jump from the
+// first target" (above 1, which always holds).
+constexpr int aiJumpCount(int jumps) { return jumps >= kUnreachable ? kUnreachable : jumps + 2; }
 
 struct DesignInfo {
     bool ready = false;
@@ -223,16 +234,24 @@ public:
     // (colony ships included) and less what its colony queues will spend this
     // turn (queueCommitments), worked out from the state as it is now.
     Resources netIncome() const;
-    Resources revenue() const;
-    bool overCap(int extraPercent) const;   // soft cap: 0, hard cap: 20
+    Resources revenue() const;   // from the last income report (revenueOf)
+    // Over the soft cap (extraPercent 0) or the hard cap (20): for any one
+    // resource, capUpkeep > capRevenue × (M + extraPercent) / 100 in single
+    // precision (aboveSingleShare; spec 05 §7.5, confirmed: binary).
+    bool overCap(int extraPercent) const;
     // The maintenance the caps compare, worked out from the vehicles of the
     // moment (capMaintenance) when the planner is made and again when its
     // start-of-turn and economy-step ministers start.
     Resources capUpkeep;
-    // The net income the start-of-turn step worked out once, kept for the
-    // facility upgrades of the economy step (spec 05 §7.5 *Net income*,
-    // confirmed: binary): set when the ministers after Politics start, or
-    // handed over from that step (planEconomyStep). An economy step that has
+    // The revenue the caps compare (spec 05 §7.5 *Revenue*, confirmed:
+    // binary): worked out afresh from the colonies at the start-of-turn step
+    // (capRevenueOf) and reused by the economy step (ai::StartOfTurnFigures);
+    // a planner that is handed none works it out when it is made.
+    Resources capRevenue;
+    // The net income the start-of-turn step worked out once, first thing,
+    // kept for the facility upgrades of the economy step (spec 05 §7.5 *Net
+    // income*, confirmed: binary): handed over from that step
+    // (planEconomyStep, ai::StartOfTurnFigures). An economy step that has
     // none works it out when its ministers start (inferred, spec 05 Q73).
     std::optional<Resources> startOfTurnNet;
 
@@ -278,6 +297,25 @@ void planStellarManipulation(Planner& p);
 // vehicle whose hull takes colony modules (`Requirement Pct Colony Mods`
 // above 0), so colony ships never count. The maintenance paid includes them.
 Resources capMaintenance(const Rules& r, const GameState& s, EmpireId e);
+// Production × the computer-player income factor plus income from other
+// empires (trade and tariffs received; tariffs paid are not subtracted), from
+// an income report (spec 05 §7.5 *Net income*, *Revenue*).
+Resources revenueFrom(const GameState& s, EmpireId e, const EconomyReport& eco);
+// Planner::revenue and Planner::netIncome for the state as it is now: the
+// revenue of the last income report (Empire::economy).
+Resources revenueOf(const GameState& s, EmpireId e);
+Resources netIncomeOf(const Rules& r, const GameState& s, EmpireId e);
+// The caps' revenue (spec 05 §7.5 *Revenue*, confirmed: binary): the same
+// sum, worked out afresh from the colonies as they stand now
+// (economy::incomeReport), so a colony founded, grown, lost or made unhappy
+// since the last income step already counts.
+Resources capRevenueOf(const Rules& r, const GameState& s, EmpireId e);
+// value > base × percent / 100 as the original's caps test it (spec 05 §7.5,
+// confirmed: binary): percent / 100 rounded to a 32-bit float, the product
+// with base rounded to a float again (both to nearest, ties to even), and
+// the integer value compared with that float, all in exact integer
+// arithmetic (no floating point in turn resolution; see ai.cpp).
+bool aboveSingleShare(int64_t value, int64_t base, int64_t percent);
 // What the empire's colony queues will spend this turn on their first items
 // (spec 05 §7.5 *Net income*, confirmed: binary): for each colony queue
 // holding items, the first item's cost less what has been paid into it (not
@@ -298,6 +336,21 @@ std::string colonyTypeName(std::string_view surface);  // "Colony (Rock)"
 // and the game's breathable/home-type options allow it.
 bool canSettle(const Rules& r, const GameState& s, const Empire& e, const SpaceObject& planet);
 bool hasColonyModule(const Rules& r, const Empire& e, std::string_view surface);
+// The empire's queue list (spec 05 §7.5 "Placement", confirmed: binary,
+// question 60): every queue it owns, system by system in system order and,
+// within a system, in the order of the system's own object list: the planets
+// (in the game's object order) before the ships, which follow the order they
+// were placed in or entered the system (Vehicle::arrival; a planet made
+// during play also comes first, inferred, question 64). Every colony has a
+// queue, a ship one only when it carries a Space Yard component (spec 02
+// §6.1). The Defense Base placement and the Scrap minister's scrap place use
+// it (ai_economy.cpp).
+std::vector<cmd::QueueTarget> queueList(const Planner& p);
+// A working space yard at a queue owner (spec 05 §7.5 "Placement",
+// confirmed: binary, question 60): an uncloaked colony's yard facility, or
+// the yard component of an uncloaked ship that is neither destroyed nor
+// mothballed.
+bool workingYard(const Planner& p, const cmd::QueueTarget& t);
 // Builds the design of a template the empire would make now (spec 05 §7.5), or nullopt.
 std::optional<Design> buildDesign(const Rules& r, const GameState& s, const Empire& e, const DesignTemplate& t);
 // Abilities whose parts the Design minister ranks by their Amount 1 (spec

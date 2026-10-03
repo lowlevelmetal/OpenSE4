@@ -291,5 +291,11 @@ void applySystemAbilities(TurnContext& ctx, EmpireId e);
 // Recomputes Empire::economy (projected income/expenses) without changing
 // anything else. Called after setup and at the end of each turn for the UI.
 void updateReports(const Rules& r, GameState& s);
+// The income part of that projection for one empire, from the state as it is
+// now: the colonies' delivered production and what the spaceport rule keeps
+// back, remote mining, the other income (Generate Points, the empire minimum
+// and the computer bonus), the tariffs paid, research and intelligence, and
+// trade and tariffs received. Maintenance, construction and storage stay 0.
+EconomyReport incomeReport(const Rules& r, const GameState& s, EmpireId e);
 
 } // namespace opense4::game::economy

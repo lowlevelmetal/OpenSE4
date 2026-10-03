@@ -903,6 +903,7 @@ TEST_CASE("ai: ship construction spends one turn of net income on queues under 5
     e2.economy.colonies = Resources{100000, 100000, 100000};
     ai::detail::Planner q(r, s2, cpu, ai::detail::Mode::Computer, 9);
     q.state = ai::AiState::Infrastructure;
+    q.capRevenue = Resources{100000, 100000, 100000};  // the revenue the caps compare
     q.capUpkeep = Resources{95000, 0, 0};  // the maintenance the caps compare: above 80 % and 90 %, not above 100 % of revenue
     CHECK(q.overCap(0));
     CHECK(q.overCap(10));
@@ -912,6 +913,52 @@ TEST_CASE("ai: ship construction spends one turn of net income on queues under 5
         if (c && c->owner == cpu)
             for (const QueueItem& item : c->queue.items)
                 if (item.kind == QueueItem::Kind::Vehicle) CHECK(q.info(item.design).role == ai::detail::Role::Colonizer);
+}
+
+TEST_CASE("ai: the vehicle table counts each type once, before the clean-up of obsolete items") {
+    // Spec 05 §7.5 AI_Construction_Vehicles (confirmed: binary, question 70):
+    // an item the clean-up removes still counts for its type until the next turn.
+    TempTree t("tablecounts");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Infrastructure\nNum Queue Entries := 1\nEntry 1 Type := Attack Ship\nEntry 1 Must Have At Least := 2\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(3, 2, 0, 12, r);
+    const EmpireId cpu{0u};
+    Empire& e = s.empire(cpu);
+    const DesignId old = addWarship(s, r, cpu, "Old Picket");
+    const DesignId fresh = addWarship(s, r, cpu, "New Picket");
+    e.designs.push_back(old);
+    e.designs.push_back(fresh);
+    s.design(old).createdTurn = 1;
+    s.design(fresh).createdTurn = 2;
+    s.design(old).obsolete = true;
+    e.economy = {};
+    e.economy.colonies = Resources{100000, 100000, 100000};
+    // The homeworld's queue: two attack ships of the obsolete design, the
+    // first one paid into, so only the second goes.
+    Colony& home = homeworld(s, cpu);
+    QueueItem item;
+    item.kind = QueueItem::Kind::Vehicle;
+    item.design = old;
+    home.queue.items = {item, item};
+    home.queue.items[0].spent = Resources{1, 0, 0};
+    auto build = [&](const GameState& from) {
+        ai::detail::Planner p(r, from, cpu, ai::detail::Mode::Computer, 9);
+        p.state = ai::AiState::Infrastructure;
+        ai::detail::planShips(p);
+        return p.st;
+    };
+    auto designs = [&](const GameState& g) {
+        std::vector<DesignId> out;
+        for (const QueueItem& q : g.colony(home.planet)->queue.items) out.push_back(q.design);
+        return out;
+    };
+    // The row "at least 2" still sees two: the removed item counts this turn.
+    const GameState turn2 = build(s);
+    CHECK(designs(turn2) == std::vector<DesignId>{old});
+    // The next turn it sees one and asks for the new design.
+    const GameState turn3 = build(turn2);
+    CHECK(designs(turn3) == std::vector<DesignId>{old, fresh});
 }
 
 TEST_CASE("ai: Colonizer entries build the colony-ship type of the first uncovered target") {
@@ -2420,6 +2467,9 @@ TEST_CASE("ai: recruits away from the fleet get a Join Fleet order and count tow
     REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {leader}}).ok);
     const FleetId fleet = s.fleets.back().id;
     for (int i = 0; i < 7; ++i) addTestVehicle(s, r, warship, away);
+    // Supplies for many moves: the Resupply minister leaves them alone.
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == me) v.supply = 1'000'000;
     // 8 vehicles, one fleet with 50 %: four members, so three recruits.
     auto joins = [&](const std::vector<Command>& cmds) {
         int n = 0;
@@ -2469,6 +2519,117 @@ TEST_CASE("ai: a fleet whose leader is unfit is disbanded") {
     v.damage[1] = v.damage[3] = 0;
     v.damage[0] = entryStructure(r, s.design(warship), 0);  // the bridge
     CHECK(disbanded());
+}
+
+TEST_CASE("ai: in Defend (Short Term) each entry gets the nearest idle defence fleet, and the fleets get no other orders") {
+    // Spec 05 §7.5 AI_Fleets *Orders* (confirmed: binary, questions 68, 69).
+    TempTree t("defendfleets");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 3\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 50\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u}, enemy{1u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    // Two empty sectors of the home system.
+    std::vector<Location> empty;
+    for (int x = 0; x < kSystemSize && empty.size() < 2; ++x)
+        for (int y = 0; y < kSystemSize && empty.size() < 2; ++y) {
+            const Location at{home.system, Sector{x, y}};
+            bool taken = false;
+            for (ObjectId o : s.galaxy.system(home.system).objects) taken = taken || s.galaxy.object(o).sector == at.sector;
+            if (!taken) empty.push_back(at);
+        }
+    REQUIRE(empty.size() == 2);
+    const Location side = empty[0], corner = empty[1];
+    const Location next{s.galaxy.neighbors(home.system).front(), Sector{kSystemCenter, kSystemCenter}};
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    auto fleetAt = [&](Location at) {
+        const VehicleId v = addTestVehicle(s, r, warship, at).id;
+        REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {v}}).ok);
+        return s.fleets.back().id;
+    };
+    // Three fleets, half for defence: fleet 1 attacks, fleets 2 and 3 defend.
+    const FleetId strike = fleetAt(home);
+    const FleetId far = fleetAt(next);
+    const FleetId guard = fleetAt(home);
+    // Intruders in the home system: the entry at the homeworld comes first
+    // (our population at stake), then the strongest of the other two.
+    const DesignId raider = addWarship(s, r, enemy, "Raider");
+    addTestVehicle(s, r, raider, home);
+    VehicleId sideLatest;
+    for (int i = 0; i < 3; ++i) sideLatest = addTestVehicle(s, r, raider, side).id;
+    addTestVehicle(s, r, raider, corner);
+    sight::updateKnowledge(r, s);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::DefendShortTerm);
+
+    auto plan = [&]() {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        REQUIRE(p.sit.defendEntries.size() == 3);
+        REQUIRE(p.sit.defendEntries[0].where == home);
+        REQUIRE(p.sit.defendEntries[1].where == side);
+        REQUIRE(p.sit.defendEntries[1].latest.vehicle == sideLatest);
+        ai::detail::planFleets(p);
+        std::map<FleetId, std::vector<Order>> orders;
+        for (FleetId f : {strike, far, guard}) orders[f] = fleetOrders(p.st, *p.st.fleet(f));
+        return orders;
+    };
+    auto orders = plan();
+    // The homeworld's entry: the defence fleet standing there attacks at once
+    // (the stored Attack). The next entry gets the other defence fleet, a jump
+    // away, a Seek after the entry's latest object, whatever the threat; the
+    // third entry gets none.
+    CHECK(orders[guard] == std::vector<Order>{ai::detail::attackHere()});
+    REQUIRE(orders[far].size() == 1);
+    CHECK(orders[far].front().kind == OrderKind::Seek);
+    CHECK(orders[far].front().vehicle == sideLatest);
+    // The attack fleet stays idle: no goal, patrol or exploration.
+    CHECK(orders[strike].empty());
+    // In a turn-based game the Seek goes to the entry's sector.
+    s.options.simultaneous = false;
+    orders = plan();
+    REQUIRE(orders[far].size() == 1);
+    CHECK(orders[far].front().kind == OrderKind::Seek);
+    CHECK_FALSE(orders[far].front().vehicle.valid());
+    CHECK(orders[far].front().location == side);
+    CHECK(orders[strike].empty());
+}
+
+TEST_CASE("ai: a leftover fleet explores with the player's Move To and the Warp, kept until it has warped") {
+    // Spec 05 §7.5 AI_Fleets *Orders* (confirmed: binary).
+    TempTree t("fleetexplore");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 1\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    const VehicleId leader = addTestVehicle(s, r, warship, home).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {leader}}).ok);
+    const FleetId fleet = s.fleets.back().id;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    REQUIRE(p.state == ai::AiState::Exploration);
+    REQUIRE_FALSE(p.sit.freeFrontier.empty());
+    const ObjectId wp = p.sit.freeFrontier.front();
+    ai::detail::planFleets(p);
+    const std::vector<Order> orders = fleetOrders(p.st, *p.st.fleet(fleet));
+    REQUIRE(orders.size() == 2);
+    CHECK(orders[0] == ai::detail::moveOrder(locationOf(s.galaxy, wp)));
+    CHECK(orders[1].kind == OrderKind::Warp);
+    CHECK(orders[1].object == wp);
+    // Under way, the fleet is not idle: the next turn plans nothing for it,
+    // and the point stays taken.
+    GameState next = p.st;
+    ai::detail::Planner q(r, next, me, ai::detail::Mode::Computer, 2);
+    CHECK(std::find(q.sit.freeFrontier.begin(), q.sit.freeFrontier.end(), wp) == q.sit.freeFrontier.end());
+    ai::detail::planFleets(q);
+    CHECK(fleetOrders(q.st, *q.st.fleet(fleet)) == orders);
 }
 
 TEST_CASE("ai: troop transports reload at the nearest colony with troops") {
@@ -2613,6 +2774,30 @@ TEST_CASE("ai: the Attack minister's ships attack where they stand, otherwise se
     CHECK(*atTarget == ai::detail::attackHere());
     CHECK(fromHome->kind == OrderKind::Seek);
     CHECK(fromHome->location == target);
+}
+
+TEST_CASE("ai: in Prepare for Attack the Attack minister sends the ships outside the staging system there") {
+    // Spec 05 §7.2 *Jumps* (confirmed: binary): the routine's test that a ship
+    // is more than one jump from the first target compares the AI's jump
+    // count (the jumps plus two) with 1, so it always passes.
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, enemy{1u};
+    meet(s, me, enemy);
+    s.empire(me).relation(enemy).treaty = s.empire(enemy).relation(me).treaty = Treaty::War;
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location target = locationOf(s.galaxy, homeworld(s, enemy).planet);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::PrepareForAttack);
+    s.empire(me).aiMemory.targets = {target.system};
+    s.empire(me).aiMemory.staging = home.system;
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    const VehicleId atTarget = addTestVehicle(s, r, warship, target).id;   // no jump from the first target at all
+    const VehicleId staged = addTestVehicle(s, r, warship, {home.system, Sector{kSystemCenter, kSystemCenter}}).id;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planAttack(p);
+    CHECK(p.st.vehicle(atTarget)->orders == std::vector<Order>{ai::detail::seekOrder(home)});
+    CHECK(p.st.vehicle(staged)->orders.empty());
 }
 
 TEST_CASE("ai: the ministers' movement orders are gone at each start of turn") {
@@ -2952,6 +3137,76 @@ TEST_CASE("ai: idle drones in range go after the targets, a set number per targe
             ++sent;
         }
     CHECK(sent == p.prof.settings.antiShipDronesPerTarget);
+}
+
+TEST_CASE("ai: drones go after targets whose AI jump count is at most the setting, so the setting less 2 jumps") {
+    // Spec 05 §7.5 *Mines, satellites and drones*, §7.2 *Jumps* (confirmed: binary).
+    TempTree t("dronereach");
+    t.write("Ai/Default_AI_Settings.txt", "Maximum Anti-Ship Drone Target System Distance := 3\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = newEngineGame(13, 2, 12, false);
+    exploreEverything(s);
+    const EmpireId enemy{0u}, cpu{1u};
+    meet(s, enemy, cpu);
+    s.empire(cpu).relation(enemy).treaty = Treaty::War;
+    s.empire(enemy).relation(cpu).treaty = Treaty::War;
+    const Location home = locationOf(s.galaxy, homeworld(s, cpu).planet);
+    const VehicleId intruder = addTestVehicle(s, r, addWarship(s, r, enemy, "Raider"), home).id;
+    const DesignId hunter = addTestDesign(s, r, cpu, "Hunter", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    s.design(hunter).designType = "Anti-Ship Drone";
+    const std::vector<int> jumps = ai::detail::jumpsOver(s, home.system);
+    std::optional<SystemId> one, two;
+    for (size_t i = 0; i < jumps.size(); ++i) {
+        if (jumps[i] == 1 && !one) one = SystemId{i};
+        if (jumps[i] == 2 && !two) two = SystemId{i};
+    }
+    REQUIRE(one);
+    REQUIRE(two);
+    const VehicleId far = addTestVehicle(s, r, hunter, {*two, Sector{kSystemCenter, kSystemCenter}}).id;
+    const VehicleId near = addTestVehicle(s, r, hunter, {*one, Sector{kSystemCenter, kSystemCenter}}).id;
+    sight::updateKnowledge(r, s);
+    Empire& e = s.empire(cpu);
+    if (std::find(e.knowledge.visibleVehicles.begin(), e.knowledge.visibleVehicles.end(), intruder) == e.knowledge.visibleVehicles.end()) {
+        e.knowledge.visibleVehicles.push_back(intruder);
+        std::sort(e.knowledge.visibleVehicles.begin(), e.knowledge.visibleVehicles.end());
+    }
+    ai::detail::Planner p(r, s, cpu, ai::detail::Mode::Computer, 3);
+    REQUIRE(p.prof.settings.antiShipDroneRange == 3);
+    ai::detail::planMinesSatellitesDrones(p);
+    CHECK(p.st.vehicle(far)->orders.empty());          // 2 jumps: a count of 4
+    REQUIRE(p.st.vehicle(near)->orders.size() == 1);   // 1 jump: a count of 3
+    CHECK(p.st.vehicle(near)->orders.front().vehicle == intruder);
+}
+
+TEST_CASE("ai: recruits come from within 1 jump of the fleet (an AI jump count below 4)") {
+    // Spec 05 §7.5 AI_Fleets *Size*, §7.2 *Jumps* (confirmed: binary).
+    TempTree t("recruitreach");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 1\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    const VehicleId leader = addTestVehicle(s, r, warship, home).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {leader}}).ok);
+    const std::vector<int> jumps = ai::detail::jumpsOver(s, home.system);
+    std::optional<SystemId> one, two;
+    for (size_t i = 0; i < jumps.size(); ++i) {
+        if (jumps[i] == 1 && !one) one = SystemId{i};
+        if (jumps[i] == 2 && !two) two = SystemId{i};
+    }
+    REQUIRE(one);
+    REQUIRE(two);
+    const VehicleId far = addTestVehicle(s, r, warship, {*two, Sector{kSystemCenter, kSystemCenter}}).id;
+    const VehicleId near = addTestVehicle(s, r, warship, {*one, Sector{kSystemCenter, kSystemCenter}}).id;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planFleets(p);
+    CHECK(p.st.vehicle(near)->orders == std::vector<Order>{ai::detail::joinFleetOrder(s.fleets.back().id)});
+    CHECK(p.st.vehicle(far)->orders.empty());
 }
 
 TEST_CASE("ai: acknowledgements get a chatter reply from the response pools") {
@@ -3608,7 +3863,10 @@ TEST_CASE("ai: defend entries are ordered by jumps, our population at stake, pla
     CHECK(order(true) == std::vector<uint32_t>{3, 2, 4, 5, 1});
 }
 
-TEST_CASE("ai: the 4-jump test starts on the 6th turn in the state and counts per target") {
+TEST_CASE("ai: the strength test around the targets starts on the 6th turn in the state, reaches 2 jumps and counts per target") {
+    // Spec 05 §7.2 Prepare for Attack step 4 and *Jumps* (confirmed: binary):
+    // the AI's jump count is the jumps plus two, and the test takes the
+    // systems whose count is below 5.
     GameState s = computerGame(13, 2, 0, 12);
     exploreEverything(s);
     const EmpireId me{0u}, enemy{1u};
@@ -3617,32 +3875,48 @@ TEST_CASE("ai: the 4-jump test starts on the 6th turn in the state and counts pe
     s.vehicles.clear();
     const SystemId home = ai::detail::homeSystem(s, me);
     const SystemId enemyHome = ai::detail::homeSystem(s, enemy);
-    const std::vector<int> fromHome = ai::detail::jumpsOver(s, home);
-    REQUIRE(fromHome[enemyHome.index()] <= 4);
     AiMemory& m = s.empire(me).aiMemory;
     m.targets = {enemyHome};
     m.staging = home;
     s.empire(me).aiState = static_cast<int>(ai::AiState::PrepareForAttack);
     const Rules& r = engineRules();
-    // Our strength near the target (our home colony, 1) is not above 3 × theirs
-    // (2: their homeworld, and once more as an attack candidate, spec 05 §7.2).
+    // Their strength in the target is 2 (their homeworld, and once more as an
+    // attack candidate, spec 05 §7.2): ours near it must be above 6.
     s.empire(me).aiTurnsInState = 4;
     CHECK(ai::nextState(r, s, me) == ai::AiState::PrepareForAttack);
     s.empire(me).aiTurnsInState = 5;
     CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
-    // Five points at home (two satellite groups of one, 2 each), and a second
-    // target near home: home counts once per target (10 > 6).
+    // Systems exactly 2 and 3 jumps from the target, over every link.
+    const std::vector<int> fromTarget = ai::detail::jumpsOver(s, enemyHome);
+    std::optional<SystemId> two, three;
+    for (size_t i = 0; i < fromTarget.size(); ++i) {
+        if (SystemId{i} == home) continue;
+        if (fromTarget[i] == 2 && !two) two = SystemId{i};
+        if (fromTarget[i] == 3 && !three) three = SystemId{i};
+    }
+    REQUIRE(two);
+    REQUIRE(three);
+    CHECK(ai::detail::aiJumpCount(2) == 4);
+    CHECK(ai::detail::aiJumpCount(ai::detail::kUnreachable) == ai::detail::kUnreachable);
+    // Eight points (a satellite group of seven) 2 jumps away count; 3 jumps away they do not.
     const DesignId sat = addTestDesign(s, r, me, "Buoy", "Test Satellite Hull", {"Test Satellite Gun"});
-    for (int i = 0; i < 2; ++i) addTestVehicle(s, r, sat, {home, Sector{kSystemCenter, kSystemCenter}}).count = 1;
+    const VehicleId group = addTestVehicle(s, r, sat, {*two, Sector{kSystemCenter, kSystemCenter}}).id;
+    s.vehicle(group)->count = 7;
+    CHECK(ai::nextState(r, s, me) == ai::AiState::PrepareForAttack);
+    s.vehicle(group)->location = {*three, Sector{kSystemCenter, kSystemCenter}};
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
+    // Four points 2 jumps away are not enough for one target, but count once
+    // per target: a second target within 2 jumps of them makes eight.
+    s.vehicle(group)->location = {*two, Sector{kSystemCenter, kSystemCenter}};
+    s.vehicle(group)->count = 3;
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
+    const std::vector<int> fromTwo = ai::detail::jumpsOver(s, *two);
     std::optional<SystemId> second;
-    for (size_t i = 0; i < fromHome.size() && !second; ++i)
-        if (SystemId{i} != home && SystemId{i} != enemyHome && fromHome[i] <= 4) second = SystemId{i};
+    for (size_t i = 0; i < fromTwo.size() && !second; ++i)
+        if (SystemId{i} != home && SystemId{i} != enemyHome && fromTwo[i] <= 2 && ai::detail::jumpsOver(s, home)[i] > 0) second = SystemId{i};
     REQUIRE(second);
-    const std::vector<int> fromSecond = ai::detail::jumpsOver(s, *second);
-    REQUIRE(fromSecond[home.index()] <= 4);
-    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);  // one target: 5 is not above 6
     m.targets = {enemyHome, *second};
-    CHECK(ai::nextState(r, s, me) == ai::AiState::Attack);  // 5 + 5 > 6, and the staging system is stronger
+    CHECK(ai::nextState(r, s, me) == ai::AiState::PrepareForAttack);
 }
 
 TEST_CASE("ai: design names count the Design minister's designs and skip names any empire uses") {
@@ -5600,18 +5874,81 @@ TEST_CASE("ai: the maintenance caps count the empire's ships and bases of the mo
 
     // Revenue that puts the warship's maintenance just under the soft cap:
     // the colony ships, which the maintenance paid includes, do not push it over.
-    Empire& e = s.empire(me);
     const int64_t m = ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).prof.settings.maxMaintenancePercent;
     REQUIRE(m > 0);
-    e.economy = {};
-    for (size_t k = 0; k < 3; ++k) e.economy.colonies.v[k] = (one.v[k] * 100 + m - 1) / m;
-    e.economy.maintenance = one + settlers;
+    Resources revenue;
+    for (size_t k = 0; k < 3; ++k) revenue.v[k] = (one.v[k] * 100 + m - 1) / m;
     for (size_t k = 0; k < 3; ++k)
-        if (one.v[k] > 0) REQUIRE(xmath::Ext(one.v[k] + settlers.v[k]) > xmath::Ext(e.economy.colonies.v[k]) * xmath::percent(m));
-    CHECK_FALSE(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
+        if (one.v[k] > 0) REQUIRE(xmath::Ext(one.v[k] + settlers.v[k]) > xmath::Ext(revenue.v[k]) * xmath::percent(m));
+    auto over = [&]() {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        p.capRevenue = revenue;
+        return p.overCap(0);
+    };
+    CHECK_FALSE(over());
     // A second warship counts at once, though no maintenance was paid for it yet.
     addTestVehicle(s, r, warship, home);
-    CHECK(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
+    CHECK(over());
+}
+
+TEST_CASE("ai: the caps compare in single precision, worked out exactly in integers") {
+    // Spec 05 §7.5 (confirmed: binary): M / 100 as a 32-bit float, the product
+    // with the revenue rounded to a float again. The integer form must agree
+    // with xmath::Ext's emulation of the x87 (the quotient and the product
+    // formed in its 64-bit format, then stored to a float).
+    using ai::detail::aboveSingleShare;
+    auto emulated = [](int64_t value, int64_t base, int64_t percent) {
+        const xmath::Ext f = (xmath::Ext(percent) / xmath::Ext(100)).roundedTo(xmath::kSingleBits);
+        return xmath::Ext(value) > (xmath::Ext(base) * f).roundedTo(xmath::kSingleBits);
+    };
+    // With the stock 80 the threshold is a hair above 80 %: 80 of 100 is not over it.
+    CHECK_FALSE(aboveSingleShare(80, 100, 80));
+    CHECK(aboveSingleShare(81, 100, 80));
+    // A product rounded down to a float: 16,777,217 × 1.0 is 16,777,216 as a float.
+    CHECK(aboveSingleShare(16'777'217, 16'777'217, 100));
+    CHECK_FALSE(aboveSingleShare(16'777'216, 16'777'217, 100));
+    CHECK(aboveSingleShare(1, 0, 80));
+    CHECK_FALSE(aboveSingleShare(0, 0, 80));
+    CHECK_FALSE(aboveSingleShare(0, 5, 0) == aboveSingleShare(1, 5, 0));
+    int64_t checked = 0, disagree = 0;
+    auto compare = [&](int64_t base, int64_t percent) {
+        // The values around the threshold.
+        const int64_t t = ((xmath::Ext(base) * (xmath::Ext(percent) / xmath::Ext(100)).roundedTo(xmath::kSingleBits)).roundedTo(xmath::kSingleBits)).trunc();
+        for (int64_t value = t - 1; value <= t + 1; ++value) {
+            ++checked;
+            if (aboveSingleShare(value, base, percent) != emulated(value, base, percent)) ++disagree;
+        }
+    };
+    for (int64_t percent = 0; percent <= 300; ++percent) {
+        for (int64_t base = 0; base <= 1200; ++base) compare(base, percent);
+        for (int64_t base = 1201; base < 2'000'000'000; base = base * 3 / 2 + 7) compare(base, percent);
+    }
+    CHECK(checked > 1'000'000);
+    CHECK(disagree == 0);
+    // Negative amounts follow the same rule.
+    for (int64_t base : {-1, -7, -1000, -123'456'789})
+        for (int64_t percent : {-30, 0, 17, 80, 100})
+            for (int64_t value : {-200'000'000, -1000, -1, 0, 1, 1000})
+                CHECK(aboveSingleShare(value, base, percent) == emulated(value, base, percent));
+}
+
+TEST_CASE("ai: the caps' revenue is worked out afresh from the colonies, the start-of-turn figure reused by the economy step") {
+    // Spec 05 §7.5 *Revenue* (confirmed: binary, question 71).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    const EmpireId me{0u};
+    economy::updateReports(r, s);
+    const Resources reported = ai::detail::revenueOf(s, me);
+    CHECK(ai::detail::capRevenueOf(r, s, me) == reported);
+    // A colony founded since the last income report counts at once.
+    const auto spot = freePlanetIn(s, s.galaxy.object(homeworld(s, me).planet).system);
+    REQUIRE(spot);
+    addColony(s, *spot, me, {{me, 500}}).facilities = {facilityIndex(r, "Test Mine")};
+    const Resources live = ai::detail::capRevenueOf(r, s, me);
+    CHECK(live != reported);
+    CHECK(ai::detail::revenueOf(s, me) == reported);   // the net income's revenue stays the report's
+    CHECK(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).capRevenue == live);
+    CHECK(ai::startOfTurnFigures(r, s, me).revenue == live);
 }
 
 TEST_CASE("ai: over the soft cap the oldest design goes: a ship wherever it is, sent to the nearest yard first; a base only at a yard") {
@@ -5657,24 +5994,88 @@ TEST_CASE("ai: over the soft cap the oldest design goes: a ship wherever it is, 
         REQUIRE(applyAll(r, copy, me, cmds).empty());
         CHECK(copy.vehicle(veteran)->orders == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
     }
-    // A base at a yard whose design is older goes first, where it stands.
+    // A base at a yard whose design is older goes first, where it stands: the
+    // scrap place is its own sector, and only the Scrap goes on its list.
     s.design(fortress).createdTurn = 1;
     cmds = plan(true);
     REQUIRE(firstOf<cmd::Scrap>(cmds));
     CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == fort);
-    CHECK_FALSE(firstOf<cmd::Scrap>(cmds)->moveFirst.system.valid());
+    CHECK(firstOf<cmd::Scrap>(cmds)->moveFirst == home);
+    {
+        GameState copy = s;
+        REQUIRE(applyAll(r, copy, me, cmds).empty());
+        CHECK(copy.vehicle(fort)->orders == std::vector<Order>{Order{OrderKind::Scrap, home}});
+    }
     // A base away from a yard is no candidate.
     s.vehicle(fort)->location = away;
     cmds = plan(true);
     REQUIRE(firstOf<cmd::Scrap>(cmds));
     CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == veteran);
-    // A candidate in a fleet leaves it first, as the Scrap order needs (inferred, Q72).
+    // Nothing asks whether the candidate is cloaked or busy (spec 05 Q72): the
+    // orders go straight onto its list, and the Scrap makes its own test when
+    // it is carried out.
+    s.vehicle(veteran)->status = VehicleStatus::Cloaked;
+    s.vehicle(veteran)->orders = {Order{OrderKind::Sentry}};
+    cmds = plan(true);
+    REQUIRE(firstOf<cmd::Scrap>(cmds));
+    CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == veteran);
+    {
+        GameState copy = s;
+        REQUIRE(applyAll(r, copy, me, cmds).empty());
+        CHECK(copy.vehicle(veteran)->orders == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
+    }
+    s.vehicle(veteran)->status = VehicleStatus::Normal;
+    s.vehicle(veteran)->orders.clear();
+    // A candidate in a fleet leaves it first: what a Scrap does to a fleet is
+    // open (spec 05 Q74), so OpenSE4 keeps its choice (inferred).
     REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {veteran}}).ok);
     cmds = plan(true);
     REQUIRE(firstOf<cmd::LeaveFleet>(cmds));
     CHECK(firstOf<cmd::LeaveFleet>(cmds)->vehicle == veteran);
     CHECK(countOf<cmd::Scrap>(cmds) == 1);
     CHECK(applyAll(r, s, me, cmds).empty());
+}
+
+TEST_CASE("ai: the scrap place is the nearest queue owner with a working yard, the earlier in the queue list on a tie") {
+    // Spec 05 §7.5 *Scrap* (confirmed: binary, question 72).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    s.turn = 12;
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const std::initializer_list<std::string_view> crew{"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Laser"};
+    const DesignId oldShip = typedDesign(s, r, me, "Old Hammer", "Test Frigate", crew, "Attack Ship", 2);
+    const DesignId yardShip = typedDesign(s, r, me, "Dock", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Yard Module"},
+                                          "Space Yard Ship", 9);
+    // A yard ship two squares from the candidate, the homeworld's yard farther off.
+    const int dx = home.sector.x < 6 ? 1 : -1;
+    const Location near{home.system, Sector{home.sector.x + 6 * dx, home.sector.y}};
+    const Location candidateAt{home.system, Sector{home.sector.x + 8 * dx, home.sector.y}};
+    const VehicleId dock = addTestVehicle(s, r, yardShip, near).id;
+    const VehicleId veteran = addTestVehicle(s, r, oldShip, candidateAt).id;
+    auto place = [&]() -> std::optional<Location> {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        p.capUpkeep = Resources{1'000'000, 1'000'000, 1'000'000};
+        ai::detail::planScrap(p);
+        const auto cmds = p.report().commands;
+        const cmd::Scrap* c = firstOf<cmd::Scrap>(cmds);
+        if (!c) return std::nullopt;
+        CHECK(c->vehicle == veteran);
+        return c->moveFirst;
+    };
+    CHECK(place() == near);
+    // A yard ship whose yard does not work (mothballed) is no scrap place.
+    s.vehicle(dock)->status = VehicleStatus::Mothballed;
+    CHECK(place() == home);
+    s.vehicle(dock)->status = VehicleStatus::Normal;
+    // Equally near: the homeworld's queue comes first in the queue list
+    // (planets before ships in a system).
+    s.vehicle(dock)->location = home;
+    s.vehicle(veteran)->location = home;
+    CHECK(place() == home);
 }
 
 TEST_CASE("ai: a new fleet forms around a ship that can move and that a fleet could take, never a troop transport or boarding ship") {
@@ -5726,6 +6127,15 @@ TEST_CASE("ai: a new fleet forms around a ship that can move and that a fleet co
     s.removeDeadVehicles();
     const VehicleId hammer = addTestVehicle(s, r, addWarship(s, r, me, "Hammer"), home).id;
     addTestVehicle(s, r, trooper, home);
+    CHECK(leader() == hammer);
+    // The search walks the vehicle list back from its end, in slot order, and
+    // asks nothing about orders (spec 05 Q72): the ship in the later slot
+    // leads, busy or not, whatever the vehicle ids.
+    const VehicleId anvil = addTestVehicle(s, r, addWarship(s, r, me, "Anvil"), home).id;
+    REQUIRE(s.vehicle(anvil)->slot > s.vehicle(hammer)->slot);
+    s.vehicle(anvil)->orders = {ai::detail::moveOrder(home)};
+    CHECK(leader() == anvil);
+    std::swap(s.vehicle(anvil)->slot, s.vehicle(hammer)->slot);
     CHECK(leader() == hammer);
 }
 
@@ -5925,16 +6335,15 @@ TEST_CASE("ai: the facility upgrades spend the net income the start-of-turn step
             if (const auto* q = as<cmd::QueueAdd>(c)) n += q->item.kind == QueueItem::Kind::Upgrade;
         return n;
     };
-    // The start-of-turn step hands its figure over: the net income of that moment.
-    std::optional<Resources> start;
-    ai::planOrdersAfterPolitics(r, s, me, nullptr, nullptr, &start);
-    REQUIRE(start.has_value());
-    CHECK(*start == ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).netIncome());
-    REQUIRE(start->v[0] < 0);
+    // The start-of-turn step works its figure out first thing: the net income of that moment.
+    const ai::StartOfTurnFigures start = ai::startOfTurnFigures(r, s, me);
+    CHECK(start.net == ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).netIncome());
+    REQUIRE(start.net.v[0] < 0);
     // The economy step's upgrades spend the figure handed over, not one of their own.
-    const Resources plenty{1'000'000, 1'000'000, 1'000'000};
+    ai::StartOfTurnFigures plenty = start;
+    plenty.net = Resources{1'000'000, 1'000'000, 1'000'000};
     CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, &plenty)) == 2);
-    CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, &*start)) == 0);
+    CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, &start)) == 0);
     // Without one, the step works it out as it starts: below 0, nothing is upgraded.
     CHECK(upgrades(ai::planEconomyStep(r, s, me, 0, nullptr, nullptr)) == 0);
 }

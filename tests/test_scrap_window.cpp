@@ -446,8 +446,10 @@ TEST_CASE("scrap window: in a turn-based game each action is carried out at once
 }
 
 TEST_CASE("scrap window: the Scrap minister's form moves a vehicle to a yard first and scraps it there") {
-    // Spec 05 §7.5 *Scrap* (confirmed: binary): a Move To the nearest sector
-    // with our yard, then Scrap, in either turn style (cmd::Scrap::moveFirst).
+    // Spec 05 §7.5 *Scrap* (confirmed: binary): a Move To the scrap place when
+    // the vehicle can move and stands elsewhere, then Scrap, put straight onto
+    // its list without the Scrap window's checks, in either turn style
+    // (cmd::Scrap::moveFirst); the Scrap makes its test when carried out.
     const Rules& r = engineRules();
     for (const bool simultaneous : {true, false}) {
         CAPTURE(simultaneous);
@@ -456,10 +458,15 @@ TEST_CASE("scrap window: the Scrap minister's form moves a vehicle to a yard fir
         const Location away{home.system, Sector{home.sector.x == 0 ? 1 : home.sector.x - 1, home.sector.y}};   // one move away
         const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod"});
         const VehicleId id = addTestVehicle(s, r, plain, away).id;
-        CHECK_FALSE(apply(r, s, kMe, cmd::Scrap{id}).ok);                        // no yard where it stands
-        CHECK_FALSE(apply(r, s, kMe, cmd::Scrap{id, {}, -1, away}).ok);          // nor where it would go
+        CHECK_FALSE(apply(r, s, kMe, cmd::Scrap{id}).ok);                        // the window's form: no yard where it stands
+        // The minister's form asks nothing: a place without a yard gets the Scrap
+        // alone, and a vehicle that cannot move gets no Move To.
+        REQUIRE(apply(r, s, kMe, cmd::Scrap{id, {}, -1, away}).ok);
+        CHECK(s.vehicle(id)->orders == std::vector<Order>{Order{OrderKind::Scrap, away}});
         const DesignId inert = addTestDesign(s, r, kMe, "Inert", "Test Frigate", {"Test Bridge"});
-        CHECK_FALSE(apply(r, s, kMe, cmd::Scrap{addTestVehicle(s, r, inert, away).id, {}, -1, home}).ok);   // it cannot move
+        const VehicleId stuck = addTestVehicle(s, r, inert, away).id;
+        REQUIRE(apply(r, s, kMe, cmd::Scrap{stuck, {}, -1, home}).ok);
+        CHECK(s.vehicle(stuck)->orders == std::vector<Order>{Order{OrderKind::Scrap, away}});
         REQUIRE(apply(r, s, kMe, cmd::Scrap{id, {}, -1, home}).ok);
         CHECK(s.vehicle(id)->orders == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
         CHECK_FALSE(s.vehicle(id)->repeatOrders);
@@ -467,6 +474,9 @@ TEST_CASE("scrap window: the Scrap minister's form moves a vehicle to a yard fir
         movementPhase(r, s);
         CHECK(s.vehicle(id) == nullptr);
         CHECK(s.design(plain).scrapped == 1);
+        // Where no yard stands the Scrap fails when carried out and clears the list.
+        REQUIRE(s.vehicle(stuck));
+        CHECK(s.vehicle(stuck)->orders.empty());
     }
 }
 

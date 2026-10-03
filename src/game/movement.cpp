@@ -236,7 +236,15 @@ public:
                 acted_.insert(id);
                 // A fleet acts through its first member, in object order, that
                 // is due and has orders (spec 03 §6.3 step 5, §19 Q65).
-                if (v->orders.empty()) continue;
+                if (v->orders.empty()) {
+                    // A vehicle with movement acts on its counter's days with
+                    // or without orders, so an idle one marks its sector for
+                    // the day's battle check (spec 03 §6.3 steps 3 and 6,
+                    // spec 04 §2, confirmed: binary). One with no movement
+                    // acts only when it has orders.
+                    if (!dayOneOnly(*v)) touched_.push_back(v->location);
+                    continue;
+                }
                 action(ActorRef{id, {}});
             }
             resolveCombat();
@@ -1936,7 +1944,7 @@ private:
     std::set<VehicleId> participants_;                  // who took part in the action
     std::map<RouteKey, Route> routes_;
     std::vector<VehicleId> objectOrder_;                // the vehicles in object order (refreshed each day)
-    std::vector<Location> touched_;                     // simultaneous: sectors where an order was carried out today
+    std::vector<Location> touched_;                     // simultaneous: sectors where an object acted today
     std::vector<Entry> entered_;                        // steps made today
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase
     bool checkHere_ = false;                            // turn-based: the last action's Attack or Seek runs a battle check

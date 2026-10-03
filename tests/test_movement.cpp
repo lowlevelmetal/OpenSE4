@@ -766,10 +766,11 @@ TEST_CASE("movement: repair orders and repair by priority, aptitude and culture"
     CHECK(lone.v(stray).orders.empty());
 }
 
-TEST_CASE("movement: combat is offered once per sector and phase, only where orders were executed") {
+TEST_CASE("movement: combat is offered once per sector and phase, only where an object acted") {
     World w;
     const SystemId a = w.system("A");
-    // Speed 4 steps on days 8, 16 and 23 (spec 03 §6.3).
+    // Speed 4 steps on days 8, 16 and 23 (spec 03 §6.3); the idle guard, speed
+    // 3, acts on days 10 and 20 and marks its sector then (spec 03 §6.3 step 6).
     const VehicleId raider = w.spawn(w.ship(kA, "Raider", 4), at(a, 0, 6));
     const VehicleId guard = w.spawn(w.ship(kB, "Guard", 3), at(a, 3, 6));
     fuel(w, raider);
@@ -778,7 +779,7 @@ TEST_CASE("movement: combat is offered once per sector and phase, only where ord
     CombatSpy spy;
     spy.fight = hostilesMeet;
     w.move(spy.hooks());
-    CHECK(spy.asked == std::vector<Location>{at(a, 1, 6), at(a, 2, 6), at(a, 3, 6)});
+    CHECK(spy.asked == std::vector<Location>{at(a, 1, 6), at(a, 3, 6), at(a, 2, 6), at(a, 3, 6), at(a, 3, 6)});
     REQUIRE(spy.fought.size() == 1);
     CHECK(spy.fought[0].second == at(a, 3, 6));
     // Combat is told who stepped in that day (the mines' victims, spec 04 §10.6),
@@ -793,11 +794,13 @@ TEST_CASE("movement: combat is offered once per sector and phase, only where ord
     CHECK(w.v(raider).orders.front() == moveTo(a, 6, 6));
     CHECK(w.v(guard).location == at(a, 3, 6));
 
-    // Idle hostiles sharing a sector are not offered again; the raider moves on.
+    // The raider moves on before the idle guard acts: the guard's sector is
+    // checked on its days, with no one to fight.
     CombatSpy again;
     again.fight = hostilesMeet;
     w.move(again.hooks());
-    CHECK(std::find(again.asked.begin(), again.asked.end(), at(a, 3, 6)) == again.asked.end());
+    CHECK(std::count(again.asked.begin(), again.asked.end(), at(a, 3, 6)) == 2);
+    CHECK(again.fought.empty());
     CHECK(w.v(raider).location == at(a, 6, 6));
 
     // Two ships entering the same sector on the same day: one offer.
@@ -814,18 +817,25 @@ TEST_CASE("movement: combat is offered once per sector and phase, only where ord
     CHECK(twin.asked.size() == 3);
 }
 
-TEST_CASE("movement: simultaneous games check every sector where an order was carried out, a waiting Sentry included") {
-    // Spec 04 §2 (confirmed: binary).
+TEST_CASE("movement: simultaneous games check every sector where an object acted, a waiting Sentry and an idle ship included") {
+    // Spec 03 §6.3 steps 3 and 6, spec 04 §2 (confirmed: binary).
     World w;
     const SystemId a = w.system("A");
     const VehicleId watch = w.spawn(w.ship(kA, "Watch", 4), at(a, 5, 5));  // acts on days 8, 16 and 23
     fuel(w, watch);
     w.order(watch, mk(OrderKind::Sentry));
-    const VehicleId idle = w.spawn(w.ship(kA, "Idle", 4), at(a, 7, 7));  // no orders: never checked
+    const VehicleId idle = w.spawn(w.ship(kA, "Idle", 4), at(a, 7, 7));  // no orders: acts on the same days all the same
     fuel(w, idle);
+    // A vehicle without movement acts only when it has orders (day 1): an idle one marks nothing.
+    Design post;
+    post.owner = kA;
+    post.name = "Post";
+    post.hull = test::hullIndex(w.rules(), "Test Frigate");
+    for (auto c : {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Mv Tank"}) post.entries.push_back({test::componentIndex(w.rules(), c), -1});
+    w.spawn(addDesign(w.s, std::move(post)), at(a, 9, 9));
     CombatSpy spy;
     w.move(spy.hooks());
-    CHECK(spy.asked == std::vector<Location>(3, at(a, 5, 5)));
+    CHECK(spy.asked == std::vector<Location>{at(a, 5, 5), at(a, 7, 7), at(a, 5, 5), at(a, 7, 7), at(a, 5, 5), at(a, 7, 7)});
     for (const auto& group : spy.checkers) CHECK(group.empty());  // the day's check of the sector
     CHECK(w.v(watch).orders.size() == 1);
 }
@@ -1283,7 +1293,7 @@ TEST_CASE("movement: the ministers' Seek lasts one movement phase") {
         CHECK(w.v(hunter).location == at(a, 3, 3));  // the Seek ended at once and the Move To ran
         CHECK(w.v(hunter).orders.empty());
     }
-    SUBCASE("simultaneous: a Seek waiting at its goal is checked for battle on every action, the stored Attack once") {
+    SUBCASE("simultaneous: a Seek waiting at its goal is checked for battle on every action, the stored Attack once and then the idle ship") {
         for (const bool stored : {false, true}) {
             CAPTURE(stored);
             World w;
@@ -1294,7 +1304,9 @@ TEST_CASE("movement: the ministers' Seek lasts one movement phase") {
             w.order(gunboat, stored ? mk(OrderKind::Attack) : mk(OrderKind::Seek, at(a, 5, 5)));
             CombatSpy spy;
             w.move(spy.hooks());
-            CHECK(spy.asked == std::vector<Location>(stored ? 1 : 3, at(a, 5, 5)));
+            // The stored Attack is done on day 8; the idle gunboat still acts,
+            // and marks its sector, on days 16 and 23.
+            CHECK(spy.asked == std::vector<Location>(3, at(a, 5, 5)));
             CHECK(w.v(gunboat).location == at(a, 5, 5));
             CHECK(w.v(gunboat).orders.empty());
         }
