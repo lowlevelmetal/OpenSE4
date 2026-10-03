@@ -83,7 +83,7 @@ The **Tactical Combat Orders** window holds:
 Your drones always act by themselves, at the start of your phase. Pieces you leave idle do not
 fire by themselves.
 
-The **Combat Options** window, headed *Options In Use*, holds the animation of ship movement,
+The **Combat Options** window, headed *Options In Use*, holds check boxes for the animation of ship movement,
 sound and music, *Fast Tactical Combat*, and display switches: group identifiers, the viewing
 rectangle on the map, centring the map on the current ship, the chance to hit of each weapon when
 you point at an enemy, and the grid. In the simulator it also has `Stop Combat`. *Music On* is
@@ -116,14 +116,16 @@ When troops land during the battle, the Ground Combat window opens and the battl
 ## Replays
 
 Select a battle in the [Log](window:log) and press `Combat Replay` to play it back in the
-**Combat Replay** window. It looks like the tactical window, with a list of what happens in each
-combat turn: moves, shots, hits, misses, launches and losses, and a summary at the end.
+**Combat Replay** window. It looks like the tactical window without its panels: the map, an
+empty weapon grid on the right, `Options` and `Next` under it and the overview map at the
+bottom. The view stays where you put it: click the overview, scroll with the arrow keys, or
+zoom with the mouse wheel.
 
-- `Next` (or `Space`) plays the next combat turn.
-- `Options` opens the replay's options: animation, *Fast Tactical Combat*, the viewing rectangle, the grid, and `Stop Replay`.
+- `Next` (or `Space`) plays the next combat turn; it dims after the last one.
+- `Options` opens the replay's options: animation, *Fast Tactical Combat*, the viewing rectangle, the grid, and `Stop Replay`. Under *OpenSE4*, *List each combat turn's events and the summary* shows, in place of the empty grid, what happens in each combat turn (moves, shots, hits, misses, launches and losses) and a summary at the end.
 - `Esc` closes the replay.
 
-Point at a piece to see its design and owner.
+Point at a piece to see its design and owner at the top right.
 
 ## The Combat Simulator
 
