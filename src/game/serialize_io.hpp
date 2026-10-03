@@ -383,7 +383,7 @@ void io(Ar& ar, InterfaceOptions& o) {
 
 template <class Ar>
 void io(Ar& ar, Empire& e) {
-    fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.alive, e.passwordHash,
+    fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.neutral, e.alive, e.passwordHash,
            e.racialPointsSpent);
     fields(ar, e.stockpile, e.economy);
     fields(ar, e.techLevels, e.research, e.researchEvenly, e.repeatResearch, e.uniqueAreasUnlocked, e.researchPool);
@@ -590,7 +590,7 @@ template <class Ar> void io(Ar& ar, cmd::SetColonyTypes& c) { fields(ar, c.colon
 template <class Ar> void io(Ar& ar, cmd::SetEmpireOptions& c) { fields(ar, c.aiMinimalChanges, c.passwordHash, c.chooseColonyType); }
 template <class Ar>
 void io(Ar& ar, cmd::SetMinisters& c) {
-    fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi);
+    fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi, c.fleets);
 }
 template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) {
     fields(ar, c.clearOrdersOnEncounter, c.avoidTaggedMinefields, c.avoidRestrictedSystems);

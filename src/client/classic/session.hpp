@@ -253,6 +253,8 @@ public:
 private:
     // Adds a command to this turn's orders.
     void record(game::Command c);
+    void carryFlags(const game::Command& c);
+    void clearOrders();
     game::CommandResult issueCommand(game::Command c);
     void beginTurn();
     // Turn-based games: plays up to a human player's turn and hands the
@@ -290,6 +292,11 @@ private:
     std::string masterVerifier_;
     uint64_t revision_ = 1;
     std::vector<game::Command> orders_;
+    // The Players window switched our own empire this turn (a player's copy):
+    // the objects changed since carry their flags (carryFlags), once each.
+    bool switchedOwn_ = false;
+    std::vector<game::VehicleId> flagged_;
+    std::vector<game::ObjectId> flaggedPlanets_;
     std::vector<uint8_t> ended_;  // hotseat: humans who ended this turn
     bool waiting_ = false;
     std::unique_ptr<TurnTransport> transport_;

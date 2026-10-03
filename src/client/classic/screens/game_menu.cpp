@@ -347,8 +347,8 @@ private:
     // One row per empire in empire-number order, neutral and destroyed ones
     // included; a lit lamp means computer-controlled. A click flips the lamp;
     // OK applies every row clicked at least once, with its final state, even
-    // one clicked back; Cancel applies nothing. A neutral empire keeps its
-    // lamp: OpenSE4 keeps neutrality in the same field as the mark (inferred).
+    // one clicked back; Cancel applies nothing. A neutral empire switches like
+    // any other and stays neutral (spec 06 §7 Q84, confirmed: binary).
     void playersPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({420, 0}));
         if (!ImGui::BeginPopupModal("Empires Under Computer Control", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
@@ -360,8 +360,8 @@ private:
             const size_t i = e.id.index();
             ImGui::PushID(int(i));
             bool on = lamps_[i] != 0;
-            const bool neutral = e.kind == game::PlayerKind::Neutral;
-            if (lampToggle(ui, "##lamp", &on, !neutral)) {
+            const bool neutral = game::isNeutral(e);
+            if (lampToggle(ui, "##lamp", &on)) {
                 lamps_[i] = on;
                 clicked_[i] = 1;
             }

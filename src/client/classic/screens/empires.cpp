@@ -273,7 +273,7 @@ private:
         switch (tab_) {
             case Tab::Treaty: {
                 statLine(ui, "Race", them.race.name);
-                statLine(ui, "Player", them.kind == game::PlayerKind::Human ? "Human" : them.kind == game::PlayerKind::Neutral ? "Neutral" : "Computer");
+                statLine(ui, "Player", game::isNeutral(them) ? "Neutral" : them.kind == game::PlayerKind::Human ? "Human" : "Computer");
                 if (rel.treaty != Treaty::None) statLine(ui, "Since", formatDate(rel.treatyTurn));
                 statLine(ui, "Last war", rel.lastWarTurn >= 0 ? formatDate(uint32_t(rel.lastWarTurn)) : "Never");
                 if (them.kind != game::PlayerKind::Human) {
@@ -826,7 +826,7 @@ private:
         // The race age for every race, the experience behind it only for our own (spec 02 §9, §11).
         labelValue(ui, "Age", std::string(game::economy::raceAge(e.experience)));
         if (e.id == ui.session.player()) labelValue(ui, "Experience", formatNumber(e.experience));
-        labelValue(ui, "Player", e.kind == game::PlayerKind::Human ? "Human" : e.kind == game::PlayerKind::Computer ? "Computer" : "Neutral");
+        labelValue(ui, "Player", game::isNeutral(e) ? "Neutral" : e.kind == game::PlayerKind::Human ? "Human" : "Computer");
         if (e.id != ui.session.player()) {
             const game::Relation& rel = ui.me().relation(e.id);
             labelValue(ui, "Treaty", rel.contact ? treatyText(rel) : "No contact");

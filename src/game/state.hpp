@@ -280,6 +280,11 @@ struct Empire {
     Race race;
     uint32_t color = 0xffffff;
     PlayerKind kind = PlayerKind::Human;
+    // A neutral empire handed to a human player (kind Human): neutrality is a
+    // mark of its own that no window changes, so it stays neutral while a
+    // human plays it (spec 06 §7 Q84, confirmed: binary). Computer-controlled
+    // neutral empires have kind Neutral and this false. isNeutral() reads both.
+    bool neutral = false;
     bool alive = true;
     std::string passwordHash;
     int racialPointsSpent = 0;
@@ -373,6 +378,10 @@ struct Empire {
     Relation& relation(EmpireId e) { return relations[e.index()]; }
     bool hasExplored(SystemId s) const { return s.index() < knowledge.explored.size() && knowledge.explored[s.index()]; }
 };
+
+// A neutral empire (spec 01 §8): computer-controlled ones have kind Neutral, a
+// neutral empire a human plays keeps the mark Empire::neutral (spec 06 §7 Q84).
+inline bool isNeutral(const Empire& e) { return e.kind == PlayerKind::Neutral || e.neutral; }
 
 // ---- Orders (spec 03 §8) -------------------------------------------------------------------------
 

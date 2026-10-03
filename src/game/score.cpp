@@ -139,7 +139,7 @@ void checkDestruction(TurnContext& ctx, EmpireId id, bool lastTurnPlayed) {
     // §6). Neutral empires do not count (OpenSE4 choice, inferred).
     std::vector<EmpireId> left;
     for (const Empire& x : s.empires)
-        if (x.alive && x.kind != PlayerKind::Neutral) left.push_back(x.id);
+        if (x.alive && !isNeutral(x)) left.push_back(x.id);
     if (left.size() == 1) {
         logGoto(ctx.log(left.front(), LogCategory::Politics, "Last Empire Standing", "Every other empire has been destroyed. The game goes on."),
                 LogGoto::None);
@@ -336,7 +336,7 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
     s.winner = {};
     int64_t best = 0;
     for (const auto& [id, sc] : scores)
-        if (s.empire(id).kind != PlayerKind::Neutral && (!s.winner.valid() || sc > best)) {
+        if (!isNeutral(s.empire(id)) && (!s.winner.valid() || sc > best)) {
             s.winner = id;
             best = sc;
         }

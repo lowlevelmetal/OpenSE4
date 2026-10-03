@@ -899,11 +899,13 @@ void ClassicMode::drawNetwork(UiContext& ui) {
     ImGui::PopFont();
 }
 
-// The host's list of empires: "Toggle Empire AI On/Off" for every empire a
-// player joined, which asks "Change Empire Control" and flips only the
-// empire's computer-controlled mark (spec 05 §9.4, confirmed: binary). The
-// player column shows "[Computer]", or "[Host]" for an empire handed back that
-// no player is connected to.
+// The host's list of empires: one row per empire but the host's own, the
+// players' empires and every computer player made at setup alike, each with
+// "Toggle Empire AI On/Off", which asks "Change Empire Control" and flips only
+// the empire's computer-controlled mark (spec 05 §9.4, spec 06 §7 Q84,
+// confirmed: binary). The player column shows "[Computer]" for a
+// computer-controlled empire, and "[Host]" for a human-controlled one no
+// player is connected to (a computer player handed to human control is one).
 void ClassicMode::drawHostEmpires(UiContext& ui) {
     auto* transport = dynamic_cast<HostTransport*>(session_->transport());
     if (!transport || !transport->host().state()) return;
@@ -916,9 +918,9 @@ void ClassicMode::drawHostEmpires(UiContext& ui) {
             if (st.empire.index() >= s.empires.size()) continue;
             const game::Empire& e = s.empire(st.empire);
             const net::LobbySlot* slot = st.empire.index() < host.lobby().slots.size() ? &host.lobby().slots[st.empire.index()] : nullptr;
-            if (!slot || slot->kind != net::SlotKind::Human || slot->local) continue;
+            if (!slot || slot->local) continue;
             ImGui::PushID(int(st.empire.index()));
-            const bool computer = e.kind == game::PlayerKind::Computer;
+            const bool computer = e.kind != game::PlayerKind::Human;
             ImGui::TextUnformatted(e.name.c_str());
             ImGui::SameLine(ui.px(170));
             ImGui::TextDisabled("%s", computer ? "[Computer]" : st.connected ? slot->player.c_str() : "[Host]");
@@ -931,7 +933,7 @@ void ClassicMode::drawHostEmpires(UiContext& ui) {
         }
         if (ImGui::BeginPopupModal("Change Empire Control", nullptr, ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
             const bool valid = toggleAsked_.valid() && toggleAsked_.index() < s.empires.size();
-            const bool toComputer = valid && s.empire(toggleAsked_).kind != game::PlayerKind::Computer;
+            const bool toComputer = valid && s.empire(toggleAsked_).kind == game::PlayerKind::Human;
             if (valid)
                 ImGui::TextWrapped("%s", std::format("Hand the {} to {} control?", s.empire(toggleAsked_).name, toComputer ? "AI" : "human").c_str());
             const std::optional<bool> key = yesNoKey();

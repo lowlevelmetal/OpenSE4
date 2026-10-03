@@ -36,7 +36,7 @@ movement::RouteOptions routeOptions(const Rules& r, const GameState& s, const Or
         const Vehicle* v = s.vehicle(id);
         return v && vehicleType(r, s, *v) == VehicleType::Fighter;
     });
-    const bool neutral = ctx.owner.valid() && ctx.owner.index() < s.empires.size() && s.empire(ctx.owner).kind == PlayerKind::Neutral;
+    const bool neutral = ctx.owner.valid() && ctx.owner.index() < s.empires.size() && isNeutral(s.empire(ctx.owner));
     options.allowWarp = !fighters && !neutral;
     const VehicleId leadId = ctx.lead.valid() ? ctx.lead : ctx.members.empty() ? VehicleId{} : ctx.members.front();
     if (const Vehicle* lead = leadId.valid() ? s.vehicle(leadId) : nullptr) options.sweeper = movement::leadsSweeperGroup(s, *lead);

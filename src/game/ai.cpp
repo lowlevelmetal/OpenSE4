@@ -176,7 +176,7 @@ std::vector<SystemId> computeTerritory(const GameState& s, EmpireId id) {
     std::vector<uint8_t> mine(nSys, 0);
     for (const auto& c : s.colonies)
         if (c && c->owner == id) mine[s.galaxy.object(c->planet).system.index()] = 2;
-    if (e.kind != PlayerKind::Neutral) {
+    if (!isNeutral(e)) {
         // One warp jump over every link of the map, known or not (spec 05 §7.2).
         for (size_t i = 0; i < nSys; ++i) {
             if (mine[i] != 2) continue;
@@ -223,7 +223,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
     const Empire& e = s.empire(id);
     const size_t nSys = s.galaxy.systems.size();
     const size_t nEmp = s.empires.size();
-    const bool neutral = e.kind == PlayerKind::Neutral;
+    const bool neutral = isNeutral(e);
     Situation sit;
     sit.home = homeSystem(s, id);
     if (!sit.home.valid())
@@ -449,7 +449,7 @@ Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uin
       rng(mix(mix(mix(s.seed) ^ s.turn) ^ (uint64_t{e.value} << 20) ^ salt)) {
     difficulty = difficultyOf(s, e);
     date = aiDate(s);
-    neutral = emp().kind == PlayerKind::Neutral;
+    neutral = isNeutral(emp());
 
     const size_t nSys = st.galaxy.systems.size();
     links.resize(nSys);
@@ -1060,10 +1060,13 @@ std::string_view moodLabel(int anger) {
 bool setComputerMark(GameState& s, EmpireId e, bool computer) {
     if (!e.valid() || e.index() >= s.empires.size()) return false;
     Empire& emp = s.empire(e);
-    if (emp.kind == PlayerKind::Neutral) return false;
     // The stored difficulty a human's ministers play at; a computer player keeps its own.
     if (computer && emp.aiDifficulty < 0) emp.aiDifficulty = kDifficultyMedium;
-    emp.kind = computer ? PlayerKind::Computer : PlayerKind::Human;
+    // Only the mark changes: neutrality is a mark of its own, so a neutral
+    // empire handed to a human stays neutral (spec 06 §7 Q84, confirmed: binary).
+    const bool neutral = isNeutral(emp);
+    emp.kind = computer ? (neutral ? PlayerKind::Neutral : PlayerKind::Computer) : PlayerKind::Human;
+    emp.neutral = neutral && !computer;
     return true;
 }
 

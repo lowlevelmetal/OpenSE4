@@ -94,10 +94,17 @@ TEST_CASE("computer control: the window's switch sets the mark, every minister a
     CHECK(s.empire(kOther).kind == PlayerKind::Computer);
     CHECK(s.empire(kOther).ministers == 5);
     CHECK_FALSE(s.empire(kOther).ministerAll);
-    // Neutral empires keep their kind (OpenSE4 keeps neutrality in the mark's field).
+    // A neutral empire switches like any other and stays neutral: neutrality
+    // is a mark of its own (spec 06 §7 Q84).
     s.empire(kOther).kind = PlayerKind::Neutral;
-    CHECK_FALSE(ai::setComputerControl(s, kOther, false));
+    REQUIRE(ai::setComputerControl(s, kOther, false));
+    CHECK(s.empire(kOther).kind == PlayerKind::Human);
+    CHECK(isNeutral(s.empire(kOther)));
+    CHECK(ai::anyHumanLeft(s));
+    REQUIRE(ai::setComputerMark(s, kOther, true));
     CHECK(s.empire(kOther).kind == PlayerKind::Neutral);
+    CHECK_FALSE(s.empire(kOther).neutral);
+    CHECK(isNeutral(s.empire(kOther)));
     CHECK_FALSE(ai::setComputerControl(s, EmpireId{99u}, true));
 }
 
@@ -178,30 +185,67 @@ TEST_CASE("computer control: the local session switches empires and ends with th
 }
 
 TEST_CASE("computer control: on a player's copy only the copy changes, and the orders carry its own ministers") {
+    // Spec 06 §1.2.1, §7 Q84 (confirmed: binary): the orders file carries the
+    // empire's own data (its minister switches, its fleets' flags) always, and
+    // of its ships, units and colonies only those changed during the turn.
+    const Rules& r = engineRules();
     GameState s = newGame(true, true);
+    const DesignId design = addTestDesign(s, r, kMe, "Courier", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    const Location home = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const VehicleId early = addTestVehicle(s, r, design, home).id;
+    const VehicleId late = addTestVehicle(s, r, design, home).id;
+    const VehicleId idle = addTestVehicle(s, r, design, home).id;
     client::classic::ClassicSession session(sharedRules(), std::move(s), kMe, client::classic::SessionKind::Pbem);
     session.setComputerControl({{kOther, true}});
     CHECK(session.state().empire(kOther).kind == PlayerKind::Computer);  // the local copy
     CHECK(session.ordersThisTurn().empty());                               // nothing about other empires
+    // An order before the switch marks that ship as changed this turn.
+    cmd::SetOrders before;
+    before.vehicle = early;
+    REQUIRE(session.issue(before).ok);
     session.setComputerControl({{kMe, true}});
     CHECK(session.state().empire(kMe).kind == PlayerKind::Computer);
-    // The orders carry the minister switches and flags, never the mark.
+    CHECK(flagsAre(session.state(), kMe, true));  // the local copy: every flag
+    // An order after it marks another.
+    cmd::SetOrders after;
+    after.vehicle = late;
+    REQUIRE(session.issue(after).ok);
+    // The orders carry the minister switches, the fleets' flags and the flags
+    // of the changed objects only, never the mark.
     const auto& orders = session.ordersThisTurn();
-    REQUIRE(orders.size() == 2);
-    const auto* m = std::get_if<cmd::SetMinisters>(&orders[0]);
+    const auto* m = std::get_if<cmd::SetMinisters>(&orders[1]);
     REQUIRE(m);
     CHECK(m->areas == kAllMinisters);
-    CHECK(m->individual == true);
-    const auto* all = std::get_if<cmd::SetMinister>(&orders[1]);
+    CHECK(m->fleets == true);
+    CHECK_FALSE(m->individual.has_value());
+    const auto* all = std::get_if<cmd::SetMinister>(&orders[2]);
     REQUIRE(all);
     CHECK(all->empireWide);
     CHECK(all->on);
-    // The host, reading them, switches every minister on but keeps the empire human.
+    std::vector<VehicleId> flagged;
+    for (const Command& c : orders)
+        if (const auto* f = std::get_if<cmd::SetMinister>(&c); f && f->vehicle.valid()) {
+            CHECK(f->on);
+            flagged.push_back(f->vehicle);
+        }
+    std::sort(flagged.begin(), flagged.end());
+    std::vector<VehicleId> want{early, late};
+    std::sort(want.begin(), want.end());
+    CHECK(flagged == want);
+    // The host, reading them, switches every minister on but keeps the empire
+    // human; the ship nobody touched keeps its flag there.
     GameState host = newGame(true, true);
+    addTestDesign(host, r, kMe, "Courier", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    REQUIRE(addTestVehicle(host, r, design, home).id == early);
+    REQUIRE(addTestVehicle(host, r, design, home).id == late);
+    REQUIRE(addTestVehicle(host, r, design, home).id == idle);
     for (const Command& c : orders) REQUIRE(apply(engineRules(), host, kMe, c).ok);
     CHECK(host.empire(kMe).kind == PlayerKind::Human);
     CHECK(host.empire(kMe).ministerAll);
     CHECK(host.empire(kMe).ministers == kAllMinisters);
+    CHECK(host.vehicle(early)->minister);
+    CHECK(host.vehicle(late)->minister);
+    CHECK_FALSE(host.vehicle(idle)->minister);
 }
 
 TEST_CASE("computer control: a game file with a master password asks for it, exactly") {
