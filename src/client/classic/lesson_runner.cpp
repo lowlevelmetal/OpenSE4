@@ -478,7 +478,8 @@ void LessonRunner::drawRefusedNote(UiContext& ui, const learn::Step& st, double 
     const float alpha = float(std::min(1.0, (shows - since) * 2.0));
     ImDrawList* fg = ImGui::GetForegroundDrawList();
     fg->AddRectFilled(at, ImVec2(at.x + box.x, at.y + box.y), imColor(0x101c40, 0.95f * alpha));
-    fg->AddRect(at, ImVec2(at.x + box.x, at.y + box.y), imColor(!st.done || recoveryBlocks_.empty() || pagerHint_ ? kOutlineColor : kRecoveryColor, alpha));
+    const bool wayBack = st.done && !recoveryBlocks_.empty() && !pagerHint_;   // framed as the way back's outline
+    fg->AddRect(at, ImVec2(at.x + box.x, at.y + box.y), imColor(wayBack ? kRecoveryColor : kOutlineColor, alpha));
     fg->AddText(font, size, ImVec2(at.x + pad.x, at.y + pad.y), imColor(0xffffff, alpha), text.c_str(), nullptr, wrap);
     if (script::collectingItems()) {   // input scripts: item:"note:<the text>" (its lines joined by spaces)
         std::string label = "note:" + text;
