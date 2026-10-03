@@ -710,13 +710,19 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::PushID(int(i));
         ui.drawing = screens_[i].first;   // its Dialog registers window:<id>
         ui.windowTagged = false;
+        ui.drawingWindow = 0;
         const script::ItemScope scope(windowId(screens_[i].first));
         const bool keep = screens_[i].second->draw(ui);
         ui.drawing.reset();
         ImGui::PopID();
-        if (keep) ++i;
-        else screens_.erase(screens_.begin() + std::ptrdiff_t(i));
+        if (keep) {
+            frontWindow_ = ui.drawingWindow;
+            ++i;
+        } else {
+            screens_.erase(screens_.begin() + std::ptrdiff_t(i));
+        }
     }
+    if (screens_.empty()) frontWindow_ = 0;
     if (battleAsking) drawBattleQuestion(ui);
     updateLesson(ui);
     for (auto& [id, args] : pendingOpen_) openScreen(id, std::move(args));
@@ -816,9 +822,26 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::End();
         ImGui::PopFont();
     }
+    keepFocusOnFrontWindow();
     updateLock(ui);
     if (options_.lessonCheck) lessonCheckReport(ui);
     return !ui.requests.quitGame;
+}
+
+void ClassicMode::keepFocusOnFrontWindow() {
+    // Classic windows are modal (docs/spec/06 §1): while one is open the
+    // keyboard belongs to the one in front, so that Esc and Enter close it
+    // (Dialog::close). Dear ImGui gives the focus to whatever was clicked or
+    // focused before, which can be one of the main window's own panels (a
+    // command button that opened the window above, which has closed since).
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (frontWindow_ == 0 || g.ActiveId != 0 || ImGui::IsAnyMouseDown() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+        return;
+    ImGuiWindow* front = ImGui::FindWindowByID(frontWindow_);
+    const ImGuiWindow* nav = g.NavWindow ? g.NavWindow->RootWindow : nullptr;
+    if (!front || nav == front) return;
+    if (nav && nav->WasActive && !MainWindow::ownsWindow(nav->ID)) return;   // a prompt, the lesson panel, the chat
+    ImGui::FocusWindow(front);
 }
 
 void ClassicMode::drawNetwork(UiContext& ui) {

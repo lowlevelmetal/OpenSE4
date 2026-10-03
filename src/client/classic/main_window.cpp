@@ -18,6 +18,8 @@
 #include "game/sight.hpp"
 #include "learn/ids.hpp"
 
+#include <imgui_internal.h>
+
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -2212,6 +2214,12 @@ std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view 
 }
 
 std::optional<game::Sector> MainWindow::sectorAtFrame(Vec2 p) const { return sectorAt(p); }
+
+bool MainWindow::ownsWindow(ImGuiID window) {
+    for (const char* name : {"##commands", "##report", "##statusbuttons"})
+        if (ImHashStr(name) == window) return true;
+    return false;
+}
 
 float MainWindow::galaxyCellSize() const {
     const GalaxyGrid g = galaxyGrid();

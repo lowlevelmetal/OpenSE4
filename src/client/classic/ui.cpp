@@ -10,6 +10,8 @@
 
 #include "core/log.hpp"
 
+#include <imgui_internal.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -380,6 +382,7 @@ void UiContext::tagTab(std::string_view tab, bool shown) {
 void UiContext::tagWindow(ImVec2 min, ImVec2 max) {
     if (!drawing || windowTagged) return;
     windowTagged = true;
+    drawingWindow = ImGui::GetCurrentWindow()->ID;
     tag(std::string("window:") + std::string(windowId(*drawing)), min, max);
 }
 

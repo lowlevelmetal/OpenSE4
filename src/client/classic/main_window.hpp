@@ -51,6 +51,8 @@ public:
     std::optional<game::Sector> sectorAtFrame(Vec2 p) const;
     std::vector<Vec2> findSystems(const UiContext& ui, std::string_view query, std::string& error) const;
     std::optional<game::SystemId> systemAtFrame(const UiContext& ui, Vec2 p) const;
+    // Whether a Dear ImGui window is one of the main window's own (its panels and buttons).
+    static bool ownsWindow(ImGuiID window);
     float galaxyCellSize() const;
 
 private:
