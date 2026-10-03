@@ -27,7 +27,8 @@ namespace opense4::net::crypto {
 
 namespace {
 
-[[noreturn]] void noRandomness(const char* why) {
+// Unused where the system's source cannot fail (arc4random_buf on macOS and the BSDs).
+[[noreturn, maybe_unused]] void noRandomness(const char* why) {
     std::fprintf(stderr, "OpenSE4: the system's random number source failed (%s); stopping rather than making weak keys.\n", why);
     std::abort();
 }
