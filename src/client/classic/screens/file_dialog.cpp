@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <ctime>

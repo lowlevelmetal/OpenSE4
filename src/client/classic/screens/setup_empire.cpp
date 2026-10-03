@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <cmath>
 #include <format>
 
 namespace opense4::client::classic::setup {

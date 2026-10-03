@@ -160,9 +160,9 @@ void SetupArea::textRight(Vec2 p, std::string_view s, uint32_t rgb, Face face) c
 
 float SetupArea::textWrapped(Vec2 p, std::string_view s, float width, uint32_t rgb, Face face) const {
     ImFont* f = font(face);
-    const float size = fontSize(face);
-    const ImVec2 dim = f->CalcTextSizeA(size, FLT_MAX, px(width), s.data(), s.data() + s.size());
-    ImGui::GetWindowDrawList()->AddText(f, size, at(p - Vec2{0, leadOf(face)}), imColor(rgb), s.data(), s.data() + s.size(), px(width));
+    const float fs = fontSize(face);
+    const ImVec2 dim = f->CalcTextSizeA(fs, FLT_MAX, px(width), s.data(), s.data() + s.size());
+    ImGui::GetWindowDrawList()->AddText(f, fs, at(p - Vec2{0, leadOf(face)}), imColor(rgb), s.data(), s.data() + s.size(), px(width));
     return dim.y / ctx_.k();
 }
 
@@ -248,8 +248,8 @@ void SetupArea::status(std::string_view s, const ImVec4& color) {
     if (s.empty()) return;
     const ImU32 c = ImGui::ColorConvertFloat4ToU32(color);
     ImFont* f = font(Face::Small);
-    const float size = fontSize(Face::Small);
-    ImGui::GetWindowDrawList()->AddText(f, size, at({216, 555}), c, s.data(), s.data() + s.size(), px(272));
+    const float fs = fontSize(Face::Small);
+    ImGui::GetWindowDrawList()->AddText(f, fs, at({216, 555}), c, s.data(), s.data() + s.size(), px(272));
 }
 
 // ---- Lists ----------------------------------------------------------------------------------
