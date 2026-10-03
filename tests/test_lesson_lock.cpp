@@ -343,6 +343,45 @@ TEST_CASE("lesson recovery: the way back to a closed or covered window") {
     CHECK(findRecovery(step({"lesson:next"}, false), mainOnly, {}).kind == Recovery::Kind::None);
 }
 
+TEST_CASE("lesson pager: an outlined order on another page of the order strip") {
+    // 800x600: Move To on the page shown; Explore and Sentry on the next page, their tags on the
+    // right arrow; View Orders on the page before, on the left arrow.
+    const Bindings keys;
+    std::vector<TaggedArea> tags = frameTags();
+    tags.push_back({"order:move-to", box(250, 36, 284, 70)});
+    tags.push_back({"order:explore", box(420, 44, 434, 94), true});
+    tags.push_back({"order:sentry", box(420, 44, 434, 94), true});
+    tags.push_back({"order:view-orders", box(230, 44, 244, 94), true});
+
+    CHECK(pagedTargets(step({"order:explore"}, true), tags) == std::vector<std::string>{"order:explore"});
+    CHECK(pagedTargets(step({"order:move-to", "order:sentry", "cycle:ship"}, true), tags) == std::vector<std::string>{"order:sentry"});
+    // Allowed, not outlined: the arrow is not outlined either, so nothing to say.
+    CHECK(pagedTargets(step({"button:end-turn"}, true, {"order:explore"}), tags).empty());
+    CHECK(pagerHint(step({"order:move-to"}, true), tags).empty());
+    CHECK(pagerHint(step({"order:explore"}, true), tags) == "Press the outlined arrow to show more order buttons: **Explore** is on another page.");
+    CHECK(pagerHint(step({"order:sentry", "order:explore"}, false), tags) ==
+          "Press the outlined arrow to show more order buttons: **Sentry** and **Explore** are on another page.");
+    CHECK(pagerHint(step({"order:explore", "order:view-orders"}, true), tags) ==
+          "Press an outlined arrow to show more order buttons: **Explore** and **View Orders** are on other pages.");
+
+    // An action step: the arrow is the outlined order's stand-in, and turns the page.
+    LockState st = makeLockState(step({"order:explore"}, true), tags, {}, {}, false, keys);
+    CHECK(allows(st, {427, 60}));
+    CHECK_FALSE(allows(st, {237, 60}));    // the other arrow leads elsewhere
+    CHECK(hasKey(st, KeyChord{ImGuiKey_E}));   // the order's key works on any page
+    // An explanation step: outlines are to look at, but a page arrow standing in for one only
+    // turns the page, so it responds.
+    st = makeLockState(step({"order:move-to", "order:sentry"}, false), tags, {}, {}, false, keys);
+    CHECK(allows(st, {427, 60}));
+    CHECK_FALSE(allows(st, {260, 50}));    // Move To itself: look only
+    CHECK(looks(st, {260, 50}));
+
+    // Once the page is turned, the order's own button is tagged: nothing to say.
+    tags.push_back({"order:explore", box(284, 70, 318, 104)});
+    CHECK(pagedTargets(step({"order:explore"}, true), tags).empty());
+    CHECK(pagerHint(step({"order:explore"}, true), tags).empty());
+}
+
 TEST_CASE("lesson recovery: steps that wait on the game are never timed out") {
     std::vector<learn::Diagnostic> problems;
     auto waits = [&](std::string_view text) {

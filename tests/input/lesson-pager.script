@@ -1,0 +1,50 @@
+# The order strip's pages at 800x600 in a tutorial (docs/LEARNING.md "Getting back"), on a
+# tutorial of our own (tests/input/learn): an outlined order on another page is outlined on the
+# page arrow that leads there, and the panel's hint line says to press it; the way back (a
+# window over the arrow) comes first; the arrow turns the page on an explanation step too
+# (docs/BUILDING.md "Input scripts").
+options --learn-dir=tests/input/learn --tutorial=pager-check --layout=800x600 --size=800x600
+
+wait-lesson pager-check
+click item:Next in=lesson
+wait-step 2
+click item:next in=tag:cycle:ship
+wait-step 3
+# 3 Change Name is two pages away: the right arrow stands in for it, and the hint says so.
+wait-for item:"hint:Press the outlined arrow*Change Name is on another page*" in=lesson
+screenshot pager-hint.png
+# A refused click says the same.
+click tag:panel:system@60%,60% refused
+wait-for item:"note:Press the outlined arrow*" in=lesson
+# The Planets window over the arrow: the way back comes first.
+key F4
+wait-window planets
+wait-for item:"hint:Close the Planets window first*" in=lesson
+assert-absent item:"hint:Press the outlined arrow*" in=lesson
+key Escape
+wait-closed planets
+wait-for item:"hint:Press the outlined arrow*" in=lesson
+# One click on the arrow: one page on, Change Name still a page away.
+click tag:order:rename
+wait 3
+assert-present item:"hint:Press the outlined arrow*" in=lesson
+assert-no-window rename
+# A second click shows it: no hint any more, and the order's own button is outlined.
+click tag:order:rename
+wait-gone item:"hint:*" in=lesson
+click tag:order:rename
+wait-window rename
+wait-step 4
+key Escape
+wait-closed rename
+wait-step 5
+# 5 An explanation step about Resupply At Nearest, on another page: the arrow responds.
+wait-for item:"hint:Press the outlined arrow*Resupply At Nearest*" in=lesson
+click tag:order:resupply
+click tag:order:resupply
+wait-gone item:"hint:*" in=lesson
+move tag:order:resupply
+click item:Next in=lesson
+wait-step 6
+click item:Finish in=lesson
+wait-result done

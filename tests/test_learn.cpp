@@ -388,6 +388,12 @@ TEST_CASE("learn: {design:<type>} tokens show the player's design names") {
     const std::vector<Block> out = expandTokens(doc.blocks, s, me);
     CHECK(plainText(out).find("Click Lancer.") != std::string::npos);
     CHECK(plainText(out).find("then Stone") != std::string::npos);
+    // The designs a text names (the rows a list brings into view): in order, once each, and only
+    // types the empire has a design of.
+    const Document named = parseMarkdown("**{design:Colony}**, then {design:Attack Ship}.\n\n- {design:Colony} again, "
+                                         "{design:Defense Base}\n", "t", false);
+    CHECK(namedDesigns(named.blocks, s, me) == std::vector<std::string>{"Stone", "Lancer"});
+    CHECK(namedDesigns(named.blocks, s, game::EmpireId{1u}).empty());
 }
 
 TEST_CASE("learn: lesson errors name the file and line") {

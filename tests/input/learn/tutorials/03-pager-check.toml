@@ -1,0 +1,48 @@
+# A tutorial for the input scripts (docs/BUILDING.md "Input scripts"): at 800x600 the order
+# strip has pages, and an outlined order on another page is outlined on the page arrow that
+# leads there, with a hint in the panel (docs/LEARNING.md "Getting back").
+title = "Pager check"
+summary = "Orders on other pages of the order strip, to check the page arrow's hint."
+minutes = 3
+
+[setup]
+seed = 404
+computer_players = 2
+quadrant_size = "small"
+events = "none"
+starting_ships = ["Attack Ship", "Attack Ship", "Colony"]
+
+[[step]]
+title = "Welcome"
+text = "This lesson checks the page arrows. Press **Next**."
+highlight = ["lesson:panel"]
+
+[[step]]
+title = "Select a ship"
+text = "**Click the right arrow** of the ship selector."
+highlight = ["cycle:ship"]
+done = { selected = "ship" }
+
+[[step]]
+title = "Change Name"
+text = "**Press Change Name.** The Planets window may open over the order strip meanwhile."
+highlight = ["order:rename"]
+allow = ["command:planets"]
+done = { window = "rename" }
+
+[[step]]
+title = "Close it"
+text = "**Close the window** (`Esc`)."
+highlight = ["window:rename"]
+keys = ["Escape"]
+done = { not = { window = "rename" } }
+
+[[step]]
+title = "Supplies"
+text = "**Resupply At Nearest** refills a ship's supplies. Press **Next**."
+highlight = ["order:resupply"]
+
+[[step]]
+title = "Well done"
+text = "Press **Finish**."
+highlight = ["lesson:panel"]
