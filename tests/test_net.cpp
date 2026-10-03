@@ -704,12 +704,13 @@ TEST_CASE("net: PBEM turn processing from turn files and signed .plr files") {
     info.masterPasswordVerifier = net::passwordVerifier("host", info.gameId);
     const fs::path gam = dir / "mail.gam";
     REQUIRE(game::saveGame(gam, *state, info).has_value());
-    const net::crypto::KeyPair hostKey = net::crypto::newKeyPair();
+    const net::secure::PbemHostKeys pbemHost = test::newPbemHost();
+    const net::crypto::KeyPair& hostKey = pbemHost.box;
     auto keysOf = [&](const std::string& password) { return net::passwordKeys(password, info.gameId); };
 
     // Each human player gets a turn file: its own view of the host's game,
     // which only that empire's password opens.
-    auto turnFiles = net::pbem::writeTurnFiles(r, gam, dir, hostKey.publicKey);
+    auto turnFiles = net::pbem::writeTurnFiles(r, gam, dir, pbemHost);
     REQUIRE_MESSAGE(turnFiles.has_value(), (turnFiles ? std::string{} : turnFiles.error()));
     REQUIRE(turnFiles->size() == 2);
     CHECK(turnFiles->at(0).second.filename() == "Mail_Game_01.turn");
@@ -783,7 +784,7 @@ TEST_CASE("net: PBEM turn processing from turn files and signed .plr files") {
                 .has_value());
 
     net::pbem::ProcessOptions opts;
-    opts.hostKey = hostKey;
+    opts.host = pbemHost;
     opts.masterPassword = "wrong";
     CHECK_FALSE(net::pbem::processGameFile(r, gam, orders, opts).has_value());
     opts.masterPassword = "host";
@@ -860,10 +861,11 @@ TEST_CASE("net: a PBEM game of OpenSE4 0.6 moves to the new passwords with its p
     info.dataSet = game::dataSetIdentity(r);
     const fs::path gam = tmp / "old.gam";
     REQUIRE(game::saveGame(gam, *state, info).has_value());
-    const net::crypto::KeyPair hostKey = net::crypto::newKeyPair();
+    const net::secure::PbemHostKeys pbemHost = test::newPbemHost();
+    const net::crypto::KeyPair& hostKey = pbemHost.box;
     // "pbem turn-files" for a game in progress. An old verifier has no key to
     // encrypt to: these turn files are in the clear, this once.
-    auto files = net::pbem::writeTurnFiles(r, gam, tmp.path(), hostKey.publicKey);
+    auto files = net::pbem::writeTurnFiles(r, gam, tmp.path(), pbemHost);
     REQUIRE(files.has_value());
     auto tf = net::pbem::readTurnFile(files->at(0).second);
     REQUIRE(tf.has_value());
@@ -893,7 +895,7 @@ TEST_CASE("net: a PBEM game of OpenSE4 0.6 moves to the new passwords with its p
         REQUIRE(net::pbem::writeOrdersFile(tmp / std::format("{}.plr", fresh[0] == 'm' ? "mine" : "impostor"), f, hostKey.publicKey).has_value());
     }
     net::pbem::ProcessOptions opts;
-    opts.hostKey = hostKey;
+    opts.host = pbemHost;
     auto rep = net::pbem::processGameFile(r, gam, tmp.path(), opts);
     REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
     CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
@@ -1350,11 +1352,12 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
     info.dataSet = game::dataSetIdentity(r);
     const fs::path gam = dir / "relay.gam";
     REQUIRE(game::saveGame(gam, *created, info).has_value());
-    const net::crypto::KeyPair hostKey = net::crypto::newKeyPair();
+    const net::secure::PbemHostKeys pbemHost = test::newPbemHost();
+    const net::crypto::KeyPair& hostKey = pbemHost.box;
     net::pbem::ProcessOptions opts;
-    opts.hostKey = hostKey;
+    opts.host = pbemHost;
     auto keysOf = [&](game::EmpireId e) { return net::passwordKeys(std::format("pw{}", e.value), info.gameId); };
-    auto first = net::pbem::writeTurnFiles(r, gam, dir, hostKey.publicKey);
+    auto first = net::pbem::writeTurnFiles(r, gam, dir, pbemHost);
     REQUIRE(first.has_value());
     REQUIRE(first->size() == 1);  // only the player whose turn it is
     CHECK(first->at(0).first == game::EmpireId{0u});

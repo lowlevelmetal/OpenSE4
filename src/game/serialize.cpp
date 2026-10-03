@@ -28,7 +28,8 @@ constexpr KnownMagic kKnownMagics[] = {
     {kSaveMagic, "saved game"},
     {"OSE4PLR2", "orders file (.plr)"},
     {"OSE4PLRF", "orders file (.plr) of OpenSE4 0.6"},
-    {"OSE4TURN", "player turn file (.turn)"},
+    {"OSE4TRN2", "player turn file (.turn)"},
+    {"OSE4TURN", "player turn file (.turn) of an earlier, unsigned form (ask the host for a new one)"},
 };
 
 void putU32(uint8_t* p, uint32_t v) {

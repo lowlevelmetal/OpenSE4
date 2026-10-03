@@ -47,6 +47,7 @@ std::string lowerAscii(std::string_view s) {
 }
 
 std::string hostId(std::string_view host, uint16_t port) { return std::format("{}:{}", lowerAscii(host), port); }
+std::string gameKeyId(uint64_t gameId) { return std::format("pbem-game:{:016x}", gameId); }
 
 } // namespace
 
@@ -213,15 +214,23 @@ std::vector<std::pair<std::string, crypto::Key>> KnownHosts::read() const {
     return out;
 }
 
-std::optional<crypto::Key> KnownHosts::find(std::string_view host, uint16_t port) const {
-    const std::string id = hostId(host, port);
+std::optional<crypto::Key> KnownHosts::findId(const std::string& id) const {
     for (const auto& [name, key] : read())
         if (name == id) return key;
     return std::nullopt;
 }
 
+std::optional<crypto::Key> KnownHosts::find(std::string_view host, uint16_t port) const { return findId(hostId(host, port)); }
+
 std::expected<void, std::string> KnownHosts::remember(std::string_view host, uint16_t port, const crypto::Key& key) {
-    const std::string id = hostId(host, port);
+    return rememberId(hostId(host, port), key);
+}
+
+std::optional<crypto::Key> KnownHosts::findGame(uint64_t gameId) const { return findId(gameKeyId(gameId)); }
+
+std::expected<void, std::string> KnownHosts::rememberGame(uint64_t gameId, const crypto::Key& key) { return rememberId(gameKeyId(gameId), key); }
+
+std::expected<void, std::string> KnownHosts::rememberId(const std::string& id, const crypto::Key& key) {
     auto entries = read();
     std::erase_if(entries, [&](const auto& e) { return e.first == id; });
     entries.emplace_back(id, key);
@@ -232,7 +241,8 @@ std::expected<void, std::string> KnownHosts::remember(std::string_view host, uin
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         if (!out) return std::unexpected(std::format("{}: cannot write", tmp.string()));
-        out << "# Host keys OpenSE4 has trusted: <address>:<port> <key>. Delete a line to trust that host anew.\n";
+        out << "# Host keys OpenSE4 has trusted: <address>:<port> <key>, or pbem-game:<game id> <key> for the host of a play-by-e-mail "
+               "game. Delete a line to trust that host anew.\n";
         for (const auto& [name, k] : entries) out << name << ' ' << crypto::hex(k) << '\n';
         if (!out) return std::unexpected(std::format("{}: cannot write", tmp.string()));
     }

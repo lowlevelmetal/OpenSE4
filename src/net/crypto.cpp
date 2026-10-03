@@ -192,6 +192,47 @@ bool openFrom(const KeyPair& recipient, const Key& ephemeral, std::string_view d
     return ok;
 }
 
+namespace {
+
+Key senderBoxKey(std::string_view domain, const Key& ephemeralShared, const Key& staticShared, const Key& ephemeral, const Key& sender,
+                 const Key& recipient) {
+    return Hash().add(domain).add(ephemeralShared).add(staticShared).add(ephemeral).add(sender).add(recipient).finish32();
+}
+
+} // namespace
+
+void sealFromSender(const KeyPair& sender, const Key& recipient, std::string_view domain, std::span<const uint8_t> ad, std::span<uint8_t> text,
+                    Key& ephemeral, Mac& mac) {
+    KeyPair mine = newKeyPair();
+    Key es{}, ss{};
+    // A hostile key: nobody will open it.
+    if (!agree(es, mine.secret, recipient) || !agree(ss, sender.secret, recipient)) {
+        randomBytes(es);
+        randomBytes(ss);
+    }
+    Key key = senderBoxKey(domain, es, ss, mine.publicKey, sender.publicKey, recipient);
+    seal(key, 0, ad, text, mac);  // a fresh key for every message: the zero nonce is never reused
+    ephemeral = mine.publicKey;
+    wipe(mine.secret.data(), mine.secret.size());
+    wipe(es.data(), es.size());
+    wipe(ss.data(), ss.size());
+    wipe(key.data(), key.size());
+}
+
+bool openFromSender(const KeyPair& recipient, const Key& sender, const Key& ephemeral, std::string_view domain, std::span<const uint8_t> ad,
+                    std::span<uint8_t> text, const Mac& mac) {
+    Key es{}, ss{};
+    bool ok = agree(es, recipient.secret, ephemeral) && agree(ss, recipient.secret, sender);
+    if (ok) {
+        Key key = senderBoxKey(domain, es, ss, ephemeral, sender, recipient.publicKey);
+        ok = open(key, 0, ad, text, mac);
+        wipe(key.data(), key.size());
+    }
+    wipe(es.data(), es.size());
+    wipe(ss.data(), ss.size());
+    return ok;
+}
+
 // ---- Password hashing -------------------------------------------------------------------------
 
 Key argon2id(std::string_view password, std::span<const uint8_t> salt, uint32_t kibibytes, uint32_t passes) {

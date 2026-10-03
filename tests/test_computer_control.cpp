@@ -13,6 +13,7 @@
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/pbem.hpp"
+#include "net/secure.hpp"
 
 #include <doctest/doctest.h>
 
@@ -235,7 +236,9 @@ TEST_CASE("reset passwords: the e-mail host writes them in after reading the ord
     const fs::path inbox = tmp / "inbox";
     fs::create_directories(inbox);
     net::pbem::ProcessOptions o;
-    o.hostKey = net::crypto::newKeyPair();
+    net::crypto::Key secret{};
+    net::crypto::randomBytes(secret);
+    o.host = net::secure::hostIdentity(secret).pbem;
     o.resetPasswords = {kOther};
     auto rep = net::pbem::processGameFile(r, gam, inbox, o);
     REQUIRE(rep.has_value());

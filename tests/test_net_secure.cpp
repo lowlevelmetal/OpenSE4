@@ -166,6 +166,33 @@ TEST_CASE("net security: the cryptography wrappers") {
     REQUIRE(crypto::open(key, 7, ad, back, mac));
     CHECK(std::string(back.begin(), back.end()) == message);
 
+    // Sealed to a recipient: sealTo from anyone, sealFromSender only from the
+    // holder of the sender's secret (the recipient names the sender).
+    {
+        const crypto::KeyPair host = crypto::newKeyPair(), stranger = crypto::newKeyPair();
+        std::vector<uint8_t> boxed(message.begin(), message.end());
+        crypto::Key ephemeral{};
+        crypto::Mac boxMac{};
+        crypto::sealFromSender(host, bob.publicKey, "test domain", ad, boxed, ephemeral, boxMac);
+        CHECK_FALSE(contains(boxed, "fleet"));
+        auto opensFrom = [&](const crypto::KeyPair& to, const crypto::Key& from, std::string_view domain, std::vector<uint8_t> t) {
+            return crypto::openFromSender(to, from, ephemeral, domain, ad, t, boxMac);
+        };
+        CHECK(opensFrom(bob, host.publicKey, "test domain", boxed));
+        CHECK_FALSE(opensFrom(bob, stranger.publicKey, "test domain", boxed));  // not from the stranger
+        CHECK_FALSE(opensFrom(alice, host.publicKey, "test domain", boxed));    // not for alice
+        CHECK_FALSE(opensFrom(bob, host.publicKey, "other domain", boxed));
+        // The same message sealed anonymously does not pass for the host's.
+        std::vector<uint8_t> anonymous(message.begin(), message.end());
+        crypto::Key anonymousEphemeral{};
+        crypto::Mac anonymousMac{};
+        crypto::sealTo(bob.publicKey, "test domain", ad, anonymous, anonymousEphemeral, anonymousMac);
+        CHECK_FALSE(crypto::openFromSender(bob, host.publicKey, anonymousEphemeral, "test domain", ad, anonymous, anonymousMac));
+        std::vector<uint8_t> opened = boxed;
+        REQUIRE(crypto::openFromSender(bob, host.publicKey, ephemeral, "test domain", ad, opened, boxMac));
+        CHECK(std::string(opened.begin(), opened.end()) == message);
+    }
+
     // Signatures.
     const crypto::SigningKey signer = crypto::signingKey(a);
     CHECK(crypto::signingKey(a).publicKey == signer.publicKey);  // the same seed, the same key

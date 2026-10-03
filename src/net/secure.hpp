@@ -23,6 +23,7 @@
 
 #include "net/crypto.hpp"
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <optional>
@@ -89,7 +90,9 @@ struct HostKeyFile {
 std::expected<HostKeyFile, std::string> loadOrCreateHostKey(const std::filesystem::path& file);
 
 // The host keys a player has trusted, one "<address>:<port> <64 hex digits>"
-// line each (trust on first use, like ssh's known_hosts).
+// line each (trust on first use, like ssh's known_hosts). Play-by-e-mail
+// games have no address: their host's PBEM signing key is kept per game id,
+// "pbem-game:<16 hex digits>".
 class KnownHosts {
 public:
     explicit KnownHosts(std::filesystem::path file) : file_(std::move(file)) {}
@@ -97,10 +100,15 @@ public:
     std::optional<crypto::Key> find(std::string_view host, uint16_t port) const;
     // Trusts `key` for this host and port (replacing an earlier key) and saves.
     std::expected<void, std::string> remember(std::string_view host, uint16_t port, const crypto::Key& key);
+    // The same for the host of the play-by-e-mail game `gameId`.
+    std::optional<crypto::Key> findGame(uint64_t gameId) const;
+    std::expected<void, std::string> rememberGame(uint64_t gameId, const crypto::Key& key);
     const std::filesystem::path& file() const { return file_; }
 
 private:
     std::vector<std::pair<std::string, crypto::Key>> read() const;
+    std::optional<crypto::Key> findId(const std::string& id) const;
+    std::expected<void, std::string> rememberId(const std::string& id, const crypto::Key& key);
     std::filesystem::path file_;
 };
 

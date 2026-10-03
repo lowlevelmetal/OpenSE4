@@ -7,9 +7,13 @@
 #   3. a turn-based play-by-e-mail game: each player's (empty) orders, made
 #      from their own turn file, are processed in turn, and the game goes on to
 #      the next player;
+#      The players' side trusts the host key of the game from its first turn
+#      file on and refuses a turn file signed by another key;
 #   4. when the game client was built (and SMOKE_CLIENT is not 0), it plays the
 #      next turn of that game offscreen from the player's turn file (--pbem ...
 #      --pbem-end-turn), and the server processes the .plr it wrote.
+# Keys, trusted host keys and settings go to a scratch user folder
+# (OPENSE4_USER_DIR), never the user's own.
 # Needs a data set (the installed classic game is found automatically, or pass
 # --data=DIR).
 #
@@ -23,6 +27,7 @@ if [[ $# -gt 0 && $1 != --* ]]; then
 fi
 SERVER="$BUILD/opense4-server"
 WORK=$(mktemp -d)
+export OPENSE4_USER_DIR="$WORK/user"
 PID=
 cleanup() {
     [[ -n $PID ]] && kill "$PID" 2>/dev/null || true
@@ -100,11 +105,22 @@ mkdir "$WORK/inbox"
 "$SERVER" pbem new --setup="$WORK/mail.toml" --out="$WORK/mail.gam" --host-key="$WORK/host_key.txt" "$@" | tee "$WORK/new.log"
 grep -q "Send .*Mail_Relay_01.turn to empire 1" "$WORK/new.log"
 "$SERVER" pbem info --game="$WORK/Mail_Relay_01.turn"
-"$SERVER" pbem orders --turn="$WORK/Mail_Relay_01.turn" --password=a --out="$WORK/inbox"
+grep -q "Play-by-e-mail host key" "$WORK/new.log"
+# A turn file signed by another host key is refused once the game's key is trusted.
+"$SERVER" pbem turn-files --game="$WORK/mail.gam" --out="$WORK/other" --host-key="$WORK/other_key.txt" "$@" >/dev/null 2>&1 || mkdir -p "$WORK/other"
+"$SERVER" pbem orders --turn="$WORK/Mail_Relay_01.turn" --password=a --out="$WORK/inbox" | tee "$WORK/orders1.log"
+grep -q "First turn file of this game" "$WORK/orders1.log"
+if "$SERVER" pbem orders --turn="$WORK/other/Mail_Relay_01.turn" --password=a --out="$WORK/elsewhere" >"$WORK/forged.log" 2>&1; then
+    cat "$WORK/forged.log" >&2
+    echo "server smoke test FAILED: a turn file signed by another host key was taken" >&2
+    exit 1
+fi
+grep -q "but this computer trusts" "$WORK/forged.log"
 "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" --host-key="$WORK/host_key.txt" "$@" | tee "$WORK/process1.log"
 grep -q "Next: empire 2" "$WORK/process1.log"
 grep -q "Send .*Mail_Relay_02.turn to empire 2" "$WORK/process1.log"
-"$SERVER" pbem orders --turn="$WORK/Mail_Relay_02.turn" --password=b --out="$WORK/inbox"
+"$SERVER" pbem orders --turn="$WORK/Mail_Relay_02.turn" --password=b --out="$WORK/inbox" | tee "$WORK/orders2.log"
+grep -q "is the one trusted for this game" "$WORK/orders2.log"
 "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" --host-key="$WORK/host_key.txt" "$@" | tee "$WORK/process2.log"
 grep -q "the game is now at turn 1" "$WORK/process2.log"
 grep -q "Next: empire 1" "$WORK/process2.log"
