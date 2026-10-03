@@ -285,7 +285,7 @@ void emptySlot(const Painter& ui, Vec2 frameSize) {
     ImGui::Dummy(size);
 }
 
-void drawWindowFrame(const Painter& ui, ImDrawList* dl, const Rect& r, const char* title, float buttonColumn) {
+void drawWindowFrame(const Painter& ui, ImDrawList* dl, const Rect& r, const char* title, float buttonColumn, bool contentFrame) {
     const float lw = lineWidth(ui), h = lw * 0.5f;
     const float w = r.size().x, ht = r.size().y;
     auto P = [&](float x, float y) { return ui.at(r.min + Vec2{x, y}); };
@@ -323,9 +323,9 @@ void drawWindowFrame(const Painter& ui, ImDrawList* dl, const Rect& r, const cha
     if (title) box(10, 4, w - 10, 31, palette::kFrame);
     if (buttonColumn > 0) {
         const float split = w - 15 - buttonColumn - 8;
-        box(10, top, split - 3, ht - 4, palette::kFrame);
+        if (contentFrame) box(10, top, split - 3, ht - 4, palette::kFrame);
         box(split + 2, top, w - 10, ht - 4, palette::kFrame);
-    } else {
+    } else if (contentFrame) {
         box(10, top, w - 10, ht - 4, palette::kFrame);
     }
     if (title && *title) {
@@ -402,8 +402,8 @@ void UiContext::tagWindow(ImVec2 min, ImVec2 max) {
     tag(std::string("window:") + std::string(windowId(*drawing)), min, max);
 }
 
-Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn)
-    : Dialog(ui.painter(), title, dialogRect(size), buttonColumn) {
+Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn, bool contentFrame)
+    : Dialog(ui.painter(), title, dialogRect(size), buttonColumn, contentFrame) {
     game_ = &ui;
     if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
 }
@@ -418,7 +418,7 @@ Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
 
 Dialog::Dialog(const Painter& ui, const char* title, DialogSize size, float buttonColumn) : Dialog(ui, title, dialogRect(size), buttonColumn) {}
 
-Dialog::Dialog(const Painter& ui, const char* title, const Rect& rect, float buttonColumn)
+Dialog::Dialog(const Painter& ui, const char* title, const Rect& rect, float buttonColumn, bool contentFrame)
     : ui_(ui), rect_(rect), buttonColumn_(buttonColumn > 0 && buttonColumn == 190.0f ? 180.0f : buttonColumn) {
     ImGui::SetNextWindowPos(ui.at(rect_.min), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ui.size(rect_.size()), ImGuiCond_Always);
@@ -429,7 +429,7 @@ Dialog::Dialog(const Painter& ui, const char* title, const Rect& rect, float but
                                                 ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar(2);
     if (visible_) {
-        drawWindowFrame(ui, ImGui::GetWindowDrawList(), rect_, title, buttonColumn_);
+        drawWindowFrame(ui, ImGui::GetWindowDrawList(), rect_, title, buttonColumn_, contentFrame);
         if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
     }
 }
@@ -498,6 +498,13 @@ bool Dialog::slot(const char* label, int style, bool on, bool enabled) {
 bool Dialog::button(const char* label, bool enabled) { return slot(label, 0, false, enabled); }
 bool Dialog::tab(const char* label, bool selected, bool enabled) { return slot(label, 1, selected, enabled); }
 bool Dialog::check(const char* label, bool on, bool enabled) { return slot(label, 2, on, enabled); }
+
+ImVec2 Dialog::skipSlots(int n) {
+    ImGui::SetCursorPos(ImVec2(0, ui_.px(float(nextSlot_) * pitch_)));
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    nextSlot_ += std::max(0, n);
+    return at;
+}
 
 void Dialog::spacer() {
     ImGui::SetCursorPos(ImVec2(0, ui_.px(float(nextSlot_) * pitch_)));

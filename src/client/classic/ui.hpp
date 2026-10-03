@@ -321,8 +321,9 @@ enum class DialogSize { Large, Tall, Report, Picker, Prompt, Full };
 //   return d.keepOpen();
 class Dialog {
 public:
-    // In a game: also registers the window's UI tag.
-    Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn = 190.0f);
+    // In a game: also registers the window's UI tag. `contentFrame` false
+    // leaves out the box around the content area (the Galaxy Map's).
+    Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn = 190.0f, bool contentFrame = true);
     // A window of its own size (frame pixels), centred.
     Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn = 190.0f);
     // Anywhere (the front end's Learn and Manual windows).
@@ -342,6 +343,9 @@ public:
     // reaches further (lists to x 575).
     void beginContent(float right = 0.0f);
     void beginButtons();
+    // Leaves `n` slots of the button column to the window, which draws in them
+    // (its own content, as a legend); returns their top left (ImGui screen units).
+    ImVec2 skipSlots(int n);
     // Right-column buttons (180 × 28, one slot per 31 px). A plain action button;
     bool button(const char* label, bool enabled = true);
     // a page or filter tab (chamfered corner, green lamp when selected);
@@ -358,7 +362,7 @@ public:
     void requestClose() { keep_ = false; }
 
 private:
-    Dialog(const Painter& painter, const char* title, const Rect& rect, float buttonColumn);
+    Dialog(const Painter& painter, const char* title, const Rect& rect, float buttonColumn, bool contentFrame = true);
     void endChild();
     bool slot(const char* label, int style, bool on, bool enabled);
     Painter ui_;
@@ -393,7 +397,7 @@ inline bool classicButton(UiContext& ui, const char* label, Vec2 frameSize, int 
 void emptySlot(const Painter& p, Vec2 frameSize);
 // The classic frame around a window: pipes at the sides, rails, a title strip
 // (none when `title` is null) and, with a button column, a second box for it.
-void drawWindowFrame(const Painter& p, ImDrawList* dl, const Rect& frameRect, const char* title, float buttonColumn);
+void drawWindowFrame(const Painter& p, ImDrawList* dl, const Rect& frameRect, const char* title, float buttonColumn, bool contentFrame = true);
 
 // Applies the classic look (black, 1 px blue lines) to ImGui; call once.
 void applyClassicStyle();
