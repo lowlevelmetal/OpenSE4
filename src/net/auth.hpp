@@ -6,7 +6,9 @@
 //   password, game id --Argon2id--> seed --BLAKE2b--> signing key (EdDSA)
 //                                                   + box key (X25519)
 //
-// The verifier is their public halves ("pk1:" and 128 hex digits). A player
+// The verifier is their public halves, after the Argon2id work they were made
+// with ("pk2:<KiB>:<passes>:" and 128 hex digits), so a verifier is checked
+// with its own work even after the default changes. A player
 // proves the password by signing (a login signs its session, an orders file
 // its contents), and a PBEM turn file is encrypted to the box key. Hosts and
 // saved games keep only verifiers: enough to check a signature or to encrypt,
@@ -17,7 +19,9 @@
 // Argon2id runs on the players' machines and when a host starts (its own
 // player, the master and join passwords); hosts otherwise only check
 // signatures. Results are kept in the process (passwordKeys and joinKey are
-// cheap the second time).
+// cheap the second time), and wiped when the cache is emptied and at exit.
+// A run needs its work's memory at once (128 MiB by default): when that is
+// not to be had, the functions that run it throw PasswordWorkError.
 //
 // OpenSE4 0.6 kept a verifier made of a fast, unsalted hash of the password,
 // and sent that hash in the clear. Such a verifier is checked against that
@@ -31,6 +35,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -61,39 +66,68 @@ private:
 
 std::string toHex(std::span<const uint8_t> bytes);
 
-// The Argon2id work of password keys. It is part of the key, so every
-// computer of a game must use the same: only tests lower it.
+// The Argon2id work of password keys. It is part of the key, and every
+// verifier records the work it was made with: new keys use the work set here
+// (only tests lower it), and a key checked against a verifier uses that
+// verifier's work.
 struct PasswordWork {
     uint32_t kibibytes = 128 * 1024;
     uint32_t passes = 3;
+    friend bool operator==(const PasswordWork&, const PasswordWork&) = default;
 };
+// The work a verifier may name: 8 KiB (Argon2id's least) to 1 GiB, 1 to 16
+// passes. More would let a hostile verifier tie up a player's computer.
+inline constexpr uint32_t kMinPasswordKibibytes = 8;
+inline constexpr uint32_t kMaxPasswordKibibytes = 1024 * 1024;
+inline constexpr uint32_t kMaxPasswordPasses = 16;
+bool usableWork(PasswordWork work);
+// "128 MiB, 3 passes".
+std::string describe(PasswordWork work);
 void setPasswordWork(PasswordWork work);
 PasswordWork passwordWork();
+
+// A password key could not be made: the computer did not have the memory its
+// Argon2id work needs. what() says so in words for the player.
+class PasswordWorkError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 // The keys a password stands for in one game.
 struct PasswordKeys {
     crypto::SigningKey signing;   // signs logins and orders files
     crypto::KeyPair box;          // opens the turn files sent to the empire
+    PasswordWork work;            // the Argon2id work they were made with
     std::string verifier() const;
 };
-// Empty password: none (no password).
+// Empty password: none (no password). With the work set by setPasswordWork,
+// or the given one. Throws PasswordWorkError.
 std::optional<PasswordKeys> passwordKeys(std::string_view password, uint64_t gameId);
-// Empty password: empty verifier.
+std::optional<PasswordKeys> passwordKeys(std::string_view password, uint64_t gameId, PasswordWork work);
+// The keys to check against `verifier`: made with the work it records (one of
+// another kind: the work set). Throws PasswordWorkError.
+std::optional<PasswordKeys> passwordKeysFor(std::string_view verifier, std::string_view password, uint64_t gameId);
+// Empty password: empty verifier. Throws PasswordWorkError.
 std::string passwordVerifier(std::string_view password, uint64_t gameId);
 // True when `verifier` is empty (no password set) or the password's, of
 // either kind (a verifier of OpenSE4 0.6 is checked with legacyPasswordHash).
+// Throws PasswordWorkError.
 bool checkPassword(std::string_view verifier, std::string_view password, uint64_t gameId);
 
-// The public keys in a verifier of the current kind; none when it is of
-// another kind, malformed, or holds a key of small order.
+// The public keys in a verifier of the current kind, and the work they were
+// made with; none when it is of another kind, malformed, names a work out of
+// bounds, or holds a key of small order.
 struct VerifierKeys {
     crypto::Key signing{};
     crypto::Key box{};
+    PasswordWork work;
 };
 std::optional<VerifierKeys> verifierKeys(std::string_view verifier);
 // A verifier a player may give (for a new slot, or as a new password): empty
 // (no password), or a well-formed one of the current kind.
 bool usableVerifier(std::string_view verifier);
+// Why `verifier` is not one of the current kind, in words (empty when it is).
+std::string verifierProblem(std::string_view verifier);
 
 // Signs `message` with the password's key (none: an all-zero signature).
 crypto::Signature signWith(const std::optional<PasswordKeys>& keys, std::span<const uint8_t> message);
@@ -114,8 +148,12 @@ bool checkLegacyPassword(std::string_view verifier, std::string_view legacyHash)
 // ---- Join passwords --------------------------------------------------------------------------------
 
 // The key a join password stands for with one host and one game: Argon2id
-// salted with the host's key and the game id (empty password: all zero).
+// salted with the host's key and the game id, with the work set (empty
+// password: all zero). Throws PasswordWorkError.
 crypto::Key joinKey(std::string_view joinPassword, const crypto::Key& hostKey, uint64_t gameId);
+
+// Wipes the Argon2id results kept in this process (also done at exit).
+void forgetPasswordKeys();
 
 // Comparison whose duration does not depend on where the strings differ.
 bool constantTimeEquals(std::string_view a, std::string_view b);

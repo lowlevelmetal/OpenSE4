@@ -29,6 +29,12 @@
 
 namespace opense4::test {
 
+// A PBEM host's keys, from a fresh secret (as a host key file holds).
+inline net::secure::PbemHostKeys newPbemHost() {
+    net::crypto::Key secret{};
+    net::crypto::randomBytes(secret);
+    return net::secure::hostIdentity(secret).pbem;
+}
 
 inline net::HostConfig hostConfig(int humans = 2, bool turnBased = false) {
     net::HostConfig c;

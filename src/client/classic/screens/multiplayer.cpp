@@ -241,7 +241,10 @@ private:
         cfg.port = static_cast<uint16_t>(port_);
         cfg.humanSlots = humans_;
         cfg.localPlayer = net::LocalPlayer{name_, password_, mySetup(ctx)};
-        cfg.setup.seed = ctx.seed;
+        // The galaxy's seed from the cryptographic random source: players
+        // must not guess it (the views they get leave it out). A seed the
+        // player gave (--seed) is used as given.
+        cfg.setup.seed = ctx.seedGiven ? ctx.seed : net::randomId();
         cfg.setup.options.systemCount = 0;  // rolled from the quadrant size
         cfg.setup.options.quadrantSize = quadrantSize_;
         cfg.setup.options.simultaneous = turnStyle_ == 0;
@@ -249,8 +252,12 @@ private:
         cfg.turnTimeoutSeconds = timeout_;
         cfg.upnp.enabled = upnp_ && net::PortMapper::supported();
         // This computer's identity as a host: players' games remember it.
-        if (auto key = net::secure::loadOrCreateHostKey(userDataDir() / net::secure::kHostKeyFileName)) cfg.hostKey = *key;
-        else log_.add(key.error() + " Players cannot remember this host from one game to the next.");
+        if (auto key = net::secure::loadOrCreateHostKey(userDataDir() / net::secure::kHostKeyFileName)) {
+            cfg.hostKey = key->keys.network;
+            if (!key->warning.empty()) log_.add(key->warning);
+        } else {
+            log_.add(key.error() + " Players cannot remember this host from one game to the next.");
+        }
         host_ = std::make_unique<net::HostSession>(*ctx.rules, cfg);
         rules_ = ctx.rules;
         if (auto r = host_->start(); !r) {

@@ -15,6 +15,7 @@
 #include <array>
 #include <charconv>
 #include <format>
+#include <utility>
 
 namespace opense4::client::classic {
 
@@ -189,8 +190,10 @@ private:
         if (ImGui::Button("OK", ImVec2(w, ui.px(26))) || (!ImGui::IsWindowAppearing() && ImGui::IsKeyPressed(ImGuiKey_Enter, false))) {
             if (password_ != repeat_) {
                 passwordError_ = "The two entries differ.";
+            } else if (auto value = ui.session.empirePasswordValue(password_); !value) {
+                passwordError_ = value.error();
             } else {
-                status_.issue(ui, cmd::SetEmpireOptions{.passwordHash = ui.session.empirePasswordValue(password_)});
+                status_.issue(ui, cmd::SetEmpireOptions{.passwordHash = std::move(*value)});
                 password_.clear();
                 repeat_.clear();
                 ImGui::CloseCurrentPopup();

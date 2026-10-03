@@ -13,6 +13,7 @@
 #include "ruleset/ruleset.hpp"
 
 #include <algorithm>
+#include <expected>
 #include <format>
 #include <optional>
 #include <string>
@@ -159,7 +160,7 @@ public:
                 ui.requests.quitToIntro = true;
             if (confirmPopup(ui, "Quit Game", "Quit OpenSE4? Anything not saved is lost.")) ui.requests.quitGame = true;
             masterPasswordPopup(ui);
-            notePopup(ui, "Invalid Password", "The Game Master password is not correct.");
+            notePopup(ui, "Invalid Password", masterNote_);
             playersPopup(ui);
             saveMapPopup(ui);
             draftPopup(ui);
@@ -279,8 +280,10 @@ private:
         bool open = false, invalid = false;
         if (ok) {
             // An exact comparison: letter case and spaces count.
-            if (ui.session.masterPasswordMatches(masterInput_)) open = true;
+            const std::expected<bool, std::string> matches = ui.session.masterPasswordMatches(masterInput_);
+            if (matches && *matches) open = true;
             else invalid = true;
+            masterNote_ = matches ? std::string("The Game Master password is not correct.") : matches.error();
         }
         if (ok || cancel) {
             masterInput_.clear();
@@ -352,6 +355,7 @@ private:
     std::vector<uint8_t> lamps_;
     std::vector<uint8_t> clicked_;
     std::string masterInput_;
+    std::string masterNote_ = "The Game Master password is not correct.";
 };
 
 // ---- Save Game -------------------------------------------------------------------------------

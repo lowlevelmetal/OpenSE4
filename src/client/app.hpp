@@ -40,6 +40,7 @@ struct AppOptions {
 
     // New games.
     uint64_t seed = 0;               // 0 = from the clock
+    bool seedGiven = false;          // --seed (or a script run): a network game hosted here uses it too
     int systemCount = 0;             // a quick game's star systems; 0 = the default
     int empireCount = 0;             // a quick game's empires, the player's included; 0: as Quick Start (random computer and neutral players)
     std::string quadrantType;

@@ -1,11 +1,15 @@
 #include "net/auth.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <format>
-#include <map>
 #include <mutex>
+#include <new>
+#include <optional>
 #include <string>
+#include <system_error>
+#include <vector>
 
 namespace opense4::net {
 
@@ -24,29 +28,112 @@ constexpr uint32_t rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); 
 // Domain separation: 0.6's hashes differ from a plain SHA-256 of the password.
 constexpr std::string_view kPasswordDomain = "OpenSE4 password v1\n";
 constexpr std::string_view kVerifierDomain = "OpenSE4 verifier v1\n";
-constexpr std::string_view kVerifierPrefix = "pk1:";
+constexpr std::string_view kVerifierPrefix = "pk2:";
 
 std::mutex gWorkMutex;
 PasswordWork gWork;
 
-// Argon2id runs, kept by a hash of what went in (the work included).
-std::mutex gCacheMutex;
-std::map<crypto::Key, crypto::Key> gCache;
-constexpr size_t kCacheSize = 256;
-
-crypto::Key slowHash(std::string_view domain, std::string_view password, std::span<const uint8_t> context) {
-    const PasswordWork work = passwordWork();
-    const crypto::Key salt = crypto::Hash().add(domain).add(context).finish32();
-    const crypto::Key id = crypto::Hash().add("OpenSE4 password cache").add(salt).add(password).add(uint64_t{work.kibibytes}).add(uint64_t{work.passes}).finish32();
-    {
-        std::lock_guard lock(gCacheMutex);
-        if (auto it = gCache.find(id); it != gCache.end()) return it->second;
+// Argon2id runs, kept by a hash of what went in (the work included). Both the
+// results and their ids (a fast hash of the password) are wiped when they go:
+// when the cache is full, on forgetPasswordKeys(), and at exit.
+class Cache {
+public:
+    ~Cache() { forget(); }
+    std::optional<crypto::Key> find(const crypto::Key& id) {
+        std::lock_guard lock(mutex_);
+        for (const Entry& e : entries_)
+            if (crypto::equal(e.id, id)) return e.value;
+        return std::nullopt;
     }
-    const crypto::Key out = crypto::argon2id(password, salt, work.kibibytes, work.passes);
-    std::lock_guard lock(gCacheMutex);
-    if (gCache.size() >= kCacheSize) gCache.clear();
-    gCache.emplace(id, out);
+    void add(const crypto::Key& id, const crypto::Key& value) {
+        std::lock_guard lock(mutex_);
+        if (entries_.size() >= kSize) forgetLocked();
+        entries_.push_back(Entry{id, value});
+    }
+    void forget() {
+        std::lock_guard lock(mutex_);
+        forgetLocked();
+    }
+
+private:
+    struct Entry {
+        crypto::Key id;
+        crypto::Key value;
+    };
+    static constexpr size_t kSize = 64;
+    void forgetLocked() {
+        for (Entry& e : entries_) crypto::wipe(&e, sizeof e);
+        entries_.clear();
+    }
+    std::mutex mutex_;
+    std::vector<Entry> entries_;
+};
+Cache gCache;
+
+crypto::Key slowHash(std::string_view domain, std::string_view password, std::span<const uint8_t> context, PasswordWork work) {
+    if (!usableWork(work)) throw PasswordWorkError(std::format("A password key cannot be made with {}.", describe(work)));
+    const crypto::Key salt = crypto::Hash().add(domain).add(context).finish32();
+    crypto::Key id = crypto::Hash().add("OpenSE4 password cache").add(salt).add(password).add(uint64_t{work.kibibytes}).add(uint64_t{work.passes}).finish32();
+    if (auto known = gCache.find(id)) {
+        crypto::wipe(id.data(), id.size());
+        return *known;
+    }
+    crypto::Key out{};
+    try {
+        out = crypto::argon2id(password, salt, work.kibibytes, work.passes);
+    } catch (const std::bad_alloc&) {
+        crypto::wipe(id.data(), id.size());
+        throw PasswordWorkError(std::format("This computer does not have the memory a password key needs ({} of Argon2id). Close other "
+                                            "programs and try again.",
+                                            describe(work)));
+    }
+    gCache.add(id, out);
+    crypto::wipe(id.data(), id.size());
     return out;
+}
+
+bool decimal(std::string_view text, uint32_t& out) {
+    if (text.empty() || text.size() > 10 || (text.size() > 1 && text.front() == '0')) return false;
+    const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
+    return ec == std::errc{} && end == text.data() + text.size();
+}
+
+// A verifier of the current kind, taken apart. `why` says what is wrong.
+std::optional<VerifierKeys> parseVerifier(std::string_view verifier, std::string& why) {
+    constexpr std::string_view kForm = "a password verifier is \"pk2:\", the Argon2id work (\"<KiB>:<passes>:\") and 128 hex digits";
+    if (!verifier.starts_with(kVerifierPrefix)) {
+        why = isLegacyVerifier(verifier) ? std::string("it is a password hash of OpenSE4 0.6, which a player can no longer give") : std::string(kForm);
+        return std::nullopt;
+    }
+    std::string_view rest = verifier.substr(kVerifierPrefix.size());
+    const size_t a = rest.find(':');
+    const size_t b = a == std::string_view::npos ? a : rest.find(':', a + 1);
+    VerifierKeys keys;
+    if (b == std::string_view::npos || !decimal(rest.substr(0, a), keys.work.kibibytes) || !decimal(rest.substr(a + 1, b - a - 1), keys.work.passes) ||
+        rest.size() - b - 1 != 128) {
+        why = std::string(kForm);
+        return std::nullopt;
+    }
+    if (!usableWork(keys.work)) {
+        why = std::format("its Argon2id work ({}) is out of bounds ({} KiB to {} MiB, 1 to {} passes)", describe(keys.work), kMinPasswordKibibytes,
+                          kMaxPasswordKibibytes / 1024, kMaxPasswordPasses);
+        return std::nullopt;
+    }
+    rest = rest.substr(b + 1);
+    const auto signing = crypto::keyFromHex(rest.substr(0, 64));
+    const auto box = crypto::keyFromHex(rest.substr(64, 64));
+    // One text form per verifier (hosts and players compare them as text): lower-case hex.
+    if (!signing || !box || rest != crypto::hex(*signing) + crypto::hex(*box)) {
+        why = std::string(kForm) + " (lower case)";
+        return std::nullopt;
+    }
+    if (crypto::smallOrderEdDsa(*signing) || crypto::smallOrderX25519(*box)) {
+        why = "it holds a key no password makes (a point of small order)";
+        return std::nullopt;
+    }
+    keys.signing = *signing;
+    keys.box = *box;
+    return keys;
 }
 
 std::array<uint8_t, 8> littleEndian(uint64_t v) {
@@ -138,6 +225,15 @@ std::string toHex(std::span<const uint8_t> bytes) {
     return s;
 }
 
+bool usableWork(PasswordWork work) {
+    return work.kibibytes >= kMinPasswordKibibytes && work.kibibytes <= kMaxPasswordKibibytes && work.passes >= 1 && work.passes <= kMaxPasswordPasses;
+}
+
+std::string describe(PasswordWork work) {
+    const std::string memory = work.kibibytes % 1024 == 0 ? std::format("{} MiB", work.kibibytes / 1024) : std::format("{} KiB", work.kibibytes);
+    return std::format("{}, {} pass{}", memory, work.passes, work.passes == 1 ? "" : "es");
+}
+
 void setPasswordWork(PasswordWork work) {
     std::lock_guard lock(gWorkMutex);
     gWork = work;
@@ -148,21 +244,31 @@ PasswordWork passwordWork() {
     return gWork;
 }
 
-std::string PasswordKeys::verifier() const { return std::string(kVerifierPrefix) + crypto::hex(signing.publicKey) + crypto::hex(box.publicKey); }
+std::string PasswordKeys::verifier() const {
+    return std::format("{}{}:{}:{}{}", kVerifierPrefix, work.kibibytes, work.passes, crypto::hex(signing.publicKey), crypto::hex(box.publicKey));
+}
 
-std::optional<PasswordKeys> passwordKeys(std::string_view password, uint64_t gameId) {
+std::optional<PasswordKeys> passwordKeys(std::string_view password, uint64_t gameId) { return passwordKeys(password, gameId, passwordWork()); }
+
+std::optional<PasswordKeys> passwordKeys(std::string_view password, uint64_t gameId, PasswordWork work) {
     if (password.empty()) return std::nullopt;
     const auto game = littleEndian(gameId);
-    crypto::Key seed = slowHash("OpenSE4 password key v2", password, game);
+    crypto::Key seed = slowHash("OpenSE4 password key v2", password, game, work);
     crypto::Key signingSeed = crypto::Hash(seed).add("signing key").finish32();
     crypto::Key boxSecret = crypto::Hash(seed).add("box key").finish32();
     PasswordKeys keys;
     keys.signing = crypto::signingKey(signingSeed);
     keys.box = crypto::keyPairFromSecret(boxSecret);
+    keys.work = work;
     crypto::wipe(seed.data(), seed.size());
     crypto::wipe(signingSeed.data(), signingSeed.size());
     crypto::wipe(boxSecret.data(), boxSecret.size());
     return keys;
+}
+
+std::optional<PasswordKeys> passwordKeysFor(std::string_view verifier, std::string_view password, uint64_t gameId) {
+    const std::optional<VerifierKeys> keys = verifierKeys(verifier);
+    return passwordKeys(password, gameId, keys ? keys->work : passwordWork());
 }
 
 std::string passwordVerifier(std::string_view password, uint64_t gameId) {
@@ -171,11 +277,13 @@ std::string passwordVerifier(std::string_view password, uint64_t gameId) {
 }
 
 std::optional<VerifierKeys> verifierKeys(std::string_view verifier) {
-    if (!verifier.starts_with(kVerifierPrefix) || verifier.size() != kVerifierPrefix.size() + 128) return std::nullopt;
-    const auto signing = crypto::keyFromHex(verifier.substr(kVerifierPrefix.size(), 64));
-    const auto box = crypto::keyFromHex(verifier.substr(kVerifierPrefix.size() + 64, 64));
-    if (!signing || !box || crypto::smallOrderEdDsa(*signing) || crypto::smallOrderX25519(*box)) return std::nullopt;
-    return VerifierKeys{*signing, *box};
+    std::string why;
+    return parseVerifier(verifier, why);
+}
+
+std::string verifierProblem(std::string_view verifier) {
+    std::string why;
+    return parseVerifier(verifier, why) ? std::string{} : why;
 }
 
 bool usableVerifier(std::string_view verifier) { return verifier.empty() || verifierKeys(verifier).has_value(); }
@@ -221,8 +329,10 @@ crypto::Key joinKey(std::string_view joinPassword, const crypto::Key& hostKey, u
     std::array<uint8_t, 40> context{};
     std::copy(hostKey.begin(), hostKey.end(), context.begin());
     std::copy(game.begin(), game.end(), context.begin() + 32);
-    return slowHash("OpenSE4 join password key v2", joinPassword, context);
+    return slowHash("OpenSE4 join password key v2", joinPassword, context, passwordWork());
 }
+
+void forgetPasswordKeys() { gCache.forget(); }
 
 bool constantTimeEquals(std::string_view a, std::string_view b) {
     unsigned diff = a.size() == b.size() ? 0u : 1u;
@@ -239,7 +349,10 @@ bool checkPassword(std::string_view verifier, std::string_view password, uint64_
     if (verifier.empty()) return true;
     if (password.empty()) return false;
     if (isLegacyVerifier(verifier)) return checkLegacyPassword(verifier, legacyPasswordHash(password));
-    return constantTimeEquals(verifier, passwordVerifier(password, gameId));
+    const std::optional<VerifierKeys> keys = verifierKeys(verifier);
+    if (!keys) return false;
+    const std::optional<PasswordKeys> mine = passwordKeys(password, gameId, keys->work);
+    return mine && constantTimeEquals(verifier, mine->verifier());
 }
 
 std::string resetPassword() {

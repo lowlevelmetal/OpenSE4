@@ -23,11 +23,11 @@ namespace {
 
 constexpr std::string_view kPlrMagic = "OSE4PLR2";
 constexpr std::string_view kDraftMagic = "OSE4DRFT";
-constexpr std::string_view kTurnMagic = "OSE4TURN";
+constexpr std::string_view kTurnMagic = "OSE4TRN2";
 constexpr std::string_view kWhat = "orders file (.plr)";
 constexpr std::string_view kDraftWhat = "draft of a turn";
 constexpr std::string_view kTurnWhat = "player turn file (.turn)";
-constexpr std::string_view kTurnDomain = "OpenSE4 turn file v1";
+constexpr std::string_view kTurnDomain = "OpenSE4 turn file v2";
 constexpr std::string_view kOrdersDomain = "OpenSE4 orders file v1";
 
 std::string lowerExtension(const fs::path& p) {
@@ -52,6 +52,7 @@ struct TurnHeader {
     bool turnBased = false;
     std::string verifier;
     crypto::Key hostKey{};
+    crypto::Key hostSigningKey{};
 };
 
 // The .plr on the disk: what it is for, and the orders file encrypted to the host.
@@ -64,7 +65,7 @@ struct SealedOrders {
     std::vector<uint8_t> content;
 };
 
-template <class Ar> void io(Ar& ar, TurnHeader& h) { game::serial::fields(ar, h.info, h.empire, h.turnBased, h.verifier, h.hostKey); }
+template <class Ar> void io(Ar& ar, TurnHeader& h) { game::serial::fields(ar, h.info, h.empire, h.turnBased, h.verifier, h.hostKey, h.hostSigningKey); }
 template <class Ar> void io(Ar& ar, SealedOrders& o) { game::serial::fields(ar, o.gameId, o.empire, o.turn, o.ephemeral, o.mac, o.content); }
 
 } // namespace
@@ -77,14 +78,17 @@ void io(Ar& ar, OrdersFile& f) {
 
 template <class Ar>
 void io(Ar& ar, TurnFile& f) {
-    game::serial::fields(ar, f.info, f.empire, f.turnBased, f.verifier, f.hostKey, f.encrypted, f.ephemeral, f.mac, f.content);
+    game::serial::fields(ar, f.info, f.empire, f.turnBased, f.verifier, f.hostKey, f.hostSigningKey, f.encrypted, f.ephemeral, f.mac, f.content,
+                         f.signature);
 }
 
 template <class Ar> void io(Ar& ar, TurnView& v) { game::serial::fields(ar, v.viewChecksum, v.view); }
 
 namespace {
 
-std::vector<uint8_t> headerBytes(const TurnFile& f) { return game::serial::encode(TurnHeader{f.info, f.empire, f.turnBased, f.verifier, f.hostKey}); }
+std::vector<uint8_t> headerBytes(const TurnFile& f) {
+    return game::serial::encode(TurnHeader{f.info, f.empire, f.turnBased, f.verifier, f.hostKey, f.hostSigningKey});
+}
 
 // What a .plr says in the clear, bound to its content (the fresh key is
 // bound by the encryption key itself).
@@ -124,10 +128,36 @@ std::expected<TurnFile, std::string> readTurnFile(const fs::path& file) {
     return f;
 }
 
+crypto::Key turnFileDigest(const TurnFile& f) {
+    return crypto::Hash()
+        .add("OpenSE4 turn file signature v1")
+        .add(headerBytes(f))
+        .add(uint64_t{f.encrypted ? 1u : 0u})
+        .add(f.ephemeral)
+        .add(f.mac)
+        .add(f.content)
+        .finish32();
+}
+
+void signTurnFile(TurnFile& f, const crypto::SigningKey& key) {
+    f.hostSigningKey = key.publicKey;
+    f.signature = crypto::sign(key, turnFileDigest(f));
+}
+
+bool turnFileSigned(const TurnFile& f) {
+    // A key of small order is no host's (it would pass signatures of anything).
+    return !crypto::smallOrderEdDsa(f.hostSigningKey) && crypto::verify(f.signature, f.hostSigningKey, turnFileDigest(f));
+}
+
 std::expected<TurnView, std::string> openTurnFile(const TurnFile& f, const std::optional<PasswordKeys>& keys) {
+    if (!turnFileSigned(f)) return std::unexpected(std::string("the turn file was changed after its host made it (its signature does not match)"));
+    // An empire whose password has a box key gets its view encrypted: one in
+    // the clear was made by someone else.
+    if (!f.encrypted && verifierKeys(f.verifier))
+        return std::unexpected(std::string("the turn file holds the view in the clear, although the empire's password has a key to encrypt it to"));
     std::vector<uint8_t> content = f.content;
     if (f.encrypted) {
-        if (!keys || !crypto::openFrom(keys->box, f.ephemeral, kTurnDomain, headerBytes(f), content, f.mac))
+        if (!keys || !crypto::openFromSender(keys->box, f.hostKey, f.ephemeral, kTurnDomain, headerBytes(f), content, f.mac))
             return std::unexpected(std::string("the turn file does not open with this password"));
     }
     TurnView v;
@@ -162,7 +192,7 @@ game::GameState playerView(const game::Rules& rules, const game::GameState& stat
 }
 
 std::expected<std::vector<std::pair<game::EmpireId, fs::path>>, std::string> writeTurnFiles(const game::Rules& rules, const fs::path& gameFile,
-                                                                                            const fs::path& dir, const crypto::Key& hostKey) {
+                                                                                            const fs::path& dir, const secure::PbemHostKeys& host) {
     // From the file as saved, exactly as the next processing will read it.
     auto loaded = game::loadGame(gameFile);
     if (!loaded) return std::unexpected(loaded.error());
@@ -184,18 +214,94 @@ std::expected<std::vector<std::pair<game::EmpireId, fs::path>>, std::string> wri
         f.empire = e;
         f.turnBased = game::turnBased(s);
         f.verifier = s.empire(e).passwordHash;
-        f.hostKey = hostKey;
+        f.hostKey = host.box.publicKey;
+        f.hostSigningKey = host.signing.publicKey;
         f.content = game::serial::encode(TurnView{game::stateChecksum(view), game::serializeState(view)});
-        // For the empire's eyes only, when it has a key to encrypt to.
+        // For the empire's eyes only, when it has a key to encrypt to; from
+        // this host only (its box key is mixed in), and signed.
         if (const auto keys = verifierKeys(f.verifier)) {
             f.encrypted = true;
-            crypto::sealTo(keys->box, kTurnDomain, headerBytes(f), f.content, f.ephemeral, f.mac);
+            crypto::sealFromSender(host.box, keys->box, kTurnDomain, headerBytes(f), f.content, f.ephemeral, f.mac);
         }
+        signTurnFile(f, host.signing);
         const fs::path file = dir / turnFileName(info, e);
         if (auto r = game::writeFileAtomic(file, encodeTurnFile(f)); !r) return std::unexpected(r.error());
         written.emplace_back(e, file);
     }
     return written;
+}
+
+// ---- The player's side of a turn file ----------------------------------------------------------------
+
+HostKeyCheck checkHostKey(const TurnFile& f, const secure::KnownHosts& known) {
+    HostKeyCheck c;
+    c.fingerprint = crypto::fingerprint(f.hostSigningKey);
+    const std::optional<crypto::Key> trusted = known.findGame(f.info.gameId);
+    if (!trusted) c.status = HostKeyStatus::First;
+    else if (crypto::equal(*trusted, f.hostSigningKey)) c.status = HostKeyStatus::Known;
+    else {
+        c.status = HostKeyStatus::Changed;
+        c.trusted = crypto::fingerprint(*trusted);
+    }
+    return c;
+}
+
+namespace {
+
+std::expected<PlayerTurn, std::string> openForPlayer(const TurnFile& f, secure::KnownHosts& known, std::string_view password,
+                                                     std::string_view newPassword, PlayerTrust trust) {
+    const std::string name = f.empire.valid() && f.empire.index() < f.info.empires.size() ? f.info.empires[f.empire.index()] : std::string("?");
+    // Who made the file: signed by the key it names, which must be the one
+    // trusted for this game.
+    if (!turnFileSigned(f)) return std::unexpected(std::string("The turn file was changed after its host made it (its signature does not match)."));
+    const HostKeyCheck host = checkHostKey(f, known);
+    if (host.status == HostKeyStatus::Changed && !trust.trustChangedHostKey)
+        return std::unexpected(std::format("This turn file of '{}' is signed by the host key {}, but this computer trusts {} for this game. Trust the "
+                                           "new key only if the host says it made one (a new computer, or a lost key file) and sees that "
+                                           "fingerprint; otherwise someone else made this file.",
+                                           f.info.gameName, host.fingerprint, host.trusted));
+    // The password: its keys open the view and sign the orders. An empire of
+    // OpenSE4 0.6 shows its old password's hash once and takes a new password,
+    // whose keys come from that password, never from the old hash.
+    PlayerTurn out;
+    out.host = host.status;
+    if (isLegacyVerifier(f.verifier)) {
+        out.legacyPasswordHash = legacyPasswordHash(password);
+        if (!checkLegacyPassword(f.verifier, out.legacyPasswordHash)) return std::unexpected(std::format("Wrong password for {}.", name));
+        if (newPassword.empty())
+            return std::unexpected(std::format("This game was made by OpenSE4 0.6: choose a new password for {}. This turn's orders file "
+                                               "shows the old one once, so the old one stops counting.",
+                                               name));
+        if (newPassword == password) return std::unexpected(std::string("Choose a new password other than the old one."));
+        if (!trust.showOldPassword)
+            return std::unexpected(std::format("To move {} to the new password, this turn's orders file shows the host with the key {} your "
+                                               "old password's form, once. Compare that key with the one the host sees, then agree; or ask "
+                                               "the host to reset your password instead.",
+                                               name, host.fingerprint));
+        out.keys = passwordKeys(newPassword, f.info.gameId);
+    } else if (!f.verifier.empty()) {
+        out.keys = passwordKeysFor(f.verifier, password, f.info.gameId);
+        if (!out.keys || !constantTimeEquals(out.keys->verifier(), f.verifier)) return std::unexpected(std::format("Wrong password for {}.", name));
+    }
+    auto view = openTurnFile(f, out.legacyPasswordHash.empty() ? out.keys : std::nullopt);
+    if (!view) return std::unexpected(std::format("Wrong password for {}, or the turn file was changed: {}.", name, view.error()));
+    out.view = std::move(*view);
+    // Trusted from now on (the first turn file of the game, or a new key the player agreed to).
+    if (host.status != HostKeyStatus::Known)
+        if (auto r = known.rememberGame(f.info.gameId, f.hostSigningKey); !r)
+            return std::unexpected("Could not remember the host's key: " + r.error());
+    return out;
+}
+
+} // namespace
+
+std::expected<PlayerTurn, std::string> openTurnForPlayer(const TurnFile& f, secure::KnownHosts& known, std::string_view password,
+                                                         std::string_view newPassword, PlayerTrust trust) {
+    try {
+        return openForPlayer(f, known, password, newPassword, trust);
+    } catch (const PasswordWorkError& e) {
+        return std::unexpected(std::string(e.what()));
+    }
 }
 
 // ---- Orders files ------------------------------------------------------------------------------------
@@ -298,7 +404,7 @@ std::expected<fs::path, std::string> writePlayerOrders(const fs::path& dir, cons
 // ---- The host's processing ---------------------------------------------------------------------------
 
 std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, game::GameState& state, const game::SaveInfo& info,
-                                                      const fs::path& ordersDir, const crypto::KeyPair& hostKey) {
+                                                      const fs::path& ordersDir, const crypto::KeyPair& hostKey, bool passwordMigration) {
     ProcessReport rep;
     rep.turnBefore = state.turn;
     auto refused = [&](const game::TurnResult& r) {
@@ -392,6 +498,12 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
         // the clear, so no key may come from it).
         std::string upgrade;
         if (isLegacyVerifier(e.passwordHash)) {
+            if (!passwordMigration) {
+                rep.warnings.push_back(std::format("{}: {}'s password is still in the form of OpenSE4 0.6, and this host does not move such "
+                                                   "passwords itself: reset it (Reset Passwords)",
+                                                   name, e.name));
+                continue;
+            }
             if (!checkLegacyPassword(e.passwordHash, f->legacyPasswordHash)) {
                 rep.warnings.push_back(std::format("{}: wrong password for {}", name, e.name));
                 continue;
@@ -446,7 +558,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
     for (auto& c : best)
         if (c && !c->upgrade.empty()) {
             state.empire(c->file.empire).passwordHash = c->upgrade;
-            rep.warnings.push_back(std::format("{}'s new password counts from now on", state.empire(c->file.empire).name));
+            rep.migratedPasswords.push_back(state.empire(c->file.empire).name);
         }
 
     if (turnBased) {
@@ -493,8 +605,10 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
     return rep;
 }
 
-std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rules, const fs::path& gameFile, const fs::path& ordersDir,
-                                                          const ProcessOptions& options) {
+namespace {
+
+std::expected<ProcessReport, std::string> processGameFileWithKeys(const game::Rules& rules, const fs::path& gameFile, const fs::path& ordersDir,
+                                                                  const ProcessOptions& options) {
     auto loaded = game::loadGame(gameFile);
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& state = loaded->first;
@@ -517,7 +631,7 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
     for (game::EmpireId e : options.resetPasswords)
         if (!e.valid() || e.index() >= state.empires.size()) return std::unexpected(std::string("Reset Passwords names an empire that does not exist."));
 
-    auto rep = processTurn(rules, state, info, ordersDir, options.hostKey);
+    auto rep = processTurn(rules, state, info, ordersDir, options.host.box, options.passwordMigration);
     if (!rep) return rep;
     // The new passwords win over those the orders files carried (spec 06 §1.9).
     for (game::EmpireId e : options.resetPasswords) {
@@ -535,7 +649,7 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
 
     // Each player of the new turn gets their own view, never the whole game.
     const fs::path turnDir = !options.turnFilesDir.empty() ? options.turnFilesDir : gameFile.has_parent_path() ? gameFile.parent_path() : fs::path(".");
-    auto turnFiles = writeTurnFiles(rules, gameFile, turnDir, options.hostKey.publicKey);
+    auto turnFiles = writeTurnFiles(rules, gameFile, turnDir, options.host);
     if (!turnFiles) return std::unexpected("The turn was processed and saved, but the turn files could not be written: " + turnFiles.error());
     rep->turnFiles = std::move(*turnFiles);
 
@@ -543,6 +657,19 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
         for (const fs::path& p : rep->used)
             if (!fs::remove(p, ec) && ec) rep->warnings.push_back(std::format("{}: could not delete: {}", p.filename().string(), ec.message()));
     return rep;
+}
+
+} // namespace
+
+std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rules, const fs::path& gameFile, const fs::path& ordersDir,
+                                                          const ProcessOptions& options) {
+    // The master password's check and the new passwords run Argon2id, which
+    // needs its memory at once; nothing is written before they are done.
+    try {
+        return processGameFileWithKeys(rules, gameFile, ordersDir, options);
+    } catch (const PasswordWorkError& e) {
+        return std::unexpected(std::string(e.what()));
+    }
 }
 
 } // namespace opense4::net::pbem

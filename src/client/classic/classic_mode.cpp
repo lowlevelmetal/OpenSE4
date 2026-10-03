@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <expected>
 #include <format>
 #include <iterator>
 #include <optional>
@@ -613,7 +614,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
 
     if (!session_) {
-        MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, platform_.app, {}, {}, {}, {}, frontError_};
+        MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, options_.seedGiven, platform_.app, {}, {}, {}, {}, frontError_};
         // The game starts once the screen has drawn: starting it replaces the screen.
         std::unique_ptr<ClassicSession> started;
         ctx.startGame = [&started](std::unique_ptr<ClassicSession> s) { started = std::move(s); };
@@ -1140,11 +1141,12 @@ void ClassicMode::drawHandoff(UiContext& ui) {
     ImGui::SameLine();
     if (ImGui::Button("Quit Game", ui.size({140, 30}))) ui.requests.quitGame = true;
     if (begin) {
-        if (!needsPassword || session_->passwordMatches(e, handoffPassword_)) {
+        const std::expected<bool, std::string> matches = needsPassword ? session_->passwordMatches(e, handoffPassword_) : true;
+        if (matches && *matches) {
             handoff_ = false;
             handoffPassword_.clear();
         } else {
-            handoffError_ = "Wrong password.";
+            handoffError_ = matches ? std::string("Wrong password.") : matches.error();
             handoffPassword_.clear();
         }
     }
