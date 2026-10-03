@@ -166,9 +166,11 @@ The reference section at the end lists the exact keys, values and command names.
 ## UI tags
 
 Windows and widgets that lessons point at register a tag each frame with their screen
-rectangle (`UiContext::tags`). A step's `highlight` outlines the tagged rectangles with
-a pulsing frame, over the classic windows and under the lesson panel, until the step is
-done. Tags are:
+rectangle (`UiContext::tags`) and the window it was drawn in. A step's `highlight`
+outlines the tagged rectangles with a pulsing frame until the step is done. Each frame is
+drawn in its part's own window, so whatever lies above that window covers the frame as
+it covers the part: a prompt such as "Leave the lesson?", the Game Menu and its Quit
+question, or another window. Tags are:
 
 - `window:<id>` for each window (ids as in `window:` links);
 - `command:<id>` for the main window's command buttons, `order:<id>` for the order

@@ -364,7 +364,9 @@ void UiContext::tag(std::string_view name, ImVec2 min, ImVec2 max) {
         log::warn("UI tag '{}' is not listed in learn/ids.cpp", name);
     }
 #endif
-    tags.push_back({std::string(name), min, max});
+    ImGuiWindow* window = ImGui::GetCurrentContext() ? ImGui::GetCurrentWindowRead() : nullptr;
+    if (window && window->IsFallbackWindow) window = nullptr;   // drawn outside every window: the background
+    tags.push_back({std::string(name), min, max, window});
     // A tag given to the list just drawn names its arrow column's parts too.
     if (lastList.valid && lastList.min.x == min.x && lastList.min.y == min.y && lastList.max.x == max.x && lastList.max.y == max.y) {
         const ListParts list = lastList;

@@ -164,9 +164,10 @@ void LessonRunner::drawOutlines(UiContext& ui, const LockState& lock) const {
     if (!st || progress_.result() != learn::LessonProgress::Result::None) return;
     const bool outline = !st->highlight.empty() && !progress_.completed(progress_.active());
     if (!outline && !lock.active) return;
-    // The spotlight and the outlines go in a see-through window over the
-    // classic windows and under the panel (the panel's own buttons are
-    // outlined over it).
+    // The spotlight goes in a see-through window over the classic windows and
+    // under the panel. Each outline goes in the layer of the window its part
+    // is drawn in, so a prompt, a menu or another window above that window
+    // covers the outline as it covers the part.
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(display);
@@ -177,25 +178,34 @@ void LessonRunner::drawOutlines(UiContext& ui, const LockState& lock) const {
     ImDrawList* under = ImGui::GetWindowDrawList();
     ImGui::End();
     if (ImGuiWindow* panel = ImGui::FindWindowByName("##lessonpanel"); panel && panelOpen_) ImGui::BringWindowToDisplayFront(panel);
-    // Everything the step does not let the player use is dimmed.
+    // A refused click makes the outlines flash white for a moment.
+    const double sinceRefused = ui.time - refusedTime_;
+    const bool flash = sinceRefused >= 0 && sinceRefused < 1.0 && std::fmod(sinceRefused, 0.25) < 0.125;
+    const float thick = std::max(2.0f, ui.px(flash ? 4.0f : 2.5f));
+    const float pad = ui.px(3);
+    // Everything the step does not let the player use is dimmed. The clear
+    // areas reach round the outlines, which lie just outside their parts.
     if (lock.active) {
         std::vector<LockArea> open = lock.areas;
         open.insert(open.end(), lock.lookAreas.begin(), lock.lookAreas.end());
+        const float ring = pad + std::max(2.0f, ui.px(4.0f));
+        for (LockArea& a : open) a = {ImVec2(a.min.x - ring, a.min.y - ring), ImVec2(a.max.x + ring, a.max.y + ring)};
         spotlight(under, open, display, IM_COL32(0, 0, 0, 140));
     }
-    // A refused click makes the outlines flash white for a moment.
-    const double sinceRefused = ui.time - refusedTime_;
     if (outline) {
-        const bool flash = sinceRefused >= 0 && sinceRefused < 1.0 && std::fmod(sinceRefused, 0.25) < 0.125;
         const float pulse = 0.6f + 0.4f * std::sin(float(ui.time) * 5.0f);
         const ImU32 color = flash ? IM_COL32_WHITE : imColor(0xffd040, pulse);
-        const float thick = std::max(2.0f, ui.px(flash ? 4.0f : 2.5f));
-        const float pad = ui.px(3);
-        for (const std::string& tag : st->highlight) {
-            ImDrawList* dl = tag.starts_with("lesson:") ? ImGui::GetForegroundDrawList() : under;
-            for (const UiTag& t : ui.tags)
-                if (t.name == tag) dl->AddRect(ImVec2(t.min.x - pad, t.min.y - pad), ImVec2(t.max.x + pad, t.max.y + pad), color, 0.0f, thick);
-        }
+        for (const std::string& tag : st->highlight)
+            for (const UiTag& t : ui.tags) {
+                if (t.name != tag) continue;
+                // A part drawn outside every window lies on the map, under all of them.
+                ImDrawList* dl = t.window ? t.window->DrawList : ImGui::GetBackgroundDrawList();
+                dl->PushClipRect(ImVec2(0, 0), display, false);
+                dl->PushTexture(ImGui::GetIO().Fonts->TexRef);
+                dl->AddRect(ImVec2(t.min.x - pad, t.min.y - pad), ImVec2(t.max.x + pad, t.max.y + pad), color, 0.0f, thick);
+                dl->PopTexture();
+                dl->PopClipRect();
+            }
     }
     // And a word where the player clicked (outlined or not).
     if (refusedAt_ && sinceRefused >= 0 && sinceRefused < kRefusedHint) {

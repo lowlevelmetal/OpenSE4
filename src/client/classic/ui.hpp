@@ -17,6 +17,8 @@
 
 #include <imgui.h>
 
+struct ImGuiWindow;
+
 #include <array>
 #include <filesystem>
 #include <functional>
@@ -136,10 +138,13 @@ struct UiRequests {
 };
 
 // A rectangle a lesson can outline (docs/LEARNING.md "UI tags"), in ImGui
-// screen units, registered while it is drawn.
+// screen units, registered while it is drawn. `window` is the ImGui window it
+// was drawn in (null outside every window): its outline goes in that window's
+// layer, so whatever lies above the window covers the outline too.
 struct UiTag {
     std::string name;
     ImVec2 min, max;
+    ImGuiWindow* window = nullptr;
 };
 
 struct LearnContent;
