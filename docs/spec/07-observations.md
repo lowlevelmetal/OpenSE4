@@ -274,7 +274,7 @@ its own, inside a nested rootful Xwayland display of 1024×768, so the game's 10
 frame filled the display 1:1. Input went through XTest on that display only. Stills were
 taken with ImageMagick; motion was recorded losslessly with ffmpeg's x11grab at 60 frames
 a second and examined frame by frame (which pixels changed, and their bounding box). Our
-engine and client were built from commit dc71cad. Captures, videos and the statistics
+engine and client were built from commit 7083cda. Captures, videos and the statistics
 files are in `reference/observe/2026-10-01/`.
 
 **Waits under Wine.** Every animation frame for which spec 06 §1.10.3 gives a wait of
@@ -440,7 +440,7 @@ which holds one row per living empire per turn (empire, date, then the Compariso
 columns). The third game ended after turn 92, when the human empire was destroyed, so turn
 100 averages the first two games only.
 
-**Ours.** Twelve games (seeds 1–12) of the engine at dc71cad through a scratch program
+**Ours.** Twelve games (seeds 1–12) of the engine at 7083cda through a scratch program
 (not tracked): `createGame` with a Small quadrant and simultaneous turns, Terran plus four
 other race presets as Quick Start picks them, all five empires computer-controlled, 100
 `processTurn` calls, and the statistics the engine records (`Empire::history`).
@@ -560,9 +560,9 @@ What our computer players do (seeds 1–12, five computers), for the analyst que
 Measured again once the engine followed the rules settled in spec 05 questions 53–56: the
 exploration frontier, the territory claimed one turn late, colonization danger per empire,
 the queue choice of Defense Bases and units, facility upgrades first and the facility
-minister's lists (commits e1b910b, 4badd2c and a72b94d). The set-up is the five computers of
+minister's lists (commits 8ce6c41, 4a9478d and 0fa7a48). The set-up is the five computers of
 "Pace of the computer players" (seeds 1–12, Small quadrant, simultaneous, 100 `processTurn`
-calls, `Empire::history`), run on the engine just before these changes (500ab8f, which
+calls, `Empire::history`), run on the engine just before these changes (a696d47, which
 includes later work than the table above) and after them. Means per empire, original /
 before / after:
 
@@ -583,7 +583,7 @@ before / after:
 - **AI states**, share of all empire-turns 1–100, before / after: Exploration 34 / 35 %,
   Infrastructure 7 / 8 %, Prepare for Attack 2 / 3 %, Attack 2 / 2 %, Secure Holdings 1 / 1 %,
   Defend (Short Term) 53 / 52 %. Turns 51–100: Infrastructure 4 / 5 %, Defend (Short Term)
-  79 / 78 %. With the frontier, territory and danger rules alone (e1b910b) Infrastructure
+  79 / 78 %. With the frontier, territory and danger rules alone (8ce6c41) Infrastructure
   was 9 % and Defend (Short Term) 51 %. 27 of the 60 empires never reach Infrastructure in
   100 turns (30 before); the others first do at a median of turn 19.
 - **Why the frontier changed so little** (seeds 1–6, every turn): in the turns with contact
@@ -721,7 +721,7 @@ Medium), every score visible. The Terran empire was marked computer-controlled b
 first turn, so all five empires are computer players throughout. Three games of 100 turns,
 on maps of 21, 26 and 31 systems.
 
-Ours: 24 games (seeds 1–24) of the engine at 6ef2c3e through a scratch program (not
+Ours: 24 games (seeds 1–24) of the engine at e66c17b through a scratch program (not
 tracked) that writes the same records: a Small quadrant, simultaneous turns, the Terran
 preset and four random races with random computer personalities, five computer players,
 100 `processTurn` calls. Our maps have 20–37 systems; "small maps" are our 8 games of 20–26
@@ -829,7 +829,7 @@ follow.
 - The economy step of player 1 found the lists of player 5's start-of-turn step on every turn;
   players 2–5 built their own (spec 05 §7.2 "Whose lists the economy step reads").
 
-**Scratch experiments** (the engine at 6ef2c3e with the changes named, following spec 05
+**Scratch experiments** (the engine at e66c17b with the changes named, following spec 05
 §7.2 and §7.5; not kept; the 24 games above; turns 51–100 unless marked "all"):
 
 | Change | Defend, all | Defend | Infrastructure, all | Infrastructure | Attack ships in fleets, 81–100 | War colonies gone in 10 turns |
@@ -853,10 +853,10 @@ Measured again once the engine followed the rules this session settled (spec 05 
 question 60): one-turn Seek movement orders and the stored Attack, the Join Fleet pursuit,
 the attack candidates' test, the explorers and their point list, the claim rewrite first in
 the Politics minister's run, the economy step's borrowed colonization list, and the queue
-list's yard and order details (commits 59652e4 to 28fad22; the choices the text leaves open
+list's yard and order details (commits 105c62c to bec58c3; the choices the text leaves open
 are spec 05 question 64). The set-up and records are those of "Pace observed under a
 debugger": seeds 1–24, a Small quadrant, five computer players, simultaneous turns, 100
-`processTurn` calls. Original / before (41f7d8b) / after:
+`processTurn` calls. Original / before (6211cb7) / after:
 
 | | Original | Before | After |
 |---|---|---|---|
@@ -919,7 +919,7 @@ value, the value-adjusted amount, the step-4 percentage and the output, spec 02 
 colony's happiness update every turn, term by term, with the empire-wide part; each empire's
 list of happiness events at its update; every ship's identity, owner, design type, position
 and fleet, every colony and every planet's values, every turn. Ours: the 24 games of that
-section on the engine after the movement rules (0d71f41), with the same records and the same
+section on the engine after the movement rules (e924b04), with the same records and the same
 happiness breakdown, and for each of the five original games 24 games of ours with that
 game's line-up (the races fixed, everything else as before). "Original" below is all five
 games unless a game is named.
@@ -927,7 +927,7 @@ games unless a game is named.
 **The five games together.** With the two new games the original's averages move toward
 ours; the first three games sat at the favourable end:
 
-| Turns 51–100 unless marked | Original, 3 games | Original, 5 games | Ours (0d71f41) |
+| Turns 51–100 unless marked | Original, 3 games | Original, 5 games | Ours (e924b04) |
 |---|---|---|---|
 | Defend (Short Term), all turns / turns 51–100 | 46 / 63 % | 48 / 70 % | 51 / 72 % |
 | Infrastructure, all turns / turns 51–100 | 12 / 16 % | 9 / 11 % | 8 / 8 % |
@@ -1057,7 +1057,7 @@ weapons, for planets the population, and the number of combat turns fought. They
 recorded every Defense Base placement with the empire's queue list and which entries have a
 working yard, each empire's soft-cap test with the revenue and maintenance it compared, and
 every design's owner, type, creation date and obsolete flag. Ours: the 24 games of
-"Resources, ships and colony losses under a debugger" (0d71f41), with the same battle
+"Resources, ships and colony losses under a debugger" (e924b04), with the same battle
 records plus the shots, hits and moves of each battle, and scratch builds that change one
 rule at a time (24 games each unless marked). A side is "armed" when one of its ships has a
 weapon, "unarmed" when it has ships but none armed, "units" when it has only unit groups,
@@ -1175,7 +1175,7 @@ with their owner, kind, design type and fate. The runs after the change drop the
 happiness events after each turn, as the original's hosted games and our local simultaneous
 games do; on the engine before the change that changes nothing measurable (120 seeds: +0.4
 points over the soft cap, standard error 0.5; −0.2 battles, 0.5). Original / before
-(856e694) / after; battles count each battle once, per empire and 25 turns of turns 51–100:
+(bfa45cf) / after; battles count each battle once, per empire and 25 turns of turns 51–100:
 
 | | Original | Before | After |
 |---|---|---|---|
@@ -1242,7 +1242,7 @@ dates compared strictly) and the construction budget's queue commitments (net in
 the maintenance of the moment and what the colony queues will spend this turn, the
 start-of-turn figure kept for the upgrades; spec 05 §7.5, questions 71 and 73). Set-up and
 records as in "Pace after the scrap, cap and fleet rules", the waiting happiness events
-dropped after each turn. Original / before (6fcd48e) / after, seeds 1–24:
+dropped after each turn. Original / before (55d0b7b) / after, seeds 1–24:
 
 | | Original | Before | After |
 |---|---|---|---|
@@ -1287,7 +1287,7 @@ vehicle's daily action in the movement phase (the day, the vehicle, its number o
 before the action and its sector after it), the day of every battle, every ship's orders
 after its empire's start-of-turn ministers (count, first order's kind and target), and in
 turns 1–30 the Ship Construction minister's counts per design type before its clean-up of
-obsolete items and the backlog test of each placement. Ours: the engine at aee3b7f with the
+obsolete items and the backlog test of each placement. Ours: the engine at f0142ab with the
 same records, 120 seeds of the pace set-up (the waiting happiness events kept, so the
 battles run a little above "Pace after the tie-break and budget rules"), and scratch builds
 that each add one rule; after the machine went down, 48 + 48 more games (five computer
@@ -1365,7 +1365,7 @@ alone, then all five):
 
 | | Battles | Decided won away from colonies | Drawn away | Ships lost in battle | Battles ending with the colony gone | Colonies lost | Defend (Short Term), turns 51–100 | Colonies at turn 100 | Ships at turn 50 | Second attack ship (turn) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Engine at aee3b7f | 11.1 | 5.0 | 6.1 | 7.8 | 1.0 | 1.2 | 72 % | 16.4 | 7.5 | 5 |
+| Engine at f0142ab | 11.1 | 5.0 | 6.1 | 7.8 | 1.0 | 1.2 | 72 % | 16.4 | 7.5 | 5 |
 | Vehicle table counts before the clean-up | 11.1 | 5.1 | 5.9 | 7.9 | 1.0 | 1.3 | 73 % | 16.3 | 8.0 | 9 |
 | Idle vehicles mark their sector | 13.2 | 5.0 | 9.2 | 7.8 | 1.0 | 1.2 | 72 % | 16.4 | 7.5 | 5 |
 | Exploring fleets on a Move To | 10.8 | 5.1 | 5.8 | 8.0 | 1.0 | 1.2 | 72 % | 16.4 | 7.6 | 5 |
@@ -1844,7 +1844,7 @@ Two Quick Starts (Terran) made Mid-Life Medium quadrants with 1 + 3 computer + 4
 Since 2026-10-03 our client follows these observations for Tactical Combat, Combat Replay,
 Combat Replay Options, Ground Combat and the report's up-arrow (spec 06 §1.6, §1.10.3,
 §1.10.6, §7 Q97, Q98); the replay's list of events is an OpenSE4 option, off by default (Q39).
-Our Ground Combat can now be captured offscreen: `--open=ground-combat` (after `--turns=60`,
+Our Ground Combat can now be captured offscreen: `--open=ground-combat` (after `--turns=70`,
 so that the player has a troop design) lands the player's troop transports on its homeworld
 in a strategic simulation, and `tests/input/ground-combat.script` plays it.
 

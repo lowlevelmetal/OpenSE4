@@ -3998,7 +3998,7 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     output of a few computer colonies read under a debugger beside the same colonies in ours.
 
     **Answer** (observed under a debugger, 2026-10-02; spec 07 "Resources, ships and colony
-    losses under a debugger", five original games against 24 of ours on 0d71f41). No rule of
+    losses under a debugger", five original games against 24 of ours on e924b04). No rule of
     production differs, and the first three games overstated the gap:
     - Every output of every colony at the income step of every fifth turn of two games
       (13,100 values) followed spec 02 §5.1, with the racial effects of our random race
