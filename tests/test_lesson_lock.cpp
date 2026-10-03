@@ -196,10 +196,20 @@ TEST_CASE("lesson lock: keys") {
     CHECK(lock.key(KeyChord{ImGuiKey_Enter}, true) == InputVerdict::Pass);
     CHECK(lock.key(KeyChord{ImGuiKey_Y}, true) == InputVerdict::Drop);
 
-    // A text field that has the keyboard takes every key.
+    // Tab and the arrows move nothing outside a text field.
+    CHECK(lock.key(KeyChord{ImGuiKey_Tab}, true) == InputVerdict::Drop);
+    CHECK(lock.key(KeyChord{ImGuiKey_DownArrow}, true) == InputVerdict::Drop);
+    CHECK(lock.key(KeyChord{ImGuiKey_Space}, true) == InputVerdict::Drop);
+
+    // A text field that has the keyboard takes every key (Tab moves between the
+    // window's fields), but Ctrl+Tab, which would bring another window to the front.
     s.typing = true;
     lock.set(s);
     CHECK(lock.key(KeyChord{ImGuiKey_A}, true) == InputVerdict::Pass);
+    CHECK(lock.key(KeyChord{ImGuiKey_Tab}, true) == InputVerdict::Pass);
+    CHECK(lock.key(KeyChord{ImGuiKey_LeftArrow}, true) == InputVerdict::Pass);
+    CHECK(lock.key(KeyChord{ImGuiKey_Tab, true}, true) == InputVerdict::Drop);
+    CHECK(lock.key(KeyChord{ImGuiKey_Tab, true, true}, true) == InputVerdict::Drop);
     CHECK(lock.text() == InputVerdict::Pass);
 }
 

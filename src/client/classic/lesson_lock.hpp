@@ -79,7 +79,7 @@ struct LockState {
     std::vector<LockArea> rightAreas;
     LockChoices choices;             // the main window's
     std::vector<KeyChord> keys;      // chords that pass
-    bool typing = false;             // a text field has the keyboard: every key passes
+    bool typing = false;             // a text field has the keyboard: every key passes, but Ctrl+Tab
     bool prompt = false;             // a prompt or popup is open: its answer keys pass (Y, N, T, S, Enter, Esc)
     bool windowKeys = false;         // the window in front is not locked: Esc and Enter (close it) pass
 

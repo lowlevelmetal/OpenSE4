@@ -262,6 +262,18 @@ EventVerdict ClassicMode::filterEvent(const SDL_Event& e) {
 
 void ClassicMode::updateLock(UiContext& ui) {
     const learn::Step* step = lesson_ && lesson_->locking() ? lesson_->activeStep() : nullptr;
+    // Dear ImGui's keyboard navigation would press the button its cursor was
+    // left on (Space or Enter on a command button the player clicked once):
+    // off while the lock is on, so that only the step's own keys do anything.
+    ImGuiIO& io = ImGui::GetIO();
+    if (step && (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0) {
+        io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+        navKeyboardOff_ = true;
+    } else if (!step && navKeyboardOff_) {
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        navKeyboardOff_ = false;
+    }
+    if (step && !io.WantTextInput) ImGui::SetNavCursorVisible(false);
     if (!step) {
         lock_.set({});
         return;
@@ -482,6 +494,7 @@ std::optional<std::string> ClassicMode::openAutomationWindow(const std::string& 
 }
 
 ClassicMode::~ClassicMode() {
+    if (navKeyboardOff_) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     keepLessonPlace();   // quitting the program during a tutorial
     screens_.clear();
     lesson_.reset();

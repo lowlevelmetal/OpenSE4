@@ -162,6 +162,7 @@ private:
     std::vector<classic::TaggedArea> lockTags(const classic::UiContext& ui) const;
     std::vector<std::string> lockWindows(const classic::UiContext& ui) const;
     std::string refusedKey_;    // a key the lock refused since the last frame (its name)
+    bool navKeyboardOff_ = false;   // Dear ImGui's keyboard navigation is off for the lock (updateLock)
     // The keyboard goes to the classic window in front (keepFocusOnFrontWindow).
     void keepFocusOnFrontWindow();
     ImGuiID frontWindow_ = 0;   // the Dear ImGui window of the window in front (0: none)

@@ -540,7 +540,10 @@ InputVerdict InputLock::wheel(ImVec2 p) const {
 }
 
 InputVerdict InputLock::key(const KeyChord& chord, bool down) const {
-    if (!state_.active || !down || state_.typing || isModifier(chord.key)) return InputVerdict::Pass;
+    if (!state_.active || !down || isModifier(chord.key)) return InputVerdict::Pass;
+    // Ctrl+Tab brings another window to the front (Dear ImGui's window switching): never, even from a text field.
+    if (chord.key == ImGuiKey_Tab && chord.ctrl) return InputVerdict::Drop;
+    if (state_.typing) return InputVerdict::Pass;
     if (state_.prompt && isPromptKey(chord)) return InputVerdict::Pass;
     if (state_.windowKeys && !chord.ctrl && !chord.alt && !chord.shift &&
         (chord.key == ImGuiKey_Escape || chord.key == ImGuiKey_Enter || chord.key == ImGuiKey_KeypadEnter))
