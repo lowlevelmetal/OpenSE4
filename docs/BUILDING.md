@@ -324,6 +324,9 @@ recorder is tested.
 | `manual-front.script`, `manual-game.script` | The manual: contents tree, links to pages and sections, window and Help links, Back and Forward (buttons and Alt+arrows), search, Contents, Shift+F1 |
 | `list-windows.script` | Planets, Colonies, Ships and Construction Queues: sort headings, tabs and filters, the arrow column and the wheel; item and Design Report pop-ups from right-clicks |
 | `combat-windows.script` | Tactical Combat on a sample battle: zoom and pan, the Combat Piece Report, Combat Options, the Orders menu and Resolve Combat |
+| `ground-combat.script` | Ground Combat on a sample strategic battle (`--open=ground-combat`): Begin, the rounds, Close, then the rest of the battle |
+| `combat-replay.script` | Combat Replay on a battle of the last turn: the overview, Combat Replay Options' check boxes, Next to the last combat turn, Stop Replay |
+| `report-up-arrow.script` | The report panel's up-arrow back to a sector's list: shown only for a report opened from the list |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
 
 Scripts marked `# ci: fixture-data` need nothing but our own content and also run on a game

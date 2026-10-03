@@ -107,8 +107,9 @@ SimulatorSetup demoSetup(const game::Rules& r, const game::GameState& s, game::E
 }
 
 // Starts the battle: tactical (the player drives the sides not under computer
-// control) or strategic (every side on its strategies). Opens its window.
-bool begin(UiContext& ui, SimulatorSetup setup, bool tactical, std::string& message) {
+// control) or strategic (every side on its strategies). Opens its window; a
+// strategic one already begun with `startNow` (automation).
+bool begin(UiContext& ui, SimulatorSetup setup, bool tactical, std::string& message, bool startNow = false) {
     if (!tactical)
         for (SimulatorSide& side : setup.sides) side.computer = true;
     message = game::combat::simulatorProblem(ui.rules(), ui.state(), setup);
@@ -131,7 +132,9 @@ bool begin(UiContext& ui, SimulatorSetup setup, bool tactical, std::string& mess
     fight.players = std::move(players);
     fight.title = "Combat Simulator";
     ui.session.startTactical(std::move(fight));
-    ui.open(tactical ? ScreenId::TacticalCombat : ScreenId::StrategicCombat);
+    ScreenArgs args;
+    if (startNow) args.text = "begin";
+    ui.open(tactical ? ScreenId::TacticalCombat : ScreenId::StrategicCombat, std::move(args));
     return true;
 }
 
@@ -505,6 +508,52 @@ bool& designsClosedForSimulation() {
 bool tacticalSimulationRunning(const UiContext& ui) {
     const TacticalFight* f = ui.session.tactical();
     return tacticalSimulation() && f && f->kind == TacticalFight::Kind::Simulation;
+}
+
+std::string startDemoGroundCombat(UiContext& ui) {
+    // Two of the player's troop transports full of its troops against the
+    // homeworld (spec 06 §1.10.6, as the analysts' sample of spec 07 session
+    // 5), fought by the strategies in the Strategic Combat window.
+    const game::Rules& r = ui.rules();
+    const game::GameState& s = ui.state();
+    const game::EmpireId me = ui.session.player();
+    SimulatorSetup setup = defaultSetup(me);
+    game::DesignId troops;
+    for (game::DesignId d : game::combat::simulatorCargoDesigns(r, s, me, true))
+        if (s.design(d).owner == me && game::combat::isTroopDesign(r, s, d)) {
+            troops = d;
+            break;
+        }
+    if (!troops.valid()) return "No troop design to land with.";
+    // A Troop Transport design first: its strategy is Drop Troops (spec 05 §7.5); else the roomiest ship.
+    std::optional<SimulatorItem> transport;
+    bool troopType = false;
+    for (game::DesignId d : game::combat::simulatorDesigns(r, s, me, true)) {
+        if (s.design(d).owner != me || r.hull(s.design(d).hull).type != ruleset::VehicleType::Ship) continue;
+        SimulatorItem item{SimulatorItem::Kind::Design, d, {}, 0, 1};
+        item.cargo = {game::UnitStack{troops, 1}};
+        const int64_t each = game::combat::simulatorCargoUsed(r, s, item), room = game::combat::simulatorCargoCapacity(r, s, item);
+        if (each <= 0 || room < each) continue;
+        // Full: as many troops as the hold takes.
+        item.cargo.front().count = int(std::min<int64_t>(room / each, 1000));
+        const bool isTroopType = s.design(d).designType == "Troop Transport";
+        if (!transport || (isTroopType && !troopType) || (isTroopType == troopType && item.cargo.front().count > transport->cargo.front().count)) {
+            transport = item;
+            troopType = isTroopType;
+        }
+    }
+    if (!transport) return "No ship design that can carry troops.";
+    std::optional<game::ObjectId> home;
+    for (game::ObjectId id : game::combat::simulatorPlanets(s, me))
+        if (const game::Colony* c = s.colony(id); c && c->owner == me && (!home || c->homeworld)) home = id;
+    if (!home) return "No colony in the home system to land on.";
+    setup.items.push_back(*transport);
+    setup.items.push_back(*transport);
+    setup.items.push_back({SimulatorItem::Kind::Planet, {}, *home, 1});
+    setup.seed = 1;
+    std::string message;
+    if (!begin(ui, setup, false, message, true)) return message.empty() ? std::string("The sample ground combat could not start.") : message;
+    return {};
 }
 
 bool startDemoSimulation(UiContext& ui, bool tactical) {

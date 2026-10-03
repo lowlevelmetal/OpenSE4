@@ -39,6 +39,7 @@
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/screens/combat_map.hpp"
+#include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 
@@ -129,7 +130,8 @@ void titleLabel(UiContext& ui, Dialog& d, float x, std::string_view label, const
 
 class StrategicCombatScreen final : public Screen {
 public:
-    explicit StrategicCombatScreen(int index) : index_(index) {}
+    // `begin`: a simulation fought at once, as if Begin had been pressed (automation).
+    StrategicCombatScreen(int index, bool begin) : index_(index), begun_(begin) {}
     bool modal() const override { return true; }
 
     bool draw(UiContext& ui) override {
@@ -558,57 +560,77 @@ private:
         }
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{350, 60}));
         ImGui::TextColored(kLabelBlue, "Facilities");
-        ImGui::SetCursorScreenPos(ui.at(o + Vec2{350, 75}));
-        ImGui::BeginChild("##facilities", ui.size({218, 146}), ImGuiChildFlags_Borders);
-        int col = 0;
+        // The facility grid, 6 x 4 cells of 36 px, each facility's picture with its level's numeral.
+        std::vector<GridCell> cells;
         for (uint32_t f : g.facilities) {
             if (f >= r.data().facilities.size()) continue;
-            if (col > 0) ImGui::SameLine(0, ui.px(2));
-            image(ui, ui.art.facility(r.facility(f).picture), {32, 32});
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", r.facility(f).name.c_str());
-            col = (col + 1) % 6;
+            const ruleset::Facility& fac = r.facility(f);
+            cells.push_back({ui.art.facility(fac.picture), romanNumeral(fac.romanNumeral), fac.name});
         }
-        if (g.facilities.empty()) dimText("None");
-        ImGui::EndChild();
+        grid(ui, o + Vec2{350, 75}, {218, 146}, 6, 4, cells);
     }
 
-    // "Defender" / "Attacker" at (40,y) over its units at (40,y+15), 504x72 (ours 66 high, to stay inside
-    // our content panel). The grids list troop and militia stacks only (spec 06 §1.10.6).
+    // One cell of a grid: a picture, the text at its bottom right, and the
+    // name the pointer shows (ours).
+    struct GridCell {
+        Sprite picture;
+        std::string corner;
+        std::string name;
+    };
+
+    // A grid of 36 px cells drawn with 1 px #617BC2 lines (spec 06 §1.10.6,
+    // observed): `columns` x `rows` cells in a box `size` big at `at` (frame
+    // pixels), filled row by row; the text of each cell in small white type at
+    // its bottom right.
+    void grid(UiContext& ui, Vec2 at, Vec2 size, int columns, int rows, const std::vector<GridCell>& cells) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImU32 line = imColor(palette::kButton);
+        const float lw = std::max(1.0f, ui.px(1));
+        for (int c = 0; c <= columns; ++c) {
+            const float x = std::min(size.x - 1, 36.0f * float(c));
+            dl->AddRectFilled(ui.at(at + Vec2{x, 0}), ImVec2(ui.at(at + Vec2{x, 0}).x + lw, ui.at(at + Vec2{0, std::min(size.y, 36.0f * float(rows) + 1)}).y), line);
+        }
+        for (int r = 0; r <= rows; ++r) {
+            const float y = std::min(size.y - 1, 36.0f * float(r));
+            dl->AddRectFilled(ui.at(at + Vec2{0, y}), ImVec2(ui.at(at + Vec2{std::min(size.x, 36.0f * float(columns) + 1), 0}).x, ui.at(at + Vec2{0, y}).y + lw), line);
+        }
+        ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+        const float smallSize = ui.fontPx(kSmallSize);
+        for (size_t k = 0; k < cells.size() && k < size_t(columns * rows); ++k) {
+            const Vec2 cell = at + Vec2{36.0f * float(k % size_t(columns)), 36.0f * float(k / size_t(columns))};
+            const ImVec2 a = ui.at(cell + Vec2{1, 1}), b = ui.at(cell + Vec2{36, 36});
+            if (cells[k].picture) drawSprite(dl, cells[k].picture, a, b);
+            if (!cells[k].corner.empty()) {
+                const ImVec2 t = small->CalcTextSizeA(smallSize, FLT_MAX, 0.0f, cells[k].corner.c_str());
+                dl->AddText(small, smallSize, {b.x - t.x - ui.px(1), b.y - t.y}, IM_COL32_WHITE, cells[k].corner.c_str());
+            }
+            if (!cells[k].name.empty() && ImGui::IsMouseHoveringRect(a, b) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) ImGui::SetTooltip("%s", cells[k].name.c_str());
+        }
+    }
+
+    // "Defender" / "Attacker" at (40,y), the side's mark 26 x 18 at (120,y-5)
+    // (the flag, a simulation's numbered box), and its units in a grid of 14 x 2
+    // cells of 36 px at (40,y+15), 504 x 72: one stack per cell with its count
+    // at the cell's bottom right, the defender's militia as a stack with its
+    // race's population picture (spec 06 §1.10.6, observed). The grids list
+    // troop and militia stacks only.
     void sideRow(UiContext& ui, const game::GameState& s, const char* label, float y, game::EmpireId who, const std::vector<game::UnitStack>& start,
                  const std::vector<int>& now, int militia) {
         const game::Rules& r = ui.rules();
         const Vec2 o = largeOrigin();
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{40, y}));
         ImGui::TextColored(kLabelBlue, "%s", label);
-        ImGui::SameLine(0, ui.px(10));
-        flagAndName(ui, s, who);
-        ImGui::SetCursorScreenPos(ui.at(o + Vec2{40, y + 15}));
-        ImGui::BeginChild(label, ui.size({504, 66}), ImGuiChildFlags_Borders);
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{120, y - 5}));
+        ownerMark(ui, s, who, {26, 18}, false);
         const std::string style = who.valid() && who.index() < s.empires.size() ? s.empire(who).race.style : std::string{};
-        int col = 0;
-        bool any = false;
+        std::vector<GridCell> cells;
         for (size_t k = 0; k < start.size(); ++k) {
             const game::UnitStack& st = start[k];
             if (!st.design.valid() || st.design.index() >= s.designs.size() || !game::combat::isTroopDesign(r, s, st.design)) continue;
-            any = true;
-            if (col > 0) ImGui::SameLine(0, ui.px(6));
-            ImGui::BeginGroup();
-            image(ui, ui.art.shipMini(style, r.hull(s.design(st.design).hull)), {36, 36});
-            ImGui::Text("%d", k < now.size() ? now[k] : st.count);
-            ImGui::EndGroup();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.design(st.design).name.c_str());
-            col = (col + 1) % 12;
+            cells.push_back({ui.art.shipMini(style, r.hull(s.design(st.design).hull)), std::to_string(k < now.size() ? now[k] : st.count), s.design(st.design).name});
         }
-        if (militia >= 0) {
-            any = true;
-            if (col > 0) ImGui::SameLine(0, ui.px(6));
-            ImGui::BeginGroup();
-            dimText("Militia");
-            ImGui::Text("%d", militia);
-            ImGui::EndGroup();
-        }
-        if (!any) dimText("None");
-        ImGui::EndChild();
+        if (militia >= 0) cells.push_back({ui.art.populationMini(style), std::to_string(militia), "Militia"});
+        grid(ui, o + Vec2{40, y + 15}, {504, 72}, 14, 2, cells);
     }
 
     int index_ = -1;
@@ -623,7 +645,7 @@ private:
 
 } // namespace
 
-std::unique_ptr<Screen> makeStrategicCombat(const ScreenArgs& args) { return std::make_unique<StrategicCombatScreen>(args.index); }
+std::unique_ptr<Screen> makeStrategicCombat(const ScreenArgs& args) { return std::make_unique<StrategicCombatScreen>(args.index, args.text == "begin"); }
 std::unique_ptr<Screen> makeGroundCombat(const ScreenArgs& args) { return std::make_unique<GroundCombatScreen>(args.index, args.sub); }
 
 } // namespace opense4::client::classic

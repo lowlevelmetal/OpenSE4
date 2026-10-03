@@ -525,6 +525,107 @@ bool squareInView(const CombatView& v, ImVec2 mapMin, ImVec2 mapMax, int x, int 
     return a.x >= mapMin.x - 0.5f && a.y >= mapMin.y - 0.5f && b.x <= mapMax.x + 0.5f && b.y <= mapMax.y + 0.5f;
 }
 
+void combatPanelHead(UiContext& ui, const Dialog& d, Vec2 at, const game::GameState& s, const Sprite& picture, const std::string& name, ImU32 nameColor,
+                     const std::string& size, const char* second, const std::string& secondValue, game::EmpireId owner) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRect(d.at(at + Vec2{2, 2}), d.at(at + Vec2{40, 40}), imColor(palette::kFrame), 0.0f, std::max(1.0f, ui.px(1)));
+    if (picture) drawSprite(dl, picture, d.at(at + Vec2{3, 3}), d.at(at + Vec2{39, 39}));
+    ImGui::SetCursorScreenPos(d.at(at + Vec2{190, 3}));
+    ownerMark(ui, s, owner, {26, 18}, false);
+    ImFont* body = ui.fonts.medium ? ui.fonts.medium : ImGui::GetFont();
+    ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+    const float smallSize = ui.fontPx(kSmallSize);
+    // The name stops short of the flag (ours: a long name would run over it).
+    dl->PushClipRect(d.at(at + Vec2{42, 0}), d.at(at + Vec2{188, 40}), true);
+    dl->AddText(body, ui.fontPx(kTextSize), d.at(at + Vec2{42, 4}), nameColor, name.c_str());
+    dl->PopClipRect();
+    auto line = [&](float y, const char* label, const std::string& value) {
+        dl->AddText(small, smallSize, d.at(at + Vec2{47, y}), imColor(palette::kLabel), label);
+        dl->AddText(small, smallSize, d.at(at + Vec2{91, y}), IM_COL32_WHITE, value.c_str());
+    };
+    line(23, "Size", size);
+    if (second) line(34, second, secondValue);
+}
+
+void weaponGridLines(UiContext& ui, const Dialog& d, Vec2 at, int rows) {
+    using namespace combat_frame;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    // #617BC2, as the Ground Combat window's grids (ours: the colour of this grid was not measured).
+    const ImU32 line = imColor(palette::kButton);
+    const float lw = std::max(1.0f, ui.px(1));
+    const float h = kCell * float(rows);
+    for (int c = 0; c <= kColumns; ++c) {
+        const float x = std::min(kSideW - 1, kCell * float(c));
+        dl->AddRectFilled(d.at(at + Vec2{x, 0}), ImVec2(d.at(at + Vec2{x, 0}).x + lw, d.at(at + Vec2{0, h + 1}).y), line);
+    }
+    for (int r = 0; r <= rows; ++r) {
+        const float y = kCell * float(r);
+        dl->AddRectFilled(d.at(at + Vec2{0, y}), ImVec2(d.at(at + Vec2{kSideW, 0}).x, d.at(at + Vec2{0, y}).y + lw), line);
+    }
+}
+
+void combatOverview(UiContext& ui, const Dialog& d, const CombatMapPainter& paint, const CombatView& view, ImVec2 viewSize, bool viewRect, float& cx,
+                    float& cy) {
+    const Vec2 at = combat_frame::overviewAt();
+    ImGui::SetCursorScreenPos(d.at(at));
+    const ImVec2 o = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("##overview", ui.size(combat_frame::kOverviewSize));
+    const ImVec2 o2 = d.at(at + combat_frame::kOverviewSize);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(o, o2, IM_COL32(0, 0, 0, 255));
+    const float k = ui.px(3);
+    CombatView whole;   // square (x, y) at o + (x, y) x k
+    whole.center = o;
+    whole.cell = k;
+    dl->PushClipRect(o, o2, true);
+    paint.squares(dl, whole, 2.0f);
+    if (viewRect && viewSize.x > 0 && view.cell > 0) {
+        const float halfW = viewSize.x * 0.5f / view.cell, halfH = viewSize.y * 0.5f / view.cell;
+        const ImVec2 a{o.x + (cx - halfW) * k, o.y + (cy - halfH) * k}, c{o.x + (cx + halfW) * k, o.y + (cy + halfH) * k};
+        for (float x = a.x; x < c.x; x += 4) {
+            dl->AddLine({x, a.y}, {std::min(x + 2, c.x), a.y}, IM_COL32_WHITE);
+            dl->AddLine({x, c.y}, {std::min(x + 2, c.x), c.y}, IM_COL32_WHITE);
+        }
+        for (float y = a.y; y < c.y; y += 4) {
+            dl->AddLine({a.x, y}, {a.x, std::min(y + 2, c.y)}, IM_COL32_WHITE);
+            dl->AddLine({c.x, y}, {c.x, std::min(y + 2, c.y)}, IM_COL32_WHITE);
+        }
+    }
+    dl->PopClipRect();
+    dl->AddRect(o, o2, imColor(palette::kFrameLight));
+    if (ImGui::IsItemActive()) {
+        const ImVec2 m = ImGui::GetIO().MousePos;
+        cx = std::clamp((m.x - o.x) / k, 0.0f, float(game::combat::kCombatMapWidth));
+        cy = std::clamp((m.y - o.y) / k, 0.0f, float(game::combat::kCombatMapHeight));
+    }
+}
+
+void combatViewInput(UiContext& ui, ImVec2 origin, ImVec2 size, bool hovered, bool active, float& cx, float& cy, float& cellFrame) {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (hovered && io.MouseWheel != 0.0f) {
+        const float old = cellFrame;
+        cellFrame = std::clamp(cellFrame * (io.MouseWheel > 0 ? 1.25f : 0.8f), 6.0f, 48.0f);
+        const float k = 1.0f / ui.px(old) - 1.0f / ui.px(cellFrame);
+        cx += (io.MousePos.x - (origin.x + size.x * 0.5f)) * k;
+        cy += (io.MousePos.y - (origin.y + size.y * 0.5f)) * k;
+    }
+    if (active && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+        cx -= io.MouseDelta.x / ui.px(cellFrame);
+        cy -= io.MouseDelta.y / ui.px(cellFrame);
+    }
+    cx = std::clamp(cx, 0.0f, float(game::combat::kCombatMapWidth));
+    cy = std::clamp(cy, 0.0f, float(game::combat::kCombatMapHeight));
+}
+
+void combatViewKeys(UiContext& ui, float& cx, float& cy) {
+    // 30 squares a second (half a square a frame at 60 Hz), whatever the display's refresh rate.
+    const float scroll = 30.0f * std::min(ui.dt, 0.1f);
+    if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) cx -= scroll;
+    if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) cx += scroll;
+    if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) cy -= scroll;
+    if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) cy += scroll;
+}
+
 void CombatMapPainter::sounds(size_t from, size_t to) const {
     if (to <= from || to - from > 8) return;  // skipping around is silent
     for (size_t i = from; i < to; ++i) {

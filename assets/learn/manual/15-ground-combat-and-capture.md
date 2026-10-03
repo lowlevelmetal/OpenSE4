@@ -64,10 +64,11 @@ may suffer.
 ## The Ground Combat window
 
 The **Ground Combat** window shows a ground combat: the planet with its type, atmosphere,
-conditions, value, population and facilities, and the defending and attacking troops with their
-counts (the militia among the defenders). `Begin` fights it round by round: after each round the
-round counter and the counts change, and an explosion flashes over the planet. *Victorious!*
-appears beside the winner, and `Close` stays dim until the end.
+conditions, value, population and facilities (each with its level), and the defending and
+attacking troops, each side under its flag, one stack to a cell with its count at the cell's
+corner (the militia, drawn as the planet's people, among the defenders). `Begin` fights it round
+by round: after each round the round counter and the counts change, and an explosion flashes
+over the planet. *Victorious!* appears beside the winner, and `Close` stays dim until the end.
 
 It opens by itself once your troops have landed in the Tactical Combat window, or when a
 computer player's troops land during a battle you watch, unless both empires are played by the

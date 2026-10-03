@@ -22,6 +22,7 @@
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/pointers.hpp"
 #include "client/classic/screens/combat_map.hpp"
+#include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
@@ -55,23 +56,27 @@ using game::combat::TacticalWeapon;
 using OK = TacticalOrder::Kind;
 using PieceKind = game::CombatPiece::Kind;
 
-// The layout of spec 06 §1.10.1 (confirmed: binary), W x H being the window,
-// which covers the whole frame in both layouts (§2.1.1): the map at (10,38),
-// (W-256) x (H-44); the current-piece panel 216 x 64 at (W-232,36) with the
-// weapon grid under it; the four 113 x 30 buttons in two rows 70 px above
-// the overview map, 218 x 190 at (W-230,H-196). The weapon grid's 6 x 6
-// cells, the target panel under it and the navigation buttons in the title
-// strip were observed (spec 07 session 3); their sizes and places are ours
-// (inferred, spec 06 §7 Q97).
-constexpr float kSideW = 216;
-constexpr float kPanelH = 64;
-constexpr float kWeaponCell = 36;
-constexpr int kWeaponColumns = 6;
-float mapWidth() { return frameW() - 256; }
-float mapHeight() { return frameH() - 44; }
-float sideX() { return frameW() - 232; }
-constexpr float kWeaponsY = 36 + kPanelH + 4;
-constexpr float kTargetY = kWeaponsY + kWeaponCell * kWeaponColumns + 4;
+// The layout of spec 06 §1.10.1 and §7 Q97 (confirmed: binary), W x H being
+// the window, which covers the whole frame in both layouts (§2.1.1): the map
+// at (10,38), (W-256) x (H-44); the current-piece panel 216 x 64 at (W-232,36);
+// the weapon grid of 36 px cells, 6 to a row, at (W-232,102), 6 rows (5 on a
+// frame narrower than 1024) with its up and down arrows just under it; the
+// target panel 216 x 100 at (W-232,373), only on a frame at least 1024 wide;
+// the 2 x 2 group of 113 x 30 buttons at (W-234,H-266), 70 px above the
+// overview map, 218 x 190 at (W-230,H-196).
+using combat_frame::kSideW;
+using combat_frame::kPanelH;
+using combat_frame::mapWidth;
+using combat_frame::mapHeight;
+using combat_frame::sideX;
+constexpr float kTargetH = 100;
+constexpr float kWeaponCell = combat_frame::kCell;
+constexpr int kWeaponColumns = combat_frame::kColumns;
+constexpr float kWeaponsY = 102;
+constexpr float kTargetY = 373;
+int weaponRows() { return frameW() < 1024.0f ? 5 : 6; }
+// The grid's height: its rows of cells and the closing line.
+float weaponGridH() { return kWeaponCell * float(weaponRows()) + 1; }
 
 // Animation pace (spec 06 §1.10.3): the original's waits after every frame,
 // none with Fast Tactical Combat; moves slide, or jump with "animate ship
@@ -257,12 +262,10 @@ public:
         }
         sync(ui, b);
         if (u.begun) automatic(ui, *f);
-        // Before Begin the panel shows the first of the player's pieces (ours, Q97).
-        if (!u.begun && u.selected < 0)
-            u.selected = cycle(b, -1, 1, [&](const TacticalPiece& p) { return p.alive && b.isPlayer(p.owner) && p.kind != PieceKind::Seeker; });
+        // Before Begin nothing is selected: the panel is empty (spec 06 §7 Q97, observed).
         // Drawing reads the battle; orders wait for flush() at the end of the frame.
 
-        // Titled "Tactical Combat", a simulation's battle too (inferred, Q97).
+        // Titled "Tactical Combat", a simulation's battle too (spec 06 §7 Q97, observed).
         Dialog d(ui, screenTitle(ScreenId::TacticalCombat), DialogSize::Full, 0);
         if (!d.open()) return d.keepOpen();
         const game::GameState& s = b.state();
@@ -285,7 +288,7 @@ public:
                     const Vec2 at{flagsX + 28.0f * float(i), 7};
                     drawSideBox(ui, ImGui::GetWindowDrawList(), d.at(at), d.at(at + Vec2{26, 18}), sides[i]);
                 }
-            navigation(ui, d, b);
+            if (navigation(ui, d, b)) return finishWindow(ui, *f);
         }
         // The map fills the left part, straight under the title strip.
         ImGui::SetCursorScreenPos(d.at({10, 38}));
@@ -297,7 +300,7 @@ public:
         // The target-piece panel only on a window at least 1024 wide (§2.1.1).
         if (frameW() >= 1024.0f) targetPanel(ui, d, *f, paint);
         buttons(ui, d, *f);
-        overview(ui, d, *f, paint);
+        overview(ui, d, paint);
         keys(ui, *f);
         pickers(ui, *f);
         // A refusal, or the Ram / Capture aim, over the map's top left (ours).
@@ -458,28 +461,54 @@ private:
 
     // ---- Navigation -------------------------------------------------------------------------------------
 
-    // The title strip's navigation buttons at its right (observed, spec 07
-    // session 3): the previous and the next of the side's pieces that can still
-    // move or fire, and between them a stop button that clears the selection
-    // (its effect is ours, inferred, Q97).
-    void navigation(UiContext& ui, const Dialog& d, TacticalBattle& b) {
+    // The title strip's buttons at its right (spec 06 §7 Q97, confirmed:
+    // binary): four 24 x 24 buttons in a row from (W-146,5), left to right the
+    // next piece of the side that can still move (as Space and Ctrl+N), the
+    // previous one (Ctrl+B), the next that can still fire (Ctrl+F) and the
+    // previous one (Ctrl+D), drawn as two Nextprev.bmp selectors (the ship and
+    // the crosshair) of 48 x 24; then the 20 x 20 Close.bmp box with a bar at
+    // (W-34,7), which asks the window to close: refused while the battle is not
+    // over. None of them does anything while an action is animated. True when
+    // the window should close.
+    bool navigation(UiContext& ui, const Dialog& d, TacticalBattle& b) {
         TacticalUi& u = state();
         const game::EmpireId side = b.phaseEmpire();
+        // Dim before Begin and while no side of the player is in its phase (inferred).
         const bool live = side.valid() && u.begun && b.awaitingOrders();
-        auto acts = [&](const TacticalPiece& p) { return canMove(p, side) || canFire(p, side); };
-        const float x = frameW() - 84;
-        ImGui::SetCursorScreenPos(d.at({x, 7}));
-        if (arrowButton(ui, "##prevPiece", ArrowGlyph::Left, {20, 20}, live)) {
-            u.selected = cycle(b, u.selected, -1, acts);
-            centreOn(b, u.selected);
+        const bool inert = animating();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        auto movable = [&](const TacticalPiece& p) { return canMove(p, side); };
+        auto armed = [&](const TacticalPiece& p) { return canFire(p, side); };
+        for (int group = 0; group < 2; ++group) {
+            const Vec2 at{frameW() - 146 + 48.0f * float(group), 5};
+            bool hovered = false, held = false;
+            for (int half = 0; half < 2; ++half) {
+                ImGui::SetCursorScreenPos(d.at(at + Vec2{24.0f * float(half), 0}));
+                ImGui::PushID(group * 2 + half);
+                ImGui::BeginDisabled(!live);
+                const bool clicked = ImGui::InvisibleButton("##navigate", ui.size({24, 24}));
+                ImGui::EndDisabled();
+                ImGui::PopID();
+                hovered = hovered || (live && ImGui::IsItemHovered());
+                held = held || (live && ImGui::IsItemActive());
+                if (!clicked || !live || inert) continue;
+                // The left half picks the next piece, the right half the previous one.
+                const int step = half == 0 ? 1 : -1;
+                u.selected = group == 0 ? cycle(b, u.selected, step, movable) : cycle(b, u.selected, step, armed);
+                centreOn(b, u.selected);
+            }
+            const int row = !live ? 3 : held ? 2 : hovered ? 1 : 0;
+            // Nextprev.bmp: the ship selector (column 0) and the crosshair (column 3).
+            if (const Sprite cell = ui.art.region("Pictures/Game/Buttons/Nextprev.bmp", group == 0 ? 0 : 3 * 48, row * 24, 48, 24, false))
+                drawSprite(dl, cell, d.at(at), d.at(at + Vec2{48, 24}));
         }
-        ImGui::SetCursorScreenPos(d.at({x + 22, 7}));
-        if (arrowButton(ui, "##stopPiece", ArrowGlyph::Stop, {20, 20}, live && u.selected >= 0)) u.selected = -1;
-        ImGui::SetCursorScreenPos(d.at({x + 44, 7}));
-        if (arrowButton(ui, "##nextPiece", ArrowGlyph::Right, {20, 20}, live)) {
-            u.selected = cycle(b, u.selected, 1, acts);
-            centreOn(b, u.selected);
-        }
+        const Vec2 closeAt{frameW() - 34, 7};
+        ImGui::SetCursorScreenPos(d.at(closeAt));
+        const bool close = ImGui::InvisibleButton("##closeBattle", ui.size({20, 20}));
+        const int row = ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+        if (const Sprite cell = ui.art.region("Pictures/Game/Buttons/Close.bmp", 0, row * 20, 20, 20, false))
+            drawSprite(dl, cell, d.at(closeAt), d.at(closeAt + Vec2{20, 20}));
+        return close && !inert && b.finished() && b.applied();
     }
 
     // ---- The tactical map -------------------------------------------------------------------------------
@@ -512,19 +541,7 @@ private:
         ImGuiIO& io = ImGui::GetIO();
 
         // Zoom with the wheel around the pointer; drag with the middle button.
-        if (hoveredBox && io.MouseWheel != 0.0f) {
-            const float old = u.cellFrame;
-            u.cellFrame = std::clamp(u.cellFrame * (io.MouseWheel > 0 ? 1.25f : 0.8f), 6.0f, 48.0f);
-            const float k = 1.0f / ui.px(old) - 1.0f / ui.px(u.cellFrame);
-            u.cx += (io.MousePos.x - (o.x + size.x * 0.5f)) * k;
-            u.cy += (io.MousePos.y - (o.y + size.y * 0.5f)) * k;
-        }
-        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
-            u.cx -= io.MouseDelta.x / ui.px(u.cellFrame);
-            u.cy -= io.MouseDelta.y / ui.px(u.cellFrame);
-        }
-        u.cx = std::clamp(u.cx, 0.0f, float(game::combat::kCombatMapWidth));
-        u.cy = std::clamp(u.cy, 0.0f, float(game::combat::kCombatMapHeight));
+        combatViewInput(ui, o, size, hoveredBox, ImGui::IsItemActive(), u.cx, u.cy, u.cellFrame);
 
         CombatView v;
         v.cell = ui.px(u.cellFrame);
@@ -722,59 +739,60 @@ private:
         return {};
     }
 
-    // What the Size line of a panel says.
+    // What the Size line of a panel says: the hull size's name; nothing for a planet (spec 06 §7 Q97, observed).
     static std::string sizeText(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
-        if (p.design.valid() && p.design.index() < s.designs.size())
+        if (p.design.valid() && p.design.index() < s.designs.size() && p.kind != PieceKind::Planet)
             return p.kind == PieceKind::UnitGroup ? unitsText(s, p) : ui.rules().hull(s.design(p.design).hull).name;
-        return p.kind == PieceKind::Planet ? "Planet" : p.kind == PieceKind::Seeker ? "Seeker" : "Obstacle";
+        return p.kind == PieceKind::Seeker ? "Seeker" : p.kind == PieceKind::Obstacle ? "Obstacle" : std::string{};
     }
 
-    // A piece's report in a 216 x 64 panel at `at` (frame pixels from the
-    // window): the picture with the owner's mark, the name, then in the small
-    // font "Size" and a second line ("Move" for the current piece, "Dist" for the
-    // target), and the shield and damage bars (spec 06 §1.6, §5.4). Returns the
-    // panel's rectangle in ImGui units.
-    std::pair<ImVec2, ImVec2> piecePanel(UiContext& ui, const Dialog& d, Vec2 at, const TacticalBattle& b, int index, const char* second,
-                                         const std::string& secondValue, const CombatMapPainter& paint, bool numbers) {
+    // A piece's panel at `at` (frame pixels from the window), as the original
+    // lays out both panels (spec 06 §7 Q97, observed): the picture in a 38 x 38
+    // frame at (2,2); the name in white at (42,4); "Size" and a second line
+    // ("Move" for the current piece, "Dist" for the target) in #7D9FFF small
+    // type at (47,23) and (47,34) with the values in white at x 91; the owner's
+    // flag (a simulation's numbered box) 26 x 18 at (190,3) (the texts' places
+    // are their letters' tops, as measured); and the bar frame
+    // in #4F65A2 from (2,42) to (204,61) holding the shield row in blue (y 44-50)
+    // over the structure row in red (y 53-59), blocks 3 px wide every 4 px from
+    // x 4, no numbers; a planet's structure in thousands in red at the bar's
+    // right end. The group badge (blue a leader, red a member, spec 06 §1.6) on
+    // the picture's top right corner is ours (inferred).
+    void piecePanel(UiContext& ui, const Dialog& d, Vec2 at, const TacticalBattle& b, int index, const char* second, const std::string& secondValue,
+                    const CombatMapPainter& paint) {
         const game::GameState& s = b.state();
         const TacticalPiece& p = b.pieces()[size_t(index)];
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        const ImVec2 a = d.at(at), z = d.at(at + Vec2{kSideW, kPanelH});
-        dl->AddRect(a, z, imColor(palette::kFrame));
-        if (const Sprite pic = piecePicture(ui, s, p, paint)) drawSprite(dl, pic, d.at(at + Vec2{1, 1}), d.at(at + Vec2{63, 63}));
-        ImGui::SetCursorScreenPos(d.at(at + Vec2{2, 2}));
-        ownerMark(ui, s, p.owner, {14, 10});
-        // The group badge: blue for a leader, red for a member (§1.6).
+        const ImU32 frame = imColor(palette::kFrame);
+        auto box = [&](Vec2 a, Vec2 z, ImU32 c) { dl->AddRect(d.at(at + a), d.at(at + z + Vec2{1, 1}), c, 0.0f, std::max(1.0f, ui.px(1))); };
+        combatPanelHead(ui, d, at, s, piecePicture(ui, s, p, paint), paint.pieceName(uint32_t(index)), p.alive ? IM_COL32_WHITE : IM_COL32(255, 0, 0, 255),
+                        sizeText(ui, s, p), second, secondValue, p.owner);
         if (p.isLeader || p.leader >= 0 || p.group >= 0)
-            dl->AddRectFilled(d.at(at + Vec2{52, 2}), d.at(at + Vec2{62, 12}), p.isLeader ? IM_COL32(0, 0, 255, 255) : IM_COL32(255, 0, 0, 255));
-        dl->PushClipRect(d.at(at + Vec2{67, 0}), z, true);
-        dl->AddText(d.at(at + Vec2{67, 1 + kTextLead - 3}), p.alive ? IM_COL32_WHITE : IM_COL32(255, 0, 0, 255), paint.pieceName(uint32_t(index)).c_str());
+            dl->AddRectFilled(d.at(at + Vec2{31, 3}), d.at(at + Vec2{39, 11}), p.isLeader ? IM_COL32(0, 0, 255, 255) : IM_COL32(255, 0, 0, 255));
         ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
         const float smallSize = ui.fontPx(kSmallSize);
-        auto line = [&](float y, const char* label, const std::string& value) {
-            dl->AddText(small, smallSize, d.at(at + Vec2{67, y}), imColor(palette::kLabel), label);
-            dl->AddText(small, smallSize, d.at(at + Vec2{101, y}), IM_COL32_WHITE, value.c_str());
-        };
-        line(17, "Size", sizeText(ui, s, p));
-        line(28, second, secondValue);
-        if (p.kind != PieceKind::Obstacle && p.kind != PieceKind::Seeker) {
-            // Shields in blue over damage in red; the target's numbers beside them (§1.6).
-            const float barW = numbers ? 90 : kSideW - 71;
-            auto bar = [&](float y, float fraction, ImU32 color) {
-                const ImVec2 b0 = d.at(at + Vec2{67, y}), b1 = d.at(at + Vec2{67 + barW, y + 7});
-                dl->AddRectFilled(b0, b1, IM_COL32(20, 25, 40, 255));
-                dl->AddRectFilled(b0, ImVec2(b0.x + (b1.x - b0.x) * std::clamp(fraction, 0.0f, 1.0f), b1.y), color);
-                dl->AddRect(b0, b1, imColor(palette::kFrame));
-            };
-            bar(42, p.shieldsMax > 0 ? float(p.shields) / float(p.shieldsMax) : 0.0f, IM_COL32(60, 120, 255, 255));
-            bar(52, float(p.damagePercent) / 100.0f, IM_COL32(220, 60, 50, 255));
-            if (numbers) {
-                dl->AddText(small, smallSize, d.at(at + Vec2{162, 39}), IM_COL32(0, 0, 255, 255), std::to_string(p.shields).c_str());
-                dl->AddText(small, smallSize, d.at(at + Vec2{162, 49}), IM_COL32(255, 0, 0, 255), std::format("{}%", p.damagePercent).c_str());
+        if (p.kind == PieceKind::Obstacle || p.kind == PieceKind::Seeker) return;
+        box({2, 42}, {204, 61}, frame);
+        // Each row: 50 blocks of 3 x 7 px, as many lit as the share left (a part rounds up; inferred).
+        auto row = [&](float y, int64_t now, int64_t full, ImU32 color) {
+            if (full <= 0 || now <= 0) return;
+            const int64_t lit = std::min<int64_t>(50, (now * 50 + full - 1) / full);
+            for (int64_t k = 0; k < lit; ++k) {
+                const Vec2 a = at + Vec2{4 + 4 * float(k), y};
+                dl->AddRectFilled(d.at(a), d.at(a + Vec2{3, 7}), color);
             }
+        };
+        row(44, p.shields, p.shieldsMax, IM_COL32(0, 0, 255, 255));
+        row(53, 100 - p.damagePercent, 100, IM_COL32(255, 0, 0, 255));
+        if (p.kind == PieceKind::Planet) {
+            // "21k": thousands, truncated (inferred), right-aligned at the bar's end.
+            const std::string hp = p.hitPoints >= 1000 ? std::format("{}k", p.hitPoints / 1000) : std::to_string(std::max<int64_t>(0, p.hitPoints));
+            const ImVec2 t = small->CalcTextSizeA(smallSize, FLT_MAX, 0.0f, hp.c_str());
+            const ImVec2 c{d.at(at + Vec2{202, 0}).x - t.x, d.at(at + Vec2{0, 52}).y};
+            // On black, so that it reads over the blocks (ours).
+            dl->AddRectFilled({c.x - ui.px(2), c.y}, {c.x + t.x, c.y + ui.px(9)}, IM_COL32_BLACK);
+            dl->AddText(small, smallSize, c, IM_COL32(255, 0, 0, 255), hp.c_str());
         }
-        dl->PopClipRect();
-        return {a, z};
     }
 
     void currentPanel(UiContext& ui, const Dialog& d, TacticalFight& f) {
@@ -787,29 +805,38 @@ private:
         const bool clicked = ImGui::InvisibleButton("##currentPanel", ui.size({kSideW, kPanelH}));
         ui.tagItem("tactical-combat:piece");
         const bool have = u.selected >= 0 && size_t(u.selected) < b.pieces().size();
-        if (!have) {
-            ImGui::GetWindowDrawList()->AddRect(d.at(at), d.at(at + Vec2{kSideW, kPanelH}), imColor(palette::kFrame));
-        } else {
-            const TacticalPiece& p = b.pieces()[size_t(u.selected)];
-            piecePanel(ui, d, at, b, u.selected, "Move", std::format("{}/{}", p.movement, p.movementMax), paint, false);
-            if (clicked) openReport(ui, u.selected);
-        }
-        // The weapon grid, 6 x 6 cells under the panel: click a weapon to switch it
-        // on or off; the pips are its reload. With Show Weapon To Hit Chances on,
-        // hovering an enemy shows each weapon's chance (spec 06 §1.10.3).
-        const Vec2 grid{sideX(), kWeaponsY};
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRect(d.at(grid), d.at(grid + Vec2{kSideW, kWeaponCell * kWeaponColumns}), imColor(palette::kFrame));
-        ImGui::SetCursorScreenPos(d.at(grid));
-        ImGui::BeginGroup();
-        ImGui::Dummy(ui.size({kSideW, kWeaponCell * kWeaponColumns}));
         if (have) {
             const TacticalPiece& p = b.pieces()[size_t(u.selected)];
+            piecePanel(ui, d, at, b, u.selected, "Move", std::format("{}/{}", p.movement, p.movementMax), paint);
+            if (clicked) openReport(ui, u.selected);
+        }
+        // A new piece shows its weapons from the top.
+        if (u.selected != weaponsOf_) {
+            weaponsOf_ = u.selected;
+            weaponTop_ = 0;
+        }
+        // The weapon grid of 36 px cells, 6 to a row, empty cells drawn too:
+        // click a weapon to switch it on or off. With Show Weapon To Hit
+        // Chances on, hovering an enemy shows each weapon's chance (spec 06
+        // §1.10.3). When the piece has more weapons than cells the arrows under
+        // the grid scroll it a row at a time (shown only then, inferred).
+        const Vec2 grid{sideX(), kWeaponsY};
+        const int rows = weaponRows();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImGui::SetCursorScreenPos(d.at(grid));
+        ImGui::BeginGroup();
+        ImGui::Dummy(ui.size({kSideW, weaponGridH()}));
+        size_t weapons = 0;
+        if (have) {
+            const TacticalPiece& p = b.pieces()[size_t(u.selected)];
+            weapons = p.weapons.size();
             const bool ours = u.begun && b.phaseEmpire().valid() && p.owner == b.phaseEmpire() && commandable(p, p.owner);
             const int chancesAt = settings().showToHitChances && u.hoverEnemy && ours ? u.target : -1;
-            for (size_t w = 0; w < p.weapons.size() && w < size_t(kWeaponColumns * kWeaponColumns); ++w) {
+            const size_t first = size_t(weaponTop_) * size_t(kWeaponColumns);
+            for (size_t w = first; w < p.weapons.size() && w < first + size_t(kWeaponColumns * rows); ++w) {
                 const TacticalWeapon& tw = p.weapons[w];
-                const Vec2 cell = grid + Vec2{kWeaponCell * float(w % kWeaponColumns), kWeaponCell * float(w / kWeaponColumns)};
+                const size_t slot = w - first;
+                const Vec2 cell = grid + Vec2{kWeaponCell * float(slot % kWeaponColumns), kWeaponCell * float(slot / kWeaponColumns)};
                 ImGui::SetCursorScreenPos(d.at(cell));
                 ImGui::PushID(int(w));
                 if (ImGui::InvisibleButton("##weapon", ui.size({kWeaponCell, kWeaponCell})) && ours) {
@@ -819,50 +846,80 @@ private:
                     submit(f, t);
                 }
                 const ImVec2 a = d.at(cell);
-                weaponCell(ui, tw, a, ImGui::IsItemHovered());
+                weaponCell(ui, b.state(), p, tw, a, ImGui::IsItemHovered());
                 if (chancesAt >= 0 && b.fireProblem(u.selected, int(w), chancesAt).empty()) {
+                    // The chance across the middle of the cell (its place is ours).
                     const std::string chance = std::format("{}%", b.hitChance(u.selected, int(w), chancesAt));
-                    ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-                    dl->AddText({a.x + ui.px(2), a.y + ui.px(1)}, IM_COL32(255, 255, 0, 255), chance.c_str());
-                    ImGui::PopFont();
+                    ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+                    const float tw2 = small->CalcTextSizeA(ui.fontPx(kSmallSize), FLT_MAX, 0.0f, chance.c_str()).x;
+                    const ImVec2 c{a.x + (ui.px(kWeaponCell) - tw2) * 0.5f, a.y + ui.px(13)};
+                    dl->AddRectFilled({c.x - 1, c.y}, {c.x + tw2 + 1, c.y + ui.px(10)}, IM_COL32(0, 0, 0, 200));
+                    dl->AddText(small, ui.fontPx(kSmallSize), c, IM_COL32(255, 255, 0, 255), chance.c_str());
                 }
                 if (ImGui::IsItemHovered()) weaponTooltip(ui, b, int(w), tw);
                 ImGui::PopID();
             }
         }
+        weaponGridLines(ui, d, grid, rows);
         ImGui::EndGroup();
         ui.tagItem("tactical-combat:weapons");
+        const int hiddenRows = int((weapons + size_t(kWeaponColumns) - 1) / size_t(kWeaponColumns)) - rows;
+        weaponTop_ = std::clamp(weaponTop_, 0, std::max(0, hiddenRows));
+        if (hiddenRows > 0) {
+            // BigUpDownArrows.bmp: the up arrow (column 0) over the down arrow (column 1), 64 x 17 each.
+            for (int down = 0; down < 2; ++down) {
+                const Vec2 aAt = grid + Vec2{0, weaponGridH() + 17.0f * float(down)};
+                const bool can = down ? weaponTop_ < hiddenRows : weaponTop_ > 0;
+                ImGui::SetCursorScreenPos(d.at(aAt));
+                ImGui::PushID(down ? "##weaponsDown" : "##weaponsUp");
+                ImGui::BeginDisabled(!can);
+                if (ImGui::InvisibleButton("##arrow", ui.size({64, 17})) && can) weaponTop_ += down ? 1 : -1;
+                ImGui::EndDisabled();
+                ImGui::PopID();
+                const int look = !can ? 3 : ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+                if (const Sprite arrow = ui.art.region("Pictures/Game/Buttons/BigUpDownArrows.bmp", down * 64, look * 17, 64, 17, false))
+                    drawSprite(dl, arrow, d.at(aAt), d.at(aAt + Vec2{64, 17}));
+            }
+        }
     }
 
-    void weaponCell(UiContext& ui, const TacticalWeapon& tw, ImVec2 a, bool hovered) {
+    // A weapon's cell (spec 06 §7 Q97 and spec 07 session 5, observed): the
+    // component's picture on a teal background when it is ready, the mount's
+    // code in white at the top left, the level's numeral at the bottom right
+    // and a small red mark at the top once it has fired. A weapon switched off
+    // is drawn dim, a destroyed one in red, and identical weapons of a unit
+    // group show how many are ready at the bottom left (ours).
+    void weaponCell(UiContext& ui, const game::GameState& s, const TacticalPiece& p, const TacticalWeapon& tw, ImVec2 a, bool hovered) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
+        const game::Rules& r = ui.rules();
         const ImVec2 sz = ui.size({kWeaponCell, kWeaponCell});
         const bool destroyed = tw.instances <= 0;
-        dl->AddRectFilled(a, {a.x + sz.x, a.y + sz.y}, tw.enabled ? IM_COL32(10, 30, 70, 255) : IM_COL32(15, 15, 18, 255));
-        const ruleset::Component& c = ui.rules().component(tw.component);
-        if (Sprite icon = ui.art.component(c.picture))
-            drawSprite(dl, icon, {a.x + ui.px(4), a.y + ui.px(1)}, {a.x + ui.px(32), a.y + ui.px(29)},
-                       destroyed ? IM_COL32(255, 80, 80, 150) : tw.enabled ? IM_COL32_WHITE : IM_COL32(120, 120, 120, 200));
-        // Reload pips: one per turn of the reload; lit while it counts down, all dark when ready.
-        int counter = 0, ready = 0;
-        for (int k = 0; k < tw.instances && k < int(tw.reload.size()); ++k) {
+        int ready = 0;
+        for (int k = 0; k < tw.instances && k < int(tw.reload.size()); ++k)
             if (tw.reload[size_t(k)] == 0) ++ready;
-            counter = k == 0 ? tw.reload[size_t(k)] : std::min(counter, tw.reload[size_t(k)]);
+        if (ready > 0) dl->AddRectFilled(a, {a.x + sz.x, a.y + sz.y}, IM_COL32(0, 128, 128, 255));
+        const ruleset::Component& c = r.component(tw.component);
+        if (Sprite icon = ui.art.component(c.picture))
+            drawSprite(dl, icon, {a.x + ui.px(2), a.y + ui.px(2)}, {a.x + ui.px(34), a.y + ui.px(34)},
+                       destroyed ? IM_COL32(255, 80, 80, 150) : tw.enabled ? IM_COL32_WHITE : IM_COL32(110, 110, 110, 200));
+        if (!destroyed && ready == 0) dl->AddRectFilled({a.x + ui.px(14), a.y + ui.px(1)}, {a.x + ui.px(22), a.y + ui.px(4)}, IM_COL32(255, 0, 0, 255));
+        ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+        const float size = ui.fontPx(kSmallSize);
+        if (p.design.valid() && p.design.index() < s.designs.size()) {
+            const game::Design& design = s.design(p.design);
+            if (tw.entry < design.entries.size() && design.entries[tw.entry].component == tw.component) {
+                const int mount = design.entries[tw.entry].mount;
+                if (mount >= 0 && size_t(mount) < r.data().weaponMounts.size())
+                    dl->AddText(small, size, {a.x + ui.px(2), a.y + ui.px(1)}, IM_COL32_WHITE, r.data().weaponMounts[size_t(mount)].shortName.c_str());
+            }
         }
-        const int pips = std::clamp(tw.reloadRate, 1, 5);
-        for (int k = 0; k < pips; ++k) {
-            const ImVec2 q{a.x + ui.px(3 + float(k) * 5), a.y + ui.px(31)};
-            const bool lit = k < std::min(counter, pips);
-            dl->AddRectFilled(q, {q.x + ui.px(4), q.y + ui.px(4)}, destroyed ? IM_COL32(90, 30, 30, 255)
-                                                                  : lit       ? IM_COL32(230, 150, 40, 255)
-                                                                              : IM_COL32(60, 200, 80, 255));
+        const std::string level = romanNumeral(c.romanNumeral);
+        if (!level.empty()) {
+            const ImVec2 t = small->CalcTextSizeA(size, FLT_MAX, 0.0f, level.c_str());
+            dl->AddText(small, size, {a.x + sz.x - t.x - ui.px(2), a.y + sz.y - t.y}, IM_COL32_WHITE, level.c_str());
         }
-        if (tw.instances > 1) {
-            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-            dl->AddText({a.x + ui.px(28), a.y + ui.px(25)}, IM_COL32(220, 220, 220, 255), std::format("{}", ready).c_str());
-            ImGui::PopFont();
-        }
-        dl->AddRect(a, {a.x + sz.x, a.y + sz.y}, hovered ? IM_COL32(168, 188, 255, 255) : tw.enabled ? IM_COL32(97, 123, 194, 255) : IM_COL32(50, 50, 60, 255));
+        if (tw.instances > 1) dl->AddText(small, size, {a.x + ui.px(2), a.y + sz.y - ui.px(11)}, IM_COL32(220, 220, 220, 255), std::to_string(ready).c_str());
+        if (hovered) dl->AddRect(a, {a.x + sz.x, a.y + sz.y}, IM_COL32(168, 188, 255, 255));
     }
 
     void weaponTooltip(UiContext& ui, TacticalBattle& b, int w, const TacticalWeapon& tw) {
@@ -884,21 +941,18 @@ private:
 
     // ---- The target piece -------------------------------------------------------------------------------
 
-    // The target's report under the weapon grid: "Dist" its distance from the
-    // current piece, and its shield and damage numbers in blue and red.
+    // The target's panel, 216 x 100 at (W-232,373): "Dist" its distance in
+    // squares from the current piece (spec 06 §7 Q97); empty without a target.
     void targetPanel(UiContext& ui, const Dialog& d, TacticalFight& f, const CombatMapPainter& paint) {
         TacticalBattle& b = *f.battle;
         TacticalUi& u = state();
         const Vec2 at{sideX(), kTargetY};
         ImGui::SetCursorScreenPos(d.at(at));
-        ImGui::Dummy(ui.size({kSideW, kPanelH}));
+        ImGui::Dummy(ui.size({kSideW, kTargetH}));
         ui.tagItem("tactical-combat:target");
-        if (u.target < 0 || size_t(u.target) >= b.pieces().size() || !b.pieces()[size_t(u.target)].alive) {
-            ImGui::GetWindowDrawList()->AddRect(d.at(at), d.at(at + Vec2{kSideW, kPanelH}), imColor(palette::kFrame));
-            return;
-        }
+        if (u.target < 0 || size_t(u.target) >= b.pieces().size() || !b.pieces()[size_t(u.target)].alive) return;
         const bool fromSelected = u.selected >= 0 && size_t(u.selected) < b.pieces().size() && b.pieces()[size_t(u.selected)].alive;
-        piecePanel(ui, d, at, b, u.target, "Dist", fromSelected ? std::to_string(b.distance(u.selected, u.target)) : std::string("-"), paint, true);
+        piecePanel(ui, d, at, b, u.target, "Dist", fromSelected ? std::to_string(b.distance(u.selected, u.target)) : std::string{}, paint);
     }
 
     // ---- Buttons and the overview map ------------------------------------------------------------------
@@ -910,9 +964,7 @@ private:
         TacticalUi& u = state();
         const game::EmpireId side = b.phaseEmpire();
         const bool orders = u.begun && side.valid() && !animating();
-        // Right-aligned with the overview map, whose 218 px the two 113 px buttons
-        // overrun (their x is ours, inferred).
-        const float x = frameW() - 12 - 226, y = frameH() - 196 - 70;
+        const float x = frameW() - 234, y = frameH() - 266;
         ImGui::SetCursorScreenPos(d.at({x, y}));
         if (classicButton(ui, "Options", {113, 30})) ui.open(ScreenId::TacticalOptions);
         ui.tagItem("tactical-combat:options");
@@ -938,41 +990,9 @@ private:
 
     // The whole map, 218 x 190 at (W-230, H-196), 3 px a square, with the dotted
     // Viewing Rectangle when it is on; a click moves the view there (§1.10.1).
-    void overview(UiContext& ui, const Dialog& d, TacticalFight& f, const CombatMapPainter& paint) {
-        (void)f;
+    void overview(UiContext& ui, const Dialog& d, const CombatMapPainter& paint) {
         TacticalUi& u = state();
-        const Vec2 at{frameW() - 230, frameH() - 196};
-        ImGui::SetCursorScreenPos(d.at(at));
-        const ImVec2 o = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton("##overview", ui.size({218, 190}));
-        const ImVec2 o2 = d.at(at + Vec2{218, 190});
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(o, o2, IM_COL32(0, 0, 0, 255));
-        const float k = ui.px(3);
-        CombatView whole;   // square (x, y) at o + (x, y) × k
-        whole.center = o;
-        whole.cell = k;
-        dl->PushClipRect(o, o2, true);
-        paint.squares(dl, whole, 2.0f);
-        if (viewSize_.x > 0 && settings().showViewingRectangle) {
-            const float halfW = viewSize_.x * 0.5f / view_.cell, halfH = viewSize_.y * 0.5f / view_.cell;
-            const ImVec2 a{o.x + (u.cx - halfW) * k, o.y + (u.cy - halfH) * k}, c{o.x + (u.cx + halfW) * k, o.y + (u.cy + halfH) * k};
-            for (float x = a.x; x < c.x; x += 4) {
-                dl->AddLine({x, a.y}, {std::min(x + 2, c.x), a.y}, IM_COL32_WHITE);
-                dl->AddLine({x, c.y}, {std::min(x + 2, c.x), c.y}, IM_COL32_WHITE);
-            }
-            for (float y = a.y; y < c.y; y += 4) {
-                dl->AddLine({a.x, y}, {a.x, std::min(y + 2, c.y)}, IM_COL32_WHITE);
-                dl->AddLine({c.x, y}, {c.x, std::min(y + 2, c.y)}, IM_COL32_WHITE);
-            }
-        }
-        dl->PopClipRect();
-        dl->AddRect(o, o2, imColor(palette::kFrameLight));
-        if (ImGui::IsItemActive()) {
-            const ImVec2 m = ImGui::GetIO().MousePos;
-            u.cx = (m.x - o.x) / k;
-            u.cy = (m.y - o.y) / k;
-        }
+        combatOverview(ui, d, paint, view_, viewSize_, settings().showViewingRectangle, u.cx, u.cy);
     }
 
     void begin(const TacticalBattle& b) {
@@ -1131,13 +1151,7 @@ private:
         TacticalBattle& b = *f.battle;
         TacticalUi& u = state();
         const ImGuiIO& io = ImGui::GetIO();
-        // Scrolling the map: 30 squares a second (half a square a frame at
-        // 60 Hz), whatever the display's refresh rate.
-        const float scroll = 30.0f * std::min(ui.dt, 0.1f);
-        if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) u.cx -= scroll;
-        if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) u.cx += scroll;
-        if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) u.cy -= scroll;
-        if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) u.cy += scroll;
+        combatViewKeys(ui, u.cx, u.cy);
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) u.aim = Aim::None;   // Esc closes nothing here
         if (!u.begun) return;
         if (animating()) {
@@ -1192,6 +1206,8 @@ private:
     CombatView view_;
     ImVec2 viewSize_{0, 0};
     size_t groundsSeen_ = 0;   // ground combats of the record already shown
+    int weaponsOf_ = -1;       // the piece whose weapons the grid shows
+    int weaponTop_ = 0;        // its first row shown
 };
 
 // ---- Tactical Combat Orders (spec 06 §1.10.2) ------------------------------------------------------------------
@@ -1323,7 +1339,10 @@ private:
 // ---- Combat Options (spec 06 §1.10.3) ---------------------------------------------------------------------------
 
 // Per computer, shared with the Options window where the rows are the same;
-// Stop Combat only in the simulator.
+// Stop Combat only in the simulator. "Options In Use" at (15,38) over the
+// list at (15,56), 560 x 400 (spec 06 §1.10.3); its headings and check boxes
+// as Combat Replay Options shows them (spec 07 session 5; inferred: the same
+// rows in this window).
 class TacticalOptionsScreen final : public Screen {
 public:
     bool modal() const override { return true; }
@@ -1331,30 +1350,31 @@ public:
     bool draw(UiContext& ui) override {
         Dialog d(ui, screenTitle(ScreenId::TacticalOptions), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
-        d.beginContent();
         ClassicSettings& prefs = settings();
         bool changed = false;
+        ImGui::SetCursorScreenPos(d.at({15, 38}));
         ImGui::TextColored(kLabelBlue, "Options In Use");
-        beginList(ui, "##options", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::SetCursorScreenPos(d.at({15, 56}));
+        beginList(ui, "##options", ui.size({560, 400}), 18);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0));
         heading(ui, "Animation");
-        changed |= lampToggle(ui, "Animate ship movement in combat", &prefs.animateCombatMovement);
-        ImGui::Spacing();
+        changed |= checkRow(ui, "Animate ship movement in combat", &prefs.animateCombatMovement);
         heading(ui, "Sound");
-        changed |= lampToggle(ui, "Sound On", &prefs.soundOn);
+        changed |= checkRow(ui, "Sound On", &prefs.soundOn);
         // Lit only when music is on and Settings.txt `Allow CD Music` allows it (spec 06 §1.10.3).
         bool music = musicLampLit(prefs, musicAllowed(ui.rules().data().settings));
-        if (lampToggle(ui, "Music On", &music)) {
+        if (checkRow(ui, "Music On", &music)) {
             prefs.musicOn = music;
             changed = true;
         }
-        ImGui::Spacing();
         heading(ui, "Tactical Combat");
-        changed |= lampToggle(ui, "Fast Tactical Combat", &prefs.fastTacticalCombat);
-        changed |= lampToggle(ui, "Show Group Identifiers", &prefs.showGroupIdentifiers);
-        changed |= lampToggle(ui, "Show Viewing Rectangle on Map", &prefs.showViewingRectangle);
-        changed |= lampToggle(ui, "Center Map on Current Ship", &prefs.centerOnCurrentShip);
-        changed |= lampToggle(ui, "Show Weapon To Hit Chances", &prefs.showToHitChances);
-        changed |= lampToggle(ui, "Show Grid", &prefs.tacticalGrid);
+        changed |= checkRow(ui, "Fast Tactical Combat", &prefs.fastTacticalCombat);
+        changed |= checkRow(ui, "Show Group Identifiers", &prefs.showGroupIdentifiers);
+        changed |= checkRow(ui, "Show Viewing Rectangle on Map", &prefs.showViewingRectangle);
+        changed |= checkRow(ui, "Center Map on Current Ship", &prefs.centerOnCurrentShip);
+        changed |= checkRow(ui, "Show Weapon To Hit Chances", &prefs.showToHitChances);
+        changed |= checkRow(ui, "Show Grid", &prefs.tacticalGrid);
+        ImGui::PopStyleVar();
         endList(ui);
         if (changed) saveSettings();
         d.beginButtons();
@@ -1370,26 +1390,29 @@ public:
 
 // ---- Combat Piece Report (spec 06 §1.10.1) ----------------------------------------------------------------------
 
-// A 353x422 report window built like the object reports: a 290x361 Detail
-// page (the 128x128 picture at the top left with the owner's flag on it, the
-// name at the top from x 120, or right-aligned 10 px from the page's right
-// edge when too long; labels in #7D9FFF at x 130 from y 20, 30 px apart, each
-// value in white at x 140, 15 px under its label) and the object's tabs along
-// the bottom: a ship or base Detail, Comps, Cargo (with cargo space) and
-// Ability; a planet Detail, Facil, Cargo (likewise) and Ability. A unit group
-// has no tabs: its page is cut to 249 px and its units are listed in a 108 px
-// grid at y 253. A seeker has no tabs and shows the picture of the weapon that
-// launched it. A neutral obstacle opens its ordinary object report. In a
-// simulation the owner's flag is the side's numbered box.
+// A report window built like the object reports: a 290x361 Detail picture
+// (the 128x128 picture at the top left with the owner's flag on it, the name
+// at the top from x 120, or right-aligned 10 px from the picture's right edge
+// when too long; labels in #7D9FFF at x 130 from y 20, 30 px apart, each value
+// in white at x 140, 15 px under its label) and the object's tabs along the
+// bottom: a ship or base Detail, Comps, Cargo (with cargo space) and Ability;
+// a planet Detail, Facil, Cargo (likewise) and Ability. A unit group has no
+// tabs: its page is cut to 249 px and its units are listed in a 108 px grid at
+// y 263 of the window. A seeker has no tabs and shows the picture of the
+// weapon that launched it. A neutral obstacle opens its ordinary object
+// report. In a simulation the owner's flag is the side's numbered box.
+// The report window's pages: 290x327 at (10,10) (spec 06 §7 Q87, confirmed: binary).
+constexpr float kReportPageH = 327;
+
 class CombatPieceReportScreen final : public Screen {
 public:
     explicit CombatPieceReportScreen(int piece) : piece_(piece) {}
     bool modal() const override { return true; }
 
     // A borderless 310x420 report window, as every report opened on its own
-    // (spec 06 §1.10.1, §7 Q78, confirmed: binary): the pages at (10,10), the
-    // four 72x30 tabs at (10,340), and a 153x30 Close button centred under
-    // them at (79,380).
+    // (spec 06 §1.10.1, §7 Q78, Q87, confirmed: binary): the pages, 290x327
+    // areas at (10,10) with or without tabs, end 3 px above the four 72x30
+    // tabs at (10,340); a 153x30 Close button centred under them at (79,380).
     bool draw(UiContext& ui) override {
         const TacticalFight* f = ui.session.tactical();
         if (!f || !f->battle || piece_ < 0 || size_t(piece_) >= f->battle->pieces().size()) return false;
@@ -1414,7 +1437,7 @@ public:
             if (p.kind == PieceKind::Obstacle) {
                 // The object's ordinary report (stars, warp points, comets, empty planets).
                 ImGui::SetCursorScreenPos(page);
-                ImGui::BeginChild("##page", ui.size({290, 361}));
+                ImGui::BeginChild("##page", ui.size({290, kReportPageH}));
                 if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) objectReport(ui, p.planet, &s);
                 ImGui::EndChild();
             } else {
@@ -1423,10 +1446,8 @@ public:
                 const bool planet = p.kind == PieceKind::Planet;
                 const bool tabs = !group && !seeker;
                 if (!tabs) tab_ = ReportTab::Detail;
-                // The Detail page is 290x361; with tabs the strip at y 340 takes its foot (inferred).
-                // A unit group's page is cut to 249 px, its unit grid (108 px) at y 253.
-                const float pageH = tabs ? 328.0f : 361.0f;
-                const float detailH = group ? 249.0f : pageH;
+                // A unit group's page is cut to 249 px, its unit grid (108 px) at y 263 of the window.
+                const float detailH = group ? 249.0f : kReportPageH;
                 ImGui::SetCursorScreenPos(page);
                 ImGui::BeginChild("##page", ui.size({290, detailH}), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
                 switch (tab_) {
@@ -1461,10 +1482,14 @@ private:
         return 0;
     }
 
+    // The Detail picture, 290x361, is drawn 10 px right and 10 px down of the
+    // page's corner and cut off by the page: its last 10 columns and its
+    // bottom rows never show (spec 06 §7 Q87, confirmed: binary).
     void detail(UiContext& ui, const TacticalBattle& b, const TacticalPiece& p) {
         const game::GameState& s = b.state();
         const game::Rules& r = ui.rules();
-        const ImVec2 o = ImGui::GetCursorScreenPos();
+        const ImVec2 corner = ImGui::GetCursorScreenPos();
+        const ImVec2 o{corner.x + ui.px(10), corner.y + ui.px(10)};
         ImDrawList* dl = ImGui::GetWindowDrawList();
         // The picture: the hull's portrait, the planet's, or the launching weapon's for a seeker.
         Sprite pic;
