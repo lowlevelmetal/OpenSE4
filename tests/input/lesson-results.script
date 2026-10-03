@@ -1,6 +1,7 @@
 # The result dialog of a training game, won and lost, with its buttons, using two quick
 # training games of our own (tests/input/learn; docs/BUILDING.md "Input scripts").
 # ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --learn-dir=tests/input/learn --training=quick-win --layout=1024x768 --size=1280x800
 
 wait-lesson quick-win
@@ -11,7 +12,7 @@ click item:Close in=finale optional
 click item:Yes in=finale optional
 # The panel is dragged by its title strip; it stays where it is put.
 assert-inside tag:lesson:panel tag:panel:galaxy
-drag tag:lesson:panel@60,12 to tag:panel:system@80,40
+drag tag:lesson:panel@60,12 to tag:panel:system@80,-60
 assert-inside tag:lesson:panel tag:panel:system
 key F8
 wait-window research

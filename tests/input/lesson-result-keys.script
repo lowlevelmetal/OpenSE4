@@ -2,6 +2,7 @@
 # lock"; docs/BUILDING.md "Input scripts"), on tutorial 1 at its last step: Enter closes
 # the result (Keep Playing) and is not also End Turn; Free Play, switched on in this
 # lesson, is off again when the next lesson starts.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=first-steps:15 --layout=1024x768 --size=1280x800
 
 wait-lesson first-steps

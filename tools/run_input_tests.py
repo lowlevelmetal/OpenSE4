@@ -15,12 +15,17 @@ Without either it reports that it was skipped. --fixture-data runs the scripts
 marked "# ci: fixture-data" on a game folder put together from our own test
 fixtures instead (no original game needed; CI does this).
 
+Each script plays in the layout its options give (most at 1024x768). Scripts
+marked "# layouts: both" (the tutorials and most lesson scripts) work in the
+original's small 800x600 layout too: --small plays them there as well, and
+--only-small plays only those runs. Names may be patterns ("tutorial-*").
+
 Screenshots that scripts take, and the picture of a failed step, go to --output
 (by default a folder under the system's temporary folder): they show the game's
 art, so keep them out of the repository (docs/CLEANROOM.md).
 
     python3 tools/run_input_tests.py [--exe build/debug/opense4] [--jobs N]
-        [--renderer opengl] [--output DIR] [script ...]
+        [--renderer opengl] [--output DIR] [--small | --only-small] [script ...]
 """
 
 import argparse
@@ -39,6 +44,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "tests" / "input"
 RESULT = re.compile(r"^input-script (.+): (passed|FAILED)(.*)$")
 FIXTURE_MARK = "# ci: fixture-data"
+# Scripts that also play in the 800x600 layout (--small), and the options that make it.
+BOTH_MARK = "# layouts: both"
+SMALL = ("800x600", ["--layout=800x600", "--size=800x600"])
 
 
 def scripts(names):
@@ -84,12 +92,23 @@ def fixture_game(where):
     return game
 
 
-def run(exe, script, output, classic_dir, renderer, timeout, extra):
+def marked(path, mark):
+    """Whether a line of the script's header comments starts with the mark."""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("#"):
+            break
+        if line.strip() == mark or line.startswith(mark + " "):
+            return True
+    return False
+
+
+def run(exe, script, output, classic_dir, renderer, timeout, extra, layout=None):
+    """Plays one script; `layout` is (name, options) for a run in another layout."""
     with tempfile.TemporaryDirectory(prefix="opense4-script-user-") as user:
         env = dict(os.environ)
         env.setdefault("SDL_VIDEO_DRIVER", "offscreen")
         env["OPENSE4_USER_DIR"] = user
-        shots = output / script.stem
+        shots = output / (script.stem + (f"@{layout[0]}" if layout else ""))
         shots.mkdir(parents=True, exist_ok=True)
         args = [str(exe), f"--input-script={script}", f"--script-output={shots}", "--no-audio"]
         if classic_dir:
@@ -97,6 +116,8 @@ def run(exe, script, output, classic_dir, renderer, timeout, extra):
         if renderer:
             args.append(f"--renderer={renderer}")
         args += extra
+        if layout:
+            args += layout[1]   # the command line overrides the script's options
         start = time.monotonic()
         try:
             proc = subprocess.run(args, env=env, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
@@ -127,6 +148,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) // 2)))
     ap.add_argument("--timeout", type=int, default=900, help="seconds a script may take")
     ap.add_argument("--extra", action="append", default=[], help="another option for the client (repeatable)")
+    ap.add_argument("--small", action="store_true", help=f"also play the scripts marked '{BOTH_MARK}' at 800x600")
+    ap.add_argument("--only-small", action="store_true", help=f"only the 800x600 runs of the scripts marked '{BOTH_MARK}'")
     ap.add_argument("scripts", nargs="*", help="only these scripts (names or paths)")
     a = ap.parse_args()
 
@@ -136,6 +159,10 @@ def main():
     chosen = scripts(a.scripts)
     if a.fixture_data and not a.scripts:
         chosen = [s for s in chosen if FIXTURE_MARK in s.read_text(encoding="utf-8")]
+    # The runs: each script in its own layout, and the marked ones at 800x600 with --small.
+    runs = [] if a.only_small else [(s, None) for s in chosen]
+    if a.small or a.only_small:
+        runs += [(s, SMALL) for s in chosen if marked(s, BOTH_MARK)]
 
     problems = [p for s in chosen for p in lint(s)]
     for p in problems:
@@ -163,21 +190,24 @@ def main():
         sys.exit("screenshots of the game's art stay out of the repository: pick a folder outside it")
     output.mkdir(parents=True, exist_ok=True)
 
-    print(f"{len(chosen)} script(s), {a.jobs} at a time; pictures in {output}")
+    small = sum(1 for _, layout in runs if layout)
+    print(f"{len(runs)} run(s) of {len(chosen)} script(s){f' ({small} at 800x600)' if small else ''}, "
+          f"{a.jobs} at a time; pictures in {output}")
     failed = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as pool:
-        jobs = [pool.submit(run, exe, s, output, classic_dir, a.renderer, a.timeout, a.extra) for s in chosen]
+        jobs = {pool.submit(run, exe, s, output, classic_dir, a.renderer, a.timeout, a.extra, layout): layout for s, layout in runs}
         for job in concurrent.futures.as_completed(jobs):
             script, ok, summary, detail, seconds = job.result()
+            name = script.stem + (f" @{jobs[job][0]}" if jobs[job] else "")
             if ok:
-                print(f"ok   {script.stem} {summary} {seconds:.1f} s")
+                print(f"ok   {name} {summary} {seconds:.1f} s")
             else:
                 failed += 1
-                print(f"FAIL {script.stem} ({seconds:.1f} s)")
+                print(f"FAIL {name} ({seconds:.1f} s)")
                 for line in detail.splitlines():
                     print(f"     {line}")
             sys.stdout.flush()
-    print(f"{len(chosen) - failed} of {len(chosen)} scripts passed")
+    print(f"{len(runs) - failed} of {len(runs)} runs passed")
     if not a.output:
         if failed:
             print(f"failure pictures kept in {output}")

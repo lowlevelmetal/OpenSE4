@@ -3,6 +3,8 @@
 # explored. It is going as it should however long it takes: after two minutes Next is
 # still Next, not Skip. Then End Turn with the Colonies window open: its question comes up
 # over the window and takes the click.
+# 1024x768 only: at 800x600 the Colonies window covers End Turn (lesson-uncover.script plays
+# a covered outline there).
 options --tutorial=exploring-and-colonizing:12 --open=colonies --layout=1024x768 --size=1280x800
 timeout 9000
 

@@ -1,6 +1,7 @@
 # End Turn while a window is open (docs/BUILDING.md "Input scripts"): the "End the turn
 # now?" question comes up over the window and takes the input (it used to open behind
 # it). Esc answers No and leaves the window open; Y ends the turn.
+# 1024x768 only: at 800x600 the Colonies window covers End Turn.
 options --quick-start=Terran --seed=404 --open=none --layout=1024x768 --size=1280x800
 
 wait-screen game

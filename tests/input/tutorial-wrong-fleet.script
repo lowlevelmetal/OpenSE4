@@ -2,6 +2,7 @@
 # The step waits for an attack ship, and the fleet's later orders still count: a fleet counts for
 # design_type "Attack Ship" when one of its ships is an attack ship, so a ship added by mistake
 # never blocks a later step (docs/LEARNING.md "Conditions", docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=fleets-and-movement --layout=1024x768 --size=1280x800
 
 wait-lesson fleets-and-movement

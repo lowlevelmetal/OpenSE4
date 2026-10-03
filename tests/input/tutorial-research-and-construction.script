@@ -1,6 +1,7 @@
 # Tutorial 3, "Research and construction", played through under the input lock
 # (docs/BUILDING.md "Input scripts"). The research areas are picked by their place in
 # the list of the stock data set.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=research-and-construction --layout=1024x768 --size=1280x800
 
 wait-lesson research-and-construction

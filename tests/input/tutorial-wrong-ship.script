@@ -4,6 +4,7 @@
 # founded. Now the colony ship goes first, an Explore order counts only for an attack ship,
 # and the colony is still founded (docs/LEARNING.md "Conditions", docs/BUILDING.md
 # "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=exploring-and-colonizing --layout=1024x768 --size=1280x800
 
 wait-lesson exploring-and-colonizing

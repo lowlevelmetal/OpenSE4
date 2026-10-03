@@ -1,6 +1,7 @@
 # Sliders, dragged with the mouse (docs/BUILDING.md "Input scripts"): a combat strategy's
 # setting (it takes effect when the slider is let go) and OpenSE4's Settings.
 # ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --quick-start --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
 
 wait-for tag:command:empire-status

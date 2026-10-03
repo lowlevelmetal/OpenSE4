@@ -4,6 +4,7 @@
 # - a refused click or key says what the step waits for; after three refusals in a short
 #   while the note also names Back, Skip and Free Play; with the panel hidden it says how
 #   to show it.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=first-steps:9 --layout=1024x768 --size=1280x800
 
 wait-lesson first-steps

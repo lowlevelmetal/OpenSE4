@@ -1,5 +1,6 @@
 # Tutorial 4, "Designing ships", played through under the input lock
 # (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=designing-ships --layout=1024x768 --size=1280x800
 
 wait-lesson designing-ships

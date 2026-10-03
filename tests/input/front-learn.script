@@ -2,6 +2,7 @@
 # the intro's Tutorial and Scenario buttons, the tabs, starting a lesson, and Leave with
 # its question (docs/BUILDING.md "Input scripts").
 # ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --layout=1024x768 --size=1280x800
 
 wait-screen front

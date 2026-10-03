@@ -1,5 +1,6 @@
 # Training game "Land rush": its briefing pages, its first turns with a hint, Hide and the T
 # button, and Leave Game with its question (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --training=land-rush --layout=1024x768 --size=1280x800
 
 wait-lesson land-rush

@@ -2,6 +2,7 @@
 # lesson panel"; docs/BUILDING.md "Input scripts"): tutorial 6 at step 8 with no battle to
 # move in. Next turns into Skip only after ten seconds; after a Skip the next step, whose
 # battle is missing too, gets its own ten seconds before Skip comes back (no cascade).
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=combat:8 --layout=1024x768 --size=1280x800
 
 wait-lesson combat

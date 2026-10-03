@@ -1,5 +1,6 @@
 # Training game "Research sprint": its briefing pages, its first turns and Leave Game
 # (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --training=research-sprint --layout=1024x768 --size=1280x800
 
 wait-lesson research-sprint

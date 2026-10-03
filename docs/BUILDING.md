@@ -273,12 +273,28 @@ installed game and are opt-in (see "Input scripts" below):
 
 ```sh
 OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py       # every script, on your install
+OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py --small   # ... and at 800x600 too
 python3 tools/run_input_tests.py --fixture-data                  # the ones that run on our fixtures (as CI)
+OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py --only-small 'tutorial-*'   # the tutorials at 800x600
 ```
 
-Run them after changing the client's windows, the tutorials or the input lock. With the
-lesson checks (`tools/check_lessons.py`, docs/LEARNING.md) they are the routine for the
-learning content.
+Each script plays in the layout its `options` give, most at 1024x768. The original's small
+800x600 layout differs where lessons notice it: the order strip has pages (an order on
+another page is outlined on its page arrow), lists show fewer rows, windows cover more of the
+main window. Scripts marked `# layouts: both` in their header comments work in both:
+`--small` plays them at 800x600 as well (the command line's `--layout=800x600 --size=800x600`
+overrides their options; their pictures go to `<script>@800x600`), and `--only-small` plays
+only those runs. Script names may be patterns (`'tutorial-*'`). Every script is marked except
+those written for one layout: `lesson-panel`, `lesson-uncover` and `lesson-pager` play at
+800x600 only; `learn-resume` (no compact panel), `lesson-long-step` and `end-turn-question`
+(End Turn, which the Colonies window covers at 800x600) at 1024x768 only. A script that
+plays at both should not depend on the layout: give an order that may be on another page with
+`repeat 3 until { order = "..." }` around its click (once at 1024x768, the page arrow first at
+800x600), and wait for a row of a list with `wait-for`.
+
+Run them, with `--small`, after changing the client's windows, the tutorials or the input
+lock. With the lesson checks (`tools/check_lessons.py`, docs/LEARNING.md) they are the
+routine for the learning content.
 
 The Windows tests also run under Wine:
 
@@ -317,7 +333,7 @@ recorder is tested.
 
 | Scripts | What they play |
 |---|---|
-| `tutorial-*.script` | Each of the seven tutorials from its first step to its result, under the input lock: every step done by clicking what it tells the player to click; Next only on steps that explain, never Skip or Free Play (the runner checks). `tutorial-wrong-ship.script` gives tutorial 2's Explore order to the colony ship: the step waits for an attack ship, and the colony is still founded; `tutorial-wrong-fleet.script` adds the colony ship to tutorial 5's fleet: the step waits, and the fleet's later orders still count |
+| `tutorial-*.script` | Each of the seven tutorials from its first step to its result, at 1024x768 and (with `--small`) 800x600, under the input lock: every step done by clicking what it tells the player to click; Next only on steps that explain, never Skip or Free Play (the runner checks). `tutorial-wrong-ship.script` gives tutorial 2's Explore order to the colony ship: the step waits for an attack ship, and the colony is still founded; `tutorial-wrong-fleet.script` adds the colony ship to tutorial 5's fleet: the step waits, and the fleet's later orders still count |
 | `training-*.script` | Each training game's briefing pages (Previous, Next, Close Page), its first turns with their hints, Hide, the T button and Ctrl+H, Leave Game with its question |
 | `lesson-results.script` | The result dialog, won and lost (its recap and the next game, Next Game, Keep Playing, Try Again, Learn), on two quick training games of our own in `tests/input/learn` |
 | `lesson-lock-windows.script`, `lesson-lock-simulator.script` | The tutorial input lock with windows over each other: the designer over Designs, the Combat Simulator over Designs; what the window in front does not allow is refused (docs/LEARNING.md "The input lock") |
@@ -327,6 +343,7 @@ recorder is tested.
 | `end-turn-question.script` | End Turn while a window is open: the question comes up over the window and takes the input |
 | `front-learn.script` | The intro's Tutorial and Scenario buttons, the Learn window's tabs, starting a lesson and leaving it |
 | `lesson-panel.script` | The lesson panel at 800x600 on a tutorial of our own in `tests/input/learn`: prompts and its Leave question over the panel dragged under them, placing itself again, the compact panel and More, its keys and Shift+F1 under the input lock |
+| `lesson-pager.script` | The order strip's pages at 800x600 on a tutorial of our own in `tests/input/learn`: an outlined order on another page outlined on its page arrow, the panel's hint to press it (and the note after a refused click), the way back first while a window covers the arrow, the arrow on an explanation step (docs/LEARNING.md "Getting back") |
 | `learn-resume.script` | The intro's hint by Tutorial, the Learn window's count, Next and Done marks and the lesson it chooses, and resuming a tutorial left in a window and in the main window, on tutorials of our own in `tests/input/learn` |
 | `manual-front.script`, `manual-game.script` | The manual: contents tree, links to pages and sections, window and Help links, Back and Forward (buttons and Alt+arrows), search, Contents, Shift+F1 |
 | `list-windows.script` | Planets, Colonies, Ships and Construction Queues: sort headings, tabs and filters, the arrow column and the wheel; item and Design Report pop-ups from right-clicks |
@@ -338,7 +355,8 @@ recorder is tested.
 | `game-setup.script` | The setup screens: Load Game with Change Directory, Quick Start's picker, Game Setup's pages, Add New with a name from the list picker and an e-mail address, Begin Game, and Change Email in Empire Status |
 
 Scripts marked `# ci: fixture-data` need nothing but our own content and also run on a game
-folder made from `tests/fixtures` (CI).
+folder made from `tests/fixtures` (CI). Scripts marked `# layouts: both` also play at 800x600
+(`--small`, see "Tests").
 
 ### The format
 

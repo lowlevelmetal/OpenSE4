@@ -2,6 +2,7 @@
 # docs/BUILDING.md "Input scripts"): tutorial 4 at step 5, "Choose a hull", with no window
 # open. Two windows deep: the Designs button is outlined in the recovery style and the
 # panel says to press it, then Create; once Designs is open, Create is. No Skip meanwhile.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=designing-ships:5 --open=none --layout=1024x768 --size=1280x800
 
 wait-lesson designing-ships

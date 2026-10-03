@@ -3,6 +3,7 @@
 # under the simulator and the step says nothing about it, but where the simulator lies it
 # decides: its Strategies button (step 3) and its Strategic tab (step 5) are refused,
 # while the parts each step names work.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=combat:2 --layout=1024x768 --size=1280x800
 
 wait-lesson combat

@@ -4,6 +4,7 @@
 # events, on and off again); Next plays the combat turns until it dims (at most the 30
 # combat turns of the stock data); Stop Replay closes the replay (docs/BUILDING.md "Input
 # scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --quick-start=Terran --seed=3 --systems=20 --empires=8 --turns=40 --open=combat-replay --layout=1024x768 --size=1280x800
 
 wait-window combat-replay

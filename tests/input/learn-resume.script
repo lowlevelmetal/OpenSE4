@@ -1,8 +1,10 @@
 # The Learn window and resuming a tutorial (docs/LEARNING.md "The Learn window and the
 # manual", "Resuming a lesson"), on tutorials of our own (tests/input/learn): the intro's
-# hint by Tutorial until a first lesson starts; "N of 2 done" and the first lesson not done
+# hint by Tutorial until a first lesson starts; "N of 3 done" and the first lesson not done
 # chosen and marked Next; a tutorial left before its end resumes in its game, at the step
 # where the work in its window began (docs/BUILDING.md "Input scripts").
+# 1024x768 only: it checks that this layout has no compact panel (lesson-panel.script plays
+# the 800x600 panel).
 options --learn-dir=tests/input/learn --layout=1024x768 --size=1280x800
 
 wait-screen front
@@ -12,7 +14,7 @@ screenshot intro-hint.png
 click item:Tutorial in=front
 wait-for item:"Start Lesson" in=front
 # Nothing done: the first lesson is chosen and marked Next; nothing to resume.
-assert-present item:"0 of 2 done" in=front
+assert-present item:"0 of 3 done" in=front
 assert-present item:Next:quick-lesson in=front
 assert-absent item:"Resume*" in=front
 click item:"Start Lesson" in=front
@@ -28,7 +30,7 @@ click tag:lesson:leave
 click item:Yes in="Leave Lesson" optional
 wait-screen front
 # One done: the next one is chosen and marked Next.
-wait-for item:"1 of 2 done" in=front
+wait-for item:"1 of 3 done" in=front
 assert-present item:Done:quick-lesson in=front
 assert-present item:Next:panel-check in=front
 screenshot learn-one-done.png

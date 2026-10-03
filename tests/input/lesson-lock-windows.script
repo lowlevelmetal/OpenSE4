@@ -5,6 +5,7 @@
 # designer again, and offers no Skip meanwhile. Once open, the designer lies over Designs,
 # which the step says nothing about: where the designer is, only its Size list responds,
 # so its Cancel and Create Design, and Designs' Close under them, are refused.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=designing-ships:5 --open=designs --layout=1024x768 --size=1280x800
 
 wait-lesson designing-ships

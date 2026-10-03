@@ -3,6 +3,7 @@
 # contents tree, search, Contents, and window links dimmed outside a game
 # (docs/BUILDING.md "Input scripts").
 # ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --manual=research --layout=1024x768 --size=1280x800
 
 wait-for item:page:research in=front
