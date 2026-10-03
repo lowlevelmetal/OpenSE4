@@ -112,6 +112,11 @@ std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args);
 // A sample simulated battle for automation: the player's warships against
 // copies of them, the player driving the first side. False when the player has none.
 bool startDemoSimulation(UiContext& ui, bool tactical);
+// A sample ground combat for automation: two of the player's troop transports
+// full of its troops against its homeworld, fought by the strategies in the
+// Strategic Combat window, begun at once; Ground Combat opens when the troops
+// land. The reason when it cannot start (no troop design...), else empty.
+std::string startDemoGroundCombat(UiContext& ui);
 // Fleets For Plr and Change Cargo (spec 06 §1.10.4, confirmed: binary) open the
 // Fleet Transfer and Cargo Transfer windows with ScreenArgs::text
 // kSimulatorWindow: those windows then work on a sandbox built from the
