@@ -270,6 +270,7 @@ void MainWindow::clearSelection() {
     vehicle_.reset();
     fleet_.reset();
     listMode_ = false;
+    reportFromList_ = false;
 }
 
 std::vector<game::ObjectId> MainWindow::objectsAt(const UiContext& ui, game::Sector sec) const {
@@ -1206,7 +1207,6 @@ void MainWindow::reportPanel(UiContext& ui) {
     const float tabsY = geo.reportPanel.size().y - 31;
     bool tabsFor = false, planetTabs = false;
     const bool single = object_ || vehicle_;
-    const bool several = single && sector_ && (objectsAt(ui, *sector_).size() + vehiclesAt(ui, {shown_, *sector_}).size()) > 1;
     // The report body scrolls above the tabs; the portrait, flag and name reach over the frame rail above it.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({4, 2}));
     ImGui::BeginChild("##body", ui.size({geo.reportPanel.size().x, tabsY - 1}), ImGuiChildFlags_AlwaysUseWindowPadding,
@@ -1248,6 +1248,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 tagged_.clear();
                 sector_ = o.sector;
                 object_ = id;
+                reportFromList_ = true;
                 ++selections_;
             }
             if (script::collectingItems()) {
@@ -1266,8 +1267,12 @@ void MainWindow::reportPanel(UiContext& ui) {
             ImGui::SameLine();
             const std::string label = std::format("{}\n{}", v->name, vehicleSummary(ui, *v));
             if (ImGui::Selectable(label.c_str(), tagged(v->id), 0, ImVec2(0, rowH))) {
-                if (ImGui::GetIO().KeyShift) toggleTag(ui, v->id);
-                else selectVehicle(ui, v->id);
+                if (ImGui::GetIO().KeyShift) {
+                    toggleTag(ui, v->id);
+                } else {
+                    selectVehicle(ui, v->id);
+                    reportFromList_ = true;
+                }
             }
             script::reportItem(v->owner == me ? "report:ship" : "report:other");   // input scripts: rows by kind
             if (v->owner == me) iconStrip(ui, dl, vehicleStatusCells(r, s, *v), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
@@ -1282,25 +1287,36 @@ void MainWindow::reportPanel(UiContext& ui) {
     } else if (shown_.valid()) {
         systemReport(ui, shown_);
     }
-    if (several && tagged_.empty()) {
+    if (reportFromList_ && single && tagged_.empty()) {
         // Back to the list of everything in the sector: the up-arrow button of
-        // DetailUp.bmp (33x21, four state rows) at the report's top right (spec 06
-        // §2.5, §5.3), drawn in the report's body, which takes the pointer there;
-        // its place and state order are ours (inferred, spec 06 §7 Q98).
-        const Vec2 at = geo.reportPanel.min + Vec2{geo.reportPanel.size().x - 35, 2};
+        // DetailUp.bmp, one 33x21 cell flush with the report's top right
+        // corner, at (257,0) of the 290x361 report; its rows are normal, under
+        // the pointer, held and disabled. Only a report opened from the sector's
+        // list has it. A click selects the shown object's sector again: several
+        // visible objects bring the list back, one its report (spec 06 §7 Q98,
+        // confirmed: binary). Drawn in the report's body, which takes the
+        // pointer there; disabled while the movement log replays, as the
+        // selectors are (inferred).
+        const Vec2 at = geo.reportPanel.min + Vec2{257, 0};
         const ImVec2 keep = ImGui::GetCursorScreenPos();
+        const bool enabled = !replay_.active();
         ImGui::SetCursorScreenPos(ui.at(at));
-        if (ImGui::InvisibleButton("##toList", ui.size({33, 21}))) {
-            object_.reset();
-            vehicle_.reset();
-            fleet_.reset();
-            listMode_ = true;
-            ++selections_;
-        }
-        const int state = ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+        ImGui::BeginDisabled(!enabled);
+        const bool clicked = ImGui::InvisibleButton("##toList", ui.size({33, 21}));
+        ImGui::EndDisabled();
+        const int state = !enabled ? 3 : ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
         drawAt(ui, ImGui::GetWindowDrawList(), ui.art.region("Pictures/Game/Buttons/DetailUp.bmp", 0, state * 21, 33, 21, false), at, {33, 21});
         ImGui::SetCursorScreenPos(keep);
         ImGui::Dummy(ImVec2(0, 0));
+        if (clicked && enabled) {
+            std::optional<game::Location> where;
+            if (const game::Vehicle* v = vehicle_ ? s.vehicle(*vehicle_) : nullptr) where = v->location;
+            else if (object_) where = game::Location{s.galaxy.object(*object_).system, s.galaxy.object(*object_).sector};
+            if (where) {
+                shown_ = where->system;
+                selectSector(ui, where->sector, false);
+            }
+        }
     }
     ImGui::PopClipRect();
     ImGui::EndChild();
@@ -1440,30 +1456,39 @@ void MainWindow::overlayText(UiContext& ui) {
     // The movement line (§2.4 "Movement lines"), last, over everything else in
     // the panel: a 1 px blue line through the sector centres, an 8 px ring on
     // each square entered, and white Tiny numbers, the turn each is reached.
-    if (explored && settings().showMovementLines && !replay_.active())
-        if (const auto subject = movementLineSubject(ui.rules(), s, ui.session.player(), tagged_.empty() ? vehicle_ : std::nullopt,
-                                                     tagged_.empty() ? fleet_ : std::nullopt)) {
+    // While the movement log replays, the route stored when it began is drawn
+    // over the vehicles moving underneath (§7 Q86, confirmed: binary).
+    const game::movement::PlannedRoute* route = nullptr;
+    if (explored && settings().showMovementLines) {
+        if (replay_.active()) {
+            if (replayLine_) route = &*replayLine_;
+        } else if (const auto subject = movementLineSubject(ui.rules(), s, ui.session.player(), tagged_.empty() ? vehicle_ : std::nullopt,
+                                                            tagged_.empty() ? fleet_ : std::nullopt)) {
             if (!line_ || line_->subject != *subject || line_->revision != ui.session.revision() || line_->turn != s.turn)
                 line_ = MovementLineCache{*subject, ui.session.revision(), s.turn, movementLineRoute(ui.rules(), s, *subject)};
-            auto centre = [](game::Sector sec) {
-                const Vec2 c = sectorCenter(sec);
-                return PixelPoint{int(std::lround(c.x)), int(std::lround(c.y))};
-            };
-            const ImU32 blue = imColor(kMovementLineRgb), white = imColor(kMovementNumberRgb);
-            auto pixel = [&](PixelPoint p) { dl->AddRectFilled(ui.at({float(p.x), float(p.y)}), ui.at({float(p.x + 1), float(p.y + 1)}), blue); };
-            for (const LineMark& m : movementLineMarks(line_->route, shown_, centre)) {
-                if (m.kind == LineMark::Kind::Ring) {
-                    for (const PixelPoint o : ringOffsets()) pixel({m.at.x + o.x, m.at.y + o.y});
-                } else if (m.kind == LineMark::Kind::Segment) {
-                    for (const PixelPoint p : linePixels(m.at, m.to)) pixel(p);
-                } else {
-                    // Centred: top-left at C - (w div 2, h div 2), w and h the text's size.
-                    const std::string n = std::to_string(m.number);
-                    const int w = int(std::lround(widthOf(tiny, tinySize, n))), h = int(kTinyCell);
-                    put(tiny, tinySize, {float(m.at.x - w / 2), float(m.at.y - h / 2)}, white, n);
-                }
+            route = &line_->route;
+        }
+    }
+    if (route) {
+        auto centre = [](game::Sector sec) {
+            const Vec2 c = sectorCenter(sec);
+            return PixelPoint{int(std::lround(c.x)), int(std::lround(c.y))};
+        };
+        const ImU32 blue = imColor(kMovementLineRgb), white = imColor(kMovementNumberRgb);
+        auto pixel = [&](PixelPoint p) { dl->AddRectFilled(ui.at({float(p.x), float(p.y)}), ui.at({float(p.x + 1), float(p.y + 1)}), blue); };
+        for (const LineMark& m : movementLineMarks(*route, shown_, centre)) {
+            if (m.kind == LineMark::Kind::Ring) {
+                for (const PixelPoint o : ringOffsets()) pixel({m.at.x + o.x, m.at.y + o.y});
+            } else if (m.kind == LineMark::Kind::Segment) {
+                for (const PixelPoint p : linePixels(m.at, m.to)) pixel(p);
+            } else {
+                // Centred: top-left at C - (w div 2, h div 2), w and h the text's size.
+                const std::string n = std::to_string(m.number);
+                const int w = int(std::lround(widthOf(tiny, tinySize, n))), h = int(kTinyCell);
+                put(tiny, tinySize, {float(m.at.x - w / 2), float(m.at.y - h / 2)}, white, n);
             }
         }
+    }
 
     // The hover hint (§2.3): the button's name and its key, centred in the hint area.
     if (!hintName_.empty()) {
@@ -1747,6 +1772,7 @@ void MainWindow::trackMovement(UiContext& ui) {
             beforeTurnFor_ = s.turn;
         }
         replay_.stop();
+        replayLine_.reset();
         seenTurn_ = s.turn;
     }
     const bool wasReplaying = replay_.active();
@@ -1770,11 +1796,18 @@ void MainWindow::trackMovement(UiContext& ui) {
                 sector_ = v.location.sector;
                 break;
             }
-    // The end of the replay brings back the current turn and the system shown before it.
-    if (wasReplaying && !replay_.active() && replayShownBefore_) {
-        shown_ = *replayShownBefore_;
+    // The end of the replay brings back the current turn and the system shown
+    // before it; the selected sector becomes sector 0 of that system and the
+    // selection is refreshed: one visible object there opens its report (and
+    // its movement line), none or several leave no line (spec 06 §7 Q86,
+    // confirmed: binary). That is no selection the player made.
+    if (wasReplaying && !replay_.active()) {
+        if (replayShownBefore_) shown_ = *replayShownBefore_;
         replayShownBefore_.reset();
-        clearSelection();
+        replayLine_.reset();
+        const uint64_t made = selections_;
+        selectSector(ui, game::Sector{0, 0}, false);
+        selections_ = made;
     }
     std::vector<ShipGlides::Seen> visible;
     for (const game::Vehicle& v : s.vehicles)
@@ -1841,6 +1874,11 @@ void MainWindow::startReplay(UiContext& ui, OrderId id) {
     }
     if (replay_.active() && !wasActive) {
         replayShownBefore_ = shown_;
+        // The open report's route, worked out from the current turn before the
+        // replay, stays drawn while the days play (spec 06 §7 Q86).
+        replayLine_.reset();
+        if (const auto subject = movementLineSubject(ui.rules(), s, me, tagged_.empty() ? vehicle_ : std::nullopt, tagged_.empty() ? fleet_ : std::nullopt))
+            replayLine_ = movementLineRoute(ui.rules(), s, *subject);
         tagged_.clear();
     }
 }

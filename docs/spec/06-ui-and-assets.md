@@ -305,7 +305,7 @@ reports render inside the right-hand panel (§2.5).
 | Combat Piece Report | Movement, shields, damage, supply, max targets, combat group, formation. A full report window with picture and the object's tabs; unit groups and seekers have none (§1.10.1) (confirmed: binary). | Right-click a piece. |
 | Strategic Combat | Watch-only: system, coordinates, combat turn; forces list (flag, then per vehicle size current and lost counts); small map of coloured squares; Begin, Close. Opens before the first combat turn; the battle is then fought live, the map moving step by step and the list updated after each combat turn, with no delay (§1.10.5) (confirmed: binary). | Prompt; simulator. |
 | Ground Combat | Planet details, facilities, defender and attacker lists; Begin, Close. Fought round by round, the counts updated after each round, about 0.9 s per round (§1.10.6) (confirmed: binary). | After troops land; a ground stalemate at the colony owner's end of turn. |
-| Combat Replay | Same layout as tactical, playback only; Options, Next. Space = Next, Esc closes. Title strip: "Combat Replay", the location, the combat turn and the empires' flags; no log, event list or summary of any kind (confirmed: binary). As seen (observed, spec 07 session 5): no navigation buttons, no piece or target panel, an empty weapon grid of eight rows (216×289 at (W − 232,226)), Options and Next side by side at (W − 232,534) and (W − 119,534); Next dims after the last turn. OpenSE4 keeps its own list of the turn's events in words and the battle's summary beside the map, an extension (Q39). | Log → Combat Replay. |
+| Combat Replay | Same layout as tactical, playback only; Options, Next. Space = Next, Esc closes. Title strip: "Combat Replay", the location, the combat turn and the empires' flags; no log, event list or summary of any kind (confirmed: binary). As seen (observed, spec 07 session 5): no navigation buttons, no piece or target panel, an empty weapon grid of eight rows (216×289 at (W − 232,226)), Options and Next side by side at (W − 232,534) and (W − 119,534); Next dims after the last turn. OpenSE4 follows this layout and can list the turn's events in words and the battle's summary in the empty weapon grid's place, an option of Combat Replay Options that is off by default (an extension, Q39). | Log → Combat Replay. |
 
 ### 1.7 Multiplayer, tutorial and end of game
 
@@ -742,7 +742,9 @@ selected piece of the side whose phase it is, never on a seeker, and refuse sile
 
 Closing the window saves the switches and starts or stops the music. In the Combat
 Simulator only, a Stop Combat button ends the battle and closes the tactical window.
-Layout as in §1.9 ("Options In Use" at (15,38), list at (15,56), 560×400).
+Layout as in §1.9 ("Options In Use" at (15,38), list at (15,56), 560×400). Our client draws
+the rows as 18 px check boxes under silver headings, as Combat Replay Options was seen (spec
+07 session 5; inferred for this window).
 
 **Fast Tactical Combat** keeps every animation and removes the waits between frames;
 there is no speed factor. Besides, a torpedo then moves 6 px a frame instead of 4, and
@@ -787,6 +789,9 @@ has no animations (§1.10.5).
 **Combat Replay Options** (Replay → Options), per empire and saved with the game:
 animate ship movement in combat replay [on]; Fast Tactical Combat [off]; Show Viewing
 Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the replay.
+Our client has the layout seen in spec 07 session 5 (the list at (15,57), the headings
+Animation and Tactical Combat over check boxes) and adds, under an "OpenSE4" heading, the
+per-computer switch for its list of the replay's events (§7 Q39).
 
 #### 1.10.4 Combat Simulator
 
@@ -964,6 +969,11 @@ Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the
   facility's picture with its level's numeral at the bottom right; each unit grid is 14 × 2
   such cells, one stack per cell with its count in small white type at the cell's bottom
   right, the defender's militia as a stack with the race's population picture.
+  Our client follows this since 2026-10-03 (`GroundCombatScreen`), with the empire's flag as
+  the side's mark in a real battle (inferred), the level's numeral as a Roman numeral
+  (inferred) and the name of a facility or stack shown under the pointer (ours).
+  `--open=ground-combat` reaches the window headless: the player's troop transports land on
+  its homeworld in a sample strategic simulation (it needs a troop design, so add turns).
 
 ### 1.11 The windows as observed (spec 07 session 3)
 
@@ -1043,10 +1053,10 @@ in the code and asked in §7 Q89–Q98.
   holds the current piece's report (picture, Size, Move, a damage bar, a 6×6 weapon grid), the
   target's report below it, Options and Orders, an Auto check box and End Turn as a 2×2 group,
   and the overview map at the bottom (§1.10.1). Ours titles a simulation's battle "Tactical
-  Combat" too; the places and sizes the observation and §1.10.1 do not give are ours
-  (the original's places: §7 Q97, confirmed: binary).
+  Combat" too; since 2026-10-03 it has the original's places and panels (§7 Q97, confirmed:
+  binary and observed).
 - **The report panel** (observed): no "List" text button; the up-arrow button of §2.5 returns
-  to the list (place and states: §7 Q98, confirmed: binary).
+  to the list (place and states: §7 Q98, confirmed: binary; ours follows since 2026-10-03).
 
 ---
 
@@ -1506,7 +1516,7 @@ differences:
    no second number), as allowed above.
 3. The ring's pixels match the original's under Wine (§7 Q85, observed).
 4. With ships tagged the report panel shows the tag list, so no line is drawn (inferred).
-5. The line is hidden during the movement-log replay; the original keeps drawing the route stored before the replay (§7 Q86, confirmed: binary).
+5. During the movement-log replay the route of the report open when it began stays drawn, and its end selects sector 0 of the shown system, as in the original (§7 Q86, confirmed: binary; ours since 2026-10-03).
 6. Ctrl+L saves the settings at once and shows a short note ("Movement lines on" or "off"), as
    our Ctrl+S does; the original only flips the switch (§3.2). Ours never shows a stale line,
    since it works the route out from the live state.
@@ -3088,9 +3098,14 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     The client differs: the events in words and the summary are OpenSE4's own help; to
     match they must go, or stay as a marked OpenSE4 extension (inferred).
     They stay, as an OpenSE4 extension (inferred): the list of the combat turn's events
-    in words and the battle's summary beside the map help a player follow the battle,
-    and nothing in the rules depends on them. Everything else of the window follows the
-    answer.
+    in words and the battle's summary help a player follow the battle, and nothing in the
+    rules depends on them. Since 2026-10-03 the window has the original's layout (§1.6, the
+    Tactical Combat frame) and the list is an option, off by default: "List each combat
+    turn's events and the summary" under an "OpenSE4" heading in Combat Replay Options,
+    kept per computer, puts it in the empty weapon grid's place, the summary at its end
+    once the last combat turn has played. The places were seen at 1024×768; on an 800×600
+    frame ours keeps the buttons 234 px above the bottom and the grid the rows that fit
+    under the piece panel, six (inferred).
 40. **Pointers.** Ours draws its own move arrows and crosshairs: no loader for the
     install's `.cur` files exists yet. **Answer:** the game loads all twelve `.cur` files
     at start-up and uses no other pointer. `Normal` is the pointer of every window,
@@ -3922,8 +3937,7 @@ counterpart:
     only (`pieceReportAbilities()` in `combat_logic.cpp`; our vehicles have no abilities
     of their own to add); `CombatPieceReportScreen` is a borderless 310×420 window with
     the pages at (10,10), the tabs at (10,340) and the 153×30 Close button at (79,380).
-    Where the 290×361 page meets the tab strip, a page with tabs is cut to 328 px so
-    the strip lies below it; without tabs it keeps its 361 px (inferred: question 87).
+    The pages are 290×327 with or without tabs, as question 87 settled.
 79. **Fleets For Plr.** Ours hides Fleet Transfer's Existing Fleets button (the real
     game's fleet list) while it works on the simulator's sandbox. Is it there in the
     original, and what does it list?
@@ -4105,8 +4119,9 @@ Implementing the movement lines (§2.4) on 2026-10-01 left these choices (inferr
     replay ends the current turn is reloaded, the selected sector becomes sector 0 of the
     shown system and the selection is refreshed: one visible object there opens its report
     (and its route, if any); none or several clear the line.
-    Our client differs: it hides the line while the replay runs and shows the open report's
-    line again afterwards, without moving the selection to sector 0.
+    Our client follows this since 2026-10-03: the route is worked out when the replay
+    begins, drawn while it runs, and the replay's end selects sector 0 of the shown system
+    as a click would (not counted as the player's selection).
 
 Settling Q56 and Q78 on 2026-10-01 left these choices (inferred):
 
@@ -4124,9 +4139,8 @@ Settling Q56 and Q78 on 2026-10-01 left these choices (inferred):
     page's corner and cut off by the page, so on screen it starts at (20,20) and its last
     10 columns and its bottom 44 rows (unit group: 122 rows) never show. Close is a 153×30
     button at (79,380).
-    Our client differs: the page is 328 px with tabs and 361 px without, and the Detail
-    content starts at the page's corner (10,10) instead of (20,20), so everything on it sits
-    10 px higher and further left than in the original and nothing is cut at the right.
+    Our client follows this since 2026-10-03; the other tabs' pages start at the page's
+    corner (inferred).
 88. **"REPEAT ORDERS" in the order lists.** §1.8.3 names "REPEAT ORDERS" among the
     texts the Ships\Units Orders column sorts by, beside "None" and the joined orders,
     without saying when it is written. Ours writes it for Repeat on an empty list, and the
@@ -4479,10 +4493,15 @@ choices (inferred):
       structure row in red, no numbers. In a real battle the flags replace the numbered
       boxes, and a planet's panel writes its structure in thousands in red at the bar's
       right end ("21k").
-    Our client differs: the weapon grid at (W − 232,104); the target panel 216×64 at
-    (W − 232,324); the buttons from x W − 238; three 20×20 navigation buttons at (W − 84,7),
-    (W − 62,7) and (W − 40,7) (previous, stop-and-clear, next) instead of four 24×24 ones at
-    (W − 146,5) and a closing button at (W − 34,7).
+    Our client follows this since 2026-10-03, with these choices (inferred): the grid's
+    cells, empty ones too, drawn with 1 px #617BC2 lines; its arrows shown only when the
+    piece has more weapons than cells (as in Designs, Q93); the navigation selectors in
+    their disabled row before Begin and while no side of the player is in its phase; a row
+    of blocks lights one block for every 2 % left, a part rounding up; a planet's thousands
+    on a black ground so they read over the blocks; the group badge (8×8, blue a leader, red
+    a member) on the picture's top right corner; a weapon switched off drawn dim, a
+    destroyed one red, and a unit group's identical weapons sharing a cell with the number
+    ready at the bottom left; the to-hit chance across the middle of the cell.
 98. **The report's up-arrow button.** Ours draws `DetailUp.bmp` (state rows normal, under the
     pointer, held; the fourth unused) at the report panel's top right, 35 px from its right edge
     and 2 px below its top, whenever the shown object's sector holds more than one object.
@@ -4499,5 +4518,5 @@ choices (inferred):
     on an entry of the list a sector with several objects shows); a report opened by a click
     on a sector with one object, or set up by the game at a turn's start, has none (observed,
     spec 07 session 5).
-    Our client differs: 35 px from the right edge and 2 px below the top, row 3 unused, and
-    shown whenever the sector holds more than one object, however the report was reached.
+    Our client follows this since 2026-10-03; it draws the disabled row while the movement
+    log replays, when the selectors are disabled too (inferred).

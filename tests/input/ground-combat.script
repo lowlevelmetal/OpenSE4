@@ -1,0 +1,23 @@
+# The Ground Combat window in a real (simulated) battle (--open=ground-combat: the player's
+# troop transports land on its homeworld in a strategic simulation, begun at once; sixty
+# turns first, so that the player has a troop design): Begin fights it round by round,
+# Close lights when it is over, and the strategic battle then goes on to its end
+# (docs/BUILDING.md "Input scripts").
+options --quick-start=Terran --seed=7 --turns=60 --open=ground-combat --layout=1024x768 --size=1280x800
+
+wait-window strategic-combat
+wait-window ground-combat
+wait-for item:Begin in=ground-combat
+assert-disabled item:Close in=ground-combat
+screenshot ground-combat-before.png
+click item:Begin in=ground-combat
+assert-disabled item:Begin in=ground-combat
+# Ten rounds at most, 0.9 s each.
+wait 600
+screenshot ground-combat-after.png
+click item:Close in=ground-combat
+wait-closed ground-combat
+assert-window strategic-combat
+# The strategic battle goes on to its end; Close lights then.
+click item:Close in=strategic-combat timeout=3600
+wait-closed strategic-combat
