@@ -14,10 +14,10 @@ docs/spec/.
   manual text, or tables from the data files. Rewrite everything in our own words.
   Functional identifiers such as field names, ability names and enum values are fine.
 - Since 2026-09-29 the owner allows analysing `Se4.exe` (Ghidra, rizin, gdb under
-  Wine) even though its license forbids it. Keep all raw output (listings, decompiler
-  output, addresses, binary symbol names) in `reference/re/` (gitignored). Findings go
-  into `docs/spec/` as plain-language rules marked "(confirmed: binary)". Implement
-  from the spec text, never from the listing. Never patch the executable.
+  Wine). Keep all raw output (listings, decompiler output, addresses, binary symbol
+  names) in `reference/re/` (gitignored). Findings go into `docs/spec/` as
+  plain-language rules marked "(confirmed: binary)". Implement from the spec text,
+  never from the listing. Never patch the executable.
 - Black-box observation of the running game uses `tools/observe`.
 - Screenshots and notes from the original go in `reference/` (gitignored), never
   in tracked files.

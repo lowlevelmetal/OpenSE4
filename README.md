@@ -15,8 +15,7 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
   the game's documented data formats, observation of the running game and, since
   2026-09-29, analysis of the original executable. Findings are written up as
   plain-language specs and the code is written from those; no code, data, art or
-  text from the original is copied or shipped. The game's license forbids reverse
-  engineering, so this project is not clean-room in the strict sense. See
+  text from the original is copied or shipped. See
   [docs/CLEANROOM.md](docs/CLEANROOM.md).
 - **Playable.** Every part of the classic rules is implemented:
   - economy and population;

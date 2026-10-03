@@ -11,14 +11,11 @@ engine re-creations such as OpenXcom, OpenMW and fheroes2:
 
 Anyone contributing, human or AI, follows these rules.
 
-> This is engineering policy, not legal advice. The original game's license
-> agreement forbids copying, reverse engineering and "derivative works". Get a
-> lawyer's review before any public release, especially a commercial one.
+> This is engineering policy, not legal advice.
 
 > **Change on 2026-09-29.** The project owner decided to also study the
-> original executable (disassembly and decompilation) to confirm the rules,
-> knowing that the license agreement forbids it (clause c). OpenSE4 therefore
-> no longer claims to be clean-room in the strict sense. It still never copies
+> original executable (disassembly and decompilation) to confirm the rules, so
+> OpenSE4 is not clean-room in the strict sense. It still never copies
 > or redistributes anything from the original, and its code is written from
 > our specs, not from the binary. The rules below keep it that way.
 
