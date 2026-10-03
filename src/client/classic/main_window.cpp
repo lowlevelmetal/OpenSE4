@@ -1534,7 +1534,8 @@ void MainWindow::overlayText(UiContext& ui) {
 
     // Our own notices (a pick waiting for its target, refused orders): above the coordinate line.
     const Vec2 noteAt{panel.min.x + 6, panel.max.y - 40};
-    if (pick_ != Pick::None) put(body, kTextSize, noteAt, IM_COL32(255, 220, 90, 255), pickPrompt_ + "   (Esc to cancel)");
+    // A tutorial's lock keeps Esc for the step, so the prompt does not offer it then.
+    if (pick_ != Pick::None) put(body, kTextSize, noteAt, IM_COL32(255, 220, 90, 255), ui.lessonLocked ? pickPrompt_ : pickPrompt_ + "   (Esc to cancel)");
     else if (!note_.empty() && ui.time < noteUntil_) put(body, kTextSize, noteAt, IM_COL32(255, 220, 90, 255), note_);
 
     // The hovered system on the galaxy panel: its name in cyan, in the Body face,
