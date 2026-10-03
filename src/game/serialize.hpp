@@ -66,9 +66,9 @@ class Rules;
 // happiness events waiting for the next update are no longer saved (spec 05
 // §7.5, spec 02 §4).
 // Version 7: each empire's e-mail address (Empire::email, EmpireSetup::email
-// and cmd::SetEmpireOptions::email, spec 06 §7 Q95); new-game defaults of the
-// original (Maximum Event Severity Catastrophic, the victory values, spec 01
-// §2.2, §11) change no layout.
+// and the Change Email command cmd::SetEmail, spec 06 §7 Q95); new-game
+// defaults of the original (Maximum Event Severity Catastrophic, the victory
+// values, spec 01 §2.2, §11) change no layout.
 inline constexpr uint32_t kSaveVersion = 7;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

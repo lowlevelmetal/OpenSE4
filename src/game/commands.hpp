@@ -189,8 +189,10 @@ struct SetEmpireOptions {
     std::optional<bool> aiMinimalChanges;
     std::optional<std::string> passwordHash;
     std::optional<bool> chooseColonyType;  // Empire::chooseColonyType (spec 03 §8)
-    std::optional<std::string> email;      // Change Email: Empire::email (spec 06 §7 Q95), kept as game::cleanEmail gives it
 };
+// Change Email (Empire Status, spec 06 §7 Q95): the empire's e-mail address,
+// kept as game::cleanEmail gives it; the password is kept.
+struct SetEmail { std::string email; };
 
 // ---- Ministers (spec 02 §10, spec 05 §7.1) -----------------------------------------------------
 // The Ministers window's settings; fields left empty are not changed.
@@ -235,7 +237,7 @@ using Command = std::variant<
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
-    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn>;
+    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

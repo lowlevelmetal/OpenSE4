@@ -1012,7 +1012,10 @@ struct Applier {
         if (c.aiMinimalChanges) emp().aiMinimalChanges = *c.aiMinimalChanges;
         if (c.passwordHash) emp().passwordHash = *c.passwordHash;
         if (c.chooseColonyType) emp().chooseColonyType = *c.chooseColonyType;
-        if (c.email) emp().email = cleanEmail(*c.email);
+        return {};
+    }
+    R operator()(const cmd::SetEmail& c) {
+        emp().email = cleanEmail(c.email);
         return {};
     }
 
@@ -1178,6 +1181,7 @@ OPENSE4_CMD_NAME(CloakColony)
 OPENSE4_CMD_NAME(Analyze)
 OPENSE4_CMD_NAME(SelfDestruct)
 OPENSE4_CMD_NAME(FireOn)
+OPENSE4_CMD_NAME(SetEmail)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

@@ -115,6 +115,7 @@ struct TwoPlayerGame {
         REQUIRE(host.addComputerEmpire().has_value());
         game::EmpireSetup a;
         a.name = "Alice's Realm";
+        a.email = "alice@example.org";
         alice.submitSetup(a);
         alice.setReady(true);
         bob.setReady(true);

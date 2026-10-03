@@ -108,9 +108,10 @@ TEST_CASE("e-mail address: set in Empire Setup, changed by Change Email, shown o
     CHECK(s.empire(me).email == "first@example.org");  // control characters and outer spaces dropped
     CHECK(s.empire(other).email.empty());
 
-    REQUIRE(apply(r, s, other, cmd::SetEmpireOptions{.email = std::string("second@example.org")}).ok);
+    REQUIRE(apply(r, s, other, cmd::SetEmail{"second@example.org"}).ok);
     CHECK(s.empire(other).email == "second@example.org");
-    REQUIRE(apply(r, s, me, cmd::SetEmpireOptions{.email = std::string("new@example.org")}).ok);
+    REQUIRE(apply(r, s, me, cmd::SetEmail{"new@example.org"}).ok);
+    CHECK(commandName(Command{cmd::SetEmail{}}) == "SetEmail");
     CHECK(s.empire(me).email == "new@example.org");
     CHECK(s.empire(me).passwordHash == "secret");
     // At most kMaxEmailBytes bytes, never cut inside a UTF-8 sequence.

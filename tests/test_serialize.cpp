@@ -384,7 +384,6 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::SetColonyTypes{{"Mining", "Farming"}});
     c.push_back(cmd::SetEmpireOptions{true, std::string("verifier")});
     c.push_back(cmd::SetEmpireOptions{std::nullopt, std::nullopt});
-    c.push_back(cmd::SetEmpireOptions{.email = std::string("someone@example.org")});
     c.push_back(cmd::SetMinisters{kAllMinisters, std::string("Aggressive"), true, false, std::nullopt, true});
     c.push_back(cmd::SetEncounterOptions{EncounterClear::Any});
     c.push_back(cmd::EnterSector{VehicleId{31u}, FleetId{}, {SystemId{32u}, Sector{3, 4}}, false});
@@ -400,6 +399,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::Analyze{VehicleId{39u}});
     c.push_back(cmd::SelfDestruct{VehicleId{40u}});
     c.push_back(cmd::FireOn{VehicleId{41u}});
+    c.push_back(cmd::SetEmail{"someone@example.org"});
 
     std::set<size_t> kinds;
     for (const Command& cmd : c) kinds.insert(cmd.index());
@@ -419,6 +419,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(sent.request.front().planet == ObjectId{12u});
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
+    CHECK(std::get<cmd::SetEmail>(loaded->commands.back()).email == "someone@example.org");
 }
 
 // ---- Hostile input ------------------------------------------------------------------------------------
