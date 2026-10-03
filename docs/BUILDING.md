@@ -294,8 +294,9 @@ a player's mouse and keyboard: the mode's filter first (a tutorial's input lock)
 ImGui. During a run the frame time is fixed (1/60 s), the seed is fixed (1 unless the script
 or the command line gives one), the player's own mouse and keyboard are ignored (the desktop
 pointer too, which Dear ImGui's SDL backend otherwise reads while the window has the focus)
-and no sound plays, so a script does the same thing every time, on every platform: the
-Windows build plays the same scripts in the same number of frames. When a step fails, the client prints the
+and no sound plays, so a script does the same thing every time. The Windows build plays the
+same scripts (checked under Wine, where it opens a real window: a pointer step may then take a
+frame more to aim, as the layout settles at that window's size). When a step fails, the client prints the
 script line, why it failed and where the game was, saves a picture of that frame and exits
 with 1; a script that ends exits with 0 and prints
 `input-script FILE: passed (N steps, M frames)`.
