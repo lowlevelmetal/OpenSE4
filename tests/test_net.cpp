@@ -718,7 +718,7 @@ TEST_CASE("net: PBEM turn processing from turn files and signed .plr files") {
     };
     auto signedFile = [&](game::EmpireId e, uint32_t turn, uint64_t from, const std::string& note, const std::string& password) {
         net::pbem::OrdersFile f{info.gameName, info.gameId, e, turn, make(e, turn, note), from};
-        net::pbem::signOrdersFile(f, net::hashPassword(password), false);
+        net::pbem::signOrdersFile(f, net::hashPassword(password));
         return f;
     };
     // Empire 1: valid.
@@ -819,20 +819,29 @@ TEST_CASE("net: a PBEM game of OpenSE4 0.6 moves to the new passwords with its p
     auto tf = net::pbem::readTurnFile(files->at(0).second);
     REQUIRE(tf.has_value());
     CHECK(net::isLegacyVerifier(tf->verifier));
-    // The player's orders file shows the hash this once.
+    // The player's orders file shows the old hash this once, signed with a new
+    // password: the old one is out in the open now, so nothing is made of it.
     const game::EmpireOrders orders{game::EmpireId{0u}, 0, {}};
-    REQUIRE(net::pbem::writePlayerOrders(tmp.path(), info, orders, tf->viewChecksum, net::hashPassword("pw0"), true).has_value());
+    REQUIRE(net::pbem::writePlayerOrders(tmp.path(), info, orders, tf->viewChecksum, net::hashPassword("new0"), net::hashPassword("pw0"))
+                .has_value());
     auto plr = net::pbem::readOrdersFile(tmp / "Old_Mail_01.plr");
     REQUIRE(plr.has_value());
     CHECK(plr->legacyPasswordHash == net::hashPassword("pw0"));
+    // Empire 2 tries to keep its old password: refused, its file stays.
+    const game::EmpireOrders orders2{game::EmpireId{1u}, 0, {}};
+    auto tf2 = net::pbem::readTurnFile(files->at(1).second);
+    REQUIRE(tf2.has_value());
+    REQUIRE(net::pbem::writePlayerOrders(tmp.path(), info, orders2, tf2->viewChecksum, net::hashPassword("pw1"), net::hashPassword("pw1"))
+                .has_value());
     auto rep = net::pbem::processGameFile(r, gam, tmp.path(), {});
     REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
     CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
+    CHECK(std::any_of(rep->warnings.begin(), rep->warnings.end(), [](const std::string& w) { return w.find("needs a new password") != std::string::npos; }));
     auto after = game::loadGame(gam);
     REQUIRE(after.has_value());
     const std::string& upgraded = after->first.empire(game::EmpireId{0u}).passwordHash;
-    CHECK(upgraded.starts_with("pk1:"));
-    CHECK(net::checkPassword(upgraded, net::hashPassword("pw0")));
+    CHECK(upgraded == net::passwordVerifier(net::hashPassword("new0")));
+    CHECK_FALSE(net::checkPassword(upgraded, net::hashPassword("pw0")));
     CHECK(net::isLegacyVerifier(after->first.empire(game::EmpireId{1u}).passwordHash));
     // The next turn file carries the new verifier: from now on the orders are signed only.
     auto next = net::pbem::readTurnFile(tmp / "Old_Mail_01.turn");
@@ -1297,10 +1306,10 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
     // a file of Empire 1 made from another turn file is skipped.
     auto [file1, played1] = playTurnAt(game::EmpireId{0u}, "first move");
     net::pbem::OrdersFile stray{info.gameName, info.gameId, game::EmpireId{0u}, 0, game::EmpireOrders{game::EmpireId{0u}, 0, {}}, 12345};
-    net::pbem::signOrdersFile(stray, net::hashPassword("pw0"), false);
+    net::pbem::signOrdersFile(stray, net::hashPassword("pw0"));
     REQUIRE(net::pbem::writeOrdersFile(inbox / "stray.plr", stray).has_value());
     net::pbem::OrdersFile early{info.gameName, info.gameId, game::EmpireId{1u}, 0, game::EmpireOrders{game::EmpireId{1u}, 0, {}}, 1};
-    net::pbem::signOrdersFile(early, net::hashPassword("pw1"), false);
+    net::pbem::signOrdersFile(early, net::hashPassword("pw1"));
     REQUIRE(net::pbem::writeOrdersFile(inbox / "early.plr", early).has_value());
 
     const game::GameState expected1 = expect(played1);

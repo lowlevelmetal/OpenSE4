@@ -113,7 +113,7 @@ TEST_CASE("pbem client: a simultaneous turn file is opened with the empire's pas
     CHECK_FALSE(turn->turnBased);
     CHECK(turn->turn == 0);
     CHECK(turn->startChecksum == game->viewChecksum);
-    CHECK_FALSE(turn->legacyPassword);
+    CHECK(turn->legacyPasswordHash.empty());
 
     auto session = ClassicSession::pbem(sharedRules(), std::move(*game), *turn);
     CHECK(session->kind() == SessionKind::Pbem);
@@ -363,4 +363,35 @@ TEST_CASE("pbem client: the host reads the game for the turn files and for proce
     auto after = game::loadGame(gam);
     REQUIRE(after.has_value());
     CHECK_FALSE(after->first.colony(planet)->cloaked);
+}
+
+TEST_CASE("pbem client: an empire of an OpenSE4 0.6 game moves to a new password with its first turn") {
+    const game::Rules& r = test::engineRules();
+    const test::TempDir tmp("pbem_client_legacy");
+    const fs::path gam = writeGameFile(tmp.path(), true, false, 31);
+    auto loaded = game::loadGame(gam);
+    REQUIRE(loaded.has_value());
+    loaded->first.empire(game::EmpireId{0u}).passwordHash = net::legacyPasswordVerifier(net::hashPassword("pw0"));
+    REQUIRE(game::saveGame(gam, loaded->first, loaded->second).has_value());
+    REQUIRE(net::pbem::writeTurnFiles(r, gam, tmp.path()).has_value());
+    auto game = loadPbemGame(r, turnFile(tmp.path(), game::EmpireId{0u}));
+    REQUIRE(game.has_value());
+    CHECK(pbemNeedsNewPassword(*game));
+    CHECK(beginPbemTurn(*game, game::EmpireId{0u}, "pw0").error().find("new password") != std::string::npos);
+    CHECK(beginPbemTurn(*game, game::EmpireId{0u}, "pw0", {}, "pw0").error().find("other than the old") != std::string::npos);
+    CHECK(beginPbemTurn(*game, game::EmpireId{0u}, "wrong", {}, "fresh").error().find("Wrong password") != std::string::npos);
+    auto turn = beginPbemTurn(*game, game::EmpireId{0u}, "pw0", {}, "fresh");
+    REQUIRE(turn.has_value());
+    CHECK(turn->legacyPasswordHash == net::hashPassword("pw0"));
+    CHECK(turn->passwordHash == net::hashPassword("fresh"));
+    auto file = writePbemOrders(*turn, {});
+    REQUIRE(file.has_value());
+    auto rep = net::pbem::processGameFile(r, gam, tmp.path(), {});
+    REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
+    CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
+    auto next = loadPbemGame(r, turnFile(tmp.path(), game::EmpireId{0u}));
+    REQUIRE(next.has_value());
+    CHECK_FALSE(pbemNeedsNewPassword(*next));
+    CHECK_FALSE(beginPbemTurn(*next, game::EmpireId{0u}, "pw0").has_value());
+    CHECK(beginPbemTurn(*next, game::EmpireId{0u}, "fresh").has_value());
 }

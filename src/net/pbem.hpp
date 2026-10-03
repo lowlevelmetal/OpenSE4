@@ -93,8 +93,9 @@ struct OrdersFile {
     std::string verifier;          // passwordVerifier() of the password that signed (empty: none)
     crypto::Signature signature{}; // that password's signature of everything above (ordersDigest)
     // Only for an empire whose verifier is of OpenSE4 0.6 (the turn file
-    // says so): the password hash, which the host checks once and then
-    // replaces the verifier by `verifier`.
+    // says so): the old password's hash, which the host checks once. The file
+    // is signed with a new password, whose verifier then replaces the old one:
+    // the old hash travelled in the clear, so nothing may be made of it.
     std::string legacyPasswordHash;
 };
 
@@ -105,19 +106,21 @@ std::expected<OrdersFile, std::string> readOrdersFile(const std::filesystem::pat
 
 // What the password signs: every field but the signature and the legacy hash.
 crypto::Key ordersDigest(const OrdersFile& f);
-// Fills in `verifier` and `signature` from the password hash (and the legacy
-// hash when asked); empty hash: unsigned (an empire without a password, or a draft).
-void signOrdersFile(OrdersFile& f, std::string_view passwordHash, bool legacyPassword);
+// Fills in `verifier` and `signature` from the password hash, and the old
+// password's hash of an OpenSE4 0.6 empire; empty hash: unsigned (an empire
+// without a password, or a draft).
+void signOrdersFile(OrdersFile& f, std::string_view passwordHash, std::string_view legacyPasswordHash = {});
 
 // "<game>_<NN>.plr" (NN = empire number, from 1), with unsafe characters replaced.
 std::string ordersFileName(const game::SaveInfo& info, game::EmpireId empire);
 
 // The player's side: signs and writes this turn's orders into `dir` and
 // returns the file to send to the host. `startChecksum` is the turn file's
-// view checksum.
+// view checksum; `legacyPasswordHash` as in OrdersFile (then `passwordHash`
+// is the new password's).
 std::expected<std::filesystem::path, std::string> writePlayerOrders(const std::filesystem::path& dir, const game::SaveInfo& info,
                                                                    const game::EmpireOrders& orders, uint64_t startChecksum,
-                                                                   std::string_view passwordHash, bool legacyPassword = false);
+                                                                   std::string_view passwordHash, std::string_view legacyPasswordHash = {});
 
 // ---- The host's processing -----------------------------------------------------------------------
 

@@ -71,15 +71,20 @@ struct PbemTurn {
     std::string passwordHash;          // net::hashPassword() of the password given
     bool turnBased = false;
     uint64_t startChecksum = 0;        // the turn file's view checksum (game::stateChecksum as the turn began)
-    bool legacyPassword = false;       // the empire's verifier is of OpenSE4 0.6: the .plr shows the hash once
+    // An empire whose verifier is of OpenSE4 0.6: the old password's hash,
+    // which the .plr shows this once; passwordHash is then the new password's.
+    std::string legacyPasswordHash;
 };
 
 // Checks that `empire` may play this turn with `password`: the turn file's
 // empire, living and human, whose password matches, and in a turn-based game
 // the empire whose turn it is. `ordersDir` empty: the turn file's folder
-// (inferred).
+// (inferred). A game of OpenSE4 0.6 (pbemNeedsNewPassword) also needs a
+// `newPassword`, other than the old one, which counts from this turn on.
 std::expected<PbemTurn, std::string> beginPbemTurn(const PbemGame& g, game::EmpireId empire, std::string_view password,
-                                                   std::filesystem::path ordersDir = {});
+                                                   std::filesystem::path ordersDir = {}, std::string_view newPassword = {});
+// The empire's password is of OpenSE4 0.6: this turn moves it to a new one.
+bool pbemNeedsNewPassword(const PbemGame& g);
 
 // Writes the player's .plr for the turn, signed with the password:
 // `commands` are the commands given (turn-based: every command in the order

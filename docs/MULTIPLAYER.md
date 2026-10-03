@@ -428,9 +428,12 @@ view. `opense4-server pbem turn-files --game=campaign.gam` writes the current tu
 again, for a lost file, or to go on with a game made by OpenSE4 0.6.
 
 **Games of OpenSE4 0.6** go on after `pbem turn-files`. Their password verifiers are of
-the old kind, which cannot check a signature: the turn file says so, and the player's
-next `.plr` carries the password hash once, as 0.6 did. The host checks it and keeps a
-verifier of the new kind from then on.
+the old kind, which cannot check a signature: the turn file says so, and the player
+chooses a new password with their next turn (the Play by E-mail window asks for it;
+`pbem orders --new-password`). That `.plr` carries the old password's hash once, as 0.6
+did, and is signed with the new password. The host checks the old one and keeps the new
+one's verifier from then on, so the old hash, which anyone reading that mail could see,
+is worth nothing afterwards.
 
 ### Playing your turn
 
@@ -614,8 +617,12 @@ design: the classic game has no counterpart.
 - **Games of OpenSE4 0.6.** Their verifiers (a second SHA-256) cannot check a
   signature. For such a game the host asks the login for the password hash itself,
   inside the encrypted connection, checks it and replaces the verifier by the new
-  kind. A PBEM orders file does the same once, when the turn file says the empire's
-  verifier is of the old kind.
+  kind. That hash is also the seed of the player's signing key, so the player's game
+  sends it only to a host whose key the player trusted beforehand (remembered from an
+  earlier game, or confirmed in the lobby after comparing fingerprints), or that knows
+  the join password; a host met for the first time could be someone claiming an old
+  game to collect it. A PBEM empire of the old kind moves to a new password instead
+  ([Play by e-mail](#play-by-e-mail)), because its old hash travels in the clear.
 - **Orders files** sign a BLAKE2b hash of the game, the turn, the empire, the orders,
   the checksum of the turn file they were made from and the signer's verifier.
 - **Host keys** are files of 64 hex digits (`host_key.txt`), made on first use and
@@ -747,7 +754,8 @@ message type and payload encrypted with XChaCha20-Poly1305, then the 16-byte tag
 3. The client sends `Login`: data-set fingerprint, player name, a random id of its
    session object, the player's verifier and signature, and the master password's
    signature if it has one (and the password hash, only when the host asked for it
-   for an old verifier).
+   for an old verifier and the player trusts the host's key or the session has a join
+   password).
 4. The host answers `Reject` (with a reason and a readable text) or `Welcome` (game
    name and id, the player's slot, admin rights). Then it sends the `Lobby`, and,
    during a game, the `State` and `TurnStatus`.

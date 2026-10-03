@@ -77,9 +77,14 @@ public:
     ClientPhase phase() const { return phase_; }
     ClientConfig& config() { return config_; }
     // The key the host showed on the last connection (even one refused), and
-    // whether that connection was refused because it is not ClientConfig::hostKey.
+    // why that connection was refused: the key is not ClientConfig::hostKey
+    // (changed), or the host asked for the password hash of an OpenSE4 0.6
+    // game while its key is not one the player trusted beforehand and no
+    // join password vouches for it (unconfirmed). Either way the player may
+    // compare the key with the host's and trust it.
     const std::optional<crypto::Key>& seenHostKey() const { return seenHostKey_; }
     bool hostKeyChanged() const { return hostKeyChanged_; }
+    bool hostKeyUnconfirmed() const { return hostKeyUnconfirmed_; }
     bool admin() const { return admin_; }
     uint32_t slot() const { return slot_; }
     const std::string& gameName() const { return gameName_; }
@@ -173,6 +178,8 @@ private:
     uint32_t stateSerial_ = 0;                      // State::serial of state_
     std::optional<crypto::Key> seenHostKey_;
     bool hostKeyChanged_ = false;
+    bool hostKeyUnconfirmed_ = false;
+    bool keyPinnedBySession_ = false;               // config_.hostKey came from a Welcome, not from the player
     std::vector<Event> events_;
 };
 

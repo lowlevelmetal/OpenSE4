@@ -436,9 +436,24 @@ TEST_CASE("net security: a wrong master password gives no admin rights, and old 
     net::HostSession host(engineRules(), cfg);
     REQUIRE(host.resume(s, info).has_value());
 
-    net::ClientSession wrongPw(clientConfig(host, "alice", "nope"));
+    // The password hash such a game needs goes only to a host the player
+    // trusted beforehand: met for the first time, it could be anyone claiming
+    // an old game to collect it.
+    net::ClientSession firstMeeting(clientConfig(host, "bob", "b-secret"));
+    Loop first(host, {&firstMeeting});
+    REQUIRE(firstMeeting.connect().has_value());
+    REQUIRE(first.until([&] { return first.clientSaw(0, EventType::Rejected) != nullptr; }));
+    CHECK(firstMeeting.hostKeyUnconfirmed());
+    CHECK(first.clientSaw(0, EventType::Rejected)->text.find(host.hostFingerprint()) != std::string::npos);
+    CHECK_FALSE(first.hostSaw(EventType::PlayerReconnected));
+    CHECK(net::isLegacyVerifier(host.state()->empire(game::EmpireId{1u}).passwordHash));
+
+    net::ClientConfig wrongCfg = clientConfig(host, "alice", "nope");
+    wrongCfg.hostKey = host.hostKey();
+    net::ClientSession wrongPw(wrongCfg);
     net::ClientConfig bobCfg = clientConfig(host, "bob", "b-secret");
     bobCfg.masterPasswordHash = net::hashPassword("not the boss");
+    bobCfg.hostKey = host.hostKey();  // compared with the host's and trusted
     net::ClientSession bob(bobCfg);
     Loop loop(host, {&wrongPw, &bob});
     REQUIRE(wrongPw.connect().has_value());
@@ -454,6 +469,7 @@ TEST_CASE("net security: a wrong master password gives no admin rights, and old 
 
     net::ClientConfig aliceCfg = clientConfig(host, "alice", "a-secret");
     aliceCfg.masterPasswordHash = net::hashPassword("boss");
+    aliceCfg.hostKey = host.hostKey();
     net::ClientSession alice(aliceCfg);
     Loop loop2(host, {&alice});
     REQUIRE(alice.connect().has_value());

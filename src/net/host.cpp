@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <deque>
 #include <exception>
 #include <format>
 #include <map>
@@ -28,6 +29,7 @@ namespace {
 constexpr size_t kMaxSlots = 32;
 constexpr auto kCloseGrace = std::chrono::seconds(3);
 constexpr size_t kMaxRejectionNotices = 10;
+constexpr size_t kRememberedAnswers = 64;  // per player: answers a repeated request gets again
 
 bool sameName(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) return false;
@@ -120,7 +122,24 @@ struct HostSession::Slot {
     // repeated after a reconnect is answered again, not carried out twice.
     uint64_t clientId = 0;
     uint32_t lastRequest = 0;
-    std::optional<proto::PlayResult> lastResult;
+    std::deque<proto::PlayResult> answers;  // the latest answers, oldest first
+
+    // The answer to a repeated request: the one given, while it is among the
+    // latest; else carried out with nothing refused (it was, long ago).
+    proto::PlayResult answerAgain(uint32_t request, uint32_t turn) const {
+        for (const proto::PlayResult& a : answers)
+            if (a.request == request) return a;
+        proto::PlayResult r;
+        r.request = request;
+        r.turn = turn;
+        r.ok = true;
+        return r;
+    }
+    void remember(const proto::PlayResult& r) {
+        lastRequest = r.request;
+        answers.push_back(r);
+        while (answers.size() > kRememberedAnswers) answers.pop_front();
+    }
 };
 
 HostSession::HostSession(const game::Rules& rules, HostConfig config) : rules_(rules), config_(std::move(config)) {
@@ -612,7 +631,7 @@ void HostSession::handleLogin(Peer& peer, std::span<const uint8_t> payload) {
     if (slot->clientId != h.clientId) {
         slot->clientId = h.clientId;
         slot->lastRequest = 0;
-        slot->lastResult.reset();
+        slot->answers.clear();
     }
 
     if (Peer* old = peerOfSlot(*slot); old && old != &peer) {
@@ -696,20 +715,11 @@ void HostSession::handlePlay(Peer& peer, std::span<const uint8_t> payload) {
     // Every request is answered once: a repeat (the client resends what it
     // had no answer to after a reconnect) gets the answer again.
     if (slot && slot->clientId != 0 && m.request <= slot->lastRequest) {
-        if (slot->lastResult && slot->lastResult->request == m.request) {
-            res = *slot->lastResult;
-        } else {
-            res.ok = true;
-            res.text = "already carried out";
-        }
-        peer.conn.send(MsgType::PlayResult, res);
+        peer.conn.send(MsgType::PlayResult, slot->answerAgain(m.request, res.turn));
         return;
     }
     auto answer = [&] {
-        if (slot) {
-            slot->lastRequest = m.request;
-            slot->lastResult = res;
-        }
+        if (slot) slot->remember(res);
         peer.conn.send(MsgType::PlayResult, res);
     };
     auto refuse = [&](std::string text) {
@@ -752,20 +762,11 @@ void HostSession::handleEndTurn(Peer& peer, std::span<const uint8_t> payload) {
     res.turn = state_ ? state_->turn : 0;
     Slot* slot = slotOfPeer(peer);
     if (slot && slot->clientId != 0 && m.request <= slot->lastRequest) {
-        if (slot->lastResult && slot->lastResult->request == m.request) {
-            res = *slot->lastResult;
-        } else {
-            res.ok = true;
-            res.text = "already done";
-        }
-        peer.conn.send(MsgType::PlayResult, res);
+        peer.conn.send(MsgType::PlayResult, slot->answerAgain(m.request, res.turn));
         return;
     }
     auto answer = [&] {
-        if (slot) {
-            slot->lastRequest = m.request;
-            slot->lastResult = res;
-        }
+        if (slot) slot->remember(res);
         peer.conn.send(MsgType::PlayResult, res);
     };
     const game::EmpireId e = empireOfSlot(peer.slot);

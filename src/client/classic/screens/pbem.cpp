@@ -122,6 +122,11 @@ private:
         }
         ImGui::Spacing();
         pathField("Password", password_, ctx.px(300), ImGuiInputTextFlags_Password);
+        if (pbemNeedsNewPassword(*game_)) {
+            ImGui::TextWrapped("This game was made by OpenSE4 0.6. Choose a new password: this turn's orders file shows the old one "
+                               "once, and the new one counts from this turn on.");
+            pathField("New password", newPassword_, ctx.px(300), ImGuiInputTextFlags_Password);
+        }
         pathField("Save orders in", ordersDir_, ctx.px(600));
         ImGui::Spacing();
         if (ImGui::Button("Play Turn", ctx.size({160, 34})) && game_) play(ctx);
@@ -133,8 +138,9 @@ private:
             error_ = "Choose your empire.";
             return;
         }
-        auto turn = beginPbemTurn(*game_, choices_[static_cast<size_t>(chosen_)].id, password_, ordersDir_);
+        auto turn = beginPbemTurn(*game_, choices_[static_cast<size_t>(chosen_)].id, password_, ordersDir_, newPassword_);
         password_.clear();
+        newPassword_.clear();
         if (!turn) {
             error_ = turn.error();
             return;
@@ -153,6 +159,7 @@ private:
     std::vector<PbemEmpireChoice> choices_;
     int chosen_ = -1;
     std::string password_;
+    std::string newPassword_;  // a game of OpenSE4 0.6: the password from this turn on
     std::string ordersDir_;
     std::string error_;
 };

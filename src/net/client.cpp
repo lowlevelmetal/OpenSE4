@@ -63,6 +63,7 @@ std::expected<void, std::string> ClientSession::connect() {
     slot_ = kNoSlot;
     ordersAccepted_ = false;
     hostKeyChanged_ = false;
+    hostKeyUnconfirmed_ = false;
     return {};
 }
 
@@ -189,6 +190,20 @@ void ClientSession::handleServerHello(std::span<const uint8_t> payload) {
         closeConnection("The host does not ask for a game password, but you gave one. Leave it empty to join an open game.", true);
         return;
     }
+    // An OpenSE4 0.6 game checks the password hash itself, which is also the
+    // seed of the player's signing key: it goes only to a host the player
+    // trusted beforehand, or one that knows the join password. A host first
+    // met here could be anyone (a man in the middle claiming an old game).
+    const bool vouched = (config_.hostKey && !keyPinnedBySession_) || h.joinPassword;
+    if (h.legacyPasswords && !config_.passwordHash.empty() && !vouched) {
+        hostKeyUnconfirmed_ = true;
+        closeConnection(std::format("This game was saved by OpenSE4 0.6, and its host asks for your password in that version's form, which "
+                                    "this computer sends only to a host it knows. Compare the host's key {} with the one the host sees, "
+                                    "trust it, and connect again.",
+                                    crypto::fingerprint(h.hostKey)),
+                        true);
+        return;
+    }
     const crypto::Key psk = secure::joinKey(config_.joinPasswordHash);
     auto keys = secure::clientKeys(*impl_->ephemeral, h.ephemeralKey, h.hostKey, psk, impl_->hello, payload);
     crypto::wipe(impl_->ephemeral->secret.data(), impl_->ephemeral->secret.size());
@@ -249,7 +264,10 @@ void ClientSession::handleFrame(uint8_t type, std::span<const uint8_t> payload, 
             gameId_ = m.gameId;
             phase_ = ClientPhase::Lobby;
             // The host has shown it holds its key: keep trusting that one.
-            if (!config_.hostKey) config_.hostKey = seenHostKey_;
+            if (!config_.hostKey) {
+                config_.hostKey = seenHostKey_;
+                keyPinnedBySession_ = true;
+            }
             resendAfterState_ = true;
             emit(EventType::Joined, std::format("{} ({}){}", m.gameName, m.app, m.admin ? ", admin" : ""), config_.playerName, m.slot);
             return;

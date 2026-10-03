@@ -84,7 +84,10 @@ std::vector<PbemEmpireChoice> pbemEmpires(const PbemGame& g) {
     return out;
 }
 
-std::expected<PbemTurn, std::string> beginPbemTurn(const PbemGame& g, game::EmpireId empire, std::string_view password, fs::path ordersDir) {
+bool pbemNeedsNewPassword(const PbemGame& g) { return net::isLegacyVerifier(g.verifier); }
+
+std::expected<PbemTurn, std::string> beginPbemTurn(const PbemGame& g, game::EmpireId empire, std::string_view password, fs::path ordersDir,
+                                                   std::string_view newPassword) {
     const game::GameState& s = g.state;
     if (!empire.valid() || empire.index() >= s.empires.size()) return std::unexpected(std::string("No such empire in this game."));
     const game::Empire& e = s.empire(empire);
@@ -102,16 +105,29 @@ std::expected<PbemTurn, std::string> beginPbemTurn(const PbemGame& g, game::Empi
             return std::unexpected(std::format("It is {}'s turn, not {}'s. Wait for the turn file the host sends for your turn.",
                                                empireName(s, active), e.name));
     }
+    // The old password's hash travels in this turn's .plr, so a new password
+    // takes over from it (nothing may be made of a hash that was seen).
+    std::string signingHash = hash;
+    std::string legacyHash;
+    if (pbemNeedsNewPassword(g)) {
+        if (newPassword.empty())
+            return std::unexpected(std::format("This game was made by OpenSE4 0.6: choose a new password for {}. This turn's orders file "
+                                               "shows the old one once, so the old one stops counting.",
+                                               e.name));
+        signingHash = net::hashPassword(newPassword);
+        if (signingHash == hash) return std::unexpected(std::string("Choose a new password other than the old one."));
+        legacyHash = hash;
+    }
     PbemTurn t;
     t.gameFile = g.gameFile;
     t.ordersDir = !ordersDir.empty() ? std::move(ordersDir) : g.gameFile.has_parent_path() ? g.gameFile.parent_path() : fs::path(".");
     t.info = g.info;
     t.empire = empire;
     t.turn = s.turn;
-    t.passwordHash = hash;
+    t.passwordHash = std::move(signingHash);
     t.turnBased = turnBased;
     t.startChecksum = g.viewChecksum;
-    t.legacyPassword = net::isLegacyVerifier(g.verifier);
+    t.legacyPasswordHash = std::move(legacyHash);
     return t;
 }
 
@@ -120,14 +136,14 @@ std::expected<fs::path, std::string> writePbemOrders(const PbemTurn& t, std::spa
     fs::create_directories(t.ordersDir, ec);
     if (!fs::is_directory(t.ordersDir, ec)) return std::unexpected(std::format("{}: cannot create the folder", t.ordersDir.string()));
     const game::EmpireOrders orders{t.empire, t.turn, std::vector<game::Command>(commands.begin(), commands.end())};
-    return net::pbem::writePlayerOrders(t.ordersDir, t.info, orders, t.startChecksum, t.passwordHash, t.legacyPassword);
+    return net::pbem::writePlayerOrders(t.ordersDir, t.info, orders, t.startChecksum, t.passwordHash, t.legacyPasswordHash);
 }
 
 std::expected<fs::path, std::string> writePbemDraft(const PbemTurn& t, const fs::path& dir, std::span<const game::Command> commands) {
     PbemTurn draft = t;
     draft.ordersDir = dir;
     draft.passwordHash.clear();  // unsigned: nothing of the password is left on the disk
-    draft.legacyPassword = false;
+    draft.legacyPasswordHash.clear();
     return writePbemOrders(draft, commands);
 }
 

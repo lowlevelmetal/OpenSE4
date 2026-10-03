@@ -110,19 +110,26 @@ TEST_CASE("net resilience: turn-based: a player who drops in the middle of a tur
     // A command the host carried out, whose answer was lost with the
     // connection: sent again after the reconnect, and answered again.
     loop.clear();
+    REQUIRE(g.alice.play(game::cmd::SetSystemNote{game::SystemId{1u}, "zeroth"}).has_value());
     REQUIRE(g.alice.play(game::cmd::SetSystemNote{game::SystemId{0u}, "first"}).has_value());
-    g.alice.poll(0);  // sends it
+    g.alice.poll(0);  // sends them
     REQUIRE(hostUntil(loop, [&] { return noteOf(*host.state(), aliceE) == "first"; }));
     // The answer leaves the host; Alice reads nothing.
     for (int i = 0; i < 3; ++i)
         for (auto& e : host.poll(1)) loop.hostEvents.push_back(std::move(e));
     g.alice.dropConnection();
-    CHECK(g.alice.pendingRequests() == 1);
+    CHECK(g.alice.pendingRequests() == 2);
     reconnect(loop, g.alice, aliceE);
     REQUIRE(loop.until([&] { return g.alice.pendingRequests() == 0; }));
-    CHECK(countHost(loop, EventType::OrdersReceived) == 1);  // carried out once
-    const net::Event* done = loop.clientSaw(0, EventType::CommandsDone);
-    REQUIRE(done != nullptr);
+    CHECK(countHost(loop, EventType::OrdersReceived) == 2);  // each carried out once
+    // Each repeat gets its own first answer: nothing refused.
+    size_t answers = 0;
+    for (const net::Event& e : loop.clientEvents[0])
+        if (e.type == EventType::CommandsDone) {
+            ++answers;
+            CHECK(e.text.empty());
+        }
+    CHECK(answers == 2);
 
     // A command lost on the way to the host: sent again, carried out once.
     loop.clear();
@@ -318,6 +325,7 @@ TEST_CASE("net resilience: garbage, stale and repeated messages leave the host's
         CHECK(noteOf(*host.state(), aliceE) == "once");
         const net::proto::PlayResult again = answer(playType, play(1, 0, "changed in the repeat"));
         CHECK(again.ok);
+        CHECK(again.text.empty());  // the same answer as the first time
         CHECK(noteOf(*host.state(), aliceE) == "once");
         CHECK(countHost(loop, EventType::OrdersReceived) == 1);
         // A stale turn, and garbage commands: refused, nothing changes.

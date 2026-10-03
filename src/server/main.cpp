@@ -43,7 +43,7 @@ Usage:
                               [--reset-passwords=N,M]  (new passwords, shown here only)
                               [--turn-files=DIR]
   opense4-server pbem turn-files --game=GAME.gam [--out=DIR]
-  opense4-server pbem orders --turn=FILE.turn [--password=PW] [--out=DIR]
+  opense4-server pbem orders --turn=FILE.turn [--password=PW] [--new-password=PW] [--out=DIR]
   opense4-server pbem info --game=GAME.gam|FILE.turn
   opense4-server bot --name=NAME [--connect=HOST[:PORT]] [--turns=N]
   opense4-server hash-password PASSWORD
@@ -543,7 +543,7 @@ int pbemProcess(std::span<char*> args) {
 }
 
 int pbemOrders(std::span<char*> args) {
-    auto o = parseArgs(args, {"turn", "game", "password", "out"}, {"help"});
+    auto o = parseArgs(args, {"turn", "game", "password", "new-password", "out"}, {"help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("turn") && !o->has("game")) return fail("pbem orders needs --turn=FILE.turn (the player's turn file)", 2);
@@ -558,10 +558,17 @@ int pbemOrders(std::span<char*> args) {
     if (!net::checkPassword(turnFile->verifier, hash)) return fail("wrong password for this turn file's empire", 1);
     if (game::turnBased(state) && (!state.playerTurn.started || game::activePlayer(state) != empire))
         return fail("it is not this empire's turn in this turn file", 1);
+    // An OpenSE4 0.6 empire shows its old password hash once and signs with a new password.
+    std::string signing = hash, legacy;
+    if (net::isLegacyVerifier(turnFile->verifier) && !hash.empty()) {
+        if (!o->has("new-password")) return fail("this game was made by OpenSE4 0.6: give a --new-password for this empire", 2);
+        signing = net::hashPassword(o->get("new-password"));
+        if (signing == hash) return fail("--new-password must differ from the old password", 2);
+        legacy = hash;
+    }
     // An order list without commands: "end turn" (the empire keeps its standing orders).
     const game::EmpireOrders orders{empire, state.turn, {}};
-    auto file = net::pbem::writePlayerOrders(o->get("out", "."), turnFile->info, orders, turnFile->viewChecksum, hash,
-                                             net::isLegacyVerifier(turnFile->verifier));
+    auto file = net::pbem::writePlayerOrders(o->get("out", "."), turnFile->info, orders, turnFile->viewChecksum, signing, legacy);
     if (!file) return fail(file.error(), 1);
     std::printf("Wrote %s (turn %u, empire %u).\n", file->string().c_str(), orders.turn, empire.value + 1);
     return 0;

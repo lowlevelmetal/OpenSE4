@@ -167,10 +167,10 @@ crypto::Key ordersDigest(const OrdersFile& f) {
         .finish32();
 }
 
-void signOrdersFile(OrdersFile& f, std::string_view passwordHash, bool legacyPassword) {
+void signOrdersFile(OrdersFile& f, std::string_view passwordHash, std::string_view legacyPasswordHash) {
     f.verifier = passwordVerifier(passwordHash);
     f.signature = signWithPassword(passwordHash, ordersDigest(f));
-    f.legacyPasswordHash = legacyPassword ? std::string(passwordHash) : std::string{};
+    f.legacyPasswordHash = std::string(legacyPasswordHash);
 }
 
 std::string ordersFileName(const game::SaveInfo& info, game::EmpireId empire) {
@@ -178,7 +178,7 @@ std::string ordersFileName(const game::SaveInfo& info, game::EmpireId empire) {
 }
 
 std::expected<fs::path, std::string> writePlayerOrders(const fs::path& dir, const game::SaveInfo& info, const game::EmpireOrders& orders,
-                                                       uint64_t startChecksum, std::string_view passwordHash, bool legacyPassword) {
+                                                       uint64_t startChecksum, std::string_view passwordHash, std::string_view legacyPasswordHash) {
     OrdersFile f;
     f.gameName = info.gameName;
     f.gameId = info.gameId;
@@ -186,7 +186,7 @@ std::expected<fs::path, std::string> writePlayerOrders(const fs::path& dir, cons
     f.turn = orders.turn;
     f.orders = orders;
     f.startChecksum = startChecksum;
-    signOrdersFile(f, passwordHash, legacyPassword);
+    signOrdersFile(f, passwordHash, legacyPasswordHash);
     const fs::path file = dir / ordersFileName(info, orders.empire);
     if (auto r = writeOrdersFile(file, f); !r) return std::unexpected(r.error());
     return file;
@@ -280,15 +280,21 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
             rep.warnings.push_back(std::format("{}: made from another turn file than {}'s current one", name, e.name));
             continue;
         }
-        // The password: its signature of the file, or for a verifier of
-        // OpenSE4 0.6 the hash itself, once.
+        // The password: its signature of the file. For a verifier of
+        // OpenSE4 0.6, the old password's hash once, and the signature of a
+        // new password, which counts from then on (the old hash travelled in
+        // the clear, so no key may come from it).
         std::string upgrade;
         if (isLegacyVerifier(e.passwordHash)) {
             if (!checkPassword(e.passwordHash, f->legacyPasswordHash)) {
                 rep.warnings.push_back(std::format("{}: wrong password for {}", name, e.name));
                 continue;
             }
-            upgrade = passwordVerifier(f->legacyPasswordHash);
+            if (!verifierKey(f->verifier) || checkPassword(f->verifier, f->legacyPasswordHash)) {
+                rep.warnings.push_back(std::format("{}: {} needs a new password, other than the old one", name, e.name));
+                continue;
+            }
+            upgrade = f->verifier;
             if (!checkPasswordSignature(upgrade, ordersDigest(*f), f->signature)) {
                 rep.warnings.push_back(std::format("{}: the file was changed after it was signed", name));
                 continue;
@@ -314,7 +320,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
     for (auto& c : best)
         if (c && !c->upgrade.empty()) {
             state.empire(c->file.empire).passwordHash = c->upgrade;
-            rep.warnings.push_back(std::format("{}'s password is now kept in the current form", state.empire(c->file.empire).name));
+            rep.warnings.push_back(std::format("{}'s new password counts from now on", state.empire(c->file.empire).name));
         }
 
     if (turnBased) {
