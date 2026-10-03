@@ -34,9 +34,13 @@ click item:##tile in=create-design nth=4
 click item:##tile in=create-design nth=8
 click item:##tile in=create-design nth=8
 wait-step 7
-# 7 Check the rules: more components, then Next.
-click item:##tile in=create-design nth=14
-click item:##tile in=create-design nth=15
+# 7 Check the rules: more components, then Next. The grid shows three rows of three: two
+# clicks on its down arrow bring tiles 7 to 15 into view, so the weapons (14, 15) are the
+# eighth and ninth tiles shown.
+click item:##down in=tag:create-design:components
+click item:##down in=tag:create-design:components
+click item:##tile in=create-design nth=8
+click item:##tile in=create-design nth=9
 assert { design_components = 7 }
 click item:Next in=lesson
 wait-step 8

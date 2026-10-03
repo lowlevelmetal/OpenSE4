@@ -7,6 +7,7 @@
 #include "game/state.hpp"
 
 #include <span>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -159,6 +160,10 @@ bool vehicleHasControl(const Rules& r, const GameState& s, const Vehicle& v);
 // Offense and defense modifiers from abilities: per-family Plus − Minus (§3.2).
 int64_t vehicleToHitOffense(const Rules& r, const GameState& s, const Vehicle& v);
 int64_t vehicleToHitDefense(const Rules& r, const GameState& s, const Vehicle& v);
+// The same for a design being made, every component intact: offense and
+// defense, each the plus less the minus abilities per family (the
+// designer's To Hit Modifiers, spec 06 §7 Q94).
+std::pair<int64_t, int64_t> designToHit(const Rules& r, uint32_t hull, std::span<const DesignEntry> entries);
 
 // ---- Supply (spec 03 §7, §12) ------------------------------------------------------------------
 

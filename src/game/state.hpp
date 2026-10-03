@@ -266,6 +266,10 @@ struct InterfaceOptions {
     bool replayFast = false;
     bool replayViewRect = true;
     bool replayGrid = false;
+    // The designer's To Hit Modifiers and Condensed View check boxes, options
+    // of the empire (spec 06 §7 Q94).
+    bool designToHit = false;
+    bool designCondensed = false;
 
     bool operator==(const InterfaceOptions&) const = default;
 };

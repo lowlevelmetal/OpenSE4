@@ -41,16 +41,6 @@ namespace {
 
 using Kind = ItemRef::Kind;
 
-// A 128 px hull portrait on a solid, framed backdrop (the item is the picture, for click tests).
-void portrait(UiContext& ui, const Sprite& s) {
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const ImVec2 q(p.x + ui.px(128), p.y + ui.px(128));
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(p, q, IM_COL32_BLACK);
-    dl->AddRect(p, q, imColor(palette::kFrame));
-    image(ui, s, {128, 128});
-}
-
 std::string shieldsText(const game::DesignStats& st) {
     return st.phasedShields > 0 ? std::format("{} + {} phased", st.shields, st.phasedShields) : std::to_string(st.shields);
 }
@@ -151,6 +141,7 @@ private:
                 selected_ = own.back();
                 tab_ = tabOf(ui, ui.state().design(selected_));
                 note_ = std::format("Created {}.", ui.state().design(selected_).name);
+                scrollToSelected_ = true;
                 noteIsError_ = false;
             }
             newest_ = own.back();
@@ -243,6 +234,11 @@ private:
                 script::reportItem(d.name);   // input scripts find a design by its name
                 ImGui::PopID();
                 const bool selected = designId == selected_;
+                if (selected && scrollToSelected_) {
+                    // A design just made comes into view (ours).
+                    ImGui::SetScrollHereY(0.5f);
+                    scrollToSelected_ = false;
+                }
                 if (const Sprite& lampSprite = selected ? green : blue)
                     drawSprite(dl, lampSprite, {b.x + ui.px(4), b.y + ui.px(11)}, {b.x + ui.px(17), b.y + ui.px(24)});
                 if (const Sprite pic = ui.art.shipMini(style, hull)) drawSprite(dl, pic, {b.x + ui.px(21), b.y}, {b.x + ui.px(57), b.y + ui.px(36)});
@@ -473,13 +469,16 @@ private:
         ui.tagItem("designs:simulator");
     }
 
-    // "Select Vehicle Type" (our title): the vehicle types the empire has a hull
-    // of; picking one opens the designer for it (spec 06 §7 Q94).
+    // "Select Vehicle Type": a list window with one "Name" column, the vehicle
+    // types the empire has a researched hull size of; picking one opens the
+    // designer for it, the same from every tab (spec 06 §7 Q94, confirmed: binary).
     static constexpr const char* kTypePicker = "Select Vehicle Type###vehicletype";
     void typePicker(UiContext& ui) {
         if (!beginModal(ui, kTypePicker, {340, 370})) return;
         const std::vector<ruleset::VehicleType> types = designableTypes(ui.rules(), ui.me());
         const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
+        static constexpr ListColumn kName[] = {{"Name", 0, 0, false}};
+        listHeader(ui, "##typehead", kName, listRowsWidth(ui, ImGui::GetContentRegionAvail().x));
         beginList(ui, "##types", ImVec2(0, -footer), kListLineStep);
         std::optional<ruleset::VehicleType> picked;
         for (ruleset::VehicleType t : types)
@@ -504,6 +503,7 @@ private:
     bool hideObsolete_ = false;
     bool statsView_ = false;
     int gridTop_ = 0;   // the component grid's first row shown
+    bool scrollToSelected_ = false;
     std::string note_;
     bool noteIsError_ = false;
     ItemReportPopup popup_;
@@ -511,31 +511,31 @@ private:
 
 // ---- Create Design -------------------------------------------------------------------------------
 //
-// The original's designer as observed (spec 07 session 3): titled after the
-// vehicle type chosen first ("Ship Design"), it starts with no size. Top row:
-// the picture; Size, Design Type and Design Name, each with a down-arrow button
-// that opens its list; the figures box (Space Used, Total Cost on three lines,
-// Movement, Shields, Cargo Space, Supply Capacity). Then "Components on Design"
-// as a strip of icons with arrows, and "Components Available" as a 3-column grid
-// of tiles (icon, name, kT) with the Warnings and Component Details boxes beside
-// it. Buttons: Comp Type, Weap Mount, the To Hit Modifiers, Condensed View and
-// Only Latest check boxes, Weapons Report, and Create Design and Cancel in the
-// 13th and 14th slots. Every place and size not given there is ours (inferred,
-// spec 06 §7 Q94).
+// The original's designer (spec 06 §7 Q94, confirmed: binary; places in the
+// 780x475 window): titled after the vehicle type chosen first ("Ship
+// Design"), it starts with no size, no design type and no name. The picture
+// 131x131 at (19,40); Size, Design Type and Design Name labelled at x 155
+// over 185x20 drop-down boxes at x 160 (only the name can be typed in); the
+// figures box 223x140 at (349,40); "Components on Design" at (19,181) over
+// the strip at (25,198), 536x38; "Components Available (<type>)" at
+// (19,238) over the tile grid at (19,254), 550x114, tiles 173x38 three to a
+// row; Warnings at (19,369) over a list at (19,385), 283x76, and Component
+// Details at (309,369) over a box at (309,385), 264x76. Buttons: Comp Type,
+// Weap Mount, To Hit Modifiers, Condensed View and Only Latest (slots 8 to
+// 10), Weapons Report (11), Create Design (13), Cancel.
 
 namespace cd {
 // Sums of ImGui positions (ImGui's own operators are not enabled here).
 inline ImVec2 operator+(ImVec2 a, ImVec2 b) { return {a.x + b.x, a.y + b.y}; }
-// Places in the content area (frame pixels from its top left).
-constexpr Vec2 kPicture{3, 3};
-constexpr float kPickerX = 140, kPickerBoxW = 190, kPickerArrow = 20;
-constexpr float kFiguresX = 358, kFiguresR = 553, kFiguresB = 131;
-constexpr float kStripY = 137;         // its label; the strip 16 px below, 38 tall
+constexpr Vec2 kPicture{19, 40};
+constexpr float kLabelX = 155, kBoxX = 160, kBoxW = 185, kBoxH = 20;
+constexpr Vec2 kFigures{349, 40}, kFiguresSize{223, 140};
+constexpr Vec2 kStrip{25, 198}, kStripSize{536, 38};
 constexpr float kCell = 36;            // a component cell in the strip
-constexpr float kGridY = 197;          // the lower labels; boxes 16 px below
-constexpr float kGridW = 366, kBottom = 427;
-constexpr float kSideX = 375, kWarningsB = 303;
-constexpr float kTileH = 36;
+constexpr Vec2 kGrid{19, 254}, kGridSize{550, 114};
+constexpr float kTileW = 173, kTileH = 38;
+constexpr Vec2 kWarnings{19, 385}, kWarningsSize{283, 76};
+constexpr Vec2 kDetails{309, 385}, kDetailsSize{264, 76};
 } // namespace cd
 
 using cd::operator+;
@@ -627,8 +627,9 @@ private:
                 strategy_ = 0;
             }
         } else {
-            // The vehicle type picked in Designs; it starts with no size and no
-            // name (observed). A hull given by automation is taken as the size.
+            // The vehicle type picked in Designs; it starts with no size, no
+            // design type and no name (observed). A hull given by automation is
+            // taken as the size.
             if (args_.sub >= 0 && args_.sub < static_cast<int>(ruleset::VehicleType::Count)) type_ = static_cast<ruleset::VehicleType>(args_.sub);
             else if (args_.text == "new-unit") {
                 for (ruleset::VehicleType t : designableTypes(r, me))
@@ -641,7 +642,8 @@ private:
                 hull_ = static_cast<uint32_t>(args_.index);
                 type_ = r.hull(*hull_).type;
             }
-            pickDesignType(ui);
+            // No design type yet: its box reads "Design Type" (observed, spec 06 §7 Q94).
+            designType_.clear();
         }
         mounts_ = hull_ ? hullMounts(r, me, *hull_) : std::vector<uint32_t>{};
         title_ = designWindowTitle(type_);
@@ -686,11 +688,15 @@ private:
         std::optional<game::DesignStats> st;
         if (hull_) st = game::computeDesignStats(ui.rules(), &ui.me(), *hull_, entries_);
         hovered_.reset();
-        d.beginContent();
-        topRow(ui, st);
-        strip(ui);
-        grid(ui, st);
-        sideBoxes(ui, st);
+        toHit_ = ui.options().designToHit;
+        condensed_ = ui.options().designCondensed;
+        d.beginContent(576);
+        topRow(ui, d, st);
+        strip(ui, d);
+        grid(ui, d, st);
+        sideBoxes(ui, d, st);
+        ImGui::SetCursorScreenPos(d.at({19, 40}));
+        ImGui::Dummy(ImVec2(0, 0));
         if (hovered_) hover_ = hovered_;
         d.beginButtons();
         buttons(ui, d, st);
@@ -698,49 +704,51 @@ private:
         return d.keepOpen();
     }
 
-    // A label in label blue at a place of the content area.
-    static void label(UiContext& ui, Vec2 at, const char* text) {
-        ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + ui.size(at + Vec2{0, kTextLead - 3}), imColor(palette::kLabel), text);
+    // A label in label blue at a place of the window.
+    static void label(UiContext& ui, const Dialog& d, Vec2 at, std::string_view text) {
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, at, imColor(palette::kLabel), text);
     }
 
-    // A value box with its down-arrow button; returns true when the button is pressed.
-    bool pickerBox(UiContext& ui, const char* id, float y, const std::string& value, bool enabled = true) {
+    // A 185x20 drop-down box at (160, y) showing `value` (else `empty` in grey)
+    // with its arrow at the right; returns true when it is pressed.
+    bool dropBox(UiContext& ui, const Dialog& d, const char* id, float y, const std::string& value, const char* empty, bool enabled = true) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        const ImVec2 o = ImGui::GetWindowPos();
-        const ImVec2 a = o + ui.size({cd::kPickerX, y}), b = o + ui.size({cd::kPickerX + cd::kPickerBoxW, y + 20});
-        dl->AddRect(a, b, imColor(palette::kFrame));
-        dl->PushClipRect(a, b, true);
-        dl->AddText({a.x + ui.px(4), a.y + ui.px(2)}, value.empty() ? imColor(palette::kSecondary) : IM_COL32_WHITE, value.empty() ? "None" : value.c_str());
+        const ImVec2 a = d.at({cd::kBoxX, y}), b = d.at({cd::kBoxX + cd::kBoxW, y + cd::kBoxH});
+        dl->AddRect(a, b, imColor(palette::kFrameLight));
+        dl->PushClipRect(a, {b.x - ui.px(cd::kBoxH), b.y}, true);
+        dl->AddText({a.x + ui.px(4), a.y + ui.px(2)}, value.empty() ? imColor(palette::kSecondary) : IM_COL32_WHITE, value.empty() ? empty : value.c_str());
         dl->PopClipRect();
-        ImGui::SetCursorPos(ui.size({cd::kPickerX + cd::kPickerBoxW + 2, y}));
-        return arrowButton(ui, id, ArrowGlyph::Down, {cd::kPickerArrow, 20}, enabled);
+        ImGui::SetCursorScreenPos(d.at({cd::kBoxX + cd::kBoxW - cd::kBoxH, y}));
+        return arrowButton(ui, id, ArrowGlyph::Down, {cd::kBoxH, cd::kBoxH}, enabled);
     }
 
-    void topRow(UiContext& ui, const std::optional<game::DesignStats>& st) {
+    void topRow(UiContext& ui, const Dialog& d, const std::optional<game::DesignStats>& st) {
         const game::Rules& r = ui.rules();
-        // The picture: the hull's portrait once a size is chosen.
-        ImGui::SetCursorPos(ui.size(cd::kPicture));
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // The picture: 131x131, the hull's picture drawn from (1,1); a click opens the hull's report.
+        dl->AddRect(d.at(cd::kPicture), d.at(cd::kPicture + Vec2{131, 131}), imColor(palette::kButton));
+        ImGui::SetCursorScreenPos(d.at(cd::kPicture + Vec2{1, 1}));
         if (hull_) {
-            portrait(ui, ui.art.shipPortrait(ui.me().race.style, r.hull(*hull_)));
+            image(ui, ui.art.shipPortrait(ui.me().race.style, r.hull(*hull_)), {128, 128});
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Hull, *hull_});
         } else {
-            portrait(ui, Sprite{});
+            ImGui::Dummy(ui.size({128, 128}));
         }
 
         // Size.
-        label(ui, {cd::kPickerX, 3}, "Size");
+        label(ui, d, {cd::kLabelX, 39}, "Size");
         const std::string size = hull_ ? std::format("{} ({}kT)", r.hull(*hull_).name, r.hull(*hull_).tonnage) : std::string{};
-        if (pickerBox(ui, "##size", 19, size)) ImGui::OpenPopup("##sizes");
-        ui.tag("create-design:hull", ImGui::GetWindowPos() + ui.size({cd::kPickerX, 19}), ImGui::GetItemRectMax());
+        if (dropBox(ui, d, "##size", 55, size, "Size")) ImGui::OpenPopup("##sizes");
+        ui.tag("create-design:hull", d.at({cd::kBoxX, 55}), d.at({cd::kBoxX + cd::kBoxW, 55 + cd::kBoxH}));
         if (ImGui::BeginPopup("##sizes")) {
             for (uint32_t h : hullsOfType(r, ui.me(), type_, hull_))
                 if (ImGui::Selectable(std::format("{} ({} kT)##{}", r.hull(h).name, r.hull(h).tonnage, h).c_str(), hull_ == h)) setHull(ui, h);
             ImGui::EndPopup();
         }
 
-        // Design Type.
-        label(ui, {cd::kPickerX, 45}, "Design Type");
-        if (pickerBox(ui, "##type", 61, designType_)) ImGui::OpenPopup("##types");
+        // Design Type: a new design has none, its box reading "Design Type".
+        label(ui, d, {cd::kLabelX, 79}, "Design Type");
+        if (dropBox(ui, d, "##type", 95, designType_, "Design Type")) ImGui::OpenPopup("##types");
         if (ImGui::BeginPopup("##types")) {
             const auto& types = ui.me().designTypes;
             for (size_t i = 0; i < types.size(); ++i)
@@ -748,14 +756,19 @@ private:
             ImGui::EndPopup();
         }
 
-        // Design Name: typed, or picked from the race's list with its button.
-        label(ui, {cd::kPickerX, 87}, "Design Name");
-        ImGui::SetCursorPos(ui.size({cd::kPickerX, 103}));
-        ImGui::SetNextItemWidth(ui.px(cd::kPickerBoxW));
-        if (ImGui::InputText("##name", name_.data(), name_.size())) error_.clear();
-        ui.tagItem("create-design:name");
-        ImGui::SetCursorPos(ui.size({cd::kPickerX + cd::kPickerBoxW + 2, 103}));
-        if (arrowButton(ui, "##names", ArrowGlyph::Down, {cd::kPickerArrow, 20}, true)) ImGui::OpenPopup("##namelist");
+        // Design Name: typed, or picked from the race's list with its arrow;
+        // without a name the box reads "Design Name".
+        label(ui, d, {cd::kLabelX, 119}, "Design Name");
+        dl->AddRect(d.at({cd::kBoxX, 135}), d.at({cd::kBoxX + cd::kBoxW, 135 + cd::kBoxH}), imColor(palette::kFrameLight));
+        ImGui::SetCursorScreenPos(d.at({cd::kBoxX + 1, 136}));
+        ImGui::SetNextItemWidth(ui.px(cd::kBoxW - cd::kBoxH - 2));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ui.px(3), ui.px(1)));
+        if (ImGui::InputTextWithHint("##name", "Design Name", name_.data(), name_.size())) error_.clear();
+        ImGui::PopStyleVar(2);
+        ui.tag("create-design:name", d.at({cd::kBoxX, 135}), d.at({cd::kBoxX + cd::kBoxW - cd::kBoxH, 135 + cd::kBoxH}));
+        ImGui::SetCursorScreenPos(d.at({cd::kBoxX + cd::kBoxW - cd::kBoxH, 135}));
+        if (arrowButton(ui, "##names", ArrowGlyph::Down, {cd::kBoxH, cd::kBoxH}, true)) ImGui::OpenPopup("##namelist");
         ui.tagItem("create-design:suggest");
         if (ImGui::BeginPopup("##namelist")) {
             const std::vector<std::string> choices = nameChoices(ui);
@@ -768,50 +781,49 @@ private:
             ImGui::EndPopup();
         }
 
-        // The figures box.
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        const ImVec2 o = ImGui::GetWindowPos();
-        dl->AddRect(o + ui.size({cd::kFiguresX, 3}), o + ui.size({cd::kFiguresR, cd::kFiguresB}), imColor(palette::kFrame));
-        int line = 0;
-        auto row = [&](const char* name, const std::string& value, ImU32 color = IM_COL32_WHITE) {
-            const float y = 5.0f + 14.0f * float(line++);
-            if (name) label(ui, {cd::kFiguresX + 4, y}, name);
-            if (value.empty()) return;
-            const float w = ImGui::CalcTextSize(value.c_str()).x;
-            dl->AddText(o + ImVec2(ui.px(cd::kFiguresR - 4) - w, ui.px(y + kTextLead - 3)), color, value.c_str());
+        // The figures box: lines 16 px apart from y 4, labels at x 4, values at x 120.
+        dl->AddRect(d.at(cd::kFigures), d.at(cd::kFigures + cd::kFiguresSize), imColor(palette::kButton));
+        auto row = [&](float y, const char* name, const std::string& value, ImU32 color = IM_COL32_WHITE) {
+            if (name) label(ui, d, cd::kFigures + Vec2{4, y}, name);
+            if (!value.empty()) textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, cd::kFigures + Vec2{120, y}, color, value);
         };
         const bool over = st && st->tonnageUsed > st->tonnageMax;
-        row("Space Used", st ? std::format("{}/{}kT", st->tonnageUsed, st->tonnageMax) : std::string("-"),
+        row(4, "Space Used", st ? std::format("{}/{}", st->tonnageUsed, st->tonnageMax) : std::string("0/0"),
             over ? ImGui::GetColorU32(kWarnText) : IM_COL32_WHITE);
-        row("Total Cost", {});
+        row(20, "Total Cost", {});
         static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
         static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
         for (size_t k = 0; k < 3; ++k) {
-            const float y = 5.0f + 14.0f * float(line++);
-            const std::string v = st ? formatNumber(st->cost.v[k]) : std::string("-");
-            if (const Sprite icon = ui.art.icon16(kIcons[k]))
-                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), o + ui.size({cd::kFiguresR - 18, y}),
-                             o + ui.size({cd::kFiguresR - 4, y + 14}), {icon.uv.min.x, icon.uv.min.y}, {icon.uv.max.x, icon.uv.max.y});
-            const float w = ImGui::CalcTextSize(v.c_str()).x;
-            dl->AddText(o + ImVec2(ui.px(cd::kFiguresR - 20) - w, ui.px(y + kTextLead - 3)), imColor(kColors[k]), v.c_str());
+            const float y = 20.0f + 16.0f * float(k);
+            row(y, nullptr, st ? formatNumber(st->cost.v[k]) : std::string("0"), imColor(kColors[k]));
+            if (const Sprite icon = ui.art.icon16(kIcons[k])) drawSprite(dl, icon, d.at(cd::kFigures + Vec2{174, y}), d.at(cd::kFigures + Vec2{190, y + 16}));
         }
-        row("Movement", st ? std::to_string(st->movement) : std::string("-"));
-        row("Shields", st ? shieldsText(*st) : std::string("-"));
-        row("Cargo Space", st ? std::format("{}kT", st->cargoCapacity) : std::string("-"));
-        row("Supply Capacity", st ? formatNumber(st->supplyCapacity) : std::string("-"));
+        row(68, "Movement", st ? std::to_string(st->movement) : std::string("0"));
+        if (toHit_) {
+            // To Hit Modifiers: the design's combat to-hit bonuses in place of
+            // Shields, Cargo Space and Supply Capacity (spec 06 §7 Q94).
+            const auto [offense, defense] = hull_ ? game::designToHit(r, *hull_, entries_) : std::pair<int64_t, int64_t>{0, 0};
+            row(84, "Offense Bonus", std::format("{:+}%", offense));
+            row(100, "Defense Bonus", std::format("{:+}%", defense));
+        } else {
+            row(84, "Shields", st ? shieldsText(*st) : std::string("0"));
+            row(100, "Cargo Space", st ? std::to_string(st->cargoCapacity) : std::string("0"));
+            row(116, "Supply Capacity", st ? formatNumber(st->supplyCapacity) : std::string("0"));
+        }
     }
 
-    // "Components on Design": a strip of 36 px cells between two arrows; a click
-    // removes the component, a right-click opens its report. Condensed View
-    // shows each component once with its count (inferred).
-    void strip(UiContext& ui) {
+    // "Components on Design" at (19,181), the hint right-aligned to x 573, the
+    // strip at (25,198), 536x38: 36 px cells between two arrows (the small
+    // left and right arrows, ours); a click removes the component, a
+    // right-click opens its report. Condensed View merges identical components
+    // (same component and mount) into one cell with the count on it when above 1.
+    void strip(UiContext& ui, const Dialog& d) {
         const game::Rules& r = ui.rules();
-        label(ui, {3, cd::kStripY}, std::format("Components on Design ({})", entries_.size()).c_str());
+        label(ui, d, {19, 181}, "Components on Design");
+        textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {573, 184}, imColor(palette::kLabel), "(click to remove component)");
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        const ImVec2 o = ImGui::GetWindowPos();
-        const float top = cd::kStripY + 16;
-        const ImVec2 boxA = o + ui.size({3, top}), boxB = o + ui.size({cd::kFiguresR, top + 38});
-        dl->AddRect(boxA, boxB, imColor(palette::kFrame));
+        const ImVec2 boxA = d.at(cd::kStrip), boxB = d.at(cd::kStrip + cd::kStripSize);
+        dl->AddRect(boxA, boxB, imColor(palette::kFrameLight));
         struct Cell {
             game::DesignEntry entry;
             int count = 1;
@@ -822,41 +834,45 @@ private:
             for (const EntryGroup& g : groupEntries(entries_)) cells.push_back({g.entry, g.count, g.last});
         else
             for (size_t i = 0; i < entries_.size(); ++i) cells.push_back({entries_[i], 1, i});
-        const int visible = static_cast<int>((cd::kFiguresR - 2 - 20 - 22) / cd::kCell);
+        const int visible = static_cast<int>((cd::kStripSize.x - 2 * 17) / cd::kCell);
         stripFirst_ = std::clamp(stripFirst_, 0, std::max(0, static_cast<int>(cells.size()) - visible));
-        ImGui::SetCursorPos(ui.size({4, top + 1}));
-        if (arrowButton(ui, "##stripLeft", ArrowGlyph::Left, {16, 36}, stripFirst_ > 0)) --stripFirst_;
-        ImGui::SetCursorPos(ui.size({cd::kFiguresR - 17, top + 1}));
-        if (arrowButton(ui, "##stripRight", ArrowGlyph::Right, {16, 36}, stripFirst_ + visible < static_cast<int>(cells.size()))) ++stripFirst_;
+        auto arrow = [&](const char* id, bool left, float x, bool enabled) {
+            const Vec2 at{x, cd::kStrip.y};
+            ImGui::SetCursorScreenPos(d.at(at));
+            ImGui::BeginDisabled(!enabled);
+            const bool clicked = ImGui::InvisibleButton(id, ui.size({16, 38}));
+            ImGui::EndDisabled();
+            const int look = !enabled ? 3 : ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+            if (const Sprite sp = ui.art.region("Pictures/Game/Buttons/SmallLeftRightArrows.bmp", left ? 0 : 16, look * 38, 16, 38, false))
+                drawSprite(dl, sp, d.at(at), d.at(at + Vec2{16, 38}));
+            return clicked && enabled;
+        };
+        if (arrow("##stripLeft", true, cd::kStrip.x, stripFirst_ > 0)) --stripFirst_;
+        if (arrow("##stripRight", false, cd::kStrip.x + cd::kStripSize.x - 16, stripFirst_ + visible < static_cast<int>(cells.size()))) ++stripFirst_;
         std::optional<size_t> remove;
         for (int i = 0; i < visible && stripFirst_ + i < static_cast<int>(cells.size()); ++i) {
             const Cell& c = cells[static_cast<size_t>(stripFirst_ + i)];
             const ruleset::Component& comp = r.component(c.entry.component);
-            const Vec2 at{22 + cd::kCell * float(i), top + 1};
-            ImGui::SetCursorPos(ui.size(at));
+            const Vec2 at{cd::kStrip.x + 17 + cd::kCell * float(i), cd::kStrip.y + 1};
+            const ImVec2 a = d.at(at), z = d.at(at + Vec2{cd::kCell, cd::kCell});
+            ImGui::SetCursorScreenPos(a);
             ImGui::PushID(stripFirst_ + i);
-            const bool clicked = ImGui::InvisibleButton("##cell", ui.size({cd::kCell, cd::kCell}));
+            const bool clicked = ImGui::InvisibleButton("##cell", ImVec2(z.x - a.x, z.y - a.y));
             const bool hovered = ImGui::IsItemHovered();
             ImGui::PopID();
-            const ImVec2 a = o + ui.size(at);
-            if (hovered) dl->AddRect(a, a + ui.size({cd::kCell, cd::kCell}), imColor(palette::kButtonHot));
-            if (const Sprite pic = ui.art.component(comp.picture)) drawSprite(dl, pic, a + ui.size({2, 2}), a + ui.size({34, 34}));
+            if (const Sprite pic = ui.art.component(comp.picture)) drawSprite(dl, pic, a, z);
+            if (hovered) dl->AddRect(a, z, imColor(palette::kButtonHot));
             ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
             if (const std::string_view code = mountCode(r, c.entry.mount); !code.empty())
-                dl->AddText(a + ui.size({3, 1}), IM_COL32(255, 255, 0, 255), code.data(), code.data() + code.size());
+                dl->AddText(a + ui.size({2, 1}), IM_COL32(255, 255, 0, 255), code.data(), code.data() + code.size());
             if (c.count > 1) {
-                const std::string n = std::format("x{}", c.count);
+                const std::string n = std::to_string(c.count);
                 dl->AddText(a + ImVec2(ui.px(34) - ImGui::CalcTextSize(n.c_str()).x, ui.px(24)), IM_COL32_WHITE, n.c_str());
             }
             ImGui::PopFont();
             if (hovered) hovered_ = ItemRef{Kind::Component, c.entry.component, c.entry.mount};
             if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Component, c.entry.component, c.entry.mount});
             if (clicked) remove = c.remove;
-        }
-        if (cells.empty()) {
-            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-            dl->AddText(o + ui.size({24, top + 13}), imColor(palette::kSecondary), "(click a component below to add it to the design)");
-            ImGui::PopFont();
         }
         ui.tag("create-design:on-design", boxA, boxB);
         if (remove && *remove < entries_.size()) {
@@ -865,28 +881,32 @@ private:
         }
     }
 
-    // "Components Available": tiles of icon, name and kT, three to a row, in a
-    // list with the arrow column; a click adds the component (with the chosen
+    // "Components Available (<type>)" at (19,238), the hint right-aligned to
+    // x 573, the tiles in a list at (19,254), 550x114: 173x38 tiles of icon,
+    // name and kT, three to a row; a click adds the component (with the chosen
     // mount where it applies), a right-click opens its report.
-    void grid(UiContext& ui, const std::optional<game::DesignStats>& st) {
+    void grid(UiContext& ui, const Dialog& d, const std::optional<game::DesignStats>& st) {
         const game::Rules& r = ui.rules();
         const uint32_t hull = probeHull(ui);
-        std::string filter = group_.empty() ? std::string("All types") : group_;
-        if (mount_ >= 0) filter += " - " + r.data().weaponMounts[static_cast<size_t>(mount_)].longName;
-        label(ui, {3, cd::kGridY}, "Components Available");
-        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-        ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + ui.size({150, cd::kGridY + 2}), imColor(palette::kSecondary), filter.c_str());
-        ImGui::PopFont();
-        ImGui::SetCursorPos(ui.size({3, cd::kGridY + 16}));
+        std::string kind = group_.empty() ? std::string("All") : group_;
+        if (mount_ >= 0) kind += ", " + r.data().weaponMounts[static_cast<size_t>(mount_)].longName;
+        label(ui, d, {19, 238}, std::format("Components Available ({})", kind));
+        textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {573, 240}, imColor(palette::kLabel), "(click to add component)");
+        ImGui::SetCursorScreenPos(d.at(cd::kGrid));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-        beginList(ui, "##available", ui.size({cd::kGridW, cd::kBottom - cd::kGridY - 16}), cd::kTileH);
+        beginList(ui, "##available", ui.size(cd::kGridSize), cd::kTileH);
         const std::vector<uint32_t> comps = designerComponents(r, ui.me(), hull, group_, onlyLatest_);
-        const float tileW = std::floor(ImGui::GetContentRegionAvail().x / 3.0f);
-        const float tileH = ui.px(cd::kTileH);
+        const float tileW = ui.px(cd::kTileW), tileH = ui.px(cd::kTileH);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetCursorScreenPos();
+        // Only the rows in view are submitted (input scripts count the tiles
+        // shown); a row less than a pixel in view counts as out of it (scroll
+        // positions are whole pixels, rows need not be).
+        const float viewTop = ImGui::GetScrollY(), viewH = ImGui::GetWindowHeight();
         for (size_t i = 0; i < comps.size(); ++i) {
+            const float rowTop = tileH * float(i / 3);
+            if (rowTop + tileH <= viewTop + 1.0f || rowTop >= viewTop + viewH - 1.0f) continue;
             const uint32_t ci = comps[i];
             const ruleset::Component& c = r.component(ci);
             const game::DesignEntry entry{ci, hull_ ? mountFor(r, *hull_, ci, mount_) : -1};
@@ -900,22 +920,16 @@ private:
             const bool hovered = ImGui::IsItemHovered();
             ImGui::PopID();
             const ImVec2 b(a.x + tileW, a.y + tileH);
-            dl->AddRect(a, b, imColor(hovered ? palette::kButtonHot : palette::kFrame, hovered ? 1.0f : 0.6f));
-            if (const Sprite pic = ui.art.component(c.picture)) drawSprite(dl, pic, a + ui.size({2, 2}), a + ui.size({34, 34}), fits ? IM_COL32_WHITE : IM_COL32(120, 120, 120, 255));
+            if (hovered) dl->AddRect(a, b, imColor(palette::kButtonHot));
+            if (const Sprite pic = ui.art.component(c.picture))
+                drawSprite(dl, pic, a + ui.size({1, 1}), a + ui.size({37, 37}), fits ? IM_COL32_WHITE : IM_COL32(120, 120, 120, 255));
             ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-            dl->PushClipRect(a + ui.size({37, 0}), b, true);
-            dl->AddText(a + ui.size({37, 3}), fits ? IM_COL32_WHITE : imColor(palette::kDim), c.name.c_str());
-            // With To Hit Modifiers on, a weapon shows its to-hit modifier with the
-            // chosen mount in place of its size (inferred, Q94).
-            std::string second = std::format("{}kT", m.tonnage);
-            if (toHit_ && c.isWeapon()) {
-                const int mod = c.weapon.modifier + (entry.mount >= 0 ? r.data().weaponMounts[static_cast<size_t>(entry.mount)].toHitModifier : 0);
-                second = std::format("To Hit {:+}", mod);
-            }
-            dl->AddText(a + ui.size({37, 19}), imColor(palette::kSecondary), second.c_str());
-            if (const std::string_view code = mountCode(r, entry.mount); !code.empty())
-                dl->AddText(a + ui.size({3, 1}), IM_COL32(255, 255, 0, 255), code.data(), code.data() + code.size());
+            dl->PushClipRect(a + ui.size({39, 0}), b, true);
+            dl->AddText(a + ui.size({40, 3}), fits ? IM_COL32_WHITE : imColor(palette::kDim), c.name.c_str());
+            dl->AddText(a + ui.size({40, 21}), imColor(palette::kSecondary), std::format("{}kT", m.tonnage).c_str());
             dl->PopClipRect();
+            if (const std::string_view code = mountCode(r, entry.mount); !code.empty())
+                dl->AddText(a + ui.size({2, 1}), IM_COL32(255, 255, 0, 255), code.data(), code.data() + code.size());
             ImGui::PopFont();
             if (hovered) hovered_ = ItemRef{Kind::Component, ci, entry.mount};
             if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Component, ci, entry.mount});
@@ -936,31 +950,42 @@ private:
         ui.tagItem("create-design:components");
     }
 
-    // The Warnings box (every rule the design breaks, in yellow, spec 06 §5.4)
-    // and the Component Details box (the component under the pointer, else the hull).
-    void sideBoxes(UiContext& ui, const std::optional<game::DesignStats>& st) {
-        label(ui, {cd::kSideX, cd::kGridY}, "Warnings");
-        ImGui::SetCursorPos(ui.size({cd::kSideX, cd::kGridY + 16}));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({3, 2}));
-        beginList(ui, "##warnings", ui.size({cd::kFiguresR - cd::kSideX, cd::kWarningsB - cd::kGridY - 16}), kListLineStep,
-                  ImGuiChildFlags_AlwaysUseWindowPadding);
+    // Warnings at (19,369) over a list at (19,385), 283x76: one line of white
+    // text after a small red ball per requirement the design does not meet,
+    // 18 px apart (observed, spec 07 session 5); Component Details at (309,369)
+    // over a box at (309,385), 264x76 (the component under the pointer, else the hull).
+    void sideBoxes(UiContext& ui, const Dialog& d, const std::optional<game::DesignStats>& st) {
+        label(ui, d, {19, 369}, "Warnings");
+        ImGui::SetCursorScreenPos(d.at(cd::kWarnings));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        beginList(ui, "##warnings", ui.size(cd::kWarningsSize), 18);
+        std::vector<std::string> lines;
+        if (!error_.empty()) lines.push_back("Not created: " + error_);
+        for (const std::string& p : problems(ui, st)) lines.push_back(p);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
         ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-        ImGui::PushTextWrapPos(0.0f);
-        if (!error_.empty()) ImGui::TextColored(ImVec4(1, 1, 0, 1), "Not created: %s", error_.c_str());
-        const std::vector<std::string> list = problems(ui, st);
-        for (const std::string& p : list) ImGui::TextColored(ImVec4(1, 1, 0, 1), "%s", p.c_str());
-        if (list.empty() && error_.empty()) ImGui::TextColored(kGoodText, "None: the design can be created.");
-        ImGui::PopTextWrapPos();
+        const float w = ImGui::GetContentRegionAvail().x;
+        for (const std::string& line : lines) {
+            const ImVec2 a = ImGui::GetCursorScreenPos();
+            dl->AddCircleFilled({a.x + ui.px(7), a.y + ui.px(9)}, ui.px(3.5f), IM_COL32(255, 0, 0, 255));
+            dl->PushClipRect(a, {a.x + w, a.y + ui.px(18)}, true);
+            dl->AddText({a.x + ui.px(14), a.y + ui.px(3 + kSmallLead)}, IM_COL32_WHITE, line.c_str());
+            dl->PopClipRect();
+            ImGui::Dummy(ImVec2(w, ui.px(18)));
+            if (ImGui::IsItemHovered() && ImGui::CalcTextSize(line.c_str()).x > w - ui.px(14)) ImGui::SetTooltip("%s", line.c_str());
+        }
         ImGui::PopFont();
         endList(ui);
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
         ui.tagItem("create-design:warnings");
 
-        label(ui, {cd::kSideX, cd::kWarningsB + 6}, "Component Details");
-        ImGui::SetCursorPos(ui.size({cd::kSideX, cd::kWarningsB + 22}));
+        label(ui, d, {309, 369}, "Component Details");
+        ImGui::SetCursorScreenPos(d.at(cd::kDetails));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({3, 2}));
-        beginList(ui, "##details", ui.size({cd::kFiguresR - cd::kSideX, cd::kBottom - cd::kWarningsB - 22}), kListLineStep,
-                  ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::PushStyleColor(ImGuiCol_Border, imColorV(palette::kFrameLight));
+        ImGui::BeginChild("##details", ui.size(cd::kDetailsSize), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::PopStyleColor();
         ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
         ImGui::PushTextWrapPos(0.0f);
         if (hover_ && hover_->kind == Kind::Component) itemDetail(ui, *hover_, DetailStyle::Compact);
@@ -968,7 +993,7 @@ private:
         else ImGui::TextColored(kDimText, "Point at a component to see it here.");
         ImGui::PopTextWrapPos();
         ImGui::PopFont();
-        endList(ui);
+        ImGui::EndChild();
         ImGui::PopStyleVar();
     }
 
@@ -997,20 +1022,34 @@ private:
             }
             ImGui::EndPopup();
         }
-        // On/off settings: check boxes (observed, spec 07 session 3).
-        if (d.check("To Hit Modifiers", toHit_)) toHit_ = !toHit_;
-        if (d.check("Condensed View", condensed_)) condensed_ = !condensed_;
+        // Slots 3 to 7 empty; the check boxes in 8 to 10, Weapons Report in 11,
+        // Create Design in 13 (spec 06 §7 Q94). To Hit Modifiers and Condensed
+        // View are the empire's options.
+        for (int gap = 0; gap < 5; ++gap) d.spacer();
+        if (d.check("To Hit Modifiers", toHit_)) setToHit(ui, !toHit_);
+        if (d.check("Condensed View", condensed_)) setCondensed(ui, !condensed_);
         if (d.check("Only Latest", onlyLatest_)) onlyLatest_ = !onlyLatest_;
-        d.spacer();
         if (d.button("Weapons Report")) {
             ScreenArgs a;
             a.text = "weapons";
             a.index = mount_;
             ui.open(ScreenId::Help, a);
         }
-        for (int gap = 0; gap < 5; ++gap) d.spacer();
+        d.spacer();
         if (d.button(editing_.valid() ? "Save Design" : "Create Design")) create(ui);
         ui.tagItem("create-design:save");
+    }
+
+    static void setToHit(UiContext& ui, bool on) {
+        game::InterfaceOptions o = ui.options();
+        o.designToHit = on;
+        ui.setOptions(o);
+    }
+
+    static void setCondensed(UiContext& ui, bool on) {
+        game::InterfaceOptions o = ui.options();
+        o.designCondensed = on;
+        ui.setOptions(o);
     }
 
     void create(UiContext& ui) {
@@ -1047,7 +1086,7 @@ private:
     std::string group_;  // Comp Type filter; empty = all
     int32_t mount_ = -1;
     std::vector<uint32_t> mounts_;
-    bool condensed_ = false;
+    bool condensed_ = false;   // the empire's options, read each frame (drawDialog)
     bool onlyLatest_ = true;
     bool toHit_ = false;
     int stripFirst_ = 0;

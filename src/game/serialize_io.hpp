@@ -379,6 +379,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     fields(ar, o.planetsSort, o.coloniesSort, o.shipsSort, o.queuesSort);
     fields(ar, o.replayAnimate, o.replayFast, o.replayViewRect, o.replayGrid);
     fields(ar, o.shipsTab, o.shipsShown);
+    fields(ar, o.designToHit, o.designCondensed);
 }
 
 template <class Ar>
