@@ -27,7 +27,7 @@ constexpr FactInfo kFacts[] = {
     {Fact::Tab, "tab", T, false, "an open window shows that tab or filter (\"<window>:<tab>\")"},
     {Fact::Picking, "picking", T, false, "the main window waits for the place an order of that kind goes to (\"move-to\", ...)"},
     {Fact::MovementLines, "movement_lines", F, false, "the system view shows the ships' movement lines (Ctrl+L)"},
-    {Fact::Route, "route", F, false, "the selected ship, or its fleet, has a Move To order to somewhere else: a route to draw"},
+    {Fact::Route, "route", F, false, "the selected ship, or its fleet, has a Move To order to another sector or a Move To Waypoint order: a route to draw"},
     {Fact::DesignComponents, "design_components", N, false, "the design being built in the open Create Design window has N components",
      "Components on the design"},
     {Fact::DesignHullChosen, "design_hull_chosen", F, false, "the player picked a hull in the open Create Design window's Size list"},

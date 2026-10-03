@@ -146,9 +146,9 @@ them: it holds only for a selection the player made since the step began, so the
 homeworld a game starts with, or a ship selected for an earlier step, does not count
 until the player selects it again.
 
-**`design_type`** qualifies the `selected`, `order` and `command` keys written beside it in
-one table: only a vehicle (or design) of that design type counts, so a step about an attack
-ship is not done by the colony ship next to it:
+**`design_type`** qualifies the `selected`, `order`, `command` and `fleet_ships` keys written
+beside it in one table: only a vehicle (or design) of that design type counts, so a step about
+an attack ship is not done by the colony ship next to it:
 
 ```toml
 done = { order = "explore", design_type = "Attack Ship" }   # Explore, given to an attack ship
@@ -162,8 +162,17 @@ letter case does not matter. An order counts when it went to a vehicle of that t
 fleet with one in it (so a ship added to a fleet by mistake never blocks a later step);
 `selected` reads the selected vehicle's design (`ship`, `base`, `unit` or `fleet` only);
 among the commands it qualifies `SetOrders`, `QueueAdd` (a ship or base of that type),
-`CreateDesign`, `JoinFleet` (the ship that joined) and `CreateFleet` (one of its ships). Anywhere else it is a load error. Prefer it whenever a step names a kind of ship:
-a step that any ship can do can be done with the wrong one.
+`CreateDesign`, `JoinFleet` (the ship that joined) and `CreateFleet` (one of its ships);
+`fleet_ships` counts only the fleet's ships of that type. Anywhere else it is a load error.
+Prefer it whenever a step names a kind of ship: a step that any ship can do can be done with the
+wrong one.
+
+**A command or a state.** A command counts once it is given while the step is active; a count
+or a state holds whenever it is true, however it came about. Where a step can be done again (a
+resumed game goes back a few steps, see "Resuming a lesson"), give it the state too, in an
+`any`, so that it does not wait for a command the game no longer needs: tutorial 5's "Add the
+second attack ship" is `any = [{ command = "JoinFleet", design_type = "Attack Ship" }, {
+fleet_ships = 2, design_type = "Attack Ship" }]`.
 
 **`message_type` and `message_treaty`** qualify `command = "SendMessage"` the same way: only a
 message of that type (an id of Communicate's Message Type list) naming that treaty counts, so a
@@ -187,12 +196,14 @@ done = { command = "SendMessage", message_type = "propose-treaty", message_treat
 | `simulator_owner = "race-N"` | the open Combat Simulator's Owner for item is Race N (the side the next items go to) |
 | `picking = "<order>"` | the main window waits for the place an order goes to (`move-to`, `colonize`, ...: its order button was pressed) |
 | `movement_lines = true` | the system view shows the ships' movement lines (`Ctrl+L`) |
+| `route = true` | the selected ship, or its fleet, has a Move To order to another sector or a Move To Waypoint order (a Move To to the sector it is in draws no route) |
 | `draft_message_type = "<type>"`, `draft_treaty = "<treaty>"` | the message being written in Communicate is of that type (`propose-treaty`) and names that treaty |
 | `option = "<name>"` | that setting of the empire is on (`research-evenly`, `planet-names`, ...; `not` for off) |
 | `treaty = "<kind>"` | the empire holds that treaty with another empire (`war`: is at war with one) |
 | `turn = N` | the game has reached turn N (the first turn is 0) |
 | `turns_passed = N` | since: N turns have ended |
 | `colonies`, `ships`, `bases`, `units`, `fleets`, `designs` `= N` | the player's empire has N of them |
+| `fleet_ships = N` | one of the empire's fleets holds N ships (of the `design_type` beside it) |
 | `research_queued = N`, `construction_queued = N` | so many items wait in the queues |
 | `techs_researched = N` | since: N tech levels researched |
 | `systems_explored = N`, `empires_met = N`, `treaties = N` | as named |
@@ -296,9 +307,9 @@ the bottom left of the system view, where it hides the least of the classic wind
 buttons are on the right). When that place would hide what the active step outlines or
 allows, or an open prompt, it takes the system view's top left or a corner of the screen
 instead (or the middle of an edge of the screen): the place that hides the smallest share wins.
-Each tag counts by the share of it hidden, so a small button weighs as much as a large map; a
-part the step shows and the way back's outlined button count as much as an outlined tag, an
-allowed tag half; a prompt or pop-up counts as much as an outlined tag. Each new step chooses
+Each tag counts by the share of it hidden, so a small button weighs as much as a large map; the
+way back's outlined button counts as much as an outlined tag, a part the step shows three
+quarters, an allowed tag half; a prompt or pop-up counts as much as an outlined tag. Each new step chooses
 afresh. When every place hides something, the
 place taken stays while it is about as good as the best, so the panel does not jump between
 near-equal places as its height settles.
@@ -358,7 +369,9 @@ screen): then it is compact too, its text scrolling.
   Finish; in a training game the next page), **Alt+B** Back (the previous page), **Alt+K**
   Skip when the panel offers it, and **Alt+R** Read More. Alt and the button's first
   letter, as in a set-up wizard; no prompt answers to B, K or R, and N in a Yes/No box is
-  No. Each button's tooltip names its key.
+  No. Each button's tooltip names its key. A key moves the panel once per press (holding it
+  does not repeat), and the second click of a double click on Next, Back or Skip does nothing:
+  the first one already moved to another step, whose button lies in the same place.
 - Leave Lesson and Start (in the Learn window) ask with a Yes/No box: Y means Yes; N,
   Esc and Enter mean No (spec 06 §3.4). Esc or Enter in the result box is Keep Playing.
 
@@ -388,8 +401,12 @@ were done (`LessonProgress::jumpTo`: the step's "since" counters start again).
   being built, a sample battle) are not part of the game. A step that works in a window
   (one of its tags lies in it) goes back through the steps before it that work in that
   window or open it, to the first of them: left in the designer, the lesson resumes at the
-  step that opens Designs. A step in the main window resumes as it is. Steps whose
-  condition already holds in the saved game move on at once.
+  step that opens Designs. A step that uses the work a window held goes back as far as
+  closing the window would (above, "Getting back"), and from there in the same way: left at
+  tutorial 6's strategic battle, the lesson resumes at the step that opens the simulator. A
+  step in the main window resumes as it is. Steps whose condition already holds in the saved
+  game move on at once (write a step's condition so that it can: "Conditions", a command or a
+  state).
 - **When it cannot**: the place keeps a fingerprint of the lesson's steps
   (`learn::lessonFingerprint`: their number, tags, keys and conditions; rewording keeps
   it). If the lesson's steps changed since, or its game is missing, the Learn window says
@@ -433,14 +450,29 @@ shown:
   in the amber of the step's outlines, not the cyan of a way back. A way back comes first
   when both apply (a window over the arrow: "Close the Planets window first").
 
-- **A window closed before the step was done, and its work with it** (a design being built, a
-  battle being set up): when a window the active step works in, open when the step began, has
-  closed (and the step does not wait for that), the lesson goes back to the step that opens it,
-  through the steps that work in it (`learn::rewindStep`), and says so above the panel's
-  buttons: "The Ship Design window was closed, and what was done in it with it: the lesson went
-  back to the step that opens it." Those steps are done again (`LessonProgress::rewind`; their
-  "since" counters start afresh). Battle windows, which close when the battle ends, are left
-  out. The lock keeps such windows open (no Esc, no Cancel), so it takes Free Play or the game.
+  A way back that can be pressed comes first: with the queue window closed over Construction
+  Queues, the list in Construction Queues opens it again, not the Build Queue order that
+  Construction Queues covers (which would first need it closed).
+
+- **A window closed before the step was done, and its work with it**: only three windows hold
+  work of the client's own that closing them loses (`learn::lostWithWindow`): the designer (the
+  design being built), the Combat Simulator (the battle being set up) and Communicate (the
+  message being written). Everything done in another window is a command the game keeps (a
+  fleet created, an item queued, a project chosen), so closing Fleet Transfer, a queue window
+  or Research only shows the way back. When a window that holds such work, and that the active
+  step uses (`learn::usesWork`: one of its outlined or allowed parts lies in it, not its Close
+  button nor the simulator's Strategies, which needs no battle), has closed after being open at
+  some time during the step (and the step does not wait for that), the lesson goes back to the
+  first step before it whose condition read that work (`learn::rewindStep`), but never past a
+  step whose condition the game met (`learn::clientOnly` is false for it: a command, an order,
+  an option, a count). The panel says so above its buttons, with the way back while the window
+  is closed: "The Combat Simulator window was closed and what was set up in it was lost: the
+  lesson went back to step 3. Press **Simulator** in Designs to open it again." Those steps are
+  done again (`LessonProgress::rewind`; their "since" counters start afresh); the battles
+  fought since stay fought. Tutorial 6's step 13 (a strategic battle from the same setup) goes
+  back to step 3 when the simulator closes; its step 15 (Strategies) does not. Battle windows,
+  which close when the battle ends, are left out. The lock keeps such windows open (no Esc, no
+  Cancel), so it takes Free Play or the game.
 
 While a way back is shown, Next never turns into Skip. A refused click says the same (and
 the page arrow's hint). The panel draws the line from `LessonRunner::recoveryHint()`
@@ -504,7 +536,13 @@ What a step allows:
   Yes/No boxes, error boxes and the main window's pickers (every ImGui popup and every
   window that calls `UiContext::promptWindow()`), with their answer keys (Y, N, T, S,
   Enter, Esc). They, the lesson panel and the T button lie above every window.
-- **Text fields**: while one has the keyboard, every key passes.
+- **Text fields**: while one has the keyboard, every key passes (Tab moves between the fields
+  of the window in front, the arrows move in the text), but Ctrl+Tab, which would bring another
+  window to the front.
+- **No keyboard navigation**: Dear ImGui's keyboard navigation is off while the lock is on (and
+  its cursor hidden), so Space or Enter never press a button that a click or Tab left the
+  keyboard on; only the step's keys do anything. Outside a text field Tab and the arrows do
+  nothing unless a step lists them.
 
 Keys: a step's `keys` list (`"F12"`, `"Ctrl+L"`, `"Alt+1"`, `"Escape"`; modifiers
 `Ctrl+`, `Shift+` and `Alt+` before a letter, digit, `F1`-`F12` or a named key: `Enter`,
@@ -705,7 +743,11 @@ then prints `lesson-audit <slug>:<N> ...` lines (`client/classic/lesson_audit.hp
   id, with where they are: on screen or off, clear of the spotlight or dimmed, under the
   lesson panel. Flagged when no match can be seen clearly; a name in a sentence that
   closes it ("Close the Log") needs none. What matched nothing is listed for checking by
-  hand.
+  hand. Each part the step outlines or shows gets a line of its own too: on the screen,
+  clear of the spotlight, and how much of it the panel covers. Such a part is flagged when the
+  panel lies over its middle or over more than 5% of it (15% of a part at least three times the
+  panel's size, such as a battle map, which leaves the panel nowhere else to go); a name the
+  text matches, over more than 25%.
 - Then `lesson-audit <slug>:<N> end flags=<k> unmatched=<m> layout=<w>x<h>`.
 
 `python3 tools/check_lessons.py --audit` runs it for every step of every tutorial at
@@ -775,7 +817,12 @@ resume records in the settings. The input scripts `lesson-*.script` and
 `end-turn-question.script` play the lock with stacked windows, the way back, Skip, the
 notes after refused clicks and keys, the keys of questions and Free Play at a lesson's
 start; `lesson-rewind` and `lesson-rewind-simulator` close tutorial 4's designer and tutorial
-6's Combat Simulator with Free Play and play the steps the lesson goes back to.
+6's Combat Simulator with Free Play (the simulator before and after its tactical battle) and
+play the steps the lesson goes back to; `lesson-keep-fleet`, `lesson-keep-queue` and
+`lesson-keep-strategies` close Fleet Transfer, Research, the queue window and the simulator at
+steps that need nothing they held, and check that the lesson stays and only shows the way
+back. `lesson-keyboard` tries Ctrl+Tab, Tab, Esc, Enter and Space from the manual's search
+field, `lesson-double-next` a double click on Next.
 
 Three input scripts play tutorials of our own (`tests/input/learn/tutorials`), so they do
 not change with the built-in lessons: `lesson-panel.script` (800x600: prompts over a panel
@@ -884,6 +931,7 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`, and the `design_type` qu
 | `simulator_owner` | `race-1` to `race-10` | the Combat Simulator is open and its Owner for item is that race: the items clicked next go to it |
 | `picking` | `move-to`, `warp`, `colonize`, `attack`, `patrol`, `load-cargo`, `drop-cargo`, `launch-units`, `recover-units`, `location` (a window asked for a place) | the main window waits for the place that order goes to: its button was pressed, the sector not yet clicked |
 | `movement_lines` | true or false | the system view shows the ships' movement lines (`Ctrl+L`, a client setting) |
+| `route` | true or false | the selected ship, or the fleet it is in, has a Move To order to another sector or a Move To Waypoint order: a route the system view draws |
 | `draft_message_type` | a message type id (`propose-treaty`, `gift`, ...) | the Communicate window is writing a message of that type |
 | `draft_treaty` | a treaty kind, or `none` | the Communicate window's message names that treaty |
 | `battle_begun` | true or false | the Tactical Combat window is open and its battle has begun (Begin was pressed) |
@@ -899,6 +947,7 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`, and the `design_type` qu
 | `bases` | N | it has N bases (mothballed ones not counted) |
 | `units` | N | it has N units: fighters, satellites, mines, troops, drones and weapon platforms, in space and in cargo |
 | `fleets` | N | it has N fleets |
+| `fleet_ships` | N | one of its fleets holds N ships (of the design type `design_type` beside it names, if any) |
 | `designs` | N | it has N designs that are not obsolete (a quick start's designs included) |
 | `research_queued` | N | N research projects are queued |
 | `construction_queued` | N | N items wait in its construction queues, all of them together |
