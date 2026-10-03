@@ -1,5 +1,7 @@
 #include "net/protocol.hpp"
 
+#include "net/auth.hpp"
+
 #include <format>
 
 #ifndef OPENSE4_VERSION
@@ -71,6 +73,12 @@ std::string describe(const Event& e) {
 } // namespace opense4::net
 
 namespace opense4::net::proto {
+
+bool usablePasswordValues(const std::vector<game::Command>& commands) {
+    for (const game::Command& c : commands)
+        if (const auto* o = std::get_if<game::cmd::SetEmpireOptions>(&c); o && o->passwordHash && !usableVerifier(*o->passwordHash)) return false;
+    return true;
+}
 
 bool probeVersion(std::span<const uint8_t> payload, VersionProbe& out) {
     game::serial::Reader r(payload, kArchiveVersion);

@@ -45,6 +45,10 @@ KeyPair keyPairFromSecret(const Key& secret);
 // The shared secret of a Diffie-Hellman exchange. False when it is all zero,
 // which only a hostile peer's low-order point produces.
 bool agree(Key& shared, const Key& mySecret, const Key& theirPublic);
+// Whether an X25519 or EdDSA public key is a point of small order (no key
+// any secret could make: hostile, or broken).
+bool smallOrderX25519(const Key& publicKey);
+bool smallOrderEdDsa(const Key& publicKey);
 
 // ---- BLAKE2b ----------------------------------------------------------------------------------
 
@@ -78,6 +82,20 @@ void seal(const Key& key, uint64_t counter, std::span<const uint8_t> ad, std::sp
 // Decrypts in place; false (and `text` unusable) when the message, its
 // additional data, the key or the counter is not the one it was sealed with.
 bool open(const Key& key, uint64_t counter, std::span<const uint8_t> ad, std::span<uint8_t> text, const Mac& mac);
+
+// Encrypts `text` in place for the holder of `recipient`'s secret half, with
+// a fresh key pair of our own (returned in `ephemeral`): the key is a BLAKE2b
+// hash of `domain`, the agreement and both public keys. `ad` is
+// authenticated. openFrom() undoes it; false when anything differs.
+void sealTo(const Key& recipient, std::string_view domain, std::span<const uint8_t> ad, std::span<uint8_t> text, Key& ephemeral, Mac& mac);
+bool openFrom(const KeyPair& recipient, const Key& ephemeral, std::string_view domain, std::span<const uint8_t> ad, std::span<uint8_t> text,
+              const Mac& mac);
+
+// ---- Password hashing (Argon2id) -----------------------------------------------------------------
+
+// Argon2id of `password` with `salt` (16 bytes or more) and the given work:
+// `kibibytes` of memory and `passes` over it, one lane.
+Key argon2id(std::string_view password, std::span<const uint8_t> salt, uint32_t kibibytes, uint32_t passes);
 
 // ---- Signatures (EdDSA over Curve25519 with BLAKE2b) ----------------------------------------------
 

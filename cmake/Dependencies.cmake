@@ -88,8 +88,9 @@ target_include_directories(drlibs SYSTEM INTERFACE "${drlibs_SOURCE_DIR}")
 
 add_library(monocypher STATIC "${monocypher_SOURCE_DIR}/src/monocypher.c")
 target_include_directories(monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/src")
-# Third-party code: don't apply or show warnings.
-target_compile_options(monocypher PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/w,-w>)
+# Third-party code: don't apply or show warnings. Always optimized (GCC, Clang):
+# a debug build's Argon2 would take ten times as long to check a password.
+target_compile_options(monocypher PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/w,-w> $<$<NOT:$<C_COMPILER_ID:MSVC>>:-O2>)
 set_target_properties(monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(OPENSE4_BUILD_TESTS)

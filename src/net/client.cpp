@@ -54,7 +54,8 @@ std::expected<void, std::string> ClientSession::connect() {
     if (!proto::validPlayerName(config_.playerName)) return std::unexpected(std::string("Choose a player name of 1 to 32 characters."));
     auto s = connectTcp(config_.host, config_.port);
     if (!s) return std::unexpected(s.error());
-    impl_->conn.emplace(std::move(*s), config_.maxMessageBytes);
+    // Small frames only until the host has shown it holds the session's keys (the Welcome).
+    impl_->conn.emplace(std::move(*s), std::min(config_.maxMessageBytes, proto::kMaxHandshakeBytes));
     impl_->connectStarted = Clock::now();
     impl_->ephemeral.reset();
     impl_->hello.clear();
@@ -64,6 +65,7 @@ std::expected<void, std::string> ClientSession::connect() {
     ordersAccepted_ = false;
     hostKeyChanged_ = false;
     hostKeyUnconfirmed_ = false;
+    hostAskedOldPassword_ = false;
     return {};
 }
 
@@ -182,29 +184,28 @@ void ClientSession::handleServerHello(std::span<const uint8_t> payload) {
     // The join password is part of the keys. A host that asks for none
     // although we have one is refused too: a man in the middle would claim
     // exactly that to get around it.
-    if (h.joinPassword && config_.joinPasswordHash.empty()) {
+    if (h.joinPassword && config_.joinPassword.empty()) {
         closeConnection("This game needs a game password to join.", true);
         return;
     }
-    if (!h.joinPassword && !config_.joinPasswordHash.empty()) {
+    if (!h.joinPassword && !config_.joinPassword.empty()) {
         closeConnection("The host does not ask for a game password, but you gave one. Leave it empty to join an open game.", true);
         return;
     }
-    // An OpenSE4 0.6 game checks the password hash itself, which is also the
-    // seed of the player's signing key: it goes only to a host the player
-    // trusted beforehand, or one that knows the join password. A host first
-    // met here could be anyone (a man in the middle claiming an old game).
-    const bool vouched = (config_.hostKey && !keyPinnedBySession_) || h.joinPassword;
-    if (h.legacyPasswords && !config_.passwordHash.empty() && !vouched) {
+    // The old form of a password goes only to a host whose key the player
+    // trusted beforehand (not merely seen on an earlier connection of this
+    // session), and only once the player agreed.
+    const bool trusted = config_.hostKey && !keyPinnedBySession_;
+    if (config_.sendOldPassword && !config_.password.empty() && !trusted) {
         hostKeyUnconfirmed_ = true;
-        closeConnection(std::format("This game was saved by OpenSE4 0.6, and its host asks for your password in that version's form, which "
-                                    "this computer sends only to a host it knows. Compare the host's key {} with the one the host sees, "
-                                    "trust it, and connect again.",
+        closeConnection(std::format("Your game shows the old form of your password only to a host it knows. Compare the host's key {} "
+                                    "with the one the host sees, trust it, and connect again.",
                                     crypto::fingerprint(h.hostKey)),
                         true);
         return;
     }
-    const crypto::Key psk = secure::joinKey(config_.joinPasswordHash);
+    // The game's keys (Argon2id: a moment of work, then kept in this process).
+    const crypto::Key psk = joinKey(config_.joinPassword, h.hostKey, h.gameId);
     auto keys = secure::clientKeys(*impl_->ephemeral, h.ephemeralKey, h.hostKey, psk, impl_->hello, payload);
     crypto::wipe(impl_->ephemeral->secret.data(), impl_->ephemeral->secret.size());
     impl_->ephemeral.reset();
@@ -214,17 +215,20 @@ void ClientSession::handleServerHello(std::span<const uint8_t> payload) {
     }
     Connection& c = *impl_->conn;
     c.startEncryption(keys->send, keys->receive);
+    crypto::wipe(keys->send.data(), keys->send.size());
+    crypto::wipe(keys->receive.data(), keys->receive.size());
     // Who we are, sealed. The proofs sign this session only.
+    const std::optional<PasswordKeys> mine = passwordKeys(config_.password, h.gameId);
     proto::Login login;
     login.dataSet = config_.dataSet;
     login.player = config_.playerName;
     login.clientId = clientId_;
-    login.passwordVerifier = passwordVerifier(config_.passwordHash);
-    login.passwordProof = signWithPassword(config_.passwordHash, secure::loginDigest(keys->sessionId, "player", config_.playerName));
-    login.master = !config_.masterPasswordHash.empty();
+    login.passwordVerifier = mine ? mine->verifier() : std::string{};
+    login.passwordProof = signWith(mine, secure::loginDigest(keys->sessionId, "player", config_.playerName));
+    login.master = !config_.masterPassword.empty();
     if (login.master)
-        login.masterProof = signWithPassword(config_.masterPasswordHash, secure::loginDigest(keys->sessionId, "master", config_.playerName));
-    if (h.legacyPasswords) login.legacyPasswordHash = config_.passwordHash;  // an OpenSE4 0.6 game: its verifiers need the hash once
+        login.masterProof = signWith(passwordKeys(config_.masterPassword, h.gameId), secure::loginDigest(keys->sessionId, "master", config_.playerName));
+    if (config_.sendOldPassword) login.legacyPasswordHash = legacyPasswordHash(config_.password);
     c.send(MsgType::Login, login);
 }
 
@@ -268,6 +272,8 @@ void ClientSession::handleFrame(uint8_t type, std::span<const uint8_t> payload, 
                 config_.hostKey = seenHostKey_;
                 keyPinnedBySession_ = true;
             }
+            c.setMaxIncoming(config_.maxMessageBytes);
+            config_.sendOldPassword = false;  // agreed once, for this login
             resendAfterState_ = true;
             emit(EventType::Joined, std::format("{} ({}){}", m.gameName, m.app, m.admin ? ", admin" : ""), config_.playerName, m.slot);
             return;
@@ -275,7 +281,11 @@ void ClientSession::handleFrame(uint8_t type, std::span<const uint8_t> payload, 
         case MsgType::Reject: {
             proto::Reject m;
             if (!proto::decode(payload, m, error)) break;
-            closeConnection(proto::sanitize(m.text, 1000), true);
+            if (m.reason == proto::RejectReason::OldPassword && sealed) hostAskedOldPassword_ = true;
+            // A refusal in the clear came before the connection was secured:
+            // anyone could have sent it, so it is shown as the host's word only.
+            const std::string text = proto::sanitize(m.text, 1000);
+            closeConnection(sealed ? text : "The host said, before the connection was secured: " + text, true);
             return;
         }
         case MsgType::Lobby: {

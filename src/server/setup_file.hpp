@@ -28,14 +28,20 @@
 namespace opense4::server {
 
 struct SetupEmpire {
-    game::EmpireSetup setup;  // passwordHash holds hashPassword() of the empire's password
-    std::string player;       // login name in network games
+    game::EmpireSetup setup;      // passwordHash stays empty: the game makes the verifier (net/auth.hpp)
+    std::string player;           // login name in network games
+    std::string password;         // the empire's password, as written
+    std::string passwordVerifier; // or its verifier in the game `game_id` (net::passwordVerifier)
 };
 
 struct SetupFile {
     std::string gameName;
     std::optional<uint64_t> seed;
-    std::string masterPasswordHash;  // hashPassword() of master_password
+    // The game's id, which salts its passwords: needed for verifiers made in
+    // advance (opense4-server password-verifier --game-id=N).
+    std::optional<uint64_t> gameId;
+    std::string masterPassword;          // master_password, as written
+    std::string masterPasswordVerifier;  // or master_password_verifier (needs game_id)
     // A network or e-mail game is simultaneous unless the file says
     // `simultaneous = false` (docs/MULTIPLAYER.md); a new local game is
     // turn-based (GameOptions).

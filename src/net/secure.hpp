@@ -14,8 +14,10 @@
 // The transcript is the two hellos as sent, so changing either breaks the
 // keys. DH(e_c, s_h) means only the holder of s_h's secret half can read the
 // Login, and clients pin s_h (KnownHosts) after the first connection. The
-// join key comes from the join password, so without it a man in the middle
-// cannot complete the handshake either. Each direction has its own key and a
+// join key comes from the join password (net::joinKey: Argon2id salted with
+// the host's key and the game id), so without it a man in the middle cannot
+// complete the handshake either; one who wins a first connection can still
+// try to guess a weak join password offline, an Argon2id run per guess. Each direction has its own key and a
 // message counter as its nonce (net/connection.hpp): a frame replayed,
 // dropped or reordered fails to decrypt and ends the connection.
 
@@ -38,9 +40,6 @@ struct SessionKeys {
     crypto::Key sessionId{};   // the same on both sides: what logins sign
 };
 
-// The pre-shared key a join password stands for (empty hash: all zero).
-crypto::Key joinKey(std::string_view joinPasswordHash);
-
 // The session keys of a handshake, on the client and on the host side.
 // `clientHello` and `serverHello` are the two messages' payloads as sent.
 // Fails when a key agreement comes out all zero (a hostile key).
@@ -57,8 +56,10 @@ crypto::Key loginDigest(const crypto::Key& sessionId, std::string_view role, std
 // ---- Long-term host keys and pins --------------------------------------------------------------
 
 // A host's long-term key from `file` (64 hex digits of its secret half, one
-// line), made and written there (readable by the owner only) when the file
-// does not exist yet.
+// line). When the file does not exist yet, a new key is made and written
+// there: the file is created exclusively (never over another one made at the
+// same moment) and readable by the owner only, in a folder only the owner
+// can enter when this makes it (POSIX).
 std::expected<crypto::KeyPair, std::string> loadOrCreateHostKey(const std::filesystem::path& file);
 
 // The host keys a player has trusted, one "<address>:<port> <64 hex digits>"

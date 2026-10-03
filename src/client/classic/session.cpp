@@ -74,6 +74,7 @@ std::unique_ptr<ClassicSession> ClassicSession::pbem(std::shared_ptr<const game:
                                                      std::filesystem::path draftsDir) {
     const game::EmpireId player = turn.empire;
     auto session = std::make_unique<ClassicSession>(std::move(rules), std::move(game.state), player, SessionKind::Pbem);
+    session->multiplayerGameId_ = turn.info.gameId;  // salts the passwords this session makes
     session->pbem_ = std::move(turn);
     session->pbemDrafts_ = std::move(draftsDir);
     session->masterVerifier_ = game.info.masterPasswordVerifier;
@@ -163,14 +164,14 @@ game::CommandResult ClassicSession::issueCommand(game::Command c) {
 std::string ClassicSession::empirePasswordValue(std::string_view password) const {
     if (password.empty()) return {};
     if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0)
-        return net::passwordVerifier(net::hashPassword(password));
+        return net::passwordVerifier(password, multiplayerGameId_);
     return game::hashPassword(password);
 }
 
 bool ClassicSession::passwordMatches(const game::Empire& e, std::string_view password) const {
     if (e.passwordHash.empty()) return true;
     if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0)
-        return net::checkPassword(e.passwordHash, net::hashPassword(password));
+        return net::checkPassword(e.passwordHash, password, multiplayerGameId_);
     return game::hashPassword(password) == e.passwordHash;
 }
 
@@ -220,7 +221,7 @@ bool ClassicSession::humansGone() const {
 }
 
 bool ClassicSession::masterPasswordMatches(std::string_view password) const {
-    return !masterVerifier_.empty() && net::checkPassword(masterVerifier_, net::hashPassword(password));
+    return !masterVerifier_.empty() && net::checkPassword(masterVerifier_, password, multiplayerGameId_);
 }
 
 void ClassicSession::setComputerControl(const std::vector<std::pair<game::EmpireId, bool>>& rows) {

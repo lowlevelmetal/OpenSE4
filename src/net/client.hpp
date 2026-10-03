@@ -41,9 +41,16 @@ struct ClientConfig {
     std::string host = "127.0.0.1";
     uint16_t port = kDefaultPort;
     std::string playerName;
-    std::string passwordHash;          // hashPassword() of the player's password (optional)
-    std::string joinPasswordHash;      // hashPassword() of the game password, if the host set one
-    std::string masterPasswordHash;    // hashPassword() of the master password: admin rights (optional)
+    // Passwords as typed: they never leave this machine. The keys they stand
+    // for in the game (Argon2id, net/auth.hpp) are made when the host has
+    // said which game it is.
+    std::string password;              // the player's password (optional)
+    std::string joinPassword;          // the game password, if the host set one
+    std::string masterPassword;        // the master password: admin rights (optional)
+    // The player agreed to show the host the OpenSE4 0.6 form of the password,
+    // once, after the host asked (hostAskedOldPassword); only ever to a host
+    // whose key the player trusted (hostKey given, not just seen).
+    bool sendOldPassword = false;
     std::string dataSet;               // game::dataSetIdentity() of the local rules
     // The host key this player trusts for the host (secure::KnownHosts); a
     // host with another key is refused. None: trust the first key seen, which
@@ -78,13 +85,16 @@ public:
     ClientConfig& config() { return config_; }
     // The key the host showed on the last connection (even one refused), and
     // why that connection was refused: the key is not ClientConfig::hostKey
-    // (changed), or the host asked for the password hash of an OpenSE4 0.6
-    // game while its key is not one the player trusted beforehand and no
-    // join password vouches for it (unconfirmed). Either way the player may
-    // compare the key with the host's and trust it.
+    // (changed), or the player agreed to show an OpenSE4 0.6 password but the
+    // host's key is not one the player trusted beforehand (unconfirmed).
+    // Either way the player may compare the key with the host's and trust it.
     const std::optional<crypto::Key>& seenHostKey() const { return seenHostKey_; }
     bool hostKeyChanged() const { return hostKeyChanged_; }
     bool hostKeyUnconfirmed() const { return hostKeyUnconfirmed_; }
+    // The last connection was refused because the player's empire still has a
+    // password in OpenSE4 0.6's form: the host needs that form once
+    // (ClientConfig::sendOldPassword, after the player agreed).
+    bool hostAskedOldPassword() const { return hostAskedOldPassword_; }
     bool admin() const { return admin_; }
     uint32_t slot() const { return slot_; }
     const std::string& gameName() const { return gameName_; }
@@ -179,6 +189,7 @@ private:
     std::optional<crypto::Key> seenHostKey_;
     bool hostKeyChanged_ = false;
     bool hostKeyUnconfirmed_ = false;
+    bool hostAskedOldPassword_ = false;
     bool keyPinnedBySession_ = false;               // config_.hostKey came from a Welcome, not from the player
     std::vector<Event> events_;
 };

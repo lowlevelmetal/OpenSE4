@@ -88,9 +88,6 @@ std::string listOf(const std::vector<std::string>& parts) {
     return s;
 }
 
-// A verifier a player may register: none, or one of the current kind.
-bool usableVerifier(std::string_view v) { return v.empty() || verifierKey(v).has_value(); }
-
 } // namespace
 
 struct HostSession::Peer {
@@ -182,7 +179,7 @@ LanGame HostSession::lanGame() const {
     for (const LobbySlot& slot : lobby_.slots)
         if (slot.kind == SlotKind::Human && !slot.player.empty()) ++g.players;
     g.started = phase_ != HostPhase::Lobby;
-    g.password = !config_.joinPasswordHash.empty();
+    g.password = !config_.joinPassword.empty();
     g.protocol = kProtocolVersion;
     g.hostKey = hostFingerprint();
     return g;
@@ -194,7 +191,10 @@ std::expected<void, std::string> HostSession::start() {
     if (config_.localPlayer && !proto::validPlayerName(config_.localPlayer->name))
         return std::unexpected(std::string("Choose a player name of 1 to 32 characters."));
     if (auto r = openPort(); !r) return r;
-    gameId_ = randomId();
+    gameId_ = config_.gameId ? config_.gameId : randomId();
+    // The passwords' keys in this game (Argon2id, once, here at the start).
+    masterVerifier_ = !config_.masterPasswordVerifier.empty() ? config_.masterPasswordVerifier : passwordVerifier(config_.masterPassword, gameId_);
+    joinKey_ = joinKey(config_.joinPassword, hostKey_.publicKey, gameId_);
     slots_.clear();
     for (int i = 0; i < config_.humanSlots && slots_.size() < kMaxSlots; ++i) {
         auto s = std::make_unique<Slot>();
@@ -206,7 +206,7 @@ std::expected<void, std::string> HostSession::start() {
             s->info.connected = true;
             s->info.setup = config_.localPlayer->setup;
             s->info.setup.kind = game::PlayerKind::Human;
-            s->verifier = passwordVerifier(config_.localPlayer->passwordHash);
+            s->verifier = passwordVerifier(config_.localPlayer->password, gameId_);
         }
         slots_.push_back(std::move(s));
     }
@@ -217,7 +217,9 @@ std::expected<void, std::string> HostSession::start() {
 
 std::expected<void, std::string> HostSession::resume(game::GameState state, const game::SaveInfo& info) {
     if (phase_ != HostPhase::Stopped) return std::unexpected(std::string("The host is already running."));
-    if (!info.masterPasswordVerifier.empty() && !checkPassword(info.masterPasswordVerifier, config_.masterPasswordHash))
+    if (!info.masterPasswordVerifier.empty() &&
+        !(config_.masterPasswordVerifier.empty() ? checkPassword(info.masterPasswordVerifier, config_.masterPassword, info.gameId)
+                                                 : constantTimeEquals(info.masterPasswordVerifier, config_.masterPasswordVerifier)))
         return std::unexpected(std::string("This saved game is protected by a master password, and the one given does not match."));
     if (!info.dataSet.empty() && !game::sameDataSet(info.dataSet, config_.dataSet))
         return std::unexpected(std::format("This game was saved with data set {}, but the host has {}.", info.dataSet, config_.dataSet));
@@ -227,6 +229,12 @@ std::expected<void, std::string> HostSession::resume(game::GameState state, cons
     if (!info.gameName.empty()) config_.gameName = info.gameName;
     if (auto r = openPort(); !r) return r;
     gameId_ = info.gameId ? info.gameId : randomId();
+    // The master password's verifier stays, unless it is of OpenSE4 0.6 (then
+    // it is made anew from the password just checked) or the save has none.
+    masterVerifier_ = info.masterPasswordVerifier;
+    if (masterVerifier_.empty() || isLegacyVerifier(masterVerifier_))
+        masterVerifier_ = !config_.masterPasswordVerifier.empty() ? config_.masterPasswordVerifier : passwordVerifier(config_.masterPassword, gameId_);
+    joinKey_ = joinKey(config_.joinPassword, hostKey_.publicKey, gameId_);
 
     slots_.clear();
     int humans = 0;
@@ -327,7 +335,7 @@ std::vector<Event> HostSession::poll(int timeoutMs) {
                 // The client's first sealed message did not open: it derived
                 // other keys, which a wrong join password does. Said in the
                 // clear, as it cannot read anything sealed.
-                const std::string why = config_.joinPasswordHash.empty()
+                const std::string why = config_.joinPassword.empty()
                                             ? std::string("The connection could not be secured (the handshake was changed on its way).")
                                             : std::string("Wrong game password.");
                 p.conn.sendPlain(MsgType::Reject, proto::Reject{proto::RejectReason::Password, why});
@@ -508,13 +516,6 @@ void HostSession::reject(Peer& peer, uint8_t reason, std::string text) {
     dropPeer(peer, text, false);
 }
 
-bool HostSession::anyLegacyVerifier() const {
-    if (state_)
-        for (const game::Empire& e : state_->empires)
-            if (isLegacyVerifier(e.passwordHash)) return true;
-    return std::any_of(slots_.begin(), slots_.end(), [](const auto& s) { return isLegacyVerifier(s->verifier); });
-}
-
 void HostSession::handleClientHello(Peer& peer, std::span<const uint8_t> payload) {
     using RR = proto::RejectReason;
     auto code = [](RR r) { return static_cast<uint8_t>(r); };
@@ -537,15 +538,16 @@ void HostSession::handleClientHello(Peer& peer, std::span<const uint8_t> payload
     }
     crypto::Key clientKey{};
     std::copy_n(reinterpret_cast<const uint8_t*>(hello.ephemeralKey.data()), clientKey.size(), clientKey.begin());
-    const crypto::KeyPair ephemeral = crypto::newKeyPair();
+    crypto::KeyPair ephemeral = crypto::newKeyPair();
     proto::ServerHello answer;
     answer.app = std::string(appVersion());
     answer.ephemeralKey = ephemeral.publicKey;
     answer.hostKey = hostKey_.publicKey;
-    answer.joinPassword = !config_.joinPasswordHash.empty();
-    answer.legacyPasswords = anyLegacyVerifier();
+    answer.joinPassword = !config_.joinPassword.empty();
+    answer.gameId = gameId_;
     const std::vector<uint8_t> answerBytes = proto::encode(answer);
-    auto keys = secure::hostKeys(ephemeral, hostKey_, clientKey, secure::joinKey(config_.joinPasswordHash), payload, answerBytes);
+    auto keys = secure::hostKeys(ephemeral, hostKey_, clientKey, joinKey_, payload, answerBytes);
+    crypto::wipe(ephemeral.secret.data(), ephemeral.secret.size());
     if (!keys) {
         dropPeer(peer, keys.error(), false);
         return;
@@ -554,6 +556,8 @@ void HostSession::handleClientHello(Peer& peer, std::span<const uint8_t> payload
     peer.conn.startEncryption(keys->send, keys->receive);
     peer.sessionId = keys->sessionId;
     peer.keyed = true;
+    crypto::wipe(keys->send.data(), keys->send.size());
+    crypto::wipe(keys->receive.data(), keys->receive.size());
 }
 
 void HostSession::handleLogin(Peer& peer, std::span<const uint8_t> payload) {
@@ -575,11 +579,8 @@ void HostSession::handleLogin(Peer& peer, std::span<const uint8_t> payload) {
         if (sameName(b, name)) return reject(peer, code(RR::Banned), "The host removed you from this game.");
     // The proofs sign this very session (secure::loginDigest): seen by a
     // man in the middle, they are worth nothing on another connection.
-    bool admin = false;
-    if (h.master && !config_.masterPasswordHash.empty()) {
-        const crypto::Key master = passwordKey(config_.masterPasswordHash).publicKey;
-        admin = crypto::verify(h.masterProof, master, secure::loginDigest(peer.sessionId, "master", name));
-    }
+    const bool admin =
+        h.master && !masterVerifier_.empty() && checkPasswordSignature(masterVerifier_, secure::loginDigest(peer.sessionId, "master", name), h.masterProof);
     const crypto::Key digest = secure::loginDigest(peer.sessionId, "player", name);
 
     Slot* slot = nullptr;
@@ -617,10 +618,20 @@ void HostSession::handleLogin(Peer& peer, std::span<const uint8_t> payload) {
         if (slot->info.local) return reject(peer, code(RR::Name), "That empire belongs to the host.");
         std::string& verifier = state_ ? state_->empires[slotIndex(*slot)].passwordHash : slot->verifier;
         if (isLegacyVerifier(verifier)) {
-            // A game of OpenSE4 0.6: the password hash came with the login, sealed.
-            if (!checkPassword(verifier, h.legacyPasswordHash))
+            // A game of OpenSE4 0.6. This player's password is still in that
+            // version's form: its old hash proves it once, sealed, and only
+            // when the player agreed; the new verifier came from the password
+            // itself, never from that hash.
+            if (h.legacyPasswordHash.empty())
+                return reject(peer, code(RR::OldPassword),
+                              std::format("This game was saved by OpenSE4 0.6, and {}'s password is still in that version's form. To move it to "
+                                          "the new one, your game must show the host the old form once.",
+                                          name));
+            if (!checkLegacyPassword(verifier, h.legacyPasswordHash))
                 return reject(peer, code(RR::Password), std::format("Wrong password for {}.", name));
-            verifier = passwordVerifier(h.legacyPasswordHash);
+            if (h.passwordVerifier.empty() || !usableVerifier(h.passwordVerifier) || !checkPasswordSignature(h.passwordVerifier, digest, h.passwordProof))
+                return reject(peer, code(RR::Password), "Your client sent a password the host cannot use.");
+            verifier = h.passwordVerifier;
             slot->verifier = verifier;
             emit(EventType::Info, std::format("{}'s password is now kept in the current form.", name));
         } else if (!checkPasswordSignature(verifier, digest, h.passwordProof)) {
@@ -693,6 +704,7 @@ void HostSession::handleOrders(Peer& peer, std::span<const uint8_t> payload) {
     if (orders->empire != e) return ack(false, "These orders are for another empire.");
     if (orders->turn != state_->turn) return ack(false, "The orders' turn does not match.");
     if (!state_->empire(e).alive) return ack(false, "Your empire is no more.");
+    if (!proto::usablePasswordValues(orders->commands)) return ack(false, "These orders set a password of a kind the host does not take.");
     const size_t count = orders->commands.size();
     orders_[e.index()] = std::move(*orders);
     ack(true, std::format("Orders for turn {} received ({} commands).", m.turn, count));
@@ -735,6 +747,7 @@ void HostSession::handlePlay(Peer& peer, std::span<const uint8_t> payload) {
     auto orders = game::deserializeOrders(m.orders);
     if (!orders) return refuse("Unreadable commands: " + orders.error());
     if (orders->empire != e || orders->turn != state_->turn) return refuse("These commands are for another empire or turn.");
+    if (!proto::usablePasswordValues(orders->commands)) return refuse("These commands set a password of a kind the host does not take.");
     checkBase(peer, m.base);
     const size_t count = orders->commands.size();
     emit(EventType::OrdersReceived, std::format("{} command{}", count, count == 1 ? "" : "s"), peer.player, peer.slot, e, state_->turn);
@@ -908,7 +921,7 @@ void HostSession::refreshLobby() {
     lobby_.humanSlots = static_cast<uint32_t>(std::count_if(slots_.begin(), slots_.end(), [](const auto& s) { return s->info.kind == SlotKind::Human; }));
     lobby_.started = phase_ == HostPhase::Playing || phase_ == HostPhase::GameOver;
     lobby_.turnTimeoutSeconds = config_.turnTimeoutSeconds;
-    lobby_.seed = config_.setup.seed;
+    lobby_.seed = 0;  // the galaxy's seed stays with the host: it would rebuild the whole map
     lobby_.options = state_ ? state_->options : config_.setup.options;
     lobby_.slots.clear();
     for (const auto& s : slots_) {
@@ -1213,6 +1226,7 @@ std::expected<void, std::string> HostSession::submitOrders(game::EmpireOrders or
     if (!orders.empire.valid() || orders.empire.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
     if (orders.turn != state_->turn)
         return std::unexpected(std::format("These orders are for turn {}, but the game is at turn {}.", orders.turn, state_->turn));
+    if (!proto::usablePasswordValues(orders.commands)) return std::unexpected(std::string("These orders set a password of a kind the host does not take."));
     const game::EmpireId e = orders.empire;
     const Slot& s = *slots_[e.index()];
     orders_[e.index()] = std::move(orders);
@@ -1260,7 +1274,7 @@ std::expected<void, std::string> HostSession::processTurnNow() {
     // The passwords Reset Passwords chose take effect now, after the orders
     // (which carry the players' own passwords) were read (spec 06 §1.9).
     for (const PasswordReset& p : std::exchange(resets_, {}))
-        if (p.empire.index() < state_->empires.size()) state_->empire(p.empire).passwordHash = passwordVerifier(hashPassword(p.password));
+        if (p.empire.index() < state_->empires.size()) state_->empire(p.empire).passwordHash = p.verifier;
 
     orders_.assign(state_->empires.size(), std::nullopt);
     stateCache_ = redactedState();
@@ -1292,7 +1306,9 @@ std::expected<std::vector<HostSession::PasswordReset>, std::string> HostSession:
     std::vector<PasswordReset> out;
     for (game::EmpireId e : empires) {
         if (!e.valid() || e.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
-        out.push_back({e, resetPassword()});
+        std::string password = resetPassword();
+        std::string verifier = passwordVerifier(password, gameId_);
+        out.push_back({e, std::move(password), std::move(verifier)});
     }
     resets_ = out;
     for (const PasswordReset& p : out)
@@ -1360,6 +1376,7 @@ std::expected<game::TurnResult, std::string> HostSession::playCommands(game::Emp
     if (!turnBased()) return std::unexpected(std::string("This game is simultaneous: submit orders for the turn instead."));
     if (!empire.valid() || empire.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
     if (activeEmpire() != empire) return std::unexpected(std::string("It is not that empire's turn."));
+    if (!proto::usablePasswordValues(commands)) return std::unexpected(std::string("These commands set a password of a kind the host does not take."));
     const std::string who = playerName(empire);
     emit(EventType::OrdersReceived, std::format("{} command{}", commands.size(), commands.size() == 1 ? "" : "s"),
          who.empty() ? std::string("host") : who, empire.index() < slots_.size() ? slots_[empire.index()]->info.id : kNoSlot, empire,
@@ -1495,7 +1512,7 @@ game::SaveInfo HostSession::saveInfo() const {
     info.gameName = config_.gameName;
     info.dataSet = config_.dataSet;
     info.gameId = gameId_;
-    info.masterPasswordVerifier = passwordVerifier(config_.masterPasswordHash);
+    info.masterPasswordVerifier = masterVerifier_;
     if (state_)
         for (size_t i = 0; i < state_->empires.size(); ++i)
             info.players.push_back(i < slots_.size() && slots_[i]->info.kind == SlotKind::Human ? slots_[i]->info.player : std::string{});

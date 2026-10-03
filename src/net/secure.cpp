@@ -6,6 +6,16 @@
 #include <fstream>
 #include <system_error>
 
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <share.h>
+#include <sys/stat.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 namespace opense4::net::secure {
 
 namespace fs = std::filesystem;
@@ -40,11 +50,6 @@ std::string hostId(std::string_view host, uint16_t port) { return std::format("{
 
 } // namespace
 
-crypto::Key joinKey(std::string_view joinPasswordHash) {
-    if (joinPasswordHash.empty()) return {};
-    return crypto::Hash().add("OpenSE4 join password key v1").add(joinPasswordHash).finish32();
-}
-
 std::expected<SessionKeys, std::string> clientKeys(const crypto::KeyPair& ephemeral, const crypto::Key& hostEphemeral, const crypto::Key& hostKey,
                                                    const crypto::Key& psk, std::span<const uint8_t> clientHello, std::span<const uint8_t> serverHello) {
     crypto::Key ee{}, es{};
@@ -75,40 +80,84 @@ crypto::Key loginDigest(const crypto::Key& sessionId, std::string_view role, std
 
 // ---- Host keys ---------------------------------------------------------------------------------
 
+namespace {
+
+std::expected<crypto::KeyPair, std::string> readHostKey(const fs::path& file) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) return std::unexpected(std::format("{}: cannot read the host key", file.string()));
+    std::string line;
+    while (std::getline(in, line)) {
+        std::erase(line, '\r');
+        if (line.empty() || line.front() == '#') continue;
+        const auto secret = crypto::keyFromHex(line);
+        crypto::wipe(line.data(), line.size());
+        if (!secret) break;
+        return crypto::keyPairFromSecret(*secret);
+    }
+    return std::unexpected(std::format("{}: not a host key file (expected 64 hex digits)", file.string()));
+}
+
+// Creates `file` for writing only if it does not exist, readable by the owner
+// only. -1: it exists (or cannot be made).
+int createExclusive(const fs::path& file) {
+#ifdef _WIN32
+    int fd = -1;
+    if (_wsopen_s(&fd, file.c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _SH_DENYRW, _S_IREAD | _S_IWRITE) != 0) return -1;
+    return fd;
+#else
+    return ::open(file.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+#endif
+}
+
+bool writeAll(int fd, std::string_view text) {
+    while (!text.empty()) {
+#ifdef _WIN32
+        const int n = _write(fd, text.data(), static_cast<unsigned>(text.size()));
+#else
+        const auto n = ::write(fd, text.data(), text.size());
+#endif
+        if (n <= 0) return false;
+        text.remove_prefix(static_cast<size_t>(n));
+    }
+    return true;
+}
+
+void closeFile(int fd) {
+#ifdef _WIN32
+    _close(fd);
+#else
+    ::close(fd);
+#endif
+}
+
+} // namespace
+
 std::expected<crypto::KeyPair, std::string> loadOrCreateHostKey(const fs::path& file) {
     std::error_code ec;
-    if (fs::exists(file, ec)) {
-        std::ifstream in(file, std::ios::binary);
-        std::string line;
-        while (std::getline(in, line)) {
-            std::erase(line, '\r');
-            if (line.empty() || line.front() == '#') continue;
-            const auto secret = crypto::keyFromHex(line);
-            crypto::wipe(line.data(), line.size());
-            if (!secret) break;
-            crypto::KeyPair k = crypto::keyPairFromSecret(*secret);
-            return k;
-        }
-        return std::unexpected(std::format("{}: not a host key file (expected 64 hex digits)", file.string()));
+    if (fs::exists(file, ec)) return readHostKey(file);
+    if (file.has_parent_path() && !fs::exists(file.parent_path(), ec)) {
+        fs::create_directories(file.parent_path(), ec);
+#ifndef _WIN32
+        fs::permissions(file.parent_path(), fs::perms::owner_all, fs::perm_options::replace, ec);
+#endif
     }
-    const crypto::KeyPair k = crypto::newKeyPair();
-    if (file.has_parent_path()) fs::create_directories(file.parent_path(), ec);
-    fs::path tmp = file;
-    tmp += ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out) return std::unexpected(std::format("{}: cannot write the host key", tmp.string()));
-        // Only the owner may read it (where the file system has permissions).
-        fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
-        std::string secret = crypto::hex(k.secret);
-        out << "# OpenSE4 host key: the secret half of this machine's identity in network games. Keep it private.\n"
-            << "# Fingerprint: " << crypto::fingerprint(k.publicKey) << "\n"
-            << secret << "\n";
-        crypto::wipe(secret.data(), secret.size());
-        if (!out) return std::unexpected(std::format("{}: cannot write the host key", tmp.string()));
+    const int fd = createExclusive(file);
+    if (fd < 0) {
+        // Made by another program meanwhile: that one counts.
+        if (fs::exists(file, ec)) return readHostKey(file);
+        return std::unexpected(std::format("{}: cannot create the host key", file.string()));
     }
-    fs::rename(tmp, file, ec);
-    if (ec) return std::unexpected(std::format("{}: cannot save the host key: {}", file.string(), ec.message()));
+    crypto::KeyPair k = crypto::newKeyPair();
+    std::string text = std::format("# OpenSE4 host key: the secret half of this machine's identity in network games. Keep it private.\n"
+                                   "# Fingerprint: {}\n{}\n",
+                                   crypto::fingerprint(k.publicKey), crypto::hex(k.secret));
+    const bool ok = writeAll(fd, text);
+    crypto::wipe(text.data(), text.size());
+    closeFile(fd);
+    if (!ok) {
+        fs::remove(file, ec);
+        return std::unexpected(std::format("{}: cannot write the host key", file.string()));
+    }
     return k;
 }
 

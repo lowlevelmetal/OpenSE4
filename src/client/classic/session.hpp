@@ -177,8 +177,8 @@ public:
     // The value cmd::SetEmpireOptions::passwordHash takes for a new password
     // (empty: none). Local and hotseat games keep game::hashPassword();
     // network and PBEM games keep the verifier the host checks logins and
-    // .plr files against (net::passwordVerifier of net::hashPassword), and so
-    // does a network or PBEM game file opened with Load Game.
+    // .plr files against (net::passwordVerifier, salted with the game's id),
+    // and so does a network or PBEM game file opened with Load Game.
     std::string empirePasswordValue(std::string_view password) const;
     // Whether `password` opens the empire's turn (hotseat hand-over), by the
     // same scheme as empirePasswordValue. True when it has no password.
@@ -210,6 +210,9 @@ public:
 
     // Hotseat: switches the local player (after a password check by the UI).
     void setPlayer(game::EmpireId e);
+    // A network game's id (net::HostSession / ClientSession::gameId), which
+    // salts the passwords this session makes (empirePasswordValue).
+    void setMultiplayerGame(uint64_t gameId) { multiplayerGameId_ = gameId; }
 
     // ---- Player Computer Control (spec 06 §1.2.1, confirmed: binary) ----
     // Whether the game has a master password the window asks for first: a

@@ -42,8 +42,9 @@ public:
         ImGui::Begin("Play by E-mail", nullptr,
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
         ImGui::TextWrapped("The host of a play-by-e-mail game sends each player a turn file (.turn): the game as your empire knows "
-                           "it. Open yours here, give your password and play your turn. End Turn saves your orders file (.plr), "
-                           "signed with your password; send that file back to the host.");
+                           "it, which only your password opens. Open yours here, give your password and play your turn. End Turn "
+                           "saves your orders file (.plr), signed with your password and readable by the host only; send that file "
+                           "back to the host.");
         ImGui::Spacing();
         pathField("Turn file", file_, ctx.px(600), ImGuiInputTextFlags_None);
         ImGui::SameLine();
@@ -96,14 +97,16 @@ private:
     }
 
     void gamePanel(MenuContext& ctx) {
-        const game::GameState& s = game_->state;
+        // Before the password only the turn file's header is readable.
+        const game::SaveInfo& info = game_->info;
         ImGui::SeparatorText("Game");
-        ImGui::Text("%s", std::format("'{}', turn {}", game_->info.gameName, s.turn).c_str());
-        if (game::turnBased(s)) {
+        ImGui::Text("%s", std::format("'{}', turn {}", info.gameName, info.turn).c_str());
+        if (game_->turnBased) {
             const game::EmpireId active = pbemActivePlayer(*game_);
             ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s",
-                               active.valid() ? std::format("Turn-based: it is {}'s turn.", s.empire(active).name).c_str()
-                                              : "Turn-based: nobody's turn (the host plays on first).");
+                               active.valid() && active.index() < info.empires.size()
+                                   ? std::format("Turn-based: it is {}'s turn.", info.empires[active.index()]).c_str()
+                                   : "Turn-based: nobody's turn (the host plays on first).");
             ImGui::TextWrapped("Your orders are carried out at once on your copy, as a preview. The host carries them out on the whole "
                                "game, which decides battles and what you cannot see; your next turn file shows the result.");
         } else {

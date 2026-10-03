@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cstring>
 #include <format>
+#include <map>
+#include <mutex>
+#include <string>
 
 namespace opense4::net {
 
@@ -18,11 +21,39 @@ constexpr std::array<uint32_t, 64> kRound{
 
 constexpr uint32_t rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
 
-// Domain separation: our hashes differ from a plain SHA-256 of the password.
+// Domain separation: 0.6's hashes differ from a plain SHA-256 of the password.
 constexpr std::string_view kPasswordDomain = "OpenSE4 password v1\n";
 constexpr std::string_view kVerifierDomain = "OpenSE4 verifier v1\n";
-constexpr std::string_view kSigningKeyDomain = "OpenSE4 password signing key v1";
 constexpr std::string_view kVerifierPrefix = "pk1:";
+
+std::mutex gWorkMutex;
+PasswordWork gWork;
+
+// Argon2id runs, kept by a hash of what went in (the work included).
+std::mutex gCacheMutex;
+std::map<crypto::Key, crypto::Key> gCache;
+constexpr size_t kCacheSize = 256;
+
+crypto::Key slowHash(std::string_view domain, std::string_view password, std::span<const uint8_t> context) {
+    const PasswordWork work = passwordWork();
+    const crypto::Key salt = crypto::Hash().add(domain).add(context).finish32();
+    const crypto::Key id = crypto::Hash().add("OpenSE4 password cache").add(salt).add(password).add(uint64_t{work.kibibytes}).add(uint64_t{work.passes}).finish32();
+    {
+        std::lock_guard lock(gCacheMutex);
+        if (auto it = gCache.find(id); it != gCache.end()) return it->second;
+    }
+    const crypto::Key out = crypto::argon2id(password, salt, work.kibibytes, work.passes);
+    std::lock_guard lock(gCacheMutex);
+    if (gCache.size() >= kCacheSize) gCache.clear();
+    gCache.emplace(id, out);
+    return out;
+}
+
+std::array<uint8_t, 8> littleEndian(uint64_t v) {
+    std::array<uint8_t, 8> b{};
+    for (size_t i = 0; i < b.size(); ++i) b[i] = static_cast<uint8_t>(v >> (8 * i));
+    return b;
+}
 
 } // namespace
 
@@ -107,7 +138,60 @@ std::string toHex(std::span<const uint8_t> bytes) {
     return s;
 }
 
-std::string hashPassword(std::string_view password) {
+void setPasswordWork(PasswordWork work) {
+    std::lock_guard lock(gWorkMutex);
+    gWork = work;
+}
+
+PasswordWork passwordWork() {
+    std::lock_guard lock(gWorkMutex);
+    return gWork;
+}
+
+std::string PasswordKeys::verifier() const { return std::string(kVerifierPrefix) + crypto::hex(signing.publicKey) + crypto::hex(box.publicKey); }
+
+std::optional<PasswordKeys> passwordKeys(std::string_view password, uint64_t gameId) {
+    if (password.empty()) return std::nullopt;
+    const auto game = littleEndian(gameId);
+    crypto::Key seed = slowHash("OpenSE4 password key v2", password, game);
+    crypto::Key signingSeed = crypto::Hash(seed).add("signing key").finish32();
+    crypto::Key boxSecret = crypto::Hash(seed).add("box key").finish32();
+    PasswordKeys keys;
+    keys.signing = crypto::signingKey(signingSeed);
+    keys.box = crypto::keyPairFromSecret(boxSecret);
+    crypto::wipe(seed.data(), seed.size());
+    crypto::wipe(signingSeed.data(), signingSeed.size());
+    crypto::wipe(boxSecret.data(), boxSecret.size());
+    return keys;
+}
+
+std::string passwordVerifier(std::string_view password, uint64_t gameId) {
+    const auto keys = passwordKeys(password, gameId);
+    return keys ? keys->verifier() : std::string{};
+}
+
+std::optional<VerifierKeys> verifierKeys(std::string_view verifier) {
+    if (!verifier.starts_with(kVerifierPrefix) || verifier.size() != kVerifierPrefix.size() + 128) return std::nullopt;
+    const auto signing = crypto::keyFromHex(verifier.substr(kVerifierPrefix.size(), 64));
+    const auto box = crypto::keyFromHex(verifier.substr(kVerifierPrefix.size() + 64, 64));
+    if (!signing || !box || crypto::smallOrderEdDsa(*signing) || crypto::smallOrderX25519(*box)) return std::nullopt;
+    return VerifierKeys{*signing, *box};
+}
+
+bool usableVerifier(std::string_view verifier) { return verifier.empty() || verifierKeys(verifier).has_value(); }
+
+crypto::Signature signWith(const std::optional<PasswordKeys>& keys, std::span<const uint8_t> message) {
+    if (!keys) return {};
+    return crypto::sign(keys->signing, message);
+}
+
+bool checkPasswordSignature(std::string_view verifier, std::span<const uint8_t> message, const crypto::Signature& signature) {
+    if (verifier.empty()) return true;
+    const std::optional<VerifierKeys> keys = verifierKeys(verifier);
+    return keys && crypto::verify(signature, keys->signing, message);
+}
+
+std::string legacyPasswordHash(std::string_view password) {
     if (password.empty()) return {};
     Sha256 h;
     h.update(kPasswordDomain);
@@ -115,23 +199,11 @@ std::string hashPassword(std::string_view password) {
     return toHex(h.finish());
 }
 
-crypto::SigningKey passwordKey(std::string_view passwordHash) {
-    crypto::Key seed = crypto::Hash().add(kSigningKeyDomain).add(passwordHash).finish32();
-    crypto::SigningKey key = crypto::signingKey(seed);
-    crypto::wipe(seed.data(), seed.size());
-    return key;
-}
-
-std::string passwordVerifier(std::string_view passwordHash) {
-    if (passwordHash.empty()) return {};
-    return std::string(kVerifierPrefix) + crypto::hex(passwordKey(passwordHash).publicKey);
-}
-
-std::string legacyPasswordVerifier(std::string_view passwordHash) {
-    if (passwordHash.empty()) return {};
+std::string legacyPasswordVerifier(std::string_view legacyHash) {
+    if (legacyHash.empty()) return {};
     Sha256 h;
     h.update(kVerifierDomain);
-    h.update(passwordHash);
+    h.update(legacyHash);
     return toHex(h.finish());
 }
 
@@ -139,20 +211,17 @@ bool isLegacyVerifier(std::string_view verifier) {
     return verifier.size() == 64 && std::all_of(verifier.begin(), verifier.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
 }
 
-std::optional<crypto::Key> verifierKey(std::string_view verifier) {
-    if (!verifier.starts_with(kVerifierPrefix)) return std::nullopt;
-    return crypto::keyFromHex(verifier.substr(kVerifierPrefix.size()));
+bool checkLegacyPassword(std::string_view verifier, std::string_view legacyHash) {
+    return isLegacyVerifier(verifier) && !legacyHash.empty() && constantTimeEquals(verifier, legacyPasswordVerifier(legacyHash));
 }
 
-crypto::Signature signWithPassword(std::string_view passwordHash, std::span<const uint8_t> message) {
-    if (passwordHash.empty()) return {};
-    return crypto::sign(passwordKey(passwordHash), message);
-}
-
-bool checkPasswordSignature(std::string_view verifier, std::span<const uint8_t> message, const crypto::Signature& signature) {
-    if (verifier.empty()) return true;
-    const std::optional<crypto::Key> key = verifierKey(verifier);
-    return key && crypto::verify(signature, *key, message);
+crypto::Key joinKey(std::string_view joinPassword, const crypto::Key& hostKey, uint64_t gameId) {
+    if (joinPassword.empty()) return {};
+    const auto game = littleEndian(gameId);
+    std::array<uint8_t, 40> context{};
+    std::copy(hostKey.begin(), hostKey.end(), context.begin());
+    std::copy(game.begin(), game.end(), context.begin() + 32);
+    return slowHash("OpenSE4 join password key v2", joinPassword, context);
 }
 
 bool constantTimeEquals(std::string_view a, std::string_view b) {
@@ -166,18 +235,20 @@ bool constantTimeEquals(std::string_view a, std::string_view b) {
     return diff == 0;
 }
 
-bool checkPassword(std::string_view verifier, std::string_view passwordHash) {
+bool checkPassword(std::string_view verifier, std::string_view password, uint64_t gameId) {
     if (verifier.empty()) return true;
-    if (passwordHash.empty()) return false;
-    if (isLegacyVerifier(verifier)) return constantTimeEquals(verifier, legacyPasswordVerifier(passwordHash));
-    return constantTimeEquals(verifier, passwordVerifier(passwordHash));
+    if (password.empty()) return false;
+    if (isLegacyVerifier(verifier)) return checkLegacyPassword(verifier, legacyPasswordHash(password));
+    return constantTimeEquals(verifier, passwordVerifier(password, gameId));
 }
 
 std::string resetPassword() {
-    const uint64_t a = 11 + randomId() % 89;
-    const uint64_t b = 11 + randomId() % 89;
-    const uint64_t c = 11 + randomId() % 89;
-    return std::format("{}{}{}", a, b, c);
+    std::string out;
+    for (int i = 0; i < 6; ++i) {
+        const uint64_t n = 11 + randomId() % 89;
+        out += std::to_string(n);
+    }
+    return out;
 }
 
 uint64_t randomId() {

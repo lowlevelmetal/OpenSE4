@@ -662,7 +662,8 @@ design: the classic game has no counterpart.
     - battles the player was not in;
     - in a turn-based game, what the player whose turn it is has done in that turn (the
       moves of its ships, its launches and its open questions), for everyone else;
-    - the random-number state.
+    - the random-number state, and the galaxy's seed (from which the whole map and the
+      computer players' choices could be rebuilt; the lobby does not show it either).
   - Kept: what diplomacy and the score screens show.
   - Shared: a Partnership gives its partner the maps and tech levels, as in the rules.
 

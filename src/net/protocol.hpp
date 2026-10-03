@@ -82,7 +82,10 @@ enum class MsgType : uint8_t {
 // The type byte of every frame after the handshake: the real type is inside.
 inline constexpr uint8_t kSealedFrame = 0xf0;
 
-enum class RejectReason : uint8_t { Protocol, DataSet, Password, Name, Full, NotInGame, Banned, ShuttingDown };
+// OldPassword: the player's empire still has a verifier of OpenSE4 0.6; the
+// host needs that password's old hash once (Login::legacyPasswordHash), which
+// the player's game sends only when the player agrees.
+enum class RejectReason : uint8_t { Protocol, DataSet, Password, Name, Full, NotInGame, Banned, ShuttingDown, OldPassword };
 
 enum class AdminAction : uint8_t { StartGame, AddComputer, RemoveSlot, Kick, ProcessTurn, SetAiControl, SetTurnTimeout, ResetPasswords };
 
@@ -113,7 +116,7 @@ struct ServerHello {
     crypto::Key ephemeralKey{};   // the host's X25519 key for this connection
     crypto::Key hostKey{};        // the host's long-term key (clients may pin it)
     bool joinPassword = false;    // the session keys include the join password's
-    bool legacyPasswords = false; // the game has verifiers of OpenSE4 0.6: send the password hash with the login
+    uint64_t gameId = 0;          // salts the password and join keys (net/auth.hpp)
 };
 
 // The client's first sealed message. The proofs sign secure::loginDigest()
@@ -122,11 +125,14 @@ struct Login {
     std::string dataSet;
     std::string player;
     uint64_t clientId = 0;               // random per ClientSession: a request repeated after a reconnect is recognized
-    std::string passwordVerifier;        // passwordVerifier() of the player's password (empty: none)
+    std::string passwordVerifier;        // passwordVerifier() of the player's password in this game (empty: none)
     crypto::Signature passwordProof{};   // the password's signature of the session
     bool master = false;                 // the player gives the master password
     crypto::Signature masterProof{};
-    std::string legacyPasswordHash;      // only when the host asked (ServerHello::legacyPasswords)
+    // Only after the host refused with OldPassword and the player agreed:
+    // the password's OpenSE4 0.6 hash, which the host checks once and then
+    // keeps `passwordVerifier` instead.
+    std::string legacyPasswordHash;
 };
 
 struct Welcome {
@@ -252,7 +258,7 @@ void io(Ar& ar, ClientHello& m) {
 }
 template <class Ar>
 void io(Ar& ar, ServerHello& m) {
-    game::serial::fields(ar, m.protocol, m.app, m.ephemeralKey, m.hostKey, m.joinPassword, m.legacyPasswords);
+    game::serial::fields(ar, m.protocol, m.app, m.ephemeralKey, m.hostKey, m.joinPassword, m.gameId);
 }
 template <class Ar>
 void io(Ar& ar, Login& m) {
@@ -295,6 +301,12 @@ bool decode(std::span<const uint8_t> payload, T& out, std::string& error) {
 
 // Reads the VersionProbe at the start of a client's first message, whatever follows.
 bool probeVersion(std::span<const uint8_t> payload, VersionProbe& out);
+
+// Whether commands a player sent set only password values a host may keep
+// (cmd::SetEmpireOptions::passwordHash): none, or a verifier of the current
+// kind (net::usableVerifier). Anything else could lock the empire out, or
+// pose as an OpenSE4 0.6 verifier.
+bool usablePasswordValues(const std::vector<game::Command>& commands);
 
 // Short printable form of a player-supplied string (logs, names).
 std::string sanitize(std::string_view text, size_t maxLength);

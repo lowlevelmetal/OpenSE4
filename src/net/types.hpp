@@ -44,7 +44,7 @@ struct LobbyInfo {
     uint32_t humanSlots = 0;
     bool started = false;
     int turnTimeoutSeconds = 0;      // 0 = none
-    uint64_t seed = 0;
+    uint64_t seed = 0;               // always 0: the galaxy's seed stays with the host
     game::GameOptions options;
     std::vector<LobbySlot> slots;    // in empire order once started
 

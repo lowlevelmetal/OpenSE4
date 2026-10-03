@@ -2,9 +2,10 @@
 
 // Play by e-mail from the game client (docs/MULTIPLAYER.md, "Play by e-mail"):
 // the player opens the turn file the host sent (.turn: the game as the
-// player's empire knows it, never the whole game), gives the empire's
-// password, plays the turn and saves the orders file (.plr) that goes back
-// to the host, signed with the password. The files are read and written with
+// player's empire knows it, never the whole game, encrypted to the empire's
+// password), gives the password, plays the turn and saves the orders file
+// (.plr) that goes back to the host, signed with the password and encrypted
+// to the host's key. The files are read and written with
 // the library in src/net/pbem.hpp; this part has no UI so it can be tested
 // headless.
 //
@@ -21,6 +22,8 @@
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
 #include "game/state.hpp"
+#include "net/auth.hpp"
+#include "net/pbem.hpp"
 
 #include <expected>
 #include <filesystem>
@@ -35,17 +38,20 @@ namespace opense4::client::classic {
 // A turn file as opened for play.
 struct PbemGame {
     std::filesystem::path gameFile;    // the turn file
-    game::SaveInfo info;
-    // The game as the player's turn begins, as the player's empire knows it.
-    game::GameState state;
+    net::pbem::TurnFile file;          // as read (the view still encrypted)
+    game::SaveInfo info;               // the game's header
     game::EmpireId empire;             // whose turn file it is
+    bool turnBased = false;
     std::string verifier;              // that empire's password verifier
-    uint64_t viewChecksum = 0;         // game::stateChecksum(state), checked on loading
+    // The game as the player's turn begins, as the player's empire knows it:
+    // opened by beginPbemTurn with the password.
+    game::GameState state;
+    uint64_t viewChecksum = 0;         // game::stateChecksum(state), checked on opening
 };
 
-// Loads a turn file for play: the data set must be the one it was made with
-// (as the host checks), its view must match its checksum, and the game must
-// not be over. The host's own game file (.gam, the whole game) is refused.
+// Reads a turn file: the data set must be the one it was made with (as the
+// host checks). The host's own game file (.gam, the whole game) is refused.
+// The view opens with the password (beginPbemTurn).
 std::expected<PbemGame, std::string> loadPbemGame(const game::Rules& rules, const std::filesystem::path& gameFile);
 
 // One empire of the game file, for the player's choice.
@@ -68,20 +74,24 @@ struct PbemTurn {
     game::SaveInfo info;
     game::EmpireId empire;
     uint32_t turn = 0;
-    std::string passwordHash;          // net::hashPassword() of the password given
+    // The password's keys in this game (none: the empire has no password).
+    // They sign the .plr; for an empire of OpenSE4 0.6 they are the new
+    // password's, and legacyPasswordHash the old password's hash, which the
+    // .plr shows this once.
+    std::optional<net::PasswordKeys> keys;
+    std::string legacyPasswordHash;
+    net::crypto::Key hostKey{};        // the host's key: the .plr is encrypted to it
     bool turnBased = false;
     uint64_t startChecksum = 0;        // the turn file's view checksum (game::stateChecksum as the turn began)
-    // An empire whose verifier is of OpenSE4 0.6: the old password's hash,
-    // which the .plr shows this once; passwordHash is then the new password's.
-    std::string legacyPasswordHash;
 };
 
-// Checks that `empire` may play this turn with `password`: the turn file's
-// empire, living and human, whose password matches, and in a turn-based game
-// the empire whose turn it is. `ordersDir` empty: the turn file's folder
-// (inferred). A game of OpenSE4 0.6 (pbemNeedsNewPassword) also needs a
-// `newPassword`, other than the old one, which counts from this turn on.
-std::expected<PbemTurn, std::string> beginPbemTurn(const PbemGame& g, game::EmpireId empire, std::string_view password,
+// Checks that `empire` may play this turn with `password` and opens the
+// turn file's view with it (into g.state): the turn file's empire, living and
+// human, whose password matches, and in a turn-based game the empire whose
+// turn it is. `ordersDir` empty: the turn file's folder (inferred). A game of
+// OpenSE4 0.6 (pbemNeedsNewPassword) also needs a `newPassword`, other than
+// the old one, which counts from this turn on.
+std::expected<PbemTurn, std::string> beginPbemTurn(PbemGame& g, game::EmpireId empire, std::string_view password,
                                                    std::filesystem::path ordersDir = {}, std::string_view newPassword = {});
 // The empire's password is of OpenSE4 0.6: this turn moves it to a new one.
 bool pbemNeedsNewPassword(const PbemGame& g);

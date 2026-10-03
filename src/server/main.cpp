@@ -46,7 +46,7 @@ Usage:
   opense4-server pbem orders --turn=FILE.turn [--password=PW] [--new-password=PW] [--out=DIR]
   opense4-server pbem info --game=GAME.gam|FILE.turn
   opense4-server bot --name=NAME [--connect=HOST[:PORT]] [--turns=N]
-  opense4-server hash-password PASSWORD
+  opense4-server password-verifier --game-id=N PASSWORD
 
 Network game options:
   --data=DIR             The classic game's Data directory (default: auto-detect)
@@ -88,9 +88,11 @@ that turn. Stop the server with Ctrl+C; it saves first.
 
 pbem: the host keeps GAME.gam, the whole game, and never sends it. "new" and
 "process" write a turn file per player who plays next (<game>_<NN>.turn, next
-to GAME.gam or in --turn-files): the game as that player's empire knows it.
-Send each player their own. Players send back one .plr file per turn, signed
-with their password. "process" reads every .plr in DIR, checks game, turn,
+to GAME.gam or in --turn-files): the game as that player's empire knows it,
+encrypted to that empire's password. Send each player their own. Players send
+back one .plr file per turn, signed with their password and encrypted to the
+host's key (--host-key, as for network games: keep it, or the .plr files can
+no longer be read). "process" reads every .plr in DIR, checks game, turn,
 empire, the turn file it was made from and the password, processes the turn,
 rewrites GAME.gam (the previous turn is kept as GAME.gam.bak), writes the new
 turn files and deletes the .plr files it used (--keep-orders keeps them). In a
@@ -99,12 +101,18 @@ player's turn from that player's .plr and names the player whose turn file to
 send next. "turn-files" writes the current turn files again (a game of OpenSE4
 0.6, or a lost file). "orders" writes an empty .plr from a turn file.
 
+password-verifier: what a setup file may hold instead of a password
+(password_verifier, master_password_verifier, with game_id = N): the
+password's verifier in the game N. It holds nothing anyone can log in with.
+
 bot: a scripted player for tests. It joins, readies up, submits orders for
 --turns turns (default 2) and exits 0 once the turn has advanced that often.
 In a turn-based game it plays one command in each of its turns and ends them.
 Options: --password, --join-password, --master-password (then also --start to
 start the game), --race=PRESET, --data=DIR, --timeout=SEC (default 120),
---host-key=HEX (the host's public key: refuse any other host).
+--host-key=HEX (the host's public key: refuse any other host), --old-password
+(a game of OpenSE4 0.6: show the host the old form of the password once, to
+move it to the new one; only with --host-key).
 )";
 
 std::atomic<bool> gStop{false};
@@ -204,6 +212,19 @@ std::expected<std::unique_ptr<game::Rules>, std::string> loadRules(const std::st
     return std::make_unique<game::Rules>(std::move(*loaded.ruleset), dir->parent_path());
 }
 
+// The host's long-term key: --host-key=FILE, else host_key.txt in OpenSE4's
+// user folder (made on first use). Network players pin it; PBEM players'
+// orders files are encrypted to it.
+std::expected<net::crypto::KeyPair, std::string> loadHostKey(const Options& o) {
+    const std::filesystem::path keyFile = o.has("host-key") ? std::filesystem::path(o.get("host-key"))
+                                                            : net::secure::userDataDir() / net::secure::kHostKeyFileName;
+    auto key = net::secure::loadOrCreateHostKey(keyFile);
+    if (key)
+        say(std::format("Host key {} ({}); public key {}", net::crypto::fingerprint(key->publicKey), keyFile.string(),
+                        net::crypto::hex(key->publicKey)));
+    return key;
+}
+
 std::string fileSafe(std::string_view name) {
     std::string out;
     for (char c : name) {
@@ -286,19 +307,15 @@ int runServer(std::span<char*> args) {
     cfg.humanSlots = static_cast<int>(*players);
     cfg.autoStart = true;
     cfg.turnTimeoutSeconds = static_cast<int>(*timeout);
-    cfg.masterPasswordHash = net::hashPassword(o.get("password"));
-    cfg.joinPasswordHash = net::hashPassword(o.get("join-password"));
+    cfg.masterPassword = o.get("password");
+    cfg.joinPassword = o.get("join-password");
     cfg.upnp.enabled = !o.has("no-upnp");
     cfg.lanDiscovery = !o.has("no-lan-discovery");
     // The host's identity: players' games remember its key and refuse a host
     // that shows another (docs/MULTIPLAYER.md, "Security").
-    const std::filesystem::path keyFile = o.has("host-key") ? std::filesystem::path(o.get("host-key"))
-                                                            : net::secure::userDataDir() / net::secure::kHostKeyFileName;
-    auto hostKey = net::secure::loadOrCreateHostKey(keyFile);
+    auto hostKey = loadHostKey(o);
     if (!hostKey) return fail(hostKey.error(), 2);
     cfg.hostKey = *hostKey;
-    say(std::format("Host key {} ({}); public key {}", net::crypto::fingerprint(hostKey->publicKey), keyFile.string(),
-                    net::crypto::hex(hostKey->publicKey)));
     cfg.setup.seed = o.has("seed") ? static_cast<uint64_t>(*seed) : net::randomId();
     cfg.setup.options.systemCount = static_cast<int>(*systems);
     cfg.setup.options.quadrantSize = static_cast<int>(*quadrantSize);
@@ -318,7 +335,11 @@ int runServer(std::span<char*> args) {
         cfg.setup.options.systemCount = count;
         cfg.setup.options.quadrantSize = size;
         cfg.setup.options.quadrantType = quadrant;
-        if (!setup->masterPasswordHash.empty() && !o.has("password")) cfg.masterPasswordHash = setup->masterPasswordHash;
+        if (!o.has("password")) {
+            cfg.masterPassword = setup->masterPassword;
+            cfg.masterPasswordVerifier = setup->masterPasswordVerifier;
+        }
+        if (setup->gameId) cfg.gameId = *setup->gameId;
         for (const auto& e : setup->empires) {
             if (e.setup.kind == game::PlayerKind::Human) say("Note: human empires in the setup file are ignored; players join the lobby.");
             else computers.push_back(e.setup);
@@ -433,7 +454,7 @@ void listTurnFiles(const std::vector<std::pair<game::EmpireId, std::filesystem::
 }
 
 int pbemNew(std::span<char*> args) {
-    auto o = parseArgs(args, {"setup", "out", "data", "turn-files"}, {"help"});
+    auto o = parseArgs(args, {"setup", "out", "data", "turn-files", "host-key"}, {"help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("setup") || !o->has("out")) return fail("pbem new needs --setup=FILE.toml and --out=GAME.gam", 2);
@@ -449,14 +470,18 @@ int pbemNew(std::span<char*> args) {
     game::SaveInfo info;
     info.gameName = setup->gameName;
     info.dataSet = game::dataSetIdentity(**rules);
-    info.gameId = net::randomId();
-    info.masterPasswordVerifier = net::passwordVerifier(setup->masterPasswordHash);
+    info.gameId = setup->gameId.value_or(net::randomId());
+    // The game keeps only verifiers, made for this game (Argon2id: a moment per password).
+    info.masterPasswordVerifier = !setup->masterPasswordVerifier.empty() ? setup->masterPasswordVerifier
+                                                                         : net::passwordVerifier(setup->masterPassword, info.gameId);
     for (const auto& e : setup->empires) {
         game::EmpireSetup es = e.setup;
-        es.passwordHash = net::passwordVerifier(e.setup.passwordHash);  // the game keeps only verifiers
+        es.passwordHash = !e.passwordVerifier.empty() ? e.passwordVerifier : net::passwordVerifier(e.password, info.gameId);
         gs.empires.push_back(std::move(es));
         info.players.push_back(e.player);
     }
+    auto hostKey = loadHostKey(*o);
+    if (!hostKey) return fail(hostKey.error(), 2);
     auto state = game::createGame(**rules, gs);
     if (!state) return fail("could not create the game: " + state.error(), 1);
     // Turn-based: computer players before the first human play now, and that human's turn starts.
@@ -470,7 +495,7 @@ int pbemNew(std::span<char*> args) {
     const std::filesystem::path dir = o->has("turn-files") ? std::filesystem::path(o->get("turn-files"))
                                       : out.has_parent_path() ? out.parent_path()
                                                               : std::filesystem::path(".");
-    auto files = net::pbem::writeTurnFiles(**rules, out, dir);
+    auto files = net::pbem::writeTurnFiles(**rules, out, dir, hostKey->publicKey);
     if (!files) return fail(files.error(), 1);
     std::printf("Keep %s to yourself: it holds the whole game.\n", out.string().c_str());
     listTurnFiles(*files, info);
@@ -478,7 +503,7 @@ int pbemNew(std::span<char*> args) {
 }
 
 int pbemTurnFiles(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "out", "data"}, {"help"});
+    auto o = parseArgs(args, {"game", "out", "data", "host-key"}, {"help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game")) return fail("pbem turn-files needs --game=GAME.gam", 2);
@@ -490,7 +515,9 @@ int pbemTurnFiles(std::span<char*> args) {
     const std::filesystem::path dir = o->has("out") ? std::filesystem::path(o->get("out"))
                                       : game.has_parent_path() ? game.parent_path()
                                                                : std::filesystem::path(".");
-    auto files = net::pbem::writeTurnFiles(**rules, game, dir);
+    auto hostKey = loadHostKey(*o);
+    if (!hostKey) return fail(hostKey.error(), 2);
+    auto files = net::pbem::writeTurnFiles(**rules, game, dir, hostKey->publicKey);
     if (!files) return fail(files.error(), 1);
     if (files->empty()) std::printf("Nobody plays this turn (the game is over, or no human is left).\n");
     listTurnFiles(*files, *info);
@@ -498,14 +525,17 @@ int pbemTurnFiles(std::span<char*> args) {
 }
 
 int pbemProcess(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords", "turn-files"}, {"keep-orders", "allow-data-mismatch", "help"});
+    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords", "turn-files", "host-key"}, {"keep-orders", "allow-data-mismatch", "help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game") || !o->has("orders")) return fail("pbem process needs --game=GAME.gam and --orders=DIR", 2);
     auto rules = loadRules(o->get("data"));
     if (!rules) return fail(rules.error(), 2);
     net::pbem::ProcessOptions options;
-    options.masterPasswordHash = net::hashPassword(o->get("password"));
+    options.masterPassword = o->get("password");
+    auto hostKey = loadHostKey(*o);
+    if (!hostKey) return fail(hostKey.error(), 2);
+    options.hostKey = *hostKey;
     options.deleteProcessed = !o->has("keep-orders");
     options.allowDataSetMismatch = o->has("allow-data-mismatch");
     if (o->has("turn-files")) options.turnFilesDir = o->get("turn-files");
@@ -550,25 +580,31 @@ int pbemOrders(std::span<char*> args) {
     const std::filesystem::path path = o->has("turn") ? o->get("turn") : o->get("game");
     auto turnFile = net::pbem::readTurnFile(path);
     if (!turnFile) return fail(turnFile.error() + " (pbem orders needs the player's turn file)", 1);
-    auto view = game::deserializeState(turnFile->view);
-    if (!view) return fail(view.error(), 1);
-    const game::GameState& state = *view;
     const game::EmpireId empire = turnFile->empire;
-    const std::string hash = net::hashPassword(o->get("password"));
-    if (!net::checkPassword(turnFile->verifier, hash)) return fail("wrong password for this turn file's empire", 1);
-    if (game::turnBased(state) && (!state.playerTurn.started || game::activePlayer(state) != empire))
-        return fail("it is not this empire's turn in this turn file", 1);
-    // An OpenSE4 0.6 empire shows its old password hash once and signs with a new password.
-    std::string signing = hash, legacy;
-    if (net::isLegacyVerifier(turnFile->verifier) && !hash.empty()) {
+    const std::string password = o->get("password");
+    // The password's keys in this game open the view and sign the orders. An
+    // OpenSE4 0.6 empire shows the old hash once and signs with a new password.
+    std::optional<net::PasswordKeys> keys;
+    std::string legacy;
+    if (net::isLegacyVerifier(turnFile->verifier)) {
+        legacy = net::legacyPasswordHash(password);
+        if (!net::checkLegacyPassword(turnFile->verifier, legacy)) return fail("wrong password for this turn file's empire", 1);
         if (!o->has("new-password")) return fail("this game was made by OpenSE4 0.6: give a --new-password for this empire", 2);
-        signing = net::hashPassword(o->get("new-password"));
-        if (signing == hash) return fail("--new-password must differ from the old password", 2);
-        legacy = hash;
+        if (o->get("new-password") == password) return fail("--new-password must differ from the old password", 2);
+        keys = net::passwordKeys(o->get("new-password"), turnFile->info.gameId);
+    } else if (!turnFile->verifier.empty()) {
+        keys = net::passwordKeys(password, turnFile->info.gameId);
+        if (!keys || keys->verifier() != turnFile->verifier) return fail("wrong password for this turn file's empire", 1);
     }
+    auto view = net::pbem::openTurnFile(*turnFile, legacy.empty() ? keys : std::nullopt);
+    if (!view) return fail(view.error(), 1);
+    auto state = game::deserializeState(view->view);
+    if (!state) return fail(state.error(), 1);
+    if (game::turnBased(*state) && (!state->playerTurn.started || game::activePlayer(*state) != empire))
+        return fail("it is not this empire's turn in this turn file", 1);
     // An order list without commands: "end turn" (the empire keeps its standing orders).
-    const game::EmpireOrders orders{empire, state.turn, {}};
-    auto file = net::pbem::writePlayerOrders(o->get("out", "."), turnFile->info, orders, turnFile->viewChecksum, signing, legacy);
+    const game::EmpireOrders orders{empire, state->turn, {}};
+    auto file = net::pbem::writePlayerOrders(o->get("out", "."), turnFile->info, orders, view->viewChecksum, keys, turnFile->hostKey, legacy);
     if (!file) return fail(file.error(), 1);
     std::printf("Wrote %s (turn %u, empire %u).\n", file->string().c_str(), orders.turn, empire.value + 1);
     return 0;
@@ -578,21 +614,25 @@ int pbemInfo(std::span<char*> args) {
     auto o = parseArgs(args, {"game"}, {"help"});
     if (!o) return fail(o.error(), 2);
     if (!o->has("game")) return fail("pbem info needs --game=GAME.gam (or a player's FILE.turn)", 2);
-    std::optional<game::EmpireId> viewOf;
-    std::expected<std::pair<game::GameState, game::SaveInfo>, std::string> game = game::loadGame(o->get("game"));
+    auto game = game::loadGame(o->get("game"));
     if (!game) {
-        // A player's turn file: its empire's view.
+        // A player's turn file: only its header is readable without the password.
         auto turnFile = net::pbem::readTurnFile(o->get("game"));
         if (!turnFile) return fail(game.error(), 1);
-        auto view = game::deserializeState(turnFile->view);
-        if (!view) return fail(view.error(), 1);
-        viewOf = turnFile->empire;
-        game = std::pair{std::move(*view), turnFile->info};
+        const game::SaveInfo& info = turnFile->info;
+        std::printf("A player's turn file of '%s' (id %016llx), turn %u, for empire %u%s.\n", info.gameName.c_str(),
+                    static_cast<unsigned long long>(info.gameId), info.turn, turnFile->empire.value + 1,
+                    turnFile->encrypted ? " (its view opens with that empire's password)" : "");
+        std::printf("Data set: %s\n%s\n", info.dataSet.c_str(), turnFile->turnBased ? "Turn-based: it is that empire's turn." : "Simultaneous turns.");
+        for (size_t i = 0; i < info.empires.size(); ++i) {
+            const std::string player = i < info.players.size() ? info.players[i] : std::string{};
+            std::printf("  empire %zu: %s%s%s\n", i + 1, info.empires[i].c_str(), player.empty() ? "" : ", player ", player.c_str());
+        }
+        return 0;
     }
     const auto& [state, info] = *game;
     std::printf("Game '%s' (id %016llx), turn %u, year %d.%u\n", info.gameName.c_str(), static_cast<unsigned long long>(info.gameId), state.turn,
                 state.year(), state.turn % 10);
-    if (viewOf) std::printf("A player's turn file: the game as empire %u knows it.\n", viewOf->value + 1);
     std::printf("Data set: %s\nMaster password: %s\n", info.dataSet.c_str(), info.masterPasswordVerifier.empty() ? "none" : "set");
     for (const game::Empire& e : state.empires) {
         const std::string player = e.id.index() < info.players.size() ? info.players[e.id.index()] : std::string{};
@@ -615,7 +655,7 @@ int pbemInfo(std::span<char*> args) {
 int runBot(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"connect", "port", "name", "password", "join-password", "master-password", "data", "race", "turns", "timeout", "host-key"},
-                            {"start", "help"});
+                            {"start", "old-password", "help"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
     if (o.has("help")) return usage();
@@ -640,9 +680,11 @@ int runBot(std::span<char*> args) {
         cfg.host.resize(colon);
     }
     cfg.playerName = o.get("name");
-    cfg.passwordHash = net::hashPassword(o.get("password"));
-    cfg.joinPasswordHash = net::hashPassword(o.get("join-password"));
-    cfg.masterPasswordHash = net::hashPassword(o.get("master-password"));
+    cfg.password = o.get("password");
+    cfg.joinPassword = o.get("join-password");
+    cfg.masterPassword = o.get("master-password");
+    // An OpenSE4 0.6 game: show the host the old form of the password once (with --host-key only).
+    cfg.sendOldPassword = o.has("old-password");
     cfg.dataSet = game::dataSetIdentity(**rules);
     if (o.has("host-key")) {
         cfg.hostKey = net::crypto::keyFromHex(o.get("host-key"));
@@ -757,9 +799,12 @@ int main(int argc, char** argv) {
         return fail("pbem needs a command: new, process, turn-files, orders or info (see --help)", 2);
     }
     if (mode == "bot") return runBot(args.subspan(1));
-    if (mode == "hash-password") {
-        if (args.size() != 2) return fail("usage: opense4-server hash-password PASSWORD", 2);
-        std::printf("%s\n", net::hashPassword(args[1]).c_str());
+    if (mode == "password-verifier") {
+        auto o = parseArgs(args.subspan(1), {"game-id"}, {"help"});
+        if (!o || o->positional.size() != 1 || !o->has("game-id")) return fail("usage: opense4-server password-verifier --game-id=N PASSWORD", 2);
+        auto id = o->integer("game-id", 0, 1, std::numeric_limits<int64_t>::max());
+        if (!id) return fail(id.error(), 2);
+        std::printf("%s\n", net::passwordVerifier(o->positional.front(), static_cast<uint64_t>(*id)).c_str());
         return 0;
     }
     return runServer(args);

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -87,6 +88,21 @@ bool agree(Key& shared, const Key& mySecret, const Key& theirPublic) {
     return !equal(shared, zero);
 }
 
+bool smallOrderX25519(const Key& publicKey) {
+    // A clamped scalar clears the cofactor: only a small-order point gives zero.
+    Key scalar{};
+    scalar[0] = 0x58;
+    scalar[31] = 0x40;
+    Key out{};
+    return !agree(out, scalar, publicKey);
+}
+
+bool smallOrderEdDsa(const Key& publicKey) {
+    Key x{};
+    crypto_eddsa_to_x25519(x.data(), publicKey.data());
+    return smallOrderX25519(x);
+}
+
 // ---- BLAKE2b ----------------------------------------------------------------------------------
 
 struct Hash::State {
@@ -143,6 +159,50 @@ void seal(const Key& key, uint64_t counter, std::span<const uint8_t> ad, std::sp
 bool open(const Key& key, uint64_t counter, std::span<const uint8_t> ad, std::span<uint8_t> text, const Mac& mac) {
     const auto nonce = nonceOf(counter);
     return crypto_aead_unlock(text.data(), mac.data(), key.data(), nonce.data(), ad.data(), ad.size(), text.data(), text.size()) == 0;
+}
+
+namespace {
+
+Key boxKey(std::string_view domain, const Key& shared, const Key& ephemeral, const Key& recipient) {
+    return Hash().add(domain).add(shared).add(ephemeral).add(recipient).finish32();
+}
+
+} // namespace
+
+void sealTo(const Key& recipient, std::string_view domain, std::span<const uint8_t> ad, std::span<uint8_t> text, Key& ephemeral, Mac& mac) {
+    KeyPair mine = newKeyPair();
+    Key shared{};
+    if (!agree(shared, mine.secret, recipient)) randomBytes(shared);  // a hostile key: nobody will open it
+    Key key = boxKey(domain, shared, mine.publicKey, recipient);
+    seal(key, 0, ad, text, mac);  // a fresh key for every message: the zero nonce is never reused
+    ephemeral = mine.publicKey;
+    wipe(mine.secret.data(), mine.secret.size());
+    wipe(shared.data(), shared.size());
+    wipe(key.data(), key.size());
+}
+
+bool openFrom(const KeyPair& recipient, const Key& ephemeral, std::string_view domain, std::span<const uint8_t> ad, std::span<uint8_t> text,
+              const Mac& mac) {
+    Key shared{};
+    if (!agree(shared, recipient.secret, ephemeral)) return false;
+    Key key = boxKey(domain, shared, ephemeral, recipient.publicKey);
+    const bool ok = open(key, 0, ad, text, mac);
+    wipe(shared.data(), shared.size());
+    wipe(key.data(), key.size());
+    return ok;
+}
+
+// ---- Password hashing -------------------------------------------------------------------------
+
+Key argon2id(std::string_view password, std::span<const uint8_t> salt, uint32_t kibibytes, uint32_t passes) {
+    std::vector<uint8_t> work(size_t{kibibytes} * 1024);
+    const crypto_argon2_config config{CRYPTO_ARGON2_ID, kibibytes, passes, 1};
+    const crypto_argon2_inputs inputs{reinterpret_cast<const uint8_t*>(password.data()), salt.data(), static_cast<uint32_t>(password.size()),
+                                      static_cast<uint32_t>(salt.size())};
+    Key out{};
+    crypto_argon2(out.data(), static_cast<uint32_t>(out.size()), work.data(), config, inputs, crypto_argon2_no_extras);
+    wipe(work.data(), work.size());
+    return out;
 }
 
 // ---- Signatures -------------------------------------------------------------------------------
