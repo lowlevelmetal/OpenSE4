@@ -588,6 +588,32 @@ TEST_CASE("quadrant generation: position specifiers, comets and names") {
     }
     CHECK(seen.size() == 8);  // 101 draws find every free sector of the ring
 
+    // Ring 0 is any sector of the inner 11 x 11 square, redrawn while taken (spec 01
+    // §4.3, confirmed: binary); Ring 9 has no rule and is placed on Ring 7 with a warning.
+    std::vector<ruleset::SystemObjectTemplate> inner;
+    for (int k = 0; k < 30; ++k) inner.push_back(obj("Planet", "Ring 0"));
+    inner.push_back(obj("Planet", "Ring 9"));
+    const Generated anywhere = generate(withSystem(inner), opt, 5);
+    std::set<Sector> innerSeen;
+    std::vector<const SpaceObject*> placed;
+    for (ObjectId id : anywhere.galaxy.systems.front().objects)
+        if (anywhere.galaxy.object(id).kind != ObjectKind::WarpPoint) placed.push_back(&anywhere.galaxy.object(id));
+    REQUIRE(placed.size() == 31);
+    bool offCentre = false;
+    for (size_t k = 0; k < 30; ++k) {
+        const Sector at = placed[k]->sector;
+        CHECK(at.x >= 1);
+        CHECK(at.x <= 11);
+        CHECK(at.y >= 1);
+        CHECK(at.y <= 11);
+        innerSeen.insert(at);
+        if (chebyshev(at, Sector{kSystemCenter, kSystemCenter}) > 1) offCentre = true;
+    }
+    CHECK(innerSeen.size() == 30);  // every draw found a free sector
+    CHECK(offCentre);
+    CHECK(chebyshev(placed[30]->sector, Sector{kSystemCenter, kSystemCenter}) == 6);
+    CHECK(std::any_of(anywhere.warnings.begin(), anywhere.warnings.end(), [](const std::string& w) { return w.find("Ring 9") != std::string::npos; }));
+
     // A warp point entry claims its sector too: the later Ring entries avoid
     // it, and a planet placed with it is named with a letter after its empty
     // name. A planet placed at (0, 0) while later entries remain counts them
@@ -719,7 +745,9 @@ TEST_CASE("homeworld placement: jump distance tiers and sizes") {
         g.objects[a.index()].destination = b;
         g.objects[b.index()].destination = a;
     }
-    // S = 10, P = 2: the second home is more than trunc(0.8 x 5) = 4 jumps from the first.
+    // S = 10, P = 2, L = trunc(0.8 x 5) = 4: the original counts jumps plus two and
+    // wants a count above L, so the second home is at least L - 1 = 3 jumps from the
+    // first (spec 01 §3.6, confirmed: binary).
     const std::vector<EmpireStart> two{{"A", "Rock", "Oxygen"}, {"B", "Rock", "Oxygen"}};
     for (uint64_t seed = 1; seed <= 20; ++seed) {
         Galaxy copy = g;
@@ -728,10 +756,23 @@ TEST_CASE("homeworld placement: jump distance tiers and sizes") {
         REQUIRE(homes.has_value());
         const int first = static_cast<int>(copy.object((*homes)[0]).system.index());
         const int second = static_cast<int>(copy.object((*homes)[1]).system.index());
-        // Some system lies more than 4 jumps away wherever the first home is, so attempt 1 succeeds.
-        CHECK(std::abs(second - first) > 4);
+        // Some system lies 3 jumps or more away wherever the first home is, so attempt 1 succeeds.
+        CHECK(std::abs(second - first) >= 3);
         CHECK(copy.objects.size() == g.objects.size());  // nothing created
     }
+    // With the first home held at one end of the chain, systems 3 to 9 all qualify.
+    PlacementOptions pinned;
+    pinned.startingPoints = {{SystemId{0u}, Sector{3, 3}, 0}};
+    std::set<int> seconds;
+    for (uint64_t seed = 1; seed <= 60; ++seed) {
+        Galaxy copy = g;
+        Rng rng(seed);
+        auto homes = placeHomeworlds(copy, rs, two, pinned, rng);
+        REQUIRE(homes.has_value());
+        CHECK(copy.object((*homes)[0]).system == SystemId{0u});
+        seconds.insert(static_cast<int>(copy.object((*homes)[1]).system.index()));
+    }
+    CHECK(seconds == std::set<int>{3, 4, 5, 6, 7, 8, 9});
     // Not evenly distributed: anywhere but the first home's system.
     PlacementOptions loose;
     loose.evenlyDistributed = false;
@@ -1114,6 +1155,40 @@ TEST_CASE("homeworld placement: a created homeworld takes a sector without a pla
     CHECK(m.g.object(homes->front()).sector == Sector{5, 5});
     CHECK(m.g.object(homes->front()).name == "Pointed III");
     CHECK(held == po.startingPoints);  // a specific point stays with the game
+}
+
+TEST_CASE("homeworld placement: the last resort may reuse a home system only when players may share one") {
+    // One start-eligible system and one that is not, and no Rock/Oxygen planet anywhere:
+    // both homeworlds are created. The second empire's 2,000 draws skip the first one's
+    // home system unless "Allowed to start in the same system" is on (spec 01 §3.6,
+    // confirmed: binary).
+    const auto& rs = fixture();
+    Quadrant q(rs);
+    const SystemId only = q.system("Only");
+    q.system("Void", false);
+    q.add(only, ObjectKind::Planet, kIceMethaneSmallType, {2, 2});
+    const std::vector<EmpireStart> rock{{"Rock Folk", "Rock", "Oxygen"}, {"Stone Folk", "Rock", "Oxygen"}};
+    PlacementOptions shared;
+    shared.allowSameSystem = true;
+    int elsewhere = 0;
+    for (uint64_t seed = 1; seed <= 12; ++seed) {
+        Galaxy copy = q.g;
+        Rng rng(seed);
+        auto homes = placeHomeworlds(copy, rs, rock, shared, rng);
+        REQUIRE(homes.has_value());
+        CHECK(copy.object((*homes)[0]).system == only);
+        CHECK(copy.object((*homes)[1]).system == only);
+        CHECK((*homes)[0] != (*homes)[1]);
+
+        Galaxy apart = q.g;
+        Rng rng2(seed);
+        auto separate = placeHomeworlds(apart, rs, rock, PlacementOptions{}, rng2);
+        REQUIRE(separate.has_value());
+        CHECK(apart.object((*separate)[0]).system == only);
+        // No eligible system is left: one more random system, whatever its type.
+        if (apart.object((*separate)[1]).system != only) ++elsewhere;
+    }
+    CHECK(elsewhere > 0);
 }
 
 TEST_CASE("made planets take the numeral after the highest I to XXX of each sector's first planet") {

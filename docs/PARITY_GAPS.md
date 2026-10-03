@@ -365,15 +365,16 @@ On 2026-10-03 the original's generated galaxies were read through a debugger and
 with ours (spec 01 §3.8; 544 quadrants of every type and size, 41 placements): every
 distribution agrees, and the link building, the connectivity pass and the warp point
 sectors come out exactly as the original's. The empire placement showed that the original's
-spread test counts two jumps more than the real number (spec 01 §3.6), the first row below.
+spread test counts two jumps more than the real number (spec 01 §3.6). Since 2026-10-03 the
+engine's spread test does the same (J + 2 > L), the last-resort homeworld may reuse an
+earlier home system when "Allowed to start in the same system" is on, and a template's
+`Ring 0` is any sector of the inner 11 × 11 square (`generate.cpp`). `Ring 8` and `Ring 9`
+stay on `Ring 7` with a warning: the spec has no rule for them (spec 01 §14 Q46).
 
 These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Empire placement spread (`generate.cpp` `placeHomeworlds`, with `warpJumps`) | Attempts 1 and 2 need more than L real jumps from every earlier home (L = trunc(0.8 or 0.5 × (S div P))) | The original's jump count is the real number plus two, so a system at least L − 1 jumps away passes (spec 01 §3.6, confirmed: binary, observed in 243 placements). Ours spreads homes two jumps farther in those attempts | M |
-| Last-resort homeworld (`generate.cpp` `placeHomeworlds`) | Always skips a system that is already another player's home | Skips it only when "Allowed to start in the same system" is off (confirmed: binary; spec 01 §3.6 says only "not used by another player"); off by default | L |
-| System template positions (`generate.cpp` `resolvePosition`) | "Ring 0" goes to the centre; rings above 7 are clamped | "Ring 0" is a random sector of the inner 11 × 11 square (x and y 1–11), redrawn like any ring while taken, up to 101 draws (spec 01 §4.3, confirmed: binary); the stock data uses neither | L |
 | Generation edge cases (`generate.cpp` `drawNames`, the connectivity pass of `buildLinks`, the "warp points anywhere" draw of `placeWarpPoints`, `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
 
 ## Client windows (spec 06)
@@ -617,7 +618,9 @@ share the vehicle type, which differ (the queue list details above, implemented 
 2026-10-02). The golden games of `tests/test_determinism.cpp` moved to seed 39 then, to
 seed 19 on 2026-10-02, to seed 42 later that day (the varied battles to seed 19, whose
 invasion still lands), and to seed 35 with the budget rule, whose games still cover
-battles, events, intelligence and politics.
+battles, events, intelligence and politics. The simultaneous golden game moved to seed 39
+with the placement spread of spec 01 §3.6 (2026-10-03): seed 35 placed the homes closer and
+fought no battle.
 
 Found under a debugger on 2026-10-02 (spec 05 §7.2, §7.5, questions 65–71; spec 07
 "Battles, bases and the first turns under a debugger"; confirmed: binary) and implemented
