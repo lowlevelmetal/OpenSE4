@@ -1117,7 +1117,8 @@ void MainWindow::commandPanel(UiContext& ui) {
     orderPage_ = std::clamp(orderPage_, 0, l.orderPages - 1);
     const float stripX = x0 + l.orderStrip.x + 16;
     const std::array<Vec2, 2> pagerAt{Vec2{x0 + l.pagerLeft, 44}, Vec2{x0 + l.pagerRight, 44}};
-    // Orders on another page: their lesson tags outline the arrow that leads there (ours).
+    // Orders on another page: their lesson tags outline the arrow that leads there, the
+    // shorter way round (ours); the lesson says to press it (UiTag::pager).
     std::array<std::vector<std::string>, 2> pagerTags;
     for (size_t col = 0; col < kOrderStrip.size(); ++col)
         for (size_t row = 0; row < 2; ++row) {
@@ -1161,7 +1162,7 @@ void MainWindow::commandPanel(UiContext& ui) {
         ImGui::PushID(400 + side);
         const auto [clicked, hovered] = hit("pager", at, {14, 50}, paging);
         ImGui::PopID();
-        for (const std::string& tag : pagerTags[size_t(side)]) ui.tagItem(tag);
+        for (const std::string& tag : pagerTags[size_t(side)]) ui.tagPager(tag);
         const int state = !paging ? 3 : ImGui::IsItemActive() ? 2 : hovered ? 1 : 0;
         dl->AddRect(ui.at(at - Vec2{2, 7}), ui.at(at + Vec2{15, 60}), imColor(palette::kDisabled));
         drawAt(ui, dl, ui.art.region("Pictures/Game/Buttons/BigLeftRightArrows.bmp", side * 14, state * 50, 14, 50, false), at, {14, 50});

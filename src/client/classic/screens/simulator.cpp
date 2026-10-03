@@ -309,6 +309,7 @@ private:
             ImGui::PushID(id.c_str());
             const ImVec2 p = ImGui::GetCursorScreenPos();
             const bool clicked = ImGui::Selectable("##item", false, 0, ImVec2(0, ui.px(24)));
+            lessonRow(ui, name, lessonRow_);   // the design a tutorial step names, in view
             const bool right = ImGui::IsItemClicked(ImGuiMouseButton_Right);
             const bool hovered = ImGui::IsItemHovered();
             const float rowRight = ImGui::GetItemRectMax().x;
@@ -472,6 +473,7 @@ private:
     bool demo_ = false;
     SimulatorSetup setup_;
     int current_ = 0;
+    uint64_t lessonRow_ = 0;   // the tutorial step whose named item the list scrolled to (lessonRow)
     bool tactical_ = true;
     std::string message_;
     DesignReportPopup designReport_;

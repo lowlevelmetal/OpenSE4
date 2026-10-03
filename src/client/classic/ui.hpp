@@ -20,6 +20,7 @@
 struct ImGuiWindow;
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -146,6 +147,10 @@ struct UiTag {
     std::string name;
     ImVec2 min, max;
     ImGuiWindow* window = nullptr;
+    // A stand-in: the tag of an order on another page of the order strip
+    // (800x600), registered on the page arrow that leads there. A lesson
+    // outlines the arrow and says to press it (docs/LEARNING.md "Getting back").
+    bool pager = false;
 };
 
 struct LearnContent;
@@ -241,6 +246,9 @@ public:
     void tagListParts(std::string_view base, const ListParts& list);
     // The last ImGui item (a button, a child window).
     void tagItem(std::string_view name) { tag(name, ImGui::GetItemRectMin(), ImGui::GetItemRectMax()); }
+    // The last ImGui item, a page arrow of the order strip, as the stand-in
+    // for the order `name` on the page it leads to (UiTag::pager).
+    void tagPager(std::string_view name);
     void tagFrame(std::string_view name, const Rect& frameRect) { tag(name, at(frameRect.min), at(frameRect.max)); }
     // The window being drawn (set by the mode around each Screen::draw): its
     // first Dialog registers `window:<id>`.
@@ -264,6 +272,12 @@ public:
     const LearnContent* learn = nullptr;
     bool lessonRunning = false;
     bool lessonLocked = false;
+    // The rows the active tutorial step names: its {design:<type>} tokens
+    // filled in (docs/LEARNING.md "Text tokens"). A list that shows one
+    // scrolls it into view the first time (lessonRow, screens/list_widgets.hpp);
+    // `lessonRowsFor` tells the steps apart (0: no step).
+    std::vector<std::string> lessonRows;
+    uint64_t lessonRowsFor = 0;
     // What windows tell lessons this frame (cleared at its start): their
     // tabs, the designer's and the simulator's work in progress. The mode
     // adds the open windows and the selection.

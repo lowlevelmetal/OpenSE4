@@ -56,8 +56,13 @@ public:
     // The way back when the active step's window was closed or another window
     // covers its outline (docs/LEARNING.md "Getting back"): Markdown for the
     // panel, under the step's text; empty when there is none. Its part is
-    // outlined in the recovery style meanwhile.
+    // outlined in the recovery style meanwhile. Without one, the page arrow
+    // to press when an outlined order is on another page of the order strip.
     const std::string& recoveryHint() const { return recoveryHint_; }
+
+    // The rows the active step names, for the lists to bring into view
+    // (UiContext::lessonRows): set before the windows draw.
+    void nameRows(UiContext& ui) const;
 
     // Tutorials: shows step `step` (0-based) as if the ones before were done
     // (--tutorial=<slug>:<step>, for checking content).
@@ -137,6 +142,7 @@ private:
     double targetsSeen_ = 0;
     Recovery recovery_;
     std::string recoveryHint_;                 // Markdown
+    bool pagerHint_ = false;                   // it is about a page arrow (lesson_lock.hpp pagerHint), not a way back
     std::vector<learn::Block> recoveryBlocks_;
     std::map<std::string, std::string> titles_;   // the windows' titles as last shown, by id
     // The last press or key the lock refused, and when the recent ones were.

@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -96,6 +97,14 @@ int listArrow(const Painter& p, const char* id, bool up, bool enabled);
 // True on a click and, while held, on each repeat.
 enum class ArrowGlyph { Up, Down, Left, Right, Stop };
 bool arrowButton(const Painter& p, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled);
+
+// In a tutorial: call right after drawing a row of a scrolling list or table
+// (the row is the last item). When the active step names the row
+// (UiContext::lessonRows, its {design:<type>} tokens) and the list shows it
+// for the first time during that step, a row out of view is scrolled to the
+// middle of the list. `done` keeps the step that was done for (one per list),
+// so the player can scroll away again (docs/LEARNING.md "Text tokens").
+void lessonRow(UiContext& ui, std::string_view name, uint64_t& done);
 
 // The same in a game's windows, which also tag the column's parts.
 inline Painter listPainter(UiContext& ui) {

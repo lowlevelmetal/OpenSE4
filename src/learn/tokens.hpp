@@ -29,6 +29,10 @@ std::vector<std::string> tokenProblems(const std::vector<Block>& blocks);
 // ship); empty when it has none.
 std::string designNameOfType(const game::GameState& state, game::EmpireId empire, std::string_view type);
 
+// The designs a text names: the names its {design:<type>} tokens show, in
+// order, each once (a type the empire has no design of is left out).
+std::vector<std::string> namedDesigns(const std::vector<Block>& blocks, const game::GameState& state, game::EmpireId empire);
+
 // The text with every token filled in for the empire.
 std::string expandTokens(std::string_view text, const game::GameState& state, game::EmpireId empire);
 std::vector<Block> expandTokens(const std::vector<Block>& blocks, const game::GameState& state, game::EmpireId empire);

@@ -906,6 +906,7 @@ private:
                 const bool ok = b.problem.empty();
                 const RowEvents ev = tableRow(ui, static_cast<int>(i), false);
                 script::reportItem(b.name);   // input scripts find an item by its name
+                lessonRow(ui, b.name, lessonRow_);   // the design a tutorial step names, in view
                 if (ev.hovered) hoverAvail_ = i;
                 if (ev.clicked || ev.doubleClicked) add(ui, b);
                 if (ev.rightClicked) openItemReport(ui, b.item);
@@ -1288,6 +1289,7 @@ private:
     int batch_ = 1;
     game::Resources rate_;
     std::vector<Buildable> avail_;
+    uint64_t lessonRow_ = 0;   // the tutorial step whose named row the list scrolled to (lessonRow)
     std::optional<size_t> hoverAvail_, hoverQueue_;
     StatusLine status_;
     ConfirmPopup confirm_;

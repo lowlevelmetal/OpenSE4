@@ -23,8 +23,11 @@ assert { order = "colonize" }
 # when it got its orders, is the last ship: the next one is an attack ship).
 click item:next in=tag:cycle:ship
 wait-step 6
-# 6 Explore.
-click tag:order:explore
+# 6 Explore. At 800x600 the order is on another page of the order strip: its outline lies on
+# the page arrow, whose click shows the order, and a second click gives it.
+repeat 2 until { order = "explore" }
+  click tag:order:explore
+end
 wait-step 7
 # 7 The second attack ship: the next ship, and Explore.
 click item:next in=tag:cycle:ship

@@ -27,7 +27,10 @@ wait-step 6
 click item:next in=tag:cycle:ship
 click item:next in=tag:cycle:ship
 assert { selected = "ship", design_type = "Colony" }
-click tag:order:explore
+# (At 800x600 the first click turns the order strip's page to Explore.)
+repeat 2 until { order = "explore", design_type = "Colony" }
+  click tag:order:explore
+end
 wait 30
 assert { order = "explore" }
 assert-step 6

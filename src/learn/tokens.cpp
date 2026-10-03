@@ -3,6 +3,7 @@
 #include "datafile/datafile.hpp"
 #include "learn/condition.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <format>
 #include <optional>
@@ -59,6 +60,27 @@ void blockProblems(const std::vector<Block>& blocks, std::vector<std::string>& o
         for (const auto& row : b.table.rows)
             for (const Inline& cell : row) inlineProblems(cell, out);
         blockProblems(b.tip, out);
+    }
+}
+
+// Calls `f` with every span of the blocks, in order.
+template <typename F>
+void forEachSpan(const std::vector<Block>& blocks, F&& f) {
+    auto list = [&](auto&& self, const List& l) -> void {
+        for (const ListItem& item : l.items) {
+            for (const Span& span : item.text) f(span);
+            for (const List& sub : item.sub) self(self, sub);
+        }
+    };
+    for (const Block& b : blocks) {
+        for (const Span& span : b.text) f(span);
+        list(list, b.list);
+        for (const Inline& cell : b.table.header)
+            for (const Span& span : cell) f(span);
+        for (const auto& row : b.table.rows)
+            for (const Inline& cell : row)
+                for (const Span& span : cell) f(span);
+        forEachSpan(b.tip, f);
     }
 }
 
@@ -129,6 +151,18 @@ std::string designNameOfType(const game::GameState& s, game::EmpireId empire, st
         }
     }
     return best ? best->name : std::string{};
+}
+
+std::vector<std::string> namedDesigns(const std::vector<Block>& blocks, const game::GameState& s, game::EmpireId empire) {
+    std::vector<std::string> out;
+    forEachSpan(blocks, [&](const Span& span) {
+        for (auto f = nextToken(span.text, 0); f; f = nextToken(span.text, f->end)) {
+            if (!f->closed || f->kind != "design") continue;
+            std::string name = designNameOfType(s, empire, f->argument);
+            if (!name.empty() && std::find(out.begin(), out.end(), name) == out.end()) out.push_back(std::move(name));
+        }
+    });
+    return out;
 }
 
 std::string expandTokens(std::string_view text, const game::GameState& s, game::EmpireId empire) {

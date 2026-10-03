@@ -49,16 +49,22 @@ wait-step 10
 click item:next in=tag:cycle:ship
 key Ctrl+1
 wait-step 11
-# 11 The order list: View Orders.
-click tag:order:view-orders
+# 11 The order list: View Orders. At 800x600 it is two pages of the order strip away: the
+# outlined page arrow, twice, then the order.
+repeat 3 until { window = "view-orders" }
+  click tag:order:view-orders
+end
 wait-window view-orders
 wait-step 12
 # 12 Editing orders: close it with Esc.
 key Escape
 wait-closed view-orders
 wait-step 13
-# 13 Supplies: the Resupply order (the fleet is still selected).
-click tag:order:resupply
+# 13 Supplies: the Resupply order (the fleet is still selected); at 800x600 the page arrow
+# first, as on step 11.
+repeat 3 until { order = "resupply" }
+  click tag:order:resupply
+end
 wait-step 14
 # 14 End the turn.
 click tag:button:end-turn

@@ -385,6 +385,12 @@ void UiContext::tagListParts(std::string_view base, const ListParts& list) {
     }
 }
 
+void UiContext::tagPager(std::string_view name) {
+    const size_t at = tags.size();
+    tagItem(name);
+    if (at < tags.size()) tags[at].pager = true;
+}
+
 void UiContext::promptWindow() {
     const ImVec2 pos = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
     promptAreas.emplace_back(pos, ImVec2(pos.x + size.x, pos.y + size.y));

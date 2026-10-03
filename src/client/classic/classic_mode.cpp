@@ -264,7 +264,7 @@ void ClassicMode::updateLock(UiContext& ui) {
     }
     std::vector<TaggedArea> tags;
     tags.reserve(ui.tags.size());
-    for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}});
+    for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}, t.pager});
     // The open windows as they are shown, back to front: where they overlap, the front-most one decides.
     std::vector<std::string> open;
     for (const auto& [id, screen] : screens_) open.emplace_back(windowId(id));
@@ -757,6 +757,12 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (!refusedKey_.empty() && lesson_) lesson_->refused(std::nullopt, fs.time, refusedKey_);
     refusedKey_.clear();
     ui.lessonRunning = lesson_ != nullptr;
+    if (lesson_) {
+        lesson_->nameRows(ui);
+    } else {
+        ui.lessonRows.clear();
+        ui.lessonRowsFor = 0;
+    }
     session_->poll();
     if (options_.scripted) trackForScripts();
     const script::ItemScope mainScope("main");

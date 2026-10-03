@@ -78,16 +78,20 @@ struct LockState {
     size_t parts() const;
 };
 
-// A UI tag of the frame drawn last, and where it is.
+// A UI tag of the frame drawn last, and where it is. `pager`: the tag of an
+// order on another page of the order strip, on the page arrow that leads
+// there (UiTag::pager).
 struct TaggedArea {
     std::string_view name;
     LockArea area;
+    bool pager = false;
 };
 
 // The lock for a step, from the frame drawn last:
 // - the areas of the step's allowed tags, and of its highlighted ones when it
 //   waits for an action (a step with `done`); an explanation step's outlines
-//   can be pointed at and scrolled, not clicked;
+//   can be pointed at and scrolled, not clicked, except a page arrow that
+//   stands in for an outlined order (it only turns the page);
 // - the lesson panel and the T button; when a window the step works in is
 //   closed, the tags that open it (so a step never waits behind a closed
 //   window); when another window covers an outlined part, that window's Close
@@ -129,6 +133,14 @@ struct Recovery {
     bool operator==(const Recovery&) const = default;
 };
 Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& tags, const std::vector<std::string>& openWindows);
+
+// The step's outlined orders that are on another page of the order strip
+// (800x600): their tags lie on a page arrow (TaggedArea::pager), which the
+// lesson outlines in their place. In the step's order.
+std::vector<std::string> pagedTargets(const learn::Step& step, const std::vector<TaggedArea>& tags);
+// What the panel says about them (Markdown): "Press the outlined arrow to
+// show more order buttons: **Explore** is on another page." Empty for none.
+std::string pagerHint(const learn::Step& step, const std::vector<TaggedArea>& tags);
 
 // Whether a step's `done` waits on the game rather than on a click: turns,
 // the empire's counts that grow with them (systems explored, colonies,

@@ -72,7 +72,7 @@ click tag:order:build-queue
 wait-window set-queue
 wait-step 13
 # 13 Queue your warship: the new design on the Ships tab, as the panel names it.
-assert-present item:"Lesson Warship" in=set-queue
+wait-for item:"Lesson Warship" in=set-queue
 click item:"Lesson Warship" in=set-queue
 wait-step 14
 assert { construction_queued = 1 }

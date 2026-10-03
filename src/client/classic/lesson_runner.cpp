@@ -246,10 +246,11 @@ void LessonRunner::updateRecovery(const UiContext& ui, const learn::ClientFacts&
     const learn::Step* st = lesson().kind == learn::LessonKind::Tutorial ? activeStep() : nullptr;
     Recovery r;
     std::vector<std::string> windows;
-    if (st && !progress_.completed(progress_.active()) && progress_.result() == learn::LessonProgress::Result::None) {
-        std::vector<TaggedArea> tags;
+    std::vector<TaggedArea> tags;
+    const bool waiting = st && !progress_.completed(progress_.active()) && progress_.result() == learn::LessonProgress::Result::None;
+    if (waiting) {
         tags.reserve(ui.tags.size());
-        for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}});
+        for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}, t.pager});
         windows = windowsBackToFront(ui, facts.openWindows);
         r = findRecovery(*st, tags, windows);
         // Its targets on screen, or a way back to them: Skip waits.
@@ -262,6 +263,11 @@ void LessonRunner::updateRecovery(const UiContext& ui, const learn::ClientFacts&
     std::string hint = describe(recovery_);
     if (recovery_.kind == Recovery::Kind::Uncover && !windows.empty() && windows.back() == recovery_.window) hint += " (Esc)";
     if (!hint.empty()) hint += ".";
+    // Otherwise an outlined order on another page of the order strip (800x600):
+    // its outline lies on the page arrow, which needs a word.
+    pagerHint_ = hint.empty() && waiting;
+    if (pagerHint_) hint = pagerHint(*st, tags);
+    pagerHint_ = pagerHint_ && !hint.empty();
     if (hint != recoveryHint_) {
         recoveryHint_ = std::move(hint);
         recoveryBlocks_ = recoveryHint_.empty() ? std::vector<learn::Block>{} : learn::parseMarkdown(recoveryHint_, {}, false).blocks;
@@ -311,6 +317,15 @@ std::string LessonRunner::recoveryPlain() const {
     std::string text = learn::plainText(recoveryBlocks_);
     while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
     return text;
+}
+
+void LessonRunner::nameRows(UiContext& ui) const {
+    ui.lessonRows.clear();
+    ui.lessonRowsFor = 0;
+    const learn::Step* st = lesson().kind == learn::LessonKind::Tutorial ? activeStep() : nullptr;
+    if (!st || progress_.completed(progress_.active()) || progress_.result() != learn::LessonProgress::Result::None) return;
+    ui.lessonRows = learn::namedDesigns(st->text, ui.state(), ui.session.player());
+    ui.lessonRowsFor = progress_.active() + 1;
 }
 
 void LessonRunner::jumpTo(const UiContext& ui, size_t step) {
@@ -463,7 +478,7 @@ void LessonRunner::drawRefusedNote(UiContext& ui, const learn::Step& st, double 
     const float alpha = float(std::min(1.0, (shows - since) * 2.0));
     ImDrawList* fg = ImGui::GetForegroundDrawList();
     fg->AddRectFilled(at, ImVec2(at.x + box.x, at.y + box.y), imColor(0x101c40, 0.95f * alpha));
-    fg->AddRect(at, ImVec2(at.x + box.x, at.y + box.y), imColor(!st.done || recoveryBlocks_.empty() ? kOutlineColor : kRecoveryColor, alpha));
+    fg->AddRect(at, ImVec2(at.x + box.x, at.y + box.y), imColor(!st.done || recoveryBlocks_.empty() || pagerHint_ ? kOutlineColor : kRecoveryColor, alpha));
     fg->AddText(font, size, ImVec2(at.x + pad.x, at.y + pad.y), imColor(0xffffff, alpha), text.c_str(), nullptr, wrap);
     if (script::collectingItems()) {   // input scripts: item:"note:<the text>" (its lines joined by spaces)
         std::string label = "note:" + text;
@@ -695,8 +710,8 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
         const KeyChord& c = keys.chords(a)[0];
         return c.empty() ? std::string{} : std::format(" ({})", chordName(c));
     };
-    // The way back to the active step's targets (recoveryHint()), above the buttons
-    // where it is always in sight.
+    // The way back to the active step's targets, or the page arrow that shows them
+    // (recoveryHint()), above the buttons where it is always in sight.
     const std::string hint = tutorial && !over && progress_.step() == progress_.active() && !recoveryHint_.empty() ? recoveryPlain() : std::string{};
 
     // The buttons, in two groups: moving through the lesson, then the panel
@@ -954,7 +969,8 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
         ImGui::EndChild();
 
         if (!hint.empty()) {
-            // Marked with a bar in the colour of the way back's outline.
+            // Marked with a bar in the colour of the outline it is about: the way
+            // back's, or the step's own on a page arrow.
             ImGui::SetCursorPos(ui.size({kSide + 4, kTitleH + L.body + 2}));
             const ImVec2 start = ImGui::GetCursorScreenPos();
             ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
@@ -963,7 +979,8 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
             ImGui::PopTextWrapPos();
             ImGui::PopFont();
             const ImVec2 end = ImGui::GetItemRectMax();
-            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(start.x - ui.px(5), start.y), ImVec2(start.x - ui.px(2), end.y), imColor(kRecoveryColor));
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(start.x - ui.px(5), start.y), ImVec2(start.x - ui.px(2), end.y),
+                                                      imColor(pagerHint_ ? kOutlineColor : kRecoveryColor));
             if (script::collectingItems())   // input scripts: item:"hint:<the text>"
                 script::reportItem("hint:" + hint, start, end);
         }

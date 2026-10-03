@@ -25,6 +25,7 @@ art, so keep them out of the repository (docs/CLEANROOM.md).
 
 import argparse
 import concurrent.futures
+import fnmatch
 import os
 import pathlib
 import re
@@ -50,7 +51,11 @@ def scripts(names):
         if p.suffix == ".script" and p.exists():
             out.append(p.resolve())
             continue
-        match = [s for s in found if s.stem == name or s.stem == pathlib.Path(name).stem]
+        stem = pathlib.Path(name).stem
+        if any(c in stem for c in "*?["):   # a pattern: "tutorial-*"
+            match = [s for s in found if fnmatch.fnmatchcase(s.stem, stem)]
+        else:
+            match = [s for s in found if s.stem == name or s.stem == stem]
         if not match:
             sys.exit(f"no script named {name} in {SCRIPTS}")
         out.extend(match)

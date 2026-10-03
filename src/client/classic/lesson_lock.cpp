@@ -1,10 +1,13 @@
 #include "client/classic/lesson_lock.hpp"
 
+#include "client/classic/order_rules.hpp"
 #include "learn/access.hpp"
 #include "learn/ids.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <format>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -192,7 +195,9 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
         if (const TaggedArea* t = findTag(tags, "window:" + *w))
             st.windows.push_back(LockWindow{*w, t->area, constrained(*w), {}, {}});
     for (const TaggedArea& t : tags) {
-        const bool act = contains(allowed, t.name);
+        // A page arrow that stands in for an outlined order only turns the
+        // page: it responds on an explanation step too.
+        const bool act = contains(allowed, t.name) || (t.pager && contains(look, t.name));
         if (!act && !contains(look, t.name)) continue;
         // The lesson panel and the T button lie above every window.
         if (isLessonTag(t.name)) {
@@ -320,6 +325,49 @@ Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& ta
         }
     }
     return {};
+}
+
+namespace {
+
+// The order strip's name of an order tag ("order:resupply": "Resupply At Nearest").
+std::string orderTitle(std::string_view tag) {
+    const std::string_view id = tag.substr(tag.find(':') + 1);
+    for (size_t i = 0; i < kOrderCount; ++i) {
+        const auto o = static_cast<OrderId>(i);
+        if (learn::orderStripId(orderSlotKey(o)) == id) return std::string(orderName(o));
+    }
+    return std::string(id);
+}
+
+} // namespace
+
+std::vector<std::string> pagedTargets(const learn::Step& step, const std::vector<TaggedArea>& tags) {
+    std::vector<std::string> out;
+    for (const std::string& t : step.highlight) {
+        if (!t.starts_with("order:") || contains(out, t)) continue;
+        bool paged = false, shown = false;
+        for (const TaggedArea& a : tags)
+            if (a.name == t) (a.pager ? paged : shown) = true;
+        if (paged && !shown) out.push_back(t);
+    }
+    return out;
+}
+
+std::string pagerHint(const learn::Step& step, const std::vector<TaggedArea>& tags) {
+    const std::vector<std::string> paged = pagedTargets(step, tags);
+    if (paged.empty()) return {};
+    std::string names;
+    std::vector<float> arrows;   // the left edges of the arrows they lie on
+    for (size_t i = 0; i < paged.size(); ++i) {
+        names += std::format("{}**{}**", i == 0 ? "" : i + 1 == paged.size() ? " and " : ", ", orderTitle(paged[i]));
+        for (const TaggedArea& a : tags)
+            if (a.pager && a.name == paged[i] &&
+                std::none_of(arrows.begin(), arrows.end(), [&](float x) { return std::abs(x - a.area.min.x) < 0.5f; }))
+                arrows.push_back(a.area.min.x);
+    }
+    const bool both = arrows.size() > 1;
+    return std::format("Press {} outlined arrow to show more order buttons: {} {} on {}.", both ? "an" : "the", names,
+                       paged.size() > 1 ? "are" : "is", both ? "other pages" : "another page");
 }
 
 namespace {

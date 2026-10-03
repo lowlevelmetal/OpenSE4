@@ -6,9 +6,12 @@ wait-lesson diplomacy-and-intelligence
 # 1 Neighbours.
 click item:Next in=lesson
 wait-step 2
-# 2 Send out an explorer: the first attack ship, Explore.
+# 2 Send out an explorer: the first attack ship, Explore (at 800x600 the outlined page arrow
+# first, which shows the order).
 click item:next in=tag:cycle:ship
-click tag:order:explore
+repeat 2 until { order = "explore" }
+  click tag:order:explore
+end
 wait-step 3
 # 3 A second explorer: the next ship, Explore.
 click item:next in=tag:cycle:ship

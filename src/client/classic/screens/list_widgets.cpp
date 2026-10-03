@@ -14,6 +14,17 @@ namespace opense4::client::classic {
 
 // ---- Classic lists -----------------------------------------------------------------------------
 
+void lessonRow(UiContext& ui, std::string_view name, uint64_t& done) {
+    if (ui.lessonRowsFor == 0 || done == ui.lessonRowsFor) return;
+    if (std::find(ui.lessonRows.begin(), ui.lessonRows.end(), name) == ui.lessonRows.end()) return;
+    done = ui.lessonRowsFor;
+    // In view: inside the rows' clip rectangle (a table's starts under its frozen headings).
+    ImGuiWindow* rows = ImGui::GetCurrentWindow();
+    const ImRect row(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+    if (row.Min.y >= rows->ClipRect.Min.y && row.Max.y <= rows->ClipRect.Max.y) return;
+    ImGui::ScrollToRect(rows, row, ImGuiScrollFlags_AlwaysCenterY);
+}
+
 std::vector<float> columnEdges(UiContext& ui, std::span<const ListColumn> cols, float width) {
     std::vector<float> x{0.0f};
     float fixed = 0;
