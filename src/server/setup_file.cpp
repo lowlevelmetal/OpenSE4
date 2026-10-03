@@ -60,6 +60,7 @@ constexpr std::array kBoolOptions{
     BoolOption{"same_system_allowed", &O::sameSystemAllowed},
     BoolOption{"evenly_distributed", &O::evenlyDistributed},
     BoolOption{"no_tactical_combat", &O::noTacticalCombat},
+    BoolOption{"complete_tech_tree", &O::completeTechTree},
     BoolOption{"allow_gifts", &O::allowGifts},
     BoolOption{"allow_tech_trades", &O::allowTechTrades},
     BoolOption{"allow_intel", &O::allowIntel},

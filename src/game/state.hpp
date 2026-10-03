@@ -883,6 +883,10 @@ struct GameOptions {
     // default, so turn-based games ask (inferred: an opt-out check box).
     // Simultaneous games never offer tactical combat either way.
     bool noTacticalCombat = false;
+    // "Players can see the complete tech tree" (spec 01 §2.2), off by default:
+    // with it on the Research window has its Tech Tree button, the only way to
+    // the Tech Tree window; it changes nothing else (spec 06 §7 Q92, confirmed: binary).
+    bool completeTechTree = false;
     bool allowGifts = true;
     bool allowTechTrades = true;
     bool allowIntel = true;

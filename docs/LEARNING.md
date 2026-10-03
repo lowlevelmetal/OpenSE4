@@ -418,6 +418,7 @@ start, the player's empire gets the designs of one Design minister run and no sh
 | `events` | `"none"`, `"low"`, `"medium"`, `"high"` | low |
 | `ai_difficulty` | `"low"`, `"medium"`, `"high"`: the level of the lesson's computer empires | medium |
 | `no_tactical_combat` | true or false | false |
+| `complete_tech_tree` | true or false: "Players can see the complete tech tree", the Research window's Tech Tree button | false |
 | `all_systems_seen` | true or false | false |
 | `omnipresent` | true or false | false |
 | `no_ruins` | true or false | false |

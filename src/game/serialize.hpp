@@ -67,7 +67,8 @@ class Rules;
 // §7.5, spec 02 §4).
 // Version 7: the neutral mark of a neutral empire a human plays
 // (Empire::neutral) and the fleets' flag in a player's minister switches
-// (cmd::SetMinisters::fleets) (spec 06 §7 Q84).
+// (cmd::SetMinisters::fleets) (spec 06 §7 Q84); the "Players can see the
+// complete tech tree" option (GameOptions::completeTechTree, spec 06 §7 Q92).
 inline constexpr uint32_t kSaveVersion = 7;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

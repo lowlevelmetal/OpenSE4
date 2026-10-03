@@ -103,12 +103,11 @@ public:
         ImGui::EndGroup();
         ui.tagItem("research:queue");
 
-        // The original's column: the three pages, a gap, the two check boxes,
-        // then Reorder Projects in the 13th slot just above Close (observed,
-        // spec 07 session 3). The original shows Tech Tree only when the game
-        // lets players see the complete tech tree, a setting OpenSE4's games do
-        // not have yet: ours always shows it, in the 12th slot (inferred, spec 06
-        // §7 Q92).
+        // The original's column (spec 06 §7 Q92, confirmed: binary): the three
+        // pages, a gap, Repeat Projects and Divide Pts Evenly (slots 5 and 6),
+        // Tech Tree in slot 12 only when the game lets players see the
+        // complete tech tree (the only way to that window), Reorder Projects in
+        // slot 13, Close.
         d.beginButtons();
         projectPageButtons(d, page_);
         d.spacer();
@@ -117,8 +116,12 @@ public:
         if (d.check("Divide Pts Evenly", e.researchEvenly)) set(ui, e.research, !e.researchEvenly, e.repeatResearch);
         ui.tagItem("research:divide-evenly");
         for (int gap = 0; gap < 5; ++gap) d.spacer();
-        if (d.button("Tech Tree")) ui.open(ScreenId::TechTree);
-        ui.tagItem("research:tech-tree");
+        if (ui.state().options.completeTechTree) {
+            if (d.button("Tech Tree")) ui.open(ScreenId::TechTree);
+            ui.tagItem("research:tech-tree");
+        } else {
+            d.spacer();
+        }
         if (d.button("Reorder Projects", e.research.size() > 1)) {
             std::vector<std::string> rows;
             for (const auto& p : e.research) rows.push_back(std::format("{} {}", ui.rules().tech(p.area).name, e.techLevel(p.area) + 1));

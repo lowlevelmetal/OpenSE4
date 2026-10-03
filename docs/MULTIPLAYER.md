@@ -527,7 +527,7 @@ ai_bonus = 0                   # 0 none, 1 low, 2 medium, 3 high
 score_display = 1              # 0 own, 1 own and Non-Aggression or better, 2 all
 # true/false: all_warp_points_connected, all_planets_same_size, no_warp_points, warp_points_anywhere,
 # all_systems_seen, omnipresent, finite_resources, same_system_allowed,
-# evenly_distributed, no_tactical_combat, allow_gifts, allow_tech_trades,
+# evenly_distributed, no_tactical_combat, complete_tech_tree, allow_gifts, allow_tech_trades,
 # allow_intel, allow_surrender (on by default), no_ruins, only_breathable, only_home_type, team_mode,
 # simultaneous (the default; false plays a turn-based game)
 
