@@ -357,9 +357,11 @@ MinGW-w64.
   data, the same PBEM game played for 15 turns by the Linux and the Windows
   `opense4-server` gave identical states. Over encrypted connections, a Linux
   `opense4-server` hosted the Windows server's scripted client under Wine for four
-  simultaneous turns, and a Linux and a Windows client for three turn-based ones
-  (2026-10-02): the host's desync check found every Windows copy of the game identical to
-  the view it sent.
+  simultaneous turns (with a join password), and a Linux and a Windows client for three
+  turn-based ones (2026-10-02): the host's desync check found every Windows copy of the
+  game identical to the view it sent. By e-mail, the Windows build opened a turn file
+  the Linux host had encrypted to its empire's password and sent orders the Linux host
+  read and accepted: both make the same Argon2id keys.
 - **Engine code.** It follows the rules of the section above. Serialized and hashed
   values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`, which also takes
   `size_t`, 64 bits everywhere: the Windows and macOS builds reject `long` and
