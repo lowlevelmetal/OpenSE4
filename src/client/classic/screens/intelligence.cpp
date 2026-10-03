@@ -64,7 +64,7 @@ public:
         textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 316}, blue, std::format("{} Current Projects", e.intel.size()));
         textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {575, 318}, blue, "(click to cancel project)");
         queue(ui, d);
-        ui.tag("intelligence:queue", d.at(kProjectBoxesAt), d.at(kProjectBoxesAt + Vec2{560, 130}));
+        ui.tag("intelligence:queue", d.at(kProjectBoxesAt), d.at(kProjectBoxesAt + Vec2{projectBoxesInUse(e.intel.size(), page_), 130}));
         targetPicker(ui);
 
         // The buttons: the three pages, a gap, Repeat Projects and Divide Pts

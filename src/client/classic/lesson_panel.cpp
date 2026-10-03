@@ -48,7 +48,8 @@ float hiddenShare(const Box& panel, std::span<const Box> parts) {
 }
 
 float spotScore(const Box& panel, const Avoid& avoid) {
-    return hiddenShare(panel, avoid.targets) + 0.5f * hiddenShare(panel, avoid.allowed) + hiddenShare(panel, avoid.prompts);
+    return hiddenShare(panel, avoid.targets) + 0.75f * hiddenShare(panel, avoid.shown) + 0.5f * hiddenShare(panel, avoid.allowed) +
+           hiddenShare(panel, avoid.prompts);
 }
 
 size_t bestSpot(std::span<const Spot> spots, const Avoid& avoid, std::optional<int> previous) {

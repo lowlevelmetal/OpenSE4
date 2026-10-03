@@ -890,7 +890,7 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
             }
         };
         add(st->highlight, avoid.targets);
-        add(st->show, avoid.targets);   // what the text points at, to read
+        add(st->show, avoid.shown);   // what the text points at, to read
         add(st->allow, avoid.allowed);
         // The way back to the step's window, outlined: as much a target as the step's own.
         if (!recovery_.press.empty() && progress_.step() == progress_.active()) add({recovery_.press}, avoid.targets);
@@ -970,7 +970,7 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
         // A whole panel that hides some of an explanation step's parts on a small
         // screen: from the next frame the step shows compact (its text scrolls, More shows it whole).
         if (smallScreen && !tight && progress_.step() == progress_.active() && activeStep() && !activeStep()->done &&
-            panel::hiddenShare(spots[best].box, avoid.targets) > 0.02f)
+            panel::hiddenShare(spots[best].box, avoid.targets) + panel::hiddenShare(spots[best].box, avoid.shown) > 0.02f)
             compactForRoom_ = progress_.step();
         chosen = layouts[best];
         ImGui::SetNextWindowPos(spots[best].box.min, ImGuiCond_Always);

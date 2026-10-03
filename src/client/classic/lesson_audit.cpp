@@ -227,7 +227,12 @@ std::string status(const AuditInput& in, const LockArea& a, bool& ok, bool stric
     const bool shown = onScreen(a, in.display);
     const bool lit = in.spotlight.lit(c);
     const float share = panelShare(in, a);
-    const bool under = (in.panel && in.panel->contains(c)) || share > (strict ? 0.05f : 0.25f);
+    // A part at least three times the panel's size (a battle map, a window that fills the screen)
+    // leaves it nowhere to go: a corner of it under the panel is fine.
+    const float partArea = (a.max.x - a.min.x) * (a.max.y - a.min.y);
+    const float panelArea = in.panel ? (in.panel->max.x - in.panel->min.x) * (in.panel->max.y - in.panel->min.y) : 0.0f;
+    const float allowed = strict ? (panelArea > 0 && partArea >= 3.0f * panelArea ? 0.15f : 0.05f) : 0.25f;
+    const bool under = (in.panel && in.panel->contains(c)) || share > allowed;
     ok = shown && lit && !under;
     std::string s = shown ? "on screen" : "OFF SCREEN";
     s += lit ? ", clear" : ", DIMMED";

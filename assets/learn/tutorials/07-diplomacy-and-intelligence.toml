@@ -204,13 +204,14 @@ manual = "intelligence#the-intelligence-window"
 [[step]]
 title = "A first project"
 text = """
-**Click a defense project** in the list to add it: it stores up points and stops enemy projects
-aimed at you.
+**Click a defense project** in the list to add it to your projects, shown below: it stores up
+points and stops enemy projects aimed at you.
 
 Your intelligence points come from intelligence facilities, which you build like any other
 facility. Without them the project waits.
 """
 highlight = ["intelligence:projects", "intelligence:projects:defense"]
+show = ["intelligence:queue"]
 done = { command = "SetIntel" }
 manual = "intelligence#defense-projects"
 

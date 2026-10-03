@@ -39,7 +39,8 @@ int rowCount(std::span<const Slot> slots);
 // What the panel should not hide, and how much each counts: each part by the
 // share of it hidden, so a small button weighs as much as a large map.
 struct Avoid {
-    std::vector<Box> targets;   // what the active step outlines
+    std::vector<Box> targets;   // what the active step outlines (and the way back's button)
+    std::vector<Box> shown;     // what it shows, to read: three quarters as much
     std::vector<Box> allowed;   // what else it lets the player use: half as much
     std::vector<Box> prompts;   // open prompts and pop-ups: as much as a target
 };

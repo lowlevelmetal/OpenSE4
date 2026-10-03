@@ -9,6 +9,7 @@
 #include "client/classic/screens/reorder_popup.hpp"
 #include "client/classic/ui.hpp"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -74,6 +75,13 @@ struct ProjectBox {
 };
 // Where the four boxes of a page start, in the window (140×130 each, side by side).
 inline constexpr Vec2 kProjectBoxesAt{15, 330};
+// The boxes of the projects page that hold a project, and the next empty one
+// (for lessons: what the list of current projects shows), from the left, in
+// frame pixels of the boxes' width (560 for all four).
+inline float projectBoxesInUse(size_t projects, int page) {
+    const int onPage = std::clamp(static_cast<int>(projects) - page * kProjectsPerPage, 0, kProjectsPerPage);
+    return 560.0f * float(std::min(kProjectsPerPage, onPage + 1)) / float(kProjectsPerPage);
+}
 // The four boxes of the shown page from `at` (window coordinates of `d`): a
 // black cell (the RowGrid pattern under the pointer when it holds a project)
 // with its top, right and bottom edges in #617BC2; the name word-wrapped in

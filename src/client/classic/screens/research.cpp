@@ -106,7 +106,7 @@ public:
         textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 316}, blue, std::format("{} Current Projects", e.research.size()));
         textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {575, 318}, blue, "(click a project to cancel it)");
         projects(ui, d);
-        ui.tag("research:queue", d.at(kProjectBoxesAt), d.at(kProjectBoxesAt + Vec2{560, 130}));
+        ui.tag("research:queue", d.at(kProjectBoxesAt), d.at(kProjectBoxesAt + Vec2{projectBoxesInUse(e.research.size(), page_), 130}));
 
         // The original's column (spec 06 §7 Q92, confirmed: binary): the three
         // pages, a gap, Repeat Projects and Divide Pts Evenly (slots 5 and 6),

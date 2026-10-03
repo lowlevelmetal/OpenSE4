@@ -49,13 +49,13 @@ manual = "research#research-points"
 [[step]]
 title = "Choose projects"
 text = """
-**Click three areas** in the list to queue them as projects.
+**Click three areas** in the list to queue them as projects; they show in the boxes below it.
 
 Point at an area to see what its next level unlocks, and check the **Cost** column: some levels
 take a few turns, others a hundred. Start with one or two cheap ones, then add a long-term goal.
 """
 highlight = ["research:areas"]
-show = ["research:headings"]
+show = ["research:headings", "research:queue"]
 done = { research_queued = 3 }
 manual = "research#technology-areas-and-levels"
 
