@@ -1772,7 +1772,9 @@ highlighted, and an X marks each empire that has met one.
     subsection"), and the host also recalculates the colonies a player's orders name when it
     reads them (spec 05 §9.2).
 
-45. **Jump counts elsewhere.** *Open* (raised 2026-10-03). The routine the original uses to
+45. **Jump counts elsewhere.** *Answered 2026-10-03* (confirmed: binary): spec 05 §7.2
+    *Jumps* gives each test in real jumps; the engine still uses the old numbers (PARITY_GAPS).
+    Raised 2026-10-03: The routine the original uses to
     count warp jumps between two systems returns the number of jumps plus two (§3.6). The
     home placement's spread test is now written with that in mind. The same routine serves
     about a dozen other tests, most of them the computer players' (spec 05 §7: "within 4

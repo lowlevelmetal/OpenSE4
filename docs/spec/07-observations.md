@@ -1277,6 +1277,134 @@ turns 51–100 70 → 72 % (+1.5, 1.1), Infrastructure 6.5 → 6.2 %, Exploratio
   about as many from turn 75 (question 62). The bases placed early fall a little (0.29
   against 0.35 at turn 50).
 
+### The computer players' second round under a debugger (2026-10-03)
+
+**How.** More games of the original under the debugger of "Pace observed under a debugger",
+with the same set-up, on a nested display of their own: game 10 (30 systems) and game 13
+played to turn 100, game 12 to turn 59 (the machine went down) and game 14 to turn 32, when
+the play stopped; game 11 failed at set-up. New read-only breakpoints recorded: every
+vehicle's daily action in the movement phase (the day, the vehicle, its number of orders
+before the action and its sector after it), the day of every battle, every ship's orders
+after its empire's start-of-turn ministers (count, first order's kind and target), and in
+turns 1–30 the Ship Construction minister's counts per design type before its clean-up of
+obsolete items and the backlog test of each placement. Ours: the engine at aee3b7f with the
+same records, 120 seeds of the pace set-up (the waiting happiness events kept, so the
+battles run a little above "Pace after the tie-break and budget rules"), and scratch builds
+that each add one rule; after the machine went down, 48 + 48 more games (five computer
+players) for the colony measures below.
+
+**The second attack ship** (spec 05 question 70). On turn 2 every empire of game 10 counted
+two attack ships, both still queued, before the clean-up removed the second (its turn-1
+design had become obsolete that turn); the Attack Ship row ("at least 2") was satisfied, and
+the minister queued two weapon platforms, satellites and a colony ship. The second attack
+ship came on turn 9 and the first colony ship on turn 7 (median, as in the four earlier
+games).
+
+**Idle ships and the daily battle check** (question 68). Of the ships' daily actions in
+game 10, 45 % were made with an empty order list; 14 of its 202 battles began in a sector
+where only such idle ships had acted that day (125 where a vehicle with orders had acted, 63
+where only other vehicles had).
+
+**Fleets and their orders** (questions 68, 69). After the start-of-turn ministers:
+
+| Attack ships, game 10 / ours (24 seeds) | Turns 26–50 | Turns 51–100 |
+|---|---|---|
+| Per empire | 3.2 / 3.3 | 9.6 / 7.4 |
+| In fleets | 90 / 83 % | 77 / 74 % |
+| First order a Seek | 36 / 34 % | 37 / 46 % |
+| First order a Move To | 44 / 26 % | 15 / 19 % |
+| First order a Warp | 1 / 24 % | 0 / 11 % |
+| No orders | 16 / 8 % | 37 / 12 % |
+| Fleets with no orders, turns in Defend (Short Term) with enemies listed | 14 / 2 % (all turns) | |
+
+The original's fleets that explore carry a Move To toward the frontier point and the Warp,
+kept turn after turn until they arrive (27 % of its attack ships in turns 26–50 carried the
+same Move To as the turn before); ours carry a Seek and the Warp, and the Warp is left first
+after each movement phase. In Defend (Short Term) with enemies listed, the original's attack
+fleets and the defence fleets left over stay idle (spec 05 §7.5 `AI_Fleets` *Orders*).
+Enemy colonies targeted per empire-turn of turns 51–100: game 10 0.47, with 1.3 attack ships
+each (median 1), colonies of a median 90M people; ours 0.46, with 2.5 (median 2), 58M.
+
+**Game 13** (turns 51–100, per empire and 25 turns): battles 7.6, decided battles won away
+from colonies 3.4, colonies lost 3.1, battles ending with the enemy colony gone 3.0, attack
+ships lost in battle 3.8, over the soft cap in 30 % of turns 51–100 and 6 % of turns 26–50,
+attack ships per empire-turn 11.0, fleets without orders in Defend (Short Term) with enemies
+listed 8 %, Exploration 70 % of turns 1–25, Defend (Short Term) 78 % of turns 51–100. Game
+12, to turn 59, was over the soft cap in 13 % of turns 26–50.
+
+**Game 10** (turns 51–100, per empire and 25 turns): 17.2 battles (decided: armed against
+armed 97 %, armed against a colony 34 %), decided battles won away from colonies 4.8 and
+drawn 10.1 (the four earlier games 2.1–3.4 and 0.0–21.5), battles ending with the enemy
+colony gone 1.9, colonies lost 1.7, ships lost 9.0 (attack ships in battle 8.0); over the
+soft cap in 20 % of turns 51–100 and 2 % of turns 26–50; bases at turn 100 0.75 per empire.
+
+**Colonies changing hands** (questions 76, 77). In the six original games with colony
+records every colony lost in turns 51–100 went in a battle at its planet (1.7–3.1 per empire
+and 25 turns, nearly all of 100M people or less): none was captured and none was lost
+otherwise, and no planet was destroyed. Nearly every colony gained was founded on a free
+planet (2.8–6.3, 4.5 over the six; under 0.3 on a planet emptied in the five turns before).
+Battles at an enemy colony, counted once per sector and turn, per empire and 25 turns:
+
+| | Original, games 6 / 7 / 10 / 13 | Ours (48 seeds) | Ours with the Defend (Short Term) fleet rule |
+|---|---|---|---|
+| Battles at an enemy colony | 3.0 / 4.2 / 4.9 / 3.1 | 2.0 | 1.8 |
+| Ending with the colony gone | 2.2 / 1.9 / 1.9 / 2.9 | 1.0 | 1.5 |
+| Planet hit points at the start, gone / survived (median) | 425 / 666, 350 / 15,490, 510 / 9,320, 370 / 1,650 | 440 / 11,160 | 370 / 950 |
+| Armed attackers (median) | 1 / 2 / 2 / 2.5 | 2 | 1 |
+| Enemy colony entries in the defend lists, per empire-turn | 3.3 / 1.2 / 2.0 / 1.9 | 2.4 | 1.2 |
+| Battles per entry and turn | 4 / 14 / 10 / 7 % | 3 % | 6 % |
+
+Most colony battles were fought once per sector and turn (29 of 31, 38 of 42, 40 of 49 and 33
+of 34); the attackers' first order was a Seek or the stored Attack in 79–88 % of them, and
+none (idle ships) in 10–19 %.
+Founded / lost per empire and 25 turns: ours 3.8 / 1.2, with the fleet rule 4.1 / 1.8.
+
+**Rule by rule in our engine** (120 seeds each, turns 51–100 per empire and 25 turns,
+event counts as in "Resources, ships and colony losses under a debugger"; each scratch rule
+alone, then all five):
+
+| | Battles | Decided won away from colonies | Drawn away | Ships lost in battle | Battles ending with the colony gone | Colonies lost | Defend (Short Term), turns 51–100 | Colonies at turn 100 | Ships at turn 50 | Second attack ship (turn) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Engine at aee3b7f | 11.1 | 5.0 | 6.1 | 7.8 | 1.0 | 1.2 | 72 % | 16.4 | 7.5 | 5 |
+| Vehicle table counts before the clean-up | 11.1 | 5.1 | 5.9 | 7.9 | 1.0 | 1.3 | 73 % | 16.3 | 8.0 | 9 |
+| Idle vehicles mark their sector | 13.2 | 5.0 | 9.2 | 7.8 | 1.0 | 1.2 | 72 % | 16.4 | 7.5 | 5 |
+| Exploring fleets on a Move To | 10.8 | 5.1 | 5.8 | 8.0 | 1.0 | 1.2 | 72 % | 16.4 | 7.6 | 5 |
+| Defend (Short Term) fleet rule | 8.2 | 4.1 | 3.2 | 5.9 | 1.6 | 1.8 | 67 % | 15.3 | 7.8 | 5 |
+| All five | 9.7 | 3.9 | 4.9 | 5.9 | 1.6 | 1.8 | 67 % | 15.6 | 8.0 | 9 |
+| Original | 6.1–19.1 (three games) | 2.1–4.8 (five) | 0.0–21.5 (five) | 5.1–9.0 (five) | 1.9–2.2 (three) | 1.7–3.6 (five) | 70 % | 17.0 | 8.6 | 9 |
+
+Standard errors over the 120 seeds are about 0.15 for the decided battles and 0.07 for the
+colonies lost. With the Defend (Short Term) fleet rule the colonies targeted rose to 0.57
+per
+empire-turn with 1.9 attack ships each (median 1). Colonies founded or taken / lost per
+empire
+and 25 turns of turns 51–100: the original (five games) 4.5 / 2.3, ours 3.8 / 1.2, with the
+fleet rule 4.1 / 1.8 (question 76).
+
+**The first 25 turns** (question 75). Over the nine original games of this set-up with
+records (games 1–7, 10 and 12), Exploration took 61–95 % of turns 1–25 per game (80 % over
+all;
+the first five had 85 %), Infrastructure 0–10 % (4 %), and the empires had explored 2.6–9.2
+systems by turn 10 (4.7). Ours: 77 % and 6 %, 5.5 systems; with the counts before the
+clean-up 78 % and 4.8. Ships per empire at turn 50 were 6.6–11.8 per original game (six
+games, 8.8 over all), ours 7.5 (8.0 with the counts before the clean-up).
+
+**Jump counts** (spec 01 §14 Q45). The jump count the AI uses is the real number of jumps
+plus two; three of its tests compare it with a number (the strength test around the targets,
+fleet recruiting, the drones), and one always passes (spec 05 §7.2 *Jumps*). With the three
+tests corrected, 48 scratch games of ours showed no measurable change: Attack 2 → 1 % of
+turns 51–100, Defend (Short Term) 70 → 72 %, battles and colonies the same.
+
+**What this settles** (spec 05 questions 68–76): the second attack ship (counts taken before
+the clean-up); idle ships in the battle check; the exploring fleets' Move To; the Defend
+(Short Term) fleet rule, the largest lever found for decided battles, losses and colonies
+taken; the scrap and fleet-leader details; the net income's timing; the jump counts. The
+first 25 turns, the ships at turn 50, the decided battles away from colonies and the time in
+Defend (Short Term) lie within the original's spread. Colonies change hands only by
+bombardment in battles and by founding on free planets; what is left of the difference is the
+number of enemy colonies inside the territories (question 77). Open: what a Scrap does to a
+fleet (question 74).
+
 ## Session 5: more windows side by side, and generated galaxies (2026-10-03)
 
 Same harness as session 4 (a copy of the install, a Wine prefix of its own, the nested
