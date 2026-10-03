@@ -1081,7 +1081,11 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
             for (size_t i = 0; i < specs.size() && i < slots.size(); ++i) {
                 const Spec& s = specs[i];
                 ImGui::SetCursorPos(ui.size({kSide + slots[i].x, top + float(slots[i].row) * (rowH + kRowGap)}));
-                if (classicButton(p, s.label.c_str(), {slots[i].w, rowH}, s.style, s.on, s.enabled)) {
+                // The second click of a double click on Next, Back or Skip is no second
+                // press: the first one moved the panel to another step, whose button it is.
+                const bool moves = s.what == Button::Next || s.what == Button::Back || s.what == Button::Skip;
+                if (classicButton(p, s.label.c_str(), {slots[i].w, rowH}, s.style, s.on, s.enabled) &&
+                    !(moves && ImGui::GetIO().MouseClickedLastCount[ImGuiMouseButton_Left] > 1)) {
                     audio().play("button");
                     pressed = s.what;
                 }

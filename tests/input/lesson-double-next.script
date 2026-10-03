@@ -1,0 +1,11 @@
+# A double-click on the lesson panel's Next moves one step, not two (docs/LEARNING.md "The
+# lesson panel"; docs/BUILDING.md "Input scripts"): the second click of a double-click on Next,
+# Back or Skip does nothing. Tutorial 1: step 1's Next, double-clicked, stops at step 2.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --tutorial=first-steps --layout=1024x768 --size=1280x800
+
+wait-lesson first-steps
+double-click tag:lesson:next
+wait-step 2
+wait 20
+assert-step 2
