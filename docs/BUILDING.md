@@ -274,7 +274,7 @@ installed game and are opt-in (see "Input scripts" below):
 ```sh
 OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py       # every script, on your install
 OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py --small   # ... and at 800x600 too
-python3 tools/run_input_tests.py --fixture-data                  # the ones that run on our fixtures (as CI)
+python3 tools/run_input_tests.py --fixture-data --small          # the ones that run on our fixtures, at both layouts (as CI)
 OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py --only-small 'tutorial-*'   # the tutorials at 800x600
 ```
 
@@ -422,7 +422,7 @@ input scripts CI plays run on a game folder made from our own test fixtures.
 | Windows / MSVC release (VS 2022), (VS 2026) | The `release` preset with Visual Studio 2022 (on `windows-2022`) and Visual Studio 2026 (on `windows-2025`) and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
 | Windows / MinGW-w64 package | `tools/package_release.sh windows` in MSYS2 (`dist-mingw`, warnings as errors): the release build, the unit tests, the zip file and the installer, kept as the run's `opense4-windows` artifact |
 | Windows / installer | Installs that installer silently (`/S`), checks the files, shortcuts and Apps & features entry, starts the installed programs, and uninstalls silently, checking that nothing is left |
-| Linux / input scripts (fixture data) | Builds the client (`debug`, GCC) and plays the input scripts marked `# ci: fixture-data` (the manual, the Learn window, a training game's results, sliders, the setup screens) with `tools/run_input_tests.py --fixture-data`: headless (SDL's offscreen driver) on Mesa's software OpenGL (llvmpipe), on the minimal data set and pictures of `tests/fixtures` with our built-in learning content. A failed run keeps its pictures as the `input-scripts-failure` artifact |
+| Linux / input scripts (fixture data) | Builds the client (`debug`, GCC) and plays the input scripts marked `# ci: fixture-data` (the manual, the Learn window, a training game's results, sliders, the setup screens) with `tools/run_input_tests.py --fixture-data --small` (those marked for both layouts also at 800x600): headless (SDL's offscreen driver) on Mesa's software OpenGL (llvmpipe), on the minimal data set and pictures of `tests/fixtures` with our built-in learning content. A failed run keeps its pictures as the `input-scripts-failure` artifact |
 
 The Linux and macOS jobs run the tests in one process per core
 (`.github/scripts/run_tests_parallel.sh`). The jobs keep the compiler's output

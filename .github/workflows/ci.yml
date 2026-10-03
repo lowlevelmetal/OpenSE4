@@ -157,7 +157,7 @@ jobs:
         env:
           SDL_VIDEO_DRIVER: offscreen
           LIBGL_ALWAYS_SOFTWARE: 1
-        run: python3 tools/run_input_tests.py --fixture-data --renderer=opengl --jobs 4 --output "$RUNNER_TEMP/input-scripts"
+        run: python3 tools/run_input_tests.py --fixture-data --small --renderer=opengl --jobs 4 --output "$RUNNER_TEMP/input-scripts"
 
       # The pictures show only our own fixtures and content.
       - name: Keep the pictures of a failed run
