@@ -9,6 +9,7 @@
 #include "game/query.hpp"
 #include "game/rules.hpp"
 #include "game/scrap.hpp"
+#include "game/setup.hpp"
 #include "game/sight.hpp"
 #include "game/xmath.hpp"
 
@@ -1013,6 +1014,10 @@ struct Applier {
         if (c.chooseColonyType) emp().chooseColonyType = *c.chooseColonyType;
         return {};
     }
+    R operator()(const cmd::SetEmail& c) {
+        emp().email = cleanEmail(c.email);
+        return {};
+    }
 
     // ---- Ministers (spec 02 §10, spec 05 §7.1) ----------------------------------------------------
 
@@ -1176,6 +1181,7 @@ OPENSE4_CMD_NAME(CloakColony)
 OPENSE4_CMD_NAME(Analyze)
 OPENSE4_CMD_NAME(SelfDestruct)
 OPENSE4_CMD_NAME(FireOn)
+OPENSE4_CMD_NAME(SetEmail)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

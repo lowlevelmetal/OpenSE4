@@ -60,6 +60,7 @@ std::string checkSetup(const game::Rules& r, const game::GameOptions& options, g
     s.leaderName = proto::sanitize(s.leaderName, 64);
     s.preset = proto::sanitize(s.preset, 64);
     s.ministerStyle = proto::sanitize(s.ministerStyle, 64);
+    s.email = game::cleanEmail(s.email);
     s.passwordHash.clear();
     s.kind = game::PlayerKind::Human;
     s.presetTier = std::clamp(s.presetTier, 0, 2);
@@ -927,6 +928,7 @@ void HostSession::refreshLobby() {
     for (const auto& s : slots_) {
         LobbySlot info = s->info;
         info.setup.passwordHash.clear();
+        info.setup.email.clear();  // each player's address stays with the host (spec 06 §7 Q95)
         lobby_.slots.push_back(std::move(info));
     }
 }

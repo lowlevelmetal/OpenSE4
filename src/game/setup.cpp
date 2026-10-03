@@ -262,6 +262,23 @@ std::string hashPassword(std::string_view password) {
     return std::format("fnv1a64:{:016x}", h.value());
 }
 
+std::string cleanEmail(std::string_view address) {
+    std::string out;
+    for (char c : address) {
+        const auto u = static_cast<unsigned char>(c);
+        if (u >= 0x20 && u != 0x7f) out += c;
+    }
+    const size_t first = out.find_first_not_of(' ');
+    if (first == std::string::npos) return {};
+    out = out.substr(first, out.find_last_not_of(' ') - first + 1);
+    if (out.size() > kMaxEmailBytes) {
+        size_t end = kMaxEmailBytes;
+        while (end > 0 && (static_cast<unsigned char>(out[end]) & 0xc0) == 0x80) --end;  // not inside a UTF-8 sequence
+        out.resize(end);
+    }
+    return out;
+}
+
 const ruleset::RacePreset* findPreset(const Rules& r, std::string_view folderOrName) {
     for (const auto& p : r.racePresets())
         if (keysEqual(p.folder, folderOrName) || keysEqual(p.name, folderOrName)) return &p;
@@ -387,6 +404,7 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         e.id = EmpireId{i};
         e.kind = es.kind;
         e.passwordHash = es.passwordHash;
+        e.email = cleanEmail(es.email);
         // The Empire Setup minister style; it drives a Computer Controlled
         // empire too, unless the race's style is used (spec 02 §9, spec 05 §7.1).
         e.ministerStyle = es.ministerStyle;

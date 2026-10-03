@@ -3,7 +3,7 @@
 # turns first, so that the player has a troop design): Begin fights it round by round,
 # Close lights when it is over, and the strategic battle then goes on to its end
 # (docs/BUILDING.md "Input scripts").
-options --quick-start=Terran --seed=7 --turns=60 --open=ground-combat --layout=1024x768 --size=1280x800
+options --quick-start=Terran --empires=4 --seed=7 --turns=60 --open=ground-combat --layout=1024x768 --size=1280x800
 
 wait-window strategic-combat
 wait-window ground-combat

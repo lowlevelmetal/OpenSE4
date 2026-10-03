@@ -111,6 +111,7 @@ TEST_CASE("net: protocol messages round trip") {
     slot.player = "alice";
     slot.ready = true;
     slot.setup.name = "Alice's Empire";
+    slot.setup.email = "alice@example.org";
     slot.setup.customRace = game::Race{};
     lobby.slots = {slot, net::LobbySlot{}};
     net::LobbyInfo back;
@@ -121,7 +122,20 @@ TEST_CASE("net: protocol messages round trip") {
     REQUIRE(back.slots.size() == 2);
     CHECK(back.slots[0].player == "alice");
     CHECK(back.slots[0].setup.customRace.has_value());
+    CHECK(back.slots[0].setup.email == "alice@example.org");
     CHECK(back.slots[1].open());
+
+    // Change Email in a turn-based player's commands.
+    net::proto::PlayCommands play;
+    play.turn = 3;
+    play.request = 2;
+    play.orders = game::serializeOrders(game::EmpireOrders{game::EmpireId{1u}, 3, {game::cmd::SetEmail{"bob@example.org"}}});
+    net::proto::PlayCommands playBack;
+    REQUIRE(net::proto::decode(net::proto::encode(play), playBack, error));
+    auto played = game::deserializeOrders(playBack.orders);
+    REQUIRE(played.has_value());
+    REQUIRE(played->commands.size() == 1);
+    CHECK(std::get<game::cmd::SetEmail>(played->commands[0]).email == "bob@example.org");
 
     net::proto::Login login;
     login.player = "bob";
@@ -295,6 +309,14 @@ TEST_CASE("net: lobby, game start and a turn with two clients") {
     CHECK(host.state()->seed == 21);
     CHECK(g.alice.state()->seed == 0);
     CHECK(g.alice.lobby().seed == 0);
+    // Each player's e-mail address reaches the game, but no other player
+    // (spec 06 §7 Q95: it is shown only to its own player).
+    CHECK(host.state()->empires[0].email == "alice@example.org");
+    CHECK(g.alice.state()->empires[0].email == "alice@example.org");
+    CHECK(g.bob.state()->empires[0].email.empty());
+    REQUIRE_FALSE(g.bob.lobby().slots.empty());
+    CHECK(g.bob.lobby().slots[0].setup.email.empty());
+    CHECK(g.alice.lobby().slots[0].setup.email.empty());
 
     // Chat reaches everyone.
     g.alice.chat("hello all");
@@ -342,9 +364,14 @@ TEST_CASE("net: lobby, game start and a turn with two clients") {
     // A second turn; resubmitting replaces earlier orders.
     REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "first try")).has_value());
     REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "second try")).has_value());
-    REQUIRE(g.bob.submitOrders(noteOrders(g.bob, "bob again")).has_value());
+    game::EmpireOrders bobsTurn = noteOrders(g.bob, "bob again");
+    bobsTurn.commands.push_back(game::cmd::SetEmail{"bob@example.org"});  // Change Email travels with the orders
+    REQUIRE(g.bob.submitOrders(bobsTurn).has_value());
     REQUIRE(loop.until([&] { return g.alice.state()->turn == 2 && g.bob.state()->turn == 2; }));
     CHECK(noteOf(*g.alice.state(), game::EmpireId{0u}) == "second try");
+    CHECK(host.state()->empires[1].email == "bob@example.org");
+    CHECK(g.bob.state()->empires[1].email == "bob@example.org");
+    CHECK(g.alice.state()->empires[1].email.empty());
 
     // Leaving: the host notices.
     g.bob.disconnect("bye now");

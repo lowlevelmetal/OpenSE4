@@ -694,8 +694,22 @@ private:
             while (i < spec.size() && (spec[i] < '0' || spec[i] > '9')) ++i;
             if (i < spec.size()) {
                 int k = spec[i] - '0';  // a single digit
-                if (k <= 1) return center;
+                if (k == 0) {
+                    // Any sector of the inner 11 × 11 square, redrawn like a ring
+                    // while taken, up to 101 draws (confirmed: binary).
+                    Sector last{1, 1};
+                    for (int n = 0; n < 101; ++n) {
+                        const int x = 1 + draw(rng_, kSystemSize - 2);
+                        const int y = 1 + draw(rng_, kSystemSize - 2);
+                        last = Sector{x, y};
+                        if (!claimed(last)) break;
+                    }
+                    return last;
+                }
+                if (k == 1) return center;
                 if (k > 7) {
+                    // The spec gives no rule for Ring 8 and 9: the ring formula would
+                    // leave the 13 × 13 grid (OpenSE4 choice, spec 01 §14 Q46).
                     warn(std::format("System '{}': position '{}' is beyond the grid; using Ring 7.", sys.name, spec));
                     k = 7;
                 }
@@ -1151,10 +1165,13 @@ std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy
                 if (!startEligible(galaxy, rs, sys.id)) continue;
                 if (!options.allowSameSystem && isHomeSystem(sys.id)) continue;
                 if (attempt < 3 && options.evenlyDistributed) {
+                    // The original's jump count is the real number plus two, and the
+                    // test is count > L, so a system at least L − 1 jumps away passes
+                    // (spec 01 §3.6, confirmed: binary). No warp path counts as 999.
                     const int limit = farEnough[static_cast<size_t>(attempt - 1)];
                     const bool spread = std::all_of(jumpsFrom.begin(), jumpsFrom.end(), [&](const std::vector<int>& j) {
                         const int d = j[sys.id.index()];
-                        return d < 0 || d > limit;  // no warp path counts as very far
+                        return d < 0 || d + 2 > limit;
                     });
                     if (!spread) continue;
                 }
@@ -1171,11 +1188,13 @@ std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy
         if (!pool.empty()) {
             home = pool[static_cast<size_t>(draw(rng, static_cast<int>(pool.size())))];
         } else {
-            // Nothing fits: a new homeworld in a random start-eligible system.
+            // Nothing fits: a new homeworld in a random start-eligible system that is
+            // not an earlier player's home system, a test skipped when players may
+            // start in the same system (spec 01 §3.6, confirmed: binary).
             std::optional<SystemId> target;
             for (int n = 0; n < 2000 && !target; ++n) {
                 const SystemId s{static_cast<uint32_t>(draw(rng, systemCount))};
-                if (startEligible(galaxy, rs, s) && !isHomeSystem(s)) target = s;
+                if (startEligible(galaxy, rs, s) && (options.allowSameSystem || !isHomeSystem(s))) target = s;
             }
             if (!target) target = SystemId{static_cast<uint32_t>(draw(rng, systemCount))};
             // Any sector without a planet: a star, storm, warp point or asteroid

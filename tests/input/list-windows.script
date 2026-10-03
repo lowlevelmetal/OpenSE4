@@ -1,7 +1,7 @@
 # The four list windows (docs/spec/06 §1.8): their sortable headings, their filters and tabs,
 # and the arrow column every list scrolls with; and a design's report from a right-click
 # (docs/BUILDING.md "Input scripts"). The computer plays 15 turns first, so the lists fill.
-options --quick-start --seed=7 --turns=15 --open=none --layout=1024x768 --size=1280x800
+options --quick-start --empires=4 --seed=7 --turns=15 --open=none --layout=1024x768 --size=1280x800
 
 wait-screen game
 wait-for tag:command:planets

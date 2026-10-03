@@ -2,11 +2,16 @@
 
 #include "engine_fixture.hpp"
 
+#include "game/commands.hpp"
 #include "game/redact.hpp"
 #include "game/serialize.hpp"
+#include "game/setup.hpp"
 #include "game/turn.hpp"
 
 #include <doctest/doctest.h>
+
+#include <format>
+#include <string>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -80,4 +85,44 @@ TEST_CASE("redact: spectators see no empire's private data") {
     CHECK(v.vehicles.empty());
     CHECK(v.fleets.empty());
     for (const Empire& e : v.empires) CHECK(e.stockpile.isZero());
+}
+
+TEST_CASE("e-mail address: set in Empire Setup, changed by Change Email, shown only to its player") {
+    // Spec 06 §7 Q95: the address is the empire's, entered in Empire Setup's
+    // Email box and changed with Change Email (the password is kept).
+    const Rules& r = test::engineRules();
+    GameSetup setup;
+    setup.seed = 5;
+    setup.options.systemCount = 12;
+    for (int i = 0; i < 2; ++i) {
+        EmpireSetup e;
+        e.name = std::format("Empire {}", i + 1);
+        e.email = i == 0 ? "  first@example.org\t" : "";
+        e.passwordHash = i == 0 ? "secret" : "";
+        setup.empires.push_back(std::move(e));
+    }
+    auto created = createGame(r, setup);
+    REQUIRE(created.has_value());
+    GameState& s = *created;
+    const EmpireId me{0u}, other{1u};
+    CHECK(s.empire(me).email == "first@example.org");  // control characters and outer spaces dropped
+    CHECK(s.empire(other).email.empty());
+
+    REQUIRE(apply(r, s, other, cmd::SetEmail{"second@example.org"}).ok);
+    CHECK(s.empire(other).email == "second@example.org");
+    REQUIRE(apply(r, s, me, cmd::SetEmail{"new@example.org"}).ok);
+    CHECK(commandName(Command{cmd::SetEmail{}}) == "SetEmail");
+    CHECK(s.empire(me).email == "new@example.org");
+    CHECK(s.empire(me).passwordHash == "secret");
+    // At most kMaxEmailBytes bytes, never cut inside a UTF-8 sequence.
+    std::string longAddress(kMaxEmailBytes - 1, 'a');
+    longAddress += "\xc3\xa9@example.org";
+    CHECK(cleanEmail(longAddress) == std::string(kMaxEmailBytes - 1, 'a'));
+
+    const GameState mine = redactForEmpire(r, s, me);
+    CHECK(mine.empire(me).email == "new@example.org");
+    CHECK(mine.empire(other).email.empty());
+    const GameState spectator = redactForEmpire(r, s, EmpireId{});
+    CHECK(spectator.empire(me).email.empty());
+    CHECK(spectator.empire(other).email.empty());
 }

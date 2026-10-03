@@ -193,7 +193,9 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
                     race = p.folder;
                     break;
                 }
-        game::GameSetup setup = quickStartSetup(*mode->rules_, race, options.seed, std::max(0, options.empireCount - 1));
+        // --empires=N: N - 1 computer opponents; without it, Quick Start's own (random computer and neutral players).
+        game::GameSetup setup = quickStartSetup(*mode->rules_, race, options.seed,
+                                                options.empireCount > 0 ? std::optional<int>(options.empireCount - 1) : std::nullopt);
         if (options.systemCount > 0) setup.options.systemCount = options.systemCount;
         setup.options.quadrantType = options.quadrantType;
         setup.options.simultaneous = !options.turnBased;

@@ -365,15 +365,16 @@ On 2026-10-03 the original's generated galaxies were read through a debugger and
 with ours (spec 01 §3.8; 544 quadrants of every type and size, 41 placements): every
 distribution agrees, and the link building, the connectivity pass and the warp point
 sectors come out exactly as the original's. The empire placement showed that the original's
-spread test counts two jumps more than the real number (spec 01 §3.6), the first row below.
+spread test counts two jumps more than the real number (spec 01 §3.6). Since 2026-10-03 the
+engine's spread test does the same (J + 2 > L), the last-resort homeworld may reuse an
+earlier home system when "Allowed to start in the same system" is on, and a template's
+`Ring 0` is any sector of the inner 11 × 11 square (`generate.cpp`). `Ring 8` and `Ring 9`
+stay on `Ring 7` with a warning: the spec has no rule for them (spec 01 §14 Q46).
 
 These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Empire placement spread (`generate.cpp` `placeHomeworlds`, with `warpJumps`) | Attempts 1 and 2 need more than L real jumps from every earlier home (L = trunc(0.8 or 0.5 × (S div P))) | The original's jump count is the real number plus two, so a system at least L − 1 jumps away passes (spec 01 §3.6, confirmed: binary, observed in 243 placements). Ours spreads homes two jumps farther in those attempts | M |
-| Last-resort homeworld (`generate.cpp` `placeHomeworlds`) | Always skips a system that is already another player's home | Skips it only when "Allowed to start in the same system" is off (confirmed: binary; spec 01 §3.6 says only "not used by another player"); off by default | L |
-| System template positions (`generate.cpp` `resolvePosition`) | "Ring 0" goes to the centre; rings above 7 are clamped | "Ring 0" is a random sector of the inner 11 × 11 square (x and y 1–11), redrawn like any ring while taken, up to 101 draws (spec 01 §4.3, confirmed: binary); the stock data uses neither | L |
 | Generation edge cases (`generate.cpp` `drawNames`, the connectivity pass of `buildLinks`, the "warp points anywhere" draw of `placeWarpPoints`, `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
 
 ## Client windows (spec 06)
@@ -422,7 +423,8 @@ Q89–Q98. What remains different (impact visual only unless noted):
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Research (`screens/research.cpp`) | Tech Tree always in slot 12; project boxes with the name, level and an estimate centred, the small box writing "paid / cost" | Tech Tree only when the game lets players see the complete tech tree, a Game Settings check box our setup and `GameOptions` lack (spec 01 §2.2), and the only way to the Tech Tree window; 140×130 boxes with the name, "Research Level N", Completion and Cost Per Turn, the small box a bar of up to 19 green blocks (spec 06 §7 Q92) | L |
-| Empire Status (`screens/empire_status.cpp`) | Change Email dim: the engine keeps no e-mail address for an empire; one table per block, icons on each block's first row, the net as an unlabelled block | The address is the empire's (asked for by Change Email and by Empire Setup's Email box), saved with the game and carried in the orders file but never used to send mail (spec 05 §9.2, spec 06 §7 Q95); needs an `Empire` field. Amounts right-aligned at fixed places, icons only on From Our Colonies, Net Resources Per Turn a labelled row | L |
+| Empire Status (`screens/empire_status.cpp`) | One table per block, icons on each block's first row, the net as an unlabelled block | Amounts right-aligned at fixed places, icons only on From Our Colonies, Net Resources Per Turn a labelled row (spec 06 §7 Q95) | L |
+| E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Every list (`screens/list_widgets.cpp`) | A 16 px column with arrows of our own drawing, no thumb; the wheel scrolls | A 24 px column with the `Arrows.bmp` cells (normal, under the pointer, held, disabled), a thumb as long as the visible share, a click or drag in the track jumps there, holding an arrow repeats every 100 ms (spec 06 §7 Q89) | L |
 | Empires (`screens/empires.cpp`) | Borders a view of the Empires window, one filter at a time, overlaps in white, no claiming | Borders a window of its own: a check box per empire, the claimed systems in their colours, contested ones yellow with a Legend, a click claims a system or gives it up (spec 06 §7 Q96) | L |
 | Weapons Report export (`data_export.cpp`) | Four tab-separated `OpenSE4_*.txt` tables of our own columns | `Weapons.txt`, `Comps.txt`, `WeaponFamilies.txt`, `CompFamilies.txt`, fixed-width, every component of the data set (spec 06 §7 Q83) | L |
@@ -436,19 +438,49 @@ Q89–Q98. What remains different (impact visual only unless noted):
 
 Seen side by side with the running original on 2026-10-03 ([spec 07](spec/07-observations.md),
 session 5, which gives each original layout in full): the setup screens, the front end,
-Help, the Galaxy Map, Intelligence, Combat Replay and Ground Combat. Impact visual only
-unless noted:
+Help, the Galaxy Map, Intelligence, Combat Replay and Ground Combat.
+
+Since 2026-10-03 the setup screens and the front end follow session 5: Game Setup and Empire
+Setup in the setup frame with every page's boxes (`screens/setup.cpp`, `setup_empire.cpp`,
+`setup_widgets.cpp`), Game Setup opening on Players with an empty list and Add New starting
+an empty empire with the Email box and the 340×370 list pickers; the new-game defaults
+(random computer and neutral players at Medium with one count choice, Maximum Event Severity
+Catastrophic, the victory values) and Quick Start keeping them, its opponents rolled from the
+seed (`setup::quickStartGame`); Quick Start's picker in Settings.txt's style order, eight to a
+page, column by column, with the empire's name as written; one Load Game dialog for the intro,
+the Game Menu's Load and Delete and Add Existing's Load Empire (`screens/file_dialog.cpp`);
+the intro's "Loading:" and "Complete". What still differs, and OpenSE4's own additions:
+
+- **Ours, kept** (impact none): the intro's Multiplayer, Settings and Manual buttons at the top
+  right; a status line under the setup frame (errors, a summary); Game Setup's Seed box,
+  system details under the pointer and map facts on Quadrant, the list of possible events on
+  Events, Allow All and Remove All on Technology, Move Up and Move Down and a "Computer" mark
+  on Players, Restore Defaults on Mechanics; Empire Setup's Preset Build and Race Name
+  (General), an enabled Computer Controlled box (a listed empire may be a computer player),
+  the homeworld's picture (Environment), Preset Values and All 100% (Characteristics), why a
+  trait cannot be taken (Advanced Traits); Quick Start's double click and the yellow frame on
+  the chosen portrait; `--quick-start --empires=N` and a lesson's `computer_players`, which
+  give N − 1 (or that many) computer players and no neutral empire.
+- **Dim in ours** (impact L): Game Settings' Game Master Password, Cheat codes allowed and
+  Players can see the complete tech tree (no such options for a game on one computer; network
+  games set a master password in Multiplayer); Mechanics' Different Machines, Multiplayer
+  Game Filename, Save Game Directory Path and Connection Type (network and e-mail games are set
+  up from Multiplayer).
+- **Our choices where the observation is silent** (impact L): the spin controls' steps (5 % a
+  click for characteristics, 100,000 points, one year, 10 % and 5 % for the victory values, 50
+  units and 10 ships) and typing into their value boxes; the characteristics' level words
+  other than "Average" and the effect wording; Begin Game without a chosen portrait asks for
+  one; Change Directory asks for a folder by name (with Default); the Compare Culture
+  Modifiers window is our table; the pictures under the page buttons come from the seed;
+  Victory Conditions keeps whole years; the lists use the shared arrow column (the "Every
+  list" row); loading a game shows no "Login To Game" list of its empires and the Game Master.
+
+Impact visual only unless noted:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Game Setup (`screens/setup.cpp`, `setup_widgets.cpp`) | A layout of our own: title strip, the pages as a column at the right, radio rows with ranges and explanations; opens on Quadrant; Technology Level on the Technology page; a Combat choice on Mechanics; no Game Master Password, Cheat Codes, No Tactical Combat or complete-tech-tree boxes, Multiplayer Game Filename, Save Game Directory Path or Connection Type | The setup frame and the eight page layouts of spec 07 session 5 (an 800×600 area, page buttons at the left, content frame, Begin Game and Cancel under it); opens on Players | L |
-| New-game and Quick Start defaults (`state.hpp` `GameOptions`, `setup_model.cpp` `defaultSettings`, `frontend.cpp` `quickStartSetup`) | Maximum Event Severity High; random neutral players off; victory values 50000 points, 100 years, 200 %, 75 %, 20 years, 10 years; one human empire already in the list; Quick Start gives the player 4 computer opponents and no neutral empire | Catastrophic; random computer and neutral empires both on with one count choice (Medium: 3–7 of each); 5,000,000, 10.0, 300 %, 50 %, 1.0 and 5.0; the list starts empty; Quick Start keeps these defaults, so it rolls 3–7 computer players and 3–7 neutral empires (spec 01 §2.1, §2.2, §11; spec 07 session 5) | M |
-| Empire Setup (`screens/setup_empire.cpp`) | A layout of our own, filled from the race's preset, no Email box, drop-down pickers | The six page layouts of spec 07 session 5; starts empty; an Email box; 340×370 list pickers | L |
-| Quick Start (`frontend.cpp` `QuickStartScreen`) | Every race alphabetically, row by row, scrolled by row with 16 px arrows; Begin Game dim until a portrait is chosen; the Cryslonite named "Cryslonite Imperium Imperium" | Settings.txt's Quick Start Style order, column by column, pages of eight turned by 24×24 arrows; the empire's name as written (spec 07 session 5) | L |
-| Load Game (`frontend.cpp` `LoadGameScreen`, the in-game window) | Two different windows (a 600×540 panel from the intro, a 536 px window in the game), no dates, no Change Directory | One 420×520 dialog with Save Game Name and Date columns, Change Directory and Cancel (spec 07 session 5) | L |
 | Help (`screens/help.cpp`) | Find box, items grouped with pictures and sizes, our own detail lines, no Weap Mount tab or Manual button, Weapons Report in slot 11 | Alphabetical name lists with lamps, the detail layout of spec 07 session 5, Weap Mount tab (slot 2), Weapons Report (slot 12), Manual (slot 13) | L |
 | Galaxy Map (`screens/galaxy_map.cpp`) | Map 5–6 px up and left in a darker frame, a frame round the content, Goto System in slot 8, an extra Show Distances box and a legend | Map frame (144,189)–(687,564), hint under it, Goto System in slot 11, Show Names in slot 13 (spec 07 session 5) | L |
-| Intro (`frontend.cpp`) | Multiplayer, Settings and Manual buttons at the top right; "Data: se4" at the right of the version line | "Loading:" and "Complete" at the right of the version line; no other buttons (our extra buttons are OpenSE4's) | L |
 | Intelligence (`screens/intelligence.cpp`) | Points as a line in the content, a two-column table with the group in orange, the four project boxes stacked at the right, a description box, Divide Evenly, Reorder Projects in slot 7 | The Research layout: points in the title strip, silver group headings, 14 px rows with the cost right-aligned, four 140 px boxes side by side with their small boxes, Divide Pts Evenly, Reorder Projects in slot 13 (spec 07 session 5) | L |
 
 Since 2026-10-03 the battle windows follow session 5 and spec 06 §7 Q86, Q87, Q97 and Q98:
@@ -629,7 +661,9 @@ share the vehicle type, which differ (the queue list details above, implemented 
 2026-10-02). The golden games of `tests/test_determinism.cpp` moved to seed 39 then, to
 seed 19 on 2026-10-02, to seed 42 later that day (the varied battles to seed 19, whose
 invasion still lands), and to seed 35 with the budget rule, whose games still cover
-battles, events, intelligence and politics.
+battles, events, intelligence and politics. The simultaneous golden game moved to seed 39
+with the placement spread of spec 01 §3.6 (2026-10-03): seed 35 placed the homes closer and
+fought no battle.
 
 Found under a debugger on 2026-10-02 (spec 05 §7.2, §7.5, questions 65–71; spec 07
 "Battles, bases and the first turns under a debugger"; confirmed: binary) and implemented

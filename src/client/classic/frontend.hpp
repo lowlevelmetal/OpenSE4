@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string_view>
 
 namespace opense4::client::classic {
@@ -75,8 +76,12 @@ std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name);
 std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::shared_ptr<const game::Rules> rules, const game::GameSetup& setup,
                                                                           const game::StartExtras& extras = {});
 
-// Quick start: the player's race plus random computer opponents.
-game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed, int opponents = 4);
+// Quick Start: the player's race in a new game's settings, so random computer
+// and neutral players (Medium) rolled from the seed (spec 01 §2.1, §2.2).
+// With `opponents` (a lesson's, or --empires on the command line): that many
+// computer players of other races picked from the seed, and no neutral one.
+game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed,
+                                std::optional<int> opponents = std::nullopt);
 // What a quick start gives beyond its setup (spec 01 §2.1, confirmed:
 // binary): the player gets one Design minister run at creation, and no ships.
 game::StartExtras quickStartExtras();

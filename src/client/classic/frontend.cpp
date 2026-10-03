@@ -4,6 +4,10 @@
 
 #include "client/app_settings.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/file_dialog.hpp"
+#include "client/classic/screens/setup_model.hpp"
+#include "client/classic/screens/setup_widgets.hpp"
+#include "client/script/items.hpp"
 #include "client/classic/settings.hpp"
 #include "client/settings_window.hpp"
 #include "datafile/datafile.hpp"
@@ -52,13 +56,16 @@ public:
         background(ctx);
         // The original's intro (docs/spec/06 §1.1, §7 Q9): a black band along the
         // bottom with two rows of four buttons across the full width, the version
-        // at the left and the data set at the right. OpenSE4's own entries sit
-        // in a small row at the top right, apart from the original's layout.
+        // at the left and the loading state at the right. OpenSE4's own entries
+        // sit in a small row at the top right, apart from the original's layout.
+        // Places are the 1024x768 frame's, kept at the same distance from the
+        // frame's bottom in the 800x600 layout.
         const Painter p = ctx.painter();
         const float left = ctx.map.left, right = ctx.map.right;
-        ImGui::GetBackgroundDrawList()->AddRectFilled(ctx.at({left, 695}), ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y),
+        const float dy = frameH() - 768.0f;
+        ImGui::GetBackgroundDrawList()->AddRectFilled(ctx.at({left, 695 + dy}), ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y),
                                                       IM_COL32_BLACK);
-        ImGui::SetNextWindowPos(ctx.at({left, 672}));
+        ImGui::SetNextWindowPos(ctx.at({left, 672 + dy}));
         ImGui::SetNextWindowSize(ctx.size({right - left, 96}));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -66,9 +73,11 @@ public:
                                                 ImGuiWindowFlags_NoBackground)) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             ImGui::PushFont(ctx.fonts.small, p.fontPx(kSmallSize));
-            dl->AddText(ctx.at({left + 10, 682}), IM_COL32(220, 220, 220, 255), "Version: OpenSE4 " OPENSE4_CLIENT_VERSION);
-            const std::string data = "Data: " + ctx.rules->data().dataDir.parent_path().filename().string();
-            dl->AddText(ctx.at({right - 12 - ImGui::CalcTextSize(data.c_str()).x / ctx.k(), 682}), IM_COL32(220, 220, 220, 255), data.c_str());
+            dl->AddText(ctx.at({left + 10, 682 + dy}), IM_COL32(220, 220, 220, 255), "Version: OpenSE4 " OPENSE4_CLIENT_VERSION);
+            // At its right the original's loading progress, done once the data
+            // files have loaded (spec 07 session 5): "Loading:" and "Complete".
+            dl->AddText(ctx.at({right - (1024 - 713), 682 + dy}), IM_COL32(220, 220, 220, 255), "Loading:");
+            dl->AddText(ctx.at({right - (1024 - 814), 682 + dy}), IM_COL32(220, 220, 220, 255), "Complete");
             ImGui::PopFont();
             struct Entry {
                 const char* label;
@@ -93,16 +102,17 @@ public:
             constexpr size_t kColumns = 4;
             const float w = (right - left - 24 - 5 * float(kColumns - 1)) / float(kColumns);
             for (size_t i = 0; i < entries.size(); ++i) {
-                ImGui::SetCursorScreenPos(ctx.at({left + 12 + float(i % kColumns) * (w + 5), 700 + float(i / kColumns) * 30}));
+                ImGui::SetCursorScreenPos(ctx.at({left + 12 + float(i % kColumns) * (w + 5), 700 + dy + float(i / kColumns) * 30}));
                 if (classicButton(p, entries[i].label, {w, 26}, 0, false, entries[i].go != nullptr) && entries[i].go) entries[i].go();
             }
-            if (!ctx.error.empty()) dl->AddText(ctx.at({left + 12, 660}), IM_COL32(255, 128, 100, 255), ctx.error.c_str());
-            if (!error_.empty()) dl->AddText(ctx.at({left + 12, 644}), IM_COL32(255, 128, 100, 255), error_.c_str());
+            if (!ctx.error.empty()) dl->AddText(ctx.at({left + 12, 660 + dy}), IM_COL32(255, 128, 100, 255), ctx.error.c_str());
+            if (!error_.empty()) dl->AddText(ctx.at({left + 12, 644 + dy}), IM_COL32(255, 128, 100, 255), error_.c_str());
         }
         ImGui::End();
         ImGui::PopStyleVar(2);
 
-        // OpenSE4's own entries: multiplayer, its settings and the manual.
+        // OpenSE4's own entries, which the original does not have: multiplayer,
+        // its settings and the manual.
         ImGui::SetNextWindowPos(ctx.at({right - 12 - 3 * 112 - 2 * 4, 10}));
         ImGui::SetNextWindowSize(ctx.size({3 * 112 + 2 * 4, 24}));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -175,91 +185,69 @@ public:
     }
 };
 
-// Tiles the star field over the whole window (the empire picker's backdrop).
-void starfield(MenuContext& ctx) {
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    const ImVec2 size = ImGui::GetIO().DisplaySize;
-    dl->AddRectFilled({0, 0}, size, IM_COL32_BLACK);
-    const Sprite sky = ctx.art.image("Pictures/Game/Screens/1024X768/Starmap.bmp", false);
-    if (!sky) return;
-    const float tw = ctx.px(sky.size.x), th = ctx.px(sky.size.y);
-    for (float y = 0; y < size.y; y += th)
-        for (float x = 0; x < size.x; x += tw)
-            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(sky.tex.value)), {x, y}, {x + tw, y + th}, {sky.uv.min.x, sky.uv.min.y},
-                         {sky.uv.max.x, sky.uv.max.y});
-}
-
+// Quick Start's picker in the setup frame (spec 07 session 5): "Select Empire"
+// and a two-line hint, the races of Settings.txt's Quick Start Style list in
+// pages of eight, two columns of four filled column by column, each a 128×128
+// portrait with the empire's name and the race's description beside it;
+// arrows at the frame's right turn a whole page; Begin Game and Cancel.
 class QuickStartScreen final : public FrontScreen {
 public:
     void draw(MenuContext& ctx) override {
-        // The original's picker: a title and hint at the left, a framed two-column
-        // list of portraits with each race's name and description, and the
-        // Begin Game and Cancel buttons below it.
-        starfield(ctx);
-        const Painter p = ctx.painter();
+        if (styles_.empty() && ctx.rules) styles_ = setup::quickStartStyles(*ctx.rules);
+        setup::SetupArea a(ctx, "##quick", "Select Empire", setup::Decoration::None);
+        if (!a.open()) return;
         const auto& presets = ctx.rules->racePresets();
-        ImGui::SetNextWindowPos(ctx.at({0, 0}));
-        ImGui::SetNextWindowSize(ctx.size({frameW(), frameH()}));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        if (ImGui::Begin("##quick", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                                 ImGuiWindowFlags_NoBackground)) {
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            ImGui::PushFont(ctx.fonts.bold, p.fontPx(kTitleSize));
-            dl->AddText(ctx.at({113, 84}), IM_COL32_WHITE, "Select Empire");
-            ImGui::PopFont();
-            ImGui::SetCursorPos(ctx.size({111, 126}));
-            ImGui::PushTextWrapPos(ctx.px(280));
-            ImGui::TextColored(kLabelBlue, "Choose the empire you will lead by clicking its portrait.");
-            ImGui::PopTextWrapPos();
-
-            const Rect box{{328, 85}, {912, 632}};
-            drawWindowFrame(p, dl, box, nullptr, 0);
-            ImGui::SetCursorPos(ctx.size({338, 95}));
-            beginList(ctx.painter(), "##races", ctx.size({566, 530}), 132, ImGuiChildFlags_None, false);
-            int col = 0;
-            for (size_t i = 0; i < presets.size(); ++i) {
-                if (presets[i].neutral) continue;
-                if (col++ % 2) ImGui::SameLine(ctx.px(277));
-                ImGui::PushID(int(i));
-                ImGui::BeginGroup();
-                const ImVec2 a = ImGui::GetCursorScreenPos();
-                const ImVec2 b{a.x + ctx.px(128), a.y + ctx.px(128)};
-                if (ImGui::InvisibleButton("##portrait", ctx.size({128, 128}))) chosen_ = int(i);
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) begin(ctx, i);
-                ImDrawList* cl = ImGui::GetWindowDrawList();
-                if (Sprite portrait = ctx.art.racePortrait(presets[i].folder))
-                    cl->AddImage(ImTextureRef(static_cast<ImTextureID>(portrait.tex.value)), a, b, {portrait.uv.min.x, portrait.uv.min.y},
-                                 {portrait.uv.max.x, portrait.uv.max.y});
-                const bool selected = int(i) == chosen_;
-                cl->AddRect(a, b, selected ? IM_COL32(255, 220, 90, 255) : imColor(palette::kFrame), 0.0f, selected ? 2.0f : 1.0f);
-                ImGui::SameLine(0, ctx.px(5));
-                ImGui::BeginGroup();
-                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ctx.px(138));
-                const std::string name = presets[i].empireType.empty() ? presets[i].name : presets[i].name + " " + presets[i].empireType;
-                ImGui::TextUnformatted(name.c_str());
-                ImGui::PushFont(ctx.fonts.small, p.fontPx(kSmallSize));
-                ImGui::TextUnformatted(presets[i].description.c_str());
-                ImGui::PopFont();
-                ImGui::PopTextWrapPos();
-                ImGui::EndGroup();
-                ImGui::EndGroup();
-                ImGui::PopID();
-                if (col % 2 == 0) ImGui::Dummy(ctx.size({0, 2}));
+        a.heading({1, 43}, "Choose the empire you will lead");
+        a.heading({1, 59}, "by clicking its portrait.");
+        constexpr size_t kPerPage = 8;
+        const size_t pages = std::max<size_t>(1, (styles_.size() + kPerPage - 1) / kPerPage);
+        page_ = std::min(page_, pages - 1);
+        for (size_t k = 0; k < kPerPage; ++k) {
+            const size_t at = page_ * kPerPage + k;
+            if (at >= styles_.size()) break;
+            const size_t index = styles_[at];
+            const ruleset::RacePreset& p = presets[index];
+            // The left column first: styles 1-4, then 5-8.
+            const Vec2 frame{k < 4 ? 230.0f : 506.0f, 14 + 132.0f * float(k % 4)};
+            a.place(frame);
+            ImGui::PushID(static_cast<int>(index));
+            if (ImGui::InvisibleButton("##portrait", a.size({128, 128}))) chosen_ = static_cast<int>(index);
+            const bool twice = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+            ImGui::PopID();
+            const std::string name = empireName(p);
+            script::reportItem(name);   // input scripts find a race by its empire's name
+            a.picture(ctx.art.racePortrait(p.folder), frame, frame + Vec2{128, 128});
+            const bool selected = static_cast<int>(index) == chosen_;
+            a.box(frame, frame + Vec2{127, 127}, selected ? 0xffdc5a : setup::kBoxRgb);
+            const float nameH = a.textWrapped(frame + Vec2{134, 3}, name, 134, setup::kWhite);
+            a.textWrapped(frame + Vec2{134, 5 + nameH}, p.description, 132, setup::kExplainRgb, setup::Face::Small);
+            if (twice) {
+                begin(ctx, index);
+                return;
             }
-            endList(ctx.painter());
-
-            ImGui::SetCursorPos(ctx.size({608, 645}));
-            if (classicButton(p, "Begin Game", {148, 26}, 0, false, chosen_ >= 0)) begin(ctx, size_t(chosen_));
-            ImGui::SetCursorPos(ctx.size({761, 645}));
-            if (classicButton(p, "Cancel", {148, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ctx.go(FrontId::Intro);
-            if (!error_.empty()) dl->AddText(ctx.at({328, 680}), IM_COL32(255, 128, 100, 255), error_.c_str());
         }
-        ImGui::End();
-        ImGui::PopStyleVar(2);
+        if (a.arrow("##pageup", {766, 9}, true, page_ > 0)) --page_;
+        if (a.arrow("##pagedown", {766, 516}, false, page_ + 1 < pages)) ++page_;
+        if (!error_.empty()) a.status(error_, setup::kBad);
+        // Begin Game is lit before a portrait is chosen (observed); without one it
+        // only asks for a choice (ours).
+        if (a.beginButton("Begin Game")) {
+            if (chosen_ >= 0) {
+                begin(ctx, static_cast<size_t>(chosen_));
+                return;
+            }
+            error_ = "Click a portrait to choose the empire you will lead.";
+        }
+        if (a.cancelButton()) ctx.go(FrontId::Intro);
     }
 
 private:
+    // The empire's name as the race file writes it: Empire Name and Empire Type.
+    static std::string empireName(const ruleset::RacePreset& p) {
+        const std::string& name = p.empireName.empty() ? p.name : p.empireName;
+        return p.empireType.empty() ? name : name + " " + p.empireType;
+    }
+
     void begin(MenuContext& ctx, size_t preset) {
         auto setup = quickStartSetup(*ctx.rules, ctx.rules->racePresets()[preset].folder, ctx.seed);
         auto session = startLocalGame(ctx.rules, setup, quickStartExtras());
@@ -271,6 +259,8 @@ private:
         ctx.startGame(std::move(*session));
     }
 
+    std::vector<size_t> styles_;
+    size_t page_ = 0;
     int chosen_ = -1;
     std::string error_;
 };
@@ -319,57 +309,31 @@ private:
     SettingsPanelState state_;
 };
 
+// The original's Load Game dialog over the intro picture (screens/file_dialog.hpp),
+// the same one the Game Menu's Load opens.
 class LoadGameScreen final : public FrontScreen {
 public:
     void draw(MenuContext& ctx) override {
         background(ctx);
-        if (!scanned_) scan();
-        if (beginPanel(ctx, "##load", Rect{{212, 120}, {812, 660}}, "Load Game")) {
-            // The list scrolls with the arrow column (spec 06 §1.1: scroll arrows).
-            beginList(ctx.painter(), "##saves", ImVec2(0, -ctx.px(46)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-            if (saves_.empty()) ImGui::TextDisabled("No saved games in %s", savesDir().string().c_str());
-            for (const auto& [name, path] : saves_)
-                if (ImGui::Selectable(name.c_str())) {
-                    const BusyPointer busy;
-                    auto session = ClassicSession::load(ctx.rules, path);
-                    if (session) {
-                        restoreHistoryFrom(path);
-                        if (ctx.loadedFromIntro) ctx.loadedFromIntro();
-                        ctx.startGame(std::move(*session));
-                    } else {
-                        error_ = session.error();
-                    }
-                }
-            endList(ctx.painter());
-            if (ImGui::Button("Cancel", ctx.size({140, 34}))) ctx.go(FrontId::Intro);
-            if (!error_.empty()) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", error_.c_str());
+        const FileDialog::Result r = dialog_.draw(ctx.painter(), "##load");
+        if (r == FileDialog::Result::Cancelled) {
+            ctx.go(FrontId::Intro);
+        } else if (r == FileDialog::Result::Chosen) {
+            const std::filesystem::path path = dialog_.chosen().path;
+            const BusyPointer busy;
+            auto session = ClassicSession::load(ctx.rules, path);
+            if (session) {
+                restoreHistoryFrom(path);
+                if (ctx.loadedFromIntro) ctx.loadedFromIntro();
+                ctx.startGame(std::move(*session));
+            } else {
+                dialog_.setError(session.error());
             }
         }
-        endPanel();
     }
 
 private:
-    void scan() {
-        scanned_ = true;
-        std::error_code ec;
-        std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> files;
-        for (const auto& e : std::filesystem::directory_iterator(savesDir(), ec)) {
-            std::string ext = e.path().extension().string();
-            for (char& c : ext)
-                if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-            if (e.is_regular_file(ec) && ext == ".gam") files.emplace_back(e.last_write_time(ec), e.path());
-        }
-        // Newest first, then by name: a total order (the directory's differs between platforms).
-        std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
-            return a.first != b.first ? a.first > b.first : a.second.filename() < b.second.filename();
-        });
-        for (const auto& [time, path] : files) saves_.emplace_back(path.stem().string(), path);
-    }
-    bool scanned_ = false;
-    std::vector<std::pair<std::string, std::filesystem::path>> saves_;
-    std::string error_;
+    FileDialog dialog_{"Load Game", "Save Game Name", ".gam", loadGameDirectory(), savesDir()};
 };
 
 } // namespace
@@ -391,26 +355,8 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::
     return std::make_unique<ClassicSession>(std::move(rules), std::move(*state), player, humans > 1 ? SessionKind::Hotseat : SessionKind::Local);
 }
 
-game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed, int opponents) {
-    game::GameSetup setup;
-    setup.seed = seed;  // every other setting keeps its default (a rolled Medium quadrant)
-    game::EmpireSetup me;
-    me.preset = std::string(playerPreset);
-    me.kind = game::PlayerKind::Human;
-    setup.empires.push_back(me);
-    // Opponents: other non-neutral presets, picked deterministically from the seed.
-    std::vector<std::string> pool;
-    for (const auto& p : rules.racePresets())
-        if (!p.neutral && !datafile::keysEqual(p.folder, playerPreset)) pool.push_back(p.folder);
-    Rng rng(seed ^ 0x9e3779b97f4a7c15ull);
-    rng.shuffle(pool);
-    for (int i = 0; i < opponents && size_t(i) < pool.size(); ++i) {
-        game::EmpireSetup e;
-        e.preset = pool[size_t(i)];
-        e.kind = game::PlayerKind::Computer;
-        setup.empires.push_back(e);
-    }
-    return setup;
+game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed, std::optional<int> opponents) {
+    return setup::quickStartGame(rules, playerPreset, seed, opponents);
 }
 
 game::StartExtras quickStartExtras() {

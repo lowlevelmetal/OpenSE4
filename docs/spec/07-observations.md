@@ -1523,6 +1523,12 @@ empires) in slots 12–13.
 
 **Borders** (Empires → Borders): a window of its own, see spec 06 §7 Q96.
 
+**OpenSE4 since 2026-10-03.** The setup screens, Quick Start, Load Game and the intro follow
+the layouts above (the "Ours:" notes describe our client as it was observed); the empire's
+Email box and Change Email keep an address with the empire; the new-game defaults are the
+original's, and Quick Start keeps them. What still differs, and OpenSE4's own additions on
+these screens, are listed in PARITY_GAPS ("Seen side by side ... on 2026-10-03").
+
 ### Side by side, part 3: Intelligence, battles, Combat Replay, Ground Combat
 
 A game made for the purpose: Small quadrant, High starting resources, Technology Level High,

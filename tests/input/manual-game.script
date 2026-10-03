@@ -2,7 +2,7 @@
 # opens the page for the window in front, window and Help links open game windows, and the
 # Game Menu's Learn window reads the manual (docs/BUILDING.md "Input scripts").
 # ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
-options --quick-start --seed=7 --open=none --layout=1024x768 --size=1280x800
+options --quick-start --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
 
 wait-screen game
 wait-for tag:command:research

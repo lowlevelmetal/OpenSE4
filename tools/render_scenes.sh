@@ -35,7 +35,8 @@ render() {
     export OPENSE4_USER_DIR="$user"
     [ "${program[0]}" = wine ] && export OPENSE4_USER_DIR="Z:$user"
     printf '[options]\nshow_movement_lines = true\n' > "$user/classic_settings.toml"
-    local common=(--seed=7 --no-audio "--renderer=$renderer" --size=1600x900)
+    # Four empires, no neutral ones: the scenes from before Quick Start rolled its random players.
+    local common=(--seed=7 --empires=4 --no-audio "--renderer=$renderer" --size=1600x900)
     shot() {
         local name=$1
         shift

@@ -2,7 +2,7 @@
 # them; a report opened from that list has the arrow at its top right, which brings the
 # list back; the report the game opens at the start, and one opened by a click on a
 # sector with a single object, have none (docs/BUILDING.md "Input scripts").
-options --quick-start=Terran --seed=7 --open=none --layout=1024x768 --size=1280x800
+options --quick-start=Terran --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
 
 wait-screen game
 wait 5

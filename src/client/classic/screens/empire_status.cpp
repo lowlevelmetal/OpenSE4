@@ -9,6 +9,7 @@
 #include "client/script/items.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/ai_data.hpp"
+#include "game/setup.hpp"
 
 #include <algorithm>
 #include <array>
@@ -129,9 +130,13 @@ public:
         if (d.button("Strategies")) ui.open(ScreenId::Strategies);
         if (d.button("Repair Priorities")) ui.open(ScreenId::RepairPriorities);
         for (int gap = 0; gap < 5; ++gap) d.spacer();
-        // The original keeps an e-mail address with each empire; our engine keeps
-        // none yet, so the button stays dim (spec 06 §7 Q95, docs/PARITY_GAPS.md).
-        d.button("Change Email", false);
+        // Change Email asks for the empire's address, holding the current one;
+        // OK stores it, the password is kept (spec 06 §7 Q95, confirmed: binary).
+        if (d.button("Change Email")) {
+            email_ = me.email;
+            ImGui::OpenPopup("Change Email");
+        }
+        emailPopup(ui);
         if (d.button("Change Password")) {
             password_.clear();
             repeat_.clear();
@@ -144,6 +149,27 @@ public:
     }
 
 private:
+    // The original's input box (spec 06 §7 Q95): "Please Enter Email Address",
+    // the current address in the field, OK and Cancel. Ours is drawn as our
+    // other input boxes are.
+    void emailPopup(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({360, 0}));
+        if (!ImGui::BeginPopupModal("Change Email", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
+        ImGui::TextColored(kLabelBlue, "Please Enter Email Address");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = inputString("##email", email_, game::kMaxEmailBytes, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::Spacing();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("OK", ImVec2(w, ui.px(26))) || enter) {
+            status_.issue(ui, game::cmd::SetEmail{email_});
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
     void passwordPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({360, 0}));
         if (!ImGui::BeginPopupModal("Change Password", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
@@ -177,6 +203,7 @@ private:
 
     CommandStatus status_;
     std::string password_, repeat_, passwordError_;
+    std::string email_;
 };
 
 // ---- Empire Options --------------------------------------------------------------------------

@@ -25,7 +25,7 @@ struct ClassicOptions {
     std::string installDir;  // empty = auto-detect
     uint64_t seed = 1;
     int systemCount = 0;     // 0 = default
-    int empireCount = 5;
+    int empireCount = 0;  // a quick game's empires, the player's included; 0: Quick Start's random players
     std::string quadrantType;
     bool skipIntro = false;  // start a quick game at once (automation, screenshots)
     std::string race;        // quick start race preset (folder name); empty = first

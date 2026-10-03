@@ -2,7 +2,7 @@
 # player's warships against copies of them): the wheel zooms the map, a right-click on a
 # piece shows its Combat Piece Report, the Options and Orders windows (docs/BUILDING.md
 # "Input scripts").
-options --quick-start --seed=7 --open=tactical --layout=1024x768 --size=1280x800
+options --quick-start --empires=4 --seed=7 --open=tactical --layout=1024x768 --size=1280x800
 
 wait-window tactical-combat
 wait-for item:Begin in=tactical-combat
