@@ -26,6 +26,7 @@ bool worthShowing(net::EventType t) {
         case EventType::OrdersRejected:
         case EventType::PortMapping:
         case EventType::PlayerTurn:
+        case EventType::Desync:
         case EventType::GameOver: return true;
         default: return false;
     }
@@ -83,6 +84,7 @@ std::optional<game::GameState> HostTransport::pollState() {
     bool fresh = std::exchange(fresh_, false);
     for (const net::Event& e : host_->poll(0)) {
         if (worthShowing(e.type)) log_.add(net::describe(e));
+        if (e.type == net::EventType::Desync) log::warn("Network game: {}", e.text);
         fresh = fresh || e.type == net::EventType::NewTurn || e.type == net::EventType::PlayerTurn ||
                 (e.type == net::EventType::StateUpdated && e.empire == host_->localEmpire());
     }
@@ -132,6 +134,8 @@ std::optional<game::GameState> ClientTransport::pollState() {
     for (const net::Event& e : client_->poll(0)) {
         // The host's notices to us (refused commands, Reset Passwords answers) show too.
         if (worthShowing(e.type) || e.type == net::EventType::Info) log_.add(net::describe(e));
+        // A desync is never silent: the in-game log above, and opense4.log.
+        if (e.type == net::EventType::Desync) log::warn("Network game: {}", e.text);
         // Back after a reconnect: the host resent the game (turn-based: always
         // news; simultaneous: when a turn was processed meanwhile).
         const bool rejoined = e.type == net::EventType::GameStarted && client_->state() &&

@@ -126,6 +126,7 @@ notices() {  # notices <build dir> <target> <output file>
         section "stb (MIT licence or public domain)" "$deps/stb-src/LICENSE"
         section "dr_libs (public domain or MIT No Attribution)" "$deps/drlibs-src/LICENSE"
         section "miniupnpc (BSD 3-clause licence)" "$deps/miniupnpc-src/LICENSE"
+        section "Monocypher (BSD 2-clause licence or CC0 1.0)" "$deps/monocypher-src/LICENCE.md"
         echo; echo; echo "------------------------------------------------------------------------"
         echo "Khronos OpenGL headers (MIT licence)"; echo "------------------------------------------------------------------------"; echo
         sed -n '/Copyright/,/\*\//p' third_party/khronos/GL/glcorearb.h

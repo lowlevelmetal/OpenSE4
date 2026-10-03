@@ -74,6 +74,7 @@ std::unique_ptr<ClassicSession> ClassicSession::pbem(std::shared_ptr<const game:
                                                      std::filesystem::path draftsDir) {
     const game::EmpireId player = turn.empire;
     auto session = std::make_unique<ClassicSession>(std::move(rules), std::move(game.state), player, SessionKind::Pbem);
+    session->multiplayerGameId_ = turn.info.gameId;  // salts the passwords this session makes
     session->pbem_ = std::move(turn);
     session->pbemDrafts_ = std::move(draftsDir);
     session->masterVerifier_ = game.info.masterPasswordVerifier;
@@ -92,7 +93,7 @@ std::expected<std::filesystem::path, std::string> ClassicSession::savePbemDraft(
     if (!pbem_) return std::unexpected(std::string("This is not a play-by-e-mail game."));
     if (!ordersFile_.empty()) return std::unexpected(std::string("The orders of this turn are already saved for the host."));
     if (pbemDrafts_.empty()) return std::unexpected(std::string("No folder to save the turn in."));
-    return writePbemDraft(*pbem_, pbemDrafts_, state_, orders_);
+    return writePbemDraft(*pbem_, pbemDrafts_, orders_);
 }
 
 bool ClassicSession::myTurn() const {
@@ -163,14 +164,14 @@ game::CommandResult ClassicSession::issueCommand(game::Command c) {
 std::string ClassicSession::empirePasswordValue(std::string_view password) const {
     if (password.empty()) return {};
     if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0)
-        return net::passwordVerifier(net::hashPassword(password));
+        return net::passwordVerifier(password, multiplayerGameId_);
     return game::hashPassword(password);
 }
 
 bool ClassicSession::passwordMatches(const game::Empire& e, std::string_view password) const {
     if (e.passwordHash.empty()) return true;
     if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0)
-        return net::checkPassword(e.passwordHash, net::hashPassword(password));
+        return net::checkPassword(e.passwordHash, password, multiplayerGameId_);
     return game::hashPassword(password) == e.passwordHash;
 }
 
@@ -220,7 +221,7 @@ bool ClassicSession::humansGone() const {
 }
 
 bool ClassicSession::masterPasswordMatches(std::string_view password) const {
-    return !masterVerifier_.empty() && net::checkPassword(masterVerifier_, net::hashPassword(password));
+    return !masterVerifier_.empty() && net::checkPassword(masterVerifier_, password, multiplayerGameId_);
 }
 
 void ClassicSession::setComputerControl(const std::vector<std::pair<game::EmpireId, bool>>& rows) {
@@ -300,7 +301,9 @@ void ClassicSession::runCall() {
     answers_.clear();
     // A PBEM game never stops: the battles the player's order started are
     // shown afterwards (spec 06 §1.10.5, "different machines"). Local and
-    // hotseat games showed theirs as they happened.
+    // hotseat games showed theirs as they happened. The PBEM copy is the
+    // player's own view, so its battles are a preview: the host fights them
+    // again with the whole game (docs/MULTIPLAYER.md, "Play by e-mail").
     if (kind_ == SessionKind::Pbem && call == Call::Issue)
         for (size_t i = std::min(callBattles_, state_.combats.size()); i < state_.combats.size(); ++i) {
             const auto& who = state_.combats[i].participants;
@@ -383,7 +386,7 @@ void ClassicSession::endTurn() {
     if (kind_ == SessionKind::Pbem) {
         // The host processes the turn: write the orders file for it and wait.
         if (!pbem_ || (turnBased() && !myTurn())) return;
-        auto file = writePbemOrders(*pbem_, state_, orders_);
+        auto file = writePbemOrders(*pbem_, orders_);
         if (!file) {
             pbemError_ = file.error();
             log::warn("PBEM: {}", pbemError_);
@@ -462,6 +465,17 @@ void ClassicSession::poll() {
     auto s = transport_->pollState();
     if (!s) return;
     if (!game::turnBased(*s)) {
+        if (s->turn == state_.turn) {
+            // The host sent this turn's game again (our copy differed from
+            // its, a desync): our orders so far go onto the new copy, and an
+            // End Turn already given stays given.
+            state_ = std::move(*s);
+            std::vector<game::Command> again = std::exchange(orders_, {});
+            for (game::Command& c : again)
+                if (game::apply(*rules_, state_, player_, c).ok) record(std::move(c));
+            ++revision_;
+            return;
+        }
         state_ = std::move(*s);
         strategic_.clear();
         queueTurnBattles();

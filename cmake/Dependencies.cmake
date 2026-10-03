@@ -75,9 +75,23 @@ FetchContent_Declare(drlibs
     URL https://github.com/mackron/dr_libs/archive/dfe8377631000664666519fdb83da193fd8037f4.tar.gz
     URL_HASH SHA256=4654acb029f4f2a43ac2edb60c4cb09f40615b4b5bee9709954f910cb979e5fd
     SOURCE_SUBDIR _no_cmake)
-FetchContent_MakeAvailable(imgui volk vma tomlplusplus stb drlibs)
+# Monocypher (BSD 2-clause or CC0): the cryptography of network and
+# play-by-e-mail games (X25519, XChaCha20-Poly1305, BLAKE2b, EdDSA). One C file;
+# the release tarball, as signed by its author.
+FetchContent_Declare(monocypher
+    URL https://github.com/LoupVaillant/Monocypher/releases/download/4.0.2/monocypher-4.0.2.tar.gz
+    URL_HASH SHA256=38d07179738c0c90677dba3ceb7a7b8496bcfea758ba1a53e803fed30ae0879c
+    SOURCE_SUBDIR _no_cmake)
+FetchContent_MakeAvailable(imgui volk vma tomlplusplus stb drlibs monocypher)
 add_library(drlibs INTERFACE)
 target_include_directories(drlibs SYSTEM INTERFACE "${drlibs_SOURCE_DIR}")
+
+add_library(monocypher STATIC "${monocypher_SOURCE_DIR}/src/monocypher.c")
+target_include_directories(monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/src")
+# Third-party code: don't apply or show warnings. Always optimized (GCC, Clang):
+# a debug build's Argon2 would take ten times as long to check a password.
+target_compile_options(monocypher PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/w,-w> $<$<NOT:$<C_COMPILER_ID:MSVC>>:-O2>)
+set_target_properties(monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(OPENSE4_BUILD_TESTS)
     FetchContent_Declare(doctest

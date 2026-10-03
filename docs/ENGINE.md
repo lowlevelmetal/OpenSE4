@@ -355,7 +355,13 @@ MinGW-w64.
   After a deliberate rules change, print the new values with
   `OPENSE4_PRINT_GOLDEN=1 opense4_tests -tc="determinism*" -s`. With the player's own
   data, the same PBEM game played for 15 turns by the Linux and the Windows
-  `opense4-server` gave identical states.
+  `opense4-server` gave identical states. Over encrypted connections, a Linux
+  `opense4-server` hosted the Windows server's scripted client under Wine for four
+  simultaneous turns (with a join password), and a Linux and a Windows client for three
+  turn-based ones (2026-10-02): the host's desync check found every Windows copy of the
+  game identical to the view it sent. By e-mail, the Windows build opened a turn file
+  the Linux host had encrypted to its empire's password and sent orders the Linux host
+  read and accepted: both make the same Argon2id keys.
 - **Engine code.** It follows the rules of the section above. Serialized and hashed
   values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`, which also takes
   `size_t`, 64 bits everywhere: the Windows and macOS builds reject `long` and
@@ -419,8 +425,12 @@ MinGW-w64.
 - In a turn-based game the host carries out each command of the player whose turn it is
   as it arrives and sends that player its new view. Everyone gets their view when the
   turn passes on.
-- `src/net` carries this over TCP with UPnP port mapping. `opense4-server` hosts
-  headless or processes PBEM turn files.
+- A play-by-e-mail host keeps the whole game and sends each player the same view as a
+  turn file; the players' orders files come back signed with their passwords.
+- `src/net` carries this over TCP, encrypted (Monocypher: X25519, XChaCha20-Poly1305,
+  BLAKE2b, EdDSA), with UPnP port mapping. A player's copy that drifts from the host's
+  view is detected (`game::statePartHashes` names the parts) and replaced.
+  `opense4-server` hosts headless or processes PBEM turns.
 
 See [MULTIPLAYER.md](MULTIPLAYER.md).
 

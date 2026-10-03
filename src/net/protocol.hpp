@@ -7,10 +7,15 @@
 // archive (game/serialize_io.hpp). Game states and order lists travel as
 // complete serializeState()/serializeOrders() blobs with their own checksum.
 //
-// The client opens with Hello; the host answers Welcome or Reject. Before
-// the Welcome the host accepts only small frames (kMaxHandshakeBytes).
+// The handshake (net/secure.hpp) is in the clear: the client's ClientHello,
+// the host's ServerHello, or a Reject. Every frame after it is sealed: its
+// type byte is kSealedFrame, and the message type with the payload follow
+// encrypted and authenticated (net/connection.hpp). The client's first sealed
+// message is its Login; the host answers Welcome or Reject. Before the
+// Welcome the host accepts only small frames (kMaxHandshakeBytes).
 
 #include "game/serialize_io.hpp"
+#include "net/crypto.hpp"
 #include "net/types.hpp"
 
 #include <cstdint>
@@ -47,7 +52,7 @@ inline constexpr size_t kMaxHandshakeBytes = 64 * 1024;
 
 enum class MsgType : uint8_t {
     // client -> host
-    Hello = 1,
+    ClientHello = 1,    // in the clear: opens the handshake
     SubmitSetup = 2,
     SetReady = 3,
     SubmitOrders = 4,
@@ -55,6 +60,7 @@ enum class MsgType : uint8_t {
     Admin = 6,
     PlayCommands = 7,   // turn-based games
     EndTurn = 8,
+    Login = 9,          // the first sealed message: who the player is
     // host -> client
     Welcome = 32,
     Reject = 33,
@@ -65,25 +71,68 @@ enum class MsgType : uint8_t {
     Chat = 38,
     Notice = 39,
     PlayResult = 40,    // turn-based games
+    ServerHello = 41,   // in the clear: the host's half of the handshake
+    Desync = 42,        // the player's copy of the game differed from the host's
     // both ways
     Ping = 64,
     Pong = 65,
     Bye = 66,
 };
 
-enum class RejectReason : uint8_t { Protocol, DataSet, Password, Name, Full, NotInGame, Banned, ShuttingDown };
+// The type byte of every frame after the handshake: the real type is inside.
+inline constexpr uint8_t kSealedFrame = 0xf0;
+
+// OldPassword: the player's empire still has a verifier of OpenSE4 0.6; the
+// host needs that password's old hash once (Login::legacyPasswordHash), which
+// the player's game sends only when the player agrees.
+enum class RejectReason : uint8_t { Protocol, DataSet, Password, Name, Full, NotInGame, Banned, ShuttingDown, OldPassword };
 
 enum class AdminAction : uint8_t { StartGame, AddComputer, RemoveSlot, Kick, ProcessTurn, SetAiControl, SetTurnTimeout, ResetPasswords };
 
-struct Hello {
+// The start of every client's first message, in every protocol version: a
+// host reads this much first and refuses another version with a reason the
+// client can show.
+struct VersionProbe {
+    uint32_t magic = 0;
+    uint32_t protocol = 0;
+    std::string app;
+};
+
+// The client's opening, in the clear. It is laid out like protocol 4's
+// greeting (magic, protocol, program version and five strings), so that a
+// host of OpenSE4 0.6 reads it and answers with a readable refusal.
+struct ClientHello {
     uint32_t magic = kMagic;
     uint32_t protocol = kProtocolVersion;
     std::string app;
+    std::string ephemeralKey;   // 32 bytes: the client's X25519 key for this connection
+    std::array<std::string, 4> reserved;
+};
+
+// The host's answer, in the clear (net/secure.hpp).
+struct ServerHello {
+    uint32_t protocol = kProtocolVersion;
+    std::string app;
+    crypto::Key ephemeralKey{};   // the host's X25519 key for this connection
+    crypto::Key hostKey{};        // the host's long-term key (clients may pin it)
+    bool joinPassword = false;    // the session keys include the join password's
+    uint64_t gameId = 0;          // salts the password and join keys (net/auth.hpp)
+};
+
+// The client's first sealed message. The proofs sign secure::loginDigest()
+// of this very session, so they are worthless anywhere else.
+struct Login {
     std::string dataSet;
     std::string player;
-    std::string passwordHash;
-    std::string joinPasswordHash;
-    std::string masterPasswordHash;
+    uint64_t clientId = 0;               // random per ClientSession: a request repeated after a reconnect is recognized
+    std::string passwordVerifier;        // passwordVerifier() of the player's password in this game (empty: none)
+    crypto::Signature passwordProof{};   // the password's signature of the session
+    bool master = false;                 // the player gives the master password
+    crypto::Signature masterProof{};
+    // Only after the host refused with OldPassword and the player agreed:
+    // the password's OpenSE4 0.6 hash, which the host checks once and then
+    // keeps `passwordVerifier` instead.
+    std::string legacyPasswordHash;
 };
 
 struct Welcome {
@@ -109,9 +158,20 @@ struct SetReady {
     bool ready = false;
 };
 
+// What the player's copy of the game looked like when it sent orders or
+// commands: the State it last received, and that state's checksum and part
+// hashes as the client computes them now (game::statePartHashes). The host
+// compares them with what it sent; a difference is a desync.
+struct BaseState {
+    uint32_t serial = 0;
+    uint64_t checksum = 0;
+    std::vector<uint64_t> parts;
+};
+
 struct SubmitOrders {
     uint32_t turn = 0;
     std::vector<uint8_t> orders;  // serializeOrders()
+    BaseState base;
 };
 
 struct ChatSend {
@@ -123,8 +183,9 @@ struct ChatSend {
 // new State, then a PlayResult with the same request number.
 struct PlayCommands {
     uint32_t turn = 0;
-    uint32_t request = 0;
+    uint32_t request = 0;         // increasing per ClientSession (Login::clientId)
     std::vector<uint8_t> orders;  // serializeOrders() of the commands, in order
+    BaseState base;
 };
 
 // Turn-based games: the sender ends its turn. The host answers with a
@@ -155,6 +216,16 @@ struct State {
     game::EmpireId empire;        // the receiving player's empire
     bool gameStart = false;
     std::vector<uint8_t> state;   // serializeState()
+    uint32_t serial = 0;          // increasing per host: what BaseState::serial refers to
+    bool resync = false;          // sent again after a desync (Desync came first)
+};
+
+// The host found the player's copy of the game different from what it sent
+// (BaseState); the State that follows replaces it.
+struct Desync {
+    uint32_t turn = 0;
+    std::vector<std::string> parts;   // which parts of the state differ
+    std::string text;
 };
 
 struct OrdersAck {
@@ -180,10 +251,20 @@ struct Bye {
     std::string reason;
 };
 
+template <class Ar> void io(Ar& ar, VersionProbe& m) { game::serial::fields(ar, m.magic, m.protocol, m.app); }
 template <class Ar>
-void io(Ar& ar, Hello& m) {
-    game::serial::fields(ar, m.magic, m.protocol, m.app, m.dataSet, m.player, m.passwordHash, m.joinPasswordHash, m.masterPasswordHash);
+void io(Ar& ar, ClientHello& m) {
+    game::serial::fields(ar, m.magic, m.protocol, m.app, m.ephemeralKey, m.reserved);
 }
+template <class Ar>
+void io(Ar& ar, ServerHello& m) {
+    game::serial::fields(ar, m.protocol, m.app, m.ephemeralKey, m.hostKey, m.joinPassword, m.gameId);
+}
+template <class Ar>
+void io(Ar& ar, Login& m) {
+    game::serial::fields(ar, m.dataSet, m.player, m.clientId, m.passwordVerifier, m.passwordProof, m.master, m.masterProof, m.legacyPasswordHash);
+}
+template <class Ar> void io(Ar& ar, BaseState& m) { game::serial::fields(ar, m.serial, m.checksum, m.parts); }
 template <class Ar>
 void io(Ar& ar, Welcome& m) {
     game::serial::fields(ar, m.protocol, m.app, m.gameName, m.gameId, m.slot, m.admin, m.dataSet);
@@ -191,13 +272,14 @@ void io(Ar& ar, Welcome& m) {
 template <class Ar> void io(Ar& ar, Reject& m) { game::serial::fields(ar, m.reason, m.text); }
 template <class Ar> void io(Ar& ar, SubmitSetup& m) { game::serial::fields(ar, m.setup); }
 template <class Ar> void io(Ar& ar, SetReady& m) { game::serial::fields(ar, m.ready); }
-template <class Ar> void io(Ar& ar, SubmitOrders& m) { game::serial::fields(ar, m.turn, m.orders); }
+template <class Ar> void io(Ar& ar, SubmitOrders& m) { game::serial::fields(ar, m.turn, m.orders, m.base); }
 template <class Ar> void io(Ar& ar, ChatSend& m) { game::serial::fields(ar, m.text); }
-template <class Ar> void io(Ar& ar, PlayCommands& m) { game::serial::fields(ar, m.turn, m.request, m.orders); }
+template <class Ar> void io(Ar& ar, PlayCommands& m) { game::serial::fields(ar, m.turn, m.request, m.orders, m.base); }
 template <class Ar> void io(Ar& ar, EndTurn& m) { game::serial::fields(ar, m.turn, m.request); }
 template <class Ar> void io(Ar& ar, PlayResult& m) { game::serial::fields(ar, m.request, m.turn, m.ok, m.text, m.refused); }
 template <class Ar> void io(Ar& ar, Admin& m) { game::serial::fields(ar, m.action, m.slot, m.value, m.setup, m.text); }
-template <class Ar> void io(Ar& ar, State& m) { game::serial::fields(ar, m.turn, m.empire, m.gameStart, m.state); }
+template <class Ar> void io(Ar& ar, State& m) { game::serial::fields(ar, m.turn, m.empire, m.gameStart, m.state, m.serial, m.resync); }
+template <class Ar> void io(Ar& ar, Desync& m) { game::serial::fields(ar, m.turn, m.parts, m.text); }
 template <class Ar> void io(Ar& ar, OrdersAck& m) { game::serial::fields(ar, m.turn, m.ok, m.text); }
 template <class Ar> void io(Ar& ar, Chat& m) { game::serial::fields(ar, m.from, m.text); }
 template <class Ar> void io(Ar& ar, Notice& m) { game::serial::fields(ar, m.text); }
@@ -216,6 +298,15 @@ template <class T>
 bool decode(std::span<const uint8_t> payload, T& out, std::string& error) {
     return game::serial::decode(payload, out, error, kArchiveVersion);
 }
+
+// Reads the VersionProbe at the start of a client's first message, whatever follows.
+bool probeVersion(std::span<const uint8_t> payload, VersionProbe& out);
+
+// Whether commands a player sent set only password values a host may keep
+// (cmd::SetEmpireOptions::passwordHash): none, or a verifier of the current
+// kind (net::usableVerifier). Anything else could lock the empire out, or
+// pose as an OpenSE4 0.6 verifier.
+bool usablePasswordValues(const std::vector<game::Command>& commands);
 
 // Short printable form of a player-supplied string (logs, names).
 std::string sanitize(std::string_view text, size_t maxLength);
