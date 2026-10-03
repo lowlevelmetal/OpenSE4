@@ -57,7 +57,7 @@ bool isStopWord(std::string_view w) {
         "name", "no", "now", "on", "once", "one", "only", "open", "or", "out", "pick", "play", "point", "press", "propose", "read",
         "right", "select", "send", "set", "so", "some", "start", "switch", "that", "the", "their", "then", "there", "these", "this",
         "those", "three", "to", "try", "turn", "two", "type", "up", "use", "watch", "what", "when", "while", "with", "without",
-        "you", "your", "welcome", "well", "done", "ships", "ship", "green", "red", "other", "another", "more", "most", "less", "key"};
+        "you", "your", "welcome", "well", "done", "green", "red", "other", "another", "more", "most", "less", "key"};
     return std::find(std::begin(kStop), std::end(kStop), lower(w)) != std::end(kStop);
 }
 
@@ -243,18 +243,8 @@ AuditReport auditStep(const AuditInput& in) {
     std::vector<std::string> named = st.highlight;
     named.insert(named.end(), st.allow.begin(), st.allow.end());
     // The step's text, plain and lower case, to tell what it names.
-    std::string plain;
-    std::vector<std::string> refs;
-    {
-        std::vector<std::string> sink;
-        for (const learn::Block& b : in.text) {
-            const learn::Inline* spans = b.kind == learn::Block::Kind::Paragraph || b.kind == learn::Block::Kind::Heading ? &b.text : nullptr;
-            if (spans) inlineRefs(*spans, sink, plain);
-            if (b.kind == learn::Block::Kind::List)
-                for (const learn::ListItem& item : b.list.items) inlineRefs(item.text, sink, plain);
-        }
-        refs = textReferences(in.text);
-    }
+    const std::string plain = learn::plainText(in.text);
+    const std::vector<std::string> refs = textReferences(in.text);
     const std::string text = lower(plain);
     auto textNames = [&](std::string_view label) {
         const std::string l = lower(visible(label));

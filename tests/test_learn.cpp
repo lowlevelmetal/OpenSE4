@@ -576,6 +576,11 @@ TEST_CASE("learn: the options of choosers are UI tags a step can name") {
     CHECK(isUiTag("create-design:type:attack-ship"));
     CHECK(isUiTag("create-design:type:colony-rock"));
     CHECK_FALSE(isUiTag("create-design:type:warship"));
+    // The race's own design types (not the AI's) are options of the open chooser where it draws them,
+    // but a step names one of the vocabulary.
+    CHECK(choiceGroupOf("create-design:type:pop-transport") == nullptr);
+    CHECK(choiceGroupOf("create-design:type:pop-transport", true) == choiceGroupOf("create-design:type:attack-ship"));
+    CHECK(choiceGroupOf("set-queue:available:up", true) == nullptr);   // only open choosers take any id
     CHECK(isUiTag("create-design:hull:smallest"));
     CHECK(isUiTag("set-queue:available:named"));
     CHECK(isUiTag("set-queue:available:other"));

@@ -474,6 +474,20 @@ TEST_CASE("lesson lock: a step that names an option lets only that option of the
     CHECK(none.allows({500, 330}));
 }
 
+TEST_CASE("lesson lock: an open chooser's options from the data set are refused too") {
+    const Bindings keys;
+    std::vector<TaggedArea> tags = {
+        {"window:create-design", box(100, 100, 900, 700)},
+        {"create-design:type", box(200, 150, 400, 170)},
+        {"create-design:type:attack-ship", box(400, 170, 600, 190), false, true},
+        {"create-design:type:pop-transport", box(400, 190, 600, 210), false, true},
+    };
+    const learn::Step s = step({"create-design:type", "create-design:type:attack-ship"}, true);
+    const LockState st = makeLockState(s, tags, {"create-design"}, {box(390, 160, 610, 220)}, false, keys);
+    CHECK(st.allows({500, 180}));
+    CHECK_FALSE(st.allows({500, 200}));
+}
+
 TEST_CASE("lesson lock: options inside an allowed list") {
     const Bindings keys;
     std::vector<TaggedArea> tags = {
@@ -548,4 +562,70 @@ TEST_CASE("lesson lock: a window an earlier step left open can only be closed") 
     CHECK(std::none_of(st.keys.begin(), st.keys.end(), [&](const KeyChord& c) {
         return std::find(keys.chords(Action::Log).begin(), keys.chords(Action::Log).end(), c) != keys.chords(Action::Log).end();
     }));
+}
+
+// ---- The lesson audit (client/classic/lesson_audit.hpp) -----------------------------------------
+
+#include "client/classic/lesson_audit.hpp"
+#include "learn/markdown.hpp"
+
+namespace {
+
+std::vector<learn::Block> text(std::string_view markdown) { return learn::parseMarkdown(markdown, {}, false).blocks; }
+
+bool hasLine(const AuditReport& r, std::string_view part) {
+    return std::any_of(r.lines.begin(), r.lines.end(), [&](const std::string& l) { return l.find(part) != std::string::npos; });
+}
+
+} // namespace
+
+TEST_CASE("lesson audit: the things a step's text names") {
+    const std::vector<std::string> refs = textReferences(
+        text("**Press Create, and pick Ship** when the game asks. The **Design Detail** on the right shows its **Movement**. Press **Next**."));
+    auto has = [&](std::string_view r) { return std::find(refs.begin(), refs.end(), r) != refs.end(); };
+    CHECK(has("Create"));   // a long bold instruction gives its capitalised names
+    CHECK(has("Ship"));
+    CHECK(has("Design Detail"));
+    CHECK(has("Movement"));
+    CHECK(has("on the right"));
+    // Keys are no names on the screen; a lower-case bold idea is none either.
+    const std::vector<std::string> keys = textReferences(text("**Close the Log** (`Esc`). Each system becomes **explored**."));
+    CHECK(std::find(keys.begin(), keys.end(), "Esc") == keys.end());
+    CHECK(std::find(keys.begin(), keys.end(), "explored") == keys.end());
+}
+
+TEST_CASE("lesson audit: a chooser the step does not narrow, and what the text names under the spotlight") {
+    const Bindings keys;
+    // Create, with its picker open: every vehicle type passes.
+    learn::Step s = step({"designs:create"}, true);
+    s.text = text("**Press Create, and pick Ship.** The **Design Detail** shows the figures.");
+    std::vector<TaggedArea> tags = pickerTags();
+    tags.push_back({"designs:details", box(360, 150, 690, 650)});
+    const LockArea picker = box(390, 290, 610, 400);
+    AuditInput in;
+    in.step = &s;
+    in.text = s.text;
+    in.tags = tags;
+    in.openWindows = {"designs"};
+    in.lock = makeLockState(s, tags, in.openWindows, {picker}, false, keys);
+    in.spotlight = in.lock.grown(6);
+    in.items = {{"Create", "designs", box(700, 200, 880, 230)},
+                {"Ship", "designs", box(400, 300, 600, 320)},
+                {"Base", "designs", box(400, 320, 600, 340)},
+                {"text:Design Detail", "designs", box(370, 130, 470, 148)}};
+    in.display = ImVec2(1280, 800);
+    AuditReport r = auditStep(in);
+    CHECK(hasLine(r, "A chooser designs:create: every option passes"));
+    CHECK(hasLine(r, "B ref \"Design Detail\""));
+    CHECK(r.flags >= 2);   // the chooser, and the details dimmed
+
+    // Narrowed to Ship, and the details shown: nothing to flag.
+    s.highlight.push_back("designs:create:ship");
+    s.show = {"designs:details"};
+    in.lock = makeLockState(s, tags, in.openWindows, {picker}, false, keys);
+    in.spotlight = in.lock.grown(6);
+    r = auditStep(in);
+    CHECK(hasLine(r, "A chooser designs:create: only ship"));
+    CHECK_FALSE(hasLine(r, "FLAG"));
+    CHECK(r.flags == 0);
 }

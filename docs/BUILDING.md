@@ -293,8 +293,8 @@ plays at both should not depend on the layout: give an order that may be on anot
 800x600), and wait for a row of a list with `wait-for`.
 
 Run them, with `--small`, after changing the client's windows, the tutorials or the input
-lock. With the lesson checks (`tools/check_lessons.py`, docs/LEARNING.md) they are the
-routine for the learning content.
+lock. With the lesson checks (`tools/check_lessons.py`, and its `--audit` of what each step
+lets through and shows, docs/LEARNING.md) they are the routine for the learning content.
 
 The Windows tests also run under Wine:
 
@@ -333,7 +333,7 @@ recorder is tested.
 
 | Scripts | What they play |
 |---|---|
-| `tutorial-*.script` | Each of the seven tutorials from its first step to its result, at 1024x768 and (with `--small`) 800x600, under the input lock: every step done by clicking what it tells the player to click; Next only on steps that explain, never Skip or Free Play (the runner checks). `tutorial-wrong-ship.script` gives tutorial 2's Explore order to the colony ship: the step waits for an attack ship, and the colony is still founded; `tutorial-wrong-fleet.script` adds the colony ship to tutorial 5's fleet: the step waits, and the fleet's later orders still count |
+| `tutorial-*.script` | Each of the seven tutorials from its first step to its result, at 1024x768 and (with `--small`) 800x600, under the input lock: every step done by clicking what it tells the player to click; Next only on steps that explain, never Skip or Free Play (the runner checks); the wrong choices a step refuses tried with `refused` (Base in tutorial 4's vehicle types, another hull, design type, race, list row, tab or message type, the buttons of windows earlier steps left open). `tutorial-wrong-ship.script` tries to give tutorial 2's Explore order to the colony ship: the ship arrows are refused while the order is given, and Explore while the colony ship is selected; `tutorial-wrong-fleet.script` tries to add the colony ship to tutorial 5's fleet: its row is refused, and so is the fleet's list |
 | `training-*.script` | Each training game's briefing pages (Previous, Next, Close Page), its first turns with their hints, Hide, the T button and Ctrl+H, Leave Game with its question |
 | `lesson-results.script` | The result dialog, won and lost (its recap and the next game, Next Game, Keep Playing, Try Again, Learn), on two quick training games of our own in `tests/input/learn` |
 | `lesson-lock-windows.script`, `lesson-lock-simulator.script` | The tutorial input lock with windows over each other: the designer over Designs, the Combat Simulator over Designs; what the window in front does not allow is refused (docs/LEARNING.md "The input lock") |
@@ -402,6 +402,7 @@ from a double click.
 | `repeat N [until { condition }] ... end` | the steps between up to N times; with `until`, leaves as soon as the condition holds (checked before each pass, counters from the first) and fails if it never did |
 | `screenshot FILE`, `echo TEXT` | save this frame's picture (relative to `--script-output`); print a line |
 | `dump [SCOPE]`, `print KEY ...` | for writing scripts: print the UI tags, the widgets with their places, and the input lock; print condition counters (`print turn colonies`) |
+| `audit` | print the lesson audit of the tutorial step the lesson is at, in the state the script brought the game to (docs/LEARNING.md "Checking the lessons: the audit") |
 
 Every wait (and a pointer step's wait for its target) fails after its timeout (`timeout=N` on
 the line, else the script's). Conditions are those of the lessons (docs/LEARNING.md
