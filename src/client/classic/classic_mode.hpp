@@ -93,8 +93,9 @@ private:
     std::optional<std::string> openAutomationWindow(const std::string& name);
     // --select: a vehicle for the main window to select (automation).
     std::optional<std::string> selectForAutomation(const std::string& what);
-    // The lesson panel and its requests, Ctrl+H and Shift+F1.
-    void updateLesson(classic::UiContext& ui);
+    // The lesson panel and its requests, Ctrl+H and Shift+F1 (not while a
+    // question waits for its answer: `prompted`).
+    void updateLesson(classic::UiContext& ui, bool prompted);
     void contextHelp();
     void endTurn();
     void updateAudio();

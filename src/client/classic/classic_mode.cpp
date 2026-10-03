@@ -502,9 +502,10 @@ void ClassicMode::contextHelp() {
     openScreen(ScreenId::Manual, std::move(args));
 }
 
-void ClassicMode::updateLesson(UiContext& ui) {
+void ClassicMode::updateLesson(UiContext& ui, bool prompted) {
     const Bindings& keys = appSettings().controls.bindings;
-    if (keys.pressed(Action::ContextHelp)) contextHelp();
+    // Shift+F1; a key that answers a prompt is that prompt's.
+    if (!prompted && keys.pressed(Action::ContextHelp)) contextHelp();
     const bool toggle = ui.requests.toggleLessonPanel;
     ui.requests.toggleLessonPanel = false;
     if (!lesson_ && !options_.scripted) return;
@@ -707,8 +708,14 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     const bool asking = screens_.empty() && !session_->questions().empty() && !battleAsking;
     const std::optional<game::ObjectId> choosing = screens_.empty() && !asking && !battleAsking ? colonyTypeChoice(ui) : std::nullopt;
 
-    // Classic windows are modal: while one is open the main window takes no input.
-    main_.update(ui, !screens_.empty() || asking || battleAsking || choosing.has_value() || confirmEndTurn_);
+    // Classic windows are modal: while one is open the main window takes no
+    // input; nor while a question waits for its answer: the End Turn question,
+    // a popup (the lesson's "Leave the lesson?" and result, a host's question)
+    // or a message box. The key that answers one (N, Enter) is not also a
+    // main-window key (Change Name, End Turn).
+    const bool prompted = asking || battleAsking || choosing.has_value() || confirmEndTurn_ || !lessonError_.empty() ||
+                          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    main_.update(ui, !screens_.empty() || prompted);
     drawNetwork(ui);
     drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
@@ -733,7 +740,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     }
     if (screens_.empty()) frontWindow_ = 0;
     if (battleAsking) drawBattleQuestion(ui);
-    updateLesson(ui);
+    updateLesson(ui, prompted);
     for (auto& [id, args] : pendingOpen_) openScreen(id, std::move(args));
     pendingOpen_.clear();
     main_.applyRequests(ui);
@@ -747,18 +754,25 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (confirmEndTurn_) {
         // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06
         // §3.4). The key that asked for the end of the turn does not answer it.
+        // It is modal: over every window (End Turn works while one is open) and
+        // it takes the input until it is answered. Another popup (a lesson's
+        // result) goes first.
+        constexpr const char* kEndTurn = "End Turn";
+        if (!ImGui::IsPopupOpen(kEndTurn) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) ImGui::OpenPopup(kEndTurn);
         ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 300) * 0.5f), std::floor((frameH() - 110) * 0.5f)}));
         ImGui::SetNextWindowSize(ui.size({300, 110}));
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-        ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
-        ui.promptWindow();   // never covered by a tutorial's input lock
-        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
-        ImGui::TextUnformatted("End the turn now?");
-        const std::optional<bool> key = yesNoKey();
-        const bool yes = ImGui::Button("Yes", ui.size({120, 28})) || key == true;
-        ImGui::SameLine();
-        const bool no = ImGui::Button("No", ui.size({120, 28})) || key == false;
-        ImGui::End();
+        bool yes = false, no = false;
+        if (ImGui::BeginPopupModal(kEndTurn, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags)) {
+            ui.promptWindow();   // never covered by a tutorial's input lock
+            ImGui::TextUnformatted("End the turn now?");
+            const std::optional<bool> key = yesNoKey();
+            yes = ImGui::Button("Yes", ui.size({120, 28})) || key == true;
+            ImGui::SameLine();
+            no = ImGui::Button("No", ui.size({120, 28})) || key == false;
+            if (yes || no) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
         ImGui::PopFont();
         if (yes) {
             confirmEndTurn_ = false;
@@ -826,6 +840,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
         ImGui::Begin("Lesson", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
         ui.promptWindow();   // never covered by a tutorial's input lock
+        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();   // over the window that asked (the Learn window)
         ImGui::TextWrapped("%s", lessonError_.c_str());
         if (ImGui::Button("OK", ui.size({120, 26})) || okKey()) lessonError_.clear();   // a message box: Esc or Enter is OK
         ImGui::End();
@@ -849,7 +864,8 @@ void ClassicMode::keepFocusOnFrontWindow() {
     ImGuiWindow* front = ImGui::FindWindowByID(frontWindow_);
     const ImGuiWindow* nav = g.NavWindow ? g.NavWindow->RootWindow : nullptr;
     if (!front || nav == front) return;
-    if (nav && nav->WasActive && !MainWindow::ownsWindow(nav->ID)) return;   // a prompt, the lesson panel, the chat
+    // A prompt (one that appeared this very frame too), the lesson panel, the chat.
+    if (nav && (nav->Active || nav->WasActive) && !MainWindow::ownsWindow(nav->ID)) return;
     ImGui::FocusWindow(front);
 }
 
