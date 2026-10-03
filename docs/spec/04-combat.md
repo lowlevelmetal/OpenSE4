@@ -108,21 +108,21 @@ Conventions:
 
 **Simultaneous games** (confirmed: binary). Tactical combat is never offered, and the
 computer resolves every battle. The manual's older rule (combat only on every 5th day) was
-replaced (history 1.15, 1.42). After each of the 30 daily steps of the movement phase,
-every sector where an object acted that day is checked: a vehicle on each day its movement
+replaced (history 1.15, 1.42). After each of the 30 daily steps of the movement phase, every
+sector where an object acted that day is checked: a vehicle on each day its movement
 schedule makes it act, whether or not it has orders (so an idle ship counts), and a colony
 that acted with orders (spec 03 §6.3 steps 3 and 6; confirmed: binary). The engine differs:
-only an action that carries out an order marks the sector (`Mover::run`). The check passes when an
-empire with a vehicle or unit group in the sector that is not flagged as cloaked sees an
-object of an empire it is hostile to. Only the flag counts: a fighter, satellite or drone
-group whose cloak hides it all the same still counts as a side that sees, and so does a
-mothballed ship. A colony alone never counts as the side that sees, and minefields take no
+only an action that carries out an order marks the sector (`Mover::run`). The check passes
+when an empire with a vehicle or unit group in the sector that is not flagged as cloaked
+sees an object of an empire it is hostile to. Only the flag counts: a fighter, satellite or
+drone group whose cloak hides it all the same still counts as a side that sees, and so does
+a mothballed ship. A colony alone never counts as the side that sees, and minefields take no
 part in this check at all: they neither see, nor are seen, nor make their owner present
-(confirmed: binary). A sector that already had a battle this game turn is skipped when
-every owned object now there took part in it, so a standing order can start one battle per
-game turn, and a second only when newcomers arrive. No order list is cleared. Results
-arrive as log entries. Battles are not shown unless the Settings flag `Simultaneous Games
-Show Strategic Combat` is set; then every battle is shown in the strategic window.
+(confirmed: binary). A sector that already had a battle this game turn is skipped when every
+owned object now there took part in it, so a standing order can start one battle per game
+turn, and a second only when newcomers arrive. No order list is cleared. Results arrive as
+log entries. Battles are not shown unless the Settings flag `Simultaneous Games Show
+Strategic Combat` is set; then every battle is shown in the strategic window.
 
 **Game option "No Tactical Combat".** It is one of the game's general options. With it
 on, the combat window offers only the strategic view, so every battle is strategic

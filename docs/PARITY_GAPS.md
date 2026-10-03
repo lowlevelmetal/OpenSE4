@@ -662,8 +662,8 @@ not yet implemented, ranked by what they change in 120 scratch games:
   acts by its movement schedule marks its sector with or without orders. Battles 11.1 →
   13.2 per empire and 25 turns, the new ones drawn without a shot; decided battles and
   losses unchanged.
-- **Exploring fleets** (`planFleets`). The player's Move To toward the frontier point and the
-  Warp, lasting until done, instead of a Seek and the Warp; no measurable change.
+- **Exploring fleets** (`planFleets`). The player's Move To toward the frontier point and
+  the Warp, lasting until done, instead of a Seek and the Warp; no measurable change.
 - **Fleet leaders** (`canLeadFleet`, `planFleets`). The search walks the vehicle list from
   its end (slot order) and has no idle test; ours take the newest idle ship by id.
 - **Scrap** (`scrapOldest`). The Move To and Scrap go straight onto the candidate's list,
@@ -674,6 +674,12 @@ not yet implemented, ranked by what they change in 120 scratch games:
 - **Net income's timing**: the start-of-turn figure is worked out before the AI state update
   and Politics (ours after Politics); the cap test's revenue comes from the colonies of the
   moment (ours from the last income report).
+- **Jump counts compared with numbers** (spec 05 §7.2 *Jumps*, spec 01 §14 Q45). The
+  original's count is the jumps plus two, so its tests mean at most 2 jumps for the strength
+  test around the targets, 1 jump for fleet recruiting (which also has no idle test) and the
+  setting less 2 for the drones, and its "more than one jump from the first target" in
+  Prepare for Attack always holds; ours test 4, 3 and the setting in real jumps
+  (`ai_anger.cpp`, `ai_military.cpp`). No measurable change in 48 scratch games.
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state

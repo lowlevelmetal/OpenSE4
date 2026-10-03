@@ -1294,7 +1294,8 @@ of the pace set-up (the waiting happiness events kept, so the battles run a litt
 two attack ships, both still queued, before the clean-up removed the second (its turn-1
 design had become obsolete that turn); the Attack Ship row ("at least 2") was satisfied, and
 the minister queued two weapon platforms, satellites and a colony ship. The second attack
-ship came on turn 9 and the first colony ship on turn 7 (median, as in the four earlier games).
+ship came on turn 9 and the first colony ship on turn 7 (median, as in the four earlier
+games).
 
 **Idle ships and the daily battle check** (question 68). Of the ships' daily actions in
 game 10, 45 % were made with an empty order list; 14 of its 202 battles began in a sector
@@ -1343,15 +1344,26 @@ alone, then all five):
 | Original | 6.1–19.1 (three games) | 2.1–4.8 (five) | 0.0–21.5 (five) | 5.1–9.0 (five) | 1.9–2.2 (three) | 1.7–3.6 (five) | 70 % | 17.0 | 8.6 | 9 |
 
 Standard errors over the 120 seeds are about 0.15 for the decided battles and 0.07 for the
-colonies lost. With the Defend (Short Term) fleet rule the colonies targeted rose to 0.57 per
-empire-turn with 1.9 attack ships each (median 1). Colonies founded or taken / lost per empire
+colonies lost. With the Defend (Short Term) fleet rule the colonies targeted rose to 0.57
+per
+empire-turn with 1.9 attack ships each (median 1). Colonies founded or taken / lost per
+empire
 and 25 turns of turns 51–100: the original (five games) 4.5 / 2.3, ours 3.8 / 1.2, with the
 fleet rule 4.1 / 1.8 (question 76).
 
-**The first 25 turns** (question 75). Explored systems per empire at turns 10 / 25: the
-original (nine games) 4.0 / 6.6, ours 5.5 / 7.6, with the counts before the clean-up 4.8 /
-7.5; Exploration 83 % of turns 1–25 in the original, 77 % in ours and 78 % with the rule;
-Infrastructure 3 against 6 %.
+**The first 25 turns** (question 75). Over the nine original games of this set-up with
+records (games 1–7, 10 and 12), Exploration took 61–95 % of turns 1–25 per game (80 % over
+all;
+the first five had 85 %), Infrastructure 0–10 % (4 %), and the empires had explored 2.6–9.2
+systems by turn 10 (4.7). Ours: 77 % and 6 %, 5.5 systems; with the counts before the
+clean-up 78 % and 4.8. Ships per empire at turn 50 were 6.6–11.8 per original game (six
+games, 8.8 over all), ours 7.5 (8.0 with the counts before the clean-up).
+
+**Jump counts** (spec 01 §14 Q45). The jump count the AI uses is the real number of jumps
+plus two; three of its tests compare it with a number (the strength test around the targets,
+fleet recruiting, the drones), and one always passes (spec 05 §7.2 *Jumps*). With the three
+tests corrected, 48 scratch games of ours showed no measurable change: Attack 2 → 1 % of
+turns 51–100, Defend (Short Term) 70 → 72 %, battles and colonies the same.
 
 **What this settles** (spec 05 questions 68–73): the second attack ship (counts taken before
 the clean-up); idle ships in the battle check; the exploring fleets' Move To; the Defend

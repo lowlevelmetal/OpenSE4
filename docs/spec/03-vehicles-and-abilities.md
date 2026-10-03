@@ -799,19 +799,20 @@ over a **30-day** month (confirmed: binary):
    movement acts on its counter's days, step 3, so an idle ship marks its sector on those
    days; a vehicle carried along by a group member does not act itself), and the sector of a
    colony that acted with orders (confirmed: binary; observed 2026-10-03: in game 10 a
-   little under half of the ships' daily actions were made with an empty list, spec 07 "The computer
-   players' second round under a debugger"). The engine differs: `Mover::run`
+   little under half of the ships' daily actions were made with an empty list, spec 07 "The
+   computer players' second round under a debugger"). The engine differs: `Mover::run`
    (`movement.cpp`) skips a vehicle with no orders, so only an action that carries out an
    order marks a sector; in 120 scratch games with idle vehicles marking theirs, battles
-   went from 11.1 to 13.2 per empire and 25 turns of turns 51–100, nearly all of the new ones
-   drawn without a shot, and decided battles and losses did not change. When an empire with an uncloaked vehicle there sees
-   an object, not a minefield, of an empire it is hostile to (spec 04 §2; a colony never counts
-   as the side that sees), a combat is fought, unless the location already had a battle
-   this turn and both of these hold for the latest one: no piece recorded as surviving it was
-   below full structure (damage from before that battle counts), and every object owned by a
-   player now in the sector (ships, bases, unit groups including minefields, and colonies) is on
-   its owner's list of that battle's survivors, matched by name. So a minefield (never a combat
-   piece) or any newcomer forces a new battle. Combat is always resolved automatically.
+   went from 11.1 to 13.2 per empire and 25 turns of turns 51–100, nearly all of the new
+   ones drawn without a shot, and decided battles and losses did not change. When an empire
+   with an uncloaked vehicle there sees an object, not a minefield, of an empire it is
+   hostile to (spec 04 §2; a colony never counts as the side that sees), a combat is fought,
+   unless the location already had a battle this turn and both of these hold for the latest
+   one: no piece recorded as surviving it was below full structure (damage from before that
+   battle counts), and every object owned by a player now in the sector (ships, bases, unit
+   groups including minefields, and colonies) is on its owner's list of that battle's
+   survivors, matched by name. So a minefield (never a combat piece) or any newcomer forces
+   a new battle. Combat is always resolved automatically.
 7. Also after each day, pursuit orders (Attack, §8) whose target is gone are removed.
 8. Combat does **not** clear orders or stop movement. Its only effect on orders is that a Sentry
    order at the head of a participant's list is removed, even with Repeat on.

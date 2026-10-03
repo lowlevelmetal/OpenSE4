@@ -976,9 +976,24 @@ which wiped a system received in the empire's own Politics run at once.
 
 **Jumps** (confirmed: binary): every AI jump count uses every warp link of the map, known
 or not, and an unreachable system counts as 999 jumps. That covers the territory's "one
-warp jump", the jumps from home that order the lists, the staging system, the 4-jump test,
-Secure Holdings' neighbours, the reachability of the Not Connected test, the nearest fleet
-or colony ship, recruiting and drone distances.
+warp jump", the jumps from home that order the lists, the staging system, the strength test
+around the targets, Secure Holdings' neighbours, the reachability of the Not Connected test,
+the nearest fleet or colony ship, recruiting and drone distances. The routine that counts
+jumps between two systems returns the number of jumps plus two (spec 01 §3.6, §14 Q45;
+confirmed: binary, 2026-10-03). Where the AI compares it with a fixed number or a setting,
+this section gives the real number of jumps: the strength test around the targets (at most
+2 jumps, §7.2 Prepare for Attack), fleet recruiting (at most 1 jump, §7.5 `AI_Fleets`) and
+the drones (at most the setting less 2, §7.5 *Mines, satellites and drones*). The Attack
+routine's test that a ship in Prepare for Attack is more than one jump from the first
+target always passes, so every ship it plans outside the staging system is sent there
+(the fleets' leaders, and ships outside fleets while there is none). Choices of the nearest
+or the fewest jumps, the orders of the lists and the reachability test (below 999) are not
+affected; the territory's one jump, Secure Holdings' neighbours and the Politics minister's
+"within 2 jumps of X's territory" use the warp links directly and count real jumps. The
+engine differs: it counts real jumps throughout and tests at most 4, 3 and the setting
+(`ai_anger.cpp`, `planFleets` and the drones in `ai_military.cpp`); with the three tests
+corrected, 48 scratch games showed no measurable change (Attack 2 → 1 % of turns 51–100,
+Defend (Short Term) 70 → 72 %).
 
 **Strength.** Each turn the AI adds up a strength per system and per empire. It counts
 every owned object, including those it cannot see:
@@ -1111,8 +1126,9 @@ build their own at the end.
   3. Drop every target whose hostile strength exceeds 5 × our strength in the staging
      system. If none is left → Infrastructure.
   4. Once 5 full turns have been spent in this state (from the 6th turn; the counter is 0
-     on the first): add up, for each target, our strength in every system within 4 jumps
-     of it, the target included, so a system near two targets counts twice. Unless the sum
+     on the first): add up, for each target, our strength in every system within 2 jumps
+     of it (the original's count below 5, which is the jumps plus two, see *Jumps* above),
+     the target included, so a system near two targets counts twice. Unless the sum
      exceeds 3 × the targets' total hostile strength → Infrastructure.
   5. No hostile-owned candidate planet is left in the target systems → Infrastructure.
   6. Our strength in the staging system exceeds the first target's hostile strength →
@@ -2276,21 +2292,21 @@ binary).
     or less compares `Max Amount of Planets` with our planet count instead. With no match,
     n = 0.
   - n is also 0 until `Fleets Dont Use For Num Turns` turns after the game start.
-  - *Forming*: with fewer fleets than wanted, at most one new fleet is formed per turn.
-    It forms around the newest idle, fit ship not in a fleet, with `Fleets Default
-    Formation` and `Fleets Default Strategy`. Only a ship that can move and that an attack
-    fleet or a defence fleet could take may lead it, and never a troop transport or a
-    boarding ship: an attack ship, a carrier or drone carrier with its units aboard, a
-    kamikaze ship, or a defence ship (confirmed: binary). The test filters the search,
-    which walks the empire's vehicle list backwards from its end (slot order, §7.5
-    *Scrap*), skips vehicles already in a fleet and takes the first that passes either test;
-    "fit" is the unavailability test of the fleets (damage, a missing operating part, an
-    armed type with no strength), and nothing asks that the ship be idle (confirmed:
-    binary). The engine differs: `planFleets` (`canLeadFleet`, `ai_military.cpp`) takes the
-    newest by vehicle id (creation order, not slot order) and only an idle ship, so a ship
-    with a Join Fleet or other standing order is never a leader in ours. It used to form a fleet around any fit ship, troop
-    transports and empty carriers included: 7 % of its fleets were troop transports alone and
-    6 % carriers alone (fleet-turns of turns 51–100), against none and 1 % in one game of the
+  - *Forming*: with fewer fleets than wanted, at most one new fleet is formed per turn. It
+    forms around the newest idle, fit ship not in a fleet, with `Fleets Default Formation`
+    and `Fleets Default Strategy`. Only a ship that can move and that an attack fleet or a
+    defence fleet could take may lead it, and never a troop transport or a boarding ship: an
+    attack ship, a carrier or drone carrier with its units aboard, a kamikaze ship, or a
+    defence ship (confirmed: binary). The test filters the search, which walks the empire's
+    vehicle list backwards from its end (slot order, §7.5 *Scrap*), skips vehicles already
+    in a fleet and takes the first that passes either test; "fit" is the unavailability test
+    of the fleets (damage, a missing operating part, an armed type with no strength), and
+    nothing asks that the ship be idle (confirmed: binary). The engine differs: `planFleets`
+    (`canLeadFleet`, `ai_military.cpp`) takes the newest by vehicle id (creation order, not
+    slot order) and only an idle ship, so a ship with a Join Fleet or other standing order
+    is never a leader in ours. It used to form a fleet around any fit ship, troop transports
+    and empty carriers included: 7 % of its fleets were troop transports alone and 6 %
+    carriers alone (fleet-turns of turns 51–100), against none and 1 % in one game of the
     original, and such fleets went to fight and draw (spec 07 "Battles, bases and the first
     turns under a debugger").
   - *Disbanding*: fleets beyond n are disbanded, and so is a fleet whose leader is gone
@@ -2300,17 +2316,20 @@ binary).
     defence fleets.
   - *Size*: a fleet recruits up to trunc(vehicle count × `Fleets Percentage of Ships For
     Fleets` / 100 / n) members.
-    - Recruits are idle ships not in a fleet, within 3 jumps. They join at once if at the
-      fleet's spot; otherwise their orders are cleared and they get a Join Fleet order
-      (confirmed: binary). That order chases the fleet: on each of the ship's actions it
-      steps toward the fleet's position at that moment (wherever the fleet has gone since),
-      and it joins as soon as it stands where the fleet stands; it waits when out of
-      movement points and fails (clearing the list) only when no route is left or the
-      fleet is gone. The ship counts toward the fleet's size from the moment it is ordered.
-      OpenSE4 follows this since 2026-10-02: the order is `OrderKind::JoinFleet` (the fleet
-      in `amount`), and `planFleets` counts the ships that carry one for a fleet among its
-      members. A recruit also waits, rather than fails, when a hazard, a busy yard or a
-      blocked way stops its step (inferred from "fails only when").
+    - Recruits are ships not in a fleet and without a Join Fleet order, within 1 jump of the
+      fleet (the original's count below 4, which is the jumps plus two, §7.2 *Jumps*), that
+      pass the attack fleets' or the defence fleets' test; nothing asks that they be idle.
+      They join at once if at the fleet's spot; otherwise their orders are cleared and they
+      get a Join Fleet order (confirmed: binary). That order chases the fleet: on each of
+      the ship's actions it steps toward the fleet's position at that moment (wherever the
+      fleet has gone since), and it joins as soon as it stands where the fleet stands; it
+      waits when out of movement points and fails (clearing the list) only when no route is
+      left or the fleet is gone. The ship counts toward the fleet's size from the moment it
+      is ordered. OpenSE4 follows this since 2026-10-02: the order is `OrderKind::JoinFleet`
+      (the fleet in `amount`), and `planFleets` counts the ships that carry one for a fleet
+      among its members. A recruit also waits, rather than fails, when a hazard, a busy yard
+      or a blocked way stops its step (inferred from "fails only when"). The engine differs:
+      `planFleets` (`ai_military.cpp`) recruits only idle ships, within 3 jumps.
     - Observed under a debugger (spec 07 "Pace observed under a debugger"): from turn 41
       on, 74–78 % of the original's attack ships were in fleets, against 44–51 % in ours;
       an empire with 46 ships kept six fleets of 7, 7, 6, 6, 2 and 1 attack ships, while our
@@ -2357,18 +2376,17 @@ binary).
       Attack, the target with the most candidates in Attack, and the secured system in
       Secure Holdings. In other states they go to the top attack candidate if its owner
       is at War with us.
-    - Leftover fleets defend, then patrol (fleets led by a defence ship) or explore.
-      An exploring fleet gets the player's Move To toward the free frontier point and the
-      Warp through it, not a Seek (confirmed: binary): the Move To lasts until it arrives,
-      so the fleet is not idle and is not planned again until it has warped. Of the attack
-      ships of game 10
-      in turns 26–50, 42 % were in fleets whose first order after the start-of-turn ministers
-      was such a Move To, and 27 % carried the same Move To as the turn before (observed,
-      spec 07 "The computer players' second round under a debugger"). The engine differs:
-      `planFleets` (`ai_military.cpp`) gives a Seek and the Warp (question 64), so the Warp
-      waits behind the Seek and is left as the first order after the movement phase (24 % of
-      our attack ships at the start of turns 26–50 against 1 % in the original). In 120
-      scratch games with the Move To, battles, losses and colonies did not change
+    - Leftover fleets defend, then patrol (fleets led by a defence ship) or explore. An
+      exploring fleet gets the player's Move To toward the free frontier point and the Warp
+      through it, not a Seek (confirmed: binary): the Move To lasts until it arrives, so the
+      fleet is not idle and is not planned again until it has warped. Of the attack ships of
+      game 10 in turns 26–50, 42 % were in fleets whose first order after the start-of-turn
+      ministers was such a Move To, and 27 % carried the same Move To as the turn before
+      (observed, spec 07 "The computer players' second round under a debugger"). The engine
+      differs: `planFleets` (`ai_military.cpp`) gives a Seek and the Warp (question 64), so
+      the Warp waits behind the Seek and is left as the first order after the movement phase
+      (24 % of our attack ships at the start of turns 26–50 against 1 % in the original). In
+      120 scratch games with the Move To, battles, losses and colonies did not change
       measurably.
   - Ships outside fleets get individual attack and defence orders only while the empire
     has no active fleet.
@@ -2498,7 +2516,9 @@ binary).
   - Anti-ship targets are ships inside our territory of empires at War with us.
     Anti-planet targets are planets of such empires among the attack candidates.
   - Idle drones in space within `Maximum Anti-Ship` (or `Anti-Planet`) `Drone Target
-    System Distance` jumps are then sent after the targets, per-target times.
+    System Distance` less 2 jumps (3 with the stock 5; the setting is compared with the
+    jumps plus two, §7.2 *Jumps*) are then sent after the targets, per-target times. The
+    engine differs: it compares the setting with the real jumps.
 - **`AI_Settings`** (confirmed: binary):
   - `Turns to Wait until next attack` is the attack gap of §7.2;
   - `Maximum Systems to Defend at a Time` caps the defend list;
@@ -4165,7 +4185,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     hostile one starts a battle; per decided battle in the original, the first orders of the
     ships on each side (Seek, Attack, Warp, none) and which minister gave them, beside ours.
 
-    **Answer** (confirmed: binary and observed, 2026-10-03; spec 07 "The computer players' second round under a debugger").
+    **Answer** (confirmed: binary and observed, 2026-10-03; spec 07 "The computer players'
+    second round under a debugger").
     - Ships without orders do start battles. Every vehicle that acts on a day by its
       movement schedule marks its sector for the day's battle check, with or without
       orders (spec 03 §6.3 step 6). In game 10, 45 % of the ships' daily actions were made
@@ -4173,15 +4194,15 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       ships had acted that day. Ours mark a sector only when an order is carried out; with
       the original's rule our battles rose from 11.1 to 13.2 per empire and 25 turns, the
       new ones drawn without a shot, and the decided ones did not change.
-    - The decided battles come from the Fleets minister in Defend (Short Term). The
-      original sends one idle defence fleet to each defend-list entry in the systems to
-      defend, nearest first, and gives no other fleet orders that turn; ours send every
-      fleet, attack fleets included, to an entry, a patrol or an exploration (§7.5
-      `AI_Fleets` *Orders*). In such turns 14 % of the original's fleets had no orders
-      after the start-of-turn ministers against our 2 %, and in turns 51–100 37 % of its
-      attack ships had none against our 12 %. With the original's rule, our computers won 4.1
-      decided battles away from colonies per empire and 25 turns instead of 5.0 and lost 5.9
-      ships in battle instead of 7.8.
+    - The decided battles come from the Fleets minister in Defend (Short Term). The original
+      sends one idle defence fleet to each defend-list entry in the systems to defend,
+      nearest first, and gives no other fleet orders that turn; ours send every fleet,
+      attack fleets included, to an entry, a patrol or an exploration (§7.5 `AI_Fleets`
+      *Orders*). In such turns 14 % of the original's fleets had no orders after the
+      start-of-turn ministers against our 2 %, and in turns 51–100 37 % of its attack ships
+      had none against our 12 %. With the original's rule, our computers won 4.1 decided
+      battles away from colonies per empire and 25 turns instead of 5.0 and lost 5.9 ships
+      in battle instead of 7.8.
     - Game 10 widens the original's spread: 4.8 decided battles won away from colonies per
       empire and 25 turns, so the five games with full records range from 2.1 to 4.8.
     - The kinds of decided battles are the same: in two original games and 24 of ours,
@@ -4195,20 +4216,21 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     the other states) and the colonies' strength, beside ours; and whether a fleet or a
     defender is ever sent against a colony whose planet out-rates it.
 
-    **Answer** (confirmed: binary and observed, 2026-10-03; spec 07 "The computer players' second round under a debugger"). With fleets in being,
-    enemy colonies are attacked by the defence fleets of Defend (Short Term): one fleet per
-    defend-list entry of the systems to defend, the nearest idle defence fleet for each, in
-    the fleets' order, with no comparison of the fleet's strength with the colony's (§7.5
-    `AI_Fleets` *Orders*). In game 10 the original's ministers sent 1.3 attack ships to each
-    enemy colony they targeted (median 1), 0.47 colonies per empire-turn of turns 51–100,
-    colonies of a median 90M people; ours targeted as many colonies (0.46) with 2.5 ships each
-    (median 2), as our leftover fleets go to the top entries again. With the original's
-    fleet rule our fleets spread over more colonies (0.57 per empire-turn, 1.9 ships each,
-    median 1), the battles ending with the colony gone rose from 1.0 to 1.6 per empire and
-    25 turns (the original 1.9–2.2 in three games) and the colonies lost from 1.2 to 1.8
-    (the original 1.7–3.6 in five games). Attacks on strong colonies fail in the original
-    as in ours: game 10 made 49 that the colony survived, against colonies of a median
-    13,770 hit points with two unit groups.
+    **Answer** (confirmed: binary and observed, 2026-10-03; spec 07 "The computer players'
+    second round under a debugger"). With fleets in being, enemy colonies are attacked by
+    the defence fleets of Defend (Short Term): one fleet per defend-list entry of the
+    systems to defend, the nearest idle defence fleet for each, in the fleets' order, with
+    no comparison of the fleet's strength with the colony's (§7.5 `AI_Fleets` *Orders*). In
+    game 10 the original's ministers sent 1.3 attack ships to each enemy colony they
+    targeted (median 1), 0.47 colonies per empire-turn of turns 51–100, colonies of a median
+    90M people; ours targeted as many colonies (0.46) with 2.5 ships each (median 2), as our
+    leftover fleets go to the top entries again. With the original's fleet rule our fleets
+    spread over more colonies (0.57 per empire-turn, 1.9 ships each, median 1), the battles
+    ending with the colony gone rose from 1.0 to 1.6 per empire and 25 turns (the original
+    1.9–2.2 in three games) and the colonies lost from 1.2 to 1.8 (the original 1.7–3.6 in
+    five games). Attacks on strong colonies fail in the original as in ours: game 10 made 49
+    that the colony survived, against colonies of a median 13,770 hit points with two unit
+    groups.
 70. **The second attack ship** (question 65). In the original, after the turn-2 redesign
     makes the first Attack Ship design obsolete, the ministers of turns 2 and 3 queue units
     and a colony ship but no attack ship, and the new design's first attack ship is queued
@@ -4217,7 +4239,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     item removed), the backlog test of the homeworld's queue on those turns, and when the
     queued obsolete item leaves the queue relative to the Ship Construction minister.
 
-    **Answer** (confirmed: binary and observed, 2026-10-03; spec 07 "The computer players' second round under a debugger"). The vehicle table's
+    **Answer** (confirmed: binary and observed, 2026-10-03; spec 07 "The computer players'
+    second round under a debugger"). The vehicle table's
     counts are taken before the clean-up of obsolete items and only grow by what the loop
     places (§7.5 `AI_Construction_Vehicles`). On turn 2 every empire of game 10 counted two
     attack ships (both still queued; the second, of the obsolete turn-1 design, was then
@@ -4263,7 +4286,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     rules").
 
     Turns 51–100, and the test's last details (confirmed: binary and observed, 2026-10-03;
-    spec 07 "The computer players' second round under a debugger"): game 10 was over the soft cap in 20 % of turns 51–100 (2 % of turns 26–50), so
+    spec 07 "The computer players' second round under a debugger"): game 10 was over the
+    soft cap in 20 % of turns 51–100 (2 % of turns 26–50), so
     the three original games with this record have 14, 16 and 20 %, against our median of
     11 % per game. The test's revenue is worked out afresh from the colonies at the
     start-of-turn step, not taken from the last income step, and the product with M / 100 is
@@ -4297,11 +4321,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     but have no design, so they are never candidates. Nothing about fleets, cloaks or busy
     ships is checked: the Move To and the Scrap are put straight onto the candidate's own
     order list. The scrap place is the nearest of the empire's queue owners with a working
-    yard, by the ministers' travel distance, the earlier in the empire's queue list on a tie,
-    and with none nothing is scrapped that turn (§7.5 *Scrap*). The leader test filters the
-    search: it walks the vehicle list from its end, skips ships in fleets and takes the first
-    that passes the attack or the defence test, with no idle test (§7.5 `AI_Fleets`). What a
-    Scrap at the head of a fleet member's list does to its fleet is question 74.
+    yard, by the ministers' travel distance, the earlier in the empire's queue list on a
+    tie, and with none nothing is scrapped that turn (§7.5 *Scrap*). The leader test filters
+    the search: it walks the vehicle list from its end, skips ships in fleets and takes the
+    first that passes the attack or the defence test, with no idle test (§7.5 `AI_Fleets`).
+    What a Scrap at the head of a fleet member's list does to its fleet is question 74.
 73. **Details the net income rule leaves open** (§7.5 *Net income*). OpenSE4's choices
     since 2026-10-02 (inferred):
     - the start-of-turn step works the figure out when its ministers after Politics start;
@@ -4322,8 +4346,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     Politics) can differ when Politics changes the trade figures in the same turn. The
     vehicle list works its budget out after its clean-up, as ours does. A queue's commitment
     is its first item's cost times the item's count, less what was paid, capped at the rate
-    the queue spends at that turn (its owner's rate, raised by an emergency build and lowered
-    in the slow turns after one), as ours does (§7.5 *Net income*).
+    the queue spends at that turn (its owner's rate, raised by an emergency build and
+    lowered in the slow turns after one), as ours does (§7.5 *Net income*).
 74. **A Scrap order on a fleet member** (§7.5 *Scrap*, question 72). The original puts the
     Move To and the Scrap straight onto the candidate's own list, also when it is in a fleet
     or cloaked; a fleet member's list is run through its fleet's group (spec 03 §8). To
@@ -4338,13 +4362,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     fleet's location), so the Move To takes the whole fleet to the yard and the Scrap would
     take the group's first member, which need not be the candidate; a cloaked candidate is
     not scrapped. To verify with a trace: which member a fleet's group lists first.
-75. **The first 25 turns** (spec 07 "The computer players' second round under a debugger"). With the vehicle table's counts taken before the
-    clean-up (question 70), our computers spend 78 % of turns 1–25 in Exploration against
-    the original's 83–85 % (nine games), explore faster (4.8 systems at turn 10 against 4.0,
-    7.5 at turn 25 against 6.6) and pass through Infrastructure more often (6 against 3 % of
-    turns 1–25, mostly from Defend (Short Term)). To verify: per empire in turns 1–25, the
-    explorers, the points they take and their arrival turns, and the state transitions with
-    their reasons, beside ours.
+75. **The first 25 turns** (spec 07 "The computer players' second round under a debugger").
+    With the vehicle table's counts taken before the clean-up (question 70), our computers
+    spend 78 % of turns 1–25 in Exploration, explore 4.8 systems by turn 10 and pass through
+    Infrastructure in 6 % of turns 1–25. To verify: the explorers' points and the state
+    transitions with their reasons, beside ours.
+
+    **Answer** (observed, 2026-10-03). With nine games of the original in the same set-up
+    the spread covers ours: Exploration 61–95 % of turns 1–25 per game (80 % over all nine;
+    the first five games had 85 %), Infrastructure 0–10 % (4 %), explored systems at turn 10
+    2.6–9.2 per empire (4.7). No rule difference is left to find in the first 25 turns
+    beyond question 70.
 76. **Colonies after the Defend (Short Term) fleet rule** (spec 07 "The computer players'
     second round under a debugger"). Per empire and 25 turns of turns 51–100 the original
     founds or takes 4.5 colonies and loses 2.3 (five games); ours 3.8 and 1.2, and with the
