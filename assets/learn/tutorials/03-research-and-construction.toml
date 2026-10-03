@@ -164,20 +164,26 @@ manual = "economy#the-empire-status-window"
 [[step]]
 title = "End the turn"
 text = """
-Close the window and end the turn (**End Turn**, then **Yes**). At the end of the turn your colonies produce, your queues
-build and your research projects are paid.
+Close the window and end the turn (**End Turn**, then **Yes**). At the end of the turn your
+colonies produce, your queues build and your research projects are paid.
+
+A project that reaches its cost gains your empire a level in its area. With a cheap project
+first, that happens at the end of this turn; otherwise end turns until your first project is done.
 """
 highlight = ["button:end-turn"]
-done = { turns_passed = 1 }
+done = { techs_researched = 1 }
 manual = "turns#what-happens-at-the-end-of-a-turn"
 
 [[step]]
 title = "New technology"
 text = """
-When a project reaches its cost, your empire gains a level in that area, and the Log (`F10`)
-lists what the new level unlocks. End turns until your first project is done: with a cheap
-project first, that is the next turn.
+Your first project is done: your empire has a new level in its area. The **Log** (`F10`) lists
+what the new level unlocks: components and facilities you can now design and build. Read it at
+the start of every turn.
+
+That is research and construction. The next lesson designs a warship with what you know. Press
+**Finish** to end this one.
 """
-highlight = ["command:log", "button:end-turn"]
-done = { techs_researched = 1 }
+highlight = ["command:log"]
+allow = ["command:log"]
 manual = "research#the-research-queue"

@@ -1,0 +1,71 @@
+# Tutorial 5, "Fleets, movement and supply", played through under the input lock
+# (docs/BUILDING.md "Input scripts").
+options --tutorial=fleets-and-movement --layout=1024x768 --size=1280x800
+
+wait-lesson fleets-and-movement
+# 1 Ships on the move.
+click item:Next in=lesson
+wait-step 2
+# 2 Select an attack ship: the ship arrows (the first ship is an attack ship).
+click item:next in=tag:cycle:ship
+wait-step 3
+# 3 Fleet Transfer, with its order button.
+click tag:order:fleet-transfer
+wait-window fleet-transfer
+wait-step 4
+# 4 Create a fleet: Create Fleet, keeping the name offered.
+click tag:fleet-transfer:create-fleet
+click item:OK in="Create Fleet"
+wait-step 5
+# 5 Add the second attack ship: the first ship left outside fleets (the colony ship stays out).
+click item:##row in=fleet-transfer nth=1
+wait-step 6
+assert { command = "JoinFleet" }
+# 6 Your fleet: close Fleet Transfer, select an attack ship again.
+click tag:fleet-transfer:close
+wait-closed fleet-transfer
+click item:next in=tag:cycle:ship
+wait-step 7
+# 7 Move the fleet: Move To, then an empty sector at the far end of the system view (more
+# sectors away than the fleet moves in a turn).
+click tag:order:move-to
+click sector:empty nth=150
+wait-step 8
+print turn
+assert-present tag:panel:system
+# 8 Movement points: Ctrl+L shows the route, again hides it.
+key Ctrl+L
+wait 10
+screenshot t5-route.png
+key Ctrl+L
+click item:Next in=lesson
+wait-step 9
+# 9 Set a waypoint: click the sector with a warp point, then Alt+1.
+click sector:warp-point
+key Alt+1
+wait-step 10
+# 10 Go to the waypoint: select the fleet again, Ctrl+1.
+click item:next in=tag:cycle:ship
+key Ctrl+1
+wait-step 11
+# 11 The order list: View Orders.
+click tag:order:view-orders
+wait-window view-orders
+wait-step 12
+# 12 Editing orders: close it with Esc.
+key Escape
+wait-closed view-orders
+wait-step 13
+# 13 Supplies: the Resupply order (the fleet is still selected).
+click tag:order:resupply
+wait-step 14
+# 14 End the turn.
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 1
+wait-step 15
+# 15 Well done: Finish.
+click item:Finish in=lesson
+wait-result done
+click item:"Keep Playing"
+wait-gone item:"Keep Playing"

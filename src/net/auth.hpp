@@ -1,19 +1,35 @@
 #pragma once
 
-// Password handling for network and PBEM games (docs/MULTIPLAYER.md).
+// Password handling for network and PBEM games (docs/MULTIPLAYER.md,
+// "Security"). In each game a password stands for two key pairs:
 //
-// Plain-text passwords never leave the player's machine and are never stored:
+//   password, game id --Argon2id--> seed --BLAKE2b--> signing key (EdDSA)
+//                                                   + box key (X25519)
 //
-//   password --hashPassword()--> password hash --passwordVerifier()--> verifier
+// The verifier is their public halves ("pk1:" and 128 hex digits). A player
+// proves the password by signing (a login signs its session, an orders file
+// its contents), and a PBEM turn file is encrypted to the box key. Hosts and
+// saved games keep only verifiers: enough to check a signature or to encrypt,
+// not to sign or to decrypt. Guessing a password from a verifier costs an
+// Argon2id run per guess, salted per game, so a verifier of one game helps
+// with no other.
 //
-// Clients send the password hash (in the network handshake and in .plr
-// files). Hosts and saved games keep only the verifier, a hash of the hash,
-// so a copy of a saved game (which every PBEM player receives) does not
-// reveal anything a player could log in with. The connection itself is not
-// encrypted; see the security notes in docs/MULTIPLAYER.md.
+// Argon2id runs on the players' machines and when a host starts (its own
+// player, the master and join passwords); hosts otherwise only check
+// signatures. Results are kept in the process (passwordKeys and joinKey are
+// cheap the second time).
+//
+// OpenSE4 0.6 kept a verifier made of a fast, unsalted hash of the password,
+// and sent that hash in the clear. Such a verifier is checked against that
+// hash (legacyPasswordHash) only to move the empire to a verifier of the
+// current kind, made from the password itself: nothing is ever made of the
+// old hash.
+
+#include "net/crypto.hpp"
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -45,20 +61,73 @@ private:
 
 std::string toHex(std::span<const uint8_t> bytes);
 
-// Empty password -> empty hash (no password).
-std::string hashPassword(std::string_view password);
-// Empty hash -> empty verifier.
-std::string passwordVerifier(std::string_view passwordHash);
-// True when `verifier` is empty (no password set) or matches the hash.
-bool checkPassword(std::string_view verifier, std::string_view passwordHash);
+// The Argon2id work of password keys. It is part of the key, so every
+// computer of a game must use the same: only tests lower it.
+struct PasswordWork {
+    uint32_t kibibytes = 128 * 1024;
+    uint32_t passes = 3;
+};
+void setPasswordWork(PasswordWork work);
+PasswordWork passwordWork();
+
+// The keys a password stands for in one game.
+struct PasswordKeys {
+    crypto::SigningKey signing;   // signs logins and orders files
+    crypto::KeyPair box;          // opens the turn files sent to the empire
+    std::string verifier() const;
+};
+// Empty password: none (no password).
+std::optional<PasswordKeys> passwordKeys(std::string_view password, uint64_t gameId);
+// Empty password: empty verifier.
+std::string passwordVerifier(std::string_view password, uint64_t gameId);
+// True when `verifier` is empty (no password set) or the password's, of
+// either kind (a verifier of OpenSE4 0.6 is checked with legacyPasswordHash).
+bool checkPassword(std::string_view verifier, std::string_view password, uint64_t gameId);
+
+// The public keys in a verifier of the current kind; none when it is of
+// another kind, malformed, or holds a key of small order.
+struct VerifierKeys {
+    crypto::Key signing{};
+    crypto::Key box{};
+};
+std::optional<VerifierKeys> verifierKeys(std::string_view verifier);
+// A verifier a player may give (for a new slot, or as a new password): empty
+// (no password), or a well-formed one of the current kind.
+bool usableVerifier(std::string_view verifier);
+
+// Signs `message` with the password's key (none: an all-zero signature).
+crypto::Signature signWith(const std::optional<PasswordKeys>& keys, std::span<const uint8_t> message);
+// True when `verifier` is empty (no password set), or of the current kind and
+// `signature` is its key's signature of `message`. A verifier of OpenSE4 0.6
+// checks no signature (false).
+bool checkPasswordSignature(std::string_view verifier, std::span<const uint8_t> message, const crypto::Signature& signature);
+
+// ---- OpenSE4 0.6 ---------------------------------------------------------------------------------
+
+// 0.6's password hash (a SHA-256 with a prefix; empty password: empty).
+std::string legacyPasswordHash(std::string_view password);
+// 0.6's verifier of that hash (a second SHA-256).
+std::string legacyPasswordVerifier(std::string_view legacyHash);
+bool isLegacyVerifier(std::string_view verifier);
+bool checkLegacyPassword(std::string_view verifier, std::string_view legacyHash);
+
+// ---- Join passwords --------------------------------------------------------------------------------
+
+// The key a join password stands for with one host and one game: Argon2id
+// salted with the host's key and the game id (empty password: all zero).
+crypto::Key joinKey(std::string_view joinPassword, const crypto::Key& hostKey, uint64_t gameId);
+
 // Comparison whose duration does not depend on where the strings differ.
 bool constantTimeEquals(std::string_view a, std::string_view b);
 
-// A random 64-bit id (game ids, keepalive tokens); not for game rules.
+// A random 64-bit id (game ids, keepalive tokens) from the system's
+// cryptographic random source; not for game rules.
 uint64_t randomId();
-// A password the host's Reset Passwords gives (spec 06 §1.9): three random
-// numbers from 11 to 99 written one after another, six digits, drawn from
-// randomId(), a source apart from the game's random numbers.
+// A password the host's Reset Passwords gives (spec 06 §1.9): random numbers
+// from 11 to 99 written one after another, drawn from randomId(), a source
+// apart from the game's random numbers. The original writes three (six
+// digits); OpenSE4 writes six (twelve digits), as its verifiers can be
+// guessed offline.
 std::string resetPassword();
 
 } // namespace opense4::net

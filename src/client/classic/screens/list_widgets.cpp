@@ -1,5 +1,7 @@
 #include "client/classic/screens/list_widgets.hpp"
 
+#include "client/script/items.hpp"
+
 #include <imgui_internal.h>
 
 #include <algorithm>
@@ -68,6 +70,7 @@ int listHeader(UiContext& ui, const char* id, std::span<const ListColumn> cols, 
         bool hovered = false, held = false;
         if (cols[i].sortable) {
             if (ImGui::InvisibleButton("##head", size)) clicked = int(i);
+            if (cols[i].label) script::reportItem(cols[i].label);   // input scripts find a heading by its label
             hovered = ImGui::IsItemHovered();
             held = ImGui::IsItemActive();
         } else {
@@ -98,6 +101,7 @@ int tableHeadings(UiContext& ui, std::span<const ListColumn> cols) {
         bool hovered = false, held = false;
         if (cols[i].sortable) {
             if (ImGui::InvisibleButton("##head", ImVec2(w, std::max(1.0f, h - 2 * padY)))) clicked = int(i);
+            if (cols[i].label) script::reportItem(cols[i].label);
             hovered = ImGui::IsItemHovered();
             held = ImGui::IsItemActive();
         } else {
@@ -205,11 +209,22 @@ void arrowColumn(const Painter& ui, const OpenList& list, float height, std::arr
     const float step = ui.px(list.step);
     float target = scroll;
     ImGui::PushID(list.name.c_str());
-    // The up arrow at the top, the down arrow at the bottom.
-    target -= float(columnArrow(ui, "##up", true, arrow, !list.disabled && scroll > 0.5f)) * step;
+    // The up arrow at the top, the down arrow at the bottom. Dear ImGui keeps
+    // scroll positions in whole pixels and a step need not be one: each step
+    // goes to the next whole row from the nearest one, and to the end when that
+    // is within a pixel, or rounding would build up (a few rows down and as
+    // many back up left the list short of its top).
+    const float row = step > 0.0f ? std::round(scroll / step) : 0.0f;
+    if (const int up = columnArrow(ui, "##up", true, arrow, !list.disabled && scroll > 0.5f); up > 0) {
+        const float t = std::min(scroll - 1.0f, (row - float(up)) * step);
+        target = t < 1.0f ? 0.0f : t;
+    }
     parts[0] = {ImGui::GetItemRectMin(), ImGui::GetItemRectMax()};
     ImGui::SetCursorScreenPos({at.x, at.y + height - arrow});
-    target += float(columnArrow(ui, "##down", false, arrow, !list.disabled && scroll < maxScroll - 0.5f)) * step;
+    if (const int down = columnArrow(ui, "##down", false, arrow, !list.disabled && scroll < maxScroll - 0.5f); down > 0) {
+        const float t = std::max(scroll + 1.0f, (row + float(down)) * step);
+        target = t > maxScroll - 1.0f ? maxScroll : t;
+    }
     parts[1] = {ImGui::GetItemRectMin(), ImGui::GetItemRectMax()};
     // The track between them and its thumb.
     const float trackTop = at.y + arrow, trackH = std::max(0.0f, height - 2 * arrow);
@@ -256,7 +271,13 @@ void wheel(const Painter& ui, const OpenList& list) {
         if (!(w->Flags & ImGuiWindowFlags_ChildWindow)) break;
     }
     if (!over) return;
-    ImGui::SetScrollY(rows, std::clamp(rows->Scroll.y - notches * step, 0.0f, rows->ScrollMax.y));
+    // Whole rows, as the arrows go (arrowColumn).
+    const float scroll = rows->Scroll.y, maxScroll = rows->ScrollMax.y;
+    const float row = step > 0.0f ? std::round(scroll / step) : 0.0f;
+    float target = (row - notches) * step;
+    if (target < 1.0f) target = 0.0f;
+    if (target > maxScroll - 1.0f) target = maxScroll;
+    ImGui::SetScrollY(rows, target);
 }
 
 std::string listName(const char* id) {

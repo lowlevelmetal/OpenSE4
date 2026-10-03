@@ -212,7 +212,7 @@ TEST_CASE("computer control: a game file with a master password asks for it, exa
     info.gameName = "Guarded";
     info.gameId = 77;
     info.dataSet = dataSetIdentity(r);
-    info.masterPasswordVerifier = net::passwordVerifier(net::hashPassword("Master Key"));
+    info.masterPasswordVerifier = net::passwordVerifier("Master Key", info.gameId);
     const fs::path file = tmp / "guarded.gam";
     REQUIRE(saveGame(file, s, info).has_value());
     auto session = client::classic::ClassicSession::load(sharedRules(), file);
@@ -236,15 +236,16 @@ TEST_CASE("reset passwords: the e-mail host writes them in after reading the ord
     const fs::path inbox = tmp / "inbox";
     fs::create_directories(inbox);
     net::pbem::ProcessOptions o;
+    o.hostKey = net::crypto::newKeyPair();
     o.resetPasswords = {kOther};
     auto rep = net::pbem::processGameFile(r, gam, inbox, o);
     REQUIRE(rep.has_value());
     REQUIRE(rep->passwordResets.size() == 1);
     CHECK(rep->passwordResets.front().first == kOther);
-    CHECK(rep->passwordResets.front().second.size() == 6);
+    CHECK(rep->passwordResets.front().second.size() == 12);  // six numbers from 11 to 99 (the original: three)
     auto after = loadGame(gam);
     REQUIRE(after.has_value());
-    CHECK(net::checkPassword(after->first.empire(kOther).passwordHash, net::hashPassword(rep->passwordResets.front().second)));
+    CHECK(net::checkPassword(after->first.empire(kOther).passwordHash, rep->passwordResets.front().second, info.gameId));
     // Turn-based games have none.
     after->first.options.simultaneous = false;
     REQUIRE(saveGame(gam, after->first, after->second).has_value());

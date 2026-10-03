@@ -24,11 +24,13 @@ struct LanGame {
     uint16_t port = 0;         // the game's TCP port
     std::string gameName;
     std::string version;       // appVersion() of the host
+    uint32_t protocol = 0;     // the host's kProtocolVersion (0: OpenSE4 0.6 and older, which do not say)
     std::string dataSet;       // game::dataSetIdentity() of the host's rules
     uint32_t players = 0;      // human slots taken
     uint32_t slots = 0;        // human slots
     bool started = false;
     bool password = false;     // a join password is needed
+    std::string hostKey;       // fingerprint of the host's key (unauthenticated: compare it with the host's own screen)
 
     bool operator==(const LanGame&) const = default;
 };

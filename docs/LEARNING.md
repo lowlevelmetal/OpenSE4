@@ -355,6 +355,15 @@ without `done` says Next (or Finish), one with `done` does not, outlines somethi
 its `done` can be reached with only its highlighted and allowed tags and keys
 (`learn::reachProblems`).
 
+The input scripts of `tests/input` (docs/BUILDING.md "Input scripts") play every
+tutorial from its first step to its result through the client's own input, under the
+input lock: each step done by clicking what it tells the player to click, Next only on
+steps that explain, never Skip or Free Play. Others play each training game's briefing,
+first turns and Leave Game, the result dialog won and lost, the Learn window and the
+manual. They need your installed game:
+`OPENSE4_CLASSIC_DATA=auto python3 tools/run_input_tests.py`. A lesson whose steps
+change needs its script changed with it.
+
 Unit tests cover the Markdown parser, the loaders (with their errors), each condition
 against the engine fixture, a tutorial (with Back, the active step and Skip) and a
 training game played through `learn::LessonProgress`, the step access rules, and the

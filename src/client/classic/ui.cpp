@@ -4,10 +4,13 @@
 
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
+#include "client/script/items.hpp"
 #include "client/ui/bitmap_font.hpp"
 #include "assets/tiny_font.hpp"
 
 #include "core/log.hpp"
+
+#include <imgui_internal.h>
 
 #include <algorithm>
 #include <cmath>
@@ -187,6 +190,7 @@ bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int sty
     const bool clicked = ImGui::InvisibleButton("##classic", size);
     ImGui::EndDisabled();
     ImGui::PopID();
+    script::reportItem(label);   // input scripts find it by its label
     const bool hovered = enabled && ImGui::IsItemHovered();
     const bool held = hovered && ImGui::IsItemActive();
 
@@ -394,6 +398,7 @@ void UiContext::tagTab(std::string_view tab, bool shown) {
 void UiContext::tagWindow(ImVec2 min, ImVec2 max) {
     if (!drawing || windowTagged) return;
     windowTagged = true;
+    drawingWindow = ImGui::GetCurrentWindow()->ID;
     tag(std::string("window:") + std::string(windowId(*drawing)), min, max);
 }
 

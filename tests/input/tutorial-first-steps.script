@@ -1,0 +1,69 @@
+# Tutorial 1, "First steps", played through under the input lock: every step
+# done by clicking what it tells the player to click (docs/BUILDING.md "Input scripts").
+options --tutorial=first-steps --layout=1024x768 --size=1280x800
+
+wait-lesson first-steps
+assert-step 1
+# 1 Welcome, 2 Your empire: explanations.
+click item:Next in=lesson
+wait-step 2
+click item:Next in=lesson
+wait-step 3
+# 3 Your home system: an empty part of the system view.
+click sector:empty
+wait-step 4
+# 4 Your homeworld: its sector lists everything there; then the homeworld in that list.
+click sector:home
+click item:report:colony
+wait-step 5
+# 5 The planet report: its tabs, then Next.
+click item:Facil in=main
+click item:Ability in=main
+click item:Detail in=main
+click item:Next in=lesson
+wait-step 6
+# 6 Other planets.
+click sector:planet+!colony
+wait-step 7
+# 7 The galaxy panel: a right click opens the Galaxy Map.
+right-click tag:panel:galaxy
+wait-window galaxy-map
+wait-step 8
+# 8 Close it with its Close button.
+click tag:galaxy-map:close
+wait-closed galaxy-map
+wait-step 9
+# 9 The command buttons: an explanation.
+move tag:command:designs
+click item:Next in=lesson
+wait-step 10
+# 10 Help.
+click tag:command:help
+wait-window help
+wait-step 11
+# 11 Help topics: a few tabs and an item, then Close.
+click item:Facilities in=help
+click item:Components in=help
+click tag:help:close
+wait-closed help
+wait-step 12
+# 12 Your ships: the right arrow of the ship selector.
+click item:next in=tag:cycle:ship
+wait-step 13
+# 13 The orders: an explanation.
+click item:Next in=lesson
+wait-step 14
+# 14 End the turn, and answer Yes.
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 1
+wait-step 15
+# 15 Well done: Finish.
+assert-present item:Finish in=lesson
+click item:Finish in=lesson
+wait-result done
+assert-present item:"Keep Playing"
+assert-present item:"Next Lesson"
+click item:"Keep Playing"
+wait-gone item:"Keep Playing"
+assert-result done

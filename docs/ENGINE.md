@@ -355,7 +355,13 @@ MinGW-w64.
   After a deliberate rules change, print the new values with
   `OPENSE4_PRINT_GOLDEN=1 opense4_tests -tc="determinism*" -s`. With the player's own
   data, the same PBEM game played for 15 turns by the Linux and the Windows
-  `opense4-server` gave identical states.
+  `opense4-server` gave identical states. Over encrypted connections, a Linux
+  `opense4-server` hosted the Windows server's scripted client under Wine for four
+  simultaneous turns (with a join password), and a Linux and a Windows client for three
+  turn-based ones (2026-10-02): the host's desync check found every Windows copy of the
+  game identical to the view it sent. By e-mail, the Windows build opened a turn file
+  the Linux host had encrypted to its empire's password and sent orders the Linux host
+  read and accepted: both make the same Argon2id keys.
 - **Engine code.** It follows the rules of the section above. Serialized and hashed
   values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`, which also takes
   `size_t`, 64 bits everywhere: the Windows and macOS builds reject `long` and
@@ -419,8 +425,12 @@ MinGW-w64.
 - In a turn-based game the host carries out each command of the player whose turn it is
   as it arrives and sends that player its new view. Everyone gets their view when the
   turn passes on.
-- `src/net` carries this over TCP with UPnP port mapping. `opense4-server` hosts
-  headless or processes PBEM turn files.
+- A play-by-e-mail host keeps the whole game and sends each player the same view as a
+  turn file; the players' orders files come back signed with their passwords.
+- `src/net` carries this over TCP, encrypted (Monocypher: X25519, XChaCha20-Poly1305,
+  BLAKE2b, EdDSA), with UPnP port mapping. A player's copy that drifts from the host's
+  view is detected (`game::statePartHashes` names the parts) and replaced.
+  `opense4-server` hosts headless or processes PBEM turns.
 
 See [MULTIPLAYER.md](MULTIPLAYER.md).
 
@@ -482,6 +492,16 @@ which the original draws in the system's Small Fonts.
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |
 | `screens/learn_screens.*`, `screens/markdown_view.*` | The Learn window and the manual viewer, in the front end and in a game, and the Markdown they draw |
+| `classic_probe.cpp` | What input scripts see of the client (`script::Probe`): the UI tags and widgets of the frame drawn last, the main window's sectors and systems, the windows, the lesson and the game's counters |
+
+`src/client/script` plays input scripts (docs/BUILDING.md "Input scripts"): `script.*`
+is the format and its parser, `player.*` turns each step into the frame's input events and
+checks over a `Probe` (headless, so the tests drive it with one of their own),
+`sdl_input.*` makes those events into the SDL events a mouse and keyboard send, `items.*`
+collects the widgets of each frame by label (Dear ImGui's item hooks, `imgui_item_hook.*`
+in `src/third_party_config`, turned on only for a script or a recording) and
+`recorder.*` writes a script from a session. The app handles a script's events exactly as
+a player's: `Mode::filterEvent` (the tutorial input lock) first, then Dear ImGui.
 
 ### Learning to play
 

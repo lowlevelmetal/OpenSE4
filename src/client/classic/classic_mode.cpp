@@ -7,6 +7,7 @@
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
+#include "client/script/items.hpp"
 #include "client/ui/theme.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
@@ -416,6 +417,7 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     ui_->learn = learn_.get();
     session_->onIssued = [this](const game::Command& c) {
         if (lesson_) lesson_->issued(c);
+        if (options_.scripted) scriptTracker_.issued(c);
     };
     ui_->opener = [this](ScreenId id, ScreenArgs args) { pendingOpen_.emplace_back(id, std::move(args)); };
     session_->onNewTurn = [this] {
@@ -425,6 +427,14 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     };
     main_ = MainWindow{};
     main_.reset(*ui_);
+    if (options_.scripted) {
+        // Input scripts count from the start of this game.
+        scriptTracker_ = {};
+        lastFacts_ = {};
+        scriptTracker_.observe(session_->state(), session_->player());
+        trackedRevision_ = session_->revision();
+        gameMark_ = learn::markNow(session_->rules(), session_->state(), session_->player(), scriptTracker_);
+    }
     logSeen_ = session_->me().log.size();  // what the game brought is not news
     handoffPlayer_ = {};
     handoff_ = false;
@@ -489,13 +499,16 @@ void ClassicMode::updateLesson(UiContext& ui) {
     if (keys.pressed(Action::ContextHelp)) contextHelp();
     const bool toggle = ui.requests.toggleLessonPanel;
     ui.requests.toggleLessonPanel = false;
-    if (!lesson_) return;
-    if (toggle || keys.pressed(Action::LessonText)) lesson_->togglePanel();
+    if (!lesson_ && !options_.scripted) return;
     learn::ClientFacts facts = std::move(ui.facts);   // what the windows told this frame
     for (const auto& [id, screen] : screens_) facts.openWindows.emplace_back(windowId(id));
     facts.selected = main_.selectionKinds(ui);
     facts.selections = main_.selections();
     facts.battleOrders = tacticalOrderLog();
+    if (options_.scripted) lastFacts_ = facts;   // for input scripts' conditions
+    if (!lesson_) return;
+    if (toggle || keys.pressed(Action::LessonText)) lesson_->togglePanel();
+    const script::ItemScope scope("lesson");
     lesson_->frame(ui, facts, lock_.state());
 }
 
@@ -561,6 +574,7 @@ bool ClassicMode::update(const FrameState& fs) {
     updateAudio();
     applyLayout();
     mapping_ = frameMappingFor(float(fs.frame.width), float(fs.frame.height));
+    fbScale_ = fs.fbScale;
     // Every classic window defaults to the game's text font at its native size.
     ImGui::PushFont(fonts_.regular, kTextSize * mapping_.scale / fs.fbScale * appSettings().graphics.textScale);
     const bool keepRunning = updateFrame(fs);
@@ -601,7 +615,10 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ctx.learn = learn_.get();
         ctx.startLesson = [this](learn::LessonKind kind, const std::string& slug) { pendingLesson_ = {kind, slug}; };
         ctx.loadedFromIntro = [this] { loadedFromIntro_ = true; };
-        if (front_) front_->draw(ctx);
+        if (front_) {
+            const script::ItemScope scope("front");
+            front_->draw(ctx);
+        }
         if (started) startGame(std::move(started));
         if (pendingLesson_ && !session_) {
             // Started after the screen drew: starting replaces it.
@@ -639,6 +656,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (const auto refused = lock_.takeRefused(); refused && lesson_) lesson_->refused(*refused, fs.time);
     ui.lessonRunning = lesson_ != nullptr;
     session_->poll();
+    if (options_.scripted) trackForScripts();
+    const script::ItemScope mainScope("main");
     if (!pendingSelect_.empty() && !selectForAutomation(pendingSelect_)) pendingSelect_.clear();
 
     // Hotseat: when the turn passes to another human, hide the map until that
@@ -692,12 +711,19 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::PushID(int(i));
         ui.drawing = screens_[i].first;   // its Dialog registers window:<id>
         ui.windowTagged = false;
+        ui.drawingWindow = 0;
+        const script::ItemScope scope(windowId(screens_[i].first));
         const bool keep = screens_[i].second->draw(ui);
         ui.drawing.reset();
         ImGui::PopID();
-        if (keep) ++i;
-        else screens_.erase(screens_.begin() + std::ptrdiff_t(i));
+        if (keep) {
+            frontWindow_ = ui.drawingWindow;
+            ++i;
+        } else {
+            screens_.erase(screens_.begin() + std::ptrdiff_t(i));
+        }
     }
+    if (screens_.empty()) frontWindow_ = 0;
     if (battleAsking) drawBattleQuestion(ui);
     updateLesson(ui);
     for (auto& [id, args] : pendingOpen_) openScreen(id, std::move(args));
@@ -797,9 +823,26 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::End();
         ImGui::PopFont();
     }
+    keepFocusOnFrontWindow();
     updateLock(ui);
     if (options_.lessonCheck) lessonCheckReport(ui);
     return !ui.requests.quitGame;
+}
+
+void ClassicMode::keepFocusOnFrontWindow() {
+    // Classic windows are modal (docs/spec/06 §1): while one is open the
+    // keyboard belongs to the one in front, so that Esc and Enter close it
+    // (Dialog::close). Dear ImGui gives the focus to whatever was clicked or
+    // focused before, which can be one of the main window's own panels (a
+    // command button that opened the window above, which has closed since).
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (frontWindow_ == 0 || g.ActiveId != 0 || ImGui::IsAnyMouseDown() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+        return;
+    ImGuiWindow* front = ImGui::FindWindowByID(frontWindow_);
+    const ImGuiWindow* nav = g.NavWindow ? g.NavWindow->RootWindow : nullptr;
+    if (!front || nav == front) return;
+    if (nav && nav->WasActive && !MainWindow::ownsWindow(nav->ID)) return;   // a prompt, the lesson panel, the chat
+    ImGui::FocusWindow(front);
 }
 
 void ClassicMode::drawNetwork(UiContext& ui) {

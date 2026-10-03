@@ -1,6 +1,7 @@
 # Builds and tests OpenSE4 on Linux, macOS and Windows (docs/BUILDING.md,
 # "Continuous integration"). Nothing here needs the original game: the tests
-# that read an installed copy are opt-in (OPENSE4_CLASSIC_DATA) and stay off.
+# that read an installed copy are opt-in (OPENSE4_CLASSIC_DATA) and stay off,
+# and the input scripts that CI plays run on our own test fixtures.
 #
 # Third-party actions are pinned to a full commit SHA; the comment names the tag.
 
@@ -99,6 +100,74 @@ jobs:
         run: |
           build/${{ matrix.preset }}/opense4 --help > /dev/null
           build/${{ matrix.preset }}/opense4-server --help > /dev/null
+
+  # The client itself, played by input scripts (docs/BUILDING.md "Input scripts"): the
+  # scripts that need nothing but our own content run on a game folder made from the
+  # test fixtures, headless, with Mesa's software OpenGL. The others play the
+  # original game, which CI does not have.
+  input-scripts:
+    name: Linux / input scripts (fixture data)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The build dependencies as above, and Mesa: llvmpipe behind EGL, which SDL's
+      # offscreen video driver uses without a display.
+      - name: Install the build dependencies and Mesa
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends glslc libsdl3-dev libvulkan-dev ccache \
+            libegl1 libegl-mesa0 libgl1-mesa-dri libgles2
+
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: linux-gcc-debug
+          max-size: 1G
+          evict-old-files: job
+
+      - name: Restore the FetchContent sources
+        id: deps
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .deps
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: |
+          cmake -DDIR=.deps -P .github/scripts/fetchcontent_cache.cmake
+          cmake --preset debug -C .deps/sources.cmake \
+            -DOPENSE4_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Keep the FetchContent sources for the next run
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: cmake -DDIR=.deps -DBUILD=build/debug -P .github/scripts/fetchcontent_cache.cmake
+
+      - name: Build the client
+        run: cmake --build --preset debug --target opense4
+
+      - name: Play the input scripts on the test fixtures
+        env:
+          SDL_VIDEO_DRIVER: offscreen
+          LIBGL_ALWAYS_SOFTWARE: 1
+        run: python3 tools/run_input_tests.py --fixture-data --renderer=opengl --jobs 4 --output "$RUNNER_TEMP/input-scripts"
+
+      # The pictures show only our own fixtures and content.
+      - name: Keep the pictures of a failed run
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: input-scripts-failure
+          path: ${{ runner.temp }}/input-scripts
+          if-no-files-found: ignore
+          retention-days: 14
 
   macos:
     name: macOS / Apple Clang debug

@@ -14,7 +14,7 @@ outcomes, **L** is an edge case.
 
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played locally, hotseat, over the network and by e-mail. On different machines a host is in charge: over the network (an OpenSE4 extension) it carries out the commands of the player whose turn it is; by e-mail each player sends the commands of their turn (`.plr`), and the host replays them and sends the game on to the next player. A player who is away, out of time or without a `.plr` is played by the computer for that turn (spec 05 open question 33). The game client opens a PBEM `.gam` (Multiplayer, Play by E-mail, or `--pbem`), plays the player's turn in either style and writes the `.plr` at End Turn (spec 05 open question 36). A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. As in the original, nobody is asked Tactical or Strategic in a game played on different machines: the host resolves the battle (local and hotseat games stop at each battle they show). The host never stops, so a client shows those battles afterwards, where the original shows the player whose turn it is the Strategic Combat window before the battle (spec 06 §7 Q74) | Spec 05 §9.1: on different machines the save file passes from player to player, and TCP/IP is for simultaneous games only; spec 04 §2, §3 step 1; spec 06 §2.7 | M |
+| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played locally, hotseat, over the network and by e-mail. On different machines a host is in charge: over the network (an OpenSE4 extension) it carries out the commands of the player whose turn it is; by e-mail each player plays their turn on their own view (a turn file) and sends its commands (`.plr`), and the host carries them out on the whole game and sends the next player their turn file. A player who is away, out of time or without a `.plr` is played by the computer for that turn (spec 05 open question 33). The game client opens a PBEM turn file (Multiplayer, Play by E-mail, or `--pbem`), plays the player's turn in either style and writes the `.plr` at End Turn (spec 05 open question 36). A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. As in the original, nobody is asked Tactical or Strategic in a game played on different machines: the host resolves the battle (local and hotseat games stop at each battle they show). The host never stops, so a client shows those battles afterwards, where the original shows the player whose turn it is the Strategic Combat window before the battle (spec 06 §7 Q74) | Spec 05 §9.1: on different machines the save file passes from player to player, and TCP/IP is for simultaneous games only; spec 04 §2, §3 step 1; spec 06 §2.7 | M |
 
 ## Economy and population (spec 02)
 
@@ -328,8 +328,8 @@ Cloak, which loads recalculate, upgrades) are §14 Q44, settled from the executa
 2026-10-01, and followed the same day: a Decloak in a simultaneous game makes only the acting
 empire's side of a first contact (`diplomacy::firstContactIn` with `onlySide`, in the colony's
 system); the host recalculates the colonies a player's orders name when it reads them, then
-sight everywhere; every reading of a game file recalculates every colony (Load Game, `--load`, a PBEM file opened
-by a player or the host, a local or hotseat simultaneous game passing to the next player or to
+sight everywhere; every reading of a game file recalculates every colony (Load Game, `--load`, a PBEM game read
+by the host for the turn files and for processing, a local or hotseat simultaneous game passing to the next player or to
 processing; `diplomacy::recalculateColonies`); a completed upgrade does not; the automatic
 decloak is a full Decloak (`diplomacy::recalculateColony`).
 

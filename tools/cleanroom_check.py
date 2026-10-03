@@ -138,7 +138,7 @@ def main():
     for p in args.paths:
         if os.path.isdir(p):
             for root, _, names in os.walk(p):
-                files += [os.path.join(root, f) for f in names if f.endswith((".md", ".txt", ".cpp", ".hpp", ".toml", ".py", ".xml", ".nsi", ".desktop", ".sh", ".in"))]
+                files += [os.path.join(root, f) for f in names if f.endswith((".md", ".txt", ".cpp", ".hpp", ".toml", ".py", ".xml", ".nsi", ".desktop", ".sh", ".in", ".script"))]
         elif os.path.exists(p):
             files.append(p)
 

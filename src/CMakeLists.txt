@@ -115,13 +115,15 @@ add_library(opense4_net STATIC
     net/auth.cpp
     net/client.cpp
     net/connection.cpp
+    net/crypto.cpp
     net/host.cpp
     net/pbem.cpp
     net/protocol.cpp
+    net/secure.cpp
     net/socket.cpp
     net/upnp.cpp
     net/discovery.cpp)
-target_link_libraries(opense4_net PUBLIC opense4_game PRIVATE Threads::Threads opense4_warnings)
+target_link_libraries(opense4_net PUBLIC opense4_game PRIVATE Threads::Threads monocypher opense4_warnings)
 target_compile_definitions(opense4_net PRIVATE OPENSE4_VERSION="${PROJECT_VERSION}")
 if(OPENSE4_ENABLE_UPNP)
     target_sources(opense4_net PRIVATE net/upnp_miniupnpc.cpp)
@@ -130,7 +132,7 @@ else()
     target_sources(opense4_net PRIVATE net/upnp_disabled.cpp)
 endif()
 if(WIN32)
-    target_link_libraries(opense4_net PRIVATE ws2_32)
+    target_link_libraries(opense4_net PRIVATE ws2_32 bcrypt)
 endif()
 
 # --- the dedicated server (network games and play-by-e-mail) ------------------------

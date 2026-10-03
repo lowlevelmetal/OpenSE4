@@ -6,6 +6,7 @@
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/reorder_popup.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/script/items.hpp"
 #include "client/classic/status_icons.hpp"
 
 #include "game/design.hpp"
@@ -883,6 +884,7 @@ private:
                 const Buildable& b = avail_[i];
                 const bool ok = b.problem.empty();
                 const RowEvents ev = tableRow(ui, static_cast<int>(i), false);
+                script::reportItem(b.name);   // input scripts find an item by its name
                 if (ev.hovered) hoverAvail_ = i;
                 if (ev.clicked || ev.doubleClicked) add(ui, b);
                 if (ev.rightClicked) openItemReport(ui, b.item);

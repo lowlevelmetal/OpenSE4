@@ -122,6 +122,11 @@ struct Lesson {
 // returns nothing when the file cannot be used at all.
 std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, LessonKind kind, std::vector<Diagnostic>& problems);
 
+// A condition on its own, written as in the files ("{ colonies = 2 }" or
+// "colonies = 2"), with its problems in `problems` (input scripts use it,
+// docs/BUILDING.md "Input scripts"). `line` is the line the text is on.
+std::optional<Condition> parseCondition(std::string_view text, std::string_view file, int line, std::vector<Diagnostic>& problems);
+
 // The slug of a content file: its name without the order number and the
 // extension ("03-first-colony.toml" gives "first-colony").
 std::string slugOf(std::string_view fileName);

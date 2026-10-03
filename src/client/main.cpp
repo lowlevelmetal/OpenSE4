@@ -1,11 +1,14 @@
 #include "client/app.hpp"
+#include "client/script/script.hpp"
 #include "core/log.hpp"
 
 #include <charconv>
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <string_view>
+#include <vector>
 
 // SDL's entry point: on Windows it provides WinMain for the windowed build and
 // calls main() below; elsewhere it changes nothing.
@@ -89,8 +92,15 @@ Play by e-mail (see docs/MULTIPLAYER.md):
 Paths:
   --assets=DIR                    OpenSE4's own assets directory (default: auto-detect, else built in)
 
+Input scripts (see docs/BUILDING.md "Input scripts"):
+  --input-script=FILE             Play FILE's clicks, keys and checks through the game's own input (FILE's
+                                  options line adds options); exits with 1 when a step fails, with a picture
+  --script-output=DIR             Where a script's screenshots and failure picture go (default: the system's
+                                  temporary folder, opense4-scripts)
+  --record-input=FILE             Record what you do as an input script, to start one from
+
 Automation:
-  --screenshot=FILE.png           Render a few frames, save a screenshot and exit
+  --screenshot=FILE.png           Render a few frames, save a screenshot and exit (with a script: the last frame)
   --frames=N                      Frame to capture (default 10)
   --turns=N                       Let the AI play N turns for every empire (yours too) first
   --select=moving|fleet|ID        Then select one of your vehicles in the main window: the first with a
@@ -122,8 +132,32 @@ int main(int argc, char** argv) {
     options.width = saved.windowWidth;
     options.height = saved.windowHeight;
 
+    // An input script's options line comes first; the command line can override it.
+    std::vector<std::string> args;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
+        if (!arg.starts_with("--input-script=")) continue;
+        std::vector<std::string> errors;
+        auto script = client::script::loadScript(std::string(arg.substr(15)), errors);
+        if (!script) {
+            for (const std::string& e : errors) std::fprintf(stderr, "%s\n", e.c_str());
+            return 2;
+        }
+        args = script->options;
+        options.recordOptions = script->options;
+        options.inputScript = std::move(*script);
+    }
+    for (int i = 1; i < argc; ++i) {
+        args.emplace_back(argv[i]);
+        const std::string_view a = argv[i];
+        // What a recording's options line repeats: the game's own options.
+        if (!a.starts_with("--record-input") && !a.starts_with("--screenshot") && !a.starts_with("--frames") && !a.starts_with("--input-script") &&
+            !a.starts_with("--script-output"))
+            options.recordOptions.emplace_back(a);
+    }
+
+    for (const std::string& argument : args) {
+        const std::string_view arg = argument;
         const auto eq = arg.find('=');
         const std::string_view key = arg.substr(0, eq);
         const std::string_view value = eq == std::string_view::npos ? std::string_view{} : arg.substr(eq + 1);
@@ -215,18 +249,27 @@ int main(int argc, char** argv) {
         } else if (key == "--select") {
             options.select = std::string(value);
             ok = !value.empty();
+        } else if (key == "--input-script") {
+            ok = options.inputScript.has_value();
+        } else if (key == "--script-output") {
+            options.scriptOutput = std::string(value);
+            ok = !value.empty();
+        } else if (key == "--record-input") {
+            options.recordInput = std::string(value);
+            ok = !value.empty();
         } else if (key == "--verbose") {
             log::setMinLevel(log::Level::Debug);
         } else {
             ok = false;
         }
         if (!ok) {
-            std::fprintf(stderr, "Invalid argument: %s\n\n%s", argv[i], kUsage);
+            std::fprintf(stderr, "Invalid argument: %s\n\n%s", argument.c_str(), kUsage);
             return 2;
         }
     }
 
-    if (options.seed == 0) options.seed = static_cast<uint64_t>(std::time(nullptr));
+    // A script run is the same every time: a fixed seed unless one is given.
+    if (options.seed == 0) options.seed = options.inputScript ? 1 : static_cast<uint64_t>(std::time(nullptr));
     // The log also goes to opense4.log in the user data folder: on Windows the
     // game has no console, so that file is where a player finds it.
     log::setFile(client::userDataDirectory() / "opense4.log");

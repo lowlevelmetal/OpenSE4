@@ -2883,21 +2883,24 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     player who is away is waited for until the turn time limit, a forced turn or a
     hand-over to the computer. The computer then plays the rest of that turn as it plays
     a missing player in a simultaneous game (§7.1: all ministers on, or bookkeeping only).
-  - **E-mail.** The player plays their turn on their copy of the `.gam`, and the `.plr`
-    carries that player's commands in the order given, with checksums of the game before
-    and after. The host replays them with `applyLive`, runs `endPlayerTurn` and sends the
-    new `.gam` on to the next player. A missing `.plr` means the computer plays that turn.
+  - **E-mail.** The host keeps the `.gam` and sends the player whose turn it is a turn file
+    of their own (their redacted view, below). The player plays the turn on it, each
+    command carried out at once as a preview, and the `.plr` carries that player's
+    commands in the order given, with the checksum of the turn file. The host carries
+    them out with `applyLive` on the whole game, runs `endPlayerTurn` and writes the next
+    player's turn file. A missing `.plr` means the computer plays that turn.
 - **What a client receives.** The original sends every player the whole game (§9.2) and hides
-  things only on display. OpenSE4's TCP/IP host sends each player a redacted view instead (an
-  OpenSE4 choice; its e-mail game file is the full state, like the original's). Either way the
-  client must apply spec 01 §6.9 "What other players see" to what it holds, so that the visible
-  behaviour matches the original.
+  things only on display. OpenSE4's hosts send each player a redacted view instead (an
+  OpenSE4 choice): the TCP/IP host every turn, the e-mail host as each player's turn file.
+  Either way the client must apply spec 01 §6.9 "What other players see" to what it holds, so
+  that the visible behaviour matches the original.
 - **The player's side of an e-mail game** (both turn styles). The game client opens the
-  `.gam`, the player picks their empire and gives its password, which is checked against
-  the empire's verifier as the host will check the `.plr`. The turn is played as in a
-  local game of that style, and End Turn writes the `.plr` instead of processing the turn.
-  A turn in progress can be saved and finished later (step 3 of §9.2). The engine's choices
-  are an OpenSE4 extension (open question 36 compares them with the original).
+  player's turn file and asks for the empire's password, which is checked against the
+  empire's verifier as the host will check the `.plr`'s signature. The turn is played as
+  in a local game of that style, and End Turn writes the signed `.plr` instead of
+  processing the turn. A turn in progress can be saved and finished later (step 3 of
+  §9.2). The engine's choices are an OpenSE4 extension (open question 36 compares them
+  with the original).
 
 ## 10. `Settings.txt` keys in scope [D]
 
@@ -3231,9 +3234,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     folder), named after the game and the player number; saving during the turn writes the
     same `.plr` and leaves the `.gam` unchanged; the player's side never reads a `.plr`
     back; a `.plr` is a snapshot of the player's part of the game checked by date, turn code
-    and game code. Turn-based games have no `.plr` at all. OpenSE4's `.plr` is a command
-    list with checksums, written next to the `.gam`, and its drafts folder, password rule
-    and turn-based files have no counterpart.
+    and game code. Turn-based games have no `.plr` at all. OpenSE4's `.plr` is a signed
+    command list with the checksum of the player's turn file, written next to that turn
+    file, and its per-player turn files, drafts folder, password rule and turn-based
+    files have no counterpart.
 37. **Computer-player details the settled rules leave open** (§7.2–§7.5): **Answer:**
     every sub-item is settled from the executable (confirmed: binary), except the last,
     which has no counterpart. The rule is in the section named. Where the engine (each

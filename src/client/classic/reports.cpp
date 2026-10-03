@@ -1,5 +1,7 @@
 #include "client/classic/reports.hpp"
 
+#include "client/script/items.hpp"
+
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/status_icons.hpp"
 
@@ -226,6 +228,7 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo) 
         ImGui::PushID(int(i));
         const bool clicked = ImGui::InvisibleButton("tab", ui.size({72, 30}));
         ImGui::PopID();
+        script::reportItem(tabs[i].label);   // input scripts find a tab by its label
         const bool selected = tabs[i].tab == current;
         const int row = selected ? 2 : ImGui::IsItemHovered() ? 1 : 0;
         if (Sprite cell = ui.art.region("Pictures/Game/Buttons/TabBtns.bmp", tabs[i].column * 72, row * 30, 72, 30, false))

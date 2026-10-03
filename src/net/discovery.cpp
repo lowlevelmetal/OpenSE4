@@ -38,8 +38,9 @@ std::string encodeQuery() { return std::string(kQuery); }
 bool isQuery(std::string_view packet) { return packet.substr(0, kQuery.size()) == kQuery; }
 
 std::string encodeGame(const LanGame& g) {
-    return std::format("{}\nname={}\nport={}\nversion={}\ndata={}\nplayers={}\nslots={}\nstarted={}\npassword={}\n", kReply, clean(g.gameName),
-                       g.port, clean(g.version), clean(g.dataSet, 96), g.players, g.slots, g.started ? 1 : 0, g.password ? 1 : 0);
+    return std::format("{}\nname={}\nport={}\nversion={}\nprotocol={}\ndata={}\nplayers={}\nslots={}\nstarted={}\npassword={}\nkey={}\n", kReply,
+                       clean(g.gameName), g.port, clean(g.version), g.protocol, clean(g.dataSet, 96), g.players, g.slots, g.started ? 1 : 0,
+                       g.password ? 1 : 0, clean(g.hostKey));
 }
 
 std::optional<LanGame> decodeGame(std::string_view packet) {
@@ -58,6 +59,8 @@ std::optional<LanGame> decodeGame(std::string_view packet) {
         if (key == "name") g.gameName = clean(value);
         else if (key == "port") havePort = number(value, g.port) && g.port != 0;
         else if (key == "version") g.version = clean(value);
+        else if (key == "protocol") number(value, g.protocol);
+        else if (key == "key") g.hostKey = clean(value);
         else if (key == "data") g.dataSet = clean(value, 96);
         else if (key == "players") number(value, g.players);
         else if (key == "slots") number(value, g.slots);

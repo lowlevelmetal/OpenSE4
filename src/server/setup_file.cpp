@@ -71,6 +71,11 @@ constexpr std::array kBoolOptions{
     BoolOption{"simultaneous", &O::simultaneous},
 };
 
+// The hashes of OpenSE4 0.6 setup files made the same key in every game.
+constexpr std::string_view kOldHash =
+    "password hashes are no longer used (OpenSE4 now salts passwords per game): write the password, or its verifier for this game "
+    "(\"opense4-server password-verifier --game-id=N\") with game_id";
+
 std::string where(const std::string& source, const toml::node& n) {
     const auto line = n.source().begin.line;
     return line ? std::format("{}:{}", source, line) : source;
@@ -81,14 +86,19 @@ public:
     Parser(std::string source, const game::Rules& rules) : source_(std::move(source)), rules_(rules) {}
 
     std::expected<SetupFile, std::string> run(const toml::table& root) {
-        allowOnly(root, "", {"name", "seed", "master_password", "master_password_hash", "options", "empire"});
+        allowOnly(root, "", {"name", "seed", "game_id", "master_password", "master_password_verifier", "master_password_hash", "options", "empire"});
+        if (const toml::node* n = root.get("master_password_hash")) error(*n, kOldHash);
         out_.gameName = string(root, "name").value_or("OpenSE4 game");
         if (const toml::node* n = root.get("seed")) {
             if (const auto* i = n->as_integer()) out_.seed = static_cast<uint64_t>(i->get());
             else error(*n, "'seed' must be an integer");
         }
-        if (auto pw = string(root, "master_password")) out_.masterPasswordHash = net::hashPassword(*pw);
-        if (auto h = string(root, "master_password_hash")) out_.masterPasswordHash = *h;
+        if (const toml::node* n = root.get("game_id")) {
+            if (const auto* i = n->as_integer(); i && i->get() > 0) out_.gameId = static_cast<uint64_t>(i->get());
+            else error(*n, "'game_id' must be a positive integer");
+        }
+        if (auto pw = string(root, "master_password")) out_.masterPassword = *pw;
+        if (auto v = string(root, "master_password_verifier")) out_.masterPasswordVerifier = verifier(root, "master_password_verifier", *v);
         if (const toml::node* n = root.get("options")) {
             if (const auto* t = n->as_table()) options(*t);
             else error(*n, "[options] must be a table");
@@ -196,8 +206,9 @@ private:
     }
 
     void empire(const toml::table& t) {
-        allowOnly(t, "empire", {"name", "race", "tier", "kind", "player", "password", "password_hash", "color", "empire_type", "leader",
-                                "leader_title", "minister_style", "use_race_minister_style"});
+        allowOnly(t, "empire", {"name", "race", "tier", "kind", "player", "password", "password_verifier", "password_hash", "color", "empire_type",
+                                "leader", "leader_title", "minister_style", "use_race_minister_style"});
+        if (const toml::node* n = t.get("password_hash")) error(*n, kOldHash);
         SetupEmpire e;
         game::EmpireSetup& s = e.setup;
         s.name = string(t, "name").value_or("");
@@ -228,9 +239,16 @@ private:
             else error(*n, "'use_race_minister_style' must be true or false");
         }
         e.player = string(t, "player").value_or("");
-        if (auto pw = string(t, "password")) s.passwordHash = net::hashPassword(*pw);
-        if (auto h = string(t, "password_hash")) s.passwordHash = *h;
+        if (auto pw = string(t, "password")) e.password = *pw;
+        if (auto v = string(t, "password_verifier")) e.passwordVerifier = verifier(t, "password_verifier", *v);
         out_.empires.push_back(std::move(e));
+    }
+
+    // A verifier made in advance: of the current kind, and for a game whose id the file fixes.
+    std::string verifier(const toml::table& t, std::string_view key, const std::string& value) {
+        if (!net::usableVerifier(value) || value.empty()) error(*t.get(key), std::format("'{}' is not a password verifier (opense4-server password-verifier)", key));
+        else if (!out_.gameId) error(*t.get(key), std::format("'{}' needs 'game_id': a verifier belongs to one game", key));
+        return value;
     }
 
     std::string source_;
