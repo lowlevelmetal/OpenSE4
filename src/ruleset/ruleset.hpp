@@ -124,6 +124,7 @@ struct Component {
     int structure = 0;
     Cost cost;
     VehicleTypeMask vehicles = 0;
+    std::string vehicleText;         // the "Vehicle Type" field as written (the Weapons Report's export)
     std::string vehicleDescription;  // shown in reports when the list override is used
     int supplyUsed = 0;
     int maxPerVehicle = 0;  // 0 = unlimited

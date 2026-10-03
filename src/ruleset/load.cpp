@@ -313,6 +313,7 @@ private:
         c.structure = r.int32("Tonnage Structure");
         c.cost = cost(r);
         c.vehicles = vehicleMask(r, "Vehicle Type");
+        c.vehicleText = r.str("Vehicle Type", Need::Optional);
         // Optional override (the classic files spell the key "Vechicle").
         for (const char* key : {"Vechicle List Type Override", "Vehicle List Type Override"})
             if (r.has(key)) c.vehicles = overrideMask(r.str(key));

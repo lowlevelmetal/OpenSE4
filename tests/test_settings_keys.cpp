@@ -39,8 +39,6 @@ std::string readFile(const std::filesystem::path& p) {
     return std::string(std::istreambuf_iterator<char>(in), {});
 }
 
-size_t tabs(std::string_view line) { return static_cast<size_t>(std::count(line.begin(), line.end(), '\t')); }
-
 std::vector<std::string> lines(const std::string& text) {
     std::vector<std::string> out;
     std::istringstream in(text);
@@ -114,46 +112,58 @@ TEST_CASE("settings keys: Allow CD Music in the Options window and the Combat Op
 }
 
 TEST_CASE("settings keys: the Weapons Report's export writes four tables") {
+    // Spec 06 §7 Q83 (confirmed: binary): Weapons.txt, Comps.txt,
+    // WeaponFamilies.txt, CompFamilies.txt, fixed-width columns under a header
+    // line and a line of dashes, every weapon or every component in data order.
     const Rules& r = engineRules();
     const std::vector<ExportTable> tables = weaponAndComponentTables(r);
     REQUIRE(tables.size() == 4);
-    CHECK(tables[0].fileName == "weapons.txt");
-    CHECK(tables[1].fileName == "components.txt");
-    CHECK(tables[2].fileName == "weapon_families.txt");
-    CHECK(tables[3].fileName == "component_families.txt");
-    // Every row has the header's columns.
+    CHECK(tables[0].fileName == "Weapons.txt");
+    CHECK(tables[1].fileName == "Comps.txt");
+    CHECK(tables[2].fileName == "WeaponFamilies.txt");
+    CHECK(tables[3].fileName == "CompFamilies.txt");
     for (const ExportTable& t : tables) {
         const std::vector<std::string> rows = lines(t.text);
-        REQUIRE_FALSE(rows.empty());
-        for (const std::string& row : rows) CHECK(tabs(row) == tabs(rows.front()));
+        REQUIRE(rows.size() >= 2);
+        CHECK(rows[0].starts_with("Name"));
+        CHECK(rows[1] == std::string(rows[0].size(), '-'));
+        for (const std::string& row : rows) CHECK(row.find('\t') == std::string::npos);
     }
-    // One row per weapon (data order), one per component.
     const auto& comps = r.data().components;
     const auto weapons = std::count_if(comps.begin(), comps.end(), [](const ruleset::Component& c) { return c.isWeapon(); });
     REQUIRE(weapons > 0);
     const std::vector<std::string> weaponRows = lines(tables[0].text);
-    CHECK(weaponRows.size() == static_cast<size_t>(weapons) + 1);
-    CHECK(lines(tables[1].text).size() == comps.size() + 1);
-    // The first weapon's row: its name, then its damage at range 1 among the last 20 columns.
+    CHECK(weaponRows.size() == static_cast<size_t>(weapons) + 2);
+    CHECK(lines(tables[1].text).size() == comps.size() + 2);
+    CHECK(lines(tables[2].text).size() == static_cast<size_t>(weapons) + 2);
+    CHECK(lines(tables[3].text).size() == comps.size() + 2);
+    // The first weapon's row: its name in 40 columns, then the damage at
+    // ranges 1 to 20 in 4 columns each.
     uint32_t first = 0;
     while (!comps[first].isWeapon()) ++first;
-    const std::string& row = weaponRows[1];
-    CHECK(row.starts_with(comps[first].name + "\t"));
-    std::vector<std::string> cells;
-    std::istringstream in(row);
-    for (std::string c; std::getline(in, c, '\t');) cells.push_back(c);
-    REQUIRE(cells.size() >= 20);
-    CHECK(cells[cells.size() - 20] == std::to_string(weaponDamageAtRange(r, DesignEntry{first, -1}, 1)));
-    CHECK(cells.back() == std::to_string(weaponDamageAtRange(r, DesignEntry{first, -1}, 20)));
-    // Each family lists its members, lowest level first.
-    for (const std::string& familyRow : lines(tables[3].text))
-        CHECK(familyRow.find("\n") == std::string::npos);
+    const std::string& row = weaponRows[2];
+    REQUIRE(row.size() > 40 + 80);
+    CHECK(row.substr(0, comps[first].name.size()) == comps[first].name);
+    auto field = [&](size_t at, size_t width) {
+        std::string f = row.substr(at, width);
+        f.erase(0, f.find_first_not_of(' '));
+        return f;
+    };
+    CHECK(field(40, 4) == std::to_string(weaponDamageAtRange(r, DesignEntry{first, -1}, 1)));
+    CHECK(field(40 + 19 * 4, 4) == std::to_string(weaponDamageAtRange(r, DesignEntry{first, -1}, 20)));
+    // Reload rate and tonnage follow, 6 columns each.
+    CHECK(field(120, 6) == std::to_string(comps[first].weapon.reloadRate));
+    CHECK(field(126, 6) == std::to_string(comps[first].tonnage));
+    // A component row: tonnage and structure after the 40-column name.
+    const std::string comp = lines(tables[1].text)[2];
+    CHECK(comp.substr(0, comps[0].name.size()) == comps[0].name);
+    CHECK(comp.substr(40, 6).find(std::to_string(comps[0].tonnage)) != std::string::npos);
 
     const TempDir tmp("weapon_export");
-    const auto written = writeExportTables(tmp.path() / "SaveGame", "OpenSE4_", tables);
+    const auto written = writeExportTables(tmp.path() / "SaveGame", "", tables);
     REQUIRE(written);
     REQUIRE(written->size() == 4);
-    CHECK(written->front().filename() == "OpenSE4_weapons.txt");
+    CHECK(written->front().filename() == "Weapons.txt");
     for (size_t i = 0; i < tables.size(); ++i) CHECK(readFile((*written)[i]) == tables[i].text);
 }
 

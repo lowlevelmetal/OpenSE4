@@ -384,21 +384,22 @@ private:
         if (lampButton(ui, d, "Dmg 11-20", page_ == 1)) page_ = 1;
         d.spacer();
         // With Settings.txt `Allow Export of Weapon And Component Data` TRUE:
-        // four tables written to the saves folder, each followed by its
-        // "Export Successful" message (spec 06 §1.9, confirmed: binary).
+        // Weapons.txt, Comps.txt, WeaponFamilies.txt and CompFamilies.txt written
+        // to the saves folder, each followed by its "Export Successful" message
+        // naming the file (spec 06 §1.9, §7 Q83, confirmed: binary).
         if (exportAllowed(r.data().settings) && d.button("Export")) exportTables(ui);
         if (d.button("Help Topics")) weapons_ = false;
     }
 
     void exportTables(UiContext& ui) {
         exportQueue_.clear();
-        const auto written = writeExportTables(savesDir(), "OpenSE4_", weaponAndComponentTables(ui.rules()));
+        const auto written = writeExportTables(savesDir(), "", weaponAndComponentTables(ui.rules()));
         if (!written) {
             exportQueue_.emplace_back("Export Failed", written.error());
             return;
         }
         for (const std::filesystem::path& file : *written)
-            exportQueue_.emplace_back("Export Successful", std::format("The table was written to {}.", file.string()));
+            exportQueue_.emplace_back("Export Successful", std::format("Exported to {}.", file.string()));
     }
 
     // The export's messages, one after another.
