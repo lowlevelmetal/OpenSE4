@@ -84,8 +84,8 @@ const std::vector<Phrase>& phrases() {
         {"the list", {"*list"}},
         {"in the list", {"*list"}},
         {"on the right", {"*right"}},
-        {"title strip", {"*title"}},
-        {"top line", {"*title"}},
+        {"title strip", {"*title", "research:points"}},
+        {"top line", {"research:points", "*title"}},
         {"column", {"*column"}},
         {"the map", {"tactical-combat:map", "panel:system"}},
         {"portrait", {"empires:list"}},
@@ -211,15 +211,28 @@ struct Match {
     LockArea area;
 };
 
-std::string status(const AuditInput& in, const LockArea& a, bool& ok) {
+// The share of an area the lesson panel covers (0 to 1).
+float panelShare(const AuditInput& in, const LockArea& a) {
+    if (!in.panel) return 0.0f;
+    const float w = std::min(a.max.x, in.panel->max.x) - std::max(a.min.x, in.panel->min.x);
+    const float h = std::min(a.max.y, in.panel->max.y) - std::max(a.min.y, in.panel->min.y);
+    const float area = (a.max.x - a.min.x) * (a.max.y - a.min.y);
+    return w > 0 && h > 0 && area > 0 ? std::min(1.0f, w * h / area) : 0.0f;
+}
+
+// `strict`: a part the step outlines or shows, which the panel is to keep off
+// altogether; a name the text matches may lie partly under it.
+std::string status(const AuditInput& in, const LockArea& a, bool& ok, bool strict = false) {
     const ImVec2 c = a.centre();
     const bool shown = onScreen(a, in.display);
     const bool lit = in.spotlight.lit(c);
-    const bool under = in.panel && in.panel->contains(c);
+    const float share = panelShare(in, a);
+    const bool under = (in.panel && in.panel->contains(c)) || share > (strict ? 0.05f : 0.25f);
     ok = shown && lit && !under;
     std::string s = shown ? "on screen" : "OFF SCREEN";
     s += lit ? ", clear" : ", DIMMED";
-    if (under) s += ", UNDER THE PANEL";
+    if (under) s += std::format(", UNDER THE PANEL ({:.0f}%)", share * 100.0f);
+    else if (share > 0) s += std::format(", the panel over {:.0f}%", share * 100.0f);
     return s;
 }
 
@@ -254,6 +267,8 @@ AuditReport auditStep(const AuditInput& in) {
     named.insert(named.end(), st.allow.begin(), st.allow.end());
     // The step's text, plain and lower case, to tell what it names.
     const std::string plain = learn::plainText(in.text);
+    // The text before its tokens were filled in: a name not in it came from a {design:<type>} token.
+    const std::string raw = lower(learn::plainText(st.text));
     const std::vector<std::string> refs = textReferences(in.text);
     const std::string text = lower(plain);
     auto textNames = [&](std::string_view label) {
@@ -510,6 +525,10 @@ AuditReport auditStep(const AuditInput& in) {
                 }
             }
         }
+        // A design a token names: the row the step chooses in a list (`<list>:named`).
+        if (raw.find(lref) == std::string::npos)
+            for (const TaggedArea& t : in.tags)
+                if (t.name.ends_with(":named") && onScreen(t.area, in.display)) found.push_back({"tag " + std::string(t.name) + " (the row named)", t.area});
         // An option of a chooser the step names ("Attack Ship" in the Design Type list, "Race 2"):
         // it can be seen once its chooser opens, so the chooser stands for it.
         bool option = false;
@@ -577,6 +596,49 @@ AuditReport auditStep(const AuditInput& in) {
         if (found.size() > 3) where += std::format("; ... ({} matches)", found.size());
         if (anyOk) line(std::format("B ref \"{}\": {}", ref, where));
         else line(std::format("B ref \"{}\": {}", ref, where), "named by the text but not to be seen clearly");
+    }
+    // The parts the step outlines and shows: on the screen, clear, and none of
+    // them under the panel (it keeps off them).
+    std::vector<std::string> parts = st.highlight;
+    parts.insert(parts.end(), st.show.begin(), st.show.end());
+    for (const std::string& part : parts) {
+        if (isLessonTag(part) || learn::choiceGroupOf(part)) continue;
+        bool any = false, anyOk = false;
+        std::string where;
+        for (const TaggedArea& t : in.tags) {
+            if (t.name != part || !onScreen(t.area, in.display)) continue;
+            bool ok = false;
+            std::string s = status(in, t.area, ok, true);
+            // A list whose options the step narrows is clear where they are (not at its middle).
+            if (!ok && !in.spotlight.lit(t.area.centre()) && panelShare(in, t.area) <= 0.05f) {
+                bool litPart = false;
+                for (int k = 1; k < 8 && !litPart; ++k)
+                    for (int j = 1; j < 4 && !litPart; ++j)
+                        litPart = in.spotlight.lit(ImVec2(t.area.min.x + (t.area.max.x - t.area.min.x) * float(j) / 4.0f,
+                                                          t.area.min.y + (t.area.max.y - t.area.min.y) * float(k) / 8.0f));
+                if (litPart) {
+                    ok = true;
+                    s += " (its options the step chooses are clear)";
+                }
+            }
+            // A part another window covers, which the step lets the player close (its way back).
+            if (!ok && !inTop(t.area.centre()))
+                if (const LockWindow* w = windowAt(t.area.centre()); w && tagWindowId(t.name) != std::optional<std::string_view>(w->id))
+                    for (const TaggedArea& c : in.tags)
+                        if (c.name == w->id + ":close" && in.lock.allows(c.area.centre())) {
+                            ok = true;
+                            s += std::format(" (under {}, which the step lets the player close first)", w->id);
+                            break;
+                        }
+            if (!any) where = s;
+            any = true;
+            anyOk = anyOk || ok;
+        }
+        if (!any) continue;   // not on the screen: the lesson check says so
+        const bool shown = std::find(st.show.begin(), st.show.end(), part) != st.show.end();
+        const std::string head = std::format("B {} {}: {}", shown ? "shows" : "outlines", part, where);
+        if (anyOk) line(head);
+        else line(head, "a part of the step that is not to be seen clearly");
     }
     return r;
 }
