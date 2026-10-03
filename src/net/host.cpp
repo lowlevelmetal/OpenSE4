@@ -10,9 +10,11 @@
 #include "net/auth.hpp"
 #include "net/connection.hpp"
 #include "net/protocol.hpp"
+#include "net/secure.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <deque>
 #include <exception>
 #include <format>
 #include <map>
@@ -27,6 +29,7 @@ namespace {
 constexpr size_t kMaxSlots = 32;
 constexpr auto kCloseGrace = std::chrono::seconds(3);
 constexpr size_t kMaxRejectionNotices = 10;
+constexpr size_t kRememberedAnswers = 64;  // per player: answers a repeated request gets again
 
 bool sameName(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) return false;
@@ -71,6 +74,21 @@ std::string checkSetup(const game::Rules& r, const game::GameOptions& options, g
     return {};
 }
 
+// The checksum in a serializeState() blob's envelope (= stateChecksum).
+uint64_t blobChecksum(const std::vector<uint8_t>& blob) {
+    uint64_t v = 0;
+    if (blob.size() >= game::kEnvelopeSize)
+        for (size_t i = 0; i < 8; ++i) v |= static_cast<uint64_t>(blob[24 + i]) << (8 * i);
+    return v;
+}
+
+std::string listOf(const std::vector<std::string>& parts) {
+    if (parts.empty()) return "a part the host cannot name";
+    std::string s;
+    for (const std::string& p : parts) s += (s.empty() ? "" : ", ") + p;
+    return s;
+}
+
 } // namespace
 
 struct HostSession::Peer {
@@ -78,6 +96,10 @@ struct HostSession::Peer {
     Connection conn;
     std::string address;
     Clock::time_point connectedAt = Clock::now();
+    bool keyed = false;           // the handshake is done: everything is sealed from here
+    crypto::Key sessionId{};
+    uint32_t sentSerial = 0;      // the last State sent, and its blob (desync checks)
+    std::shared_ptr<const std::vector<uint8_t>> sentState;
     bool welcomed = false;
     bool admin = false;
     uint32_t slot = kNoSlot;
@@ -94,10 +116,33 @@ struct HostSession::Slot {
     LobbySlot info;
     std::string verifier;  // the player's password verifier
     uint64_t peer = 0;     // connected peer id, 0 = none
+    // Turn-based requests of the player's client (Login::clientId): a request
+    // repeated after a reconnect is answered again, not carried out twice.
+    uint64_t clientId = 0;
+    uint32_t lastRequest = 0;
+    std::deque<proto::PlayResult> answers;  // the latest answers, oldest first
+
+    // The answer to a repeated request: the one given, while it is among the
+    // latest; else carried out with nothing refused (it was, long ago).
+    proto::PlayResult answerAgain(uint32_t request, uint32_t turn) const {
+        for (const proto::PlayResult& a : answers)
+            if (a.request == request) return a;
+        proto::PlayResult r;
+        r.request = request;
+        r.turn = turn;
+        r.ok = true;
+        return r;
+    }
+    void remember(const proto::PlayResult& r) {
+        lastRequest = r.request;
+        answers.push_back(r);
+        while (answers.size() > kRememberedAnswers) answers.pop_front();
+    }
 };
 
 HostSession::HostSession(const game::Rules& rules, HostConfig config) : rules_(rules), config_(std::move(config)) {
     if (config_.dataSet.empty()) config_.dataSet = game::dataSetIdentity(rules_);
+    hostKey_ = config_.hostKey ? *config_.hostKey : crypto::newKeyPair();
 }
 
 HostSession::~HostSession() { stop(); }
@@ -135,7 +180,9 @@ LanGame HostSession::lanGame() const {
     for (const LobbySlot& slot : lobby_.slots)
         if (slot.kind == SlotKind::Human && !slot.player.empty()) ++g.players;
     g.started = phase_ != HostPhase::Lobby;
-    g.password = !config_.joinPasswordHash.empty();
+    g.password = !config_.joinPassword.empty();
+    g.protocol = kProtocolVersion;
+    g.hostKey = hostFingerprint();
     return g;
 }
 
@@ -145,7 +192,10 @@ std::expected<void, std::string> HostSession::start() {
     if (config_.localPlayer && !proto::validPlayerName(config_.localPlayer->name))
         return std::unexpected(std::string("Choose a player name of 1 to 32 characters."));
     if (auto r = openPort(); !r) return r;
-    gameId_ = randomId();
+    gameId_ = config_.gameId ? config_.gameId : randomId();
+    // The passwords' keys in this game (Argon2id, once, here at the start).
+    masterVerifier_ = !config_.masterPasswordVerifier.empty() ? config_.masterPasswordVerifier : passwordVerifier(config_.masterPassword, gameId_);
+    joinKey_ = joinKey(config_.joinPassword, hostKey_.publicKey, gameId_);
     slots_.clear();
     for (int i = 0; i < config_.humanSlots && slots_.size() < kMaxSlots; ++i) {
         auto s = std::make_unique<Slot>();
@@ -157,7 +207,7 @@ std::expected<void, std::string> HostSession::start() {
             s->info.connected = true;
             s->info.setup = config_.localPlayer->setup;
             s->info.setup.kind = game::PlayerKind::Human;
-            s->verifier = passwordVerifier(config_.localPlayer->passwordHash);
+            s->verifier = passwordVerifier(config_.localPlayer->password, gameId_);
         }
         slots_.push_back(std::move(s));
     }
@@ -168,7 +218,9 @@ std::expected<void, std::string> HostSession::start() {
 
 std::expected<void, std::string> HostSession::resume(game::GameState state, const game::SaveInfo& info) {
     if (phase_ != HostPhase::Stopped) return std::unexpected(std::string("The host is already running."));
-    if (!info.masterPasswordVerifier.empty() && !checkPassword(info.masterPasswordVerifier, config_.masterPasswordHash))
+    if (!info.masterPasswordVerifier.empty() &&
+        !(config_.masterPasswordVerifier.empty() ? checkPassword(info.masterPasswordVerifier, config_.masterPassword, info.gameId)
+                                                 : constantTimeEquals(info.masterPasswordVerifier, config_.masterPasswordVerifier)))
         return std::unexpected(std::string("This saved game is protected by a master password, and the one given does not match."));
     if (!info.dataSet.empty() && !game::sameDataSet(info.dataSet, config_.dataSet))
         return std::unexpected(std::format("This game was saved with data set {}, but the host has {}.", info.dataSet, config_.dataSet));
@@ -178,6 +230,12 @@ std::expected<void, std::string> HostSession::resume(game::GameState state, cons
     if (!info.gameName.empty()) config_.gameName = info.gameName;
     if (auto r = openPort(); !r) return r;
     gameId_ = info.gameId ? info.gameId : randomId();
+    // The master password's verifier stays, unless it is of OpenSE4 0.6 (then
+    // it is made anew from the password just checked) or the save has none.
+    masterVerifier_ = info.masterPasswordVerifier;
+    if (masterVerifier_.empty() || isLegacyVerifier(masterVerifier_))
+        masterVerifier_ = !config_.masterPasswordVerifier.empty() ? config_.masterPasswordVerifier : passwordVerifier(config_.masterPassword, gameId_);
+    joinKey_ = joinKey(config_.joinPassword, hostKey_.publicKey, gameId_);
 
     slots_.clear();
     int humans = 0;
@@ -272,7 +330,18 @@ std::vector<Event> HostSession::poll(int timeoutMs) {
             if (it.readable) p.conn.receive();
             while (auto f = p.conn.nextFrame()) {
                 if (p.closing) continue;  // draining
-                handleFrame(p, static_cast<uint8_t>(f->type), f->payload);
+                handleFrame(p, static_cast<uint8_t>(f->type), f->payload, f->sealed);
+            }
+            if (p.conn.keysDiffer() && !p.closing) {
+                // The client's first sealed message did not open: it derived
+                // other keys, which a wrong join password does. Said in the
+                // clear, as it cannot read anything sealed.
+                const std::string why = config_.joinPassword.empty()
+                                            ? std::string("The connection could not be secured (the handshake was changed on its way).")
+                                            : std::string("Wrong game password.");
+                p.conn.sendPlain(MsgType::Reject, proto::Reject{proto::RejectReason::Password, why});
+                emit(EventType::Info, std::format("Refused {}: {}", p.address, why));
+                dropPeer(p, why, false);
             }
             if (it.writable) p.conn.flush();
         }
@@ -367,12 +436,21 @@ void HostSession::flushAll() {
 
 // ---- Messages -------------------------------------------------------------------------------------------
 
-void HostSession::handleFrame(Peer& peer, uint8_t type, std::span<const uint8_t> payload) {
+void HostSession::handleFrame(Peer& peer, uint8_t type, std::span<const uint8_t> payload, bool sealed) {
     std::string error;
     const auto msg = static_cast<MsgType>(type);
-    if (!peer.welcomed) {
-        if (msg == MsgType::Hello) handleHello(peer, payload);
+    if (!peer.keyed) {
+        if (msg == MsgType::ClientHello) handleClientHello(peer, payload);
         else dropPeer(peer, "protocol error (expected a greeting)", false);
+        return;
+    }
+    if (!sealed) {
+        dropPeer(peer, "protocol error (a message in the clear on an encrypted connection)", false);
+        return;
+    }
+    if (!peer.welcomed) {
+        if (msg == MsgType::Login) handleLogin(peer, payload);
+        else dropPeer(peer, "protocol error (expected a login)", false);
         return;
     }
     Slot* slot = slotOfPeer(peer);
@@ -439,30 +517,72 @@ void HostSession::reject(Peer& peer, uint8_t reason, std::string text) {
     dropPeer(peer, text, false);
 }
 
-void HostSession::handleHello(Peer& peer, std::span<const uint8_t> payload) {
+void HostSession::handleClientHello(Peer& peer, std::span<const uint8_t> payload) {
     using RR = proto::RejectReason;
     auto code = [](RR r) { return static_cast<uint8_t>(r); };
-    proto::Hello h;
-    std::string error;
-    if (!proto::decode(payload, h, error) || h.magic != proto::kMagic) {
+    // The version first, whatever the rest is: older and newer clients get a
+    // refusal they can read (an OpenSE4 0.6 client handles this Reject).
+    proto::VersionProbe probe;
+    if (!proto::probeVersion(payload, probe) || probe.magic != proto::kMagic) {
         dropPeer(peer, "not an OpenSE4 client", false);
         return;
     }
-    if (h.protocol != kProtocolVersion)
+    if (probe.protocol != kProtocolVersion)
         return reject(peer, code(RR::Protocol),
                       std::format("The host runs {} (network protocol {}); you have {} (protocol {}). Both need the same version.",
-                                  appVersion(), kProtocolVersion, proto::sanitize(h.app, 40), h.protocol));
+                                  appVersion(), kProtocolVersion, proto::sanitize(probe.app, 40), probe.protocol));
+    proto::ClientHello hello;
+    std::string error;
+    if (!proto::decode(payload, hello, error) || hello.ephemeralKey.size() != crypto::Key{}.size()) {
+        dropPeer(peer, "protocol error: a broken greeting", false);
+        return;
+    }
+    crypto::Key clientKey{};
+    std::copy_n(reinterpret_cast<const uint8_t*>(hello.ephemeralKey.data()), clientKey.size(), clientKey.begin());
+    crypto::KeyPair ephemeral = crypto::newKeyPair();
+    proto::ServerHello answer;
+    answer.app = std::string(appVersion());
+    answer.ephemeralKey = ephemeral.publicKey;
+    answer.hostKey = hostKey_.publicKey;
+    answer.joinPassword = !config_.joinPassword.empty();
+    answer.gameId = gameId_;
+    const std::vector<uint8_t> answerBytes = proto::encode(answer);
+    auto keys = secure::hostKeys(ephemeral, hostKey_, clientKey, joinKey_, payload, answerBytes);
+    crypto::wipe(ephemeral.secret.data(), ephemeral.secret.size());
+    if (!keys) {
+        dropPeer(peer, keys.error(), false);
+        return;
+    }
+    peer.conn.sendRaw(MsgType::ServerHello, answerBytes);
+    peer.conn.startEncryption(keys->send, keys->receive);
+    peer.sessionId = keys->sessionId;
+    peer.keyed = true;
+    crypto::wipe(keys->send.data(), keys->send.size());
+    crypto::wipe(keys->receive.data(), keys->receive.size());
+}
+
+void HostSession::handleLogin(Peer& peer, std::span<const uint8_t> payload) {
+    using RR = proto::RejectReason;
+    auto code = [](RR r) { return static_cast<uint8_t>(r); };
+    proto::Login h;
+    std::string error;
+    if (!proto::decode(payload, h, error)) {
+        dropPeer(peer, "protocol error: " + error, false);
+        return;
+    }
     if (!game::sameDataSet(h.dataSet, config_.dataSet))
         return reject(peer, code(RR::DataSet),
                       std::format("The host plays with data set {}; yours is {}. Both need the same game data and mods.", config_.dataSet,
                                   proto::sanitize(h.dataSet, 200)));
-    if (!config_.joinPasswordHash.empty() && !constantTimeEquals(h.joinPasswordHash, config_.joinPasswordHash))
-        return reject(peer, code(RR::Password), "Wrong game password.");
     const std::string name = h.player;
     if (!proto::validPlayerName(name)) return reject(peer, code(RR::Name), "Choose a player name of 1 to 32 characters.");
     for (const std::string& b : banned_)
         if (sameName(b, name)) return reject(peer, code(RR::Banned), "The host removed you from this game.");
-    const bool admin = !config_.masterPasswordHash.empty() && constantTimeEquals(h.masterPasswordHash, config_.masterPasswordHash);
+    // The proofs sign this very session (secure::loginDigest): seen by a
+    // man in the middle, they are worth nothing on another connection.
+    const bool admin =
+        h.master && !masterVerifier_.empty() && checkPasswordSignature(masterVerifier_, secure::loginDigest(peer.sessionId, "master", name), h.masterProof);
+    const crypto::Key digest = secure::loginDigest(peer.sessionId, "player", name);
 
     Slot* slot = nullptr;
     bool reconnect = false;
@@ -471,10 +591,12 @@ void HostSession::handleHello(Peer& peer, std::span<const uint8_t> payload) {
             if (!s->info.open() && s->info.kind == SlotKind::Human && sameName(s->info.player, name)) slot = s.get();
         if (slot) {
             if (slot->info.local) return reject(peer, code(RR::Name), "That name belongs to the host.");
-            if (!checkPassword(slot->verifier, h.passwordHash))
+            if (!checkPasswordSignature(slot->verifier, digest, h.passwordProof))
                 return reject(peer, code(RR::Password), "That player name is taken (wrong password).");
             reconnect = true;
         } else {
+            if (!usableVerifier(h.passwordVerifier) || !checkPasswordSignature(h.passwordVerifier, digest, h.passwordProof))
+                return reject(peer, code(RR::Password), "Your client sent a password the host cannot use.");
             for (auto& s : slots_)
                 if (s->info.open()) {
                     slot = s.get();
@@ -484,7 +606,7 @@ void HostSession::handleHello(Peer& peer, std::span<const uint8_t> payload) {
             slot->info.player = name;
             slot->info.ready = false;
             slot->info.setup = {};
-            slot->verifier = passwordVerifier(h.passwordHash);
+            slot->verifier = h.passwordVerifier;
         }
     } else {
         for (size_t i = 0; i < slots_.size() && !slot; ++i) {
@@ -495,9 +617,33 @@ void HostSession::handleHello(Peer& peer, std::span<const uint8_t> payload) {
         if (!slot)
             return reject(peer, code(RR::NotInGame), std::format("This game is under way and has no empire for player {}.", name));
         if (slot->info.local) return reject(peer, code(RR::Name), "That empire belongs to the host.");
-        const std::string& verifier = state_ ? state_->empires[slotIndex(*slot)].passwordHash : slot->verifier;
-        if (!checkPassword(verifier, h.passwordHash)) return reject(peer, code(RR::Password), std::format("Wrong password for {}.", name));
+        std::string& verifier = state_ ? state_->empires[slotIndex(*slot)].passwordHash : slot->verifier;
+        if (isLegacyVerifier(verifier)) {
+            // A game of OpenSE4 0.6. This player's password is still in that
+            // version's form: its old hash proves it once, sealed, and only
+            // when the player agreed; the new verifier came from the password
+            // itself, never from that hash.
+            if (h.legacyPasswordHash.empty())
+                return reject(peer, code(RR::OldPassword),
+                              std::format("This game was saved by OpenSE4 0.6, and {}'s password is still in that version's form. To move it to "
+                                          "the new one, your game must show the host the old form once.",
+                                          name));
+            if (!checkLegacyPassword(verifier, h.legacyPasswordHash))
+                return reject(peer, code(RR::Password), std::format("Wrong password for {}.", name));
+            if (h.passwordVerifier.empty() || !usableVerifier(h.passwordVerifier) || !checkPasswordSignature(h.passwordVerifier, digest, h.passwordProof))
+                return reject(peer, code(RR::Password), "Your client sent a password the host cannot use.");
+            verifier = h.passwordVerifier;
+            slot->verifier = verifier;
+            emit(EventType::Info, std::format("{}'s password is now kept in the current form.", name));
+        } else if (!checkPasswordSignature(verifier, digest, h.passwordProof)) {
+            return reject(peer, code(RR::Password), std::format("Wrong password for {}.", name));
+        }
         reconnect = true;
+    }
+    if (slot->clientId != h.clientId) {
+        slot->clientId = h.clientId;
+        slot->lastRequest = 0;
+        slot->answers.clear();
     }
 
     if (Peer* old = peerOfSlot(*slot); old && old != &peer) {
@@ -523,6 +669,23 @@ void HostSession::handleHello(Peer& peer, std::span<const uint8_t> payload) {
     }
 }
 
+void HostSession::checkBase(Peer& peer, const proto::BaseState& base) {
+    // A copy based on an older State (commands still in flight, an earlier
+    // connection) cannot be compared.
+    if (base.serial == 0 || base.serial != peer.sentSerial || !peer.sentState) return;
+    if (base.checksum == blobChecksum(*peer.sentState)) return;
+    std::vector<std::string> parts;
+    if (auto sent = game::deserializeState(*peer.sentState)) parts = game::differingStateParts(base.parts, game::statePartHashes(*sent));
+    const uint32_t turn = state_ ? state_->turn : 0;
+    const std::string list = listOf(parts);
+    emit(EventType::Desync, std::format("Turn {}: {}'s copy of the game differs from the host's ({}); the host sends it again.", turn, peer.player, list),
+         peer.player, peer.slot, empireOfSlot(peer.slot), turn);
+    peer.conn.send(MsgType::Desync,
+                   proto::Desync{turn, parts,
+                                 std::format("Turn {}: your copy of the game differed from the host's ({}). The host sent its game again.", turn, list)});
+    sendState(peer, false, true);
+}
+
 void HostSession::handleOrders(Peer& peer, std::span<const uint8_t> payload) {
     proto::SubmitOrders m;
     std::string error;
@@ -532,6 +695,7 @@ void HostSession::handleOrders(Peer& peer, std::span<const uint8_t> payload) {
     }
     auto ack = [&](bool ok, std::string text) { peer.conn.send(MsgType::OrdersAck, proto::OrdersAck{m.turn, ok, std::move(text)}); };
     if (phase_ != HostPhase::Playing || !state_) return ack(false, "No turn is open.");
+    checkBase(peer, m.base);
     if (turnBased()) return ack(false, "This game is turn-based: commands are carried out as they are given, in your turn.");
     if (m.turn != state_->turn) return ack(false, std::format("These orders are for turn {}, but the game is at turn {}.", m.turn, state_->turn));
     const game::EmpireId e = empireOfSlot(peer.slot);
@@ -541,6 +705,7 @@ void HostSession::handleOrders(Peer& peer, std::span<const uint8_t> payload) {
     if (orders->empire != e) return ack(false, "These orders are for another empire.");
     if (orders->turn != state_->turn) return ack(false, "The orders' turn does not match.");
     if (!state_->empire(e).alive) return ack(false, "Your empire is no more.");
+    if (!proto::usablePasswordValues(orders->commands)) return ack(false, "These orders set a password of a kind the host does not take.");
     const size_t count = orders->commands.size();
     orders_[e.index()] = std::move(*orders);
     ack(true, std::format("Orders for turn {} received ({} commands).", m.turn, count));
@@ -559,9 +724,20 @@ void HostSession::handlePlay(Peer& peer, std::span<const uint8_t> payload) {
     proto::PlayResult res;
     res.request = m.request;
     res.turn = state_ ? state_->turn : 0;
+    Slot* slot = slotOfPeer(peer);
+    // Every request is answered once: a repeat (the client resends what it
+    // had no answer to after a reconnect) gets the answer again.
+    if (slot && slot->clientId != 0 && m.request <= slot->lastRequest) {
+        peer.conn.send(MsgType::PlayResult, slot->answerAgain(m.request, res.turn));
+        return;
+    }
+    auto answer = [&] {
+        if (slot) slot->remember(res);
+        peer.conn.send(MsgType::PlayResult, res);
+    };
     auto refuse = [&](std::string text) {
         res.text = std::move(text);
-        peer.conn.send(MsgType::PlayResult, res);
+        answer();
     };
     if (phase_ != HostPhase::Playing || !state_) return refuse("No turn is open.");
     if (!turnBased()) return refuse("This game is simultaneous: send your orders for the turn instead.");
@@ -572,6 +748,8 @@ void HostSession::handlePlay(Peer& peer, std::span<const uint8_t> payload) {
     auto orders = game::deserializeOrders(m.orders);
     if (!orders) return refuse("Unreadable commands: " + orders.error());
     if (orders->empire != e || orders->turn != state_->turn) return refuse("These commands are for another empire or turn.");
+    if (!proto::usablePasswordValues(orders->commands)) return refuse("These commands set a password of a kind the host does not take.");
+    checkBase(peer, m.base);
     const size_t count = orders->commands.size();
     emit(EventType::OrdersReceived, std::format("{} command{}", count, count == 1 ? "" : "s"), peer.player, peer.slot, e, state_->turn);
     game::TurnResult result;
@@ -583,7 +761,7 @@ void HostSession::handlePlay(Peer& peer, std::span<const uint8_t> payload) {
     res.ok = true;
     for (const auto& [who, why] : result.rejected)
         if (who == e) res.refused.push_back(why);
-    peer.conn.send(MsgType::PlayResult, res);
+    answer();
 }
 
 void HostSession::handleEndTurn(Peer& peer, std::span<const uint8_t> payload) {
@@ -596,6 +774,15 @@ void HostSession::handleEndTurn(Peer& peer, std::span<const uint8_t> payload) {
     proto::PlayResult res;
     res.request = m.request;
     res.turn = state_ ? state_->turn : 0;
+    Slot* slot = slotOfPeer(peer);
+    if (slot && slot->clientId != 0 && m.request <= slot->lastRequest) {
+        peer.conn.send(MsgType::PlayResult, slot->answerAgain(m.request, res.turn));
+        return;
+    }
+    auto answer = [&] {
+        if (slot) slot->remember(res);
+        peer.conn.send(MsgType::PlayResult, res);
+    };
     const game::EmpireId e = empireOfSlot(peer.slot);
     std::expected<void, std::string> done = std::unexpected(std::string("No turn is open."));
     if (phase_ == HostPhase::Playing && state_ && turnBased()) {
@@ -604,7 +791,7 @@ void HostSession::handleEndTurn(Peer& peer, std::span<const uint8_t> payload) {
         else {
             // Answer first: the states of the turns that follow come after.
             res.ok = true;
-            peer.conn.send(MsgType::PlayResult, res);
+            answer();
             if (auto r = endPlayerTurn(e); !r) notifyPlayer(e, r.error());
             return;
         }
@@ -612,7 +799,7 @@ void HostSession::handleEndTurn(Peer& peer, std::span<const uint8_t> payload) {
         done = std::unexpected(std::string("This game is simultaneous: send your orders for the turn instead."));
     }
     res.text = done.error();
-    peer.conn.send(MsgType::PlayResult, res);
+    answer();
 }
 
 void HostSession::handleAdmin(Peer& peer, std::span<const uint8_t> payload) {
@@ -735,7 +922,7 @@ void HostSession::refreshLobby() {
     lobby_.humanSlots = static_cast<uint32_t>(std::count_if(slots_.begin(), slots_.end(), [](const auto& s) { return s->info.kind == SlotKind::Human; }));
     lobby_.started = phase_ == HostPhase::Playing || phase_ == HostPhase::GameOver;
     lobby_.turnTimeoutSeconds = config_.turnTimeoutSeconds;
-    lobby_.seed = config_.setup.seed;
+    lobby_.seed = 0;  // the galaxy's seed stays with the host: it would rebuild the whole map
     lobby_.options = state_ ? state_->options : config_.setup.options;
     lobby_.slots.clear();
     for (const auto& s : slots_) {
@@ -924,23 +1111,28 @@ game::EmpireId HostSession::empireOfSlot(uint32_t id) const {
     return {};
 }
 
-std::vector<std::vector<uint8_t>> HostSession::redactedState() const {
+std::vector<HostSession::StateBlob> HostSession::redactedState() const {
     // Every empire gets its own view (fog of war, game/redact.hpp); the last
     // entry is the spectator view for peers without an empire. Password
     // verifiers never leave the host.
-    std::vector<std::vector<uint8_t>> views;
-    for (const game::Empire& e : state_->empires) views.push_back(game::serializeState(game::redactForEmpire(rules_, *state_, e.id)));
-    views.push_back(game::serializeState(game::redactForEmpire(rules_, *state_, game::EmpireId{})));
+    std::vector<StateBlob> views;
+    for (const game::Empire& e : state_->empires)
+        views.push_back(std::make_shared<const std::vector<uint8_t>>(game::serializeState(game::redactForEmpire(rules_, *state_, e.id))));
+    views.push_back(std::make_shared<const std::vector<uint8_t>>(game::serializeState(game::redactForEmpire(rules_, *state_, game::EmpireId{}))));
     return views;
 }
 
-void HostSession::sendState(Peer& peer, bool gameStart) {
+void HostSession::sendState(Peer& peer, bool gameStart, bool resync) {
     proto::State m;
     m.turn = state_->turn;
     m.empire = empireOfSlot(peer.slot);
     m.gameStart = gameStart;
     const size_t view = m.empire.valid() && m.empire.index() + 1 < stateCache_.size() ? m.empire.index() : stateCache_.size() - 1;
-    m.state = stateCache_[view];
+    m.state = *stateCache_[view];
+    m.serial = nextSerial_++;
+    m.resync = resync;
+    peer.sentSerial = m.serial;
+    peer.sentState = stateCache_[view];
     peer.conn.send(MsgType::State, m);
 }
 
@@ -1036,6 +1228,7 @@ std::expected<void, std::string> HostSession::submitOrders(game::EmpireOrders or
     if (!orders.empire.valid() || orders.empire.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
     if (orders.turn != state_->turn)
         return std::unexpected(std::format("These orders are for turn {}, but the game is at turn {}.", orders.turn, state_->turn));
+    if (!proto::usablePasswordValues(orders.commands)) return std::unexpected(std::string("These orders set a password of a kind the host does not take."));
     const game::EmpireId e = orders.empire;
     const Slot& s = *slots_[e.index()];
     orders_[e.index()] = std::move(orders);
@@ -1083,7 +1276,7 @@ std::expected<void, std::string> HostSession::processTurnNow() {
     // The passwords Reset Passwords chose take effect now, after the orders
     // (which carry the players' own passwords) were read (spec 06 §1.9).
     for (const PasswordReset& p : std::exchange(resets_, {}))
-        if (p.empire.index() < state_->empires.size()) state_->empire(p.empire).passwordHash = passwordVerifier(hashPassword(p.password));
+        if (p.empire.index() < state_->empires.size()) state_->empire(p.empire).passwordHash = p.verifier;
 
     orders_.assign(state_->empires.size(), std::nullopt);
     stateCache_ = redactedState();
@@ -1115,7 +1308,9 @@ std::expected<std::vector<HostSession::PasswordReset>, std::string> HostSession:
     std::vector<PasswordReset> out;
     for (game::EmpireId e : empires) {
         if (!e.valid() || e.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
-        out.push_back({e, resetPassword()});
+        std::string password = resetPassword();
+        std::string verifier = passwordVerifier(password, gameId_);
+        out.push_back({e, std::move(password), std::move(verifier)});
     }
     resets_ = out;
     for (const PasswordReset& p : out)
@@ -1183,6 +1378,7 @@ std::expected<game::TurnResult, std::string> HostSession::playCommands(game::Emp
     if (!turnBased()) return std::unexpected(std::string("This game is simultaneous: submit orders for the turn instead."));
     if (!empire.valid() || empire.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
     if (activeEmpire() != empire) return std::unexpected(std::string("It is not that empire's turn."));
+    if (!proto::usablePasswordValues(commands)) return std::unexpected(std::string("These commands set a password of a kind the host does not take."));
     const std::string who = playerName(empire);
     emit(EventType::OrdersReceived, std::format("{} command{}", commands.size(), commands.size() == 1 ? "" : "s"),
          who.empty() ? std::string("host") : who, empire.index() < slots_.size() ? slots_[empire.index()]->info.id : kNoSlot, empire,
@@ -1221,7 +1417,7 @@ game::TurnResult HostSession::runLive(game::EmpireId empire, const std::vector<g
     // One view per empire and a spectator's; an empire founded meanwhile (a rebel colony) renews them all.
     if (stateCache_.size() != state_->empires.size() + 1) stateCache_ = redactedState();
     for (game::EmpireId e : changed) {
-        stateCache_[e.index()] = game::serializeState(game::redactForEmpire(rules_, *state_, e));
+        stateCache_[e.index()] = std::make_shared<const std::vector<uint8_t>>(game::serializeState(game::redactForEmpire(rules_, *state_, e)));
         emit(EventType::StateUpdated, e == empire ? std::string("its own commands") : std::string("a battle"), playerName(e), kNoSlot, e,
              state_->turn);
         if (e.index() >= slots_.size()) continue;
@@ -1318,7 +1514,7 @@ game::SaveInfo HostSession::saveInfo() const {
     info.gameName = config_.gameName;
     info.dataSet = config_.dataSet;
     info.gameId = gameId_;
-    info.masterPasswordVerifier = passwordVerifier(config_.masterPasswordHash);
+    info.masterPasswordVerifier = masterVerifier_;
     if (state_)
         for (size_t i = 0; i < state_->empires.size(); ++i)
             info.players.push_back(i < slots_.size() && slots_[i]->info.kind == SlotKind::Human ? slots_[i]->info.player : std::string{});

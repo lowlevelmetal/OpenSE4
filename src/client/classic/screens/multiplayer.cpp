@@ -12,18 +12,23 @@
 #include "game/serialize.hpp"
 #include "net/auth.hpp"
 #include "net/discovery.hpp"
+#include "net/secure.hpp"
 #include "net/socket.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
-#include <utility>
 #include <format>
+#include <optional>
+#include <string>
+#include <utility>
 
 namespace opense4::client::classic {
 
 namespace {
+
+namespace crypto = net::crypto;
 
 enum class Mode { Choose, Host, Join, Lobby };
 
@@ -194,7 +199,8 @@ private:
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(g.started ? "In progress" : "Lobby");
                 ImGui::TableNextColumn();
-                if (g.dataSet != mine) ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "Different game data");
+                if (g.protocol != net::kProtocolVersion) ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "Other OpenSE4 version");
+                else if (g.dataSet != mine) ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "Different game data");
                 else if (g.password) ImGui::TextUnformatted("Password needed");
                 ImGui::PopID();
             }
@@ -234,14 +240,17 @@ private:
         cfg.gameName = gameName_;
         cfg.port = static_cast<uint16_t>(port_);
         cfg.humanSlots = humans_;
-        cfg.localPlayer = net::LocalPlayer{name_, net::hashPassword(password_), mySetup(ctx)};
+        cfg.localPlayer = net::LocalPlayer{name_, password_, mySetup(ctx)};
         cfg.setup.seed = ctx.seed;
         cfg.setup.options.systemCount = 0;  // rolled from the quadrant size
         cfg.setup.options.quadrantSize = quadrantSize_;
         cfg.setup.options.simultaneous = turnStyle_ == 0;
-        cfg.joinPasswordHash = net::hashPassword(joinPassword_);
+        cfg.joinPassword = joinPassword_;
         cfg.turnTimeoutSeconds = timeout_;
         cfg.upnp.enabled = upnp_ && net::PortMapper::supported();
+        // This computer's identity as a host: players' games remember it.
+        if (auto key = net::secure::loadOrCreateHostKey(userDataDir() / net::secure::kHostKeyFileName)) cfg.hostKey = *key;
+        else log_.add(key.error() + " Players cannot remember this host from one game to the next.");
         host_ = std::make_unique<net::HostSession>(*ctx.rules, cfg);
         rules_ = ctx.rules;
         if (auto r = host_->start(); !r) {
@@ -268,9 +277,15 @@ private:
         cfg.host = address_;
         cfg.port = static_cast<uint16_t>(port_);
         cfg.playerName = name_;
-        cfg.passwordHash = net::hashPassword(password_);
-        cfg.joinPasswordHash = net::hashPassword(joinPassword_);
+        cfg.password = password_;
+        cfg.joinPassword = joinPassword_;
         cfg.dataSet = game::dataSetIdentity(*ctx.rules);
+        // The host's key as trusted before (none: trusted on this first connection).
+        cfg.hostKey = knownHosts().find(address_, static_cast<uint16_t>(port_));
+        // Agreed by the player in the prompt below, for this connection only.
+        cfg.sendOldPassword = std::exchange(sendOldPassword_, false);
+        prompt_ = Prompt::None;
+        confirming_ = false;
         client_ = std::make_unique<net::ClientSession>(cfg);
         rules_ = ctx.rules;
         if (auto r = client_->connect(); !r) {
@@ -280,6 +295,73 @@ private:
         }
         setupSent_ = false;
         mode_ = Mode::Lobby;
+    }
+
+    static net::secure::KnownHosts knownHosts() { return net::secure::KnownHosts(userDataDir() / net::secure::kKnownHostsFileName); }
+
+    // After joining: remember the host's key, or say it is the one remembered.
+    void noteHostKey() {
+        const std::optional<crypto::Key>& seen = client_->seenHostKey();
+        if (!seen) return;
+        const std::string fp = crypto::fingerprint(*seen);
+        auto known = knownHosts();
+        const auto port = static_cast<uint16_t>(port_);
+        if (known.find(address_, port) == seen) {
+            log_.add(std::format("The host's key is the one this computer knows: {}", fp));
+        } else if (auto r = known.remember(address_, port, *seen); r) {
+            log_.add(std::format("First connection to this host: its key {} is now remembered. Check it against the one the host sees.", fp));
+        } else {
+            log_.add("Could not remember the host's key: " + r.error());
+        }
+        hostKey_ = fp;
+    }
+
+    // The questions about the host, each with a second confirmation.
+    void hostPrompt(MenuContext& ctx) {
+        const ImVec4 warn(1, 0.5f, 0.4f, 1);
+        const auto port = static_cast<uint16_t>(port_);
+        const std::optional<crypto::Key> known = knownHosts().find(address_, port);
+        const std::string shown = crypto::fingerprint(promptKey_);
+        ImGui::PushTextWrapPos(0);
+        if (prompt_ == Prompt::KeyChanged) {
+            ImGui::TextColored(warn, "This computer trusts the key %s for this host, but it now shows %s.",
+                               known ? crypto::fingerprint(*known).c_str() : "(none)", shown.c_str());
+            ImGui::TextWrapped("Trust the new key only if the host says it made one (a new computer, or a deleted key file), and the "
+                               "fingerprint the host sees is the new one. Otherwise someone may be in between.");
+        } else {
+            ImGui::TextColored(warn, "This game was saved by OpenSE4 0.6, and your password is still in that version's form.");
+            ImGui::TextWrapped("To move it to the new form, your game must show the host the old form once. Do it only with a host you "
+                               "trust: compare its key %s with the one the host sees (its lobby or log). Anyone who recorded your games "
+                               "of OpenSE4 0.6 knows the old form: if that worries you, ask the host to reset your password instead.",
+                               shown.c_str());
+        }
+        ImGui::PopTextWrapPos();
+        if (!confirming_) {
+            const char* label = prompt_ == Prompt::KeyChanged ? "Trust the New Key..." : "The Key Matches: Continue...";
+            if (ImGui::Button(label, ctx.size({300, 30}))) confirming_ = true;
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ctx.size({120, 30}))) prompt_ = Prompt::None;
+            return;
+        }
+        ImGui::TextColored(warn, "%s", prompt_ == Prompt::KeyChanged ? std::format("Really trust {} for {}:{}?", shown, address_, port_).c_str()
+                                                                     : std::format("Really show your old password's form to the host with the "
+                                                                                   "key {}, once?",
+                                                                                   shown)
+                                                                           .c_str());
+        if (ImGui::Button("Yes, and Connect", ctx.size({200, 30}))) {
+            if (auto r = knownHosts().remember(address_, port, promptKey_); !r) {
+                error_ = r.error();
+                return;
+            }
+            sendOldPassword_ = prompt_ == Prompt::OldPassword;
+            connect(ctx);
+            return;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ctx.size({120, 30}))) {
+            prompt_ = Prompt::None;
+            confirming_ = false;
+        }
     }
 
     void leave() {
@@ -296,6 +378,13 @@ private:
         std::vector<net::Event> events = host_ ? host_->poll(0) : client_ ? client_->poll(0) : std::vector<net::Event>{};
         for (const net::Event& e : events) {
             if (e.type != net::EventType::LobbyChanged && e.type != net::EventType::TurnStatusChanged) log_.add(net::describe(e));
+            if (e.type == net::EventType::Joined && client_) noteHostKey();
+            if (e.type == net::EventType::Rejected && client_ && client_->seenHostKey()) {
+                promptKey_ = *client_->seenHostKey();
+                confirming_ = false;
+                if (client_->hostKeyChanged()) prompt_ = Prompt::KeyChanged;
+                else if (client_->hostAskedOldPassword() || client_->hostKeyUnconfirmed()) prompt_ = Prompt::OldPassword;
+            }
             if (e.type == net::EventType::Joined && client_ && !setupSent_) {
                 client_->submitSetup(mySetup(ctx));
                 setupSent_ = true;
@@ -318,12 +407,14 @@ private:
             const game::EmpireId me = host_->localEmpire();
             game::GameState state = game::redactForEmpire(*rules_, *host_->state(), me);
             auto session = std::make_unique<ClassicSession>(rules_, std::move(state), me, SessionKind::NetworkClient);
+            session->setMultiplayerGame(host_->gameId());
             session->setTransport(std::make_unique<HostTransport>(rules_, std::move(host_)));
             ctx.startGame(std::move(session));
         } else if (client_ && client_->state()) {
             game::GameState state = *client_->state();
             const game::EmpireId me = client_->empire();
             auto session = std::make_unique<ClassicSession>(rules_, std::move(state), me, SessionKind::NetworkClient);
+            session->setMultiplayerGame(client_->gameId());
             session->setTransport(std::make_unique<ClientTransport>(std::move(client_)));
             ctx.startGame(std::move(session));
         }
@@ -351,11 +442,15 @@ private:
             if (pm.state != net::PortMapState::Mapped && !pm.message.empty()) ImGui::TextColored(col, "%s", pm.message.c_str());
             ImGui::PopTextWrapPos();
             if (host_->lanDiscoveryRunning()) ImGui::TextDisabled("Players on your local network see this game in their Join list.");
+            ImGui::TextDisabled("Host key: %s (players see it when they join)", host_->hostFingerprint().c_str());
         } else {
-            const char* phase = client_->phase() == net::ClientPhase::Lobby ? "In the lobby" : client_->phase() == net::ClientPhase::Playing
-                                                                                                    ? "Playing"
-                                                                                                    : "Connecting...";
+            const char* phase = client_->phase() == net::ClientPhase::Lobby     ? "In the lobby"
+                                : client_->phase() == net::ClientPhase::Playing   ? "Playing"
+                                : client_->phase() == net::ClientPhase::Disconnected ? "Not connected"
+                                                                                     : "Connecting...";
             ImGui::Text("%s - %s:%u", phase, client_->config().host.c_str(), unsigned(client_->config().port));
+            if (!hostKey_.empty()) ImGui::TextDisabled("Encrypted. Host key: %s", hostKey_.c_str());
+            if (prompt_ != Prompt::None) hostPrompt(ctx);
         }
         ImGui::TextDisabled("%s", info.options.simultaneous ? "Simultaneous turns: everyone gives orders, then the host runs the turn."
                                                              : "Turn-based: players take their turns one after another.");
@@ -482,6 +577,14 @@ private:
     std::string error_;
     bool setupSent_ = false;
     bool autoReady_ = false;  // automation: ready as soon as we joined
+    std::string hostKey_;     // fingerprint of the host we joined
+    // A question about the host after a refusal: its key changed, or it asks
+    // for the OpenSE4 0.6 form of the password. Each needs a second click.
+    enum class Prompt { None, KeyChanged, OldPassword };
+    Prompt prompt_ = Prompt::None;
+    crypto::Key promptKey_{};       // the key the host showed
+    bool confirming_ = false;       // the first click was made: ask once more
+    bool sendOldPassword_ = false;  // the next connection shows the old form (the player agreed)
     NetLog log_;
     std::shared_ptr<const game::Rules> rules_;
     std::unique_ptr<net::HostSession> host_;

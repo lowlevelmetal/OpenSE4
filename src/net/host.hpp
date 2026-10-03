@@ -22,6 +22,7 @@
 #include "game/serialize.hpp"
 #include "game/state.hpp"
 #include "game/turn.hpp"
+#include "net/crypto.hpp"
 #include "net/discovery.hpp"
 #include "net/socket.hpp"
 #include "net/types.hpp"
@@ -37,10 +38,14 @@
 
 namespace opense4::net {
 
+namespace proto {
+struct BaseState;
+}
+
 // In-game hosting: the host is also a player (lobby slot of its own).
 struct LocalPlayer {
     std::string name;
-    std::string passwordHash;          // hashPassword() (optional)
+    std::string password;              // the host's own player's password (optional; Argon2id at start)
     game::EmpireSetup setup;
 };
 
@@ -51,9 +56,14 @@ struct HostConfig {
     int humanSlots = 2;                // human players, the local player included
     std::optional<LocalPlayer> localPlayer;
     game::GameSetup setup;             // seed and options; the empires come from the lobby
-    std::string joinPasswordHash;      // hashPassword() of the password needed to join; empty: open game
-    std::string masterPasswordHash;    // hashPassword() of the master password: grants remote admin rights
+    std::string joinPassword;          // the password needed to join; empty: open game
+    std::string masterPassword;        // the master password: grants remote admin rights (empty: none)
+    std::string masterPasswordVerifier;  // instead: its verifier in this game (net::passwordVerifier, with gameId)
+    uint64_t gameId = 0;               // the new game's id, which salts its passwords; 0: a random one
     std::string dataSet;               // empty: dataSetIdentity() of the rules
+    // The host's long-term key (secure::loadOrCreateHostKey), which players
+    // pin; none: a new one for this session only.
+    std::optional<crypto::KeyPair> hostKey;
     bool autoStart = false;            // start as soon as every human slot is taken and ready
     int turnTimeoutSeconds = 0;        // process the turn after this long even if orders are missing; 0: wait
     PortMapperOptions upnp;            // UPnP port mapping (on by default)
@@ -78,7 +88,8 @@ public:
     // Opens the lobby for a new game.
     std::expected<void, std::string> start();
     // Continues a saved game: players reconnect by name and password. A save
-    // with a master password needs config.masterPasswordHash to match.
+    // with a master password needs config.masterPassword (or the same
+    // masterPasswordVerifier) to match.
     std::expected<void, std::string> resume(game::GameState state, const game::SaveInfo& info);
     // Says goodbye to everyone, removes the UPnP mapping and closes the port.
     void stop(std::string_view reason = "The host closed the game.");
@@ -93,6 +104,12 @@ public:
     // How this game appears to LAN discovery.
     LanGame lanGame() const;
     bool lanDiscoveryRunning() const { return discovery_.running(); }
+    // The public half of the host's long-term key, and its fingerprint as
+    // players compare it (crypto::fingerprint).
+    const crypto::Key& hostKey() const { return hostKey_.publicKey; }
+    // The game's id (salts its passwords); 0 before start() or resume().
+    uint64_t gameId() const { return gameId_; }
+    std::string hostFingerprint() const { return crypto::fingerprint(hostKey_.publicKey); }
     const LobbyInfo& lobby() const { return lobby_; }
 
     // ---- Lobby ------------------------------------------------------------------------------
@@ -146,6 +163,7 @@ public:
     struct PasswordReset {
         game::EmpireId empire;
         std::string password;
+        std::string verifier;   // its verifier in this game (made at once: the host runs Argon2id now, not at the turn)
     };
     // The host of a simultaneous game gives each listed empire a new six-digit
     // password (net::resetPassword, not the game's random numbers). Every reset
@@ -171,13 +189,18 @@ private:
               uint32_t turn = 0);
     std::expected<void, std::string> openPort();
     void acceptPeers();
-    void handleFrame(Peer& peer, uint8_t type, std::span<const uint8_t> payload);
-    void handleHello(Peer& peer, std::span<const uint8_t> payload);
+    void handleFrame(Peer& peer, uint8_t type, std::span<const uint8_t> payload, bool sealed);
+    void handleClientHello(Peer& peer, std::span<const uint8_t> payload);
+    void handleLogin(Peer& peer, std::span<const uint8_t> payload);
     void handleAdmin(Peer& peer, std::span<const uint8_t> payload);
     void handleOrders(Peer& peer, std::span<const uint8_t> payload);
     void handlePlay(Peer& peer, std::span<const uint8_t> payload);
     void handleEndTurn(Peer& peer, std::span<const uint8_t> payload);
     void reject(Peer& peer, uint8_t reason, std::string text);
+    // Compares a player's copy of the game with the State last sent to it;
+    // on a difference tells the player which parts differ, logs it and sends
+    // the state again.
+    void checkBase(Peer& peer, const proto::BaseState& base);
     void dropPeer(Peer& peer, std::string reason, bool sayBye);
     void peerGone(Peer& peer, const std::string& reason);
     void runTimers();
@@ -192,11 +215,12 @@ private:
     void broadcastLobby();
     void refreshTurnStatus();
     void broadcastTurnStatus();
-    void sendState(Peer& peer, bool gameStart);
+    void sendState(Peer& peer, bool gameStart, bool resync = false);
     void broadcastState(bool gameStart);
     void beginTurn();
     bool allOrdersIn() const;
-    std::vector<std::vector<uint8_t>> redactedState() const;
+    using StateBlob = std::shared_ptr<const std::vector<uint8_t>>;
+    std::vector<StateBlob> redactedState() const;
     void notifyPlayer(game::EmpireId empire, const std::string& text);
     void notifyRejections(const game::TurnResult& result, uint32_t turn);
     // Turn-based games.
@@ -212,6 +236,10 @@ private:
     HostPhase phase_ = HostPhase::Stopped;
     uint16_t port_ = 0;
     uint64_t gameId_ = 0;
+    crypto::KeyPair hostKey_;
+    crypto::Key joinKey_{};             // net::joinKey of the join password, made at start
+    std::string masterVerifier_;        // the master password's verifier in this game (empty: none)
+    uint32_t nextSerial_ = 1;           // State::serial
     Socket listener_;
     PortMapper mapper_;
     DiscoveryResponder discovery_;
@@ -227,7 +255,7 @@ private:
     std::function<void(game::GameState&)> gameCreated_;
     std::vector<std::optional<game::EmpireOrders>> orders_;
     std::optional<std::chrono::steady_clock::time_point> deadline_;
-    std::vector<std::vector<uint8_t>> stateCache_;  // per-empire views of the current turn (+ spectator)
+    std::vector<StateBlob> stateCache_;  // per-empire views of the current turn (+ spectator)
     std::vector<Event> events_;
     std::vector<PasswordReset> resets_;  // Reset Passwords not applied yet (never saved)
 };

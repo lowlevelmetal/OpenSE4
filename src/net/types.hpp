@@ -14,7 +14,7 @@
 namespace opense4::net {
 
 inline constexpr uint16_t kDefaultPort = 6720;       // TCP, as in the classic game
-inline constexpr uint32_t kProtocolVersion = 4;
+inline constexpr uint32_t kProtocolVersion = 5;
 inline constexpr uint32_t kNoSlot = 0xffffffffu;
 inline constexpr size_t kMaxPlayerNameLength = 32;
 inline constexpr size_t kMaxChatLength = 500;
@@ -44,7 +44,7 @@ struct LobbyInfo {
     uint32_t humanSlots = 0;
     bool started = false;
     int turnTimeoutSeconds = 0;      // 0 = none
-    uint64_t seed = 0;
+    uint64_t seed = 0;               // always 0: the galaxy's seed stays with the host
     game::GameOptions options;
     std::vector<LobbySlot> slots;    // in empire order once started
 
@@ -119,6 +119,8 @@ enum class EventType : uint8_t {
     PlayerTurn,          // the turn passed: empire (invalid: none, the host waits), player, turn
     StateUpdated,        // a new state() within the same game turn (host: empire's view changed)
     CommandsDone,        // client: the host carried out our commands (request); text: the refusals, if any
+    // Both.
+    Desync,              // a player's copy of the game differed from the host's (turn, text: which parts); the host sent it again
 };
 
 std::string_view displayName(EventType t);

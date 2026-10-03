@@ -39,6 +39,8 @@ add_executable(opense4_tests
     test_movement.cpp
     test_movement_line.cpp
     test_net.cpp
+    test_net_resilience.cpp
+    test_net_secure.cpp
     test_pbem_client.cpp
     test_redact.cpp
     test_research.cpp

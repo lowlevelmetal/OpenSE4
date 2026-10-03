@@ -1,5 +1,7 @@
 #include "net/protocol.hpp"
 
+#include "net/auth.hpp"
+
 #include <format>
 
 #ifndef OPENSE4_VERSION
@@ -37,6 +39,7 @@ std::string_view displayName(EventType t) {
         case EventType::PlayerTurn: return "player turn";
         case EventType::StateUpdated: return "state updated";
         case EventType::CommandsDone: return "commands done";
+        case EventType::Desync: return "desync";
     }
     return "?";
 }
@@ -57,6 +60,7 @@ std::string describe(const Event& e) {
                                e.empire.value, e.text.empty() ? "" : ", ", e.text);
         case EventType::CommandsDone:
             return std::format("{} request {}{}{}", tag, e.request, e.text.empty() ? "" : ": ", e.text);
+        case EventType::Desync: return std::format("{} {}", tag, e.text);
         case EventType::GameStarted:
         case EventType::NewTurn:
         case EventType::TurnProcessing:
@@ -69,6 +73,18 @@ std::string describe(const Event& e) {
 } // namespace opense4::net
 
 namespace opense4::net::proto {
+
+bool usablePasswordValues(const std::vector<game::Command>& commands) {
+    for (const game::Command& c : commands)
+        if (const auto* o = std::get_if<game::cmd::SetEmpireOptions>(&c); o && o->passwordHash && !usableVerifier(*o->passwordHash)) return false;
+    return true;
+}
+
+bool probeVersion(std::span<const uint8_t> payload, VersionProbe& out) {
+    game::serial::Reader r(payload, kArchiveVersion);
+    io(r, out);
+    return r.ok();
+}
 
 std::string sanitize(std::string_view text, size_t maxLength) {
     std::string out;

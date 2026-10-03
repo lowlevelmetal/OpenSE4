@@ -6,6 +6,7 @@
 // needs a router or the Internet.
 
 #include "engine_fixture.hpp"
+#include "net_fixture.hpp"
 
 #include "client/classic/movement_line.hpp"
 #include "client/classic/net_transport.hpp"
@@ -21,6 +22,7 @@
 #include "net/host.hpp"
 #include "net/pbem.hpp"
 #include "net/protocol.hpp"
+#include "net/secure.hpp"
 #include "net/socket.hpp"
 #include "net/upnp.hpp"
 #include "server/setup_file.hpp"
@@ -51,19 +53,25 @@ TEST_CASE("net: SHA-256 and password hashing") {
     for (size_t i = 0; i < million.size(); i += 777) chunked.update(std::string_view(million).substr(i, 777));
     CHECK(net::toHex(chunked.finish()) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
 
-    CHECK(net::hashPassword("").empty());
-    CHECK(net::passwordVerifier("").empty());
-    const std::string h = net::hashPassword("hunter2");
+    // OpenSE4 0.6's hash, kept to check old verifiers once.
+    CHECK(net::legacyPasswordHash("").empty());
+    const std::string h = net::legacyPasswordHash("hunter2");
     CHECK(h.size() == 64);
-    CHECK(h == net::hashPassword("hunter2"));
-    CHECK(h != net::hashPassword("hunter3"));
+    CHECK(h == net::legacyPasswordHash("hunter2"));
+    CHECK(h != net::legacyPasswordHash("hunter3"));
     CHECK(h != net::toHex(net::Sha256::of("hunter2")));  // domain-separated
-    const std::string v = net::passwordVerifier(h);
-    CHECK(v != h);
-    CHECK(net::checkPassword(v, h));
-    CHECK_FALSE(net::checkPassword(v, net::hashPassword("nope")));
-    CHECK_FALSE(net::checkPassword(v, ""));
-    CHECK(net::checkPassword("", "anything"));  // no password set
+    CHECK(net::checkLegacyPassword(net::legacyPasswordVerifier(h), h));
+    // The current kind: per game.
+    CHECK(net::passwordVerifier("", 1).empty());
+    const std::string v = net::passwordVerifier("hunter2", 1);
+    CHECK(v.starts_with("pk1:"));
+    CHECK(v.size() == 4 + 128);
+    CHECK(net::checkPassword(v, "hunter2", 1));
+    CHECK_FALSE(net::checkPassword(v, "nope", 1));
+    CHECK_FALSE(net::checkPassword(v, "", 1));
+    CHECK_FALSE(net::checkPassword(v, "hunter2", 2));  // another game, another verifier
+    CHECK(v != net::passwordVerifier("hunter2", 2));
+    CHECK(net::checkPassword("", "anything", 1));  // no password set
     CHECK(net::constantTimeEquals("abc", "abc"));
     CHECK_FALSE(net::constantTimeEquals("abc", "abd"));
     CHECK_FALSE(net::constantTimeEquals("abc", "abcd"));
@@ -71,6 +79,26 @@ TEST_CASE("net: SHA-256 and password hashing") {
 }
 
 // ---- Protocol and framing ------------------------------------------------------------------------
+
+namespace {
+
+// The greeting of protocol 4 (OpenSE4 0.6), field for field.
+struct OldHello {
+    uint32_t magic = net::proto::kMagic;
+    uint32_t protocol = 4;
+    std::string app = "OpenSE4 0.6.1";
+    std::string dataSet;
+    std::string player;
+    std::string passwordHash;
+    std::string joinPasswordHash;
+    std::string masterPasswordHash;
+};
+template <class Ar>
+void io(Ar& ar, OldHello& m) {
+    game::serial::fields(ar, m.magic, m.protocol, m.app, m.dataSet, m.player, m.passwordHash, m.joinPasswordHash, m.masterPasswordHash);
+}
+
+} // namespace
 
 TEST_CASE("net: protocol messages round trip") {
     net::LobbyInfo lobby;
@@ -95,18 +123,34 @@ TEST_CASE("net: protocol messages round trip") {
     CHECK(back.slots[0].setup.customRace.has_value());
     CHECK(back.slots[1].open());
 
-    net::proto::Hello hello;
-    hello.player = "bob";
-    hello.dataSet = "x#1";
-    net::proto::Hello helloBack;
-    REQUIRE(net::proto::decode(net::proto::encode(hello), helloBack, error));
-    CHECK(helloBack.player == "bob");
-    CHECK(helloBack.magic == net::proto::kMagic);
+    net::proto::Login login;
+    login.player = "bob";
+    login.dataSet = "x#1";
+    login.passwordProof[5] = 7;
+    net::proto::Login loginBack;
+    REQUIRE(net::proto::decode(net::proto::encode(login), loginBack, error));
+    CHECK(loginBack.player == "bob");
+    CHECK(loginBack.passwordProof[5] == 7);
 
-    std::vector<uint8_t> bytes = net::proto::encode(hello);
+    std::vector<uint8_t> bytes = net::proto::encode(login);
     bytes.pop_back();
-    CHECK_FALSE(net::proto::decode(bytes, helloBack, error));
+    CHECK_FALSE(net::proto::decode(bytes, loginBack, error));
     CHECK_FALSE(error.empty());
+
+    // The opening reads as protocol 4's greeting, so an OpenSE4 0.6 host can
+    // refuse it with a reason; and a host reads the version of any greeting.
+    net::proto::ClientHello hello;
+    hello.app = "OpenSE4 9.9";
+    hello.ephemeralKey = std::string(32, 'k');
+    OldHello asOld;
+    REQUIRE(net::proto::decode(net::proto::encode(hello), asOld, error));
+    CHECK(asOld.magic == net::proto::kMagic);
+    CHECK(asOld.protocol == net::kProtocolVersion);
+    CHECK(asOld.app == "OpenSE4 9.9");
+    net::proto::VersionProbe probe;
+    REQUIRE(net::proto::probeVersion(net::proto::encode(asOld), probe));
+    CHECK(probe.protocol == net::kProtocolVersion);
+    CHECK_FALSE(net::proto::probeVersion(std::vector<uint8_t>{1, 2}, probe));
 
     CHECK(net::proto::validPlayerName("Alice Smith"));
     CHECK_FALSE(net::proto::validPlayerName(""));
@@ -225,107 +269,6 @@ TEST_CASE("net: port mapper fallback without a router") {
 
 // ---- Host and clients on loopback -----------------------------------------------------------------------
 
-namespace {
-
-net::HostConfig hostConfig(int humans = 2, bool turnBased = false) {
-    net::HostConfig c;
-    c.gameName = "Loopback";
-    c.bindAddress = "127.0.0.1";
-    c.port = 0;
-    c.humanSlots = humans;
-    c.upnp.enabled = false;
-    c.setup.seed = 21;
-    c.setup.options.systemCount = 10;
-    c.setup.options.simultaneous = !turnBased;
-    return c;
-}
-
-net::ClientConfig clientConfig(const net::HostSession& host, std::string name, std::string password = {}) {
-    net::ClientConfig c;
-    c.port = host.port();
-    c.playerName = std::move(name);
-    c.passwordHash = net::hashPassword(password);
-    c.dataSet = game::dataSetIdentity(engineRules());
-    return c;
-}
-
-// Polls a host and its clients until a condition holds.
-struct Loop {
-    net::HostSession& host;
-    std::vector<net::ClientSession*> clients;
-    std::vector<net::Event> hostEvents;
-    std::vector<std::vector<net::Event>> clientEvents;
-
-    Loop(net::HostSession& h, std::vector<net::ClientSession*> cs) : host(h), clients(std::move(cs)), clientEvents(clients.size()) {}
-
-    void step() {
-        for (auto& e : host.poll(1)) hostEvents.push_back(std::move(e));
-        for (size_t i = 0; i < clients.size(); ++i)
-            for (auto& e : clients[i]->poll(1)) clientEvents[i].push_back(std::move(e));
-    }
-    bool until(const std::function<bool()>& done, int ms = 5000) {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-        while (std::chrono::steady_clock::now() < deadline) {
-            step();
-            if (done()) return true;
-        }
-        return false;
-    }
-    bool hostSaw(EventType t) const {
-        return std::any_of(hostEvents.begin(), hostEvents.end(), [&](const net::Event& e) { return e.type == t; });
-    }
-    const net::Event* clientSaw(size_t i, EventType t) const {
-        for (const auto& e : clientEvents[i])
-            if (e.type == t) return &e;
-        return nullptr;
-    }
-    void clear() {
-        hostEvents.clear();
-        for (auto& v : clientEvents) v.clear();
-    }
-};
-
-game::EmpireOrders noteOrders(const net::ClientSession& c, const std::string& note) {
-    return game::EmpireOrders{c.empire(), c.state()->turn, {game::cmd::SetSystemNote{game::SystemId{0u}, note}}};
-}
-
-std::string noteOf(const game::GameState& s, game::EmpireId e) {
-    const auto& notes = s.empire(e).knowledge.notes;
-    return notes.empty() ? std::string{} : notes[0];
-}
-
-// Two players in a started game with one computer empire.
-struct TwoPlayerGame {
-    net::HostSession host;
-    net::ClientSession alice{net::ClientConfig{}};
-    net::ClientSession bob{net::ClientConfig{}};
-    std::unique_ptr<Loop> loop;
-
-    explicit TwoPlayerGame(bool turnBased = false) : host(engineRules(), hostConfig(2, turnBased)) {
-        REQUIRE(host.start().has_value());
-        alice.config() = clientConfig(host, "alice", "a-secret");
-        bob.config() = clientConfig(host, "bob", "b-secret");
-        loop = std::make_unique<Loop>(host, std::vector<net::ClientSession*>{&alice, &bob});
-        REQUIRE(alice.connect().has_value());
-        REQUIRE(bob.connect().has_value());
-        REQUIRE(loop->until([&] { return alice.phase() == net::ClientPhase::Lobby && bob.phase() == net::ClientPhase::Lobby; }));
-        REQUIRE(host.addComputerEmpire().has_value());
-        game::EmpireSetup a;
-        a.name = "Alice's Realm";
-        alice.submitSetup(a);
-        alice.setReady(true);
-        bob.setReady(true);
-        REQUIRE(loop->until([&] {
-            const auto& l = host.lobby();
-            return l.slots.size() == 3 && l.slots[0].ready && l.slots[1].ready && l.slots[0].setup.name == "Alice's Realm";
-        }));
-        CHECK(host.startProblem().empty());
-        REQUIRE(host.startGame().has_value());
-        REQUIRE(loop->until([&] { return alice.state() && bob.state(); }));
-    }
-};
-
-} // namespace
 
 TEST_CASE("net: lobby, game start and a turn with two clients") {
     TwoPlayerGame g;
@@ -344,9 +287,14 @@ TEST_CASE("net: lobby, game start and a turn with two clients") {
     CHECK(g.alice.lobby().started);
     // Clients get the state without password verifiers; the host keeps them.
     CHECK_FALSE(host.state()->empires[0].passwordHash.empty());
-    CHECK(net::checkPassword(host.state()->empires[0].passwordHash, net::hashPassword("a-secret")));
+    CHECK(net::checkPassword(host.state()->empires[0].passwordHash, "a-secret", host.gameId()));
     CHECK(g.alice.state()->empires[0].passwordHash.empty());
     CHECK(g.alice.state()->galaxy.systems.size() == host.state()->galaxy.systems.size());
+    // Nor the galaxy's seed, from which the whole map (home systems included)
+    // and the computer players' choices could be rebuilt: the host keeps it.
+    CHECK(host.state()->seed == 21);
+    CHECK(g.alice.state()->seed == 0);
+    CHECK(g.alice.lobby().seed == 0);
 
     // Chat reaches everyone.
     g.alice.chat("hello all");
@@ -483,11 +431,12 @@ TEST_CASE("net: Reset Passwords on the host of a simultaneous game (spec 06 §1.
     TwoPlayerGame g;
     net::HostSession& host = g.host;
     Loop& loop = *g.loop;
-    // Six digits: three numbers from 11 to 99.
+    // Twelve digits: six numbers from 11 to 99 (the original writes three:
+    // OpenSE4's verifiers can be guessed offline, so it writes more).
     for (int i = 0; i < 50; ++i) {
         const std::string pw = net::resetPassword();
-        REQUIRE(pw.size() == 6);
-        for (size_t k = 0; k < 6; k += 2) {
+        REQUIRE(pw.size() == 12);
+        for (size_t k = 0; k < 12; k += 2) {
             const int n = std::stoi(pw.substr(k, 2));
             CHECK(n >= 11);
             CHECK(n <= 99);
@@ -505,14 +454,14 @@ TEST_CASE("net: Reset Passwords on the host of a simultaneous game (spec 06 §1.
     // Alice changes her own password in this turn's orders: the reset, applied
     // after the orders are read, wins.
     game::EmpireOrders mine = noteOrders(g.alice, "x");
-    mine.commands.push_back(game::cmd::SetEmpireOptions{.passwordHash = net::passwordVerifier(net::hashPassword("mine"))});
+    mine.commands.push_back(game::cmd::SetEmpireOptions{.passwordHash = net::passwordVerifier("mine", host.gameId())});
     REQUIRE(g.alice.submitOrders(mine).has_value());
     REQUIRE(g.bob.submitOrders(noteOrders(g.bob, "y")).has_value());
     REQUIRE(loop.until([&] { return host.state()->turn == 1; }));
     const std::string& verifier = host.state()->empire(game::EmpireId{0u}).passwordHash;
-    CHECK(net::checkPassword(verifier, net::hashPassword(reset->front().password)));
-    CHECK_FALSE(net::checkPassword(verifier, net::hashPassword("mine")));
-    CHECK(net::checkPassword(host.state()->empire(game::EmpireId{1u}).passwordHash, net::hashPassword("b-secret")));  // discarded
+    CHECK(net::checkPassword(verifier, reset->front().password, host.gameId()));
+    CHECK_FALSE(net::checkPassword(verifier, "mine", host.gameId()));
+    CHECK(net::checkPassword(host.state()->empire(game::EmpireId{1u}).passwordHash, "b-secret", host.gameId()));  // discarded
     CHECK(host.pendingPasswordResets().empty());
     // Cleared before the turn: nothing happens.
     REQUIRE(host.resetPasswords({game::EmpireId{1u}}).has_value());
@@ -520,7 +469,7 @@ TEST_CASE("net: Reset Passwords on the host of a simultaneous game (spec 06 §1.
     REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "z")).has_value());
     REQUIRE(g.bob.submitOrders(noteOrders(g.bob, "z")).has_value());
     REQUIRE(loop.until([&] { return host.state()->turn == 2; }));
-    CHECK(net::checkPassword(host.state()->empire(game::EmpireId{1u}).passwordHash, net::hashPassword("b-secret")));
+    CHECK(net::checkPassword(host.state()->empire(game::EmpireId{1u}).passwordHash, "b-secret", host.gameId()));
     // Only simultaneous games.
     TwoPlayerGame tb(true);
     CHECK_FALSE(tb.host.resetPasswords({game::EmpireId{0u}}).has_value());
@@ -528,11 +477,11 @@ TEST_CASE("net: Reset Passwords on the host of a simultaneous game (spec 06 §1.
 
 TEST_CASE("net: a player with the master password asks a headless host to reset passwords") {
     net::HostConfig cfg = hostConfig(1);
-    cfg.masterPasswordHash = net::hashPassword("master");
+    cfg.masterPassword = "master";
     net::HostSession host(engineRules(), cfg);
     REQUIRE(host.start().has_value());
     net::ClientConfig adminCfg = clientConfig(host, "admin");
-    adminCfg.masterPasswordHash = net::hashPassword("master");
+    adminCfg.masterPassword = "master";
     net::ClientSession admin(adminCfg);
     Loop loop(host, {&admin});
     REQUIRE(admin.connect().has_value());
@@ -553,16 +502,16 @@ TEST_CASE("net: a player with the master password asks a headless host to reset 
 
 TEST_CASE("net: joining is checked (data set, passwords, names, capacity)") {
     net::HostConfig cfg = hostConfig(1);
-    cfg.joinPasswordHash = net::hashPassword("letmein");
+    cfg.joinPassword = "letmein";
     net::HostSession host(engineRules(), cfg);
     REQUIRE(host.start().has_value());
 
     net::ClientConfig badData = clientConfig(host, "a");
     badData.dataSet = "mod#0123456789abcdef";
-    badData.joinPasswordHash = net::hashPassword("letmein");
+    badData.joinPassword = "letmein";
     net::ClientConfig noPassword = clientConfig(host, "b");
     net::ClientConfig good = clientConfig(host, "carol", "pw");
-    good.joinPasswordHash = net::hashPassword("letmein");
+    good.joinPassword = "letmein";
     net::ClientConfig late = good;
     late.playerName = "dave";
 
@@ -598,11 +547,11 @@ TEST_CASE("net: joining is checked (data set, passwords, names, capacity)") {
 
 TEST_CASE("net: admin requests and kicks") {
     net::HostConfig cfg = hostConfig(2);
-    cfg.masterPasswordHash = net::hashPassword("master");
+    cfg.masterPassword = "master";
     net::HostSession host(engineRules(), cfg);
     REQUIRE(host.start().has_value());
     net::ClientConfig adminCfg = clientConfig(host, "admin");
-    adminCfg.masterPasswordHash = net::hashPassword("master");
+    adminCfg.masterPassword = "master";
     net::ClientSession admin(adminCfg);
     net::ClientSession pleb(clientConfig(host, "pleb"));
     Loop loop(host, {&admin, &pleb});
@@ -714,11 +663,11 @@ TEST_CASE("net: host saves and resumes a network game") {
 
     // A master password on the save must be matched.
     game::SaveInfo locked = loaded->second;
-    locked.masterPasswordVerifier = net::passwordVerifier(net::hashPassword("m"));
+    locked.masterPasswordVerifier = net::passwordVerifier("m", loaded->second.gameId);
     net::HostSession wrong(engineRules(), hostConfig());
     CHECK_FALSE(wrong.resume(loaded->first, locked).has_value());
     net::HostConfig right = hostConfig();
-    right.masterPasswordHash = net::hashPassword("m");
+    right.masterPassword = "m";
     net::HostSession ok(engineRules(), right);
     CHECK(ok.resume(loaded->first, locked).has_value());
     std::error_code ec;
@@ -727,7 +676,7 @@ TEST_CASE("net: host saves and resumes a network game") {
 
 // ---- Play by e-mail ------------------------------------------------------------------------------------
 
-TEST_CASE("net: PBEM turn processing from .plr files") {
+TEST_CASE("net: PBEM turn processing from turn files and signed .plr files") {
     namespace fs = std::filesystem;
     const game::Rules& r = engineRules();
     const TempDir tmp("pbem");
@@ -743,7 +692,7 @@ TEST_CASE("net: PBEM turn processing from .plr files") {
         game::EmpireSetup e;
         e.name = std::format("Empire {}", i + 1);
         e.kind = i < 2 ? game::PlayerKind::Human : game::PlayerKind::Computer;
-        e.passwordHash = net::passwordVerifier(net::hashPassword(std::format("pw{}", i)));
+        e.passwordHash = net::passwordVerifier(std::format("pw{}", i), 4242);
         setup.empires.push_back(e);
     }
     auto state = game::createGame(r, setup);
@@ -752,30 +701,92 @@ TEST_CASE("net: PBEM turn processing from .plr files") {
     info.gameName = "Mail Game";
     info.gameId = 4242;
     info.dataSet = game::dataSetIdentity(r);
-    info.masterPasswordVerifier = net::passwordVerifier(net::hashPassword("host"));
+    info.masterPasswordVerifier = net::passwordVerifier("host", info.gameId);
     const fs::path gam = dir / "mail.gam";
     REQUIRE(game::saveGame(gam, *state, info).has_value());
+    const net::crypto::KeyPair hostKey = net::crypto::newKeyPair();
+    auto keysOf = [&](const std::string& password) { return net::passwordKeys(password, info.gameId); };
+
+    // Each human player gets a turn file: its own view of the host's game,
+    // which only that empire's password opens.
+    auto turnFiles = net::pbem::writeTurnFiles(r, gam, dir, hostKey.publicKey);
+    REQUIRE_MESSAGE(turnFiles.has_value(), (turnFiles ? std::string{} : turnFiles.error()));
+    REQUIRE(turnFiles->size() == 2);
+    CHECK(turnFiles->at(0).second.filename() == "Mail_Game_01.turn");
+    std::vector<uint64_t> start;
+    for (const auto& [empire, file] : *turnFiles) {
+        auto tf = net::pbem::readTurnFile(file);
+        REQUIRE(tf.has_value());
+        CHECK(tf->empire == empire);
+        CHECK(tf->verifier == state->empire(empire).passwordHash);
+        CHECK(tf->hostKey == hostKey.publicKey);
+        CHECK(tf->encrypted);
+        CHECK(tf->info.masterPasswordVerifier.empty());
+        game::GameState host = *state;
+        net::pbem::readForTurn(r, host);
+        const game::GameState view = game::redactForEmpire(r, host, empire);
+        // Another empire's password, or none, does not open it.
+        const std::string mine = std::format("pw{}", empire.value), theirs = std::format("pw{}", 1 - empire.value);
+        CHECK_FALSE(net::pbem::openTurnFile(*tf, keysOf(theirs)).has_value());
+        CHECK_FALSE(net::pbem::openTurnFile(*tf, std::nullopt).has_value());
+        auto opened = net::pbem::openTurnFile(*tf, keysOf(mine));
+        REQUIRE(opened.has_value());
+        CHECK(opened->viewChecksum == game::stateChecksum(view));
+        CHECK(opened->view == game::serializeState(view));
+        CHECK(tf->content != net::pbem::encodeTurnView(*opened));  // on the disk only encrypted
+        start.push_back(opened->viewChecksum);
+    }
+    CHECK(start[0] != start[1]);
 
     auto make = [&](game::EmpireId e, uint32_t turn, const std::string& note) {
         return game::EmpireOrders{e, turn, {game::cmd::SetSystemNote{game::SystemId{0u}, note}}};
     };
-    // Empire 1: valid.
-    auto file1 = net::pbem::writePlayerOrders(orders, info, make(game::EmpireId{0u}, 0, "mailed"), net::hashPassword("pw0"));
+    auto signedFile = [&](game::EmpireId e, uint32_t turn, uint64_t from, const std::string& note, const std::string& password) {
+        net::pbem::OrdersFile f{info.gameName, info.gameId, e, turn, make(e, turn, note), from, 1};
+        net::pbem::signOrdersFile(f, keysOf(password));
+        return f;
+    };
+    // Empire 1: valid, and a newer revision than an older file that looks newer on the disk.
+    auto file1 = net::pbem::writePlayerOrders(orders, info, make(game::EmpireId{0u}, 0, "mailed"), start[0], keysOf("pw0"), hostKey.publicKey);
     REQUIRE(file1.has_value());
     CHECK(file1->filename() == "Mail_Game_01.plr");
-    // Empire 2: wrong password.
-    REQUIRE(net::pbem::writePlayerOrders(orders, info, make(game::EmpireId{1u}, 0, "forged"), net::hashPassword("pw0")).has_value());
+    REQUIRE(net::pbem::writeOrdersFile(orders / "older.plr", signedFile(game::EmpireId{0u}, 0, start[0], "an older try", "pw0"), hostKey.publicKey)
+                .has_value());
+    // Empire 2: signed with another password.
+    REQUIRE(net::pbem::writePlayerOrders(orders, info, make(game::EmpireId{1u}, 0, "forged"), start[1], keysOf("pw0"), hostKey.publicKey).has_value());
+    // Empire 2 again: rightly signed, then changed.
+    net::pbem::OrdersFile changed = signedFile(game::EmpireId{1u}, 0, start[1], "honest", "pw1");
+    changed.orders.commands[0] = game::cmd::SetSystemNote{game::SystemId{0u}, "changed on the way"};
+    REQUIRE(net::pbem::writeOrdersFile(orders / "changed.plr", changed, hostKey.publicKey).has_value());
+    // Empire 2 once more: made from another turn file.
+    REQUIRE(net::pbem::writeOrdersFile(orders / "elsewhere.plr", signedFile(game::EmpireId{1u}, 0, 12345, "from elsewhere", "pw1"), hostKey.publicKey)
+                .has_value());
+    // Empire 2: rightly signed, but setting a password that is no verifier of the
+    // current kind (one that looks like OpenSE4 0.6's would make the host ask
+    // everyone's game for its old password).
+    net::pbem::OrdersFile oldKind{info.gameName, info.gameId, game::EmpireId{1u}, 0,
+                                  game::EmpireOrders{game::EmpireId{1u}, 0, {game::cmd::SetEmpireOptions{.passwordHash = std::string(64, 'a')}}},
+                                  start[1], 2};
+    net::pbem::signOrdersFile(oldKind, keysOf("pw1"));
+    REQUIRE(net::pbem::writeOrdersFile(orders / "oldkind.plr", oldKind, hostKey.publicKey).has_value());
     // Stale turn and another game.
-    net::pbem::OrdersFile stale{info.gameName, info.gameId, game::EmpireId{1u}, 7, net::hashPassword("pw1"), make(game::EmpireId{1u}, 7, "old")};
-    REQUIRE(net::pbem::writeOrdersFile(orders / "stale.plr", stale).has_value());
-    net::pbem::OrdersFile other{"Other", 1, game::EmpireId{1u}, 0, net::hashPassword("pw1"), make(game::EmpireId{1u}, 0, "other")};
-    REQUIRE(net::pbem::writeOrdersFile(orders / "other.plr", other).has_value());
+    net::pbem::OrdersFile stale = signedFile(game::EmpireId{1u}, 7, start[1], "old", "pw1");
+    REQUIRE(net::pbem::writeOrdersFile(orders / "stale.plr", stale, hostKey.publicKey).has_value());
+    net::pbem::OrdersFile other = signedFile(game::EmpireId{1u}, 0, start[1], "other", "pw1");
+    other.gameName = "Other";
+    other.gameId = 1;
+    REQUIRE(net::pbem::writeOrdersFile(orders / "other.plr", other, hostKey.publicKey).has_value());
     REQUIRE(game::writeFileAtomic(orders / "garbage.plr", std::vector<uint8_t>{1, 2, 3}).has_value());
+    // Encrypted to another host: this host cannot read it.
+    REQUIRE(net::pbem::writeOrdersFile(orders / "elsewhere_host.plr", signedFile(game::EmpireId{1u}, 0, start[1], "x", "pw1"),
+                                       net::crypto::newKeyPair().publicKey)
+                .has_value());
 
     net::pbem::ProcessOptions opts;
-    opts.masterPasswordHash = net::hashPassword("wrong");
+    opts.hostKey = hostKey;
+    opts.masterPassword = "wrong";
     CHECK_FALSE(net::pbem::processGameFile(r, gam, orders, opts).has_value());
-    opts.masterPasswordHash = net::hashPassword("host");
+    opts.masterPassword = "host";
     auto rep = net::pbem::processGameFile(r, gam, orders, opts);
     REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
     CHECK(rep->turnBefore == 0);
@@ -783,34 +794,138 @@ TEST_CASE("net: PBEM turn processing from .plr files") {
     REQUIRE(rep->submitted.size() == 1);
     CHECK(rep->submitted[0] == "Empire 1");
     CHECK(rep->playedByComputer == std::vector<std::string>{"Empire 2"});
-    CHECK(rep->warnings.size() == 4);
+    CHECK(rep->warnings.size() == 9);
     auto warned = [&](std::string_view what) {
         return std::any_of(rep->warnings.begin(), rep->warnings.end(), [&](const std::string& w) { return w.find(what) != std::string::npos; });
     };
     CHECK(warned("wrong password"));
+    CHECK(warned("changed after it was signed"));
+    CHECK(warned("another turn file"));
+    CHECK(warned("a password of a kind"));
     CHECK(warned("out of date"));
     CHECK(warned("another game"));
     CHECK(warned("garbage.plr"));
+    CHECK(warned("not for this host's key"));
+    CHECK(warned("older.plr: ignored"));
     CHECK_FALSE(fs::exists(*file1));           // used: deleted
+    CHECK_FALSE(fs::exists(orders / "older.plr"));
     CHECK(fs::exists(orders / "stale.plr"));   // not used: kept
     CHECK(fs::exists(dir / "mail.gam.bak"));
+    // The new turn files, one per human player.
+    REQUIRE(rep->turnFiles.size() == 2);
+    CHECK(net::pbem::readTurnFile(rep->turnFiles[1].second)->info.turn == 1);
 
     auto after = game::loadGame(gam);
     REQUIRE(after.has_value());
     CHECK(after->first.turn == 1);
     CHECK(after->second.gameId == 4242);
     CHECK(noteOf(after->first, game::EmpireId{0u}) == "mailed");
-    CHECK(noteOf(after->first, game::EmpireId{1u}) != "forged");
+    CHECK(noteOf(after->first, game::EmpireId{1u}).empty());
 
-    // Round trip of the file format itself.
-    auto read = net::pbem::readOrdersFile(orders / "stale.plr");
+    // Round trip of the file format itself: only the host's key opens it.
+    auto read = net::pbem::readOrdersFile(orders / "stale.plr", hostKey);
     REQUIRE(read.has_value());
     CHECK(read->turn == 7);
     CHECK(read->orders.commands.size() == 1);
-    CHECK_FALSE(net::pbem::decodeOrdersFile(game::serializeOrders(stale.orders)).has_value());
+    CHECK(read->verifier == net::passwordVerifier("pw1", info.gameId));
+    CHECK_FALSE(net::pbem::readOrdersFile(orders / "stale.plr", net::crypto::newKeyPair()).has_value());
+    CHECK_FALSE(net::pbem::decodeOrdersFile(game::serializeOrders(stale.orders), hostKey).has_value());
+    CHECK(net::pbem::decodeOrdersFile(game::wrapEnvelope("OSE4PLRF", std::vector<uint8_t>{}), hostKey).error().find("OpenSE4 0.6") !=
+          std::string::npos);
 
     std::error_code ec;
     fs::remove_all(dir, ec);
+}
+
+TEST_CASE("net: a PBEM game of OpenSE4 0.6 moves to the new passwords with its players' first orders") {
+    namespace fs = std::filesystem;
+    const game::Rules& r = engineRules();
+    const TempDir tmp("pbem_legacy");
+    game::GameSetup setup;
+    setup.seed = 4;
+    setup.options.systemCount = 8;
+    setup.options.simultaneous = true;
+    for (int i = 0; i < 2; ++i) {
+        game::EmpireSetup e;
+        e.name = std::format("Empire {}", i + 1);
+        e.kind = game::PlayerKind::Human;
+        e.passwordHash = net::legacyPasswordVerifier(net::legacyPasswordHash(std::format("pw{}", i)));
+        setup.empires.push_back(e);
+    }
+    auto state = game::createGame(r, setup);
+    REQUIRE(state.has_value());
+    game::SaveInfo info;
+    info.gameName = "Old Mail";
+    info.gameId = 66;
+    info.dataSet = game::dataSetIdentity(r);
+    const fs::path gam = tmp / "old.gam";
+    REQUIRE(game::saveGame(gam, *state, info).has_value());
+    const net::crypto::KeyPair hostKey = net::crypto::newKeyPair();
+    // "pbem turn-files" for a game in progress. An old verifier has no key to
+    // encrypt to: these turn files are in the clear, this once.
+    auto files = net::pbem::writeTurnFiles(r, gam, tmp.path(), hostKey.publicKey);
+    REQUIRE(files.has_value());
+    auto tf = net::pbem::readTurnFile(files->at(0).second);
+    REQUIRE(tf.has_value());
+    CHECK(net::isLegacyVerifier(tf->verifier));
+    CHECK_FALSE(tf->encrypted);
+    auto view = net::pbem::openTurnFile(*tf, std::nullopt);
+    REQUIRE(view.has_value());
+    // The player's orders file shows the old hash this once, signed with a new
+    // password: the old hash was in the clear in 0.6, so nothing is made of it.
+    const game::EmpireOrders orders{game::EmpireId{0u}, 0, {}};
+    REQUIRE(net::pbem::writePlayerOrders(tmp.path(), info, orders, view->viewChecksum, net::passwordKeys("new0", info.gameId), hostKey.publicKey,
+                                         net::legacyPasswordHash("pw0"))
+                .has_value());
+    auto plr = net::pbem::readOrdersFile(tmp / "Old_Mail_01.plr", hostKey);
+    REQUIRE(plr.has_value());
+    CHECK(plr->legacyPasswordHash == net::legacyPasswordHash("pw0"));
+    // Empire 2: two different moves to a new password (someone else knew the
+    // old hash, say): the host cannot tell which is the player's, takes none.
+    auto tf2 = net::pbem::readTurnFile(files->at(1).second);
+    REQUIRE(tf2.has_value());
+    auto view2 = net::pbem::openTurnFile(*tf2, std::nullopt);
+    REQUIRE(view2.has_value());
+    const game::EmpireOrders orders2{game::EmpireId{1u}, 0, {}};
+    for (const char* fresh : {"mine1", "an impostor's"}) {
+        net::pbem::OrdersFile f{info.gameName, info.gameId, game::EmpireId{1u}, 0, orders2, view2->viewChecksum, 1};
+        net::pbem::signOrdersFile(f, net::passwordKeys(fresh, info.gameId), net::legacyPasswordHash("pw1"));
+        REQUIRE(net::pbem::writeOrdersFile(tmp / std::format("{}.plr", fresh[0] == 'm' ? "mine" : "impostor"), f, hostKey.publicKey).has_value());
+    }
+    net::pbem::ProcessOptions opts;
+    opts.hostKey = hostKey;
+    auto rep = net::pbem::processGameFile(r, gam, tmp.path(), opts);
+    REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
+    CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
+    CHECK(rep->playedByComputer == std::vector<std::string>{"Empire 2"});
+    CHECK(std::any_of(rep->warnings.begin(), rep->warnings.end(), [](const std::string& w) { return w.find("different new passwords") != std::string::npos; }));
+    CHECK(fs::exists(tmp / "mine.plr"));      // kept for the host to look at
+    CHECK(fs::exists(tmp / "impostor.plr"));
+    auto after = game::loadGame(gam);
+    REQUIRE(after.has_value());
+    const std::string upgraded = after->first.empire(game::EmpireId{0u}).passwordHash;
+    CHECK(upgraded == net::passwordVerifier("new0", info.gameId));
+    CHECK_FALSE(net::checkPassword(upgraded, "pw0", info.gameId));
+    CHECK(net::isLegacyVerifier(after->first.empire(game::EmpireId{1u}).passwordHash));
+    // The next turn file carries the new verifier, and is encrypted to it.
+    auto next = net::pbem::readTurnFile(tmp / "Old_Mail_01.turn");
+    REQUIRE(next.has_value());
+    CHECK(next->verifier == upgraded);
+    CHECK(next->encrypted);
+    // Whoever kept 0.6's hash of the old password gets nothing from it now:
+    // keys made from that hash (as if it were the password) are refused.
+    fs::remove(tmp / "mine.plr");
+    fs::remove(tmp / "impostor.plr");
+    auto nextView = net::pbem::openTurnFile(*next, net::passwordKeys("new0", info.gameId));
+    REQUIRE(nextView.has_value());
+    CHECK_FALSE(net::pbem::openTurnFile(*next, net::passwordKeys(net::legacyPasswordHash("pw0"), info.gameId)).has_value());
+    REQUIRE(net::pbem::writePlayerOrders(tmp.path(), info, game::EmpireOrders{game::EmpireId{0u}, 1, {}}, nextView->viewChecksum,
+                                         net::passwordKeys(net::legacyPasswordHash("pw0"), info.gameId), hostKey.publicKey)
+                .has_value());
+    rep = net::pbem::processGameFile(r, gam, tmp.path(), opts);
+    REQUIRE(rep.has_value());
+    CHECK(rep->submitted.empty());
+    CHECK(std::any_of(rep->warnings.begin(), rep->warnings.end(), [](const std::string& w) { return w.find("wrong password") != std::string::npos; }));
 }
 
 // ---- Server setup files ----------------------------------------------------------------------------------
@@ -848,7 +963,8 @@ tier = 2
     REQUIRE_MESSAGE(s.has_value(), (s ? std::string{} : s.error()));
     CHECK(s->gameName == "Frontier");
     CHECK(s->seed == 99u);
-    CHECK(s->masterPasswordHash == net::hashPassword("boss"));
+    CHECK(s->masterPassword == "boss");
+    CHECK_FALSE(s->gameId.has_value());
     CHECK(s->options.systemCount == 25);
     CHECK(s->options.quadrantSize == 2);
     CHECK_FALSE(s->options.allPlanetsSameSize);
@@ -860,7 +976,8 @@ tier = 2
     CHECK(s->options.victory.scoreValue == 12345);
     REQUIRE(s->empires.size() == 2);
     CHECK(s->empires[0].player == "alice");
-    CHECK(s->empires[0].setup.passwordHash == net::hashPassword("pw"));
+    CHECK(s->empires[0].password == "pw");
+    CHECK(s->empires[0].setup.passwordHash.empty());  // the game makes the verifier, for its own id
     CHECK(s->empires[1].setup.kind == game::PlayerKind::Computer);
     CHECK(s->empires[1].setup.presetTier == 2);
 
@@ -871,6 +988,22 @@ tier = 2
     CHECK(bad.error().find("unknown option 'warp'") != std::string::npos);
     CHECK(bad.error().find("'kind' must be") != std::string::npos);
     CHECK_FALSE(server::parseSetup("name = [", "broken.toml", r).has_value());
+    // Verifiers made in advance belong to one game; 0.6's hashes are refused.
+    const std::string verifier = net::passwordVerifier("pw", 4711);
+    auto fixed = server::parseSetup(std::format("game_id = 4711\nmaster_password_verifier = \"{}\"\n[[empire]]\npassword_verifier = \"{}\"\n",
+                                                verifier, verifier),
+                                    "v.toml", r);
+    REQUIRE_MESSAGE(fixed.has_value(), (fixed ? std::string{} : fixed.error()));
+    CHECK(fixed->gameId == 4711u);
+    CHECK(fixed->masterPasswordVerifier == verifier);
+    CHECK(fixed->empires[0].passwordVerifier == verifier);
+    auto noId = server::parseSetup(std::format("[[empire]]\npassword_verifier = \"{}\"\n", verifier), "w.toml", r);
+    REQUIRE_FALSE(noId.has_value());
+    CHECK(noId.error().find("needs 'game_id'") != std::string::npos);
+    auto oldHash = server::parseSetup("[[empire]]\npassword_hash = \"0123\"\n", "o.toml", r);
+    REQUIRE_FALSE(oldHash.has_value());
+    CHECK(oldHash.error().find("no longer used") != std::string::npos);
+    CHECK_FALSE(server::parseSetup("game_id = 1\n[[empire]]\npassword_verifier = \"pk1:00\"\n", "p.toml", r).has_value());
     // Three difficulty levels (spec 05 §7.1); 0 systems means "rolled from the quadrant size".
     CHECK_FALSE(server::parseSetup("[options]\nai_difficulty = 3\n", "d.toml", r).has_value());
     auto rolled = server::parseSetup("[options]\nsystems = 0\n", "z.toml", r);
@@ -896,65 +1029,6 @@ tier = 2
 
 // ---- Turn-based games over the network ----------------------------------------------------------------------
 
-namespace {
-
-// What a client sent in a turn-based game, in the order the host received
-// it: a command, or End Turn (no command).
-struct Sent {
-    game::EmpireId empire;
-    std::optional<game::Command> command;
-};
-
-bool viewMatches(const net::ClientSession& c, const net::HostSession& host) {
-    return c.state() && game::stateChecksum(*c.state()) == game::stateChecksum(game::redactForEmpire(engineRules(), *host.state(), c.empire()));
-}
-
-// Sends one command and waits for the host's answer.
-void playOne(Loop& loop, net::ClientSession& c, game::Command cmd, std::vector<Sent>& log) {
-    auto request = c.play(cmd);
-    REQUIRE_MESSAGE(request.has_value(), (request ? std::string{} : request.error()));
-    log.push_back({c.empire(), std::move(cmd)});
-    REQUIRE(loop.until([&] { return c.pendingRequests() == 0; }));
-}
-
-// The turn of the client whose turn it is, as a player would play it from
-// its own view: a note, then every idle ship sent exploring, one command at
-// a time; an Attack Sector question is answered with "enter".
-void playTurn(Loop& loop, net::ClientSession& c, std::vector<Sent>& log) {
-    REQUIRE(c.myTurn());
-    playOne(loop, c, game::cmd::SetSystemNote{game::SystemId{0u}, std::format("{} was here on turn {}", c.config().playerName, c.state()->turn)},
-            log);
-    std::vector<game::VehicleId> idle;
-    for (const game::Vehicle& v : c.state()->vehicles)
-        if (v.owner == c.empire() && v.orders.empty() && !v.fleet.valid() && v.movement > 0) idle.push_back(v.id);
-    game::Order explore;
-    explore.kind = game::OrderKind::Explore;
-    for (game::VehicleId id : idle) {
-        game::cmd::SetOrders o;
-        o.vehicle = id;
-        o.orders = {explore};
-        playOne(loop, c, o, log);
-        // Each answer is carried out before the next question is looked at.
-        while (!c.questions().empty()) {
-            const game::EntryQuestion q = c.questions().front();
-            playOne(loop, c, game::cmd::EnterSector{q.vehicle, q.fleet, q.where, true}, log);
-        }
-        CHECK(viewMatches(c, loop.host));
-    }
-}
-
-void endTurn(Loop& loop, net::ClientSession& c, std::vector<Sent>& log) {
-    const game::EmpireId e = c.empire();
-    const uint32_t turn = c.state()->turn;
-    REQUIRE(c.endTurn().has_value());
-    log.push_back({e, std::nullopt});
-    REQUIRE(loop.until([&] {
-        return c.pendingRequests() == 0 && (loop.host.activeEmpire() != e || loop.host.state()->turn != turn) &&
-               !loop.host.turnStatus().processing;
-    }));
-}
-
-} // namespace
 
 TEST_CASE("net: a turn-based network game plays like the same game on one computer") {
     TwoPlayerGame g(true);
@@ -1034,34 +1108,6 @@ TEST_CASE("net: a turn-based network game plays like the same game on one comput
     (void)bobE;
 }
 
-namespace {
-
-// A connection that speaks the protocol by hand, to send what ClientSession would not.
-struct RawPeer {
-    std::optional<net::Connection> conn;
-    std::vector<net::Frame> frames;
-
-    void pump(Loop& loop) {
-        loop.step();
-        net::PollItem item{conn->socket().native(), true, conn->wantsWrite()};
-        net::pollSockets(std::span(&item, 1), 1);
-        conn->flush();
-        if (item.readable) conn->receive();
-        while (auto f = conn->nextFrame()) frames.push_back(std::move(*f));
-    }
-    const net::Frame* find(net::proto::MsgType t) const {
-        for (const auto& f : frames)
-            if (f.type == t) return &f;
-        return nullptr;
-    }
-    bool waitFor(Loop& loop, net::proto::MsgType t) {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (std::chrono::steady_clock::now() < deadline && !find(t) && !conn->failed()) pump(loop);
-        return find(t) != nullptr;
-    }
-};
-
-} // namespace
 
 TEST_CASE("net: turn-based: the host refuses others' commands, and a player reconnects in the middle of a turn") {
     TwoPlayerGame g(true);
@@ -1073,15 +1119,7 @@ TEST_CASE("net: turn-based: the host refuses others' commands, and a player reco
 
     // Bob's own connection, by hand, sends a command in Alice's turn: refused.
     RawPeer raw;
-    auto sock = net::connectTcp("127.0.0.1", host.port());
-    REQUIRE(sock.has_value());
-    raw.conn.emplace(std::move(*sock), size_t{64} << 20);
-    net::proto::Hello hello;
-    hello.app = std::string(net::appVersion());
-    hello.dataSet = game::dataSetIdentity(engineRules());
-    hello.player = "bob";
-    hello.passwordHash = net::hashPassword("b-secret");
-    raw.conn->send(net::proto::MsgType::Hello, hello);
+    REQUIRE(raw.join(loop, host.port(), "bob", "b-secret"));
     REQUIRE(raw.waitFor(loop, net::proto::MsgType::State));
     REQUIRE(loop.until([&] { return g.bob.phase() == net::ClientPhase::Disconnected; }));  // the new connection took over
     net::proto::PlayCommands forged;
@@ -1202,8 +1240,8 @@ TEST_CASE("net: turn-based: a battle in a player's turn is asked about, fought a
     game::GameState s = newEngineGame(13, 2, 12, true);
     s.options.simultaneous = false;
     const game::EmpireId aliceE{0u}, bobE{1u};
-    s.empire(aliceE).passwordHash = net::passwordVerifier(net::hashPassword("a-secret"));
-    s.empire(bobE).passwordHash = net::passwordVerifier(net::hashPassword("b-secret"));
+    s.empire(aliceE).passwordHash = net::passwordVerifier("a-secret", 31);
+    s.empire(bobE).passwordHash = net::passwordVerifier("b-secret", 31);
     // Two warships, one sector apart, in Alice's home system.
     const game::Location home = game::locationOf(s.galaxy, homeworld(s, aliceE).planet);
     auto warship = [&](game::EmpireId owner) {
@@ -1221,6 +1259,7 @@ TEST_CASE("net: turn-based: a battle in a player's turn is asked about, fought a
     for (const game::VehicleId id : {lancer, raider}) s.vehicle(id)->supply = 100000;
     game::SaveInfo info;
     info.gameName = "Skirmish";
+    info.gameId = 31;  // salts the verifiers above
     info.dataSet = game::dataSetIdentity(r);
     info.players = {"alice", "bob"};
     net::HostSession host(r, hostConfig(2, true));
@@ -1297,7 +1336,7 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
         game::EmpireSetup e;
         e.name = std::format("Empire {}", i + 1);
         e.kind = i < 2 ? game::PlayerKind::Human : game::PlayerKind::Computer;
-        e.passwordHash = net::passwordVerifier(net::hashPassword(std::format("pw{}", i)));
+        e.passwordHash = net::passwordVerifier(std::format("pw{}", i), 777);
         setup.empires.push_back(e);
     }
     auto created = game::createGame(r, setup);
@@ -1309,16 +1348,28 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
     info.dataSet = game::dataSetIdentity(r);
     const fs::path gam = dir / "relay.gam";
     REQUIRE(game::saveGame(gam, *created, info).has_value());
+    const net::crypto::KeyPair hostKey = net::crypto::newKeyPair();
+    net::pbem::ProcessOptions opts;
+    opts.hostKey = hostKey;
+    auto keysOf = [&](game::EmpireId e) { return net::passwordKeys(std::format("pw{}", e.value), info.gameId); };
+    auto first = net::pbem::writeTurnFiles(r, gam, dir, hostKey.publicKey);
+    REQUIRE(first.has_value());
+    REQUIRE(first->size() == 1);  // only the player whose turn it is
+    CHECK(first->at(0).first == game::EmpireId{0u});
 
-    // A player's turn on their own copy of the game: commands carried out at
-    // once and recorded in order, Attack Sector answers included.
+    // A player's turn on their own turn file: commands carried out at once on
+    // the view and recorded in order, Attack Sector answers included.
     auto playTurnAt = [&](game::EmpireId e, const std::string& note) {
-        auto copy = game::loadGame(gam);
-        REQUIRE(copy.has_value());
-        game::GameState& s = copy->first;
+        auto tf = net::pbem::readTurnFile(dir / std::format("Relay_{:02}.turn", e.value + 1));
+        REQUIRE(tf.has_value());
+        REQUIRE(tf->empire == e);
+        auto opened = net::pbem::openTurnFile(*tf, keysOf(e));
+        REQUIRE(opened.has_value());
+        auto view = game::deserializeState(opened->view);
+        REQUIRE(view.has_value());
+        game::GameState& s = *view;
         REQUIRE(game::activePlayer(s) == e);
         REQUIRE(s.playerTurn.started);
-        const uint64_t before = game::stateChecksum(s);
         game::EmpireOrders played{e, s.turn, {}};
         auto give = [&](game::Command c) {
             game::applyLive(r, s, e, c);
@@ -1340,24 +1391,33 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
                 give(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, true});
             }
         }
-        auto file = net::pbem::writePlayerTurn(inbox, info, before, played, game::stateChecksum(s), net::hashPassword(std::format("pw{}", e.value)));
+        auto file = net::pbem::writePlayerOrders(inbox, info, played, opened->viewChecksum, keysOf(e), tf->hostKey);
         REQUIRE(file.has_value());
-        return std::pair{*file, s};
+        return std::pair{*file, played};
+    };
+    // What the host's whole game becomes from those commands.
+    auto expect = [&](const game::EmpireOrders& played) {
+        auto loaded = game::loadGame(gam);
+        REQUIRE(loaded.has_value());
+        game::GameState s = loaded->first;
+        net::pbem::readForTurn(r, s);
+        for (const game::Command& c : played.commands) game::applyLive(r, s, played.empire, c);
+        game::endPlayerTurn(r, s, played.empire);
+        return s;
     };
 
     // Empire 1's turn. Empire 2 also sends a file, but it is not its turn, and
-    // an old file of Empire 1 made from another copy of the game is skipped.
+    // a file of Empire 1 made from another turn file is skipped.
     auto [file1, played1] = playTurnAt(game::EmpireId{0u}, "first move");
-    net::pbem::OrdersFile stray{info.gameName, info.gameId, game::EmpireId{0u}, 0, net::hashPassword("pw0"),
-                                game::EmpireOrders{game::EmpireId{0u}, 0, {}}, 12345, 12345};
-    REQUIRE(net::pbem::writeOrdersFile(inbox / "stray.plr", stray).has_value());
-    net::pbem::OrdersFile early{info.gameName, info.gameId, game::EmpireId{1u}, 0, net::hashPassword("pw1"),
-                                game::EmpireOrders{game::EmpireId{1u}, 0, {}}, 1, 1};
-    REQUIRE(net::pbem::writeOrdersFile(inbox / "early.plr", early).has_value());
+    net::pbem::OrdersFile stray{info.gameName, info.gameId, game::EmpireId{0u}, 0, game::EmpireOrders{game::EmpireId{0u}, 0, {}}, 12345, 1};
+    net::pbem::signOrdersFile(stray, keysOf(game::EmpireId{0u}));
+    REQUIRE(net::pbem::writeOrdersFile(inbox / "stray.plr", stray, hostKey.publicKey).has_value());
+    net::pbem::OrdersFile early{info.gameName, info.gameId, game::EmpireId{1u}, 0, game::EmpireOrders{game::EmpireId{1u}, 0, {}}, 1, 1};
+    net::pbem::signOrdersFile(early, keysOf(game::EmpireId{1u}));
+    REQUIRE(net::pbem::writeOrdersFile(inbox / "early.plr", early, hostKey.publicKey).has_value());
 
-    game::GameState expected1 = played1;
-    game::endPlayerTurn(r, expected1, game::EmpireId{0u});
-    auto rep = net::pbem::processGameFile(r, gam, inbox, {});
+    const game::GameState expected1 = expect(played1);
+    auto rep = net::pbem::processGameFile(r, gam, inbox, opts);
     REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
     CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
     CHECK(rep->playedByComputer.empty());
@@ -1365,12 +1425,13 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
     CHECK(rep->turnAfter == 0);
     CHECK(rep->next == "Empire 2");
     CHECK(rep->nextEmpire == game::EmpireId{1u});
+    REQUIRE(rep->turnFiles.size() == 1);
+    CHECK(rep->turnFiles[0].first == game::EmpireId{1u});
     auto warned = [&](std::string_view what) {
         return std::any_of(rep->warnings.begin(), rep->warnings.end(), [&](const std::string& w) { return w.find(what) != std::string::npos; });
     };
     CHECK(warned("not Empire 2's"));
-    CHECK(warned("another copy"));
-    CHECK_FALSE(warned("differs"));  // the replay matched the player's game
+    CHECK(warned("another turn file"));
     CHECK_FALSE(fs::exists(file1));
     CHECK(fs::exists(inbox / "stray.plr"));
     CHECK(fs::exists(inbox / "early.plr"));
@@ -1382,13 +1443,25 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
         CHECK(game::stateChecksum(after->first) == game::stateChecksum(expected1));
         CHECK(noteOf(after->first, game::EmpireId{0u}) == "first move");
         CHECK(game::activePlayer(after->first) == game::EmpireId{1u});
+        // Empire 2's turn file shows nothing of Empire 1's turn but what Empire 2 may see.
+        auto tf = net::pbem::readTurnFile(rep->turnFiles[0].second);
+        REQUIRE(tf.has_value());
+        CHECK_FALSE(net::pbem::openTurnFile(*tf, keysOf(game::EmpireId{0u})).has_value());  // Empire 1 cannot read it
+        auto opened = net::pbem::openTurnFile(*tf, keysOf(game::EmpireId{1u}));
+        REQUIRE(opened.has_value());
+        auto view = game::deserializeState(opened->view);
+        REQUIRE(view.has_value());
+        CHECK(view->seed == 0);  // nor the galaxy's seed, from which the whole map could be rebuilt
+        CHECK(noteOf(*view, game::EmpireId{0u}).empty());
+        CHECK(view->empire(game::EmpireId{0u}).stockpile.isZero());
+        CHECK(view->empire(game::EmpireId{0u}).passwordHash.empty());
+        CHECK(game::stateChecksum(*view) == game::stateChecksum(game::redactForEmpire(r, after->first, game::EmpireId{1u})));
     }
 
     // Empire 2's turn: after it the computer player moves and the game turn ends.
     auto [file2, played2] = playTurnAt(game::EmpireId{1u}, "second move");
-    game::GameState expected2 = played2;
-    game::endPlayerTurn(r, expected2, game::EmpireId{1u});
-    rep = net::pbem::processGameFile(r, gam, inbox, {});
+    const game::GameState expected2 = expect(played2);
+    rep = net::pbem::processGameFile(r, gam, inbox, opts);
     REQUIRE(rep.has_value());
     CHECK(rep->turnAfter == 1);
     CHECK(rep->next == "Empire 1");
@@ -1400,19 +1473,18 @@ TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr o
     }
 
     // Nothing from Empire 1: the computer plays its turn, as for missing orders.
-    rep = net::pbem::processGameFile(r, gam, inbox, {});
+    rep = net::pbem::processGameFile(r, gam, inbox, opts);
     REQUIRE(rep.has_value());
     CHECK(rep->playedByComputer == std::vector<std::string>{"Empire 1"});
     CHECK(rep->next == "Empire 2");
     CHECK(rep->turnAfter == 1);
     (void)file2;
 
-    // The .plr format keeps the checksums.
-    REQUIRE(net::pbem::writeOrdersFile(inbox / "check.plr", early).has_value());
-    auto back = net::pbem::readOrdersFile(inbox / "check.plr");
+    // The .plr format keeps the turn file's checksum.
+    REQUIRE(net::pbem::writeOrdersFile(inbox / "check.plr", early, hostKey.publicKey).has_value());
+    auto back = net::pbem::readOrdersFile(inbox / "check.plr", hostKey);
     REQUIRE(back.has_value());
     CHECK(back->startChecksum == 1);
-    CHECK(back->endChecksum == 1);
 
     std::error_code ec;
     fs::remove_all(dir, ec);
