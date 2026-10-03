@@ -64,9 +64,8 @@ struct Relay {
         if (!client.valid()) {
             client = net::acceptConnection(listener);
             if (!client.valid()) return;
-            auto h = net::connectTcp("127.0.0.1", hostPort);
-            REQUIRE(h.has_value());
-            host = std::move(*h);
+            if (auto h = net::connectTcp("127.0.0.1", hostPort)) host = std::move(*h);
+            REQUIRE(host.valid());
         }
         if (closed) return;
         std::array<uint8_t, 65536> buf{};

@@ -355,7 +355,11 @@ MinGW-w64.
   After a deliberate rules change, print the new values with
   `OPENSE4_PRINT_GOLDEN=1 opense4_tests -tc="determinism*" -s`. With the player's own
   data, the same PBEM game played for 15 turns by the Linux and the Windows
-  `opense4-server` gave identical states.
+  `opense4-server` gave identical states. Over encrypted connections, a Linux
+  `opense4-server` hosted the Windows server's scripted client under Wine for four
+  simultaneous turns, and a Linux and a Windows client for three turn-based ones
+  (2026-10-02): the host's desync check found every Windows copy of the game identical to
+  the view it sent.
 - **Engine code.** It follows the rules of the section above. Serialized and hashed
   values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`, which also takes
   `size_t`, 64 bits everywhere: the Windows and macOS builds reject `long` and

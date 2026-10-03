@@ -542,9 +542,9 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 
 ## Security
 
-Network games run over encrypted connections, and passwords prove themselves
-without ever travelling. This is OpenSE4's own design: the classic game has no
-counterpart.
+Network games run over encrypted connections, play-by-e-mail players get only their
+own view, and passwords prove themselves without ever travelling. This is OpenSE4's own
+design: the classic game has no counterpart.
 
 ### Threat model
 
@@ -572,9 +572,10 @@ counterpart.
   password by signing (the session it logs in on, or a PBEM orders file); hosts and
   saved games keep only a verifier, which can check such a signature but not make one.
   A copy of a saved game, a turn file or an orders file holds nothing anyone could log
-  in or sign with, and an orders file cannot be changed or used for another turn. Weak passwords can still be guessed offline from a verifier or a
-  signature, and anyone who can reach the host can try join passwords there, one
-  connection at a time: do not reuse important passwords.
+  in or sign with, and an orders file cannot be changed or used for another turn. Weak
+  passwords can still be guessed offline from a verifier or a signature, and anyone who
+  can reach the host can try join passwords there, one connection at a time: do not
+  reuse important passwords.
 - **Not protected:** the host itself (it sees and decides everything), the host's key
   file (whoever copies it can pose as the host: it is readable by its owner only), the
   players' own computers, and the timing and size of the traffic. Anyone who can cut
@@ -621,19 +622,20 @@ counterpart.
   readable by their owner only; the players' remembered keys are lines of
   `<address>:<port> <key>` in `known_hosts.txt`. Delete a line there to meet that
   host anew.
+
 ### Other rules
 
 - **The host is authoritative.** It checks every order list against the game rules
-  and applies only the sender's own empire's orders. Garbage, a stale turn or a
-  repeated message never reaches the host's turn processing: unreadable orders and
-  orders for another turn or empire are refused, a repeat replaces (orders) or is
-  answered again (commands), and a malformed message ends that connection only. In a turn-based game it takes
+  and applies only the sender's own empire's orders. In a turn-based game it takes
   commands only from the player whose turn it is. Clients never change the host's
-  game. The host also refuses oversized messages (64 KiB before the login, 16 MiB
+  game. Garbage, a stale turn or a repeated message never reaches the host's turn
+  processing: unreadable orders and orders for another turn or empire are refused, a
+  repeat replaces (orders) or is answered again (commands), and a malformed message
+  ends that connection only. The host also refuses oversized messages (64 KiB before the login, 16 MiB
   after), malformed messages, unknown message types, anything before a valid
   handshake and anything in the clear after it. Connections that go silent are
   dropped.
-- **Each network player gets only their own view.** Each turn, the host sends every
+- **Each player gets only their own view.** Each turn, the host sends every
   player the game as their empire knows it (`game::redactForEmpire`):
   - Removed:
     - other empires' treasuries, research and intelligence queues, logs, history
