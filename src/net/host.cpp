@@ -658,7 +658,12 @@ void HostSession::handleLogin(Peer& peer, std::span<const uint8_t> payload) {
             // A game of OpenSE4 0.6. This player's password is still in that
             // version's form: its old hash proves it once, sealed, and only
             // when the player agreed; the new verifier came from the password
-            // itself, never from that hash.
+            // itself, never from that hash. A host may refuse that altogether.
+            if (!config_.passwordMigration)
+                return reject(peer, code(RR::Password),
+                              std::format("{}'s password is still in the form of OpenSE4 0.6, and this host does not move such passwords "
+                                          "itself. Ask the host to reset your password (Reset Passwords), then log in with the new one.",
+                                          name));
             if (h.legacyPasswordHash.empty())
                 return reject(peer, code(RR::OldPassword),
                               std::format("This game was saved by OpenSE4 0.6, and {}'s password is still in that version's form. To move it to "
@@ -670,7 +675,9 @@ void HostSession::handleLogin(Peer& peer, std::span<const uint8_t> payload) {
                 return reject(peer, code(RR::Password), "Your client sent a password the host cannot use.");
             verifier = h.passwordVerifier;
             slot->verifier = verifier;
-            emit(EventType::Info, std::format("{}'s password is now kept in the current form.", name));
+            emit(EventType::Info, std::format("Password migration: {} ({}) showed the form of OpenSE4 0.6 of their password once; the "
+                                              "password is kept in the current form from now on.",
+                                              name, state_ ? state_->empires[slotIndex(*slot)].name : std::string("lobby")));
         } else if (!checkPasswordSignature(verifier, digest, h.passwordProof)) {
             return reject(peer, code(RR::Password), otherWork(verifier, h.passwordVerifier, name).value_or(std::format("Wrong password for {}.", name)));
         }

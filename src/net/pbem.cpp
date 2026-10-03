@@ -401,7 +401,7 @@ std::expected<fs::path, std::string> writePlayerOrders(const fs::path& dir, cons
 // ---- The host's processing ---------------------------------------------------------------------------
 
 std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, game::GameState& state, const game::SaveInfo& info,
-                                                      const fs::path& ordersDir, const crypto::KeyPair& hostKey) {
+                                                      const fs::path& ordersDir, const crypto::KeyPair& hostKey, bool passwordMigration) {
     ProcessReport rep;
     rep.turnBefore = state.turn;
     auto refused = [&](const game::TurnResult& r) {
@@ -495,6 +495,12 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
         // the clear, so no key may come from it).
         std::string upgrade;
         if (isLegacyVerifier(e.passwordHash)) {
+            if (!passwordMigration) {
+                rep.warnings.push_back(std::format("{}: {}'s password is still in the form of OpenSE4 0.6, and this host does not move such "
+                                                   "passwords itself: reset it (Reset Passwords)",
+                                                   name, e.name));
+                continue;
+            }
             if (!checkLegacyPassword(e.passwordHash, f->legacyPasswordHash)) {
                 rep.warnings.push_back(std::format("{}: wrong password for {}", name, e.name));
                 continue;
@@ -549,7 +555,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
     for (auto& c : best)
         if (c && !c->upgrade.empty()) {
             state.empire(c->file.empire).passwordHash = c->upgrade;
-            rep.warnings.push_back(std::format("{}'s new password counts from now on", state.empire(c->file.empire).name));
+            rep.migratedPasswords.push_back(state.empire(c->file.empire).name);
         }
 
     if (turnBased) {
@@ -622,7 +628,7 @@ std::expected<ProcessReport, std::string> processGameFileWithKeys(const game::Ru
     for (game::EmpireId e : options.resetPasswords)
         if (!e.valid() || e.index() >= state.empires.size()) return std::unexpected(std::string("Reset Passwords names an empire that does not exist."));
 
-    auto rep = processTurn(rules, state, info, ordersDir, options.host.box);
+    auto rep = processTurn(rules, state, info, ordersDir, options.host.box, options.passwordMigration);
     if (!rep) return rep;
     // The new passwords win over those the orders files carried (spec 06 §1.9).
     for (game::EmpireId e : options.resetPasswords) {

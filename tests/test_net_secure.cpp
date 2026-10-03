@@ -639,6 +639,10 @@ TEST_CASE("net security: a wrong master password gives no admin rights, and old 
     CHECK(loop.clientSaw(0, EventType::Rejected)->text.find("Wrong password") != std::string::npos);
     CHECK_FALSE(bob.admin());
     CHECK_FALSE(bob.config().sendOldPassword);  // agreed once, for that login
+    // The host's log says so.
+    CHECK(std::any_of(loop.hostEvents.begin(), loop.hostEvents.end(), [](const net::Event& e) {
+        return e.type == EventType::Info && e.text.starts_with("Password migration: bob");
+    }));
     const std::string& upgraded = host.state()->empire(game::EmpireId{1u}).passwordHash;
     CHECK(upgraded == net::passwordVerifier("b-secret", info.gameId));
     CHECK_FALSE(net::checkPassword(upgraded, net::legacyPasswordHash("b-secret"), info.gameId));
@@ -655,6 +659,39 @@ TEST_CASE("net security: a wrong master password gives no admin rights, and old 
     REQUIRE(loop2.until([&] { return alice.state() != nullptr; }));
     CHECK(alice.admin());
     CHECK(host.state()->empire(game::EmpireId{0u}).passwordHash == net::passwordVerifier("a-secret", info.gameId));
+}
+
+TEST_CASE("net security: a host may refuse to move passwords of OpenSE4 0.6") {
+    game::GameSetup setup;
+    setup.seed = 5;
+    setup.options.systemCount = 8;
+    for (int i = 0; i < 2; ++i) {
+        game::EmpireSetup e;
+        e.kind = game::PlayerKind::Human;
+        setup.empires.push_back(e);
+    }
+    auto s = game::createGame(engineRules(), setup);
+    REQUIRE(s.has_value());
+    s->empire(game::EmpireId{0u}).passwordHash = net::legacyPasswordVerifier(net::legacyPasswordHash("a-secret"));
+    game::SaveInfo info;
+    info.gameName = "Old Game";
+    info.gameId = 52;
+    info.dataSet = game::dataSetIdentity(engineRules());
+    info.players = {"alice", "bob"};
+    net::HostConfig cfg = hostConfig(2);
+    cfg.passwordMigration = false;
+    net::HostSession host(engineRules(), cfg);
+    REQUIRE(host.resume(*s, info).has_value());
+    net::ClientConfig aliceCfg = clientConfig(host, "alice", "a-secret");
+    aliceCfg.hostKey = host.hostKey();  // trusted, and the player agreed: still refused
+    aliceCfg.sendOldPassword = true;
+    net::ClientSession alice(aliceCfg);
+    Loop loop(host, {&alice});
+    REQUIRE(alice.connect().has_value());
+    REQUIRE(loop.until([&] { return loop.clientSaw(0, EventType::Rejected) != nullptr; }));
+    CHECK(loop.clientSaw(0, EventType::Rejected)->text.find("reset your password") != std::string::npos);
+    CHECK(net::isLegacyVerifier(host.state()->empire(game::EmpireId{0u}).passwordHash));
+    CHECK_FALSE(std::any_of(loop.hostEvents.begin(), loop.hostEvents.end(), [](const net::Event& e) { return e.text.starts_with("Password migration"); }));
 }
 
 TEST_CASE("net security: a player can set only a password value of the current kind") {

@@ -896,10 +896,29 @@ TEST_CASE("net: a PBEM game of OpenSE4 0.6 moves to the new passwords with its p
     }
     net::pbem::ProcessOptions opts;
     opts.host = pbemHost;
+    {
+        // A host that does not move 0.6 passwords itself refuses the files
+        // (and keeps them); such empires get a password by Reset Passwords.
+        const fs::path copy = tmp / "refusing.gam";
+        fs::copy_file(gam, copy);
+        net::pbem::ProcessOptions refusing = opts;
+        refusing.passwordMigration = false;
+        refusing.deleteProcessed = false;
+        refusing.turnFilesDir = tmp / "refusing";
+        fs::create_directories(refusing.turnFilesDir);
+        auto kept = net::pbem::processGameFile(r, copy, tmp.path(), refusing);
+        REQUIRE_MESSAGE(kept.has_value(), (kept ? std::string{} : kept.error()));
+        CHECK(kept->submitted.empty());
+        CHECK(kept->migratedPasswords.empty());
+        CHECK(std::any_of(kept->warnings.begin(), kept->warnings.end(),
+                          [](const std::string& w) { return w.find("does not move such passwords") != std::string::npos; }));
+        CHECK(net::isLegacyVerifier(game::loadGame(copy)->first.empire(game::EmpireId{0u}).passwordHash));
+    }
     auto rep = net::pbem::processGameFile(r, gam, tmp.path(), opts);
     REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
     CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
     CHECK(rep->playedByComputer == std::vector<std::string>{"Empire 2"});
+    CHECK(rep->migratedPasswords == std::vector<std::string>{"Empire 1"});  // the host's report says so
     CHECK(std::any_of(rep->warnings.begin(), rep->warnings.end(), [](const std::string& w) { return w.find("different new passwords") != std::string::npos; }));
     CHECK(fs::exists(tmp / "mine.plr"));      // kept for the host to look at
     CHECK(fs::exists(tmp / "impostor.plr"));

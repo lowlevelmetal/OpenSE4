@@ -41,7 +41,7 @@ Usage:
   opense4-server pbem new --setup=FILE.toml --out=GAME.gam [--turn-files=DIR]
   opense4-server pbem process --game=GAME.gam --orders=DIR [--password=PW] [--keep-orders]
                               [--reset-passwords=N,M]  (new passwords, shown here only)
-                              [--turn-files=DIR]
+                              [--turn-files=DIR] [--no-password-migration]
   opense4-server pbem turn-files --game=GAME.gam [--out=DIR]
   opense4-server pbem orders --turn=FILE.turn [--password=PW] [--out=DIR] [--trust-new-host-key]
                              [--new-password=PW --confirm-old-password]  (a game of OpenSE4 0.6)
@@ -75,6 +75,10 @@ Network game options:
   --turn-timeout=SEC     Process the turn after SEC seconds even if orders are missing
                          (turn-based: end a player's turn after SEC seconds)
   --load=GAME.gam        Continue a saved game (players reconnect with name and password)
+  --no-password-migration  A game of OpenSE4 0.6: refuse to move a player's password
+                         from that version's form (the player shows its hash once);
+                         such players get a password by Reset Passwords only.
+                         Each move is logged ("Password migration: ...")
   --save-dir=DIR         Where autosaves go (default: the current directory, or the
                          loaded game's file)
   --autosave=N           Save every N turns (default 1; 0 = only when stopping)
@@ -102,8 +106,11 @@ rewrites GAME.gam (the previous turn is kept as GAME.gam.bak), writes the new
 turn files and deletes the .plr files it used (--keep-orders keeps them). In a
 turn-based game (setup file: simultaneous = false) "process" plays one
 player's turn from that player's .plr and names the player whose turn file to
-send next. "turn-files" writes the current turn files again (a game of OpenSE4
-0.6, or a lost file). "orders" writes an empty .plr from a turn file, as a
+send next. A game of OpenSE4 0.6 moves each empire's password to the current
+form with that player's first .plr, which shows the old form's hash once
+("password migration" in the report); --no-password-migration refuses that
+(reset those passwords instead). "turn-files" writes the current turn files
+again (a game of OpenSE4 0.6, or a lost file). "orders" writes an empty .plr from a turn file, as a
 player's game would: it trusts the turn file's host key on first use per game
 (known_hosts.txt in OpenSE4's user folder; --trust-new-host-key accepts a
 changed one), and for an empire of OpenSE4 0.6 shows the old password's form
@@ -288,7 +295,7 @@ int runServer(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
                              "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key"},
-                            {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "verbose", "help", "version"});
+                            {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "no-password-migration", "verbose", "help", "version"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
     if (o.has("help")) return usage();
@@ -326,6 +333,7 @@ int runServer(std::span<char*> args) {
     cfg.joinPassword = o.get("join-password");
     cfg.upnp.enabled = !o.has("no-upnp");
     cfg.lanDiscovery = !o.has("no-lan-discovery");
+    cfg.passwordMigration = !o.has("no-password-migration");
     // The host's identity: players' games remember its key and refuse a host
     // that shows another (docs/MULTIPLAYER.md, "Security").
     auto hostKey = loadHostKey(o, KeyUse::Network);
@@ -540,7 +548,8 @@ int pbemTurnFiles(std::span<char*> args) {
 }
 
 int pbemProcess(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords", "turn-files", "host-key"}, {"keep-orders", "allow-data-mismatch", "help"});
+    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords", "turn-files", "host-key"},
+                       {"keep-orders", "allow-data-mismatch", "no-password-migration", "help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game") || !o->has("orders")) return fail("pbem process needs --game=GAME.gam and --orders=DIR", 2);
@@ -553,6 +562,7 @@ int pbemProcess(std::span<char*> args) {
     options.host = hostKey->pbem;
     options.deleteProcessed = !o->has("keep-orders");
     options.allowDataSetMismatch = o->has("allow-data-mismatch");
+    options.passwordMigration = !o->has("no-password-migration");
     if (o->has("turn-files")) options.turnFilesDir = o->get("turn-files");
     // --reset-passwords=2,5: Reset Passwords for those empires (numbers from 1).
     const std::string resets = o->get("reset-passwords");
@@ -577,6 +587,9 @@ int pbemProcess(std::span<char*> args) {
     for (const auto& s : rep->submitted) std::printf("  orders: %s\n", s.c_str());
     for (const auto& s : rep->playedByComputer) std::printf("  no orders, played by the computer: %s\n", s.c_str());
     for (const auto& s : rep->warnings) std::printf("  warning: %s\n", s.c_str());
+    for (const auto& s : rep->migratedPasswords)
+        std::printf("  password migration: %s showed the form of OpenSE4 0.6 of its password once; its new password counts from now on.\n",
+                    s.c_str());
     for (const auto& s : rep->rejectedCommands) std::printf("  refused: %s\n", s.c_str());
     if (options.deleteProcessed && !rep->used.empty()) std::printf("  deleted %zu processed .plr files\n", rep->used.size());
     if (!rep->next.empty()) std::printf("Next: empire %u (%s).\n", rep->nextEmpire.value + 1, rep->next.c_str());

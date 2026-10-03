@@ -64,6 +64,11 @@ struct HostConfig {
     // The host's long-term key (secure::loadOrCreateHostKey), which players
     // pin; none: a new one for this session only.
     std::optional<crypto::KeyPair> hostKey;
+    // A game of OpenSE4 0.6 (resume): a player whose password is still in that
+    // version's form may move it to the current form by showing the old
+    // form's hash once (with consent, to a host whose key the player trusts).
+    // False: refused; such players get a password only by Reset Passwords.
+    bool passwordMigration = true;
     bool autoStart = false;            // start as soon as every human slot is taken and ready
     int turnTimeoutSeconds = 0;        // process the turn after this long even if orders are missing; 0: wait
     PortMapperOptions upnp;            // UPnP port mapping (on by default)

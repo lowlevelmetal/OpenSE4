@@ -229,6 +229,11 @@ struct ProcessOptions {
     bool allowDataSetMismatch = false;
     // Where the next turn files go (empty: next to the game file).
     std::filesystem::path turnFilesDir;
+    // A game of OpenSE4 0.6: an empire whose password is still in that
+    // version's form moves to a new one with an orders file that shows the
+    // old form's hash once (the player agreed). False: such files are
+    // refused, and the empire gets a password only by Reset Passwords.
+    bool passwordMigration = true;
     // Reset Passwords (spec 06 §1.9, simultaneous games): these empires get a
     // new six-digit password (net::resetPassword), written in once the turn's
     // orders have been read; the report lists them for the host only.
@@ -241,6 +246,7 @@ struct ProcessReport {
     std::vector<std::string> submitted;          // empire names with orders
     std::vector<std::string> playedByComputer;   // human empires without orders
     std::vector<std::string> warnings;           // skipped files and why
+    std::vector<std::string> migratedPasswords;  // empires moved from an OpenSE4 0.6 password to a new one
     std::vector<std::string> rejectedCommands;   // "Empire: Command: reason"
     std::vector<std::filesystem::path> used;     // .plr files that were processed
     // Turn-based games: one player's turn was played (the one in `submitted`
@@ -260,12 +266,14 @@ struct ProcessReport {
 // empire, the turn file they were made from, the password's signature and
 // the password values the orders set. Of two files for one empire the higher
 // revision counts; two different moves of an OpenSE4 0.6 empire to a new
-// password are both refused. Does not write anything.
+// password are both refused, and every one when `passwordMigration` is false.
+// Does not write anything.
 // Turn-based games: the turn of the player whose turn it is, from its .plr,
 // or played by the computer when none came; then the game plays on to the
 // next human.
 std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, game::GameState& state, const game::SaveInfo& info,
-                                                      const std::filesystem::path& ordersDir, const crypto::KeyPair& hostKey);
+                                                      const std::filesystem::path& ordersDir, const crypto::KeyPair& hostKey,
+                                                      bool passwordMigration = true);
 
 // The whole host step: load the .gam (checking the master password and the
 // data set), process the turn, save the .gam in place, write the turn files
