@@ -1,0 +1,16 @@
+# A tutorial for the input scripts (docs/BUILDING.md "Input scripts"): one step,
+# finished with Finish, so that the Learn window has a lesson done.
+title = "Quick lesson"
+summary = "One step: press Finish."
+minutes = 1
+
+[setup]
+seed = 404
+computer_players = 1
+quadrant_size = "small"
+events = "none"
+
+[[step]]
+title = "Done already"
+text = "Nothing to do here: press **Finish**."
+highlight = ["lesson:panel"]

@@ -1,0 +1,68 @@
+# A tutorial for the input scripts (docs/BUILDING.md "Input scripts"): the lesson
+# panel over the game's prompts (Create Fleet, Select Planet to Colonize), its
+# keys, and resuming (step 4 works in Fleet Transfer, which step 3 opens).
+title = "Panel check"
+summary = "A fleet and a colony ship, to check the lesson panel."
+minutes = 3
+
+[setup]
+seed = 404
+computer_players = 2
+quadrant_size = "small"
+events = "none"
+starting_ships = ["Attack Ship", "Attack Ship", "Colony"]
+
+[[step]]
+title = "Welcome"
+text = "This lesson checks the panel. Press **Next**."
+highlight = ["lesson:panel"]
+manual = "notes#keys"
+
+[[step]]
+title = "Select a ship"
+text = "Click the right arrow of the ship selector."
+highlight = ["cycle:ship"]
+done = { selected = "ship" }
+manual = "notes"
+
+[[step]]
+title = "Fleet Transfer"
+text = "Press **Fleet Transfer**."
+highlight = ["order:fleet-transfer"]
+allow = ["cycle:ship"]
+done = { window = "fleet-transfer" }
+
+[[step]]
+title = "Create a fleet"
+text = "Press **Create Fleet**, then **OK**."
+highlight = ["fleet-transfer:create-fleet"]
+done = { command = "CreateFleet" }
+
+[[step]]
+title = "Close it"
+text = "Close Fleet Transfer."
+highlight = ["fleet-transfer:close"]
+done = { not = { window = "fleet-transfer" } }
+
+[[step]]
+title = "Planets"
+text = "Open the Planets window."
+highlight = ["command:planets"]
+done = { window = "planets" }
+
+[[step]]
+title = "Colonizable"
+text = "Show the colonizable planets."
+highlight = ["planets:colonizable"]
+done = { tab = "planets:colonizable" }
+
+[[step]]
+title = "Send the colony ship"
+text = "Press **Send Colony Ship**, pick a planet and press **Colonize**."
+highlight = ["planets:send-colony-ship"]
+done = { order = "colonize" }
+
+[[step]]
+title = "Well done"
+text = "Press **Finish**."
+highlight = ["lesson:panel"]

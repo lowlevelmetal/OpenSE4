@@ -133,6 +133,7 @@ struct UiRequests {
     // The learning system: replace the game with a lesson's (Learn window),
     // leave the running lesson (its panel), show or hide the lesson panel.
     std::optional<std::pair<learn::LessonKind, std::string>> startLesson;
+    std::optional<std::pair<learn::LessonKind, std::string>> resumeLesson;   // at the place the player left it
     bool leaveLesson = false;
     bool toggleLessonPanel = false;
 };

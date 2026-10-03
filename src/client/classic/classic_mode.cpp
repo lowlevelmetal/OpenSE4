@@ -9,9 +9,11 @@
 #include "client/classic/settings.hpp"
 #include "client/script/items.hpp"
 #include "client/ui/theme.hpp"
+#include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
 #include "learn/markdown.hpp"
+#include "learn/resume.hpp"
 
 #include "core/log.hpp"
 
@@ -160,7 +162,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             step = static_cast<size_t>(std::max(1, std::atoi(slug.c_str() + colon + 1))) - 1;
             slug.resize(colon);
         }
-        if (auto problem = mode->startLesson(training ? learn::LessonKind::Training : learn::LessonKind::Tutorial, slug)) {
+        if (auto problem = mode->startLesson(training ? learn::LessonKind::Training : learn::LessonKind::Tutorial, slug, false)) {
             error = *problem;
             return nullptr;
         }
@@ -402,6 +404,7 @@ std::optional<std::string> ClassicMode::openAutomationWindow(const std::string& 
 }
 
 ClassicMode::~ClassicMode() {
+    keepLessonPlace();   // quitting the program during a tutorial
     screens_.clear();
     lesson_.reset();
     ui_.reset();
@@ -421,6 +424,7 @@ void ClassicMode::applyLayout() {
 }
 
 void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
+    keepLessonPlace();   // the game it replaces may be a tutorial's
     screens_.clear();
     lesson_.reset();
     lock_.set({});
@@ -454,7 +458,7 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     front_.reset();
 }
 
-std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, const std::string& slug) {
+std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, const std::string& slug, bool chosen) {
     const learn::Library& lib = learn_->library;
     const learn::Lesson* lesson = lib.lesson(kind, slug);
     const char* what = kind == learn::LessonKind::Tutorial ? "tutorial" : "training game";
@@ -481,6 +485,8 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
     learn::applySetup(lesson->setup, setup, extras);
     auto session = startLocalGame(rules_, setup, extras);
     if (!session) return std::format("The {} '{}' could not start its game: {}", what, slug, session.error());
+    // A place left in an older version of the lesson is of no use any more.
+    if (const auto place = lessonPlace(kind, slug); chosen && place && lessonPlaceProblem(*lesson, *place)) forgetLessonPlace(kind, slug);
     startGame(std::move(*session));
     lesson_ = std::make_unique<LessonRunner>(*lesson, *session_);
     // Free Play is for the lesson it was switched on in: every lesson starts locked.
@@ -488,12 +494,79 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
         settings().learnFreePlay = false;
         saveSettings();
     }
+    lessonResumable_ = chosen;
     openLogOnTurn_ = false;
+    if (chosen) markLessonsStarted();
     log::info("Started the {} '{}'", what, slug);
     return std::nullopt;
 }
 
+std::optional<std::string> ClassicMode::resumeLesson(learn::LessonKind kind, const std::string& slug) {
+    const learn::Lesson* lesson = learn_->library.lesson(kind, slug);
+    const std::optional<LessonPlace> place = lessonPlace(kind, slug);
+    if (!lesson || !place) return startLesson(kind, slug);
+    // The place must still fit the lesson, and its game must load.
+    std::optional<std::string> problem = lessonPlaceProblem(*lesson, *place);
+    std::unique_ptr<ClassicSession> loaded;
+    if (!problem) {
+        const BusyPointer busy;
+        auto session = ClassicSession::load(rules_, lessonPlaceFile(kind, slug));
+        if (session) {
+            loaded = std::move(*session);
+        } else {
+            log::warn("{}", session.error());
+            problem = "Its saved game could not be read";
+        }
+    }
+    if (problem) {
+        log::warn("The tutorial '{}' cannot resume at step {}: {}", slug, place->resumeAt + 1, *problem);
+        forgetLessonPlace(kind, slug);
+        if (auto failed = startLesson(kind, slug)) return failed;
+        lessonError_ = *problem + ", so the lesson starts again from its first step.";
+        return std::nullopt;
+    }
+    // Resuming the lesson being played: its place now is not kept over the one resumed.
+    if (lesson_ && lesson_->lesson().kind == kind && lesson_->lesson().slug == slug) lessonResumable_ = false;
+    startGame(std::move(loaded));
+    lesson_ = std::make_unique<LessonRunner>(*lesson, *session_);
+    lesson_->jumpTo(*ui_, place->resumeAt);
+    lessonResumable_ = true;
+    openLogOnTurn_ = false;
+    markLessonsStarted();
+    log::info("Resumed the tutorial '{}' at step {}", slug, place->resumeAt + 1);
+    return std::nullopt;
+}
+
+void ClassicMode::keepLessonPlace() {
+    // A tutorial the player leaves before its end keeps its game and the step
+    // it was at (docs/LEARNING.md "Resuming a lesson"). Its game is written
+    // apart from the player's saves (it is not the game Resume Game loads).
+    if (!lesson_ || !session_ || !lessonResumable_) return;
+    lessonResumable_ = false;
+    const learn::Lesson& l = lesson_->lesson();
+    if (l.kind != learn::LessonKind::Tutorial || session_->kind() != SessionKind::Local) return;
+    if (lesson_->progress().result() != learn::LessonProgress::Result::None) {
+        forgetLessonPlace(l.kind, l.slug);
+        return;
+    }
+    const size_t active = lesson_->progress().active();
+    if (active == 0) return;   // nothing done yet: an older place stays
+    const std::filesystem::path file = lessonPlaceFile(l.kind, l.slug);
+    std::error_code ec;
+    std::filesystem::create_directories(file.parent_path(), ec);
+    game::SaveInfo info;
+    info.gameName = l.title;
+    info.dataSet = session_->rules().data().dataDir.parent_path().filename().string();
+    if (auto saved = game::saveGame(file, session_->state(), info); !saved) {
+        log::warn("Could not keep the place in the tutorial '{}': {}", l.slug, saved.error());
+        return;
+    }
+    rememberLessonPlace(l.kind, l.slug, {active, learn::resumeStep(l, active), learn::lessonFingerprint(l)});
+    log::info("Kept the place in the tutorial '{}' at step {}", l.slug, active + 1);
+}
+
 void ClassicMode::quitToLearn(learn::LessonKind kind) {
+    keepLessonPlace();
     screens_.clear();
     lesson_.reset();
     lock_.set({});
@@ -632,7 +705,14 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ctx.go = [this](FrontId id) { nextFront_ = id; };
         ctx.quit = [this] { quit_ = true; };
         ctx.learn = learn_.get();
-        ctx.startLesson = [this](learn::LessonKind kind, const std::string& slug) { pendingLesson_ = {kind, slug}; };
+        ctx.startLesson = [this](learn::LessonKind kind, const std::string& slug) {
+            pendingLesson_ = {kind, slug};
+            pendingResume_ = false;
+        };
+        ctx.resumeLesson = [this](learn::LessonKind kind, const std::string& slug) {
+            pendingLesson_ = {kind, slug};
+            pendingResume_ = true;
+        };
         ctx.loadedFromIntro = [this] { loadedFromIntro_ = true; };
         if (front_) {
             const script::ItemScope scope("front");
@@ -643,7 +723,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             // Started after the screen drew: starting replaces it.
             const auto [kind, slug] = *pendingLesson_;
             pendingLesson_.reset();
-            if (auto problem = startLesson(kind, slug)) {
+            if (auto problem = pendingResume_ ? resumeLesson(kind, slug) : startLesson(kind, slug)) {
                 frontError_ = *problem;
                 front_ = makeFrontScreen(FrontId::Intro);
             } else {
@@ -814,6 +894,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     }
     if (ui.requests.quitToIntro) {
         ui.requests.quitToIntro = false;
+        keepLessonPlace();
         screens_.clear();
         lesson_.reset();
         lock_.set({});
@@ -829,6 +910,12 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         const auto [kind, slug] = *ui.requests.startLesson;
         ui.requests.startLesson.reset();
         if (auto problem = startLesson(kind, slug)) lessonError_ = *problem;
+        return true;
+    }
+    if (ui.requests.resumeLesson) {
+        const auto [kind, slug] = *ui.requests.resumeLesson;
+        ui.requests.resumeLesson.reset();
+        if (auto problem = resumeLesson(kind, slug)) lessonError_ = *problem;
         return true;
     }
     if (lesson_) {

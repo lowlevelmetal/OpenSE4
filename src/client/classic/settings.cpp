@@ -74,6 +74,18 @@ std::string settingsToToml(const ClassicSettings& s) {
     toml::table learn;
     learn.insert("done", std::move(done));
     learn.insert("free_play", s.learnFreePlay);
+    learn.insert("started", s.learnStarted);
+    // Step numbers from 1, as the panel shows them.
+    toml::array resume;
+    for (const ClassicSettings::ResumeRecord& r : s.learnResume) {
+        toml::table t;
+        t.insert("lesson", r.lesson);
+        t.insert("left_at", int64_t{r.leftAt} + 1);
+        t.insert("resume_at", int64_t{r.resumeAt} + 1);
+        t.insert("fingerprint", r.fingerprint);
+        resume.push_back(std::move(t));
+    }
+    learn.insert("resume", std::move(resume));
     toml::table root;
     root.insert("options", std::move(options));
     root.insert("sound", std::move(sound));
@@ -109,6 +121,20 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
         for (const toml::node& d : *done)
             if (auto v = d.value<std::string>()) s.learnDone.push_back(*v);
     if (auto v = root["learn"]["free_play"].value<bool>()) s.learnFreePlay = *v;
+    if (auto v = root["learn"]["started"].value<bool>()) s.learnStarted = *v;
+    if (const toml::array* resume = root["learn"]["resume"].as_array())
+        for (const toml::node& n : *resume) {
+            const toml::table* t = n.as_table();
+            if (!t) continue;
+            ClassicSettings::ResumeRecord r;
+            r.lesson = (*t)["lesson"].value_or(std::string{});
+            const int64_t left = (*t)["left_at"].value_or(int64_t{0}), at = (*t)["resume_at"].value_or(int64_t{0});
+            r.fingerprint = (*t)["fingerprint"].value_or(std::string{});
+            if (r.lesson.empty() || left < 1 || at < 1 || at > left || left > 10000) continue;   // not one of ours
+            r.leftAt = uint32_t(left - 1);
+            r.resumeAt = uint32_t(at - 1);
+            s.learnResume.push_back(std::move(r));
+        }
     return s;
 }
 

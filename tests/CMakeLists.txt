@@ -34,6 +34,7 @@ add_executable(opense4_tests
     test_learn.cpp
     test_learn_client.cpp
     test_lesson_lock.cpp
+    test_lesson_panel.cpp
     test_main_window.cpp
     test_maps.cpp
     test_movement.cpp
@@ -76,6 +77,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/layout.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_lock.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_panel.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_line.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_replay.cpp

@@ -3,7 +3,9 @@
 OpenSE4 teaches the game in three ways, all reached from the **Learn** window. The
 intro screen's **Tutorial** button opens it on its Tutorials tab and **Scenario** on its
 Training tab (the original's intro has both buttons); **Manual** opens the manual
-alone; during a game the Game Menu's **Learn** button opens it:
+alone; during a game the Game Menu's **Learn** button opens it. Until a first lesson is
+started on the computer (and none is done), a note above the intro's buttons points at
+**Tutorial**, which pulses (OpenSE4's own; `[learn] started` in the client settings):
 
 | Part | What it is |
 |---|---|
@@ -191,13 +193,48 @@ The same tags say what the player may use while the input lock is on (next secti
 ## The lesson panel
 
 A movable panel shows the lesson's title, the step (N of M) or the objectives with check
-marks, and the text. Until the player moves it, it sits over the galaxy panel while
-only the main window shows, and at the bottom left of the system view while a window is
-open, where it hides the least of the classic windows (their buttons are on the right).
-When that spot would hide what the active step outlines or allows, it takes the system
-view's top left or a corner of the screen instead: the spot that hides the smallest share
-of the step's tags wins (each tag counts by the share of it hidden, so a small button
-weighs as much as a large map). Once dragged, it stays where it was put.
+marks, and the text.
+
+**Its size** follows the text (`client/classic/lesson_panel.hpp` holds the layout rules,
+apart from drawing, for the tests):
+
+- It is 330 frame pixels wide times the **Text size** setting (Settings), at most 45% of
+  the screen's width, and as tall as its text needs, at most 55% of the screen's height;
+  longer text scrolls. The height is measured as the text is drawn and used from the next
+  frame on.
+- Its buttons flow into rows: each is at least as wide as its label at the text size, a
+  row ends where the next one no longer fits, and each row fills the panel's width (equal
+  widths when every label fits in one). Buttons never overlap at any text size. The title
+  fits the title strip at every text size.
+- A line above the buttons is kept for a hint about getting back on track (when the
+  lesson has one to show).
+
+**Its place**, until the player drags it: over the galaxy panel while only the main
+window shows; while a window is open, in a free column beside that window when the screen
+is wide enough for one (1920x1080: the space left and right of a centred window), else at
+the bottom left of the system view, where it hides the least of the classic windows (their
+buttons are on the right). When that place would hide what the active step outlines or
+allows, or an open prompt, it takes the system view's top left or a corner of the screen
+instead: the place that hides the smallest share wins. Each tag counts by the share of it
+hidden, so a small button weighs as much as a large map; an allowed tag counts half; a
+prompt or pop-up counts as much as an outlined tag. When every place hides something, the
+place taken stays while it is about as good as the best, so the panel does not jump between
+near-equal places as its height settles.
+
+**Dragged**, it stays where it was put (kept on the screen as its size changes), until a
+later step would have more than half of what it outlines under it: then it places itself
+again.
+
+**Above and below.** The panel lies above the classic windows (which take the front when
+they open) and under every prompt and pop-up: the game's questions, error boxes, the
+windows' own Yes/No and name boxes, combo lists, and the lesson's own Leave question and
+result. Their buttons are never under it, wherever it was dragged.
+
+**Small screens.** In the 800x600 layout an action step the lesson is at shows a
+*compact* panel, so that the window the step is about stays in view: the start of the
+step (about four lines, which scroll) and Back, Next and Read More. **More**, in the title
+strip, shows the whole step and every button for that step; **Less** makes any step's panel
+compact. Explanation steps, and steps read again with Back, show whole.
 
 - Tutorials: Back and Next. A step with a `done` condition moves on by itself the
   moment its condition holds (at once if it already holds when it is shown); Next stays
@@ -226,13 +263,46 @@ weighs as much as a large map). Once dragged, it stays where it was put.
   and Next through its series. Pages come up at the start of their turn.
 - **Hide** closes the panel; Ctrl+H or the status bar's **T** button re-opens it. A new
   step, page or hint opens it again.
+- **Keys** (OpenSE4's own, bound in Settings, Controls, under "Lesson panel", and listed in
+  Help, Hotkeys): while the panel shows and no prompt is open, **Alt+N** presses Next (or
+  Finish; in a training game the next page), **Alt+B** Back (the previous page), **Alt+K**
+  Skip when the panel offers it, and **Alt+R** Read More. Alt and the button's first
+  letter, as in a set-up wizard; no prompt answers to B, K or R, and N in a Yes/No box is
+  No. Each button's tooltip names its key.
 - Leave Lesson and Start (in the Learn window) ask with a Yes/No box: Y means Yes; N,
   Esc and Enter mean No (spec 06 §3.4). Esc or Enter in the result box is Keep Playing.
 
 Finishing a lesson or winning a training game shows the result (Next Lesson, Keep
 Playing, Learn); losing one offers Try Again. The Learn window then marks it done.
 Progress is stored with the client settings (`classic_settings.toml`, `[learn]
-done`), never in the game.
+done`), never in the game; so is the place a tutorial was left at (next section).
+
+## Resuming a lesson
+
+A tutorial the player leaves before its end keeps its place: **Leave** in the panel,
+starting another lesson or loading a game, Quit to the intro, or quitting the program.
+Its game is saved apart from the player's saves (`<user data>/lessons/tutorial-<slug>.gam`;
+it never becomes the game the intro's Resume Game loads), and the client settings keep the
+step (`[[learn.resume]]`: `lesson`, `left_at`, `resume_at`, steps from 1, and the lesson's
+`fingerprint`). The Learn window then offers **Resume (step N)** for it (a double click on
+its row resumes too); resuming loads that game and shows step N as if the steps before it
+were done (`LessonProgress::jumpTo`: the step's "since" counters start again).
+
+- **Where it resumes** (`learn::resumeStep`): open windows and what is in them (a design
+  being built, a sample battle) are not part of the game. A step that works in a window
+  (one of its tags lies in it) goes back through the steps before it that work in that
+  window or open it, to the first of them: left in the designer, the lesson resumes at the
+  step that opens Designs. A step in the main window resumes as it is. Steps whose
+  condition already holds in the saved game move on at once.
+- **When it cannot**: the place keeps a fingerprint of the lesson's steps
+  (`learn::lessonFingerprint`: their number, tags, keys and conditions; rewording keeps
+  it). If the lesson's steps changed since, or its game is missing, the Learn window says
+  so and offers only Start; if the game cannot be read, Resume starts the lesson afresh
+  with a note. Starting the lesson from the Learn window forgets such a place.
+- Leaving at step 1 keeps an older place of the same lesson. Finishing the lesson forgets
+  it. Lessons started on the command line (`--tutorial`, for checking content) keep no
+  place and do not count as a first lesson for the intro's hint; training games keep no
+  place either (the player can save them like any game).
 
 The panel only reads the game. Lessons change the game only through the player's own
 commands (every command `ClassicSession::issue()` accepts is reported to the lesson), so
@@ -278,8 +348,8 @@ What a step allows:
   show) and scrolled, but not clicked, so "hover over the buttons" never opens a
   window by mistake. Only its `allow` tags can be clicked (the report's tabs, a design
   list to browse, a name box to type in).
-- Always: the lesson panel (Back, Next or Skip, Read More, Hide, Free Play, Leave) and
-  the status bar's **T** button.
+- Always: the lesson panel (Back, Next or Skip, Read More, More, Hide, Free Play, Leave)
+  and the status bar's **T** button.
 - **Windows the step works in that are closed**: the tags that open them, two levels
   deep (a step about the designer's components allows Create in Designs, and the
   Designs button when Designs is closed too). A step never waits behind a closed window.
@@ -311,8 +381,10 @@ Keys: a step's `keys` list (`"F12"`, `"Ctrl+L"`, `"Alt+1"`, `"Escape"`; modifier
 `Slash`). Besides those, an allowed tag brings the key that does what a click on it
 does, as the player has bound it: a command button its F-key, `button:end-turn` F12,
 an order button its letter, `cycle:ship` Space and the ship keys, and a `<window>:close`
-tag Esc and Enter. Ctrl+H (the panel) always passes. Keys of tags inside windows (the
-Tactical Combat window's E) are not known to the lock: list them in `keys`.
+tag Esc and Enter. The panel's keys always pass: Ctrl+H, Alt+N, Alt+B, Alt+K and Alt+R
+(as the player has bound them), and so does Shift+F1, the manual page of the window in
+front. Keys of tags inside windows (the Tactical Combat window's E) are not known to the
+lock: list them in `keys`.
 
 How it works: at the end of each frame the client builds the lock
 (`client/classic/lesson_lock.hpp`, `makeLockState`) from that frame's tagged rectangles,
@@ -367,10 +439,17 @@ Writing steps for the lock:
 ## The Learn window and the manual
 
 The **Learn** window has three tabs. Tutorials and Training list the lessons in file
-order with their length and a Done mark, and show the chosen one's summary and its
-steps or objectives; **Start** (or a double click) starts its game. During a game this
-first asks, since the lesson's game replaces the one being played. Manual lists the
-chapters and their sections.
+order with their length, under a count ("3 of 7 done", for training games "won"), and show
+the chosen one's summary and its steps or objectives; **Start** (or a double click) starts
+its game. During a game this first asks, since the lesson's game replaces the one being
+played. Manual lists the chapters and their sections.
+
+- The first lesson not done yet is marked **Next** (the others done are marked Done).
+- The window chooses the tutorial the player left last, while it can be resumed;
+  otherwise the Next one; otherwise the first.
+- A tutorial with a place to resume shows the step in its row, says in its details where
+  it was left and where it resumes (the steps before that one dimmed, that one
+  highlighted), and offers **Resume (step N)** above Start (see "Resuming a lesson").
 
 The manual viewer shows the contents tree and a search box (every word must appear in
 a section) on the left and the page on the right. **Back** and **Forward** (or Alt+Left
@@ -437,10 +516,18 @@ training game played through `learn::LessonProgress`, the step access rules, and
 input lock (`tests/test_lesson_lock.cpp`: hit-testing, drags, keys, prompts, open and
 closed windows, windows stacked over each other, a window covering an outline, the way
 back, and which conditions wait on the game). `tests/test_learn_client.cpp` checks that
-the client's window ids are the ones lessons use. The input scripts `lesson-*.script` and
+the client's window ids are the ones lessons use. `tests/test_lesson_panel.cpp` checks the
+panel's layout (buttons in rows, the place that hides the least, prompts), its keys and
+Shift+F1 under the lock, the step a tutorial resumes at, the lesson fingerprint and the
+resume records in the settings. The input scripts `lesson-*.script` and
 `end-turn-question.script` play the lock with stacked windows, the way back, Skip, the
 notes after refused clicks and keys, the keys of questions and Free Play at a lesson's
 start.
+
+Two input scripts play tutorials of our own (`tests/input/learn/tutorials`), so they do
+not change with the built-in lessons: `lesson-panel.script` (800x600: prompts over a panel
+dragged under them, the compact panel, the panel's keys) and `learn-resume.script` (the
+intro's hint, the Learn window's choice and marks, resuming in and out of a window).
 
 ## Reference
 
@@ -699,8 +786,8 @@ the Weapons Report.
 | `<window>:<tab>` | a tab or filter button of the windows above (window tabs) |
 | `<list>:up`, `<list>:down`, `<list>:track`, `<list>:thumb` | the arrow column of a list: its up and down arrows, the track between them and the thumb in it. `<list>` is the list's tag above (`planets:list:down`) or, for every list of a window, `<window>:<list id>` (`log:list:down`; the list id is the client's, without its `##`) |
 | `help:tabs` | the Help window's tabs |
-| `lesson:panel`, `lesson:next`, `lesson:read-more` | the lesson panel, its Next and Read More |
-| `lesson:free-play`, `lesson:leave` | its Free Play and Leave buttons |
+| `lesson:panel`, `lesson:back`, `lesson:next`, `lesson:read-more` | the lesson panel, its Back, Next (Skip, Finish) and Read More |
+| `lesson:more`, `lesson:hide`, `lesson:free-play`, `lesson:leave` | its More (Less) button on small screens, Hide, Free Play and Leave |
 
 Order strip ids (`order:<id>`): `move-to`, `warp`, `move-to-waypoint`, `colonize`,
 `attack`, `fleet-transfer`, `resupply`, `repair`, `clear-orders`, `build-queue`,

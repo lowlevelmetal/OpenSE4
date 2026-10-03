@@ -10,6 +10,7 @@
 // and the game's autosave choice.
 
 #include <array>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -57,6 +58,20 @@ struct ClassicSettings {
     // Free Play (the lesson panel's switch): tutorials do not lock the input
     // to the step's action. Off by default.
     bool learnFreePlay = false;
+    // A lesson was started on this machine (the intro's hint by Tutorial
+    // shows until then).
+    bool learnStarted = false;
+    // Tutorials left before their end, to resume (docs/LEARNING.md "Resuming
+    // a lesson"); the game of each is kept beside the settings
+    // (learn_content.hpp lessonResumeFile), the most recently left last.
+    struct ResumeRecord {
+        std::string lesson;        // "tutorial:<slug>"
+        uint32_t leftAt = 0;       // the active step when the player left it (0-based)
+        uint32_t resumeAt = 0;     // the step it resumes at (learn::resumeStep)
+        std::string fingerprint;   // learn::lessonFingerprint then, in hex
+        bool operator==(const ResumeRecord&) const = default;
+    };
+    std::vector<ResumeRecord> learnResume;
 };
 
 // The Options window's music steps (spec 06 §1.9).

@@ -221,7 +221,7 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
             st.keys.push_back(KeyChord{ImGuiKey_Enter});
         }
     }
-    addAction(Action::LessonText);
+    for (const Action a : {Action::LessonText, Action::LessonNext, Action::LessonBack, Action::LessonSkip, Action::LessonReadMore, Action::ContextHelp}) addAction(a);
     return st;
 }
 

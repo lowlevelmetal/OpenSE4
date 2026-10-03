@@ -95,8 +95,8 @@ struct TaggedArea {
 // - every open window the step says nothing about (the game opened it, or an
 //   allowed click did), and the game's prompts and ImGui popups;
 // - the step's keys, the hotkeys of its tags (a command button's F-key, End
-//   Turn's F12, an order's letter, Esc and Enter for a `:close` tag) and
-//   Ctrl+H for the panel.
+//   Turn's F12, an order's letter, Esc and Enter for a `:close` tag), the
+//   panel's keys (Ctrl+H, Next, Back, Skip, Read More) and Shift+F1.
 // `openWindows` are the open windows' ids back to front (the last one is in
 // front); each window's rectangle is its `window:<id>` tag.
 LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& tags, const std::vector<std::string>& openWindows,

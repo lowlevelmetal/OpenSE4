@@ -8,14 +8,17 @@
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/screens/setup_widgets.hpp"
 #include "client/script/items.hpp"
+#include "client/classic/learn_content.hpp"
 #include "client/classic/settings.hpp"
 #include "client/settings_window.hpp"
 #include "datafile/datafile.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <functional>
+#include <string_view>
 
 #ifndef OPENSE4_CLIENT_VERSION
 #define OPENSE4_CLIENT_VERSION "0.0.0"
@@ -101,12 +104,21 @@ public:
             }};
             constexpr size_t kColumns = 4;
             const float w = (right - left - 24 - 5 * float(kColumns - 1)) / float(kColumns);
+            ImVec2 tutorialMin, tutorialMax;
             for (size_t i = 0; i < entries.size(); ++i) {
                 ImGui::SetCursorScreenPos(ctx.at({left + 12 + float(i % kColumns) * (w + 5), 700 + dy + float(i / kColumns) * 30}));
                 if (classicButton(p, entries[i].label, {w, 26}, 0, false, entries[i].go != nullptr) && entries[i].go) entries[i].go();
+                if (std::string_view(entries[i].label) == "Tutorial") {
+                    tutorialMin = ImGui::GetItemRectMin();
+                    tutorialMax = ImGui::GetItemRectMax();
+                }
             }
             if (!ctx.error.empty()) dl->AddText(ctx.at({left + 12, 660 + dy}), IM_COL32(255, 128, 100, 255), ctx.error.c_str());
             if (!error_.empty()) dl->AddText(ctx.at({left + 12, 644 + dy}), IM_COL32(255, 128, 100, 255), error_.c_str());
+            // OpenSE4's own: until a first lesson is started, a hint points new
+            // players at Tutorial (docs/LEARNING.md), which pulses.
+            if (ctx.learn && !ctx.learn->library.tutorials.empty() && !lessonsStarted() && settings().learnDone.empty())
+                tutorialHint(ctx, tutorialMin, tutorialMax, !ctx.error.empty() || !error_.empty());
         }
         ImGui::End();
         ImGui::PopStyleVar(2);
@@ -132,6 +144,28 @@ public:
     }
 
 private:
+    static void tutorialHint(MenuContext& ctx, ImVec2 buttonMin, ImVec2 buttonMax, bool errorShown) {
+        const Painter p = ctx.painter();
+        const float pulse = 0.6f + 0.4f * std::sin(float(ctx.time) * 4.0f);
+        ImDrawList* fg = ImGui::GetForegroundDrawList();
+        const float pad = ctx.px(2);
+        fg->AddRect(ImVec2(buttonMin.x - pad, buttonMin.y - pad), ImVec2(buttonMax.x + pad, buttonMax.y + pad), imColor(0xffd040, pulse), 0.0f,
+                    std::max(2.0f, ctx.px(2.5f)));
+        // The note above the band of buttons, over the picture.
+        constexpr const char* kText = "New to the game? Tutorial (outlined below) starts guided lessons\nthat teach it step by step, in about ten minutes each.";
+        ImGui::PushFont(ctx.fonts.regular, p.fontPx(kTextSize));
+        const ImVec2 text = ImGui::CalcTextSize(kText);
+        const ImVec2 inner(ctx.px(8), ctx.px(5));
+        const float bottom = buttonMin.y - ctx.px(errorShown ? 98 : 52);   // clear of the version line and the error lines
+        const ImVec2 a(buttonMin.x, bottom - text.y - 2 * inner.y), b(buttonMin.x + text.x + 2 * inner.x, bottom);
+        ImDrawList* bg = ImGui::GetBackgroundDrawList();
+        bg->AddRectFilled(a, b, imColor(0x101c40, 0.92f));
+        bg->AddRect(a, b, imColor(0xffd040, 0.9f), 0.0f, std::max(1.0f, ctx.px(1.5f)));
+        bg->AddText(ImVec2(a.x + inner.x, a.y + inner.y), IM_COL32_WHITE, kText);
+        ImGui::PopFont();
+        script::reportItem("tutorial-hint", a, b);   // input scripts see whether it shows
+    }
+
     void resume(MenuContext& ctx, const std::filesystem::path& file) {
         const BusyPointer busy;  // the Hourglass while it loads (spec 06 §5.8)
         auto session = ClassicSession::load(ctx.rules, file);

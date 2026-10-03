@@ -326,6 +326,8 @@ recorder is tested.
 | `lesson-prompt-keys.script`, `lesson-result-keys.script` | Keys that answer a lesson's questions are not also main-window keys; the notes after refused clicks and keys; Free Play off at a lesson's start |
 | `end-turn-question.script` | End Turn while a window is open: the question comes up over the window and takes the input |
 | `front-learn.script` | The intro's Tutorial and Scenario buttons, the Learn window's tabs, starting a lesson and leaving it |
+| `lesson-panel.script` | The lesson panel at 800x600 on a tutorial of our own in `tests/input/learn`: prompts and its Leave question over the panel dragged under them, placing itself again, the compact panel and More, its keys and Shift+F1 under the input lock |
+| `learn-resume.script` | The intro's hint by Tutorial, the Learn window's count, Next and Done marks and the lesson it chooses, and resuming a tutorial left in a window and in the main window, on tutorials of our own in `tests/input/learn` |
 | `manual-front.script`, `manual-game.script` | The manual: contents tree, links to pages and sections, window and Help links, Back and Forward (buttons and Alt+arrows), search, Contents, Shift+F1 |
 | `list-windows.script` | Planets, Colonies, Ships and Construction Queues: sort headings, tabs and filters, the arrow column and the wheel; item and Design Report pop-ups from right-clicks |
 | `combat-windows.script` | Tactical Combat on a sample battle: zoom and pan, the Combat Piece Report, Combat Options, the Orders menu and Resolve Combat |
