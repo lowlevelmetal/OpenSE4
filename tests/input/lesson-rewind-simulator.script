@@ -1,0 +1,46 @@
+# The way back for tutorial 6's Combat Simulator (docs/LEARNING.md "Getting back"; docs/BUILDING.md
+# "Input scripts"): Esc is refused while the battle is set up (Designs lies under the simulator);
+# with Free Play the simulator closes and its setup is lost, so the lesson goes back to the step
+# that opens it, and the sides are set up again from Race 1.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --tutorial=combat --layout=1024x768 --size=1280x800
+
+wait-lesson combat
+click item:Next in=lesson
+wait-step 2
+click tag:command:designs
+wait-window designs
+click tag:designs:simulator
+wait-window combat-simulator
+wait-step 3
+wait-for tag:combat-simulator:items:named
+click tag:combat-simulator:items:named
+click tag:combat-simulator:items:named
+wait-step 4
+click item:"Race 2" in=combat-simulator
+wait-step 5
+key Escape refused
+assert-window combat-simulator
+# Free Play (at 800x600 More shows it first): the simulator closes with its setup; back to step 2.
+click item:More in=lesson optional
+click tag:lesson:free-play
+key Escape
+wait-closed combat-simulator
+wait-step 2
+wait-for item:"hint:The * window was closed*" in=lesson
+click item:More in=lesson optional
+click tag:lesson:free-play
+click tag:designs:simulator
+wait-window combat-simulator
+wait-step 3
+assert { simulator_owner = "race-1" }
+wait-for tag:combat-simulator:items:named
+click tag:combat-simulator:items:named
+click tag:combat-simulator:items:named
+wait-step 4
+click item:"Race 2" in=combat-simulator
+wait-step 5
+wait-for tag:combat-simulator:items:named
+click tag:combat-simulator:items:named
+wait-step 6
+assert { all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }

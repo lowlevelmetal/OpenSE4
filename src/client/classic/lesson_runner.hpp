@@ -95,6 +95,11 @@ private:
     bool stuck(const UiContext& ui) const;
     // The way back for the active step (lesson_lock.hpp findRecovery), and its hint.
     void updateRecovery(const UiContext& ui, const learn::ClientFacts& facts);
+    // A window the active step works in, open when it began, has closed before
+    // the step was done: the lesson goes back to the step that opens it
+    // (learn::rewindStep), since the work in it was lost.
+    void checkRewind(const UiContext& ui, const learn::ClientFacts& facts);
+    std::string windowTitle(std::string_view id) const;
     std::string describe(const Recovery& r) const;
     std::string recoveryPlain() const;   // the hint without its Markdown
     void drawPanel(UiContext& ui);
@@ -143,6 +148,9 @@ private:
     // (or a way back to them was).
     std::optional<size_t> activeSeen_;
     std::vector<std::string> leftOpen_;   // windowsAtStepStart()
+    int closedFrames_ = 0;                // checkRewind: frames a window of the step has been closed
+    std::optional<size_t> rewoundTo_;     // the step the lesson went back to (its note shows until it is done)
+    std::string rewoundNote_;
     double activeSince_ = 0;
     double targetsSeen_ = 0;
     Recovery recovery_;

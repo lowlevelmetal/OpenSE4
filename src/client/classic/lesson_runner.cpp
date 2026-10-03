@@ -10,6 +10,8 @@
 #include "client/classic/widgets.hpp"
 #include "client/script/items.hpp"
 #include "core/hash.hpp"
+#include "learn/ids.hpp"
+#include "learn/resume.hpp"
 #include "learn/tokens.hpp"
 
 #include <imgui_internal.h>
@@ -174,10 +176,12 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const L
     windowsOpen_ = !facts.openWindows.empty();
     evaluate(ui, facts);
     // When the active step began, and whether its targets are on screen.
+    checkRewind(ui, facts);
     if (activeSeen_ != progress_.active()) {
         activeSeen_ = progress_.active();
         activeSince_ = targetsSeen_ = ui.time;
         leftOpen_ = facts.openWindows;
+        closedFrames_ = 0;
         // A note about a click the step before refused is not about this one.
         refusedAt_.reset();
         refusedKey_.clear();
@@ -279,12 +283,59 @@ void LessonRunner::updateRecovery(const UiContext& ui, const learn::ClientFacts&
     }
 }
 
+std::string LessonRunner::windowTitle(std::string_view id) const {
+    if (const auto it = titles_.find(std::string(id)); it != titles_.end() && !it->second.empty()) return it->second;
+    if (const auto screen = screenFromWindowId(id)) return std::string(screenTitle(*screen));
+    return std::string(id);
+}
+
+namespace {
+
+// Whether a condition waits for that window to open or to close.
+bool mentionsWindow(const learn::Condition& c, std::string_view window) {
+    if (c.op == learn::Condition::Op::Fact) return c.fact == learn::Fact::Window && c.text == window;
+    return std::any_of(c.children.begin(), c.children.end(), [&](const learn::Condition& x) { return mentionsWindow(x, window); });
+}
+
+} // namespace
+
+void LessonRunner::checkRewind(const UiContext& ui, const learn::ClientFacts& facts) {
+    const learn::Step* st = lesson().kind == learn::LessonKind::Tutorial ? activeStep() : nullptr;
+    if (!st || activeSeen_ != progress_.active() || progress_.completed(progress_.active()) ||
+        progress_.result() != learn::LessonProgress::Result::None) {
+        closedFrames_ = 0;
+        return;
+    }
+    // A window the player opens (not a battle's), which the step works in and
+    // which was open when the step began, closed now; a step that waits for it
+    // to close (or for another to open in its place) is not left behind.
+    std::optional<std::string> gone;
+    for (const std::string& w : leftOpen_) {
+        if (std::find(facts.openWindows.begin(), facts.openWindows.end(), w) != facts.openWindows.end()) continue;
+        const learn::WindowInfo* info = learn::findWindow(w);
+        if (!info || !info->openable || !learn::worksIn(*st, w) || (st->done && mentionsWindow(*st->done, w))) continue;
+        gone = w;
+        break;
+    }
+    // A few frames, for a window that closes as the one the step waits for opens.
+    if (!gone || ++closedFrames_ < 4) {
+        if (!gone) closedFrames_ = 0;
+        return;
+    }
+    closedFrames_ = 0;
+    const size_t active = progress_.active();
+    const size_t to = learn::rewindStep(lesson(), active, *gone);
+    if (to >= active) return;
+    progress_.rewind(to, ui.rules(), ui.state(), ui.session.player());
+    seen_ = 0;
+    panelOpen_ = true;
+    rewoundTo_ = to;
+    rewoundNote_ = std::format("The {} window was closed, and what was done in it with it: the lesson went back to the step that opens it.",
+                               windowTitle(*gone));
+}
+
 std::string LessonRunner::describe(const Recovery& r) const {
-    auto title = [&](std::string_view id) {
-        if (const auto it = titles_.find(std::string(id)); it != titles_.end() && !it->second.empty()) return it->second;
-        if (const auto screen = screenFromWindowId(id)) return std::string(screenTitle(*screen));
-        return std::string(id);
-    };
+    auto title = [&](std::string_view id) { return windowTitle(id); };
     // What to press, as the player sees it: the verb, and the button ("the
     // **Designs** button (F3)", "**Create** in Designs", "the **Build Queue**
     // order"); `in` names the window a button inside a window is in.
@@ -358,7 +409,8 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     h.add(facts.selections);
     for (const std::string& t : facts.tabs) h.add(std::string_view(t));
     h.add(facts.designComponents.value_or(-1)).add(facts.designHullChosen).add(facts.simulatorOwners).add(facts.simulatorItems);
-    h.add(std::string_view(facts.simulatorOwner));
+    h.add(std::string_view(facts.simulatorOwner)).add(std::string_view(facts.picking)).add(facts.movementLines);
+    h.add(std::string_view(facts.draftMessageType)).add(std::string_view(facts.draftTreaty));
     h.add(std::string_view(facts.designType)).add(facts.designNamed).add(std::string_view(facts.designVehicle)).add(facts.selectedVehicle.value);
     h.add(facts.battleBegun).add(facts.battleOrders.size()).add(facts.battleTurn);
     if (h.value() == seen_ || progress_.result() != learn::LessonProgress::Result::None) return;
@@ -719,7 +771,11 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
     };
     // The way back to the active step's targets, or the page arrow that shows them
     // (recoveryHint()), above the buttons where it is always in sight.
-    const std::string hint = tutorial && !over && progress_.step() == progress_.active() && !recoveryHint_.empty() ? recoveryPlain() : std::string{};
+    std::string hint = tutorial && !over && progress_.step() == progress_.active() && !recoveryHint_.empty() ? recoveryPlain() : std::string{};
+    // Or why the lesson went back to this step (checkRewind), until it is done.
+    if (hint.empty() && tutorial && !over && rewoundTo_ && *rewoundTo_ == progress_.step() && progress_.step() == progress_.active() &&
+        !progress_.completed(progress_.step()))
+        hint = rewoundNote_;
 
     // The buttons, in two groups: moving through the lesson, then the panel
     // itself (a compact panel leaves the second group to More).
@@ -822,6 +878,8 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
         add(st->highlight, avoid.targets);
         add(st->show, avoid.targets);   // what the text points at, to read
         add(st->allow, avoid.allowed);
+        // The way back to the step's window, outlined: as much a target as the step's own.
+        if (!recovery_.press.empty() && progress_.step() == progress_.active()) add({recovery_.press}, avoid.targets);
     }
     avoid.prompts = prompts.boxes;
 
@@ -888,6 +946,11 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
         spot(8, {display.x - size.x - gap, display.y - size.y - gap}, standard);
         spot(9, {display.x - size.x - gap, ui.px(40)}, standard);
         spot(10, {gap, ui.px(40)}, standard);
+        // The middles of the screen's edges, for a window that fills the corners with what a step needs.
+        spot(11, {(display.x - size.x) * 0.5f, display.y - size.y - gap}, standard);
+        spot(12, {(display.x - size.x) * 0.5f, ui.px(40)}, standard);
+        spot(13, {gap, (display.y - size.y) * 0.5f}, standard);
+        spot(14, {display.x - size.x - gap, (display.y - size.y) * 0.5f}, standard);
         const size_t best = panel::bestSpot(spots, avoid, spot_);
         spot_ = spots[best].id;
         chosen = layouts[best];

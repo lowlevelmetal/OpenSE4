@@ -28,6 +28,19 @@ std::vector<std::string_view> stepWindows(const Step& step);
 // A step in the main window resumes as it is.
 size_t resumeStep(const Lesson& lesson, size_t active);
 
+// Going back when a window the active step works in closed before the step
+// was done (docs/LEARNING.md "Getting back"): the work in it (a design being
+// built, a battle being set up) is lost with it, so the lesson goes back to
+// the step that opened the window, through the steps before `active` that
+// work in it. Returns `active` when no earlier step opened it. Close buttons
+// do not count as working in a window.
+size_t rewindStep(const Lesson& lesson, size_t active, std::string_view window);
+// Whether a step works in `window` (one of its highlighted, allowed or shown
+// tags lies in it; Close buttons do not count), and whether one of its tags
+// opens it.
+bool worksIn(const Step& step, std::string_view window);
+bool opens(const Step& step, std::string_view window);
+
 // What a saved place in a tutorial depends on: the number of steps and each
 // step's tags, keys and condition. Rewording a step keeps it; adding,
 // removing, reordering or changing what a step waits for changes it.

@@ -84,6 +84,16 @@ void LessonProgress::jumpTo(size_t step, const game::Rules& rules, const game::G
     frontier_ = step;
 }
 
+void LessonProgress::rewind(size_t step, const game::Rules& rules, const game::GameState& state, game::EmpireId empire) {
+    if (lesson_.kind != LessonKind::Tutorial || result_ != Result::None || step >= frontier_) return;
+    for (size_t i = step; i < lesson_.steps.size(); ++i) {
+        completed_[i] = 0;
+        stepMarks_[i].reset();
+    }
+    frontier_ = step;
+    enter(step, rules, state, empire);
+}
+
 std::vector<Counter> LessonProgress::counters(const game::Rules& rules, const game::GameState& state, game::EmpireId empire,
                                               const ClientFacts& client) const {
     if (lesson_.kind != LessonKind::Tutorial || result_ != Result::None || step_ != frontier_ || frontier_ >= lesson_.steps.size()) return {};

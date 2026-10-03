@@ -1,0 +1,60 @@
+# The way back when the window a step works in closes before the step is done (docs/LEARNING.md
+# "Getting back"; docs/BUILDING.md "Input scripts"): tutorial 4's designer. Under the lock the
+# designer cannot be closed (Esc is refused: Designs lies under it); with Free Play on it can, and
+# the design in it is lost, so the lesson goes back to the step that opens it, says so, and the
+# hull and the design type are chosen again. The vehicle types stay narrowed to Ship.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --tutorial=designing-ships --layout=1024x768 --size=1280x800
+
+wait-lesson designing-ships
+click item:Next in=lesson
+wait-step 2
+click tag:command:designs
+wait-window designs
+wait-step 3
+click item:Next in=lesson
+wait-step 4
+click tag:designs:create
+wait-for tag:designs:create:ship
+click tag:designs:create:ship
+wait-window create-design
+wait-step 5
+click item:##size in=create-design
+wait-for tag:create-design:hull:smallest
+click tag:create-design:hull:smallest
+wait-step 6
+click item:##type in=create-design
+wait-for tag:create-design:type:attack-ship
+click tag:create-design:type:attack-ship
+wait-step 7
+click item:##tile in=create-design nth=2
+# Under the lock Esc is refused.
+key Escape refused
+assert-window create-design
+# Free Play (at 800x600 More shows it first): the designer closes, its design with it; the lesson goes back to step 4 and says why.
+click item:More in=lesson optional
+click tag:lesson:free-play
+key Escape
+wait-closed create-design
+wait-step 4
+wait-for item:"hint:The * window was closed*" in=lesson
+click item:More in=lesson optional
+click tag:lesson:free-play
+# Step 4 again: Create, and only Ship.
+click tag:designs:create
+wait-for tag:designs:create:ship
+click tag:designs:create:base refused
+click tag:designs:create:ship
+wait-window create-design
+wait-step 5
+assert-absent item:"hint:*" in=lesson
+assert { design_vehicle = "ship" }
+click item:##size in=create-design
+wait-for tag:create-design:hull:smallest
+click tag:create-design:hull:smallest
+wait-step 6
+click item:##type in=create-design
+wait-for tag:create-design:type:attack-ship
+click tag:create-design:type:attack-ship
+wait-step 7
+assert { design_type_chosen = "Attack Ship" }

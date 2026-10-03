@@ -61,6 +61,10 @@ public:
     void skip(const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
     // Shows a step as if the ones before it were done (checking content).
     void jumpTo(size_t step, const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
+    // Goes back to an earlier step, which becomes the active one again, its
+    // condition and those after it to be met again ("since" counters start
+    // afresh): the work of the steps since was lost (a window closed).
+    void rewind(size_t step, const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
     // How far the active step has come, while it waits for something that
     // can be counted (systems explored, turns, items): its condition's
     // counters (learn::counters), then its `progress` facts once they are
