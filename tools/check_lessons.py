@@ -33,7 +33,7 @@ are written only when --screenshots names a directory; keep them out of the
 repository (docs/CLEANROOM.md).
 
     python3 tools/check_lessons.py [--exe build/debug/opense4] [--screenshots DIR] [--words] [slug ...]
-    python3 tools/check_lessons.py --audit [--jobs 4] [--verbose] [--screenshots DIR] [slug ...]
+    python3 tools/check_lessons.py --audit [--jobs 4] [--verbose] [--screenshots DIR] [--learn-dir DIR] [slug ...]
 
 The client runs with a user folder of its own (OPENSE4_USER_DIR, a temporary
 one unless the environment names one), so your settings are never touched.
@@ -85,8 +85,11 @@ def check_words(only):
     return too_long
 
 
+LEARN_DIR = None   # --learn-dir: the content to check instead of assets/learn
+
+
 def tutorials(only):
-    for path in sorted((ROOT / "assets" / "learn" / "tutorials").glob("*.toml")):
+    for path in sorted(((LEARN_DIR or ROOT / "assets" / "learn") / "tutorials").glob("*.toml")):
         slug = re.sub(r"^\d+-", "", path.stem)
         if only and slug not in only:
             continue
@@ -95,8 +98,12 @@ def tutorials(only):
         yield slug, steps
 
 
+def learn_args():
+    return [f"--learn-dir={LEARN_DIR}"] if LEARN_DIR else []
+
+
 def check(exe, slug, n, shots, env):
-    args = [str(exe), f"--tutorial={slug}:{n}", "--lesson-check"]
+    args = [str(exe), f"--tutorial={slug}:{n}", "--lesson-check"] + learn_args()
     if shots:
         args.append(f"--screenshot={shots / f'{slug}-{n:02d}.png'}")
     try:
@@ -118,7 +125,7 @@ def check(exe, slug, n, shots, env):
 def audit(exe, slug, n, layout, shots, env):
     """One step at one layout: (flags, unmatched, lines) or (None, None, [why])."""
     name, options = layout
-    args = [str(exe), f"--tutorial={slug}:{n}", "--lesson-audit"] + options
+    args = [str(exe), f"--tutorial={slug}:{n}", "--lesson-audit"] + options + learn_args()
     if shots:
         args.append(f"--screenshot={shots / f'{slug}-{n:02d}@{name}.png'}")
     try:
@@ -187,8 +194,12 @@ def main():
     ap.add_argument("--audit", action="store_true", help="audit each step at both layouts (--lesson-audit): what the lock lets through, what the text names")
     ap.add_argument("--jobs", type=int, default=4, help="--audit: runs at a time (default 4)")
     ap.add_argument("--verbose", action="store_true", help="--audit: print every line, not only the flagged and unmatched ones")
+    ap.add_argument("--learn-dir", help="check the content of this folder (as the client's --learn-dir) instead of assets/learn")
     ap.add_argument("slugs", nargs="*", help="only these tutorials")
     a = ap.parse_args()
+    global LEARN_DIR
+    if a.learn_dir:
+        LEARN_DIR = pathlib.Path(a.learn_dir).resolve()
 
     too_long = check_words(set(a.slugs))
     if a.words:
