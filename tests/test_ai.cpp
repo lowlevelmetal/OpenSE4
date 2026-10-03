@@ -914,6 +914,52 @@ TEST_CASE("ai: ship construction spends one turn of net income on queues under 5
                 if (item.kind == QueueItem::Kind::Vehicle) CHECK(q.info(item.design).role == ai::detail::Role::Colonizer);
 }
 
+TEST_CASE("ai: the vehicle table counts each type once, before the clean-up of obsolete items") {
+    // Spec 05 §7.5 AI_Construction_Vehicles (confirmed: binary, question 70):
+    // an item the clean-up removes still counts for its type until the next turn.
+    TempTree t("tablecounts");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Infrastructure\nNum Queue Entries := 1\nEntry 1 Type := Attack Ship\nEntry 1 Must Have At Least := 2\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(3, 2, 0, 12, r);
+    const EmpireId cpu{0u};
+    Empire& e = s.empire(cpu);
+    const DesignId old = addWarship(s, r, cpu, "Old Picket");
+    const DesignId fresh = addWarship(s, r, cpu, "New Picket");
+    e.designs.push_back(old);
+    e.designs.push_back(fresh);
+    s.design(old).createdTurn = 1;
+    s.design(fresh).createdTurn = 2;
+    s.design(old).obsolete = true;
+    e.economy = {};
+    e.economy.colonies = Resources{100000, 100000, 100000};
+    // The homeworld's queue: two attack ships of the obsolete design, the
+    // first one paid into, so only the second goes.
+    Colony& home = homeworld(s, cpu);
+    QueueItem item;
+    item.kind = QueueItem::Kind::Vehicle;
+    item.design = old;
+    home.queue.items = {item, item};
+    home.queue.items[0].spent = Resources{1, 0, 0};
+    auto build = [&](const GameState& from) {
+        ai::detail::Planner p(r, from, cpu, ai::detail::Mode::Computer, 9);
+        p.state = ai::AiState::Infrastructure;
+        ai::detail::planShips(p);
+        return p.st;
+    };
+    auto designs = [&](const GameState& g) {
+        std::vector<DesignId> out;
+        for (const QueueItem& q : g.colony(home.planet)->queue.items) out.push_back(q.design);
+        return out;
+    };
+    // The row "at least 2" still sees two: the removed item counts this turn.
+    const GameState turn2 = build(s);
+    CHECK(designs(turn2) == std::vector<DesignId>{old});
+    // The next turn it sees one and asks for the new design.
+    const GameState turn3 = build(turn2);
+    CHECK(designs(turn3) == std::vector<DesignId>{old, fresh});
+}
+
 TEST_CASE("ai: Colonizer entries build the colony-ship type of the first uncovered target") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(3, 2, 12, false);

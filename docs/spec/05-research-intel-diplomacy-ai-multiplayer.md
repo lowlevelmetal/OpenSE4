@@ -1744,13 +1744,14 @@ binary).
          the homeworld's queue falls below 5 turns of backlog (observed under a debugger,
          2026-10-03: every empire of game 10 counted two attack ships on turn 2, both
          queued, and queued weapon platforms, satellites and a colony ship instead; spec 07
-         "The computer players' second round under a debugger"). The engine differs:
-         `ShipBuilder::have` (`ai_economy.cpp`) counts live after `cleanUp`, so our
-         computers queue the new Attack Ship on turn 2. In 120 scratch games with the
-         counts taken before the clean-up, the second attack ship came on turn 9 (median)
-         instead of 5 and the first colony ship on turn 7 instead of 9, as in the original
-         (9 and 7), with 1.1 attack ships per empire at turn 5 instead of 2.0 (the original
-         1.05) and 8.0 ships at turn 50 instead of 7.5 (8.6) (question 70).
+         "The computer players' second round under a debugger"). OpenSE4 follows this
+         since 2026-10-03 (`ShipBuilder::takeCounts`, `ai_economy.cpp`); it used to count
+         live after `cleanUp`, so its computers queued the new Attack Ship on turn 2. In 120
+         scratch games with the counts taken before the clean-up, the second attack ship
+         came on turn 9 (median) instead of 5 and the first colony ship on turn 7 instead
+         of 9, as in the original (9 and 7), with 1.1 attack ships per empire at turn 5
+         instead of 2.0 (the original 1.05) and 8.0 ships at turn 50 instead of 7.5 (8.6)
+         (question 70).
        - Under-supplied: count < `Must Have At Least`, or `Planet Per Item` > 0 and count
          < colonies × 10 / `Planet Per Item`, compared exactly (not rounded).
        - Over the hard cap, only "Open Warp Point" designs qualify. Over the soft cap, only

@@ -160,11 +160,11 @@ TEST_CASE("determinism: a simultaneous game gives the golden checksums") {
         {2, 0xbff6e9fec1164b6full},
         {5, 0x95800d070b7ba158ull},
         {10, 0xbeee64fc3bf9fdf2ull},
-        {20, 0x14f6db82a526baa0ull},
-        {40, 0x43cbde76bd171ec8ull},
-        {60, 0x69c6b938c775e849ull},
-        {80, 0x6636ed08a316f447ull},
-        {100, 0x0668cb1c8b5fa7d1ull},
+        {20, 0xe0dd94c0f07f3bcbull},
+        {40, 0x650f83ff9779978aull},
+        {60, 0x25398f8351c42462ull},
+        {80, 0x81aa53943b7a353cull},
+        {100, 0x01247c3621aa0c17ull},
     }};
     checkCoverage(playGolden("simultaneous", 39, true, kGolden));
 }
