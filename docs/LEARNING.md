@@ -397,8 +397,9 @@ Texts are Markdown as in the manual; their links are checked like the manual's.
 ### Setup keys
 
 The lesson's game is a quick start (the intro's Quick Start path, `quickStartSetup`)
-for `race` with `computer_players` opponents picked from the seed; the other keys then
-set the game options. Keys left out keep the quick start's values. As in any quick
+for `race` with `computer_players` opponents picked from the seed and no neutral empire
+(the intro's Quick Start instead rolls random computer and neutral players, as a new game
+does); the other keys then set the game options. Keys left out keep the quick start's values. As in any quick
 start, the player's empire gets the designs of one Design minister run and no ships
 (spec 01 §2.1, §3.6); `starting_ships` is the only way a lesson adds ships.
 

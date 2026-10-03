@@ -1035,9 +1035,9 @@ in the code and asked in §7 Q89–Q98.
   Trade, From Tariffs, From Remote Mining, Total), Resource Expenses Per Turn (Tariffs,
   Maintenance Cost, Construction Queue Usage, Total), Net Resources Per Turn and Resources in
   Treasury (Current Total, Maximum Resource Storage), with icons on the first row; Change Email
-  in the 12th slot and Change Password in the 13th. Our engine keeps no e-mail address for an
-  empire, so Change Email is dim; the missed-turn switch ("AI should not make changes during a
-  simultaneous game", §1.2.1) is in the Ministers window. The original's layout and Change Email are in §7 Q95 (confirmed: binary).
+  in the 12th slot and Change Password in the 13th. Change Email asks for the empire's
+  address and keeps it (`cmd::SetEmail`, since 2026-10-03); the missed-turn switch ("AI should
+  not make changes during a simultaneous game", §1.2.1) is in the Ministers window. The original's layout and Change Email are in §7 Q95 (confirmed: binary).
 - **Empires** (observed): Treaty, Trade, Tariff, a gap, History, Treaty Grid, Intelligence (dim
   without contact), Borders, Scores, Victory Conditions, Comparisons, a gap, Our Race; Borders
   without a check box; no heading or explanation over the empty strip. Ours keeps Borders as a
@@ -4415,8 +4415,12 @@ choices (inferred):
       every orders file, and shown back there; the game itself never sends mail (it has no
       mail code), so the address is for the players' own use.
     Our client differs: one table per block with icons on each block's first row, Net
-    Resources Per Turn as an unlabelled block, our other incomes added to From Our Colonies,
-    and Change Email dim (no address in our `Empire`).
+    Resources Per Turn as an unlabelled block, our other incomes added to From Our Colonies.
+    Change Email follows the answer since 2026-10-03 (`Empire::email`, set in Empire Setup's
+    Email box and by `cmd::SetEmail`, saved with the game); the address travels in a player's
+    orders only as that command, empire files do not keep it, and a player's view and the
+    network lobby leave out other players' addresses (OpenSE4 choices: no window shows another
+    player's address).
 96. **Borders.** §1.5 lists Borders as a window reached from Empires. Ours keeps it as a view of
     the Empires window that the plain Borders button shows and hides (a tab returns to the
     portraits too). Is it a window of its own in the original, and what are its layout and
