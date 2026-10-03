@@ -82,12 +82,16 @@ std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e);
 std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e);
 // The figures an empire's start-of-turn step works out first thing, before
 // the AI state update and the Politics minister (spec 05 §7.5 *Net income*,
-// confirmed: binary): the net income, which its economy step keeps for the
-// facility upgrades. The turn works them out with startOfTurnFigures, hands
-// them to the start-of-turn ministers (planOrdersAfterPolitics) and keeps
-// them for the economy step (TurnContext::aiStartFigures, planEconomyStep).
+// *Revenue*, confirmed: binary): the net income, which its economy step
+// keeps for the facility upgrades, and the revenue the soft and hard caps
+// compare, worked out afresh from the colonies, which the start-of-turn
+// ministers and the economy step both use. The turn works them out with
+// startOfTurnFigures, hands them to the start-of-turn ministers
+// (planOrdersAfterPolitics) and keeps them for the economy step
+// (TurnContext::aiStartFigures, planEconomyStep).
 struct StartOfTurnFigures {
     Resources net;
+    Resources revenue;
 };
 StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, EmpireId e);
 // `colonyTargets` receives the colonization targets of the lists, in order
@@ -105,8 +109,8 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
 // instead of its own; whether the empire can settle each is its own test
 // (inferred, spec 05 Q64).
 // `figures`: those the empire's start-of-turn step worked out
-// (startOfTurnFigures): the net income for the facility upgrades. Without
-// them the step works them out when it starts.
+// (startOfTurnFigures): the net income for the facility upgrades and the
+// caps' revenue. Without them the step works them out when it starts.
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve = 0,
                                      const std::vector<ObjectId>* colonyTargets = nullptr, const StartOfTurnFigures* figures = nullptr);
 // The reserve quirk (spec 05 §7.5 "Units file", confirmed: binary): the

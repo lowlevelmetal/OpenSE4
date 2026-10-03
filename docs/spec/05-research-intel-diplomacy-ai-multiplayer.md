@@ -1689,17 +1689,29 @@ binary).
     empire minimum stands in when a total is 0), worked out afresh from the colonies as
     they stand at the start-of-turn step with the output rule of spec 02 §5.1 (the same
     per-system totals the empire's status figures use), so a colony founded, grown, lost or
-    made unhappy since the last income step already counts (confirmed: binary). The engine
-    differs: `Planner::revenue` takes the last income report; the minerals revenue of the
-    two agreed within 3 % at the median in turns 11–50 (scratch comparison with two original
-    games).
+    made unhappy since the last income step already counts (confirmed: binary). OpenSE4
+    follows this since 2026-10-03: the start-of-turn step works the caps' revenue out first
+    thing, with the net income (`ai::startOfTurnFigures`, `capRevenueOf` over
+    `economy::incomeReport`, the income part of the report the turn's end projects), and its
+    ministers and the economy step's compare it (`Planner::capRevenue`). It used to take the
+    last income report (`Planner::revenue`, which the net income still reads); the minerals
+    revenue of the two agreed within 3 % at the median in turns 11–50 (scratch comparison
+    with two original games).
   - With M = `Maximum Maintenance Percent of Revenue`, the empire is over the soft cap
     when, for any one of minerals, organics or radioactives, that resource's maintenance
     > its revenue × M / 100. It is over the hard cap when the same holds with M + 20. The
     product is taken in single precision (M / 100 as a 32-bit float, so with the stock 80
-    the threshold is a hair above 80 %) (confirmed: binary). The engine compares in its
-    extended precision (`Planner::overCap`); the two differ only when the maintenance lies
-    within a float's rounding of the threshold.
+    the threshold is a hair above 80 %) (confirmed: binary). OpenSE4 follows this since
+    2026-10-03 without floating point (`aboveSingleShare`, `ai.cpp`): M / 100 rounded to 24
+    significant bits is F × 2^-k for an integer F, the product with the revenue is the
+    integer revenue × F rounded to 24 significant bits (to nearest, ties to even) times
+    2^-k, and the maintenance is compared with it exactly in 128-bit integers. That agrees
+    with the float computation, the x87's rounding of the quotient and the product to its
+    64-bit format before the store included, for every M (M / 100 is exact or has a binary
+    period dividing 20, so it never lies on a midpoint) and every revenue below 2^40 (the product
+    is then exact in 64 bits); the unit test checks it against the engine's x87 emulation
+    for M from 0 to 300. It used to compare in extended precision, which differed only when
+    the maintenance lay within a float's rounding of the threshold.
   - The maintenance in that test (confirmed: binary) is the sum, over the empire's ships
     and bases, of each one's maintenance by spec 02 §7, leaving out every vehicle whose hull
     has `Requirement Pct Colony Mods` above 0 (in the stock data the Colony Ship hull):

@@ -889,6 +889,19 @@ void applyStorageCap(TurnContext& ctx, EmpireId e) {
 
 // ---- Reports -------------------------------------------------------------------------------------------
 
+EconomyReport incomeReport(const Rules& r, const GameState& s, EmpireId e) {
+    if (!e.valid() || e.index() >= s.empires.size()) return {};
+    EconomyReport rep = reportFrom(computeIncome(r, s, e));
+    if (s.empire(e).alive) {
+        const TradeIncome t = computeTrade(r, s, e);
+        rep.trade = t.trade;
+        rep.tariffsIn = t.tariffsIn;
+        rep.research += t.research;
+        rep.intelligence += t.intelligence;
+    }
+    return rep;
+}
+
 void updateReports(const Rules& r, GameState& s) {
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};

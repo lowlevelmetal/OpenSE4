@@ -903,6 +903,7 @@ TEST_CASE("ai: ship construction spends one turn of net income on queues under 5
     e2.economy.colonies = Resources{100000, 100000, 100000};
     ai::detail::Planner q(r, s2, cpu, ai::detail::Mode::Computer, 9);
     q.state = ai::AiState::Infrastructure;
+    q.capRevenue = Resources{100000, 100000, 100000};  // the revenue the caps compare
     q.capUpkeep = Resources{95000, 0, 0};  // the maintenance the caps compare: above 80 % and 90 %, not above 100 % of revenue
     CHECK(q.overCap(0));
     CHECK(q.overCap(10));
@@ -5873,18 +5874,81 @@ TEST_CASE("ai: the maintenance caps count the empire's ships and bases of the mo
 
     // Revenue that puts the warship's maintenance just under the soft cap:
     // the colony ships, which the maintenance paid includes, do not push it over.
-    Empire& e = s.empire(me);
     const int64_t m = ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).prof.settings.maxMaintenancePercent;
     REQUIRE(m > 0);
-    e.economy = {};
-    for (size_t k = 0; k < 3; ++k) e.economy.colonies.v[k] = (one.v[k] * 100 + m - 1) / m;
-    e.economy.maintenance = one + settlers;
+    Resources revenue;
+    for (size_t k = 0; k < 3; ++k) revenue.v[k] = (one.v[k] * 100 + m - 1) / m;
     for (size_t k = 0; k < 3; ++k)
-        if (one.v[k] > 0) REQUIRE(xmath::Ext(one.v[k] + settlers.v[k]) > xmath::Ext(e.economy.colonies.v[k]) * xmath::percent(m));
-    CHECK_FALSE(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
+        if (one.v[k] > 0) REQUIRE(xmath::Ext(one.v[k] + settlers.v[k]) > xmath::Ext(revenue.v[k]) * xmath::percent(m));
+    auto over = [&]() {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        p.capRevenue = revenue;
+        return p.overCap(0);
+    };
+    CHECK_FALSE(over());
     // A second warship counts at once, though no maintenance was paid for it yet.
     addTestVehicle(s, r, warship, home);
-    CHECK(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
+    CHECK(over());
+}
+
+TEST_CASE("ai: the caps compare in single precision, worked out exactly in integers") {
+    // Spec 05 §7.5 (confirmed: binary): M / 100 as a 32-bit float, the product
+    // with the revenue rounded to a float again. The integer form must agree
+    // with xmath::Ext's emulation of the x87 (the quotient and the product
+    // formed in its 64-bit format, then stored to a float).
+    using ai::detail::aboveSingleShare;
+    auto emulated = [](int64_t value, int64_t base, int64_t percent) {
+        const xmath::Ext f = (xmath::Ext(percent) / xmath::Ext(100)).roundedTo(xmath::kSingleBits);
+        return xmath::Ext(value) > (xmath::Ext(base) * f).roundedTo(xmath::kSingleBits);
+    };
+    // With the stock 80 the threshold is a hair above 80 %: 80 of 100 is not over it.
+    CHECK_FALSE(aboveSingleShare(80, 100, 80));
+    CHECK(aboveSingleShare(81, 100, 80));
+    // A product rounded down to a float: 16,777,217 × 1.0 is 16,777,216 as a float.
+    CHECK(aboveSingleShare(16'777'217, 16'777'217, 100));
+    CHECK_FALSE(aboveSingleShare(16'777'216, 16'777'217, 100));
+    CHECK(aboveSingleShare(1, 0, 80));
+    CHECK_FALSE(aboveSingleShare(0, 0, 80));
+    CHECK_FALSE(aboveSingleShare(0, 5, 0) == aboveSingleShare(1, 5, 0));
+    int64_t checked = 0, disagree = 0;
+    auto compare = [&](int64_t base, int64_t percent) {
+        // The values around the threshold.
+        const int64_t t = ((xmath::Ext(base) * (xmath::Ext(percent) / xmath::Ext(100)).roundedTo(xmath::kSingleBits)).roundedTo(xmath::kSingleBits)).trunc();
+        for (int64_t value = t - 1; value <= t + 1; ++value) {
+            ++checked;
+            if (aboveSingleShare(value, base, percent) != emulated(value, base, percent)) ++disagree;
+        }
+    };
+    for (int64_t percent = 0; percent <= 300; ++percent) {
+        for (int64_t base = 0; base <= 1200; ++base) compare(base, percent);
+        for (int64_t base = 1201; base < 2'000'000'000; base = base * 3 / 2 + 7) compare(base, percent);
+    }
+    CHECK(checked > 1'000'000);
+    CHECK(disagree == 0);
+    // Negative amounts follow the same rule.
+    for (int64_t base : {-1, -7, -1000, -123'456'789})
+        for (int64_t percent : {-30, 0, 17, 80, 100})
+            for (int64_t value : {-200'000'000, -1000, -1, 0, 1, 1000})
+                CHECK(aboveSingleShare(value, base, percent) == emulated(value, base, percent));
+}
+
+TEST_CASE("ai: the caps' revenue is worked out afresh from the colonies, the start-of-turn figure reused by the economy step") {
+    // Spec 05 §7.5 *Revenue* (confirmed: binary, question 71).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    const EmpireId me{0u};
+    economy::updateReports(r, s);
+    const Resources reported = ai::detail::revenueOf(s, me);
+    CHECK(ai::detail::capRevenueOf(r, s, me) == reported);
+    // A colony founded since the last income report counts at once.
+    const auto spot = freePlanetIn(s, s.galaxy.object(homeworld(s, me).planet).system);
+    REQUIRE(spot);
+    addColony(s, *spot, me, {{me, 500}}).facilities = {facilityIndex(r, "Test Mine")};
+    const Resources live = ai::detail::capRevenueOf(r, s, me);
+    CHECK(live != reported);
+    CHECK(ai::detail::revenueOf(s, me) == reported);   // the net income's revenue stays the report's
+    CHECK(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).capRevenue == live);
+    CHECK(ai::startOfTurnFigures(r, s, me).revenue == live);
 }
 
 TEST_CASE("ai: over the soft cap the oldest design goes: a ship wherever it is, sent to the nearest yard first; a base only at a yard") {

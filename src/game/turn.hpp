@@ -148,8 +148,9 @@ struct TurnContext {
     std::optional<std::vector<ObjectId>> aiColonyTargets;
     // Each empire's figures as its start-of-turn step worked them out first
     // thing (ai::startOfTurnFigures: the net income for the facility
-    // upgrades of its economy step, spec 05 §7.5 *Net income*, confirmed:
-    // binary), by empire index; the economy step takes them.
+    // upgrades of its economy step and the caps' revenue, spec 05 §7.5 *Net
+    // income*, *Revenue*, confirmed: binary), by empire index; the economy
+    // step takes them.
     std::vector<std::optional<ai::StartOfTurnFigures>> aiStartFigures;
 
     // Simultaneous games: called after each of the 30 movement days with the

@@ -178,9 +178,9 @@ TEST_CASE("determinism: a turn-based game gives the golden checksums") {
         {10, 0x9c32da003225fd01ull},
         {20, 0x96d0ff316d9d9b93ull},
         {40, 0x3a56f22ab8ffd025ull},
-        {60, 0x065973e0d8d0d89dull},
-        {80, 0x1ee5697a424d8d62ull},
-        {100, 0xdd4ce803ba8dbcf5ull},
+        {60, 0x2939e7cdf7d009e0ull},
+        {80, 0x1fbc97be9016553eull},
+        {100, 0x230ad1b8fec3de7full},
     }};
     checkCoverage(playGolden("turn-based", 39, false, kGolden));
 }

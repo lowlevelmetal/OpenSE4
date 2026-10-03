@@ -234,12 +234,20 @@ public:
     // (colony ships included) and less what its colony queues will spend this
     // turn (queueCommitments), worked out from the state as it is now.
     Resources netIncome() const;
-    Resources revenue() const;
-    bool overCap(int extraPercent) const;   // soft cap: 0, hard cap: 20
+    Resources revenue() const;   // from the last income report (revenueOf)
+    // Over the soft cap (extraPercent 0) or the hard cap (20): for any one
+    // resource, capUpkeep > capRevenue × (M + extraPercent) / 100 in single
+    // precision (aboveSingleShare; spec 05 §7.5, confirmed: binary).
+    bool overCap(int extraPercent) const;
     // The maintenance the caps compare, worked out from the vehicles of the
     // moment (capMaintenance) when the planner is made and again when its
     // start-of-turn and economy-step ministers start.
     Resources capUpkeep;
+    // The revenue the caps compare (spec 05 §7.5 *Revenue*, confirmed:
+    // binary): worked out afresh from the colonies at the start-of-turn step
+    // (capRevenueOf) and reused by the economy step (ai::StartOfTurnFigures);
+    // a planner that is handed none works it out when it is made.
+    Resources capRevenue;
     // The net income the start-of-turn step worked out once, first thing,
     // kept for the facility upgrades of the economy step (spec 05 §7.5 *Net
     // income*, confirmed: binary): handed over from that step
@@ -289,9 +297,25 @@ void planStellarManipulation(Planner& p);
 // vehicle whose hull takes colony modules (`Requirement Pct Colony Mods`
 // above 0), so colony ships never count. The maintenance paid includes them.
 Resources capMaintenance(const Rules& r, const GameState& s, EmpireId e);
-// Planner::revenue and Planner::netIncome for the state as it is now.
+// Production × the computer-player income factor plus income from other
+// empires (trade and tariffs received; tariffs paid are not subtracted), from
+// an income report (spec 05 §7.5 *Net income*, *Revenue*).
+Resources revenueFrom(const GameState& s, EmpireId e, const EconomyReport& eco);
+// Planner::revenue and Planner::netIncome for the state as it is now: the
+// revenue of the last income report (Empire::economy).
 Resources revenueOf(const GameState& s, EmpireId e);
 Resources netIncomeOf(const Rules& r, const GameState& s, EmpireId e);
+// The caps' revenue (spec 05 §7.5 *Revenue*, confirmed: binary): the same
+// sum, worked out afresh from the colonies as they stand now
+// (economy::incomeReport), so a colony founded, grown, lost or made unhappy
+// since the last income step already counts.
+Resources capRevenueOf(const Rules& r, const GameState& s, EmpireId e);
+// value > base × percent / 100 as the original's caps test it (spec 05 §7.5,
+// confirmed: binary): percent / 100 rounded to a 32-bit float, the product
+// with base rounded to a float again (both to nearest, ties to even), and
+// the integer value compared with that float, all in exact integer
+// arithmetic (no floating point in turn resolution; see ai.cpp).
+bool aboveSingleShare(int64_t value, int64_t base, int64_t percent);
 // What the empire's colony queues will spend this turn on their first items
 // (spec 05 §7.5 *Net income*, confirmed: binary): for each colony queue
 // holding items, the first item's cost less what has been paid into it (not
