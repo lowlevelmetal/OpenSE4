@@ -426,7 +426,9 @@ MinGW-w64.
   as it arrives and sends that player its new view. Everyone gets their view when the
   turn passes on.
 - A play-by-e-mail host keeps the whole game and sends each player the same view as a
-  turn file; the players' orders files come back signed with their passwords.
+  turn file, signed with the host's key (which the player's game trusts per game from
+  the first turn file on); the players' orders files come back signed with their
+  passwords.
 - `src/net` carries this over TCP, encrypted (Monocypher: X25519, XChaCha20-Poly1305,
   BLAKE2b, EdDSA), with UPnP port mapping. A player's copy that drifts from the host's
   view is detected (`game::statePartHashes` names the parts) and replaced.
