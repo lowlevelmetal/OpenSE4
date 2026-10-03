@@ -31,8 +31,11 @@ Press **Begin** at the bottom right to start the battle; until then the other co
 `Begin` then becomes `End Turn`.
 
 **The title strip** at the top shows the battle's location, the combat turn and the empires in the
-battle, the one whose phase it is framed in yellow. The arrow buttons at its right step through
-your pieces that can still move or fire; the square between them clears the selection.
+battle, the one whose phase it is framed in yellow. The two selectors at its right step through
+your pieces: the one with the ship through those that can still move, the one with the crosshair
+through those that can still fire; the left half of each picks the next piece (as `Space`,
+`Ctrl+N` and `Ctrl+F`), the right half the previous one (`Ctrl+B`, `Ctrl+D`). The small box at the
+far right closes the window, but only once the battle is over.
 
 **The map** fills the left of the window. The mouse wheel zooms, dragging with the middle button
 pans, and the arrow keys scroll. The overview map at the bottom right shows the whole battlefield
@@ -47,13 +50,17 @@ In your phase:
 - Click the map, or press `Space`, to skip an animation.
 
 **The current piece panel** at the top right shows the selected piece's picture, name, size and
-movement, with a blue bar for its shields and a red one for its damage; click it for the piece's
-report. Under it, the **weapon grid** holds the piece's weapons, six to a row, each with its
-reload marks. Click a weapon to switch it on or off; `Shift+A` switches all on and `Shift+C` all
-off. Hover over a weapon to see its chance to hit and its damage against the target. Under the
-grid, the target panel (on a screen at least 1024 pixels wide) shows the enemy under the pointer,
-the last one you fired at or the nearest one: its distance in squares, and its shields and damage
-as bars and numbers.
+movement, its owner's flag, and two rows of blocks: blue for what is left of its shields, red for
+what is left of its structure (a planet also writes its structure in thousands); click it for
+the piece's report. It stays empty until you press `Begin`. Under it, the **weapon grid** holds
+the piece's weapons, six to a row: a weapon ready to fire stands on teal, one that has fired
+shows a small red mark at the top, and each cell has its mount's letter at the top left and its
+level at the bottom right. Click a weapon to switch it on or off; `Shift+A` switches all on and
+`Shift+C` all off. Hover over a weapon to see its chance to hit and its damage against the target.
+When a piece has more weapons than the grid holds, the arrows under it scroll the grid. Further
+down, the target panel (on a screen at least 1024 pixels wide) shows the enemy under the pointer,
+the last one you fired at or the nearest one: its distance in squares, and its shields and
+structure as blocks.
 
 The buttons:
 

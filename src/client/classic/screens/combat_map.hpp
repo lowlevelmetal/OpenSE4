@@ -102,4 +102,46 @@ CombatPace combatPace(const game::Rules& r, bool fast, bool animateMoves);
 // over [mapMin, mapMax] (a move with a square outside it is not animated).
 bool squareInView(const CombatView& v, ImVec2 mapMin, ImVec2 mapMax, int x, int y);
 
+// ---- The Tactical Combat window's frame, which Combat Replay shares ----------------------------------
+// (spec 06 §1.6, §1.10.1, §7 Q97, confirmed: binary.) W x H being the frame:
+// the map at (10,38), (W-256) x (H-44), 36 px squares; the right column from
+// x W-232, 216 wide, the current-piece panel 216 x 64 at its top (y 36); the
+// overview map 218 x 190 at (W-230,H-196).
+namespace combat_frame {
+inline constexpr float kSideW = 216;
+inline constexpr float kCell = 36;      // a map square and a weapon cell, in frame pixels
+inline constexpr int kColumns = 6;      // weapon cells in a row
+inline constexpr float kPanelY = 36;
+inline constexpr float kPanelH = 64;
+inline constexpr Vec2 kOverviewSize{218, 190};
+inline float mapWidth() { return frameW() - 256; }
+inline float mapHeight() { return frameH() - 44; }
+inline float sideX() { return frameW() - 232; }
+inline Vec2 overviewAt() { return {frameW() - 230, frameH() - 196}; }
+} // namespace combat_frame
+
+// The head of a piece panel at `at` (frame pixels from the window), as the
+// original lays out both of its panels (spec 06 §7 Q97, observed): the
+// picture in a 38 x 38 frame at (2,2), the name at (42,4), "Size" and a second
+// line (none when `second` is null) in #7D9FFF small type at (47,23) and
+// (47,34) with their values in white at x 91, the owner's flag (a
+// simulation's numbered box) 26 x 18 at (190,3). The places are the letters'
+// tops, as measured.
+void combatPanelHead(UiContext& ui, const Dialog& d, Vec2 at, const game::GameState& s, const Sprite& picture, const std::string& name, ImU32 nameColor,
+                     const std::string& size, const char* second, const std::string& secondValue, game::EmpireId owner);
+// The weapon grid's cells, empty ones too: 1 px lines on the 36 px pitch,
+// `rows` rows of six from `at`.
+void weaponGridLines(UiContext& ui, const Dialog& d, Vec2 at, int rows);
+// The overview map at combat_frame::overviewAt(): the whole battle map, 3 px
+// a square, with the dotted viewing rectangle when `viewRect` (the part `view`
+// shows over `viewSize`); pressing or dragging on it centres the view there.
+void combatOverview(UiContext& ui, const Dialog& d, const CombatMapPainter& paint, const CombatView& view, ImVec2 viewSize, bool viewRect, float& cx,
+                    float& cy);
+// OpenSE4's own over the map at [origin, origin + size]: the wheel zooms
+// around the pointer (6 to 48 frame pixels a square) and the middle button
+// drags the view; the view stays on the map.
+void combatViewInput(UiContext& ui, ImVec2 origin, ImVec2 size, bool hovered, bool active, float& cx, float& cy, float& cellFrame);
+// The arrow keys scroll the map, 30 squares a second.
+void combatViewKeys(UiContext& ui, float& cx, float& cy);
+
 } // namespace opense4::client::classic
