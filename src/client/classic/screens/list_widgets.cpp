@@ -3,7 +3,10 @@
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <string>
+#include <string_view>
 
 namespace opense4::client::classic {
 
@@ -117,7 +120,10 @@ namespace {
 
 struct OpenList {
     float step = kListRowH;
-    ImGuiWindow* rows = nullptr;
+    ImGuiWindow* box = nullptr;   // the framed box
+    ImGuiWindow* rows = nullptr;  // the window that scrolls (the rows' child or the table's)
+    bool disabled = false;
+    std::string name;             // the list id without its "##"
 };
 
 std::vector<OpenList>& openLists() {
@@ -125,15 +131,178 @@ std::vector<OpenList>& openLists() {
     return lists;
 }
 
-} // namespace
+// Repeats of a held arrow every 100 ms after the click (spec 06 §7 Q89).
+constexpr float kRepeat = 0.1f;
 
-float listRowsWidth(const Painter& ui, float width) { return std::max(1.0f, width - ui.px(kListArrowW) - ui.px(1)); }
-
-bool listArrow(const Painter& ui, const char* id, bool up, Vec2 size, bool enabled) {
-    return arrowButton(ui, id, up ? ArrowGlyph::Up : ArrowGlyph::Down, size, enabled);
+// Steps one press of an InvisibleButton just drawn gives this frame.
+int pressSteps(bool pressed) {
+    if (pressed) return 1;
+    if (!ImGui::IsItemActive()) return 0;
+    const float t = ImGui::GetIO().MouseDownDuration[ImGuiMouseButton_Left];
+    if (t <= 0.0f) return 0;
+    return ImGui::CalcTypematicRepeatAmount(t - ImGui::GetIO().DeltaTime, t, kRepeat, kRepeat);
 }
 
-bool arrowButton(const Painter& ui, const char* id, ArrowGlyph glyph, Vec2 size, bool enabled) {
+// The outline of the thumb (and of our own arrows): 1 frame pixel, inside [a, b].
+void outline(const Painter& ui, ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 c) {
+    // Four filled edges: crisp at any scale.
+    const float lw = std::max(1.0f, std::floor(ui.map.scale)) / ui.fbScale;
+    if (b.x - a.x <= 2 * lw || b.y - a.y <= 2 * lw) {
+        dl->AddRectFilled(a, b, c);
+        return;
+    }
+    dl->AddRectFilled(a, {b.x, a.y + lw}, c);
+    dl->AddRectFilled({a.x, b.y - lw}, b, c);
+    dl->AddRectFilled({a.x, a.y + lw}, {a.x + lw, b.y - lw}, c);
+    dl->AddRectFilled({b.x - lw, a.y + lw}, {b.x, b.y - lw}, c);
+}
+
+void glyph(const Painter& ui, ImDrawList* dl, ImVec2 a, ImVec2 b, ArrowGlyph g, ImU32 c) {
+    outline(ui, dl, a, b, c);
+    const float cx = std::floor((a.x + b.x) * 0.5f), cy = std::floor((a.y + b.y) * 0.5f);
+    const float s = std::min(b.x - a.x, b.y - a.y);
+    const float hw = std::floor(s * 0.3f), hh = std::floor(s * 0.18f);
+    switch (g) {
+        case ArrowGlyph::Up: dl->AddTriangleFilled({cx, cy - hh}, {cx + hw, cy + hh}, {cx - hw, cy + hh}, c); break;
+        case ArrowGlyph::Down: dl->AddTriangleFilled({cx - hw, cy - hh}, {cx + hw, cy - hh}, {cx, cy + hh}, c); break;
+        case ArrowGlyph::Left: dl->AddTriangleFilled({cx - hh, cy}, {cx + hh, cy - hw}, {cx + hh, cy + hw}, c); break;
+        case ArrowGlyph::Right: dl->AddTriangleFilled({cx + hh, cy}, {cx - hh, cy + hw}, {cx - hh, cy - hw}, c); break;
+        case ArrowGlyph::Stop: dl->AddRectFilled({cx - hh, cy - hh}, {cx + hh, cy + hh}, c); break;
+    }
+}
+
+// One arrow of the column `size` ImGui units square at the cursor; the steps to scroll.
+int columnArrow(const Painter& ui, const char* id, bool up, float size, bool enabled) {
+    const ImVec2 a = ImGui::GetCursorScreenPos();
+    const ImVec2 b{a.x + size, a.y + size};
+    ImGui::BeginDisabled(!enabled);
+    const bool pressed = ImGui::InvisibleButton(id, ImVec2(size, size), ImGuiButtonFlags_PressedOnClick);
+    ImGui::EndDisabled();
+    const int steps = enabled ? pressSteps(pressed) : 0;
+    const bool hovered = enabled && ImGui::IsItemHovered();
+    const bool held = enabled && ImGui::IsItemActive();
+    // The sheet's state rows: 0 normal, 1 under the pointer, 2 held, 3 dim.
+    const int state = !enabled ? 3 : held ? 2 : hovered ? 1 : 0;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (Sprite s = ui.art.region("Pictures/Game/Buttons/Arrows.bmp", up ? 24 : 0, state * 24, 24, 24, false))
+        dl->AddImage(ImTextureRef(static_cast<ImTextureID>(s.tex.value)), a, b, {s.uv.min.x, s.uv.min.y}, {s.uv.max.x, s.uv.max.y});
+    else {
+        const uint32_t c = state == 3 ? palette::kDisabled : state == 2 ? palette::kButtonHeld : state == 1 ? palette::kButtonHot : palette::kButton;
+        glyph(ui, dl, a, b, up ? ArrowGlyph::Up : ArrowGlyph::Down, imColor(c));
+    }
+    return steps;
+}
+
+// The column at the cursor, `height` ImGui units tall, scrolling `list.rows`;
+// its parts' rectangles go to `parts` (up, down, track, thumb).
+void arrowColumn(const Painter& ui, const OpenList& list, float height, std::array<std::pair<ImVec2, ImVec2>, 4>& parts) {
+    ImGuiWindow* rows = list.rows;
+    const float scroll = rows ? rows->Scroll.y : 0.0f, maxScroll = rows ? rows->ScrollMax.y : 0.0f;
+    const float visible = rows ? rows->InnerRect.GetHeight() : height;
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const float w = ui.px(kListArrowW);
+    const float arrow = std::min(w, std::floor(height * 0.5f));
+    const float step = ui.px(list.step);
+    float target = scroll;
+    ImGui::PushID(list.name.c_str());
+    // The up arrow at the top, the down arrow at the bottom.
+    target -= float(columnArrow(ui, "##up", true, arrow, !list.disabled && scroll > 0.5f)) * step;
+    parts[0] = {ImGui::GetItemRectMin(), ImGui::GetItemRectMax()};
+    ImGui::SetCursorScreenPos({at.x, at.y + height - arrow});
+    target += float(columnArrow(ui, "##down", false, arrow, !list.disabled && scroll < maxScroll - 0.5f)) * step;
+    parts[1] = {ImGui::GetItemRectMin(), ImGui::GetItemRectMax()};
+    // The track between them and its thumb.
+    const float trackTop = at.y + arrow, trackH = std::max(0.0f, height - 2 * arrow);
+    const float content = visible + maxScroll;
+    const float thumbH = trackH <= 0 ? 0.0f : std::min(trackH, std::max(ui.px(6), content > 0 ? std::floor(trackH * visible / content) : trackH));
+    const float thumbY = trackTop + (maxScroll > 0 ? std::floor((trackH - thumbH) * scroll / maxScroll) : 0.0f);
+    parts[2] = {{at.x, trackTop}, {at.x + w, trackTop + trackH}};
+    parts[3] = {{at.x, thumbY}, {at.x + w, thumbY + thumbH}};
+    if (trackH >= 1.0f) {
+        ImGui::SetCursorScreenPos({at.x, trackTop});
+        ImGui::BeginDisabled(list.disabled);
+        ImGui::InvisibleButton("##track", ImVec2(w, trackH), ImGuiButtonFlags_PressedOnClick);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemActive() && maxScroll > 0 && trackH > thumbH) {
+            // Straight to the pointer: the thumb centred on it, a whole row at a time.
+            const float frac = std::clamp((ImGui::GetIO().MousePos.y - trackTop - thumbH * 0.5f) / (trackH - thumbH), 0.0f, 1.0f);
+            target = step > 0 ? std::round(frac * maxScroll / step) * step : frac * maxScroll;
+            if (frac >= 1.0f) target = maxScroll;
+        }
+        if (thumbH >= 1.0f)
+            outline(ui, ImGui::GetWindowDrawList(), parts[3].first, parts[3].second,
+                    imColor(list.disabled ? palette::kDisabled : palette::kFrameLight));
+    }
+    ImGui::PopID();
+    if (rows && target != scroll) ImGui::SetScrollY(rows, std::clamp(target, 0.0f, maxScroll));
+}
+
+// The mouse wheel over the list: a row per notch (observed, spec 07 session 5).
+// The lists' windows take no wheel themselves (ImGuiWindowFlags_NoScrollWithMouse).
+void wheel(const Painter& ui, const OpenList& list) {
+    ImGuiWindow* rows = list.rows;
+    const float step = ui.px(list.step);
+    const float notches = ImGui::GetIO().MouseWheel;
+    if (!rows || notches == 0.0f || list.disabled) return;
+    const ImGuiWindow* hovered = GImGui->HoveredWindow;
+    // Over the box or anything in it that does not scroll by itself.
+    bool over = false;
+    for (const ImGuiWindow* w = hovered; w; w = w->ParentWindow) {
+        if (w == list.box) {
+            over = true;
+            break;
+        }
+        if (w != rows && w->ScrollMax.y > 0.0f && !(w->Flags & ImGuiWindowFlags_NoScrollWithMouse)) return;
+        if (!(w->Flags & ImGuiWindowFlags_ChildWindow)) break;
+    }
+    if (!over) return;
+    ImGui::SetScrollY(rows, std::clamp(rows->Scroll.y - notches * step, 0.0f, rows->ScrollMax.y));
+}
+
+std::string listName(const char* id) {
+    std::string_view s(id);
+    while (s.starts_with('#')) s.remove_prefix(1);
+    return std::string(s);
+}
+
+// Opens the framed box; the rows go at (2,2), (W − 30) × (H − 4) frame pixels.
+ImVec2 openBox(const Painter& ui, const char* id, ImVec2 size, bool border) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(kListInset), ui.px(kListInset)));
+    ImGui::PushStyleColor(ImGuiCol_Border, imColorV(palette::kFrameLight));
+    ImGui::BeginChild(id, size, (border ? ImGuiChildFlags_Borders : ImGuiChildFlags_None) | ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    return {listRowsWidth(ui, avail.x + ui.px(2 * kListInset)), std::max(1.0f, avail.y)};
+}
+
+// Closes the box: the column at its right, the wheel, the tags.
+void closeBox(const Painter& ui, const OpenList& list, ImVec2 rowsMin, float height) {
+    wheel(ui, list);
+    ImGuiWindow* box = list.box;
+    std::array<std::pair<ImVec2, ImVec2>, 4> parts{};
+    ImGui::SetCursorScreenPos({box->Pos.x + box->Size.x - ui.px(kListColumnW - kListInset), rowsMin.y});
+    arrowColumn(ui, list, height, parts);
+    ImGui::EndChild();
+    if (UiContext* tags = ui.tagger) {
+        UiContext::ListParts p;
+        p.min = ImGui::GetItemRectMin();
+        p.max = ImGui::GetItemRectMax();
+        p.parts = parts;
+        p.valid = true;
+        if (tags->drawing && !list.name.empty()) tags->tagListParts(std::string(windowId(*tags->drawing)) + ":" + list.name, p);
+        tags->lastList = p;
+    }
+}
+
+} // namespace
+
+float listRowsWidth(const Painter& ui, float width) { return std::max(1.0f, width - ui.px(kListColumnW + kListInset)); }
+
+int listArrow(const Painter& ui, const char* id, bool up, bool enabled) { return columnArrow(ui, id, up, ui.px(kListArrowW), enabled); }
+
+bool arrowButton(const Painter& ui, const char* id, ArrowGlyph g, Vec2 size, bool enabled) {
     const ImVec2 a = ImGui::GetCursorScreenPos();
     const ImVec2 s = ui.size(size);
     const ImVec2 b{a.x + s.x, a.y + s.y};
@@ -146,97 +315,61 @@ bool arrowButton(const Painter& ui, const char* id, ArrowGlyph glyph, Vec2 size,
     const bool held = hovered && ImGui::IsItemActive();
     // The button blue in its four states (spec 06 §5.4), as the column's buttons.
     const uint32_t state = !enabled ? palette::kDisabled : held ? palette::kButtonHeld : hovered ? palette::kButtonHot : palette::kButton;
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    const float lw = std::max(1.0f, std::floor(ui.map.scale)) / ui.fbScale, h = lw * 0.5f;
-    dl->AddRect({a.x + h, a.y + h}, {b.x - h, b.y - h}, imColor(state), 0.0f, lw);
-    // A filled triangle, a little smaller than the box, pointing its way; or a square.
-    const float cx = std::floor((a.x + b.x) * 0.5f), cy = std::floor((a.y + b.y) * 0.5f);
-    const float hw = std::floor(std::min(s.x, s.y) * 0.3f), hh = std::floor(std::min(s.x, s.y) * 0.18f);
-    const ImU32 c = imColor(state);
-    switch (glyph) {
-        case ArrowGlyph::Up: dl->AddTriangleFilled({cx, cy - hh}, {cx + hw, cy + hh}, {cx - hw, cy + hh}, c); break;
-        case ArrowGlyph::Down: dl->AddTriangleFilled({cx - hw, cy - hh}, {cx + hw, cy - hh}, {cx, cy + hh}, c); break;
-        case ArrowGlyph::Left: dl->AddTriangleFilled({cx - hh, cy}, {cx + hh, cy - hw}, {cx + hh, cy + hw}, c); break;
-        case ArrowGlyph::Right: dl->AddTriangleFilled({cx + hh, cy}, {cx - hh, cy + hw}, {cx - hh, cy - hw}, c); break;
-        case ArrowGlyph::Stop: dl->AddRectFilled({cx - hh, cy - hh}, {cx + hh, cy + hh}, c); break;
-    }
+    glyph(ui, ImGui::GetWindowDrawList(), a, b, g, imColor(state));
     return clicked && enabled;
 }
 
 void beginList(const Painter& ui, const char* id, ImVec2 size, float step, ImGuiChildFlags rowsFlags, bool border) {
     const ImVec2 padding = ImGui::GetStyle().WindowPadding;
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(1), ui.px(1)));
-    ImGui::BeginChild(id, size, (border ? ImGuiChildFlags_Borders : ImGuiChildFlags_None) | ImGuiChildFlags_AlwaysUseWindowPadding,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleVar();
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const bool disabled = (GImGui->CurrentItemFlags & ImGuiItemFlags_Disabled) != 0;
+    const ImVec2 rows = openBox(ui, id, size, border);
+    ImGuiWindow* box = ImGui::GetCurrentWindow();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
-    ImGui::BeginChild("##rows", ImVec2(listRowsWidth(ui, avail.x), std::max(1.0f, avail.y)), rowsFlags, ImGuiWindowFlags_NoScrollbar);
+    ImGui::BeginChild("##rows", rows, rowsFlags, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
-    openLists().push_back({step, ImGui::GetCurrentWindow()});
+    openLists().push_back({step, box, ImGui::GetCurrentWindow(), disabled, listName(id)});
 }
-
-namespace {
-
-// The arrow column at the cursor, `height` ImGui units tall, scrolling `rows`.
-void arrowColumn(const Painter& ui, const OpenList& list, float scroll, float maxScroll, float height) {
-    const ImVec2 at = ImGui::GetCursorScreenPos();
-    const float h = height / ui.k();
-    const float arrow = std::min(kListArrowW, std::floor(h * 0.5f));
-    const float step = ui.px(list.step);
-    ImGui::PushID(list.rows ? static_cast<int>(list.rows->ID) : 0);
-    if (listArrow(ui, "##up", true, {kListArrowW, arrow}, scroll > 0.5f)) ImGui::SetScrollY(list.rows, std::max(0.0f, scroll - step));
-    ImGui::SetCursorScreenPos({at.x, at.y + ui.px(h - arrow)});
-    if (listArrow(ui, "##down", false, {kListArrowW, arrow}, scroll < maxScroll - 0.5f))
-        ImGui::SetScrollY(list.rows, std::min(maxScroll, scroll + step));
-    ImGui::PopID();
-}
-
-} // namespace
 
 void endList(const Painter& ui) {
     if (openLists().empty()) return;
     const OpenList list = openLists().back();
     openLists().pop_back();
-    const float scroll = ImGui::GetScrollY(), maxScroll = ImGui::GetScrollMaxY();
+    const ImVec2 rowsMin = ImGui::GetWindowPos();
     const float height = ImGui::GetWindowHeight();
     ImGui::EndChild();
-    ImGui::SameLine(0, ui.px(1));
-    arrowColumn(ui, list, scroll, maxScroll, height);
-    ImGui::EndChild();
+    closeBox(ui, list, rowsMin, height);
 }
 
 bool beginListTable(const Painter& ui, const char* id, int columns, ImGuiTableFlags flags, ImVec2 size, float step) {
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float w = size.x > 0 ? size.x : std::max(1.0f, avail.x + size.x);
-    const float h = size.y > 0 ? size.y : std::max(1.0f, avail.y + size.y);
-    ImGui::BeginGroup();
-    // No scroll bar: the arrow column takes its place.
+    const bool disabled = (GImGui->CurrentItemFlags & ImGuiItemFlags_Disabled) != 0;
+    const ImVec2 rows = openBox(ui, id, size, true);
+    ImGuiWindow* box = ImGui::GetCurrentWindow();
+    // No scroll bar: the arrow column takes its place; the box is the frame.
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
-    const bool open = ImGui::BeginTable(id, columns, flags | ImGuiTableFlags_ScrollY, ImVec2(listRowsWidth(ui, w), h));
+    const bool open = ImGui::BeginTable("##table", columns, (flags & ~ImGuiTableFlags_BordersOuter) | ImGuiTableFlags_ScrollY, rows);
     ImGui::PopStyleVar();
     if (!open) {
-        ImGui::EndGroup();
+        ImGui::EndChild();
         return false;
     }
-    openLists().push_back({step, ImGui::GetCurrentWindow()});
+    ImGuiWindow* inner = ImGui::GetCurrentWindow();
+    inner->Flags |= ImGuiWindowFlags_NoScrollWithMouse;  // the wheel is the list's (wheel())
+    openLists().push_back({step, box, inner, disabled, listName(id)});
     return true;
 }
 
 void endListTable(const Painter& ui) {
     if (openLists().empty()) {
         ImGui::EndTable();
-        ImGui::EndGroup();
+        ImGui::EndChild();
         return;
     }
     const OpenList list = openLists().back();
     openLists().pop_back();
-    const float scroll = ImGui::GetScrollY(), maxScroll = ImGui::GetScrollMaxY();
+    const ImVec2 rowsMin = list.rows->Pos;
+    const float height = list.rows->Size.y;
     ImGui::EndTable();
-    const float height = ImGui::GetItemRectSize().y;
-    ImGui::SameLine(0, ui.px(1));
-    arrowColumn(ui, list, scroll, maxScroll, height);
-    ImGui::EndGroup();
+    closeBox(ui, list, rowsMin, height);
 }
 
 } // namespace opense4::client::classic

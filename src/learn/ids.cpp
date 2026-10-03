@@ -344,6 +344,16 @@ std::optional<game::Treaty> treatyFromId(std::string_view id) {
 bool isUiTag(std::string_view tag) {
     if (tag.starts_with("window:")) return findWindow(tag.substr(7)) != nullptr;
     if (tag.ends_with(":close")) return findWindow(tag.substr(0, tag.size() - 6)) != nullptr;
+    // A list's arrow column: `<list tag>:up` (and down, track, thumb) for a
+    // tagged list, `<window id>:<list id>:up` for every list of a window.
+    for (std::string_view part : {":up", ":down", ":track", ":thumb"}) {
+        if (!tag.ends_with(part)) continue;
+        const std::string_view list = tag.substr(0, tag.size() - part.size());
+        if (isUiTag(list)) return true;
+        const size_t colon = list.find(':');
+        return colon != std::string_view::npos && colon + 1 < list.size() && list.find(':', colon + 1) == std::string_view::npos &&
+               findWindow(list.substr(0, colon)) != nullptr;
+    }
     const auto tags = fixedUiTags();
     return std::find(tags.begin(), tags.end(), tag) != tags.end();
 }

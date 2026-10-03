@@ -687,7 +687,7 @@ private:
         dl->AddText({a.x + ui.px(4), a.y + ui.px(2)}, value.empty() ? imColor(palette::kSecondary) : IM_COL32_WHITE, value.empty() ? "None" : value.c_str());
         dl->PopClipRect();
         ImGui::SetCursorPos(ui.size({cd::kPickerX + cd::kPickerBoxW + 2, y}));
-        return listArrow(ui, id, false, {cd::kPickerArrow, 20}, enabled);
+        return arrowButton(ui, id, ArrowGlyph::Down, {cd::kPickerArrow, 20}, enabled);
     }
 
     void topRow(UiContext& ui, const std::optional<game::DesignStats>& st) {
@@ -729,7 +729,7 @@ private:
         if (ImGui::InputText("##name", name_.data(), name_.size())) error_.clear();
         ui.tagItem("create-design:name");
         ImGui::SetCursorPos(ui.size({cd::kPickerX + cd::kPickerBoxW + 2, 103}));
-        if (listArrow(ui, "##names", false, {cd::kPickerArrow, 20}, true)) ImGui::OpenPopup("##namelist");
+        if (arrowButton(ui, "##names", ArrowGlyph::Down, {cd::kPickerArrow, 20}, true)) ImGui::OpenPopup("##namelist");
         ui.tagItem("create-design:suggest");
         if (ImGui::BeginPopup("##namelist")) {
             const std::vector<std::string> choices = nameChoices(ui);
@@ -799,9 +799,9 @@ private:
         const int visible = static_cast<int>((cd::kFiguresR - 2 - 20 - 22) / cd::kCell);
         stripFirst_ = std::clamp(stripFirst_, 0, std::max(0, static_cast<int>(cells.size()) - visible));
         ImGui::SetCursorPos(ui.size({4, top + 1}));
-        if (listArrow(ui, "##stripLeft", true, {16, 36}, stripFirst_ > 0)) --stripFirst_;
+        if (arrowButton(ui, "##stripLeft", ArrowGlyph::Left, {16, 36}, stripFirst_ > 0)) --stripFirst_;
         ImGui::SetCursorPos(ui.size({cd::kFiguresR - 17, top + 1}));
-        if (listArrow(ui, "##stripRight", false, {16, 36}, stripFirst_ + visible < static_cast<int>(cells.size()))) ++stripFirst_;
+        if (arrowButton(ui, "##stripRight", ArrowGlyph::Right, {16, 36}, stripFirst_ + visible < static_cast<int>(cells.size()))) ++stripFirst_;
         std::optional<size_t> remove;
         for (int i = 0; i < visible && stripFirst_ + i < static_cast<int>(cells.size()); ++i) {
             const Cell& c = cells[static_cast<size_t>(stripFirst_ + i)];

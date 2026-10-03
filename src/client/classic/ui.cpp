@@ -361,6 +361,22 @@ void UiContext::tag(std::string_view name, ImVec2 min, ImVec2 max) {
     }
 #endif
     tags.push_back({std::string(name), min, max});
+    // A tag given to the list just drawn names its arrow column's parts too.
+    if (lastList.valid && lastList.min.x == min.x && lastList.min.y == min.y && lastList.max.x == max.x && lastList.max.y == max.y) {
+        const ListParts list = lastList;
+        lastList.valid = false;
+        tagListParts(name, list);
+    }
+}
+
+void UiContext::tagListParts(std::string_view base, const ListParts& list) {
+    static constexpr std::string_view kParts[] = {"up", "down", "track", "thumb"};
+    for (size_t i = 0; i < std::size(kParts); ++i) {
+        const std::string name = std::format("{}:{}", base, kParts[i]);
+        // Once per frame: a list whose own name is the tag its window gives it.
+        if (std::any_of(tags.begin(), tags.end(), [&](const UiTag& t) { return t.name == name; })) continue;
+        tag(name, list.parts[i].first, list.parts[i].second);
+    }
 }
 
 void UiContext::promptWindow() {

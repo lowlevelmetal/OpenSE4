@@ -631,6 +631,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     ui.time = fs.time;
     ui.dt = fs.dt;
     ui.tags.clear();
+    ui.lastList.valid = false;
     ui.facts = {};
     ui.promptAreas.clear();
     ui.lessonLocked = lock_.active();

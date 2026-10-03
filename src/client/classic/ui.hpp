@@ -17,6 +17,7 @@
 
 #include <imgui.h>
 
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -142,6 +143,7 @@ struct UiTag {
 };
 
 struct LearnContent;
+class UiContext;
 
 // What the classic widgets need to draw: the pictures, the fonts and the frame
 // scale. The in-game UiContext and the front end's MenuContext both provide one.
@@ -151,6 +153,8 @@ struct Painter {
     FrameMapping map;
     float fbScale = 1.0f;
     float textScale = 1.0f;
+    // In a game: where widgets register their UI tags (the lists' arrow column); null elsewhere.
+    UiContext* tagger = nullptr;
 
     float k() const { return map.scale / fbScale; }
     float px(float framePixels) const { return framePixels * k(); }
@@ -219,6 +223,16 @@ public:
     // a few widgets inside windows (learn/ids.hpp lists them all).
     std::vector<UiTag> tags;
     void tag(std::string_view name, ImVec2 min, ImVec2 max);
+    // The parts of the arrow column of the list drawn last (list_widgets.hpp):
+    // a tag given to that list (`planets:list`) also tags its parts
+    // (`planets:list:up`, `:down`, `:track`, `:thumb`).
+    struct ListParts {
+        ImVec2 min, max;
+        std::array<std::pair<ImVec2, ImVec2>, 4> parts;  // up, down, track, thumb
+        bool valid = false;
+    };
+    ListParts lastList;
+    void tagListParts(std::string_view base, const ListParts& list);
     // The last ImGui item (a button, a child window).
     void tagItem(std::string_view name) { tag(name, ImGui::GetItemRectMin(), ImGui::GetItemRectMax()); }
     void tagFrame(std::string_view name, const Rect& frameRect) { tag(name, at(frameRect.min), at(frameRect.max)); }
