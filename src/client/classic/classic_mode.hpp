@@ -85,6 +85,13 @@ private:
     // Starts a lesson's game from its [setup] through the quick start; on
     // failure returns why.
     std::optional<std::string> startLesson(learn::LessonKind kind, const std::string& slug);
+    // Resumes a tutorial at the place the player left it (docs/LEARNING.md
+    // "Resuming a lesson"); a place that cannot be resumed any more starts the
+    // lesson afresh, with a note. On failure returns why.
+    std::optional<std::string> resumeLesson(learn::LessonKind kind, const std::string& slug);
+    // Before the lesson's game goes (Leave, another game, quitting): a
+    // tutorial left before its end keeps its game and step to resume.
+    void keepLessonPlace();
     // Back to the front end's Learn window (after a lesson).
     void quitToLearn(learn::LessonKind kind);
     void openScreen(classic::ScreenId id, classic::ScreenArgs args);
@@ -126,6 +133,7 @@ private:
     bool keepLogClosed_ = false;  // ... and the Log does not open by itself (screenshots of the main window)
     bool quit_ = false;
     std::optional<std::pair<learn::LessonKind, std::string>> pendingLesson_;   // chosen in the front end
+    bool pendingResume_ = false;                                               // ... to resume
 
     // During a game.
     std::unique_ptr<classic::ClassicSession> session_;
@@ -138,6 +146,9 @@ private:
     // The tutorial or training game being played, if any.
     std::unique_ptr<classic::LessonRunner> lesson_;
     std::string lessonError_;   // a lesson that could not start
+    // The lesson was chosen in the Learn window or the lesson panel (not on
+    // the command line, which checks content): leaving it keeps its place.
+    bool lessonResumable_ = false;
     // The tutorial input lock, made at the end of each frame for the next.
     classic::InputLock lock_;
     void updateLock(classic::UiContext& ui);

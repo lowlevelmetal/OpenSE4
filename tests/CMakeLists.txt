@@ -34,6 +34,7 @@ add_executable(opense4_tests
     test_learn.cpp
     test_learn_client.cpp
     test_lesson_lock.cpp
+    test_lesson_panel.cpp
     test_main_window.cpp
     test_maps.cpp
     test_movement.cpp

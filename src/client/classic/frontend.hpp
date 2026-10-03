@@ -43,6 +43,8 @@ struct MenuContext {
     // The learning content, and starting a lesson's game (docs/LEARNING.md).
     const LearnContent* learn = nullptr;
     std::function<void(learn::LessonKind, const std::string&)> startLesson;
+    // ... or resume a tutorial at the place the player left it.
+    std::function<void(learn::LessonKind, const std::string&)> resumeLesson;
 
     float k() const { return map.scale / fbScale; }
     ImVec2 at(Vec2 framePos) const {

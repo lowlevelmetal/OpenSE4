@@ -1,13 +1,16 @@
 #include "client/classic/learn_content.hpp"
 
+#include "client/classic/session.hpp"
 #include "client/classic/settings.hpp"
 #include "core/embedded.hpp"
 #include "core/log.hpp"
+#include "learn/resume.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <format>
 
 namespace opense4::client::classic {
@@ -108,6 +111,64 @@ void markLessonDone(learn::LessonKind kind, std::string_view slug) {
     if (lessonDone(kind, slug)) return;
     settings().learnDone.push_back(progressKey(kind, slug));
     saveSettings();
+}
+
+bool lessonsStarted() { return settings().learnStarted; }
+
+void markLessonsStarted() {
+    if (settings().learnStarted) return;
+    settings().learnStarted = true;
+    saveSettings();
+}
+
+std::optional<LessonPlace> lessonPlace(learn::LessonKind kind, std::string_view slug) {
+    const std::string key = progressKey(kind, slug);
+    for (const ClassicSettings::ResumeRecord& r : settings().learnResume) {
+        if (r.lesson != key) continue;
+        LessonPlace p;
+        p.leftAt = r.leftAt;
+        p.resumeAt = r.resumeAt;
+        const auto [end, ec] = std::from_chars(r.fingerprint.data(), r.fingerprint.data() + r.fingerprint.size(), p.fingerprint, 16);
+        if (ec != std::errc{} || end != r.fingerprint.data() + r.fingerprint.size()) p.fingerprint = 0;
+        return p;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> lastLeftLesson(learn::LessonKind kind) {
+    const std::string prefix = progressKey(kind, "");
+    const auto& list = settings().learnResume;
+    for (auto it = list.rbegin(); it != list.rend(); ++it)
+        if (it->lesson.starts_with(prefix)) return it->lesson.substr(prefix.size());
+    return std::nullopt;
+}
+
+std::filesystem::path lessonPlaceFile(learn::LessonKind kind, std::string_view slug) {
+    return userDataDir() / "lessons" / std::format("{}-{}.gam", learn::kindName(kind), slug);
+}
+
+void rememberLessonPlace(learn::LessonKind kind, std::string_view slug, const LessonPlace& place) {
+    auto& list = settings().learnResume;
+    const std::string key = progressKey(kind, slug);
+    std::erase_if(list, [&](const ClassicSettings::ResumeRecord& r) { return r.lesson == key; });
+    list.push_back({key, uint32_t(place.leftAt), uint32_t(place.resumeAt), std::format("{:016x}", place.fingerprint)});
+    saveSettings();
+}
+
+void forgetLessonPlace(learn::LessonKind kind, std::string_view slug) {
+    std::error_code ec;
+    std::filesystem::remove(lessonPlaceFile(kind, slug), ec);
+    auto& list = settings().learnResume;
+    const std::string key = progressKey(kind, slug);
+    if (std::erase_if(list, [&](const ClassicSettings::ResumeRecord& r) { return r.lesson == key; }) > 0) saveSettings();
+}
+
+std::optional<std::string> lessonPlaceProblem(const learn::Lesson& lesson, const LessonPlace& place) {
+    if (place.fingerprint != learn::lessonFingerprint(lesson) || place.resumeAt >= lesson.steps.size())
+        return std::string("The lesson has changed since you left it");
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(lessonPlaceFile(lesson.kind, lesson.slug), ec)) return std::string("Its saved game is missing");
+    return std::nullopt;
 }
 
 } // namespace opense4::client::classic

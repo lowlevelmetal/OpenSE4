@@ -14,17 +14,34 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 
 namespace opense4::client::classic {
 
 namespace {
 
 const ImVec4 kDone{0.45f, 0.9f, 0.45f, 1.0f};
+const ImVec4 kGold{1.0f, 0.85f, 0.45f, 1.0f};
 
 void dim(std::string_view text) {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextColored(imColorV(palette::kSecondary), "%.*s", int(text.size()), text.data());
     ImGui::PopTextWrapPos();
+}
+
+void wrapped(const ImVec4& color, const std::string& text) {
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(color, "%s", text.c_str());
+    ImGui::PopTextWrapPos();
+}
+
+// The place the player left a tutorial at, while it can still be resumed
+// (docs/LEARNING.md "Resuming a lesson").
+std::optional<LessonPlace> resumable(const learn::Lesson& l) {
+    if (l.kind != learn::LessonKind::Tutorial) return std::nullopt;
+    std::optional<LessonPlace> place = lessonPlace(l.kind, l.slug);
+    if (!place || lessonPlaceProblem(l, *place)) return std::nullopt;
+    return place;
 }
 
 } // namespace
@@ -61,9 +78,16 @@ bool LearnView::draw(const Painter& p, Dialog& d, LearnHost& host) {
     } else {
         const learn::LessonKind kind = tab_ == Tab::Tutorials ? learn::LessonKind::Tutorial : learn::LessonKind::Training;
         const learn::Lesson* l = lib.lesson(kind, sel);
+        // A tutorial left before its end goes on where it was.
+        if (const std::optional<LessonPlace> place = l && host.resume ? resumable(*l) : std::nullopt) {
+            if (d.button(std::format("Resume (step {})", place->resumeAt + 1).c_str())) host.resume(kind, l->slug);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", host.inGame ? "Ends the current game and goes on with this lesson in its own game, where you left it"
+                                                    : "Goes on with this lesson in its game, where you left it");
+        }
         if (d.button(tab_ == Tab::Tutorials ? "Start Lesson" : "Start Game", l != nullptr)) host.start(kind, l->slug);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", host.inGame ? "Ends the current game and starts this one" : "Starts this lesson's game");
+            ImGui::SetTooltip("%s", host.inGame ? "Ends the current game and starts this one" : "Starts this lesson's game from the beginning");
     }
     if (!host.content->originalManual.empty()) {
         if (d.button("Original Manual")) openOriginalManual(*host.content);
@@ -82,28 +106,53 @@ void LearnView::lessons(const Painter& p, LearnHost& host, learn::LessonKind kin
         dim(kind == learn::LessonKind::Tutorial ? "No tutorials are installed yet." : "No training games are installed yet.");
         return;
     }
-    if (!lib.lesson(kind, sel)) sel = list.front().slug;
+    // The first lesson not done yet is the one to take next.
+    const learn::Lesson* nextUp = nullptr;
+    size_t done = 0;
+    for (const learn::Lesson& l : list) {
+        if (lessonDone(kind, l.slug)) ++done;
+        else if (!nextUp) nextUp = &l;
+    }
+    if (!lib.lesson(kind, sel)) {
+        // Chosen at first: the tutorial the player left last, to go on with
+        // it; else the next one to take.
+        const std::optional<std::string> left = lastLeftLesson(kind);
+        const learn::Lesson* leftLesson = left ? lib.lesson(kind, *left) : nullptr;
+        sel = leftLesson && resumable(*leftLesson) ? leftLesson->slug : nextUp ? nextUp->slug : list.front().slug;
+    }
 
-    // The list on the left, the chosen lesson on the right.
+    // How far the player is; the list on the left, the chosen lesson on the right.
+    const std::string count = std::format("{} of {} {}", done, list.size(), kind == learn::LessonKind::Tutorial ? "done" : "won");
+    ImGui::TextColored(kLabelBlue, "%s", count.c_str());
+    script::reportItem(count);
+    const float rowH = std::max(p.px(34), ImGui::GetTextLineHeight() * 2.0f + p.px(2));
     ImGui::BeginChild("##lessons", ImVec2(p.px(250), 0), ImGuiChildFlags_Borders);
     for (const learn::Lesson& l : list) {
         ImGui::PushID(l.slug.c_str());
-        const bool done = lessonDone(kind, l.slug);
-        if (ImGui::Selectable("##row", sel == l.slug, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, p.px(34)))) {
+        const std::optional<LessonPlace> place = resumable(l);
+        if (ImGui::Selectable("##row", sel == l.slug, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, rowH))) {
             sel = l.slug;
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) host.start(kind, l.slug);
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                if (place && host.resume) host.resume(kind, l.slug);
+                else host.start(kind, l.slug);
+            }
         }
         script::reportItem(l.title);   // input scripts find a lesson by its title
-        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+        const float second = min.y + std::max(p.px(18), ImGui::GetTextLineHeight() + p.px(3));
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddText(ImVec2(min.x + p.px(4), min.y + p.px(2)), IM_COL32_WHITE, l.title.c_str());
         const std::string sub = l.minutes > 0 ? std::format("About {} minutes", l.minutes) : std::string{};
-        dl->AddText(ImVec2(min.x + p.px(4), min.y + p.px(18)), imColor(palette::kSecondary), sub.c_str());
-        if (done) {
-            const char* mark = "Done";
-            const float w = ImGui::CalcTextSize(mark).x;
-            dl->AddText(ImVec2(ImGui::GetItemRectMax().x - w - p.px(6), min.y + p.px(2)), ImGui::GetColorU32(kDone), mark);
-        }
+        dl->AddText(ImVec2(min.x + p.px(4), second), imColor(palette::kSecondary), sub.c_str());
+        // Done, or Next on the first one not done; and where a tutorial was left.
+        auto mark = [&](const std::string& text, const ImVec4& color, float y) {
+            const float w = ImGui::CalcTextSize(text.c_str()).x;
+            dl->AddText(ImVec2(max.x - w - p.px(6), y), ImGui::GetColorU32(color), text.c_str());
+            script::reportItem(std::format("{}:{}", text, l.slug), ImVec2(max.x - w - p.px(6), y), ImVec2(max.x - p.px(6), y + ImGui::GetTextLineHeight()));
+        };
+        if (lessonDone(kind, l.slug)) mark("Done", kDone, min.y + p.px(2));
+        else if (&l == nextUp) mark("Next", kGold, min.y + p.px(2));
+        if (place) mark(std::format("Step {}", place->resumeAt + 1), kGold, second);
         ImGui::PopID();
     }
     ImGui::EndChild();
@@ -120,9 +169,29 @@ void LearnView::lessons(const Painter& p, LearnHost& host, learn::LessonKind kin
         ImGui::Spacing();
         if (l->minutes > 0) ImGui::TextColored(kLabelBlue, "About %d minutes", l->minutes);
         if (kind == learn::LessonKind::Tutorial) {
+            // Where the player left it, and whether it resumes there.
+            std::optional<size_t> resumeAt;
+            if (const std::optional<LessonPlace> place = lessonPlace(kind, l->slug)) {
+                ImGui::Spacing();
+                if (const auto problem = lessonPlaceProblem(*l, *place)) {
+                    wrapped(imColorV(palette::kSecondary),
+                            std::format("You left this lesson at step {}. {}, so it starts again from the first step.", place->leftAt + 1, *problem));
+                } else {
+                    resumeAt = place->resumeAt;
+                    wrapped(kGold, place->resumeAt == place->leftAt
+                                       ? std::format("You left this lesson at step {}. Resume goes on from there.", place->leftAt + 1)
+                                       : std::format("You left this lesson at step {}. Resume goes back to step {}, where the work in its "
+                                                     "window began: open windows are not kept.",
+                                                     place->leftAt + 1, place->resumeAt + 1));
+                }
+            }
+            ImGui::Spacing();
             ImGui::TextColored(kLabelBlue, "%zu steps", l->steps.size());
             ImGui::Spacing();
-            for (size_t i = 0; i < l->steps.size(); ++i) ImGui::Text("%zu. %s", i + 1, l->steps[i].title.c_str());
+            for (size_t i = 0; i < l->steps.size(); ++i) {
+                const ImVec4 color = !resumeAt ? ImVec4(1, 1, 1, 1) : i < *resumeAt ? imColorV(palette::kSecondary) : i == *resumeAt ? kGold : ImVec4(1, 1, 1, 1);
+                ImGui::TextColored(color, "%zu. %s", i + 1, l->steps[i].title.c_str());
+            }
         } else {
             ImGui::TextColored(kLabelBlue, "Objectives");
             for (const learn::Objective& o : l->objectives) {
@@ -370,14 +439,20 @@ public:
         LearnHost host = gameHost(ui);
         host.start = [this](learn::LessonKind kind, const std::string& slug) {
             pending_ = {kind, slug};
+            resume_ = false;
             confirm_.open("Leave this game and start the lesson's game? Anything not saved is lost.", "Start Lesson");
+        };
+        host.resume = [this](learn::LessonKind kind, const std::string& slug) {
+            pending_ = {kind, slug};
+            resume_ = true;
+            confirm_.open("Leave this game and go on with the lesson where you left it? Anything not saved is lost.", "Resume Lesson");
         };
         bool keep = true;
         {
             Dialog d(ui, "Learn", DialogSize::Large);
             keep = view_.draw(ui.painter(), d, host);
             // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
-            if (confirm_.draw(ui)) ui.requests.startLesson = pending_;
+            if (confirm_.draw(ui)) (resume_ ? ui.requests.resumeLesson : ui.requests.startLesson) = pending_;
         }
         return keep;
     }
@@ -385,6 +460,7 @@ public:
 private:
     LearnView view_;
     std::pair<learn::LessonKind, std::string> pending_;
+    bool resume_ = false;   // pending_ resumes at the place the player left it
     YesNoPrompt confirm_;
 };
 
@@ -428,6 +504,9 @@ public:
         host.content = ctx.learn;
         host.start = [&ctx](learn::LessonKind kind, const std::string& slug) {
             if (ctx.startLesson) ctx.startLesson(kind, slug);
+        };
+        host.resume = [&ctx](learn::LessonKind kind, const std::string& slug) {
+            if (ctx.resumeLesson) ctx.resumeLesson(kind, slug);
         };
         host.openManual = [this](const std::string& target) {
             if (manual_) manual_->go(target);

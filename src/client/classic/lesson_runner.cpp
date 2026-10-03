@@ -152,6 +152,7 @@ void LessonRunner::finished() {
     panelOpen_ = true;
     const learn::LessonProgress::Result r = progress_.result();
     if (r == learn::LessonProgress::Result::Done || r == learn::LessonProgress::Result::Won) markLessonDone(lesson().kind, lesson().slug);
+    if (r == learn::LessonProgress::Result::Done) forgetLessonPlace(lesson().kind, lesson().slug);   // nothing left to resume
 }
 
 void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {

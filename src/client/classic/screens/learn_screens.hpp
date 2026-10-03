@@ -24,6 +24,8 @@ struct LearnHost {
     bool locked = false;
     // Starts a lesson or training game.
     std::function<void(learn::LessonKind, const std::string&)> start;
+    // Resumes a tutorial at the place the player left it (learn_content.hpp lessonPlace).
+    std::function<void(learn::LessonKind, const std::string&)> resume;
     // Shows the manual at "slug" or "slug#anchor".
     std::function<void(const std::string&)> openManual;
     // Follows a `window:` or `help:` link (games only).
