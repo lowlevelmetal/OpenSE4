@@ -29,9 +29,9 @@ wait-step 5
 click tag:tactical-combat:end-turn
 wait-step 6
 assert { battle_begun = true }
-# 6 Move: zoom the map out with the wheel (five notches) until the base shows, select a ship, and click the
+# 6 Move: zoom the map out with the wheel (twelve notches) until the base shows, select a ship, and click the
 # square above the base: the ship moves toward it as far as it can this turn.
-wheel tag:tactical-combat:map -5
+wheel tag:tactical-combat:map -12
 wait-for item:piece:enemy in=tactical-combat
 click item:piece:own in=tactical-combat nth=1
 click item:piece:enemy@50%,-50% in=tactical-combat
