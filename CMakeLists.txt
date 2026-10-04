@@ -37,6 +37,17 @@ if(OPENSE4_STATIC AND NOT MSVC)
         add_link_options(-static-libstdc++ -static-libgcc)
     endif()
 endif()
+# The same game on every machine (docs/ENGINE.md, "Same on every platform"): no
+# fused multiply-add. ARM has it, and GCC would fuse a * b + c there by default,
+# rounding once where x86_64 rounds twice. Everything, the libraries included.
+if(NOT MSVC)
+    add_compile_options(-ffp-contract=off)
+endif()
+# 32-bit Linux (armhf): 64-bit time_t and file offsets in every library, so that
+# times after 2038 and files over 2 GiB work as on 64-bit machines (glibc 2.34+).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+    add_compile_definitions(_FILE_OFFSET_BITS=64 _TIME_BITS=64)
+endif()
 if(NOT OPENSE4_DEV_PATHS AND NOT MSVC)
     # Keep the build machine's paths out of the binary (source file names in logs).
     add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=." "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
@@ -59,6 +70,11 @@ if(MSVC)
 else()
     target_compile_options(opense4_warnings INTERFACE -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion
         -Wno-missing-field-initializers)  # Vulkan's `VkFoo info{VK_STRUCTURE_TYPE_FOO}` idiom
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # GCC for 32-bit ARM notes at every std::format that GCC 9.1 changed how its
+        # arguments are passed; that concerns only code built by older compilers.
+        target_compile_options(opense4_warnings INTERFACE -Wno-psabi)
+    endif()
     if(OPENSE4_WARNINGS_AS_ERRORS)
         target_compile_options(opense4_warnings INTERFACE -Werror)
     endif()
