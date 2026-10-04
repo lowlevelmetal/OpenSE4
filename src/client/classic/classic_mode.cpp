@@ -765,13 +765,27 @@ void ClassicMode::closeChildren(std::vector<ScreenId> closed) {
 void ClassicMode::endTurn() {
     // Never while a battle is being fought or asked about: it is part of the turn
     // being processed. The main window's End Turn is unavailable then anyway
-    // (every window and question is modal).
+    // (every window and question is modal), and the battle's window must not
+    // be closed under it.
     if (!session_ || session_->waitingForOthers() || session_->tactical() || session_->battleQuestion()) return;
     audio().play("endturn");
     screens_.clear();
     parentOf_.clear();
     const BusyPointer busy;  // the Hourglass while the turn is processed (§5.8)
     session_->endTurn();
+}
+
+void ClassicMode::dropInputMadeWhileBusy() {
+    SDL_PumpEvents();
+    for (const SDL_EventType type : {SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP, SDL_EVENT_TEXT_INPUT, SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_BUTTON_UP,
+                                     SDL_EVENT_MOUSE_WHEEL})
+        SDL_FlushEvent(type);
+    // And what Dear ImGui holds still to hand out over the next frames: every
+    // key and button is then released.
+    ImGuiIO& io = ImGui::GetIO();
+    io.ClearEventsQueue();
+    io.ClearInputKeys();
+    io.ClearInputMouse();
 }
 
 void ClassicMode::cueMusic(MusicCue cue) {
@@ -817,7 +831,16 @@ bool ClassicMode::update(const FrameState& fs) {
     // Every classic window defaults to the game's text font at its own raster
     // size; the Text size setting enlarges reading text and OpenSE4's own (ui.hpp).
     ImGui::PushFont(fonts_.regular, kTextSize * mapping_.scale / fs.fbScale);
+    const ClassicSession* session = session_.get();
+    const uint64_t calls = session ? session->engineCalls() : 0;
+    const uint64_t started = SDL_GetTicksNS();
     const bool keepRunning = updateFrame(fs);
+    // The original locks its panels while the turn is processed (spec 06
+    // §2.3); here the processing holds the frame, and what was clicked or
+    // pressed meanwhile waits in the queue. A script's input never waits.
+    constexpr uint64_t kBusyNs = 250'000'000;
+    if (session && session_.get() == session && session_->engineCalls() != calls && !options_.scripted && SDL_GetTicksNS() - started > kBusyNs)
+        dropInputMadeWhileBusy();
     ImGui::PopFont();
     // The frame's pointer, grown with the classic screens by whole multiples.
     if (pointers().loaded()) pointers().apply(int(std::lround(mapping_.scale / std::max(0.01f, fs.fbScale))));
@@ -1003,7 +1026,10 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     }
     closeChildren(std::move(closed));
     if (screens_.empty()) frontWindow_ = 0;
-    if (battleAsking) drawBattleQuestion(ui);
+    // A window may have answered the question meanwhile (Ground Combat's
+    // Close, a battle that does not start), and the game gone on: only one
+    // still waiting is drawn.
+    if (battleAsking && session_->battleQuestion() && !session_->tactical()) drawBattleQuestion(ui);
     updateLesson(ui, prompted);
     for (auto& [id, args] : pendingOpen_) openScreen(id, std::move(args));
     pendingOpen_.clear();
@@ -1390,15 +1416,21 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
     // a computer empire, a notice naming the system and the empires comes
     // first. The colony owner's end-of-turn ground combat always has its
     // notice, then the Ground Combat window.
+    if (!session_->battleQuestion()) return;
     const game::BattleQuestion& q = *session_->battleQuestion();
     const game::GameState& s = ui.state();
     const bool ground = q.kind == game::BattleQuestion::Kind::Ground;
     const size_t key = q.index * 100003u + size_t(q.where.system.value) * 1009u + size_t(q.where.sector.x * 13 + q.where.sector.y);
     if (battleChoiceKey_ != key) {
         battleChoiceKey_ = key;
-        const game::EmpireId turn = game::activePlayer(s);
-        battleNotice_ = ground || (!s.options.simultaneous && turn.valid() && turn.index() < s.empires.size() &&
-                                   s.empire(turn).kind != game::PlayerKind::Human);
+        // Whose turn it is at the battle: the question's copy of the game. The
+        // session's game is as before the call, so after the player's End Turn
+        // it is still the player's turn there, while the battle comes in a
+        // computer player's turn that the call went on to.
+        const game::GameState& at = q.state ? *q.state : s;
+        const game::EmpireId turn = game::activePlayer(at);
+        battleNotice_ = ground || (!at.options.simultaneous && turn.valid() && turn.index() < at.empires.size() &&
+                                   at.empire(turn).kind != game::PlayerKind::Human);
     }
     if (!battleNotice_) {
         // The question itself: the Strategic Combat window, or Ground Combat for a ground fight.

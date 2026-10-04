@@ -1,0 +1,54 @@
+# A battle that stops the turn, answered Strategic (docs/BUILDING.md "Input scripts"). With
+# seed 23, ten systems and seven empires, after the computer has played every empire for 40
+# turns, the player's first End Turn stops in a computer's turn: its ship comes through a
+# warp point into a sector where the player's forces are. The notice comes first; Strategic
+# Combat then asks Tactical or Strategic, and Strategic fights the battle by the strategies.
+# The game stays as it was until Close lets the turn go on, and the turn then ends exactly
+# once; a second End Turn ends the next one. Play it with the asan preset's client too:
+# v0.8.1 crashed here, the main window drawing from vehicles the stopped turn had freed.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --seed=23 --systems=10 --empires=7 --turns=40 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+assert-turn 40
+# New colonies ask for their type first (questions are modal).
+repeat 10
+  click item:"*(suggested)" optional timeout=5
+end
+click tag:button:end-turn
+click item:Yes in="End Turn" optional
+# The notice: a computer player's turn brought the battle.
+wait-for item:Begin
+assert-turn 40
+click item:Begin
+wait-window strategic-combat
+assert-present item:Tactical in=strategic-combat
+assert-turn 40
+screenshot battle-question.png
+click item:Strategic in=strategic-combat
+# The strategies fight it; Close lights at its end. End Turn does nothing meanwhile (the
+# main window takes no input while a window is open) and leaves the window as it is.
+wait 300
+assert-enabled item:Close in=strategic-combat
+click tag:button:end-turn
+wait 5
+assert-turn 40
+assert-enabled item:Close in=strategic-combat
+click item:Close in=strategic-combat
+wait-closed strategic-combat
+wait-turn 41
+# Nothing more is played on its own.
+wait 120
+assert-turn 41
+assert-no-window strategic-combat
+# The next End Turn plays the next turn (any battle it brings answered Strategic too).
+key Escape
+click tag:button:end-turn
+click item:Yes in="End Turn" optional
+repeat 20 until { turn = 42 }
+  click item:Begin optional timeout=30
+  click item:Strategic in=strategic-combat optional timeout=30
+  click item:Close in=strategic-combat optional timeout=600
+end
+wait 60
+assert-turn 42

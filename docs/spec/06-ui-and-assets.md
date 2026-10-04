@@ -1318,7 +1318,11 @@ Three groups, left to right [T][S]:
    Designs, Planets, Colonies, Ships\Units, Construction Queues. Bottom row: Research,
    Empires, Log, Empire Status, Help, End Turn. They match F2..F11, F1 and F12 (§3).
    Pressing End Turn disables the main window's panels until every computer player has
-   moved. A left-click plays `cmdbtn` when sound is on (confirmed: binary).
+   moved. A left-click plays `cmdbtn` when sound is on (confirmed: binary). Our client
+   processes the turn within one frame; the clicks and keys given meanwhile are dropped
+   when it ends (`ClassicMode::dropInputMadeWhileBusy`), so a second click on End Turn
+   does not end the next turn as well. While a battle is being shown, End Turn does
+   nothing (the battle's window is modal, §1.10.5).
 2. **Order buttons**: 40 order places with fixed positions (the order and cells are in
    spec 07 §UI), filled column by column, top then bottom (confirmed: binary). The order
    area starts at (230,36), 219 px right of the panel's left edge and 2 px below its top;
@@ -4142,10 +4146,13 @@ a viewer sees of Q73 was observed); Q74 and Q75 have no counterpart:
     at once in its Begin and Close form for every battle, computer-only battles included:
     the setting takes the place of the test for a human side.
     Our client matches for the notice (`ClassicMode::drawBattleQuestion`,
-    `classic_mode.cpp`, shows it only in turn-based games). Since 2026-10-01 the engine
-    matches too: with the setting on, `resolve()` (`combat_space.cpp`) stops a simultaneous
-    turn at every battle on that machine, computer-only ones included (a Show question
-    with no human side).
+    `classic_mode.cpp`, shows it only in turn-based games). It takes whose turn it is
+    from the battle's own copy of the game (`BattleQuestion::state`): the session's game
+    stays as it was before the call, still the player's own turn when the battle came in
+    a computer player's turn after the player's End Turn (until 2026-10-04 the notice was
+    missing there). Since 2026-10-01 the engine matches too: with the setting on,
+    `resolve()` (`combat_space.cpp`) stops a simultaneous turn at every battle on that
+    machine, computer-only ones included (a Show question with no human side).
 
 Bringing the combat windows in line with Q34–Q36 and Q38 on 2026-10-01 left these
 choices of ours (inferred) (Q73–Q76 are those of the live battle flow). All are settled

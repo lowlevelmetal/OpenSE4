@@ -494,6 +494,18 @@ plays at both should not depend on the layout: give an order that may be on anot
 Run them, with `--small`, after changing the client's windows, the tutorials or the input
 lock. With the lesson checks (`tools/check_lessons.py`, and its `--audit` of what each step
 lets through and shows, docs/LEARNING.md) they are the routine for the learning content.
+After changing the session, the turn flow or the battle windows, also play
+`battle-strategic` with the `asan` build's client, which turns a dangling pointer into a
+failure (`ASAN_OPTIONS=detect_leaks=0 ./build/asan/opense4 --input-script=...`; the
+graphics drivers leak a little at exit).
+
+`OPENSE4_BATTLE_SOAK=N` with `OPENSE4_CLASSIC_DATA=auto` runs an opt-in soak test
+(`-tc="battle flow: quick*"`): N quick turn-based games on your install from seed
+`OPENSE4_BATTLE_SOAK_SEED` (default 1), the player's empire played by its ministers for
+`OPENSE4_BATTLE_SOAK_TURNS` turns (150), every battle fought as the Strategic Combat window
+fights it, and each turn compared with the same turn played without stops
+(`_OPP` computer players, 4; `_SYSTEMS` systems, 12; `_SIM=1` for simultaneous turns). Under
+the `asan` build it finds memory errors in the battle flow.
 
 The audio check plays the scripts of `tests/audio` with sound on, through SDL's `disk`
 audio driver, which writes the mix to a file in real time instead of to a sound card, and
@@ -580,6 +592,7 @@ recorder is tested.
 | `combat-windows.script` | Tactical Combat on a sample battle: zoom and pan, the Combat Piece Report, Combat Options, the Orders menu and Resolve Combat |
 | `ground-combat.script` | Ground Combat on a sample strategic battle (`--open=ground-combat`): Begin, the rounds, Close, then the rest of the battle |
 | `combat-replay.script` | Combat Replay on a battle of the last turn: the overview, Combat Replay Options' check boxes, Next to the last combat turn, Stop Replay |
+| `battle-strategic.script` | A battle that stops the player's End Turn: an enemy ship comes through a warp point into the player's sector in a computer player's turn; the notice, Strategic Combat's question, Strategic, End Turn doing nothing over the battle's window, Close; the turn then ends exactly once, and the next End Turn ends the next one. Play it with the `asan` client too (v0.8.1 crashed here: see "Crash reports") |
 | `report-up-arrow.script` | The report panel's up-arrow back to a sector's list: shown only for a report opened from the list |
 | `selection-other-system.script` | Another system shown keeps the selection: the report and its tab across a galaxy-panel click and the Galaxy Map's Goto System, a right-click in the system panel doing nothing, a facility's report from Facil, Detail again when a report is filled afresh |
 | `only-latest.script` | The Only Latest boxes of Set Construction Queue and Create Design write the Empire Options rows |
@@ -641,6 +654,46 @@ from a double click.
 Every wait (and a pointer step's wait for its target) fails after its timeout (`timeout=N` on
 the line, else the script's). Conditions are those of the lessons (docs/LEARNING.md
 "Conditions").
+
+## Crash reports
+
+When the program dies of a fault or of an exception nothing caught, `src/client/crash_report.cpp`
+appends a report to `opense4.log` in the user data folder and a message box says where it is
+(not in automated runs: scripts, screenshots, `--lesson-check`, `SDL_VIDEO_DRIVER=offscreen`
+or `dummy`). The next start renames that log to `opense4.previous.log`. A report looks like:
+
+```
+==== OpenSE4 crash report ====
+Version: 0.8.1 (Windows, x86_64, Clang 21.1.0)
+What: access violation (0xc0000005), reading 0x18
+Stack:
+  opense4.exe+0x4f1a2c
+  ...
+Last log lines:
+  [  812.240 info ] A battle at system 4 (12, 10) stops the turn to be shown (1 human side(s))
+==== end of the crash report ====
+```
+
+Windows reports come from an unhandled-exception filter (with a stack guarantee and a
+thread of its own for stack overflows), Linux and macOS ones from signal handlers that
+write with async-signal-safe calls only; there the message box is shown by the program
+started again as `opense4 --crash-message=FILE`. An uncaught exception names its message.
+Builds with AddressSanitizer keep the sanitizer's own handlers. The stack lines are
+module and offset: turn them into functions and lines with the same build's binary,
+`addr2line -f -C -e opense4 0x4c9d04` (Linux, from the `(+0x...)` of a line) or
+`llvm-addr2line -f -C -e opense4.exe 0x1404f1a2c` (Windows: the offset plus the image base,
+0x140000000 for our 64-bit builds). Release packages are stripped, so keep the unstripped
+binary of each release (or rebuild the tag) to read them.
+
+`OPENSE4_CRASH_TEST=fault` (or `exception`) makes the game crash on purpose right after
+the handler is installed, to check the report on a platform, under Wine too:
+
+```sh
+OPENSE4_CRASH_TEST=fault SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4; tail -20 ~/.local/share/OpenSE4/opense4.log
+```
+
+`tests/test_crash_report.cpp` checks the report of a segmentation fault and of an uncaught
+exception in a child process (Linux and macOS).
 
 ## Continuous integration
 

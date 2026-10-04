@@ -170,6 +170,11 @@ private:
         std::vector<const game::Vehicle*> vehicles;
     };
     std::vector<ShownSector> sectors_;
+    // The game the list was made from: its vehicle pointers hold only until
+    // the next state change (ClassicSession::revision()), which can come
+    // between update() and render() (see render()).
+    uint64_t sectorsRevision_ = 0;
+    const game::Vehicle* sectorsVehicles_ = nullptr;
 
     game::SystemId shown_;
     uint64_t selections_ = 0;   // selections the player made (selectSector, selectVehicle, selectPlanet, list rows)

@@ -298,6 +298,14 @@ battle come only after the window has closed. Nothing a window shows can change 
 so the results are the same whether a battle is shown or not. Network and PBEM hosts and
 automated runs pass no answers and never stop.
 
+A call with answers keeps a copy of the game from its start (`detail::withBattles`,
+`turn_internal.hpp`). A stop puts it back, which replaces the contents of the state, the
+storage of its lists among them: a client that holds pointers into the state (the main
+window's sector list, a window's references) must take them again after any such call,
+stopped or not, and `ClassicSession::revision()` changes with each. A fault (any other
+exception) also puts the game back before it goes on to the caller, and the session then
+drops the call: nothing half processed is ever shown, carried on or autosaved.
+
 A battle's record (`CombatRecord`) holds its pieces, the events the replays play back
 (moves, shots, hits, losses of units, launches, captures) and the ground combats fought
 when troops landed (`GroundCombat`, for the Ground Combat window: both sides at the start,
@@ -481,6 +489,15 @@ grow, for example with more pipelines or offscreen targets, without touching gam
 explains where it looked and exits with an error. It then opens the window, the render
 device (Vulkan, else OpenGL) and Dear ImGui, and runs the frame loop and screenshots.
 
+`src/client/crash_report.*` installs the crash handler (main.cpp): a fault or an exception
+nothing caught appends a report to `opense4.log` (version, what happened, the stack as
+module and offset, the last log lines; `log::crashWrite` writes without locking or
+allocating) and a message box says where it is (docs/BUILDING.md "Crash reports").
+While End Turn's processing (or the rest of a turn after a battle's window) holds the
+frame, the player's clicks and keys wait in the queue; `ClassicMode` drops them after such
+a frame, as the original locks its panels until the computer players have moved, so a
+second click on End Turn does not end the next turn too.
+
 `src/client/classic` presents the engine in the classic layouts: a 1024×768 or
 800×600 frame scaled to the window, drawn with the art, raster fonts and mouse
 pointers from the player's install (docs/spec/06 §2.1.1, §5.4, §5.8). The layout
@@ -493,7 +510,7 @@ which the original draws in the system's Small Fonts.
 
 | Part | Role |
 |---|---|
-| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat games it holds the battle (or ground fight) that stops the engine call to be shown, and the battle being fought in a window, and makes the engine call again with the answers; it lists the battles of network and PBEM games, shown afterwards |
+| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat games it holds the battle (or ground fight) that stops the engine call to be shown, and the battle being fought in a window, and makes the engine call again with the answers; it lists the battles of network and PBEM games, shown afterwards. It autosaves only after a call has finished; a call that throws is dropped with the game put back (`dropCall`) |
 | `art.*` | Pictures from the install, cached as textures (each part cut from a sheet a texture of its own, so a scaled frame never smooths in the next part's edge): minis turned to their heading, the combat maps' tiled background, the layout's system backgrounds and intro picture, and each empire's colour from its race's swatch |
 | `layout.*` | The two screen layouts: regions, frame strips, sector grid, order strip pages, status bar and title strip places, and how the layout is chosen (headless) |
 | `pointers.*`, `pointer_rules.*` | The install's twelve `.cur` pointers as SDL cursors, the Hourglass while the program is busy (`BusyPointer`), and which pointer the tactical map shows (headless rules) |

@@ -112,6 +112,9 @@ public:
 
     // Bumped on every state change; windows use it to refresh cached views.
     uint64_t revision() const { return revision_; }
+    // How many engine calls that play the game (an order carried out, End
+    // Turn, the computer players' turns, a battle's answer) have run.
+    uint64_t engineCalls() const { return engineCalls_; }
 
     // Validates and applies a command for the local player (turn-based games:
     // and carries it out).
@@ -244,7 +247,8 @@ public:
     // state (game::ai::setComputerControl). A local or hotseat game changes
     // at once; on a player's copy of a game on different machines only that
     // copy changes, and the orders carry the player's own empire's minister
-    // switches and flags (never the mark) to the host.
+    // switches and flags (never the mark) to the host. Nothing changes while
+    // a battle waits to be shown (battleQuestion()).
     void setComputerControl(const std::vector<std::pair<game::EmpireId, bool>>& rows);
     // A local or hotseat game with no living human-controlled empire has
     // ended: no further turn is played (spec 06 §1.2.1 "No human left").
@@ -293,6 +297,12 @@ private:
     enum class Call { None, Issue, EndTurn, Resume, Process };
     void beginCall(Call call, std::optional<game::Command> command = std::nullopt);
     void runCall();
+    // A fault in the engine call (an exception other than a battle stop): the
+    // game is put back as it was before the call (the engine's copy, or the
+    // turn's start), and the call is dropped with its question and answers,
+    // so that nothing goes on from it: no new turn, no autosave. runCall()
+    // then lets the exception go on to the crash report (client/crash_report.hpp).
+    void dropCall(std::string_view why);
     // Whether this session's engine calls stop for battles to show (local and hotseat games).
     bool showsBattles() const;
     // Who plays the human empires' turns in this session's turn-based calls.
@@ -309,6 +319,7 @@ private:
     // here (SaveInfo::masterPasswordVerifier); kept when the game is saved.
     std::string masterVerifier_;
     uint64_t revision_ = 1;
+    uint64_t engineCalls_ = 0;
     std::vector<game::Command> orders_;
     // The Players window switched our own empire this turn (a player's copy):
     // the objects changed since carry their flags (carryFlags), once each.

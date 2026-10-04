@@ -112,6 +112,11 @@ private:
     void updateLesson(classic::UiContext& ui, bool prompted);
     void contextHelp();
     void endTurn();
+    // Clicks and keys the player gave while a long engine call kept the
+    // frame busy (End Turn's processing, the rest of a turn after a battle's
+    // window) are dropped: they were aimed at a screen that has changed since
+    // (a second click on End Turn would end the next turn).
+    void dropInputMadeWhileBusy();
     void updateAudio();
     // Switches the music for a cue (docs/spec/06 §5.5), when music is on.
     void cueMusic(MusicCue cue);

@@ -183,9 +183,14 @@ data directory. OpenSE4 never writes to the game directory.
 
 The environment variable `OPENSE4_USER_DIR` names another folder for all of this (the
 tests use it, and it serves a portable install). Every run of the game writes its log to
-`opense4.log` there, replacing the last one: on Windows, where the game has no console,
-that file is where its messages are, including any file of your install it could not
-find ("Not in the installed game: ...").
+`opense4.log` there: on Windows, where the game has no console, that file is where its
+messages are, including any file of your install it could not find ("Not in the installed
+game: ..."). The run before keeps its log as `opense4.previous.log`.
+
+If OpenSE4 crashes, it adds a short crash report to the end of `opense4.log` (the version,
+what went wrong, where in the program, and the last lines of the log) and a message box
+says where the file is. Please attach that file to your bug report; if you started the
+game again first, the report is in `opense4.previous.log`.
 
 ## Troubleshooting
 
@@ -193,6 +198,7 @@ find ("Not in the installed game: ...").
 |---|---|
 | "No copy of the game was found" | Pass `--classic-dir` (step 2). Check that the directory contains `Data/Components.txt`. |
 | Black window or crash at startup | Try `--renderer=opengl`. With the Vulkan SDK installed, `--validation` shows driver errors. |
+| The game crashed | Send `opense4.log` (or `opense4.previous.log` after a restart) from the folder above with your report: its end holds the crash report. |
 | Text looks wrong in names | The data files are Latin-1 and are converted to UTF-8 on load. Report any file that still looks wrong. |
 | A mod fails to load | Run `opense4-datacheck` on its data directory. The errors show the file and line. |
 | No movement line after Move To | The line is the per-computer option "Display Ship Movement Lines" (Game Menu → Options, or Ctrl+L), off on a fresh install as in the original. Starting a new simultaneous game switches it on; joining one does not. It shows for the ship, base, unit group or fleet whose report is open. |
