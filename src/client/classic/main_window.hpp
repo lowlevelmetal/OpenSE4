@@ -86,6 +86,11 @@ private:
     void selectVehicle(UiContext& ui, game::VehicleId v);
     void selectPlanet(UiContext& ui, game::ObjectId p);
     void clearSelection();
+    // Shows another system and changes nothing else: no sector of it is
+    // current, and the report or list, its tab, the lit orders and the tags
+    // stay (the galaxy panel's left-click, the Galaxy Map's Goto System; spec
+    // 06 §2.6, §7 Q103). The system already shown: nothing.
+    void showOtherSystem(game::SystemId sys);
     const game::Vehicle* selectedVehicle(const UiContext& ui) const;
     const game::Colony* selectedColony(const UiContext& ui) const;
     std::vector<game::ObjectId> objectsAt(const UiContext& ui, game::Sector s) const;
@@ -111,6 +116,23 @@ private:
     void orderDone();  // the tagged group dissolves after an order
     void startPick(UiContext& ui, Pick p, std::string prompt);
     void completePick(UiContext& ui, game::Location where, std::optional<game::ObjectId> object);
+    // Giving an order its target (spec 06 §2.9): Colonize, Warp, Drop Cargo
+    // and a pursuing Attack need one object of the clicked sector. None: no
+    // order, silently; one: the target at once; several: the Pick Object
+    // window asks.
+    struct PickCandidate {
+        game::ObjectId object;
+        game::VehicleId vehicle;
+    };
+    struct PickObject {
+        Pick pick = Pick::None;
+        game::Location where;
+        std::vector<PickCandidate> candidates;
+    };
+    bool pursuingAttack(UiContext& ui) const;
+    std::vector<PickCandidate> pickCandidates(UiContext& ui, Pick p, game::Location where) const;
+    void givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c);
+    void drawPickObject(UiContext& ui);
     void finishPatrol(UiContext& ui);
     void openFor(UiContext& ui, ScreenId id);   // a window about the selected vehicle, fleet or colony
     void chooseCargo(UiContext& ui, Pick p);    // Load / Drop Cargo, Launch / Recover Units Remotely: the type first
@@ -134,6 +156,10 @@ private:
     // Ship movement animation (ship_glides.hpp) and the movement log replay
     // (movement_replay.hpp), updated once per frame.
     void trackMovement(UiContext& ui);
+    // Turn-based games: the view follows the player's own objects whose
+    // orders ran during its turn (spec 06 §2.7), from the session's steps.
+    void followOwnMoves(UiContext& ui);
+    uint64_t followedCall_ = 0;
     // Ctrl+P, Ctrl+I, Ctrl+O, Ctrl+U: builds this turn's log first if needed.
     void startReplay(UiContext& ui, OrderId id);
     // What each sector of the shown system draws this frame.
@@ -157,12 +183,19 @@ private:
     std::optional<game::VehicleId> vehicle_;
     std::optional<game::FleetId> fleet_;
     bool listMode_ = false;
+    // Where the list in the report panel was built: it stays that sector's
+    // list while another system is shown (spec 06 §7 Q103).
+    std::optional<game::Location> listAt_;
+    // The Log's Goto to a system without a sector empties the report panel
+    // until the next selection (spec 06 §2.5).
+    bool emptyReport_ = false;
     // The report was opened from the sector's list (a click on one of its
     // entries): only then does it show the up-arrow back to the list (spec 06
     // §7 Q98). Every other selection clears it.
     bool reportFromList_ = false;
     std::vector<game::VehicleId> tagged_;
     ReportTab tab_ = ReportTab::Detail;
+    ItemReportPopup itemReport_;   // a facility's or component's report, from a right-click on Facil or Comps
 
     Pick pick_ = Pick::None;
     std::string pickPrompt_;
@@ -172,6 +205,7 @@ private:
     std::optional<game::Sector> hover_;
     std::optional<game::SystemId> galaxyHover_;
     std::optional<Chooser> chooser_;
+    std::optional<PickObject> pickObject_;   // the Pick Object window, while it asks
     // The hover hint over the system panel (§2.3): the button's name and key.
     std::string hintName_, hintKey_;
     std::string note_;

@@ -46,8 +46,8 @@ struct EntryGroup {
 std::vector<EntryGroup> groupEntries(std::span<const game::DesignEntry> entries);
 
 // Components the empire has researched that fit on the hull's vehicle type, in data
-// order. `group` filters by General Group (empty = all); `onlyLatest` keeps the newest
-// numeral of each family among them.
+// order. `group` filters by General Group (empty = all); `onlyLatest` keeps the last of
+// each run of neighbouring components of one family among them (spec 02 §6.4).
 std::vector<uint32_t> designerComponents(const game::Rules& r, const game::Empire& e, uint32_t hull, std::string_view group, bool onlyLatest);
 // The General Groups among designerComponents(), sorted.
 std::vector<std::string> componentGroups(const game::Rules& r, const game::Empire& e, uint32_t hull);

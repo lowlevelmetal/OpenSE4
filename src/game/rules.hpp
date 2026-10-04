@@ -73,9 +73,19 @@ public:
     // kMaxTechLevelCost (spec 05 §1.3).
     int64_t techLevelCost(ruleset::TechAreaId a, int level, int techCost) const;
 
-    // Newest available facility/component of a family (highest Roman Numeral).
+    // Newest available facility/component of a family (highest Roman
+    // Numeral): the target of upgrades (spec 02 §6.6) and of design Upgrade.
     std::optional<uint32_t> latestFacilityOfFamily(const Empire& e, int family) const;
     std::optional<uint32_t> latestComponentOfFamily(const Empire& e, int family) const;
+    // Only Latest (spec 02 §6.4, confirmed: binary): `items` are data-file
+    // indices in data-file order that passed a window's other filters; every
+    // item whose next one in that list has the same family (`Facility
+    // Family`, `Family`) is dropped, so of each run of neighbouring items of
+    // one family only the last stays, in its place. Numerals and names play
+    // no part, family 0 is an ordinary family, and a family split into
+    // separate runs keeps one item per run.
+    std::vector<uint32_t> onlyLatestFacilities(std::span<const uint32_t> items) const;
+    std::vector<uint32_t> onlyLatestComponents(std::span<const uint32_t> items) const;
     // First facility (lowest numeral, available) that has ability `k`.
     std::optional<uint32_t> bestFacilityWith(const Empire& e, AbilityKind k) const;
 

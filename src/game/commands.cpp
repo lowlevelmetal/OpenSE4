@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/commands.hpp"
 
 #include "game/design.hpp"
@@ -72,8 +73,10 @@ std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
         case OrderKind::Attack:
             // An Attack naming no target and no place is the stored form the
             // computer's ministers give a ship already on its target's sector:
-            // it attacks where the group stands (spec 03 §8, spec 05 §7.5).
-            if (!o.vehicle.valid() && !o.object.valid() && o.location.system.valid()) return "No target";
+            // it attacks where the group stands (spec 03 §8, spec 05 §7.5). A
+            // turn-based Attack that is no pursuit names only its sector, and
+            // is given even when nothing is seen there (spec 06 §2.9).
+            if (!o.vehicle.valid() && !o.object.valid() && o.location.system.valid() && s.options.simultaneous) return "No target";
             break;
         case OrderKind::Seek:
             if (o.vehicle.valid() || o.object.valid()) break;
@@ -549,7 +552,8 @@ struct Applier {
         col->population.clear();
         col->anger = kNewColonyAnger;
         if (col->facilities.empty()) s.colonies[c.planet.index()].reset();
-        addLog(s, e, LogCategory::Misc, std::format("{} abandoned", s.galaxy.object(c.planet).name), {}, locationOf(s.galaxy, c.planet));
+        addLog(s, e, LogCategory::Misc, std::format("{} abandoned", s.galaxy.object(c.planet).name), {}, locationOf(s.galaxy, c.planet),
+               logpicture::planet(c.planet));
         addHistory(s, e, e, std::format("Abandoned {}", s.galaxy.object(c.planet).name), locationOf(s.galaxy, c.planet));
         return {};
     }
@@ -588,16 +592,31 @@ struct Applier {
                 to = &col->cargo;
                 space = colonyCargoCapacity(r, s, *col) - cargoSpaceUsed(r, s, col->cargo);
             } else {
-                // Population lands on the colony (bounded by its maximum).
+                // Population lands on the colony's population, capped by its
+                // free population room (its maximum less its population, never
+                // below 0); cargo space plays no part (spec 03 §11, confirmed:
+                // binary).
+                if (a != b) return R::fail("Both holders must be in the same sector");
                 Cargo landing;
                 landing.population = col->population;
                 const int64_t room = std::max<int64_t>(0, maxPopulation(r, s, *col) - col->totalPopulation());
-                Cargo* src = from;
-                if (!src) return R::fail("Population cannot move between colonies directly");
-                if (a != b) return R::fail("Both holders must be in the same sector");
-                const int64_t moved =
-                    moveCargo(r, s, *src, landing, room * r.setting("Population Mass", 5), {}, c.populationRace, c.amount, false);
-                col->population = std::move(landing.population);
+                const int64_t popMass = r.setting("Population Mass", 5);
+                int64_t moved = 0;
+                if (from) {
+                    moved = moveCargo(r, s, *from, landing, room * popMass, {}, c.populationRace, c.amount, false);
+                } else {
+                    // From another own colony in the sector, population to
+                    // population: the clicked race only, the source keeping at
+                    // least 1M of its total, at no cost, in both turn styles
+                    // (spec 03 §11, §19 Q79, confirmed: binary).
+                    Colony* src = ownColony(s, e, c.fromPlanet);
+                    if (!src || src == col) return R::fail("Pick another colony to move the population to");
+                    Cargo leaving;
+                    leaving.population = src->population;
+                    moved = moveCargo(r, s, leaving, landing, room * popMass, {}, c.populationRace, c.amount, true);
+                    if (moved > 0) src->population = std::move(leaving.population);
+                }
+                if (moved > 0) col->population = std::move(landing.population);
                 return moved > 0 ? R{} : R::fail("Nothing could be moved");
             }
         } else {
@@ -1089,13 +1108,14 @@ struct Applier {
     // Repeat switched off (spec 03 §6.4, §8).
     R operator()(const cmd::EnterSector& c) {
         if (s.options.simultaneous) return R::fail("Only in turn-based games");
-        std::string name;
+        std::string name, picture;
         if (c.fleet.valid()) {
             Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
             if (fleetOrders(s, *f).empty()) return R::fail("The fleet has no orders");
             if (c.enter) return {};
             name = f->name;
+            picture = logpicture::fleet(e);
             // Like any failed order: every copy of the fleet's orders is cleared.
             for (VehicleId id : fleetGroup(s, *f)) {
                 Vehicle& v = *s.vehicle(id);
@@ -1108,10 +1128,12 @@ struct Applier {
             if (v->orders.empty()) return R::fail("The vehicle has no orders");
             if (c.enter) return {};
             name = v->name;
+            picture = logpicture::vehicle(r, s, *v);
             v->orders.clear();
             v->repeatOrders = false;
         }
-        addLog(s, e, LogCategory::Misc, std::format("{}: orders cancelled", name), "It did not enter the sector with enemy forces.");
+        addLog(s, e, LogCategory::Misc, std::format("{}: orders cancelled", name), "It did not enter the sector with enemy forces.", std::nullopt,
+               picture);
         return {};
     }
 

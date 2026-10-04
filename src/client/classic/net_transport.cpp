@@ -69,9 +69,12 @@ void HostTransport::submitOrders(const game::EmpireOrders& orders) {
 void HostTransport::playCommand(const game::Command& c) {
     auto r = host_->playCommands(host_->localEmpire(), {c});
     if (!r) log_.add("Not carried out: " + r.error());
-    else
+    else {
         for (const auto& [empire, why] : r->rejected)
             if (empire == host_->localEmpire()) log_.add("Refused: " + why);
+        for (const game::PlayerMessage& m : r->messages)
+            if (m.empire == host_->localEmpire()) log_.add(std::format("{}: {}", m.title, m.text));
+    }
     fresh_ = true;
 }
 

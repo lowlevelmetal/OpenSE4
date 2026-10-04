@@ -3,15 +3,26 @@
 // Object reports (docs/spec/06 §1.4), drawn into the current ImGui window.
 // Used by the main window's report panel and by list windows.
 
+#include "client/classic/ability_lines.hpp"
+#include "client/classic/screens/item_ref.hpp"
 #include "client/classic/ui.hpp"
+
+#include <optional>
 
 namespace opense4::client::classic {
 
+// Every report filled for an object opens on Detail; only a redraw in place
+// keeps its tab (spec 06 §2.5, §7 Q107).
 enum class ReportTab { Detail, Components, Cargo, Abilities, Facilities };
 
-void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab);
+// A right-click on a facility of the Facil page or a component of the Comps
+// page returns that item, whose report the report's owner opens (an
+// ItemReportPopup; spec 06 §1.4, §7 Q105); left-clicks there do nothing.
+// `simulator`: a report in the Combat Simulator, whose Ability page leaves
+// the racial and culture lines out.
+std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab, bool simulator = false);
 void fleetReport(UiContext& ui, const game::Fleet& f);
-void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab);
+std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab, bool simulator = false);
 void systemReport(UiContext& ui, game::SystemId sys);
 // Stars, storms, warp points; `state`: another game than the session's (a
 // battle's copy or a combat simulation's sandbox).
@@ -22,6 +33,10 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo =
 // (Detail, Comps, Cargo, Ability, Facil, Descr, Race, Tech), lit when selected;
 // `label` names it for input scripts (and is drawn without the picture). True when clicked.
 bool reportTab(UiContext& ui, int column, const char* label, bool selected);
+
+// Draws the lines: the blue lamp of General.bmp at (0,2) of each, the text from
+// x 13, wrapped 23 px short of the page's width. An empty page stays empty.
+void abilityPage(UiContext& ui, const std::vector<std::string>& lines);
 
 // One-line descriptions for lists. `viewer` names warp points the way that
 // empire knows them (sight::warpPointName: the destination once explored);

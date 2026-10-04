@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/economy.hpp"
 
 #include "datafile/datafile.hpp"
@@ -78,7 +79,8 @@ void setMultipliedConditions(TurnContext& ctx, const Colony& c, Ext product) {
     else if (product.isZero()) p.conditions = Conditions::of(Ext(1) / Ext(10));
     else p.conditions = Conditions::of(product);
     if (p.conditions == kOptimalConditions && before < kOptimalConditions)
-        ctx.log(c.owner, LogCategory::Misc, std::format("{} has optimal conditions", p.name), {}, locationOf(ctx.state.galaxy, c.planet));
+        ctx.log(c.owner, LogCategory::Misc, std::format("{} has optimal conditions", p.name), {}, locationOf(ctx.state.galaxy, c.planet),
+                "PlanetConditionsAtMax");
 }
 
 // A value change: normal games add points, finite games a percentage of the stock (truncated).
@@ -128,7 +130,7 @@ int64_t plagueBase(int level) {
 void cure(TurnContext& ctx, Colony& c) {
     c.plagueLevel = 0;
     ctx.log(c.owner, LogCategory::Events, std::format("Plague on {} cured", ctx.state.galaxy.object(c.planet).name), {},
-            locationOf(ctx.state.galaxy, c.planet));
+            locationOf(ctx.state.galaxy, c.planet), "PlagueCured");
 }
 
 // Returns false when the colony died out and was removed.
@@ -150,7 +152,7 @@ bool plague(TurnContext& ctx, Colony& c) {
     const std::string name = s.galaxy.object(c.planet).name;
     if (dead >= c.totalPopulation()) {
         ctx.log(c.owner, LogCategory::Events, std::format("Plague wiped out {}", name), "Every inhabitant died of the plague.",
-                locationOf(s.galaxy, c.planet));
+                locationOf(s.galaxy, c.planet), "PlagueBreaksOut");
         colonyDiesOut(ctx, c.planet, "plague");
         return false;
     }
@@ -162,7 +164,7 @@ bool plague(TurnContext& ctx, Colony& c) {
     }
     trimCargoToCapacity(r, s, c);  // cargo above the capacity goes now (spec 02 §2)
     ctx.log(c.owner, LogCategory::Events, std::format("Plague on {}", name), std::format("{}M died of the plague this turn.", dead),
-            locationOf(s.galaxy, c.planet));
+            locationOf(s.galaxy, c.planet), "PlagueBreaksOut");
     return true;
 }
 
@@ -184,7 +186,8 @@ void convertAtmosphere(TurnContext& ctx, Colony& c) {
     c.atmosphereTurns = std::min(c.atmosphereTurns + 1, kMaxAtmosphereTurns);
     if (c.atmosphereTurns <= turns) return;  // more than Val1 turns: Val1 + 1 in all (confirmed: binary)
     c.atmosphereTurns = 0;
-    ctx.log(c.owner, LogCategory::Misc, std::format("{} now has a {} atmosphere", planet.name, target), {}, locationOf(s.galaxy, c.planet));
+    ctx.log(c.owner, LogCategory::Misc, std::format("{} now has a {} atmosphere", planet.name, target), {}, locationOf(s.galaxy, c.planet),
+            logpicture::planet(c.planet));
     planet.atmosphere = target;
 }
 
@@ -305,7 +308,7 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
     setAnger(r, s, c, static_cast<int>(std::clamp<int64_t>(c.anger + change, -kMaxAnger, 2 * kMaxAnger)));
     if (moodFromAnger(c.anger) == Mood::Rioting)
         ctx.log(c.owner, LogCategory::Misc, std::format("Riots on {}", s.galaxy.object(c.planet).name),
-                "The population produces nothing, builds nothing and does not grow until calm returns.", where);
+                "The population produces nothing, builds nothing and does not grow until calm returns.", where, "PlanetRiots");
 }
 
 } // namespace

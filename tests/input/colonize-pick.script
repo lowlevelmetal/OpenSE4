@@ -1,0 +1,84 @@
+# Colonize in a sector with several planets (spec 06 §2.9, §7 Q100; spec 03 §8, §11, §19 Q79),
+# on a training game of our own (tests/input/learn-orders) with two colony ships at home and,
+# with this seed, a gas giant and its two rock moons in sector 9,3 of the home system:
+# - the Pick Object window lists the three planets; Cancel gives no order;
+# - a wrong pick (the gas giant) is not checked when given: the ship sets out, arrives with no
+#   movement left, and at the next turn's start, which opens on the ship, a message box titled
+#   "Colonize" says why; nothing is logged and its order list is empty;
+# - picking a moon colonizes it at once; the second ship settles the other moon;
+# - Cargo Transfer from one moon's colony lists the other on the right and moves population
+#   between them (docs/BUILDING.md "Input scripts").
+options --learn-dir=tests/input/learn-orders --training=settlers --layout=1024x768 --size=1280x800
+
+wait-lesson settlers
+wait 5
+click tag:lesson:hide
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+# The picker: the planet and its moons, in the system's order. Cancel: no order.
+key C
+wait-until { picking = "colonize" }
+click sector:9,3
+wait-for item:"Eurul IV A"
+assert-present item:"Eurul IV"
+assert-present item:"Eurul IV B"
+assert-present tag:pick-object:list
+click item:Cancel in=main
+wait-gone item:"Eurul IV A"
+assert { not = { order = "colonize" } }
+# A wrong pick: the gas giant, which a rock colony ship cannot settle.
+key C
+wait-until { picking = "colonize" }
+click sector:9,3
+wait-for item:"Eurul IV"
+click item:"Eurul IV"
+assert { order = "colonize" }
+key F12
+click item:Yes optional
+wait-for item:"window:Colonize###messagebox"
+click item:OK
+wait-gone item:"window:Colonize###messagebox"
+click tag:log:close optional
+assert-no-log "Unable to Colonize"
+assert { colonies = 1 }
+# The moon: colonized at once, and the colony type is asked.
+key C
+wait-until { picking = "colonize" }
+click sector:9,3
+wait-for item:"Eurul IV A"
+click item:"Eurul IV A"
+wait-for item:"*(suggested)"
+click item:"*(suggested)"
+wait-until { colonies = 2 }
+# The second colony ship settles the other moon at the next turn's start.
+click sector:home
+wait-for item:report:ship
+click item:report:ship
+wait 2
+key C
+wait-until { picking = "colonize" }
+click sector:9,3
+wait-for item:"Eurul IV B"
+click item:"Eurul IV B"
+assert { order = "colonize" }
+key F12
+click item:Yes optional
+# The Log opens at the turn's start; the colony type is asked once it is closed.
+wait-window log
+click tag:log:close
+wait-for item:"*(suggested)"
+click item:"*(suggested)"
+wait-until { colonies = 3 }
+# Cargo Transfer from the first moon's colony: the other colony of the sector is on the right,
+# and population goes from one colony to the other.
+click sector:9,3
+wait-for item:report:colony
+click item:report:colony nth=1
+wait 2
+key T
+wait-window cargo-transfer
+wait-for item:"Eurul IV B" in=cargo-transfer
+click item:"Terran Population" in=cargo-transfer nth=1
+wait-for item:"status:Moved*"

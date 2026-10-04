@@ -8,6 +8,7 @@
 // ids stay stable and whatever named the old object finds it gone.
 
 #include "datafile/datafile.hpp"
+#include "game/log_picture.hpp"
 #include "game/design.hpp"
 #include "game/events.hpp"
 #include "game/generate.hpp"
@@ -80,7 +81,8 @@ void loseColony(TurnContext& ctx, ObjectId planet, std::string_view cause) {
     if (!c) return;
     const EmpireId owner = c->owner;
     const SystemId sys = s.galaxy.object(planet).system;
-    ctx.log(owner, LogCategory::Events, std::format("{} lost", s.galaxy.object(planet).name), std::string(cause), locationOf(s.galaxy, planet));
+    ctx.log(owner, LogCategory::Events, std::format("{} lost", s.galaxy.object(planet).name), std::string(cause), locationOf(s.galaxy, planet),
+            "PlanetDestroyed");
     addHistory(s, owner, owner, std::format("Lost the colony on {}. {}", s.galaxy.object(planet).name, cause), locationOf(s.galaxy, planet));
     ctx.mood(owner, "Any Planet Lost", sys, planet);
     if (keysEqual(c->colonyType, "Homeworld")) ctx.mood(owner, "Homeworld Lost", sys, planet);
@@ -509,7 +511,10 @@ private:
         return a;
     }
 
-    void announce(std::string title) {
+    // `picture`: the entry's (spec 06 §4.1): PlanetCreated, StarDestroyed,
+    // WPOpened and the others, the new object's for a constructed planet,
+    // none where the game has no file.
+    void announce(std::string title, const std::string& picture) {
         addHistory(s_, owner_, owner_, std::format("{} (by {})", title, name_), here_);
         const std::string text = stellarReportText(s_, owner_, name_);
         // A destroyed planet or star (a new nebula or black hole reports the
@@ -519,8 +524,8 @@ private:
         // question 44, confirmed: binary).
         if (isDestructiveStellarReport(title))
             for (EmpireId w : witnesses_)
-                if (w != owner_) ctx_.log(w, LogCategory::Events, title, text, here_);
-        ctx_.log(owner_, LogCategory::Events, std::move(title), text, here_);
+                if (w != owner_) ctx_.log(w, LogCategory::Events, title, text, here_, picture);
+        ctx_.log(owner_, LogCategory::Events, std::move(title), text, here_, picture);
     }
 
     // Who gets a destroyed planet's or star's report (spec 05 §7.3 term 2,
@@ -573,7 +578,7 @@ private:
                     append(std::move(planet), sys.id);
                 }
                 remove(*plan_.object);
-                announce(std::format("Planet Created: {}", name));
+                announce(std::format("Planet Created: {}", name), "PlanetCreated");
                 return;
             }
             case StellarAction::DestroyPlanet: {
@@ -581,7 +586,7 @@ private:
                 // Destroy Planet takes the empires present after its result:
                 // the destroyed colony no longer counts (spec 05 Q50).
                 noteWitnesses(false);
-                announce(std::format("{}{}", kPlanetDestroyed, s_.galaxy.object(*plan_.object).name));
+                announce(std::format("{}{}", kPlanetDestroyed, s_.galaxy.object(*plan_.object).name), "PlanetDestroyed");
                 return;
             }
             case StellarAction::CreateStar: {
@@ -590,18 +595,18 @@ private:
                 star.sector = here_.sector;
                 applySectorType(rs, star, pick(plan_.types));
                 star.name = sys.name + " Star";
-                announce(std::format("Star Created: {}", star.name));
+                announce(std::format("Star Created: {}", star.name), "StarCreated");
                 append(std::move(star), sys.id);
                 return;
             }
             case StellarAction::DestroyStar:
                 noteWitnesses(true);
-                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name));
+                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name), "StarDestroyed");
                 destroyStar(ctx_, *plan_.object, "A star exploded in the system.", s_.rng);
                 return;
             case StellarAction::OpenWarpPoint: openWarpPoint(); return;
             case StellarAction::CloseWarpPoint: {
-                announce(std::format("Warp Point Closed: {}", sight::warpPointName(s_, owner_, *plan_.object)));
+                announce(std::format("Warp Point Closed: {}", sight::warpPointName(s_, owner_, *plan_.object)), "WPClosed");
                 closeWarpPoint(s_, *plan_.object);
                 return;
             }
@@ -624,20 +629,21 @@ private:
                     storm.abilities.push_back(ability(effects[k].first, effects[k].second));
                 }
                 storm.name = "Storm";
-                announce(std::format("Storm created in {}", sys.name));
+                announce(std::format("Storm created in {}", sys.name), {});
                 append(std::move(storm), sys.id);
                 return;
             }
             case StellarAction::DestroyStorm:
-                announce(std::format("Storm destroyed in {}", sys.name));
+                announce(std::format("Storm destroyed in {}", sys.name), {});
                 remove(*plan_.object);
                 return;
             case StellarAction::CreateNebulae:
             case StellarAction::CreateBlackHole: {
                 const bool nebula = action_ == StellarAction::CreateNebulae;
                 noteWitnesses(true);
-                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name));
-                announce(std::format("{} created in {}", nebula ? "Nebula" : "Black hole", sys.name));
+                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name), "StarDestroyed");
+                // A nebula created shows StarDestroyed (a quirk of the original, spec 06 §4.1).
+                announce(std::format("{} created in {}", nebula ? "Nebula" : "Black hole", sys.name), nebula ? "StarDestroyed" : "BlackHoleCreated");
                 shockwave(ctx_, sys.id, nebula ? "The system became a nebula." : "The system collapsed into a black hole.", s_.rng);
                 if (nebula) setSystemKind(system(), "Nebulae", {ability(AbilityKind::SectorSightObscuration, 3)});
                 else
@@ -649,7 +655,7 @@ private:
             case StellarAction::DestroyNebulae:
             case StellarAction::DestroyBlackHole: {
                 const bool nebula = action_ == StellarAction::DestroyNebulae;
-                announce(std::format("{} removed from {}", nebula ? "Nebula" : "Black hole", sys.name));
+                announce(std::format("{} removed from {}", nebula ? "Nebula" : "Black hole", sys.name), nebula ? "NebulaeDestroyed" : "BlackHoleDestroyed");
                 setSystemKind(sys, "Normal", {});  // a standard, start-eligible system; the objects stay
                 return;
             }
@@ -684,7 +690,7 @@ private:
         s_.galaxy.object(near).destination = far;
         s_.galaxy.object(far).destination = near;
         sight::learnWarpLink(s_, owner_, near);
-        announce(std::format("Warp Point Opened to {}", s_.galaxy.system(to).name));
+        announce(std::format("Warp Point Opened to {}", s_.galaxy.system(to).name), "WPOpened");
     }
 
     void construct() {
@@ -711,9 +717,10 @@ private:
         world.value = {value, value, value};
         world.conditions = kOptimalConditions;  // 1.5
         world.name = planetName(sysId);
-        announce(std::format("Planet Created: {}", world.name));
+        const std::string title = std::format("Planet Created: {}", world.name);
         remove(*plan_.object);  // the star is used up
-        append(std::move(world), sysId);
+        const ObjectId made = append(std::move(world), sysId);
+        announce(title, logpicture::planet(made));   // the new object's picture
         // Every object of the builder here carrying the device or any component of a
         // required group is destroyed, whole ship included, mothballed ships too
         // (spec 01 §9, confirmed: binary).

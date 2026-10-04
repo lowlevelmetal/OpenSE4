@@ -701,12 +701,9 @@ std::vector<std::pair<uint32_t, uint32_t>> queuedFacilitySwitches(const game::Ru
 
 std::vector<uint32_t> facilityChoices(const game::Rules& r, const game::Empire& e, bool onlyLatest) {
     std::vector<uint32_t> out;
-    for (uint32_t i = 0; i < r.data().facilities.size(); ++i) {
-        if (!r.facilityAvailable(e, i)) continue;
-        if (onlyLatest && r.latestFacilityOfFamily(e, r.facility(i).family) != i) continue;
-        out.push_back(i);
-    }
-    return out;
+    for (uint32_t i = 0; i < r.data().facilities.size(); ++i)
+        if (r.facilityAvailable(e, i)) out.push_back(i);
+    return onlyLatest ? r.onlyLatestFacilities(out) : out;
 }
 
 bool isUnitDesign(const game::Rules& r, const game::Design& d) {

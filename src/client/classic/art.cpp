@@ -182,6 +182,15 @@ Sprite Art::flag(std::string_view style, bool large) {
 
 Sprite Art::racePortrait(std::string_view style) { return image(raceFile(style, "Race_Portrait.bmp"), false); }
 
+Sprite Art::raceImage(std::string_view style, std::string_view suffix, bool generic) {
+    if (generic) return image(raceFile(style, suffix), false);
+    for (std::string_view folder : {"Races", "RaceNeutral"}) {
+        const std::string path = std::format("Pictures/{}/{}/{}_{}", folder, style, style, suffix);
+        if (files_.find(path)) return image(path, false);
+    }
+    return {};
+}
+
 Sprite Art::populationMini(std::string_view style) { return image(raceFile(style, "Pop_Mini.bmp")); }
 
 Sprite Art::populationPortrait(std::string_view style) { return image(raceFile(style, "Pop_Portrait.bmp")); }

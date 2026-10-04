@@ -602,6 +602,7 @@ public:
         const bool keep = drawWindow(ui);
         itemReport_.draw(ui);
         designReport_.draw(ui);
+        ownerReport_.draw(ui);
         return keep;
     }
 
@@ -654,8 +655,14 @@ private:
             ui.tagTab(kBuildTabIds[static_cast<size_t>(tab)], tab_ == tab);
         }
         // On/off settings are check boxes (spec 07 §UI).
-        if (checkButton(d, ui, "Only Latest", onlyLatest_, true, "Show only the newest level of each facility and no obsolete designs"))
+        if (checkButton(d, ui, "Only Latest", onlyLatest_, true, "Show only the newest level of each facility and no obsolete designs")) {
+            // The box is the Empire Options row "only latest items for
+            // construction": a click changes the option (spec 02 §6.4).
             onlyLatest_ = !onlyLatest_;
+            game::InterfaceOptions o = ui.options();
+            o.latestConstructionOnly = onlyLatest_;
+            ui.setOptions(o);
+        }
         // Multi-Add disables the queue option buttons (spec 06 §1.8.2).
         const bool options = !multi_;
         game::cmd::QueueFlags flags{target_, q->onHold, q->repeat, q->emergency, q->autoWaypoint};
@@ -801,6 +808,10 @@ private:
         const game::Vehicle* v = target_.vehicle.valid() ? s.vehicle(target_.vehicle) : nullptr;
         const game::Colony* c = v ? nullptr : s.colony(target_.planet);
         const Sprite pic = v ? vehiclePortrait(ui, *v) : ui.art.planetPortrait(r.data().sectorObjectTypes[s.galaxy.object(target_.planet).sectorType].picture);
+        // The owner box: a right-click anywhere in it opens the owner's Planet
+        // or Ship Report as a popup on Detail; a left-click does nothing (spec
+        // 06 §1.8.3, §7 Q104). Multi-Add has no single owner (multiHeader).
+        ImGui::BeginGroup();
         image(ui, pic, {72, 72});
         ImGui::SameLine();
         ImGui::BeginGroup();
@@ -847,6 +858,9 @@ private:
         labelValue(ui, "New ships to", moveTo, 90);
         if (c && c->totalPopulation() == 0) ImGui::TextColored(kTextWarn, "A colony without population cannot build.");
         ImGui::EndGroup();
+        ImGui::EndGroup();
+        script::reportItem("set-queue:owner");   // input scripts right-click the owner box
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) openReport(ownerReport_, target_);
         ImGui::Separator();
     }
 
@@ -1316,6 +1330,7 @@ private:
     std::vector<size_t> pendingOrder_;
     ItemReportPopup itemReport_;
     DesignReportPopup designReport_;
+    ReportPopup ownerReport_;   // the queue owner's report, from a right-click on the owner box
     bool waypointPending_ = false;
     bool templatesPending_ = false;
     bool templatesLoaded_ = false;

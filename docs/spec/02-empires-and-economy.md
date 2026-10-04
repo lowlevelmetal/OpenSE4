@@ -1041,8 +1041,10 @@ use emergency build (confirmed: binary).
     (spec 06 §1.9): a click changes the option, saved with the empire. The Weapons Report's
     box starts off every time and is not saved.
 
-  Our client differs: it keeps the highest numeral of each family and always keeps family
-  0, and its boxes do not write the Empire Options back (spec 06 §7 Q109).
+  Since 2026-10-04 our client follows (`Rules::onlyLatestComponents` and
+  `onlyLatestFacilities`), and its two boxes write the Empire Options rows back (spec 06 §7
+  Q109). Upgrades keep their own target, the highest numeral researched (§6.6,
+  `Rules::latestFacilityOfFamily`).
 
 ### 6.5 Items
 

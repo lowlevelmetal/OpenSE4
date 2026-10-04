@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/score.hpp"
 
 #include "game/design.hpp"
@@ -128,7 +129,7 @@ void checkDestruction(TurnContext& ctx, EmpireId id, bool lastTurnPlayed) {
     const std::string text = destroyedText(s, id);
     for (const Empire& x : s.empires)
         if (x.id == id || (x.alive && x.relation(id).contact)) {
-            logGoto(ctx.log(x.id, LogCategory::Politics, "Empire Destroyed", text), LogGoto::None);
+            logGoto(ctx.log(x.id, LogCategory::Politics, "Empire Destroyed", text, std::nullopt, "PlayerDied"), LogGoto::None);
             addHistory(s, x.id, id, std::format("The {} was destroyed", effects::empireFullName(s.empire(id))));
         }
     // Intelligence projects aimed at it go; every treaty with it returns to "no contact".

@@ -501,3 +501,67 @@ TEST_CASE("colony cloaking: computer players' colonies decloak for their orders 
     CHECK_FALSE(cw.colony().cloaked);
     (void)r;
 }
+
+TEST_CASE("colony orders: Cargo Transfer moves population between two own colonies in one sector (spec 03 §11, §19 Q79)") {
+    for (const bool simultaneous : {true, false}) {
+        CAPTURE(simultaneous);
+        World w;
+        w.s.options.simultaneous = simultaneous;
+        const EmpireId me{0u}, them{1u};
+        const std::string air = w.s.empire(me).race.atmosphere;
+        w.s.empire(them).race.atmosphere = air;   // both races breathe there: no domes
+        const SystemId sys = w.system("Home");
+        const ObjectId big = w.planet(sys, {3, 3}, "Rock", air, "Large");
+        const ObjectId moon = w.planet(sys, {3, 3}, "Rock", air, "Small");
+        const ObjectId third = w.planet(sys, {3, 3}, "Rock", air, "Small");
+        const ObjectId far = w.planet(sys, {5, 5}, "Rock", air, "Small");
+        Colony& a = w.colony(big, me, 300);
+        a.population.push_back({them, 40});   // a second race living there
+        w.colony(moon, me, 10);
+        w.colony(third, me, 10);
+        w.colony(far, me, 10);
+        const Resources before = w.s.empire(me).stockpile;
+        const int64_t moonMax = maxPopulation(w.rules(), w.s, *w.s.colony(moon));
+        REQUIRE(moonMax > 200);
+
+        auto transfer = [&](ObjectId from, ObjectId to, EmpireId race, int64_t amount) {
+            return apply(w.rules(), w.s, me, cmd::TransferCargo{{}, from, {}, to, {}, race, amount});
+        };
+        auto people = [&](ObjectId p, EmpireId race) {
+            for (const PopulationGroup& g : w.s.colony(p)->population)
+                if (g.race == race) return g.millions;
+            return int64_t{0};
+        };
+        // Population to population, the clicked race only, at no cost.
+        REQUIRE(transfer(big, moon, me, 50).ok);
+        CHECK(people(big, me) == 250);
+        CHECK(people(moon, me) == 60);
+        CHECK(people(big, them) == 40);
+        CHECK(people(moon, them) == 0);
+        CHECK(w.s.colony(moon)->cargo.empty());
+        CHECK(w.s.empire(me).stockpile == before);
+        REQUIRE(transfer(big, moon, them, 5).ok);
+        CHECK(people(moon, them) == 5);
+        CHECK(people(big, them) == 35);
+        // Capped by the target's free population room: fill the moon, with
+        // more than enough people on the big planet.
+        w.s.colony(big)->population.front().millions = moonMax * 2;
+        REQUIRE(transfer(big, moon, me, moonMax * 2).ok);
+        CHECK(w.s.colony(moon)->totalPopulation() == moonMax);
+        CHECK(people(big, me) == moonMax * 2 - (moonMax - 65));
+        // A full target takes nobody.
+        CHECK_FALSE(transfer(big, moon, me, 1).ok);
+        // The source keeps at least 1M of its total: all would leave, so one less moves.
+        w.s.colony(big)->population.front().millions = 100;   // room on the big planet
+        REQUIRE(transfer(third, big, me, 100000).ok);
+        CHECK(people(third, me) == 1);
+        CHECK(people(big, me) == 109);
+        CHECK_FALSE(transfer(third, big, me, 1).ok);
+        // Not between sectors, not to itself, not from a quarantined colony.
+        CHECK_FALSE(transfer(big, far, me, 1).ok);
+        CHECK_FALSE(transfer(big, big, me, 1).ok);
+        w.s.colony(moon)->population.front().millions = 10;
+        w.s.colony(big)->plagueLevel = 1;
+        CHECK_FALSE(transfer(big, moon, me, 1).ok);
+    }
+}

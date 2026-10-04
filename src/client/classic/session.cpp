@@ -246,6 +246,20 @@ void ClassicSession::takeResult(const game::TurnResult& result) {
         if (empire == player_) notices_.push_back(text);
 }
 
+void ClassicSession::takeLive(game::TurnResult& res, bool turnStart) {
+    // Only the local player's own, while its turn is in progress (spec 03 §8, spec 06 §2.7).
+    if (!myTurn()) return;
+    for (game::PlayerMessage& m : res.messages)
+        if (m.empire == player_) messages_.push_back(std::move(m));
+    std::vector<game::LiveStep> steps;
+    for (const game::LiveStep& st : res.liveSteps)
+        if (st.empire == player_) steps.push_back(st);
+    if (steps.empty()) return;
+    liveSteps_ = std::move(steps);
+    liveStepsAtTurnStart_ = turnStart;
+    ++liveStepsCall_;
+}
+
 void ClassicSession::resumeTurnBased() { beginCall(Call::Resume); }
 
 // Network and PBEM games (the host's own player included, whose session is a
@@ -389,6 +403,7 @@ void ClassicSession::runCall() {
     };
     switch (call) {
         case Call::Issue: {
+            takeLive(res, false);
             // Attack Sector questions stay in the game (GameState::playerTurn.questions).
             // PBEM: the host replays every command given, refused ones too (a
             // refused answer still settles its question), so all are kept.
@@ -405,6 +420,7 @@ void ClassicSession::runCall() {
         case Call::EndTurn:
             nextHuman();
             takeResult(res);
+            takeLive(res, true);
             clearOrders();
             waiting_ = false;
             if (state_.turn != callTurn_) autosave();  // the game turn was processed (spec 01 §2.2)
@@ -413,6 +429,7 @@ void ClassicSession::runCall() {
         case Call::Resume:
             nextHuman();
             takeResult(res);
+            takeLive(res, true);
             if (state_.turn != callTurn_) autosave();
             break;
         case Call::Process:

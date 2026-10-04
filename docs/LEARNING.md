@@ -1088,6 +1088,7 @@ the Weapons Report.
 | `panel:system`, `panel:report`, `panel:galaxy` | the system view, the report panel, the galaxy panel |
 | `panel:commands`, `panel:orders`, `panel:report-tabs` | the command buttons, the order strip, the report's tabs |
 | `sector:home`, `report:colony` | the homeworld's sector in the system view (while the home system is shown); the player's colony in the report's list of a sector |
+| `pick-object:list` | the main window's Pick Object window: the planets, warp points or objects of the sector a Colonize, Warp, Drop Cargo or pursuing Attack was aimed at (a picker: it always responds) |
 | `cycle:ship`, `cycle:fleet`, `cycle:colony` | the previous and next selectors |
 | `research:areas`, `research:queue`, `research:tech-tree` | Research: the list of areas (a click adds a project), the current projects, Tech Tree |
 | `research:headings`, `research:points` | Research: the headings of the areas' columns (Current Level, Cost); the research points in its title strip |

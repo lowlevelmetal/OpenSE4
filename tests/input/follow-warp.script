@@ -1,0 +1,27 @@
+# The view follows the player's own turn-based moves (spec 06 §2.7, §7 Q102): a colony ship
+# ordered through a warp point of the home system jumps at once; the system panel then shows the
+# arrival system with the exit warp point's sector current, and the ship's report stays open.
+# A training game of our own (tests/input/learn-orders) (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-orders --training=settlers --layout=1024x768 --size=1280x800
+
+wait-lesson settlers
+wait 5
+click tag:lesson:hide
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+assert-present sector:home
+# Warp through the warp point four sectors away, at 0,8.
+key W
+wait-until { picking = "warp" }
+click sector:0,8
+wait 10
+# The ship jumped: the arrival system is shown, its warp point's sector current (marked), the
+# report still the ship's.
+assert-absent sector:home
+assert-present sector:selected+warp-point
+assert-present sector:ship+warp-point
+assert { order = "warp" }
+assert-present item:Comps

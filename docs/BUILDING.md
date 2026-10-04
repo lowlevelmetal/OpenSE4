@@ -594,6 +594,9 @@ recorder is tested.
 | `combat-replay.script` | Combat Replay on a battle of the last turn: the overview, Combat Replay Options' check boxes, Next to the last combat turn, Stop Replay |
 | `battle-strategic.script` | A battle that stops the player's End Turn: an enemy ship comes through a warp point into the player's sector in a computer player's turn; the notice, Strategic Combat's question, Strategic, End Turn doing nothing over the battle's window, Close; the turn then ends exactly once, and the next End Turn ends the next one. Play it with the `asan` client too (v0.8.1 crashed here: see "Crash reports") |
 | `report-up-arrow.script` | The report panel's up-arrow back to a sector's list: shown only for a report opened from the list |
+| `selection-other-system.script` | Another system shown keeps the selection: the report and its tab across a galaxy-panel click and the Galaxy Map's Goto System, a right-click in the system panel doing nothing, a facility's report from Facil, Detail again when a report is filled afresh |
+| `only-latest.script` | The Only Latest boxes of Set Construction Queue and Create Design write the Empire Options rows |
+| `colonize-pick.script`, `follow-warp.script` | On a training game of our own in `tests/input/learn-orders` (two colony ships at home): Colonize's Pick Object window and Cancel, a wrong pick failing on arrival with the "Colonize" message box, the moons settled, population moved between them with Cargo Transfer; a warp the view follows to the arrival system |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
 | `game-setup.script` | The setup screens: Load Game with Change Directory, Quick Start's picker, Game Setup's pages, Add New with a name from the list picker and an e-mail address, Begin Game, and Change Email in Empire Status |
 

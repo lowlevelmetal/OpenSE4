@@ -106,7 +106,11 @@ void trimCargo(const Rules& r, const GameState& s, Vehicle& v);
 // bases outside `group` (troops are also dropped onto a hostile colony to
 // invade it). `unit` invalid means population. amount < 0: as much as possible.
 int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group = {});
-int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group = {});
+// `colony` or `holder`: the destination the player picked (spec 06 §2.9):
+// only that own colony or vehicle takes the cargo; with neither, every own
+// colony there, enemy planets for troops, then every own holder.
+int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group = {}, ObjectId colony = {},
+                  VehicleId holder = {});
 // Colony ships take colonists from an own colony where the order starts.
 int64_t loadColonists(TurnContext& ctx, VehicleId id);
 

@@ -143,5 +143,5 @@ The buttons on the right help:
 | `Weap Mount` | Choose the mount for the weapons you add next (once a size is chosen). |
 | `To Hit Modifiers` | A check box: the figures show the design's **Offense Bonus** and **Defense Bonus** (its combat to-hit bonuses) instead of shields, cargo space and supply capacity. It is kept with your empire. |
 | `Condensed View` | A check box: show identical components (the same component and mount) once in the strip, with their count. It is kept with your empire. |
-| `Only Latest` | A check box: hide older versions of each component. |
+| `Only Latest` | A check box: of components of one family listed one after another, show only the last (the newest). It is an Empire Options setting, kept as you leave it. |
 | `Weapons Report` | Compare weapons, with the chosen mount. |

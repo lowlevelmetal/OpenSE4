@@ -17,6 +17,7 @@
 // warp jump included), the Attack order and a Seek order at its target run a
 // battle check (spec 04 §2).
 
+#include "game/log_picture.hpp"
 #include "game/movement.hpp"
 
 #include "game/combat.hpp"
@@ -699,8 +700,18 @@ private:
     }
 
     Exec fail(const Group& g, const Order& o, std::string_view why) {
-        ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {} order cancelled", name(g), displayName(o.kind)), std::string(why), where(g));
+        ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {} order cancelled", name(g), displayName(o.kind)), std::string(why), where(g),
+                 picture(g));
         return Exec::Fail;
+    }
+
+    // The acting object's own picture for the entries about it (spec 06
+    // §4.1): a planet's, a fleet member's fleet portrait, a unit group's
+    // group portrait, a ship's or base's hull portrait.
+    std::string picture(const Group& g) const {
+        if (g.planet.valid()) return logpicture::planet(g.planet);
+        const Vehicle* v = s_.vehicle(g.lead);
+        return v ? logpicture::vehicle(r_, s_, *v) : std::string{};
     }
 
     Exec afterTravel(Group& g, const Order& o, Travel t) {
@@ -731,7 +742,7 @@ private:
     // action ends there.
     Exec encounter(Group& g, const Order& o, bool arrived) {
         ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
-                 "Another empire is in the system; the orders were cleared (empire options).", where(g));
+                 "Another empire is in the system; the orders were cleared (empire options).", where(g), picture(g));
         routes_.erase(routeKey(g));
         clearListsOf(g.members);
         clearListsOf(g.holders);
@@ -916,7 +927,7 @@ private:
         for (VehicleId id : std::vector<VehicleId>(g.members)) hurt(ctx_, id, static_cast<int>(std::min<int64_t>(damage, INT_MAX)), cause);
         for (VehicleId id : g.members)
             if (const Vehicle* v = s_.vehicle(id); v && alive(*v))
-                ctx_.log(g.owner, LogCategory::Events, std::format("{} damaged", v->name), std::string(cause), v->location);
+                ctx_.log(g.owner, LogCategory::Events, std::format("{} damaged", v->name), std::string(cause), v->location, "ShipDamaged");
         g.stopped = true;
     }
 
@@ -951,6 +962,9 @@ private:
         // A sweeper group entering a tagged minefield where mines act decloaks first (§12).
         if (decloakSweepers(r_, s_, next, g.members)) decloaked(next.system);
         if (via.valid()) {
+            // A warp jump of a turn-based group: the view following it shows
+            // the arrival system with the exit warp point current (spec 06 §2.7).
+            if (live_) ctx_.liveSteps.push_back(LiveStep{g.owner, g.actor.valid() ? g.actor : g.lead, g.fleet, {}, next, true});
             for (size_t i = 0; i < g.members.size(); ++i) sight::learnWarpLink(s_, g.owner, via);
             // Turbulence: a 50 % chance per transit that every member takes the
             // total of the warp point it leaves; the group arrives but its order fails (confirmed: binary).
@@ -1099,7 +1113,7 @@ private:
         const bool enemy = hostilePresentInSystem(g.owner, where(g).system);
         if (!lowSupply && !enemy) return Exec::Wait;
         ctx_.log(g.owner, LogCategory::Combat, std::format("{}: {}", name(g), enemy ? "enemy sighted" : "supplies low"), "Sentry duty ended.",
-                 where(g));
+                 where(g), picture(g));
         return Exec::Done;
     }
 
@@ -1142,7 +1156,7 @@ private:
         const bool stored = !o.vehicle.valid() && !o.object.valid() && !validLocation(s_, o.location);
         if ((live_ && !onlyDrones(g)) || stored) return placeAttack(g, o);
         if (pursuitOver(s_, g.owner, o)) {
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g));
+            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g), picture(g));
             return Exec::Done;
         }
         // A drone sent at a warp point goes through it (an order given before
@@ -1295,7 +1309,8 @@ private:
             if (t != Travel::Arrived) return afterTravel(g, o, t);
         }
         if (remaining(g) <= 0 || immobile(g)) {
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g));
+            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g),
+                     picture(g));
             return Exec::Done;
         }
         bool lowered = false;
@@ -1355,7 +1370,7 @@ private:
             const char* why = o.kind == OrderKind::Explore    ? "nothing left to explore"
                               : o.kind == OrderKind::Resupply ? "no reachable resupply depot"
                                                               : "no reachable repair facility";
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g));
+            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g), picture(g));
             return Exec::Removed;
         }
         forEachList(g, [&](std::vector<Order>& list, bool) {
@@ -1367,30 +1382,84 @@ private:
         return execute(g, o);
     }
 
-    // Colonize (§8): fails while a member is cloaked or when nobody can colonize
-    // the planet; the colonizer is the last suitable member (confirmed: binary).
+    // Colonize (§8, confirmed: binary): given as Load Cargo, Move To and
+    // Colonize, so nothing about the planet is checked before the group is in
+    // its sector (spec 06 §7 Q100). There the reasons are tested in the
+    // game's order: the planet gone, unseen or elsewhere; an asteroid field;
+    // no movement left (the order waits); a colony there, of any empire; a
+    // cloaked member; no member able to colonize it. The colonizer is the last
+    // suitable member.
     Exec colonize(Group& g, Order& o) {
-        if (any(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; })) return fail(g, o, "A cloaked ship cannot colonize.");
-        VehicleId colonizer;
-        std::string why;
-        for (VehicleId id : g.members) {
-            const std::string p = colonizeProblem(r_, s_, *s_.vehicle(id), o.object);
-            if (p.empty()) colonizer = id;
-            else if (why.empty()) why = p;
-        }
-        if (!colonizer.valid()) return fail(g, o, why);
         if (o.amount == 0) {
-            loadColonists(ctx_, colonizer);  // colonists come aboard where the order starts (spec 03 §8)
+            // An order that reached a list without its Load Cargo (tools,
+            // tests): the colonists come aboard where it starts, on the last
+            // member that could colonize, else the last member.
+            VehicleId loader = g.members.empty() ? VehicleId{} : g.members.back();
+            for (VehicleId id : g.members)
+                if (colonizeProblem(r_, s_, *s_.vehicle(id), o.object).empty()) loader = id;
+            if (loader.valid()) loadColonists(ctx_, loader);
             o.amount = 1;
         }
-        const Travel t = travel(g, locationOf(s_.galaxy, o.object));
-        if (t != Travel::Arrived) return afterTravel(g, o, t);
+        const bool exists = o.object.valid() && o.object.index() < s_.galaxy.objects.size() && inSystem(s_.galaxy, o.object);
+        if (exists && locationOf(s_.galaxy, o.object) != where(g)) {
+            // A Colonize still on its way: the computer players' order, which
+            // travels itself (spec 05 §7.5, open question 23). It gives up as
+            // soon as nobody in the group could settle the planet any more
+            // (inferred); a player's Colonize follows its Move To and is
+            // checked only in the planet's sector.
+            const bool cloaked = any(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; });
+            std::string why = cloaked ? std::string("A cloaked ship cannot colonize.") : std::string{};
+            bool able = false;
+            for (VehicleId id : g.members) {
+                const std::string p = colonizeProblem(r_, s_, *s_.vehicle(id), o.object);
+                able = able || p.empty();
+                if (!p.empty() && why.empty()) why = p;
+            }
+            if (cloaked || !able) return colonizeFailed(g, why);
+            const Travel t = travel(g, locationOf(s_.galaxy, o.object));
+            if (t != Travel::Arrived) return afterTravel(g, o, t);
+        }
+        // A planet gone, out of the sector, or holding a colony its owner
+        // cannot see (cloaked) leaves no planet to colonize (spec 01 §6.9).
+        // Ours does not test whether a storm or nebula hides the planet
+        // itself: our computer players aim at such planets and would fail
+        // there for ever (spec 03 §19 Q80).
+        const bool hidden = exists && s_.colony(o.object) && !sight::canSeeColony(r_, s_, g.owner, o.object);
+        if (!exists || hidden || locationOf(s_.galaxy, o.object) != where(g)) return colonizeFailed(g, "There is no planet here to colonize.");
+        const SpaceObject& planet = s_.galaxy.object(o.object);
+        if (planet.kind != ObjectKind::Planet) return colonizeFailed(g, std::format("{} cannot be colonized.", planet.name));
         // Carried out like any order, on an acting day with movement left, so
         // the colony exists during the later phases; without movement it
         // waits (spec 05 §8 step 5, open question 24; spec 03 §8).
         if (remaining(g) <= 0) return Exec::Wait;
+        if (s_.colony(o.object)) return colonizeFailed(g, std::format("{} is already a colony.", planet.name));
+        if (any(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; })) return colonizeFailed(g, "A cloaked ship cannot colonize.");
+        VehicleId colonizer;
+        for (VehicleId id : g.members)
+            if (colonizeProblem(r_, s_, *s_.vehicle(id), o.object).empty()) colonizer = id;
+        if (!colonizer.valid()) return colonizeFailed(g, std::format("Unable to colonize {} planets.", planet.surface));
         foundColony(ctx_, colonizer, o.object);
         return Exec::Done;
+    }
+
+    // A failed Colonize clears the whole list, as every failed order (§8).
+    // Where the player reads why (spec 03 §8, confirmed: binary): in a
+    // turn-based game the human whose turn it is gets a message box titled
+    // "Colonize" at once and nothing is logged, a computer player nothing;
+    // in a simultaneous game the owner, computer players too, gets one entry,
+    // "Unable to Colonize", in the Colonization Minister's words, with the
+    // picture OrdersNotCompleted (spec 06 §4.1).
+    Exec colonizeFailed(const Group& g, std::string_view why) {
+        if (live_) {
+            if (live_->ask) ctx_.messages.push_back(PlayerMessage{g.owner, "Colonize", std::string(why)});
+        } else {
+            const Location here = where(g);
+            ctx_.log(g.owner, LogCategory::Misc, "Unable to Colonize",
+                     std::format("The Colonization Minister reports that {} could not found a colony in the {} system. {}", name(g),
+                                 s_.galaxy.system(here.system).name, why),
+                     here, "OrdersNotCompleted");
+        }
+        return Exec::Fail;
     }
 
     // Load, Launch and Recover are always done; Drop can fail (§8, confirmed: binary).
@@ -1414,7 +1483,7 @@ private:
                 if (o.amount >= 0 && p.amount <= 0) break;
                 switch (o.kind) {
                     case OrderKind::LoadCargo: moved += loadCargo(ctx_, id, o.design, p.amount, g.members); break;
-                    case OrderKind::DropCargo: moved += dropCargo(ctx_, id, o.design, p.amount, g.members); break;
+                    case OrderKind::DropCargo: moved += dropCargo(ctx_, id, o.design, p.amount, g.members, o.object, o.vehicle); break;
                     case OrderKind::LaunchUnits: moved += launchUnits(ctx_, budget_, Launcher{id, {}}, p); break;
                     case OrderKind::RecoverUnits: moved += recoverUnits(ctx_, Launcher{id, {}}, p); break;
                     default: break;
@@ -1426,7 +1495,7 @@ private:
             const bool byKind = o.kind == OrderKind::RecoverUnits && !o.vehicle.valid();
             const std::string what = byKind ? std::string("units") : s_.design(o.design).name;
             ctx_.log(g.owner, LogCategory::Misc, std::format("{} {} {} {}", name(g), o.kind == OrderKind::LaunchUnits ? "launched" : "recovered", moved, what),
-                     {}, where(g));
+                     {}, where(g), picture(g));
         }
         return Exec::Acted;
     }
@@ -1525,7 +1594,7 @@ private:
             ctx_.log(g.owner, LogCategory::Misc, "Resources Converted",
                      std::format("The Resource Minister reports that {} in the {} system has converted {} {} into {} {}.", planet.name,
                                  s_.galaxy.system(planet.system).name, amount, displayName(from), gain, displayName(to)),
-                     locationOf(s_.galaxy, g.planet));
+                     locationOf(s_.galaxy, g.planet), logpicture::planet(g.planet));
         }
         return Exec::Done;
     }
@@ -1760,7 +1829,7 @@ private:
             }
             if (!struck) continue;
             ctx_.log(e.owner, LogCategory::Combat, std::format("{} stopped by a minefield", e.name),
-                     e.pursuit ? "It keeps its orders." : "Its orders were cancelled.", where);
+                     e.pursuit ? "It keeps its orders." : "Its orders were cancelled.", where, "MineExplosion");
             if (!e.pursuit) clearListsOf(e.holders);
         }
     }
@@ -1808,6 +1877,11 @@ private:
     static constexpr int kLiveOrderLimit = 21;
 
     void liveActor(ActorRef ref) {
+        // The group's orders start to run here: the view of a human player
+        // following its own moves selects it (spec 06 §2.7).
+        if (const Vehicle* v = s_.vehicle(ref.vehicle)) ctx_.liveSteps.push_back(LiveStep{v->owner, v->id, v->fleet, {}, v->location, false});
+        else if (const Colony* c = s_.colony(ref.planet))
+            ctx_.liveSteps.push_back(LiveStep{c->owner, {}, {}, ref.planet, locationOf(s_.galaxy, ref.planet), false});
         int completed = 0;  // orders that left the head of the list, chained ones included
         carried_.reset();
         struct EndRun {
@@ -2076,7 +2150,7 @@ void runStellarHazards(TurnContext& ctx) {
             const EmpireId owner = v->owner;
             const Location where = v->location;
             if (!hurt(ctx, id, static_cast<int>(std::min<int64_t>(damage, INT_MAX)), "Torn apart at the centre of the system."))
-                ctx.log(owner, LogCategory::Events, std::format("{} damaged", name), "Damaged at the centre of the system.", where);
+                ctx.log(owner, LogCategory::Events, std::format("{} damaged", name), "Damaged at the centre of the system.", where, "ShipDamaged");
         }
     }
     s.removeDeadVehicles();

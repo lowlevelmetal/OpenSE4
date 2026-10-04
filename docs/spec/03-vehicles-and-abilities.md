@@ -2409,8 +2409,21 @@ rules in §8); this one is ours:
     a race's line moves people from population to population, capped by the target's free
     population room, the source keeping at least 1M, at no cost and in both turn styles (§11)
     (confirmed: binary).
-    Our engine differs: the cargo-transfer command refuses it ("Population cannot move between
-    colonies directly", `commands.cpp`). It must accept it under the rules of §11 (same sector,
-    the clicked race only, the target's population room, the source's last 1M, plague quarantine
-    refused). Our window also puts every holder in both lists; it should put the selected holder
-    (and its fleet-mates there) on the left and the others on the right.
+    Since 2026-10-04 our engine follows: `cmd::TransferCargo` from one own colony to another in
+    the same sector moves the clicked race from population to population under the rules of §11
+    (`commands.cpp`), and the window puts the selected holder (and its fleet-mates there) on the
+    left and the others on the right (`cargo_transfer.cpp`).
+
+**Implementing the players' reports on 2026-10-04** left this question of ours:
+
+80. **A planet hidden from its colonizer.** §8 names, among a Colonize's reasons to fail, a
+    planet "not seen by the ship's owner". Ours counts as unseen only a planet whose colony the
+    owner cannot see (a cloaked colony, spec 01 §6.9), not one that a storm or a nebula hides
+    by the "seeing the planet" test: our computer players aim their colony ships at every
+    planet of the systems they have explored, so with that test their ships would fail at such
+    a planet turn after turn. Also ours, for the computer players' Colonize, which travels
+    itself (spec 05 §7.5, open question 23): it gives up on its way as soon as no group member
+    could settle the planet any more; a player's Colonize follows its Move To and is checked
+    only in the planet's sector (inferred). Which planets does the original's "seen" test
+    reject while a ship stands in their sector, and does its computer player aim only at
+    planets it sees?

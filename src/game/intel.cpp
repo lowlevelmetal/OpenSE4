@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/intel.hpp"
 
 #include "game/diplomacy.hpp"
@@ -46,7 +47,8 @@ void projectMessages(TurnContext& ctx, const ruleset::IntelProject& p, EmpireId 
     if (validEmpire(ctx.state, to)) {
         std::string text = p.sourceMessages.empty() ? std::string(fallbackSource)
                                                     : effects::substitute(p.sourceMessages[rng.index(p.sourceMessages.size())], tokens);
-        logGoto(ctx.log(to, LogCategory::Intelligence, p.name, withPrefix(text), where, p.sourcePicture),
+        // A counter-intelligence success shows IntelSabotageByUs (spec 06 §4.1).
+        logGoto(ctx.log(to, LogCategory::Intelligence, p.name, withPrefix(text), where, defended ? std::string("IntelSabotageByUs") : p.sourcePicture),
                 defended ? LogGoto::Intelligence : outcomeGoto(where));
     }
     if (validEmpire(ctx.state, victim)) {
@@ -61,7 +63,8 @@ void projectMessages(TurnContext& ctx, const ruleset::IntelProject& p, EmpireId 
 
 void failed(TurnContext& ctx, EmpireId source, const ruleset::IntelProject& p, std::string_view why, std::optional<Location> where = {}) {
     // Our project failed: no Goto (spec 06 §7 Q41).
-    logGoto(ctx.log(source, LogCategory::Intelligence, p.name, withPrefix(std::format("The operation failed: {}.", why)), where), LogGoto::None);
+    logGoto(ctx.log(source, LogCategory::Intelligence, p.name, withPrefix(std::format("The operation failed: {}.", why)), where, p.sourcePicture),
+            LogGoto::None);
 }
 
 // A finished defense project (spec 05 §2.4, confirmed: binary): the other
@@ -90,7 +93,8 @@ void runDefense(TurnContext& ctx, EmpireId owner, const IntelProjectOrder& order
                         std::nullopt, rng, true);
         return;
     }
-    logGoto(ctx.log(owner, LogCategory::Intelligence, p.name, withPrefix("Our counter-intelligence found no hostile operation to stop.")),
+    logGoto(ctx.log(owner, LogCategory::Intelligence, p.name, withPrefix("Our counter-intelligence found no hostile operation to stop."), std::nullopt,
+                    p.sourcePicture),
             LogGoto::None);
 }
 

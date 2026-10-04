@@ -92,12 +92,12 @@ In the system panel, a small star on a planet tells you whether you can settle i
 |---|---|
 | Green star | You can colonize it, and your race breathes its air. |
 | Red star | You can colonize it, but the colony would be domed. |
-| No star | You cannot colonize it (wrong type for your technology, or already taken). |
+| No star | You cannot colonize it (wrong type for your technology, or already taken), or it is not the planet its sector shows (a moon beside a larger planet). |
 
 To colonize:
 
 1. Build a colony ship at a colony with a space yard (see [Construction](construction)).
-2. Select the ship and give the **Colonize** order (`C`), then click the planet.
+2. Select the ship and give the **Colonize** order (`C`), then click the planet's sector. When the sector holds several planets, such as a planet and its moons, pick the one you mean in the list that opens. The planet is checked only when the ship gets there: a planet it cannot settle cancels its orders then.
 3. If the ship carries no population and is at one of your colonies, it first loads people there. It then flies to the planet and settles it.
 
 When the ship arrives, it is used up. The new colony gets the people and units the ship carried,

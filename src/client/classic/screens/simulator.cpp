@@ -147,6 +147,7 @@ public:
         if (mode == "again" && savedSetup()) setup_ = std::move(*savedSetup());
         savedSetup().reset();
         tacticalSimulation() = false;
+        report_.setSimulator(true);   // its Ability page leaves the racial and culture lines out (spec 06 §1.4)
     }
     bool modal() const override { return true; }
 

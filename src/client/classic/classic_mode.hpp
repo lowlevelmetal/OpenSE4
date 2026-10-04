@@ -242,6 +242,10 @@ private:
     size_t battleChoiceKey_ = SIZE_MAX;    // the battle question on screen
     bool battleNotice_ = false;            // the notice before it (a computer empire's turn)
     std::deque<size_t> strategicQueue_;   // battles (GameState::combats) waiting for the Strategic Combat window
+    // Turn-based games: message boxes the player's own orders raised (a failed
+    // Colonize, spec 03 §8), shown one after another with OK.
+    std::deque<game::PlayerMessage> messageBoxes_;
+    void drawMessageBox(classic::UiContext& ui);
 
     // Hotseat hand-over between human players.
     void drawHandoff(classic::UiContext& ui);

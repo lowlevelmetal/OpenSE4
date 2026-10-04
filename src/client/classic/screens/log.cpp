@@ -11,6 +11,8 @@
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
+#include "client/classic/screens/item_reports.hpp"
+#include "game/log_picture.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -168,8 +170,12 @@ public:
                 // the system only, spec 06 §7 Q70); an entry that names no system
                 // does nothing, and the Log stays open.
                 if (const auto at = goTo(ui, sel)) {
-                    if (at->sector.valid()) ui.requests.focus = *at;
-                    else ui.requests.showSystem = at->system;
+                    if (at->sector.valid()) {
+                        ui.requests.focus = *at;
+                    } else {
+                        ui.requests.showSystem = at->system;
+                        ui.requests.showSystemEmptiesReport = true;
+                    }
                     close = true;
                 }
             } else if (const auto window = logWindowTarget(target)) {
@@ -328,55 +334,152 @@ private:
         ImGui::EndPopup();
     }
 
+    // The picture of an entry, resolved now (spec 06 §4.1 "Picture" and
+    // "Pictures of the other entries", confirmed: binary): none when the
+    // entry has none, its file is missing or its subject is gone.
+    static Sprite pictureOf(UiContext& ui, const Row& row) {
+        using Kind = game::logpicture::Parsed::Kind;
+        const game::GameState& s = ui.state();
+        const game::Rules& r = ui.rules();
+        if (row.notice) return ui.art.eventPicture("OrdersNotCompleted");
+        if (!row.entry) return {};
+        // A message logged before entries carried pictures: the sender's portrait.
+        if (row.entry->picture.empty() && row.message) return ui.art.racePortrait(s.empire(row.message->from).race.style);
+        const game::logpicture::Parsed p = game::logpicture::parse(row.entry->picture);
+        auto style = [&](game::EmpireId e) -> const std::string* {
+            return e.valid() && e.index() < s.empires.size() ? &s.empire(e).race.style : nullptr;
+        };
+        switch (p.kind) {
+            case Kind::Event: return ui.art.eventPicture(p.name);
+            case Kind::Race:
+                if (const std::string* st = style(p.empire)) return ui.art.racePortrait(*st);
+                return {};
+            case Kind::Hull: {
+                const game::DesignId d{p.id};
+                if (d.index() >= s.designs.size() || s.design(d).hull >= r.data().vehicleSizes.size()) return {};
+                const std::string* st = style(s.design(d).owner);
+                return ui.art.shipPortrait(st ? *st : std::string{}, r.hull(s.design(d).hull));
+            }
+            case Kind::Planet: {
+                const game::ObjectId o{p.id};
+                if (o.index() >= s.galaxy.objects.size()) return {};
+                const game::SpaceObject& obj = s.galaxy.object(o);
+                const bool there = obj.system.valid() && obj.system.index() < s.galaxy.systems.size() &&
+                                   std::ranges::find(s.galaxy.system(obj.system).objects, o) != s.galaxy.system(obj.system).objects.end();
+                if (!there || obj.sectorType >= r.data().sectorObjectTypes.size()) return {};
+                return ui.art.planetPortrait(r.data().sectorObjectTypes[obj.sectorType].picture);
+            }
+            case Kind::Facility:
+                if (p.id < r.data().facilities.size()) return ui.art.facilityPortrait(r.facility(p.id).picture);
+                return {};
+            case Kind::Group: {
+                const std::string* st = style(p.empire);
+                if (!st) return {};
+                const char* suffix = p.name == "fighter" ? "Portrait_FighterGroup.bmp" : p.name == "mine" ? "Portrait_MineGroup.bmp"
+                                                                                                          : "Portrait_SatelliteGroup.bmp";
+                return ui.art.raceImage(*st, suffix, false);
+            }
+            case Kind::Fleet:
+                if (const std::string* st = style(p.empire)) return ui.art.raceImage(*st, "Portrait_Fleet.bmp", true);
+                return {};
+            case Kind::Developed:
+            case Kind::None: break;
+        }
+        return {};
+    }
+
+    // An item developed or an intelligence project now available: the pane
+    // shows the item's details instead of a picture, title and date (spec 06 §4.1).
+    static std::optional<ItemRef> developedItem(const UiContext& ui, const Row& row) {
+        if (!row.entry) return std::nullopt;
+        const game::logpicture::Parsed p = game::logpicture::parse(row.entry->picture);
+        if (p.kind != game::logpicture::Parsed::Kind::Developed) return std::nullopt;
+        const auto& d = ui.rules().data();
+        if (p.name == "component" && p.id < d.components.size()) return ItemRef{ItemRef::Kind::Component, p.id};
+        if (p.name == "facility" && p.id < d.facilities.size()) return ItemRef{ItemRef::Kind::Facility, p.id};
+        if (p.name == "hull" && p.id < d.vehicleSizes.size()) return ItemRef{ItemRef::Kind::Hull, p.id};
+        if (p.name == "intel" && p.id < d.intelProjects.size()) return ItemRef{ItemRef::Kind::IntelProject, p.id};
+        return std::nullopt;
+    }
+
+    // The details pane (spec 06 §4.1 "Picture", confirmed: binary): the
+    // selected entry's picture at the top-left corner at its own size,
+    // unframed; the title in the button font to its right, from picture
+    // width + 10 to 2 px short of the right edge, wrapped within the
+    // picture's height; "Date:" at (4, picture height + 10) with the date at
+    // x 40; the body from (4, picture height + 30), 8 px narrower than the
+    // area and at most 300 px tall. An entry without a picture keeps the one
+    // shown before; with none shown since the Log opened, the text starts at
+    // the top left (the title at x 10).
     void details(UiContext& ui, const Row* r) {
         const game::GameState& s = ui.state();
         if (!r) return;
-        Sprite picture;
-        if (r->message) picture = ui.art.racePortrait(s.empire(r->message->from).race.style);
-        else if (r->entry) picture = ui.art.eventPicture(r->entry->picture);
-        else if (r->notice) picture = ui.art.eventPicture("OrdersNotCompleted");
+        if (r->index != pictureFor_) {
+            // Looked up only when the selected entry changes.
+            pictureFor_ = r->index;
+            if (const Sprite found = pictureOf(ui, *r)) picture_ = found;
+        }
+        if (const auto item = developedItem(ui, *r)) {
+            itemDetail(ui, *item, DetailStyle::Full);
+            return;
+        }
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        const float areaW = ImGui::GetContentRegionAvail().x / ui.k();
+        const Vec2 pic = picture_ ? picture_.size : Vec2{0, 0};
+        if (picture_) drawSprite(dl, picture_, origin, {origin.x + ui.px(pic.x), origin.y + ui.px(pic.y)});
+        // The title to the picture's right, wrapped within its height.
+        ImFont* bold = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
+        const float titleX = pic.x + 10;
+        const float titleW = std::max(20.0f, areaW - titleX - 2);
+        const ImVec2 titleAt{origin.x + ui.px(titleX), origin.y};
+        const float titleH = picture_ ? pic.y : ui.px(kTitleSize) * 3.0f / ui.k();
+        dl->PushClipRect(titleAt, {titleAt.x + ui.px(titleW), origin.y + ui.px(titleH)}, true);
+        dl->AddText(bold, ui.fontPx(kTitleSize), titleAt, IM_COL32_WHITE, r->title.c_str(), nullptr, ui.px(titleW));
+        dl->PopClipRect();
+        // Without a picture, the date and the body under the title (inferred: the original's
+        // places would put them on the title's line).
+        const float top = picture_ ? pic.y : bold->CalcTextSizeA(ui.fontPx(kTitleSize), FLT_MAX, ui.px(titleW), r->title.c_str()).y / ui.k();
+        const float dateY = top + 10;
+        dl->AddText({origin.x + ui.px(4), origin.y + ui.px(dateY)}, ImGui::ColorConvertFloat4ToU32(kLabelBlue), "Date:");
+        const std::string date = formatDate(r->turn);
+        dl->AddText({origin.x + ui.px(40), origin.y + ui.px(dateY)}, IM_COL32_WHITE, date.c_str());
         const int combat = combatIndex(ui, r);
-        framedImage(ui, picture, {128, 128});
-        ImGui::Spacing();
+        ImGui::SetCursorScreenPos({origin.x + ui.px(4), origin.y + ui.px(top + 30)});
         if (combat >= 0) {
             combatDetails(ui, *r, s.combats[size_t(combat)]);
             return;
         }
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
-        ImGui::TextUnformatted(r->title.c_str());
-        ImGui::PopFont();
-        ImGui::PopTextWrapPos();
-        labelValue(ui, "Date:", formatDate(r->turn), 40);
         if (r->message) {
             messageDetails(ui, *r->message);
-        } else if (r->entry) {
-            // Reading text: the Text size setting enlarges it, and the details scroll.
-            const ReadingText reading(ui.painter());
-            if (!r->entry->text.empty()) wrappedText(r->entry->text);
-        } else if (r->notice) {
-            const ReadingText reading(ui.painter());
-            wrappedText(*r->notice);
+            return;
         }
+        const std::string& body = r->entry ? r->entry->text : r->notice ? *r->notice : std::string{};
+        if (body.empty()) return;
+        ImGui::BeginChild("##body", ui.size({areaW - 8, std::min(300.0f, ImGui::GetContentRegionAvail().y / ui.k())}), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_NoBackground);
+        {
+            // Reading text: the Text size setting enlarges it, and the body scrolls.
+            const ReadingText reading(ui.painter());
+            wrappedText(body);
+        }
+        ImGui::EndChild();
     }
 
-    // A combat entry (spec 06 §4.1, §7 Q43): "Combat in <system>", the date
-    // and the sector, then each empire (flag at x 4, name at x 34) and one
-    // 20 px row per piece it had at the start: the name 12 px in, cut before
-    // the Damage column at x 200 without an ellipsis, and the damage fixed
-    // when the battle ended, "Dead" or "Taken". All of it white.
+    // A combat entry (spec 06 §4.1, §7 Q43): its picture, title and date as
+    // every entry's, then "Combat in <system>" and the sector, then each
+    // empire (flag at x 4, name at x 34) and one 20 px row per piece it had
+    // at the start: the name 12 px in, cut before the Damage column at x 200
+    // without an ellipsis, and the damage fixed when the battle ended, "Dead"
+    // or "Taken". All of it white.
     void combatDetails(UiContext& ui, const Row& r, const game::CombatRecord& c) {
         const game::GameState& s = ui.state();
+        (void)r;
         const bool known = c.location.system.index() < s.galaxy.systems.size();
-        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
-        ImGui::TextUnformatted(std::format("Combat in {}", known ? s.galaxy.system(c.location.system).name : std::string("?")).c_str());
-        ImGui::PopFont();
-        const float x = ImGui::GetCursorPosX();
+        const float x = ImGui::GetCursorPosX() - ui.px(4);
         auto at = [&](float dx) { ImGui::SameLine(x + ui.px(dx)); };
         ImGui::SetCursorPosX(x + ui.px(4));
-        ImGui::TextColored(kLabelBlue, "Date:");
-        at(40);
-        ImGui::TextUnformatted(formatDate(r.turn).c_str());
+        ImGui::TextUnformatted(std::format("Combat in {}", known ? s.galaxy.system(c.location.system).name : std::string("?")).c_str());
         at(132);
         ImGui::TextColored(kLabelBlue, "Coord:");
         at(180);
@@ -435,6 +538,8 @@ private:
     }
 
     bool opened_ = false;
+    Sprite picture_;              // the picture the pane shows: the last entry's that had one since the Log opened
+    int32_t pictureFor_ = -1;     // the entry it was looked up for (the whole log's index)
     uint8_t startFilter_ = 0;     // automation's filter for the first opening (0: the stored one)
     uint8_t filter_ = 0;          // 0 All, else the category + 1
     bool gotoLit_ = true;         // Goto is created lit and follows the entries selected (spec 06 §7 Q91)

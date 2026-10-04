@@ -1,5 +1,7 @@
 #include "client/classic/screens/ships_common.hpp"
 
+#include "client/script/items.hpp"
+
 #include "client/classic/screens/list_widgets.hpp"
 
 #include "game/design.hpp"
@@ -227,6 +229,8 @@ void Status::draw(UiContext&) const {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextColored(error_ ? kBad : kGood, "%s", text_.c_str());
     ImGui::PopTextWrapPos();
+    // Input scripts read the line as "status:<text>" (or "error:<text>").
+    script::reportItem(std::string(error_ ? "error:" : "status:") + text_, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 }
 
 // ---- Lists ------------------------------------------------------------------------------------
@@ -387,10 +391,12 @@ void ReportPopup::draw(UiContext& ui) {
     placePopup(ui, {400, 540});
     if (!ImGui::BeginPopupModal(id.c_str(), nullptr, kPopupFlags)) return;
     ImGui::BeginChild("##report", ImVec2(0, -ui.px(34)));
-    if (v) vehicleReport(ui, *v, tab_);
+    std::optional<ItemRef> item;
+    if (v) item = vehicleReport(ui, *v, tab_);
     else if (f) fleetReport(ui, *f);
-    else if (planet_.valid()) planetReport(ui, planet_, tab_);
+    else if (planet_.valid()) item = planetReport(ui, planet_, tab_);
     ImGui::EndChild();
+    if (item) item_.open(*item);
     bool close = false;
     if (v || planet_.valid()) {
         const bool isPlanet = !v;
@@ -400,8 +406,10 @@ void ReportPopup::draw(UiContext& ui) {
         tab_ = reportTabs(ui, t, isPlanet);
         ImGui::SameLine();
     }
-    if (ImGui::Button("Close", ImVec2(-FLT_MIN, ui.px(22))) || escapePressed()) close = true;
+    const bool itemOpen = ImGui::IsPopupOpen("##itemreport");
+    if (ImGui::Button("Close", ImVec2(-FLT_MIN, ui.px(22))) || (!itemOpen && escapePressed())) close = true;
     if (close || (!v && !f && !planet_.valid())) ImGui::CloseCurrentPopup();
+    item_.draw(ui);
     ImGui::EndPopup();
 }
 

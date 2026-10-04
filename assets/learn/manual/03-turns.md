@@ -93,7 +93,7 @@ when there is news (switch **Show the log at the start of each turn** off in
 
 - The **Log Messages** list at the top left shows the entries in the order they happened: messages from other empires first, then the turn's events, then the orders that could not be carried out. The selected entry has a green lamp, the others a blue one.
 - The map below it marks the system of the selected entry.
-- **Log Details** on the right shows the entry's picture, title, date and text. A battle entry lists the forces of each empire and the damage each one took. A message shows its sender, tone, text and package, and whether you have answered it.
+- **Log Details** on the right shows the entry's picture, title, date and text; an entry without a picture of its own keeps the last one shown. An entry about something researched shows that item's details instead. A battle entry lists the forces of each empire and the damage each one took. A message shows its sender, tone, text and package, and whether you have answered it.
 - The buttons on the right filter by category: **All, Construction, Research, Intelligence, Events, Politics, Combat** and **Misc**. A category with no entries this turn is dimmed.
 
 The Log remembers the filter and the selected entry when you open it again.

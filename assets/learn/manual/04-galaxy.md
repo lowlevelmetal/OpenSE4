@@ -132,7 +132,8 @@ you have not explored is a short stub.
 The grid and the warp lines can be switched off in [Empire Options](settings#empire-options).
 Each empire's colour is the colour swatch of its race's flag. Point at the panel to see the name
 of the nearest explored system in cyan. Left-click a system to show it
-in the system panel. Right-click the panel to open the [Galaxy Map](window:galaxy-map).
+in the system panel: the report and the selected ship stay as they are. Right-click the panel to
+open the [Galaxy Map](window:galaxy-map).
 
 The Galaxy Map is a larger map with overlay tabs: **Presence**, **Avoid** (the systems you avoid),
 **Ally Claimed**, **Enemy Claimed**, **Spaceports** and **Resupply Depots**. Tick `Show Names`

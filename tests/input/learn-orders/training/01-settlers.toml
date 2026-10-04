@@ -1,0 +1,19 @@
+# A training game for the input scripts (docs/BUILDING.md "Input scripts"): the
+# player's homeworld with two colony ships at the start, in a home system whose
+# sectors hold planets with moons, for the Colonize picker and Cargo Transfer
+# between two colonies of one sector. Free play: nothing to win in the scripts.
+title = "Settlers"
+summary = "Two colony ships at home, and planets with moons nearby."
+minutes = 1
+learned = ["Picking the planet a colony ship settles"]
+
+[setup]
+seed = 7
+race = "Terran"
+computer_players = 3
+events = "none"
+starting_ships = ["Colony", "Colony"]
+
+[[objective]]
+text = "Hold 40 colonies"
+when = { colonies = 40 }

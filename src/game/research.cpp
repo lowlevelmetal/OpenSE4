@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/research.hpp"
 
 #include "game/economy.hpp"
@@ -230,22 +231,25 @@ void setLevel(TurnContext& ctx, EmpireId e, TechAreaId area, int newLevel, std::
     const std::vector<uint8_t> areasAfter = openAreas(r, s, emp);
 
     const std::string& name = r.tech(area).name;
-    ctx.log(e, LogCategory::Research, "New Tech Level", std::format("{} is now at level {} ({}).", name, newLevel, source));
+    ctx.log(e, LogCategory::Research, "New Tech Level", std::format("{} is now at level {} ({}).", name, newLevel, source), std::nullopt,
+            "NewTechLevel");
     const size_t projects = after.size() - r.data().intelProjects.size();
     for (size_t i = 0; i < after.size(); ++i)
         if (after[i] && !before[i]) {
             const std::string item = itemName(r, i);
             if (i < projects)
                 ctx.log(e, LogCategory::Research, std::format("{} Discovered", item),
-                        std::format("{} is now available thanks to {} level {}.", item, name, newLevel));
+                        std::format("{} is now available thanks to {} level {}.", item, name, newLevel), std::nullopt, logpicture::developed(r, i));
             else
                 ctx.log(e, LogCategory::Research, std::format("{} Developed", item),
-                        std::format("Our agents can now carry out {}, thanks to {} level {}.", item, name, newLevel));
+                        std::format("Our agents can now carry out {}, thanks to {} level {}.", item, name, newLevel), std::nullopt,
+                        logpicture::developed(r, i));
         }
     for (size_t i = 0; i < areasAfter.size(); ++i)
         if (areasAfter[i] && !areasBefore[i])
             ctx.log(e, LogCategory::Research, "New Tech Area Discovered",
-                    std::format("{} can now be researched, thanks to {} level {}.", r.data().techAreas[i].name, name, newLevel));
+                    std::format("{} can now be researched, thanks to {} level {}.", r.data().techAreas[i].name, name, newLevel), std::nullopt,
+                    "NewTechArea");
     // Subjugation passes no technology to the master (spec 05 §1.5, confirmed: binary).
 }
 
@@ -349,7 +353,7 @@ void researchStep(TurnContext& ctx, EmpireId id) {
                 std::none_of(now.research.begin(), now.research.end(), [&](const ResearchProject& p) { return p.area == area; }))
                 now.research.push_back({area, 0});
     if (!done.empty() && now.research.empty())
-        ctx.log(id, LogCategory::Research, "All Projects Completed", "The research queue is empty.");
+        ctx.log(id, LogCategory::Research, "All Projects Completed", "The research queue is empty.", std::nullopt, "NewTechArea");
 }
 
 } // namespace opense4::game::research

@@ -119,7 +119,11 @@ struct ScreenArgs {
 
 // Requests from windows to the main window / mode.
 struct UiRequests {
+    // Show a system: as a galaxy-panel click, keeping the report (the Galaxy
+    // Map's Goto System), or with the report panel emptied (the Log's Goto to
+    // a system without a sector) (spec 06 §2.5, §2.6).
     std::optional<game::SystemId> showSystem;
+    bool showSystemEmptiesReport = false;
     std::optional<game::Location> focus;          // show the system and select the sector
     std::optional<game::VehicleId> selectVehicle;
     std::optional<game::ObjectId> selectPlanet;

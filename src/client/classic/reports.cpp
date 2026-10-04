@@ -56,20 +56,25 @@ void cargoList(UiContext& ui, const game::Cargo& c, int64_t capacity) {
     }
 }
 
-void abilityList(const std::vector<game::ParsedAbility>& list) {
-    if (list.empty()) {
-        ImGui::TextColored(kDim, "No special abilities");
-        return;
-    }
-    for (const auto& a : list) {
-        if (a.kind == game::AbilityKind::AITag) continue;
-        const std::string name = a.kind == game::AbilityKind::Unknown ? a.raw : std::string(game::identifier(a.kind));
-        if (a.value1 != 0 || a.value2 != 0) ImGui::BulletText("%s (%lld, %lld)", name.c_str(), static_cast<long long>(a.value1),
-                                                              static_cast<long long>(a.value2));
-        else if (!a.text1.empty() && a.text1 != "0") ImGui::BulletText("%s (%s)", name.c_str(), a.text1.c_str());
-        else ImGui::BulletText("%s", name.c_str());
+} // namespace
+
+void abilityPage(UiContext& ui, const std::vector<std::string>& lines) {
+    const Sprite lampSprite = ui.art.region("Pictures/Game/General.bmp", 177, 0, 13, 13);
+    const float right = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - ui.px(23);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    for (const std::string& line : lines) {
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        if (lampSprite)
+            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(lampSprite.tex.value)), {at.x, at.y + ui.px(2)}, {at.x + ui.px(13), at.y + ui.px(15)},
+                         {lampSprite.uv.min.x, lampSprite.uv.min.y}, {lampSprite.uv.max.x, lampSprite.uv.max.y});
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ui.px(13));
+        ImGui::PushTextWrapPos(right);
+        ImGui::TextUnformatted(line.c_str());
+        ImGui::PopTextWrapPos();
     }
 }
+
+namespace {
 
 // Status icons (docs/spec/06 §4.4) in a row, in the order they are drawn.
 void statusRow(UiContext& ui, const std::vector<int>& cells) {
@@ -277,15 +282,16 @@ void noteForeignReport(UiContext& ui, const game::Vehicle& v) {
 
 } // namespace
 
-void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
+std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab, bool simulator) {
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
     const game::Design& d = s.design(v.design);
     const bool own = v.owner == ui.session.player();
+    std::optional<ItemRef> opened;
     if (!own && v.owner.valid()) {
         const game::VehicleId id = v.id;
         noteForeignReport(ui, v);
-        if (!s.vehicle(id)) return;  // a turn-based command may change the game
+        if (!s.vehicle(id)) return opened;  // a turn-based command may change the game
     }
     if (Sprite flag = ui.art.flag(v.owner.valid() ? s.empire(v.owner).race.style : "")) {
         image(ui, flag, {26, 18});
@@ -337,25 +343,44 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
         case ReportTab::Components:
         case ReportTab::Facilities: {
             // A group that mixes designs lists each design's parts (its units are whole).
+            // A right-click on a component opens its Component Report, with
+            // the mount the design gave it (spec 06 §1.4, §7 Q105).
+            int row = 0;
+            auto rightClicked = [&](const game::DesignEntry& e, std::string_view label) {
+                script::reportItem(label);   // input scripts find a row by what it shows
+                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                    opened = ItemRef{ItemRef::Kind::Component, e.component, e.mount};
+            };
             for (const game::UnitStack& st : v.mixed) {
                 const game::Design& sd = s.design(st.design);
                 heading(ui, std::format("{} x{}", sd.name, st.count).c_str());
                 for (const game::DesignEntry& e : sd.entries) {
                     const auto& c = r.component(e.component);
+                    const std::string label = e.mount >= 0 ? r.data().weaponMounts[static_cast<size_t>(e.mount)].shortName + " " + c.name : c.name;
+                    ImGui::PushID(row++);
+                    ImGui::BeginGroup();
                     image(ui, ui.art.component(c.picture), {24, 24});
                     ImGui::SameLine();
-                    ImGui::TextUnformatted((e.mount >= 0 ? r.data().weaponMounts[static_cast<size_t>(e.mount)].shortName + " " + c.name : c.name).c_str());
+                    ImGui::TextUnformatted(label.c_str());
+                    ImGui::EndGroup();
+                    ImGui::PopID();
+                    rightClicked(e, label);
                 }
             }
             for (size_t i = 0; i < d.entries.size() && v.mixed.empty(); ++i) {
                 const auto& c = r.component(d.entries[i].component);
                 const bool intact = game::entryIntact(r, s, v, i);
+                ImGui::PushID(row++);
+                ImGui::BeginGroup();
                 image(ui, ui.art.component(c.picture), {24, 24}, intact ? Color{1, 1, 1, 1} : Color{1, 0.3f, 0.3f, 0.8f});
                 ImGui::SameLine();
                 std::string label = c.name;
                 if (d.entries[i].mount >= 0) label = r.data().weaponMounts[static_cast<size_t>(d.entries[i].mount)].shortName + " " + label;
                 if (intact) ImGui::TextUnformatted(label.c_str());
                 else ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s (destroyed)", label.c_str());
+                ImGui::EndGroup();
+                ImGui::PopID();
+                rightClicked(d.entries[i], label);
             }
             break;
         }
@@ -363,8 +388,9 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
             if (own) cargoList(ui, v.cargo, game::vehicleCargoCapacity(r, s, v));
             else ImGui::TextColored(kDim, "Unknown");
             break;
-        case ReportTab::Abilities: abilityList(game::vehicleAbilities(r, s, v)); break;
+        case ReportTab::Abilities: abilityPage(ui, vehicleAbilityLines(r, s, v, !simulator)); break;
     }
+    return opened;
 }
 
 void fleetReport(UiContext& ui, const game::Fleet& f) {
@@ -405,10 +431,11 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
     for (const auto& o : orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
 }
 
-void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
+std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab, bool simulator) {
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
     const game::SpaceObject& o = s.galaxy.object(planet);
+    std::optional<ItemRef> opened;
     // The colony only when the player sees it by the detection rule: an
     // unseen one's planet reports as uncolonized (spec 01 §6.9).
     const game::Colony* c = seenColony(r, s, ui.session.player(), planet);
@@ -494,25 +521,28 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
                 break;
             }
             labelValue(ui, "Facilities", std::format("{} / {}", c->facilities.size(), game::facilitySlots(r, s, *c)));
-            for (uint32_t f : c->facilities) {
+            // One row per facility, a type held twice in two rows; a
+            // right-click opens the facility's report (spec 06 §1.4, §7 Q105).
+            for (size_t i = 0; i < c->facilities.size(); ++i) {
+                const uint32_t f = c->facilities[i];
+                ImGui::PushID(int(i));
+                ImGui::BeginGroup();
                 image(ui, ui.art.facility(r.facility(f).picture), {24, 24});
                 ImGui::SameLine();
                 ImGui::TextUnformatted(r.facility(f).name.c_str());
+                ImGui::EndGroup();
+                ImGui::PopID();
+                script::reportItem(r.facility(f).name);   // input scripts find a row by what it shows
+                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) opened = ItemRef{ItemRef::Kind::Facility, f};
             }
             break;
         case ReportTab::Cargo:
             if (own) cargoList(ui, c->cargo, game::colonyCargoCapacity(r, s, *c));
             else ImGui::TextColored(kDim, c ? "Unknown" : "Not colonized");
             break;
-        case ReportTab::Abilities: {
-            std::vector<game::ParsedAbility> list;
-            if (own) list = game::colonyAbilities(r, s, *c);
-            else
-                for (const auto& a : o.abilities) list.push_back(game::parseAbility(a));
-            abilityList(list);
-            break;
-        }
+        case ReportTab::Abilities: abilityPage(ui, planetAbilityLines(r, s, planet, own ? c->owner : game::EmpireId{}, !simulator)); break;
     }
+    return opened;
 }
 
 void systemReport(UiContext& ui, game::SystemId sysId) {

@@ -270,7 +270,12 @@ void MainWindow::clearSelection() {
     vehicle_.reset();
     fleet_.reset();
     listMode_ = false;
+    listAt_.reset();
+    emptyReport_ = false;
     reportFromList_ = false;
+    // Every report filled for an object opens on Detail, the object already
+    // shown included (spec 06 §2.5, §7 Q107).
+    tab_ = ReportTab::Detail;
 }
 
 std::vector<game::ObjectId> MainWindow::objectsAt(const UiContext& ui, game::Sector sec) const {
@@ -303,9 +308,8 @@ void MainWindow::selectSector(UiContext& ui, game::Sector sec, bool cycle) {
     const auto objects = objectsAt(ui, sec);
     const auto vehicles = vehiclesAt(ui, {shown_, sec});
     const size_t total = objects.size() + vehicles.size();
-    const bool same = sector_ && *sector_ == sec;
     clearSelection();
-    if (!same) tagged_.clear();  // clicking another sector clears the tags (§2.5)
+    tagged_.clear();  // every click on a sector clears the tags, on the same sector too (§2.5)
     (void)cycle;
     if (total == 0) {
         sector_ = sec;  // empty space: the system report, with the sector marked
@@ -318,6 +322,13 @@ void MainWindow::selectSector(UiContext& ui, game::Sector sec, bool cycle) {
         return;
     }
     listMode_ = true;
+    listAt_ = game::Location{shown_, sec};
+}
+
+void MainWindow::showOtherSystem(game::SystemId sys) {
+    if (sys == shown_) return;
+    shown_ = sys;
+    sector_.reset();   // nothing marked, no Range on the coordinate line
 }
 
 void MainWindow::selectVehicle(UiContext& ui, game::VehicleId id) {
@@ -367,7 +378,7 @@ std::vector<std::string> MainWindow::selectionKinds(const UiContext& ui) const {
         } else if (o.kind == game::ObjectKind::WarpPoint) {
             out.emplace_back("warp-point");
         }
-    } else if (listMode_ && sector_) {
+    } else if (listMode_ && listAt_) {
         out.emplace_back("sector");
     } else if (shown_.valid()) {
         out.emplace_back("system");
@@ -443,14 +454,20 @@ void MainWindow::toggleTag(UiContext& ui, game::VehicleId id) {
 }
 
 void MainWindow::tagAll(UiContext& ui) {
-    if (!sector_) return;
+    // Every own object of the list shown, else of the current sector.
+    const std::optional<game::Location> at = listMode_ && listAt_ ? listAt_
+                                             : sector_            ? std::optional(game::Location{shown_, *sector_})
+                                                                  : std::nullopt;
+    if (!at) return;
     tagged_.clear();
-    for (const game::Vehicle* v : vehiclesAt(ui, {shown_, *sector_}))
+    for (const game::Vehicle* v : vehiclesAt(ui, *at))
         if (v->owner == ui.session.player() && !tagged(v->id)) toggleTag(ui, v->id);
     if (!tagged_.empty()) {
+        const bool here = at->system == shown_;
         clearSelection();
-        sector_ = ui.state().vehicle(tagged_.front())->location.sector;
+        if (here) sector_ = at->sector;
         listMode_ = true;
+        listAt_ = at;
     }
 }
 
@@ -463,9 +480,15 @@ void MainWindow::applyRequests(UiContext& ui) {
         selectSector(ui, rq.focus->sector, false);
     }
     if (rq.showSystem) {
-        shown_ = *rq.showSystem;
-        clearSelection();
-        tagged_.clear();
+        if (rq.showSystemEmptiesReport) {
+            // The Log's Goto to a system without a sector: the report panel is emptied (spec 06 §2.5, §7 Q103).
+            shown_ = *rq.showSystem;
+            clearSelection();
+            tagged_.clear();
+            emptyReport_ = true;
+        } else {
+            showOtherSystem(*rq.showSystem);   // the Galaxy Map's Goto System, as a galaxy-panel click
+        }
     }
     if (rq.pickLocation) {
         pick_ = Pick::Callback;
@@ -476,6 +499,7 @@ void MainWindow::applyRequests(UiContext& ui) {
     rq.selectPlanet.reset();
     rq.focus.reset();
     rq.showSystem.reset();
+    rq.showSystemEmptiesReport = false;
     rq.pickLocation = nullptr;
     rq.pickPrompt.clear();
 }
@@ -605,50 +629,113 @@ void MainWindow::openFor(UiContext& ui, ScreenId id) {
     ui.open(id, a);
 }
 
-void MainWindow::completePick(UiContext& ui, game::Location where, std::optional<game::ObjectId> object) {
+bool MainWindow::pursuingAttack(UiContext& ui) const {
+    // An Attack is a pursuit in a simultaneous game, or for a drone group (spec 06 §2.9).
+    if (!ui.session.turnBased()) return true;
     const game::GameState& s = ui.state();
+    std::vector<game::VehicleId> who = tagged_;
+    if (who.empty() && vehicle_) who.push_back(*vehicle_);
+    return !who.empty() && std::all_of(who.begin(), who.end(), [&](game::VehicleId id) {
+        const game::Vehicle* v = s.vehicle(id);
+        return v && game::vehicleType(ui.rules(), s, *v) == ruleset::VehicleType::Drone;
+    });
+}
+
+std::vector<MainWindow::PickCandidate> MainWindow::pickCandidates(UiContext& ui, Pick p, game::Location where) const {
+    // The candidates in the clicked sector, in the system's object order
+    // (spec 06 §2.9, confirmed: binary); an unexplored system has none (its
+    // stellar objects are not shown).
+    const game::GameState& s = ui.state();
+    const game::Rules& r = ui.rules();
+    const game::EmpireId me = ui.session.player();
+    std::vector<std::pair<uint64_t, PickCandidate>> found;
+    const bool drones = p == Pick::Attack && ui.session.turnBased();   // a pursuit in a turn-based game: a drone group
+    for (game::ObjectId id : shownStellarObjects(r, s, me, where.system, where.sector)) {
+        const game::SpaceObject& o = s.galaxy.object(id);
+        const game::Colony* seen = seenColony(r, s, me, id);
+        bool take = false;
+        switch (p) {
+            case Pick::Colonize: take = o.kind == game::ObjectKind::Planet; break;   // colonized or not, of any type
+            case Pick::Warp: take = o.kind == game::ObjectKind::WarpPoint; break;
+            case Pick::DropCargo: take = seen && seen->owner == me; break;
+            case Pick::Attack: take = (seen && seen->owner != me) || (drones && o.kind == game::ObjectKind::WarpPoint); break;
+            default: break;
+        }
+        if (take) found.emplace_back(game::objectOrderKey(s, id), PickCandidate{id, {}});
+    }
+    if (p == Pick::DropCargo || p == Pick::Attack)
+        for (const game::Vehicle* v : vehiclesAt(ui, where)) {
+            bool take = false;
+            if (p == Pick::DropCargo) take = v->owner == me;
+            else if (v->owner.valid() && v->owner != me) {
+                const ruleset::VehicleType type = game::vehicleType(r, s, *v);
+                take = !drones || type == ruleset::VehicleType::Ship || type == ruleset::VehicleType::Satellite;
+            }
+            if (take) found.emplace_back(game::objectOrderKey(*v), PickCandidate{{}, v->id});
+        }
+    std::stable_sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<PickCandidate> out;
+    for (const auto& [key, c] : found) out.push_back(c);
+    return out;
+}
+
+void MainWindow::givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c) {
+    // The picked object is the order's target; nothing about it is checked
+    // now: the order's own tests run when it is carried out (spec 06 §2.9).
+    switch (p) {
+        case Pick::Colonize:
+        case Pick::Warp: {
+            game::Order o{p == Pick::Colonize ? game::OrderKind::Colonize : game::OrderKind::Warp, where};
+            o.object = c.object;
+            giveOrder(ui, o);
+            return;
+        }
+        case Pick::Attack: {
+            game::Order o{game::OrderKind::Attack, where};
+            o.object = c.object;
+            o.vehicle = c.vehicle;
+            giveOrder(ui, o);
+            return;
+        }
+        case Pick::DropCargo: {
+            // Delivered into the object picked.
+            game::Order o{game::OrderKind::DropCargo, where};
+            o.design = pickDesign_;
+            o.amount = -1;
+            o.object = c.object;
+            o.vehicle = c.vehicle;
+            giveOrder(ui, o);
+            return;
+        }
+        default: return;
+    }
+}
+
+void MainWindow::completePick(UiContext& ui, game::Location where, std::optional<game::ObjectId> object) {
     const Pick p = pick_;
     pick_ = Pick::None;
     switch (p) {
         case Pick::None: return;
         case Pick::MoveTo: giveOrder(ui, game::Order{game::OrderKind::MoveTo, where}); return;
+        case Pick::Attack:
+            if (!pursuingAttack(ui)) {
+                // A turn-based Attack names its sector: given even with nothing seen there (spec 06 §2.9).
+                const std::vector<PickCandidate> seen = pickCandidates(ui, p, where);
+                givePicked(ui, p, where, seen.empty() ? PickCandidate{} : seen.front());
+                return;
+            }
+            [[fallthrough]];
         case Pick::Warp:
-            for (game::ObjectId id : s.galaxy.system(where.system).objects)
-                if (s.galaxy.object(id).kind == game::ObjectKind::WarpPoint && s.galaxy.object(id).sector == where.sector) {
-                    game::Order o{game::OrderKind::Warp, where};
-                    o.object = id;
-                    giveOrder(ui, o);
-                    return;
-                }
-            note(ui, "There is no warp point there.");
-            return;
-        case Pick::Colonize: {
-            for (game::ObjectId id : game::planetsAt(s, where))
-                if (!s.colony(id) && (!object || *object == id)) {
-                    game::Order o{game::OrderKind::Colonize, where};
-                    o.object = id;
-                    giveOrder(ui, o);
-                    return;
-                }
-            note(ui, "There is no planet to colonize there.");
-            return;
-        }
-        case Pick::Attack: {
-            for (const game::Vehicle* v : vehiclesAt(ui, where))
-                if (v->owner != ui.session.player()) {
-                    game::Order o{game::OrderKind::Attack, where};
-                    o.vehicle = v->id;
-                    giveOrder(ui, o);
-                    return;
-                }
-            for (game::ObjectId id : game::planetsAt(s, where))
-                if (const game::Colony* c = s.colony(id); c && c->owner != ui.session.player()) {
-                    game::Order o{game::OrderKind::Attack, where};
-                    o.object = id;
-                    giveOrder(ui, o);
-                    return;
-                }
-            note(ui, "There is nothing to attack there.");
+        case Pick::Colonize:
+        case Pick::DropCargo: {
+            std::vector<PickCandidate> candidates = pickCandidates(ui, p, where);
+            if (object) std::erase_if(candidates, [&](const PickCandidate& c) { return c.object != *object; });
+            if (candidates.empty()) return;   // no order, and nothing said
+            if (candidates.size() == 1) {
+                givePicked(ui, p, where, candidates.front());
+                return;
+            }
+            pickObject_ = PickObject{p, where, std::move(candidates)};
             return;
         }
         case Pick::Patrol:
@@ -656,7 +743,6 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
             pick_ = Pick::Patrol;  // keep collecting until Enter or a right click
             return;
         case Pick::LoadCargo:
-        case Pick::DropCargo:
         case Pick::LaunchRemote:
         case Pick::RecoverRemote: {
             static constexpr std::array<game::OrderKind, 4> kKinds{game::OrderKind::LoadCargo, game::OrderKind::DropCargo,
@@ -671,6 +757,87 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
             if (pickCallback_) pickCallback_(where);
             pickCallback_ = nullptr;
             return;
+    }
+}
+
+void MainWindow::drawPickObject(UiContext& ui) {
+    // The Pick Object window (spec 06 §2.9, confirmed: binary): borderless,
+    // black, 248x253, its top-left corner at the clicked sector's top-right
+    // corner (moved up to stay inside the main window); "Please select" and
+    // what in a 228x21 label at (12,8); the list from (8,37), 232 wide, one
+    // row per candidate with its system-panel picture and its name from x 40,
+    // the row under the pointer lit; Cancel the only button. A left-click on
+    // a row picks; Cancel or Esc gives no order.
+    const PickObject& po = *pickObject_;
+    const game::GameState& s = ui.state();
+    const game::EmpireId me = ui.session.player();
+    const Vec2 size{248, 253};
+    Vec2 at = cellOrigin(po.where.sector) + Vec2{geo.cell, 0};
+    at.y = std::max(0.0f, std::min(at.y, frameH() - size.y));
+    at.x = std::min(at.x, geo.right - size.x);
+    ImGui::SetNextWindowPos(ui.at(at));
+    ImGui::SetNextWindowSize(ui.size(size));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32_BLACK);
+    std::optional<PickCandidate> picked;
+    bool cancel = false;
+    if (ImGui::Begin("##pickobject", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags)) {
+        // A question of the main window's: over the classic windows, never covered by a tutorial's input lock.
+        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+        ui.promptWindow();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        static constexpr std::array<const char*, 4> kWhat{"the planet to colonize", "the warp connection to use", "the destination for cargo",
+                                                          "the target to attack"};
+        const size_t what = po.pick == Pick::Colonize ? 0 : po.pick == Pick::Warp ? 1 : po.pick == Pick::DropCargo ? 2 : 3;
+        const std::string title = std::string("Please select ") + kWhat[what];
+        dl->PushClipRect(ui.at(at + Vec2{12, 8}), ui.at(at + Vec2{240, 29}), true);
+        dl->AddText(ui.at(at + Vec2{12, 8 + 3}), imColor(palette::kLabel), title.c_str());
+        dl->PopClipRect();
+        // The list, down to 16 px above the button bar.
+        const float buttonsY = size.y - 34;
+        ImGui::SetCursorScreenPos(ui.at(at + Vec2{8, 37}));
+        ImGui::BeginChild("##candidates", ui.size({232, buttonsY - 16 - 37}), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+        const float rowH = ui.px(38);
+        for (size_t i = 0; i < po.candidates.size(); ++i) {
+            const PickCandidate& c = po.candidates[i];
+            Sprite picture;
+            std::string name;
+            if (const game::Vehicle* v = s.vehicle(c.vehicle)) {
+                picture = vehicleMini(ui, *v);
+                name = v->name;
+            } else if (c.object.valid() && c.object.index() < s.galaxy.objects.size()) {
+                picture = objectSprite(ui, s.galaxy.object(c.object));
+                name = objectName(s, c.object, me);
+            }
+            ImGui::PushID(int(i));
+            const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+            if (ImGui::Selectable(("##" + name).c_str(), false, ImGuiSelectableFlags_None, ImVec2(0, rowH))) picked = c;
+            script::reportItem(name);   // input scripts pick a row by its name
+            ImGui::GetWindowDrawList()->AddText({rowMin.x + ui.px(40), rowMin.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f}, IM_COL32_WHITE,
+                                                name.c_str());
+            if (picture)
+                ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(picture.tex.value)), {rowMin.x, rowMin.y + ui.px(1)},
+                                                     {rowMin.x + ui.px(36), rowMin.y + ui.px(37)}, {picture.uv.min.x, picture.uv.min.y},
+                                                     {picture.uv.max.x, picture.uv.max.y});
+            ImGui::PopID();
+        }
+        ImGui::EndChild();
+        ui.tagItem("pick-object:list");
+        ImGui::SetCursorScreenPos(ui.at(at + Vec2{(size.x - 180) * 0.5f, buttonsY}));
+        cancel = classicButton(ui, "Cancel", {180, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+    if (picked) {
+        const PickObject chosen = std::move(*pickObject_);
+        pickObject_.reset();
+        givePicked(ui, chosen.pick, chosen.where, *picked);
+    } else if (cancel) {
+        audio().play("close");
+        pickObject_.reset();
     }
 }
 
@@ -936,8 +1103,9 @@ void MainWindow::update(UiContext& ui, bool blocked) {
         for (FinaleKind k : endings) args.text += (args.text.empty() ? "" : ",") + std::string(finaleArgName(k));
         ui.open(ScreenId::Finale, std::move(args));
     }
-    prepareSectors(ui);
     if (!shown_.valid() && !ui.state().galaxy.systems.empty()) reset(ui);
+    followOwnMoves(ui);
+    prepareSectors(ui);
     // Selections can vanish when a turn is processed.
     if (vehicle_ && !ui.state().vehicle(*vehicle_)) clearSelection();
     if (fleet_ && !ui.state().fleet(*fleet_)) fleet_.reset();
@@ -952,12 +1120,14 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     // or the main window's own picker, the command buttons, order strip,
     // selectors and report panel take no input (no click, no hover hint), and
     // neither do the map panels and the keys (below).
-    inputBlocked_ = blocked || chooser_.has_value();
+    inputBlocked_ = blocked || chooser_.has_value() || pickObject_.has_value();
     statusBar(ui);
     commandPanel(ui);
     reportPanel(ui);
     overlayText(ui);
     statusButtons(ui);
+    // A facility's or component's report, from a right-click on the report's page (spec 06 §1.4).
+    itemReport_.draw(ui);
     // The panels lessons point at (docs/LEARNING.md "UI tags").
     ui.tagFrame("panel:system", geo.systemPanel);
     ui.tagFrame("panel:report", geo.reportPanel);
@@ -968,8 +1138,9 @@ void MainWindow::update(UiContext& ui, bool blocked) {
             if (const game::Location at = game::locationOf(ui.state().galaxy, c->planet); at.system == shown_)
                 ui.tagFrame("sector:home", Rect::fromPosSize(cellOrigin(at.sector), {geo.cell, geo.cell}));
     // The picker takes the keys while it is open (Esc closes it and nothing else).
-    const bool choosing = chooser_.has_value();
-    if (choosing) drawChooser(ui);
+    const bool choosing = chooser_.has_value() || pickObject_.has_value();
+    if (chooser_) drawChooser(ui);
+    else if (pickObject_) drawPickObject(ui);
     if (!blocked && !choosing) {
         mouse(ui);
         hotkeys(ui);
@@ -1260,24 +1431,26 @@ void MainWindow::reportPanel(UiContext& ui) {
                     ImGui::Separator();
                 }
             }
-            vehicleReport(ui, *v, tab_);
+            if (const auto item = vehicleReport(ui, *v, tab_)) itemReport_.open(*item);
             tabsFor = true;
         }
     } else if (object_ && tagged_.empty()) {
         const game::SpaceObject& o = s.galaxy.object(*object_);
         if (o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids) {
-            planetReport(ui, *object_, tab_);
+            if (const auto item = planetReport(ui, *object_, tab_)) itemReport_.open(*item);
             tabsFor = planetTabs = true;
         } else {
             objectReport(ui, *object_);
         }
-    } else if ((listMode_ || !tagged_.empty()) && sector_) {
-        // Everything in the sector: planets first, then vehicles. Each row: the
-        // picture, the name, a ship's class, and status icons for own objects;
-        // Shift+click tags a vehicle (§2.5).
+    } else if ((listMode_ || !tagged_.empty()) && listAt_) {
+        // Everything in the sector the list was built for, which another
+        // system shown leaves as it is: planets first, then vehicles. Each
+        // row: the picture, the name, a ship's class, and status icons for
+        // own objects; Shift+click tags a vehicle (§2.5, §7 Q103).
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float rowH = ui.px(36);
-        for (game::ObjectId id : objectsAt(ui, *sector_)) {
+        const game::Location at = *listAt_;
+        for (game::ObjectId id : shownStellarObjects(ui.rules(), s, me, at.system, at.sector)) {
             const game::SpaceObject& o = s.galaxy.object(id);
             ImGui::PushID(int(id.value));
             image(ui, objectSprite(ui, o), {36, 36});
@@ -1285,7 +1458,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             if (ImGui::Selectable(objectName(s, id, me).c_str(), false, 0, ImVec2(0, rowH))) {
                 clearSelection();
                 tagged_.clear();
-                sector_ = o.sector;
+                if (o.system == shown_) sector_ = o.sector;
                 object_ = id;
                 reportFromList_ = true;
                 ++selections_;
@@ -1300,7 +1473,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
             ImGui::PopID();
         }
-        for (const game::Vehicle* v : vehiclesAt(ui, {shown_, *sector_})) {
+        for (const game::Vehicle* v : vehiclesAt(ui, at)) {
             ImGui::PushID(int(v->id.value) + 1000000);
             const ImVec2 rowMin = ImGui::GetCursorScreenPos();
             image(ui, vehicleMini(ui, *v), {36, 36});
@@ -1310,7 +1483,13 @@ void MainWindow::reportPanel(UiContext& ui) {
                 if (ImGui::GetIO().KeyShift) {
                     toggleTag(ui, v->id);
                 } else {
+                    // The row's report; the system shown stays as it is.
+                    const game::SystemId showing = shown_;
                     selectVehicle(ui, v->id);
+                    if (shown_ != showing) {
+                        shown_ = showing;
+                        sector_.reset();
+                    }
                     reportFromList_ = true;
                 }
             }
@@ -1324,7 +1503,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             ImGui::PopID();
         }
         if (!tagged_.empty()) ImGui::TextColored(kDimText, "%zu tagged: orders go to all of them.", tagged_.size());
-    } else if (shown_.valid()) {
+    } else if (shown_.valid() && !emptyReport_) {
         systemReport(ui, shown_);
     }
     if (reportFromList_ && single && tagged_.empty()) {
@@ -1439,6 +1618,8 @@ void MainWindow::overlayText(UiContext& ui) {
                 const game::SpaceObject& o = s.galaxy.object(id);
                 const game::Colony* col = s.colony(id);
                 if (o.kind != game::ObjectKind::Planet || !col || !showsFacilityMarkers(s, ui.session.player(), col->owner)) continue;
+                // Only on the planet its sector shows (spec 06 §2.4 "Sector contents", §7 Q108).
+                if (std::none_of(sectors_.begin(), sectors_.end(), [&](const ShownSector& sec) { return sec.view.stellar == id; })) continue;
                 // Only on a colony the player sees: a partner's colony needs sensors there (spec 01 §6.9).
                 if (col->owner != ui.session.player() && !game::sight::canSeeColony(ui.rules(), s, ui.session.player(), id)) continue;
                 if (replay_.active() && replay_.colonyOwner(id) != col->owner) continue;
@@ -1594,34 +1775,29 @@ void MainWindow::mouse(UiContext& ui) {
             ui.open(ScreenId::GalaxyMap, args);
             return;
         }
-        if (const auto best = galaxySystemAt(ui, p, false)) {
-            shown_ = *best;
-            if (pick_ == Pick::None) {
-                clearSelection();
-                tagged_.clear();
-                ++selections_;   // the system, with nothing in it selected
-            }
-        }
+        // A left-click shows the system nearest the pointer and changes
+        // nothing else: the report or list, its tab, the lit orders and the
+        // tags stay, so an order can be given a target there (spec 06 §2.6,
+        // §7 Q103, confirmed: binary).
+        if (const auto best = galaxySystemAt(ui, p, false)) showOtherSystem(*best);
         return;
     }
 
     if (auto sec = sectorAt(p)) {
         const game::Location where{shown_, *sec};
         if (pick_ != Pick::None) {
-            if (right && pick_ == Pick::Patrol) {
-                finishPatrol(ui);
-                return;
-            }
-            completePick(ui, where, std::nullopt);
+            if (right && pick_ == Pick::Patrol) finishPatrol(ui);   // ours: a right click ends the patrol's points
+            else if (left) completePick(ui, where, std::nullopt);
             return;
         }
-        // Right click on a sector with an own mobile vehicle selected: Move To (an OpenSE4 shortcut, optional).
-        if (right && appSettings().controls.rightClickMoves) {
-            if (const game::Vehicle* v = selectedVehicle(ui); v && v->owner == ui.session.player() && v->location != where &&
-                                                              litNow(ui)[static_cast<size_t>(OrderId::MoveTo)]) {
+        // Only the left button acts in the system panel (spec 06 §2.4, §7
+        // Q103), but for OpenSE4's optional shortcut: a right click on a
+        // sector with an own mobile vehicle selected gives Move To.
+        if (right) {
+            if (const game::Vehicle* v = selectedVehicle(ui); appSettings().controls.rightClickMoves && v && v->owner == ui.session.player() &&
+                                                              v->location != where && litNow(ui)[static_cast<size_t>(OrderId::MoveTo)])
                 giveOrder(ui, game::Order{game::OrderKind::MoveTo, where});
-                return;
-            }
+            return;
         }
         selectSector(ui, *sec, true);
     }
@@ -1824,6 +2000,9 @@ void MainWindow::trackMovement(UiContext& ui) {
         }
         replay_.stop();
         replayLine_.reset();
+        // The game selects the current sector again at a turn's start: the
+        // report is filled afresh, on Detail (spec 06 §2.5, §7 Q107).
+        if (seenTurn_ != UINT32_MAX) tab_ = ReportTab::Detail;
         seenTurn_ = s.turn;
     }
     const bool wasReplaying = replay_.active();
@@ -1868,6 +2047,51 @@ void MainWindow::trackMovement(UiContext& ui) {
     // §2.4); the movement log replay never pauses (spec 06 §7 Q62).
     const double pause = ShipGlides::stepPause(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
     glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible, geo.cell, pause);
+}
+
+void MainWindow::followOwnMoves(UiContext& ui) {
+    // The view moves by itself only while a human player's own orders are
+    // carried out during its turn in a turn-based game (spec 06 §2.7,
+    // confirmed: binary): before an object's orders run outside the system
+    // shown, its system is shown with its sector current; after each warp
+    // jump the arrival system is shown with the exit warp point's sector
+    // current, the report of the ship staying open. At the start of the
+    // turn each object with orders left is selected in turn as it acts, so
+    // the turn opens on the last one. Never in simultaneous games, nor for
+    // other empires' moves, and no option.
+    const uint64_t call = ui.session.liveStepsCall();
+    if (call == followedCall_) return;
+    followedCall_ = call;
+    if (!ui.session.turnBased() || replay_.active()) return;
+    const std::vector<game::LiveStep>& steps = ui.session.liveSteps();
+    const game::GameState& s = ui.state();
+    const bool turnStart = ui.session.liveStepsAtTurnStart();
+    const uint64_t made = selections_;   // the game's selections are none the player made
+    for (const game::LiveStep& st : steps) {
+        if (!st.at.system.valid() || st.at.system.index() >= s.galaxy.systems.size()) continue;
+        if (st.jump) {
+            shown_ = st.at.system;
+            sector_ = st.at.sector;
+            continue;
+        }
+        if (turnStart) {
+            // Selected in turn: its system shown, its sector current, its report opened.
+            clearSelection();
+            tagged_.clear();
+            shown_ = st.at.system;
+            sector_ = st.at.sector;
+            if (st.planet.valid()) {
+                object_ = st.planet;
+            } else if (const game::Vehicle* v = s.vehicle(st.vehicle)) {
+                vehicle_ = v->id;
+                if (v->fleet.valid() && v->owner == ui.session.player()) fleet_ = v->fleet;
+            }
+        } else if (st.at.system != shown_) {
+            shown_ = st.at.system;
+            sector_ = st.at.sector;
+        }
+    }
+    selections_ = made;
 }
 
 void MainWindow::startReplay(UiContext& ui, OrderId id) {
@@ -2019,29 +2243,41 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
             if (!spriteAt(ui.art.planet(rules.data().sectorObjectTypes[o.sectorType].picture, keyed), square))
                 r.disc(square + Vec2{18, 18}, 12.0f, o.kind == game::ObjectKind::Star ? Color::hex(0xffe080) : Color::hex(0x8090a0));
         }
-        // Colonies carry the owner's small flag at the top right; planets we could
-        // colonise get the classic star (green: breathable, red: needs domes).
-        for (game::ObjectId id : sys.objects) {
+        // One planet's marks per sector: only the stellar object the sector
+        // shows carries the colony box or the colonisation star, never both;
+        // the other planets of the sector get no mark (spec 06 §2.4 "Sector
+        // contents", §7 Q108, confirmed: binary).
+        for (const ShownSector& sec : sectors_) {
+            if (!sec.view.stellar) continue;
+            const game::ObjectId id = *sec.view.stellar;
             const game::SpaceObject& o = s.galaxy.object(id);
-            // A planet the player does not see gets no mark at all (spec 01 §6.9).
-            if (!game::sight::canSeePlanet(rules, s, ui.session.player(), id)) continue;
-            const Vec2 c = sectorCenter(o.sector);
+            if (o.kind != game::ObjectKind::Planet && o.kind != game::ObjectKind::Asteroids) continue;
+            const Vec2 square = spriteSquare(sec.sector);
             const game::Colony* col = s.colony(id);
             std::optional<game::EmpireId> owner = col ? std::optional(col->owner) : std::nullopt;
             if (replay_.active()) owner = replay_.colonyOwner(id);
-            // The colony's mark only when the player sees the colony by the
+            // The colony's box only when the player sees the colony by the
             // detection rule; an unseen colony's planet looks empty and gets
-            // the colonize star when its type fits (spec 01 §6.9, spec 06 §2.4).
+            // the colonisation star when its type fits (spec 01 §6.9).
             if (owner && *owner != ui.session.player() && !game::sight::canSeeColony(rules, s, ui.session.player(), id)) owner.reset();
             if (owner) {
-                const Sprite flag = ui.art.flag(s.empire(*owner).race.style, false);
-                if (flag) r.sprite(flag.tex, Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), flag.uv);
-                else r.rect(Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), empireCol(s, *owner));
+                // A 1 px outline in the owner's colour over (X+20, Y+1)-(X+35, Y+11),
+                // and 0 to 3 bars of 3x6 at X+30, X+26, X+22 (top Y+3), filled
+                // right to left: one up to 200M, two under 1000M, three from 1000M.
+                const Color c = empireCol(s, *owner);
+                r.rect(Rect::fromPosSize(square + Vec2{20, 1}, {15, 1}), c);
+                r.rect(Rect::fromPosSize(square + Vec2{20, 10}, {15, 1}), c);
+                r.rect(Rect::fromPosSize(square + Vec2{20, 1}, {1, 10}), c);
+                r.rect(Rect::fromPosSize(square + Vec2{34, 1}, {1, 10}), c);
+                const int64_t population = col ? col->totalPopulation() : 0;
+                const int bars = population <= 0 ? 0 : population <= 200 ? 1 : population < 1000 ? 2 : 3;
+                for (int b = 0; b < bars; ++b) r.rect(Rect::fromPosSize(square + Vec2{30.0f - 4.0f * float(b), 3}, {3, 6}), c);
             } else if (ui.options().colonizableMarkers && o.kind == game::ObjectKind::Planet &&
                        colonizeProblem(rules, s, ui.session.player(), id, tech).empty()) {
+                // The 12x8 star of General.bmp at (X+24, Y): green breathable, red domed.
                 const bool breathe = breathableBy(s, ui.session.player(), o);
-                const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 237 : 261, 16, 7, 7);
-                if (star) r.sprite(star.tex, Rect::fromPosSize(c + Vec2{11, -17}, {7, 7}), star.uv);
+                const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 234 : 258, 16, 12, 8);
+                if (star) r.sprite(star.tex, Rect::fromPosSize(square + Vec2{24, 0}, {12, 8}), star.uv);
             }
         }
     }
@@ -2139,6 +2375,9 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         else brackets(*sector_, kSelectYellow);
     }
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
+    // While the Pick Object window asks, the clicked sector has a 1 px #647EC7 frame (spec 06 §2.9).
+    if (pickObject_ && pickObject_->where.system == shown_)
+        r.rectOutline(Rect::fromPosSize(cellOrigin(pickObject_->where.sector), {geo.cell, geo.cell}), 1.0f, Color::hex(0x647ec7));
     // Waypoints and tagged minefields: a cyan 1 px rectangle on the cell's edges
     // (the number or "M" is drawn by overlayText).
     auto cellFrame = [&](game::Sector sec) { r.rectOutline(Rect::fromPosSize(cellOrigin(sec), {geo.cell, geo.cell}), 1.0f, rgb(map_style::kWaypoint)); };

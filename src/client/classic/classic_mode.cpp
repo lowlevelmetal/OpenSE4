@@ -976,6 +976,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             openScreen(ScreenId::StrategicCombat, std::move(args));
         }
     }
+    // A failed Colonize and the like: a message box over the view (spec 03 §8).
+    for (game::PlayerMessage& m : session_->takeMessages()) messageBoxes_.push_back(std::move(m));
     const bool asking = screens_.empty() && !session_->questions().empty() && !battleAsking;
     const std::optional<game::ObjectId> choosing = screens_.empty() && !asking && !battleAsking ? colonyTypeChoice(ui) : std::nullopt;
 
@@ -983,9 +985,10 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     // window takes no input, not its command buttons, order strip, selectors,
     // panels, map clicks or keys; nor while a question waits for its answer:
     // the End Turn question, a popup (the lesson's "Leave the lesson?" and
-    // result, a host's question) or a message box. The key that answers one
-    // (N, Enter) is not also a main-window key (Change Name, End Turn).
-    const bool prompted = asking || battleAsking || choosing.has_value() || confirmEndTurn_ || !lessonError_.empty() ||
+    // result, a host's question) or a message box (a failed Colonize). The key
+    // that answers one (N, Enter) is not also a main-window key (Change Name,
+    // End Turn).
+    const bool prompted = asking || battleAsking || choosing.has_value() || confirmEndTurn_ || !lessonError_.empty() || !messageBoxes_.empty() ||
                           ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     const bool modalOpen = !screens_.empty() || prompted || session_->tactical() != nullptr;
     modalOpen_ = modalOpen;
@@ -994,6 +997,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
     if (choosing) drawColonyTypeChoice(ui, *choosing);
+    if (!messageBoxes_.empty() && !battleAsking) drawMessageBox(ui);
 
     // Windows, oldest first; the newest draws on top. Every window is modal:
     // only the one in front takes input, the ones behind it wait (ui.behind).
@@ -1342,6 +1346,30 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     if (yes) session_->answer(true);
     else if (no) session_->answer(false);
     ImGui::PopFont();
+}
+
+// A message box with the message's title and OK (Enter and Esc too), modal
+// over the view; the next one comes when it is answered (spec 03 §8: a failed
+// Colonize in a turn-based game, "Colonize" and the reason).
+void ClassicMode::drawMessageBox(UiContext& ui) {
+    const game::PlayerMessage& m = messageBoxes_.front();
+    const std::string id = m.title + "###messagebox";
+    if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
+    ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 340) * 0.5f), std::floor(frameH() * 0.5f - 70)}));
+    ImGui::SetNextWindowSize(ui.size({340, 0}));
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+    bool ok = false;
+    if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                                        ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
+        ui.promptWindow();   // never covered by a tutorial's input lock
+        ImGui::TextWrapped("%s", m.text.c_str());
+        ImGui::Spacing();
+        ok = ImGui::Button("OK", ui.size({320, 28})) || okKey();
+        if (ok) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::PopFont();
+    if (ok) messageBoxes_.pop_front();
 }
 
 std::optional<game::ObjectId> ClassicMode::colonyTypeChoice(const UiContext& ui) const {

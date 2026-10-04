@@ -227,6 +227,7 @@ private:
     using StateBlob = std::shared_ptr<const std::vector<uint8_t>>;
     std::vector<StateBlob> redactedState() const;
     void notifyPlayer(game::EmpireId empire, const std::string& text);
+    void notifyMessages(const game::TurnResult& result);
     void notifyRejections(const game::TurnResult& result, uint32_t turn);
     // Turn-based games.
     game::LiveOptions liveOptions() const;
