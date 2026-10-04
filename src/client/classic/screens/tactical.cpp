@@ -1243,7 +1243,8 @@ public:
         std::function<void()> chosen;   // runs once the menu has gone
         bool close = false;
         const bool open = ImGui::Begin("Tactical Combat Orders", nullptr,
-                                       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags);
+                                       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags |
+                                           ui.windowFlags());
         ImGui::PopStyleVar(2);
         if (open) {
             if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
@@ -1433,7 +1434,8 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         const bool open = ImGui::Begin("Combat Piece Report", nullptr,
-                                       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags);
+                                       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags |
+                                           ui.windowFlags());
         ImGui::PopStyleVar(2);
         bool keep = true;
         if (open) {

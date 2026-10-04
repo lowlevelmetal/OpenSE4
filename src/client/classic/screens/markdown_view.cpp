@@ -39,7 +39,7 @@ class Renderer {
 public:
     Renderer(const Painter& p, MarkdownOptions& options) : p_(p), opt_(options) {
         body_ = p.fonts.readingFont();  // OpenSE4's own text font (docs/spec/06 §5.4)
-        size_ = p.fontPx(kTextSize);
+        size_ = p.textPx(kTextSize);
         ImGui::PushFont(body_, size_);
         lineH_ = ImGui::GetTextLineHeight() + p.px(2);
         space_ = body_->CalcTextSizeA(size_, FLT_MAX, 0.0f, " ").x;
@@ -85,7 +85,7 @@ private:
             opt_.scrollTo.clear();
         }
         ImFont* font = b.level <= 2 ? p_.fonts.bold : body_;
-        const float size = b.level <= 2 ? p_.fontPx(kTitleSize) : size_;
+        const float size = b.level <= 2 ? p_.textPx(kTitleSize) : size_;
         const uint32_t color = b.level == 1 ? 0xffffff : b.level == 2 ? palette::kLabel : palette::kHeading;
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         const float w = width() - indent;

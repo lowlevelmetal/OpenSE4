@@ -163,7 +163,10 @@ private:
         bg->AddRect(a, b, imColor(0xffd040, 0.9f), 0.0f, std::max(1.0f, ctx.px(1.5f)));
         bg->AddText(ImVec2(a.x + inner.x, a.y + inner.y), IM_COL32_WHITE, kText);
         ImGui::PopFont();
-        script::reportItem("tutorial-hint", a, b);   // input scripts see whether it shows
+        // Input scripts see whether it shows (drawn over the picture, outside the band's window).
+        ImGui::PushClipRect(a, b, false);
+        script::reportItem("tutorial-hint", a, b);
+        ImGui::PopClipRect();
     }
 
     void resume(MenuContext& ctx, const std::filesystem::path& file) {
@@ -303,9 +306,11 @@ class SettingsFrontScreen final : public FrontScreen {
 public:
     void draw(MenuContext& ctx) override {
         background(ctx);
-        // The same 780×475 classic window as the in-game Settings.
+        // The same 780×475 classic window as the in-game Settings, centred on
+        // the frame as every dialog is (spec 06 §2.1.1): at 800x600 too.
         const Painter p = ctx.painter();
-        const Rect r{{122, 146}, {902, 621}};
+        const Vec2 min{std::floor((frameW() - 780.0f) * 0.5f), std::floor((frameH() - 475.0f) * 0.5f)};
+        const Rect r{min, min + Vec2{780, 475}};
         ImGui::SetNextWindowPos(ctx.at(r.min));
         ImGui::SetNextWindowSize(ctx.size(r.size()));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));

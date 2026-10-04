@@ -1,0 +1,94 @@
+# Text and the Text size setting at its largest, 1.5 (spec 06 §5.4; docs/BUILDING.md "Input
+# scripts"): the classic windows keep the original's places and raster sizes, every caption
+# and every text kept to its place fits its box (cut short with "…" where it cannot), and no
+# widget is cut off by its window (assert-fits); our own questions grow with their text, the
+# reading text (the Log's entries, a race's description, the system report) wraps and scrolls.
+# layouts: both
+options --quick-start=Terran --seed=7 --turns=30 --open=none --text-size=1.5 --layout=1024x768 --size=1280x800
+
+wait-screen game
+# Colony Type, our own question, takes the larger text and grows with it.
+wait-for item:"*(suggested)" in="Colony Type"
+assert-fits "Colony Type"
+screenshot text-fit-colony-type
+repeat 40
+click item:"*(suggested)" in="Colony Type" optional
+wait 2
+end
+assert-fits main
+screenshot text-fit-main
+# The command buttons' windows.
+key F3
+wait-window designs
+assert-fits designs
+key Escape
+wait-closed designs
+key F4
+wait-window planets
+assert-fits planets
+key Escape
+key F5
+wait-window colonies
+assert-fits colonies
+key Escape
+key F6
+wait-window ships
+assert-fits ships
+key Escape
+key F7
+wait-window queues
+assert-fits queues
+key Escape
+key F8
+wait-window research
+assert-fits research
+key Escape
+key F10
+wait-window log
+assert-fits log
+screenshot text-fit-log
+key Escape
+key F11
+wait-window empire-status
+click item:Ministers in=empire-status
+wait-window ministers
+assert-fits ministers
+key Escape
+wait-closed ministers
+key Escape
+key F1
+wait-window help
+assert-fits help
+key Escape
+# Empires and the Race Report, each of its pages.
+key F9
+wait-window empires
+assert-fits empires
+click tag:empires:our-race
+wait-window race-report
+assert-fits race-report
+click item:Descr in=race-report
+assert-fits race-report
+screenshot text-fit-race-descr
+click item:Race in=race-report
+assert-fits race-report
+click item:Tech in=race-report
+assert-fits race-report
+key Escape
+wait-closed race-report
+key Escape
+wait-closed empires
+# The system report of an empty sector, then End Turn's question.
+click sector:empty
+assert-fits main
+click tag:button:end-turn
+wait-for item:Yes in="End Turn"
+assert-fits "End Turn"
+screenshot text-fit-end-turn
+click item:No in="End Turn"
+wait-gone item:No in="End Turn"
+# The manual (Shift+F1: the main window's page), OpenSE4's own text.
+key Shift+F1
+wait-window manual
+assert-fits manual
+screenshot text-fit-manual

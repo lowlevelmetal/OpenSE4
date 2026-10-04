@@ -43,10 +43,17 @@ bool visiblePart(ImVec2& min, ImVec2& max) {
     return max.x > min.x && max.y > min.y;
 }
 
-void add(std::string_view label, ImVec2 min, ImVec2 max, bool disabled, bool text = false) {
+void add(std::string_view label, ImVec2 min, ImVec2 max, bool disabled, bool text = false, bool overflow = false) {
     Registry& r = registry();
+    const ImVec2 fullMin = min, fullMax = max;
     if (!visiblePart(min, max)) return;
-    (text ? r.currentTexts : r.current).push_back(Item{std::string(label), r.scope, rootName(), min, max, disabled});
+    Item item{std::string(label), r.scope, rootName(), min, max, disabled};
+    item.hidden = std::max({min.x - fullMin.x, min.y - fullMin.y, fullMax.x - max.x, fullMax.y - max.y, 0.0f});
+    item.clipped = item.hidden > 0.5f;
+    if (const ImGuiContext* g = ImGui::GetCurrentContext(); g && g->CurrentWindow)
+        item.scrolls = g->CurrentWindow->ScrollMax.x > 0.0f || g->CurrentWindow->ScrollMax.y > 0.0f || g->CurrentTable != nullptr;
+    item.overflow = overflow;
+    (text ? r.currentTexts : r.current).push_back(std::move(item));
 }
 
 // Dear ImGui's hook: a labelled item was just added; LastItemData holds it.
@@ -146,6 +153,11 @@ void reportText(std::string_view text) {
 void reportText(std::string_view text, ImVec2 min, ImVec2 max) {
     if (!collectingTexts()) return;
     add(text, min, max, false, true);
+}
+
+void reportFit(std::string_view text, ImVec2 min, ImVec2 max, bool overflow) {
+    if (!collectingTexts()) return;
+    add(text, min, max, false, true, overflow);
 }
 
 void reportItem(std::string_view label) {

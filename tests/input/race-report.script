@@ -1,0 +1,39 @@
+# The Race Report (spec 06 §1.4, §1.10.1; docs/BUILDING.md "Input scripts"): a report window
+# of its own, 310x420, with the Detail, Descr, Race and Tech tabs and a Close button. It is
+# modal over Empires, which opened it: the report keeps the keyboard (Esc closes it, not
+# Empires) and Empires behind it takes no click (its Close does nothing) while the report is
+# open. Closing the report leaves Empires open and in front again.
+# layouts: both
+options --quick-start=Terran --seed=404 --open=empires --layout=1024x768 --size=1280x800
+
+wait-window empires
+click tag:empires:our-race
+wait-window race-report
+assert-present item:Close in=race-report
+assert-present item:Detail in=race-report
+screenshot race-report-detail
+click item:Descr in=race-report
+screenshot race-report-descr
+click item:Race in=race-report
+screenshot race-report-race
+click item:Tech in=race-report
+screenshot race-report-tech
+click item:Detail in=race-report
+# Empires waits behind the report: its Close and Our Race do nothing.
+click item:Close in=empires
+click tag:empires:our-race
+wait 5
+assert-window race-report
+assert-window empires
+# Esc goes to the report in front.
+key Escape
+wait-closed race-report
+assert-window empires
+# Its Close button closes only the report; then Empires takes the input again.
+click tag:empires:our-race
+wait-window race-report
+click tag:race-report:close
+wait-closed race-report
+assert-window empires
+key Escape
+wait-closed empires

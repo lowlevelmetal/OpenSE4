@@ -21,6 +21,10 @@ struct Item {
     std::string window;  // the Dear ImGui window it is in (the root window's name)
     ImVec2 min, max;     // the visible part (clipped to its window)
     bool disabled = false;
+    bool clipped = false;    // its window showed only part of it: more than `hidden`
+    float hidden = 0.0f;     // ... this much of its width and height (ImGui units)
+    bool scrolls = false;    // drawn in a window that scrolls or a table's cell (a part out of view is no fault)
+    bool overflow = false;   // a text that does not fit the box it was given (reportFit)
 };
 
 // The label as shown: "Name##col" shows "Name", "##up" nothing.
@@ -41,6 +45,10 @@ bool collectingItems();
 bool collectingTexts();
 void reportText(std::string_view text);
 void reportText(std::string_view text, ImVec2 min, ImVec2 max);
+// A text drawn into a box of its own (a button's caption, a text kept to its
+// place): where it was drawn and whether it overflows the box. Scripts check
+// these with assert-fits.
+void reportFit(std::string_view text, ImVec2 min, ImVec2 max, bool overflow);
 
 // A widget of ours, the last ImGui item: its label as shown.
 void reportItem(std::string_view label);

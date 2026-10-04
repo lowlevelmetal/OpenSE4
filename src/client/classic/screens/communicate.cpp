@@ -653,7 +653,10 @@ private:
         if (m.planet.valid() && m.planet.index() < s.galaxy.objects.size()) labelValue(ui, "Planet", s.galaxy.object(m.planet).name);
         ImGui::Spacing();
         ImGui::BeginChild("##text", ImVec2(0, ui.px(80)), ImGuiChildFlags_Borders);
-        wrappedText(m.text.empty() ? std::string("(no text)") : m.text);
+        {
+            const ReadingText reading(ui.painter());   // it scrolls
+            wrappedText(m.text.empty() ? std::string("(no text)") : m.text);
+        }
         ImGui::EndChild();
         if (!m.offer.empty() || !m.request.empty()) {
             auto offer = m.offer, request = m.request;

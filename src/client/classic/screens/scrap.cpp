@@ -471,7 +471,7 @@ private:
         ImGui::SetNextWindowSize(ui.size({420, 0}), ImGuiCond_Always);
         const bool open = ImGui::Begin(id, nullptr,
                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
+                                           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags | ui.windowFlags());
         if (!open) {
             ImGui::End();
             return false;
