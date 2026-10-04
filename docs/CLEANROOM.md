@@ -84,6 +84,7 @@ may not.
 | Classic-format data reader (interop) | `src/datafile/`, `src/ruleset/` | yes |
 | Our own test fixtures (invented content) | `tests/fixtures/` | yes |
 | Screenshots and notes from the player's copy | `reference/` | **no**, gitignored |
+| The README's screenshots of OpenSE4 running on the player's copy (an exception the owner made on 2026-10-03; they show the original's art) | `docs/screenshots/` | yes |
 | Analysis projects, listings, raw reverse-engineering notes | `reference/re/` | **no**, gitignored |
 | Our reverse-engineering helper scripts (no output) | `tools/re/` | yes |
 | The player's installed game | Wherever Steam put it. Auto-detected, never copied. | no |

@@ -20,7 +20,9 @@ docs/spec/.
   never from the listing. Never patch the executable.
 - Black-box observation of the running game uses `tools/observe`.
 - Screenshots and notes from the original go in `reference/` (gitignored), never
-  in tracked files.
+  in tracked files. The one exception, the owner's decision of 2026-10-03: the
+  README's screenshots of OpenSE4 in `docs/screenshots/`, which show the original's
+  art from the install.
 - Run `python3 tools/cleanroom_check.py` after writing docs or content; it must
   report 0 matches.
 

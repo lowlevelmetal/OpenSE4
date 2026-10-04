@@ -37,6 +37,16 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
 Without an install it explains where it looked and exits: there is no game to play
 without your copy. [docs/ENGINE.md](docs/ENGINE.md) is the map of the engine's code.
 
+## Screenshots
+
+| | | |
+|---|---|---|
+| ![A star system in the main window, about a hundred turns into a game](docs/screenshots/system-view.webp) | ![Designing a warship in the Ship Design window](docs/screenshots/ship-design.webp) | ![A guided tutorial step: the lesson panel and the outlined design list](docs/screenshots/tutorial.webp) |
+| A star system, a hundred turns in | Designing a warship | A guided tutorial |
+
+The screenshots show OpenSE4 running on an installed copy of Space Empires IV Deluxe:
+the art is the original game's, read from that install.
+
 ## Building
 
 Full instructions for Linux, Windows and macOS are in
