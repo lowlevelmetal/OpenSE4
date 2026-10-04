@@ -33,6 +33,7 @@ RequestExecutionLevel admin
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
+!include "WinVer.nsh"
 
 Name "${APP_NAME}"
 OutFile "${OUTFILE}"
@@ -88,7 +89,18 @@ FunctionEnd
 
 Function .onInit
     ${IfNot} ${RunningX64}
-        MessageBox MB_OK|MB_ICONSTOP "${APP_NAME} needs a 64-bit version of Windows."
+        MessageBox MB_OK|MB_ICONSTOP "${APP_NAME} needs a 64-bit version of Windows." /SD IDOK
+        Abort
+    ${EndIf}
+    ; The programs run on Windows 7 with Service Pack 1 and every later Windows
+    ; (docs/BUILDING.md, "Windows 7 to 11").
+    ${IfNot} ${AtLeastWin7}
+        MessageBox MB_OK|MB_ICONSTOP "${APP_NAME} needs Windows 7 with Service Pack 1, or a later Windows." /SD IDOK
+        Abort
+    ${EndIf}
+    ${If} ${IsWin7}
+    ${AndIfNot} ${AtLeastServicePack} 1
+        MessageBox MB_OK|MB_ICONSTOP "${APP_NAME} needs Service Pack 1 for Windows 7. Install it with Windows Update, then run this setup again." /SD IDOK
         Abort
     ${EndIf}
     SetRegView 64
