@@ -323,6 +323,34 @@ std::string formatDate(uint32_t turn);           // 2400.3
 uint32_t empireRgb(const game::GameState& s, game::EmpireId e);
 ImU32 empireColor(const game::GameState& s, game::EmpireId e);
 
+// ---- Text that keeps to its place (the Text size setting) ------------------------------------
+// Settings → Graphics → Text size enlarges every classic font (fontPx). Text that
+// flows (lists, report and description boxes, OpenSE4's own windows) takes the
+// room it needs; text at a fixed place of a classic layout (button captions, title
+// strips, the status bar, the report's label and value lines, the system panel's
+// names) keeps that place: where the enlarged text does not fit its box it is
+// drawn smaller, never below the classic size, and what still does not fit is cut
+// short with "…", the whole text showing as a tooltip under the pointer.
+
+struct TextFit {
+    float size = 0.0f;   // the font size to draw at (ImGui units)
+    std::string text;    // the text to draw: cut short with "…" when `cut`
+    bool cut = false;
+    ImVec2 extent;       // its size (ImGui units)
+};
+// `framePx`: the font's classic size in frame pixels (kTextSize...); `maxWidth`
+// and `maxHeight` (0: any) in ImGui units.
+TextFit fitText(const Painter& p, ImFont* font, float framePx, std::string_view text, float maxWidth, float maxHeight = 0.0f);
+// Draws the text fitted to `maxWidth` from `pos` (its top left, ImGui units),
+// placed by `align` across the box (0 left, 0.5 centred, 1 right), and shows the
+// whole text as a tooltip while the pointer is over a cut one. A null `dl` draws
+// into the current window.
+TextFit drawFitted(const Painter& p, ImDrawList* dl, ImFont* font, float framePx, ImVec2 pos, float maxWidth, ImU32 color, std::string_view text,
+                   float align = 0.0f, float maxHeight = 0.0f);
+// The same as an item in the current window's layout (in the window's font and
+// colour), at most `maxWidth` wide (ImGui units; 0: to the right edge).
+void fittedText(const Painter& p, std::string_view text, float maxWidth = 0.0f, ImU32 color = 0);
+
 // ---- Keys in dialogs (spec 06 §3.4, confirmed: binary) ---------------------------------------
 // Call inside the prompt's window. Keys pressed on the frame the window
 // appears are ignored: they belong to whatever opened it.

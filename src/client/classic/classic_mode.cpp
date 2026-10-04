@@ -229,7 +229,33 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     return mode;
 }
 
+bool ClassicMode::heldUp(const ImGuiWindow* w) const {
+    // Every window is modal: the main window's panels while a window or a
+    // question is open, and the windows behind the one in front.
+    if (!w || !session_) return false;
+    const ImGuiID root = w->RootWindow ? w->RootWindow->ID : w->ID;
+    if (modalOpen_ && MainWindow::ownsWindow(root) && root != ImHashStr("##statusbuttons")) return true;
+    return root != frontWindow_ && std::find(classicWindows_.begin(), classicWindows_.end(), root) != classicWindows_.end();
+}
+
+void ClassicMode::holdUpHover() {
+    // Dear ImGui found the window under the pointer at the start of the frame;
+    // one held up by the window in front gets no hover and no click (nor do its
+    // child windows, which a window flag would not reach), and a click there
+    // focuses nothing.
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (heldUp(g.HoveredWindow)) g.HoveredWindow = nullptr;
+    if (heldUp(g.HoveredWindowUnderMovingWindow)) g.HoveredWindowUnderMovingWindow = nullptr;
+}
+
 EventVerdict ClassicMode::filterEvent(const SDL_Event& e) {
+    if (session_ && e.type == SDL_EVENT_MOUSE_WHEEL) {
+        // The wheel scrolls what lies under the pointer before the frame starts:
+        // not a window held up by the one in front (holdUpHover does the rest).
+        ImGuiWindow* under = nullptr;
+        ImGui::FindHoveredWindowEx(ImVec2(e.wheel.mouse_x, e.wheel.mouse_y), true, &under, nullptr);
+        if (heldUp(under)) return EventVerdict::Drop;
+    }
     if (!session_ || !lock_.active()) return EventVerdict::Pass;
     auto verdict = [](InputVerdict v) {
         switch (v) {
@@ -861,6 +887,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     }
 
     UiContext& ui = *ui_;
+    holdUpHover();
     ui.map = mapping_;
     ui.textScale = appSettings().graphics.textScale;
     ui.fbScale = fs.fbScale;

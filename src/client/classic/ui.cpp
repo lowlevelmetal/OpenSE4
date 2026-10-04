@@ -164,6 +164,92 @@ Fonts loadClassicFonts(const Fonts& app, const assets::InstallFiles& files) {
     return out;
 }
 
+// ---- Text that keeps to its place -------------------------------------------------------------
+
+namespace {
+
+ImVec2 measure(ImFont* font, float size, std::string_view t) { return font->CalcTextSizeA(size, FLT_MAX, 0.0f, t.data(), t.data() + t.size()); }
+
+// The end of a cut text: the font's own "…" (cp1252 has one), else three dots.
+const char* ellipsisFor(ImFont* font) { return font->IsGlyphInFont(0x2026) ? "\xE2\x80\xA6" : "..."; }
+
+// The start of the UTF-8 character before `at`.
+size_t previousChar(std::string_view t, size_t at) {
+    while (at > 0 && (static_cast<unsigned char>(t[at - 1]) & 0xC0) == 0x80) --at;
+    return at > 0 ? at - 1 : 0;
+}
+
+// Whether the pointer is over [min, max] in the window that draws with `dl`
+// (the background: no window under the pointer).
+bool hoverOver(ImDrawList* dl, ImVec2 min, ImVec2 max) {
+    const ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (!ImGui::IsMouseHoveringRect(min, max, false)) return false;
+    if (dl == ImGui::GetBackgroundDrawList()) return g.HoveredWindow == nullptr;
+    const ImGuiWindow* current = g.CurrentWindow;
+    return g.HoveredWindow && current && g.HoveredWindow->RootWindow == current->RootWindow;
+}
+
+} // namespace
+
+TextFit fitText(const Painter& p, ImFont* font, float framePx, std::string_view text, float maxWidth, float maxHeight) {
+    TextFit f;
+    f.text = std::string(text);
+    if (!font) font = ImGui::GetFont();
+    const float wanted = p.fontPx(framePx);
+    // Never smaller than the classic size (unless the setting asks for smaller text).
+    const float floor = std::min(wanted, framePx * p.k());
+    f.size = wanted;
+    if (maxHeight > 0.0f && f.size > maxHeight) f.size = std::max(floor, maxHeight);
+    f.extent = measure(font, f.size, text);
+    if (maxWidth <= 0.0f || f.extent.x <= maxWidth + 0.01f) return f;
+    // Smaller: in proportion first, then step by step (raster glyphs' advances are whole pixels).
+    float size = std::max(floor, f.size * maxWidth / f.extent.x);
+    ImVec2 e = measure(font, size, text);
+    while (e.x > maxWidth + 0.01f && size > floor) {
+        size = std::max(floor, size - std::max(0.25f, p.k() * 0.25f));
+        e = measure(font, size, text);
+    }
+    f.size = size;
+    f.extent = e;
+    if (e.x <= maxWidth + 0.01f) return f;
+    // Still too wide at the classic size: cut it short.
+    const char* dots = ellipsisFor(font);
+    size_t keep = text.size();
+    std::string cut;
+    do {
+        keep = previousChar(text, keep);
+        while (keep > 0 && text[keep - 1] == ' ') --keep;
+        cut = std::string(text.substr(0, keep)) + dots;
+        e = measure(font, size, cut);
+    } while (keep > 0 && e.x > maxWidth + 0.01f);
+    f.text = std::move(cut);
+    f.extent = e;
+    f.cut = true;
+    return f;
+}
+
+TextFit drawFitted(const Painter& p, ImDrawList* dl, ImFont* font, float framePx, ImVec2 pos, float maxWidth, ImU32 color, std::string_view text,
+                   float align, float maxHeight) {
+    if (!font) font = ImGui::GetFont();
+    if (!dl) dl = ImGui::GetWindowDrawList();
+    const TextFit f = fitText(p, font, framePx, text, maxWidth, maxHeight);
+    const float x = pos.x + std::max(0.0f, maxWidth - f.extent.x) * align;
+    dl->AddText(font, f.size, {std::floor(x + 0.5f), std::floor(pos.y + 0.5f)}, color, f.text.c_str());
+    if (f.cut && hoverOver(dl, pos, {pos.x + maxWidth, pos.y + f.extent.y})) ImGui::SetTooltip("%.*s", int(text.size()), text.data());
+    return f;
+}
+
+void fittedText(const Painter& p, std::string_view text, float maxWidth, ImU32 color) {
+    ImFont* font = ImGui::GetFont();
+    const float framePx = ImGui::GetFontSize() / std::max(0.001f, p.k() * p.textScale);
+    if (maxWidth <= 0.0f) maxWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+    const TextFit f = fitText(p, font, framePx, text, maxWidth);
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddText(font, f.size, at, color ? color : ImGui::GetColorU32(ImGuiCol_Text), f.text.c_str());
+    ImGui::Dummy(ImVec2(f.extent.x, ImGui::GetTextLineHeight()));
+    if (f.cut && ImGui::IsItemHovered()) ImGui::SetTooltip("%.*s", int(text.size()), text.data());
+}
+
 // ---- Classic buttons and frames ---------------------------------------------------------------
 
 namespace {

@@ -174,6 +174,11 @@ private:
     void keepFocusOnFrontWindow();
     ImGuiID frontWindow_ = 0;   // the Dear ImGui window of the window in front (0: none)
     std::vector<ImGuiID> classicWindows_;   // and of every classic window drawn this frame
+    // Every window is modal: whether the Dear ImGui window (or its root) is held
+    // up by the window in front (or, for the main window's panels, by any window
+    // or question), as of the last frame; and taking the hover from such windows.
+    bool heldUp(const ImGuiWindow* window) const;
+    void holdUpHover();
     // --lesson-check: the windows the step works in, and its report.
     void prepareLessonCheck();
     void lessonCheckReport(classic::UiContext& ui);

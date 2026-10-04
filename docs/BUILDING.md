@@ -547,6 +547,7 @@ recorder is tested.
 | `lesson-skip.script`, `lesson-long-step.script` | Skip only after ten seconds without a way back, and no cascade after it; no Skip on a step that waits on the turns; End Turn refused under a window, with the way back (close it) |
 | `lesson-prompt-keys.script`, `lesson-result-keys.script` | Keys that answer a lesson's questions are not also main-window keys; the notes after refused clicks and keys; Free Play off at a lesson's start |
 | `end-turn-question.script` | End Turn while a window is open does nothing, by click or key (every window is modal); with the window closed its question comes up and takes the input |
+| `race-report.script` | The Race Report from Empires' Our Race: its four tabs and Close; modal over Empires (Empires' Close and Our Race do nothing under it), Esc closing the report and not Empires |
 | `modal-designer.script`, `modal-battle.script` | Every window is modal: under the ship designer and under a battle in Strategic Combat, End Turn (click, F12, Enter), the command buttons and their keys and the selectors do nothing; Esc goes to the window in front; once the window closes End Turn works |
 | `front-learn.script` | The intro's Tutorial and Scenario buttons, the Learn window's tabs, starting a lesson and leaving it |
 | `lesson-panel.script` | The lesson panel at 800x600 on a tutorial of our own in `tests/input/learn`: prompts and its Leave question over the panel dragged under them, placing itself again, the compact panel and More, its keys and Shift+F1 under the input lock |

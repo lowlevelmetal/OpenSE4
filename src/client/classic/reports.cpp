@@ -221,24 +221,28 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo) 
                                        {ReportTab::Cargo, 2, "Cargo"},
                                        {ReportTab::Abilities, 3, "Ability"}}};
     ReportTab chosen = current;
-    ImDrawList* dl = ImGui::GetWindowDrawList();
     for (size_t i = 0; i < tabs.size(); ++i) {
         if (tabs[i].tab == ReportTab::Cargo && !cargo) continue;
         if (i > 0) ImGui::SameLine(0, 0);
         ImGui::PushID(int(i));
-        const bool clicked = ImGui::InvisibleButton("tab", ui.size({72, 30}));
+        if (reportTab(ui, tabs[i].column, tabs[i].label, tabs[i].tab == current)) chosen = tabs[i].tab;
         ImGui::PopID();
-        script::reportItem(tabs[i].label);   // input scripts find a tab by its label
-        const bool selected = tabs[i].tab == current;
-        const int row = selected ? 2 : ImGui::IsItemHovered() ? 1 : 0;
-        if (Sprite cell = ui.art.region("Pictures/Game/Buttons/TabBtns.bmp", tabs[i].column * 72, row * 30, 72, 30, false))
-            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(cell.tex.value)), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                         {cell.uv.min.x, cell.uv.min.y}, {cell.uv.max.x, cell.uv.max.y});
-        else
-            dl->AddText(ImGui::GetItemRectMin(), imColor(selected ? 0xffffff : palette::kButton), tabs[i].label);
-        if (clicked) chosen = tabs[i].tab;
     }
     return chosen;
+}
+
+bool reportTab(UiContext& ui, int column, const char* label, bool selected) {
+    const bool clicked = ImGui::InvisibleButton("tab", ui.size({72, 30}));
+    script::reportItem(label);   // input scripts find a tab by its label
+    const int row = selected ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (Sprite cell = ui.art.region("Pictures/Game/Buttons/TabBtns.bmp", column * 72, row * 30, 72, 30, false))
+        dl->AddImage(ImTextureRef(static_cast<ImTextureID>(cell.tex.value)), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), {cell.uv.min.x, cell.uv.min.y},
+                     {cell.uv.max.x, cell.uv.max.y});
+    else
+        drawFitted(ui.painter(), dl, ui.fonts.bold, kTitleSize, ImGui::GetItemRectMin(), ui.px(72), imColor(selected ? 0xffffff : palette::kButton), label, 0.5f,
+                   ui.px(30));
+    return clicked;
 }
 
 namespace {
