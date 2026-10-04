@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #ifndef _WIN32
 #include <csignal>
@@ -100,6 +101,17 @@ TEST_CASE("crash report: an exception nothing caught") {
     CHECK(text.find("an exception nothing caught: a battle window broke") != std::string::npos);
     CHECK(text.find("Last log lines:\n  [") != std::string::npos);
     CHECK(text.find("the last thing before the crash") != std::string::npos);
+    CHECK(text.find("==== end of the crash report ====") != std::string::npos);
+}
+
+TEST_CASE("crash report: an exception nothing caught on another thread (the audio and music threads)") {
+    const test::TempDir dir("crashthread");
+    const auto [status, text] = crashChild(dir.path(), []() noexcept {
+        std::thread music([] { breakWindow(); });
+        music.join();
+    });
+    CHECK(WIFSIGNALED(status));
+    CHECK(text.find("an exception nothing caught: a battle window broke") != std::string::npos);
     CHECK(text.find("==== end of the crash report ====") != std::string::npos);
 }
 

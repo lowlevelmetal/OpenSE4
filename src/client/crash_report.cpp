@@ -29,6 +29,7 @@
 #include <signal.h>
 #include <spawn.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #if __has_include(<execinfo.h>)
 #include <execinfo.h>
@@ -96,8 +97,35 @@ constexpr const char* kCompiler =
 char gHeader[1024];
 size_t gHeaderSize = 0;
 bool gShowMessage = false;
-std::filesystem::path gLogFile;
-std::atomic<bool> gReporting{false};
+// One report per crash: 0 none yet, 1 being written, 2 its message shown, 3 done.
+std::atomic<int> gStage{0};
+thread_local bool tReporting = false;
+
+void pause100ms() {
+#ifdef _WIN32
+    Sleep(100);
+#else
+    timespec t{0, 100'000'000};
+    nanosleep(&t, nullptr);   // async-signal-safe
+#endif
+}
+
+// Whether this thread writes the report. Another thread that crashes while
+// one is written (the audio and music threads run on) waits for it, at most
+// 30 s for the writing and then while the message is shown, and the first
+// one then ends the program. A fault inside the report itself (the same
+// thread again) gives up at once.
+bool beginReport() {
+    if (tReporting) return false;
+    int none = 0;
+    if (!gStage.compare_exchange_strong(none, 1)) {
+        for (int i = 0; i < 300 && gStage.load() == 1; ++i) pause100ms();
+        while (gStage.load() == 2) pause100ms();
+        return false;
+    }
+    tReporting = true;
+    return true;
+}
 
 void put(std::string_view s) { log::crashWrite(s); }
 
@@ -237,7 +265,9 @@ void report(EXCEPTION_POINTERS* info) {
     }
     putStack(info ? info->ContextRecord : nullptr);
     putFooter();
+    gStage = 2;
     showMessage();
+    gStage = 3;
 }
 
 DWORD WINAPI reportThread(void* info) {
@@ -246,7 +276,7 @@ DWORD WINAPI reportThread(void* info) {
 }
 
 LONG WINAPI onException(EXCEPTION_POINTERS* info) {
-    if (gReporting.exchange(true)) return EXCEPTION_CONTINUE_SEARCH;
+    if (!beginReport()) return EXCEPTION_CONTINUE_SEARCH;
     const NT_TIB* tib = reinterpret_cast<const NT_TIB*>(NtCurrentTeb());
     gStackLow = reinterpret_cast<uintptr_t>(tib->StackLimit);
     gStackHigh = reinterpret_cast<uintptr_t>(tib->StackBase);
@@ -279,6 +309,19 @@ void putStack() {
 #endif
 }
 
+// The message box, from the program started again: a signal handler (or a
+// thread other than the main one) cannot open windows.
+void showMessage() {
+    if (!gShowMessage || gExe[0] == '\0') return;
+    char* const argv[] = {gExe, gArgument, nullptr};
+    pid_t pid = 0;
+    if (posix_spawn(&pid, gExe, nullptr, nullptr, argv, environ) == 0) {
+        int status = 0;
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+        }
+    }
+}
+
 #ifndef OPENSE4_SANITIZED
 
 // Room for the handlers when the fault is a stack overflow.
@@ -295,20 +338,8 @@ const char* signalName(int sig) {
     }
 }
 
-// The message box from the program started again: a signal handler cannot open windows.
-void showMessage() {
-    if (!gShowMessage || gExe[0] == '\0') return;
-    char* const argv[] = {gExe, gArgument, nullptr};
-    pid_t pid = 0;
-    if (posix_spawn(&pid, gExe, nullptr, nullptr, argv, environ) == 0) {
-        int status = 0;
-        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
-        }
-    }
-}
-
 void onSignal(int sig, siginfo_t* info, void*) {
-    if (!gReporting.exchange(true)) {
+    if (beginReport()) {
         putHeader();
         put("What: signal ");
         putDec(sig);
@@ -322,7 +353,9 @@ void onSignal(int sig, siginfo_t* info, void*) {
         put("\n");
         putStack();
         putFooter();
+        gStage = 2;
         showMessage();
+        gStage = 3;
     }
     // Then the program dies of the signal, as it would have without the handler.
     signal(sig, SIG_DFL);
@@ -335,7 +368,7 @@ void onSignal(int sig, siginfo_t* info, void*) {
 
 // An exception nothing caught (all platforms).
 [[noreturn]] void onTerminate() {
-    if (!gReporting.exchange(true)) {
+    if (beginReport()) {
         std::string what = "std::terminate was called without an exception";
         if (const std::exception_ptr e = std::current_exception()) {
             try {
@@ -356,12 +389,11 @@ void onSignal(int sig, siginfo_t* info, void*) {
         putStack();
 #endif
         putFooter();
-#ifdef _WIN32
+        // The exception may come on the audio or the music thread: on Linux
+        // and macOS the box comes from the program started again there too.
+        gStage = 2;
         showMessage();
-#else
-        // Not in a signal handler: the message box can be shown here.
-        if (gShowMessage) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenSE4", crashMessage(gLogFile).c_str(), nullptr);
-#endif
+        gStage = 3;
     }
 #ifdef _WIN32
     TerminateProcess(GetCurrentProcess(), 3);
@@ -395,7 +427,6 @@ void installCrashHandler(const CrashOptions& options) {
     gHeaderSize = std::min(header.size(), sizeof gHeader);
     std::memcpy(gHeader, header.data(), gHeaderSize);
     gShowMessage = options.showMessage;
-    gLogFile = options.logFile;
     std::set_terminate(onTerminate);
 #ifdef _WIN32
     const std::string message = crashMessage(options.logFile);

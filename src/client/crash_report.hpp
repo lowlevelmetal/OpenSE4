@@ -17,7 +17,9 @@
 // the program started again (`opense4 --crash-message=FILE`), since a
 // signal handler cannot safely open a window. All platforms: a terminate
 // handler names the uncaught exception. Builds with AddressSanitizer keep
-// the sanitizer's own signal handlers.
+// the sanitizer's own signal handlers. One report per crash: another thread
+// that crashes meanwhile (the audio device's, the music decoder's) waits
+// for it, and the program ends when it is done.
 
 #include <filesystem>
 #include <string>
