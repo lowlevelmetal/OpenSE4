@@ -48,8 +48,9 @@ TEST_CASE("crash report: the last run's log is kept beside the new one") {
     const std::filesystem::path log = dir.path() / "opense4.log";
     client::keepPreviousLog(log);   // nothing to keep
     CHECK_FALSE(std::filesystem::exists(dir.path() / "opense4.previous.log"));
-    std::ofstream(log) << "the crashed run\n";
-    std::ofstream(dir.path() / "opense4.previous.log") << "an older run\n";
+    // Binary, so the bytes read back are the bytes written on every platform.
+    std::ofstream(log, std::ios::binary) << "the crashed run\n";
+    std::ofstream(dir.path() / "opense4.previous.log", std::ios::binary) << "an older run\n";
     client::keepPreviousLog(log);
     CHECK_FALSE(std::filesystem::exists(log));
     CHECK(readAll(dir.path() / "opense4.previous.log") == "the crashed run\n");
