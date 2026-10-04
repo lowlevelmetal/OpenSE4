@@ -63,6 +63,17 @@ as `Move To: pick a destination`, and the sector under the pointer gets green co
 a sector in the system panel, or click a system in the galaxy panel first to show another system
 and then click a sector there. Press `Esc` to cancel.
 
+**Colonize**, **Warp**, **Drop Cargo** and an **Attack** that chases its target need one thing in
+the sector you click: a planet, a warp point, one of your own colonies or ships, or a target. When
+the sector holds several (a planet and its moons, say), a small window lists them: click the one
+you mean, or `Cancel`. Nothing is checked yet: a colony ship sent to a planet it cannot settle
+finds out when it arrives, and its orders are then cleared.
+
+In a turn-based game your orders are carried out as you give them, and the system panel follows
+your ships: when one jumps through a warp point, the panel shows the system it arrived in, with
+the warp point it came out of marked, and its report stays open. At the start of your turn each
+of your ships with orders left acts in turn, and the turn opens on the last one.
+
 ## Selecting things
 
 The **system panel** shows the selected system as a grid of 13 by 13 sectors. Stars, planets,
@@ -71,15 +82,16 @@ the top left, followed by the coordinates of the sector under the pointer.
 
 - **Left-click** a sector. If it holds one thing, the report panel shows its report. If it holds several, the panel lists them; click one in the list to see its report, and the up-arrow button at the report's top right to go back.
 - **Left-click empty space** to read about the whole system: its type and its special features. The sector stays selected, so that you can set a waypoint there, but it is not marked.
-- **Right-click** a sector while one of your ships is selected, and the ship moves there (you can turn this off in [Settings](settings#controls)).
+- **Right-click** a sector while one of your ships is selected, and the ship moves there (an OpenSE4 shortcut; you can turn it off in [Settings](settings#controls)). Otherwise a right-click in the system panel does nothing.
+- Showing another system, with a click on the galaxy panel or the Galaxy Map's `Goto System`, changes nothing else: the report, its tab and the order buttons stay, so you can give the selected ship an order with a target in that system.
 - The selected sector has yellow corner marks while it holds something you can see; the coordinate line then also gives the range from it to the sector under the pointer.
 
 What else you see in the system panel:
 
-- The flag of the owner's race at the top right of each colony.
+- A small box in the owner's colour at the top right of each colony, with up to three bars for its population. Only the planet a sector shows carries it: a colony on a moon beside a larger planet has no box.
 - For a single stack of ships, one ship picture with the number of ships at its bottom right. When several empires' ships share a sector, or ships sit beside a planet, small flags with counts take its place.
 - A ring around a cloaked ship, in its empire's colour.
-- A small green or red star on planets you could colonize (see [Planets and colonies](planets-and-colonies#colonizing)).
+- A small green or red star on planets you could colonize (see [Planets and colonies](planets-and-colonies#colonizing)), again only on the planet a sector shows, and never together with a colony box.
 - The name of the system a warp point leads to, once you have explored it.
 - Your waypoints, as a cyan frame around the sector with the waypoint's number, and sectors you tagged as minefields, with a cyan `M`.
 - With the matching option on, the route of your selected ship as a dashed line (`Ctrl+L`).
@@ -99,6 +111,12 @@ A report has tabs along its bottom:
 
 - **Ships**: `Detail` (class, size, movement, damage, supplies, experience, fleet, orders), `Comps` (its components, with destroyed ones in red), `Cargo` and `Ability`.
 - **Planets**: `Detail` (type, atmosphere, conditions, value and, for your colonies, population, growth, mood, production and construction), `Facil` (its facilities), `Cargo` and `Ability`.
+
+A report always opens on `Detail`, also when you click the same object again. Right-click a
+facility on `Facil`, or a component on `Comps`, to read its report. `Ability` lists one line per
+special ability: a planet's own, then for your colonies what your race, its culture, the
+population and the mood add; a ship's hull's, then what your race and culture add. A facility's
+or component's abilities are on its own report.
 
 A ship in a fleet shows the fleet's report above its own: the fleet's speed, supplies,
 experience, formation, strategy and members.

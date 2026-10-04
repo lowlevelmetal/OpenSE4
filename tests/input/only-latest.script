@@ -1,0 +1,38 @@
+# Only Latest is the Empire Options' row (spec 02 §6.4, spec 06 §7 Q109): the box in Set
+# Construction Queue changes "only latest items for construction" and the one in Create Design
+# "only latest components for designs"; both are kept with the empire, so the windows open again
+# as they were left. Which items the boxes keep is tested on our fixtures (test_design_tools.cpp)
+# (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start=Terran --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 5
+assert { not = { option = "latest-construction-only" } }
+assert { not = { option = "latest-components-only" } }
+# Set Construction Queue's box.
+click sector:home
+wait 2
+key Q
+wait-window set-queue
+click item:"Only Latest" in=set-queue
+wait 2
+assert { option = "latest-construction-only" }
+click tag:set-queue:close
+wait-closed set-queue
+key Q
+wait-window set-queue
+click item:"Only Latest" in=set-queue
+wait 2
+assert { not = { option = "latest-construction-only" } }
+click tag:set-queue:close
+wait-closed set-queue
+# Create Design's box.
+click tag:command:designs
+wait-window designs
+click tag:designs:create
+click tag:designs:create:ship
+wait-window create-design
+click item:"Only Latest" in=create-design
+wait 2
+assert { option = "latest-components-only" }

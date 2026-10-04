@@ -2620,12 +2620,12 @@ TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     CHECK_FALSE(movement::colonizeProblem(r, w.s, w.v(rock), target).empty());  // taken
     CHECK_FALSE(movement::colonizeProblem(r, w.s, w.v(rock), w.object(a, ObjectKind::Asteroids, {9, 9})).empty());
 
-    // The wrong module: nothing is checked until the ship is in the planet's
-    // sector; there the order fails and the list is cleared, and the
-    // Colonization Minister reports it in a simultaneous game (spec 03 §8).
+    // The wrong module, given as a player gives it (Move To, then Colonize):
+    // nothing is checked until the ship is in the planet's sector; there the
+    // order fails and the list is cleared, and the Colonization Minister
+    // reports it in a simultaneous game (spec 03 §8).
     fuel(w, rock);
-    w.order(rock, mk(OrderKind::Colonize, {}, ice));
-    w.order(rock, mk(OrderKind::MoveTo, at(a, 1, 1)));
+    w.give(rock, {mk(OrderKind::Colonize, {}, ice), mk(OrderKind::MoveTo, at(a, 1, 1))});
     w.move();
     CHECK_FALSE(w.logged(kA, "Unable to Colonize"));
     for (int i = 0; i < 6 && !w.v(rock).orders.empty(); ++i) w.move();
@@ -2637,6 +2637,15 @@ TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     REQUIRE(entry != w.s.empire(kA).log.end());
     CHECK(entry->picture == "OrdersNotCompleted");
     CHECK(entry->text.find(w.s.galaxy.system(a).name) != std::string::npos);   // names the system
+
+    // The computer players' Colonize, which travels itself, gives up on its
+    // way as soon as nobody aboard could settle the planet (inferred, spec 03 §19 Q80).
+    const VehicleId rock2 = w.spawn(w.ship(kA, "Rocky Two", 3, {"Test Rock Pod"}), at(a, 0, 0));
+    fuel(w, rock2);
+    w.order(rock2, mk(OrderKind::Colonize, {}, ice));
+    w.move();
+    CHECK(w.v(rock2).location == at(a, 0, 0));
+    CHECK(w.v(rock2).orders.empty());
 }
 
 TEST_CASE("movement: colony ships found colonies during the phases, on an acting day with movement left") {

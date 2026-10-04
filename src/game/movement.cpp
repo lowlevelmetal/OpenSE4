@@ -1401,12 +1401,31 @@ private:
             o.amount = 1;
         }
         const bool exists = o.object.valid() && o.object.index() < s_.galaxy.objects.size() && inSystem(s_.galaxy, o.object);
-        if (exists) {
+        if (exists && locationOf(s_.galaxy, o.object) != where(g)) {
+            // A Colonize still on its way: the computer players' order, which
+            // travels itself (spec 05 §7.5, open question 23). It gives up as
+            // soon as nobody in the group could settle the planet any more
+            // (inferred); a player's Colonize follows its Move To and is
+            // checked only in the planet's sector.
+            const bool cloaked = any(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; });
+            std::string why = cloaked ? std::string("A cloaked ship cannot colonize.") : std::string{};
+            bool able = false;
+            for (VehicleId id : g.members) {
+                const std::string p = colonizeProblem(r_, s_, *s_.vehicle(id), o.object);
+                able = able || p.empty();
+                if (!p.empty() && why.empty()) why = p;
+            }
+            if (cloaked || !able) return colonizeFailed(g, why);
             const Travel t = travel(g, locationOf(s_.galaxy, o.object));
             if (t != Travel::Arrived) return afterTravel(g, o, t);
         }
-        if (!exists || !sight::canSeePlanet(r_, s_, g.owner, o.object) || locationOf(s_.galaxy, o.object) != where(g))
-            return colonizeFailed(g, "There is no planet here to colonize.");
+        // A planet gone, out of the sector, or holding a colony its owner
+        // cannot see (cloaked) leaves no planet to colonize (spec 01 §6.9).
+        // Ours does not test whether a storm or nebula hides the planet
+        // itself: our computer players aim at such planets and would fail
+        // there for ever (spec 03 §19 Q80).
+        const bool hidden = exists && s_.colony(o.object) && !sight::canSeeColony(r_, s_, g.owner, o.object);
+        if (!exists || hidden || locationOf(s_.galaxy, o.object) != where(g)) return colonizeFailed(g, "There is no planet here to colonize.");
         const SpaceObject& planet = s_.galaxy.object(o.object);
         if (planet.kind != ObjectKind::Planet) return colonizeFailed(g, std::format("{} cannot be colonized.", planet.name));
         // Carried out like any order, on an acting day with movement left, so

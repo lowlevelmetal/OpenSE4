@@ -302,8 +302,8 @@ the Combat Piece Report. Left-clicks on these pages do nothing.
 - **Cargo**: a right-click on units opens their design's report, on population the race's
   report.
 
-Our client differs (§7 Q105): it draws Facil and Comps as text rows and takes no click on
-them.
+Since 2026-10-04 our client follows for Facil and Comps (§7 Q105), still drawn as rows,
+not the 36 px grid; Cargo takes no right-click.
 
 **The Ability page** (confirmed: binary; observed, spec 07 session 6). A plain list of
 text lines. Each line starts with the blue 13×13 lamp of `Pictures/Game/General.bmp` (the
@@ -359,7 +359,8 @@ placeholder.
   lines a negative value is preceded by a space instead (a quirk). Reports in the Combat
   Simulator leave the racial and culture lines out.
 
-Our client differs (§7 Q106).
+Since 2026-10-04 our client follows (§7 Q106), in our own words for the racial,
+cultural, population-level and mood lines.
 
 ### 1.5 Diplomacy and empire comparison
 
@@ -610,7 +611,8 @@ a right-click on the owner's row in Construction Queues opens, on its Detail tab
 which shows the planet's type, conditions and resource values. A left-click on the box
 does nothing. In the Multi-Add window the box lists the tagged queues and has no single
 owner; the original does not guard a right-click there (it reads an owner that is not
-there), so OpenSE4 should ignore it. Our client differs (§7 Q104).
+there), so OpenSE4 should ignore it. Since 2026-10-04 our client follows (§7 Q104); the
+box's contents are still ours.
 
 ### 1.9 Options windows
 
@@ -1646,9 +1648,8 @@ report opens at once and its orders light up; with several, the list opens and e
 stays dim until a row is chosen (confirmed: binary). Only the left button acts in the system
 panel: a right-click does nothing there, and there is no double-click action, so a
 double-click on a warp point is two clicks on its sector and never shows the system it
-leads to (confirmed: binary; observed, spec 07 session 6). Our client differs (§7 Q103): a
-right-click selects like a left-click (and OpenSE4's optional right-click Move To uses the
-right button too).
+leads to (confirmed: binary; observed, spec 07 session 6). Since 2026-10-04 our client
+follows (§7 Q103); OpenSE4's optional right-click Move To still uses the right button.
 
 ### 2.5 Ship list / report panel
 
@@ -1678,7 +1679,7 @@ changes only when the player selects something:
   (§2.7).
 
 Showing another system (the galaxy panel's left-click, the Galaxy Map's Goto System)
-never changes the panel (§2.6). Our client differs (§7 Q103).
+never changes the panel (§2.6). Since 2026-10-04 our client follows (§7 Q103).
 
 **The report's tab is not remembered** (confirmed: binary; observed, spec 07 session 6).
 Every time a report is filled for an object it opens on its first tab, Detail: on a click
@@ -1686,8 +1687,8 @@ in the system panel (the object already shown included), a click on a row of the
 list, a Goto, the up-arrow, and each re-selection by the game listed above. Only a redraw
 of the report in place keeps its tab: after an order to the shown object, or when its data
 change. Report popups are new windows each time and open on Detail too. The rule is the
-same for every report with tabs (planet, ship, race, combat piece). Our client differs
-(§7 Q107).
+same for every report with tabs (planet, ship, race, combat piece). Since 2026-10-04 our
+client follows (§7 Q107).
 
 Status icons in a list row are drawn in 20 px steps from the row's right edge leftwards,
 6 per row, then a second row (confirmed: binary; §4.4).
@@ -1719,7 +1720,7 @@ with the same report or list, the same tab, the same lit order buttons and the s
 and the movement line shows the part of the route in the new system (§2.4). So a player can
 select a ship, show another system and give the ship an order with a target there. A click
 on the system already shown does nothing. Going back to the ship's system this way leaves
-its sector unmarked until it is clicked. Our client differs (§7 Q103).
+its sector unmarked until it is clicked. Since 2026-10-04 our client follows (§7 Q103).
 A right-click opens the **Galaxy Map window** (780x475): a larger map with overlay
 buttons Presence, Avoid, Ally Claimed, Enemy Claimed, Spaceports and Resupply Depots,
 Goto System (list of seen systems; picking one closes the map and shows it, exactly as a
@@ -1794,16 +1795,8 @@ run, not only to the selected one:
   moves by itself; the movement-log replay's Ctrl+U follows each own object instead
   (§7 Q51). A computer player's moves in a turn-based game never move the view.
 
-Our client differs (§7 Q102): its view never follows. After an order makes a ship or fleet
-jump in a turn-based game the system panel keeps the old system while the report shows the
-ship elsewhere, and orders continuing at a turn's start select nothing. In a turn-based
-game, during the human's own turn only, it should: show the system of an own vehicle or
-colony, with its sector current, before that object carries out orders outside the shown
-system; on each arrival in another system show the arrival system with the exit warp
-point's sector current, keeping the selected vehicle, fleet or tagged group and its report;
-and at the turn's start select each object with continuing orders in turn as it acts,
-ending on the last. Nothing in simultaneous games, computer players' turns or other
-empires' moves, and no option.
+Since 2026-10-04 our client follows (§7 Q102) in local, hotseat and play-by-e-mail games;
+a network client's view does not follow yet.
 
 ### 2.8 When order buttons are lit
 
@@ -1934,14 +1927,8 @@ object. Nothing about the target is checked when it is picked; the order's own t
 it is carried out (spec 03 §8). In a turn-based game the selected vehicle's orders then run at
 once.
 
-Our client differs (§7 Q100): it has no Pick Object window. Its Colonize takes the
-first uncolonized planet of the sector, so with a planet and its moon it always aims at the
-planet, even one the ship cannot colonize, and never at the moon; its Warp takes the first warp
-point, its Attack the first foreign vehicle (else the first foreign colony), and its Drop Cargo
-names no destination. It should gather the candidates of the table, give the target at once
-when there is one, and open the Pick Object window when there are several. Its prompt reads
-"Colonize: pick a planet" and similar, and a click with no candidate shows a note of its own;
-the original's prompt names the order and a click with no candidate says nothing.
+Since 2026-10-04 our client follows (§7 Q100). Its prompt is still its own ("Colonize: pick
+a planet" and similar, at the bottom left of the system panel).
 
 ---
 
@@ -2219,7 +2206,7 @@ Where entries come from:
   - The executable knows some names that have no file in the stock install; such an
     entry keeps the previous picture (above).
 
-  Our client differs (§7 Q101).
+  Since 2026-10-04 our client follows (§7 Q101).
 - **Political messages** from other empires (§4.2): each delivered message, acceptances
   of trades, gifts and tributes included, becomes an ordinary entry when it arrives,
   titled "Message", category Politics, Goto Empires, its text naming the sender and
@@ -4246,12 +4233,12 @@ counterpart:
       (10,340), and a Close button 153×30 centred under them at (79,380), its bottom
       10 px above the window's.
 
-    Since 2026-10-01 our client follows: the Ability tab lists the hull's abilities and
-    then every component's of the design, destroyed or not, and a planet's own abilities
-    only (`pieceReportAbilities()` in `combat_logic.cpp`; our vehicles have no abilities
-    of their own to add; the components are to go, Q106); `CombatPieceReportScreen` is a
-    borderless 310×420 window with the pages at (10,10), the tabs at (10,340) and the
-    153×30 Close button at (79,380).
+    Since 2026-10-01 our client follows, and since 2026-10-04 with the correction: the
+    Ability tab lists the hull's entries, never the components', and a planet's own
+    abilities only, each as its `Descr` line after the lamp (`pieceReportAbilities()` in
+    `combat_logic.cpp`; our vehicles have no abilities of their own to add, Q106);
+    `CombatPieceReportScreen` is a borderless 310×420 window with the pages at (10,10), the
+    tabs at (10,340) and the 153×30 Close button at (79,380).
     The pages are 290×327 with or without tabs, as question 87 settled.
 79. **Fleets For Plr.** Ours hides Fleet Transfer's Existing Fleets button (the real
     game's fleet list) while it works on the simulator's sandbox. Is it there in the
@@ -4883,16 +4870,18 @@ windows; the population move between colonies is spec 03 §19 Q79.
      §8) (confirmed: binary; observed, spec 07 session 6: a huge ice planet and its tiny
      rock moon listed in that order, the ice pick failing on arrival with the message box
      and an empty list, the moon pick colonizing at once).
-     Our client differs: `MainWindow::completePick` (`main_window.cpp`) takes the first
-     uncolonized planet of the sector, so it aims at the larger planet even when the ship
-     cannot colonize it and never at the moon. Make it gather the candidates of §2.9 and
-     open a Pick Object window when there are several; the same applies to Warp (warp
-     points), Drop Cargo (own objects, the pick becoming the destination) and a pursuing
-     Attack (visible foreign objects). The engine's failure entry differs in wording and
-     place too: ours logs "<name>: Colonize order cancelled" under Misc in both turn
-     styles; the original shows the message box in a turn-based game (no log entry) and,
-     in a simultaneous game, an entry titled "Unable to Colonize" with the picture
-     `OrdersNotCompleted` (§4.1).
+     Since 2026-10-04 our client follows: `MainWindow::completePick` gathers the candidates
+     of the table (`pickCandidates`), gives the target at once when there is one, gives
+     nothing and says nothing when there is none (a turn-based Attack excepted, which names its
+     sector), and opens the Pick Object window (`drawPickObject`, tag `pick-object:list`) when
+     there are several, with the clicked sector outlined; Drop Cargo names the object picked as
+     its destination (`Order::object` or `Order::vehicle`, `dropCargo`). The engine checks a
+     Colonize only in the planet's sector, in the order of spec 03 §8; a failure clears the list
+     and, in a turn-based game, comes to the human whose turn it is as a message box titled
+     "Colonize" (`TurnResult::messages`, not logged; a network host sends it as a notice), in a
+     simultaneous game as one "Unable to Colonize" entry from the Colonization Minister with the
+     picture `OrdersNotCompleted`. Ours still writes its own prompt ("Colonize: pick a planet")
+     at the bottom left of the system panel.
 101. **Log pictures.** "All the images that should be showing on the event log each turn
      are missing." **Answer:** the original shows one picture, the selected entry's, at
      the top-left of the details pane, with the title to its right, and picks it by the kind
@@ -4900,16 +4889,18 @@ windows; the population move between colonies is spec 03 §19 Q79.
      file of `Pictures/Events/` (§4.1 "Picture", "Loading", "Items developed" and
      "Pictures of the other entries") (confirmed: binary; observed, spec 07 session 6: a
      built ship's entry shows its hull portrait).
-     Our client differs: the engine fills `LogEntry::picture` only for random events
-     (`events.cpp`) and intelligence (`intel.cpp`), so every other entry draws an empty
-     128×128 frame, and `log.cpp` (`details()`) always draws that frame with the title
-     under it. To change: record with every entry the kind of picture and its subject (an
-     Events file name; the race portrait of an empire; a design's hull portrait; an
-     object's picture; a facility's picture; a unit group kind with its empire; a fleet)
-     and resolve it when the entry is shown, an object that is gone giving none; draw the
-     picture unframed at its own size with the title to its right, "Date:" at
-     picture height + 10 and the body at + 30; keep the last picture for an entry without
-     one; and show a developed item's Research details instead of title and text.
+     Since 2026-10-04 our client follows: every entry records its picture when it is made
+     (`game/log_picture.hpp`: an Events file name, or a subject resolved when shown: a race
+     portrait, a design's hull portrait, a planet's or facility's picture, a unit group's or
+     fleet's portrait, an item developed), and `log.cpp` draws it unframed at its own size with
+     the title to its right, the date at its height + 10 and the body at + 30, keeps the last
+     picture for an entry without one, and shows a developed item's details. Entries the table
+     does not name take a picture by analogy (the sentry, launch and target-gone notes the
+     acting object's own; bombardment and a colony lost in battle the planet's; a cancelled
+     package and "Treaty Not Possible" the other empire's portrait) or none (storms created or
+     destroyed, Game Over, the last empire standing) (inferred). Without any picture shown yet,
+     the title starts at x 10 and the date and body follow under it (inferred: the original's
+     places would put them on the title's line).
 102. **The view and a ship that warps.** "Ships moving through warp points at your command
      don't automatically change the view to the new system." **Answer:** in a turn-based
      game, during the human's own turn, the view follows every own object whose orders
@@ -4918,7 +4909,13 @@ windows; the population move between colonies is spec 03 §19 Q79.
      report stays open. No option controls it (Center Map on Current Ship is the tactical
      map's); in simultaneous games only the movement-log replay's Ctrl+U follows ships
      (§2.7) (confirmed: binary; observed, spec 07 session 6).
-     Our client differs: its view never follows; §2.7 says what to change.
+     Since 2026-10-04 our client follows in local, hotseat and play-by-e-mail games: the engine
+     reports each group whose orders run and each warp jump of a turn-based run
+     (`TurnResult::liveSteps`, not saved), and `MainWindow::followOwnMoves` shows the system of
+     an own object acting outside the system shown, the arrival system with the exit warp point
+     current after a jump (the selection and its report kept), and at the turn's start selects
+     each object with orders in turn, ending on the last. A network client's view does not
+     follow yet: its host carries the orders out and sends only the new state.
 103. **Selection when another system is shown.** "When selecting a ship and then another
      system, it doesn't retain the selected ship and replaces the ship in the middle window
      with the new system." **Answer:** the galaxy panel's left-click and the Galaxy Map's
@@ -4929,40 +4926,31 @@ windows; the population move between colonies is spec 03 §19 Q79.
      buttons replace the report (§2.5, §2.6). In the system panel only the left button acts
      and a double-click on a warp point does not show the system it leads to (§2.4)
      (confirmed: binary; observed, spec 07 session 6).
-     Our client differs: outside an order pick, a galaxy-panel click (even on the shown
-     system), Galaxy Map Goto System (`requests.showSystem`) and the Log's Goto to a system
-     without a sector clear the selection and the tags, so the report falls back to the
-     new system's report. The galaxy-panel branch of `MainWindow::mouse` and the Goto
-     System request should set only the shown system and drop the marked sector, keeping
-     the vehicle, object, fleet, list, tags and tab, and do nothing for the system already
-     shown. Since ours builds the list from the shown system and the selected sector, it
-     must keep the list's own location, as the original keeps the list it built. The Log's
-     Goto with no sector should empty the report panel. Ours also selects on a right-click
-     in the system panel and clears the tags only when another sector is clicked.
+     Since 2026-10-04 our client follows: a galaxy-panel click and Goto System
+     (`MainWindow::showOtherSystem`) change only the system shown and drop the current sector;
+     the list keeps the sector it was built for (`listAt_`); the Log's Goto to a system without a
+     sector empties the report panel; a right-click in the system panel does nothing but
+     OpenSE4's optional right-click Move To; every left-click on a sector clears the tags.
 104. **The queue owner's report.** "In the construction queue of a planet, you used to be
      able to right-click the planet to see its details like mineral value." **Answer:**
      the owner box at the top of Set Construction Queue's queue column: a right-click opens
      the owner's Planet or Ship Report as a popup on Detail, the same report a right-click
      on a Construction Queues row opens (§1.8.3) (confirmed: binary; observed, spec 07
      session 6).
-     Our client differs: the header of Set Construction Queue (`header()` in `queues.cpp`)
-     takes no click. Give the window a report popup (`ReportPopup` of `colony_widgets`)
-     and open the planet or vehicle report on a right-click over the header, drawn after
-     the window as Construction Queues does; ignore it in Multi-Add. The header's content
-     (our portrait, location, stockpile, population, mode, new ships' destination) also
-     differs from the original's box; aligning it is optional.
+     Since 2026-10-04 our client follows: a right-click on the header of Set Construction
+     Queue opens the owner's Planet or Ship Report popup on Detail (`ownerReport_`); Multi-Add's
+     header takes no click. The header's contents are still ours.
 105. **Facility reports from the Facil tab.** "On the Facil tab of the planet details
      screen, you used to be able to right-click a facility to get information about it."
      **Answer:** yes: a right-click on a facility of the Facil grid opens that facility's
      report, and on the ship report's Comps grid the component's report with its mount;
      on Cargo, units open their design's report and population the race's (§1.4)
      (confirmed: binary; observed, spec 07 session 6).
-     Our client differs: `planetReport()` and `vehicleReport()` (`reports.cpp`) draw these
-     pages as text rows and take no right-click. Add a right-click on each facility that
-     opens the item report (`ItemReportPopup`) for that facility, and on each component for
-     that component and mount, in the main window's report panel, both report popups and
-     the Combat Piece Report (the report functions need to hand the click back to their
-     owner). Drawing the original's 36 px grid, one cell per facility, is optional.
+     Since 2026-10-04 our client follows for Facil and Comps: a right-click on a facility or a
+     component row opens its item report (`ItemReportPopup`, with the component's mount) in the
+     report panel, both report popups and the Combat Piece Report; the report functions return
+     the item clicked. The pages are still drawn as rows, not the 36 px grid, and Cargo takes no
+     right-click.
 106. **The Ability tab.** "It now shows the abilities individually instead of combined, and
      the space yard shows index values for minerals, organics and radioactives instead of
      text saying it can construct with 2000 minerals per turn." **Answer:** the original
@@ -4973,32 +4961,19 @@ windows; the population move between colonies is spec 03 §19 Q79.
      the player remembers is the space yard's own `Descr`, shown on that facility's report,
      which Q105 makes reachable from the Facil tab (§1.4 "The Ability page") (confirmed:
      binary; observed, spec 07 session 6).
-     Our client differs: the planet page (`planetReport()`, `reports.cpp`) lists
-     `colonyAbilities()`, the planet's entries and every facility's, and the ship page
-     `vehicleAbilities()`, the hull's and the working components' (nothing when
-     mothballed); both print each entry as its identifier with "(Val 1, Val 2)", which is
-     where the space yard's index values come from, show "No special abilities" when
-     empty, and use plain bullets. Each line should be the entry's `Descr`
-     (`ruleset::Ability::description`); the planet page should hold the planet's natural
-     entries and then the racial, cultural, population-level and mood lines of §1.4, the
-     ship page the hull's entries and then the racial and cultural lines, with no
-     components and the same for a mothballed ship; an empty page stays empty; each line
-     gets the `General.bmp` lamp with the text at x 13. All the data the extra lines need
-     is loaded (racial traits' descriptions and types, the culture, the characteristics,
-     the population-modifier table, the mood modifiers). The Combat Piece Report's Ability
-     tab (`pieceReportAbilities()`, `combat_logic.cpp`) lists every component of the
-     design too and should drop them (§1.10.1, Q78 corrected).
+     Since 2026-10-04 our client follows: `planetAbilityLines` and `vehicleAbilityLines`
+     (`ability_lines.cpp`) give the lines of §1.4, each drawn after the `General.bmp` lamp with
+     the text at x 13; an empty page stays empty; the Combat Simulator's reports leave the racial
+     and culture lines out; `pieceReportAbilities()` lists the hull's or planet's own entries
+     only. Our words for the racial, cultural, population-level and mood lines are our own.
 107. **The report's tab across selections.** "A tab picked on a planet's report stays picked
      on a new planet, even in another system." **Answer:** the original resets it: every
      report filled for an object opens on Detail, the same object clicked again included;
      nothing is stored per kind of report or for the game (§2.5) (confirmed: binary;
      observed, spec 07 session 6).
-     Our client differs: `MainWindow::tab_` changes only by the tab strip. Set it to
-     Detail wherever the panel's object is chosen (`clearSelection()`, which the sector,
-     vehicle and planet selections call, and the list-row click of the report panel) and
-     at the game's own re-selections (§2.5). `ReportPopup::openPlanet()` and
-     `openVehicle()` (`colony_widgets.cpp`) keep the last tab and should reset it; the
-     popup in `ships_common.cpp` already resets.
+     Since 2026-10-04 our client follows: `clearSelection()` (every selection, the list's rows,
+     the game's own re-selections) and `ReportPopup::openPlanet()`/`openVehicle()` reset the tab
+     to Detail; showing another system keeps it (Q103).
 108. **The colonizable marker in a sector with a colony.** "If you colonize a planet or moon
      and there's another colonizable one in that sector, it still shows the red star in the
      top right of the sector through your flag. Is that intended?" **Answer:** no. Only the
@@ -5007,12 +4982,9 @@ windows; the population move between colonies is spec 03 §19 Q79.
      other planets of the sector get none, so a colony on a moon beside a larger planet has
      no mark on the map (§2.4 "One planet's marks per sector") (confirmed: binary;
      observed, spec 07 session 6).
-     Our client differs: it marks every planet of the system at the same corner of its
-     sector, a flag for each seen colony and a star for each colonizable planet
-     (`main_window.cpp`, the loop after the stellar sprites), so a colony and a second
-     colonizable planet in one sector overlap; the facility letters likewise go on every
-     colony. It should mark only each sector's shown stellar object, with the colony box
-     (outline and bars, no flag) or the 12×8 star at the geometry of §2.4.
+     Since 2026-10-04 our client follows: `drawSystem` marks only each sector's shown stellar
+     object, with the colony box (outline and bars, no flag) or the 12×8 star at the places of
+     §2.4, and the facility letters go on that planet only.
 109. **Only Latest.** "With Contra-Terrene engines researched, Only Latest still shows Ion
      Engine III as the most recent." **Answer:** the original keeps, of each run of
      neighbouring items with the same `Family` in data-file order, the last one; numerals
@@ -5020,13 +4992,7 @@ windows; the population move between colonies is spec 03 §19 Q79.
      Contra-Terrene, Jacketed-Photon, Quantum, so with Contra-Terrene Engine I researched
      the designer shows it and hides Ion Engine III (spec 02 §6.4 "Only Latest")
      (confirmed: binary).
-     Our client differs: `filterComponents` (`design_tools.cpp`, Create Design and the
-     Weapons Report) keeps the highest Roman numeral of each family, the first on a tie,
-     and always keeps family 0, which is why Ion Engine III stays. It should walk the
-     filtered list in data order and drop an item when the next item kept by the other
-     filters has the same family; the Facilities tab of Set Construction Queue
-     (`facilityChoices`, via `Rules::latestFacilityOfFamily`) needs the same rule on
-     `Facility Family` (it agrees with ours on stock data but not on mods). The designer's
-     and Set Construction Queue's boxes are the Empire Options rows of §1.9 and should
-     write them back when clicked; ours only read them when the window opens. (The design
-     Upgrade button's use of `latestComponentOfFamily` is outside this question.)
+     Since 2026-10-04 our client follows: `Rules::onlyLatestComponents` and
+     `Rules::onlyLatestFacilities` keep the last of each run of neighbours; the designer's and
+     Set Construction Queue's boxes write the Empire Options rows back. Upgrades keep the
+     highest numeral researched (`latestFacilityOfFamily`, spec 02 §6.6).

@@ -57,7 +57,7 @@ manual = "main-window#selecting-things"
 [[step]]
 title = "Your homeworld"
 text = """
-**Click your homeworld**, the planet with your small flag (outlined).
+**Click your homeworld**, the planet with the small box in your colour (outlined).
 
 Your ships share its sector, so the report first lists everything there: **click your homeworld
 in that list**. Later, the up arrow at the top right of a report brings such a list back.
