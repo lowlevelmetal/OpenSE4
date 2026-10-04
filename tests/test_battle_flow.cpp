@@ -14,6 +14,7 @@
 #include "client/classic/session.hpp"
 
 #include "game/commands.hpp"
+#include "game/diplomacy.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
@@ -127,10 +128,18 @@ TEST_CASE("battle flow: quick games on the installed data, every battle Strategi
         int battles = 0, warped = 0, ground = 0, diverged = 0;
         for (int t = 0; t < turns && !session.state().gameOver && !session.humansGone(); ++t) {
             const uint32_t before = session.state().turn;
+            // The same turn played without stops, as the session plays it.
             GameState silent = session.state();
-            LiveOptions lo;
-            lo.endWithoutHumans = true;
-            endPlayerTurn(*rules, silent, session.player(), lo, nullptr);
+            if (simultaneous) {
+                diplomacy::recalculateColonies(*rules, silent);   // ClassicSession::reloadGame
+                silent.pendingMood.clear();
+                const std::vector<EmpireOrders> orders{{session.player(), silent.turn, {}}};
+                processTurn(*rules, silent, orders);
+            } else {
+                LiveOptions lo;
+                lo.endWithoutHumans = true;
+                endPlayerTurn(*rules, silent, session.player(), lo, nullptr);
+            }
             session.endTurn();
             int guard = 0;
             while (session.battleQuestion() && ++guard < 500) {
