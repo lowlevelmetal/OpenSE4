@@ -233,7 +233,8 @@ public:
     // state (game::ai::setComputerControl). A local or hotseat game changes
     // at once; on a player's copy of a game on different machines only that
     // copy changes, and the orders carry the player's own empire's minister
-    // switches and flags (never the mark) to the host.
+    // switches and flags (never the mark) to the host. Nothing changes while
+    // a battle waits to be shown (battleQuestion()).
     void setComputerControl(const std::vector<std::pair<game::EmpireId, bool>>& rows);
     // A local or hotseat game with no living human-controlled empire has
     // ended: no further turn is played (spec 06 §1.2.1 "No human left").

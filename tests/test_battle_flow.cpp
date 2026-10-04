@@ -243,6 +243,13 @@ TEST_CASE("battle flow: an enemy warps in at waiting ships; Strategic; the turn 
     CHECK(session.battleQuestion().has_value());
     CHECK(stateChecksum(session.state()) == before);
 
+    // Nor can the Players window hand an empire to the computer meanwhile:
+    // the call is made again with the answers, and must stop at the same battles.
+    session.setComputerControl({{w.ar.a, true}, {w.ar.b, false}});
+    CHECK(session.state().empire(w.ar.a).kind == PlayerKind::Human);
+    CHECK(session.state().empire(w.ar.b).kind == PlayerKind::Computer);
+    CHECK(session.kind() == classic::SessionKind::Local);
+
     // Strategic, then Close: the turn goes on and ends, once.
     REQUIRE(fightStrategic(session, rules));
     CHECK_FALSE(session.battleQuestion().has_value());

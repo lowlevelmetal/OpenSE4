@@ -274,6 +274,13 @@ std::expected<bool, std::string> ClassicSession::masterPasswordMatches(std::stri
 }
 
 void ClassicSession::setComputerControl(const std::vector<std::pair<game::EmpireId, bool>>& rows) {
+    // While a battle waits to be shown the game is as before the engine call,
+    // which is made again with the answers: who is human must not change
+    // meanwhile, or the call would stop at other battles than those answered.
+    if (call_ != Call::None) {
+        log::warn("Computer control is not changed while a battle waits to be fought");
+        return;
+    }
     for (const auto& [empire, computer] : rows) {
         if (!game::ai::setComputerControl(state_, empire, computer)) continue;
         // A player's copy of a game on different machines: the orders carry the
