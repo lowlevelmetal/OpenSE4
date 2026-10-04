@@ -2,11 +2,14 @@
 // Comparisons, History, Race Report and Victory Conditions (docs/spec/06 §1.2,
 // §1.5; docs/spec/05 §3, §5, §6). Communicate lives in communicate.cpp.
 
+#include "client/audio.hpp"
 #include "client/classic/quadrant_map.hpp"
+#include "client/classic/reports.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
+#include "client/script/items.hpp"
 
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
@@ -14,9 +17,14 @@
 #include "game/score.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <map>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -818,66 +826,138 @@ private:
 
 // ---- Race Report ---------------------------------------------------------------------------------------
 
+// A report window of its own, like every report opened on its own (spec 06 §1.4,
+// §1.10.1, §7 Q87, confirmed: binary): borderless, 310x420, centred; the pages
+// 290x327 at (10,10), the four 72x30 tabs Detail, Descr, Race and Tech at
+// (10,340), a 153x30 Close button centred under them at (79,380). It is modal
+// over the window it was opened from (Empires, Communicate), which it closes
+// with; Esc closes it too (inferred, as the Combat Piece Report).
 class RaceReportScreen final : public Screen {
 public:
     explicit RaceReportScreen(const ScreenArgs& a) : empire_(a.empire) {}
+    bool closesWithParent() const override { return true; }
 
     bool draw(UiContext& ui) override {
         const game::GameState& s = ui.state();
         if (!validEmpire(s, empire_)) empire_ = ui.session.player();
         const game::Empire& e = s.empire(empire_);
-        Dialog d(ui, "Race Report", DialogSize::Report, 0.0f);
-        if (!d.open()) return d.keepOpen();
-        const float footer = ui.px(26) * 2 + ImGui::GetStyle().ItemSpacing.y * 2;
-        ImGui::BeginChild("##report", ImVec2(0, -footer));
-        switch (tab_) {
-            case Tab::Detail: detail(ui, e); break;
-            case Tab::Descr: descr(ui, e); break;
-            case Tab::Race: race(ui, e); break;
-            case Tab::Tech: tech(ui, e); break;
+        const Vec2 size{310, 420};
+        const Vec2 min{std::floor((frameW() - size.x) * 0.5f), std::floor((frameH() - size.y) * 0.5f)};
+        ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        const bool open = ImGui::Begin("Race Report", nullptr,
+                                       ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                           ImGuiWindowFlags_NoScrollWithMouse | ui.windowFlags());
+        ImGui::PopStyleVar(2);
+        bool keep = true;
+        if (open) {
+            if (ImGui::IsWindowAppearing() && !ui.behind) ImGui::SetWindowFocus();
+            ui.tagWindow(ui.at(min), ui.at(min + size));
+            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + size}, nullptr, 0);
+            ImGui::SetCursorScreenPos(ui.at(min + Vec2{10, 10}));
+            if (tab_ == Tab::Detail) {
+                ImGui::BeginChild("##detail", ui.size({290, kPageH}), ImGuiChildFlags_None,
+                                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBackground);
+                detail(ui, e);
+                ImGui::EndChild();
+            } else {
+                // The other pages flow and scroll with the lists' arrow column.
+                const Painter list = listPainter(ui);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({2, 2}));
+                beginList(list, tab_ == Tab::Descr ? "##descr" : tab_ == Tab::Race ? "##race" : "##tech", ui.size({290, kPageH}), kListLineStep,
+                          ImGuiChildFlags_AlwaysUseWindowPadding, false);
+                ImGui::PopStyleVar();
+                switch (tab_) {
+                    case Tab::Descr: descr(ui, e); break;
+                    case Tab::Race: race(ui, e); break;
+                    case Tab::Tech: tech(ui, e); break;
+                    case Tab::Detail: break;
+                }
+                endList(list);
+            }
+            static constexpr std::array<std::tuple<Tab, int, const char*>, 4> kTabs{
+                {{Tab::Detail, 0, "Detail"}, {Tab::Descr, 5, "Descr"}, {Tab::Race, 6, "Race"}, {Tab::Tech, 7, "Tech"}}};
+            ImGui::SetCursorScreenPos(ui.at(min + Vec2{10, 340}));
+            for (size_t i = 0; i < kTabs.size(); ++i) {
+                const auto& [tab, column, label] = kTabs[i];
+                if (i > 0) ImGui::SameLine(0, 0);
+                ImGui::PushID(int(i));
+                if (reportTab(ui, column, label, tab == tab_)) {
+                    audio().play("button");
+                    tab_ = tab;
+                }
+                ImGui::PopID();
+            }
+            ImGui::SetCursorScreenPos(ui.at(min + Vec2{79, 380}));
+            if (classicButton(ui, "Close", {153, 30})) keep = false;
+            ui.tagItem("race-report:close");
+            if (!ui.behind && ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                !ImGui::GetIO().WantTextInput)
+                keep = false;
         }
-        ImGui::EndChild();
-        static constexpr std::array<std::pair<Tab, const char*>, 4> kTabs{
-            {{Tab::Detail, "Detail"}, {Tab::Descr, "Descr"}, {Tab::Race, "Race"}, {Tab::Tech, "Tech"}}};
-        const float w = (ImGui::GetContentRegionAvail().x - 3 * ui.px(2)) / 4;
-        for (size_t i = 0; i < kTabs.size(); ++i) {
-            if (i > 0) ImGui::SameLine(0, ui.px(2));
-            const bool active = kTabs[i].first == tab_;
-            if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.36f, 0.75f, 1));
-            if (ImGui::Button(kTabs[i].second, ImVec2(w, ui.px(26)))) tab_ = kTabs[i].first;
-            if (active) ImGui::PopStyleColor();
-        }
-        d.close();
-        return d.keepOpen();
+        ImGui::End();
+        if (!keep) audio().play("close");
+        return keep;
     }
 
 private:
     enum class Tab { Detail, Descr, Race, Tech };
+    static constexpr float kPageH = 327.0f;
 
+    // The object report's places (spec 06 §1.10.1, §5.4): the 128x128 picture at
+    // the top left with the owner's flag on it; the name in the Button face from x
+    // 120 at y 4, right-aligned 10 px from the page's right edge when too long; the
+    // lines' labels in label blue at x 130 from y 20 every 30 px, each value in
+    // white at x 140 15 px under its label. Each text keeps to its place
+    // (drawFitted).
     void detail(UiContext& ui, const game::Empire& e) {
-        const float indent = std::max(0.0f, (ImGui::GetContentRegionAvail().x - ui.px(128)) * 0.5f);
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
-        framedImage(ui, ui.art.racePortrait(e.race.style), {128, 128});
-        ImGui::Spacing();
-        empireLabel(ui, e.id, true);
-        ImGui::TextColored(kTextDim, "%s %s", e.leaderTitle.c_str(), e.leaderName.c_str());
-        ImGui::Separator();
-        labelValue(ui, "Empire", e.empireType.empty() ? e.name : std::format("{} {}", e.name, e.empireType));
-        labelValue(ui, "Race", e.race.name);
-        labelValue(ui, "Homeworld", std::format("{}, {}", e.race.nativeSurface, e.race.atmosphere));
-        if (const ruleset::Culture* c = ui.rules().culture(e.race)) labelValue(ui, "Culture", c->name);
+        const Painter p = ui.painter();
+        const ImVec2 o = ImGui::GetWindowPos();
+        auto at = [&](float x, float y) { return ImVec2(o.x + ui.px(x), o.y + ui.px(y)); };
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        auto put = [&](const Sprite& sp, float x, float y, float w, float h) {
+            if (sp) dl->AddImage(ImTextureRef(static_cast<ImTextureID>(sp.tex.value)), at(x, y), at(x + w, y + h), {sp.uv.min.x, sp.uv.min.y}, {sp.uv.max.x, sp.uv.max.y});
+        };
+        put(ui.art.racePortrait(e.race.style), 0, 0, 128, 128);
+        put(ui.art.flag(e.race.style), 2, 2, 26, 18);
+        ImFont* button = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
+        ImFont* body = ui.fonts.medium ? ui.fonts.medium : ImGui::GetFont();
+        const std::string& name = e.race.name.empty() ? e.name : e.race.name;
+        if (const TextFit wide = fitText(p, button, kTitleSize, name, ui.px(290 - 10 - 120)); !wide.cut && wide.size >= p.fontPx(kTitleSize) - 0.01f)
+            drawFitted(p, dl, button, kTitleSize, at(120, 4 + kTitleLead), ui.px(290 - 10 - 120), IM_COL32_WHITE, name);
+        else   // kept clear of the picture
+            drawFitted(p, dl, button, kTitleSize, at(130, 4 + kTitleLead), ui.px(290 - 10 - 130), IM_COL32_WHITE, name, 1.0f);
+        std::vector<std::pair<const char*, std::string>> lines;
+        lines.emplace_back("Empire", e.empireType.empty() ? e.name : std::format("{} {}", e.name, e.empireType));
+        lines.emplace_back("Leader", std::format("{} {}", e.leaderTitle, e.leaderName));
+        lines.emplace_back("Race", e.race.name);
+        lines.emplace_back("Homeworld", std::format("{}, {}", e.race.nativeSurface, e.race.atmosphere));
+        if (const ruleset::Culture* c = ui.rules().culture(e.race)) lines.emplace_back("Culture", c->name);
         const auto& happiness = ui.rules().data().happinessModels;
-        if (e.race.happinessModel < happiness.size()) labelValue(ui, "Happiness", happiness[e.race.happinessModel].name);
-        if (!e.race.demeanor.empty()) labelValue(ui, "Demeanor", e.race.demeanor);
+        if (e.race.happinessModel < happiness.size()) lines.emplace_back("Happiness", happiness[e.race.happinessModel].name);
+        if (!e.race.demeanor.empty()) lines.emplace_back("Demeanor", e.race.demeanor);
         // The race age for every race, the experience behind it only for our own (spec 02 §9, §11).
-        labelValue(ui, "Age", std::string(game::economy::raceAge(e.experience)));
-        if (e.id == ui.session.player()) labelValue(ui, "Experience", formatNumber(e.experience));
-        labelValue(ui, "Player", game::isNeutral(e) ? "Neutral" : e.kind == game::PlayerKind::Human ? "Human" : "Computer");
-        if (e.id != ui.session.player()) {
+        lines.emplace_back("Age", std::string(game::economy::raceAge(e.experience)));
+        if (e.id == ui.session.player()) {
+            lines.emplace_back("Experience", formatNumber(e.experience));
+        } else {
             const game::Relation& rel = ui.me().relation(e.id);
-            labelValue(ui, "Treaty", rel.contact ? treatyText(rel) : "No contact");
+            lines.emplace_back("Treaty", rel.contact ? treatyText(rel) : "No contact");
         }
-        if (!e.alive) ImGui::TextColored(kTextBad, "This empire has been destroyed.");
+        std::string player = game::isNeutral(e) ? "Neutral" : e.kind == game::PlayerKind::Human ? "Human" : "Computer";
+        if (!e.alive) player += " (destroyed)";
+        lines.emplace_back("Player", std::move(player));
+        const ImU32 label = ImGui::ColorConvertFloat4ToU32(kLabelBlue);
+        float y = 20;
+        for (const auto& [l, value] : lines) {
+            drawFitted(p, dl, body, kTextSize, at(130, y + kTextLead), ui.px(290 - 130), label, l, 0.0f, ui.px(15));
+            drawFitted(p, dl, body, kTextSize, at(140, y + 15 + kTextLead), ui.px(290 - 140), IM_COL32_WHITE, value, 0.0f, ui.px(15));
+            script::reportText(l, at(130, y), at(290, y + 30));
+            y += 30;
+        }
+        ImGui::Dummy(ui.size({290, std::min(kPageH, y)}));
     }
 
     void descr(UiContext& ui, const game::Empire& e) {
@@ -888,6 +968,7 @@ private:
             if (text->empty()) continue;
             any = true;
             heading(ui, title);
+            const ReadingText reading(ui.painter());   // the page scrolls
             wrappedText(*text);
             ImGui::Spacing();
         }
@@ -897,13 +978,14 @@ private:
     void race(UiContext& ui, const game::Empire& e) {
         heading(ui, "Characteristics");
         if (ImGui::BeginTable("##chars", 2, ImGuiTableFlags_RowBg)) {
+            const float value = ImGui::CalcTextSize("000%").x + ImGui::GetStyle().CellPadding.x * 2;
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, ui.px(56));
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, value);
             for (size_t i = 0; i < game::kCharacteristics; ++i) {
                 const int v = e.race.characteristics[i];
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::TextUnformatted(std::string(game::displayName(static_cast<game::Characteristic>(i))).c_str());
+                fittedText(game::displayName(static_cast<game::Characteristic>(i)));
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextColored(v > 100 ? kTextGood : v < 100 ? kTextBad : ImVec4(0.9f, 0.92f, 0.97f, 1), "%d%%", v);
             }
@@ -915,7 +997,9 @@ private:
         if (e.race.traits.empty()) ImGui::TextColored(kTextDim, "None");
         for (uint32_t t : e.race.traits) {
             if (t >= traits.size()) continue;
+            ImGui::PushTextWrapPos(0.0f);
             ImGui::BulletText("%s", traits[t].name.c_str());
+            ImGui::PopTextWrapPos();
             if (!traits[t].description.empty() && ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
                 ImGui::PushTextWrapPos(ui.px(320));
@@ -934,16 +1018,19 @@ private:
         }
         const game::Rules& r = ui.rules();
         const auto [owned, total] = techProgress(r, ui.state(), e);
-        labelValue(ui, "Tech levels", std::format("{} of {}", owned, total));
+        ImGui::TextColored(kLabelBlue, "Tech levels");
+        ImGui::SameLine();
+        ImGui::Text("%d of %d", owned, total);
         if (ImGui::BeginTable("##tech", 2, ImGuiTableFlags_RowBg)) {
+            const float value = ImGui::CalcTextSize("00 / 00").x + ImGui::GetStyle().CellPadding.x * 2;
             ImGui::TableSetupColumn("Area", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(56));
+            ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, value);
             for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
                 const ruleset::TechAreaId a{i};
                 if (e.techLevel(a) <= 0) continue;
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::TextUnformatted(r.tech(a).name.c_str());
+                fittedText(r.tech(a).name);
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%d / %d", e.techLevel(a), r.tech(a).maxLevel);
             }

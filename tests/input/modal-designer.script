@@ -1,0 +1,32 @@
+# Every window is modal (spec 06 §1, §3.4; docs/BUILDING.md "Input scripts"): while the
+# ship designer is open over Designs, the main window takes no input. End Turn (its button,
+# F12 and Enter), the command buttons and their keys, the order strip and the selectors do
+# nothing. Esc is the designer's Cancel, not Designs' Close: the keys go to the window in
+# front. Close then closes Designs, and End Turn works again.
+# layouts: both
+options --quick-start=Terran --seed=404 --open=designs --layout=1024x768 --size=1280x800
+
+wait-window designs
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+click tag:button:end-turn
+key F12
+key Enter
+click tag:command:planets
+key F4
+click tag:cycle:ship
+wait 10
+assert-absent item:Yes in="End Turn"
+assert-turn 0
+assert-window create-design
+assert-no-window planets
+# The designer is the window in front: Esc is its Cancel.
+key Escape
+wait-closed create-design
+assert-window designs
+click item:Close in=designs
+wait-closed designs
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 1

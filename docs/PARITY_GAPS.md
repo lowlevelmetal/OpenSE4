@@ -540,6 +540,25 @@ change nothing in the original's layout:
 - **`--open=ground-combat`**: a sample strategic simulation in which the player's troop
   transports land on its homeworld, to reach Ground Combat headless.
 
+Since 2026-10-04 the client answers players' reports on v0.8.1:
+
+- **Every window and question is modal** (spec 06 §1, §3.4): while one is open the main
+  window takes no input at all (command buttons and their hover hints, order strip,
+  selectors, report panel, map clicks and keys), only the window in front takes input, and
+  End Turn is never carried out during a battle. Before, the command buttons stayed live,
+  so End Turn could be pressed under the ship designer or a battle. The tutorial lock and
+  its way back follow (docs/LEARNING.md "The input lock").
+- **The Race Report** is drawn like every report opened on its own (spec 06 §1.4,
+  §1.10.1): 310x420, the four tabs, a Close button; modal over Empires and closed with it.
+- **The system report** follows its places (spec 06 §1.4) and wraps every line; a black
+  hole's abilities no longer run out of the panel, and what does not fit scrolls.
+- **No stray lines under warp points and asteroid fields**: each part cut from a sheet is a
+  texture of its own, so a frame scaled by a fraction no longer smooths in the next cell's
+  edge (spec 06 §2.4).
+- **Text size** enlarges reading text and OpenSE4's own; the classic layouts' fixed places
+  keep the original's raster sizes, and text that does not fit its box is cut short with an
+  ellipsis and a tooltip (spec 06 §5.4). `assert-fits` checks it in input scripts.
+
 Players' reports on 0.8.1, settled from the executable on 2026-10-04 and checked in a running
 game where one could show it (spec 07 session 6; spec 06 §7 Q100–Q109), were implemented the
 same day:

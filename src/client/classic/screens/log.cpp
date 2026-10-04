@@ -458,7 +458,11 @@ private:
         if (body.empty()) return;
         ImGui::BeginChild("##body", ui.size({areaW - 8, std::min(300.0f, ImGui::GetContentRegionAvail().y / ui.k())}), ImGuiChildFlags_None,
                           ImGuiWindowFlags_NoBackground);
-        wrappedText(body);
+        {
+            // Reading text: the Text size setting enlarges it, and the body scrolls.
+            const ReadingText reading(ui.painter());
+            wrappedText(body);
+        }
         ImGui::EndChild();
     }
 
@@ -516,7 +520,10 @@ private:
         if (m.thirdEmpire.valid() && m.thirdEmpire.index() < s.empires.size()) labelValue(ui, "About", s.empire(m.thirdEmpire).name, 60);
         if (m.planet.valid() && m.planet.index() < s.galaxy.objects.size()) labelValue(ui, "Planet", s.galaxy.object(m.planet).name, 60);
         ImGui::Spacing();
-        wrappedText(m.text.empty() ? std::string("(no text)") : m.text);
+        {
+            const ReadingText reading(ui.painter());
+            wrappedText(m.text.empty() ? std::string("(no text)") : m.text);
+        }
         auto items = [&](const char* title, const std::vector<game::PackageItem>& list) {
             if (list.empty()) return;
             ImGui::Spacing();

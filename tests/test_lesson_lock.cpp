@@ -309,7 +309,7 @@ std::vector<TaggedArea> stackedTags() {
 
 } // namespace
 
-TEST_CASE("lesson lock: the front-most window under the pointer decides") {
+TEST_CASE("lesson lock: only the window in front responds (every window is modal)") {
     const Bindings keys;
     const learn::Step s = step({"create-design:components"}, true);
     // Designs behind, the designer in front: the step names the designer only.
@@ -317,19 +317,19 @@ TEST_CASE("lesson lock: the front-most window under the pointer decides") {
     REQUIRE(st.windows.size() == 2);
     CHECK(st.windows[0].id == "create-design");   // front first
     CHECK(st.windows[0].constrained);
-    CHECK_FALSE(st.windows[1].constrained);
+    CHECK(st.windows[1].constrained);           // behind the designer: held up by it
     CHECK(allows(st, {200, 400}));              // the components list
     CHECK_FALSE(allows(st, {600, 655}));        // the designer's Cancel, over Designs
     CHECK_FALSE(allows(st, {300, 120}));        // its hull list: another step's
     CHECK_FALSE(allows(st, {450, 400}));        // the rest of the designer, though Designs lies under it
-    CHECK(allows(st, {800, 115}));              // Designs where the designer leaves it free: the player's
-    CHECK(allows(st, {800, 670}));              // Designs' own Close
+    CHECK_FALSE(allows(st, {800, 115}));        // Designs where the designer leaves it free: it waits for the designer
+    CHECK_FALSE(st.allowsButton({800, 115}, 3)); // no right-click there either
     CHECK_FALSE(allows(st, {50, 650}));         // the system view, outside both windows
     CHECK(allows(st, {800, 600}));              // the lesson panel lies above every window
     CHECK_FALSE(st.windowKeys);                 // the designer in front is the step's: no Esc
     CHECK(st.parts() > 0);
 
-    // The player brought Designs to the front: all of it is theirs, the designer's parts under it too.
+    // Designs in front: all of it is the player's, the designer's parts under it too.
     const LockState back = makeLockState(s, stackedTags(), {"create-design", "designs"}, {}, false, keys);
     CHECK(back.windows[0].id == "designs");
     CHECK(allows(back, {600, 655}));
@@ -342,7 +342,7 @@ TEST_CASE("lesson lock: the front-most window under the pointer decides") {
     CHECK(asked.prompt);
 }
 
-TEST_CASE("lesson lock: the main window's parts under windows") {
+TEST_CASE("lesson lock: the main window's parts while a window is open") {
     const Bindings keys;
     // End Turn is allowed; a window the step names lies over part of it, another one the step leaves alone over the rest.
     std::vector<TaggedArea> tags = frameTags();
@@ -351,8 +351,17 @@ TEST_CASE("lesson lock: the main window's parts under windows") {
     const learn::Step s = step({"button:end-turn"}, true, {"queues:list"});
     LockState st = makeLockState(s, tags, {"queues"}, {}, false, keys);
     CHECK_FALSE(allows(st, {55, 20}));   // under Construction Queues, which the step names
-    CHECK(allows(st, {70, 20}));         // the rest of End Turn
+    CHECK_FALSE(allows(st, {70, 20}));   // the rest of End Turn: the main window waits for the window (modal)
+    CHECK(looks(st, {70, 20}));          // still in the clear, to be seen
     CHECK(allows(st, {48, 8}));          // the window's allowed part
+    // The way back: the window's Close button, with Esc and Enter.
+    tags.push_back({"queues:close", box(58, 38, 64, 44)});
+    st = makeLockState(s, tags, {"queues"}, {}, false, keys);
+    CHECK(allows(st, {60, 40}));
+    CHECK(hasKey(st, KeyChord{ImGuiKey_Escape}));
+    // With no window open End Turn is the step's again.
+    st = makeLockState(s, tags, {}, {}, false, keys);
+    CHECK(allows(st, {70, 20}));
     // A window the step says nothing about over the button: the window's, so the click is.
     st = makeLockState(step({"button:end-turn"}, true), tags, {"queues"}, {}, false, keys);
     CHECK(allows(st, {55, 20}));
@@ -376,6 +385,12 @@ TEST_CASE("lesson lock: a window that covers an outline") {
     CHECK(coveringWindow("create-design:components", tags, {"create-design", "designs"}) == "designs");
     CHECK_FALSE(coveringWindow("create-design:components", tags, {"designs", "create-design"}));
     CHECK_FALSE(coveringWindow("lesson:panel", tags, {"designs"}));
+    // A part to be used is held up by the window in front, wherever it lies (every window is modal).
+    CHECK(coveringWindow("command:designs", tags, {"designs"}, true) == "designs");
+    CHECK(coveringWindow("designs:create", tags, {"designs", "create-design"}, true) == "create-design");
+    CHECK_FALSE(coveringWindow("create-design:components", tags, {"designs", "create-design"}, true));
+    CHECK_FALSE(coveringWindow("command:designs", tags, {}, true));
+    CHECK_FALSE(coveringWindow("lesson:panel", tags, {"designs"}, true));
 
     // A window the step names covers its outline: its Close button (and Esc) become usable.
     const learn::Step s = step({"command:empire-status"}, true, {"designs:list"});
@@ -417,8 +432,17 @@ TEST_CASE("lesson recovery: the way back to a closed or covered window") {
     CHECK(r.kind == Recovery::Kind::Uncover);
     CHECK(r.window == "designs");
     CHECK(r.press == "designs:close");
-    // Not covered: nothing to do. An explanation step's outlines count as well.
+    // An explanation step's outline that no window covers: nothing to do, it can be seen.
     CHECK(findRecovery(step({"command:designs"}, false), tags, {"designs"}).kind == Recovery::Kind::None);
+    // An action step's: Designs holds the main window up wherever it lies, so it closes first.
+    r = findRecovery(step({"command:designs"}, true), tags, {"designs"});
+    CHECK(r.kind == Recovery::Kind::Uncover);
+    CHECK(r.window == "designs");
+    // Create in Designs, behind the designer: the designer closes first.
+    r = findRecovery(step({"designs:create"}, true), tags, {"designs", "create-design"});
+    CHECK(r.kind == Recovery::Kind::Uncover);
+    CHECK(r.window == "create-design");
+    CHECK(r.press == "create-design:close");
     // No way back on screen: nothing to show (Skip comes later).
     CHECK(findRecovery(step({"tactical-combat:map"}, true), mainOnly, {}).kind == Recovery::Kind::None);
     // Only the lesson's own tags: nothing to recover.

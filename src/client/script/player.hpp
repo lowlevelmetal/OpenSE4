@@ -50,6 +50,8 @@ public:
     virtual std::vector<Box> tagBoxes(std::string_view name) const = 0;
     virtual std::vector<std::string> tagNames() const = 0;
     virtual const std::vector<Item>& items() const { return lastItems(); }
+    // The texts drawn into boxes of their own and the windows' drawn labels (items.hpp).
+    virtual const std::vector<Item>& texts() const { return lastTexts(); }
     virtual ImVec2 framePoint(float x, float y) const = 0;   // a point of the classic frame
     virtual float frameScale() const = 0;                     // ImGui units per frame pixel
     // The sectors of the system view (or the systems of the galaxy panel) a

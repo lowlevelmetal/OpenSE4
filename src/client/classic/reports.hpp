@@ -29,6 +29,10 @@ void systemReport(UiContext& ui, game::SystemId sys);
 void objectReport(UiContext& ui, game::ObjectId object, const game::GameState* state = nullptr);
 // Tab strip for reports; returns the chosen tab. Without `cargo` the Cargo tab is left out.
 ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo = true);
+// One report tab at the cursor: the 72x30 cell of TabBtns.bmp in `column`
+// (Detail, Comps, Cargo, Ability, Facil, Descr, Race, Tech), lit when selected;
+// `label` names it for input scripts (and is drawn without the picture). True when clicked.
+bool reportTab(UiContext& ui, int column, const char* label, bool selected);
 
 // Draws the lines: the blue lamp of General.bmp at (0,2) of each, the text from
 // x 13, wrapped 23 px short of the page's width. An empty page stays empty.

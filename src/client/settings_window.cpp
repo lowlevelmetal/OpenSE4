@@ -119,6 +119,10 @@ void graphicsSettingsPage(SettingsPanelState& state, AppControl& app, float px) 
     save |= ImGui::Checkbox("Scale by whole multiples only", &g.integerScaling);
     ImGui::SetNextItemWidth(w);
     if (ImGui::SliderFloat("Text size", &g.textScale, 0.75f, 1.5f, "%.2fx")) save = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Enlarges the text you read: the manual, the lessons, OpenSE4's questions and the windows'\n"
+                          "descriptions and messages. The classic windows' buttons, labels and lists keep the\n"
+                          "game's own fonts and places; to enlarge everything, make the window larger.");
 
     section("Renderer");
     RendererChoice renderer = g.renderer;

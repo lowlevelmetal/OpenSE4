@@ -1,23 +1,33 @@
-# End Turn while a window is open (docs/BUILDING.md "Input scripts"): the "End the turn
-# now?" question comes up over the window and takes the input (it used to open behind
-# it). Esc answers No and leaves the window open; Y ends the turn.
-# 1024x768 only: at 800x600 the Colonies window covers End Turn.
+# End Turn and windows (docs/BUILDING.md "Input scripts"): every window is modal (spec 06
+# §1, §3.4), so while one is open End Turn does nothing, by click or key, and the turn stays
+# where it is. With the window closed the "End the turn now?" question comes up and takes
+# the input: Esc answers No; No and Yes by click.
+# layouts: both
 options --quick-start=Terran --seed=404 --open=none --layout=1024x768 --size=1280x800
 
 wait-screen game
 key F5
 wait-window colonies
 click tag:button:end-turn
+wait 10
+assert-absent item:Yes in="End Turn"
+key F12
+wait 10
+assert-absent item:Yes in="End Turn"
+assert-window colonies
+assert-turn 0
+key Escape
+wait-closed colonies
+click tag:button:end-turn
 wait-for item:Yes in="End Turn"
 key Escape
 wait-gone item:Yes in="End Turn"
-assert-window colonies
 assert-turn 0
 click tag:button:end-turn
 wait-for item:No in="End Turn"
 click item:No in="End Turn"
 wait-gone item:No in="End Turn"
-assert-window colonies
+assert-turn 0
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1

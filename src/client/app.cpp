@@ -127,8 +127,9 @@ int App::run(const AppOptions& options) {
         shutdown();
         return 1;
     }
-    // Sound needs a real session: not with --no-audio, and not for screenshots or scripts.
-    if (!options.noAudio && options.screenshotPath.empty() && !options.inputScript) audio().open();
+    // Sound needs a real session: not with --no-audio, and not for screenshots or
+    // scripts unless --audio asks for it (to check the audio itself).
+    if (!options.noAudio && (options.audio || (options.screenshotPath.empty() && !options.inputScript))) audio().open();
     if (options.inputScript) {
         std::filesystem::path out = options.scriptOutput;
         if (out.empty()) {

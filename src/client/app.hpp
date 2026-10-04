@@ -30,6 +30,7 @@ struct AppOptions {
     bool validation = false;
     bool vsync = true;
     bool noAudio = false;
+    bool audio = false;              // --audio: sound even in a script or screenshot run
     bool fullscreen = false;
     int width = 1600;
     int height = 900;

@@ -37,7 +37,12 @@ Conventions that hold across the whole UI:
   and key at the top of the system panel (§2.3). No other control has a hint
   (confirmed: binary).
 - **Dialogs are modal.** While any window is open the main window takes no keys; each
-  dialog handles a few keys of its own (§3.4) (confirmed: binary).
+  dialog handles a few keys of its own (§3.4) (confirmed: binary). Our client follows this
+  since 2026-10-04: while a window or one of the game's questions is open, the main window
+  takes no input at all (command buttons and their hover hints, order strip, selectors,
+  report panel, map clicks and keys), and only the window in front takes input; the windows
+  behind it wait until it closes. End Turn is never carried out while a battle is fought
+  or asked about.
 - **Radio "lights".** Tab and filter buttons show a small green lamp when active; on/off
   options are rows with a lamp that is lit when set [S]. Lists scroll with up/down arrow
   buttons in a narrow column, not standard scrollbars [S].
@@ -280,9 +285,9 @@ reports render inside the right-hand panel (§2.5).
 |---|---|
 | Ship Report | Detail (owner flag, 128 px portrait with status icons under it, name, class, size, movement, damage, supplies, crew experience, fleet, maintenance), Comps, Cargo, Ability. Less detail for foreign ships. |
 | Planet Report | Detail (owner flag, picture, status icons, physical data, value, description, then colony data: type, population, mood, output, construction), Facil, Cargo, Ability. An "Empty" variant without tabs for planets that are not ours. |
-| Race Report | Detail, Descr (free-text blocks), Race (characteristics, traits), Tech (known tech). |
+| Race Report | Detail, Descr (free-text blocks), Race (characteristics, traits), Tech (known tech). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); Detail in the object report's places (the race's portrait with the flag on it, the name from x 120 at y 4, label lines at x 130 every 30 px with values at x 140); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate) and closes with it; Esc closes it (inferred, as the Combat Piece Report). |
 | Fleet, Storm reports | Fleet: movement, supply pool, experience, formation, strategy, ships. Storm: picture, size, description, abilities. |
-| System Report | Shown when empty space in the system panel is clicked. The 128x128 picture `Pictures/Systems/<Background Bitmap>` (the system type's background name, folder root; normal systems use `Starmap.bmp`) at the top left; "<Name> System" right-aligned at the top (left edge at most x 120, y 4); the type's description in grey (160,160,160) from y 140, in a box 42 px tall; the system's abilities from y 197 (confirmed: binary). |
+| System Report | Shown when empty space in the system panel is clicked. The 128x128 picture `Pictures/Systems/<Background Bitmap>` (the system type's background name, folder root; normal systems use `Starmap.bmp`) at the top left; "<Name> System" right-aligned at the top (left edge at most x 120, y 4); the type's description in grey (160,160,160) from y 140, in a box 42 px tall; the system's abilities from y 197 (confirmed: binary). Our client follows these places since 2026-10-04 and adds the type and the location as label lines beside the picture; it wraps the description and every ability (a black hole's are long), and when they do not fit the panel (a long text, a larger Text size) the description and the abilities scroll together with the lists' arrow column from y 140 down (inferred: what the original does with text longer than its boxes is not described). |
 | Component / Facility / Ship Size / Formation reports | Cost with resource icons, size, damage resistance, vehicle types, weapon data including damage by range, abilities; formation diagram. |
 
 **Right-clicks inside a report's pages** (confirmed: binary; observed, spec 07 session 6).
@@ -1360,7 +1365,12 @@ cells sit inside it after a margin:
   results outside 0..12 are ignored. (A click in the margin left of or above the grid
   therefore counts as column or row 0.)
 - **Sprites are never scaled.** Every object sprite is drawn at its native 36x36,
-  centred in its cell: offset 0 at 800x600, 7 px at 1024x768.
+  centred in its cell: offset 0 at 800x600, 7 px at 1024x768. Our client scales the whole
+  frame to the window; since 2026-10-04 every picture it cuts from a sheet (the planet
+  sheet's cells, flags, buttons, icons) is a texture of its own, so the smoothing of a
+  frame scaled by a fraction no longer takes in the edge of the next cell, which drew a thin
+  line, its colour that of the next row, under warp points, asteroid fields and other
+  objects.
 - **Background.** The system picture (490x490 or 660x660, §5.3) is copied 1:1 from its
   top-left corner; the rightmost and bottom 6 px (800x600) or 8 px (1024x768) are never
   shown. An unexplored system shows `Starmap.bmp` with the word "Unexplored" centred at
@@ -2576,6 +2586,19 @@ differs:
   pixels are repeated unevenly (nearest neighbour) rather than drawn 1:1.
 - OpenSE4's own windows (Learn, the manual, the lesson panel) keep our own font (Noto
   Sans) for their text, and it stands in for any `.fon` file that is missing.
+- **Text size** (Settings → Graphics, 0.75 to 1.5, OpenSE4's; since 2026-10-04): it
+  enlarges the text that can take the room. That is OpenSE4's own text (the lesson panel,
+  the manual, the Learn window, the multiplayer screens, and the questions our client draws:
+  End Turn, Colony Type, Attack Sector, Next Player), and the classic windows' reading
+  text, which wraps and scrolls: the Log's entries, messages, a race's description, and the
+  reports of systems, stars, storms and warp points. Text at the classic layouts' fixed
+  places (button and tab captions, titles, the status bar, label and value lines, list rows
+  and headings, the system panel's names, the battle notice) keeps the sizes above at every
+  setting, so no layout changes; where even that does not fit its box (a long name), the
+  text is cut short with "…" and shows whole as a tooltip under the pointer. Settings
+  itself keeps its size, so the setting can always be changed back. Before, every classic
+  font grew with the setting, and from 1.2 on captions ran out of their buttons and lines
+  over each other.
 
 ### 5.5 Sounds and music
 
@@ -2639,6 +2662,9 @@ differs:
     0 dB.
   - The original draws the track from the same random generator as the game rules. Ours
     must use a separate source so that music never changes game results.
+  - OpenSE4 cuts an effect off with a fade of a few milliseconds rather than at once, fades
+    a track out over a quarter second before the next one, and loops each track without a
+    gap (`src/client/audio_mixer.*`), so none of these changes clicks.
 
 ### 5.6 Scenarios and tutorial
 
@@ -2955,7 +2981,8 @@ the 800x600 layout in §2.1.1.
     nothing while one is open, and nothing while the turn is being ended or the movement
     log replayed. Esc and Enter close only some windows; §3.4 lists the keys of each
     kind. In Yes/No prompts Enter means No (confirmed: binary).
-    Our client follows §3.4 in its prompts: Yes/No boxes (Y; N, Esc and Enter mean No; the
+    Our client follows §3.4 in its prompts and, since 2026-10-04, makes every window and
+    question modal as above (§1): Yes/No boxes (Y; N, Esc and Enter mean No; the
     key that opened a box does not answer it), windows with Close (Esc and Enter), battle
     notices (Esc and Enter mean Begin), the Tactical/Strategic question (T and S) and Next
     Player (Esc and Enter), and its command and order buttons write the hint text of §2.3.

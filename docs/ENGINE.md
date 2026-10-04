@@ -398,8 +398,8 @@ hashed sizes at their own width.
   - the history files end their lines in CR LF.
 
   Paths are UTF-8 everywhere. The Windows programs carry a manifest with the UTF-8 code
-  page (`packaging/windows/opense4.manifest`), and stb and dr_mp3 open UTF-8 or wide
-  names. This was checked with an install under a folder with a non-ASCII name.
+  page (`packaging/windows/opense4.manifest`), stb opens UTF-8 names, and the sounds
+  and music are read through `std::filesystem` paths (wide on Windows). This was checked with an install under a folder with a non-ASCII name.
   Windows before 10 1903 ignore the manifest's code page, so the release build converts
   between paths and narrow strings as UTF-8 itself (`src/compat/libcxx_utf8_paths.cpp`).
   Environment variables that hold paths are read with `core::environment`, and the
@@ -494,10 +494,10 @@ which the original draws in the system's Small Fonts.
 | Part | Role |
 |---|---|
 | `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat games it holds the battle (or ground fight) that stops the engine call to be shown, and the battle being fought in a window, and makes the engine call again with the answers; it lists the battles of network and PBEM games, shown afterwards |
-| `art.*` | Pictures from the install, cached as textures: minis turned to their heading, the combat maps' tiled background, the layout's system backgrounds and intro picture, and each empire's colour from its race's swatch |
+| `art.*` | Pictures from the install, cached as textures (each part cut from a sheet a texture of its own, so a scaled frame never smooths in the next part's edge): minis turned to their heading, the combat maps' tiled background, the layout's system backgrounds and intro picture, and each empire's colour from its race's swatch |
 | `layout.*` | The two screen layouts: regions, frame strips, sector grid, order strip pages, status bar and title strip places, and how the layout is chosen (headless) |
 | `pointers.*`, `pointer_rules.*` | The install's twelve `.cur` pointers as SDL cursors, the Hourglass while the program is busy (`BusyPointer`), and which pointer the tactical map shows (headless rules) |
-| `ui.*` | The frame mapping, `UiContext`, the modal window stack, the classic dialog layout, and the keys of dialogs and prompts (spec 06 §3.4: `yesNoKey`, `okKey`, `YesNoPrompt`). `UiContext::options()` and `setOptions()` read and change the empire's Empire Options and window memories (`game::InterfaceOptions`, saved with the game, changed with `cmd::SetInterfaceOptions`) |
+| `ui.*` | The frame mapping, `UiContext`, the modal window stack (only the window in front takes input: `UiContext::behind`, `windowFlags()`), the classic dialog layout, text and the Text size setting (`fontPx` for the classic layouts' fixed places, `textPx` and `ReadingText` for reading text and OpenSE4's own, `fitText`/`drawFitted` to keep a text to its box), and the keys of dialogs and prompts (spec 06 §3.4: `yesNoKey`, `okKey`, `YesNoPrompt`). `UiContext::options()` and `setOptions()` read and change the empire's Empire Options and window memories (`game::InterfaceOptions`, saved with the game, changed with `cmd::SetInterfaceOptions`) |
 | `settings.*` | This computer's preferences: the Options window (Game Menu → Options: animation, sound, music steps, Fast Tactical Combat, movement lines), the Combat Options display switches, OpenSE4's effects volume and the last saved game (Resume Game), in `classic_settings.toml` |
 | `facility_markers.*` | The facility letter markers the Empire Options can show on colonies in the system window |
 | `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay's controls, and hotkeys |
@@ -524,6 +524,20 @@ collects the widgets of each frame by label (Dear ImGui's item hooks, `imgui_ite
 in `src/third_party_config`, turned on only for a script or a recording) and
 `recorder.*` writes a script from a session. The app handles a script's events exactly as
 a player's: `Mode::filterEvent` (the tutorial input lock) first, then Dear ImGui.
+
+`src/client/audio.*` plays the install's sounds and music (docs/spec/06 §5.5; the music
+lookup and the log lines are in docs/SETUP.md "Sound and music"). One SDL audio stream is
+bound to the device, and the device's audio thread pulls the mix from it
+(`audio_mixer.*`, headless and tested): effects decoded once to the device's rate, music
+decoded and looped without a gap on a thread of its own into a lock-free ring, so the
+main thread's frames (or a long turn) never feed it. Nothing starts or stops abruptly: an
+effect cut off by the next one fades out over 6 ms, every clip ramps in and out over 2 ms
+(some of the remastered sounds start or end mid-wave), a track change or stop fades out
+over a quarter second, volume changes ramp over 30 ms, music that runs dry fades out on a
+10 ms reserve and back in, and peaks above 0.9 bend smoothly towards full scale instead of
+clipping. `audio_playlist.cpp` holds the playlists, the music cues (`MusicDirector`, with
+its own random source) and the volume steps. `tools/check_audio.py` listens to the client
+headless (docs/BUILDING.md "Tests").
 
 ### Learning to play
 

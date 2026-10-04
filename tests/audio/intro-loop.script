@@ -1,0 +1,10 @@
+# The intro screen's music for 65 seconds (tools/check_audio.py): the one intro
+# track of the stock Settings.txt is 48 s long, so it must start again, without
+# a gap or a click (docs/spec/06 §5.5: each track loops). The device mixes as
+# Windows' usually does (WASAPI's shared mode: 32-bit float at 48 kHz), so the
+# 22.05 kHz track and the 44.1 kHz sounds are converted.
+# device: F32 2 48000
+options --open=intro --layout=1024x768 --size=1280x800 --audio
+timeout 7200
+wait-screen front
+wait 3900

@@ -1,3 +1,5 @@
+find_package(Threads REQUIRED)
+
 add_executable(opense4_tests
     main.cpp
     combat_fixture.cpp
@@ -5,6 +7,7 @@ add_executable(opense4_tests
     test_ai.cpp
     test_app_settings.cpp
     test_audio.cpp
+    test_audio_mix.cpp
     test_classic_colony_logic.cpp
     test_classic_options.cpp
     test_client_layout.cpp
@@ -66,6 +69,7 @@ add_executable(opense4_tests
 # classic client logic without UI dependencies.
 target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/app_settings.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/audio_mixer.cpp
     ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/items.cpp
@@ -102,7 +106,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
-target_link_libraries(opense4_tests PRIVATE opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 opense4_warnings)
+target_link_libraries(opense4_tests PRIVATE opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")

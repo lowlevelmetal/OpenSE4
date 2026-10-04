@@ -18,6 +18,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace opense4::client {
@@ -147,9 +148,15 @@ private:
     std::unique_ptr<classic::UiContext> ui_;
     classic::MainWindow main_;
     std::vector<std::pair<classic::ScreenId, std::unique_ptr<classic::Screen>>> screens_;
+    // The window that was in front when each window opened (its parent): a
+    // window that closes with its parent (Screen::closesWithParent) closes with it.
+    std::unordered_map<const classic::Screen*, classic::ScreenId> parentOf_;
+    // Closes the windows that belong to the windows closed this frame.
+    void closeChildren(std::vector<classic::ScreenId> closed);
     std::vector<std::pair<classic::ScreenId, classic::ScreenArgs>> pendingOpen_;
     bool openLogOnTurn_ = false;
     bool confirmEndTurn_ = false;
+    bool modalOpen_ = false;   // a window or a question is open this frame: the main window takes no input
     // The tutorial or training game being played, if any.
     std::unique_ptr<classic::LessonRunner> lesson_;
     std::string lessonError_;   // a lesson that could not start
@@ -166,6 +173,12 @@ private:
     // The keyboard goes to the classic window in front (keepFocusOnFrontWindow).
     void keepFocusOnFrontWindow();
     ImGuiID frontWindow_ = 0;   // the Dear ImGui window of the window in front (0: none)
+    std::vector<ImGuiID> classicWindows_;   // and of every classic window drawn this frame
+    // Every window is modal: whether the Dear ImGui window (or its root) is held
+    // up by the window in front (or, for the main window's panels, by any window
+    // or question), as of the last frame; and taking the hover from such windows.
+    bool heldUp(const ImGuiWindow* window) const;
+    void holdUpHover();
     // --lesson-check: the windows the step works in, and its report.
     void prepareLessonCheck();
     void lessonCheckReport(classic::UiContext& ui);

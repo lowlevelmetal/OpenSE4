@@ -435,11 +435,13 @@ shown:
   **Create** in Designs to open it again." Two windows deep, the first button to press
   is outlined and both are named ("Press the **Designs** button (F3), then **Create**,
   to open it again").
-- **A window covers the outline** (the middle of the outlined part lies under a window in
-  front of the one the part is in): that window's Close button is outlined the same way
-  and the panel says "Close the Colonies window first (Esc)" (Esc only when it is the
-  window in front, which Esc closes). When the step names that window, the lock lets its
-  Close button and Esc through.
+- **A window holds up the outline**: for an action step, any open window while the outlined
+  part is in the main window, and the window in front while the part is in a window behind
+  it (every window is modal, `coveringWindow(..., modal)`); for an explanation step, whose
+  outlines are only to be seen, a window that covers the middle of the outlined part. That
+  window's Close button is outlined the same way and the panel says "Close the Colonies
+  window first (Esc)" (Esc only when it is the window in front, which Esc closes). When the
+  step names that window, the lock lets its Close button and Esc through.
 
 - **An outlined order is on another page of the order strip** (800x600; the step's text
   names the order, but its outline lies on a page arrow): with no way back to show, the
@@ -522,15 +524,15 @@ What a step allows:
   earlier step left open** (open when the step began) that the step says nothing about can
   only be closed: its Close button, and Esc and Enter while it is the window in front. So "close both queue windows, then open Colonies" cannot be used to queue
   something else, and a Log left open does not take the step's clicks.
-- **Windows over each other**: where the pointer is over a window, the front-most window
-  there decides, as it is the one that gets the click. A window the step names lets only
-  its tagged parts through, even where a window the step says nothing about lies under it
+- **Windows over each other**: every window is modal (spec 06 §1, §3.4), so only the window
+  in front responds; the windows behind it and the main window take nothing until it
+  closes, wherever they lie. A window the step names lets only its tagged parts through
   (the designer over Designs, Set Construction Queue over Construction Queues, the Combat
   Simulator over Designs): their Cancel, Fill Queue or Strategies stay locked. A window
-  the step says nothing about lets everything through where it is in front. The main
-  window's parts respond only where no window lies over them. The order is the one the
-  player sees: a window clicked comes to the front. When a window the step names covers
-  an outlined part, its Close button is allowed (see "Getting back").
+  the step says nothing about lets everything through. The main window's parts respond
+  only while no window is open; an explanation step's outlines and what a step shows stay
+  clear of the spotlight where no window covers them. When a window the step names holds
+  up an outlined part, its Close button is allowed (see "Getting back").
 - **The game's own questions** always work: the End Turn question, battle notices and
   the Tactical or Strategic question, Colony Type, Attack Sector, Combat Complete,
   Yes/No boxes, error boxes and the main window's pickers (every ImGui popup and every
@@ -584,10 +586,9 @@ hidden):
 question, Colony Type, Attack Sector, a battle notice, an ImGui popup such as "Leave the
 lesson?" or the lesson's result, a message box), the main window's keys do nothing, so
 the key that answers it is not also a main-window key (N answering "No" is not Change
-Name, Enter closing the result is not End Turn); nor does Shift+F1. The End Turn
-question is modal: it comes up over every window (End Turn can be clicked while a
-window is open) and takes the input until it is answered. The main window's pickers
-come up over the windows too.
+Name, Enter closing the result is not End Turn); nor does Shift+F1. Like every part of
+the main window, End Turn does nothing while a window or a question is open; its question
+is modal and takes the input until it is answered, and so are the main window's pickers.
 
 **Free Play**, a check box in the lesson panel, switches the lock off for the lesson
 being played (outlines, conditions and the way back stay); it is a client setting

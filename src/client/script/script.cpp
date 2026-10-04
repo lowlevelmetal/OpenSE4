@@ -200,6 +200,7 @@ constexpr OpInfo kOps[] = {
     {"assert-lesson", Op::AssertLesson},
     {"assert-turn", Op::AssertTurn},
     {"assert-inside", Op::AssertInside},
+    {"assert-fits", Op::AssertFits},
     {"screenshot", Op::Screenshot},
     {"echo", Op::Echo},
     {"print", Op::Print},
@@ -588,6 +589,11 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
                 ok = args.size() <= 1;
                 if (!ok) fail("'dump' takes at most a scope (a window id, main, lesson, front)");
                 if (ok && !args.empty()) st.text = args[0]->text;
+                break;
+            case Op::AssertFits:
+                ok = args.size() == 1;
+                if (!ok) fail("'assert-fits' takes a scope (a window id, main, lesson, front, or a Dear ImGui window's name)");
+                if (ok) st.text = args[0]->text;
                 break;
             case Op::Print:
                 ok = !args.empty();
