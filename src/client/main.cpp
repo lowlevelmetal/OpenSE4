@@ -8,6 +8,7 @@
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -57,7 +58,10 @@ Rendering:
   --size=WxH                      Window size (default 1600x900)
   --layout=auto|800x600|1024x768  The classic screen layout (default: auto, 800x600 on a desktop
                                   800 px wide or less, as the original; forcing one is OpenSE4's)
+  --text-size=N                   Settings' Text size for this run, 0.75 to 1.5
   --no-audio                      No sound or music
+  --audio                         Sound and music even in a script or screenshot run (to check
+                                  the audio, e.g. with SDL_AUDIO_DRIVER=disk: docs/SETUP.md)
 
 Game:
   --classic-dir=DIR               Game directory of your installed copy (default: auto-detect)
@@ -208,6 +212,13 @@ int main(int argc, char** argv) {
             else if (value == "800x600") saved.layout = client::LayoutChoice::Small800;
             else if (value == "1024x768") saved.layout = client::LayoutChoice::Large1024;
             else ok = false;
+        } else if (key == "--text-size") {
+            // Settings → Graphics → Text size for this run (0.75 to 1.5).
+            const std::string text(value);
+            char* end = nullptr;
+            const float scale = std::strtof(text.c_str(), &end);
+            ok = !text.empty() && end == text.c_str() + text.size() && scale >= 0.75f && scale <= 1.5f;
+            if (ok) saved.textScale = scale;
         } else if (key == "--seed") {
             ok = parseInt(value, options.seed);
         } else if (key == "--systems") {
@@ -218,6 +229,8 @@ int main(int argc, char** argv) {
             // Accepted and ignored, so older command lines keep working.
         } else if (key == "--no-audio") {
             options.noAudio = true;
+        } else if (key == "--audio") {
+            options.audio = true;
         } else if (key == "--classic-dir") {
             options.installDir = std::string(value);
         } else if (key == "--quick-start") {

@@ -166,10 +166,16 @@ struct Painter {
     float textScale = 1.0f;
     // In a game: where widgets register their UI tags (the lists' arrow column); null elsewhere.
     UiContext* tagger = nullptr;
+    // Flags every classic window drawn with it adds (UiContext::windowFlags: a
+    // window behind the one in front takes no input).
+    ImGuiWindowFlags windowFlags = 0;
 
     float k() const { return map.scale / fbScale; }
     float px(float framePixels) const { return framePixels * k(); }
-    float fontPx(float framePixels) const { return framePixels * k() * textScale; }
+    // Font sizes (see "Text and the Text size setting" below): a classic font
+    // at its own raster size, and text the Text size setting enlarges.
+    float fontPx(float framePixels) const { return framePixels * k(); }
+    float textPx(float framePixels) const { return framePixels * k() * textScale; }
     ImVec2 at(Vec2 framePos) const {
         const Vec2 p = map.toFb(framePos) / fbScale;
         return {p.x, p.y};
@@ -179,13 +185,19 @@ struct Painter {
 
 class UiContext;
 
+// Every classic window is modal (docs/spec/06 §1, §3.4, confirmed: binary):
+// while one is open the main window takes no input, and only the window in
+// front (the one opened last) does; the windows behind it wait until it closes.
 class Screen {
 public:
     virtual ~Screen() = default;
     // Draws the window; returns false once it should close.
     virtual bool draw(UiContext& ui) = 0;
-    // Screens that block the main window (modal) dim it and take all input.
-    virtual bool modal() const { return false; }
+    // Every window is modal; the battle windows still say so themselves.
+    virtual bool modal() const { return true; }
+    // Windows that belong to the window under them (a report about something in
+    // it) close with it: when that window closes, they close too.
+    virtual bool closesWithParent() const { return false; }
 };
 
 class UiContext {
@@ -218,8 +230,12 @@ public:
 
     // Frame pixels -> ImGui units.
     float k() const { return map.scale / fbScale; }
-    // A font size in frame pixels, with the Text size setting applied.
-    float fontPx(float framePixels) const { return framePixels * k() * textScale; }
+    // A font size in frame pixels: a classic font at its own raster size (the
+    // classic layouts' fixed places), and text that the Text size setting
+    // enlarges (reading text and OpenSE4's own; see "Text and the Text size
+    // setting" below).
+    float fontPx(float framePixels) const { return framePixels * k(); }
+    float textPx(float framePixels) const { return framePixels * k() * textScale; }
     float textScale = 1.0f;
     ImVec2 at(Vec2 framePos) const {
         const Vec2 p = map.toFb(framePos) / fbScale;
@@ -227,7 +243,16 @@ public:
     }
     ImVec2 size(Vec2 frameSize) const { return {frameSize.x * k(), frameSize.y * k()}; }
     float px(float framePixels) const { return framePixels * k(); }
-    Painter painter() const { return {art, fonts, map, fbScale, textScale}; }
+    Painter painter() const { return {art, fonts, map, fbScale, textScale, nullptr, windowFlags()}; }
+
+    // The window being drawn lies behind the one in front (every window is
+    // modal): it takes no mouse or keyboard input. Set by the mode around
+    // each Screen::draw; every root window a screen begins adds windowFlags().
+    bool behind = false;
+    ImGuiWindowFlags windowFlags() const {
+        return behind ? int(ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoFocusOnAppearing)
+                      : 0;
+    }
 
     // UI tags of this frame (cleared at its start): `window:<id>` for each
     // window (Dialog registers it), the main window's buttons and panels and
@@ -304,6 +329,58 @@ std::string formatDate(uint32_t turn);           // 2400.3
 // An empire's colour: its race's swatch (Art::swatchColor), as 0xRRGGBB or for ImGui.
 uint32_t empireRgb(const game::GameState& s, game::EmpireId e);
 ImU32 empireColor(const game::GameState& s, game::EmpireId e);
+
+// ---- Text and the Text size setting -----------------------------------------------------------
+// Settings → Graphics → Text size (0.75 to 1.5) enlarges the text that has room
+// to grow: OpenSE4's own (the lesson panel, the manual, the Learn window,
+// Settings, the questions and pickers our client draws) and the classic
+// windows' reading text, which wraps and scrolls (descriptions, the report
+// pages that scroll, the Log's entries, Help's details, messages): textPx.
+// Text at a fixed place of a classic layout (button and tab captions, window
+// titles, the status bar, label and value lines, list rows and headings, the
+// system panel's names) keeps the original's raster size (spec 06 §5.4), so
+// the layouts stay as they are: fontPx. Where even that does not fit its box
+// (a long name), the text is cut short with "…" and the whole text shows as a
+// tooltip under the pointer (fitText, drawFitted, fittedText); text of ours in
+// a fixed box first shrinks back towards the classic size (`scaled`).
+
+struct TextFit {
+    float size = 0.0f;   // the font size to draw at (ImGui units)
+    std::string text;    // the text to draw: cut short with "…" when `cut`
+    bool cut = false;
+    ImVec2 extent;       // its size (ImGui units)
+};
+// `framePx`: the font's classic size in frame pixels (kTextSize...); `maxWidth`
+// and `maxHeight` (0: any) in ImGui units. `scaled`: the text starts at the
+// Text size setting's size (textPx) and shrinks to the classic size to fit.
+TextFit fitText(const Painter& p, ImFont* font, float framePx, std::string_view text, float maxWidth, float maxHeight = 0.0f, bool scaled = false);
+// Draws the text fitted to `maxWidth` from `pos` (its top left, ImGui units),
+// placed by `align` across the box (0 left, 0.5 centred, 1 right), and shows the
+// whole text as a tooltip while the pointer is over a cut one. A null `dl` draws
+// into the current window.
+TextFit drawFitted(const Painter& p, ImDrawList* dl, ImFont* font, float framePx, ImVec2 pos, float maxWidth, ImU32 color, std::string_view text,
+                   float align = 0.0f, float maxHeight = 0.0f, bool scaled = false);
+// The same as an item in the current window's layout (in the window's font,
+// at its size, and colour), at most `maxWidth` wide (ImGui units; 0: to the
+// right edge of the window or table cell).
+void fittedText(std::string_view text, float maxWidth = 0.0f, ImU32 color = 0);
+// The text cut short with "…" to `maxWidth` (ImGui units) in the current font
+// and size, for a widget's label; `cut` tells whether it was. Show the whole
+// text as a tooltip over the widget when it was (cutTooltip).
+std::string elided(std::string_view text, float maxWidth, bool* cut = nullptr);
+void cutTooltip(bool cut, std::string_view text);
+// The reading text of a classic window (see above) in the window's font, at the
+// Text size setting's size, while it lives.
+class ReadingText {
+public:
+    explicit ReadingText(const Painter& p, ImFont* font = nullptr, float framePx = kTextSize);
+    ~ReadingText() { ImGui::PopFont(); }
+    ReadingText(const ReadingText&) = delete;
+    ReadingText& operator=(const ReadingText&) = delete;
+};
+// A bullet and its text wrapped to the window's width (ImGui::BulletText does
+// not wrap: a long line ran out of its box).
+void wrappedBullet(std::string_view text, const ImVec4* color = nullptr);
 
 // ---- Keys in dialogs (spec 06 §3.4, confirmed: binary) ---------------------------------------
 // Call inside the prompt's window. Keys pressed on the frame the window

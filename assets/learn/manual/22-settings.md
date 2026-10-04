@@ -25,7 +25,7 @@ saved for every game.
 | Show frame rate | A frame counter in the corner. |
 | Widescreen layout | **Extended** uses the whole width of a wide screen; **Classic 4:3** keeps the original proportions with bars at the sides. |
 | Sharp pixels, Scale by whole multiples only | Crisp, unsmoothed classic art. |
-| Text size | Larger or smaller text, from 0.75 to 1.5 times. |
+| Text size | Larger or smaller text, from 0.75 to 1.5 times, for what you read: this manual, the lessons, OpenSE4's questions and the windows' descriptions and messages. The classic windows' buttons, labels and lists keep the game's own fonts and places; a larger window makes all of it larger. |
 | Renderer | Automatic (Vulkan, else OpenGL), Vulkan or OpenGL. This takes effect the next time you start OpenSE4. |
 
 > If the screen stays black or OpenSE4 crashes at start, choose the OpenGL renderer here, or start OpenSE4 with `--renderer=opengl`.

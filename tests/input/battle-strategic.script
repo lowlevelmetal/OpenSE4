@@ -11,6 +11,10 @@ options --quick-start --seed=23 --systems=10 --empires=7 --turns=40 --open=none 
 
 wait-screen game
 assert-turn 40
+# New colonies ask for their type first (questions are modal).
+repeat 10
+  click item:"*(suggested)" optional timeout=5
+end
 click tag:button:end-turn
 click item:Yes in="End Turn" optional
 # The notice: a computer player's turn brought the battle.
@@ -22,8 +26,8 @@ assert-present item:Tactical in=strategic-combat
 assert-turn 40
 screenshot battle-question.png
 click item:Strategic in=strategic-combat
-# The strategies fight it; Close lights at its end. End Turn, whose button is not under
-# the window at 1024x768, does nothing meanwhile and leaves the window as it is.
+# The strategies fight it; Close lights at its end. End Turn does nothing meanwhile (the
+# main window takes no input while a window is open) and leaves the window as it is.
 wait 300
 assert-enabled item:Close in=strategic-combat
 click tag:button:end-turn

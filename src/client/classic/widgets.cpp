@@ -39,6 +39,7 @@ void lamp(UiContext& ui, bool on, float frameSize) {
 bool lampToggle(UiContext& ui, const char* label, bool* value, bool enabled) {
     ImGui::PushID(label);
     const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float right = p.x + ImGui::GetContentRegionAvail().x;
     const float h = std::max(ImGui::GetTextLineHeight(), ui.px(16));
     const bool clicked = ImGui::Selectable("##row", false, enabled ? 0 : ImGuiSelectableFlags_Disabled, ImVec2(0, h));
     script::reportItem(label);   // input scripts find the row by its label
@@ -48,7 +49,10 @@ bool lampToggle(UiContext& ui, const char* label, bool* value, bool enabled) {
     if (const Sprite s = lampSprite(ui, *value)) drawSprite(dl, s, l0, {l0.x + ls, l0.y + ls}, enabled ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 110));
     else dl->AddCircleFilled({l0.x + ls * 0.5f, l0.y + ls * 0.5f}, ls * 0.4f, *value ? IM_COL32(80, 220, 90, 255) : IM_COL32(90, 90, 90, 255));
     const ImU32 text = ImGui::GetColorU32(enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
-    dl->AddText({p.x + ui.px(22), p.y + (h - ImGui::GetTextLineHeight()) * 0.5f}, text, label);
+    // Cut short to the row (whole under the pointer).
+    const float x = p.x + ui.px(22);
+    drawFitted(ui.painter(), dl, ImGui::GetFont(), ImGui::GetFontSize() / ui.k(), {x, p.y + (h - ImGui::GetTextLineHeight()) * 0.5f},
+               std::max(1.0f, right - x), text, label);
     ImGui::PopID();
     if (clicked && enabled) *value = !*value;
     return clicked && enabled;
@@ -57,6 +61,7 @@ bool lampToggle(UiContext& ui, const char* label, bool* value, bool enabled) {
 bool checkRow(UiContext& ui, const char* label, bool* value, float indent, bool enabled) {
     ImGui::PushID(label);
     const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float right = p.x + ImGui::GetContentRegionAvail().x;
     const float h = ui.px(18);
     const bool clicked = ImGui::Selectable("##row", false, enabled ? 0 : ImGuiSelectableFlags_Disabled, ImVec2(0, h));
     script::reportItem(label);   // input scripts find the row by its label
@@ -70,7 +75,9 @@ bool checkRow(UiContext& ui, const char* label, bool* value, float indent, bool 
             drawSprite(dl, s, l0, {l0.x + ui.px(13), l0.y + ui.px(13)}, enabled ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 110));
         }
     const ImU32 text = ImGui::GetColorU32(enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
-    dl->AddText({b1.x + ui.px(6), p.y + (h - ImGui::GetTextLineHeight()) * 0.5f}, text, label);
+    const float x = b1.x + ui.px(6);
+    drawFitted(ui.painter(), dl, ImGui::GetFont(), ImGui::GetFontSize() / ui.k(), {x, p.y + (h - ImGui::GetTextLineHeight()) * 0.5f},
+               std::max(1.0f, right - x), text, label);
     ImGui::PopID();
     if (clicked && enabled) *value = !*value;
     return clicked && enabled;

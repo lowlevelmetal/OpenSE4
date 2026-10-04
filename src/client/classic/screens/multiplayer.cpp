@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
@@ -69,9 +70,11 @@ public:
             for (size_t i = 0; i < ctx.rules->racePresets().size(); ++i)
                 if (!ctx.rules->racePresets()[i].neutral) presets_.push_back(i);
 
-        ImGui::SetNextWindowPos(ctx.at({62, 50}));
-        ImGui::SetNextWindowSize(ctx.size({900, 668}));
-        ImGui::PushFont(ctx.fonts.regular, kTextSize * ctx.k());
+        // Centred on the frame, and inside it at 800x600 too; our own text takes the Text size setting.
+        const Vec2 size{std::min(900.0f, frameW() - 24.0f), std::min(668.0f, frameH() - 24.0f)};
+        ImGui::SetNextWindowPos(ctx.at({std::floor((frameW() - size.x) * 0.5f), std::floor((frameH() - size.y) * 0.5f)}));
+        ImGui::SetNextWindowSize(ctx.size(size));
+        ImGui::PushFont(ctx.fonts.regular, ctx.painter().textPx(kTextSize));
         ImGui::Begin(mode_ == Mode::Lobby ? "Multiplayer Lobby" : "Multiplayer", nullptr,
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
         switch (mode_) {
@@ -92,15 +95,20 @@ private:
         ImGui::TextWrapped("Play with other people over the network, with simultaneous turns or one player after another. One "
                            "player hosts; the others join with the host's address. The host's computer runs the game.");
         ImGui::Spacing();
-        if (ImGui::Button("Host a Game", ctx.size({200, 40}))) mode_ = Mode::Host;
+        // Four buttons sharing the width (800x600 and larger text too).
+        const ImVec2 button(std::min(ctx.px(200), (ImGui::GetContentRegionAvail().x - 3 * ImGui::GetStyle().ItemSpacing.x) / 4),
+                            std::max(ctx.px(40), ImGui::GetFrameHeight()));
+        if (ImGui::Button("Host a Game", button)) mode_ = Mode::Host;
         ImGui::SameLine();
-        if (ImGui::Button("Join a Game", ctx.size({200, 40}))) mode_ = Mode::Join;
+        if (ImGui::Button("Join a Game", button)) mode_ = Mode::Join;
         ImGui::SameLine();
-        if (ImGui::Button("Play by E-mail", ctx.size({200, 40}))) ctx.go(FrontId::Pbem);
+        if (ImGui::Button("Play by E-mail", button)) ctx.go(FrontId::Pbem);
         ImGui::SameLine();
-        if (ImGui::Button("Back", ctx.size({200, 40}))) ctx.go(FrontId::Intro);
+        if (ImGui::Button("Back", button)) ctx.go(FrontId::Intro);
         ImGui::Spacing();
+        ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("To host a game without a player on the host machine, or to host a play-by-e-mail game, use opense4-server.");
+        ImGui::PopTextWrapPos();
     }
 
     void common(MenuContext& ctx) {

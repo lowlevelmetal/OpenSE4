@@ -2,9 +2,14 @@
 
 // Sound effects and music from the player's installed classic game
 // (docs/spec/06 §5.5): Sounds/*.wav (or the remastered Sounds/New/ set) and
-// the MP3 playlists named in Settings.txt. Plays through SDL3 audio streams;
-// without an audio device (headless runs, --no-audio) everything is silent
-// and every call is a cheap no-op.
+// the MP3 playlists named in Settings.txt. One SDL3 audio stream is bound to
+// the device; the device's audio thread pulls the mix from it
+// (client/audio_mixer.hpp), so sound keeps going while the main thread is
+// busy (a turn being processed, a window being dragged). Music is decoded on
+// a thread of its own. Without an audio device (headless runs, --no-audio)
+// everything is silent and every call is a cheap no-op. What happens goes to
+// the log (opense4.log): the device, the settings, each track and every file
+// that cannot be played, with why (docs/SETUP.md "Sound and music").
 
 #include "assets/assets.hpp"
 #include "core/rng.hpp"
@@ -36,6 +41,12 @@ struct Playlists {
     std::vector<std::string> intro, background, combat;
 };
 Playlists readPlaylists(const ruleset::Settings& settings);
+
+// The tracks of the playlists the install lacks ("Music/<file>", each once).
+std::vector<std::string> missingTracks(const Playlists& lists, const assets::InstallFiles& files);
+// Writes to the log what music the game has: the playlists, or why there is
+// none, and any track they name that the install lacks (docs/SETUP.md).
+void reportPlaylists(const ruleset::Settings& settings, const Playlists& lists, const assets::InstallFiles& files);
 
 // The sound of a stellar manipulation the player sees, from the title of the
 // engine's log entry about it (docs/spec/06 §5.5); empty for other entries.
@@ -90,13 +101,17 @@ public:
     void setOptions(const AudioOptions& options);
     const AudioOptions& options() const;
 
-    // One effect at a time: a new one cuts off the one playing (docs/spec/06 §5.5).
+    // One effect at a time: a new one cuts off the one playing (docs/spec/06
+    // §5.5), with a fade of a few milliseconds.
     void play(std::string_view name);
     // Loops one track (a file name in Music/); the same track keeps playing.
+    // What played fades out first. A track that cannot be played is logged
+    // and not tried again.
     void playTrack(const std::string& file);
-    void stopMusic();
+    void stopMusic();  // fades out
+    // A track is playing or starting (false again when it fails).
     bool musicPlaying() const;
-    // Call every frame: keeps the music fed and frees finished sounds.
+    // Call every frame: reports the music's progress and problems to the log.
     void update();
 
     struct Impl;

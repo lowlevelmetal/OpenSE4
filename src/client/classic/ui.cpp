@@ -164,6 +164,123 @@ Fonts loadClassicFonts(const Fonts& app, const assets::InstallFiles& files) {
     return out;
 }
 
+// ---- Text that keeps to its place -------------------------------------------------------------
+
+namespace {
+
+ImVec2 measure(ImFont* font, float size, std::string_view t) { return font->CalcTextSizeA(size, FLT_MAX, 0.0f, t.data(), t.data() + t.size()); }
+
+// The end of a cut text: the font's own "…" (cp1252 has one), else three dots.
+const char* ellipsisFor(ImFont* font) { return font->IsGlyphInFont(0x2026) ? "\xE2\x80\xA6" : "..."; }
+
+// The start of the UTF-8 character before `at`.
+size_t previousChar(std::string_view t, size_t at) {
+    while (at > 0 && (static_cast<unsigned char>(t[at - 1]) & 0xC0) == 0x80) --at;
+    return at > 0 ? at - 1 : 0;
+}
+
+// Whether the pointer is over [min, max] in the window that draws with `dl`
+// (the background: no window under the pointer).
+bool hoverOver(ImDrawList* dl, ImVec2 min, ImVec2 max) {
+    const ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (!ImGui::IsMouseHoveringRect(min, max, false)) return false;
+    if (dl == ImGui::GetBackgroundDrawList()) return g.HoveredWindow == nullptr;
+    const ImGuiWindow* current = g.CurrentWindow;
+    return g.HoveredWindow && current && g.HoveredWindow->RootWindow == current->RootWindow;
+}
+
+// The text at `wanted` (ImGui units), smaller down to `smallest` while it is too
+// wide, then cut short. `step`: how much smaller each try is.
+TextFit fitSized(ImFont* font, float wanted, float smallest, float step, std::string_view text, float maxWidth, float maxHeight) {
+    TextFit f;
+    f.text = std::string(text);
+    if (!font) font = ImGui::GetFont();
+    f.size = wanted;
+    if (maxHeight > 0.0f && f.size > maxHeight) f.size = std::max(smallest, maxHeight);
+    f.extent = measure(font, f.size, text);
+    if (maxWidth <= 0.0f || f.extent.x <= maxWidth + 0.01f) return f;
+    // Smaller: in proportion first, then step by step (raster glyphs' advances are whole pixels).
+    float size = std::max(smallest, f.size * maxWidth / f.extent.x);
+    ImVec2 e = measure(font, size, text);
+    while (e.x > maxWidth + 0.01f && size > smallest) {
+        size = std::max(smallest, size - step);
+        e = measure(font, size, text);
+    }
+    f.size = size;
+    f.extent = e;
+    if (e.x <= maxWidth + 0.01f) return f;
+    // Still too wide at the smallest size: cut it short.
+    const char* dots = ellipsisFor(font);
+    size_t keep = text.size();
+    std::string cut;
+    do {
+        keep = previousChar(text, keep);
+        while (keep > 0 && text[keep - 1] == ' ') --keep;
+        cut = std::string(text.substr(0, keep)) + dots;
+        e = measure(font, size, cut);
+    } while (keep > 0 && e.x > maxWidth + 0.01f);
+    f.text = std::move(cut);
+    f.extent = e;
+    f.cut = true;
+    return f;
+}
+
+} // namespace
+
+TextFit fitText(const Painter& p, ImFont* font, float framePx, std::string_view text, float maxWidth, float maxHeight, bool scaled) {
+    const float wanted = scaled ? p.textPx(framePx) : p.fontPx(framePx);
+    // Never smaller than the classic size (unless the setting asks for smaller text).
+    const float smallest = std::min(wanted, p.fontPx(framePx));
+    return fitSized(font, wanted, smallest, std::max(0.25f, p.k() * 0.25f), text, maxWidth, maxHeight);
+}
+
+TextFit drawFitted(const Painter& p, ImDrawList* dl, ImFont* font, float framePx, ImVec2 pos, float maxWidth, ImU32 color, std::string_view text,
+                   float align, float maxHeight, bool scaled) {
+    if (!font) font = ImGui::GetFont();
+    if (!dl) dl = ImGui::GetWindowDrawList();
+    const TextFit f = fitText(p, font, framePx, text, maxWidth, maxHeight, scaled);
+    const float x = pos.x + std::max(0.0f, maxWidth - f.extent.x) * align;
+    dl->AddText(font, f.size, {std::floor(x + 0.5f), std::floor(pos.y + 0.5f)}, color, f.text.c_str());
+    script::reportFit(f.text, {x, pos.y}, {x + f.extent.x, pos.y + f.extent.y},
+                      f.extent.x > maxWidth + 0.5f || (maxHeight > 0.0f && f.extent.y > maxHeight + 0.5f));
+    if (f.cut && hoverOver(dl, pos, {pos.x + maxWidth, pos.y + f.extent.y})) ImGui::SetTooltip("%.*s", int(text.size()), text.data());
+    return f;
+}
+
+void fittedText(std::string_view text, float maxWidth, ImU32 color) {
+    ImFont* font = ImGui::GetFont();
+    if (maxWidth <= 0.0f) maxWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+    // At the window's font and size: cut short only.
+    const TextFit f = fitSized(font, ImGui::GetFontSize(), ImGui::GetFontSize(), 1.0f, text, maxWidth, 0.0f);
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddText(font, f.size, at, color ? color : ImGui::GetColorU32(ImGuiCol_Text), f.text.c_str());
+    script::reportFit(f.text, at, {at.x + f.extent.x, at.y + f.extent.y}, f.extent.x > maxWidth + 0.5f);
+    ImGui::Dummy(ImVec2(f.extent.x, ImGui::GetTextLineHeight()));
+    if (f.cut && ImGui::IsItemHovered()) ImGui::SetTooltip("%.*s", int(text.size()), text.data());
+}
+
+std::string elided(std::string_view text, float maxWidth, bool* cut) {
+    const TextFit f = fitSized(ImGui::GetFont(), ImGui::GetFontSize(), ImGui::GetFontSize(), 1.0f, text, std::max(1.0f, maxWidth), 0.0f);
+    if (cut) *cut = f.cut;
+    return f.text;
+}
+
+void cutTooltip(bool cut, std::string_view text) {
+    if (cut && ImGui::IsItemHovered()) ImGui::SetTooltip("%.*s", int(text.size()), text.data());
+}
+
+ReadingText::ReadingText(const Painter& p, ImFont* font, float framePx) { ImGui::PushFont(font, p.textPx(framePx)); }
+
+void wrappedBullet(std::string_view text, const ImVec4* color) {
+    ImGui::Bullet();
+    ImGui::SameLine();
+    ImGui::PushTextWrapPos(0.0f);
+    if (color) ImGui::PushStyleColor(ImGuiCol_Text, *color);
+    ImGui::TextUnformatted(text.data(), text.data() + text.size());
+    if (color) ImGui::PopStyleColor();
+    ImGui::PopTextWrapPos();
+}
+
 // ---- Classic buttons and frames ---------------------------------------------------------------
 
 namespace {
@@ -219,10 +336,12 @@ bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int sty
     }
 
     ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
-    const ImVec2 ts = ImGui::CalcTextSize(label, nullptr, true);
+    const std::string_view caption(label, size_t(labelEnd(label) - label));
     const float lamp = ui.px(13), gap = ui.px(3);
     const float midY = (a.y + b.y) * 0.5f;
+    const float inner = size.x - 2 * lw - ui.px(2);   // the caption keeps 1 px clear of the outline
     float x;
+    TextFit fit;
     if (style == 2) {
         const float box = ui.px(16);
         const ImVec2 b0{a.x + ui.px(4), midY - box * 0.5f};
@@ -231,11 +350,15 @@ bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int sty
             if (Sprite s = ui.art.region("Pictures/Game/General.bmp", 191, 0, 13, 13))
                 dl->AddImage(ImTextureRef(static_cast<ImTextureID>(s.tex.value)), {b0.x + (box - lamp) * 0.5f, b0.y + (box - lamp) * 0.5f},
                              {b0.x + (box + lamp) * 0.5f, b0.y + (box + lamp) * 0.5f}, {s.uv.min.x, s.uv.min.y}, {s.uv.max.x, s.uv.max.y});
-        x = b0.x + box + ui.px(4);
-        x = std::max(x, (a.x + b.x - ts.x) * 0.5f);
+        // Centred across the button where it clears the box, else just after it.
+        const float after = b0.x + box + ui.px(3);
+        fit = fitText(ui, ui.fonts.bold, kTitleSize, caption, b.x - lw - ui.px(1) - after);
+        x = std::max(after, (a.x + b.x - fit.extent.x) * 0.5f);
     } else {
         const bool withLamp = style == 1 && on;
-        const float group = ts.x + (withLamp ? lamp + gap : 0.0f);
+        const float room = inner - (withLamp ? lamp + gap : 0.0f);
+        fit = fitText(ui, ui.fonts.bold, kTitleSize, caption, room);
+        const float group = fit.extent.x + (withLamp ? lamp + gap : 0.0f);
         x = (a.x + b.x - group) * 0.5f;
         if (withLamp) {
             if (Sprite s = ui.art.region("Pictures/Game/General.bmp", 191, 0, 13, 13))
@@ -245,9 +368,13 @@ bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int sty
         }
     }
     // Centred across; the top of the text at (button height - text height) / 2 + 2 (spec 06 §5.4).
-    const float textH = ts.y / ui.k();
+    const float textH = fit.extent.y / ui.k();
     const float top = a.y + ui.px(std::floor((frameSize.y - textH) * 0.5f) + 2.0f);
-    dl->AddText({std::floor(x), std::floor(top)}, text, label, labelEnd(label));
+    dl->AddText(ImGui::GetFont(), fit.size, {std::floor(x), std::floor(top)}, text, fit.text.c_str());
+    script::reportFit(fit.text, {std::floor(x), std::floor(top)}, {std::floor(x) + fit.extent.x, std::floor(top) + fit.extent.y},
+                      std::floor(x) < a.x || std::floor(x) + fit.extent.x > b.x + 0.5f || std::floor(top) + fit.extent.y > b.y + 0.5f);
+    // A caption cut short shows whole under the pointer (the original's never are).
+    if (fit.cut && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%.*s", int(caption.size()), caption.data());
     ImGui::PopFont();
     return clicked && enabled;
 }
@@ -448,11 +575,12 @@ Dialog::Dialog(const Painter& ui, const char* title, const Rect& rect, float but
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     visible_ = ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                                                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
-                                                ImGuiWindowFlags_NoScrollWithMouse);
+                                                ImGuiWindowFlags_NoScrollWithMouse | ui.windowFlags);
     ImGui::PopStyleVar(2);
     if (visible_) {
         drawWindowFrame(ui, ImGui::GetWindowDrawList(), rect_, title, buttonColumn_, contentFrame);
-        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+        // A window opened over another comes to the front with the keyboard (it is modal).
+        if (ImGui::IsWindowAppearing() && (ui.windowFlags & ImGuiWindowFlags_NoMouseInputs) == 0) ImGui::SetWindowFocus();
     }
 }
 

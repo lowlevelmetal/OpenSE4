@@ -948,6 +948,11 @@ void MainWindow::update(UiContext& ui, bool blocked) {
 
     hintName_.clear();
     hintKey_.clear();
+    // Every window and question is modal (spec 06 §1, §3.4): while one is open,
+    // or the main window's own picker, the command buttons, order strip,
+    // selectors and report panel take no input (no click, no hover hint), and
+    // neither do the map panels and the keys (below).
+    inputBlocked_ = blocked || chooser_.has_value();
     statusBar(ui);
     commandPanel(ui);
     reportPanel(ui);
@@ -979,9 +984,8 @@ void MainWindow::drawChooser(UiContext& ui) {
     bool close = false;
     std::function<void()> chosen;
     if (d.open()) {
-        // A question of the main window's: over the classic windows (an order
-        // button can be clicked while one is open), and never covered by a
-        // tutorial's input lock.
+        // A question of the main window's, modal like every window, and never
+        // covered by a tutorial's input lock.
         ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
         ui.promptWindow();
         d.beginContent();
@@ -1022,9 +1026,12 @@ void MainWindow::statusBar(UiContext& ui) {
     const float size = ui.fontPx(kTextSize);
     auto width = [&](const std::string& t) { return font->CalcTextSizeA(size, FLT_MAX, 0.0f, t.c_str()).x / ui.k(); };
     auto text = [&](float x, ImU32 color, const std::string& t) { dl->AddText(font, size, ui.at({x, textY}), color, t.c_str()); };
-    text(x0 + 47, IM_COL32_WHITE, std::format("{} {}", e.name, e.empireType));
-    text(x0 + 231, IM_COL32_WHITE, std::format("{} {}", e.leaderTitle, e.leaderName));
     const float dateX = x0 + l.gameDateX;
+    // A long empire or leader name is cut short before the next item (whole under the pointer).
+    const Painter p = ui.painter();
+    drawFitted(p, dl, font, kTextSize, ui.at({x0 + 47, textY}), ui.px(231 - 4 - 47), IM_COL32_WHITE, std::format("{} {}", e.name, e.empireType));
+    drawFitted(p, dl, font, kTextSize, ui.at({x0 + 231, textY}), ui.px(dateX - 4 - (x0 + 231)), IM_COL32_WHITE,
+               std::format("{} {}", e.leaderTitle, e.leaderName));
     text(dateX, imColor(palette::kLabel), "Game Date");
     text(dateX + width("Game Date "), IM_COL32_WHITE, formatDate(ui.state().turn));
     // Each stockpile ends 2 px left of its 16 px icon.
@@ -1088,7 +1095,7 @@ void MainWindow::commandPanel(UiContext& ui) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("##commands", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
+                                            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | blockedFlags());
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float x0 = geo.left;
     // While the movement log plays the command buttons and selectors are disabled (§7 Q51).
@@ -1235,7 +1242,7 @@ void MainWindow::reportPanel(UiContext& ui) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("##report", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
+                                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | blockedFlags());
     const float tabsY = geo.reportPanel.size().y - 31;
     bool tabsFor = false, planetTabs = false;
     const bool single = object_ || vehicle_;
@@ -1355,9 +1362,12 @@ void MainWindow::reportPanel(UiContext& ui) {
     ImGui::EndChild();
     if (tabsFor) {
         ImGui::SetCursorPos(ImVec2(ui.px(-4), ui.px(tabsY)));
+        // The strip reaches 4 px left of the panel, over the rail: not cut off there.
+        ImGui::PushClipRect(ui.at(geo.reportPanel.min - Vec2{4, 0}), ui.at(geo.reportPanel.max), false);
         const ReportTab current = planetTabs ? (tab_ == ReportTab::Components ? ReportTab::Facilities : tab_)
                                              : (tab_ == ReportTab::Facilities ? ReportTab::Components : tab_);
         tab_ = reportTabs(ui, current, planetTabs);
+        ImGui::PopClipRect();
         ui.tagFrame("panel:report-tabs", Rect{{geo.reportPanel.min.x - 4, geo.reportPanel.min.y + tabsY}, {geo.reportPanel.min.x + 284, geo.reportPanel.min.y + tabsY + 30}});
     }
     ImGui::End();

@@ -485,8 +485,8 @@ main window. Scripts marked `# layouts: both` in their header comments work in b
 overrides their options; their pictures go to `<script>@800x600`), and `--only-small` plays
 only those runs. Script names may be patterns (`'tutorial-*'`). Every script is marked except
 those written for one layout: `lesson-panel`, `lesson-uncover` and `lesson-pager` play at
-800x600 only; `learn-resume` (no compact panel), `lesson-long-step` and `end-turn-question`
-(End Turn, which the Colonies window covers at 800x600) at 1024x768 only. A script that
+800x600 only; `learn-resume` (no compact panel) and `lesson-long-step` (two minutes of play)
+at 1024x768 only. A script that
 plays at both should not depend on the layout: give an order that may be on another page with
 `repeat 3 until { order = "..." }` around its click (once at 1024x768, the page arrow first at
 800x600), and wait for a row of a list with `wait-for`.
@@ -507,6 +507,26 @@ fights it, and each turn compared with the same turn played without stops
 (`_OPP` computer players, 4; `_SYSTEMS` systems, 12; `_SIM=1` for simultaneous turns). Under
 the `asan` build it finds memory errors in the battle flow.
 
+The audio check plays the scripts of `tests/audio` with sound on, through SDL's `disk`
+audio driver, which writes the mix to a file in real time instead of to a sound card, and
+then reads that file. It fails on clicks (a jump between neighbouring samples far above the
+sound around it: a sound started, cut off or broken off without a fade), on digital silence
+that begins or ends away from zero, on three seconds or more without music, on clipping,
+and on any track or sound the log says could not be played or music that ran dry. It needs
+your install and about a minute of real time:
+
+```sh
+OPENSE4_CLASSIC_DATA=auto python3 tools/check_audio.py                  # both scripts, side by side
+OPENSE4_CLASSIC_DATA=auto python3 tools/check_audio.py --keep /tmp/audio intro-loop   # keep the capture and log
+```
+
+`intro-loop` stays on the intro screen past the end of its 48-second track, with the device
+at 32-bit float and 48 kHz as Windows usually mixes (a script's `# device: F32 2 48000`
+header line); `game-turns` cuts effects off with others, ends turns and changes the
+background track at turn 65, at the disk driver's 16-bit 44.1 kHz. Run it after changing
+`src/client/audio*`. The mixer's fades and ramps, the decoding and the music thread have
+unit tests of their own (`tests/test_audio_mix.cpp`, on our own `tests/fixtures/audio`).
+
 The Windows tests also run under Wine. `tools/package_release.sh` runs them in a Wine
 prefix of its own set to Windows 7 SP1 (`build/_tools/wine-win7`); by hand:
 
@@ -526,7 +546,8 @@ a player's mouse and keyboard: the mode's filter first (a tutorial's input lock)
 ImGui. During a run the frame time is fixed (1/60 s), the seed is fixed (1 unless the script
 or the command line gives one), the player's own mouse and keyboard are ignored (the desktop
 pointer too, which Dear ImGui's SDL backend otherwise reads while the window has the focus)
-and no sound plays, so a script does the same thing every time. The Windows build plays the
+and no sound plays (unless `--audio` asks for it, as the audio check below does), so a script
+does the same thing every time. The Windows build plays the
 same scripts (checked under Wine, where it opens a real window: a pointer step may then take a
 frame more to aim, as the layout settles at that window's size). When a step fails, the client prints the
 script line, why it failed and where the game was, saves a picture of that frame and exits
@@ -556,9 +577,12 @@ recorder is tested.
 | `lesson-rewind.script`, `lesson-rewind-simulator.script` | A window a step works in closed with its work (tutorial 4's designer, tutorial 6's Combat Simulator before and after its tactical battle, closed with Free Play since the lock refuses it): the lesson goes back to the first step that set the work up, says why and how to open the window again, and the steps are played again |
 | `lesson-keep-fleet.script`, `lesson-keep-queue.script`, `lesson-keep-strategies.script` | A window closed at a step that needs nothing it held (Fleet Transfer after the fleet was made, Research after the projects were chosen, the queue window after the ship was queued, the simulator at tutorial 6's Strategies): the lesson stays at that step, shows the way back (Construction Queues' list, not the order under it), and nothing is done twice |
 | `lesson-keyboard.script`, `lesson-double-next.script` | Keyboard navigation under the lock: Ctrl+Tab refused even from a text field, Tab within the window in front, Space and Enter pressing no button the keyboard was left on while Space still does what the step allows; a double click on the panel's Next moving one step |
-| `lesson-skip.script`, `lesson-long-step.script` | Skip only after ten seconds without a way back, and no cascade after it; no Skip on a step that waits on the turns |
+| `lesson-skip.script`, `lesson-long-step.script` | Skip only after ten seconds without a way back, and no cascade after it; no Skip on a step that waits on the turns; End Turn refused under a window, with the way back (close it) |
 | `lesson-prompt-keys.script`, `lesson-result-keys.script` | Keys that answer a lesson's questions are not also main-window keys; the notes after refused clicks and keys; Free Play off at a lesson's start |
-| `end-turn-question.script` | End Turn while a window is open: the question comes up over the window and takes the input |
+| `end-turn-question.script` | End Turn while a window is open does nothing, by click or key (every window is modal); with the window closed its question comes up and takes the input |
+| `text-fit.script` | Text size 1.5 (`--text-size=1.5`): `assert-fits` in the main window, the command buttons' windows, Ministers, Empires, every page of the Race Report, End Turn's question and the manual; Colony Type and the reading text grow with the setting |
+| `race-report.script` | The Race Report from Empires' Our Race: its four tabs and Close; modal over Empires (Empires' Close and Our Race do nothing under it), Esc closing the report and not Empires |
+| `modal-designer.script`, `modal-battle.script` | Every window is modal: under the ship designer and under a battle in Strategic Combat, End Turn (click, F12, Enter), the command buttons and their keys and the selectors do nothing; Esc goes to the window in front; once the window closes End Turn works |
 | `front-learn.script` | The intro's Tutorial and Scenario buttons, the Learn window's tabs, starting a lesson and leaving it |
 | `lesson-panel.script` | The lesson panel at 800x600 on a tutorial of our own in `tests/input/learn`: prompts and its Leave question over the panel dragged under them, placing itself again, the compact panel and More, its keys and Shift+F1 under the input lock |
 | `lesson-pager.script` | The order strip's pages at 800x600 on a tutorial of our own in `tests/input/learn`: an outlined order on another page outlined on its page arrow, the panel's hint to press it (and the note after a refused click), the way back first while a window covers the arrow, the arrow on an explanation step (docs/LEARNING.md "Getting back") |
@@ -616,6 +640,7 @@ from a double click.
 | `wait-step N`, `wait-result R`, `wait-lesson SLUG`, `wait-screen S` | until the lesson's active step is N; its result is `none`, `done`, `won` or `lost`; that lesson (or `none`) runs; the screen is `game` or `front` |
 | `wait-until { condition }`, `wait-turn N` | until a lesson condition holds ("since" counters from the start of the wait); until the game reaches turn N |
 | `assert-present T`, `assert-absent T`, `assert-enabled T`, `assert-disabled T`, `assert-inside T T2` | T is on screen, or not; enabled or dim; T's point lies in T2's rectangle |
+| `assert-fits SCOPE` | in that scope (a window id, `main`, `lesson`, `front`, or a Dear ImGui window's name): every text drawn into a box of its own (a button's caption, a text kept to its place) fits the box, and no labelled widget is cut off by its window by more than 4 frame pixels (a window that scrolls and a table's cells excepted) |
 | `assert-window ID`, `assert-no-window ID`, `assert-step N`, `assert-result R`, `assert-lesson SLUG`, `assert-screen S`, `assert-turn N` | as the waits, at once |
 | `assert { condition }`, `assert-log "TEXT"`, `assert-no-log "TEXT"` | a lesson condition ("since" counters from the start of the game); some entry of the player's log has that text (letter case ignored), or none |
 | `repeat N [until { condition }] ... end` | the steps between up to N times; with `until`, leaves as soon as the condition holds (checked before each pass, counters from the first) and fails if it never did |

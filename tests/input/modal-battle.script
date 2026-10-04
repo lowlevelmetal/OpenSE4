@@ -1,0 +1,24 @@
+# A battle is part of the turn being processed (spec 06 §1.6; docs/BUILDING.md "Input
+# scripts"): while Strategic Combat shows one, End Turn does nothing, by click or key (the
+# main window takes no input while a window is open, and the end of the turn waits for the
+# battle). Begin plays the battle; Close ends it, and End Turn works again.
+# layouts: both
+options --quick-start=Terran --seed=7 --open=strategic-combat --layout=1024x768 --size=1280x800
+
+wait-window strategic-combat
+click tag:button:end-turn
+key F12
+key Enter
+click tag:command:research
+wait 10
+assert-absent item:Yes in="End Turn"
+assert-turn 0
+assert-window strategic-combat
+assert-no-window research
+click item:Begin in=strategic-combat
+wait-for item:Close in=strategic-combat timeout=3000
+click item:Close in=strategic-combat
+wait-closed strategic-combat
+click tag:button:end-turn
+click item:Yes in="End Turn"
+wait-turn 1

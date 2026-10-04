@@ -1022,7 +1022,27 @@ use emergency build (confirmed: binary).
   - Fill appends a template's items, checking each against current tech.
   - Add Type saves the current queue as a new template.
 - **Multi-Add** adds ships or units to several selected queues at once.
-- **Only Latest** filters the item list to the newest level of each family.
+- **Only Latest** (confirmed: binary; spec 06 §7 Q109). The list is first built in
+  data-file order from the items that pass the window's other filters. With Only Latest
+  on, every item whose next item in that list has the same family is dropped, so of each
+  run of neighbouring items of one family only the last stays, in its place. Roman
+  numerals and names play no part, family 0 is an ordinary family, and a family split into
+  separate runs in the file keeps one item per run.
+  - Facilities tab: the rule on `Facility Family`, in Facility.txt order.
+  - Ships and Units tabs: Only Latest hides the empire's obsolete designs and nothing else.
+    The Upgrades tab ignores it.
+  - Create Design and the Weapons Report apply the same rule to components on `Family`, in
+    Components.txt order, after their vehicle-type, group, research and (Weapons Report)
+    weapon-kind filters. The stock large engines (Ion, Contra-Terrene, Jacketed-Photon and
+    Quantum, I to III each) share one family in that order, so researching Contra-Terrene
+    Engine I hides every Ion engine and shows Contra-Terrene Engine I.
+  - The box in Set Construction Queue is the Empire Options row "only latest items for
+    construction", the one in Create Design the row "only latest components for designs"
+    (spec 06 §1.9): a click changes the option, saved with the empire. The Weapons Report's
+    box starts off every time and is not saved.
+
+  Our client differs: it keeps the highest numeral of each family and always keeps family
+  0, and its boxes do not write the Empire Options back (spec 06 §7 Q109).
 
 ### 6.5 Items
 

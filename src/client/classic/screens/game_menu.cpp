@@ -83,7 +83,7 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         bool keep = true;
         const bool open = ImGui::Begin("Game Menu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+                                                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ui.windowFlags());
         ImGui::PopStyleVar(2);
         if (open) {
             if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();

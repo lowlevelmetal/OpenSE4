@@ -100,7 +100,7 @@ FileDialog::Result FileDialog::draw(const Painter& p, const char* window, UiCont
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
     const bool visible = ImGui::Begin(window, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                                           ImGuiWindowFlags_NoScrollWithMouse);
+                                                           ImGuiWindowFlags_NoScrollWithMouse | p.windowFlags);
     if (visible) {
         if (game) game->tagWindow(p.at(rect.min), p.at(rect.max));
         if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
