@@ -81,13 +81,23 @@ SDL3 is fetched automatically unless CMake can find an installed copy. Pass
 `-DCMAKE_PREFIX_PATH=C:\path\to\SDL3` to use a prebuilt SDL3. The SDL3 DLL is copied
 next to the executable.
 
+An MSVC build links Microsoft's C and C++ runtime as DLLs (`vcruntime140.dll`,
+`msvcp140.dll` and the Universal C Runtime). The computer it runs on needs the Visual
+C++ Redistributable, and on Windows 7 also the Universal C Runtime update (KB2999226).
+Use it for development. The release packages come from the `dist-windows` preset, and
+they need nothing installed (see "Windows 7 to 11").
+
 You can also open the source folder directly in Visual Studio ("Open Folder"), which
 reads `CMakePresets.json`.
 
-Every Windows program carries an application manifest that sets the UTF-8 code page
-(`packaging/windows/opense4.manifest`, honoured from Windows 10 1903 on), so file names
-with letters outside ASCII work as on Linux. `.gitattributes` turns off line-end
-conversion, so a clone with `core.autocrlf` builds the same program as on Linux.
+Every Windows program carries an application manifest
+(`packaging/windows/opense4.manifest`). It names Windows 7 to 11 as supported and sets
+the UTF-8 code page, so that file names with letters outside ASCII work as on Linux.
+Windows 10 1903 and later honour the code page. On older Windows the release build
+reads paths, environment variables and command lines as UTF-8 itself (see "Windows 7
+to 11"); an MSVC build uses the system's code page there. `.gitattributes` turns off
+line-end conversion, so a clone with `core.autocrlf` builds the same program as on
+Linux.
 
 ## macOS
 
@@ -120,8 +130,8 @@ which is optional and untested; when Vulkan does not start, the default
 | `release` | RelWithDebInfo | Optimized, with symbols |
 | `asan` | Debug | AddressSanitizer and UndefinedBehaviorSanitizer (GCC and Clang) |
 | `dist-linux` | Release | Redistributable Linux build (see "Release packages") |
-| `dist-windows` | Release | Redistributable Windows build, cross-compiled with MinGW-w64 |
-| `dist-mingw` | Release | The same Windows build, made natively in MSYS2 (MinGW-w64) |
+| `dist-windows` | Release | Redistributable Windows build for Windows 7 SP1 to 11: llvm-mingw for `msvcrt.dll`, fetched at a pinned version (see "Windows 7 to 11"). A cross build on Linux, or native on Windows |
+| `dist-mingw` | Release | A Windows build in MSYS2 with its own MinGW-w64 GCC. It needs the Universal C Runtime (Windows 10 and later, or Windows 7 with KB2999226), so the packages do not use it |
 
 | CMake option | Default | Effect |
 |---|---|---|
@@ -138,8 +148,8 @@ The code must compile without warnings under
 ## Release packages
 
 `tools/package_release.sh [linux] [windows]` builds, tests and packages both
-platforms from one Linux machine. In MSYS2 on Windows (the UCRT64 shell) it builds
-the Windows packages natively instead, with the `dist-mingw` preset:
+platforms from one Linux machine. In MSYS2 on Windows it builds the Windows packages
+natively instead. Either way they come from the `dist-windows` preset:
 
 - `dist/OpenSE4-<version>-linux-x86_64.tar.gz`
 - `dist/OpenSE4-<version>-windows-x86_64.zip`
@@ -163,21 +173,29 @@ installed copy, without which the game does not start.
   newer), even when built on a newer distribution: `cmake/GlibcCompat.cmake` routes
   the few newer glibc functions to older versions or small built-in
   implementations. `tools/check_glibc.sh` reports what a binary needs.
-- **Windows** (`dist-windows`, or `dist-mingw` in MSYS2): built with MinGW-w64
-  (`mingw-w64-gcc` for the cross build) and linked with `-static`. The executables need only Windows' own DLLs and the
-  Universal C Runtime, which ships with Windows 10 and 11. The game is a windowed
-  application; started from a console it still prints `--help` and its log there.
-  With Wine installed, the script runs the Windows tests through it.
+- **Windows** (`dist-windows`): built with llvm-mingw for `msvcrt.dll` and linked
+  with `-static`, so the C++ runtime (libc++), the unwinder and winpthreads are in
+  the executables. They need only DLLs that every Windows from 7 SP1 on has:
+  before packaging, `tools/check_windows_imports.py` checks every program's imports
+  against Windows 7 SP1 (see "Windows 7 to 11"). The game is a windowed application;
+  started from a console it still prints `--help` and its log there. With Wine
+  installed, the script runs the Windows tests through it, in a Wine prefix of its own
+  (`build/_tools/wine-win7`) that reports Windows 7 SP1.
 
 Requirements beyond a normal build:
 
-- network access the first time (SDL3 is fetched and built as a static library);
-- `mingw-w64-gcc` for Windows;
+- network access the first time (SDL3 is fetched and built as a static library, and
+  the Windows toolchain is fetched into `build/_tools`);
+- `python3` for the Windows import check;
 - `bsdtar` for the zip file;
-- NSIS or Wine for the installer (see "The Windows installer").
+- NSIS or Wine for the installer (see "The Windows installer"), and Wine to run the
+  Windows tests on Linux.
 
-In MSYS2, install `git` and the UCRT64 packages `gcc`, `cmake`, `ninja`, `shaderc`,
-`libarchive` (for `bsdtar`) and `nsis`, each named `mingw-w64-ucrt-x86_64-<name>`.
+In MSYS2, install `git`, `python` and the UCRT64 packages `cmake`, `ninja`, `shaderc`,
+`libarchive` (for `bsdtar`) and `nsis`, each named `mingw-w64-ucrt-x86_64-<name>`. The
+compiler is llvm-mingw's Windows build, which the toolchain file fetches; MSYS2's own GCC
+would make programs for the Universal C Runtime. CI does not run this native route: it
+cross-builds on Linux, as the releases are made.
 
 Pass `--skip-tests` to package without running the tests.
 
@@ -193,6 +211,8 @@ Program Files and adds:
 An update goes into the folder of the previous install. The uninstaller leaves
 saved games and settings in `%APPDATA%\OpenSE4` alone. Silent use works as with any
 NSIS installer: `setup.exe /S`, and `/D=C:\path` (last, unquoted) for another folder.
+On 32-bit Windows, on Windows older than 7, and on Windows 7 without Service Pack 1
+the installer says what is missing and stops (exit status 2 when silent).
 
 The script uses `makensis` when it is on the PATH (Debian and Ubuntu package it as
 `nsis`, MSYS2 as `mingw-w64-ucrt-x86_64-nsis`). Otherwise it runs the official Windows build of NSIS under Wine. That build
@@ -202,6 +222,82 @@ taken from `NSIS_DIR`.
 `opense4.exe` carries the icon and version information from
 `packaging/windows/opense4.rc.in`. The icon (`opense4.ico`) and the installer's side
 picture are rendered from the SVG icon by `tools/render_icons.sh`.
+
+### Windows 7 to 11
+
+The Windows packages run on 64-bit Windows 7 with Service Pack 1, 8, 8.1, 10 and 11,
+with nothing else to install. This has been checked by import analysis and under Wine
+set to Windows 7 SP1, not on real Windows 7. Wine provides the newer functions whatever
+version it reports, and it honours the manifest's UTF-8 code page even as Windows 7, so
+a Wine run alone cannot show that a program works on Windows 7.
+
+**The C runtime.** MinGW-w64 toolchains now link the Universal C Runtime
+(`api-ms-win-crt-*.dll`, `ucrtbase.dll`). Windows 10 and 11 have it; Windows 7 gets it
+only from update KB2999226, which a fresh SP1 lacks, and a program that imports it does
+not start there. The choices were:
+
+- ship the Universal C Runtime's DLLs beside the programs: Microsoft allows this, but
+  the DLLs come with the Windows SDK, under Microsoft's licence, and add some forty
+  files to every package;
+- require the update, with the installer checking for it: Windows 7 players then have
+  to find and install it before the game starts, and the zip has no installer to
+  tell them;
+- link `msvcrt.dll`, the C library that every Windows version has.
+
+The `dist-windows` preset takes the last: [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
+(MinGW-w64 15 with Clang, LLD and libc++) in its build for `msvcrt.dll`. Its headers and
+runtime libraries target Windows 7. `cmake/toolchains/llvm-mingw-x86_64.cmake` downloads
+the pinned release (about 80 MB) into `build/_tools` once and checks its SHA-256, for a
+Linux x86_64 or a Windows x64 host; `LLVM_MINGW_DIR` names another copy of the same
+build. What this changes:
+
+- The Windows release is built with Clang and libc++ rather than GCC and libstdc++. The
+  rules give the same golden checksums with every compiler (docs/ENGINE.md, "Same on
+  every platform"); libc++ is also what macOS uses.
+- `msvcrt.dll` is an older C library, but MinGW-w64 brings its own C99 `printf` and
+  `scanf` families, so numbers print as on Linux.
+- libc++ converts between paths and narrow strings in the ANSI code page, which is
+  UTF-8 only where the manifest's code page applies (Windows 10 1903 and later).
+  `cmake/WindowsCompat.cmake` has the linker send those two conversions to
+  `src/compat/libcxx_utf8_paths.cpp`, which uses UTF-8 as libstdc++ does, and
+  `src/core/environment.hpp` reads environment variables and the server's and data
+  checker's arguments as UTF-8. A user folder such as `C:\Users\José` therefore works on
+  every Windows version. `tests/test_platform.cpp` checks this.
+- MSYS2 deprecated its own `msvcrt.dll` environment (MINGW64) in 2026, so a native build
+  in MSYS2 uses llvm-mingw's Windows build too.
+
+**The import check.** `tools/check_windows_imports.py` reads the import tables of
+executables and DLLs (ordinary and delay-loaded) and fails on any DLL that a fresh
+Windows 7 SP1 x64 lacks (it keeps a reviewed list of the ones it has) and on any function
+of Windows 8 or later, from a documented list per DLL that includes the symbols
+`msvcrt.dll` gained after Windows Vista. `tools/package_release.sh` runs it before
+packaging, and so does CI. A newer function may still be used through `GetProcAddress`
+with a fallback, as SDL3 does for DPI awareness, thread names and the precise clock.
+
+```sh
+python3 tools/check_windows_imports.py build/dist-windows/*.exe
+python3 tools/check_windows_imports.py --list build/dist-windows/opense4.exe   # every import
+python3 tools/check_windows_imports.py --msvc-runtime build/release/*.exe build/release/SDL3.dll
+```
+
+`--msvc-runtime` allows the Visual C++ and Universal C runtimes of an MSVC build, which
+must then be installed on the computer.
+
+**The rest.**
+
+- Our code and Dear ImGui compile with `_WIN32_WINNT` and `WINVER` set to 0x0601
+  (Windows 7), so the Windows headers declare nothing newer; miniupnpc is set to
+  Windows 7 too. SDL3 chooses its own version, supports every Windows from XP on, and
+  loads newer functions at run time.
+- The manifest names Windows 7, 8, 8.1 and 10/11 as supported. SDL declares the DPI
+  awareness: per monitor on Windows 8.1 and later, the whole system on 7 and 8, which
+  have nothing finer.
+- Windows 7 drivers seldom offer Vulkan 1.3, so there the game draws with the OpenGL
+  3.3 of the graphics card maker's driver. When neither starts, it says what it needs,
+  to install the maker's current driver, and why each renderer failed.
+- The network code uses `WSAPoll` (Windows Vista and later) and `BCryptGenRandom` with
+  the system's preferred generator (Windows 7 and later).
+- The installer checks for Windows 7 SP1 (see "The Windows installer").
 
 ## Installing on Linux
 
@@ -296,11 +392,15 @@ Run them, with `--small`, after changing the client's windows, the tutorials or 
 lock. With the lesson checks (`tools/check_lessons.py`, and its `--audit` of what each step
 lets through and shows, docs/LEARNING.md) they are the routine for the learning content.
 
-The Windows tests also run under Wine:
+The Windows tests also run under Wine. `tools/package_release.sh` runs them in a Wine
+prefix of its own set to Windows 7 SP1 (`build/_tools/wine-win7`); by hand:
 
 ```sh
-cmake --preset dist-windows && cmake --build --preset dist-windows
-WINEDLLOVERRIDES="winemenubuilder.exe=d" wine build/dist-windows/tests/opense4_tests.exe
+cmake --preset dist-windows && cmake --build --preset dist-windows -j 4
+export WINEPREFIX=$PWD/build/_tools/wine-win7 WINEDLLOVERRIDES="winemenubuilder.exe=d"
+wine winecfg -v win7                                   # once: report Windows 7 SP1
+wine build/dist-windows/tests/opense4_tests.exe
+python3 tools/check_windows_imports.py build/dist-windows/*.exe
 ```
 
 ## Input scripts
@@ -424,8 +524,8 @@ input scripts CI plays run on a game folder made from our own test fixtures.
 | Linux / GCC ASan+UBSan | The unit tests built with the `asan` preset, warnings as errors; they stop at the first memory error, leak or undefined behaviour |
 | macOS / Apple Clang debug | The `debug` preset on Apple silicon (`macos-latest`) with Apple Clang, libc++ and Homebrew's SDL3, warnings as errors; the unit tests |
 | Windows / MSVC release (VS 2022), (VS 2026) | The `release` preset with Visual Studio 2022 (on `windows-2022`) and Visual Studio 2026 (on `windows-2025`) and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
-| Windows / MinGW-w64 package | `tools/package_release.sh windows` in MSYS2 (`dist-mingw`, warnings as errors): the release build, the unit tests, the zip file and the installer, kept as the run's `opense4-windows` artifact |
-| Windows / installer | Installs that installer silently (`/S`), checks the files, shortcuts and Apps & features entry, starts the installed programs, and uninstalls silently, checking that nothing is left |
+| Windows / llvm-mingw package (Windows 7 to 11) | `tools/package_release.sh windows` on Ubuntu, as for a release (`dist-windows`, warnings as errors): the cross build with llvm-mingw, the Windows 7 import check of every program, the unit tests under Wine (Ubuntu's Wine, set to Windows 7 SP1), the zip file and the installer (Ubuntu's NSIS), kept as the run's `opense4-windows` artifact |
+| Windows / installer | Installs that installer silently (`/S`) on Windows Server 2025, checks the files, shortcuts and Apps & features entry, starts the installed programs, has the data checker read our fixture data set, and uninstalls silently, checking that nothing is left |
 | Linux / input scripts (fixture data) | Builds the client (`debug`, GCC) and plays the input scripts marked `# ci: fixture-data` (the manual, the Learn window, a training game's results, sliders, the setup screens) with `tools/run_input_tests.py --fixture-data --small` (those marked for both layouts also at 800x600): headless (SDL's offscreen driver) on Mesa's software OpenGL (llvmpipe), on the minimal data set and pictures of `tests/fixtures` with our built-in learning content. A failed run keeps its pictures as the `input-scripts-failure` artifact |
 
 The Linux and macOS jobs run the tests in one process per core
@@ -433,13 +533,18 @@ The Linux and macOS jobs run the tests in one process per core
 (ccache) and the sources FetchContent downloads
 (`.github/scripts/fetchcontent_cache.cmake`) in the Actions cache. A change to
 `cmake/Dependencies.cmake` starts from fresh downloads. The packages are always
-built from fresh downloads. The workflows only read the repository, and pin every
+built from fresh downloads of the sources; the Windows package job keeps llvm-mingw
+in the Actions cache, keyed by its toolchain file. The workflows only read the repository, and pin every
 action to a full commit SHA (the comment beside it names the release).
 
 `.github/workflows/release.yml` runs for a version tag (`v*`), or by hand from the
-Actions tab. It builds the Linux package on Ubuntu and the Windows packages in
-MSYS2 with `tools/package_release.sh`, writes the checksums, and keeps everything as
-one artifact, `OpenSE4-<version>`. It does not publish a release.
+Actions tab. It builds the Linux package and the Windows packages (cross-built with
+llvm-mingw) on Ubuntu with `tools/package_release.sh`, writes the checksums, and keeps
+everything as one artifact, `OpenSE4-<version>`. It does not publish a release.
+
+The MSVC jobs build with Microsoft's runtime DLLs, which Windows 7 has only after the
+Visual C++ Redistributable and KB2999226 are installed, so CI does not hold them to
+Windows 7. Their programs are not shipped.
 
 The other input scripts (the tutorials, the training games, the list and battle windows)
 stay local: they play the original game's data, art and fonts (its race presets, designs,

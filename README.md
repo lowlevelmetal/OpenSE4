@@ -97,6 +97,21 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
 - **Mods:** `opense4-datacheck` checks a modded data set and names the file, line and
   record of anything it doesn't understand.
 
+## System requirements
+
+- **Your own copy of Space Empires IV Deluxe** (see "Setting up the game data").
+- **Windows:** 64-bit Windows 7 with Service Pack 1, 8, 8.1, 10 or 11, with nothing else
+  to install. Windows 7 drivers seldom offer Vulkan 1.3, so there the game draws with
+  OpenGL 3.3. That needs the current driver from the graphics card's maker (NVIDIA, AMD
+  or Intel): Windows' own basic display driver has no OpenGL 3.3. Graphics chips older
+  than about 2012 may have none either (Intel HD Graphics 2000 and 3000, for example).
+  Windows 7, 8 and 8.1 support is checked by analysing the programs' imports and by
+  running them under Wine set to Windows 7; it has not been tested on real Windows 7.
+- **Linux:** 64-bit x86 with glibc 2.34 or later (Ubuntu 22.04, Debian 12, Fedora 35,
+  SteamOS 3 and newer), and Vulkan 1.3 or OpenGL 3.3.
+- **macOS:** builds from source (see [docs/BUILDING.md](docs/BUILDING.md)); there is no
+  package.
+
 ## Building
 
 Full instructions for Linux, Windows and macOS are in

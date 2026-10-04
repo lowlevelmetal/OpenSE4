@@ -345,7 +345,9 @@ same game and draw the same picture. The rules below keep it that way. Everythin
 was checked on 2026-10-01: the Linux build (GCC), the Windows build (MinGW-w64) under
 Wine, and a Clang 21 + libc++ build of the tests. CI builds and tests every push with
 GCC, Clang, Apple Clang (macOS on ARM, libc++), MSVC (Visual Studio 2022 and 2026) and
-MinGW-w64.
+llvm-mingw (Clang and libc++ for `msvcrt.dll`, the Windows release since 2026-10-03,
+tested under Wine). That release build under Wine drew the same picture as the Linux
+build after eight turns of a quick start, to the bit.
 
 - **Golden checksums.** `tests/test_determinism.cpp` plays a simultaneous and a
   turn-based game of four computer players for 100 turns (battles, frequent events,
@@ -389,6 +391,11 @@ MinGW-w64.
   Paths are UTF-8 everywhere. The Windows programs carry a manifest with the UTF-8 code
   page (`packaging/windows/opense4.manifest`), and stb and dr_mp3 open UTF-8 or wide
   names. This was checked with an install under a folder with a non-ASCII name.
+  Windows before 10 1903 ignore the manifest's code page, so the release build converts
+  between paths and narrow strings as UTF-8 itself (`src/compat/libcxx_utf8_paths.cpp`).
+  Environment variables that hold paths are read with `core::environment`, and the
+  server's and the data checker's arguments with `core::utf8Arguments`
+  (`core/environment.hpp`); SDL already hands the client UTF-8 arguments.
 - **Picture.** Vulkan and OpenGL share the shader, blending, samplers and UNORM
   framebuffer; Vulkan never picks an sRGB-encoding swapchain when another format is
   offered. `tools/render_scenes.sh` renders ten scenes: the main window at both layouts,
