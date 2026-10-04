@@ -107,6 +107,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->desktopLayout_ = layoutForDesktop(desktopWidth);
     mode->applyLayout();
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
+    reportPlaylists(mode->rules_->data().settings, mode->playlists_, mode->art_->files());
     mode->restyle();
     mode->learn_ = loadLearnContent(platform.assetsDir, options.learnDir, mode->art_->files());
 

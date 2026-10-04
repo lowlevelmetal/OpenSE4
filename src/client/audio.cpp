@@ -1,124 +1,115 @@
 #include "client/audio.hpp"
 
+#include "client/audio_mixer.hpp"
 #include "core/log.hpp"
-#include "core/rng.hpp"
-#include "ruleset/ruleset.hpp"
 
 #include <SDL3/SDL.h>
 
-#define DR_MP3_IMPLEMENTATION
-#include <dr_mp3.h>
-
 #include <algorithm>
+#include <array>
 #include <format>
 #include <map>
+#include <set>
 
 namespace opense4::client {
 
 namespace {
 
-constexpr int kMusicBufferSeconds = 2;
+// Frames mixed per step of the audio callback.
+constexpr int kCallbackFrames = 1024;
+// How often the log may report the music running dry.
+constexpr uint64_t kUnderrunLogMs = 5000;
+
+std::string percent(float v) { return std::format("{} %", static_cast<int>(v * 100.0f + 0.5f)); }
 
 } // namespace
 
 struct Audio::Impl {
-    struct Clip {
-        SDL_AudioSpec spec{};
-        std::vector<uint8_t> data;
-    };
-
     SDL_AudioDeviceID device = 0;
     SDL_AudioSpec deviceSpec{};
+    SDL_AudioStream* output = nullptr;  // the mix, bound to the device; its callback pulls from the mixer
+    std::unique_ptr<audiomix::Mixer> mixer;
+    std::array<float, kCallbackFrames * audiomix::kChannels> callbackBuffer{};  // the audio thread's
+
     const assets::InstallFiles* files = nullptr;
     AudioOptions options;
-    std::map<std::string, std::optional<Clip>> clips;  // misses are cached too
-    std::vector<SDL_AudioStream*> voices;
+    bool optionsLogged = false;
+    std::map<std::string, std::shared_ptr<const audiomix::Clip>> clips;  // misses are cached too (nullptr)
 
-    // Music: one track, looped.
+    // Music: one track, looped by its decoder.
     std::string trackFile;
     bool musicPlaying = false;
-    drmp3 mp3{};
-    bool mp3Open = false;
-    SDL_AudioStream* musicStream = nullptr;
+    std::unique_ptr<audiomix::MusicTrack> track;
+    bool trackReported = false;
+    uint64_t trackLoops = 0;
+    std::set<std::string> failedTracks;  // logged once, not tried again
+    uint64_t underrunsLogged = 0, underrunLogTicks = 0;
 
-    const Clip* clip(std::string_view name) {
+    // Main-thread calls into the mixer hold the output stream's lock, which the
+    // audio thread holds while it mixes.
+    struct Lock {
+        SDL_AudioStream* s;
+        explicit Lock(SDL_AudioStream* stream) : s(stream) { SDL_LockAudioStream(s); }
+        ~Lock() { SDL_UnlockAudioStream(s); }
+        Lock(const Lock&) = delete;
+        Lock& operator=(const Lock&) = delete;
+    };
+
+    static void SDLCALL feed(void* user, SDL_AudioStream* stream, int additional, int /*total*/) {
+        Impl& a = *static_cast<Impl*>(user);
+        constexpr int kFrameBytes = static_cast<int>(sizeof(float)) * audiomix::kChannels;
+        int frames = (additional + kFrameBytes - 1) / kFrameBytes;
+        while (frames > 0) {
+            const int n = std::min(frames, kCallbackFrames);
+            a.mixer->mix(a.callbackBuffer.data(), static_cast<size_t>(n));
+            SDL_PutAudioStreamData(stream, a.callbackBuffer.data(), n * kFrameBytes);
+            frames -= n;
+        }
+    }
+
+    float musicGainNow() const { return options.music ? musicGain(musicStep(options.musicVolume)) : 0.0f; }
+    float effectsGainNow() const { return options.sound ? options.soundVolume : 0.0f; }
+
+    void applyGains() {
+        if (!output) return;
+        const Lock lock(output);
+        mixer->setEffectsGain(effectsGainNow());
+        mixer->setMusicGain(musicGainNow());
+        if (!options.sound) mixer->stopEffects();
+    }
+
+    std::shared_ptr<const audiomix::Clip> clip(std::string_view name) {
         const std::string key = std::string(name) + (options.remastered ? "#new" : "#old");
-        if (auto it = clips.find(key); it != clips.end()) return it->second ? &*it->second : nullptr;
-        std::optional<Clip> loaded;
+        if (auto it = clips.find(key); it != clips.end()) return it->second;
+        std::shared_ptr<const audiomix::Clip> loaded;
+        const std::vector<std::string> candidates = soundCandidates(name, options.remastered);
+        bool found = false;
         if (files)
-            for (const std::string& candidate : soundCandidates(name, options.remastered))
-                if (auto path = files->find(candidate)) {
-                    Clip c;
-                    Uint8* buf = nullptr;
-                    Uint32 len = 0;
-                    if (SDL_LoadWAV(path->string().c_str(), &c.spec, &buf, &len)) {
-                        c.data.assign(buf, buf + len);
-                        SDL_free(buf);
-                        loaded = std::move(c);
+            for (const std::string& candidate : candidates) {
+                const auto path = files->find(candidate);
+                if (!path) continue;
+                found = true;
+                std::vector<uint8_t> bytes;
+                std::string why = audiomix::readFileBytes(*path, bytes);
+                if (why.empty()) {
+                    if (auto c = audiomix::decodeWav(bytes, mixer->rate(), why)) {
+                        loaded = std::make_shared<const audiomix::Clip>(std::move(*c));
                         break;
                     }
                 }
-        if (!loaded && files) {
-            const auto tried = soundCandidates(name, options.remastered);
-            files->noteMissing(tried.empty() ? std::string(name) : tried.front());
-        }
-        auto [it, inserted] = clips.emplace(key, std::move(loaded));
-        return it->second ? &*it->second : nullptr;
-    }
-
-    void closeTrack() {
-        if (mp3Open) drmp3_uninit(&mp3);
-        mp3Open = false;
-        if (musicStream) SDL_DestroyAudioStream(musicStream);
-        musicStream = nullptr;
-    }
-
-    float musicGainNow() const { return musicGain(musicStep(options.musicVolume)); }
-
-    // Opens the track (again, to loop it); a missing file plays nothing.
-    bool openTrack() {
-        closeTrack();
-        if (!files || trackFile.empty()) return false;
-        auto path = files->find("Music/" + trackFile);
-        if (!path) {
-            files->noteMissing("Music/" + trackFile);
-            return false;
-        }
-#if defined(_WIN32)
-        // The wide name: fopen of a narrow one takes the ANSI code page (unless the manifest's UTF-8 applies).
-        if (!drmp3_init_file_w(&mp3, path->wstring().c_str(), nullptr)) return false;
-#else
-        if (!drmp3_init_file(&mp3, path->string().c_str(), nullptr)) return false;
-#endif
-        mp3Open = true;
-        SDL_AudioSpec src{SDL_AUDIO_S16, static_cast<int>(mp3.channels), static_cast<int>(mp3.sampleRate)};
-        musicStream = SDL_CreateAudioStream(&src, &deviceSpec);
-        if (!musicStream || !SDL_BindAudioStream(device, musicStream)) {
-            closeTrack();
-            return false;
-        }
-        SDL_SetAudioStreamGain(musicStream, musicGainNow());
-        return true;
-    }
-
-    void feedMusic() {
-        if (!musicPlaying || !options.music) return;
-        if (!mp3Open && !openTrack()) {
-            musicPlaying = false;
-            return;
-        }
-        const int bytesPerFrame = static_cast<int>(mp3.channels) * 2;
-        const int want = static_cast<int>(mp3.sampleRate) * bytesPerFrame * kMusicBufferSeconds;
-        std::vector<drmp3_int16> pcm(4096 * mp3.channels);
-        while (SDL_GetAudioStreamQueued(musicStream) < want) {
-            const drmp3_uint64 frames = drmp3_read_pcm_frames_s16(&mp3, 4096, pcm.data());
-            if (frames == 0) {
-                // Track finished: let the queued tail play out, then start it again.
-                if (SDL_GetAudioStreamQueued(musicStream) + SDL_GetAudioStreamAvailable(musicStream) == 0) openTrack();
-                return;
+                log::warn("Sound: cannot play {}: {}", path->string(), why);
             }
-            SDL_PutAudioStreamData(musicStream, pcm.data(), static_cast<int>(frames) * bytesPerFrame);
+        if (!found && files) files->noteMissing(candidates.empty() ? std::string(name) : candidates.front());
+        clips.emplace(key, loaded);
+        return loaded;
+    }
+
+    void dropTrack() {
+        if (output) {
+            const Lock lock(output);
+            mixer->setMusic(nullptr);  // fades out what plays
         }
+        track.reset();
     }
 };
 
@@ -127,27 +118,50 @@ Audio::Audio() : impl_(std::make_unique<Impl>()) {}
 Audio::~Audio() { close(); }
 
 bool Audio::open() {
-    if (impl_->device) return true;
+    Impl& a = *impl_;
+    if (a.device) return true;
     if (!SDL_WasInit(SDL_INIT_AUDIO) && !SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-        log::info("No audio: {}", SDL_GetError());
+        log::warn("Audio: no sound or music: SDL cannot start its audio ({})", SDL_GetError());
         return false;
     }
-    impl_->device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
-    if (!impl_->device) {
-        log::info("No audio device: {}", SDL_GetError());
+    a.device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
+    if (!a.device) {
+        log::warn("Audio: no sound or music: no audio device can be opened ({}, driver {})", SDL_GetError(),
+                  SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "none");
         return false;
     }
-    SDL_GetAudioDeviceFormat(impl_->device, &impl_->deviceSpec, nullptr);
+    int sampleFrames = 0;
+    if (!SDL_GetAudioDeviceFormat(a.device, &a.deviceSpec, &sampleFrames)) a.deviceSpec = SDL_AudioSpec{SDL_AUDIO_F32, 2, 48000};
+    // Mix at the device's rate (one conversion per source, done off the audio thread).
+    const int rate = a.deviceSpec.freq >= 8000 && a.deviceSpec.freq <= 192000 ? a.deviceSpec.freq : 48000;
+    a.mixer = std::make_unique<audiomix::Mixer>(rate);
+    const SDL_AudioSpec mix{SDL_AUDIO_F32, audiomix::kChannels, rate};
+    a.output = SDL_CreateAudioStream(&mix, &a.deviceSpec);
+    if (!a.output || !SDL_SetAudioStreamGetCallback(a.output, &Impl::feed, &a) || !SDL_BindAudioStream(a.device, a.output)) {
+        log::warn("Audio: no sound or music: the mix cannot be sent to the device ({})", SDL_GetError());
+        close();
+        return false;
+    }
+    const char* name = SDL_GetAudioDeviceName(a.device);
+    log::info("Audio: {} through {}: {} Hz, {} channels, {}, {} frames a buffer; mixing at {} Hz", name ? name : "the default device",
+              SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "?", a.deviceSpec.freq, a.deviceSpec.channels,
+              SDL_GetAudioFormatName(a.deviceSpec.format), sampleFrames, rate);
+    a.applyGains();
     return true;
 }
 
 void Audio::close() {
     if (!impl_) return;
-    impl_->closeTrack();
-    for (SDL_AudioStream* v : impl_->voices) SDL_DestroyAudioStream(v);
-    impl_->voices.clear();
-    if (impl_->device) SDL_CloseAudioDevice(impl_->device);
-    impl_->device = 0;
+    Impl& a = *impl_;
+    if (a.output) SDL_DestroyAudioStream(a.output);  // no callback after this
+    a.output = nullptr;
+    a.track.reset();
+    a.mixer.reset();
+    a.clips.clear();
+    a.musicPlaying = false;
+    a.trackFile.clear();
+    if (a.device) SDL_CloseAudioDevice(a.device);
+    a.device = 0;
 }
 
 bool Audio::active() const { return impl_->device != 0; }
@@ -155,15 +169,26 @@ bool Audio::active() const { return impl_->device != 0; }
 void Audio::setInstall(const assets::InstallFiles* files) {
     impl_->files = files;
     impl_->clips.clear();
+    impl_->failedTracks.clear();
 }
 
 void Audio::setOptions(const AudioOptions& options) {
-    const bool musicWasOn = impl_->options.music;
-    impl_->options = options;
-    impl_->options.soundVolume = std::clamp(options.soundVolume, 0.0f, 1.0f);
-    impl_->options.musicVolume = std::clamp(options.musicVolume, 0.0f, 1.0f);
-    if (impl_->musicStream) SDL_SetAudioStreamGain(impl_->musicStream, impl_->musicGainNow());
-    if (musicWasOn && !options.music) impl_->closeTrack();
+    Impl& a = *impl_;
+    AudioOptions o = options;
+    o.soundVolume = std::clamp(o.soundVolume, 0.0f, 1.0f);
+    o.musicVolume = std::clamp(o.musicVolume, 0.0f, 1.0f);
+    const AudioOptions& old = a.options;
+    const bool changed = !a.optionsLogged || o.sound != old.sound || o.music != old.music || o.soundVolume != old.soundVolume ||
+                         o.musicVolume != old.musicVolume || o.remastered != old.remastered;
+    if (!changed) return;
+    const bool musicWasOn = a.options.music;
+    a.options = o;
+    log::info("Audio settings: sound effects {}{}, music {}", o.sound ? "on at " + percent(o.soundVolume) : std::string("off"),
+              o.sound ? (o.remastered ? " (the remastered set in Sounds/New)" : " (the classic set in Sounds)") : "",
+              o.music ? std::format("on at step {} of 5", musicStep(o.musicVolume)) : std::string("off"));
+    a.optionsLogged = true;
+    a.applyGains();
+    if (musicWasOn && !o.music) stopMusic();
 }
 
 const AudioOptions& Audio::options() const { return impl_->options; }
@@ -171,36 +196,46 @@ const AudioOptions& Audio::options() const { return impl_->options; }
 void Audio::play(std::string_view name) {
     Impl& a = *impl_;
     if (!a.device || !a.options.sound || name.empty()) return;
-    const Impl::Clip* c = a.clip(name);
+    auto c = a.clip(name);
     if (!c) return;
-    // One effect at a time: the new one cuts off the one playing.
-    for (SDL_AudioStream* v : a.voices) SDL_DestroyAudioStream(v);
-    a.voices.clear();
-    SDL_AudioStream* s = SDL_CreateAudioStream(&c->spec, &a.deviceSpec);
-    if (!s) return;
-    if (!SDL_BindAudioStream(a.device, s)) {
-        SDL_DestroyAudioStream(s);
-        return;
-    }
-    SDL_SetAudioStreamGain(s, a.options.soundVolume);
-    SDL_PutAudioStreamData(s, c->data.data(), static_cast<int>(c->data.size()));
-    SDL_FlushAudioStream(s);
-    a.voices.push_back(s);
+    log::debug("Sound: {}", name);
+    const Impl::Lock lock(a.output);
+    a.mixer->playEffect(std::move(c));
 }
 
 void Audio::playTrack(const std::string& file) {
     Impl& a = *impl_;
     if (!a.device || file.empty()) return;
     if (a.musicPlaying && a.trackFile == file) return;  // already playing it
+    if (a.failedTracks.contains(file)) return;          // logged when it failed
+    const std::string relative = "Music/" + file;
+    const auto path = a.files ? a.files->find(relative) : std::nullopt;
+    if (!path) {
+        a.failedTracks.insert(file);
+        if (a.files) a.files->noteMissing(relative);
+        log::warn("Music: cannot play {}: it is not in the installed game ({})", relative,
+                  a.files ? (a.files->root() / "Music").string() : std::string("no install"));
+        return;
+    }
+    // The new track decodes on its own thread; the old one fades out meanwhile.
+    a.track = std::make_unique<audiomix::MusicTrack>(*path, a.mixer->rate());
+    {
+        const Impl::Lock lock(a.output);
+        a.mixer->setMusic(a.track->ring());
+    }
     a.trackFile = file;
-    a.closeTrack();
     a.musicPlaying = true;
+    a.trackReported = false;
+    a.trackLoops = 0;
 }
 
 void Audio::stopMusic() {
-    impl_->musicPlaying = false;
-    impl_->trackFile.clear();
-    impl_->closeTrack();
+    Impl& a = *impl_;
+    if (!a.musicPlaying && !a.track) return;
+    a.musicPlaying = false;
+    if (!a.trackFile.empty()) log::info("Music: stopped Music/{}", a.trackFile);
+    a.trackFile.clear();
+    a.dropTrack();
 }
 
 bool Audio::musicPlaying() const { return impl_->musicPlaying; }
@@ -208,12 +243,44 @@ bool Audio::musicPlaying() const { return impl_->musicPlaying; }
 void Audio::update() {
     Impl& a = *impl_;
     if (!a.device) return;
-    std::erase_if(a.voices, [](SDL_AudioStream* s) {
-        if (SDL_GetAudioStreamQueued(s) > 0 || SDL_GetAudioStreamAvailable(s) > 0) return false;
-        SDL_DestroyAudioStream(s);
-        return true;
-    });
-    a.feedMusic();
+    if (a.track) {
+        switch (a.track->state()) {
+            case audiomix::MusicTrack::State::Opening: break;
+            case audiomix::MusicTrack::State::Failed:
+                log::warn("Music: cannot play Music/{}: {}", a.trackFile, a.track->error());
+                a.failedTracks.insert(a.trackFile);
+                a.musicPlaying = false;
+                a.trackFile.clear();
+                a.dropTrack();
+                break;
+            case audiomix::MusicTrack::State::Playing:
+                if (!a.trackReported) {
+                    const audiomix::Mp3Info& i = a.track->info();
+                    log::info("Music: playing Music/{} ({} Hz, {} channel{}, {:.0f} s, looped)", a.trackFile, i.sampleRate, i.channels,
+                              i.channels == 1 ? "" : "s", i.seconds);
+                    a.trackReported = true;
+                }
+                if (const uint64_t loops = a.track->loops(); loops != a.trackLoops) {
+                    log::debug("Music: Music/{} starts again", a.trackFile);
+                    a.trackLoops = loops;
+                }
+                break;
+        }
+    }
+    std::vector<std::shared_ptr<audiomix::FrameRing>> retired;
+    uint64_t underruns = 0;
+    {
+        const Impl::Lock lock(a.output);
+        retired = a.mixer->takeRetired();
+        underruns = a.mixer->underruns();
+    }
+    retired.clear();  // freed here, not on the audio thread
+    if (underruns > a.underrunsLogged && SDL_GetTicks() >= a.underrunLogTicks) {
+        log::warn("Audio: the music ran dry {} time{} so far: its decoding fell behind (is the computer very busy?)", underruns,
+                  underruns == 1 ? "" : "s");
+        a.underrunsLogged = underruns;
+        a.underrunLogTicks = SDL_GetTicks() + kUnderrunLogMs;
+    }
 }
 
 Audio& audio() {
