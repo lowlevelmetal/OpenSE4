@@ -562,6 +562,7 @@ void systemReport(UiContext& ui, game::SystemId sysId) {
         ImGui::PushFont(body, p.fontPx(kTextSize));
         for (const std::string& a : abilities) wrappedBullet(a);
         ImGui::PopFont();
+        ImGui::Dummy(ImVec2(0, 0));   // the cursor was placed: an item makes the room
         return;
     }
     // Too much for the panel: the description and the abilities scroll together.
