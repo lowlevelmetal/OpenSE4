@@ -1270,7 +1270,12 @@ cells sit inside it after a margin:
   results outside 0..12 are ignored. (A click in the margin left of or above the grid
   therefore counts as column or row 0.)
 - **Sprites are never scaled.** Every object sprite is drawn at its native 36x36,
-  centred in its cell: offset 0 at 800x600, 7 px at 1024x768.
+  centred in its cell: offset 0 at 800x600, 7 px at 1024x768. Our client scales the whole
+  frame to the window; since 2026-10-04 every picture it cuts from a sheet (the planet
+  sheet's cells, flags, buttons, icons) is a texture of its own, so the smoothing of a
+  frame scaled by a fraction no longer takes in the edge of the next cell, which drew a thin
+  line, its colour that of the next row, under warp points, asteroid fields and other
+  objects.
 - **Background.** The system picture (490x490 or 660x660, §5.3) is copied 1:1 from its
   top-left corner; the rightmost and bottom 6 px (800x600) or 8 px (1024x768) are never
   shown. An unexplored system shows `Starmap.bmp` with the word "Unexplored" centred at

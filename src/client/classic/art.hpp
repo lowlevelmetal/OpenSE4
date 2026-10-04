@@ -105,6 +105,13 @@ private:
         int height = 0;
     };
     const Texture* load(std::string_view relative, bool colorKey);
+    // A part of a sheet as a texture of its own, cached like the others. Drawn
+    // scaled with smoothing, a part that only had its corner of the sheet's
+    // texture took in a sliver of the next part at its edges: a line under
+    // warp points and asteroid fields, whose next row on the planet sheet is
+    // not black. A texture of its own repeats its edge pixels instead.
+    Sprite cut(std::string_view sheet, bool colorKey, int x, int y, int w, int h);
+    std::map<std::string, assets::Image> sheets_;   // the pixels of the sheets parts are cut from (key as textures_)
     // A picture turned by heading × 45°, cached like the others.
     Sprite rotated(std::string_view relative, int heading, bool colorKey);
     std::string raceFile(std::string_view style, std::string_view suffix);

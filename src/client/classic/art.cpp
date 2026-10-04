@@ -29,12 +29,6 @@ std::string systemFile(std::string_view bitmap) {
     return file;
 }
 
-Sprite sub(gfx::TextureId id, int texW, int texH, int x, int y, int w, int h) {
-    if (!id || texW <= 0 || texH <= 0 || x < 0 || y < 0 || x + w > texW || y + h > texH) return {};
-    const float u0 = float(x) / float(texW), v0 = float(y) / float(texH);
-    return {id, Rect{{u0, v0}, {u0 + float(w) / float(texW), v0 + float(h) / float(texH)}}, Vec2{float(w), float(h)}};
-}
-
 } // namespace
 
 Art::Art(gfx::Device& device, assets::InstallFiles files) : device_(device), files_(std::move(files)) {}
@@ -51,6 +45,7 @@ void Art::setFilter(gfx::Filter filter) {
     for (auto& [key, t] : textures_)
         if (t.id) device_.destroyTexture(t.id);
     textures_.clear();
+    sheets_.clear();
 }
 
 const Art::Texture* Art::load(std::string_view relative, bool colorKey) {
@@ -88,12 +83,37 @@ Sprite Art::cell(std::string_view sheet, int index, int cellW, int cellH, bool c
     if (!t || index < 0 || cellW <= 0) return {};
     const int cols = t->width / cellW;
     if (cols <= 0) return {};
-    return sub(t->id, t->width, t->height, (index % cols) * cellW, (index / cols) * cellH, cellW, cellH);
+    return cut(sheet, colorKey, (index % cols) * cellW, (index / cols) * cellH, cellW, cellH);
 }
 
-Sprite Art::region(std::string_view picture, int x, int y, int w, int h, bool colorKey) {
-    const Texture* t = load(picture, colorKey);
-    return t ? sub(t->id, t->width, t->height, x, y, w, h) : Sprite{};
+Sprite Art::region(std::string_view picture, int x, int y, int w, int h, bool colorKey) { return cut(picture, colorKey, x, y, w, h); }
+
+Sprite Art::cut(std::string_view sheet, bool colorKey, int x, int y, int w, int h) {
+    const Texture* t = load(sheet, colorKey);
+    if (!t || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > t->width || y + h > t->height) return {};
+    if (x == 0 && y == 0 && w == t->width && h == t->height) return whole(t->id, w, h);
+    const std::string sheetKey = lower(sheet) + (colorKey ? "#k" : "#o");
+    const std::string key = std::format("{}@{},{},{},{}", sheetKey, x, y, w, h);
+    if (auto it = textures_.find(key); it != textures_.end()) return it->second.id ? whole(it->second.id, it->second.width, it->second.height) : Sprite{};
+    auto pixels = sheets_.find(sheetKey);
+    if (pixels == sheets_.end()) {
+        assets::Image img;
+        if (const auto path = files_.find(sheet))
+            if (auto loaded = assets::loadImage(*path, colorKey)) img = std::move(*loaded);
+        pixels = sheets_.emplace(sheetKey, std::move(img)).first;
+    }
+    Texture c;
+    const assets::Image& img = pixels->second;
+    if (x + w <= img.width && y + h <= img.height) {
+        std::vector<uint8_t> part(size_t(w) * size_t(h) * 4);
+        for (int row = 0; row < h; ++row)
+            std::memcpy(part.data() + size_t(row) * size_t(w) * 4, img.rgba.data() + (size_t(y + row) * size_t(img.width) + size_t(x)) * 4, size_t(w) * 4);
+        c.id = device_.createTexture(gfx::TextureDesc{w, h, filter_, key.c_str()}, part.data());
+        c.width = w;
+        c.height = h;
+    }
+    textures_.emplace(key, c);
+    return c.id ? whole(c.id, w, h) : Sprite{};
 }
 
 Sprite Art::planet(int picture, bool colorKey) { return cell("Pictures/Planets/Planets.bmp", picture, 36, 36, colorKey); }
