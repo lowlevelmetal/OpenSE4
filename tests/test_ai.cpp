@@ -838,6 +838,88 @@ TEST_CASE("ai: a colony ship takes colonists aboard where it starts, so the new 
     CHECK(s.colony(founded)->totalPopulation() > 0);
 }
 
+TEST_CASE("ai: a colony ship flies to a planet it cannot see, fails on arrival and is sent there again (spec 05 §7.5, Q78)") {
+    // Sight plays no part in the targets: the original's computer players
+    // keep failing at a hidden planet until the sight changes, and so do ours.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, true);
+    exploreEverything(s);
+    const EmpireId me{0u};
+    s.empire(me).kind = PlayerKind::Computer;
+    const Colony& home = homeworld(s, me);
+    const ObjectId homePlanet = home.planet;
+    const SystemId homeSys = s.galaxy.object(homePlanet).system;
+    // The first target: a planet of our type in the home system, away from
+    // the homeworld's sector, with ancient ruins (sorted first), whose own
+    // obscuration (3) is above every sensor level we have.
+    ObjectId target;
+    for (ObjectId o : s.galaxy.system(homeSys).objects) {
+        SpaceObject& obj = s.galaxy.object(o);
+        if (obj.kind == ObjectKind::Planet && !s.colony(o) && obj.sector != s.galaxy.object(homePlanet).sector) {
+            obj.surface = s.empire(me).race.nativeSurface;
+            for (const auto& [kind, value] : {std::pair{AbilityKind::AncientRuins, 0}, std::pair{AbilityKind::SectorSightObscuration, 3}}) {
+                ruleset::Ability a;
+                a.type = std::string(identifier(kind));
+                a.value1 = std::to_string(value);
+                obj.abilities.push_back(a);
+            }
+            target = o;
+            break;
+        }
+    }
+    REQUIRE(target.valid());
+    REQUIRE_FALSE(sight::canSeeColony(r, s, me, target));
+    // Two engines: at speed 1 the day counter's thirty steps of 1/30, in
+    // double precision, end just below 1, and the ship would not act.
+    const std::string_view surface = s.empire(me).race.nativeSurface;
+    const DesignId settler = addTestDesign(s, r, me, "Settler", "Test Frigate",
+                                           {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine",
+                                            "Test Supply Pod", surface == "Ice" ? "Test Ice Pod" : surface == "Rock" ? "Test Rock Pod" : "Test Gas Pod"});
+    const VehicleId ship = addTestVehicle(s, r, settler, locationOf(s.galaxy, homePlanet)).id;
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        REQUIRE_FALSE(p.sit.colonyTargets.empty());
+        CHECK(p.sit.colonyTargets.front().planet == target);
+    }
+    TurnOptions opts;
+    opts.aiForMissing = false;  // only the computer player acts
+    auto failedHere = [&]() {
+        for (const LogEntry& l : s.empire(me).log)
+            if (l.title == "Unable to Colonize" && l.text.find("There is no planet here to colonize.") != std::string::npos &&
+                l.location == std::optional<Location>(locationOf(s.galaxy, target)))
+                return true;
+        return false;
+    };
+    // It flies all the way: nothing stops it before the planet's sector, where
+    // the Colonize fails and clears its orders.
+    int turns = 0;
+    while (turns < 6 && !failedHere()) {
+        processTurn(r, s, {}, opts);
+        ++turns;
+    }
+    REQUIRE(failedHere());
+    REQUIRE(s.vehicle(ship));
+    CHECK(s.vehicle(ship)->location == locationOf(s.galaxy, target));
+    CHECK(s.vehicle(ship)->orders.empty());
+    CHECK_FALSE(s.colony(target));
+    // Idle, it is the nearest ship for the same first target: it gets the
+    // Colonize again and fails again, turn after turn.
+    for (int t = 0; t < 3; ++t) {
+        processTurn(r, s, {}, opts);
+        CHECK(failedHere());
+        REQUIRE(s.vehicle(ship));
+        CHECK(s.vehicle(ship)->location == locationOf(s.galaxy, target));
+        CHECK_FALSE(s.colony(target));
+    }
+    // Once the planet is seen (here its obscuration gone), the next try settles it.
+    std::erase_if(s.galaxy.object(target).abilities,
+                  [](const ruleset::Ability& a) { return parseAbilityKind(a.type) == AbilityKind::SectorSightObscuration; });
+    processTurn(r, s, {}, opts);
+    REQUIRE(s.colony(target));
+    CHECK(s.colony(target)->owner == me);
+    CHECK(s.vehicle(ship) == nullptr);
+}
+
 // ---- Construction ---------------------------------------------------------------------------------
 
 TEST_CASE("ai: research, construction and designs on the first turn") {

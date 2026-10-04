@@ -54,6 +54,9 @@ bool canSeePlanet(const Rules& r, const GameState& s, EmpireId viewer, ObjectId 
 // (canSeePlanet). Every window that asks whether a colony is seen uses this
 // test: the map's colony mark, the planet report, the Planets window, the
 // galaxy map's presence colours and the intelligence picker (spec 01 §6.9).
+// The Colonize order's "seen" test is this rule applied to the planet
+// whether or not it has a colony (spec 03 §8, §19 Q80): a planet without a
+// colony has the obscuration of its sector and system, at least 1.
 bool canSeeColony(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet);
 // True when the viewer has a sensor source in the system (its own or a
 // partner's whose sensors it gets), or the game is omnipresent.

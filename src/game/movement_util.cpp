@@ -648,24 +648,32 @@ int unitsInSpace(const Rules& r, const GameState& s, EmpireId owner) {
     return static_cast<int>(std::min<int64_t>(n, std::numeric_limits<int>::max()));
 }
 
+std::string detail::colonizerProblem(const Rules& r, const GameState& s, const Vehicle& v, const SpaceObject& planet) {
+    AbilityKind k = AbilityKind::ColonizeRock;
+    if (datafile::keysEqual(planet.surface, "Ice")) k = AbilityKind::ColonizeIce;
+    else if (datafile::keysEqual(planet.surface, "Gas Giant") || datafile::keysEqual(planet.surface, "Gas")) k = AbilityKind::ColonizeGas;
+    if (!hasAbility(vehicleAbilities(r, s, v), k)) return std::format("{} cannot colonize {} planets", v.name, planet.surface);
+    const Race& race = s.empire(v.owner).race;
+    if (s.options.onlyBreathable && !datafile::keysEqual(planet.atmosphere, race.atmosphere))
+        return "Only planets with a breathable atmosphere may be colonized in this game";
+    if (s.options.onlyHomeType && !datafile::keysEqual(planet.surface, race.nativeSurface))
+        return "Only planets of the home planet type may be colonized in this game";
+    return {};
+}
+
 std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v, ObjectId planet) {
     if (!planet.valid() || planet.index() >= s.galaxy.objects.size()) return "No such planet";
     if (!detail::inSystem(s.galaxy, planet)) return "That planet no longer exists";
     const SpaceObject& obj = s.galaxy.object(planet);
     if (obj.kind != ObjectKind::Planet) return "Only planets can be colonized";
-    // A colony the colonizer's owner cannot see (cloaked) leaves no planet to
-    // colonize, as far as it knows (spec 01 §6.9, confirmed: binary).
-    if (s.colony(planet)) return sight::canSeeColony(r, s, v.owner, planet) ? "The planet is already colonized" : "There is no planet here to colonize";
-    AbilityKind k = AbilityKind::ColonizeRock;
-    if (datafile::keysEqual(obj.surface, "Ice")) k = AbilityKind::ColonizeIce;
-    else if (datafile::keysEqual(obj.surface, "Gas Giant") || datafile::keysEqual(obj.surface, "Gas")) k = AbilityKind::ColonizeGas;
-    if (!hasAbility(vehicleAbilities(r, s, v), k)) return std::format("{} cannot colonize {} planets", v.name, obj.surface);
-    const Race& race = s.empire(v.owner).race;
-    if (s.options.onlyBreathable && !datafile::keysEqual(obj.atmosphere, race.atmosphere))
-        return "Only planets with a breathable atmosphere may be colonized in this game";
-    if (s.options.onlyHomeType && !datafile::keysEqual(obj.surface, race.nativeSurface))
-        return "Only planets of the home planet type may be colonized in this game";
-    return {};
+    // "Seen" (spec 03 §8, §19 Q80, confirmed: binary): the detection rule of
+    // spec 01 §6.3 for the owner, applied to the planet whether or not it has
+    // a colony, with the sensors of the moment. A planet that a storm, a
+    // nebula or a colony's cloak hides from them leaves no planet to colonize,
+    // as far as they know.
+    if (!sight::canSeeColony(r, s, v.owner, planet)) return "There is no planet here to colonize";
+    if (s.colony(planet)) return "The planet is already colonized";
+    return detail::colonizerProblem(r, s, v, obj);
 }
 
 bool resupplyDepotAt(const Rules& r, const GameState& s, EmpireId empire, Location where) {
