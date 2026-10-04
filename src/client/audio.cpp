@@ -17,8 +17,10 @@ namespace {
 
 // Frames mixed per step of the audio callback.
 constexpr int kCallbackFrames = 1024;
-// How often the log may report the music running dry.
+// How often the log may report the music running dry, and the settings (a
+// slider being dragged changes them every frame).
 constexpr uint64_t kUnderrunLogMs = 5000;
+constexpr uint64_t kSettingsLogMs = 1000;
 
 std::string percent(float v) { return std::format("{} %", static_cast<int>(v * 100.0f + 0.5f)); }
 
@@ -33,7 +35,9 @@ struct Audio::Impl {
 
     const assets::InstallFiles* files = nullptr;
     AudioOptions options;
-    bool optionsLogged = false;
+    bool optionsSet = false;
+    std::string settingsLogged;  // the last settings line written to the log
+    uint64_t settingsLogTicks = 0;
     std::map<std::string, std::shared_ptr<const audiomix::Clip>> clips;  // misses are cached too (nullptr)
 
     // Music: one track, looped by its decoder.
@@ -65,6 +69,20 @@ struct Audio::Impl {
             SDL_PutAudioStreamData(stream, a.callbackBuffer.data(), n * kFrameBytes);
             frames -= n;
         }
+    }
+
+    // The settings in the log: at once, then at most once a second, and the
+    // last ones always (update() writes what waited).
+    void logSettings() {
+        const AudioOptions& o = options;
+        const std::string line =
+            std::format("Audio settings: sound effects {}{}, music {}", o.sound ? "on at " + percent(o.soundVolume) : std::string("off"),
+                        o.sound ? (o.remastered ? " (the remastered set in Sounds/New)" : " (the classic set in Sounds)") : "",
+                        o.music ? std::format("on at step {} of 5", musicStep(o.musicVolume)) : std::string("off"));
+        if (line == settingsLogged || SDL_GetTicks() < settingsLogTicks) return;
+        log::info("{}", line);
+        settingsLogged = line;
+        settingsLogTicks = SDL_GetTicks() + kSettingsLogMs;
     }
 
     float musicGainNow() const { return options.music ? musicGain(musicStep(options.musicVolume)) : 0.0f; }
@@ -183,15 +201,13 @@ void Audio::setOptions(const AudioOptions& options) {
     o.soundVolume = std::clamp(o.soundVolume, 0.0f, 1.0f);
     o.musicVolume = std::clamp(o.musicVolume, 0.0f, 1.0f);
     const AudioOptions& old = a.options;
-    const bool changed = !a.optionsLogged || o.sound != old.sound || o.music != old.music || o.soundVolume != old.soundVolume ||
+    const bool changed = !a.optionsSet || o.sound != old.sound || o.music != old.music || o.soundVolume != old.soundVolume ||
                          o.musicVolume != old.musicVolume || o.remastered != old.remastered;
     if (!changed) return;
     const bool musicWasOn = a.options.music;
     a.options = o;
-    log::info("Audio settings: sound effects {}{}, music {}", o.sound ? "on at " + percent(o.soundVolume) : std::string("off"),
-              o.sound ? (o.remastered ? " (the remastered set in Sounds/New)" : " (the classic set in Sounds)") : "",
-              o.music ? std::format("on at step {} of 5", musicStep(o.musicVolume)) : std::string("off"));
-    a.optionsLogged = true;
+    a.optionsSet = true;
+    a.logSettings();
     a.applyGains();
     if (musicWasOn && !o.music) stopMusic();
 }
@@ -247,6 +263,7 @@ bool Audio::musicPlaying() const { return impl_->musicPlaying; }
 
 void Audio::update() {
     Impl& a = *impl_;
+    if (a.optionsSet) a.logSettings();
     if (!a.device) return;
     if (a.track) {
         switch (a.track->state()) {
