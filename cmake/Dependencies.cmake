@@ -113,6 +113,8 @@ if(OPENSE4_ENABLE_UPNP)
     set(UPNPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
     set(UPNPC_NO_INSTALL ON CACHE BOOL "" FORCE)
+    # Windows 7, as our own code (CMakeLists.txt), rather than its default of XP.
+    set(MINIUPNPC_TARGET_WINDOWS_VERSION "0x0601" CACHE STRING "" FORCE)
     FetchContent_Declare(miniupnpc
         URL https://github.com/miniupnp/miniupnp/archive/refs/tags/miniupnpc_2_3_3.tar.gz
         URL_HASH SHA256=8cf2c833b3e76fc4893ff29c2a376e3394962449e5970e373c0a91421724d222
