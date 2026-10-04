@@ -124,7 +124,12 @@ bool Audio::open() {
         log::warn("Audio: no sound or music: SDL cannot start its audio ({})", SDL_GetError());
         return false;
     }
-    a.device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
+    // The device's own format, unless one of SDL's format hints (SDL_AUDIO_FREQUENCY,
+    // SDL_AUDIO_FORMAT, SDL_AUDIO_CHANNELS) asks for another: SDL applies them only
+    // to a blank request (docs/SETUP.md "Sound and music").
+    const bool hinted = SDL_GetHint(SDL_HINT_AUDIO_FREQUENCY) || SDL_GetHint(SDL_HINT_AUDIO_FORMAT) || SDL_GetHint(SDL_HINT_AUDIO_CHANNELS);
+    const SDL_AudioSpec blank{};
+    a.device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, hinted ? &blank : nullptr);
     if (!a.device) {
         log::warn("Audio: no sound or music: no audio device can be opened ({}, driver {})", SDL_GetError(),
                   SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "none");

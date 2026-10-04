@@ -54,6 +54,8 @@ Rendering:
   --layout=auto|800x600|1024x768  The classic screen layout (default: auto, 800x600 on a desktop
                                   800 px wide or less, as the original; forcing one is OpenSE4's)
   --no-audio                      No sound or music
+  --audio                         Sound and music even in a script or screenshot run (to check
+                                  the audio, e.g. with SDL_AUDIO_DRIVER=disk: docs/SETUP.md)
 
 Game:
   --classic-dir=DIR               Game directory of your installed copy (default: auto-detect)
@@ -207,6 +209,8 @@ int main(int argc, char** argv) {
             // Accepted and ignored, so older command lines keep working.
         } else if (key == "--no-audio") {
             options.noAudio = true;
+        } else if (key == "--audio") {
+            options.audio = true;
         } else if (key == "--classic-dir") {
             options.installDir = std::string(value);
         } else if (key == "--quick-start") {
