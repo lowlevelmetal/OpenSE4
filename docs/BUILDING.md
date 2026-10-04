@@ -494,6 +494,10 @@ plays at both should not depend on the layout: give an order that may be on anot
 Run them, with `--small`, after changing the client's windows, the tutorials or the input
 lock. With the lesson checks (`tools/check_lessons.py`, and its `--audit` of what each step
 lets through and shows, docs/LEARNING.md) they are the routine for the learning content.
+After changing the session, the turn flow or the battle windows, also play
+`battle-strategic` with the `asan` build's client, which turns a dangling pointer into a
+failure (`ASAN_OPTIONS=detect_leaks=0 ./build/asan/opense4 --input-script=...`; the
+graphics drivers leak a little at exit).
 
 The Windows tests also run under Wine. `tools/package_release.sh` runs them in a Wine
 prefix of its own set to Windows 7 SP1 (`build/_tools/wine-win7`); by hand:
@@ -556,6 +560,7 @@ recorder is tested.
 | `combat-windows.script` | Tactical Combat on a sample battle: zoom and pan, the Combat Piece Report, Combat Options, the Orders menu and Resolve Combat |
 | `ground-combat.script` | Ground Combat on a sample strategic battle (`--open=ground-combat`): Begin, the rounds, Close, then the rest of the battle |
 | `combat-replay.script` | Combat Replay on a battle of the last turn: the overview, Combat Replay Options' check boxes, Next to the last combat turn, Stop Replay |
+| `battle-strategic.script` | A battle that stops the player's End Turn: an enemy ship comes through a warp point into the player's sector in a computer player's turn; the notice, Strategic Combat's question, Strategic, End Turn doing nothing over the battle's window, Close; the turn then ends exactly once, and the next End Turn ends the next one. Play it with the `asan` client too (v0.8.1 crashed here) |
 | `report-up-arrow.script` | The report panel's up-arrow back to a sector's list: shown only for a report opened from the list |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
 | `game-setup.script` | The setup screens: Load Game with Change Directory, Quick Start's picker, Game Setup's pages, Add New with a name from the list picker and an e-mail address, Begin Game, and Change Email in Empire Status |

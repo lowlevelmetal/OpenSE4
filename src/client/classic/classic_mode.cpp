@@ -715,6 +715,11 @@ void ClassicMode::openScreen(ScreenId id, ScreenArgs args) {
 
 void ClassicMode::endTurn() {
     if (!session_ || session_->waitingForOthers()) return;
+    // A battle being shown (its question, or its fight in a window) holds the
+    // game until its window closes (spec 06 §1.10.5): End Turn, whose button
+    // can still be clicked over a window, does nothing then; it does not
+    // close the battle's window either.
+    if (session_->battleQuestion() || session_->tactical()) return;
     audio().play("endturn");
     screens_.clear();
     const BusyPointer busy;  // the Hourglass while the turn is processed (§5.8)
@@ -931,7 +936,10 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         }
     }
     if (screens_.empty()) frontWindow_ = 0;
-    if (battleAsking) drawBattleQuestion(ui);
+    // A window may have answered the question meanwhile (Ground Combat's
+    // Close, a battle that does not start), and the game gone on: only one
+    // still waiting is drawn.
+    if (battleAsking && session_->battleQuestion() && !session_->tactical()) drawBattleQuestion(ui);
     updateLesson(ui, prompted);
     for (auto& [id, args] : pendingOpen_) openScreen(id, std::move(args));
     pendingOpen_.clear();
@@ -939,9 +947,11 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
 
     if (ui.requests.endTurn) {
         ui.requests.endTurn = false;
-        // The Empire Options' "confirm ending the turn" (spec 06 §1.9).
-        if (ui.options().confirmEndTurn) confirmEndTurn_ = true;
-        else endTurn();
+        // The Empire Options' "confirm ending the turn" (spec 06 §1.9). Nothing
+        // while a battle is being shown (see endTurn()).
+        const bool battle = session_->battleQuestion() || session_->tactical();
+        if (!battle && ui.options().confirmEndTurn) confirmEndTurn_ = true;
+        else if (!battle) endTurn();
     }
     if (confirmEndTurn_) {
         // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06
@@ -1281,15 +1291,21 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
     // a computer empire, a notice naming the system and the empires comes
     // first. The colony owner's end-of-turn ground combat always has its
     // notice, then the Ground Combat window.
+    if (!session_->battleQuestion()) return;
     const game::BattleQuestion& q = *session_->battleQuestion();
     const game::GameState& s = ui.state();
     const bool ground = q.kind == game::BattleQuestion::Kind::Ground;
     const size_t key = q.index * 100003u + size_t(q.where.system.value) * 1009u + size_t(q.where.sector.x * 13 + q.where.sector.y);
     if (battleChoiceKey_ != key) {
         battleChoiceKey_ = key;
-        const game::EmpireId turn = game::activePlayer(s);
-        battleNotice_ = ground || (!s.options.simultaneous && turn.valid() && turn.index() < s.empires.size() &&
-                                   s.empire(turn).kind != game::PlayerKind::Human);
+        // Whose turn it is at the battle: the question's copy of the game. The
+        // session's game is as before the call, so after the player's End Turn
+        // it is still the player's turn there, while the battle comes in a
+        // computer player's turn that the call went on to.
+        const game::GameState& at = q.state ? *q.state : s;
+        const game::EmpireId turn = game::activePlayer(at);
+        battleNotice_ = ground || (!at.options.simultaneous && turn.valid() && turn.index() < at.empires.size() &&
+                                   at.empire(turn).kind != game::PlayerKind::Human);
     }
     if (!battleNotice_) {
         // The question itself: the Strategic Combat window, or Ground Combat for a ground fight.

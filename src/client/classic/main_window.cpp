@@ -1710,6 +1710,13 @@ void MainWindow::hotkeys(UiContext& ui) {
 void MainWindow::render(gfx::Renderer2D& r, UiContext& ui) {
     layOut(ui.map.left, ui.map.right);
     trackMovement(ui);
+    // The sector list holds pointers into the game's vehicles, made in
+    // update(). Whatever changed the game since (a turn ended, a battle
+    // window's answer carried the turn on, an order carried out at once, or
+    // a call stopped at a battle, which puts back the game as it was before
+    // it) may have moved or freed them: the list is made again from the game
+    // as it is now.
+    if (sectorsRevision_ != ui.session.revision() || sectorsVehicles_ != ui.state().vehicles.data()) prepareSectors(ui);
     r.rect(Rect{{geo.left, 0}, {geo.right, frameH()}}, Color::hex(0x000000));
     drawSystem(r, ui);
     drawGalaxy(r, ui);
@@ -1922,6 +1929,8 @@ void MainWindow::prepareSectors(UiContext& ui) {
     // the game's vehicles the player sees, or the replay's at its day; those
     // gliding to their square or animated by the replay are drawn on their way.
     sectors_.clear();
+    sectorsRevision_ = ui.session.revision();
+    sectorsVehicles_ = ui.state().vehicles.data();
     if (!shown_.valid()) return;
     const game::GameState& s = ui.state();
     std::map<game::Sector, std::pair<std::vector<game::ObjectId>, std::vector<const game::Vehicle*>>> bySector;
