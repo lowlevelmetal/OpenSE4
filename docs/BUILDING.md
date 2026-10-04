@@ -499,6 +499,14 @@ After changing the session, the turn flow or the battle windows, also play
 failure (`ASAN_OPTIONS=detect_leaks=0 ./build/asan/opense4 --input-script=...`; the
 graphics drivers leak a little at exit).
 
+`OPENSE4_BATTLE_SOAK=N` with `OPENSE4_CLASSIC_DATA=auto` runs an opt-in soak test
+(`-tc="battle flow: quick*"`): N quick turn-based games on your install from seed
+`OPENSE4_BATTLE_SOAK_SEED` (default 1), the player's empire played by its ministers for
+`OPENSE4_BATTLE_SOAK_TURNS` turns (150), every battle fought as the Strategic Combat window
+fights it, and each turn compared with the same turn played without stops
+(`_OPP` computer players, 4; `_SYSTEMS` systems, 12; `_SIM=1` for simultaneous turns). Under
+the `asan` build it finds memory errors in the battle flow.
+
 The Windows tests also run under Wine. `tools/package_release.sh` runs them in a Wine
 prefix of its own set to Windows 7 SP1 (`build/_tools/wine-win7`); by hand:
 

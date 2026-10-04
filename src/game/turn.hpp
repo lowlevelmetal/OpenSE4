@@ -71,6 +71,13 @@ namespace opense4::game {
 // game, so the results are the same whether a window shows a battle or not,
 // and a call without answers (network and PBEM hosts, automation) never
 // stops.
+//
+// A call with answers keeps a copy of the game from its start. Putting the
+// game back replaces the state's contents, the storage of its lists among
+// them, so whoever holds pointers or references into the state must take
+// them again after any such call, stopped or not (a call that goes on may
+// add or remove vehicles too). A fault (an exception other than a stop) also
+// puts the game back as it was before the call, then goes on to the caller.
 
 // How one battle is fought.
 struct BattleAnswer {

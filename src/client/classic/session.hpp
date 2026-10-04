@@ -279,6 +279,12 @@ private:
     enum class Call { None, Issue, EndTurn, Resume, Process };
     void beginCall(Call call, std::optional<game::Command> command = std::nullopt);
     void runCall();
+    // A fault in the engine call (an exception other than a battle stop): the
+    // game is put back as it was before the call (the engine's copy, or the
+    // turn's start), and the call is dropped with its question and answers,
+    // so that nothing goes on from it: no new turn, no autosave. runCall()
+    // then lets the exception go on to the crash report (client/crash_report.hpp).
+    void dropCall(std::string_view why);
     // Whether this session's engine calls stop for battles to show (local and hotseat games).
     bool showsBattles() const;
     // Who plays the human empires' turns in this session's turn-based calls.

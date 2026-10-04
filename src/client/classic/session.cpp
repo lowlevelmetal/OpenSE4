@@ -12,6 +12,7 @@
 #include "net/auth.hpp"
 
 #include <algorithm>
+#include <exception>
 #include <format>
 #include <fstream>
 #include <string_view>
@@ -319,17 +320,25 @@ void ClassicSession::beginCall(Call call, std::optional<game::Command> command) 
 void ClassicSession::runCall() {
     const std::vector<game::BattleAnswer>* answers = showsBattles() ? &answers_ : nullptr;
     game::TurnResult res;
-    switch (call_) {
-        case Call::Issue: res = game::applyLive(*rules_, state_, player_, *callCommand_, answers); break;
-        case Call::EndTurn: res = game::endPlayerTurn(*rules_, state_, player_, liveOptions(), answers); break;
-        case Call::Resume: res = game::resumeTurnBased(*rules_, state_, liveOptions(), answers); break;
-        case Call::Process: {
-            game::TurnOptions options;
-            options.battles = answers;
-            res = game::processTurn(*rules_, state_, callOrders_, options);
-            break;
+    try {
+        switch (call_) {
+            case Call::Issue: res = game::applyLive(*rules_, state_, player_, *callCommand_, answers); break;
+            case Call::EndTurn: res = game::endPlayerTurn(*rules_, state_, player_, liveOptions(), answers); break;
+            case Call::Resume: res = game::resumeTurnBased(*rules_, state_, liveOptions(), answers); break;
+            case Call::Process: {
+                game::TurnOptions options;
+                options.battles = answers;
+                res = game::processTurn(*rules_, state_, callOrders_, options);
+                break;
+            }
+            case Call::None: return;
         }
-        case Call::None: return;
+    } catch (const std::exception& e) {
+        dropCall(e.what());
+        throw;
+    } catch (...) {
+        dropCall("an unknown exception");
+        throw;
     }
     ++revision_;
     if (res.battle) {
@@ -341,13 +350,16 @@ void ClassicSession::runCall() {
     }
     const Call call = std::exchange(call_, Call::None);
     if (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) writePlayerRecords(res.records);
-    // The battles fought in the Tactical Combat window must have come out the same here.
+    // The battles fought in the Tactical Combat window must have come out the
+    // same here. Searched in the whole list: a call that ends the game turn
+    // drops the battles of the turn before (GameState::combats), so the new
+    // ones need not start at the old length.
     for (const game::CombatRecord& fought : fought_) {
         const auto same = [&](const game::CombatRecord& r) {
             return r.location == fought.location && r.turn == fought.turn && r.summary == fought.summary && r.pieces.size() == fought.pieces.size() &&
                    r.events.size() == fought.events.size();
         };
-        if (std::none_of(state_.combats.begin() + std::ptrdiff_t(std::min(callBattles_, state_.combats.size())), state_.combats.end(), same))
+        if (std::none_of(state_.combats.begin(), state_.combats.end(), same))
             log::warn("The tactical battle at system {} came out differently in the game", fought.location.system.value);
     }
     fought_.clear();
@@ -413,6 +425,21 @@ void ClassicSession::runCall() {
         case Call::None: break;
     }
     callCommand_.reset();
+}
+
+void ClassicSession::dropCall(std::string_view why) {
+    log::error("The game could not go on ({}): it stays as it was before the {}", why,
+               call_ == Call::Issue ? "order" : call_ == Call::Resume ? "computer players' turns" : "turn was ended");
+    // processTurn keeps no copy of its own when no battle can stop it.
+    if (call_ == Call::Process && turnStart_) state_ = *turnStart_;
+    call_ = Call::None;
+    callCommand_.reset();
+    callOrders_.clear();
+    answers_.clear();
+    fought_.clear();
+    battle_.reset();
+    if (tactical_ && tactical_->kind == TacticalFight::Kind::Game) tactical_.reset();
+    ++revision_;
 }
 
 void ClassicSession::answerBattle(game::BattleAnswer answer) {

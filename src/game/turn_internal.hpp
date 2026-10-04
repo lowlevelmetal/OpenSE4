@@ -46,6 +46,31 @@ struct BattleQuestionRaised {
     BattleQuestion question;
 };
 
+// Runs a call that plays the game with the answers of its stops (turn.hpp,
+// "Battles shown as they happen"): `body` gets the answers to hand out, or
+// null when `answers` is (nothing stops; no copy is kept). A stop whose
+// answer is missing stops the call: the state goes back to what it was
+// before, and the result holds the question. Any other exception (a fault)
+// also puts the state back before it goes on to the caller, so that a game
+// half carried through a call is never shown or saved.
+template <class Body>
+TurnResult withBattles(GameState& s, const std::vector<BattleAnswer>* answers, Body&& body) {
+    if (!answers) return body(nullptr);
+    GameState before = s;
+    TurnContext::Battles battles{answers, 0};
+    try {
+        return body(&battles);
+    } catch (BattleQuestionRaised& raised) {
+        s = std::move(before);
+        TurnResult out;
+        out.battle = std::move(raised.question);
+        return out;
+    } catch (...) {
+        s = std::move(before);
+        throw;
+    }
+}
+
 // The turn-based game turn (turn_based.cpp): processTurn's path when the
 // game is not simultaneous.
 TurnResult playTurnBasedTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options);

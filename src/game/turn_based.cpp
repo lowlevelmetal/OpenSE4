@@ -23,6 +23,7 @@ using detail::Control;
 using detail::living;
 using detail::keepStartFigures;
 using detail::ministersPlan;
+using detail::withBattles;
 
 namespace {
 
@@ -417,24 +418,6 @@ TurnResult refused(EmpireId e, std::string why) {
     TurnResult out;
     out.rejected.emplace_back(e, std::move(why));
     return out;
-}
-
-// Runs a turn-based call with the answers of its stops (turn.hpp). A stop
-// whose answer is missing stops the call: the state goes back to what it was
-// before, and the result holds the question.
-template <class Body>
-TurnResult withBattles(GameState& s, const std::vector<BattleAnswer>* answers, Body&& body) {
-    if (!answers) return body(nullptr);
-    GameState before = s;
-    TurnContext::Battles battles{answers, 0};
-    try {
-        return body(&battles);
-    } catch (detail::BattleQuestionRaised& raised) {
-        s = std::move(before);
-        TurnResult out;
-        out.battle = std::move(raised.question);
-        return out;
-    }
 }
 
 } // namespace

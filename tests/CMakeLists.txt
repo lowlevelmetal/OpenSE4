@@ -56,6 +56,7 @@ add_executable(opense4_tests
     test_sight.cpp
     test_stellar.cpp
     test_turn_based.cpp
+    test_battle_flow.cpp
     test_turn_order.cpp
     test_unit_groups.cpp
     test_wincursor.cpp
