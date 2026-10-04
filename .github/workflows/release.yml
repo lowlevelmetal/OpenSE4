@@ -59,43 +59,52 @@ jobs:
   # 32-bit ARM (armhf: ARMv7, hard-float, NEON), cross-compiled on x86_64 with
   # Ubuntu's arm-linux-gnueabihf GCC; the tests run under QEMU. SDL3's build
   # needs the same headers and libraries as above, for armhf: Ubuntu's ports
-  # archive has them, installed next to the runner's own (multiarch).
+  # archive has them, installed next to the amd64 packages (multiarch). In a
+  # clean Ubuntu container: the runner's own packages are newer than the
+  # archive's, and the armhf ones must have the same versions.
   linux-armhf:
     name: Linux package (armhf)
     runs-on: ubuntu-26.04
+    container: ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
+      # The archive serves amd64; the ports archive serves armhf.
       - name: Add the armhf architecture
         run: |
           . /etc/os-release
-          # The runner's sources serve only amd64; the ports archive serves armhf.
-          sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
+          sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
           printf '%s\n' 'Types: deb' 'URIs: http://ports.ubuntu.com/ubuntu-ports' \
             "Suites: $VERSION_CODENAME $VERSION_CODENAME-updates $VERSION_CODENAME-security" \
             'Components: main universe' 'Architectures: armhf' \
-            'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' |
-            sudo tee /etc/apt/sources.list.d/ubuntu-ports.sources
-          sudo dpkg --add-architecture armhf
+            'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' > /etc/apt/sources.list.d/ubuntu-ports.sources
+          dpkg --add-architecture armhf
 
       - name: Install the build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++-arm-linux-gnueabihf qemu-user glslc pkg-config \
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git cmake ninja-build binutils file \
+            g++-arm-linux-gnueabihf qemu-user glslc pkg-config desktop-file-utils appstream \
             libasound2-dev:armhf libpulse-dev:armhf libaudio-dev:armhf libfribidi-dev:armhf libjack-dev:armhf \
             libsndio-dev:armhf libx11-dev:armhf libxext-dev:armhf libxrandr-dev:armhf libxcursor-dev:armhf \
             libxfixes-dev:armhf libxi-dev:armhf libxss-dev:armhf libxtst-dev:armhf libxkbcommon-dev:armhf \
             libdrm-dev:armhf libgbm-dev:armhf libgl-dev:armhf libgles-dev:armhf libegl-dev:armhf \
             libdbus-1-dev:armhf libibus-1.0-dev:armhf libudev-dev:armhf libthai-dev:armhf \
             libusb-1.0-0-dev:armhf libpipewire-0.3-dev:armhf libwayland-dev:armhf wayland-protocols \
-            libdecor-0-dev:armhf liburing-dev:armhf desktop-file-utils appstream
+            libdecor-0-dev:armhf liburing-dev:armhf
+          cmake --version | head -1
           arm-linux-gnueabihf-g++ --version | head -1
 
+      # After git is installed, so that the checkout is a repository the script can describe.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Build, test and package
-        run: tools/package_release.sh linux-armhf
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          tools/package_release.sh linux-armhf
 
       - name: Upload the package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
