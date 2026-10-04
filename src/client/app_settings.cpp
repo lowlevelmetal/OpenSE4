@@ -1,5 +1,6 @@
 #include "client/app_settings.hpp"
 
+#include "core/environment.hpp"
 #include "core/log.hpp"
 
 #include <SDL3/SDL_filesystem.h>
@@ -84,8 +85,8 @@ const char* displayName(LayoutChoice l) {
 
 std::filesystem::path userDataDirectory() {
     std::filesystem::path dir;
-    if (const char* own = std::getenv("OPENSE4_USER_DIR"); own && *own) {
-        dir = own;  // UTF-8 (the Windows programs use the UTF-8 code page)
+    if (const auto own = core::environment("OPENSE4_USER_DIR"); own && !own->empty()) {
+        dir = *own;  // UTF-8, as narrow strings become paths everywhere
     } else if (char* pref = SDL_GetPrefPath("", "OpenSE4")) {
         dir = pref;
         SDL_free(pref);

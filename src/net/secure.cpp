@@ -1,5 +1,7 @@
 #include "net/secure.hpp"
 
+#include "core/environment.hpp"
+
 #include <algorithm>
 #include <cstdlib>
 #include <format>
@@ -252,14 +254,16 @@ std::expected<void, std::string> KnownHosts::rememberId(const std::string& id, c
 }
 
 fs::path userDataDir() {
-    if (const char* own = std::getenv("OPENSE4_USER_DIR"); own && *own) return fs::path(own);
+    // The variables as UTF-8 (core/environment.hpp), which every narrow path is.
+    auto variable = [](const char* name) { return core::environment(name).value_or(std::string()); };
+    if (const std::string own = variable("OPENSE4_USER_DIR"); !own.empty()) return fs::path(own);
 #if defined(_WIN32)
-    if (const char* appData = std::getenv("APPDATA"); appData && *appData) return fs::path(appData) / "OpenSE4";
+    if (const std::string appData = variable("APPDATA"); !appData.empty()) return fs::path(appData) / "OpenSE4";
 #elif defined(__APPLE__)
-    if (const char* home = std::getenv("HOME"); home && *home) return fs::path(home) / "Library" / "Application Support" / "OpenSE4";
+    if (const std::string home = variable("HOME"); !home.empty()) return fs::path(home) / "Library" / "Application Support" / "OpenSE4";
 #else
-    if (const char* data = std::getenv("XDG_DATA_HOME"); data && *data) return fs::path(data) / "OpenSE4";
-    if (const char* home = std::getenv("HOME"); home && *home) return fs::path(home) / ".local" / "share" / "OpenSE4";
+    if (const std::string data = variable("XDG_DATA_HOME"); !data.empty()) return fs::path(data) / "OpenSE4";
+    if (const std::string home = variable("HOME"); !home.empty()) return fs::path(home) / ".local" / "share" / "OpenSE4";
 #endif
     std::error_code ec;
     return fs::current_path(ec) / "userdata";

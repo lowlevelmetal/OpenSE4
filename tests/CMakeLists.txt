@@ -43,6 +43,7 @@ add_executable(opense4_tests
     test_net_resilience.cpp
     test_net_secure.cpp
     test_pbem_client.cpp
+    test_platform.cpp
     test_redact.cpp
     test_research.cpp
     test_ruleset.cpp

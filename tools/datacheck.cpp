@@ -4,6 +4,7 @@
 //   opense4-datacheck                 auto-detect an installed copy of the classic game
 //   opense4-datacheck path/to/Data    check a specific data set (e.g. a mod)
 
+#include "core/environment.hpp"
 #include "ruleset/ruleset.hpp"
 
 #include <cstdio>
@@ -15,8 +16,9 @@ using namespace opense4;
 int main(int argc, char** argv) {
     std::filesystem::path dir;
     bool verbose = false;
-    for (int i = 1; i < argc; ++i) {
-        const std::string_view arg = argv[i];
+    const std::vector<std::string> args = core::utf8Arguments(argc, argv);  // UTF-8 on Windows too
+    for (size_t i = 1; i < args.size(); ++i) {
+        const std::string_view arg = args[i];
         if (arg == "-v" || arg == "--verbose") verbose = true;
         else dir = arg;
     }

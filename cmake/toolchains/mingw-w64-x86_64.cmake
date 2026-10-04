@@ -1,5 +1,10 @@
-# Cross-compiling for 64-bit Windows with MinGW-w64 (GCC), e.g. from Linux:
-#   cmake --preset dist-windows
+# Cross-compiling for 64-bit Windows with a distribution's MinGW-w64 GCC, e.g. from
+# Linux:
+#   cmake -B build/mingw-gcc -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-x86_64.cmake
+# Today's MinGW-w64 GCC packages (Arch's, MSYS2's UCRT64) link the Universal C
+# Runtime, so the programs need Windows 10 or later, or Windows 7 with update
+# KB2999226. The release packages use llvm-mingw-x86_64.cmake instead (the
+# dist-windows preset), whose programs run on Windows 7 SP1 to 11.
 # Host tools (glslc) come from the build machine; libraries and headers from the
 # MinGW-w64 sysroot. Tests run through Wine when it is installed.
 

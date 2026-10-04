@@ -97,26 +97,34 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
 - **Mods:** `opense4-datacheck` checks a modded data set and names the file, line and
   record of anything it doesn't understand.
 
-## Downloads and system requirements
+## System requirements
 
-Each release on GitHub has these packages. Each holds the game (`opense4`), the dedicated
-server (`opense4-server`) and the data checker (`opense4-datacheck`):
+- **Your own copy of Space Empires IV Deluxe** (see "Setting up the game data").
+- **Windows:** 64-bit Windows 7 with Service Pack 1, 8, 8.1, 10 or 11, with nothing else
+  to install. Windows 7 drivers seldom offer Vulkan 1.3, so there the game draws with
+  OpenGL 3.3. That needs the current driver from the graphics card's maker (NVIDIA, AMD
+  or Intel): Windows' own basic display driver has no OpenGL 3.3. Graphics chips older
+  than about 2012 may have none either (Intel HD Graphics 2000 and 3000, for example).
+  Windows 7, 8 and 8.1 support is checked by analysing the programs' imports and by
+  running them under Wine set to Windows 7; it has not been tested on real Windows 7.
+- **Linux:** glibc 2.34 or later (Ubuntu 22.04, Debian 12, Fedora 35, SteamOS 3 and
+  newer; on ARM also Raspberry Pi OS 12 and Fedora Asahi Remix), and Vulkan 1.3 or
+  OpenGL 3.3. Each release has a package for each architecture:
+  - `OpenSE4-<version>-linux-x86_64.tar.gz`: 64-bit PCs;
+  - `OpenSE4-<version>-linux-aarch64.tar.gz`: 64-bit ARM;
+  - `OpenSE4-<version>-linux-armhf.tar.gz`: 32-bit ARM, ARMv7 or newer with NEON (a
+    Raspberry Pi 2 or later on the 32-bit Raspberry Pi OS, for example).
 
-| Package | For |
-|---|---|
-| `OpenSE4-<version>-linux-x86_64.tar.gz` | 64-bit PC Linux: Ubuntu 22.04, Debian 12, Fedora 35, SteamOS 3 or newer |
-| `OpenSE4-<version>-linux-aarch64.tar.gz` | 64-bit ARM Linux: Raspberry Pi OS (64-bit) 12 or newer, Debian 12, Ubuntu 22.04, Fedora Asahi Remix |
-| `OpenSE4-<version>-linux-armhf.tar.gz` | 32-bit ARM Linux on ARMv7 or newer with NEON: Raspberry Pi OS (32-bit) 12 or newer on a Pi 2 or later, Debian 12, Ubuntu 22.04 |
-| `OpenSE4-<version>-windows-x86_64-setup.exe` and `.zip` | Windows (see "Running") |
+  Nothing else needs installing: SDL is built in and loads X11 or Wayland, the GPU
+  driver and the sound server at run time. Every architecture computes the same game,
+  so they play together over the network and by e-mail.
+- **macOS:** builds from source (see [docs/BUILDING.md](docs/BUILDING.md)); there is no
+  package.
 
-The Linux programs need glibc 2.34 or newer and nothing else installed: SDL is built in
-and loads X11 or Wayland, the GPU driver and the sound server at run time. Each
-architecture computes the same game, so they play together over the network and by
-e-mail.
+### Graphics on ARM
 
-The game draws with **Vulkan 1.3 or OpenGL 3.3**, and needs one of them. A PC graphics
-card or integrated GPU of the last ten years with current drivers has OpenGL 3.3, and
-most have Vulkan 1.3 too. On ARM it depends on the GPU and the Mesa version:
+On ARM, whether the GPU offers Vulkan 1.3 or OpenGL 3.3 depends on the chip and the
+Mesa version:
 
 | Device | Vulkan 1.3 | OpenGL 3.3 |
 |---|---|---|

@@ -60,13 +60,13 @@
         },
         {
             "name": "dist-windows",
-            "displayName": "Release package for Windows (MinGW-w64 cross build, static, resources built in)",
+            "displayName": "Release package for Windows 7 to 11 (llvm-mingw for msvcrt.dll, static, resources built in)",
             "inherits": "dist",
-            "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake"
+            "toolchainFile": "${sourceDir}/cmake/toolchains/llvm-mingw-x86_64.cmake"
         },
         {
             "name": "dist-mingw",
-            "displayName": "Release package for Windows (native MinGW-w64 build in MSYS2, static, resources built in)",
+            "displayName": "Windows build in MSYS2 with its own MinGW-w64 GCC (Universal C Runtime: Windows 10+, not the release packages)",
             "inherits": "dist"
         }
     ],

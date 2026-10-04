@@ -1,14 +1,33 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
   The application manifest of every OpenSE4 program on Windows (CMakeLists.txt,
-  opense4_windows_manifest). The UTF-8 code page makes the C library's narrow
-  file functions (fopen, used by stb_image and dr_mp3) and std::filesystem's
-  narrow strings use UTF-8, as on Linux, so paths with letters outside ASCII
-  (a user name like José, a game folder like Spiele) work the same everywhere.
-  Windows 10 1903 and later honour it. SDL declares the DPI awareness itself
-  (per monitor, version 2).
+  opense4_windows_manifest).
+
+  - supportedOS: the programs run on Windows 7 SP1, 8, 8.1, 10 and 11, and get each
+    version's own behaviour rather than the compatibility of an older one.
+  - The UTF-8 code page makes the C library's narrow file functions and
+    std::filesystem's narrow strings use UTF-8, as on Linux, so paths with letters
+    outside ASCII (a user name like José, a game folder like Spiele) work the same
+    everywhere. Windows 10 1903 and later honour it. On older Windows the release
+    build converts paths as UTF-8 itself (src/compat/libcxx_utf8_paths.cpp,
+    core/environment.hpp).
+  - SDL declares the DPI awareness at run time: per monitor (version 2) on Windows 10
+    1703 and later, per monitor on 8.1, system-wide on 7 and 8, which have nothing
+    finer.
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 7 -->
+      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
+      <!-- Windows 8 -->
+      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+      <!-- Windows 8.1 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+      <!-- Windows 10 and 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+  </compatibility>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>

@@ -1,6 +1,7 @@
 #include "ruleset/ruleset.hpp"
 
 #include "ruleset/ability_names.hpp"
+#include "core/environment.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -165,16 +166,16 @@ std::optional<std::filesystem::path> findInstalledDataDir(const std::filesystem:
     if (!hint.empty()) return resolve(hint);
 
     std::vector<fs::path> steamRoots;
-    if (const char* home = std::getenv("HOME")) {
-        steamRoots.push_back(fs::path(home) / ".local/share/Steam");
-        steamRoots.push_back(fs::path(home) / ".steam/steam");
-        steamRoots.push_back(fs::path(home) / ".var/app/com.valvesoftware.Steam/.local/share/Steam");
-        steamRoots.push_back(fs::path(home) / "Library/Application Support/Steam");  // macOS
+    if (const auto home = core::environment("HOME")) {
+        steamRoots.push_back(fs::path(*home) / ".local/share/Steam");
+        steamRoots.push_back(fs::path(*home) / ".steam/steam");
+        steamRoots.push_back(fs::path(*home) / ".var/app/com.valvesoftware.Steam/.local/share/Steam");
+        steamRoots.push_back(fs::path(*home) / "Library/Application Support/Steam");  // macOS
     }
 #if defined(_WIN32)
     if (auto steam = steamFolderFromRegistry()) steamRoots.push_back(*steam);
 #endif
-    if (const char* programFiles = std::getenv("ProgramFiles(x86)")) steamRoots.push_back(fs::path(programFiles) / "Steam");
+    if (const auto programFiles = core::environment("ProgramFiles(x86)")) steamRoots.push_back(fs::path(*programFiles) / "Steam");
     steamRoots.push_back("C:/Program Files (x86)/Steam");
     steamRoots.push_back("C:/Program Files/Steam");
 

@@ -57,6 +57,16 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Dependencies)
 include(Shaders)
 
+# Windows 7 SP1 is the oldest Windows the programs support (docs/BUILDING.md,
+# "Windows 7 to 11"): the Windows headers then declare nothing newer, so a call to
+# a newer function fails to compile and must go through GetProcAddress with a
+# fallback. For our own code and Dear ImGui; SDL3 picks its own version and loads
+# newer functions at run time, and miniupnpc is set in cmake/Dependencies.cmake.
+# tools/check_windows_imports.py checks the built programs.
+if(WIN32)
+    add_compile_definitions(_WIN32_WINNT=0x0601 WINVER=0x0601)
+endif()
+
 # Common warning flags for first-party targets.
 add_library(opense4_warnings INTERFACE)
 if(MSVC)
@@ -139,4 +149,11 @@ endif()
 if(OPENSE4_STATIC AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT MSVC)
     include(GlibcCompat)
     opense4_apply_glibc_compat("${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools" "${CMAKE_SOURCE_DIR}/tests")
+endif()
+
+# Windows builds with libc++ (the release toolchain) convert narrow strings to and
+# from paths as UTF-8 on every Windows version (cmake/WindowsCompat.cmake).
+if(WIN32 AND NOT MSVC)
+    include(WindowsCompat)
+    opense4_apply_windows_compat("${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools" "${CMAKE_SOURCE_DIR}/tests")
 endif()
