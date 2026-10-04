@@ -54,7 +54,7 @@
         },
         {
             "name": "dist-mingw",
-            "displayName": "Release package for Windows (native MinGW-w64 build in MSYS2, static, resources built in)",
+            "displayName": "Windows build in MSYS2 with its own MinGW-w64 GCC (Universal C Runtime: Windows 10+, not the release packages)",
             "inherits": "dist"
         }
     ],
