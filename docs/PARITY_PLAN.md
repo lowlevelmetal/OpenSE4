@@ -2,9 +2,11 @@
 
 **Goal.** The new engine (`src/game`), run on the player's installed classic data set
 and art, should play the same as the original: the same rules, numbers and screens.
-It must stay clean-room throughout (see [CLEANROOM.md](CLEANROOM.md)). A second goal
-is our own free data set and art in the same format, so the game also runs, and can be
-distributed, without the original.
+It must stay clean-room throughout (see [CLEANROOM.md](CLEANROOM.md)).
+
+**Not a goal: replacing the original's content.** OpenSE4 plays on the player's own copy
+of Space Empires IV Deluxe and always needs it: we make no data set, art, sound or music
+of our own to stand in for it. To play, players buy the original game.
 
 **How parity is established:**
 
@@ -143,11 +145,6 @@ questions are what the observation sessions still have to settle.
 - [x] Tutorials, training games and the manual: OpenSE4's own, in our own words
       ([LEARNING.md](LEARNING.md)). The original's tutorial cannot be played: its starting
       game is a binary `.gam`.
-
-### M9: Our own content (not planned)
-- [ ] A complete data set in the classic format, with our own art, fonts and sounds, so
-      the game would run without the original. Not planned: OpenSE4 is an engine for
-      the player's own copy of Space Empires IV Deluxe.
 
 ## Next steps
 

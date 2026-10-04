@@ -10,7 +10,8 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
 
 - **You need your own copy of Space Empires IV Deluxe.** It is available on Steam.
   OpenSE4 reads the game's data files, art and sound from your installation at
-  runtime. None of the original game ships with this project.
+  runtime. None of the original game ships with this project, and OpenSE4 will never
+  replace it with art or data of its own: buy the original to play.
 - **Written from specs, nothing copied.** The rules are reimplemented from the manual,
   the game's documented data formats, observation of the running game and, since
   2026-09-29, analysis of the original executable. Findings are written up as
