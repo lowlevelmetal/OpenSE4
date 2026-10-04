@@ -101,6 +101,131 @@ jobs:
           build/${{ matrix.preset }}/opense4 --help > /dev/null
           build/${{ matrix.preset }}/opense4-server --help > /dev/null
 
+  # 64-bit ARM, natively on GitHub's arm64 runner (docs/BUILDING.md, "ARM Linux"),
+  # with the distribution's SDL3. An optimized build: only there may a compiler
+  # fuse a multiply and an add, which -ffp-contract=off forbids (docs/ENGINE.md,
+  # "Same on every platform"); the debug builds above never do.
+  linux-arm64:
+    name: Linux arm64 / GCC release
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends glslc libsdl3-dev libvulkan-dev ccache
+          cmake --version | head -1
+          "$CXX" --version | head -1
+
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: linux-arm64-gcc-release
+          max-size: 1G
+          evict-old-files: job
+
+      # The sources are the same on every architecture: one cache for all Linux jobs.
+      - name: Restore the FetchContent sources
+        id: deps
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .deps
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: |
+          cmake -DDIR=.deps -P .github/scripts/fetchcontent_cache.cmake
+          cmake --preset release -C .deps/sources.cmake \
+            -DOPENSE4_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Keep the FetchContent sources for the next run
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: cmake -DDIR=.deps -DBUILD=build/release -P .github/scripts/fetchcontent_cache.cmake
+
+      - name: Build
+        run: cmake --build --preset release -- -k 0
+
+      - name: Unit tests
+        run: .github/scripts/run_tests_parallel.sh build/release/tests/opense4_tests 4
+
+      - name: Start the programs
+        run: |
+          build/release/opense4 --help > /dev/null
+          build/release/opense4-server --help > /dev/null
+
+  # 32-bit ARM (armhf: ARMv7, hard-float, NEON), cross-compiled on x86_64 with
+  # Ubuntu's arm-linux-gnueabihf GCC and the toolchain file of the
+  # dist-linux-armhf preset, warnings as errors. The tests run under QEMU's user
+  # mode: GitHub's arm64 runners cannot all run 32-bit ARM code. Optimized, as
+  # above, and much faster under QEMU than a debug build. SDL3 is built without
+  # windows (the tests open none); the release workflow builds it complete.
+  linux-armhf:
+    name: Linux armhf / GCC release (QEMU)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the cross compiler and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-arm-linux-gnueabihf qemu-user glslc ccache
+          cmake --version | head -1
+          arm-linux-gnueabihf-g++ --version | head -1
+          qemu-arm --version | head -1
+
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: linux-armhf-gcc-release
+          max-size: 1G
+          evict-old-files: job
+
+      - name: Restore the FetchContent sources
+        id: deps
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .deps
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: |
+          cmake -DDIR=.deps -P .github/scripts/fetchcontent_cache.cmake
+          cmake --preset release -B build/armhf -C .deps/sources.cmake \
+            --toolchain cmake/toolchains/arm-linux-gnueabihf.cmake \
+            -DSDL_UNIX_CONSOLE_BUILD=ON -DOPENSE4_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Keep the FetchContent sources for the next run
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: cmake -DDIR=.deps -DBUILD=build/armhf -P .github/scripts/fetchcontent_cache.cmake
+
+      - name: Build
+        run: cmake --build build/armhf -- -k 0
+
+      # QEMU finds the ARM C library and dynamic loader under -L.
+      - name: Unit tests
+        run: |
+          file build/armhf/tests/opense4_tests
+          printf '#!/bin/sh\nexec qemu-arm -L /usr/arm-linux-gnueabihf "%s" "$@"\n' "$PWD/build/armhf/tests/opense4_tests" > "$RUNNER_TEMP/opense4_tests"
+          chmod +x "$RUNNER_TEMP/opense4_tests"
+          .github/scripts/run_tests_parallel.sh "$RUNNER_TEMP/opense4_tests" 4
+
+      - name: Start the programs
+        run: |
+          qemu-arm -L /usr/arm-linux-gnueabihf build/armhf/opense4 --help > /dev/null
+          qemu-arm -L /usr/arm-linux-gnueabihf build/armhf/opense4-server --help > /dev/null
+
   # The client itself, played by input scripts (docs/BUILDING.md "Input scripts"): the
   # scripts that need nothing but our own content run on a game folder made from the
   # test fixtures, headless, with Mesa's software OpenGL. The others play the
