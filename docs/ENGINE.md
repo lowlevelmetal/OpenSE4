@@ -489,6 +489,10 @@ grow, for example with more pipelines or offscreen targets, without touching gam
 explains where it looked and exits with an error. It then opens the window, the render
 device (Vulkan, else OpenGL) and Dear ImGui, and runs the frame loop and screenshots.
 
+`src/client/crash_report.*` installs the crash handler (main.cpp): a fault or an exception
+nothing caught appends a report to `opense4.log` (version, what happened, the stack as
+module and offset, the last log lines; `log::crashWrite` writes without locking or
+allocating) and a message box says where it is (docs/BUILDING.md "Crash reports").
 While End Turn's processing (or the rest of a turn after a battle's window) holds the
 frame, the player's clicks and keys wait in the queue; `ClassicMode` drops them after such
 a frame, as the original locks its panels until the computer players have moved, so a

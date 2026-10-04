@@ -1,11 +1,15 @@
 #include "client/app.hpp"
+#include "client/crash_report.hpp"
 #include "client/script/script.hpp"
+#include "core/environment.hpp"
 #include "core/log.hpp"
 
 #include <charconv>
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -128,6 +132,13 @@ int main(int argc, char** argv) {
     attachParentConsole();
 #endif
     using namespace opense4;
+    // The message box of a crash report, started by the crashed program
+    // (client/crash_report.hpp): it shows the box and nothing else.
+    if (argc == 2 && std::string_view(argv[1]).starts_with("--crash-message=")) {
+        log::info("The crash report is in {}", std::string_view(argv[1]).substr(16));
+        client::showCrashMessage(std::filesystem::path(std::string_view(argv[1]).substr(16)));
+        return 0;
+    }
     client::AppOptions options;
     // Start from the saved settings; command-line options override them for this run.
     client::GraphicsSettings& saved = client::appSettings().graphics;
@@ -284,7 +295,22 @@ int main(int argc, char** argv) {
     options.seedGiven = options.seed != 0 || options.inputScript;
     if (options.seed == 0) options.seed = options.inputScript ? 1 : static_cast<uint64_t>(std::time(nullptr));
     // The log also goes to opense4.log in the user data folder: on Windows the
-    // game has no console, so that file is where a player finds it.
-    log::setFile(client::userDataDirectory() / "opense4.log");
+    // game has no console, so that file is where a player finds it. The last
+    // run's log, a crash report perhaps, stays beside it as opense4.previous.log.
+    const std::filesystem::path logFile = client::userDataDirectory() / "opense4.log";
+    client::keepPreviousLog(logFile);
+    log::setFile(logFile);
+    // A crash or an exception nothing caught leaves a report there; a message
+    // box says where, except in automated runs, which must never wait on one.
+    const auto video = core::environment("SDL_VIDEO_DRIVER");
+    const bool headless = video && (*video == "offscreen" || *video == "dummy");
+    client::installCrashHandler({logFile, !options.inputScript && options.screenshotPath.empty() && !options.lessonCheck && !headless});
+    // Checking the crash report (docs/BUILDING.md "Crash reports"): crash on purpose now.
+    if (const auto test = core::environment("OPENSE4_CRASH_TEST")) {
+        log::info("OPENSE4_CRASH_TEST={}: crashing on purpose", *test);
+        if (*test == "exception") throw std::runtime_error("a test of the crash report");
+        volatile int* nowhere = nullptr;
+        *nowhere = 1;
+    }
     return client::App().run(options);
 }
