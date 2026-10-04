@@ -1434,6 +1434,8 @@ void MainWindow::overlayText(UiContext& ui) {
                 const game::SpaceObject& o = s.galaxy.object(id);
                 const game::Colony* col = s.colony(id);
                 if (o.kind != game::ObjectKind::Planet || !col || !showsFacilityMarkers(s, ui.session.player(), col->owner)) continue;
+                // Only on the planet its sector shows (spec 06 §2.4 "Sector contents", §7 Q108).
+                if (std::none_of(sectors_.begin(), sectors_.end(), [&](const ShownSector& sec) { return sec.view.stellar == id; })) continue;
                 // Only on a colony the player sees: a partner's colony needs sensors there (spec 01 §6.9).
                 if (col->owner != ui.session.player() && !game::sight::canSeeColony(ui.rules(), s, ui.session.player(), id)) continue;
                 if (replay_.active() && replay_.colonyOwner(id) != col->owner) continue;
@@ -2005,29 +2007,41 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
             if (!spriteAt(ui.art.planet(rules.data().sectorObjectTypes[o.sectorType].picture, keyed), square))
                 r.disc(square + Vec2{18, 18}, 12.0f, o.kind == game::ObjectKind::Star ? Color::hex(0xffe080) : Color::hex(0x8090a0));
         }
-        // Colonies carry the owner's small flag at the top right; planets we could
-        // colonise get the classic star (green: breathable, red: needs domes).
-        for (game::ObjectId id : sys.objects) {
+        // One planet's marks per sector: only the stellar object the sector
+        // shows carries the colony box or the colonisation star, never both;
+        // the other planets of the sector get no mark (spec 06 §2.4 "Sector
+        // contents", §7 Q108, confirmed: binary).
+        for (const ShownSector& sec : sectors_) {
+            if (!sec.view.stellar) continue;
+            const game::ObjectId id = *sec.view.stellar;
             const game::SpaceObject& o = s.galaxy.object(id);
-            // A planet the player does not see gets no mark at all (spec 01 §6.9).
-            if (!game::sight::canSeePlanet(rules, s, ui.session.player(), id)) continue;
-            const Vec2 c = sectorCenter(o.sector);
+            if (o.kind != game::ObjectKind::Planet && o.kind != game::ObjectKind::Asteroids) continue;
+            const Vec2 square = spriteSquare(sec.sector);
             const game::Colony* col = s.colony(id);
             std::optional<game::EmpireId> owner = col ? std::optional(col->owner) : std::nullopt;
             if (replay_.active()) owner = replay_.colonyOwner(id);
-            // The colony's mark only when the player sees the colony by the
+            // The colony's box only when the player sees the colony by the
             // detection rule; an unseen colony's planet looks empty and gets
-            // the colonize star when its type fits (spec 01 §6.9, spec 06 §2.4).
+            // the colonisation star when its type fits (spec 01 §6.9).
             if (owner && *owner != ui.session.player() && !game::sight::canSeeColony(rules, s, ui.session.player(), id)) owner.reset();
             if (owner) {
-                const Sprite flag = ui.art.flag(s.empire(*owner).race.style, false);
-                if (flag) r.sprite(flag.tex, Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), flag.uv);
-                else r.rect(Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), empireCol(s, *owner));
+                // A 1 px outline in the owner's colour over (X+20, Y+1)-(X+35, Y+11),
+                // and 0 to 3 bars of 3x6 at X+30, X+26, X+22 (top Y+3), filled
+                // right to left: one up to 200M, two under 1000M, three from 1000M.
+                const Color c = empireCol(s, *owner);
+                r.rect(Rect::fromPosSize(square + Vec2{20, 1}, {15, 1}), c);
+                r.rect(Rect::fromPosSize(square + Vec2{20, 10}, {15, 1}), c);
+                r.rect(Rect::fromPosSize(square + Vec2{20, 1}, {1, 10}), c);
+                r.rect(Rect::fromPosSize(square + Vec2{34, 1}, {1, 10}), c);
+                const int64_t population = col ? col->totalPopulation() : 0;
+                const int bars = population <= 0 ? 0 : population <= 200 ? 1 : population < 1000 ? 2 : 3;
+                for (int b = 0; b < bars; ++b) r.rect(Rect::fromPosSize(square + Vec2{30.0f - 4.0f * float(b), 3}, {3, 6}), c);
             } else if (ui.options().colonizableMarkers && o.kind == game::ObjectKind::Planet &&
                        colonizeProblem(rules, s, ui.session.player(), id, tech).empty()) {
+                // The 12x8 star of General.bmp at (X+24, Y): green breathable, red domed.
                 const bool breathe = breathableBy(s, ui.session.player(), o);
-                const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 237 : 261, 16, 7, 7);
-                if (star) r.sprite(star.tex, Rect::fromPosSize(c + Vec2{11, -17}, {7, 7}), star.uv);
+                const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 234 : 258, 16, 12, 8);
+                if (star) r.sprite(star.tex, Rect::fromPosSize(square + Vec2{24, 0}, {12, 8}), star.uv);
             }
         }
     }
