@@ -22,6 +22,7 @@ add_executable(opense4
     client/audio.cpp
     client/audio_mixer.cpp
     client/audio_playlist.cpp
+    client/crash_report.cpp
     client/classic/art.cpp
     client/classic/classic_mode.cpp
     client/classic/classic_probe.cpp

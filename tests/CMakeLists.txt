@@ -15,6 +15,7 @@ add_executable(opense4_tests
     test_colony_orders.cpp
     test_combat.cpp
     test_computer_control.cpp
+    test_crash_report.cpp
     test_combat_rules.cpp
     test_combat_planning.cpp
     test_combat_replay.cpp
@@ -60,6 +61,7 @@ add_executable(opense4_tests
     test_sight.cpp
     test_stellar.cpp
     test_turn_based.cpp
+    test_battle_flow.cpp
     test_turn_order.cpp
     test_unit_groups.cpp
     test_wincursor.cpp
@@ -71,6 +73,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/app_settings.cpp
     ${CMAKE_SOURCE_DIR}/src/client/audio_mixer.cpp
     ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/crash_report.cpp
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/items.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/player.cpp

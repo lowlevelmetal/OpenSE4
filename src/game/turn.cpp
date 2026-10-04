@@ -157,17 +157,8 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     // ones included, stops the turn to be shown (turn.hpp; spec 06 §1.10.5,
     // §7 Q76): the turn is played again with the answers so far, up to the
     // next battle (spec 04 §2).
-    if (!options.battles || !simultaneousBattlesShown(r)) return simultaneousTurn(r, s, orders, options, nullptr);
-    GameState before = s;
-    TurnContext::Battles battles{options.battles, 0};
-    try {
-        return simultaneousTurn(r, s, orders, options, &battles);
-    } catch (detail::BattleQuestionRaised& raised) {
-        s = std::move(before);
-        TurnResult out;
-        out.battle = std::move(raised.question);
-        return out;
-    }
+    const std::vector<BattleAnswer>* answers = options.battles && simultaneousBattlesShown(r) ? options.battles : nullptr;
+    return detail::withBattles(s, answers, [&](TurnContext::Battles* battles) { return simultaneousTurn(r, s, orders, options, battles); });
 }
 
 namespace {
