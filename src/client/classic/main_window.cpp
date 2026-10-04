@@ -1993,6 +1993,9 @@ void MainWindow::trackMovement(UiContext& ui) {
         }
         replay_.stop();
         replayLine_.reset();
+        // The game selects the current sector again at a turn's start: the
+        // report is filled afresh, on Detail (spec 06 §2.5, §7 Q107).
+        if (seenTurn_ != UINT32_MAX) tab_ = ReportTab::Detail;
         seenTurn_ = s.turn;
     }
     const bool wasReplaying = replay_.active();
