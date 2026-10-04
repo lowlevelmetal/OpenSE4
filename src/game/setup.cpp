@@ -191,7 +191,7 @@ std::vector<ObjectId> extraStartingPlanets(const Rules& r, GameState& s, const E
             out.push_back(*planet);
         }
     while (static_cast<int>(out.size()) < count) {
-        const SystemId target = systems[s.rng.below(systems.size())];
+        const SystemId target = systems[s.rng.index(systems.size())];
         std::vector<Sector> inner;
         for (Sector sct : emptySectors(s.galaxy, target))
             if (sct.x >= 1 && sct.x <= 11 && sct.y >= 1 && sct.y <= 11) inner.push_back(sct);
@@ -202,7 +202,7 @@ std::vector<ObjectId> extraStartingPlanets(const Rules& r, GameState& s, const E
             const int y = s.rng.rangeInt(1, 11);
             where = Sector{x, y};
         } else {
-            where = inner[s.rng.below(inner.size())];
+            where = inner[s.rng.index(inner.size())];
         }
         out.push_back(createStartingPlanet(s.galaxy, rs, target, where, e.race.nativeSurface, e.race.atmosphere,
                                            s.options.allPlanetsSameSize ? homeSize : 0, s.options.finiteResources, s.rng));

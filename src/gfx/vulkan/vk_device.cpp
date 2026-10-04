@@ -269,8 +269,8 @@ public:
             return;
         }
         auto* base = static_cast<uint8_t*>(f.stream.mapped);
-        std::memcpy(base + vertexOffset, batch.vertices.data(), vertexBytes);
-        std::memcpy(base + indexOffset, batch.indices.data(), indexBytes);
+        std::memcpy(base + vertexOffset, batch.vertices.data(), batch.vertices.size_bytes());
+        std::memcpy(base + indexOffset, batch.indices.data(), batch.indices.size_bytes());
         f.streamUsed = end;
 
         vkCmdBindVertexBuffers(f.cmd, 0, 1, &f.stream.buffer, &vertexOffset);

@@ -45,7 +45,7 @@ void projectMessages(TurnContext& ctx, const ruleset::IntelProject& p, EmpireId 
                      std::optional<Location> where, Rng& rng, bool defended = false) {
     if (validEmpire(ctx.state, to)) {
         std::string text = p.sourceMessages.empty() ? std::string(fallbackSource)
-                                                    : effects::substitute(p.sourceMessages[rng.below(p.sourceMessages.size())], tokens);
+                                                    : effects::substitute(p.sourceMessages[rng.index(p.sourceMessages.size())], tokens);
         logGoto(ctx.log(to, LogCategory::Intelligence, p.name, withPrefix(text), where, p.sourcePicture),
                 defended ? LogGoto::Intelligence : outcomeGoto(where));
     }

@@ -154,19 +154,19 @@ size_t resumeStep(const Lesson& lesson, size_t active) {
 
 uint64_t lessonFingerprint(const Lesson& lesson) {
     Hasher h;
-    h.add(std::string_view(kindName(lesson.kind))).add(lesson.steps.size());
+    h.add(std::string_view(kindName(lesson.kind))).addSize(lesson.steps.size());
     for (const Step& st : lesson.steps) {
         for (const auto* list : {&st.highlight, &st.allow, &st.keys}) {
-            h.add(list->size());
+            h.addSize(list->size());
             for (const std::string& s : *list) h.add(std::string_view(s));
         }
         // What a step shows counts once there is some (older places of lessons without it still fit).
         if (!st.show.empty()) {
-            h.add(std::string_view("show")).add(st.show.size());
+            h.add(std::string_view("show")).addSize(st.show.size());
             for (const std::string& s : st.show) h.add(std::string_view(s));
         }
         if (!st.rightClick.empty()) {
-            h.add(std::string_view("right_click")).add(st.rightClick.size());
+            h.add(std::string_view("right_click")).addSize(st.rightClick.size());
             for (const std::string& s : st.rightClick) h.add(std::string_view(s));
         }
         h.add(std::string_view(st.done ? describe(*st.done) : std::string("-")));

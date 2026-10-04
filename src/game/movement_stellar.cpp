@@ -108,7 +108,7 @@ ObjectId replaceByAsteroids(TurnContext& ctx, ObjectId old, int size, std::strin
     if (types.empty()) types = naturalSectorTypes(r.data(), ObjectKind::Asteroids);
     field.kind = ObjectKind::Asteroids;
     field.abilities.clear();
-    if (!types.empty()) applySectorType(r.data(), field, types[rng.below(types.size())]);
+    if (!types.empty()) applySectorType(r.data(), field, types[rng.index(types.size())]);
     const ObjectId made = s.addObject(std::move(field), s.galaxy.object(old).system);
     loseColony(ctx, old, cause);
     removeObject(s, old);
@@ -476,7 +476,7 @@ public:
 private:
     StarSystem& system() { return s_.galaxy.system(here_.system); }
 
-    uint32_t pick(const std::vector<uint32_t>& types) { return types[s_.rng.below(types.size())]; }
+    uint32_t pick(const std::vector<uint32_t>& types) { return types[s_.rng.index(types.size())]; }
 
     // A new object takes the lowest free slot of the object list, whatever
     // kind of object left it (spec 03 §19 Q62).
@@ -619,8 +619,8 @@ private:
                     {AbilityKind::SectorShieldDisruption, r_.setting("Created Storm Maximum Shield Disruption", 0)},
                 }};
                 if (std::any_of(effects.begin(), effects.end(), [](const auto& e) { return e.second > 0; })) {
-                    size_t k = s_.rng.below(effects.size());
-                    while (effects[k].second <= 0) k = s_.rng.below(effects.size());
+                    size_t k = s_.rng.index(effects.size());
+                    while (effects[k].second <= 0) k = s_.rng.index(effects.size());
                     storm.abilities.push_back(ability(effects[k].first, effects[k].second));
                 }
                 storm.name = "Storm";

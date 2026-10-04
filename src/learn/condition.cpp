@@ -193,7 +193,7 @@ void Tracker::observe(const game::GameState& state, game::EmpireId empire) {
         // A battle is known by where and when it was fought and what happened in it.
         Hasher h;
         h.add(rec.turn).add(rec.location.system.value).add(rec.location.sector.x).add(rec.location.sector.y);
-        h.add(rec.pieces.size()).add(rec.events.size());
+        h.addSize(rec.pieces.size()).addSize(rec.events.size());
         for (const game::CombatEvent& ev : rec.events) h.add(ev.kind).add(ev.round).add(ev.piece).add(ev.target);
         const uint64_t key = h.value();
         const auto at = std::lower_bound(battles_.begin(), battles_.end(), key);

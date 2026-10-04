@@ -960,7 +960,7 @@ int hitUnits(const Rules& r, const GameState& s, std::vector<UnitStack>& stacks,
             if (stacks[k].count > 0 && dies(entryOf(stacks[k].design))) any = true;
         if (!any) break;
         // Every design entry is equally likely; an entry whose units are all dead wastes the draw.
-        const size_t k = entries[entries.size() == 1 ? 0 : rng.below(entries.size())];
+        const size_t k = entries[entries.size() == 1 ? 0 : rng.index(entries.size())];
         if (stacks[k].count <= 0) continue;
         const Entry& e = entryOf(stacks[k].design);
         if (!dies(e)) continue;
@@ -1196,7 +1196,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                     if (v.count > 0 && mineMayHit(cs, typeOf(r, s, v))) targets.push_back(id);
                 }
                 if (targets.empty()) break;
-                Vehicle& victim = *s.vehicle(targets[rng.below(targets.size())]);
+                Vehicle& victim = *s.vehicle(targets[rng.index(targets.size())]);
                 const bool unitGroup = isUnitType(typeOf(r, s, victim));
                 // A unit group's value for the mine's credit: the units it had when this mine picked it.
                 int64_t hadTonnage = 0;

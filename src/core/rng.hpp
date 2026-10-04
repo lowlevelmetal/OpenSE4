@@ -43,6 +43,10 @@ public:
         }
     }
 
+    // A uniform index into `size` elements: below(size) as a size_t (32 bits on
+    // armhf), the same number on every machine.
+    size_t index(size_t size) { return static_cast<size_t>(below(size)); }
+
     // Uniform integer in [lo, hi] (inclusive).
     int64_t range(int64_t lo, int64_t hi) {
         if (hi <= lo) return lo;
@@ -54,12 +58,12 @@ public:
     bool percent(int pct) { return static_cast<int>(below(100)) < pct; }
 
     template <class T>
-    T& pick(std::span<T> items) { return items[below(items.size())]; }
+    T& pick(std::span<T> items) { return items[index(items.size())]; }
 
     template <class Container>
     void shuffle(Container& c) {
         for (size_t i = c.size(); i > 1; --i) {
-            const size_t j = below(i);
+            const size_t j = index(i);
             using std::swap;
             swap(c[i - 1], c[j]);
         }

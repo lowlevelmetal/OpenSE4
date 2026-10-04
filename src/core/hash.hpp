@@ -10,22 +10,26 @@
 namespace opense4 {
 
 // Checksums, saves and network messages must have the same bytes on every
-// platform (docs/ENGINE.md, "Same on every platform"). Every target is a 64-bit
-// little-endian machine; the archive (game/serialize_io.hpp) writes integers
-// little-endian explicitly, the hasher below hashes them as they lie in memory.
+// platform (docs/ENGINE.md, "Same on every platform"). Every target is a
+// little-endian machine, 64-bit or 32-bit (armhf); the archive
+// (game/serialize_io.hpp) writes integers little-endian explicitly, the hasher
+// below hashes them as they lie in memory.
 static_assert(std::endian::native == std::endian::little, "OpenSE4 assumes a little-endian machine");
-static_assert(sizeof(size_t) == 8, "OpenSE4 assumes 64-bit sizes");
+static_assert(sizeof(size_t) == 8 || sizeof(size_t) == 4, "OpenSE4 assumes 32-bit or 64-bit sizes");
 
 // The scalar types whose size is the same everywhere: bool, the fixed-width
-// integers, size_t (64 bits, asserted above) and enums. `long` is 32 bits on
-// Windows and 64 on Linux and macOS, and `wchar_t` 16 and 32: the Windows and
-// macOS builds reject them here (on Linux `long` is int64_t and cannot be
-// told apart). On macOS size_t is `unsigned long`, not uint64_t.
+// integers and enums. `long` is 32 bits on Windows and 32-bit Linux and 64 on
+// 64-bit Linux and macOS, and size_t 32 bits on armhf and 64 elsewhere: a size
+// is hashed or stored as uint64_t (addSize below, or a u32 count). Where one of
+// them is not a fixed-width type it is rejected here: `long` on Windows, macOS
+// and armhf, size_t (`unsigned long`) on macOS, and `wchar_t` (16 or 32 bits)
+// everywhere. Elsewhere it is one of the fixed-width types and cannot be told
+// apart, so the macOS build in CI catches a size_t passed as it is.
 template <class T>
 concept FixedWidthScalar =
     std::is_same_v<T, bool> || std::is_same_v<T, char> || std::is_same_v<T, int8_t> || std::is_same_v<T, uint8_t> ||
     std::is_same_v<T, int16_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t> ||
-    std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t> || std::is_same_v<T, size_t> || std::is_enum_v<T>;
+    std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t> || std::is_enum_v<T>;
 
 // FNV-1a, used for state checksums (determinism tests, desync detection).
 class Hasher {
@@ -44,8 +48,11 @@ public:
         return *this;
     }
 
+    // A size or count: 64 bits on every machine (size_t is 32 bits on armhf).
+    Hasher& addSize(size_t n) { return add(uint64_t{n}); }
+
     Hasher& add(std::string_view s) {
-        add(uint64_t{s.size()});
+        addSize(s.size());
         bytes(s.data(), s.size());
         return *this;
     }

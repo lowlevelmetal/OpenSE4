@@ -414,7 +414,7 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     // them again only when one of these changed.
     const ClassicSession& session = ui.session;
     Hasher h;
-    h.add(session.revision()).add(progress_.tracker().commands().size()).add(progress_.step());
+    h.add(session.revision()).addSize(progress_.tracker().commands().size()).addSize(progress_.step());
     for (const std::string& w : facts.openWindows) h.add(std::string_view(w));
     h.add(std::string_view("|"));
     for (const std::string& k : facts.selected) h.add(std::string_view(k));
@@ -424,7 +424,7 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     h.add(std::string_view(facts.simulatorOwner)).add(std::string_view(facts.picking)).add(facts.movementLines);
     h.add(std::string_view(facts.draftMessageType)).add(std::string_view(facts.draftTreaty));
     h.add(std::string_view(facts.designType)).add(facts.designNamed).add(std::string_view(facts.designVehicle)).add(facts.selectedVehicle.value);
-    h.add(facts.battleBegun).add(facts.battleOrders.size()).add(facts.battleTurn);
+    h.add(facts.battleBegun).addSize(facts.battleOrders.size()).add(facts.battleTurn);
     if (h.value() == seen_ || progress_.result() != learn::LessonProgress::Result::None) return;
     seen_ = h.value();
     const learn::LessonProgress::Changes ch = progress_.update(ui.rules(), ui.state(), session.player(), facts);

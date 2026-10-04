@@ -131,7 +131,7 @@ int64_t applyDamage(const Rules& r, GameState& s, std::vector<Stack>& side, cons
         st.count -= static_cast<int>(killed);
         damage -= killed * st.hitPoints;
         if (killed <= 0 || !st.list || killers.empty()) continue;
-        const Stack& credit = killers[rng.below(killers.size())];
+        const Stack& credit = killers[rng.index(killers.size())];
         if (credit.list && credit.design.valid())
             s.design(credit.design).enemyTonnageDestroyed += killed * designTonnage(r, s.design(st.design));
     }

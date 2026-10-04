@@ -487,7 +487,7 @@ Battle::Settled Battle::settle(int x, int y, int size, int self) {
     if (fits(x, y, size, self)) return {x, y, true};
     int hx = x, hy = y;
     for (int hop = 0; hop < 10; ++hop) {
-        const auto [dx, dy] = kStraight[rng_.below(kStraight.size())];
+        const auto [dx, dy] = kStraight[rng_.index(kStraight.size())];
         hx = std::clamp(hx + dx * size, 0, kW - 1 - size);
         hy = std::clamp(hy + dy * size, 0, kH - 1 - size);
         if (fits(hx, hy, size, self)) return {hx, hy, true};

@@ -397,7 +397,7 @@ std::string dataSetIdentity(const Rules& r) {
     // The loaded tables: catches data sets built in memory and mods that
     // differ outside the data directory (race presets).
     auto names = [&](const auto& list) {
-        h.add(list.size());
+        h.addSize(list.size());
         for (const auto& item : list) h.add(std::string_view(item.name));
     };
     names(d.techAreas);
@@ -409,11 +409,11 @@ std::string dataSetIdentity(const Rules& r) {
     names(d.systemTypes);
     names(d.quadrantTypes);
     names(d.intelProjects);
-    h.add(d.eventTypes.size());
+    h.addSize(d.eventTypes.size());
     for (const auto& e : d.eventTypes) h.add(std::string_view(e.type));
     names(d.combatStrategies);
     names(r.racePresets());
-    h.add(d.settings.size());
+    h.addSize(d.settings.size());
 
     // Every data file, in a platform-independent order and line-ending form.
     std::error_code ec;

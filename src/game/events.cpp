@@ -89,7 +89,7 @@ std::vector<Sector> emptySectors(const GameState& s, SystemId sys, bool outerRin
 template <class T>
 std::optional<T> choose(const std::vector<T>& options, Rng& rng) {
     if (options.empty()) return std::nullopt;
-    return options[rng.below(options.size())];
+    return options[rng.index(options.size())];
 }
 
 // The original's way of picking a target (spec 05 §2.1, §4, confirmed:
@@ -98,7 +98,7 @@ std::optional<T> choose(const std::vector<T>& options, Rng& rng) {
 template <class T, class Check>
 std::optional<T> drawCandidate(std::vector<T> candidates, Rng& rng, Check&& check) {
     for (int draw = 0; draw < kTargetDraws && !candidates.empty(); ++draw) {
-        const size_t i = rng.below(candidates.size());
+        const size_t i = rng.index(candidates.size());
         if (check(candidates[i])) return candidates[i];
         candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(i));
     }
@@ -253,7 +253,7 @@ int64_t hitCargoUnits(const Rules& r, GameState& s, Cargo& c, int64_t damage, Rn
     int64_t pool = std::min<int64_t>(damage, combat::kMaxShotDamage);
     int64_t killed = 0;
     for (int n = 0; n < 20 && pool > 0 && !c.units.empty(); ++n) {
-        UnitStack& st = c.units[rng.below(c.units.size())];
+        UnitStack& st = c.units[rng.index(c.units.size())];
         if (st.count <= 0 || st.design.index() >= s.designs.size()) continue;
         const int64_t hp = std::max<int64_t>(1, combat::detail::unitHitPoints(r, s.design(st.design)));
         if (pool < hp) continue;
@@ -346,7 +346,7 @@ void setEmpireTokens(Tokens& t, const GameState& s, EmpireId source, EmpireId ta
 
 const ruleset::Message* pickMessage(std::span<const ruleset::Message> messages, Rng& rng) {
     if (messages.empty()) return nullptr;
-    return &messages[rng.below(messages.size())];
+    return &messages[rng.index(messages.size())];
 }
 
 // ---- Effect classification ---------------------------------------------------------------------
@@ -661,14 +661,14 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     e.name = s.galaxy.system(system).name;
     const auto& names = r.data().names;
     for (int draw = 0; (e.name.empty() || taken(e.name)) && !names.empireNames.empty() && draw < 1000; ++draw)
-        e.name = names.empireNames[rng.below(names.empireNames.size())];
+        e.name = names.empireNames[rng.index(names.empireNames.size())];
     if (e.name.empty()) e.name = "Rebels";
     for (int n = 2; taken(e.name); ++n)
         if (const std::string numbered = std::format("{} {}", e.name, n); !taken(numbered)) e.name = numbered;
     // A new leader name and the pictures of a random neutral race that no
     // empire uses for its race or pictures; when all are in use, a random one
     // of all the neutral races.
-    if (!names.emperorNames.empty()) e.leaderName = names.emperorNames[rng.below(names.emperorNames.size())];
+    if (!names.emperorNames.empty()) e.leaderName = names.emperorNames[rng.index(names.emperorNames.size())];
     std::vector<const ruleset::RacePreset*> neutrals, unused;
     for (const ruleset::RacePreset& p : r.racePresets()) {
         if (!p.neutral) continue;
@@ -679,7 +679,7 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
         if (!used) unused.push_back(&p);
     }
     const auto& pictures = unused.empty() ? neutrals : unused;
-    if (!pictures.empty()) e.race.style = pictures[rng.below(pictures.size())]->folder;
+    if (!pictures.empty()) e.race.style = pictures[rng.index(pictures.size())]->folder;
     // Its home planet type and atmosphere are the planet's.
     if (!obj.surface.empty()) e.race.nativeSurface = obj.surface;
     if (!obj.atmosphere.empty()) e.race.atmosphere = obj.atmosphere;
@@ -781,7 +781,7 @@ int64_t damageVehicle(const Rules& r, GameState& s, Vehicle& v, int64_t amount, 
         for (size_t i = 0; i < d.entries.size(); ++i)
             if (!armor(i) && entryIntact(r, s, v, i)) intact.push_back(i);
         if (intact.empty()) break;
-        hit(intact[rng.below(intact.size())]);
+        hit(intact[rng.index(intact.size())]);
     }
     // Storage lost to the damage takes supply and cargo with it (spec 03 §7, §11).
     if (applied > 0 && !vehicleDestroyed(r, s, v)) movement::fitToCapacity(r, s, v);
@@ -1101,7 +1101,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             const std::vector<uint32_t> start = col->facilities;
             for (int64_t k = 0; k < n && !col->facilities.empty(); ++k) {
                 for (;;) {
-                    const uint32_t kind = start[rng.below(start.size())];
+                    const uint32_t kind = start[rng.index(start.size())];
                     const auto it = std::find(col->facilities.begin(), col->facilities.end(), kind);
                     if (it == col->facilities.end()) continue;
                     out.tokens.facilityName = r.facility(kind).name;
@@ -1268,7 +1268,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         }
         case Effect::ResearchDeleteProject: {
             if (!victim || victim->research.empty()) return out;
-            const size_t idx = rng.below(victim->research.size());
+            const size_t idx = rng.index(victim->research.size());
             out.tokens.techName = r.tech(victim->research[idx].area).name;
             out.actual = victim->research[idx].progress;
             victim->research.erase(victim->research.begin() + static_cast<std::ptrdiff_t>(idx));
@@ -1277,7 +1277,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         case Effect::IntelDeleteProject: {
             // Can remove a defense project too.
             if (!victim || victim->intel.empty()) return out;
-            const size_t idx = rng.below(victim->intel.size());
+            const size_t idx = rng.index(victim->intel.size());
             out.actual = victim->intel[idx].progress;
             victim->intel.erase(victim->intel.begin() + static_cast<std::ptrdiff_t>(idx));
             break;
@@ -1678,7 +1678,7 @@ std::optional<Target> pickEventTarget(const Rules& r, const GameState& s, uint32
 
     // Up to 1,000 draws; a candidate that fails a check is removed.
     for (int draw = 0; draw < effects::kTargetDraws && !candidates.empty(); ++draw) {
-        const size_t i = rng.below(candidates.size());
+        const size_t i = rng.index(candidates.size());
         const Target t = eventTarget(s, kind, candidates[i]);
         bool ok = targetExists(r, s, t);
         std::optional<Location> where;

@@ -540,7 +540,7 @@ TEST_CASE("serialize: random corruption never crashes the reader") {
         std::vector<uint8_t> p = useState ? state : orders;
         const int edits = rng.rangeInt(1, 6);
         for (int e = 0; e < edits; ++e) {
-            const size_t at = rng.below(p.size());
+            const size_t at = rng.index(p.size());
             switch (rng.below(4)) {
                 case 0: p[at] = static_cast<uint8_t>(rng.below(256)); break;
                 case 1: p[at] = 0xff; break;
