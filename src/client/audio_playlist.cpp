@@ -1,11 +1,13 @@
 #include "client/audio.hpp"
 
+#include "core/log.hpp"
 #include "ruleset/ruleset.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <format>
+#include <set>
 
 // The parts of audio.hpp that need no audio device (tested directly).
 
@@ -32,6 +34,32 @@ std::vector<std::string> readList(const ruleset::Settings& s, std::string_view k
 Playlists readPlaylists(const ruleset::Settings& settings) {
     if (!settings.boolean("Allow CD Music", true)) return {};
     return {readList(settings, "Intro"), readList(settings, "Background"), readList(settings, "Combat")};
+}
+
+std::vector<std::string> missingTracks(const Playlists& lists, const assets::InstallFiles& files) {
+    std::vector<std::string> out;
+    std::set<std::string> seen;
+    for (const auto* list : {&lists.intro, &lists.background, &lists.combat})
+        for (const std::string& track : *list)
+            if (const std::string path = "Music/" + track; seen.insert(path).second && !files.find(path)) out.push_back(path);
+    return out;
+}
+
+void reportPlaylists(const ruleset::Settings& settings, const Playlists& lists, const assets::InstallFiles& files) {
+    if (!settings.boolean("Allow CD Music", true)) {
+        log::info("Music: none: the game's Data/Settings.txt sets Allow CD Music to FALSE");
+        return;
+    }
+    if (lists.intro.empty() && lists.background.empty() && lists.combat.empty()) {
+        log::warn("Music: none: the game's Data/Settings.txt names no tracks (Num Intro Songs, Num Background Songs, Num Combat Songs)");
+        return;
+    }
+    log::info("Music: Data/Settings.txt names {} intro, {} background and {} combat tracks", lists.intro.size(), lists.background.size(),
+              lists.combat.size());
+    for (const std::string& path : missingTracks(lists, files)) {
+        files.noteMissing(path);
+        log::warn("Music: {}, named by Settings.txt, is not in the installed game ({})", path, (files.root() / "Music").string());
+    }
 }
 
 std::string_view stellarSound(std::string_view title) {

@@ -1,0 +1,28 @@
+# A game's sounds and music (tools/check_audio.py): effects cutting each other
+# off (a command button, then Esc closing its window at once), End Turn with
+# eight empires (each turn plays its sound while the main thread is busy), and
+# the new background track of turn 65 (docs/spec/06 §5.5: a new one every fifth
+# turn), which must fade the old one out rather than break it off.
+options --quick-start=Terran --seed=7 --empires=8 --systems=40 --turns=61 --open=none --layout=1024x768 --size=1280x800 --audio
+timeout 7200
+wait-screen game
+wait 300
+click tag:command:research
+wait 4
+key Escape
+wait 4
+click tag:command:planets
+wait 3
+key Escape
+wait 4
+click tag:command:ships
+key Escape
+wait 120
+repeat 8 until { turn = 66 }
+  click item:"*(suggested)" optional
+  click tag:button:end-turn
+  click item:Yes in="End Turn" optional
+  wait 300
+end
+assert-turn 66
+wait 900

@@ -2652,6 +2652,9 @@ differs:
     0 dB.
   - The original draws the track from the same random generator as the game rules. Ours
     must use a separate source so that music never changes game results.
+  - OpenSE4 cuts an effect off with a fade of a few milliseconds rather than at once, fades
+    a track out over a quarter second before the next one, and loops each track without a
+    gap (`src/client/audio_mixer.*`), so none of these changes clicks.
 
 ### 5.6 Scenarios and tutorial
 

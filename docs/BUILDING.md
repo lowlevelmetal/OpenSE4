@@ -495,6 +495,26 @@ Run them, with `--small`, after changing the client's windows, the tutorials or 
 lock. With the lesson checks (`tools/check_lessons.py`, and its `--audit` of what each step
 lets through and shows, docs/LEARNING.md) they are the routine for the learning content.
 
+The audio check plays the scripts of `tests/audio` with sound on, through SDL's `disk`
+audio driver, which writes the mix to a file in real time instead of to a sound card, and
+then reads that file. It fails on clicks (a jump between neighbouring samples far above the
+sound around it: a sound started, cut off or broken off without a fade), on digital silence
+that begins or ends away from zero, on three seconds or more without music, on clipping,
+and on any track or sound the log says could not be played or music that ran dry. It needs
+your install and about a minute of real time:
+
+```sh
+OPENSE4_CLASSIC_DATA=auto python3 tools/check_audio.py                  # both scripts, side by side
+OPENSE4_CLASSIC_DATA=auto python3 tools/check_audio.py --keep /tmp/audio intro-loop   # keep the capture and log
+```
+
+`intro-loop` stays on the intro screen past the end of its 48-second track, with the device
+at 32-bit float and 48 kHz as Windows usually mixes (a script's `# device: F32 2 48000`
+header line); `game-turns` cuts effects off with others, ends turns and changes the
+background track at turn 65, at the disk driver's 16-bit 44.1 kHz. Run it after changing
+`src/client/audio*`. The mixer's fades and ramps, the decoding and the music thread have
+unit tests of their own (`tests/test_audio_mix.cpp`, on our own `tests/fixtures/audio`).
+
 The Windows tests also run under Wine. `tools/package_release.sh` runs them in a Wine
 prefix of its own set to Windows 7 SP1 (`build/_tools/wine-win7`); by hand:
 
@@ -514,7 +534,8 @@ a player's mouse and keyboard: the mode's filter first (a tutorial's input lock)
 ImGui. During a run the frame time is fixed (1/60 s), the seed is fixed (1 unless the script
 or the command line gives one), the player's own mouse and keyboard are ignored (the desktop
 pointer too, which Dear ImGui's SDL backend otherwise reads while the window has the focus)
-and no sound plays, so a script does the same thing every time. The Windows build plays the
+and no sound plays (unless `--audio` asks for it, as the audio check below does), so a script
+does the same thing every time. The Windows build plays the
 same scripts (checked under Wine, where it opens a real window: a pointer step may then take a
 frame more to aim, as the layout settles at that window's size). When a step fails, the client prints the
 script line, why it failed and where the game was, saves a picture of that frame and exits
