@@ -47,6 +47,18 @@
             "inherits": "dist"
         },
         {
+            "name": "dist-linux-aarch64",
+            "displayName": "Release package for 64-bit ARM Linux (aarch64 cross build, static, resources built in)",
+            "inherits": "dist",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/aarch64-linux-gnu.cmake"
+        },
+        {
+            "name": "dist-linux-armhf",
+            "displayName": "Release package for 32-bit ARM Linux (armhf: ARMv7 hard-float with NEON; cross build, static, resources built in)",
+            "inherits": "dist",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/arm-linux-gnueabihf.cmake"
+        },
+        {
             "name": "dist-windows",
             "displayName": "Release package for Windows (MinGW-w64 cross build, static, resources built in)",
             "inherits": "dist",
@@ -63,6 +75,8 @@
         { "name": "release", "configurePreset": "release" },
         { "name": "asan", "configurePreset": "asan" },
         { "name": "dist-linux", "configurePreset": "dist-linux" },
+        { "name": "dist-linux-aarch64", "configurePreset": "dist-linux-aarch64" },
+        { "name": "dist-linux-armhf", "configurePreset": "dist-linux-armhf" },
         { "name": "dist-windows", "configurePreset": "dist-windows" },
         { "name": "dist-mingw", "configurePreset": "dist-mingw" }
     ],
@@ -71,6 +85,8 @@
         { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
         { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
         { "name": "dist-linux", "configurePreset": "dist-linux", "output": { "outputOnFailure": true } },
+        { "name": "dist-linux-aarch64", "configurePreset": "dist-linux-aarch64", "output": { "outputOnFailure": true } },
+        { "name": "dist-linux-armhf", "configurePreset": "dist-linux-armhf", "output": { "outputOnFailure": true } },
         { "name": "dist-windows", "configurePreset": "dist-windows", "output": { "outputOnFailure": true } },
         { "name": "dist-mingw", "configurePreset": "dist-mingw", "output": { "outputOnFailure": true } }
     ]
