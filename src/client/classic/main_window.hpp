@@ -86,6 +86,11 @@ private:
     void selectVehicle(UiContext& ui, game::VehicleId v);
     void selectPlanet(UiContext& ui, game::ObjectId p);
     void clearSelection();
+    // Shows another system and changes nothing else: no sector of it is
+    // current, and the report or list, its tab, the lit orders and the tags
+    // stay (the galaxy panel's left-click, the Galaxy Map's Goto System; spec
+    // 06 §2.6, §7 Q103). The system already shown: nothing.
+    void showOtherSystem(game::SystemId sys);
     const game::Vehicle* selectedVehicle(const UiContext& ui) const;
     const game::Colony* selectedColony(const UiContext& ui) const;
     std::vector<game::ObjectId> objectsAt(const UiContext& ui, game::Sector s) const;
@@ -152,6 +157,12 @@ private:
     std::optional<game::VehicleId> vehicle_;
     std::optional<game::FleetId> fleet_;
     bool listMode_ = false;
+    // Where the list in the report panel was built: it stays that sector's
+    // list while another system is shown (spec 06 §7 Q103).
+    std::optional<game::Location> listAt_;
+    // The Log's Goto to a system without a sector empties the report panel
+    // until the next selection (spec 06 §2.5).
+    bool emptyReport_ = false;
     // The report was opened from the sector's list (a click on one of its
     // entries): only then does it show the up-arrow back to the list (spec 06
     // §7 Q98). Every other selection clears it.

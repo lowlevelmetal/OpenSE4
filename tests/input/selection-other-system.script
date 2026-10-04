@@ -1,0 +1,47 @@
+# Showing another system keeps the selection (spec 06 §2.4-§2.6, §7 Q103, Q107): a click on
+# the galaxy panel and the Galaxy Map's Goto System change only the system shown, and the
+# report keeps its object and its tab; a right-click in the system panel does nothing; a
+# report filled again for an object, the same one included, opens on Detail; a right-click
+# on a facility of the Facil page opens its report (Q105) (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start=Terran --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 5
+# The homeworld's report on its Facil page.
+click sector:home
+wait-for item:Facil
+click item:Facil
+wait-for item:"Space Port"
+# A right-click on another planet's sector changes nothing.
+right-click sector:planet+!colony
+wait 3
+assert-present item:"Space Port"
+assert { selected = "colony" }
+# A right-click on a facility opens its report; a click on the report closes it.
+right-click item:"Space Port"
+wait-for item:window:##itemreport
+click item:window:##itemreport
+wait-gone item:window:##itemreport
+# A click on another system of the galaxy panel shows it; the report stays on Facil.
+click system:!shown
+wait 3
+assert-present item:"Space Port"
+assert { selected = "colony" }
+assert-absent sector:home
+# The Galaxy Map's Goto System, back home: the report still stays.
+right-click tag:panel:galaxy
+wait-window galaxy-map
+click item:"Goto System" in=galaxy-map
+wait-for item:"window:Goto System"
+# The home system, Eurul with this seed: the only one explored.
+click item:Eurul in=galaxy-map
+wait-closed galaxy-map
+wait 3
+assert-present sector:home
+assert-present item:"Space Port"
+# Clicking the homeworld again fills its report afresh: Detail, not Facil.
+click sector:home
+wait 3
+assert-absent item:"Space Port"
+assert { selected = "colony" }

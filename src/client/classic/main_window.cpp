@@ -270,6 +270,8 @@ void MainWindow::clearSelection() {
     vehicle_.reset();
     fleet_.reset();
     listMode_ = false;
+    listAt_.reset();
+    emptyReport_ = false;
     reportFromList_ = false;
     // Every report filled for an object opens on Detail, the object already
     // shown included (spec 06 §2.5, §7 Q107).
@@ -306,9 +308,8 @@ void MainWindow::selectSector(UiContext& ui, game::Sector sec, bool cycle) {
     const auto objects = objectsAt(ui, sec);
     const auto vehicles = vehiclesAt(ui, {shown_, sec});
     const size_t total = objects.size() + vehicles.size();
-    const bool same = sector_ && *sector_ == sec;
     clearSelection();
-    if (!same) tagged_.clear();  // clicking another sector clears the tags (§2.5)
+    tagged_.clear();  // every click on a sector clears the tags, on the same sector too (§2.5)
     (void)cycle;
     if (total == 0) {
         sector_ = sec;  // empty space: the system report, with the sector marked
@@ -321,6 +322,13 @@ void MainWindow::selectSector(UiContext& ui, game::Sector sec, bool cycle) {
         return;
     }
     listMode_ = true;
+    listAt_ = game::Location{shown_, sec};
+}
+
+void MainWindow::showOtherSystem(game::SystemId sys) {
+    if (sys == shown_) return;
+    shown_ = sys;
+    sector_.reset();   // nothing marked, no Range on the coordinate line
 }
 
 void MainWindow::selectVehicle(UiContext& ui, game::VehicleId id) {
@@ -370,7 +378,7 @@ std::vector<std::string> MainWindow::selectionKinds(const UiContext& ui) const {
         } else if (o.kind == game::ObjectKind::WarpPoint) {
             out.emplace_back("warp-point");
         }
-    } else if (listMode_ && sector_) {
+    } else if (listMode_ && listAt_) {
         out.emplace_back("sector");
     } else if (shown_.valid()) {
         out.emplace_back("system");
@@ -446,14 +454,20 @@ void MainWindow::toggleTag(UiContext& ui, game::VehicleId id) {
 }
 
 void MainWindow::tagAll(UiContext& ui) {
-    if (!sector_) return;
+    // Every own object of the list shown, else of the current sector.
+    const std::optional<game::Location> at = listMode_ && listAt_ ? listAt_
+                                             : sector_            ? std::optional(game::Location{shown_, *sector_})
+                                                                  : std::nullopt;
+    if (!at) return;
     tagged_.clear();
-    for (const game::Vehicle* v : vehiclesAt(ui, {shown_, *sector_}))
+    for (const game::Vehicle* v : vehiclesAt(ui, *at))
         if (v->owner == ui.session.player() && !tagged(v->id)) toggleTag(ui, v->id);
     if (!tagged_.empty()) {
+        const bool here = at->system == shown_;
         clearSelection();
-        sector_ = ui.state().vehicle(tagged_.front())->location.sector;
+        if (here) sector_ = at->sector;
         listMode_ = true;
+        listAt_ = at;
     }
 }
 
@@ -466,9 +480,15 @@ void MainWindow::applyRequests(UiContext& ui) {
         selectSector(ui, rq.focus->sector, false);
     }
     if (rq.showSystem) {
-        shown_ = *rq.showSystem;
-        clearSelection();
-        tagged_.clear();
+        if (rq.showSystemEmptiesReport) {
+            // The Log's Goto to a system without a sector: the report panel is emptied (spec 06 §2.5, §7 Q103).
+            shown_ = *rq.showSystem;
+            clearSelection();
+            tagged_.clear();
+            emptyReport_ = true;
+        } else {
+            showOtherSystem(*rq.showSystem);   // the Galaxy Map's Goto System, as a galaxy-panel click
+        }
     }
     if (rq.pickLocation) {
         pick_ = Pick::Callback;
@@ -479,6 +499,7 @@ void MainWindow::applyRequests(UiContext& ui) {
     rq.selectPlanet.reset();
     rq.focus.reset();
     rq.showSystem.reset();
+    rq.showSystemEmptiesReport = false;
     rq.pickLocation = nullptr;
     rq.pickPrompt.clear();
 }
@@ -1269,13 +1290,15 @@ void MainWindow::reportPanel(UiContext& ui) {
         } else {
             objectReport(ui, *object_);
         }
-    } else if ((listMode_ || !tagged_.empty()) && sector_) {
-        // Everything in the sector: planets first, then vehicles. Each row: the
-        // picture, the name, a ship's class, and status icons for own objects;
-        // Shift+click tags a vehicle (§2.5).
+    } else if ((listMode_ || !tagged_.empty()) && listAt_) {
+        // Everything in the sector the list was built for, which another
+        // system shown leaves as it is: planets first, then vehicles. Each
+        // row: the picture, the name, a ship's class, and status icons for
+        // own objects; Shift+click tags a vehicle (§2.5, §7 Q103).
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float rowH = ui.px(36);
-        for (game::ObjectId id : objectsAt(ui, *sector_)) {
+        const game::Location at = *listAt_;
+        for (game::ObjectId id : shownStellarObjects(ui.rules(), s, me, at.system, at.sector)) {
             const game::SpaceObject& o = s.galaxy.object(id);
             ImGui::PushID(int(id.value));
             image(ui, objectSprite(ui, o), {36, 36});
@@ -1283,7 +1306,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             if (ImGui::Selectable(objectName(s, id, me).c_str(), false, 0, ImVec2(0, rowH))) {
                 clearSelection();
                 tagged_.clear();
-                sector_ = o.sector;
+                if (o.system == shown_) sector_ = o.sector;
                 object_ = id;
                 reportFromList_ = true;
                 ++selections_;
@@ -1298,7 +1321,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
             ImGui::PopID();
         }
-        for (const game::Vehicle* v : vehiclesAt(ui, {shown_, *sector_})) {
+        for (const game::Vehicle* v : vehiclesAt(ui, at)) {
             ImGui::PushID(int(v->id.value) + 1000000);
             const ImVec2 rowMin = ImGui::GetCursorScreenPos();
             image(ui, vehicleMini(ui, *v), {36, 36});
@@ -1308,7 +1331,13 @@ void MainWindow::reportPanel(UiContext& ui) {
                 if (ImGui::GetIO().KeyShift) {
                     toggleTag(ui, v->id);
                 } else {
+                    // The row's report; the system shown stays as it is.
+                    const game::SystemId showing = shown_;
                     selectVehicle(ui, v->id);
+                    if (shown_ != showing) {
+                        shown_ = showing;
+                        sector_.reset();
+                    }
                     reportFromList_ = true;
                 }
             }
@@ -1322,7 +1351,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             ImGui::PopID();
         }
         if (!tagged_.empty()) ImGui::TextColored(kDimText, "%zu tagged: orders go to all of them.", tagged_.size());
-    } else if (shown_.valid()) {
+    } else if (shown_.valid() && !emptyReport_) {
         systemReport(ui, shown_);
     }
     if (reportFromList_ && single && tagged_.empty()) {
@@ -1591,34 +1620,29 @@ void MainWindow::mouse(UiContext& ui) {
             ui.open(ScreenId::GalaxyMap, args);
             return;
         }
-        if (const auto best = galaxySystemAt(ui, p, false)) {
-            shown_ = *best;
-            if (pick_ == Pick::None) {
-                clearSelection();
-                tagged_.clear();
-                ++selections_;   // the system, with nothing in it selected
-            }
-        }
+        // A left-click shows the system nearest the pointer and changes
+        // nothing else: the report or list, its tab, the lit orders and the
+        // tags stay, so an order can be given a target there (spec 06 §2.6,
+        // §7 Q103, confirmed: binary).
+        if (const auto best = galaxySystemAt(ui, p, false)) showOtherSystem(*best);
         return;
     }
 
     if (auto sec = sectorAt(p)) {
         const game::Location where{shown_, *sec};
         if (pick_ != Pick::None) {
-            if (right && pick_ == Pick::Patrol) {
-                finishPatrol(ui);
-                return;
-            }
-            completePick(ui, where, std::nullopt);
+            if (right && pick_ == Pick::Patrol) finishPatrol(ui);   // ours: a right click ends the patrol's points
+            else if (left) completePick(ui, where, std::nullopt);
             return;
         }
-        // Right click on a sector with an own mobile vehicle selected: Move To (an OpenSE4 shortcut, optional).
-        if (right && appSettings().controls.rightClickMoves) {
-            if (const game::Vehicle* v = selectedVehicle(ui); v && v->owner == ui.session.player() && v->location != where &&
-                                                              litNow(ui)[static_cast<size_t>(OrderId::MoveTo)]) {
+        // Only the left button acts in the system panel (spec 06 §2.4, §7
+        // Q103), but for OpenSE4's optional shortcut: a right click on a
+        // sector with an own mobile vehicle selected gives Move To.
+        if (right) {
+            if (const game::Vehicle* v = selectedVehicle(ui); appSettings().controls.rightClickMoves && v && v->owner == ui.session.player() &&
+                                                              v->location != where && litNow(ui)[static_cast<size_t>(OrderId::MoveTo)])
                 giveOrder(ui, game::Order{game::OrderKind::MoveTo, where});
-                return;
-            }
+            return;
         }
         selectSector(ui, *sec, true);
     }

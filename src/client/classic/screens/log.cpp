@@ -168,8 +168,12 @@ public:
                 // the system only, spec 06 §7 Q70); an entry that names no system
                 // does nothing, and the Log stays open.
                 if (const auto at = goTo(ui, sel)) {
-                    if (at->sector.valid()) ui.requests.focus = *at;
-                    else ui.requests.showSystem = at->system;
+                    if (at->sector.valid()) {
+                        ui.requests.focus = *at;
+                    } else {
+                        ui.requests.showSystem = at->system;
+                        ui.requests.showSystemEmptiesReport = true;
+                    }
                     close = true;
                 }
             } else if (const auto window = logWindowTarget(target)) {
