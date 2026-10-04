@@ -99,6 +99,26 @@ std::optional<uint32_t> Rules::latestComponentOfFamily(const Empire& e, int fami
     return best;
 }
 
+namespace {
+
+template <class Family>
+std::vector<uint32_t> lastOfFamilyRuns(std::span<const uint32_t> items, Family family) {
+    std::vector<uint32_t> out;
+    for (size_t i = 0; i < items.size(); ++i)
+        if (i + 1 == items.size() || family(items[i + 1]) != family(items[i])) out.push_back(items[i]);
+    return out;
+}
+
+} // namespace
+
+std::vector<uint32_t> Rules::onlyLatestFacilities(std::span<const uint32_t> items) const {
+    return lastOfFamilyRuns(items, [&](uint32_t i) { return data_.facilities[i].family; });
+}
+
+std::vector<uint32_t> Rules::onlyLatestComponents(std::span<const uint32_t> items) const {
+    return lastOfFamilyRuns(items, [&](uint32_t i) { return data_.components[i].family; });
+}
+
 std::optional<uint32_t> Rules::bestFacilityWith(const Empire& e, AbilityKind k) const {
     std::optional<uint32_t> best;
     int64_t bestValue = 0;

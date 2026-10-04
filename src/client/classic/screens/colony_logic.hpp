@@ -340,7 +340,8 @@ std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::
 std::vector<std::pair<uint32_t, uint32_t>> queuedFacilitySwitches(const game::Rules& r, const game::GameState& s, game::EmpireId e,
                                                                   const game::Colony& c);
 
-// Researched facilities; with onlyLatest, the newest level of each family.
+// Researched facilities in data order; with onlyLatest, the last of each run of
+// neighbouring facilities of one Facility Family (spec 02 §6.4).
 std::vector<uint32_t> facilityChoices(const game::Rules& r, const game::Empire& e, bool onlyLatest);
 // Own designs for the Ships tab (ships and bases) or the Units tab; with
 // onlyLatest, obsolete designs are left out.

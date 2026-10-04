@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <array>
 #include <format>
-#include <map>
 
 namespace opense4::client::classic {
 
@@ -50,25 +49,15 @@ std::vector<EntryGroup> groupEntries(std::span<const game::DesignEntry> entries)
 
 namespace {
 
-// Available components passing `keep`, reduced to the newest numeral of each family when
-// `onlyLatest` (components without a family always stay). One pass over the catalogue.
+// Available components passing `keep`, in data order; with `onlyLatest`, of
+// each run of neighbouring components of one family the last (spec 02 §6.4,
+// Rules::onlyLatestComponents).
 template <class Keep>
 std::vector<uint32_t> filterComponents(const game::Rules& r, const game::Empire& e, bool onlyLatest, Keep keep) {
     std::vector<uint32_t> out;
-    std::map<int, size_t> familySlot;  // family -> position in `out`
-    for (uint32_t i = 0; i < r.data().components.size(); ++i) {
-        const ruleset::Component& c = r.component(i);
-        if (!keep(c) || !r.componentAvailable(e, i)) continue;
-        if (onlyLatest && c.family != 0) {
-            if (auto it = familySlot.find(c.family); it != familySlot.end()) {
-                if (c.romanNumeral > r.component(out[it->second]).romanNumeral) out[it->second] = i;
-                continue;
-            }
-            familySlot.emplace(c.family, out.size());
-        }
-        out.push_back(i);
-    }
-    return out;
+    for (uint32_t i = 0; i < r.data().components.size(); ++i)
+        if (keep(r.component(i)) && r.componentAvailable(e, i)) out.push_back(i);
+    return onlyLatest ? r.onlyLatestComponents(out) : out;
 }
 
 } // namespace

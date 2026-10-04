@@ -10,6 +10,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <array>
 #include <format>
 
 using namespace opense4;
@@ -150,6 +151,36 @@ TEST_CASE("design tools: designer component list follows hull, tech, group and O
     CHECK(isUnitHull(r.hull(fighter).type));
     CHECK_FALSE(isUnitHull(r.hull(frigate).type));
     CHECK_FALSE(isUnitHull(r.hull(hullIndex(r, "Test Station")).type));
+}
+
+TEST_CASE("design tools: Only Latest keeps the last of each run of neighbours of one family") {
+    // Spec 02 §6.4 (confirmed: binary): numerals and names play no part, family 0
+    // is an ordinary family, and a family split into two runs keeps one per run.
+    ruleset::Ruleset rs = buildEngineRuleset();
+    REQUIRE(rs.components.size() >= 7);
+    REQUIRE(rs.facilities.size() >= 4);
+    const std::array<int, 7> families{4, 4, 0, 0, 4, 9, 9};
+    for (size_t i = 0; i < families.size(); ++i) {
+        rs.components[i].family = families[i];
+        rs.components[i].romanNumeral = 7 - int(i);   // the last of a run has the lowest numeral
+    }
+    const std::array<int, 4> facilityFamilies{3, 3, 3, 0};
+    for (size_t i = 0; i < facilityFamilies.size(); ++i) {
+        rs.facilities[i].family = facilityFamilies[i];
+        rs.facilities[i].romanNumeral = 3 - int(i);
+    }
+    const Rules r(std::move(rs));
+    const std::vector<uint32_t> all{0, 1, 2, 3, 4, 5, 6};
+    CHECK(r.onlyLatestComponents(all) == std::vector<uint32_t>{1, 3, 4, 6});
+    // The rule runs on the list the other filters left: with item 4 filtered
+    // out, items 1 and 3 belong to different runs still, and 0 and 1 to one.
+    const std::vector<uint32_t> filtered{0, 1, 3, 5};
+    CHECK(r.onlyLatestComponents(filtered) == std::vector<uint32_t>{1, 3, 5});
+    const std::vector<uint32_t> neighbours{0, 4};   // the same family once the items between are filtered out
+    CHECK(r.onlyLatestComponents(neighbours) == std::vector<uint32_t>{4});
+    CHECK(r.onlyLatestComponents(std::vector<uint32_t>{}).empty());
+    CHECK(r.onlyLatestFacilities(std::vector<uint32_t>{0, 1, 2, 3}) == std::vector<uint32_t>{2, 3});
+    CHECK(r.onlyLatestFacilities(std::vector<uint32_t>{0, 2}) == std::vector<uint32_t>{2});
 }
 
 TEST_CASE("design tools: the vehicle types and hulls the designer offers") {

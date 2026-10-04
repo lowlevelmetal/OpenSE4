@@ -654,8 +654,14 @@ private:
             ui.tagTab(kBuildTabIds[static_cast<size_t>(tab)], tab_ == tab);
         }
         // On/off settings are check boxes (spec 07 §UI).
-        if (checkButton(d, ui, "Only Latest", onlyLatest_, true, "Show only the newest level of each facility and no obsolete designs"))
+        if (checkButton(d, ui, "Only Latest", onlyLatest_, true, "Show only the newest level of each facility and no obsolete designs")) {
+            // The box is the Empire Options row "only latest items for
+            // construction": a click changes the option (spec 02 §6.4).
             onlyLatest_ = !onlyLatest_;
+            game::InterfaceOptions o = ui.options();
+            o.latestConstructionOnly = onlyLatest_;
+            ui.setOptions(o);
+        }
         // Multi-Add disables the queue option buttons (spec 06 §1.8.2).
         const bool options = !multi_;
         game::cmd::QueueFlags flags{target_, q->onHold, q->repeat, q->emergency, q->autoWaypoint};

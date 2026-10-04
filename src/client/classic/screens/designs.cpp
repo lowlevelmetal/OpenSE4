@@ -1054,7 +1054,14 @@ private:
         for (int gap = 0; gap < 5; ++gap) d.spacer();
         if (d.check("To Hit Modifiers", toHit_)) setToHit(ui, !toHit_);
         if (d.check("Condensed View", condensed_)) setCondensed(ui, !condensed_);
-        if (d.check("Only Latest", onlyLatest_)) onlyLatest_ = !onlyLatest_;
+        if (d.check("Only Latest", onlyLatest_)) {
+            // The box is the Empire Options row "only latest components for
+            // designs": a click changes the option (spec 02 §6.4).
+            onlyLatest_ = !onlyLatest_;
+            game::InterfaceOptions o = ui.options();
+            o.latestComponentsOnly = onlyLatest_;
+            ui.setOptions(o);
+        }
         if (d.button("Weapons Report")) {
             ScreenArgs a;
             a.text = "weapons";
