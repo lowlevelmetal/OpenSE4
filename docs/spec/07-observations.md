@@ -1857,6 +1857,60 @@ exactly from the original's own system places, and the placements revealed one r
 the original's spread test counts two jumps more than the real number (spec 01 §3.6,
 §3.8).
 
+## Session 6: the players' reports on v0.8.1 (2026-10-04)
+
+Players compared OpenSE4 0.8.1 with the original (spec 06 §7 Q100–Q109, spec 03 §19 Q79).
+The executable settled every report; this session checked what a short game could show.
+A Quick Start game (Terran, turn-based, 1024×768); the homeworld queued two attack ships
+and a colony ship, and the turns were ended until they were built.
+
+- **The homeworld's Ability tab** (Q106): a list of lines, each after a blue lamp: three
+  "Racial Trait:" lines (research, trade, mineral production), four "Cultural Trait:" lines
+  (research and intelligence production, trade, ground combat), a production line and a
+  construction-rate line for the colony's population level (2000M), and one line for
+  production from happiness. No facility line, and nothing about the space yard.
+- **The Facil tab** (Q105): a grid of 36 px cells, one per facility, with "Facilities" and
+  "15/15" under it. A right-click on a cell opened that facility's report over the system
+  panel (picture, name, description, cost, Abilities); the space yard's lists its three
+  construction rates and its repair rate as sentences. A click on the report closed it.
+- **The report's tab** (Q107): with Facil chosen, a click on the homeworld's sector, and a
+  click elsewhere then back, both showed Detail.
+- **Another system** (Q103): with the homeworld's report on Facil, a left-click on an
+  unexplored system in the galaxy panel showed "Unexplored" in the system panel; the report
+  panel kept the homeworld's Facil page. A right-click on another planet's sector changed
+  nothing. A double-click on a warp point to an unexplored system selected its sector and
+  showed the warp point's report; the view stayed.
+- **Set Construction Queue** (Q104): a right-click in the owner box at the top of the queue
+  column opened the Planet Report as a popup on Detail, with a Close button.
+- **The Log** (Q101): at the start of the turn after a ship was built the Log opened by
+  itself; its details pane showed the ship's hull portrait at the top left, the title to its
+  right on two lines, "Date:" under the picture and the minister's text below.
+- **A warp** (Q102): the new attack ship selected, W, a click on the warp point three sectors
+  away. While picking, the system panel's bottom row asked, in white and centred, for the
+  Warp order's target. The ship moved, jumped, and the system panel switched to the arrival
+  system with the yellow marks on the arrival warp point and the ship's report still open,
+  2 of 6 movement left. The colony ship did the same a few turns later.
+- **Colonize** (Q100): the arrival system had two sectors holding two planets each (a white
+  "2" at their bottom left, no star). The rock colony ship selected, C, a click on one of
+  them: a small window opened with its top-left corner at the sector's top-right corner and
+  the sector outlined, titled with a request for the planet to colonize, listing a huge ice
+  planet and then its tiny rock moon (its name with the letter A), each with its picture,
+  and a Cancel button. Cancel gave no order and ended the pick. Picking the ice planet: the
+  ship moved one sector and stopped (no movement left). At the next turn's start the ship
+  was selected, moved on, arrived, and a message box titled "Colonize" said it could not
+  colonize an ice planet; after OK its Clear, View and Repeat Orders buttons were dim (the
+  list was empty). C again, the same sector, the moon picked: the colony was made at once
+  and the Select Colony Type window came up.
+- **The colonised moon on the map** (Q108): afterwards the sector still showed the ice
+  planet's sprite, with no colony box and no star; the moon's colony has no mark on the map.
+  (The white count at the sector's bottom left read 3 right after; not examined.) Planets of
+  a colonisable type alone in their sector kept their red stars.
+- **A ship's Ability tab** (Q106): the stock attack ship's page held its hull's line (its
+  small size makes it harder to hit), two "Racial Trait:" lines (ship attack, maintenance)
+  and two lines without a prefix (space combat, maintenance cost), and no line for its
+  engines, armour or weapons. A right-click on an engine in the Comps grid opened its
+  Component Report, whose Abilities hold the engine's two sentences.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
@@ -1918,3 +1972,7 @@ Session 5 (2026-10-03), the same harness as session 4:
 - Our client's screens: `--layout=1024x768 --size=1024x768 --open=<window>` (setup pages
   with `--open=setup:<page>` and `--open=empiresetup:<page>`, Help tabs with
   `--open=help:<tab>`), offscreen with OpenGL.
+
+Session 6 (2026-10-04): the harness of session 5 without a debugger: a copy of the install,
+its own Wine prefix and the nested display, driven by the XTest script of session 4 and
+captured with `import`; the captures are in `reference/observe/2026-10-04/` (not tracked).

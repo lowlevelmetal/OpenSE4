@@ -133,6 +133,13 @@ turn-based Move To they interrupt goes on only within the current run (`encounte
 drone group's Sentry ends at a tenth of `Supply Amount for Low Supply Warning` while it holds a
 unit, as a fighter group's does (`sentry()`, spec 06 §7 Q61). No row remains.
 
+Players' reports on 0.8.1, settled from the executable on 2026-10-04 (spec 07 session 6):
+
+| Item | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| Population between own colonies in one sector (`commands.cpp`, cargo transfer) | Refused ("Population cannot move between colonies directly") | Allowed through Cargo Transfer: population to population, the clicked race only, capped by the target's free population room, the source keeping 1M, no cost, both turn styles (spec 03 §11, §19 Q79) | M |
+| Colonize failures (`movement.cpp` `fail()`) | One Misc log entry, "<name>: Colonize order cancelled", in both turn styles | Turn-based: a message box titled "Colonize" with the reason, at once, and no log entry; simultaneous: one entry titled "Unable to Colonize" in the Colonization Minister's words, picture `OrdersNotCompleted` (spec 03 §8, spec 06 §4.1) | L |
+
 ## Combat (spec 04)
 
 The combat engine follows the rules of spec 04 settled on 2026-09-30 (§2-§19.1): start
@@ -525,6 +532,22 @@ change nothing in the original's layout:
   cell shows the weapon's figures.
 - **`--open=ground-combat`**: a sample strategic simulation in which the player's troop
   transports land on its homeworld, to reach Ground Combat headless.
+
+Players' reports on 0.8.1, settled from the executable on 2026-10-04 and checked in a running
+game where one could show it (spec 07 session 6; spec 06 §7 Q100–Q109):
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| Colonize target (`MainWindow::completePick`) | The first uncolonized planet of the clicked sector, so a planet the ship cannot colonize hides its moon; Warp, Attack and Drop Cargo also take the first candidate | The Pick Object window when the sector holds several candidates: every planet for Colonize, warp points for Warp, own objects for Drop Cargo, visible foreign objects for a pursuing Attack (spec 06 §2.9, Q100) | H |
+| Log pictures (`log.cpp`, `LogEntry::picture`) | Pictures only for random events and intelligence; an empty framed box elsewhere, the title under it | A picture for nearly every entry, chosen by its kind (portraits, hull, facility and planet pictures, `Pictures/Events/`), unframed with the title to its right; a developed item shows its Research details (spec 06 §4.1, Q101) | M |
+| The view after a warp (`main_window.cpp`) | Never follows | In a turn-based game, during the human's turn, the system view follows every own object whose orders run, to the arrival system with the exit warp point current; no option (spec 06 §2.7, Q102) | M |
+| Another system shown (`MainWindow::mouse`, Galaxy Map Goto System) | Clears the selection and tags; the report becomes the new system's | Only the shown system changes; report, tab, order buttons, tags stay; right-click in the system panel does nothing (spec 06 §2.4–§2.6, Q103) | M |
+| Set Construction Queue owner (`queues.cpp` `header()`) | No click | A right-click opens the owner's Planet or Ship Report (spec 06 §1.8.3, Q104) | L |
+| Facil and Comps pages (`reports.cpp`) | Text rows, no click | A right-click opens the facility's or component's report (spec 06 §1.4, Q105) | M |
+| Ability page (`reports.cpp`, `pieceReportAbilities()`) | Identifiers with "(Val 1, Val 2)"; a planet lists its facilities; a ship its components | One `Descr` line per entry; a planet: its own abilities, racial, cultural, population-level and mood lines; a ship: hull and racial lines, no components (spec 06 §1.4, Q106) | M |
+| Report tab (`MainWindow::tab_`, `ReportPopup`) | Kept across selections | Back to Detail whenever a report is filled for an object (spec 06 §2.5, Q107) | L |
+| Sector marks (`main_window.cpp`) | A flag and a star for every planet of the sector, overlapping | Only the shown planet is marked, with the colony box or the star, never both (spec 06 §2.4, Q108) | L |
+| Only Latest (`design_tools.cpp` `filterComponents`, `Rules::latestFacilityOfFamily`) | Highest numeral per family, family 0 always kept; the boxes do not set the Empire Options | The last of each run of neighbouring same-family items in data order; the boxes are the Empire Options rows (spec 02 §6.4, Q109) | M |
 
 ## Computer player (spec 05 §7)
 

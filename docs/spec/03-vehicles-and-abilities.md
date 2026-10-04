@@ -135,7 +135,7 @@ all five sight types. Drone hulls grant `Extra Movement Generation` with `Val 2 
 | `Supply Amount Used` | Supply consumed each time the component is activated. For an engine this is per move, for a weapon per shot, for a one-shot device per use (§7). |
 | `Restrictions` | `None`, or `One Per Vehicle` through `Ten Per Vehicle`: the maximum count of this component **family** on one design (§4.2 rule 10). |
 | `General Group` | Category used for UI filtering and **repair priority** (§13). Stock groups are Weapons, Sensors, Engines, Stellar Manipulation, Shields, Armor, Unit Launch, Vehicle Control, Remote Mining, Supply, Construction, Cargo, Miscellaneous, Colonizing and Religious. |
-| `Family` | Integer lineage id. All numeral versions of one part share it. It drives "Only Latest" and design Upgrade. |
+| `Family` | Integer lineage id. All numeral versions of one part share it, and different lines may too (all stock large engines share one). It drives "Only Latest", which keeps the last of each run of neighbouring same-family entries in file order (spec 02 §6.4), and design Upgrade. |
 | `Roman Numeral` | 0–20. The version within the family (0 means no numeral). |
 | `Custom Group` | Integer tag that `Constructed Planet Requirements` looks up. |
 | Tech requirement block | As for hulls. It gates whether the component is visible in the designer. |
@@ -260,8 +260,9 @@ Most abilities are automatic. Some only act through an order:
 
 A **mothballed** vehicle has no abilities at all (confirmed: binary).
 
-The Ship Report "Ability" tab lists only hull and racial abilities. Component abilities appear on
-the component reports.
+The Ship Report "Ability" tab lists only hull and racial abilities, each entry as its `Descr` line
+with nothing summed. Component abilities appear on the component reports (confirmed: binary;
+observed in spec 07 session 6; the exact lines are in spec 06 §1.4).
 
 ### 3.2 Aggregation
 
@@ -1068,6 +1069,15 @@ sector is elsewhere) plus the action.
 
 **Colonize** (confirmed: binary):
 
+- **Choosing the planet.** The player presses Colonize and clicks a sector of the system panel.
+  The candidates are every planet in that sector, colonized or not, of any surface type and
+  whether or not the ship can colonize it; asteroid fields are not candidates, and a system the
+  player has not explored has none. No candidate: nothing is given and the pick ends without a
+  word. One: it is the target. Several (a planet and its moons, or two planets): a small window
+  asks which one (spec 06 §2.9); Cancel or Esc gives nothing. The orders then appended name that
+  planet: Load Cargo (population) at the current location if the ship carries none, Move To the
+  sector, Colonize. Nothing about the planet is checked when the order is given; the checks below
+  run when the Colonize does, so a wrong pick shows up only on arrival (spec 06 §7 Q100).
 - It needs the ship in the planet's sector with movement left; without movement it waits.
 - It fails if the planet is missing, not colonizable or already colonized, if any group member is
   cloaked, or if no member has the `Colonize Planet - *` ability matching the planet type. The game
@@ -1085,6 +1095,20 @@ sector is elsewhere) plus the action.
   binary).
 - When two ships target the same planet, the first one processed wins; the other's order fails.
 - A colony with 0 population is legal but cannot build facilities.
+- **The reasons, in the order tested:** the named planet is gone, is not seen by the ship's
+  owner, or is not in the ship's sector ("no planet here to colonize"); it is an asteroid field
+  ("cannot be colonized"); no movement left (the order waits, with no message); it already has a
+  colony, of any empire, the ship's own included ("already a colony"); a group member is cloaked;
+  no member can colonize it (no matching ability, or a game option excludes it: "unable to
+  colonize" and the surface type's name). A Colonize aimed at an existing colony never adds the
+  ship's population to it; Drop Cargo does that. Every reason but the wait fails the order, which
+  clears the whole list (§8), later orders and a second Colonize included.
+- **Where the player reads the reason.** In a turn-based game, when the player whose turn it is
+  is human, a message box titled "Colonize" gives the reason at once, and nothing goes to the
+  log. In a simultaneous game the ship's owner, computer players included, gets one log entry
+  titled "Unable to Colonize", worded as the Colonization Minister's report naming the system
+  and the reason (spec 06 §4.1 gives its picture). A computer player's failure in a turn-based
+  game gives no message.
 
 **Stellar manipulation** (confirmed: binary):
 
@@ -1346,6 +1370,23 @@ All rules in this section are (confirmed: binary).
   1, 5, 10, 100 or all per click and only what fits. Nothing can be loaded from a planet
   quarantined by plague. Taking population from a planet always leaves at least 1M; emptying a
   colony needs the Abandon Planet order.
+  - **The window** (Cargo Transfer, order T, lit for every own ship, base and colony in both
+    turn styles, spec 06 §2.8). The left list ("Cargo From") holds the selected ship, base or
+    colony, and with a fleet member its fleet-mates at that place; the right list ("Cargo To")
+    every other qualifying holder in the sector, other own colonies included (every planet size
+    has cargo spaces, so every own colony there takes part). Each holder's row is followed by its
+    cargo lines: for a colony one line per race of its population, then its stored cargo. A list
+    keeps its selected holder when refilled, else selects its first. A click on a cargo line
+    moves it from that line's holder to the holder selected in the other list.
+  - **Population between two colonies** goes straight from population to population, not into
+    cargo: only the clicked race moves, at most what that race has there, capped by the target's
+    free population room (its maximum population, spec 02, less its current population, never
+    below 0); cargo space plays no part. The source keeps at least 1M of its total: when the
+    amount would take all of it, one less than the total moves. Population from a colony to a
+    ship goes into the ship's cargo, capped by its room for population; population carried as
+    cargo, on a ship or stored by a colony, moved to a colony goes into its population, capped by
+    the same free population room. Units need free cargo space in the target.
+  - The Population window ("Races On Planet") is read-only.
 - **Captured or gifted ships** keep their cargo.
 
 ---
@@ -2357,3 +2398,19 @@ marked (inferred) in the code.
       happiness?
     - Unmothball is lit only when the cost is in stock (the order's test). Is the button lit
       for a mothballed vehicle the empire cannot afford?
+
+**Players' reports on v0.8.1 (2026-10-04).** The Colonize picker is spec 06 §7 Q100 (with the
+rules in §8); this one is ours:
+
+79. **Population between colonies in one sector.** "You can't move population between colonies
+    in the same sector directly anymore." Does the original move population directly between two
+    own colonies in the same sector? **Answer:** yes, through Cargo Transfer opened with either
+    colony (or a ship there) selected: the other colony is in the right-hand list, and a click on
+    a race's line moves people from population to population, capped by the target's free
+    population room, the source keeping at least 1M, at no cost and in both turn styles (§11)
+    (confirmed: binary).
+    Our engine differs: the cargo-transfer command refuses it ("Population cannot move between
+    colonies directly", `commands.cpp`). It must accept it under the rules of §11 (same sector,
+    the clicked race only, the target's population room, the source's last 1M, plague quarantine
+    refused). Our window also puts every holder in both lists; it should put the selected holder
+    (and its fleet-mates there) on the left and the others on the right.

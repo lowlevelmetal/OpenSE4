@@ -266,6 +266,7 @@ OpenSE4's own choices, (inferred):
 | Change Name | Text prompt. | Order N. |
 | Formation \ Strategy picker | For a selected fleet. | Order H. |
 | Abandon Planet confirmation | Choose whether to scrap facilities. | Ctrl+A. |
+| Pick Object | Choose one planet, warp point, own object or target when the sector clicked holds several (§2.9) (confirmed: binary). | Colonize, Warp, Drop Cargo, a pursuing Attack. |
 | Colony-type picker | Shown when a colonize order completes, if the empire option is on. | Colonize. |
 | Attack Sector prompt | Yes/No when a move would enter a sector holding enemies [S]. | Move orders. |
 | Reorder | Generic list ordering: Move Up, Move Down, Move To Top, Move To Bottom, OK, Cancel. | Research, Intelligence, queues. |
@@ -283,6 +284,82 @@ reports render inside the right-hand panel (§2.5).
 | Fleet, Storm reports | Fleet: movement, supply pool, experience, formation, strategy, ships. Storm: picture, size, description, abilities. |
 | System Report | Shown when empty space in the system panel is clicked. The 128x128 picture `Pictures/Systems/<Background Bitmap>` (the system type's background name, folder root; normal systems use `Starmap.bmp`) at the top left; "<Name> System" right-aligned at the top (left edge at most x 120, y 4); the type's description in grey (160,160,160) from y 140, in a box 42 px tall; the system's abilities from y 197 (confirmed: binary). |
 | Component / Facility / Ship Size / Formation reports | Cost with resource icons, size, damage resistance, vehicle types, weapon data including damage by range, abilities; formation diagram. |
+
+**Right-clicks inside a report's pages** (confirmed: binary; observed, spec 07 session 6).
+They work wherever the report appears: the main window's report panel, a report popup and
+the Combat Piece Report. Left-clicks on these pages do nothing.
+
+- **Facil** (planet) is a grid of 36×36 cells, one per facility, so a type the colony holds
+  twice fills two cells, with "Facilities" and the count of facilities against the
+  planet's room under it and page arrows when there are more cells than fit. A right-click
+  on a facility opens that facility's report: the small item report that a right-click on
+  a facility in Set Construction Queue's buildable list also opens (picture, name,
+  description, cost, and the facility's abilities as written in its data, such as a space
+  yard's construction rates). It is modal and closes on any click on it or on Esc.
+- **Comps** (ship or base) is the same kind of grid, with "Damaged Components" under it. A
+  right-click on a component opens its Component Report, with the weapon mount the design
+  gave it.
+- **Cargo**: a right-click on units opens their design's report, on population the race's
+  report.
+
+Our client differs (§7 Q105): it draws Facil and Comps as text rows and takes no click on
+them.
+
+**The Ability page** (confirmed: binary; observed, spec 07 session 6). A plain list of
+text lines. Each line starts with the blue 13×13 lamp of `Pictures/Game/General.bmp` (the
+cell at (177,0)) at (0,2) of the line; the text starts at x 13 and wraps at the page width
+less 23 px. Nothing is combined, summed, sorted or de-duplicated: each ability entry gives
+one line, which is the entry's `Descr` from the data file exactly as written (Val 1 and
+Val 2 are never shown, and a substitution token such as the shield points one is printed
+as it stands; only the component report fills it in). An empty page stays empty, with no
+placeholder.
+
+- **Planet Report**, filled only for the player's own colony (other planets show no tabs):
+  1. the planet's own natural abilities, in the planet's order;
+  2. the `Description` of each racial trait the owner has whose trait type concerns
+     planets (Reproduction, the three resource productions, Research and Intelligence
+     Production, SY Rate, No Plagues, No Spaceports, Population Happiness, Planet Storage
+     Space, Planetary SY Rate, the three resource storages, Production, Trade, Ground
+     Combat, Tolerance);
+  3. one line per racial characteristic that is not 100 % and concerns planets, in
+     characteristic order: a "Racial Trait:" prefix, the difference from 100 as a signed
+     percentage, and what it changes (Physical Strength: ground combat; Intelligence:
+     research; Cunning: intelligence; Environmental Resistance: tolerance; Reproduction;
+     Happiness; Political Savvy: trade; the three aptitudes: that resource's production;
+     Construction Aptitude: space-yard rate);
+  4. one line per non-zero modifier of the owner's culture that concerns planets
+     (Production, Research, Intelligence, Trade, Ground Combat, Happiness, SY Rate, in the
+     culture's order Production, Research, Intelligence, Trade, Space Combat, Ground
+     Combat, Happiness, Maintenance, SY Rate, Repair): a "Cultural Trait:" prefix, the
+     signed percentage and the name of what it changes;
+  5. the population-level lines: the first row of the population-modifier table (spec 02)
+     whose amount is at least the colony's total population; if its production % is not
+     100, one line with the signed difference as a production change for the population
+     level L, and if its space-yard rate % is not 100, a second line the same way for the
+     construction rate. L is 0 for the first row, else the previous row's amount plus 1,
+     written as a population (M, or B above 9999). No matching row, no line;
+  6. the mood line: if the colony's mood band's `Mood … Modifier` is not 100, one line with
+     the signed difference as a production change from happiness.
+
+  The colony's facilities are not on this page (each facility's abilities show on its own
+  report, opened from Facil), nor its cargo, units or the system's abilities.
+- **Ship Report** (own ships, and foreign ships whose details are shown): the hull's
+  entries, then any entries the design or the vehicle carries of its own (none in the stock
+  game), then the owner's racial lines for ships: trait descriptions whose type concerns
+  ships (Maintenance Cost, Supply Cost, Vehicle Speed, Ship Bonus, Space Combat, Repair,
+  Ship Attack, Ship Defense), "Racial Trait:" lines for Aggressiveness (attack),
+  Defensiveness (defense), Repair Aptitude (repair rate) and Maintenance Aptitude
+  (maintenance), and one line per non-zero culture modifier that concerns ships (Space
+  Combat, Maintenance, Repair) with no prefix, just the signed percentage and what it
+  changes. The components' abilities are not on this page: a stock attack ship showed its
+  hull's line and the racial and culture lines and none of its engines' or weapons'
+  (observed); they show on each component's report, opened from Comps. Mothballing does
+  not change the page.
+- In the racial and culture lines a positive value carries "+"; in the population and mood
+  lines a negative value is preceded by a space instead (a quirk). Reports in the Combat
+  Simulator leave the racial and culture lines out.
+
+Our client differs (§7 Q106).
 
 ### 1.5 Diplomacy and empire comparison
 
@@ -522,6 +599,19 @@ buildable list opens (name, size, design type, date created, "(Obsolete)", cost,
 maintenance cost, movement, shields, cargo space, supply capacity and the components). A
 right-click on a queued facility or upgrade opens that facility's report.
 
+**The queue's owner box** (confirmed: binary; observed, spec 07 session 6). Above the queue
+list, a 263×60 box at (311,56) of the window describes the queue's owner: its 36×36
+picture at the left, its name from x 40 (moved left when too long), and under the name, in
+label blue, "Cargo Space" at y 16, "Facilities" at y 30 (colonies only) and "Rate" at y 44,
+their values in white from x 160 (the rate as the three resource amounts). A right-click
+anywhere in the box opens the owner's report as a popup over the window, with a Close
+button: the Planet Report for a colony, the Ship Report for a ship or base, the same report
+a right-click on the owner's row in Construction Queues opens, on its Detail tab (§2.5),
+which shows the planet's type, conditions and resource values. A left-click on the box
+does nothing. In the Multi-Add window the box lists the tagged queues and has no single
+owner; the original does not guard a right-click there (it reads an owner that is not
+there), so OpenSE4 should ignore it. Our client differs (§7 Q104).
+
 ### 1.9 Options windows
 
 There are two windows (confirmed: binary). Both show one scrolling list of lamp rows under
@@ -702,9 +792,12 @@ All of this subsection is (confirmed: binary). W×H is the tactical window's siz
   facilities as they are when the report opens, one cell each, none marked lost; lost
   facilities stay in the list until the battle ends, so during a battle this is the set
   the colony began with. Ability lists, for a ship or base, the abilities of its hull,
-  then of its whole design (every component, destroyed or not), then its own; for a
-  planet only the planet's own abilities, not its facilities' or its colony's (confirmed:
-  binary; §7 Q78).
+  then the entries its design or the vehicle carries of its own (none in stock), not its
+  components'; for a planet only the planet's own abilities, not its facilities' or its
+  colony's, and none of the racial, cultural, population and mood lines of the main
+  window's Ability page (§1.4) (corrected 2026-10-04: an earlier reading had the design's
+  whole component list here; confirmed: binary, observed on the ship report in spec 07
+  session 6; §7 Q78, Q106).
 
 #### 1.10.2 Tactical Combat Orders
 
@@ -1307,9 +1400,10 @@ Contents [T][S]:
 - Planets, asteroid fields, the star(s), storms and warp points as 36x36 sprites. A warp
   point whose destination system the empire has explored shows that system's name in its
   cell (with the Empire Option "warp point names"; details below) (confirmed: binary).
-- A colonised planet has small population bars at its top right, coloured by owner. They
-  are drawn only when the viewer sees the colony (spec 01 §6.9); an unseen foreign colony
-  shows the colonisation star instead, when its type fits (confirmed: binary).
+- A colonised planet has a small box with population bars at its top right, coloured by
+  owner. It is drawn only when the viewer sees the colony (spec 01 §6.9); an unseen foreign
+  colony shows the colonisation star instead, when its type fits. Only the planet the
+  sector shows can carry it (**Sector contents** below) (confirmed: binary).
 - Ships: a single-owner stack shows one ship sprite with a count in the bottom-right
   corner; a location with several empires, or ships orbiting a planet, shows small empire
   flags instead. The counts are drawn in the owner's empire colour (§5.3), next to each
@@ -1319,7 +1413,9 @@ Contents [T][S]:
   36x36 sprite square, in its empire's colour (dark cyan, RGB(0,128,128), if it has
   none); there is no circle when flags are shown (confirmed: binary).
 - Colonisation hint: a small green star on a planet means colonisable and breathable; red
-  means colonisable but would be domed; no star means not colonisable by this empire.
+  means colonisable but would be domed; no star means not colonisable by this empire, or
+  colonised as far as the viewer sees. Only the planet the sector shows can carry it, and
+  never together with the colony box (**Sector contents** below) (confirmed: binary).
 - The selected location is marked by `Dialogs/Selection.bmp` (eight small yellow marks),
   drawn over the sector's 36x36 square with black transparent (observed); our client draws
   it (without the picture, four corner lines). Exact rules: **Selection** below.
@@ -1349,6 +1445,26 @@ Then, in this order:
 - A stellar object is drawn first, by the `Mask Background Objs` rule above. When the
   sector holds more than one stellar object, their number is drawn in white Tiny (§5.4),
   with no background, left edge at X and bottom at Y+36.
+- **One planet's marks per sector.** Only the shown stellar object can carry the colony
+  box, the colonisation star and the facility letters. Colonising never changes which
+  object is shown, and the other planets of the sector get no mark of any kind: a colony
+  on a moon beside a larger planet has no box on the map, and the sector shows the larger
+  planet's star if that planet qualifies (observed, spec 07 session 6). The shown planet
+  gets either the box or the star, never both:
+  - **Colony box**, when the viewer sees the colony: a 1 px outline in the owner's empire
+    colour from (X+20, Y+1) to (X+35, Y+11) (15×10, right and bottom edges excluded), with
+    0 to 3 filled bars of the same colour inside, each 3×6 with its top at Y+3, at X+30,
+    X+26 and X+22, filled right to left: none for population 0, one up to 200M, two under
+    1000M, three from 1000M. There is no flag picture.
+  - **Colonisation star**, when the System Display row "colonizable planets" (on by
+    default) is on, the object is a planet (not an asteroid field), the viewer's empire
+    can colonise its surface type and atmosphere (the two game options that limit
+    colonisation apply) and it carries no colony the viewer sees: the 12×8 cell of
+    `Pictures/Game/General.bmp` at x 234 (green, breathable for the viewer) or x 258 (red,
+    otherwise), y 16, drawn at (X+24, Y).
+  - Order of drawing: the stellar sprite with its colony box, the star, the facility
+    letters, the white count of stellar objects, and last the vehicle sprite or the
+    owners' flags and counts below, over all of these.
 - **One owner, no stellar object**: one vehicle sprite, the largest vehicle by hull size
   (a ship replaces any unit group chosen before it); when that vehicle is one of the
   viewer's ships in a fleet, the fleet's icon is drawn instead. When the owner has more
@@ -1402,7 +1518,8 @@ text has a transparent background.
   see, tested at every redraw (§7 Q64). The line is empty while the pointer is over the panel's margin outside
   the sectors. Nothing is ever drawn next to the system name.
 - **Facility markers** (the System Display rows of Empire Options, all off by default):
-  on each colonized planet (never an asteroid field) that the viewer can see and that is
+  on the sector's shown planet (**Sector contents**) when it is colonized (never an
+  asteroid field), the viewer can see it and it is
   the viewer's own or belongs to an empire with a Military Alliance or Partnership with
   the viewer. Letters and their tests are in §7 Q44. They are drawn in Tiny (Small Fonts),
   in the colony owner's empire colour, packed with no spaces, right to left: the first
@@ -1523,11 +1640,15 @@ differences:
 7. A new simultaneous game started from Game Setup or Quick Start, or hosted on the network,
    switches the option on and stores it (§1.9); loading or joining a game does not.
 
-Clicks (left and right behave the same): one object → its report in the right panel;
-several objects → a list; empty space → a report about the whole system. Only visible
-objects count: with exactly one, its report opens at once and its orders light up; with
-several, the list opens and every order stays dim until a row is chosen (confirmed:
-binary).
+Left-clicks: one object → its report in the right panel; several objects → a list; empty
+space → a report about the whole system. Only visible objects count: with exactly one, its
+report opens at once and its orders light up; with several, the list opens and every order
+stays dim until a row is chosen (confirmed: binary). Only the left button acts in the system
+panel: a right-click does nothing there, and there is no double-click action, so a
+double-click on a warp point is two clicks on its sector and never shows the system it
+leads to (confirmed: binary; observed, spec 07 session 6). Our client differs (§7 Q103): a
+right-click selects like a left-click (and OpenSE4's optional right-click Move To uses the
+right button too).
 
 ### 2.5 Ship list / report panel
 
@@ -1539,8 +1660,34 @@ buttons; an up-arrow button at the top right of the report returns to the list. 
 tags several ships (a green arrow is drawn on each) so one order goes to all of them;
 the group dissolves after the order; Shift+A tags all, Shift+C clears [T]. Tagging a ship
 that is in a fleet tags the whole fleet; Shift+A tags every own object in the list, with
-fleets expanded; clicking another sector clears the tags (confirmed: binary). The orders
-a tagged group can take are in §2.8.
+fleets expanded; every left-click on a sector clears the tags, on the same sector too
+(confirmed: binary). The orders a tagged group can take are in §2.8.
+
+**What replaces the report** (confirmed: binary; observed, spec 07 session 6). The panel
+changes only when the player selects something:
+
+- a left-click on a sector of the system panel;
+- the Log's Goto to a location, which selects the entry's sector as a click would; an
+  entry with a system but no sector empties the panel;
+- Goto in the Ships\Units, Planets or Colonies windows, and the next/previous ship, fleet
+  and colony buttons and keys, which show the object's system with its sector current and
+  open its report (the colony buttons select the sector as a click would, so a sector with
+  several visible objects gives the list);
+- the game itself, which selects the current sector again at the end and the start of a
+  turn, after an order to a tagged group, and while it follows a player's turn-based moves
+  (§2.7).
+
+Showing another system (the galaxy panel's left-click, the Galaxy Map's Goto System)
+never changes the panel (§2.6). Our client differs (§7 Q103).
+
+**The report's tab is not remembered** (confirmed: binary; observed, spec 07 session 6).
+Every time a report is filled for an object it opens on its first tab, Detail: on a click
+in the system panel (the object already shown included), a click on a row of the sector's
+list, a Goto, the up-arrow, and each re-selection by the game listed above. Only a redraw
+of the report in place keeps its tab: after an order to the shown object, or when its data
+change. Report popups are new windows each time and open on Detail too. The rule is the
+same for every report with tabs (planet, ship, race, combat piece). Our client differs
+(§7 Q107).
 
 Status icons in a list row are drawn in 20 px steps from the row's right edge leftwards,
 6 per row, then a second row (confirmed: binary; §4.4).
@@ -1564,10 +1711,19 @@ colours as RGB (confirmed: binary):
 | Warp lines | (165,176,179), drawn only from explored systems; a link to an unexplored system is a stub two grid cells long. In the panel only with Show Warp Lines; in the Galaxy Map window always |
 | Hovered system | cyan (0,255,255) ring 2 px outside the cell; its name in cyan at the first corner that fits: above-right, below-right, above-left, below-left |
 
-Hovering shows the name of the nearest explored system; left-click selects a system;
-right-click opens the **Galaxy Map window** (780x475): a larger map with overlay
+Hovering shows the name of the nearest explored system. A left-click shows the hovered
+system (the one nearest the pointer) in the system panel and changes nothing else
+(confirmed: binary; observed, spec 07 session 6): no sector of it is current, so nothing
+is marked and the coordinate line shows no Range; the report panel stays exactly as it was,
+with the same report or list, the same tab, the same lit order buttons and the same tags,
+and the movement line shows the part of the route in the new system (§2.4). So a player can
+select a ship, show another system and give the ship an order with a target there. A click
+on the system already shown does nothing. Going back to the ship's system this way leaves
+its sector unmarked until it is clicked. Our client differs (§7 Q103).
+A right-click opens the **Galaxy Map window** (780x475): a larger map with overlay
 buttons Presence, Avoid, Ally Claimed, Enemy Claimed, Spaceports and Resupply Depots,
-Goto System (list of seen systems; picking one closes the map and shows it), Show
+Goto System (list of seen systems; picking one closes the map and shows it, exactly as a
+left-click on the galaxy panel does, leaving the report panel alone), Show
 Distances (light-year distances from the hovered system), Show Names, Close. Clicking a
 system there edits its free-text player notes; the hovered system's notes show at the
 bottom [T][S].
@@ -1605,6 +1761,49 @@ Claimed scheme over the empires picked with Select All, Allies, Enemies or Us.
 3. End Turn (F12, with an optional confirmation) locks the panels while the AIs play.
 4. In simultaneous games, orders are only recorded; after the host processes the turn
    the player can replay the movement log in the system panel (Ctrl+P/O/I/U).
+
+**The view follows the player's own moves** (confirmed: binary; observed, spec 07
+session 6). The main window moves its system view by itself only while a human player's
+own orders are carried out in front of them, which happens only during that player's turn
+in a turn-based game. No option controls it; Center Map on Current Ship (§1.10.3) concerns
+the tactical map only. It applies to every vehicle or colony of that player whose orders
+run, not only to the selected one:
+
+- Before each order runs, if the object is in a system other than the one shown, its
+  system is shown and its sector becomes the current sector (the one the yellow marks and
+  the coordinate line's Range use, §2.4).
+- Steps inside a system are drawn where they happen (turned and slid when animation is
+  on, §2.4); the current sector does not move with them.
+- After each jump through a warp point, whether by a Warp order (one given while standing
+  on the warp point included) or by a Move To whose route crosses systems, the arrival
+  system is shown, the exit warp point's sector becomes the current sector, both panels are
+  redrawn and the open report is refreshed: the report of the ship that jumped stays open,
+  showing its new place, and as it moves on in the new system the marks stay on the
+  arrival warp point. (The executable also has a per-empire pause after each jump, in
+  tenths of a second, which is 0 for every empire and set by no window; it can be
+  ignored.)
+- Orders run at once when given to the selected object: targeted orders, order buttons
+  such as Explore, Resupply and Repair, the Stellar Manipulation window, and Send Colony
+  Ship in the Planets window. At the start of the player's turn the view stored with the
+  empire when it ended its last turn is restored; then every own object whose list still
+  holds orders is selected in turn (its system shown, its sector current, its report
+  opened) and carries out its orders, the view following its jumps, so the turn opens on
+  the last object that acted. A message such as a failed Colonize appears over that view
+  (spec 03 §8).
+- In a simultaneous game orders run only when the turn is processed and the view never
+  moves by itself; the movement-log replay's Ctrl+U follows each own object instead
+  (§7 Q51). A computer player's moves in a turn-based game never move the view.
+
+Our client differs (§7 Q102): its view never follows. After an order makes a ship or fleet
+jump in a turn-based game the system panel keeps the old system while the report shows the
+ship elsewhere, and orders continuing at a turn's start select nothing. In a turn-based
+game, during the human's own turn only, it should: show the system of an own vehicle or
+colony, with its sector current, before that object carries out orders outside the shown
+system; on each arrival in another system show the arrival system with the exit warp
+point's sector current, keeping the selected vehicle, fleet or tagged group and its report;
+and at the turn's start select each object with continuing orders in turn as it acts,
+ending on the last. Nothing in simultaneous games, computer players' turns or other
+empires' moves, and no option.
 
 ### 2.8 When order buttons are lit
 
@@ -1694,6 +1893,55 @@ Move To, Warp, Explore, Resupply, Repair, Set Patrol, Attack, Scrap, Minister, C
 Orders, and Move To Waypoint when a waypoint is set. Cloak only if every member can cloak
 and none is cloaked; Decloak only if every member is cloaked. If any tagged object is a
 drone group, only Attack and Minister are lit.
+
+### 2.9 Giving an order its target
+
+(confirmed: binary; observed, spec 07 session 6) An order that needs a place (Move To, Warp,
+Colonize, Attack, Set Patrol, the cargo and remote unit orders) arms a pick: the system panel
+writes, in white and centred low in its bottom row of sectors, a request to select a target
+for the order, naming it, and the next left-click on a sector of the system panel completes
+it. Four orders then need one object of that sector, and the game gathers the candidates
+there, in the system's object order:
+
+| Order | Candidates in the clicked sector |
+|---|---|
+| Colonize | every planet, colonized or not, of any type, whether or not the ship can colonize it; never an asteroid field (spec 03 §8) |
+| Warp | every warp point |
+| Drop Cargo | every object of the player's own (colonies and vehicles) |
+| Attack, when it becomes a pursuit (a simultaneous game, or a drone group) | every object of another empire that the player can see; for a drone group only ships, colonies and satellite groups, plus any warp point |
+
+A system the player has not explored gives no candidate. With none, the order is not
+given and the pick ends silently (a turn-based Attack, which names no target, is given
+anyway). With one, it is the target at once. With two or more the **Pick Object** window
+asks:
+
+- a borderless black window, 248×253, its title at (12,8) in a 228×21 label: "Please select"
+  and what (the planet to colonize, the warp connection to use, the destination for cargo,
+  the target to attack);
+- its top-left corner at the clicked sector's top-right corner, moved up when it would pass
+  the bottom of the main window; while it is open the clicked sector is outlined with a 1 px
+  #647EC7 frame;
+- below the title, from (8,37) and 232 px wide down to 16 px above the button bar, a list with
+  one row per candidate: the object's system-panel picture at the left and its name from x 40;
+  the row under the pointer is drawn highlighted;
+- a left-click on a row picks that object and closes the window; Cancel (the bar's only
+  button) or Esc closes it with no pick, and then no order is given.
+
+The picked object becomes the order's target: Colonize gives Load Cargo (population, when the
+ship carries none), Move To and Colonize naming that planet; Warp gives Move To and Warp
+through that warp point; Drop Cargo delivers into that object; the pursuit follows that
+object. Nothing about the target is checked when it is picked; the order's own tests run when
+it is carried out (spec 03 §8). In a turn-based game the selected vehicle's orders then run at
+once.
+
+Our client differs (§7 Q100): it has no Pick Object window. Its Colonize takes the
+first uncolonized planet of the sector, so with a planet and its moon it always aims at the
+planet, even one the ship cannot colonize, and never at the moon; its Warp takes the first warp
+point, its Attack the first foreign vehicle (else the first foreign colony), and its Drop Cargo
+names no destination. It should gather the candidates of the table, give the target at once
+when there is one, and open the Pick Object window when there are several. Its prompt reads
+"Colonize: pick a planet" and similar, and a click with no candidate shows a note of its own;
+the original's prompt names the order and a click with no candidate says nothing.
 
 ---
 
@@ -1895,6 +2143,25 @@ Exact rules (confirmed: binary):
   the executable draws damage instead. Current and lost counts are what the Strategic
   Combat window shows, §1.10.5.) Political messages have their
   own layout unless `Use Old Log Political Message Display` is on.
+- **Picture** (confirmed: binary; observed, spec 07 session 6). Only the details pane has a
+  picture, the selected entry's; list rows never have one. It is drawn at the details
+  area's top-left corner at the file's own size (128×128 for the stock art), unscaled,
+  opaque and without a frame. The title, in the button font, goes to its right, from
+  x = picture width + 10 to 2 px short of the area's right edge, word-wrapped within the
+  picture's height. "Date:" in label blue is at (4, picture height + 10) with the date at
+  (40, same y), and the body is word-wrapped from (4, picture height + 30), 8 px narrower
+  than the area and at most 300 px tall. A diplomatic message (unless `Use Old Log
+  Political Message Display` is on) has the same picture, title and date, with its text in
+  a scrolling box below. The combat layout draws its picture the same way.
+- **Loading.** The picture is looked up only when the selected entry changes, resolved
+  like every picture and loaded only when the file exists. When an entry has no picture,
+  or its file is missing, the pane keeps the picture it showed before; when none has been
+  shown since the Log opened, there is no picture and the title, date and body start at
+  x 10, y 10 and y 30.
+- **Items developed.** An entry for a component, facility or hull developed, or a new
+  intelligence project available, has no picture, title or date in the pane: the pane
+  shows that item's details as the Research window does (the item's picture and figures,
+  or the project's text).
 
 Where entries come from:
 
@@ -1903,11 +2170,56 @@ Where entries come from:
   resolves to `Pictures/Events/<Picture>.bmp` [M].
 - **Intelligence**: IntelProjects.txt gives a picture for the acting side and one for
   the target side [M].
-- **Hard-coded events** use the remaining `Pictures/Events/` names, which by their
-  names cover new colonies (one per planet composition × atmosphere, e.g.
-  `ColonyRockOxygen`), combat results, gifts, new tech, unit/ship caps, failed orders,
-  ruins, plague, unrest, planet changes, warp points and stellar objects created or
-  destroyed, and eliminated players [M] (mapping inferred).
+- **Pictures of the other entries** (confirmed: binary). The picture is fixed by the kind
+  of entry when the entry is made and resolved when it is shown. Names below are files in
+  `Pictures/Events/` unless stated otherwise.
+  - A diplomatic message: the sender's race portrait (`<Style>_Race_Portrait`). First
+    contact, contact lost, a treaty enacted or lost, a surrender or subjugation: the other
+    empire's race portrait.
+  - Anything transferred away (planet, vehicle, resources, technology): `GiftGiven`.
+    Anything received (planet, vehicle, resources, technology, star charts, communication
+    channels) and new system maps: `GiftReceived`. Communication channels opened: none.
+  - A vehicle built: its design's hull portrait for the owner's race, as on the ship
+    report, with the `RaceGeneric` fallback. A facility built, or facilities upgraded:
+    that facility's picture (§5.2). A queue stopped for lack of resources: the picture of
+    the planet or ship that owns the queue. Maximum ships: `AtMaxShips`. No storage for a
+    new unit: `NotEnoughCargoSpace`. Launch and recover warnings: `AtMaxUnits`.
+  - A vehicle scrapped, retrofitted, self-destructed or destroyed by its own side: the
+    design's hull portrait; for a unit group the race's `_Portrait_FighterGroup`,
+    `_Portrait_MineGroup` or `_Portrait_SatelliteGroup`, with no fallback.
+  - Refused or failed orders (unable to move, load or drop cargo, cannot mothball or
+    unmothball, ship mothballed, a failed stellar manipulation, planet abandoned,
+    resources converted): the acting object's own picture (the hull portrait for a ship or
+    base, the planet's picture for a planet, the race's group portrait for a unit group);
+    for a fleet member the race's `_Portrait_Fleet`, with the `RaceGeneric` fallback. The
+    exception is a failed Colonize: `OrdersNotCompleted` (spec 03 §8).
+  - A colony founded: `Colony<Surface><Atmosphere>`, from the planet's surface (Rock, Ice,
+    Gas) and atmosphere (Oxygen, Methane, Hydrogen, CarbDiox, Argon, None).
+  - Ships lost for lack of supply, abandoned for maintenance, damaged while moving or
+    warping, or damaged by a natural event: `ShipDamaged`.
+  - A minefield met: `MineExplosion`. Ruins found: `Ruins`. Plague damage:
+    `PlagueBreaksOut`; plague cured: `PlagueCured`. Rioting: `PlanetRiots`. Colonies
+    happier or unhappy: `PopulationHappy` or `PopulationAngry`. Conditions at maximum:
+    `PlanetConditionsAtMax`. Value at maximum or worse: `PlanetValueAtMax` or
+    `PlanetValueWorse`. Atmosphere converted: the planet's picture.
+  - Stellar manipulation completed: `PlanetCreated`, `PlanetDestroyed`, `StarCreated`,
+    `StarDestroyed`, `WPOpened`, `WPClosed`, `NebulaeDestroyed`, `BlackHoleCreated`,
+    `BlackHoleDestroyed`; a nebula created shows `StarDestroyed` (a quirk), a new stellar
+    construction the new object's picture.
+  - Research: a new tech level `NewTechLevel`; a new tech area, and all research projects
+    completed, `NewTechArea`; an item developed shows its details (above).
+  - Intelligence: the outcome of our project, the project's `Source Picture`; a hostile
+    project's effect on us, its `Target Picture`; a counter-intelligence success,
+    `IntelSabotageByUs`; all intelligence projects completed, `NewTechArea`.
+  - Combat, per empire: `CombatWin` when it had pieces, some survived and no other
+    empire's did; `CombatLose` when it had pieces, none survived and another empire's did;
+    otherwise `CombatStalemate`. Ground combat: the planet's picture, or `PlanetRiots` when
+    the planet no longer exists.
+  - An empire destroyed: `PlayerDied`. A password reset: `DetectProblem`.
+  - The executable knows some names that have no file in the stock install; such an
+    entry keeps the previous picture (above).
+
+  Our client differs (§7 Q101).
 - **Political messages** from other empires (§4.2): each delivered message, acceptances
   of trades, gifts and tributes included, becomes an ordinary entry when it arrives,
   titled "Message", category Politics, Goto Empires, its text naming the sender and
@@ -3925,9 +4237,10 @@ counterpart:
     - **Facil** shows the colony's facilities as they are when the report opens, none
       marked lost; lost facilities stay in the list until the battle ends, so during a
       battle this is the set the colony began with. Our client matches in effect.
-    - **Ability** lists, for a ship or base, its hull's abilities, then its whole
-      design's (every component, destroyed or not), then its own; for a planet only the
-      planet's own abilities, not its facilities' or its colony's.
+    - **Ability** lists, for a ship or base, its hull's abilities, then the entries its
+      design or the vehicle carries of its own (none in stock), not its components'; for
+      a planet only the planet's own abilities, not its facilities' or its colony's
+      (corrected 2026-10-04, §1.10.1, Q106).
     - **The window** is borderless, 310×420, as every report opened on its own (the size
       in the form resource is overridden): pages at (10,10), the four 72×30 tabs at
       (10,340), and a Close button 153×30 centred under them at (79,380), its bottom
@@ -3936,8 +4249,9 @@ counterpart:
     Since 2026-10-01 our client follows: the Ability tab lists the hull's abilities and
     then every component's of the design, destroyed or not, and a planet's own abilities
     only (`pieceReportAbilities()` in `combat_logic.cpp`; our vehicles have no abilities
-    of their own to add); `CombatPieceReportScreen` is a borderless 310×420 window with
-    the pages at (10,10), the tabs at (10,340) and the 153×30 Close button at (79,380).
+    of their own to add; the components are to go, Q106); `CombatPieceReportScreen` is a
+    borderless 310×420 window with the pages at (10,10), the tabs at (10,340) and the
+    153×30 Close button at (79,380).
     The pages are 290×327 with or without tabs, as question 87 settled.
 79. **Fleets For Plr.** Ours hides Fleet Transfer's Existing Fleets button (the real
     game's fleet list) while it works on the simulator's sandbox. Is it there in the
@@ -4548,3 +4862,171 @@ Implementing Q83, Q84, Q88–Q96 and the session 5 windows on 2026-10-03 left th
     intelligence project? (d) "Changed during the turn" (Q84) is, in ours, a ship, unit group,
     fleet member or colony given orders, or whose minister button was pressed. Do other
     commands (a rename, a construction queue change) mark an object too?
+
+**Players' reports on v0.8.1 (2026-10-04).** Players compared OpenSE4 0.8.1 with the
+original and reported eleven differences. Each was settled from the executable and,
+where a running game could show it, observed (spec 07 session 6). Q100–Q109 below cover the
+windows; the population move between colonies is spec 03 §19 Q79.
+
+100. **Colonizing in a sector with several planets.** "It doesn't let you pick which one to
+     colonize; a moon cannot be colonized; when the primary planet does not fit the
+     colony ship but a moon does, the order fails next turn and the ship's orders are
+     cancelled." **Answer:** the original asks. A Colonize aimed at a sector with two or
+     more planets (a planet and its moons) opens the Pick Object window listing every
+     planet there, colonized or not, of any type; one planet is taken at once; none, or
+     Cancel, gives no order. The picked planet becomes the order's target; nothing is
+     checked until the Colonize runs on arrival. Then a wrong pick fails with a reason,
+     which in a turn-based game is a message box titled "Colonize" (for instance that the
+     ship cannot colonize an ice planet) and in a simultaneous game one log entry from the
+     Colonization Minister; the failure clears the ship's whole list, as every failed
+     order does. Aiming at a colony never adds the ship's population to it (§2.9, spec 03
+     §8) (confirmed: binary; observed, spec 07 session 6: a huge ice planet and its tiny
+     rock moon listed in that order, the ice pick failing on arrival with the message box
+     and an empty list, the moon pick colonizing at once).
+     Our client differs: `MainWindow::completePick` (`main_window.cpp`) takes the first
+     uncolonized planet of the sector, so it aims at the larger planet even when the ship
+     cannot colonize it and never at the moon. Make it gather the candidates of §2.9 and
+     open a Pick Object window when there are several; the same applies to Warp (warp
+     points), Drop Cargo (own objects, the pick becoming the destination) and a pursuing
+     Attack (visible foreign objects). The engine's failure entry differs in wording and
+     place too: ours logs "<name>: Colonize order cancelled" under Misc in both turn
+     styles; the original shows the message box in a turn-based game (no log entry) and,
+     in a simultaneous game, an entry titled "Unable to Colonize" with the picture
+     `OrdersNotCompleted` (§4.1).
+101. **Log pictures.** "All the images that should be showing on the event log each turn
+     are missing." **Answer:** the original shows one picture, the selected entry's, at
+     the top-left of the details pane, with the title to its right, and picks it by the kind
+     of entry: a race portrait, a hull portrait, a facility's or planet's picture, or a
+     file of `Pictures/Events/` (§4.1 "Picture", "Loading", "Items developed" and
+     "Pictures of the other entries") (confirmed: binary; observed, spec 07 session 6: a
+     built ship's entry shows its hull portrait).
+     Our client differs: the engine fills `LogEntry::picture` only for random events
+     (`events.cpp`) and intelligence (`intel.cpp`), so every other entry draws an empty
+     128×128 frame, and `log.cpp` (`details()`) always draws that frame with the title
+     under it. To change: record with every entry the kind of picture and its subject (an
+     Events file name; the race portrait of an empire; a design's hull portrait; an
+     object's picture; a facility's picture; a unit group kind with its empire; a fleet)
+     and resolve it when the entry is shown, an object that is gone giving none; draw the
+     picture unframed at its own size with the title to its right, "Date:" at
+     picture height + 10 and the body at + 30; keep the last picture for an entry without
+     one; and show a developed item's Research details instead of title and text.
+102. **The view and a ship that warps.** "Ships moving through warp points at your command
+     don't automatically change the view to the new system." **Answer:** in a turn-based
+     game, during the human's own turn, the view follows every own object whose orders
+     run, at once when given and at the turn's start, when each is selected in turn: the
+     arrival system is shown with the exit warp point's sector current, and the ship's
+     report stays open. No option controls it (Center Map on Current Ship is the tactical
+     map's); in simultaneous games only the movement-log replay's Ctrl+U follows ships
+     (§2.7) (confirmed: binary; observed, spec 07 session 6).
+     Our client differs: its view never follows; §2.7 says what to change.
+103. **Selection when another system is shown.** "When selecting a ship and then another
+     system, it doesn't retain the selected ship and replaces the ship in the middle window
+     with the new system." **Answer:** the galaxy panel's left-click and the Galaxy Map's
+     Goto System change only the system shown and leave no sector current; the report or
+     list, its tab, the lit order buttons, the tags and the movement line stay, so the ship
+     can be given an order with a target in the new system. A click on the system already
+     shown does nothing. Sector clicks, the Log's Goto, list Gotos and the next/previous
+     buttons replace the report (§2.5, §2.6). In the system panel only the left button acts
+     and a double-click on a warp point does not show the system it leads to (§2.4)
+     (confirmed: binary; observed, spec 07 session 6).
+     Our client differs: outside an order pick, a galaxy-panel click (even on the shown
+     system), Galaxy Map Goto System (`requests.showSystem`) and the Log's Goto to a system
+     without a sector clear the selection and the tags, so the report falls back to the
+     new system's report. The galaxy-panel branch of `MainWindow::mouse` and the Goto
+     System request should set only the shown system and drop the marked sector, keeping
+     the vehicle, object, fleet, list, tags and tab, and do nothing for the system already
+     shown. Since ours builds the list from the shown system and the selected sector, it
+     must keep the list's own location, as the original keeps the list it built. The Log's
+     Goto with no sector should empty the report panel. Ours also selects on a right-click
+     in the system panel and clears the tags only when another sector is clicked.
+104. **The queue owner's report.** "In the construction queue of a planet, you used to be
+     able to right-click the planet to see its details like mineral value." **Answer:**
+     the owner box at the top of Set Construction Queue's queue column: a right-click opens
+     the owner's Planet or Ship Report as a popup on Detail, the same report a right-click
+     on a Construction Queues row opens (§1.8.3) (confirmed: binary; observed, spec 07
+     session 6).
+     Our client differs: the header of Set Construction Queue (`header()` in `queues.cpp`)
+     takes no click. Give the window a report popup (`ReportPopup` of `colony_widgets`)
+     and open the planet or vehicle report on a right-click over the header, drawn after
+     the window as Construction Queues does; ignore it in Multi-Add. The header's content
+     (our portrait, location, stockpile, population, mode, new ships' destination) also
+     differs from the original's box; aligning it is optional.
+105. **Facility reports from the Facil tab.** "On the Facil tab of the planet details
+     screen, you used to be able to right-click a facility to get information about it."
+     **Answer:** yes: a right-click on a facility of the Facil grid opens that facility's
+     report, and on the ship report's Comps grid the component's report with its mount;
+     on Cargo, units open their design's report and population the race's (§1.4)
+     (confirmed: binary; observed, spec 07 session 6).
+     Our client differs: `planetReport()` and `vehicleReport()` (`reports.cpp`) draw these
+     pages as text rows and take no right-click. Add a right-click on each facility that
+     opens the item report (`ItemReportPopup`) for that facility, and on each component for
+     that component and mount, in the main window's report panel, both report popups and
+     the Combat Piece Report (the report functions need to hand the click back to their
+     owner). Drawing the original's 36 px grid, one cell per facility, is optional.
+106. **The Ability tab.** "It now shows the abilities individually instead of combined, and
+     the space yard shows index values for minerals, organics and radioactives instead of
+     text saying it can construct with 2000 minerals per turn." **Answer:** the original
+     combines nothing either, and its planet Ability tab never lists facilities. Each line
+     is one ability entry's `Descr` text; the planet page lists the planet's own
+     abilities, then racial, cultural, population-level and mood lines; the ship page the
+     hull's entries and the racial and cultural lines, not the components'. The sentence
+     the player remembers is the space yard's own `Descr`, shown on that facility's report,
+     which Q105 makes reachable from the Facil tab (§1.4 "The Ability page") (confirmed:
+     binary; observed, spec 07 session 6).
+     Our client differs: the planet page (`planetReport()`, `reports.cpp`) lists
+     `colonyAbilities()`, the planet's entries and every facility's, and the ship page
+     `vehicleAbilities()`, the hull's and the working components' (nothing when
+     mothballed); both print each entry as its identifier with "(Val 1, Val 2)", which is
+     where the space yard's index values come from, show "No special abilities" when
+     empty, and use plain bullets. Each line should be the entry's `Descr`
+     (`ruleset::Ability::description`); the planet page should hold the planet's natural
+     entries and then the racial, cultural, population-level and mood lines of §1.4, the
+     ship page the hull's entries and then the racial and cultural lines, with no
+     components and the same for a mothballed ship; an empty page stays empty; each line
+     gets the `General.bmp` lamp with the text at x 13. All the data the extra lines need
+     is loaded (racial traits' descriptions and types, the culture, the characteristics,
+     the population-modifier table, the mood modifiers). The Combat Piece Report's Ability
+     tab (`pieceReportAbilities()`, `combat_logic.cpp`) lists every component of the
+     design too and should drop them (§1.10.1, Q78 corrected).
+107. **The report's tab across selections.** "A tab picked on a planet's report stays picked
+     on a new planet, even in another system." **Answer:** the original resets it: every
+     report filled for an object opens on Detail, the same object clicked again included;
+     nothing is stored per kind of report or for the game (§2.5) (confirmed: binary;
+     observed, spec 07 session 6).
+     Our client differs: `MainWindow::tab_` changes only by the tab strip. Set it to
+     Detail wherever the panel's object is chosen (`clearSelection()`, which the sector,
+     vehicle and planet selections call, and the list-row click of the report panel) and
+     at the game's own re-selections (§2.5). `ReportPopup::openPlanet()` and
+     `openVehicle()` (`colony_widgets.cpp`) keep the last tab and should reset it; the
+     popup in `ships_common.cpp` already resets.
+108. **The colonizable marker in a sector with a colony.** "If you colonize a planet or moon
+     and there's another colonizable one in that sector, it still shows the red star in the
+     top right of the sector through your flag. Is that intended?" **Answer:** no. Only the
+     planet the sector shows (the first stellar object, or a later, larger planet) can
+     carry a mark, and it carries either the colony box or the star, never both; the
+     other planets of the sector get none, so a colony on a moon beside a larger planet has
+     no mark on the map (§2.4 "One planet's marks per sector") (confirmed: binary;
+     observed, spec 07 session 6).
+     Our client differs: it marks every planet of the system at the same corner of its
+     sector, a flag for each seen colony and a star for each colonizable planet
+     (`main_window.cpp`, the loop after the stellar sprites), so a colony and a second
+     colonizable planet in one sector overlap; the facility letters likewise go on every
+     colony. It should mark only each sector's shown stellar object, with the colony box
+     (outline and bars, no flag) or the 12×8 star at the geometry of §2.4.
+109. **Only Latest.** "With Contra-Terrene engines researched, Only Latest still shows Ion
+     Engine III as the most recent." **Answer:** the original keeps, of each run of
+     neighbouring items with the same `Family` in data-file order, the last one; numerals
+     and names play no part. The stock large engines share one family in the order Ion,
+     Contra-Terrene, Jacketed-Photon, Quantum, so with Contra-Terrene Engine I researched
+     the designer shows it and hides Ion Engine III (spec 02 §6.4 "Only Latest")
+     (confirmed: binary).
+     Our client differs: `filterComponents` (`design_tools.cpp`, Create Design and the
+     Weapons Report) keeps the highest Roman numeral of each family, the first on a tie,
+     and always keeps family 0, which is why Ion Engine III stays. It should walk the
+     filtered list in data order and drop an item when the next item kept by the other
+     filters has the same family; the Facilities tab of Set Construction Queue
+     (`facilityChoices`, via `Rules::latestFacilityOfFamily`) needs the same rule on
+     `Facility Family` (it agrees with ours on stock data but not on mods). The designer's
+     and Set Construction Queue's boxes are the Empire Options rows of §1.9 and should
+     write them back when clicked; ours only read them when the window opens. (The design
+     Upgrade button's use of `latestComponentOfFamily` is outside this question.)
