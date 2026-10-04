@@ -58,6 +58,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -189,6 +190,19 @@ public:
 
     // Messages the engine produced for the player on the last turn (rejected orders).
     const std::vector<std::string>& notices() const { return notices_; }
+    // Turn-based games: messages the player's own orders raised as they were
+    // carried out here (a failed Colonize, shown in a message box titled
+    // "Colonize", spec 03 §8), oldest first; taking them forgets them.
+    std::vector<game::PlayerMessage> takeMessages() { return std::exchange(messages_, {}); }
+    // Turn-based games: what the player's own groups did in the last call
+    // that carried orders out during its turn (an order given, the turn's
+    // start), in order, for the view that follows them (spec 06 §2.7).
+    // `liveStepsCall()` changes with each such call.
+    const std::vector<game::LiveStep>& liveSteps() const { return liveSteps_; }
+    uint64_t liveStepsCall() const { return liveStepsCall_; }
+    // Whether those steps came with the start of the player's turn (orders
+    // carried over), not with an order just given.
+    bool liveStepsAtTurnStart() const { return liveStepsAtTurnStart_; }
     // Called after a new turn begins (for the Log window auto-open etc.).
     std::function<void()> onNewTurn;
 
@@ -305,6 +319,12 @@ private:
     bool waiting_ = false;
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
+    std::vector<game::PlayerMessage> messages_;
+    std::vector<game::LiveStep> liveSteps_;
+    uint64_t liveStepsCall_ = 0;
+    bool liveStepsAtTurnStart_ = false;
+    // Takes a turn-based call's messages and steps for the local player.
+    void takeLive(game::TurnResult& res, bool turnStart);
     std::string autosaveNote_;
     std::vector<std::pair<game::EmpireId, size_t>> strategic_;   // battles to watch, and for whom (takeStrategicBattles)
     Call call_ = Call::None;

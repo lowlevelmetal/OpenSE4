@@ -72,8 +72,10 @@ std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
         case OrderKind::Attack:
             // An Attack naming no target and no place is the stored form the
             // computer's ministers give a ship already on its target's sector:
-            // it attacks where the group stands (spec 03 §8, spec 05 §7.5).
-            if (!o.vehicle.valid() && !o.object.valid() && o.location.system.valid()) return "No target";
+            // it attacks where the group stands (spec 03 §8, spec 05 §7.5). A
+            // turn-based Attack that is no pursuit names only its sector, and
+            // is given even when nothing is seen there (spec 06 §2.9).
+            if (!o.vehicle.valid() && !o.object.valid() && o.location.system.valid() && s.options.simultaneous) return "No target";
             break;
         case OrderKind::Seek:
             if (o.vehicle.valid() || o.object.valid()) break;

@@ -2620,11 +2620,23 @@ TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     CHECK_FALSE(movement::colonizeProblem(r, w.s, w.v(rock), target).empty());  // taken
     CHECK_FALSE(movement::colonizeProblem(r, w.s, w.v(rock), w.object(a, ObjectKind::Asteroids, {9, 9})).empty());
 
-    // The wrong module: the order is dropped during movement.
+    // The wrong module: nothing is checked until the ship is in the planet's
+    // sector; there the order fails and the list is cleared, and the
+    // Colonization Minister reports it in a simultaneous game (spec 03 §8).
+    fuel(w, rock);
     w.order(rock, mk(OrderKind::Colonize, {}, ice));
+    w.order(rock, mk(OrderKind::MoveTo, at(a, 1, 1)));
     w.move();
+    CHECK_FALSE(w.logged(kA, "Unable to Colonize"));
+    for (int i = 0; i < 6 && !w.v(rock).orders.empty(); ++i) w.move();
+    CHECK(w.v(rock).location == locationOf(w.s.galaxy, ice));
     CHECK(w.v(rock).orders.empty());
-    CHECK(w.logged(kA, "cannot colonize"));
+    CHECK(w.logged(kA, "Unable to Colonize"));
+    CHECK(w.logged(kA, "Unable to colonize Ice planets."));
+    const auto entry = std::find_if(w.s.empire(kA).log.begin(), w.s.empire(kA).log.end(), [](const LogEntry& l) { return l.title == "Unable to Colonize"; });
+    REQUIRE(entry != w.s.empire(kA).log.end());
+    CHECK(entry->picture == "OrdersNotCompleted");
+    CHECK(entry->text.find(w.s.galaxy.system(a).name) != std::string::npos);   // names the system
 }
 
 TEST_CASE("movement: colony ships found colonies during the phases, on an acting day with movement left") {
@@ -2671,7 +2683,7 @@ TEST_CASE("movement: the first colony ship at a planet wins; fleets colonize wit
     CHECK(w.s.vehicle(first) == nullptr);
     REQUIRE(w.s.vehicle(second));
     CHECK(w.v(second).orders.empty());
-    CHECK(w.logged(kB, "colonization failed"));
+    CHECK(w.logged(kB, "Unable to Colonize"));
 
     const ObjectId other = w.planet(a, {9, 9});
     const VehicleId escort = w.spawn(w.ship(kA, "Escort", 4), at(a, 6, 6));
@@ -4342,4 +4354,74 @@ TEST_CASE("movement: headings turn to each step's bearing within a system and su
     const auto back = deserializeState(bytes);
     REQUIRE(back.has_value());
     CHECK(back->vehicle(ship)->heading == 1);
+}
+
+TEST_CASE("movement: a turn-based Colonize at a planet the ship cannot settle fails on arrival with a message, not a log entry") {
+    // Spec 03 §8 (confirmed: binary): nothing is checked when the order is
+    // given; on arrival the human whose turn it is reads the reason in a
+    // message box titled "Colonize", nothing is logged, and the whole list is
+    // cleared; a computer player's failure gives no message. A wrong pick of a
+    // planet that is already a colony never adds the ship's population to it.
+    World w;
+    w.s.options.simultaneous = false;
+    const SystemId a = w.system("A");
+    const ObjectId ice = w.planet(a, {4, 4}, "Ice", "Oxygen", "Large");
+    const ObjectId moon = w.planet(a, {4, 4}, "Rock", "Oxygen", "Small");
+    const ObjectId taken = w.planet(a, {2, 2}, "Rock", "Oxygen");
+    w.colony(taken, kA, 100);
+    const VehicleId rock = w.spawn(w.ship(kA, "Rocky", 3, {"Test Rock Pod"}), at(a, 3, 3));
+    fuel(w, rock);
+    w.v(rock).cargo.population.push_back({kA, 5});
+    w.s.empire(kA).kind = PlayerKind::Human;
+    w.give(rock, {mk(OrderKind::Colonize, {}, ice), mk(OrderKind::MoveTo, at(a, 9, 9))});
+    TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+    movement::startTurn(ctx, kA);
+    movement::LiveMove move;
+    move.empire = kA;
+    move.vehicles = {rock};
+    move.ask = true;
+    movement::runLive(ctx, move);
+    CHECK(w.v(rock).location == at(a, 4, 4));
+    CHECK(w.v(rock).orders.empty());
+    REQUIRE(ctx.messages.size() == 1);
+    CHECK(ctx.messages.front().empire == kA);
+    CHECK(ctx.messages.front().title == "Colonize");
+    CHECK(ctx.messages.front().text == "Unable to colonize Ice planets.");
+    CHECK_FALSE(w.logged(kA, "Colonize"));
+    CHECK_FALSE(w.s.colony(ice));
+    // The moon in the same sector: colonized at once.
+    w.give(rock, {mk(OrderKind::Colonize, {}, moon)});
+    ctx.messages.clear();
+    movement::runLive(ctx, move);
+    CHECK(ctx.messages.empty());
+    REQUIRE(w.s.colony(moon));
+    CHECK(w.s.colony(moon)->owner == kA);
+
+    // An own colony aimed at: the order fails and nobody lands there.
+    const VehicleId second = w.spawn(w.ship(kA, "Second", 3, {"Test Rock Pod"}), at(a, 2, 2));
+    fuel(w, second);
+    w.v(second).cargo.population.push_back({kA, 7});
+    const int64_t before = w.s.colony(taken)->totalPopulation();
+    w.give(second, {mk(OrderKind::Colonize, {}, taken)});
+    move.vehicles = {second};
+    ctx.messages.clear();
+    movement::startTurn(ctx, kA);   // its movement
+    movement::runLive(ctx, move);
+    REQUIRE(ctx.messages.size() == 1);
+    CHECK(ctx.messages.front().text.find("already a colony") != std::string::npos);
+    CHECK(w.s.colony(taken)->totalPopulation() == before);
+    CHECK(w.s.vehicle(second) != nullptr);
+
+    // A computer player's failure: no message.
+    w.s.empire(kA).kind = PlayerKind::Computer;
+    const VehicleId third = w.spawn(w.ship(kA, "Third", 3, {"Test Rock Pod"}), at(a, 2, 2));
+    fuel(w, third);
+    w.give(third, {mk(OrderKind::Colonize, {}, taken)});
+    move.vehicles = {third};
+    move.ask = false;
+    ctx.messages.clear();
+    movement::startTurn(ctx, kA);
+    movement::runLive(ctx, move);
+    CHECK(ctx.messages.empty());
+    CHECK(w.v(third).orders.empty());
 }

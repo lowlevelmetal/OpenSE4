@@ -18,6 +18,7 @@
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
+#include "client/script/items.hpp"
 
 #include "game/design.hpp"
 #include "game/query.hpp"
@@ -188,6 +189,8 @@ private:
                 c = row(ui, 0, colonySprite(ui, h.planet), s.galaxy.object(h.planet).name, space, st);
                 if (c.right) report_.planet(h.planet);
             }
+            if (const game::Vehicle* v = ownVehicle(ui, h.vehicle)) script::reportItem(v->name);   // input scripts: rows by name
+            else if (h.planet.valid()) script::reportItem(s.galaxy.object(h.planet).name);
             if (c.left) mine = h;
             if (h == mine) {
                 int k = 0;
@@ -210,7 +213,9 @@ private:
                         detail = std::format("{}M ({}kT)", formatNumber(item.count), formatNumber(item.count * popMass));
                         pic = ui.art.populationMini(item.race.valid() ? s.empire(item.race).race.style : "");
                     }
-                    if (row(ui, 100 + k++, pic, title, detail, is).left) transfer(ui, h, other, item);
+                    const bool clicked = row(ui, 100 + k++, pic, title, detail, is).left;
+                    script::reportItem(title);   // input scripts: cargo lines by what they hold
+                    if (clicked) transfer(ui, h, other, item);
                 }
             }
             ImGui::PopID();

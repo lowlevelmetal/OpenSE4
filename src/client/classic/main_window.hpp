@@ -116,6 +116,23 @@ private:
     void orderDone();  // the tagged group dissolves after an order
     void startPick(UiContext& ui, Pick p, std::string prompt);
     void completePick(UiContext& ui, game::Location where, std::optional<game::ObjectId> object);
+    // Giving an order its target (spec 06 §2.9): Colonize, Warp, Drop Cargo
+    // and a pursuing Attack need one object of the clicked sector. None: no
+    // order, silently; one: the target at once; several: the Pick Object
+    // window asks.
+    struct PickCandidate {
+        game::ObjectId object;
+        game::VehicleId vehicle;
+    };
+    struct PickObject {
+        Pick pick = Pick::None;
+        game::Location where;
+        std::vector<PickCandidate> candidates;
+    };
+    bool pursuingAttack(UiContext& ui) const;
+    std::vector<PickCandidate> pickCandidates(UiContext& ui, Pick p, game::Location where) const;
+    void givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c);
+    void drawPickObject(UiContext& ui);
     void finishPatrol(UiContext& ui);
     void openFor(UiContext& ui, ScreenId id);   // a window about the selected vehicle, fleet or colony
     void chooseCargo(UiContext& ui, Pick p);    // Load / Drop Cargo, Launch / Recover Units Remotely: the type first
@@ -139,6 +156,10 @@ private:
     // Ship movement animation (ship_glides.hpp) and the movement log replay
     // (movement_replay.hpp), updated once per frame.
     void trackMovement(UiContext& ui);
+    // Turn-based games: the view follows the player's own objects whose
+    // orders ran during its turn (spec 06 §2.7), from the session's steps.
+    void followOwnMoves(UiContext& ui);
+    uint64_t followedCall_ = 0;
     // Ctrl+P, Ctrl+I, Ctrl+O, Ctrl+U: builds this turn's log first if needed.
     void startReplay(UiContext& ui, OrderId id);
     // What each sector of the shown system draws this frame.
@@ -179,6 +200,7 @@ private:
     std::optional<game::Sector> hover_;
     std::optional<game::SystemId> galaxyHover_;
     std::optional<Chooser> chooser_;
+    std::optional<PickObject> pickObject_;   // the Pick Object window, while it asks
     // The hover hint over the system panel (§2.3): the button's name and key.
     std::string hintName_, hintKey_;
     std::string note_;

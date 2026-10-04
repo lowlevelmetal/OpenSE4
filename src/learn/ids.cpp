@@ -131,6 +131,9 @@ constexpr std::string_view kOtherTags[] = {
     // view (while the home system is shown), the player's colony in the
     // report's list of a sector.
     "sector:home", "report:colony",
+    // The main window's Pick Object window: the candidates of the sector a
+    // Colonize, Warp, Drop Cargo or pursuing Attack was aimed at.
+    "pick-object:list",
     // Widgets inside windows.
     "research:areas", "research:headings", "research:points", "research:queue", "research:tech-tree",
     "set-queue:available", "set-queue:queue", "set-queue:rate",

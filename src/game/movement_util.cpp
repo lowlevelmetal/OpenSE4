@@ -331,7 +331,8 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
     return moved;
 }
 
-int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group) {
+int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group, ObjectId colony,
+                  VehicleId into) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
@@ -342,8 +343,10 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
     int64_t moved = 0;
     const int64_t mass = std::max<int64_t>(1, r.setting("Population Mass", 5));
 
+    const bool named = colony.valid() || into.valid();
     for (ObjectId o : ownColoniesHere(s, owner, where)) {
         if (want <= 0) break;
+        if (named && o != colony) continue;
         Colony* c = s.colony(o);
         v = s.vehicle(id);
         if (unit.valid()) {
@@ -360,7 +363,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
         }
     }
     // Troops dropped on an enemy planet land there to fight (combat::landTroops).
-    if (unit.valid() && combat::isTroopDesign(r, s, unit))
+    if (unit.valid() && !named && combat::isTroopDesign(r, s, unit))
         for (ObjectId o : planetsAt(s, where)) {
             const Colony* c = s.colony(o);
             if (want <= 0 || !c || c->owner == owner || !hostile(s, owner, c->owner)) continue;
@@ -370,6 +373,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
         }
     for (VehicleId b : ownHoldersHere(r, s, owner, where, id, group)) {
         if (want <= 0) break;
+        if (named && b != into) continue;
         Vehicle* holder = s.vehicle(b);
         v = s.vehicle(id);
         if (unit.valid()) {

@@ -805,6 +805,7 @@ void HostSession::handlePlay(Peer& peer, std::span<const uint8_t> payload) {
     res.ok = true;
     for (const auto& [who, why] : result.rejected)
         if (who == e) res.refused.push_back(why);
+    notifyMessages(result);
     answer();
 }
 
@@ -1251,6 +1252,15 @@ void HostSession::notifyPlayer(game::EmpireId empire, const std::string& text) {
     if (Peer* p = peerOfSlot(*slots_[empire.index()]); p && !p->closing) p->conn.send(MsgType::Notice, proto::Notice{text});
 }
 
+// Turn-based games: what a player's own orders raised as they ran (a failed
+// Colonize, spec 03 §8), which a local game shows in a message box: a notice
+// to that player.
+void HostSession::notifyMessages(const game::TurnResult& result) {
+    for (const game::PlayerMessage& m : result.messages)
+        if (m.empire.valid() && m.empire.index() < state_->empires.size() && state_->empire(m.empire).kind == game::PlayerKind::Human)
+            notifyPlayer(m.empire, std::format("{}: {}", m.title, m.text));
+}
+
 // Tells players which of their commands were refused.
 void HostSession::notifyRejections(const game::TurnResult& result, uint32_t turn) {
     std::map<uint32_t, std::vector<std::string>> refused;
@@ -1455,6 +1465,7 @@ game::TurnResult HostSession::runLive(game::EmpireId empire, const std::vector<g
             game::TurnResult r = game::applyLive(rules_, *state_, empire, c);
             for (auto& x : r.rejected) all.rejected.push_back(std::move(x));
             for (auto& q : r.questions) all.questions.push_back(q);
+            for (auto& m : r.messages) all.messages.push_back(std::move(m));
         }
     } catch (const std::exception& e) {
         *state_ = std::move(before);
@@ -1524,6 +1535,7 @@ std::expected<void, std::string> HostSession::turnBasedStep(const std::function<
         if (!state_->gameOver && !state_->playerTurn.started && anyHumanToPlay()) {
             game::TurnResult more = game::resumeTurnBased(rules_, *state_, liveOptions());
             for (auto& x : more.rejected) result.rejected.push_back(std::move(x));
+            for (auto& m : more.messages) result.messages.push_back(std::move(m));
         }
     } catch (const std::exception& e) {
         *state_ = std::move(before);
@@ -1536,6 +1548,7 @@ std::expected<void, std::string> HostSession::turnBasedStep(const std::function<
         return std::unexpected(why);
     }
     notifyRejections(result, turnBefore);
+    notifyMessages(result);
     stateCache_ = redactedState();
     if (state_->gameOver) {
         phase_ = HostPhase::GameOver;

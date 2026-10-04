@@ -400,6 +400,21 @@ void purgeObsoleteDesigns(TurnContext& ctx) {
 
 namespace {
 
+// A failed Colonize, told as the movement phases tell it (spec 03 §8): a
+// message box for a human in a turn-based game, nothing for a computer
+// player there, and the Colonization Minister's log entry in a simultaneous game.
+void colonizationFailed(TurnContext& ctx, EmpireId owner, const std::string& name, Location where, const std::string& why) {
+    GameState& s = ctx.state;
+    if (!s.options.simultaneous) {
+        if (s.empire(owner).kind == PlayerKind::Human) ctx.messages.push_back(PlayerMessage{owner, "Colonize", why});
+        return;
+    }
+    ctx.log(owner, LogCategory::Misc, "Unable to Colonize",
+            std::format("The Colonization Minister reports that {} could not found a colony in the {} system. {}", name,
+                        s.galaxy.system(where.system).name, why),
+            where, "OrdersNotCompleted");
+}
+
 // Every empire's colony ships, or one empire's that have movement left (turn-based games).
 void colonizeWaiting(TurnContext& ctx, std::optional<EmpireId> only) {
     const Rules& r = ctx.rules;
@@ -439,7 +454,7 @@ void colonizeWaiting(TurnContext& ctx, std::optional<EmpireId> only) {
                 if (Vehicle* v = s.vehicle(id); v && alive(*v)) popFront(v->orders, v->repeatOrders);
         } else {
             // A failed order clears the lists and switches Repeat off (§8).
-            ctx.log(owner, LogCategory::Misc, std::format("{}: colonization failed", name), why, where);
+            colonizationFailed(ctx, owner, name, where, why);
             for (VehicleId id : group)
                 if (Vehicle* v = s.vehicle(id)) {
                     v->orders.clear();
@@ -458,7 +473,7 @@ void colonizeWaiting(TurnContext& ctx, std::optional<EmpireId> only) {
         if (why.empty() && v.status == VehicleStatus::Cloaked) why = "A cloaked ship cannot colonize.";
         if (!why.empty()) {
             // When two ships target the same planet the first processed wins and the other's order fails (§8).
-            ctx.log(v.owner, LogCategory::Misc, std::format("{}: colonization failed", v.name), why, v.location);
+            colonizationFailed(ctx, v.owner, v.name, v.location, why);
             v.orders.clear();
             v.repeatOrders = false;
             continue;

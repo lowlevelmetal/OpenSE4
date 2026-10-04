@@ -120,6 +120,32 @@ struct MovementStep {
     Location from, to;
 };
 
+// Turn-based games: a message for the player whose turn it is, raised by one
+// of its own orders as it was carried out, shown at once in a message box and
+// not logged (a failed Colonize, spec 03 §8). Not saved.
+struct PlayerMessage {
+    EmpireId empire;
+    std::string title;
+    std::string text;
+    bool operator==(const PlayerMessage&) const = default;
+};
+
+// Turn-based games: what an empire's groups did as their orders ran, in
+// order, for the view that follows a human player's own moves (spec 06 §2.7):
+// a group whose orders start to run, where it stands, and each warp jump, at
+// the exit warp point's sector. `vehicle` is the acting vehicle (for a fleet
+// the member it runs through), `planet` a colony running its own list. Not
+// saved.
+struct LiveStep {
+    EmpireId empire;
+    VehicleId vehicle;
+    FleetId fleet;
+    ObjectId planet;
+    Location at;
+    bool jump = false;
+    bool operator==(const LiveStep&) const = default;
+};
+
 struct TurnContext {
     const Rules& rules;
     GameState& state;
@@ -127,6 +153,9 @@ struct TurnContext {
     std::vector<MoodEvent> moodEvents;
     std::vector<Location> battleSites;          // sectors where space combat happened
     std::vector<std::pair<EmpireId, std::string>> rejected;  // commands refused
+    // Turn-based games: the messages and the steps of this call (TurnResult).
+    std::vector<PlayerMessage> messages;
+    std::vector<LiveStep> liveSteps;
     // The answers of this call's stops (null: nothing stops, every battle is
     // strategic; see "Battles shown as they happen").
     struct Battles {
@@ -198,6 +227,12 @@ struct TurnResult {
     // text files, one entry per end-of-turn processing in the call (spec 05
     // §5, §8 step 2). The caller writes them (or not).
     std::vector<score::PlayerRecords> records;
+    // Turn-based games: messages for the players whose orders raised them (a
+    // failed Colonize, shown in a message box and not logged), and what the
+    // groups did, in order, for the view that follows a human's own moves
+    // (spec 03 §8, spec 06 §2.7).
+    std::vector<PlayerMessage> messages;
+    std::vector<LiveStep> liveSteps;
 };
 
 // Processes one full turn: applies orders, runs every phase, advances the date.

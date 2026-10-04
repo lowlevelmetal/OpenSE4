@@ -1,5 +1,7 @@
 #include "client/classic/screens/ships_common.hpp"
 
+#include "client/script/items.hpp"
+
 #include "client/classic/screens/list_widgets.hpp"
 
 #include "game/design.hpp"
@@ -227,6 +229,8 @@ void Status::draw(UiContext&) const {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextColored(error_ ? kBad : kGood, "%s", text_.c_str());
     ImGui::PopTextWrapPos();
+    // Input scripts read the line as "status:<text>" (or "error:<text>").
+    script::reportItem(std::string(error_ ? "error:" : "status:") + text_, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 }
 
 // ---- Lists ------------------------------------------------------------------------------------

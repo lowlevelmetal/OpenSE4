@@ -951,6 +951,9 @@ private:
         // A sweeper group entering a tagged minefield where mines act decloaks first (§12).
         if (decloakSweepers(r_, s_, next, g.members)) decloaked(next.system);
         if (via.valid()) {
+            // A warp jump of a turn-based group: the view following it shows
+            // the arrival system with the exit warp point current (spec 06 §2.7).
+            if (live_) ctx_.liveSteps.push_back(LiveStep{g.owner, g.actor.valid() ? g.actor : g.lead, g.fleet, {}, next, true});
             for (size_t i = 0; i < g.members.size(); ++i) sight::learnWarpLink(s_, g.owner, via);
             // Turbulence: a 50 % chance per transit that every member takes the
             // total of the warp point it leaves; the group arrives but its order fails (confirmed: binary).
@@ -1367,30 +1370,65 @@ private:
         return execute(g, o);
     }
 
-    // Colonize (§8): fails while a member is cloaked or when nobody can colonize
-    // the planet; the colonizer is the last suitable member (confirmed: binary).
+    // Colonize (§8, confirmed: binary): given as Load Cargo, Move To and
+    // Colonize, so nothing about the planet is checked before the group is in
+    // its sector (spec 06 §7 Q100). There the reasons are tested in the
+    // game's order: the planet gone, unseen or elsewhere; an asteroid field;
+    // no movement left (the order waits); a colony there, of any empire; a
+    // cloaked member; no member able to colonize it. The colonizer is the last
+    // suitable member.
     Exec colonize(Group& g, Order& o) {
-        if (any(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; })) return fail(g, o, "A cloaked ship cannot colonize.");
-        VehicleId colonizer;
-        std::string why;
-        for (VehicleId id : g.members) {
-            const std::string p = colonizeProblem(r_, s_, *s_.vehicle(id), o.object);
-            if (p.empty()) colonizer = id;
-            else if (why.empty()) why = p;
-        }
-        if (!colonizer.valid()) return fail(g, o, why);
         if (o.amount == 0) {
-            loadColonists(ctx_, colonizer);  // colonists come aboard where the order starts (spec 03 §8)
+            // An order that reached a list without its Load Cargo (tools,
+            // tests): the colonists come aboard where it starts, on the last
+            // member that could colonize, else the last member.
+            VehicleId loader = g.members.empty() ? VehicleId{} : g.members.back();
+            for (VehicleId id : g.members)
+                if (colonizeProblem(r_, s_, *s_.vehicle(id), o.object).empty()) loader = id;
+            if (loader.valid()) loadColonists(ctx_, loader);
             o.amount = 1;
         }
-        const Travel t = travel(g, locationOf(s_.galaxy, o.object));
-        if (t != Travel::Arrived) return afterTravel(g, o, t);
+        const bool exists = o.object.valid() && o.object.index() < s_.galaxy.objects.size() && inSystem(s_.galaxy, o.object);
+        if (exists) {
+            const Travel t = travel(g, locationOf(s_.galaxy, o.object));
+            if (t != Travel::Arrived) return afterTravel(g, o, t);
+        }
+        if (!exists || !sight::canSeePlanet(r_, s_, g.owner, o.object) || locationOf(s_.galaxy, o.object) != where(g))
+            return colonizeFailed(g, "There is no planet here to colonize.");
+        const SpaceObject& planet = s_.galaxy.object(o.object);
+        if (planet.kind != ObjectKind::Planet) return colonizeFailed(g, std::format("{} cannot be colonized.", planet.name));
         // Carried out like any order, on an acting day with movement left, so
         // the colony exists during the later phases; without movement it
         // waits (spec 05 §8 step 5, open question 24; spec 03 §8).
         if (remaining(g) <= 0) return Exec::Wait;
+        if (s_.colony(o.object)) return colonizeFailed(g, std::format("{} is already a colony.", planet.name));
+        if (any(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; })) return colonizeFailed(g, "A cloaked ship cannot colonize.");
+        VehicleId colonizer;
+        for (VehicleId id : g.members)
+            if (colonizeProblem(r_, s_, *s_.vehicle(id), o.object).empty()) colonizer = id;
+        if (!colonizer.valid()) return colonizeFailed(g, std::format("Unable to colonize {} planets.", planet.surface));
         foundColony(ctx_, colonizer, o.object);
         return Exec::Done;
+    }
+
+    // A failed Colonize clears the whole list, as every failed order (§8).
+    // Where the player reads why (spec 03 §8, confirmed: binary): in a
+    // turn-based game the human whose turn it is gets a message box titled
+    // "Colonize" at once and nothing is logged, a computer player nothing;
+    // in a simultaneous game the owner, computer players too, gets one entry,
+    // "Unable to Colonize", in the Colonization Minister's words, with the
+    // picture OrdersNotCompleted (spec 06 §4.1).
+    Exec colonizeFailed(const Group& g, std::string_view why) {
+        if (live_) {
+            if (live_->ask) ctx_.messages.push_back(PlayerMessage{g.owner, "Colonize", std::string(why)});
+        } else {
+            const Location here = where(g);
+            ctx_.log(g.owner, LogCategory::Misc, "Unable to Colonize",
+                     std::format("The Colonization Minister reports that {} could not found a colony in the {} system. {}", name(g),
+                                 s_.galaxy.system(here.system).name, why),
+                     here, "OrdersNotCompleted");
+        }
+        return Exec::Fail;
     }
 
     // Load, Launch and Recover are always done; Drop can fail (§8, confirmed: binary).
@@ -1414,7 +1452,7 @@ private:
                 if (o.amount >= 0 && p.amount <= 0) break;
                 switch (o.kind) {
                     case OrderKind::LoadCargo: moved += loadCargo(ctx_, id, o.design, p.amount, g.members); break;
-                    case OrderKind::DropCargo: moved += dropCargo(ctx_, id, o.design, p.amount, g.members); break;
+                    case OrderKind::DropCargo: moved += dropCargo(ctx_, id, o.design, p.amount, g.members, o.object, o.vehicle); break;
                     case OrderKind::LaunchUnits: moved += launchUnits(ctx_, budget_, Launcher{id, {}}, p); break;
                     case OrderKind::RecoverUnits: moved += recoverUnits(ctx_, Launcher{id, {}}, p); break;
                     default: break;
@@ -1808,6 +1846,11 @@ private:
     static constexpr int kLiveOrderLimit = 21;
 
     void liveActor(ActorRef ref) {
+        // The group's orders start to run here: the view of a human player
+        // following its own moves selects it (spec 06 §2.7).
+        if (const Vehicle* v = s_.vehicle(ref.vehicle)) ctx_.liveSteps.push_back(LiveStep{v->owner, v->id, v->fleet, {}, v->location, false});
+        else if (const Colony* c = s_.colony(ref.planet))
+            ctx_.liveSteps.push_back(LiveStep{c->owner, {}, {}, ref.planet, locationOf(s_.galaxy, ref.planet), false});
         int completed = 0;  // orders that left the head of the list, chained ones included
         carried_.reset();
         struct EndRun {
