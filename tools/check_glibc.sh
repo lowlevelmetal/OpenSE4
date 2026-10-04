@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Reports the newest glibc symbol version each Linux binary needs, and fails when
-# one needs more than the release floor (cmake/GlibcCompat.cmake).
+# one needs more than the release floor (cmake/GlibcCompat.cmake). Any
+# architecture: readelf reads every ELF file, whatever machine built it.
 #
 #   tools/check_glibc.sh [--max=2.34] BINARY...
 
@@ -22,10 +23,11 @@ newer() {  # is version $1 newer than $2?
 
 status=0
 for bin in "${bins[@]}"; do
-    need=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+    syms=$(readelf --dyn-syms --wide "$bin")
+    need=$(echo "$syms" | grep -o '@GLIBC_[0-9.]*' | sed 's/@GLIBC_//' | sort -V | tail -1)
     if newer "$need" "$max"; then
         echo "$bin: needs glibc $need (more than $max):"
-        objdump -T "$bin" | awk -v v="GLIBC_$need" 'index($0, v) {print "    " $NF}' | sort -u
+        echo "$syms" | grep -o "[^ ]*@GLIBC_$need\( \|\$\)" | sed 's/ *$//; s/^/    /' | sort -u
         status=1
     else
         echo "$bin: needs glibc $need"

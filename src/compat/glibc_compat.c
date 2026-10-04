@@ -24,15 +24,30 @@
     __asm__(".symver " #name "_old, " #name "@" version); \
     ret name##_old params;
 
+/* The old versions: each architecture's first glibc version (BASE), and the
+ * one that added the C99 scanf functions (ISOC99). */
+#if defined(__x86_64__)
+#define BASE "GLIBC_2.2.5"
+#define ISOC99 "GLIBC_2.7"
+#elif defined(__aarch64__)
+#define BASE "GLIBC_2.17"
+#define ISOC99 "GLIBC_2.17"
+#elif defined(__arm__) && defined(__ARM_PCS_VFP)
+#define BASE "GLIBC_2.4"
+#define ISOC99 "GLIBC_2.7"
+#else
+#error "glibc_compat.c: add this architecture's old glibc symbol versions"
+#endif
+
 /* Maths: glibc 2.35 to 2.43 added new versions; the old ones remain. */
-BIND(float, acosf, "GLIBC_2.2.5", (float))
-BIND(float, asinf, "GLIBC_2.2.5", (float))
-BIND(float, atan2f, "GLIBC_2.2.5", (float, float))
-BIND(float, log10f, "GLIBC_2.2.5", (float))
-BIND(float, sqrtf, "GLIBC_2.2.5", (float))
-BIND(float, hypotf, "GLIBC_2.2.5", (float, float))
-BIND(double, fmod, "GLIBC_2.2.5", (double, double))
-BIND(float, fmodf, "GLIBC_2.2.5", (float, float))
+BIND(float, acosf, BASE, (float))
+BIND(float, asinf, BASE, (float))
+BIND(float, atan2f, BASE, (float, float))
+BIND(float, log10f, BASE, (float))
+BIND(float, sqrtf, BASE, (float))
+BIND(float, hypotf, BASE, (float, float))
+BIND(double, fmod, BASE, (double, double))
+BIND(float, fmodf, BASE, (float, float))
 
 float __wrap_acosf(float x) { return acosf_old(x); }
 float __wrap_asinf(float x) { return asinf_old(x); }
@@ -45,14 +60,14 @@ float __wrap_fmodf(float x, float y) { return fmodf_old(x, y); }
 
 /* C23 conversions (glibc 2.38): the pre-C23 functions differ only in not
  * accepting the 0b prefix, which nothing here relies on. */
-BIND(long, strtol, "GLIBC_2.2.5", (const char*, char**, int))
-BIND(long long, strtoll, "GLIBC_2.2.5", (const char*, char**, int))
-BIND(unsigned long, strtoul, "GLIBC_2.2.5", (const char*, char**, int))
-BIND(unsigned long long, strtoull, "GLIBC_2.2.5", (const char*, char**, int))
-BIND(long, wcstol, "GLIBC_2.2.5", (const wchar_t*, wchar_t**, int))
-__asm__(".symver vsscanf_old, __isoc99_vsscanf@GLIBC_2.7");
+BIND(long, strtol, BASE, (const char*, char**, int))
+BIND(long long, strtoll, BASE, (const char*, char**, int))
+BIND(unsigned long, strtoul, BASE, (const char*, char**, int))
+BIND(unsigned long long, strtoull, BASE, (const char*, char**, int))
+BIND(long, wcstol, BASE, (const wchar_t*, wchar_t**, int))
+__asm__(".symver vsscanf_old, __isoc99_vsscanf@" ISOC99);
 int vsscanf_old(const char*, const char*, va_list);
-__asm__(".symver vfscanf_old, __isoc99_vfscanf@GLIBC_2.7");
+__asm__(".symver vfscanf_old, __isoc99_vfscanf@" ISOC99);
 int vfscanf_old(FILE*, const char*, va_list);
 
 long __wrap___isoc23_strtol(const char* s, char** end, int base) { return strtol_old(s, end, base); }
