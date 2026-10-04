@@ -30,6 +30,12 @@ if(NOT SDL3_FOUND)
     if(NOT TARGET SDL3::SDL3 AND TARGET SDL3::SDL3-static)
         add_library(SDL3::SDL3 ALIAS SDL3-static)
     endif()
+    # Third-party code: don't show its warnings (newer compilers find unused variables).
+    foreach(sdl IN ITEMS SDL3-static SDL3-shared)
+        if(TARGET ${sdl})
+            target_compile_options(${sdl} PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/w,-w>)
+        endif()
+    endforeach()
 endif()
 
 # --- Vulkan headers + shader compiler -----------------------------------------

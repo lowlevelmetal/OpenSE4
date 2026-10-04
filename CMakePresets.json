@@ -48,9 +48,9 @@
         },
         {
             "name": "dist-windows",
-            "displayName": "Release package for Windows (MinGW-w64 cross build, static, resources built in)",
+            "displayName": "Release package for Windows 7 to 11 (llvm-mingw for msvcrt.dll, static, resources built in)",
             "inherits": "dist",
-            "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake"
+            "toolchainFile": "${sourceDir}/cmake/toolchains/llvm-mingw-x86_64.cmake"
         },
         {
             "name": "dist-mingw",
