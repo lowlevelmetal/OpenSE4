@@ -398,8 +398,8 @@ hashed sizes at their own width.
   - the history files end their lines in CR LF.
 
   Paths are UTF-8 everywhere. The Windows programs carry a manifest with the UTF-8 code
-  page (`packaging/windows/opense4.manifest`), and stb and dr_mp3 open UTF-8 or wide
-  names. This was checked with an install under a folder with a non-ASCII name.
+  page (`packaging/windows/opense4.manifest`), stb opens UTF-8 names, and the sounds
+  and music are read through `std::filesystem` paths (wide on Windows). This was checked with an install under a folder with a non-ASCII name.
   Windows before 10 1903 ignore the manifest's code page, so the release build converts
   between paths and narrow strings as UTF-8 itself (`src/compat/libcxx_utf8_paths.cpp`).
   Environment variables that hold paths are read with `core::environment`, and the
@@ -524,6 +524,20 @@ collects the widgets of each frame by label (Dear ImGui's item hooks, `imgui_ite
 in `src/third_party_config`, turned on only for a script or a recording) and
 `recorder.*` writes a script from a session. The app handles a script's events exactly as
 a player's: `Mode::filterEvent` (the tutorial input lock) first, then Dear ImGui.
+
+`src/client/audio.*` plays the install's sounds and music (docs/spec/06 §5.5; the music
+lookup and the log lines are in docs/SETUP.md "Sound and music"). One SDL audio stream is
+bound to the device, and the device's audio thread pulls the mix from it
+(`audio_mixer.*`, headless and tested): effects decoded once to the device's rate, music
+decoded and looped without a gap on a thread of its own into a lock-free ring, so the
+main thread's frames (or a long turn) never feed it. Nothing starts or stops abruptly: an
+effect cut off by the next one fades out over 6 ms, every clip ramps in and out over 2 ms
+(some of the remastered sounds start or end mid-wave), a track change or stop fades out
+over a quarter second, volume changes ramp over 30 ms, music that runs dry fades out on a
+10 ms reserve and back in, and peaks above 0.9 bend smoothly towards full scale instead of
+clipping. `audio_playlist.cpp` holds the playlists, the music cues (`MusicDirector`, with
+its own random source) and the volume steps. `tools/check_audio.py` listens to the client
+headless (docs/BUILDING.md "Tests").
 
 ### Learning to play
 
