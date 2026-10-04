@@ -29,9 +29,7 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
   checked against the original. [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md) tracks what
   remains:
   - small details the original leaves open, where the engine makes its own choice;
-  - interface details still to compare with the original;
-  - the content of the tutorials, training games and manual: the learning system
-    itself is in place ([docs/LEARNING.md](docs/LEARNING.md)).
+  - a few differences in how the computer players expand, still being measured.
 
 `opense4` finds your install on its own, or takes its location with `--classic-dir`.
 Without an install it explains where it looked and exits: there is no game to play
@@ -46,6 +44,58 @@ without your copy. [docs/ENGINE.md](docs/ENGINE.md) is the map of the engine's c
 
 The screenshots show OpenSE4 running on an installed copy of Space Empires IV Deluxe:
 the art is the original game's, read from that install.
+
+## What OpenSE4 adds
+
+The rules and the classic windows stay as they were. Around them, OpenSE4 brings the
+game to today's machines and adds what a newcomer or a multiplayer group needs.
+
+**Modern screens and systems**
+- **Widescreen:** the 1024x768 layout stretches to use the whole width, up to 21:9, with
+  a larger system view and galaxy map. Classic 4:3 with bars is a setting away.
+- **Any resolution:** the classic layouts are scaled to any window or screen, windowed,
+  borderless or fullscreen. There are options for sharp pixels, whole-number scaling and a
+  larger text size.
+- **Native on Linux and Windows**, built for macOS too, with Vulkan rendering and an OpenGL
+  fallback. A Windows installer and a Linux desktop entry come with the release.
+
+**Learning the game**
+- **Seven guided tutorials:**
+  - every step points at what to use and waits until you have done it;
+  - close a window the lesson still needs and it shows you how to reopen it;
+  - steps that take several turns count your progress;
+  - you can leave a lesson and resume it later.
+- **Five training games** with goals to meet: a land rush, a research sprint, holding a
+  fortress, a first treaty and a conquest.
+- **A built-in manual** of 24 chapters, linked from the lessons. Shift+F1 opens the page
+  for the window in front.
+
+**Playing together**
+- **Network play** over TCP:
+  - simultaneous turns, or one player after another (an OpenSE4 extension);
+  - the router is set up automatically over UPnP, and games on the local network are found
+    on their own;
+  - connections are encrypted, and the game remembers each host's key, so an impostor
+    can't pose as your host;
+  - passwords never travel.
+- **Dropped connections and desyncs:** a dropped player reconnects without losing the
+  turn. A copy of the game that drifts from the host's is detected, reported and repaired.
+- **Play by e-mail**, through mail or a shared folder: each player's turn file holds only
+  that player's view, encrypted for them and signed by the host.
+- **A dedicated server** (`opense4-server`) hosts network games and processes e-mail turns
+  without a player at the keyboard.
+- **The same game on every machine:** the engine is deterministic, so a Linux host and a
+  Windows player see exactly the same results. Hotseat play on one machine works too.
+
+**Comfort**
+- **Hotkeys you can change:** the classic keys work, and every one can be rebound
+  (Settings → Controls).
+- **Small additions:**
+  - the Galaxy Map can show jump distances;
+  - Help can search;
+  - combat replays can list each turn's events.
+- **Mods:** `opense4-datacheck` checks a modded data set and names the file, line and
+  record of anything it doesn't understand.
 
 ## Building
 
