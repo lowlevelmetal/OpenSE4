@@ -350,6 +350,9 @@ TextFit drawFitted(const Painter& p, ImDrawList* dl, ImFont* font, float framePx
 // The same as an item in the current window's layout (in the window's font and
 // colour), at most `maxWidth` wide (ImGui units; 0: to the right edge).
 void fittedText(const Painter& p, std::string_view text, float maxWidth = 0.0f, ImU32 color = 0);
+// A bullet and its text wrapped to the window's width (ImGui::BulletText does
+// not wrap: a long line ran out of its box).
+void wrappedBullet(std::string_view text, const ImVec4* color = nullptr);
 
 // ---- Keys in dialogs (spec 06 §3.4, confirmed: binary) ---------------------------------------
 // Call inside the prompt's window. Keys pressed on the frame the window

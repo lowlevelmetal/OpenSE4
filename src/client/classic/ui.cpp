@@ -250,6 +250,16 @@ void fittedText(const Painter& p, std::string_view text, float maxWidth, ImU32 c
     if (f.cut && ImGui::IsItemHovered()) ImGui::SetTooltip("%.*s", int(text.size()), text.data());
 }
 
+void wrappedBullet(std::string_view text, const ImVec4* color) {
+    ImGui::Bullet();
+    ImGui::SameLine();
+    ImGui::PushTextWrapPos(0.0f);
+    if (color) ImGui::PushStyleColor(ImGuiCol_Text, *color);
+    ImGui::TextUnformatted(text.data(), text.data() + text.size());
+    if (color) ImGui::PopStyleColor();
+    ImGui::PopTextWrapPos();
+}
+
 // ---- Classic buttons and frames ---------------------------------------------------------------
 
 namespace {

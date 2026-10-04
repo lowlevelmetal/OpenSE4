@@ -3,6 +3,7 @@
 #include "client/script/items.hpp"
 
 #include "client/classic/screens/colony_logic.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/status_icons.hpp"
 
 #include "game/combat.hpp"
@@ -510,17 +511,78 @@ void systemReport(UiContext& ui, game::SystemId sysId) {
     const game::GameState& s = ui.state();
     const game::StarSystem& sys = s.galaxy.system(sysId);
     const ruleset::SystemType& type = ui.rules().data().systemTypes[sys.type.index()];
-    title(ui, sys.name);
     if (!ui.me().hasExplored(sysId)) {
+        title(ui, sys.name);
         ImGui::TextColored(kDim, "Unexplored");
         return;
     }
-    // The system type's 128x128 picture (Systems/<Background Bitmap>, docs/spec/06 §5.3).
-    if (const Sprite picture = ui.art.systemPicture(type.backgroundBitmap)) image(ui, picture, {128, 128});
-    labelValue(ui, "System Type", type.name);
-    labelValue(ui, "Location", std::format("{}, {}", sys.position.x, sys.position.y));
-    wrapped(type.description);
-    for (const auto& a : sys.abilities) ImGui::BulletText("%s", a.description.empty() ? a.type.c_str() : a.description.c_str());
+    // The original's places (spec 06 §1.4, confirmed: binary), in the report's
+    // coordinates (Pen: 4 px left and 8 px up of the spec's): the type's 128x128
+    // picture (Systems/<Background Bitmap>, §5.3) at the top left; "<Name>
+    // System" in the Button face, right-aligned at the top, its box from x 120;
+    // the type's description in grey from y 140, a box 42 px tall; the
+    // system's abilities from y 197. Ours: the type and the location as label
+    // lines beside the picture. Every text wraps: what does not fit the panel
+    // scrolls with the lists' arrow column, from the description down.
+    Pen pen(ui);
+    const Painter p = ui.painter();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 origin = ImGui::GetWindowPos();
+    auto at = [&](float x, float y) { return ImVec2(origin.x + ui.px(x), origin.y + ui.px(y)); };
+    if (const Sprite picture = ui.art.systemPicture(type.backgroundBitmap)) pen.sprite(picture, -5, -11, 128, 128);
+    ImFont* button = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
+    ImFont* body = ui.fonts.medium ? ui.fonts.medium : ImGui::GetFont();
+    ImFont* small = ui.fonts.small ? ui.fonts.small : body;
+    drawFitted(p, dl, button, kTitleSize, at(116, -4 + kTitleLead), ui.px(282 - 116), IM_COL32_WHITE, sys.name + " System", 1.0f);
+    float y = 15;
+    for (const auto& [label, value] : {std::pair<const char*, std::string>{"System Type", type.name},
+                                       std::pair<const char*, std::string>{"Location", std::format("{}, {}", sys.position.x, sys.position.y)}}) {
+        drawFitted(p, dl, body, kTextSize, at(126, y), ui.px(286 - 126), ImGui::ColorConvertFloat4ToU32(kLabelBlue), label, 0.0f, ui.px(15));
+        drawFitted(p, dl, body, kTextSize, at(136, y + 15), ui.px(286 - 136), IM_COL32_WHITE, value, 0.0f, ui.px(15));
+        script::reportText(label, at(126, y), at(286, y + 30));
+        y += 30;
+    }
+    std::vector<std::string> abilities;
+    for (const auto& a : sys.abilities) abilities.push_back(a.description.empty() ? a.type : a.description);
+    // Does it all fit the original's places?
+    const float panelBottom = ImGui::GetWindowHeight() / ui.k() - 2;
+    const float descTop = 132, abilitiesTop = 189, left = -1, width = 287;
+    const ImU32 grey = imColor(palette::kSecondary);
+    const float descH = type.description.empty() ? 0.0f
+                                                 : small->CalcTextSizeA(p.fontPx(kSmallSize), FLT_MAX, ui.px(width), type.description.c_str()).y / ui.k();
+    const float bullet = ImGui::GetFontSize() / ui.k() + ImGui::GetStyle().FramePadding.x * 2 / ui.k();
+    float abilitiesH = 0;
+    for (const std::string& a : abilities)
+        abilitiesH += body->CalcTextSizeA(p.fontPx(kTextSize), FLT_MAX, ui.px(width - bullet), a.c_str()).y / ui.k() + 2;
+    const float listTop = std::max(abilitiesTop, descTop + descH + 4);
+    if (descH <= 42 && listTop + abilitiesH <= panelBottom) {
+        if (!type.description.empty())
+            dl->AddText(small, p.fontPx(kSmallSize), at(left, descTop + kSmallLead), grey, type.description.c_str(), nullptr, ui.px(width));
+        ImGui::SetCursorScreenPos(at(left, listTop));
+        ImGui::PushFont(body, p.fontPx(kTextSize));
+        for (const std::string& a : abilities) wrappedBullet(a);
+        ImGui::PopFont();
+        return;
+    }
+    // Too much for the panel: the description and the abilities scroll together.
+    ImGui::SetCursorScreenPos(at(left - 1, descTop));
+    const Painter list = [&] {
+        Painter lp = p;
+        lp.tagger = &ui;
+        return lp;
+    }();
+    beginList(list, "##system-info", ImVec2(ui.px(width + 1), ui.px(std::max(40.0f, panelBottom - descTop))), kListLineStep, ImGuiChildFlags_None, false);
+    if (!type.description.empty()) {
+        ImGui::PushFont(small, p.fontPx(kSmallSize));
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(grey), "%s", type.description.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+    }
+    ImGui::PushFont(body, p.fontPx(kTextSize));
+    for (const std::string& a : abilities) wrappedBullet(a);
+    ImGui::PopFont();
+    endList(list);
 }
 
 void objectReport(UiContext& ui, game::ObjectId id, const game::GameState* state) {
@@ -545,7 +607,7 @@ void objectReport(UiContext& ui, game::ObjectId id, const game::GameState* state
         default: labelValue(ui, "Kind", std::string(game::displayName(o.kind))); break;
     }
     wrapped(ui.rules().data().sectorObjectTypes[o.sectorType].description);
-    for (const auto& a : o.abilities) ImGui::BulletText("%s", a.description.empty() ? a.type.c_str() : a.description.c_str());
+    for (const auto& a : o.abilities) wrappedBullet(a.description.empty() ? a.type : a.description);
 }
 
 } // namespace opense4::client::classic
