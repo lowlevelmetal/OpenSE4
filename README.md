@@ -97,6 +97,43 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
 - **Mods:** `opense4-datacheck` checks a modded data set and names the file, line and
   record of anything it doesn't understand.
 
+## Downloads and system requirements
+
+Each release on GitHub has these packages. Each holds the game (`opense4`), the dedicated
+server (`opense4-server`) and the data checker (`opense4-datacheck`):
+
+| Package | For |
+|---|---|
+| `OpenSE4-<version>-linux-x86_64.tar.gz` | 64-bit PC Linux: Ubuntu 22.04, Debian 12, Fedora 35, SteamOS 3 or newer |
+| `OpenSE4-<version>-linux-aarch64.tar.gz` | 64-bit ARM Linux: Raspberry Pi OS (64-bit) 12 or newer, Debian 12, Ubuntu 22.04, Fedora Asahi Remix |
+| `OpenSE4-<version>-linux-armhf.tar.gz` | 32-bit ARM Linux on ARMv7 or newer with NEON: Raspberry Pi OS (32-bit) 12 or newer on a Pi 2 or later, Debian 12, Ubuntu 22.04 |
+| `OpenSE4-<version>-windows-x86_64-setup.exe` and `.zip` | Windows (see "Running") |
+
+The Linux programs need glibc 2.34 or newer and nothing else installed: SDL is built in
+and loads X11 or Wayland, the GPU driver and the sound server at run time. Each
+architecture computes the same game, so they play together over the network and by
+e-mail.
+
+The game draws with **Vulkan 1.3 or OpenGL 3.3**, and needs one of them. A PC graphics
+card or integrated GPU of the last ten years with current drivers has OpenGL 3.3, and
+most have Vulkan 1.3 too. On ARM it depends on the GPU and the Mesa version:
+
+| Device | Vulkan 1.3 | OpenGL 3.3 |
+|---|---|---|
+| Raspberry Pi 5 and Pi 4 (with Pi 400, CM4, CM5) | Yes, V3DV from Mesa 24.3: Raspberry Pi OS 13, 64-bit and 32-bit. Raspberry Pi OS 12 (Mesa 24.2) has Vulkan 1.2 only | No: V3D offers OpenGL 3.1 |
+| Rockchip RK3588 and RK3588S (Mali-G610) | Yes, PanVK from Mesa 25.2 (Ubuntu 25.10 or newer; Debian 13's Mesa 25.0 is too old) | No: Panfrost offers OpenGL 3.1 |
+| Rockchip RK356x, RK3576 and others with Bifrost Mali (G52, G31) | Experimental in PanVK and off by default | No (OpenGL 3.1) |
+| Apple M1 and M2 Macs under Asahi Linux | Yes (Vulkan 1.4) | Yes (OpenGL 4.6). M3 graphics are still in development |
+| Snapdragon X Elite laptops (Adreno X1-85) | Yes, Turnip | Yes, Freedreno (Mesa 24.2 or newer), where the laptop's Linux support enables the GPU |
+| Raspberry Pi 3 and older, Pi Zero and Zero 2; other boards with only OpenGL ES 2 | No | No (OpenGL 2.1) |
+
+`--renderer=auto` (the default) picks whichever works. Machines that have neither, such
+as the Raspberry Pi 3 and older 32-bit boards, cannot run the game, but they can host
+it: the dedicated server `opense4-server` needs no GPU and no display (the armhf package
+on ARMv7 boards such as the Pi 2, aarch64 on 64-bit systems; the ARMv6 Pi 1, Pi Zero and
+Zero W are not supported). On ARM, copy the game's files from a PC, since Steam does not
+run there (see [docs/SETUP.md](docs/SETUP.md)).
+
 ## Building
 
 Full instructions for Linux, Windows and macOS are in

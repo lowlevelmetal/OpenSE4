@@ -36,6 +36,10 @@ OpenSE4 never runs the original executable. Pick one method:
 
 - **Copy an install from a Windows machine.** A copy of the game directory is enough.
 
+On ARM Linux (a Raspberry Pi, a Rockchip board, an ARM laptop) neither Steam nor SteamCMD
+runs: download the files with one of the methods above on another computer and copy the
+game directory over.
+
 ## 2. Point OpenSE4 at it
 
 With no options, OpenSE4 looks in every Steam library it can find:

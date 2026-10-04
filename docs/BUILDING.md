@@ -2,7 +2,9 @@
 
 OpenSE4 is plain CMake. It builds with GCC, Clang, Apple Clang and MSVC on Linux, Windows
 and macOS. Linux is the primary development platform. Windows builds are routine. CI
-builds and tests macOS as well, but the game itself is played there less.
+builds and tests macOS as well, but the game itself is played there less. On Linux it
+builds for x86_64 and for ARM, 64-bit (aarch64) and 32-bit (armhf), natively or
+cross-compiled (see "ARM Linux").
 
 What gets built:
 
@@ -112,6 +114,78 @@ profile the game needs. Vulkan would run through MoltenVK (`brew install molten-
 which is optional and untested; when Vulkan does not start, the default
 `--renderer=auto` falls back to OpenGL.
 
+## ARM Linux
+
+OpenSE4 builds and plays the same on 64-bit ARM (aarch64) and 32-bit ARM (armhf) Linux:
+Raspberry Pi OS, Debian, Ubuntu or Fedora Asahi Remix, on a Raspberry Pi, a Rockchip
+board, an Apple silicon Mac or a Snapdragon laptop. The README's "Downloads and system
+requirements" lists the GPUs that can run the game.
+
+**On the ARM machine itself**, build as on any Linux (see "Linux"): the same packages,
+presets and commands. Raspberry Pi OS 13 has what the table's Debian 13 line installs.
+A 32-bit build gets 64-bit `time_t` and file offsets on its own (`_TIME_BITS=64`,
+`_FILE_OFFSET_BITS=64`, from `CMakeLists.txt`).
+
+**Cross-compiling** from x86_64 uses a toolchain file:
+
+| Preset | Toolchain file | Target |
+|---|---|---|
+| `dist-linux-aarch64` | `cmake/toolchains/aarch64-linux-gnu.cmake` | 64-bit ARM (ARMv8-A) |
+| `dist-linux-armhf` | `cmake/toolchains/arm-linux-gnueabihf.cmake` | 32-bit ARM: ARMv7-A, hard-float, VFPv3 and NEON |
+
+Both use GCC's `aarch64-linux-gnu-` or `arm-linux-gnueabihf-` cross compiler (Debian and
+Ubuntu: `g++-aarch64-linux-gnu`, `g++-arm-linux-gnueabihf`; Arch: `aarch64-linux-gnu-gcc`)
+and find the target's libraries in this order (`cmake/toolchains/linux-cross.cmake`):
+
+1. a sysroot given with `-DCMAKE_SYSROOT=/path`;
+2. Debian's and Ubuntu's multiarch folders, `/usr/lib/<triple>`: the target's packages
+   installed next to the machine's own (`dpkg --add-architecture armhf`, then
+   `apt install libx11-dev:armhf ...`; Ubuntu serves ARM packages from its ports
+   archive, see `.github/workflows/release.yml`);
+3. the cross compiler's own folder, `/usr/<triple>` (Arch, Fedora).
+
+`pkg-config` sees only the target's files. A release build needs SDL's build
+dependencies for the target (the list in `release.yml`); without X11 and Wayland, SDL's
+configure stops. A build only for the tests can do without them:
+`-DSDL_UNIX_CONSOLE_BUILD=ON` builds SDL without windows, as CI's armhf job does.
+
+Clang works too: give it the target and a sysroot, for example one unpacked from the
+distribution's packages:
+
+```sh
+cmake --preset release -B build/armhf --toolchain cmake/toolchains/arm-linux-gnueabihf.cmake \
+    -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_COMPILER_TARGET=arm-linux-gnueabihf -DCMAKE_CXX_COMPILER_TARGET=arm-linux-gnueabihf \
+    -DCMAKE_SYSROOT=/path/to/armhf-sysroot -DCMAKE_LINKER_TYPE=LLD -DSDL_UNIX_CONSOLE_BUILD=ON
+```
+
+**Tests** of a cross build run through QEMU's user mode (`qemu-aarch64`, `qemu-arm`, or
+their `-static` builds; Debian and Ubuntu: `qemu-user`). The toolchain file makes it
+CMake's emulator, so `ctest` uses it; by hand, `-L` names the target's C library:
+
+```sh
+qemu-arm -L /usr/arm-linux-gnueabihf build/dist-linux-armhf/tests/opense4_tests
+```
+
+Under QEMU an optimized build runs the suite much faster than a debug build: about a
+minute and a half in four processes (`.github/scripts/run_tests_parallel.sh`) on a
+desktop machine.
+
+**The armhf baseline**, ARMv7-A with VFPv3 and NEON, covers every Raspberry Pi from the
+Pi 2 on and the ARMv7 and ARMv8 boards that run a 32-bit system. Raspberry Pi OS
+(32-bit) runs it, though its own packages are built for the ARMv6 of the Pi 1 and Pi Zero,
+which are left out. VFPv3 rather than VFPv4 keeps the Cortex-A8 and A9 in; VFPv4 would
+add only fused multiply-add, which the game never uses.
+
+**The same game:** the golden checksums of `test_determinism.cpp` are the same on
+aarch64 and armhf as on x86_64, and CI checks them on both (docs/ENGINE.md, "Same on
+every platform"). Two things keep it so. Sizes are hashed and stored as 64-bit values,
+since `size_t` is 32 bits on armhf. And GCC and Clang build with `-ffp-contract=off`:
+ARM has fused multiply-add, which GCC would otherwise use for `a * b + c` in optimized
+code, rounding once where x86_64 rounds twice. The engine computes almost nothing in
+floating point, but Dear ImGui's layout does (an aarch64 build without the option had
+hundreds of fused instructions in it).
+
 ## Presets and options
 
 | Preset | Build type | Notes |
@@ -119,7 +193,9 @@ which is optional and untested; when Vulkan does not start, the default
 | `debug` | Debug | The default for development |
 | `release` | RelWithDebInfo | Optimized, with symbols |
 | `asan` | Debug | AddressSanitizer and UndefinedBehaviorSanitizer (GCC and Clang) |
-| `dist-linux` | Release | Redistributable Linux build (see "Release packages") |
+| `dist-linux` | Release | Redistributable Linux build for this machine's architecture (see "Release packages") |
+| `dist-linux-aarch64` | Release | The same for 64-bit ARM, cross-compiled (see "ARM Linux") |
+| `dist-linux-armhf` | Release | The same for 32-bit ARM (ARMv7, hard-float, NEON), cross-compiled |
 | `dist-windows` | Release | Redistributable Windows build, cross-compiled with MinGW-w64 |
 | `dist-mingw` | Release | The same Windows build, made natively in MSYS2 (MinGW-w64) |
 
@@ -142,6 +218,8 @@ platforms from one Linux machine. In MSYS2 on Windows (the UCRT64 shell) it buil
 the Windows packages natively instead, with the `dist-mingw` preset:
 
 - `dist/OpenSE4-<version>-linux-x86_64.tar.gz`
+- `dist/OpenSE4-<version>-linux-aarch64.tar.gz` and `-linux-armhf.tar.gz`, the same for ARM
+  (see "The ARM packages")
 - `dist/OpenSE4-<version>-windows-x86_64.zip`
 - `dist/OpenSE4-<version>-windows-x86_64-setup.exe`, the same programs as an installer
 - `dist/OpenSE4-<version>-SHA256SUMS.txt`
@@ -156,12 +234,14 @@ version that has no `<release>` entry in the AppStream metadata.
 Nothing from the original game is included: players point OpenSE4 at their own
 installed copy, without which the game does not start.
 
-- **Linux** (`dist-linux`): SDL3, the C++ runtime and every other library are linked
-  statically. Only the C library stays shared, because SDL loads the system's
-  X11/Wayland, audio and GPU driver libraries at run time. The binaries run on
-  glibc 2.34 and later (Ubuntu 22.04, Debian 12, Fedora 35, RHEL 9, SteamOS 3 and
-  newer), even when built on a newer distribution: `cmake/GlibcCompat.cmake` routes
-  the few newer glibc functions to older versions or small built-in
+- **Linux** (`dist-linux`, and `dist-linux-aarch64` and `dist-linux-armhf` for ARM):
+  SDL3, the C++ runtime and every other library are linked statically. Only the C
+  library stays shared, because SDL loads the system's X11/Wayland, audio and GPU
+  driver libraries at run time; the script checks both. The binaries run on glibc
+  2.34 and later (Ubuntu 22.04, Debian 12, Fedora 35, RHEL 9, SteamOS 3 and newer; on
+  ARM also Raspberry Pi OS 12 and Fedora Asahi Remix), even when built on a newer
+  distribution: `cmake/GlibcCompat.cmake` routes the few newer glibc functions to older
+  versions (each architecture's own: `src/compat/glibc_compat.c`) or small built-in
   implementations. `tools/check_glibc.sh` reports what a binary needs.
 - **Windows** (`dist-windows`, or `dist-mingw` in MSYS2): built with MinGW-w64
   (`mingw-w64-gcc` for the cross build) and linked with `-static`. The executables need only Windows' own DLLs and the
@@ -180,6 +260,29 @@ In MSYS2, install `git` and the UCRT64 packages `gcc`, `cmake`, `ninja`, `shader
 `libarchive` (for `bsdtar`) and `nsis`, each named `mingw-w64-ucrt-x86_64-<name>`.
 
 Pass `--skip-tests` to package without running the tests.
+
+### The ARM packages
+
+`linux` packages the machine's own architecture: on an aarch64 or armhf machine,
+`tools/package_release.sh linux` makes that architecture's package with `dist-linux`.
+`linux-aarch64` and `linux-armhf` cross-compile on x86_64 with the presets of "ARM
+Linux", and run the tests through QEMU when it is installed.
+
+For a release, CI makes them: `.github/workflows/release.yml` builds the aarch64 package
+natively on GitHub's arm64 runner and cross-compiles the armhf one, for every version
+tag. With the x86_64 and Windows packages made here, add them to `dist/`:
+
+```sh
+git push origin v0.9.0                    # the release workflow starts
+tools/package_release.sh                  # meanwhile: x86_64 Linux and Windows, here
+tools/fetch_arm_packages.sh v0.9.0        # the ARM packages of that workflow run
+gh release create v0.9.0 dist/OpenSE4-0.9.0-*
+```
+
+`tools/fetch_arm_packages.sh` checks that the workflow run for the tag succeeded and
+built the commit the tag names, downloads its two ARM packages with the GitHub CLI and
+writes `dist/OpenSE4-<version>-SHA256SUMS.txt` again, over every archive of that version.
+The run's `OpenSE4-<version>` artifact holds every package with their checksums too.
 
 ### The Windows installer
 
@@ -422,6 +525,8 @@ input scripts CI plays run on a game folder made from our own test fixtures.
 |---|---|
 | Linux / GCC debug, Clang debug | The `debug` preset on Ubuntu 26.04 with the distribution's SDL3, warnings as errors; the unit tests, the golden determinism checksums among them (every job checks them) |
 | Linux / GCC ASan+UBSan | The unit tests built with the `asan` preset, warnings as errors; they stop at the first memory error, leak or undefined behaviour |
+| Linux arm64 / GCC release | The `release` preset natively on GitHub's arm64 runner (`ubuntu-26.04-arm`) with the distribution's SDL3, warnings as errors; the unit tests. Optimized, so that the compiler could fuse floating-point operations if `-ffp-contract=off` did not forbid it |
+| Linux armhf / GCC release (QEMU) | The `release` preset cross-compiled with the armhf toolchain file and Ubuntu's `arm-linux-gnueabihf` GCC (SDL3 without windows), warnings as errors; the unit tests under `qemu-arm`. The arm64 runners cannot all run 32-bit ARM code, so it runs on x86_64 |
 | macOS / Apple Clang debug | The `debug` preset on Apple silicon (`macos-latest`) with Apple Clang, libc++ and Homebrew's SDL3, warnings as errors; the unit tests |
 | Windows / MSVC release (VS 2022), (VS 2026) | The `release` preset with Visual Studio 2022 (on `windows-2022`) and Visual Studio 2026 (on `windows-2025`) and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
 | Windows / MinGW-w64 package | `tools/package_release.sh windows` in MSYS2 (`dist-mingw`, warnings as errors): the release build, the unit tests, the zip file and the installer, kept as the run's `opense4-windows` artifact |
@@ -437,9 +542,11 @@ built from fresh downloads. The workflows only read the repository, and pin ever
 action to a full commit SHA (the comment beside it names the release).
 
 `.github/workflows/release.yml` runs for a version tag (`v*`), or by hand from the
-Actions tab. It builds the Linux package on Ubuntu and the Windows packages in
-MSYS2 with `tools/package_release.sh`, writes the checksums, and keeps everything as
-one artifact, `OpenSE4-<version>`. It does not publish a release.
+Actions tab. It builds the Linux packages on Ubuntu (x86_64 and aarch64 natively, armhf
+cross-compiled with its tests under QEMU) and the Windows packages in MSYS2 with
+`tools/package_release.sh`, writes the checksums, and keeps everything as one artifact,
+`OpenSE4-<version>`, and each package as its own (`package-linux-aarch64` and so on,
+which `tools/fetch_arm_packages.sh` downloads). It does not publish a release.
 
 The other input scripts (the tutorials, the training games, the list and battle windows)
 stay local: they play the original game's data, art and fonts (its race presets, designs,

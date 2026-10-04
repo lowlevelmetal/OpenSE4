@@ -345,7 +345,10 @@ same game and draw the same picture. The rules below keep it that way. Everythin
 was checked on 2026-10-01: the Linux build (GCC), the Windows build (MinGW-w64) under
 Wine, and a Clang 21 + libc++ build of the tests. CI builds and tests every push with
 GCC, Clang, Apple Clang (macOS on ARM, libc++), MSVC (Visual Studio 2022 and 2026) and
-MinGW-w64.
+MinGW-w64, and on ARM Linux with GCC: 64-bit (aarch64) natively and 32-bit (armhf) under
+QEMU. The goldens matched on both from the start (2026-10-03: GCC 16 on aarch64 and
+GCC 15 and Clang 22 on armhf, under QEMU, then CI). What differed on armhf was the data
+set's identity, which network games compare: it hashed sizes at their own width.
 
 - **Golden checksums.** `tests/test_determinism.cpp` plays a simultaneous and a
   turn-based game of four computer players for 100 turns (battles, frequent events,
@@ -367,9 +370,14 @@ MinGW-w64.
   recognized it on the next, refused a turn file signed by another key, and both
   turns' orders were accepted.
 - **Engine code.** It follows the rules of the section above. Serialized and hashed
-  values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`, which also takes
-  `size_t`, 64 bits everywhere: the Windows and macOS builds reject `long` and
-  `wchar_t`), and little-endian 64-bit targets are asserted. `xmath::Ext` is plain
+  values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`). `size_t` is 32 bits
+  on armhf and 64 elsewhere, so a size is hashed as 64 bits (`Hasher::addSize`) and
+  stored as a u32 count; the macOS build rejects a `size_t` passed as it is, and `long`
+  and `wchar_t` too. A random index into a container comes from `Rng::index`, the same
+  draw as `below` as a `size_t`. Little-endian targets are asserted. GCC and Clang
+  build with `-ffp-contract=off` (`CMakeLists.txt`), so that no compiler fuses a
+  multiply and an add into one rounding where another rounds twice; ARM has fused
+  multiply-add, x86_64's baseline does not. `xmath::Ext` is plain
   integer code with no path of its own for any compiler. `test_xmath.cpp` checks it
   against exact arithmetic in its own multi-word integers with every compiler, and
   against the x87 itself on x86 with GCC or Clang; golden checksums of its results
