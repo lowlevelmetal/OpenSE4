@@ -1,6 +1,7 @@
 // opense4-server: the dedicated host for network games, the host side of
 // play-by-e-mail games, and a small test client. See docs/MULTIPLAYER.md.
 
+#include "core/environment.hpp"
 #include "game/diplomacy.hpp"
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
@@ -823,7 +824,12 @@ int run(std::span<char*> args);
 } // namespace
 
 int main(int argc, char** argv) {
-    std::span<char*> args(argv + 1, static_cast<size_t>(std::max(argc - 1, 0)));
+    // The arguments as UTF-8, as every narrow string in the program (on Windows the C
+    // library gives them in the ANSI code page: core/environment.hpp).
+    std::vector<std::string> utf8 = core::utf8Arguments(argc, argv);
+    std::vector<char*> pointers;
+    for (std::string& a : utf8) pointers.push_back(a.data());
+    const std::span<char*> args = std::span<char*>(pointers).subspan(std::min<size_t>(1, pointers.size()));
     // A password key that cannot be made (Argon2id's memory not to be had)
     // ends the command with that said, wherever no step reported it itself.
     try {

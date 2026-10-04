@@ -134,3 +134,10 @@ if(OPENSE4_STATIC AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT MSVC)
     include(GlibcCompat)
     opense4_apply_glibc_compat("${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools" "${CMAKE_SOURCE_DIR}/tests")
 endif()
+
+# Windows builds with libc++ (the release toolchain) convert narrow strings to and
+# from paths as UTF-8 on every Windows version (cmake/WindowsCompat.cmake).
+if(WIN32 AND NOT MSVC)
+    include(WindowsCompat)
+    opense4_apply_windows_compat("${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools" "${CMAKE_SOURCE_DIR}/tests")
+endif()
