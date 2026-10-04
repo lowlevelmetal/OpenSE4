@@ -15,10 +15,18 @@ permissions:
   contents: read
 
 jobs:
+  # x86_64 and aarch64, each natively on its own runner.
   linux:
-    name: Linux package
-    runs-on: ubuntu-26.04
+    name: Linux package (${{ matrix.arch }})
+    runs-on: ${{ matrix.image }}
     timeout-minutes: 45
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            image: ubuntu-26.04
+          - arch: aarch64
+            image: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,7 +52,55 @@ jobs:
       - name: Upload the package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: package-linux
+          name: package-linux-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # 32-bit ARM (armhf: ARMv7, hard-float, NEON), cross-compiled on x86_64 with
+  # Ubuntu's arm-linux-gnueabihf GCC; the tests run under QEMU. SDL3's build
+  # needs the same headers and libraries as above, for armhf: Ubuntu's ports
+  # archive has them, installed next to the runner's own (multiarch).
+  linux-armhf:
+    name: Linux package (armhf)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Add the armhf architecture
+        run: |
+          . /etc/os-release
+          # The runner's sources serve only amd64; the ports archive serves armhf.
+          sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
+          printf '%s\n' 'Types: deb' 'URIs: http://ports.ubuntu.com/ubuntu-ports' \
+            "Suites: $VERSION_CODENAME $VERSION_CODENAME-updates $VERSION_CODENAME-security" \
+            'Components: main universe' 'Architectures: armhf' \
+            'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' |
+            sudo tee /etc/apt/sources.list.d/ubuntu-ports.sources
+          sudo dpkg --add-architecture armhf
+
+      - name: Install the build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-arm-linux-gnueabihf qemu-user glslc pkg-config \
+            libasound2-dev:armhf libpulse-dev:armhf libaudio-dev:armhf libfribidi-dev:armhf libjack-dev:armhf \
+            libsndio-dev:armhf libx11-dev:armhf libxext-dev:armhf libxrandr-dev:armhf libxcursor-dev:armhf \
+            libxfixes-dev:armhf libxi-dev:armhf libxss-dev:armhf libxtst-dev:armhf libxkbcommon-dev:armhf \
+            libdrm-dev:armhf libgbm-dev:armhf libgl-dev:armhf libgles-dev:armhf libegl-dev:armhf \
+            libdbus-1-dev:armhf libibus-1.0-dev:armhf libudev-dev:armhf libthai-dev:armhf \
+            libusb-1.0-0-dev:armhf libpipewire-0.3-dev:armhf libwayland-dev:armhf wayland-protocols \
+            libdecor-0-dev:armhf liburing-dev:armhf desktop-file-utils appstream
+          arm-linux-gnueabihf-g++ --version | head -1
+
+      - name: Build, test and package
+        run: tools/package_release.sh linux-armhf
+
+      - name: Upload the package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-linux-armhf
           path: dist/*.tar.gz
           if-no-files-found: error
 
@@ -92,7 +148,7 @@ jobs:
 
   checksums:
     name: Checksums
-    needs: [linux, windows]
+    needs: [linux, linux-armhf, windows]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:

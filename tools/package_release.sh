@@ -2,12 +2,21 @@
 # Builds the redistributable OpenSE4 packages (docs/BUILDING.md, "Release packages"):
 #
 #   dist/OpenSE4-<version>-linux-x86_64.tar.gz        static except the C library (glibc 2.34+)
+#   dist/OpenSE4-<version>-linux-aarch64.tar.gz       the same for 64-bit ARM
+#   dist/OpenSE4-<version>-linux-armhf.tar.gz         the same for 32-bit ARM (ARMv7, hard-float, NEON)
 #   dist/OpenSE4-<version>-windows-x86_64.zip         static, cross-built with MinGW-w64
 #   dist/OpenSE4-<version>-windows-x86_64-setup.exe   the same, as an installer
 #   dist/OpenSE4-<version>-SHA256SUMS.txt
 #
 # On Linux both are built (Windows cross-compiled with MinGW-w64). In MSYS2 on
 # Windows (the UCRT64 shell) the Windows packages are built natively instead.
+#
+# `linux` is the Linux package for this machine's own architecture. The ARM
+# packages are cross-built on another machine with `linux-aarch64` and
+# `linux-armhf` (the dist-linux-aarch64 and dist-linux-armhf presets, GCC's
+# aarch64-linux-gnu and arm-linux-gnueabihf cross compilers), their tests run
+# through QEMU when it is installed (docs/BUILDING.md, "ARM Linux"). CI builds
+# all of them (.github/workflows/release.yml).
 #
 # Each holds the game, the dedicated server and the data checker, with our own
 # fonts built in, plus the README, the licence (GPL 3.0 or later) and the
@@ -21,7 +30,7 @@
 # the official Windows build under Wine, downloaded once into build/_tools (or
 # taken from $NSIS_DIR).
 #
-#   tools/package_release.sh [linux] [windows] [--skip-tests]
+#   tools/package_release.sh [linux] [linux-aarch64] [linux-armhf] [windows] [--skip-tests]
 
 set -euo pipefail
 
@@ -32,9 +41,9 @@ targets=()
 tests=1
 for arg in "$@"; do
     case "$arg" in
-        linux|windows) targets+=("$arg") ;;
+        linux|linux-x86_64|linux-aarch64|linux-armhf|windows) targets+=("$arg") ;;
         --skip-tests) tests=0 ;;
-        *) echo "usage: $0 [linux] [windows] [--skip-tests]" >&2; exit 2 ;;
+        *) echo "usage: $0 [linux] [linux-aarch64] [linux-armhf] [windows] [--skip-tests]" >&2; exit 2 ;;
     esac
 done
 
@@ -43,12 +52,33 @@ native_windows=0
 case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) native_windows=1 ;; esac
 if [ "$native_windows" = 1 ]; then
     [ ${#targets[@]} -gt 0 ] || targets=(windows)
-    if [[ " ${targets[*]} " == *" linux "* ]]; then
+    if [[ " ${targets[*]} " == *" linux"* ]]; then
         echo "The Linux package is built on Linux." >&2
         exit 2
     fi
 fi
 [ ${#targets[@]} -gt 0 ] || targets=(linux windows)
+
+# Linux packages are named after the architecture, as Debian names it for ARM:
+# x86_64, aarch64 or armhf. `linux` is this machine's own; another one is a
+# cross build.
+host_arch=""
+if [ "$native_windows" = 0 ]; then
+    case "$(${CC:-cc} -dumpmachine 2> /dev/null || uname -m)" in
+        x86_64*) host_arch=x86_64 ;;
+        aarch64*) host_arch=aarch64 ;;
+        arm*-*gnueabihf | armv7* | armv8l) host_arch=armhf ;;
+    esac
+fi
+for i in "${!targets[@]}"; do
+    if [ "${targets[$i]}" = linux ]; then
+        if [ -z "$host_arch" ]; then
+            echo "No Linux package for this machine's architecture: use linux-aarch64 or linux-armhf." >&2
+            exit 2
+        fi
+        targets[i]="linux-$host_arch"
+    fi
+done
 
 # A tagged commit (v0.1.0) is packaged as that version; anything else as the
 # project version plus the commit.
@@ -100,6 +130,33 @@ installer() {  # installer <staged Windows folder> <output .exe>
         "-DOUTFILE=$(winepath -w "$2")" "$(winepath -w "$nsi")"
 }
 
+# A Linux package's programs link only the C library: SDL loads the rest at run
+# time, by the names below (the windowing systems, GPU APIs and sound servers).
+# A cross build without the target's development packages would silently leave
+# a backend out.
+check_linux_libraries() {  # check_linux_libraries <build dir>
+    local bin lib status=0
+    for bin in "$1/opense4" "$1/opense4-server" "$1/opense4-datacheck"; do
+        for lib in $(readelf -d "$bin" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+            case "$lib" in
+                libc.so.6 | libm.so.6 | ld-linux*.so.*) ;;
+                *) echo "$bin links $lib: only the C library may be linked" >&2; status=1 ;;
+            esac
+        done
+    done
+    local loads
+    loads=$(strings "$1/opense4")
+    for lib in libX11.so.6 libwayland-client.so.0 libxkbcommon.so.0 libdecor-0.so.0 libvulkan.so.1 libGL.so.1 libEGL.so.1 \
+               libasound.so.2 libpulse.so.0 libpipewire-0.3.so.0 libudev.so.1; do
+        if ! grep -qx "$lib" <<< "$loads"; then
+            echo "$1/opense4 does not load $lib: SDL was built without it" >&2
+            status=1
+        fi
+    done
+    [ "$status" = 0 ] && echo "    links only the C library; SDL loads X11, Wayland, Vulkan, OpenGL and the sound servers at run time"
+    return "$status"
+}
+
 notices() {  # notices <build dir> <target> <output file>
     local deps="$1/_deps" out="$3"
     {
@@ -145,25 +202,53 @@ notices() {  # notices <build dir> <target> <output file>
 }
 
 for target in "${targets[@]}"; do
-    preset="dist-$target"
-    [ "$native_windows" = 1 ] && preset=dist-mingw
+    exe=""
+    strip=strip
+    run=()      # how the tests run: directly, or through QEMU
+    case "$target" in
+        linux-*)
+            arch="${target#linux-}"
+            platform=linux
+            preset=dist-linux
+            if [ "$arch" != "$host_arch" ]; then
+                case "$arch" in
+                    aarch64) triple=aarch64-linux-gnu qemu=qemu-aarch64 ;;
+                    armhf) triple=arm-linux-gnueabihf qemu=qemu-arm ;;
+                    *) echo "The $arch package is built on an $arch machine." >&2; exit 2 ;;
+                esac
+                preset="dist-$target"
+                strip="$triple-strip"
+                if emulator=$(command -v "$qemu" || command -v "$qemu-static"); then
+                    run=("$emulator" -L "/usr/$triple")
+                else
+                    run=(false)
+                fi
+            fi
+            ;;
+        windows)
+            arch=x86_64
+            platform=windows
+            preset=dist-windows
+            [ "$native_windows" = 1 ] && preset=dist-mingw
+            exe=".exe"
+            [ "$native_windows" = 1 ] || strip=x86_64-w64-mingw32-strip
+            ;;
+    esac
     build="$root/build/$preset"
     echo "==> $target: configure and build ($preset)"
     cmake --preset "$preset" > /dev/null
     cmake --build --preset "$preset"
 
-    exe=""
-    strip=strip
-    if [ "$target" = windows ]; then
-        exe=".exe"
-        [ "$native_windows" = 1 ] || strip=x86_64-w64-mingw32-strip
-    fi
-
     if [ "$tests" = 1 ]; then
         echo "==> $target: tests"
-        if [ "$target" = linux ]; then
-            "$build/tests/opense4_tests"
+        if [ "$platform" = linux ]; then
+            if [ "${run[0]:-}" = false ]; then
+                echo "    ($qemu not installed: $arch tests skipped)"
+            else
+                "${run[@]}" "$build/tests/opense4_tests"
+            fi
             tools/check_glibc.sh "$build/opense4" "$build/opense4-server" "$build/opense4-datacheck"
+            check_linux_libraries "$build"
         elif [ "$native_windows" = 1 ]; then
             "$build/tests/opense4_tests.exe"
         elif command -v wine > /dev/null; then
@@ -173,7 +258,7 @@ for target in "${targets[@]}"; do
         fi
     fi
 
-    name="OpenSE4-${version}-${target}-x86_64"
+    name="OpenSE4-${version}-${platform}-${arch}"
     stage="$dist/$name"
     rm -rf "$stage"
     mkdir -p "$stage"
@@ -183,8 +268,8 @@ for target in "${targets[@]}"; do
     done
     cp README.md "$stage/README.md"
     [ -f LICENSE ] && cp LICENSE "$stage/LICENSE"
-    notices "$build" "$target" "$stage/THIRD_PARTY_NOTICES.txt"
-    if [ "$target" = linux ]; then
+    notices "$build" "$platform" "$stage/THIRD_PARTY_NOTICES.txt"
+    if [ "$platform" = linux ]; then
         mkdir -p "$stage/share/applications" "$stage/share/metainfo" "$stage/share/icons"
         cp "packaging/linux/$app_id.desktop" "$stage/share/applications/"
         cp "$metainfo" "$stage/share/metainfo/"
@@ -206,7 +291,7 @@ for target in "${targets[@]}"; do
 
     echo "==> $target: archive"
     rm -f "$dist/$name".tar.gz "$dist/$name".zip
-    if [ "$target" = linux ]; then
+    if [ "$platform" = linux ]; then
         tar -C "$dist" -czf "$dist/$name.tar.gz" "$name"
         echo "    $dist/$name.tar.gz"
     else
