@@ -588,16 +588,31 @@ struct Applier {
                 to = &col->cargo;
                 space = colonyCargoCapacity(r, s, *col) - cargoSpaceUsed(r, s, col->cargo);
             } else {
-                // Population lands on the colony (bounded by its maximum).
+                // Population lands on the colony's population, capped by its
+                // free population room (its maximum less its population, never
+                // below 0); cargo space plays no part (spec 03 §11, confirmed:
+                // binary).
+                if (a != b) return R::fail("Both holders must be in the same sector");
                 Cargo landing;
                 landing.population = col->population;
                 const int64_t room = std::max<int64_t>(0, maxPopulation(r, s, *col) - col->totalPopulation());
-                Cargo* src = from;
-                if (!src) return R::fail("Population cannot move between colonies directly");
-                if (a != b) return R::fail("Both holders must be in the same sector");
-                const int64_t moved =
-                    moveCargo(r, s, *src, landing, room * r.setting("Population Mass", 5), {}, c.populationRace, c.amount, false);
-                col->population = std::move(landing.population);
+                const int64_t popMass = r.setting("Population Mass", 5);
+                int64_t moved = 0;
+                if (from) {
+                    moved = moveCargo(r, s, *from, landing, room * popMass, {}, c.populationRace, c.amount, false);
+                } else {
+                    // From another own colony in the sector, population to
+                    // population: the clicked race only, the source keeping at
+                    // least 1M of its total, at no cost, in both turn styles
+                    // (spec 03 §11, §19 Q79, confirmed: binary).
+                    Colony* src = ownColony(s, e, c.fromPlanet);
+                    if (!src || src == col) return R::fail("Pick another colony to move the population to");
+                    Cargo leaving;
+                    leaving.population = src->population;
+                    moved = moveCargo(r, s, leaving, landing, room * popMass, {}, c.populationRace, c.amount, true);
+                    if (moved > 0) src->population = std::move(leaving.population);
+                }
+                if (moved > 0) col->population = std::move(landing.population);
                 return moved > 0 ? R{} : R::fail("Nothing could be moved");
             }
         } else {

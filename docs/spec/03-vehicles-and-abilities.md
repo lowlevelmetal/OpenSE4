@@ -2409,8 +2409,7 @@ rules in §8); this one is ours:
     a race's line moves people from population to population, capped by the target's free
     population room, the source keeping at least 1M, at no cost and in both turn styles (§11)
     (confirmed: binary).
-    Our engine differs: the cargo-transfer command refuses it ("Population cannot move between
-    colonies directly", `commands.cpp`). It must accept it under the rules of §11 (same sector,
-    the clicked race only, the target's population room, the source's last 1M, plague quarantine
-    refused). Our window also puts every holder in both lists; it should put the selected holder
-    (and its fleet-mates there) on the left and the others on the right.
+    Since 2026-10-04 our engine follows: `cmd::TransferCargo` from one own colony to another in
+    the same sector moves the clicked race from population to population under the rules of §11
+    (`commands.cpp`), and the window puts the selected holder (and its fleet-mates there) on the
+    left and the others on the right (`cargo_transfer.cpp`).

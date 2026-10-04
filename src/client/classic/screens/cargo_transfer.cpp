@@ -1,10 +1,14 @@
 // Cargo Transfer (order T, docs/spec/06 §1.3, spec 03 §11), titled "Transfer
 // Cargo": two lists of the own cargo holders in a sector (vehicles with cargo
-// space and the colony). Select a holder in each list, then click a cargo
-// item under one to move it to the one selected in the other list, one, five,
-// ten, a hundred or all at a time. The window has no order buttons (the Load
-// and Drop Cargo orders have their own buttons, spec 06 §7 Q80) and works in
-// both turn styles.
+// space and the colonies). The left list ("Cargo From") holds the selected
+// ship, base or colony, and with a fleet member its fleet-mates there; the
+// right list ("Cargo To") every other holder in the sector, other own
+// colonies included (spec 03 §11, confirmed: binary). Select a holder in each
+// list, then click a cargo item under one to move it to the one selected in
+// the other list, one, five, ten, a hundred or all at a time: population
+// between two colonies goes from population to population. The window has no
+// order buttons (the Load and Drop Cargo orders have their own buttons, spec
+// 06 §7 Q80) and works in both turn styles.
 //
 // Opened by the Combat Simulator's Change Cargo (§1.10.4, §7 Q80) it works on
 // a sandbox of the setup: the left list holds every row of the Combat
@@ -64,7 +68,7 @@ private:
             for (const SimulatorCargoHolder& h : sim->holders) left.push_back(Holder{h.vehicle, h.planet});
             if (sim->storehouse.valid()) right.push_back(Holder{{}, sim->storehouse});
         } else {
-            left = right = holdersHere(ui);
+            for (const Holder& h : holdersHere(ui)) (fromSide(ui, h) ? left : right).push_back(h);
         }
         auto present = [](const std::vector<Holder>& list, const Holder& h) { return std::find(list.begin(), list.end(), h) != list.end(); };
         if (!present(left, from_)) from_ = left.empty() ? Holder{} : left.front();
@@ -112,17 +116,29 @@ private:
             where_ = first->location;
             from_ = Holder{first->id, {}};
         }
+        origin_ = from_;
     }
 
+    // Every own holder in the sector: the colonies, and the ships and bases
+    // with cargo space or cargo; the selected holder always.
     std::vector<Holder> holdersHere(const UiContext& ui) const {
         std::vector<Holder> out;
         if (!where_) return out;
         for (const game::Colony* c : ownColoniesAt(ui, *where_)) out.push_back(Holder{{}, c->planet});
         for (const game::Vehicle* v : ownVehiclesAt(ui, *where_)) {
             if (isUnitVehicle(ui.rules(), ui.state(), *v)) continue;
-            if (game::vehicleCargoCapacity(ui.rules(), ui.state(), *v) > 0 || !v->cargo.empty()) out.push_back(Holder{v->id, {}});
+            if (game::vehicleCargoCapacity(ui.rules(), ui.state(), *v) > 0 || !v->cargo.empty() || v->id == origin_.vehicle) out.push_back(Holder{v->id, {}});
         }
         return out;
+    }
+
+    // The left list's holders: the one the window opened with and, for a
+    // fleet member, its fleet-mates at that place (spec 03 §11).
+    bool fromSide(const UiContext& ui, const Holder& h) const {
+        if (h == origin_) return true;
+        const game::Vehicle* opened = ownVehicle(ui, origin_.vehicle);
+        const game::Vehicle* v = ownVehicle(ui, h.vehicle);
+        return opened && v && opened->fleet.valid() && v->fleet == opened->fleet && v->location == opened->location;
     }
 
     std::vector<Item> itemsOf(const UiContext& ui, const Holder& h) const {
@@ -227,6 +243,7 @@ private:
     }
 
     std::optional<game::Location> where_;
+    Holder origin_;   // the selected holder the window opened with
     Holder from_, to_;
     Step step_ = Step::Ten;
     Status status_;
