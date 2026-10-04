@@ -1392,10 +1392,9 @@ private:
     Exec colonize(Group& g, Order& o) {
         const bool known = o.object.valid() && o.object.index() < s_.galaxy.objects.size();
         if (o.amount == 0) {
-            // An order that reached a list without its Load Cargo (the
-            // computer players', tools, tests): the colonists come aboard
-            // where it starts, on the last member whose module suits the
-            // planet, else the last member.
+            // An order that reached a list without its Load Cargo (tools,
+            // tests): the colonists come aboard where it starts, on the last
+            // member whose module suits the planet, else the last member.
             VehicleId loader = g.members.empty() ? VehicleId{} : g.members.back();
             if (known)
                 for (VehicleId id : g.members)
