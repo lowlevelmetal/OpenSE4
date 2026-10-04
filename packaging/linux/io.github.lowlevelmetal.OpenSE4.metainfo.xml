@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.9.0" date="2026-10-04" type="development">
+      <description>
+        <p>Runs on Windows 7 SP1 and on 64-bit and 32-bit ARM Linux; fixes a crash after a battle, music that stopped and popping sound, buttons usable under open windows, and several screens that differed from the original game.</p>
+      </description>
+    </release>
     <release version="0.8.1" date="2026-10-03" type="development">
       <description>
         <p>Tutorials that accept only the action each step asks for and keep what it points at in view, at both screen layouts; plays together with 0.7 and 0.8 and reads their saves.</p>
