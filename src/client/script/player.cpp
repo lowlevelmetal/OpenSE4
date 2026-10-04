@@ -566,6 +566,24 @@ Player::Status Player::check(const Step& st, const Probe& probe) {
         case Op::AssertLesson:
             if (st.text == "none" ? !lesson : lesson && lesson->slug == st.text) return Status::Done;
             return fail(lesson ? std::format("the lesson '{}' is running", lesson->slug) : "no lesson is running");
+        case Op::AssertFits: {
+            // Every text drawn into a box of its own fits it, and no widget the
+            // scope draws is cut off by its window (but in a window that scrolls).
+            std::vector<std::string> faults;
+            for (const Item& text : probe.texts())
+                if (text.overflow && scopeMatches(text, st.text, probe)) faults.push_back(std::format("text {} runs out of its box", quoteWord(text.label)));
+            // A selectable row reaches half the item spacing past its window's edge: a few pixels are no fault.
+            const float slack = 4.0f * std::max(0.01f, probe.frameScale());
+            for (const Item& item : probe.items())
+                if (item.clipped && item.hidden > slack && !item.scrolls && !visibleLabel(item.label).empty() && !item.label.starts_with("window:") &&
+                    scopeMatches(item, st.text, probe))
+                    faults.push_back(std::format("item:{} is cut off by its window", quoteWord(item.label)));
+            if (faults.empty()) return Status::Done;
+            std::string list;
+            for (size_t i = 0; i < faults.size() && i < 8; ++i) list += (i ? "; " : "") + faults[i];
+            if (faults.size() > 8) list += std::format("; and {} more", faults.size() - 8);
+            return fail(list);
+        }
         case Op::AssertInside: {
             const auto a = resolve(st.target, probe, why);
             if (!a) return fail(why);

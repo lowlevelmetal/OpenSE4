@@ -10,6 +10,8 @@
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/pbem_play.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <format>
 #include <optional>
@@ -38,9 +40,11 @@ public:
         }
         if (std::exchange(openAtOnce_, false)) open(ctx);
 
-        ImGui::SetNextWindowPos(ctx.at({62, 50}));
-        ImGui::SetNextWindowSize(ctx.size({900, 668}));
-        ImGui::PushFont(ctx.fonts.regular, kTextSize * ctx.k());
+        // Centred on the frame, and inside it at 800x600 too; our own text takes the Text size setting.
+        const Vec2 size{std::min(900.0f, frameW() - 24.0f), std::min(668.0f, frameH() - 24.0f)};
+        ImGui::SetNextWindowPos(ctx.at({std::floor((frameW() - size.x) * 0.5f), std::floor((frameH() - size.y) * 0.5f)}));
+        ImGui::SetNextWindowSize(ctx.size(size));
+        ImGui::PushFont(ctx.fonts.regular, ctx.painter().textPx(kTextSize));
         ImGui::Begin("Play by E-mail", nullptr,
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
         ImGui::TextWrapped("The host of a play-by-e-mail game sends each player a turn file (.turn): the game as your empire knows "
@@ -48,10 +52,13 @@ public:
                            "saves your orders file (.plr), signed with your password and readable by the host only; send that file "
                            "back to the host.");
         ImGui::Spacing();
-        pathField("Turn file", file_, ctx.px(600), ImGuiInputTextFlags_None);
+        // The field takes what the label and the button leave.
+        const float openW = std::max(ctx.px(90), ImGui::CalcTextSize("Open").x + 2 * ImGui::GetStyle().FramePadding.x);
+        const float label = ImGui::CalcTextSize("Turn file").x + 2 * ImGui::GetStyle().ItemSpacing.x;
+        pathField("Turn file", file_, std::max(ctx.px(100), std::min(ctx.px(600), ImGui::GetContentRegionAvail().x - label - openW)), ImGuiInputTextFlags_None);
         ImGui::SameLine();
-        if (ImGui::Button("Open", ctx.size({90, 0}))) open(ctx);
-        ImGui::TextDisabled("Turn files in %s:", folder_.string().c_str());
+        if (ImGui::Button("Open", ImVec2(openW, 0))) open(ctx);
+        fittedText(std::format("Turn files in {}:", folder_.string()), 0.0f, ImGui::GetColorU32(ImGuiCol_TextDisabled));
         beginList(ctx.painter(), "##files", ImVec2(0, ctx.px(120)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         if (files_.empty()) ImGui::TextDisabled("None. Put the turn file there, or type its full path above.");
         for (const auto& f : files_)

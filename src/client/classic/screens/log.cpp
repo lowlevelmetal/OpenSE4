@@ -351,8 +351,11 @@ private:
         if (r->message) {
             messageDetails(ui, *r->message);
         } else if (r->entry) {
+            // Reading text: the Text size setting enlarges it, and the details scroll.
+            const ReadingText reading(ui.painter());
             if (!r->entry->text.empty()) wrappedText(r->entry->text);
         } else if (r->notice) {
+            const ReadingText reading(ui.painter());
             wrappedText(*r->notice);
         }
     }
@@ -414,7 +417,10 @@ private:
         if (m.thirdEmpire.valid() && m.thirdEmpire.index() < s.empires.size()) labelValue(ui, "About", s.empire(m.thirdEmpire).name, 60);
         if (m.planet.valid() && m.planet.index() < s.galaxy.objects.size()) labelValue(ui, "Planet", s.galaxy.object(m.planet).name, 60);
         ImGui::Spacing();
-        wrappedText(m.text.empty() ? std::string("(no text)") : m.text);
+        {
+            const ReadingText reading(ui.painter());
+            wrappedText(m.text.empty() ? std::string("(no text)") : m.text);
+        }
         auto items = [&](const char* title, const std::vector<game::PackageItem>& list) {
             if (list.empty()) return;
             ImGui::Spacing();

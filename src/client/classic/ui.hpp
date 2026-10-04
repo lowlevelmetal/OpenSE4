@@ -172,7 +172,10 @@ struct Painter {
 
     float k() const { return map.scale / fbScale; }
     float px(float framePixels) const { return framePixels * k(); }
-    float fontPx(float framePixels) const { return framePixels * k() * textScale; }
+    // Font sizes (see "Text and the Text size setting" below): a classic font
+    // at its own raster size, and text the Text size setting enlarges.
+    float fontPx(float framePixels) const { return framePixels * k(); }
+    float textPx(float framePixels) const { return framePixels * k() * textScale; }
     ImVec2 at(Vec2 framePos) const {
         const Vec2 p = map.toFb(framePos) / fbScale;
         return {p.x, p.y};
@@ -227,8 +230,12 @@ public:
 
     // Frame pixels -> ImGui units.
     float k() const { return map.scale / fbScale; }
-    // A font size in frame pixels, with the Text size setting applied.
-    float fontPx(float framePixels) const { return framePixels * k() * textScale; }
+    // A font size in frame pixels: a classic font at its own raster size (the
+    // classic layouts' fixed places), and text that the Text size setting
+    // enlarges (reading text and OpenSE4's own; see "Text and the Text size
+    // setting" below).
+    float fontPx(float framePixels) const { return framePixels * k(); }
+    float textPx(float framePixels) const { return framePixels * k() * textScale; }
     float textScale = 1.0f;
     ImVec2 at(Vec2 framePos) const {
         const Vec2 p = map.toFb(framePos) / fbScale;
@@ -323,14 +330,19 @@ std::string formatDate(uint32_t turn);           // 2400.3
 uint32_t empireRgb(const game::GameState& s, game::EmpireId e);
 ImU32 empireColor(const game::GameState& s, game::EmpireId e);
 
-// ---- Text that keeps to its place (the Text size setting) ------------------------------------
-// Settings → Graphics → Text size enlarges every classic font (fontPx). Text that
-// flows (lists, report and description boxes, OpenSE4's own windows) takes the
-// room it needs; text at a fixed place of a classic layout (button captions, title
-// strips, the status bar, the report's label and value lines, the system panel's
-// names) keeps that place: where the enlarged text does not fit its box it is
-// drawn smaller, never below the classic size, and what still does not fit is cut
-// short with "…", the whole text showing as a tooltip under the pointer.
+// ---- Text and the Text size setting -----------------------------------------------------------
+// Settings → Graphics → Text size (0.75 to 1.5) enlarges the text that has room
+// to grow: OpenSE4's own (the lesson panel, the manual, the Learn window,
+// Settings, the questions and pickers our client draws) and the classic
+// windows' reading text, which wraps and scrolls (descriptions, the report
+// pages that scroll, the Log's entries, Help's details, messages): textPx.
+// Text at a fixed place of a classic layout (button and tab captions, window
+// titles, the status bar, label and value lines, list rows and headings, the
+// system panel's names) keeps the original's raster size (spec 06 §5.4), so
+// the layouts stay as they are: fontPx. Where even that does not fit its box
+// (a long name), the text is cut short with "…" and the whole text shows as a
+// tooltip under the pointer (fitText, drawFitted, fittedText); text of ours in
+// a fixed box first shrinks back towards the classic size (`scaled`).
 
 struct TextFit {
     float size = 0.0f;   // the font size to draw at (ImGui units)
@@ -339,17 +351,33 @@ struct TextFit {
     ImVec2 extent;       // its size (ImGui units)
 };
 // `framePx`: the font's classic size in frame pixels (kTextSize...); `maxWidth`
-// and `maxHeight` (0: any) in ImGui units.
-TextFit fitText(const Painter& p, ImFont* font, float framePx, std::string_view text, float maxWidth, float maxHeight = 0.0f);
+// and `maxHeight` (0: any) in ImGui units. `scaled`: the text starts at the
+// Text size setting's size (textPx) and shrinks to the classic size to fit.
+TextFit fitText(const Painter& p, ImFont* font, float framePx, std::string_view text, float maxWidth, float maxHeight = 0.0f, bool scaled = false);
 // Draws the text fitted to `maxWidth` from `pos` (its top left, ImGui units),
 // placed by `align` across the box (0 left, 0.5 centred, 1 right), and shows the
 // whole text as a tooltip while the pointer is over a cut one. A null `dl` draws
 // into the current window.
 TextFit drawFitted(const Painter& p, ImDrawList* dl, ImFont* font, float framePx, ImVec2 pos, float maxWidth, ImU32 color, std::string_view text,
-                   float align = 0.0f, float maxHeight = 0.0f);
-// The same as an item in the current window's layout (in the window's font and
-// colour), at most `maxWidth` wide (ImGui units; 0: to the right edge).
-void fittedText(const Painter& p, std::string_view text, float maxWidth = 0.0f, ImU32 color = 0);
+                   float align = 0.0f, float maxHeight = 0.0f, bool scaled = false);
+// The same as an item in the current window's layout (in the window's font,
+// at its size, and colour), at most `maxWidth` wide (ImGui units; 0: to the
+// right edge of the window or table cell).
+void fittedText(std::string_view text, float maxWidth = 0.0f, ImU32 color = 0);
+// The text cut short with "…" to `maxWidth` (ImGui units) in the current font
+// and size, for a widget's label; `cut` tells whether it was. Show the whole
+// text as a tooltip over the widget when it was (cutTooltip).
+std::string elided(std::string_view text, float maxWidth, bool* cut = nullptr);
+void cutTooltip(bool cut, std::string_view text);
+// The reading text of a classic window (see above) in the window's font, at the
+// Text size setting's size, while it lives.
+class ReadingText {
+public:
+    explicit ReadingText(const Painter& p, ImFont* font = nullptr, float framePx = kTextSize);
+    ~ReadingText() { ImGui::PopFont(); }
+    ReadingText(const ReadingText&) = delete;
+    ReadingText& operator=(const ReadingText&) = delete;
+};
 // A bullet and its text wrapped to the window's width (ImGui::BulletText does
 // not wrap: a long line ran out of its box).
 void wrappedBullet(std::string_view text, const ImVec4* color = nullptr);

@@ -842,14 +842,14 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
     const float k = ui.k();
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     const Vec2 screen{display.x / k, display.y / k};   // in frame pixels
-    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+    ImGui::PushFont(ui.fonts.bold, ui.textPx(kTitleSize));
     std::vector<float> movingW, ownW;
     // A label and 6 frame pixels on each side; Free Play's check box takes 24 more on the left.
     for (const Spec& s : moving) movingW.push_back(std::ceil(ImGui::CalcTextSize(s.label.c_str(), nullptr, true).x / k + 12.0f));
     for (const Spec& s : own) ownW.push_back(std::ceil(ImGui::CalcTextSize(s.label.c_str(), nullptr, true).x / k + (s.style == 2 ? 30.0f : 12.0f)));
     const float rowH = std::max(26.0f, std::ceil(ImGui::GetFontSize() / k + 6.0f));
     ImGui::PopFont();
-    ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
+    ImGui::PushFont(ui.fonts.readingFont(), ui.textPx(kTextSize));
     const float line = ImGui::GetTextLineHeightWithSpacing() / k;
     auto hintHeight = [&](float inner) { return hint.empty() ? 0.0f : std::ceil(ImGui::CalcTextSize(hint.c_str(), nullptr, false, ui.px(inner - 8)).y / k) + 4.0f; };
 
@@ -1012,7 +1012,7 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
             Painter q = p;
             q.textScale = std::min(p.textScale, 1.2f);
             const char* label = tight ? "More" : "Less";
-            ImGui::PushFont(q.fonts.bold, q.fontPx(kTitleSize));
+            ImGui::PushFont(q.fonts.bold, q.textPx(kTitleSize));
             const float w = std::ceil(ImGui::CalcTextSize(label).x / k + 14.0f);
             ImGui::PopFont();
             ImGui::SetCursorPos(ui.size({L.w - 13.0f - w, 6}));
@@ -1047,7 +1047,7 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
             scrolledFor_ = scrollKey;
         }
         // OpenSE4's own panel: its own text font (docs/spec/06 §5.4).
-        ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
+        ImGui::PushFont(ui.fonts.readingFont(), ui.textPx(kTextSize));
         if (tutorial) tutorialBody(ui);
         else trainingBody(ui);
         ImGui::PopFont();
@@ -1063,7 +1063,7 @@ void LessonRunner::drawPanel(UiContext& ui, const Prompts& prompts) {
             // back's, or the step's own on a page arrow.
             ImGui::SetCursorPos(ui.size({kSide + 4, kTitleH + L.body + 2}));
             const ImVec2 start = ImGui::GetCursorScreenPos();
-            ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
+            ImGui::PushFont(ui.fonts.readingFont(), ui.textPx(kTextSize));
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui.px(L.w - 2 * kSide - 8));
             ImGui::TextColored(kGold, "%s", hint.c_str());
             ImGui::PopTextWrapPos();
@@ -1136,7 +1136,7 @@ void LessonRunner::drawResult(UiContext& ui) {
     const bool won = result == Result::Done || result == Result::Won;
     const bool tutorial = l.kind == learn::LessonKind::Tutorial;
     const char* title = result == Result::Done ? "Lesson complete" : result == Result::Won ? "Training game won" : "Training game lost";
-    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+    ImGui::PushFont(ui.fonts.bold, ui.textPx(kTitleSize));
     ImGui::TextColored(won ? kGood : kBad, "%s", title);
     ImGui::PopFont();
     ImGui::TextUnformatted(l.title.c_str());

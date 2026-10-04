@@ -547,6 +547,7 @@ recorder is tested.
 | `lesson-skip.script`, `lesson-long-step.script` | Skip only after ten seconds without a way back, and no cascade after it; no Skip on a step that waits on the turns; End Turn refused under a window, with the way back (close it) |
 | `lesson-prompt-keys.script`, `lesson-result-keys.script` | Keys that answer a lesson's questions are not also main-window keys; the notes after refused clicks and keys; Free Play off at a lesson's start |
 | `end-turn-question.script` | End Turn while a window is open does nothing, by click or key (every window is modal); with the window closed its question comes up and takes the input |
+| `text-fit.script` | Text size 1.5 (`--text-size=1.5`): `assert-fits` in the main window, the command buttons' windows, Ministers, Empires, every page of the Race Report, End Turn's question and the manual; Colony Type and the reading text grow with the setting |
 | `race-report.script` | The Race Report from Empires' Our Race: its four tabs and Close; modal over Empires (Empires' Close and Our Race do nothing under it), Esc closing the report and not Empires |
 | `modal-designer.script`, `modal-battle.script` | Every window is modal: under the ship designer and under a battle in Strategic Combat, End Turn (click, F12, Enter), the command buttons and their keys and the selectors do nothing; Esc goes to the window in front; once the window closes End Turn works |
 | `front-learn.script` | The intro's Tutorial and Scenario buttons, the Learn window's tabs, starting a lesson and leaving it |
@@ -605,6 +606,7 @@ from a double click.
 | `wait-step N`, `wait-result R`, `wait-lesson SLUG`, `wait-screen S` | until the lesson's active step is N; its result is `none`, `done`, `won` or `lost`; that lesson (or `none`) runs; the screen is `game` or `front` |
 | `wait-until { condition }`, `wait-turn N` | until a lesson condition holds ("since" counters from the start of the wait); until the game reaches turn N |
 | `assert-present T`, `assert-absent T`, `assert-enabled T`, `assert-disabled T`, `assert-inside T T2` | T is on screen, or not; enabled or dim; T's point lies in T2's rectangle |
+| `assert-fits SCOPE` | in that scope (a window id, `main`, `lesson`, `front`, or a Dear ImGui window's name): every text drawn into a box of its own (a button's caption, a text kept to its place) fits the box, and no labelled widget is cut off by its window by more than 4 frame pixels (a window that scrolls and a table's cells excepted) |
 | `assert-window ID`, `assert-no-window ID`, `assert-step N`, `assert-result R`, `assert-lesson SLUG`, `assert-screen S`, `assert-turn N` | as the waits, at once |
 | `assert { condition }`, `assert-log "TEXT"`, `assert-no-log "TEXT"` | a lesson condition ("since" counters from the start of the game); some entry of the player's log has that text (letter case ignored), or none |
 | `repeat N [until { condition }] ... end` | the steps between up to N times; with `until`, leaves as soon as the condition holds (checked before each pass, counters from the first) and fails if it never did |

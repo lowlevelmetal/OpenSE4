@@ -968,6 +968,7 @@ private:
             if (text->empty()) continue;
             any = true;
             heading(ui, title);
+            const ReadingText reading(ui.painter());   // the page scrolls
             wrappedText(*text);
             ImGui::Spacing();
         }
@@ -984,7 +985,7 @@ private:
                 const int v = e.race.characteristics[i];
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                fittedText(ui.painter(), game::displayName(static_cast<game::Characteristic>(i)));
+                fittedText(game::displayName(static_cast<game::Characteristic>(i)));
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextColored(v > 100 ? kTextGood : v < 100 ? kTextBad : ImVec4(0.9f, 0.92f, 0.97f, 1), "%d%%", v);
             }
@@ -1029,7 +1030,7 @@ private:
                 if (e.techLevel(a) <= 0) continue;
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                fittedText(ui.painter(), r.tech(a).name);
+                fittedText(r.tech(a).name);
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%d / %d", e.techLevel(a), r.tech(a).maxLevel);
             }

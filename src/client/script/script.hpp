@@ -64,7 +64,7 @@ enum class Op : uint8_t {
     Wait, WaitFor, WaitGone, WaitWindow, WaitClosed, WaitStep, WaitUntil, WaitTurn, WaitResult, WaitScreen, WaitLesson,
     // Checks.
     AssertPresent, AssertAbsent, AssertEnabled, AssertDisabled, AssertWindow, AssertNoWindow, AssertStep, Assert, AssertLog,
-    AssertNoLog, AssertResult, AssertScreen, AssertLesson, AssertTurn, AssertInside,
+    AssertNoLog, AssertResult, AssertScreen, AssertLesson, AssertTurn, AssertInside, AssertFits,
     // Other.
     Screenshot, Echo, Print, Dump, Audit,
     // Loops: repeat N [until {condition}] ... end.

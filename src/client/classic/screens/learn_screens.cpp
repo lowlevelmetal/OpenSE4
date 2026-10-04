@@ -59,7 +59,7 @@ bool LearnView::draw(const Painter& p, Dialog& d, LearnHost& host) {
     const learn::Library& lib = host.content->library;
     d.beginContent();
     // OpenSE4's own window: its own text font (docs/spec/06 §5.4).
-    ImGui::PushFont(p.fonts.readingFont(), p.fontPx(kTextSize));
+    ImGui::PushFont(p.fonts.readingFont(), p.textPx(kTextSize));
     switch (tab_) {
         case Tab::Tutorials: lessons(p, host, learn::LessonKind::Tutorial); break;
         case Tab::Training: lessons(p, host, learn::LessonKind::Training); break;
@@ -218,19 +218,25 @@ void LearnView::contents(const Painter& p, LearnHost& host) {
     ImGui::BeginChild("##chapters", ImVec2(0, 0), ImGuiChildFlags_Borders);
     for (const learn::ManualPage& page : lib.manual) {
         ImGui::PushID(page.slug.c_str());
-        if (ImGui::Selectable(page.doc.title.c_str(), sel == page.slug)) {
+        bool cut = false;
+        const std::string title = elided(page.doc.title, ImGui::GetContentRegionAvail().x, &cut);
+        if (ImGui::Selectable(std::format("{}##page", title).c_str(), sel == page.slug)) {
             sel = page.slug;
             host.openManual(page.slug);
         }
+        cutTooltip(cut, page.doc.title);
         for (const learn::Section& s : page.sections) {
             if (s.level > 2) continue;
             const std::string target = page.slug + "#" + s.anchor;
             ImGui::Indent(p.px(18));
             ImGui::PushStyleColor(ImGuiCol_Text, imColorV(palette::kSecondary));
-            if (ImGui::Selectable(std::format("{}##{}", s.title, s.anchor).c_str(), sel == target)) {
+            bool sectionCut = false;
+            const std::string section = elided(s.title, ImGui::GetContentRegionAvail().x, &sectionCut);
+            if (ImGui::Selectable(std::format("{}##{}", section, s.anchor).c_str(), sel == target)) {
                 sel = target;
                 host.openManual(target);
             }
+            cutTooltip(sectionCut, s.title);
             ImGui::PopStyleColor();
             ImGui::Unindent(p.px(18));
         }
@@ -286,9 +292,12 @@ void ManualView::contents(const Painter& p, const learn::Library& lib) {
             const auto& h = hits[i];
             ImGui::PushID(int(i));
             const std::string label = h.anchor.empty() ? h.page->doc.title : std::format("{}: {}", h.page->doc.title, h.section);
-            if (ImGui::Selectable(label.c_str(), false)) go(h.anchor.empty() ? h.page->slug : h.page->slug + "#" + h.anchor);
+            bool cut = false;
+            const std::string shown = elided(label, ImGui::GetContentRegionAvail().x, &cut);
+            if (ImGui::Selectable(std::format("{}##hit", shown).c_str(), false)) go(h.anchor.empty() ? h.page->slug : h.page->slug + "#" + h.anchor);
+            cutTooltip(cut, label);
             ImGui::PushTextWrapPos(0.0f);
-            ImGui::PushFont(p.fonts.small, p.fontPx(kSmallSize));
+            ImGui::PushFont(p.fonts.small, p.textPx(kSmallSize));
             ImGui::TextColored(imColorV(palette::kSecondary), "%s", h.excerpt.c_str());
             ImGui::PopFont();
             ImGui::PopTextWrapPos();
@@ -302,13 +311,20 @@ void ManualView::contents(const Painter& p, const learn::Library& lib) {
             ImGui::SetNextItemOpen(current, current ? ImGuiCond_Always : ImGuiCond_Appearing);
             const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth |
                                              (current ? ImGuiTreeNodeFlags_Selected : 0) | (page.sections.empty() ? ImGuiTreeNodeFlags_Leaf : 0);
-            const bool open = ImGui::TreeNodeEx("##page", flags, "%s", page.doc.title.c_str());
+            // Titles cut short to the column (whole under the pointer): the Text size setting enlarges them.
+            bool cut = false;
+            const std::string title = elided(page.doc.title, ImGui::GetContentRegionAvail().x - ImGui::GetTreeNodeToLabelSpacing(), &cut);
+            const bool open = ImGui::TreeNodeEx("##page", flags, "%s", title.c_str());
+            cutTooltip(cut, page.doc.title);
             if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) go(page.slug);
             if (open) {
                 for (const learn::Section& s : page.sections) {
                     if (s.level > 2) continue;
                     ImGui::PushStyleColor(ImGuiCol_Text, imColorV(palette::kSecondary));
-                    if (ImGui::Selectable(std::format("{}##{}", s.title, s.anchor).c_str(), false)) go(page.slug + "#" + s.anchor);
+                    bool sectionCut = false;
+                    const std::string section = elided(s.title, ImGui::GetContentRegionAvail().x, &sectionCut);
+                    if (ImGui::Selectable(std::format("{}##{}", section, s.anchor).c_str(), false)) go(page.slug + "#" + s.anchor);
+                    cutTooltip(sectionCut, s.title);
                     ImGui::PopStyleColor();
                 }
                 ImGui::TreePop();
@@ -329,7 +345,7 @@ bool ManualView::draw(const Painter& p, Dialog& d, LearnHost& host) {
     page_ = page ? page->slug : std::string{};
 
     d.beginContent();
-    ImGui::PushFont(p.fonts.readingFont(), p.fontPx(kTextSize));
+    ImGui::PushFont(p.fonts.readingFont(), p.textPx(kTextSize));
     if (!page) {
         heading(p, "Manual");
         dim("No manual pages are installed yet.");

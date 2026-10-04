@@ -2287,6 +2287,19 @@ differs:
   pixels are repeated unevenly (nearest neighbour) rather than drawn 1:1.
 - OpenSE4's own windows (Learn, the manual, the lesson panel) keep our own font (Noto
   Sans) for their text, and it stands in for any `.fon` file that is missing.
+- **Text size** (Settings → Graphics, 0.75 to 1.5, OpenSE4's; since 2026-10-04): it
+  enlarges the text that can take the room. That is OpenSE4's own text (the lesson panel,
+  the manual, the Learn window, the multiplayer screens, and the questions our client draws:
+  End Turn, Colony Type, Attack Sector, Next Player), and the classic windows' reading
+  text, which wraps and scrolls: the Log's entries, messages, a race's description, and the
+  reports of systems, stars, storms and warp points. Text at the classic layouts' fixed
+  places (button and tab captions, titles, the status bar, label and value lines, list rows
+  and headings, the system panel's names, the battle notice) keeps the sizes above at every
+  setting, so no layout changes; where even that does not fit its box (a long name), the
+  text is cut short with "…" and shows whole as a tooltip under the pointer. Settings
+  itself keeps its size, so the setting can always be changed back. Before, every classic
+  font grew with the setting, and from 1.2 on captions ran out of their buttons and lines
+  over each other.
 
 ### 5.5 Sounds and music
 

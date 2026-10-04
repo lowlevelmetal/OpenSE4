@@ -60,6 +60,8 @@ public:
         return out;
     }
     const std::vector<Item>& items() const override { return itemList; }
+    std::vector<Item> textList;
+    const std::vector<Item>& texts() const override { return textList; }
     ImVec2 framePoint(float x, float y) const override { return ImVec2(x, y); }
     float frameScale() const override { return 1.0f; }
     std::vector<Box> sectors(const Target& t, std::string& error) const override {
@@ -380,6 +382,46 @@ TEST_CASE("input script: where things are, and drags with other buttons") {
     CHECK(events[1].button == 2);
     CHECK(events[4].kind == InputEvent::Kind::ButtonUp);
     CHECK(events[4].pos.x == 50);
+}
+
+TEST_CASE("input script: assert-fits") {
+    FakeProbe probe;
+    Item ok = item("Close", "designs", ImVec2(0, 0), ImVec2(50, 20));
+    Item slack = item("Row", "designs", ImVec2(0, 20), ImVec2(50, 40));
+    slack.clipped = true;
+    slack.hidden = 3;   // a selectable's half item spacing past the edge
+    Item scrolled = item("Far row", "designs", ImVec2(0, 40), ImVec2(50, 60));
+    scrolled.clipped = true;
+    scrolled.hidden = 30;
+    scrolled.scrolls = true;
+    probe.itemList = {ok, slack, scrolled};
+    Item caption = item("Ship Designs", "designs", ImVec2(0, 0), ImVec2(40, 10));
+    probe.textList = {caption};
+    Player p(parse("assert-fits designs\n"), "/tmp");
+    play(p, probe);
+    CHECK(p.finished());
+
+    Item cut = item("Make Current", "designs", ImVec2(0, 60), ImVec2(50, 80));
+    cut.clipped = true;
+    cut.hidden = 12;
+    probe.itemList.push_back(cut);
+    Player q(parse("assert-fits designs\n"), "/tmp");
+    play(q, probe);
+    REQUIRE(q.failed());
+    CHECK(q.failure().find("item:\"Make Current\" is cut off by its window") != std::string::npos);
+    // Another scope's widgets are not its business.
+    Player r(parse("assert-fits planets\n"), "/tmp");
+    play(r, probe);
+    CHECK(r.finished());
+
+    probe.itemList.pop_back();
+    caption.overflow = true;
+    probe.textList = {caption};
+    Player t(parse("assert-fits designs\n"), "/tmp");
+    play(t, probe);
+    REQUIRE(t.failed());
+    CHECK(t.failure().find("text \"Ship Designs\" runs out of its box") != std::string::npos);
+    CHECK(problems("assert-fits\n").size() == 1);
 }
 
 TEST_CASE("input script: loops") {

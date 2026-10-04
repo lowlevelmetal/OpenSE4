@@ -813,8 +813,9 @@ bool ClassicMode::update(const FrameState& fs) {
     applyLayout();
     mapping_ = frameMappingFor(float(fs.frame.width), float(fs.frame.height));
     fbScale_ = fs.fbScale;
-    // Every classic window defaults to the game's text font at its native size.
-    ImGui::PushFont(fonts_.regular, kTextSize * mapping_.scale / fs.fbScale * appSettings().graphics.textScale);
+    // Every classic window defaults to the game's text font at its own raster
+    // size; the Text size setting enlarges reading text and OpenSE4's own (ui.hpp).
+    ImGui::PushFont(fonts_.regular, kTextSize * mapping_.scale / fs.fbScale);
     const bool keepRunning = updateFrame(fs);
     ImGui::PopFont();
     // The frame's pointer, grown with the classic screens by whole multiples.
@@ -1020,17 +1021,20 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         // (a lesson's result) goes first.
         constexpr const char* kEndTurn = "End Turn";
         if (!ImGui::IsPopupOpen(kEndTurn) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) ImGui::OpenPopup(kEndTurn);
-        ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 300) * 0.5f), std::floor((frameH() - 110) * 0.5f)}));
-        ImGui::SetNextWindowSize(ui.size({300, 110}));
-        ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+        // Our own question: its text takes the Text size setting, and the box its height.
+        ImGui::SetNextWindowPos(ui.at({std::floor(frameW() * 0.5f), std::floor(frameH() * 0.5f)}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(300), ui.textPx(300)), 0));
+        ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
         bool yes = false, no = false;
-        if (ImGui::BeginPopupModal(kEndTurn, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags)) {
+        if (ImGui::BeginPopupModal(kEndTurn, nullptr,
+                                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
             ui.promptWindow();   // never covered by a tutorial's input lock
             ImGui::TextUnformatted("End the turn now?");
             const std::optional<bool> key = yesNoKey();
-            yes = ImGui::Button("Yes", ui.size({120, 28})) || key == true;
+            const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+            yes = ImGui::Button("Yes", ImVec2(w, std::max(ui.px(28), ImGui::GetFrameHeight()))) || key == true;
             ImGui::SameLine();
-            no = ImGui::Button("No", ui.size({120, 28})) || key == false;
+            no = ImGui::Button("No", ImVec2(w, std::max(ui.px(28), ImGui::GetFrameHeight()))) || key == false;
             if (yes || no) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
@@ -1106,7 +1110,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (!lessonError_.empty()) {
         ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 400) * 0.5f), 320 * frameH() / kFrameH}));
         ImGui::SetNextWindowSize(ui.size({400, 0}));
-        ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+        ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
         ImGui::Begin("Lesson", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
         ui.promptWindow();   // never covered by a tutorial's input lock
         if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();   // over the window that asked (the Learn window)
@@ -1149,7 +1153,7 @@ void ClassicMode::drawNetwork(UiContext& ui) {
     // stay clear; the full lines show as a tooltip.
     ImGui::SetNextWindowPos(ui.at({8, frameH() - 56}));
     ImGui::SetNextWindowSize(ui.size({478, 50}));
-    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));   // a strip at a fixed place: the classic size
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
     ImGui::Begin("##netstatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                              ImGuiWindowFlags_NoBringToFrontOnFocus);
@@ -1253,7 +1257,7 @@ void ClassicMode::drawPbem(UiContext& ui) {
     // the orders, then where it saved them.
     ImGui::SetNextWindowPos(ui.at({8, frameH() - 56}));
     ImGui::SetNextWindowSize(ui.size({478, 50}));
-    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));   // a strip at a fixed place: the classic size
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
     // Its Main Menu button is the main window's: not while a window or question is open.
     ImGui::Begin("##pbemstatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
@@ -1292,9 +1296,10 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     if (q.where.system.valid() && q.where.system.index() < s.galaxy.systems.size())
         where = std::format("{} ({}, {})", s.galaxy.system(q.where.system).name, q.where.sector.x, q.where.sector.y);
     ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 400) * 0.5f), 290 * frameH() / kFrameH}));
-    ImGui::SetNextWindowSize(ui.size({400, 150}));
-    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-    ImGui::Begin("Attack Sector", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
+    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(400), ui.textPx(400)), 0));
+    ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
+    ImGui::Begin("Attack Sector", nullptr,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
     ui.promptWindow();   // never covered by a tutorial's input lock
     if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
     ImGui::TextWrapped("%s", std::format("Enemy forces are in {}. Should {} enter the sector and attack?", where, who.empty() ? "the ship" : who).c_str());
@@ -1302,9 +1307,10 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     ImGui::Spacing();
     // A Yes/No prompt (spec 06 §1.3): Y means Yes; N, Esc and Enter mean No (§3.4).
     const std::optional<bool> key = yesNoKey();
-    const bool yes = ImGui::Button("Yes", ui.size({140, 30})) || key == true;
+    const ImVec2 button(std::max(ui.px(140), ui.textPx(140)), std::max(ui.px(30), ImGui::GetFrameHeight()));
+    const bool yes = ImGui::Button("Yes", button) || key == true;
     ImGui::SameLine();
-    const bool no = ImGui::Button("No", ui.size({140, 30})) || key == false;
+    const bool no = ImGui::Button("No", button) || key == false;
     ImGui::End();
     if (yes) session_->answer(true);
     else if (no) session_->answer(false);
@@ -1329,16 +1335,16 @@ void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
     const game::Colony& c = *s.colony(planet);
     std::vector<std::string> types = me.colonyTypes;
     if (std::find(types.begin(), types.end(), c.colonyType) == types.end()) types.insert(types.begin(), c.colonyType);
-    const float h = 110.0f + 30.0f * float(types.size());
-    ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 300) * 0.5f), frameH() * 0.5f - h * 0.5f}));
-    ImGui::SetNextWindowSize(ui.size({300, h}));
-    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-    ImGui::Begin("Colony Type", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    ImGui::SetNextWindowPos(ui.at({std::floor(frameW() * 0.5f), std::floor(frameH() * 0.5f)}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(300), ui.textPx(300)), 0));
+    ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
+    ImGui::Begin("Colony Type", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
     ui.promptWindow();   // never covered by a tutorial's input lock
     ImGui::TextWrapped("%s", std::format("A new colony on {}. What kind of colony should it be?", s.galaxy.object(planet).name).c_str());
     ImGui::Spacing();
     for (const std::string& t : types) {
-        if (ImGui::Button(std::format("{}{}", t, t == c.colonyType ? " (suggested)" : "").c_str(), ui.size({280, 26})))
+        if (ImGui::Button(std::format("{}{}", t, t == c.colonyType ? " (suggested)" : "").c_str(),
+                          ImVec2(-FLT_MIN, std::max(ui.px(26), ImGui::GetFrameHeight()))))
             session_->issue(game::cmd::SetColonyType{planet, t});
         ui.tagOption("colony-type", t == c.colonyType ? "suggested" : "other");   // a lesson may let the suggested one through
     }
@@ -1383,7 +1389,7 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
     const Vec2 size{253, 150};
     ImGui::SetNextWindowPos(ui.at({(frameW() - size.x) * 0.5f, (frameH() - size.y) * 0.5f}));
     ImGui::SetNextWindowSize(ui.size(size));
-    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));   // the original's fixed notice: the classic size
     if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags)) {
         ImGui::PopFont();
         return;
@@ -1410,9 +1416,9 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
 void ClassicMode::drawHandoff(UiContext& ui) {
     const game::Empire& e = ui.me();
     ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 400) * 0.5f), 250 * frameH() / kFrameH}));
-    ImGui::SetNextWindowSize(ui.size({400, 230}));
-    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-    ImGui::Begin("Next Player", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(400), ui.textPx(400)), 0));
+    ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
+    ImGui::Begin("Next Player", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
     image(ui, art_->flag(e.race.style), {39, 27});
     ImGui::SameLine();
     ImGui::TextUnformatted(std::format("{} {}", e.name, e.empireType).c_str());
@@ -1431,9 +1437,10 @@ void ClassicMode::drawHandoff(UiContext& ui) {
     }
     // The Next Player notice: Esc or Enter continue (spec 06 §3.4); with a
     // password, Enter in its field submits it.
-    if (ImGui::Button("Begin Turn", ui.size({140, 30})) || (!needsPassword && okKey())) begin = true;
+    const ImVec2 button(std::max(ui.px(140), ui.textPx(140)), std::max(ui.px(30), ImGui::GetFrameHeight()));
+    if (ImGui::Button("Begin Turn", button) || (!needsPassword && okKey())) begin = true;
     ImGui::SameLine();
-    if (ImGui::Button("Quit Game", ui.size({140, 30}))) ui.requests.quitGame = true;
+    if (ImGui::Button("Quit Game", button)) ui.requests.quitGame = true;
     if (begin) {
         const std::expected<bool, std::string> matches = needsPassword ? session_->passwordMatches(e, handoffPassword_) : true;
         if (matches && *matches) {

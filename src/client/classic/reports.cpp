@@ -23,7 +23,9 @@ namespace {
 
 const ImVec4 kDim = kDimText;
 
-void wrapped(const std::string& text) {
+// Reading text: the report's body scrolls, so the Text size setting enlarges it.
+void wrapped(UiContext& ui, const std::string& text) {
+    const ReadingText reading(ui.painter());
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextColored(kDim, "%s", text.c_str());
     ImGui::PopTextWrapPos();
@@ -89,8 +91,13 @@ public:
         const ImVec2 a = at(x, y), b = at(x + w, y + h);
         dl_->AddImage(ImTextureRef(static_cast<ImTextureID>(s.tex.value)), a, b, {s.uv.min.x, s.uv.min.y}, {s.uv.max.x, s.uv.max.y});
     }
+    // Cut short at the report's right edge (whole under the pointer).
     void text(float x, float y, ImU32 color, std::string_view t) const {
-        dl_->AddText(ImGui::GetFont(), ImGui::GetFontSize(), snap(at(x, y)), color, t.data(), t.data() + t.size());
+        const TextFit f = fitText(ui_.painter(), ImGui::GetFont(), ImGui::GetFontSize() / ui_.k(), t, ui_.px(kRight - x));
+        dl_->AddText(ImGui::GetFont(), f.size, snap(at(x, y)), color, f.text.c_str());
+        script::reportFit(f.text, at(x, y), ImVec2(at(x, y).x + f.extent.x, at(x, y).y + f.extent.y), f.extent.x > ui_.px(kRight - x) + 0.5f);
+        if (f.cut && ImGui::IsMouseHoveringRect(at(x, y), at(kRight, y + 14)) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows))
+            ImGui::SetTooltip("%.*s", int(t.size()), t.data());
     }
     void text(float x, float y, ImVec4 color, std::string_view t) const { text(x, y, ImGui::GetColorU32(color), t); }
     void rightAligned(float x, float y, ImU32 color, std::string_view t) const {
@@ -121,6 +128,7 @@ public:
     }
 
 private:
+    static constexpr float kRight = 286.0f;   // the report's right edge
     static ImVec2 snap(ImVec2 p) { return {std::floor(p.x + 0.5f), std::floor(p.y + 0.5f)}; }
     UiContext& ui_;
     ImVec2 origin_;
@@ -544,22 +552,22 @@ void systemReport(UiContext& ui, game::SystemId sysId) {
     }
     std::vector<std::string> abilities;
     for (const auto& a : sys.abilities) abilities.push_back(a.description.empty() ? a.type : a.description);
-    // Does it all fit the original's places?
+    // Reading text, at the Text size setting's size. Does it all fit the original's places?
     const float panelBottom = ImGui::GetWindowHeight() / ui.k() - 2;
     const float descTop = 132, abilitiesTop = 189, left = -1, width = 287;
     const ImU32 grey = imColor(palette::kSecondary);
     const float descH = type.description.empty() ? 0.0f
-                                                 : small->CalcTextSizeA(p.fontPx(kSmallSize), FLT_MAX, ui.px(width), type.description.c_str()).y / ui.k();
+                                                 : small->CalcTextSizeA(p.textPx(kSmallSize), FLT_MAX, ui.px(width), type.description.c_str()).y / ui.k();
     const float bullet = ImGui::GetFontSize() / ui.k() + ImGui::GetStyle().FramePadding.x * 2 / ui.k();
     float abilitiesH = 0;
     for (const std::string& a : abilities)
-        abilitiesH += body->CalcTextSizeA(p.fontPx(kTextSize), FLT_MAX, ui.px(width - bullet), a.c_str()).y / ui.k() + 2;
+        abilitiesH += body->CalcTextSizeA(p.textPx(kTextSize), FLT_MAX, ui.px(width - bullet), a.c_str()).y / ui.k() + 2;
     const float listTop = std::max(abilitiesTop, descTop + descH + 4);
     if (descH <= 42 && listTop + abilitiesH <= panelBottom) {
         if (!type.description.empty())
-            dl->AddText(small, p.fontPx(kSmallSize), at(left, descTop + kSmallLead), grey, type.description.c_str(), nullptr, ui.px(width));
+            dl->AddText(small, p.textPx(kSmallSize), at(left, descTop + kSmallLead), grey, type.description.c_str(), nullptr, ui.px(width));
         ImGui::SetCursorScreenPos(at(left, listTop));
-        ImGui::PushFont(body, p.fontPx(kTextSize));
+        ImGui::PushFont(body, p.textPx(kTextSize));
         for (const std::string& a : abilities) wrappedBullet(a);
         ImGui::PopFont();
         ImGui::Dummy(ImVec2(0, 0));   // the cursor was placed: an item makes the room
@@ -574,13 +582,13 @@ void systemReport(UiContext& ui, game::SystemId sysId) {
     }();
     beginList(list, "##system-info", ImVec2(ui.px(width + 1), ui.px(std::max(40.0f, panelBottom - descTop))), kListLineStep, ImGuiChildFlags_None, false);
     if (!type.description.empty()) {
-        ImGui::PushFont(small, p.fontPx(kSmallSize));
+        ImGui::PushFont(small, p.textPx(kSmallSize));
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(grey), "%s", type.description.c_str());
         ImGui::PopTextWrapPos();
         ImGui::PopFont();
     }
-    ImGui::PushFont(body, p.fontPx(kTextSize));
+    ImGui::PushFont(body, p.textPx(kTextSize));
     for (const std::string& a : abilities) wrappedBullet(a);
     ImGui::PopFont();
     endList(list);
@@ -607,7 +615,8 @@ void objectReport(UiContext& ui, game::ObjectId id, const game::GameState* state
         }
         default: labelValue(ui, "Kind", std::string(game::displayName(o.kind))); break;
     }
-    wrapped(ui.rules().data().sectorObjectTypes[o.sectorType].description);
+    wrapped(ui, ui.rules().data().sectorObjectTypes[o.sectorType].description);
+    const ReadingText reading(ui.painter());
     for (const auto& a : o.abilities) wrappedBullet(a.description.empty() ? a.type : a.description);
 }
 

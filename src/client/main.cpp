@@ -6,6 +6,7 @@
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -53,6 +54,7 @@ Rendering:
   --size=WxH                      Window size (default 1600x900)
   --layout=auto|800x600|1024x768  The classic screen layout (default: auto, 800x600 on a desktop
                                   800 px wide or less, as the original; forcing one is OpenSE4's)
+  --text-size=N                   Settings' Text size for this run, 0.75 to 1.5
   --no-audio                      No sound or music
 
 Game:
@@ -197,6 +199,13 @@ int main(int argc, char** argv) {
             else if (value == "800x600") saved.layout = client::LayoutChoice::Small800;
             else if (value == "1024x768") saved.layout = client::LayoutChoice::Large1024;
             else ok = false;
+        } else if (key == "--text-size") {
+            // Settings → Graphics → Text size for this run (0.75 to 1.5).
+            const std::string text(value);
+            char* end = nullptr;
+            const float scale = std::strtof(text.c_str(), &end);
+            ok = !text.empty() && end == text.c_str() + text.size() && scale >= 0.75f && scale <= 1.5f;
+            if (ok) saved.textScale = scale;
         } else if (key == "--seed") {
             ok = parseInt(value, options.seed);
         } else if (key == "--systems") {
