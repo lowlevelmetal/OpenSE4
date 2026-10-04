@@ -173,7 +173,7 @@ private:
     double noteUntil_ = 0.0;
     // A window, question or the picker is open: the panels take no input (update()).
     bool inputBlocked_ = false;
-    ImGuiWindowFlags blockedFlags() const { return inputBlocked_ ? ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs : 0; }
+    ImGuiWindowFlags blockedFlags() const { return inputBlocked_ ? int(ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs) : 0; }
     int orderPage_ = 0;   // the order strip's page at 800x600 (§2.3)
 
     // The movement line's route, worked out again when the game or the report changes.

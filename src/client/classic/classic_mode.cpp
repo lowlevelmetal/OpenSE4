@@ -1261,7 +1261,7 @@ void ClassicMode::drawPbem(UiContext& ui) {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
     // Its Main Menu button is the main window's: not while a window or question is open.
     ImGui::Begin("##pbemstatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                              ImGuiWindowFlags_NoBringToFrontOnFocus | (modalOpen_ ? ImGuiWindowFlags_NoMouseInputs : 0));
+                                              ImGuiWindowFlags_NoBringToFrontOnFocus | (modalOpen_ ? int(ImGuiWindowFlags_NoMouseInputs) : 0));
     const ImVec4 gold(1, 0.85f, 0.45f, 1);
     if (!session_->ordersFile().empty()) {
         if (ImGui::SmallButton("Main Menu")) ui.requests.quitToIntro = true;

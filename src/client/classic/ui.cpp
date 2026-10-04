@@ -189,25 +189,21 @@ bool hoverOver(ImDrawList* dl, ImVec2 min, ImVec2 max) {
     return g.HoveredWindow && current && g.HoveredWindow->RootWindow == current->RootWindow;
 }
 
-} // namespace
-
-namespace {
-
-// The text at `wanted` (ImGui units), smaller down to `floor` while it is too
+// The text at `wanted` (ImGui units), smaller down to `smallest` while it is too
 // wide, then cut short. `step`: how much smaller each try is.
-TextFit fitSized(ImFont* font, float wanted, float floor, float step, std::string_view text, float maxWidth, float maxHeight) {
+TextFit fitSized(ImFont* font, float wanted, float smallest, float step, std::string_view text, float maxWidth, float maxHeight) {
     TextFit f;
     f.text = std::string(text);
     if (!font) font = ImGui::GetFont();
     f.size = wanted;
-    if (maxHeight > 0.0f && f.size > maxHeight) f.size = std::max(floor, maxHeight);
+    if (maxHeight > 0.0f && f.size > maxHeight) f.size = std::max(smallest, maxHeight);
     f.extent = measure(font, f.size, text);
     if (maxWidth <= 0.0f || f.extent.x <= maxWidth + 0.01f) return f;
     // Smaller: in proportion first, then step by step (raster glyphs' advances are whole pixels).
-    float size = std::max(floor, f.size * maxWidth / f.extent.x);
+    float size = std::max(smallest, f.size * maxWidth / f.extent.x);
     ImVec2 e = measure(font, size, text);
-    while (e.x > maxWidth + 0.01f && size > floor) {
-        size = std::max(floor, size - step);
+    while (e.x > maxWidth + 0.01f && size > smallest) {
+        size = std::max(smallest, size - step);
         e = measure(font, size, text);
     }
     f.size = size;
@@ -234,8 +230,8 @@ TextFit fitSized(ImFont* font, float wanted, float floor, float step, std::strin
 TextFit fitText(const Painter& p, ImFont* font, float framePx, std::string_view text, float maxWidth, float maxHeight, bool scaled) {
     const float wanted = scaled ? p.textPx(framePx) : p.fontPx(framePx);
     // Never smaller than the classic size (unless the setting asks for smaller text).
-    const float floor = std::min(wanted, p.fontPx(framePx));
-    return fitSized(font, wanted, floor, std::max(0.25f, p.k() * 0.25f), text, maxWidth, maxHeight);
+    const float smallest = std::min(wanted, p.fontPx(framePx));
+    return fitSized(font, wanted, smallest, std::max(0.25f, p.k() * 0.25f), text, maxWidth, maxHeight);
 }
 
 TextFit drawFitted(const Painter& p, ImDrawList* dl, ImFont* font, float framePx, ImVec2 pos, float maxWidth, ImU32 color, std::string_view text,

@@ -250,8 +250,8 @@ public:
     // each Screen::draw; every root window a screen begins adds windowFlags().
     bool behind = false;
     ImGuiWindowFlags windowFlags() const {
-        return behind ? ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoFocusOnAppearing
-                      : ImGuiWindowFlags_None;
+        return behind ? int(ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoFocusOnAppearing)
+                      : 0;
     }
 
     // UI tags of this frame (cleared at its start): `window:<id>` for each
