@@ -6,6 +6,7 @@
 // report popup that closes when clicked (docs/spec/06 §1.4). Also the list
 // row and lamp-button widgets these windows have in common.
 
+#include "client/classic/screens/item_ref.hpp"
 #include "client/classic/ui.hpp"
 
 #include <span>
@@ -14,15 +15,6 @@
 
 namespace opense4::client::classic {
 
-struct ItemRef {
-    enum class Kind : uint8_t { None, Component, Facility, Hull, TechArea, IntelProject, Treaty, Formation };
-    Kind kind = Kind::None;
-    uint32_t index = 0;
-    int32_t mount = -1;  // components: weapon mount (CompEnhancement index)
-
-    bool valid() const { return kind != Kind::None; }
-    bool operator==(const ItemRef&) const = default;
-};
 
 // Full: the Help pane (128 px picture). Report: the popup. Compact: narrow hover panes.
 enum class DetailStyle { Full, Report, Compact };
@@ -33,20 +25,6 @@ void itemDetail(UiContext& ui, const ItemRef& item, DetailStyle style);
 Sprite itemIcon(UiContext& ui, const ItemRef& item);
 std::string itemName(const UiContext& ui, const ItemRef& item);
 
-// The item report popup. Call open() from anywhere in the owning window and
-// draw() once per frame after the window (outside its Dialog).
-class ItemReportPopup {
-public:
-    void open(ItemRef item) {
-        item_ = item;
-        request_ = true;
-    }
-    void draw(UiContext& ui);
-
-private:
-    ItemRef item_;
-    bool request_ = false;
-};
 
 // ---- Widgets --------------------------------------------------------------------------------
 

@@ -136,6 +136,7 @@ private:
     game::ObjectId planet_;
     ReportTab tab_ = ReportTab::Detail;
     bool request_ = false;
+    ItemReportPopup item_;   // a facility's or component's report, from a right-click on its page
 };
 
 // A one-line text prompt with OK / Cancel; draw() returns the text on OK.

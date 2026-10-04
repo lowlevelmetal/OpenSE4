@@ -36,6 +36,7 @@ add_executable(opense4_tests
     test_lesson_lock.cpp
     test_lesson_panel.cpp
     test_main_window.cpp
+    test_reports.cpp
     test_maps.cpp
     test_movement.cpp
     test_movement_line.cpp
@@ -73,6 +74,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/script/script.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/sdl_input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp

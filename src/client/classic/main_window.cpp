@@ -271,6 +271,9 @@ void MainWindow::clearSelection() {
     fleet_.reset();
     listMode_ = false;
     reportFromList_ = false;
+    // Every report filled for an object opens on Detail, the object already
+    // shown included (spec 06 §2.5, §7 Q107).
+    tab_ = ReportTab::Detail;
 }
 
 std::vector<game::ObjectId> MainWindow::objectsAt(const UiContext& ui, game::Sector sec) const {
@@ -953,6 +956,8 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     reportPanel(ui);
     overlayText(ui);
     statusButtons(ui);
+    // A facility's or component's report, from a right-click on the report's page (spec 06 §1.4).
+    itemReport_.draw(ui);
     // The panels lessons point at (docs/LEARNING.md "UI tags").
     ui.tagFrame("panel:system", geo.systemPanel);
     ui.tagFrame("panel:report", geo.reportPanel);
@@ -1253,13 +1258,13 @@ void MainWindow::reportPanel(UiContext& ui) {
                     ImGui::Separator();
                 }
             }
-            vehicleReport(ui, *v, tab_);
+            if (const auto item = vehicleReport(ui, *v, tab_)) itemReport_.open(*item);
             tabsFor = true;
         }
     } else if (object_ && tagged_.empty()) {
         const game::SpaceObject& o = s.galaxy.object(*object_);
         if (o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids) {
-            planetReport(ui, *object_, tab_);
+            if (const auto item = planetReport(ui, *object_, tab_)) itemReport_.open(*item);
             tabsFor = planetTabs = true;
         } else {
             objectReport(ui, *object_);

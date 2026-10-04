@@ -95,18 +95,25 @@ struct StatusLine {
 // Centred modal popup with a title strip; size in frame pixels. Pair with ImGui::EndPopup().
 bool beginModal(UiContext& ui, const char* id, Vec2 size);
 
-// The planet or ship report (docs/spec/06 §1.4) with its tabs.
+// The planet or ship report (docs/spec/06 §1.4) with its tabs. A new popup
+// each time: it opens on Detail (spec 06 §2.5, §7 Q107). A right-click on a
+// facility or component of its pages opens that item's report over it.
+// `simulator`: the Combat Simulator's, whose Ability page leaves the racial
+// and culture lines out.
 class ReportPopup {
 public:
     void openPlanet(game::ObjectId p);
     void openVehicle(game::VehicleId v);
     void draw(UiContext& ui);
+    void setSimulator(bool on) { simulator_ = on; }
 
 private:
     bool pending_ = false;
+    bool simulator_ = false;
     std::optional<game::ObjectId> planet_;
     std::optional<game::VehicleId> vehicle_;
     ReportTab tab_ = ReportTab::Detail;
+    ItemReportPopup item_;
 };
 
 // The Design Report (spec 06 §1.8.3): a design's name, size, design type,

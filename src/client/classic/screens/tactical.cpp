@@ -1477,6 +1477,7 @@ public:
             if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) keep = false;
         }
         ImGui::End();
+        item_.draw(ui);
         return keep;
     }
 
@@ -1535,7 +1536,8 @@ private:
         ImGui::Dummy({1, 1});
     }
 
-    // Comps: the design's components, those destroyed in red.
+    // Comps: the design's components, those destroyed in red; a right-click
+    // opens the component's report with its mount (spec 06 §1.4, §7 Q105).
     void components(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
         const game::Rules& r = ui.rules();
         if (!p.design.valid() || p.design.index() >= s.designs.size()) return;
@@ -1543,6 +1545,8 @@ private:
         for (size_t e = 0; e < d.entries.size(); ++e) {
             const ruleset::Component& c = r.component(d.entries[e].component);
             const bool intact = e >= p.intact.size() || p.intact[e] != 0;
+            ImGui::PushID(int(e));
+            ImGui::BeginGroup();
             image(ui, ui.art.component(c.picture), {24, 24}, intact ? Color{1, 1, 1, 1} : Color{1, 0.3f, 0.3f, 0.8f});
             ImGui::SameLine();
             std::string label = c.name;
@@ -1550,6 +1554,10 @@ private:
                 label = r.data().weaponMounts[size_t(d.entries[e].mount)].shortName + " " + label;
             if (intact) ImGui::TextUnformatted(label.c_str());
             else ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s (destroyed)", label.c_str());
+            ImGui::EndGroup();
+            ImGui::PopID();
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                item_.open(ItemRef{ItemRef::Kind::Component, d.entries[e].component, d.entries[e].mount});
         }
     }
 
@@ -1560,10 +1568,17 @@ private:
             dimText("Not colonized");
             return;
         }
-        for (uint32_t f : c->facilities) {
+        for (size_t i = 0; i < c->facilities.size(); ++i) {
+            const uint32_t f = c->facilities[i];
+            ImGui::PushID(int(i));
+            ImGui::BeginGroup();
             image(ui, ui.art.facility(ui.rules().facility(f).picture), {24, 24});
             ImGui::SameLine();
             ImGui::TextUnformatted(ui.rules().facility(f).name.c_str());
+            ImGui::EndGroup();
+            ImGui::PopID();
+            // A right-click opens the facility's report (spec 06 §1.4, §7 Q105).
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) item_.open(ItemRef{ItemRef::Kind::Facility, f});
         }
     }
 
@@ -1577,13 +1592,10 @@ private:
             ImGui::Text("%d x %s", u.count, u.design.index() < s.designs.size() ? s.design(u.design).name.c_str() : "?");
     }
 
-    // Ability: a ship's or base's hull, then its whole design (destroyed parts
-    // too); a planet's own abilities only (spec 06 §1.10.1, §7 Q78).
-    void abilities(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
-        const std::vector<std::string> list = pieceReportAbilities(ui.rules(), s, p);
-        for (const std::string& line : list) ImGui::BulletText("%s", line.c_str());
-        if (list.empty()) dimText("No special abilities");
-    }
+    // Ability: a ship's or base's hull entries, not its components; a
+    // planet's own abilities only; each entry's Descr, with the lamp of the
+    // main window's page (spec 06 §1.4, §1.10.1, §7 Q78, Q106).
+    void abilities(UiContext& ui, const game::GameState& s, const TacticalPiece& p) { abilityPage(ui, pieceReportAbilities(ui.rules(), s, p)); }
 
     // A unit group's units in a 108 px grid under its cut Detail page.
     void unitGrid(UiContext& ui, const game::GameState& s, const TacticalPiece& p, ImVec2 at, float height) {
@@ -1605,6 +1617,7 @@ private:
     }
 
     int piece_ = -1;
+    ItemReportPopup item_;   // a facility's or component's report, from a right-click on its page
     ReportTab tab_ = ReportTab::Detail;
 };
 

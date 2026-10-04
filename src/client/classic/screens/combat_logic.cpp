@@ -201,23 +201,18 @@ std::vector<std::pair<std::string, std::string>> pieceReportLines(const game::Ru
 }
 
 std::vector<std::string> pieceReportAbilities(const game::Rules& r, const game::GameState& s, const game::combat::TacticalPiece& p) {
+    // Each entry's Descr as written, nothing combined (spec 06 §1.4). A ship
+    // or base: its hull's entries, then those its design or the vehicle
+    // carries of its own (none: ours have none), never its components'; a
+    // planet: its own abilities only, without the main window's racial,
+    // cultural, population and mood lines (spec 06 §1.10.1, §7 Q78, Q106).
     std::vector<std::string> out;
-    auto add = [&](std::span<const game::ParsedAbility> list) {
-        for (const game::ParsedAbility& a : list) {
-            if (a.kind == game::AbilityKind::AITag) continue;
-            const std::string name = a.kind == game::AbilityKind::Unknown ? a.raw : std::string(game::identifier(a.kind));
-            out.push_back(a.value1 != 0 || a.value2 != 0 ? std::format("{} ({}, {})", name, a.value1, a.value2) : name);
-        }
-    };
-    // A ship or base: its hull, then every component of its design, destroyed
-    // or not; our vehicles have no abilities of their own to follow.
     if (p.kind == PieceKind::Vehicle && p.design.valid() && p.design.index() < s.designs.size()) {
         const game::Design& d = s.design(p.design);
-        if (d.hull < r.data().vehicleSizes.size()) add(r.hullAbilities(d.hull));
-        for (const game::DesignEntry& e : d.entries)
-            if (e.component < r.data().components.size()) add(r.componentAbilities(e.component));
+        if (d.hull < r.data().vehicleSizes.size())
+            for (const ruleset::Ability& a : r.hull(d.hull).abilities) out.push_back(a.description);
     } else if (p.kind == PieceKind::Planet && p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) {
-        add(game::parseAbilities(s.galaxy.object(p.planet).abilities));
+        for (const ruleset::Ability& a : s.galaxy.object(p.planet).abilities) out.push_back(a.description);
     }
     return out;
 }

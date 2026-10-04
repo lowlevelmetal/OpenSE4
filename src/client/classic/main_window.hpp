@@ -158,6 +158,7 @@ private:
     bool reportFromList_ = false;
     std::vector<game::VehicleId> tagged_;
     ReportTab tab_ = ReportTab::Detail;
+    ItemReportPopup itemReport_;   // a facility's or component's report, from a right-click on Facil or Comps
 
     Pick pick_ = Pick::None;
     std::string pickPrompt_;

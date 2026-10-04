@@ -298,14 +298,14 @@ void ReportPopup::openPlanet(game::ObjectId p) {
     planet_ = p;
     vehicle_.reset();
     pending_ = true;
-    if (tab_ == ReportTab::Components) tab_ = ReportTab::Facilities;
+    tab_ = ReportTab::Detail;
 }
 
 void ReportPopup::openVehicle(game::VehicleId v) {
     vehicle_ = v;
     planet_.reset();
     pending_ = true;
-    if (tab_ == ReportTab::Facilities) tab_ = ReportTab::Components;
+    tab_ = ReportTab::Detail;
 }
 
 void ReportPopup::draw(UiContext& ui) {
@@ -318,12 +318,16 @@ void ReportPopup::draw(UiContext& ui) {
     const game::Vehicle* v = vehicle_ ? ui.state().vehicle(*vehicle_) : nullptr;
     const float footer = ui.px(26) * 2 + ImGui::GetStyle().ItemSpacing.y * 2;
     ImGui::BeginChild("##body", ImVec2(0, -footer));
-    if (planet_) planetReport(ui, *planet_, tab_);
-    else if (v) vehicleReport(ui, *v, tab_);
+    std::optional<ItemRef> item;
+    if (planet_) item = planetReport(ui, *planet_, tab_, simulator_);
+    else if (v) item = vehicleReport(ui, *v, tab_, simulator_);
     else ImGui::TextColored(kTextDim, "No longer known");
     ImGui::EndChild();
+    if (item) item_.open(*item);
     tab_ = reportTabs(ui, tab_, planet_.has_value());
-    if (ImGui::Button("Close", ImVec2(-FLT_MIN, ui.px(26))) || escapePressed()) ImGui::CloseCurrentPopup();
+    const bool itemOpen = ImGui::IsPopupOpen("##itemreport");
+    if (ImGui::Button("Close", ImVec2(-FLT_MIN, ui.px(26))) || (!itemOpen && escapePressed())) ImGui::CloseCurrentPopup();
+    item_.draw(ui);
     ImGui::EndPopup();
 }
 
