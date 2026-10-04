@@ -448,11 +448,12 @@ Dialog::Dialog(const Painter& ui, const char* title, const Rect& rect, float but
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     visible_ = ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                                                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
-                                                ImGuiWindowFlags_NoScrollWithMouse);
+                                                ImGuiWindowFlags_NoScrollWithMouse | ui.windowFlags);
     ImGui::PopStyleVar(2);
     if (visible_) {
         drawWindowFrame(ui, ImGui::GetWindowDrawList(), rect_, title, buttonColumn_, contentFrame);
-        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+        // A window opened over another comes to the front with the keyboard (it is modal).
+        if (ImGui::IsWindowAppearing() && (ui.windowFlags & ImGuiWindowFlags_NoMouseInputs) == 0) ImGui::SetWindowFocus();
     }
 }
 

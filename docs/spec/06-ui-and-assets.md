@@ -37,7 +37,12 @@ Conventions that hold across the whole UI:
   and key at the top of the system panel (§2.3). No other control has a hint
   (confirmed: binary).
 - **Dialogs are modal.** While any window is open the main window takes no keys; each
-  dialog handles a few keys of its own (§3.4) (confirmed: binary).
+  dialog handles a few keys of its own (§3.4) (confirmed: binary). Our client follows this
+  since 2026-10-04: while a window or one of the game's questions is open, the main window
+  takes no input at all (command buttons and their hover hints, order strip, selectors,
+  report panel, map clicks and keys), and only the window in front takes input; the windows
+  behind it wait until it closes. End Turn is never carried out while a battle is fought
+  or asked about.
 - **Radio "lights".** Tab and filter buttons show a small green lamp when active; on/off
   options are rows with a lamp that is lit when set [S]. Lists scroll with up/down arrow
   buttons in a narrow column, not standard scrollbars [S].
@@ -2656,7 +2661,8 @@ the 800x600 layout in §2.1.1.
     nothing while one is open, and nothing while the turn is being ended or the movement
     log replayed. Esc and Enter close only some windows; §3.4 lists the keys of each
     kind. In Yes/No prompts Enter means No (confirmed: binary).
-    Our client follows §3.4 in its prompts: Yes/No boxes (Y; N, Esc and Enter mean No; the
+    Our client follows §3.4 in its prompts and, since 2026-10-04, makes every window and
+    question modal as above (§1): Yes/No boxes (Y; N, Esc and Enter mean No; the
     key that opened a box does not answer it), windows with Close (Esc and Enter), battle
     notices (Esc and Enter mean Begin), the Tactical/Strategic question (T and S) and Next
     Player (Esc and Enter), and its command and order buttons write the hint text of §2.3.

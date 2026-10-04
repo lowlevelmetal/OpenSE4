@@ -206,16 +206,19 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
     }
     // The other windows the step says nothing about are the player's.
     auto constrained = [&](std::string_view window) { return named(allowed, window) || named(look, window); };
-    // An outlined part another window the step names covers: that window's
-    // Close button (and its keys), the way back the lesson points at. A window
-    // the step says nothing about can be closed anyway.
+    // An outlined part another window the step names covers or (every window
+    // being modal) holds up: that window's Close button (and its keys), the
+    // way back the lesson points at. A window the step says nothing about can
+    // be closed anyway.
     for (const std::string& tag : step.highlight)
-        if (const auto cover = coveringWindow(tag, tags, openWindows); cover && constrained(*cover))
+        if (const auto cover = coveringWindow(tag, tags, openWindows, step.done.has_value()); cover && constrained(*cover))
             if (std::string close = *cover + ":close"; !contains(allowed, close)) allowed.push_back(std::move(close));
-    // The open windows, front first: where one lies, it decides.
+    // The open windows, front first: where one lies, it decides. Every window
+    // is modal: only the one in front responds, the ones behind it not at all.
     for (auto w = openWindows.rbegin(); w != openWindows.rend(); ++w)
         if (const TaggedArea* t = findTag(tags, "window:" + *w))
-            st.windows.push_back(LockWindow{*w, t->area, constrained(*w), {}, {}});
+            st.windows.push_back(LockWindow{*w, t->area, constrained(*w) || w != openWindows.rbegin(), {}, {}});
+    const bool modal = !openWindows.empty();
     // The choosers the step names options of, and those options ("*": all of them).
     std::vector<std::pair<const learn::ChoiceGroup*, std::vector<std::string_view>>> chosen;
     for (const auto* list : {&step.highlight, &step.allow})
@@ -252,8 +255,16 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
         }
         const auto window = windowOf(t.name);
         auto in = std::find_if(st.windows.begin(), st.windows.end(), [&](const LockWindow& w) { return window && w.id == *window; });
-        if (in != st.windows.end()) (act ? in->areas : in->lookAreas).push_back(t.area);
-        else (act ? st.areas : st.lookAreas).push_back(t.area);
+        if (in != st.windows.end()) {
+            // A window behind the one in front only shows its parts.
+            const bool front = in == st.windows.begin();
+            (act && front ? in->areas : in->lookAreas).push_back(t.area);
+        } else if (t.top) {
+            if (act) st.top.push_back(t.area);
+        } else {
+            // The main window's parts take no input while a window is open.
+            (act && !modal ? st.areas : st.lookAreas).push_back(t.area);
+        }
     }
     st.windowKeys = !openWindows.empty() && !constrained(openWindows.back());
     st.top.insert(st.top.end(), prompts.begin(), prompts.end());
@@ -275,9 +286,9 @@ LockState makeLockState(const learn::Step& step, const std::vector<TaggedArea>& 
             st.keys.push_back(KeyChord{ImGuiKey_Enter});
         }
     }
-    // Right-clicks in the main window: only where the step lists them.
+    // Right-clicks in the main window: only where the step lists them, and while no window is open.
     for (const TaggedArea& t : tags)
-        if (contains(step.rightClick, t.name) && !windowOf(t.name)) st.rightAreas.push_back(t.area);
+        if (!modal && contains(step.rightClick, t.name) && !windowOf(t.name)) st.rightAreas.push_back(t.area);
     for (const Action a : {Action::LessonText, Action::LessonNext, Action::LessonBack, Action::LessonSkip, Action::LessonReadMore, Action::ContextHelp}) addAction(a);
     return st;
 }
@@ -350,14 +361,17 @@ size_t LockState::parts() const {
     return n;
 }
 
-std::optional<std::string> coveringWindow(std::string_view tag, const std::vector<TaggedArea>& tags, const std::vector<std::string>& openWindows) {
+std::optional<std::string> coveringWindow(std::string_view tag, const std::vector<TaggedArea>& tags, const std::vector<std::string>& openWindows,
+                                          bool modal) {
     const TaggedArea* t = shownTag(tags, tag);
-    if (!t || isLessonTag(tag)) return std::nullopt;
+    if (!t || t->top || isLessonTag(tag)) return std::nullopt;
     // The windows in front of the one the part is in (all of them for the main window's parts).
     size_t first = 0;
     if (const auto own = windowOf(tag))
         if (const auto at = std::find(openWindows.begin(), openWindows.end(), *own); at != openWindows.end())
             first = size_t(at - openWindows.begin()) + 1;
+    // Every window is modal: to use the part, the window in front must close first.
+    if (modal) return first < openWindows.size() ? std::optional<std::string>(openWindows.back()) : std::nullopt;
     const ImVec2 middle = t->area.centre();
     for (size_t i = openWindows.size(); i-- > first;)
         if (const TaggedArea* w = findTag(tags, "window:" + openWindows[i]); w && w->area.contains(middle)) return openWindows[i];
@@ -368,9 +382,13 @@ Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& ta
     std::vector<std::string_view> targets;
     for (const std::string& t : step.highlight)
         if (!isLessonTag(t)) targets.push_back(t);
+    // An action step's outlines are to be used: a window in front of them holds
+    // them up (every window is modal). An explanation step's are to be seen:
+    // only a window over them is in the way.
+    const bool use = step.done.has_value();
     // Nothing to do while an outlined part can be used.
     for (std::string_view t : targets)
-        if (shownTag(tags, t) && !coveringWindow(t, tags, openWindows)) return {};
+        if (shownTag(tags, t) && !coveringWindow(t, tags, openWindows, use)) return {};
     auto uncover = [&](std::string_view target, std::string window) {
         Recovery r{Recovery::Kind::Uncover, std::string(target), std::move(window), {}, {}};
         if (std::string close = r.window + ":close"; shownTag(tags, close)) r.press = std::move(close);
@@ -383,7 +401,7 @@ Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& ta
     // free one is on screen (Construction Queues' list).
     for (std::string_view t : targets) {
         if (shownTag(tags, t)) {
-            if (auto cover = coveringWindow(t, tags, openWindows)) return uncover(t, std::move(*cover));
+            if (auto cover = coveringWindow(t, tags, openWindows, use)) return uncover(t, std::move(*cover));
             continue;
         }
         const auto window = windowOf(t);
@@ -392,7 +410,7 @@ Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& ta
         const std::vector<std::string> openers = learn::openersOf(*window);
         for (const std::string& o : openers) {
             if (!shownTag(tags, o)) continue;
-            if (auto cover = coveringWindow(o, tags, openWindows)) {
+            if (auto cover = coveringWindow(o, tags, openWindows, true)) {
                 if (!covered) covered = uncover(t, std::move(*cover));
                 continue;
             }
@@ -403,7 +421,7 @@ Recovery findRecovery(const learn::Step& step, const std::vector<TaggedArea>& ta
             if (!inner || contains(openWindows, *inner)) continue;
             for (const std::string& first : learn::openersOf(*inner)) {
                 if (!shownTag(tags, first)) continue;
-                if (auto cover = coveringWindow(first, tags, openWindows)) {
+                if (auto cover = coveringWindow(first, tags, openWindows, true)) {
                     if (!covered) covered = uncover(t, std::move(*cover));
                     continue;
                 }

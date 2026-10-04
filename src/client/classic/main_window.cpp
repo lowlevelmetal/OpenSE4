@@ -948,6 +948,11 @@ void MainWindow::update(UiContext& ui, bool blocked) {
 
     hintName_.clear();
     hintKey_.clear();
+    // Every window and question is modal (spec 06 §1, §3.4): while one is open,
+    // or the main window's own picker, the command buttons, order strip,
+    // selectors and report panel take no input (no click, no hover hint), and
+    // neither do the map panels and the keys (below).
+    inputBlocked_ = blocked || chooser_.has_value();
     statusBar(ui);
     commandPanel(ui);
     reportPanel(ui);
@@ -979,9 +984,8 @@ void MainWindow::drawChooser(UiContext& ui) {
     bool close = false;
     std::function<void()> chosen;
     if (d.open()) {
-        // A question of the main window's: over the classic windows (an order
-        // button can be clicked while one is open), and never covered by a
-        // tutorial's input lock.
+        // A question of the main window's, modal like every window, and never
+        // covered by a tutorial's input lock.
         ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
         ui.promptWindow();
         d.beginContent();
@@ -1088,7 +1092,7 @@ void MainWindow::commandPanel(UiContext& ui) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("##commands", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
+                                            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | blockedFlags());
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float x0 = geo.left;
     // While the movement log plays the command buttons and selectors are disabled (§7 Q51).
@@ -1235,7 +1239,7 @@ void MainWindow::reportPanel(UiContext& ui) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("##report", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
+                                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | blockedFlags());
     const float tabsY = geo.reportPanel.size().y - 31;
     bool tabsFor = false, planetTabs = false;
     const bool single = object_ || vehicle_;

@@ -485,8 +485,8 @@ main window. Scripts marked `# layouts: both` in their header comments work in b
 overrides their options; their pictures go to `<script>@800x600`), and `--only-small` plays
 only those runs. Script names may be patterns (`'tutorial-*'`). Every script is marked except
 those written for one layout: `lesson-panel`, `lesson-uncover` and `lesson-pager` play at
-800x600 only; `learn-resume` (no compact panel), `lesson-long-step` and `end-turn-question`
-(End Turn, which the Colonies window covers at 800x600) at 1024x768 only. A script that
+800x600 only; `learn-resume` (no compact panel) and `lesson-long-step` (two minutes of play)
+at 1024x768 only. A script that
 plays at both should not depend on the layout: give an order that may be on another page with
 `repeat 3 until { order = "..." }` around its click (once at 1024x768, the page arrow first at
 800x600), and wait for a row of a list with `wait-for`.
@@ -544,9 +544,10 @@ recorder is tested.
 | `lesson-rewind.script`, `lesson-rewind-simulator.script` | A window a step works in closed with its work (tutorial 4's designer, tutorial 6's Combat Simulator before and after its tactical battle, closed with Free Play since the lock refuses it): the lesson goes back to the first step that set the work up, says why and how to open the window again, and the steps are played again |
 | `lesson-keep-fleet.script`, `lesson-keep-queue.script`, `lesson-keep-strategies.script` | A window closed at a step that needs nothing it held (Fleet Transfer after the fleet was made, Research after the projects were chosen, the queue window after the ship was queued, the simulator at tutorial 6's Strategies): the lesson stays at that step, shows the way back (Construction Queues' list, not the order under it), and nothing is done twice |
 | `lesson-keyboard.script`, `lesson-double-next.script` | Keyboard navigation under the lock: Ctrl+Tab refused even from a text field, Tab within the window in front, Space and Enter pressing no button the keyboard was left on while Space still does what the step allows; a double click on the panel's Next moving one step |
-| `lesson-skip.script`, `lesson-long-step.script` | Skip only after ten seconds without a way back, and no cascade after it; no Skip on a step that waits on the turns |
+| `lesson-skip.script`, `lesson-long-step.script` | Skip only after ten seconds without a way back, and no cascade after it; no Skip on a step that waits on the turns; End Turn refused under a window, with the way back (close it) |
 | `lesson-prompt-keys.script`, `lesson-result-keys.script` | Keys that answer a lesson's questions are not also main-window keys; the notes after refused clicks and keys; Free Play off at a lesson's start |
-| `end-turn-question.script` | End Turn while a window is open: the question comes up over the window and takes the input |
+| `end-turn-question.script` | End Turn while a window is open does nothing, by click or key (every window is modal); with the window closed its question comes up and takes the input |
+| `modal-designer.script`, `modal-battle.script` | Every window is modal: under the ship designer and under a battle in Strategic Combat, End Turn (click, F12, Enter), the command buttons and their keys and the selectors do nothing; Esc goes to the window in front; once the window closes End Turn works |
 | `front-learn.script` | The intro's Tutorial and Scenario buttons, the Learn window's tabs, starting a lesson and leaving it |
 | `lesson-panel.script` | The lesson panel at 800x600 on a tutorial of our own in `tests/input/learn`: prompts and its Leave question over the panel dragged under them, placing itself again, the compact panel and More, its keys and Shift+F1 under the input lock |
 | `lesson-pager.script` | The order strip's pages at 800x600 on a tutorial of our own in `tests/input/learn`: an outlined order on another page outlined on its page arrow, the panel's hint to press it (and the note after a refused click), the way back first while a window covers the arrow, the arrow on an explanation step (docs/LEARNING.md "Getting back") |

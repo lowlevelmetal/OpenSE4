@@ -1,10 +1,10 @@
 # A step that waits on the turns (docs/LEARNING.md "The lesson panel"; docs/BUILDING.md
 # "Input scripts"): tutorial 2 at step 13, "Keep exploring", waits for five systems
 # explored. It is going as it should however long it takes: after two minutes Next is
-# still Next, not Skip. Then End Turn with the Colonies window open: its question comes up
-# over the window and takes the click.
-# 1024x768 only: at 800x600 the Colonies window covers End Turn (lesson-uncover.script plays
-# a covered outline there).
+# still Next, not Skip. Then End Turn with the Colonies window open: every window is modal,
+# so the lock refuses it and the lesson shows the way back, closing Colonies (Esc); then
+# End Turn's question takes the click.
+# 1024x768 only: two minutes of play are enough for one layout.
 options --tutorial=exploring-and-colonizing:13 --open=colonies --layout=1024x768 --size=1280x800
 timeout 9000
 
@@ -14,6 +14,11 @@ wait 7300
 assert-present item:Next in=lesson
 assert-absent item:Skip in=lesson
 assert-window colonies
+click tag:button:end-turn refused
+assert-present item:"hint:*Colonies*"
+assert-turn 0
+key Escape
+wait-closed colonies
 click tag:button:end-turn
 click item:Yes in="End Turn"
 wait-turn 1

@@ -169,9 +169,13 @@ std::optional<std::string_view> tagWindowId(std::string_view tag);
 
 // The open window that covers the middle of the tag's part: the front-most
 // one in front of the window the tag is in (any window, for the main
-// window's parts). `openWindows` back to front, as for makeLockState.
+// window's parts). `modal`: the window that holds the part up instead, for a
+// part to be used: every window is modal, so the window in front holds up
+// every part of the windows behind it and of the main window, wherever it
+// lies. `openWindows` back to front, as for makeLockState. A part drawn in a
+// prompt or popup (TaggedArea::top) or the lesson's own is never covered.
 std::optional<std::string> coveringWindow(std::string_view tag, const std::vector<TaggedArea>& tags,
-                                          const std::vector<std::string>& openWindows);
+                                          const std::vector<std::string>& openWindows, bool modal = false);
 
 // How the player gets back to a step whose outlined parts cannot be used.
 struct Recovery {

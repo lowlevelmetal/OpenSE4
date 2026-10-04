@@ -166,6 +166,9 @@ struct Painter {
     float textScale = 1.0f;
     // In a game: where widgets register their UI tags (the lists' arrow column); null elsewhere.
     UiContext* tagger = nullptr;
+    // Flags every classic window drawn with it adds (UiContext::windowFlags: a
+    // window behind the one in front takes no input).
+    ImGuiWindowFlags windowFlags = 0;
 
     float k() const { return map.scale / fbScale; }
     float px(float framePixels) const { return framePixels * k(); }
@@ -179,13 +182,19 @@ struct Painter {
 
 class UiContext;
 
+// Every classic window is modal (docs/spec/06 §1, §3.4, confirmed: binary):
+// while one is open the main window takes no input, and only the window in
+// front (the one opened last) does; the windows behind it wait until it closes.
 class Screen {
 public:
     virtual ~Screen() = default;
     // Draws the window; returns false once it should close.
     virtual bool draw(UiContext& ui) = 0;
-    // Screens that block the main window (modal) dim it and take all input.
-    virtual bool modal() const { return false; }
+    // Every window is modal; the battle windows still say so themselves.
+    virtual bool modal() const { return true; }
+    // Windows that belong to the window under them (a report about something in
+    // it) close with it: when that window closes, they close too.
+    virtual bool closesWithParent() const { return false; }
 };
 
 class UiContext {
@@ -227,7 +236,16 @@ public:
     }
     ImVec2 size(Vec2 frameSize) const { return {frameSize.x * k(), frameSize.y * k()}; }
     float px(float framePixels) const { return framePixels * k(); }
-    Painter painter() const { return {art, fonts, map, fbScale, textScale}; }
+    Painter painter() const { return {art, fonts, map, fbScale, textScale, nullptr, windowFlags()}; }
+
+    // The window being drawn lies behind the one in front (every window is
+    // modal): it takes no mouse or keyboard input. Set by the mode around
+    // each Screen::draw; every root window a screen begins adds windowFlags().
+    bool behind = false;
+    ImGuiWindowFlags windowFlags() const {
+        return behind ? ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoFocusOnAppearing
+                      : ImGuiWindowFlags_None;
+    }
 
     // UI tags of this frame (cleared at its start): `window:<id>` for each
     // window (Dialog registers it), the main window's buttons and panels and

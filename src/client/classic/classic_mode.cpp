@@ -497,6 +497,7 @@ ClassicMode::~ClassicMode() {
     if (navKeyboardOff_) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     keepLessonPlace();   // quitting the program during a tutorial
     screens_.clear();
+    parentOf_.clear();
     lesson_.reset();
     ui_.reset();
     session_.reset();
@@ -517,6 +518,7 @@ void ClassicMode::applyLayout() {
 void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     keepLessonPlace();   // the game it replaces may be a tutorial's
     screens_.clear();
+    parentOf_.clear();
     lesson_.reset();
     lock_.set({});
     session_ = std::move(session);
@@ -659,6 +661,7 @@ void ClassicMode::keepLessonPlace() {
 void ClassicMode::quitToLearn(learn::LessonKind kind) {
     keepLessonPlace();
     screens_.clear();
+    parentOf_.clear();
     lesson_.reset();
     lock_.set({});
     ui_.reset();
@@ -703,20 +706,43 @@ void ClassicMode::openScreen(ScreenId id, ScreenArgs args) {
     // (windows with arguments are replaced so they show the new target).
     for (auto it = screens_.begin(); it != screens_.end(); ++it)
         if (it->first == id) {
+            parentOf_.erase(it->second.get());
             screens_.erase(it);
             break;
         }
     if (auto screen = makeScreen(id, args)) {
         // Tactical Combat and a Combat Replay start a combat track; nothing switches back after tactical combat.
         if (id == ScreenId::TacticalCombat || id == ScreenId::CombatReplay) cueMusic(MusicCue::CombatOpened);
+        if (!screens_.empty()) parentOf_[screen.get()] = screens_.back().first;
         screens_.emplace_back(id, std::move(screen));
     }
 }
 
+void ClassicMode::closeChildren(std::vector<ScreenId> closed) {
+    // A report opened from a window (the Race Report from Empires) closes with
+    // that window. Every window is modal, so its parent cannot close while it is
+    // open; this covers a parent closed by the game.
+    for (size_t at = 0; at < closed.size(); ++at)
+        for (size_t i = 0; i < screens_.size();) {
+            const auto parent = parentOf_.find(screens_[i].second.get());
+            if (parent != parentOf_.end() && parent->second == closed[at] && screens_[i].second->closesWithParent()) {
+                closed.push_back(screens_[i].first);
+                parentOf_.erase(parent);
+                screens_.erase(screens_.begin() + std::ptrdiff_t(i));
+            } else {
+                ++i;
+            }
+        }
+}
+
 void ClassicMode::endTurn() {
-    if (!session_ || session_->waitingForOthers()) return;
+    // Never while a battle is being fought or asked about: it is part of the turn
+    // being processed. The main window's End Turn is unavailable then anyway
+    // (every window and question is modal).
+    if (!session_ || session_->waitingForOthers() || session_->tactical() || session_->battleQuestion()) return;
     audio().play("endturn");
     screens_.clear();
+    parentOf_.clear();
     const BusyPointer busy;  // the Hourglass while the turn is processed (§5.8)
     session_->endTurn();
 }
@@ -869,6 +895,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         handoffPassword_.clear();
         handoffError_.clear();
         screens_.clear();
+        parentOf_.clear();
         // Battles the previous player was to watch stay theirs (the Log's Combat Replay keeps them).
         strategicQueue_.clear();
     }
@@ -900,36 +927,48 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     const bool asking = screens_.empty() && !session_->questions().empty() && !battleAsking;
     const std::optional<game::ObjectId> choosing = screens_.empty() && !asking && !battleAsking ? colonyTypeChoice(ui) : std::nullopt;
 
-    // Classic windows are modal: while one is open the main window takes no
-    // input; nor while a question waits for its answer: the End Turn question,
-    // a popup (the lesson's "Leave the lesson?" and result, a host's question)
-    // or a message box. The key that answers one (N, Enter) is not also a
-    // main-window key (Change Name, End Turn).
+    // Classic windows are modal (spec 06 §1, §3.4): while one is open the main
+    // window takes no input, not its command buttons, order strip, selectors,
+    // panels, map clicks or keys; nor while a question waits for its answer:
+    // the End Turn question, a popup (the lesson's "Leave the lesson?" and
+    // result, a host's question) or a message box. The key that answers one
+    // (N, Enter) is not also a main-window key (Change Name, End Turn).
     const bool prompted = asking || battleAsking || choosing.has_value() || confirmEndTurn_ || !lessonError_.empty() ||
                           ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
-    main_.update(ui, !screens_.empty() || prompted);
+    const bool modalOpen = !screens_.empty() || prompted || session_->tactical() != nullptr;
+    modalOpen_ = modalOpen;
+    main_.update(ui, modalOpen);
     drawNetwork(ui);
     drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
     if (choosing) drawColonyTypeChoice(ui, *choosing);
 
-    // Windows, oldest first; the newest draws on top.
+    // Windows, oldest first; the newest draws on top. Every window is modal:
+    // only the one in front takes input, the ones behind it wait (ui.behind).
+    std::vector<ScreenId> closed;
+    classicWindows_.clear();
     for (size_t i = 0; i < screens_.size();) {
         ImGui::PushID(int(i));
         ui.drawing = screens_[i].first;   // its Dialog registers window:<id>
         ui.windowTagged = false;
         ui.drawingWindow = 0;
+        ui.behind = i + 1 < screens_.size();
         const script::ItemScope scope(windowId(screens_[i].first));
         const bool keep = screens_[i].second->draw(ui);
+        ui.behind = false;
         ui.drawing.reset();
         ImGui::PopID();
+        if (ui.drawingWindow != 0) classicWindows_.push_back(ui.drawingWindow);
         if (keep) {
             frontWindow_ = ui.drawingWindow;
             ++i;
         } else {
+            closed.push_back(screens_[i].first);
+            parentOf_.erase(screens_[i].second.get());
             screens_.erase(screens_.begin() + std::ptrdiff_t(i));
         }
     }
+    closeChildren(std::move(closed));
     if (screens_.empty()) frontWindow_ = 0;
     if (battleAsking) drawBattleQuestion(ui);
     updateLesson(ui, prompted);
@@ -939,16 +978,19 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
 
     if (ui.requests.endTurn) {
         ui.requests.endTurn = false;
-        // The Empire Options' "confirm ending the turn" (spec 06 §1.9).
-        if (ui.options().confirmEndTurn) confirmEndTurn_ = true;
-        else endTurn();
+        // Only the main window asks, and it takes no input while a window or a
+        // question is open; never during a battle (endTurn()).
+        if (!modalOpen) {
+            // The Empire Options' "confirm ending the turn" (spec 06 §1.9).
+            if (ui.options().confirmEndTurn) confirmEndTurn_ = true;
+            else endTurn();
+        }
     }
     if (confirmEndTurn_) {
         // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06
         // §3.4). The key that asked for the end of the turn does not answer it.
-        // It is modal: over every window (End Turn works while one is open) and
-        // it takes the input until it is answered. Another popup (a lesson's
-        // result) goes first.
+        // It is modal and takes the input until it is answered. Another popup
+        // (a lesson's result) goes first.
         constexpr const char* kEndTurn = "End Turn";
         if (!ImGui::IsPopupOpen(kEndTurn) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) ImGui::OpenPopup(kEndTurn);
         ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 300) * 0.5f), std::floor((frameH() - 110) * 0.5f)}));
@@ -996,6 +1038,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ui.requests.quitToIntro = false;
         keepLessonPlace();
         screens_.clear();
+        parentOf_.clear();
         lesson_.reset();
         lock_.set({});
         ui_.reset();
@@ -1054,17 +1097,20 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
 void ClassicMode::keepFocusOnFrontWindow() {
     // Classic windows are modal (docs/spec/06 §1): while one is open the
     // keyboard belongs to the one in front, so that Esc and Enter close it
-    // (Dialog::close). Dear ImGui gives the focus to whatever was clicked or
-    // focused before, which can be one of the main window's own panels (a
-    // command button that opened the window above, which has closed since).
+    // (Dialog::close), and it is drawn over the others. Dear ImGui gives the
+    // focus to whatever was clicked or focused before, which can be one of the
+    // main window's own panels (a command button that opened the window above,
+    // which has closed since) or a window that has come back to the front.
     ImGuiContext& g = *ImGui::GetCurrentContext();
     if (frontWindow_ == 0 || g.ActiveId != 0 || ImGui::IsAnyMouseDown() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
         return;
     ImGuiWindow* front = ImGui::FindWindowByID(frontWindow_);
     const ImGuiWindow* nav = g.NavWindow ? g.NavWindow->RootWindow : nullptr;
     if (!front || nav == front) return;
-    // A prompt (one that appeared this very frame too), the lesson panel, the chat.
-    if (nav && (nav->Active || nav->WasActive) && !MainWindow::ownsWindow(nav->ID)) return;
+    // A prompt (one that appeared this very frame too), the lesson panel, the chat;
+    // not a window behind the one in front.
+    const bool behind = nav && std::find(classicWindows_.begin(), classicWindows_.end(), nav->ID) != classicWindows_.end();
+    if (nav && (nav->Active || nav->WasActive) && !MainWindow::ownsWindow(nav->ID) && !behind) return;
     ImGui::FocusWindow(front);
 }
 
@@ -1182,8 +1228,9 @@ void ClassicMode::drawPbem(UiContext& ui) {
     ImGui::SetNextWindowSize(ui.size({478, 50}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
+    // Its Main Menu button is the main window's: not while a window or question is open.
     ImGui::Begin("##pbemstatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                              ImGuiWindowFlags_NoBringToFrontOnFocus);
+                                              ImGuiWindowFlags_NoBringToFrontOnFocus | (modalOpen_ ? ImGuiWindowFlags_NoMouseInputs : 0));
     const ImVec4 gold(1, 0.85f, 0.45f, 1);
     if (!session_->ordersFile().empty()) {
         if (ImGui::SmallButton("Main Menu")) ui.requests.quitToIntro = true;
