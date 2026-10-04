@@ -47,6 +47,20 @@ void fatal(const std::string& message) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenSE4", message.c_str(), nullptr);
 }
 
+// Neither renderer started: what the game needs, what to do about it, and why each
+// one failed. Older systems (Windows 7 among them) seldom have a Vulkan 1.3
+// driver, so there the OpenGL 3.3 of the graphics card maker's driver is what counts.
+std::string noRendererMessage(const std::string& vulkanError, const std::string& openglError) {
+    std::string text =
+        "OpenSE4 found no graphics driver to draw with. It needs Vulkan 1.3 or OpenGL 3.3.\n\n"
+        "Install the current driver for your graphics card from its maker (NVIDIA, AMD or Intel). "
+        "The basic display driver that comes with Windows has no OpenGL 3.3, and a Remote "
+        "Desktop session may have none either.\n";
+    if (!vulkanError.empty()) text += "\nVulkan: " + vulkanError;
+    text += "\nOpenGL: " + openglError;
+    return text;
+}
+
 } // namespace
 
 int App::run(const AppOptions& options) {
@@ -162,6 +176,7 @@ bool App::createWindowAndDevice() {
                                    (options_.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
     gfx::DeviceOptions deviceOptions{options_.vsync, options_.validation};
     std::string error;
+    std::string vulkanError;  // why Vulkan did not start, for the message if OpenGL does not either
 
     if (options_.renderer != AppOptions::Renderer::OpenGL) {
         window_ = SDL_CreateWindow("OpenSE4", options_.width, options_.height, common | SDL_WINDOW_VULKAN);
@@ -180,6 +195,7 @@ bool App::createWindowAndDevice() {
                 return false;
             }
             log::warn("Vulkan unavailable ({}); falling back to OpenGL", error);
+            vulkanError = error;
         }
     }
 
@@ -199,7 +215,7 @@ bool App::createWindowAndDevice() {
         }
         device_ = gfx::createOpenGLDevice(window_, deviceOptions, error);
         if (!device_) {
-            fatal("No usable renderer. Vulkan 1.3 or OpenGL 3.3 is required.\n\n" + error);
+            fatal(noRendererMessage(vulkanError, error));
             return false;
         }
     }
