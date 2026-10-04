@@ -1941,11 +1941,13 @@ object. Nothing about the target is checked when it is picked; the order's own t
 it is carried out (spec 03 §8). In a turn-based game the selected vehicle's orders then run at
 once.
 
-Since 2026-10-04 our client follows (§7 Q100). Its prompt is still its own ("Colonize: pick
-a planet" and similar, at the bottom left of the system panel). It still differs in one
-point: it takes the candidates from the stellar objects the sector shows, so a planet hidden
-from the player is not offered; the original's Colonize candidates include it (spec 03 §19
-Q80).
+Since 2026-10-04 our client follows (§7 Q100), the Colonize candidates included: every planet
+of the clicked sector, hidden ones too, and one alone gives the order at once (spec 03 §19
+Q80; `colonizeCandidates`, `pickStep`). Its prompt is still its own ("Colonize: pick a planet"
+and similar, at the bottom left of the system panel). It differs in network and e-mail games:
+a player's view there holds no foreign colony whose planet that player does not see (spec 05
+§9.5), so such a colony is no candidate, while an uncolonized planet that a storm or a nebula
+hides is (docs/PARITY_GAPS.md).
 
 ---
 

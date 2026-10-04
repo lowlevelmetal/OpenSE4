@@ -2016,8 +2016,9 @@ binary).
     carries no people, it first gives a Load Cargo (population) order where the ship is
     (usually the yard that built it); then Move To the planet's sector, then Colonize. So
     an AI colony starts with the people the ship carried, dropped under the Drop Cargo
-    rules (spec 03 §8). OpenSE4 gives the single Colonize order of spec 03 §8, which loads
-    colonists where the ship is and has the same effect.
+    rules (spec 03 §8). OpenSE4's minister gives the single Colonize order of spec 03 §8,
+    which `cmd::SetOrders` expands as it expands a player's: Load Cargo (population) where
+    the ship is when it carries none, Move To the planet's sector, Colonize. The same orders.
   - *On the way and on arrival* (confirmed: binary): these are ordinary orders. The Move To
     follows the usual movement rules (spec 03 §6) and knows nothing of the target; nothing
     re-checks the planet until the Colonize heads the list in its sector, where the tests of
@@ -2032,7 +2033,8 @@ binary).
     when the empire gains a sensor there that reaches the obscuration, the obscuring storm or
     nebula is destroyed, another target takes the ship first, or the planet stops being a
     target. In a simultaneous game each failure writes the "Unable to
-    Colonize" entry in the empire's log. Our engine differs: §7 Q78.
+    Colonize" entry in the empire's log. OpenSE4 follows since 2026-10-04 (§7 Q78), the
+    loop included.
 - **Logistics ministers** (confirmed: binary unless marked).
   - *Transports*: an idle population transport that carries people and whose used cargo
     space (people and units) is more than half its capacity delivers; otherwise it runs the
@@ -3252,7 +3254,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 23. **Colonists on AI colony ships** (§7.5): answered (confirmed: binary). The Colonization
     minister orders Load Cargo (population) where the ship is when it has cargo space and
     carries no people, then Move To and Colonize, so an AI colony starts with the people
-    the ship carried. OpenSE4's single Colonize order has the same effect.
+    the ship carried. OpenSE4's single Colonize order is expanded into these three orders
+    when it is given (`cmd::SetOrders`).
 24. **Turn order details** (§8): answered (confirmed: binary). Item by item:
     - The turn number: the original advances the date at step 3, and every later step sees
       the new date, the ministers included (§7.5 "The date"). OpenSE4 keeps the old number
@@ -4482,13 +4485,14 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     Colonize's sight test on arrival fails at a planet the empire cannot see there; the ship
     is then idle and is often given the same planet again, failing turn after turn until the
     sight changes (§7.5 "On the way and on arrival", spec 03 §8).
-    Our engine differs:
-    - Its Colonize does not test the sight of an uncolonized planet (spec 03 §19 Q80), so its
-      computer players settle planets in nebulae and storms that the original's cannot.
-    - A computer player's single Colonize order travels itself and gives up on its way once no
-      group member could settle the planet (an OpenSE4 rule, inferred), which also contradicts
-      Q35: the original keeps flying and fails on arrival. To match, nothing should be checked
-      before the planet's sector.
-    - With both changed, our computer players will loop at hidden planets as the original's
-      do. Leaving such a planet out of the targets after a failure would be an OpenSE4 choice
-      of its own, to be marked as one; the original has nothing of the kind.
+    Since 2026-10-04 our engine follows:
+    - Its Colonize tests the sight of the planet itself, colonized or not (spec 03 §19 Q80), so
+      its computer players no longer settle planets that a storm, a nebula or their own
+      obscuration hides from them; they fail there on arrival.
+    - The minister's single Colonize was already expanded into Load Cargo, Move To and
+      Colonize when given (`cmd::SetOrders`), so nothing checked it on the way in a game; the
+      give-up branch of `colonize()` served only lists set without the expansion, and now
+      checks nothing before the planet's sector either (Q35).
+    - Their targets keep no sight test, and nothing is added to avoid the loop: our computer
+      players keep failing at a hidden planet as the original's do (spec 07 "The Colonize sight
+      test", 2026-10-04, measures it).

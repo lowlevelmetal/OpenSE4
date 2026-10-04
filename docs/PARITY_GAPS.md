@@ -145,14 +145,21 @@ implemented the same day:
   simultaneous game by one "Unable to Colonize" entry from the Colonization Minister with the
   picture `OrdersNotCompleted`.
 
-A planet hidden from its colonizer, settled from the executable on 2026-10-04 (spec 03 §19 Q80,
-spec 05 §7 Q78):
+A planet hidden from its colonizer, settled from the executable and implemented on 2026-10-04
+(spec 03 §19 Q80, spec 05 §7 Q78):
 
-| Item | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| The Colonize sight test (`movement.cpp` `colonize()`) | Only a colony the owner does not detect counts as unseen; an empty planet hidden by a storm, a nebula or its own obscuration is settled | The detection rule for the ship's owner applied to the planet, colonized or not, with the colonizing ship's sensors counted: a planet whose obscuration is above every sensor level the owner (or a partner) has in the system fails as "no planet here to colonize" (`sight::canSeeColony` is that rule) (spec 03 §8 "Seen") | M |
-| A computer player's Colonize on its way (`colonize()`, target in another sector) | Gives up as soon as no member could settle the planet (OpenSE4, inferred) | Load Cargo, Move To, Colonize as ordinary orders; nothing is checked before the Colonize runs in the planet's sector, so a ship whose target was taken flies on and fails on arrival (spec 05 §7.5, §7 Q35, Q78) | L |
-| A hidden target afterwards (`ai.cpp` targets, `ai_explore.cpp` `planColonization`) | No loop, since the test above is missing | No sight test in the targets: the failed ship is idle, the planet a target again, and the ship often gets it again, failing every turn until the sight changes. Avoiding the loop would be an OpenSE4 choice of its own, to be marked as such (spec 05 §7.5 "On the way and on arrival") | L |
+- **The Colonize sight test** (`movement.cpp` `colonize()`, `movement::colonizeProblem`): the
+  detection rule for the ship's owner applied to the planet, colonized or not, with the sensors
+  of the moment, the colonizing ship's counted, before the movement test (spec 03 §8 "Seen").
+- **Nothing checked on the way**: the computer players' Colonize was already Load Cargo, Move
+  To and Colonize once given (`cmd::SetOrders`); the branch for a Colonize away from its planet
+  (lists set without that expansion) checks nothing before the planet's sector either.
+- **The loop** at a hidden planet is the original's and is kept: the targets apply no sight
+  test, and no rule of ours avoids it (spec 05 §7.5 "On the way and on arrival"). In the pace
+  set-up of spec 07 no game changed, since no generated galaxy holds a hidden planet; spec 07
+  "The Colonize sight test" measures a variant with hidden planets.
+
+No row remains.
 
 ## Combat (spec 04)
 
@@ -590,9 +597,16 @@ same day:
 
 Settled on 2026-10-04 with spec 03 §19 Q80:
 
+- **Colonize candidates** (`MainWindow::pickCandidates`, `colonizeCandidates`): every planet
+  of the clicked sector of an explored system, hidden ones included and listed by name; one
+  hidden planet alone is taken without a window (spec 06 §2.9, spec 03 §8). Implemented on
+  2026-10-04.
+
+What remains, in network and e-mail games only:
+
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Colonize candidates (`MainWindow::pickCandidates`) | The planets the sector shows, so a planet a storm, a nebula or a colony's cloak hides from the player is left out | Every planet of the clicked sector of an explored system, hidden ones included and listed by name; one hidden planet alone is taken without a window (spec 06 §2.9, spec 03 §8) | L |
+| Colonize candidates in a network or e-mail game | A foreign colony whose planet the player does not see (its cloak, a storm, a nebula) is not in the player's view at all (`game::redactForEmpire`, spec 05 §9.5), so it is no candidate; an uncolonized hidden planet is | Every player holds the whole game (spec 05 §9.2), so such a planet is listed like any other | L; keeping the planet in the view without its colony would show it as an uncolonized planet the panel draws, so matching needs the view to say which planets are hidden, a protocol change of its own |
 
 ## Computer player (spec 05 §7)
 
@@ -755,7 +769,8 @@ seed 19 on 2026-10-02, to seed 42 later that day (the varied battles to seed 19,
 invasion still lands), and to seed 35 with the budget rule, whose games still cover
 battles, events, intelligence and politics. The simultaneous golden game moved to seed 39
 with the placement spread of spec 01 §3.6 (2026-10-03): seed 35 placed the homes closer and
-fought no battle.
+fought no battle. It moved to seed 38 with the Colonize sight test (2026-10-04): seed 39
+fought four battles, below the five the coverage asks for.
 
 Found under a debugger on 2026-10-02 (spec 05 §7.2, §7.5, questions 65–71; spec 07
 "Battles, bases and the first turns under a debugger"; confirmed: binary) and implemented

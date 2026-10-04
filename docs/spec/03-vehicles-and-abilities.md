@@ -2481,19 +2481,21 @@ rules in §8); this one is ours:
       players can keep failing at a hidden planet turn after turn, as ours did with the full
       test.
 
-    Our engine differs:
-    - `colonize()` (`movement.cpp`) treats as unseen only a planet whose colony the owner does
-      not detect. It should apply the detection rule to the planet itself, colonized or not
-      (`sight::canSeeColony` already is that rule applied to a planet), so a planet hidden by
-      a storm, a nebula or its own obscuration fails with "There is no planet here to colonize."
-    - A computer player's Colonize travels itself and gives up on its way once no member could
-      settle the planet (`colonize()`, the branch for a target in another sector), an OpenSE4
-      rule (inferred) that also contradicts spec 05 §7 Q35 (the original keeps flying and fails
-      on arrival). To match, the computer players' Colonize should check nothing before
-      arrival, as a player's does.
-    - Matching the original brings back the loop at hidden planets (spec 05 §7 Q78). Avoiding
-      it would be an OpenSE4 choice of its own, to be marked as such (for instance leaving out
-      of the targets a planet the empire failed to see on arrival); the original has none.
-    - Our client's Pick Object (`MainWindow::pickCandidates`) takes its candidates from the
-      stellar objects the sector shows, so it leaves out hidden planets; the original lists
-      them (spec 06 §2.9).
+    Since 2026-10-04 our engine follows:
+    - `colonize()` (`movement.cpp`) applies the detection rule for the group's owner to the
+      planet, colonized or not (`sight::canSeeColony`), with the sensors of the moment, the
+      colonizing group's own counted, before the movement test, so a planet hidden by a storm,
+      a nebula, its own obscuration or an undetected colony's cloak fails at once with "There is
+      no planet here to colonize.", and a detected cloaked colony as "already a colony".
+      `movement::colonizeProblem` applies the same test.
+    - Every order given, the computer players' included, is Load Cargo, Move To and Colonize
+      (`cmd::SetOrders` expands the minister's single Colonize, spec 05 §7.5), so their ships
+      already checked nothing on the way; the give-up branch of `colonize()` applied only to a
+      list set without that expansion (tools, tests). That branch now checks nothing either: a
+      Colonize away from its planet travels there as the Move To it stands for and is carried
+      out in the arriving action.
+    - The computer players' targets keep no sight test, so their colony ships loop at a hidden
+      planet as the original's do (spec 05 §7 Q78); OpenSE4 adds no rule to avoid it.
+    - The client's Pick Object takes the Colonize candidates from every planet of the clicked
+      sector of an explored system, hidden ones included (`colonizeCandidates`,
+      `client/classic/sector_view.hpp`); one alone gives the order at once (spec 06 §2.9).

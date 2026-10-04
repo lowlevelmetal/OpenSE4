@@ -1911,6 +1911,60 @@ and a colony ship, and the turns were ended until they were built.
   engines, armour or weapons. A right-click on an engine in the Comps grid opened its
   Component Report, whose Abilities hold the engine's two sentences.
 
+### The Colonize sight test (OpenSE4, 2026-10-04)
+
+Measured when the engine took up the rules of spec 03 §19 Q80 and spec 05 §7 Q78: the
+Colonize tests the sight of the planet itself, colonized or not; a Colonize away from its
+planet checks nothing on its way; the computer players' targets keep no sight test, so their
+colony ships loop at a hidden planet as the original's do. Set-up as in "Pace after the second
+debugger round": a Small quadrant of the first quadrant type, simultaneous turns, the Terran
+preset and four random computer players (drawn as the setup draws them), five computer
+players, 100 `processTurn` calls, the waiting happiness events dropped after each turn; seeds
+1–240, a scratch program (not tracked). Before: the engine at ae78de1; after: with the rules.
+Means per empire. A ship "in a loop" failed with "There is no planet here to colonize." at
+least twice in one place; "idle" counts the colony ships with no orders at a turn's end.
+
+**The pace set-up: no game changed.** The 240 games' records are identical before and after,
+turn by turn. No generated galaxy holds a planet hidden from base sensors (EM Active 1): over
+20 seeds of each of the six quadrant types and three sizes, the nebula systems (about 2.3 in a
+Small galaxy) hold no planet, and no obscuring storm (about 4.5 in a Small galaxy) shares a
+planet's sector. No planet became hidden during the 240 games either (no "no planet here"
+failure), and the computer players' Colonize was already Load Cargo, Move To and Colonize once
+given, so nothing checked it on its way before the change.
+
+| | Original | Before and after |
+|---|---|---|
+| Colonies at turns 25 / 50 / 75 / 100 | 5.3 / 12.2 / 16.6 / 17.0 (five games at 50–100) | 6.0 / 11.3 / 14.5 / 15.8 |
+| Colonies founded, turns 1–25 / 26–50 / 51–75 / 76–100 | | 5.0 / 6.1 / 4.8 / 3.4 |
+| Colonies founded or taken per 25 turns, turns 51–100; lost | 2.8–6.3 (4.5); 1.7–3.1 (six games) | 4.1; 1.9 |
+| Colony ships at turns 50 / 100; of them idle | | 1.8 / 2.2; 0.4 / 0.4 |
+| Colony ships built, turns 1–100 | | 24.0 |
+| Failed Colonize orders: no planet here; already a colony; other | | 0; 0.35; 0.36 |
+
+**A variant with hidden planets.** To see what the loop costs, every tenth planet without a
+colony at the start (by object number; 28.7 a game) was given its own `Sector - Sight
+Obscuration` of 3, as a planet in an obscuring storm's sector has. Before the change the
+computer players settled these planets like any other; after it their colony ships fail there.
+
+| | Before | After |
+|---|---|---|
+| Colonies at turns 25 / 50 / 75 / 100 | 6.0 / 11.3 / 14.5 / 15.7 | 5.2 / 8.5 / 10.4 / 11.5 |
+| Colonies founded, turns 1–25 / 26–50 / 51–75 / 76–100 | 5.0 / 6.0 / 4.6 / 3.1 | 4.2 / 3.8 / 2.8 / 1.9 |
+| Colonies founded or taken per 25 turns, turns 51–100; lost | 3.9; 1.7 | 2.3; 0.9 |
+| Colony ships at turns 50 / 100; of them idle | 1.7 / 2.0; 0.4 / 0.4 | 2.0 / 2.6; 1.0 / 1.1 |
+| Colony-ship turns idle, turns 1–50 / 51–100 | 14.7 / 20.5 | 29.7 / 51.7 |
+| Colony ships built, turns 1–100 | 23.0 | 16.5 |
+| "No planet here" failures, turns 1–100; repeats by one ship in one place | 0.03; 0 | 60.0; 57.0 |
+| Ships in a loop, per game; still in it at turn 100 | 0; 0 | 11.8; 4.2 |
+
+Paired changes at turns 50 and 100: −2.8 and −4.3 colonies (standard errors 0.11 and 0.19).
+A looping ship fails every turn and stays there until the sight changes or another target
+takes it first; the empires also built fewer colony ships. About a third of the ships that
+ever looped were still looping at turn 100. So
+the loop matters only where planets are hidden, which no generated galaxy has at the start:
+created storms and nebulae, ships that obscure their sector and cloaked colonies can make
+them during play.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
