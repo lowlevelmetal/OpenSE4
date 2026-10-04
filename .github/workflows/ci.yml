@@ -328,57 +328,58 @@ jobs:
           if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'opense4.exe --help did not exit' }
           if ($p.ExitCode -ne 0) { throw "opense4.exe --help exited with $($p.ExitCode)" }
 
+  # The Windows release packages, made as tools/package_release.sh makes them for a
+  # release: cross-built on Linux with the pinned llvm-mingw for msvcrt.dll
+  # (cmake/toolchains/llvm-mingw-x86_64.cmake), so that they run on Windows 7 SP1 to
+  # 11 without the Universal C Runtime. The script checks each program's imports
+  # against Windows 7 SP1 (tools/check_windows_imports.py) and runs the tests under
+  # Wine; the next job installs the package on Windows.
   windows-mingw:
-    name: Windows / MinGW-w64 package
-    runs-on: windows-2025
+    name: Windows / llvm-mingw package (Windows 7 to 11)
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
-    defaults:
-      run:
-        shell: msys2 {0}
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 1G
-      CCACHE_COMPILERCHECK: content
     steps:
-      - name: Check out without CRLF conversion
-        shell: pwsh
-        run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Set up MSYS2 (UCRT64)
-        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
-        with:
-          msystem: UCRT64
-          install: >-
-            git
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-shaderc
-            mingw-w64-ucrt-x86_64-ccache
-            mingw-w64-ucrt-x86_64-libarchive
-            mingw-w64-ucrt-x86_64-nsis
+      # glslc for the shaders, NSIS for the installer, bsdtar for the zip and Wine
+      # for the tests. The toolchain itself comes with the configure step.
+      - name: Install the build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends glslc nsis libarchive-tools ccache wine wine64
+          cmake --version | head -1
+          makensis -VERSION
+          wine --version
 
-      - name: Restore the compiler cache
+      # llvm-mingw (about 80 MB), fetched and checked against its SHA-256 by the
+      # configure step when the cache does not have it.
+      - name: Restore the Windows toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .ccache
-          key: ccache-windows-mingw-${{ github.sha }}
-          restore-keys: ccache-windows-mingw-
+          path: build/_tools/llvm-mingw-*
+          key: llvm-mingw-${{ runner.os }}-${{ hashFiles('cmake/toolchains/llvm-mingw-x86_64.cmake') }}
+
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: windows-llvm-mingw
+          max-size: 1G
+          evict-old-files: job
 
       # The release configuration (static, resources built in), as
       # tools/package_release.sh builds it; the settings here stay in its cache.
       # Without precompiled headers (SDL uses them), so that ccache can cache SDL.
       - name: Configure
         run: |
-          git config --global --add safe.directory '*'
-          g++ --version | head -1
-          cmake --preset dist-mingw -DOPENSE4_WARNINGS_AS_ERRORS=ON -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
+          cmake --preset dist-windows -DOPENSE4_WARNINGS_AS_ERRORS=ON -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          grep -E '^(CMAKE_CXX_COMPILER|LLVM_MINGW_DIR)' build/dist-windows/CMakeCache.txt
 
-      - name: Build, test and package
+      - name: Build, check the imports, test and package
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
         run: tools/package_release.sh windows
 
       - name: Compiler cache statistics
@@ -411,6 +412,13 @@ jobs:
         with:
           name: opense4-windows
           path: dist
+
+      # Our own test fixtures, for the data checker below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: source
+          sparse-checkout: tests/fixtures
 
       - name: Install silently
         run: |
@@ -467,6 +475,11 @@ jobs:
           $empty = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'no-data')
           $out = & "$dir\opense4-datacheck.exe" $empty.FullName 2>&1 | Out-String
           if ($LASTEXITCODE -ne 2 -or $out -notmatch 'No data set found') { throw "opense4-datacheck.exe: $LASTEXITCODE $out" }
+
+          # Our own small data set: read and checked by the release build on Windows.
+          $fixture = Join-Path $env:GITHUB_WORKSPACE 'source\tests\fixtures\minimal_dataset'
+          $out = & "$dir\opense4-datacheck.exe" $fixture 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or $out -notmatch '0 errors') { throw "opense4-datacheck.exe on the fixtures: $LASTEXITCODE $out" }
           exit 0
 
       - name: Uninstall silently
