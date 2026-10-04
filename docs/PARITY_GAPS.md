@@ -145,7 +145,14 @@ implemented the same day:
   simultaneous game by one "Unable to Colonize" entry from the Colonization Minister with the
   picture `OrdersNotCompleted`.
 
-No row remains.
+A planet hidden from its colonizer, settled from the executable on 2026-10-04 (spec 03 §19 Q80,
+spec 05 §7 Q78):
+
+| Item | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| The Colonize sight test (`movement.cpp` `colonize()`) | Only a colony the owner does not detect counts as unseen; an empty planet hidden by a storm, a nebula or its own obscuration is settled | The detection rule for the ship's owner applied to the planet, colonized or not, with the colonizing ship's sensors counted: a planet whose obscuration is above every sensor level the owner (or a partner) has in the system fails as "no planet here to colonize" (`sight::canSeeColony` is that rule) (spec 03 §8 "Seen") | M |
+| A computer player's Colonize on its way (`colonize()`, target in another sector) | Gives up as soon as no member could settle the planet (OpenSE4, inferred) | Load Cargo, Move To, Colonize as ordinary orders; nothing is checked before the Colonize runs in the planet's sector, so a ship whose target was taken flies on and fails on arrival (spec 05 §7.5, §7 Q35, Q78) | L |
+| A hidden target afterwards (`ai.cpp` targets, `ai_explore.cpp` `planColonization`) | No loop, since the test above is missing | No sight test in the targets: the failed ship is idle, the planet a target again, and the ship often gets it again, failing every turn until the sight changes. Avoiding the loop would be an OpenSE4 choice of its own, to be marked as such (spec 05 §7.5 "On the way and on arrival") | L |
 
 ## Combat (spec 04)
 
@@ -581,7 +588,11 @@ same day:
 - **Only Latest** keeps the last of each run of neighbouring same-family items, and its boxes
   are the Empire Options rows (spec 02 §6.4, Q109).
 
-No row remains.
+Settled on 2026-10-04 with spec 03 §19 Q80:
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| Colonize candidates (`MainWindow::pickCandidates`) | The planets the sector shows, so a planet a storm, a nebula or a colony's cloak hides from the player is left out | Every planet of the clicked sector of an explored system, hidden ones included and listed by name; one hidden planet alone is taken without a window (spec 06 §2.9, spec 03 §8) | L |
 
 ## Computer player (spec 05 §7)
 

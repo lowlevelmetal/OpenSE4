@@ -1077,7 +1077,11 @@ sector is elsewhere) plus the action.
   asks which one (spec 06 §2.9); Cancel or Esc gives nothing. The orders then appended name that
   planet: Load Cargo (population) at the current location if the ship carries none, Move To the
   sector, Colonize. Nothing about the planet is checked when the order is given; the checks below
-  run when the Colonize does, so a wrong pick shows up only on arrival (spec 06 §7 Q100).
+  run when the Colonize does, so a wrong pick shows up only on arrival (spec 06 §7 Q100). The
+  pick applies no sight test: planets that a storm, a nebula or a colony's cloak hides from the
+  player, which the system panel does not draw (spec 01 §6.9), are candidates like any other and
+  are listed by name; a sector that looks empty but holds one hidden planet gives the order at
+  once, with no window (§19 Q80).
 - It needs the ship in the planet's sector with movement left; without movement it waits.
 - It fails if the planet is missing, not colonizable or already colonized, if any group member is
   cloaked, or if no member has the `Colonize Planet - *` ability matching the planet type. The game
@@ -1095,14 +1099,42 @@ sector is elsewhere) plus the action.
   binary).
 - When two ships target the same planet, the first one processed wins; the other's order fails.
 - A colony with 0 population is legal but cannot build facilities.
-- **The reasons, in the order tested:** the named planet is gone, is not seen by the ship's
-  owner, or is not in the ship's sector ("no planet here to colonize"); it is an asteroid field
+- **The reasons, in the order tested:** the named planet is gone, is not seen by the ship's owner
+  (below), or is not in the ship's sector ("no planet here to colonize"); it is an asteroid field
   ("cannot be colonized"); no movement left (the order waits, with no message); it already has a
   colony, of any empire, the ship's own included ("already a colony"); a group member is cloaked;
   no member can colonize it (no matching ability, or a game option excludes it: "unable to
   colonize" and the surface type's name). A Colonize aimed at an existing colony never adds the
   ship's population to it; Drop Cargo does that. Every reason but the wait fails the order, which
   clears the whole list (§8), later orders and a second Colonize included.
+- **"Seen" is the detection rule** of spec 01 §6.3 for the ship's owner, the same test that
+  decides whether a ship is seen, applied to the planet whether or not it has a colony (§19 Q80):
+  the owner has explored the system, and in some sight type its sensor level in that system
+  reaches the planet's obscuration. The sensor level is the best over every sensor source the
+  owner has in the system at that moment, the colonizing ship itself included (every ship not
+  mothballed has at least EM Active 1), its other ships, bases, unit groups (not mines) and
+  colonies, raised by its Partnership partners' levels. The planet's obscuration is 1 in every
+  type, or the colony's cloak levels while a colony there is cloaked, raised to the obscuration of
+  its sector (the largest `Sector - Sight Obscuration` among the storms, ships and planets there)
+  and of its system (the system type's, at least 1). Sight is worked out again after every move
+  step and warp, so the test sees the ship that has just arrived. With the Omnipresent view the
+  test is the one of spec 01 §6.5 instead (no explored test, EM Active at least 1), which gives
+  the same result for a ship standing at the planet. Consequences:
+  - A planet in clear space is always seen by the ship that reaches it.
+  - A planet in a storm or a nebula whose obscuration is above every sensor level the owner has
+    there fails, colonized or not: with the stock data a nebula system or a storm with the
+    obscuration ability (level 3 in every type) hides its planets from a colony ship with base
+    sensors, unless a sensor of level 3 or more of the owner or a partner is in the system.
+  - A cloaked colony the owner does not detect fails with the same "no planet here" reason;
+    once detected it fails as "already a colony". There is no other difference between a
+    cloaked colony and an obscured empty planet, and nothing is remembered between tries: the
+    original keeps no memory of planets (spec 01 §6.9). An unexplored system cannot arise here,
+    since the ship's arrival explores it.
+  - The test is made each time the Colonize is carried out, which is when it heads the list:
+    on arrival (the Move To completes and the Colonize runs in the same action), and again at
+    each later try while it waits for movement (in a simultaneous game, each acting day). The
+    sight test comes before the movement test, so an unseen planet fails at once, even with no
+    movement left.
 - **Where the player reads the reason.** In a turn-based game, when the player whose turn it is
   is human, a message box titled "Colonize" gives the reason at once, and nothing goes to the
   log. In a simultaneous game the ship's owner, computer players included, gets one log entry
@@ -2427,3 +2459,41 @@ rules in §8); this one is ours:
     only in the planet's sector (inferred). Which planets does the original's "seen" test
     reject while a ship stands in their sector, and does its computer player aim only at
     planets it sees?
+
+    **Answer** (confirmed: binary, 2026-10-04):
+    - **The test** is the detection rule of spec 01 §6.3 for the ship's owner, applied to the
+      planet whether or not it has a colony (§8 "Seen"): the system explored, and in some sight
+      type the owner's sensor level in the system, at that moment and with the colonizing ship
+      counted, at least the planet's obscuration. Storms, nebulae and a planet's own rolled
+      obscuration count, as does a cloaked colony's cloak. It is not the "seeing the planet"
+      test of the windows (which has no presence and no explored test), and nothing about the
+      planet is remembered. It runs each time the Colonize is carried out (on arrival, and on
+      every later try while it waits for movement), before the movement test, and an unseen
+      planet gives the same "no planet here to colonize" failure as a planet that is gone.
+    - **The player's pick** applies no sight test: every planet of the clicked sector of an
+      explored system is a candidate, hidden ones included (§8, spec 06 §2.9).
+    - **The computer players** apply no sight test either: their targets are the planets of
+      every system they have explored, by the real colony state (spec 05 §7.5 "Colonization",
+      §7 Q78). Their colony ships get Load Cargo, Move To and Colonize as ordinary orders,
+      nothing checks the target on the way, and at a planet they cannot see the Colonize fails
+      on arrival, every time it is tried. The minister then finds the ship idle and, the
+      planet being a target again, often gives it the same planet: the original's computer
+      players can keep failing at a hidden planet turn after turn, as ours did with the full
+      test.
+
+    Our engine differs:
+    - `colonize()` (`movement.cpp`) treats as unseen only a planet whose colony the owner does
+      not detect. It should apply the detection rule to the planet itself, colonized or not
+      (`sight::canSeeColony` already is that rule applied to a planet), so a planet hidden by
+      a storm, a nebula or its own obscuration fails with "There is no planet here to colonize."
+    - A computer player's Colonize travels itself and gives up on its way once no member could
+      settle the planet (`colonize()`, the branch for a target in another sector), an OpenSE4
+      rule (inferred) that also contradicts spec 05 §7 Q35 (the original keeps flying and fails
+      on arrival). To match, the computer players' Colonize should check nothing before
+      arrival, as a player's does.
+    - Matching the original brings back the loop at hidden planets (spec 05 §7 Q78). Avoiding
+      it would be an OpenSE4 choice of its own, to be marked as such (for instance leaving out
+      of the targets a planet the empire failed to see on arrival); the original has none.
+    - Our client's Pick Object (`MainWindow::pickCandidates`) takes its candidates from the
+      stellar objects the sector shows, so it leaves out hidden planets; the original lists
+      them (spec 06 §2.9).

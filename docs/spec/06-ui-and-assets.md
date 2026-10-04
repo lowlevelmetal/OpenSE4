@@ -1908,7 +1908,7 @@ there, in the system's object order:
 
 | Order | Candidates in the clicked sector |
 |---|---|
-| Colonize | every planet, colonized or not, of any type, whether or not the ship can colonize it; never an asteroid field (spec 03 §8) |
+| Colonize | every planet, colonized or not, of any type, whether or not the ship can colonize it, and whether or not the player sees it (a planet a storm, a nebula or a colony's cloak hides is listed too); never an asteroid field (spec 03 §8, §19 Q80) |
 | Warp | every warp point |
 | Drop Cargo | every object of the player's own (colonies and vehicles) |
 | Attack, when it becomes a pursuit (a simultaneous game, or a drone group) | every object of another empire that the player can see; for a drone group only ships, colonies and satellite groups, plus any warp point |
@@ -1938,7 +1938,10 @@ it is carried out (spec 03 §8). In a turn-based game the selected vehicle's ord
 once.
 
 Since 2026-10-04 our client follows (§7 Q100). Its prompt is still its own ("Colonize: pick
-a planet" and similar, at the bottom left of the system panel).
+a planet" and similar, at the bottom left of the system panel). It still differs in one
+point: it takes the candidates from the stellar objects the sector shows, so a planet hidden
+from the player is not offered; the original's Colonize candidates include it (spec 03 §19
+Q80).
 
 ---
 

@@ -1986,7 +1986,11 @@ binary).
     rows.
 - **Colonization** (Colonization minister and the target list; confirmed: binary).
   - *Targets*: uncolonized planets in systems the empire knows, plus zero-population
-    colonies of hostile empires. A neutral empire looks only at its home system. Left out:
+    colonies of hostile empires. "Knows" is explored; the scan takes every planet of those
+    systems (asteroid fields excluded) by its real colony state and applies no sight test, so
+    a planet hidden by a storm, a nebula or its own obscuration is a target, and a cloaked
+    colony counts as the colony it is, seen or not (§7 Q78). A neutral empire looks only at
+    its home system. Left out:
     - planets in a system where an empire at Non-Aggression or better with us has a colony
       and we have none (only colonies count here);
     - planets one of our colony ships is already ordered to settle;
@@ -2014,6 +2018,21 @@ binary).
     an AI colony starts with the people the ship carried, dropped under the Drop Cargo
     rules (spec 03 §8). OpenSE4 gives the single Colonize order of spec 03 §8, which loads
     colonists where the ship is and has the same effect.
+  - *On the way and on arrival* (confirmed: binary): these are ordinary orders. The Move To
+    follows the usual movement rules (spec 03 §6) and knows nothing of the target; nothing
+    re-checks the planet until the Colonize heads the list in its sector, where the tests of
+    spec 03 §8 run, the sight test ("seen": the detection rule for the ship's owner, the
+    ship itself counted) among them. A target the empire cannot see there (a storm or nebula
+    whose obscuration is above every sensor level it has in the system, or a cloaked colony
+    it does not detect) fails as "no planet here to colonize"; the failure clears the ship's
+    orders, so it is idle at the next planning. The target, no longer named by any Colonize
+    order, is in the list again, and the nearest idle colony ship that can settle it is
+    often that same ship, now in the planet's system: it gets Move To (done at once) and
+    Colonize again and fails again. Nothing ever re-targets it by sight; the loop ends only
+    when the empire gains a sensor there that reaches the obscuration, the obscuring storm or
+    nebula is destroyed, another target takes the ship first, or the planet stops being a
+    target. In a simultaneous game each failure writes the "Unable to
+    Colonize" entry in the empire's log. Our engine differs: §7 Q78.
 - **Logistics ministers** (confirmed: binary unless marked).
   - *Transports*: an idle population transport that carries people and whose used cargo
     space (people and units) is more than half its capacity delivers; otherwise it runs the
@@ -4453,3 +4472,23 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     our territory, another empire's, or free space), the turns it took and whether it was
     lost on the way, beside ours; and how often each empire settles inside a neighbour's
     claimed systems.
+78. **Colonization targets and sight** (raised 2026-10-04 by spec 03 §19 Q80). Do the computer
+    players aim only at planets they see, and what happens when the target is hidden?
+    **Answer** (confirmed: binary): sight plays no part in the choice. The targets are the
+    planets of every explored system (and zero-population hostile colonies) by their real
+    colony state; the danger, jumps, ruins, atmosphere, size and value order and the
+    friendly-colony and already-targeted exclusions of §7.5 are the only filters. The ship
+    gets Load Cargo, Move To and Colonize, nothing checks the target on the way, and the
+    Colonize's sight test on arrival fails at a planet the empire cannot see there; the ship
+    is then idle and is often given the same planet again, failing turn after turn until the
+    sight changes (§7.5 "On the way and on arrival", spec 03 §8).
+    Our engine differs:
+    - Its Colonize does not test the sight of an uncolonized planet (spec 03 §19 Q80), so its
+      computer players settle planets in nebulae and storms that the original's cannot.
+    - A computer player's single Colonize order travels itself and gives up on its way once no
+      group member could settle the planet (an OpenSE4 rule, inferred), which also contradicts
+      Q35: the original keeps flying and fails on arrival. To match, nothing should be checked
+      before the planet's sector.
+    - With both changed, our computer players will loop at hidden planets as the original's
+      do. Leaving such a planet out of the targets after a failure would be an OpenSE4 choice
+      of its own, to be marked as one; the original has nothing of the kind.
