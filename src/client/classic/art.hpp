@@ -68,6 +68,10 @@ public:
     Sprite groupMini(std::string_view style, std::string_view group, bool colorKey = true, int heading = 0);  // "Fleet", "FighterGroup", ...
     Sprite flag(std::string_view style, bool large = true);
     Sprite racePortrait(std::string_view style);
+    // A picture of a race's folder, "<Style>_<suffix>"; with `generic`, the
+    // generic race's when the race has none (the Log's group portraits have no
+    // such fallback, spec 06 §4.1). Opaque.
+    Sprite raceImage(std::string_view style, std::string_view suffix, bool generic);
     Sprite populationMini(std::string_view style);
     Sprite populationPortrait(std::string_view style);
 

@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/economy.hpp"
 
 #include "datafile/datafile.hpp"
@@ -805,7 +806,7 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
         candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(pick));
         const bool ship = isShipOrBase(vehicleType(r, s, v));
         ctx.log(e, LogCategory::Construction, std::format("{} {} abandoned", ship ? "Ship" : "Unit group", v.name),
-                "The empire could not pay its maintenance.", v.location);
+                "The empire could not pay its maintenance.", v.location, "ShipDamaged");
         for (const UnitStack& st : groupStacks(v)) s.design(st.design).lost += st.count;
         // No happiness event: only a ship destroyed by damage logs `Ship Lost in
         // System` and `Any Ship Lost` (confirmed: binary).

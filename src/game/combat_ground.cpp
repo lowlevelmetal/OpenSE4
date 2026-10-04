@@ -12,6 +12,7 @@
 // changes hands with its facilities, stored units and population, and the
 // surviving invaders join its cargo.
 
+#include "game/log_picture.hpp"
 #include "game/combat.hpp"
 
 #include "game/combat_detail.hpp"
@@ -157,12 +158,14 @@ void logGroundCombat(TurnContext& ctx, ObjectId planet, EmpireId attacker, Empir
     const std::string losses = std::format("{} rounds: the invaders lost {} of {} troops, the defenders {} units and {} militia.", o.rounds,
                                            o.attackersLost, o.attackersAtStart, o.defendersLost, o.militiaLost);
     const std::string title = std::format("Ground combat at {}", system);
+    // The planet's picture, PlanetRiots once the planet is gone (spec 06 §4.1).
+    const std::string picture = obj.system.valid() ? logpicture::planet(planet) : std::string("PlanetRiots");
     if (attacker.valid() && attacker.index() < s.empires.size() && s.empire(attacker).alive)
         ctx.log(attacker, LogCategory::Combat, title, std::format("Our troops fought the {} on {}. {} {}", name(defender), obj.name, losses, outcome),
-                where);
+                where, picture);
     if (defender.valid() && defender.index() < s.empires.size() && s.empire(defender).alive)
         ctx.log(defender, LogCategory::Combat, title,
-                std::format("Troops of the {} fought our defenders on {}. {} {}", name(attacker), obj.name, losses, outcome), where);
+                std::format("Troops of the {} fought our defenders on {}. {} {}", name(attacker), obj.name, losses, outcome), where, picture);
 }
 
 int groundModifier(const Rules& r, const Empire& e) {
@@ -367,9 +370,9 @@ void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
     ctx.mood(captor, "Any Enemy Planet Captured", sys, c.planet);
     const Location where = locationOf(s.galaxy, c.planet);
     ctx.log(old, LogCategory::Combat, std::format("{} captured", name), std::format("{} troops overran our defenders and took {}.", e.name, name),
-            where);
+            where, logpicture::planet(c.planet));
     ctx.log(captor, LogCategory::Combat, std::format("{} captured", name), std::format("Our troops took {} from the {}.", name, s.empire(old).name),
-            where);
+            where, logpicture::planet(c.planet));
     addHistory(s, old, captor, std::format("The {} captured {}", e.name, name), where);
     addHistory(s, captor, old, std::format("Captured {} from the {}", name, s.empire(old).name), where);
 }
@@ -415,9 +418,9 @@ void runGroundCombat(TurnContext& ctx, EmpireId owner) {
             detail::endInvasion(*c, true);
             if (attacker != owner)
                 ctx.log(attacker, LogCategory::Combat, std::format("Ground combat on {} ended", name),
-                        std::format("Our troops on {} now serve the {}.", name, s.empire(owner).name), where);
+                        std::format("Our troops on {} now serve the {}.", name, s.empire(owner).name), where, logpicture::planet(c->planet));
             ctx.log(owner, LogCategory::Combat, std::format("Ground combat on {} ended", name),
-                    std::format("The troops landed on {} joined our garrison.", name), where);
+                    std::format("The troops landed on {} joined our garrison.", name), where, logpicture::planet(c->planet));
             continue;
         }
         if (!s.empire(owner).alive) continue;

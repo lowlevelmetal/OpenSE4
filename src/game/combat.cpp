@@ -8,6 +8,7 @@
 // "(inferred)" marks our own choices where the spec is silent. Percentages the
 // original applies in floating point go through game/xmath.hpp.
 
+#include "game/log_picture.hpp"
 #include "game/combat.hpp"
 
 #include "datafile/datafile.hpp"
@@ -1167,11 +1168,11 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
             if (n <= 0) continue;
             sweptTotal += n;
             ctx.log(EmpireId{owner}, LogCategory::Combat, std::format("Mines swept at {}", sectorName(s, where)),
-                    std::format("{} of our mines were cleared by enemy sweepers.", n), where);
+                    std::format("{} of our mines were cleared by enemy sweepers.", n), where, "MineExplosion");
         }
         if (sweptTotal > 0)
             ctx.log(victimOwner, LogCategory::Combat, std::format("Mines swept at {}", sectorName(s, where)),
-                    std::format("Our sweepers cleared {} enemy mines.", sweptTotal), where);
+                    std::format("Our sweepers cleared {} enemy mines.", sweptTotal), where, "MineExplosion");
 
         // Each mine picks one random vehicle of the group and strikes it with its
         // warheads, one after another, until it is destroyed (confirmed: binary).
@@ -1257,14 +1258,15 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                 ctx.log(m.owner, LogCategory::Combat, std::format("Mines detonated at {}", sectorName(s, where)),
                         std::format("{} of our mines struck {} enemy vehicles{}.", used, struck.size(),
                                     kills > 0 ? std::format(", destroying {}", kills) : std::string{}),
-                        where);
+                        where, "MineExplosion");
             }
         }
         for (const auto& [id, strikes] : struck) {
             const Vehicle& v = *s.vehicle(VehicleId{id});
             const int unitsLost = lost[id];
             ctx.log(v.owner, LogCategory::Combat, std::format("Mines at {}", sectorName(s, where)),
-                    std::format("{} was struck by {} enemy mines{}.", v.name, strikes, v.count <= 0 ? " and destroyed" : ""), where);
+                    std::format("{} was struck by {} enemy mines{}.", v.name, strikes, v.count <= 0 ? " and destroyed" : ""), where,
+                    "MineExplosion");
             if (unitsLost > 0 && !isUnitType(typeOf(r, s, v))) {
                 ctx.mood(v.owner, "Any Ship Lost", {}, {}, unitsLost);
                 ctx.mood(v.owner, "Ship Lost in System", where.system, {}, unitsLost);

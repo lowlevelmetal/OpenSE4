@@ -12,6 +12,7 @@
 // percentages the original applies in floating point go through xmath, and
 // the straight-line distances of Don't Get Hurt are exact integer roots.
 
+#include "game/log_picture.hpp"
 #include "game/combat.hpp"
 
 #include "datafile/datafile.hpp"
@@ -3753,11 +3754,11 @@ void Battle::finish() {
         if (p.popKilled > 0) {
             ctx_.mood(p.startOwner, "1M Population Killed", where_.system, p.object, static_cast<int>(std::min<int64_t>(p.popKilled, INT_MAX)));
             ctx_.log(p.startOwner, LogCategory::Combat, std::format("{} bombarded", p.name),
-                     std::format("{}M of our people were killed in the battle at {}.", p.popKilled, sector), where_);
+                     std::format("{}M of our people were killed in the battle at {}.", p.popKilled, sector), where_, logpicture::planet(p.object));
         }
         if (p.colonyLost) {
             ctx_.log(p.startOwner, LogCategory::Combat, std::format("{} lost", p.name),
-                     std::format("Our colony on {} was wiped out in the battle at {}.", p.name, sector), where_);
+                     std::format("Our colony on {} was wiped out in the battle at {}.", p.name, sector), where_, logpicture::planet(p.object));
             // Its population died out: the colony is removed, the planet loses
             // value and the owner gets Homeworld Lost or Any Planet Lost (spec 02 §2).
             economy::colonyDiesOut(ctx_, p.object, std::format("wiped out in the battle at {}", sector));
@@ -3884,7 +3885,9 @@ void Battle::finish() {
         if (!t.taken.empty()) text += std::format(" Taken: {}.", list(t.taken));
         if (!t.captured.empty()) text += std::format(" Captured: {}.", list(t.captured));
         if (const auto it = troopsLanded_.find(e.value); it != troopsLanded_.end()) text += std::format(" {} troops landed.", it->second);
-        ctx_.log(e, LogCategory::Combat, std::format("Battle at {}", sector), std::move(text), where_);
+        // CombatWin, CombatLose or CombatStalemate by the verdict (spec 06 §4.1).
+        ctx_.log(e, LogCategory::Combat, std::format("Battle at {}", sector), std::move(text), where_,
+                 res == Result::Win ? "CombatWin" : res == Result::Loss ? "CombatLose" : "CombatStalemate");
     }
 
     // Each participant learns (or sees again) the designs it fought: every

@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/diplomacy.hpp"
 
 #include "game/economy.hpp"
@@ -154,7 +155,8 @@ void acceptPackage(TurnContext& ctx, const DiplomaticMessage& offer) {
                               std::any_of(offer.request.begin(), offer.request.end(), isPlaceholder);
     if (placeholders) {
         for (EmpireId e : {offer.from, offer.to})
-            logGoto(ctx.log(e, LogCategory::Politics, what + " Cancelled", "The package still holds unspecified (\"Any\") items; counter with real items."),
+            logGoto(ctx.log(e, LogCategory::Politics, what + " Cancelled", "The package still holds unspecified (\"Any\") items; counter with real items.",
+                            std::nullopt, logpicture::race(e == offer.from ? offer.to : offer.from)),
                     LogGoto::Empires);
         return;
     }
@@ -170,9 +172,9 @@ void grantIndependence(TurnContext& ctx, const DiplomaticMessage& m) {
     // The sender evacuates and abandons the planet; the recipient may settle it (inferred).
     s.colonies[m.planet.index()].reset();
     ctx.log(m.from, LogCategory::Politics, "Independence Granted",
-            std::format("We have withdrawn from {} so that the {} may settle it.", planet, nameOf(s, m.to)), locationOf(s.galaxy, m.planet));
+            std::format("We have withdrawn from {} so that the {} may settle it.", planet, nameOf(s, m.to)), locationOf(s.galaxy, m.planet), "GiftGiven");
     ctx.log(m.to, LogCategory::Politics, "Independence Granted",
-            std::format("The {} has abandoned {} for us to settle.", nameOf(s, m.from), planet), locationOf(s.galaxy, m.planet));
+            std::format("The {} has abandoned {} for us to settle.", nameOf(s, m.from), planet), locationOf(s.galaxy, m.planet), "GiftReceived");
     addHistory(s, m.from, m.to, std::format("Granted {} its independence for the {}", planet, nameOf(s, m.to)), locationOf(s.galaxy, m.planet));
     addHistory(s, m.to, m.from, std::format("The {} granted {} its independence", nameOf(s, m.from), planet), locationOf(s.galaxy, m.planet));
 }
@@ -195,7 +197,8 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
     // of a trade, gift or tribute becomes it after the package's items have
     // made their entries (spec 06 §7 Q70).
     auto messageEntry = [&] {
-        if (LogEntry* entry = logGoto(ctx.log(m.to, LogCategory::Politics, "Message", text), LogGoto::Empires)) entry->message = m.id;
+        if (LogEntry* entry = logGoto(ctx.log(m.to, LogCategory::Politics, "Message", text, std::nullopt, logpicture::race(m.from)), LogGoto::Empires))
+            entry->message = m.id;
     };
     const DiplomaticMessage* answered = findMessage(s, m.inReplyTo);
     const bool package = m.type == MessageType::AcceptTrade || m.type == MessageType::AcceptGift ||
@@ -297,7 +300,8 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
             const EmpireId master = masterOf(s, party);
             if (master.valid() && master != other && s.empire(party).relation(master).treaty == Treaty::Subjugation) {
                 logGoto(ctx.log(party, LogCategory::Politics, "Treaty Not Possible",
-                                std::format("As a subject of the {} we cannot sign a treaty with the {}.", nameOf(s, master), nameOf(s, other))),
+                                std::format("As a subject of the {} we cannot sign a treaty with the {}.", nameOf(s, master), nameOf(s, other)),
+                                std::nullopt, logpicture::race(other)),
                         LogGoto::Empires);
                 return;
             }
@@ -323,8 +327,8 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     // proposal logs nothing here.
     if (entry != TreatyEntry::None) {
         const std::string title = entry == TreatyEntry::Enacted ? "Treaty Enacted" : "New Treaty";
-        logGoto(ctx.log(a, LogCategory::Politics, title, treatyEnactedText(s, b, t, role(aDom))), LogGoto::Empires);
-        logGoto(ctx.log(b, LogCategory::Politics, title, treatyEnactedText(s, a, t, role(bDom))), LogGoto::Empires);
+        logGoto(ctx.log(a, LogCategory::Politics, title, treatyEnactedText(s, b, t, role(aDom)), std::nullopt, logpicture::race(b)), LogGoto::Empires);
+        logGoto(ctx.log(b, LogCategory::Politics, title, treatyEnactedText(s, a, t, role(bDom)), std::nullopt, logpicture::race(a)), LogGoto::Empires);
     }
     // The History window lists every treaty change under the other empire.
     auto history = [&](EmpireId other, bool dom) {
@@ -346,7 +350,8 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
             if (s.empire(subject).relation(x).treaty <= Treaty::None) continue;
             setTreaty(ctx, subject, x, Treaty::None);
             logGoto(ctx.log(x, LogCategory::Politics, "Treaty Broken",
-                            std::format("The {} ended its treaty with us on becoming a subject of the {}.", nameOf(s, subject), nameOf(s, master))),
+                            std::format("The {} ended its treaty with us on becoming a subject of the {}.", nameOf(s, subject), nameOf(s, master)),
+                            std::nullopt, logpicture::race(subject)),
                     LogGoto::Empires);
         }
     }
@@ -364,7 +369,7 @@ void meetOneSide(TurnContext& ctx, EmpireId a, EmpireId b) {
     GameState& s = ctx.state;
     if (inContact(s, a, b)) return;
     s.empire(a).relation(b).contact = true;
-    ctx.log(a, LogCategory::Politics, "First Contact", firstContactText(s, b));
+    ctx.log(a, LogCategory::Politics, "First Contact", firstContactText(s, b), std::nullopt, logpicture::race(b));
     addHistory(s, a, b, std::format("First contact with the {}", nameOf(s, b)));
 }
 
@@ -430,8 +435,12 @@ void declareWar(TurnContext& ctx, EmpireId from, EmpireId to) {
     if (!living(s, from) || !living(s, to) || from == to || s.empire(from).relation(to).treaty == Treaty::War) return;
     setTreaty(ctx, from, to, Treaty::War);
     // A treaty lost: Goto opens Empires (spec 06 §7 Q41).
-    logGoto(ctx.log(from, LogCategory::Politics, "War Declared", std::format("We are now at war with the {}.", nameOf(s, to))), LogGoto::Empires);
-    logGoto(ctx.log(to, LogCategory::Politics, "War Declared", std::format("The {} has declared war on us.", nameOf(s, from))), LogGoto::Empires);
+    logGoto(ctx.log(from, LogCategory::Politics, "War Declared", std::format("We are now at war with the {}.", nameOf(s, to)), std::nullopt,
+                    logpicture::race(to)),
+            LogGoto::Empires);
+    logGoto(ctx.log(to, LogCategory::Politics, "War Declared", std::format("The {} has declared war on us.", nameOf(s, from)), std::nullopt,
+                    logpicture::race(from)),
+            LogGoto::Empires);
 }
 
 void forgetEmpire(GameState& s, EmpireId gone) {
@@ -508,8 +517,10 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
     if (!living(s, giver) || !living(s, receiver) || giver == receiver) return;
     const std::string giverName = nameOf(s, giver), receiverName = nameOf(s, receiver);
     // Every entry is category Politics; the receiver's comes first (spec 06 §7 Q70).
+    // GiftReceived for the receiver, GiftGiven for the giver (spec 06 §4.1).
     auto entry = [&](EmpireId e, std::string title, std::string text, LogGoto target, std::optional<Location> where = std::nullopt) {
-        if (LogEntry* l = ctx.log(e, LogCategory::Politics, std::move(title), std::move(text), where)) l->target = target;
+        if (LogEntry* l = ctx.log(e, LogCategory::Politics, std::move(title), std::move(text), where, e == receiver ? "GiftReceived" : "GiftGiven"))
+            l->target = target;
     };
     for (const PackageItem& item : items) {
         switch (item.kind) {
@@ -682,7 +693,8 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
     for (const Empire& e : s.empires) {
         const bool party = e.id == from || e.id == to;
         if (!party && !(e.alive && (inContact(s, e.id, from) || inContact(s, e.id, to)))) continue;
-        logGoto(ctx.log(e.id, LogCategory::Politics, "Surrender", text), LogGoto::Empires);
+        // The other empire's race portrait; for a witness, the one that surrendered (inferred).
+        logGoto(ctx.log(e.id, LogCategory::Politics, "Surrender", text, std::nullopt, logpicture::race(e.id == from ? to : from)), LogGoto::Empires);
         addHistory(s, e.id, e.id == from ? to : from, std::format("The {} surrendered to the {}", nameOf(s, from), nameOf(s, to)));
     }
     // A surrender runs the first-contact check in every system (spec 05 §3.1, confirmed: binary).
@@ -820,7 +832,7 @@ void checkContacts(TurnContext& ctx) {
             rel.dominant = false;
             rel.treatyTurn = s.turn;
             std::erase_if(s.empires[a].intel, [&](const IntelProjectOrder& o) { return o.target == other; });
-            logGoto(ctx.log(id, LogCategory::Politics, "Contact Lost", contactLostText(s, other)), LogGoto::Empires);
+            logGoto(ctx.log(id, LogCategory::Politics, "Contact Lost", contactLostText(s, other), std::nullopt, logpicture::race(other)), LogGoto::Empires);
             addHistory(s, id, other, std::format("Lost contact with the {}", nameOf(s, other)));
         }
     }
@@ -865,7 +877,8 @@ void treatyStep(TurnContext& ctx, EmpireId id) {
     others([&](EmpireId other) {
         if (s.empire(id).relation(other).treaty != Treaty::Partnership) return;
         if (shareMap(s, other, id) > 0)
-            ctx.log(id, LogCategory::Misc, "New System Maps Available", std::format("The {} has shared its star charts with us.", nameOf(s, other)));
+            ctx.log(id, LogCategory::Misc, "New System Maps Available", std::format("The {} has shared its star charts with us.", nameOf(s, other)),
+                    std::nullopt, "GiftReceived");
         shareSeenDesigns(s, other, id);
     });
     // 5. The trade counter grows toward every other living empire, whatever the treaty.

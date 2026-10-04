@@ -2,6 +2,7 @@
 // unit launch and recovery, one-shot components (spec 03 §7, §11-13).
 
 #include "datafile/datafile.hpp"
+#include "game/log_picture.hpp"
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
@@ -127,7 +128,7 @@ void poolSupply(const Rules& r, GameState& s, std::span<const VehicleId> members
 namespace {
 // The log line and mood of a vehicle lost outside combat.
 void announceLoss(TurnContext& ctx, const Vehicle& v, std::string_view cause) {
-    ctx.log(v.owner, LogCategory::Misc, std::format("{} destroyed", v.name), std::string(cause), v.location);
+    ctx.log(v.owner, LogCategory::Misc, std::format("{} destroyed", v.name), std::string(cause), v.location, "ShipDamaged");
     if (!isUnitType(vehicleType(ctx.rules, ctx.state, v))) {
         ctx.mood(v.owner, "Any Ship Lost");
         ctx.mood(v.owner, "Ship Lost in System", v.location.system);

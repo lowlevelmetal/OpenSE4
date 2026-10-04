@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/economy.hpp"
 
 #include "game/ai.hpp"
@@ -313,7 +314,7 @@ bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design
         last = h != holders.end();
         if (!last) {
             ctx.log(e, LogCategory::Construction, std::format("No Storage Available at {}", where),
-                    std::format("A {} found no cargo space in the sector and was not built.", name), q.location);
+                    std::format("A {} found no cargo space in the sector and was not built.", name), q.location, "NotEnoughCargoSpace");
             continue;
         }
         h->free -= size;
@@ -325,7 +326,8 @@ bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design
     s.design(design).built += placed;
     if (placed > 0) s.design(design).everBuilt = true;  // built at least once (spec 05 §2.3)
     if (placed > 0)
-        ctx.log(e, LogCategory::Construction, std::format("{} x {} completed", placed, name), std::format("Built at {}.", where), q.location);
+        ctx.log(e, LogCategory::Construction, std::format("{} x {} completed", placed, name), std::format("Built at {}.", where), q.location,
+                logpicture::hull(design));
     return last;
 }
 
@@ -343,7 +345,7 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
                 if (shipCount(r, s, e) >= s.options.maxShipsPerPlayer) {
                     // No Goto for the ship limit (spec 06 §7 Q41).
                     logGoto(ctx.log(e, LogCategory::Construction, std::format("{} cannot build {}", where, d.name),
-                                    "The empire has reached its limit on ships.", q.location),
+                                    "The empire has reached its limit on ships.", q.location, "AtMaxShips"),
                             LogGoto::None);
                     return Outcome::Blocked;
                 }
@@ -352,7 +354,8 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
                 s.design(design).everBuilt = true;  // built at least once (spec 05 §2.3)
                 for (int k = 0; k < count; ++k) {
                     const Vehicle& v = movement::spawnVehicle(r, s, e, design, q.location, autoWaypoint);
-                    ctx.log(e, LogCategory::Construction, std::format("{} completed", v.name), std::format("Built at {}.", where), q.location);
+                    ctx.log(e, LogCategory::Construction, std::format("{} completed", v.name), std::format("Built at {}.", where), q.location,
+                            logpicture::hull(design));
                     ctx.mood(e, "Ship Constructed", q.location.system, anchorAt(s, q));
                     ctx.mood(e, "Any Ship Constructed");
                     gainExperience(s.empire(e), tonnage / 10);  // the hull's tonnage div 10 per ship (confirmed: binary)
@@ -375,7 +378,8 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
             const int count = std::max(1, item.count);
             for (int k = 0; k < count; ++k) {
                 c->facilities.push_back(item.facility);
-                ctx.log(e, LogCategory::Construction, std::format("{} completed", f.name), std::format("Built on {}.", where), q.location);
+                ctx.log(e, LogCategory::Construction, std::format("{} completed", f.name), std::format("Built on {}.", where), q.location,
+                        logpicture::facility(item.facility));
                 ctx.mood(e, "Facility Constructed", q.location.system, c->planet);
             }
             gainExperience(s.empire(e), count);  // each finished facility item adds its count (confirmed: binary)
@@ -410,7 +414,8 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
                     }
             }
             ctx.log(e, LogCategory::Construction, std::format("{} upgraded", where),
-                    std::format("{} facilit{} now {}.", changed, changed == 1 ? "y is" : "ies are", target.name), q.location);
+                    std::format("{} facilit{} now {}.", changed, changed == 1 ? "y is" : "ies are", target.name), q.location,
+                    logpicture::facility(item.facility));
             // The colony's cloak and sensor levels are not recalculated: an
             // upgraded cloaking or sensor facility counts at its new level
             // from the colony's next recalculation (spec 01 §6.9, §14 Q44,
@@ -464,8 +469,11 @@ Resources runQueue(TurnContext& ctx, EmpireId e, const QueueRef& q) {
         std::string what;
         for (Resource res : kResources)
             if (use[res] > bank[res]) what += std::format("{}{}", what.empty() ? "" : ", ", displayName(res));
+        // The picture of the planet or ship that owns the queue (spec 06 §4.1).
+        const Vehicle* owner = q.target.vehicle.valid() ? s.vehicle(q.target.vehicle) : nullptr;
         ctx.log(e, LogCategory::Construction, std::format("Lack of Resources at {}", placeName(s, q)),
-                std::format("Nothing was built this turn: the treasury is short of {}.", what), q.location);
+                std::format("Nothing was built this turn: the treasury is short of {}.", what), q.location,
+                owner ? logpicture::vehicle(r, s, *owner) : logpicture::planet(q.target.planet));
         return {};
     }
     bank -= use;

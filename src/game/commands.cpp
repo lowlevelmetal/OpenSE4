@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/commands.hpp"
 
 #include "game/design.hpp"
@@ -551,7 +552,8 @@ struct Applier {
         col->population.clear();
         col->anger = kNewColonyAnger;
         if (col->facilities.empty()) s.colonies[c.planet.index()].reset();
-        addLog(s, e, LogCategory::Misc, std::format("{} abandoned", s.galaxy.object(c.planet).name), {}, locationOf(s.galaxy, c.planet));
+        addLog(s, e, LogCategory::Misc, std::format("{} abandoned", s.galaxy.object(c.planet).name), {}, locationOf(s.galaxy, c.planet),
+               logpicture::planet(c.planet));
         addHistory(s, e, e, std::format("Abandoned {}", s.galaxy.object(c.planet).name), locationOf(s.galaxy, c.planet));
         return {};
     }
@@ -1106,13 +1108,14 @@ struct Applier {
     // Repeat switched off (spec 03 §6.4, §8).
     R operator()(const cmd::EnterSector& c) {
         if (s.options.simultaneous) return R::fail("Only in turn-based games");
-        std::string name;
+        std::string name, picture;
         if (c.fleet.valid()) {
             Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
             if (fleetOrders(s, *f).empty()) return R::fail("The fleet has no orders");
             if (c.enter) return {};
             name = f->name;
+            picture = logpicture::fleet(e);
             // Like any failed order: every copy of the fleet's orders is cleared.
             for (VehicleId id : fleetGroup(s, *f)) {
                 Vehicle& v = *s.vehicle(id);
@@ -1125,10 +1128,12 @@ struct Applier {
             if (v->orders.empty()) return R::fail("The vehicle has no orders");
             if (c.enter) return {};
             name = v->name;
+            picture = logpicture::vehicle(r, s, *v);
             v->orders.clear();
             v->repeatOrders = false;
         }
-        addLog(s, e, LogCategory::Misc, std::format("{}: orders cancelled", name), "It did not enter the sector with enemy forces.");
+        addLog(s, e, LogCategory::Misc, std::format("{}: orders cancelled", name), "It did not enter the sector with enemy forces.", std::nullopt,
+               picture);
         return {};
     }
 

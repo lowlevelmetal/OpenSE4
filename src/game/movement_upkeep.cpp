@@ -4,6 +4,7 @@
 // spec 01 §5.3 (ruins).
 
 #include "datafile/datafile.hpp"
+#include "game/log_picture.hpp"
 #include "game/ai.hpp"
 #include "game/combat.hpp"
 #include "game/design.hpp"
@@ -42,7 +43,7 @@ void grantRuins(TurnContext& ctx, EmpireId owner, ObjectId planet) {
     };
     auto announce = [&]() {
         // Goto shows the planet, like the original's ruins entry (spec 06 §7 Q41).
-        logGoto(ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet)),
+        logGoto(ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet), "Ruins"),
                 LogGoto::Location);
         addHistory(s, owner, owner, std::format("Found ancient ruins on {}", obj.name), locationOf(s.galaxy, planet));
     };
@@ -119,7 +120,7 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
 
     const SystemId sys = s.galaxy.object(planet).system;
     ctx.log(owner, LogCategory::Misc, std::format("{} colonized", s.galaxy.object(planet).name), std::format("{} founded the colony.", v.name),
-            locationOf(s.galaxy, planet));
+            locationOf(s.galaxy, planet), logpicture::colonyFounded(s.galaxy.object(planet)));
     addHistory(s, owner, owner, std::format("Colonized {}", s.galaxy.object(planet).name), locationOf(s.galaxy, planet));
     ctx.mood(owner, "Any Planet Colonized", sys, planet);
     // Founding a colony claims nothing: the Empire Options' "claim every
@@ -260,7 +261,8 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     const int64_t droneUse = r.setting("Drone Supply Usage Per Turn", 200);
     auto decloak = [&](Vehicle& v) {
         v.status = VehicleStatus::Normal;
-        ctx.log(e, LogCategory::Misc, std::format("{} decloaked", v.name), "Its cloak could no longer be kept up.", v.location);
+        ctx.log(e, LogCategory::Misc, std::format("{} decloaked", v.name), "Its cloak could no longer be kept up.", v.location,
+                logpicture::vehicle(r, s, v));
         // Any decloak runs the first-contact check in its system (spec 05 §3.1).
         diplomacy::firstContactIn(ctx, v.location.system);
     };

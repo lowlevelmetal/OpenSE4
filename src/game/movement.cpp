@@ -17,6 +17,7 @@
 // warp jump included), the Attack order and a Seek order at its target run a
 // battle check (spec 04 §2).
 
+#include "game/log_picture.hpp"
 #include "game/movement.hpp"
 
 #include "game/combat.hpp"
@@ -699,8 +700,18 @@ private:
     }
 
     Exec fail(const Group& g, const Order& o, std::string_view why) {
-        ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {} order cancelled", name(g), displayName(o.kind)), std::string(why), where(g));
+        ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {} order cancelled", name(g), displayName(o.kind)), std::string(why), where(g),
+                 picture(g));
         return Exec::Fail;
+    }
+
+    // The acting object's own picture for the entries about it (spec 06
+    // §4.1): a planet's, a fleet member's fleet portrait, a unit group's
+    // group portrait, a ship's or base's hull portrait.
+    std::string picture(const Group& g) const {
+        if (g.planet.valid()) return logpicture::planet(g.planet);
+        const Vehicle* v = s_.vehicle(g.lead);
+        return v ? logpicture::vehicle(r_, s_, *v) : std::string{};
     }
 
     Exec afterTravel(Group& g, const Order& o, Travel t) {
@@ -731,7 +742,7 @@ private:
     // action ends there.
     Exec encounter(Group& g, const Order& o, bool arrived) {
         ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
-                 "Another empire is in the system; the orders were cleared (empire options).", where(g));
+                 "Another empire is in the system; the orders were cleared (empire options).", where(g), picture(g));
         routes_.erase(routeKey(g));
         clearListsOf(g.members);
         clearListsOf(g.holders);
@@ -916,7 +927,7 @@ private:
         for (VehicleId id : std::vector<VehicleId>(g.members)) hurt(ctx_, id, static_cast<int>(std::min<int64_t>(damage, INT_MAX)), cause);
         for (VehicleId id : g.members)
             if (const Vehicle* v = s_.vehicle(id); v && alive(*v))
-                ctx_.log(g.owner, LogCategory::Events, std::format("{} damaged", v->name), std::string(cause), v->location);
+                ctx_.log(g.owner, LogCategory::Events, std::format("{} damaged", v->name), std::string(cause), v->location, "ShipDamaged");
         g.stopped = true;
     }
 
@@ -1102,7 +1113,7 @@ private:
         const bool enemy = hostilePresentInSystem(g.owner, where(g).system);
         if (!lowSupply && !enemy) return Exec::Wait;
         ctx_.log(g.owner, LogCategory::Combat, std::format("{}: {}", name(g), enemy ? "enemy sighted" : "supplies low"), "Sentry duty ended.",
-                 where(g));
+                 where(g), picture(g));
         return Exec::Done;
     }
 
@@ -1145,7 +1156,7 @@ private:
         const bool stored = !o.vehicle.valid() && !o.object.valid() && !validLocation(s_, o.location);
         if ((live_ && !onlyDrones(g)) || stored) return placeAttack(g, o);
         if (pursuitOver(s_, g.owner, o)) {
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g));
+            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g), picture(g));
             return Exec::Done;
         }
         // A drone sent at a warp point goes through it (an order given before
@@ -1298,7 +1309,8 @@ private:
             if (t != Travel::Arrived) return afterTravel(g, o, t);
         }
         if (remaining(g) <= 0 || immobile(g)) {
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g));
+            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g),
+                     picture(g));
             return Exec::Done;
         }
         bool lowered = false;
@@ -1358,7 +1370,7 @@ private:
             const char* why = o.kind == OrderKind::Explore    ? "nothing left to explore"
                               : o.kind == OrderKind::Resupply ? "no reachable resupply depot"
                                                               : "no reachable repair facility";
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g));
+            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g), picture(g));
             return Exec::Removed;
         }
         forEachList(g, [&](std::vector<Order>& list, bool) {
@@ -1464,7 +1476,7 @@ private:
             const bool byKind = o.kind == OrderKind::RecoverUnits && !o.vehicle.valid();
             const std::string what = byKind ? std::string("units") : s_.design(o.design).name;
             ctx_.log(g.owner, LogCategory::Misc, std::format("{} {} {} {}", name(g), o.kind == OrderKind::LaunchUnits ? "launched" : "recovered", moved, what),
-                     {}, where(g));
+                     {}, where(g), picture(g));
         }
         return Exec::Acted;
     }
@@ -1563,7 +1575,7 @@ private:
             ctx_.log(g.owner, LogCategory::Misc, "Resources Converted",
                      std::format("The Resource Minister reports that {} in the {} system has converted {} {} into {} {}.", planet.name,
                                  s_.galaxy.system(planet.system).name, amount, displayName(from), gain, displayName(to)),
-                     locationOf(s_.galaxy, g.planet));
+                     locationOf(s_.galaxy, g.planet), logpicture::planet(g.planet));
         }
         return Exec::Done;
     }
@@ -1798,7 +1810,7 @@ private:
             }
             if (!struck) continue;
             ctx_.log(e.owner, LogCategory::Combat, std::format("{} stopped by a minefield", e.name),
-                     e.pursuit ? "It keeps its orders." : "Its orders were cancelled.", where);
+                     e.pursuit ? "It keeps its orders." : "Its orders were cancelled.", where, "MineExplosion");
             if (!e.pursuit) clearListsOf(e.holders);
         }
     }
@@ -2119,7 +2131,7 @@ void runStellarHazards(TurnContext& ctx) {
             const EmpireId owner = v->owner;
             const Location where = v->location;
             if (!hurt(ctx, id, static_cast<int>(std::min<int64_t>(damage, INT_MAX)), "Torn apart at the centre of the system."))
-                ctx.log(owner, LogCategory::Events, std::format("{} damaged", name), "Damaged at the centre of the system.", where);
+                ctx.log(owner, LogCategory::Events, std::format("{} damaged", name), "Damaged at the centre of the system.", where, "ShipDamaged");
         }
     }
     s.removeDeadVehicles();

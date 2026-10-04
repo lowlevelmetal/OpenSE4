@@ -1,3 +1,4 @@
+#include "game/log_picture.hpp"
 #include "game/scrap.hpp"
 
 #include "game/commands.hpp"
@@ -90,7 +91,8 @@ void scrapVehicle(TurnContext& ctx, Vehicle& v) {
     // Damage does not lower the value and cargo is lost (spec 03 §15).
     s.empire(v.owner).stockpile += scrapRefund(ctx.rules, s, v);
     perDesign(ctx.rules, s, v, [&](DesignId d, int n) { s.design(d).scrapped += n; });
-    ctx.log(v.owner, LogCategory::Construction, std::format("{} scrapped", v.name), {}, v.location);
+    ctx.log(v.owner, LogCategory::Construction, std::format("{} scrapped", v.name), {}, v.location,
+            logpicture::unitGroup(vehicleType(ctx.rules, s, v), v.owner, v.design));
     removeVehicle(v);
 }
 
@@ -130,7 +132,8 @@ void unmothballVehicle(TurnContext& ctx, Vehicle& v) {
 void selfDestructVehicle(TurnContext& ctx, Vehicle& v) {
     GameState& s = ctx.state;
     perDesign(ctx.rules, s, v, [&](DesignId d, int n) { s.design(d).scrapped += n; });
-    ctx.log(v.owner, LogCategory::Misc, std::format("{} destroyed", v.name), "It self-destructed.", v.location);
+    ctx.log(v.owner, LogCategory::Misc, std::format("{} destroyed", v.name), "It self-destructed.", v.location,
+            logpicture::unitGroup(vehicleType(ctx.rules, s, v), v.owner, v.design));
     removeVehicle(v);
 }
 
@@ -146,7 +149,7 @@ void fireOnVehicle(TurnContext& ctx, Vehicle& v) {
     // One Construction entry with Goto to the sector (spec 03 §15).
     ctx.log(v.owner, LogCategory::Construction, group ? "Group Destroyed" : "Vehicle Destroyed",
             std::format("The Demolition Minister reports that our own ships fired on {} in {} and destroyed it.", v.name, sectorText(s, v.location)),
-            v.location);
+            v.location, logpicture::unitGroup(vehicleType(ctx.rules, s, v), v.owner, v.design));
     removeVehicle(v);
 }
 
@@ -365,7 +368,8 @@ void retrofitVehicle(TurnContext& ctx, Vehicle& v, DesignId to) {
     v.movement = std::min(v.movement, vehicleMaxMovement(r, s, v));
     if (vehicleHasUnlimitedSupply(r, s, v)) v.supply = kUnlimitedSupply;
     else v.supply = std::clamp<int64_t>(v.supply, 0, vehicleSupplyCapacity(r, s, v));
-    ctx.log(v.owner, LogCategory::Construction, std::format("{} retrofitted to {}", v.name, name), {}, v.location);
+    ctx.log(v.owner, LogCategory::Construction, std::format("{} retrofitted to {}", v.name, name), {}, v.location,
+            logpicture::unitGroup(vehicleType(r, s, v), v.owner, v.design));
 }
 
 } // namespace opense4::game
