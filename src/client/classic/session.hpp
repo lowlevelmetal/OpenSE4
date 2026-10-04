@@ -111,6 +111,9 @@ public:
 
     // Bumped on every state change; windows use it to refresh cached views.
     uint64_t revision() const { return revision_; }
+    // How many engine calls that play the game (an order carried out, End
+    // Turn, the computer players' turns, a battle's answer) have run.
+    uint64_t engineCalls() const { return engineCalls_; }
 
     // Validates and applies a command for the local player (turn-based games:
     // and carries it out).
@@ -301,6 +304,7 @@ private:
     // here (SaveInfo::masterPasswordVerifier); kept when the game is saved.
     std::string masterVerifier_;
     uint64_t revision_ = 1;
+    uint64_t engineCalls_ = 0;
     std::vector<game::Command> orders_;
     // The Players window switched our own empire this turn (a player's copy):
     // the objects changed since carry their flags (carryFlags), once each.

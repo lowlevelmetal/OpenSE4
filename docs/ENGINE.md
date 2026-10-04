@@ -489,6 +489,11 @@ grow, for example with more pipelines or offscreen targets, without touching gam
 explains where it looked and exits with an error. It then opens the window, the render
 device (Vulkan, else OpenGL) and Dear ImGui, and runs the frame loop and screenshots.
 
+While End Turn's processing (or the rest of a turn after a battle's window) holds the
+frame, the player's clicks and keys wait in the queue; `ClassicMode` drops them after such
+a frame, as the original locks its panels until the computer players have moved, so a
+second click on End Turn does not end the next turn too.
+
 `src/client/classic` presents the engine in the classic layouts: a 1024×768 or
 800×600 frame scaled to the window, drawn with the art, raster fonts and mouse
 pointers from the player's install (docs/spec/06 §2.1.1, §5.4, §5.8). The layout

@@ -1218,9 +1218,11 @@ Three groups, left to right [T][S]:
    Designs, Planets, Colonies, Ships\Units, Construction Queues. Bottom row: Research,
    Empires, Log, Empire Status, Help, End Turn. They match F2..F11, F1 and F12 (§3).
    Pressing End Turn disables the main window's panels until every computer player has
-   moved. A left-click plays `cmdbtn` when sound is on (confirmed: binary). In our
-   client, while a battle is being shown, End Turn does nothing (the battle's window is
-   modal, §1.10.5).
+   moved. A left-click plays `cmdbtn` when sound is on (confirmed: binary). Our client
+   processes the turn within one frame; the clicks and keys given meanwhile are dropped
+   when it ends (`ClassicMode::dropInputMadeWhileBusy`), so a second click on End Turn
+   does not end the next turn as well. While a battle is being shown, End Turn does
+   nothing (the battle's window is modal, §1.10.5).
 2. **Order buttons**: 40 order places with fixed positions (the order and cells are in
    spec 07 §UI), filled column by column, top then bottom (confirmed: binary). The order
    area starts at (230,36), 219 px right of the panel's left edge and 2 px below its top;

@@ -320,6 +320,7 @@ void ClassicSession::beginCall(Call call, std::optional<game::Command> command) 
 void ClassicSession::runCall() {
     const std::vector<game::BattleAnswer>* answers = showsBattles() ? &answers_ : nullptr;
     game::TurnResult res;
+    if (call_ != Call::None) ++engineCalls_;
     try {
         switch (call_) {
             case Call::Issue: res = game::applyLive(*rules_, state_, player_, *callCommand_, answers); break;

@@ -726,6 +726,19 @@ void ClassicMode::endTurn() {
     session_->endTurn();
 }
 
+void ClassicMode::dropInputMadeWhileBusy() {
+    SDL_PumpEvents();
+    for (const SDL_EventType type : {SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP, SDL_EVENT_TEXT_INPUT, SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_BUTTON_UP,
+                                     SDL_EVENT_MOUSE_WHEEL})
+        SDL_FlushEvent(type);
+    // And what Dear ImGui holds still to hand out over the next frames: every
+    // key and button is then released.
+    ImGuiIO& io = ImGui::GetIO();
+    io.ClearEventsQueue();
+    io.ClearInputKeys();
+    io.ClearInputMouse();
+}
+
 void ClassicMode::cueMusic(MusicCue cue) {
     if (!settings().musicOn) return;
     const std::string track = music_.cue(cue, playlists_, session_ ? session_->state().turn : 0, session_ != nullptr);
@@ -768,7 +781,16 @@ bool ClassicMode::update(const FrameState& fs) {
     fbScale_ = fs.fbScale;
     // Every classic window defaults to the game's text font at its native size.
     ImGui::PushFont(fonts_.regular, kTextSize * mapping_.scale / fs.fbScale * appSettings().graphics.textScale);
+    const ClassicSession* session = session_.get();
+    const uint64_t calls = session ? session->engineCalls() : 0;
+    const uint64_t started = SDL_GetTicksNS();
     const bool keepRunning = updateFrame(fs);
+    // The original locks its panels while the turn is processed (spec 06
+    // §2.3); here the processing holds the frame, and what was clicked or
+    // pressed meanwhile waits in the queue. A script's input never waits.
+    constexpr uint64_t kBusyNs = 250'000'000;
+    if (session && session_.get() == session && session_->engineCalls() != calls && !options_.scripted && SDL_GetTicksNS() - started > kBusyNs)
+        dropInputMadeWhileBusy();
     ImGui::PopFont();
     // The frame's pointer, grown with the classic screens by whole multiples.
     if (pointers().loaded()) pointers().apply(int(std::lround(mapping_.scale / std::max(0.01f, fs.fbScale))));
