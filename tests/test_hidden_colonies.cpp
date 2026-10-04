@@ -126,6 +126,47 @@ TEST_CASE("hidden colonies: the system panel draws and lists only the planets th
     CHECK(ui::shownStellarObjects(r, s, kA, sky.farSys).empty());
 }
 
+TEST_CASE("hidden colonies: the Colonize pick takes every planet of the sector, the hidden ones too (spec 06 §2.9, spec 03 §19 Q80)") {
+    Sky sky;
+    const Rules& r = sky.w.rules();
+    GameState& s = sky.w.s;
+    // A nebula system: its planets are hidden from base sensors. In (2,2) a
+    // planet, its moon and an asteroid field; in (4,4) one planet alone.
+    const SystemId haze = sky.w.system("Haze", 20, 0);
+    s.galaxy.system(haze).abilities = {ab(AbilityKind::SectorSightObscuration, 3)};
+    const ObjectId big = sky.w.planet(haze, {2, 2});
+    const ObjectId moon = sky.w.planet(haze, {2, 2});
+    sky.w.object(haze, ObjectKind::Asteroids, {2, 2});
+    const ObjectId lone = sky.w.planet(haze, {4, 4});
+    sky.w.exploreAll(kA);
+    sky.cloak();
+
+    // The cloaked colony: the panel shows nothing in its sector, but it is the
+    // one candidate there, so the order is given at once, without a window.
+    CHECK(ui::shownStellarObjects(r, s, kA, sky.nearSys, Sector{6, 6}).empty());
+    const auto cloaked = ui::colonizeCandidates(s, kA, at(sky.nearSys, 6, 6));
+    CHECK(cloaked == std::vector<ObjectId>{sky.cloaker});
+    CHECK(ui::pickStep(cloaked.size()) == ui::PickStep::GiveAtOnce);
+    // A planet a nebula hides: the same.
+    CHECK(ui::shownStellarObjects(r, s, kA, haze, Sector{4, 4}).empty());
+    const auto alone = ui::colonizeCandidates(s, kA, at(haze, 4, 4));
+    CHECK(alone == std::vector<ObjectId>{lone});
+    CHECK(ui::pickStep(alone.size()) == ui::PickStep::GiveAtOnce);
+    // Two hidden planets in one sector are listed by name in the Pick Object
+    // window, in the system's object order; never the asteroid field.
+    CHECK(ui::shownStellarObjects(r, s, kA, haze, Sector{2, 2}).empty());
+    const auto two = ui::colonizeCandidates(s, kA, at(haze, 2, 2));
+    CHECK(two == std::vector<ObjectId>{big, moon});
+    CHECK(ui::pickStep(two.size()) == ui::PickStep::AskWhich);
+    // Our own colony is a candidate too (the order fails on arrival); an
+    // empty sector and an unexplored system give none, and no order.
+    CHECK(ui::colonizeCandidates(s, kA, at(sky.nearSys, 1, 1)) == std::vector<ObjectId>{sky.mine});
+    CHECK(ui::colonizeCandidates(s, kA, at(sky.nearSys, 3, 3)).empty());
+    CHECK(ui::pickStep(0) == ui::PickStep::Nothing);
+    s.empire(kA).knowledge.explored[haze.index()] = 0;
+    CHECK(ui::colonizeCandidates(s, kA, at(haze, 4, 4)).empty());
+}
+
 TEST_CASE("hidden colonies: the Planets window, the colonize star and the statistics (spec 06 §1.8.1)") {
     Sky sky;
     const Rules& r = sky.w.rules();

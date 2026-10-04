@@ -648,6 +648,12 @@ std::vector<MainWindow::PickCandidate> MainWindow::pickCandidates(UiContext& ui,
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
     const game::EmpireId me = ui.session.player();
+    if (p == Pick::Colonize) {
+        // Every planet there, the ones the panel does not draw included (spec 03 §19 Q80).
+        std::vector<PickCandidate> out;
+        for (game::ObjectId id : colonizeCandidates(s, me, where)) out.push_back(PickCandidate{id, {}});
+        return out;
+    }
     std::vector<std::pair<uint64_t, PickCandidate>> found;
     const bool drones = p == Pick::Attack && ui.session.turnBased();   // a pursuit in a turn-based game: a drone group
     for (game::ObjectId id : shownStellarObjects(r, s, me, where.system, where.sector)) {
@@ -655,7 +661,6 @@ std::vector<MainWindow::PickCandidate> MainWindow::pickCandidates(UiContext& ui,
         const game::Colony* seen = seenColony(r, s, me, id);
         bool take = false;
         switch (p) {
-            case Pick::Colonize: take = o.kind == game::ObjectKind::Planet; break;   // colonized or not, of any type
             case Pick::Warp: take = o.kind == game::ObjectKind::WarpPoint; break;
             case Pick::DropCargo: take = seen && seen->owner == me; break;
             case Pick::Attack: take = (seen && seen->owner != me) || (drones && o.kind == game::ObjectKind::WarpPoint); break;
@@ -730,12 +735,11 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
         case Pick::DropCargo: {
             std::vector<PickCandidate> candidates = pickCandidates(ui, p, where);
             if (object) std::erase_if(candidates, [&](const PickCandidate& c) { return c.object != *object; });
-            if (candidates.empty()) return;   // no order, and nothing said
-            if (candidates.size() == 1) {
-                givePicked(ui, p, where, candidates.front());
-                return;
+            switch (pickStep(candidates.size())) {
+                case PickStep::Nothing: return;   // no order, and nothing said
+                case PickStep::GiveAtOnce: givePicked(ui, p, where, candidates.front()); return;
+                case PickStep::AskWhich: pickObject_ = PickObject{p, where, std::move(candidates)}; return;
             }
-            pickObject_ = PickObject{p, where, std::move(candidates)};
             return;
         }
         case Pick::Patrol:

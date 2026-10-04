@@ -55,6 +55,26 @@ struct SectorView {
 std::vector<game::ObjectId> shownStellarObjects(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::SystemId sys,
                                                 std::optional<game::Sector> sector = std::nullopt);
 
+// The Colonize order's candidates in a clicked sector (spec 06 §2.9, spec 03
+// §8, §19 Q80, confirmed: binary), in the system's object order: every
+// planet there, colonized or not, of any type, and whether or not the
+// viewer sees it, so a planet that a storm, a nebula or a colony's cloak
+// hides from the system panel is a candidate too; never an asteroid field.
+// None while the viewer has not explored the system. With one candidate the
+// order is given at once, even in a sector that looks empty. (A network
+// player's view leaves out a foreign colony hidden from it altogether,
+// game::redactForEmpire, so it is no candidate there.)
+std::vector<game::ObjectId> colonizeCandidates(const game::GameState& s, game::EmpireId viewer, game::Location where);
+
+// What a pick that needs one object of the clicked sector does with its
+// candidates (spec 06 §2.9, confirmed: binary): none gives no order and says
+// nothing; one is the target at once, with no window; more open the Pick
+// Object window.
+enum class PickStep { Nothing, GiveAtOnce, AskWhich };
+constexpr PickStep pickStep(size_t candidates) {
+    return candidates == 0 ? PickStep::Nothing : candidates == 1 ? PickStep::GiveAtOnce : PickStep::AskWhich;
+}
+
 // `objects`: the sector's stellar objects in the system's list order;
 // `vehicles`: the vehicles the viewer sees there. `cellHeight`: 36 or 50.
 SectorView sectorView(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, std::span<const game::ObjectId> objects,
