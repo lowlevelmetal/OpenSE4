@@ -2,12 +2,15 @@
 # Builds the redistributable OpenSE4 packages (docs/BUILDING.md, "Release packages"):
 #
 #   dist/OpenSE4-<version>-linux-x86_64.tar.gz        static except the C library (glibc 2.34+)
-#   dist/OpenSE4-<version>-windows-x86_64.zip         static, cross-built with MinGW-w64
+#   dist/OpenSE4-<version>-windows-x86_64.zip         static, Windows 7 SP1 to 11 (llvm-mingw, msvcrt.dll)
 #   dist/OpenSE4-<version>-windows-x86_64-setup.exe   the same, as an installer
 #   dist/OpenSE4-<version>-SHA256SUMS.txt
 #
-# On Linux both are built (Windows cross-compiled with MinGW-w64). In MSYS2 on
-# Windows (the UCRT64 shell) the Windows packages are built natively instead.
+# On Linux both are built (Windows cross-compiled). In MSYS2 on Windows the
+# Windows packages are built natively instead. Either way the Windows programs
+# come from the dist-windows preset: llvm-mingw for msvcrt.dll, fetched into
+# build/_tools at a pinned version (cmake/toolchains/llvm-mingw-x86_64.cmake),
+# and tools/check_windows_imports.py checks that they load on Windows 7 SP1.
 #
 # Each holds the game, the dedicated server and the data checker, with our own
 # fonts built in, plus the README, the licence (GPL 3.0 or later) and the
@@ -132,21 +135,25 @@ notices() {  # notices <build dir> <target> <output file>
         sed -n '/Copyright/,/\*\//p' third_party/khronos/GL/glcorearb.h
         section "Noto Sans fonts (SIL Open Font License 1.1)" "assets/fonts/OFL.txt"
         if [ "$2" = windows ]; then
-            # Arch's mingw-w64-crt, or MSYS2's crt package.
-            local runtime=/usr/share/licenses/mingw-w64-crt/COPYING.MinGW-w64-runtime.txt
-            [ "$native_windows" = 1 ] && runtime="$MINGW_PREFIX/share/licenses/crt/COPYING.MinGW-w64-runtime.txt"
-            section "MinGW-w64 runtime" "$runtime"
+            # The runtime of the toolchain (llvm-mingw): MinGW-w64's, and LLVM's
+            # C++ library, unwinder and compiler runtime.
+            local toolchain
+            toolchain=$(sed -n 's/^LLVM_MINGW_DIR:PATH=//p' "$1/CMakeCache.txt")
+            section "MinGW-w64 runtime" "$toolchain/x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt"
+            section "MinGW-w64 winpthreads" "$toolchain/x86_64-w64-mingw32/share/mingw32/COPYING.winpthreads.txt"
+            section "LLVM runtime libraries: libc++, libc++abi, libunwind, compiler-rt (Apache 2.0 with LLVM exceptions)" \
+                "$toolchain/LICENSE.TXT"
+        else
+            echo; echo; echo "------------------------------------------------------------------------"
+            echo "GCC runtime libraries"; echo "------------------------------------------------------------------------"; echo
+            echo "The C++ standard library and GCC support libraries are linked in under the"
+            echo "GCC Runtime Library Exception (GPL version 3 with the exception)."
         fi
-        echo; echo; echo "------------------------------------------------------------------------"
-        echo "GCC runtime libraries"; echo "------------------------------------------------------------------------"; echo
-        echo "The C++ standard library and GCC support libraries are linked in under the"
-        echo "GCC Runtime Library Exception (GPL version 3 with the exception)."
     } > "$out"
 }
 
 for target in "${targets[@]}"; do
     preset="dist-$target"
-    [ "$native_windows" = 1 ] && preset=dist-mingw
     build="$root/build/$preset"
     echo "==> $target: configure and build ($preset)"
     cmake --preset "$preset" > /dev/null
@@ -156,7 +163,10 @@ for target in "${targets[@]}"; do
     strip=strip
     if [ "$target" = windows ]; then
         exe=".exe"
-        [ "$native_windows" = 1 ] || strip=x86_64-w64-mingw32-strip
+        strip=$(sed -n 's/^CMAKE_STRIP:FILEPATH=//p' "$build/CMakeCache.txt")  # the toolchain's
+        echo "==> $target: imports (Windows 7 SP1)"
+        python3 tools/check_windows_imports.py "$build/opense4.exe" "$build/opense4-server.exe" \
+            "$build/opense4-datacheck.exe" "$build/tests/opense4_tests.exe"
     fi
 
     if [ "$tests" = 1 ]; then
@@ -167,7 +177,19 @@ for target in "${targets[@]}"; do
         elif [ "$native_windows" = 1 ]; then
             "$build/tests/opense4_tests.exe"
         elif command -v wine > /dev/null; then
-            WINEDEBUG=-all wine "$build/tests/opense4_tests.exe"
+            # In a Wine prefix of its own that reports Windows 7 SP1. Wine has the
+            # newer functions whatever it reports: the import check above is what
+            # holds the programs to Windows 7.
+            (
+                export WINEPREFIX="$root/build/_tools/wine-win7" WINEDEBUG=-all \
+                    WINEDLLOVERRIDES="winemenubuilder.exe=d;mscoree=d;mshtml=d"
+                if [ ! -f "$WINEPREFIX/system.reg" ]; then
+                    wine wineboot -i > /dev/null 2>&1
+                    wine winecfg -v win7 > /dev/null 2>&1
+                    if command -v wineserver > /dev/null; then wineserver -w; fi
+                fi
+                wine "$build/tests/opense4_tests.exe"
+            )
         else
             echo "    (Wine not installed: Windows tests skipped)"
         fi
