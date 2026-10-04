@@ -96,6 +96,11 @@ bool decloakSweepers(const Rules& r, GameState& s, Location where, std::span<con
 // `colonizer` founds a colony on `planet`, which it has checked it may: the
 // ship is consumed and its people and cargo land (movement_upkeep.cpp).
 void foundColony(TurnContext& ctx, VehicleId colonizer, ObjectId planet);
+// The colonizer's own part of the Colonize tests: the `Colonize Planet - *`
+// ability matching the planet's surface, and the game options that exclude
+// it (empty = it could settle that kind of planet). Nothing about the
+// planet's state or sight.
+std::string colonizerProblem(const Rules& r, const GameState& s, const Vehicle& v, const SpaceObject& planet);
 
 // ---- Cargo and units (spec 03 §11-12) ------------------------------------------------------------
 int64_t freeCargo(const Rules& r, const GameState& s, const Vehicle& v);

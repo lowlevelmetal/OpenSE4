@@ -336,7 +336,11 @@ bool isDestructiveStellarReport(std::string_view title);
 std::string stellarReportText(const GameState& s, EmpireId culprit, std::string_view vehicle);
 bool stellarReportNames(const GameState& s, const LogEntry& entry, EmpireId culprit);
 
-// Why this vehicle cannot colonize that planet (empty = it can, ignoring distance).
+// Why this vehicle cannot colonize that planet now (empty = it can, ignoring
+// distance): the planet gone or not a planet; not seen by the vehicle's
+// owner (the detection rule with the sensors of the moment, so a planet in
+// a system where the owner has no sensor source is not seen; spec 03 §8);
+// already colonized; no matching module, or a game option against it.
 std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v, ObjectId planet);
 // A resupply depot `empire` may use in this sector: a colonized planet with
 // Supply Generation, its own or of an empire it has a Military Alliance or

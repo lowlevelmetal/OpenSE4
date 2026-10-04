@@ -1385,47 +1385,47 @@ private:
     // Colonize (§8, confirmed: binary): given as Load Cargo, Move To and
     // Colonize, so nothing about the planet is checked before the group is in
     // its sector (spec 06 §7 Q100). There the reasons are tested in the
-    // game's order: the planet gone, unseen or elsewhere; an asteroid field;
-    // no movement left (the order waits); a colony there, of any empire; a
-    // cloaked member; no member able to colonize it. The colonizer is the last
-    // suitable member.
+    // game's order, each time the Colonize heads the list: the planet gone,
+    // unseen or elsewhere; an asteroid field; no movement left (the order
+    // waits); a colony there, of any empire; a cloaked member; no member able
+    // to colonize it. The colonizer is the last suitable member.
     Exec colonize(Group& g, Order& o) {
+        const bool known = o.object.valid() && o.object.index() < s_.galaxy.objects.size();
         if (o.amount == 0) {
             // An order that reached a list without its Load Cargo (tools,
             // tests): the colonists come aboard where it starts, on the last
-            // member that could colonize, else the last member.
+            // member whose module suits the planet, else the last member.
             VehicleId loader = g.members.empty() ? VehicleId{} : g.members.back();
-            for (VehicleId id : g.members)
-                if (colonizeProblem(r_, s_, *s_.vehicle(id), o.object).empty()) loader = id;
+            if (known)
+                for (VehicleId id : g.members)
+                    if (colonizerProblem(r_, s_, *s_.vehicle(id), s_.galaxy.object(o.object)).empty()) loader = id;
             if (loader.valid()) loadColonists(ctx_, loader);
             o.amount = 1;
         }
-        const bool exists = o.object.valid() && o.object.index() < s_.galaxy.objects.size() && inSystem(s_.galaxy, o.object);
-        if (exists && locationOf(s_.galaxy, o.object) != where(g)) {
-            // A Colonize still on its way: the computer players' order, which
-            // travels itself (spec 05 §7.5, open question 23). It gives up as
-            // soon as nobody in the group could settle the planet any more
-            // (inferred); a player's Colonize follows its Move To and is
-            // checked only in the planet's sector.
-            const bool cloaked = any(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; });
-            std::string why = cloaked ? std::string("A cloaked ship cannot colonize.") : std::string{};
-            bool able = false;
-            for (VehicleId id : g.members) {
-                const std::string p = colonizeProblem(r_, s_, *s_.vehicle(id), o.object);
-                able = able || p.empty();
-                if (!p.empty() && why.empty()) why = p;
-            }
-            if (cloaked || !able) return colonizeFailed(g, why);
+        if (known && locationOf(s_.galaxy, o.object) != where(g)) {
+            // A Colonize away from its planet: a list set without the
+            // expansion cmd::SetOrders makes (tools, tests); every order
+            // given, the computer players' too, already is Load Cargo, Move
+            // To and Colonize (spec 05 §7.5). It stands for that Move To:
+            // nothing is checked before the planet's sector, even when the
+            // planet has been taken, changed or destroyed (spec 05 §7 Q35,
+            // Q78). The step that arrives completes the Move To, and the
+            // Colonize is carried out in the same action; a turn-based game
+            // runs it after the step's battle check, as it runs the next
+            // order (runLive).
             const Travel t = travel(g, locationOf(s_.galaxy, o.object));
-            if (t != Travel::Arrived) return afterTravel(g, o, t);
+            if (t != Travel::Reached || live_) return afterTravel(g, o, t);
         }
-        // A planet gone, out of the sector, or holding a colony its owner
-        // cannot see (cloaked) leaves no planet to colonize (spec 01 §6.9).
-        // Ours does not test whether a storm or nebula hides the planet
-        // itself: our computer players aim at such planets and would fail
-        // there for ever (spec 03 §19 Q80).
-        const bool hidden = exists && s_.colony(o.object) && !sight::canSeeColony(r_, s_, g.owner, o.object);
-        if (!exists || hidden || locationOf(s_.galaxy, o.object) != where(g)) return colonizeFailed(g, "There is no planet here to colonize.");
+        // "Seen" (§8, §19 Q80, confirmed: binary): the detection rule of spec
+        // 01 §6.3 for the group's owner applied to the planet, colonized or
+        // not, with the sensors of this moment, the group's own counted (sight
+        // is live: it follows every step and warp). With the omnipresent view
+        // the explored test drops and EM Active is at least 1 (spec 01 §6.5).
+        // A planet that a storm, a nebula or an undetected colony's cloak
+        // hides, like one that is gone or elsewhere, leaves no planet here;
+        // the test comes before the movement test, so it fails at once.
+        const bool seen = known && sight::canSeeColony(r_, s_, g.owner, o.object);
+        if (!seen || locationOf(s_.galaxy, o.object) != where(g)) return colonizeFailed(g, "There is no planet here to colonize.");
         const SpaceObject& planet = s_.galaxy.object(o.object);
         if (planet.kind != ObjectKind::Planet) return colonizeFailed(g, std::format("{} cannot be colonized.", planet.name));
         // Carried out like any order, on an acting day with movement left, so
@@ -1436,7 +1436,7 @@ private:
         if (any(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; })) return colonizeFailed(g, "A cloaked ship cannot colonize.");
         VehicleId colonizer;
         for (VehicleId id : g.members)
-            if (colonizeProblem(r_, s_, *s_.vehicle(id), o.object).empty()) colonizer = id;
+            if (colonizerProblem(r_, s_, *s_.vehicle(id), planet).empty()) colonizer = id;
         if (!colonizer.valid()) return colonizeFailed(g, std::format("Unable to colonize {} planets.", planet.surface));
         foundColony(ctx_, colonizer, o.object);
         return Exec::Done;

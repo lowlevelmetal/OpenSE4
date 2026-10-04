@@ -31,6 +31,20 @@ std::vector<game::ObjectId> shownStellarObjects(const game::Rules& r, const game
     return out;
 }
 
+std::vector<game::ObjectId> colonizeCandidates(const game::GameState& s, game::EmpireId viewer, game::Location where) {
+    std::vector<game::ObjectId> out;
+    const game::SystemId sys = where.system;
+    if (!sys.valid() || sys.index() >= s.galaxy.systems.size() || !viewer.valid() || viewer.index() >= s.empires.size()) return out;
+    if (!s.empire(viewer).hasExplored(sys)) return out;
+    for (game::ObjectId id : s.galaxy.system(sys).objects) {
+        const game::SpaceObject& o = s.galaxy.object(id);
+        if (o.sector == where.sector && o.kind == game::ObjectKind::Planet) out.push_back(id);
+    }
+    std::stable_sort(out.begin(), out.end(),
+                     [&](game::ObjectId a, game::ObjectId b) { return game::objectOrderKey(s, a) < game::objectOrderKey(s, b); });
+    return out;
+}
+
 int flagStep(int owners, int cellHeight) {
     if (owners <= 0 || owners * 10 <= cellHeight) return 10;
     return cellHeight / owners;

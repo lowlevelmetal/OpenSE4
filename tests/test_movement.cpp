@@ -2638,14 +2638,157 @@ TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     CHECK(entry->picture == "OrdersNotCompleted");
     CHECK(entry->text.find(w.s.galaxy.system(a).name) != std::string::npos);   // names the system
 
-    // The computer players' Colonize, which travels itself, gives up on its
-    // way as soon as nobody aboard could settle the planet (inferred, spec 03 §19 Q80).
+    // The computer players' Colonize, which travels itself, stands for their
+    // Move To and Colonize: nothing is checked on its way, so a ship that
+    // cannot settle the planet flies all the way and fails on arrival (spec
+    // 05 §7.5, §7 Q35, Q78).
     const VehicleId rock2 = w.spawn(w.ship(kA, "Rocky Two", 3, {"Test Rock Pod"}), at(a, 0, 0));
     fuel(w, rock2);
     w.order(rock2, mk(OrderKind::Colonize, {}, ice));
+    w.s.empire(kA).log.clear();
     w.move();
-    CHECK(w.v(rock2).location == at(a, 0, 0));
+    CHECK(w.v(rock2).location != at(a, 0, 0));
+    CHECK_FALSE(w.logged(kA, "Unable to Colonize"));
+    for (int i = 0; i < 6 && !w.v(rock2).orders.empty(); ++i) w.move();
+    CHECK(w.v(rock2).location == locationOf(w.s.galaxy, ice));
     CHECK(w.v(rock2).orders.empty());
+    CHECK(w.logged(kA, "Unable to colonize Ice planets."));
+    CHECK(w.logged(kA, "Rocky Two"));
+    // So does one whose target another empire settles while it is on its way:
+    // it arrives and finds a colony there.
+    const ObjectId far = w.planet(a, {9, 2});
+    const VehicleId rock3 = w.spawn(w.ship(kA, "Rocky Three", 3, {"Test Rock Pod"}), at(a, 0, 0));
+    fuel(w, rock3);
+    w.order(rock3, mk(OrderKind::Colonize, {}, far));
+    w.s.empire(kA).log.clear();
+    w.move();
+    REQUIRE_FALSE(w.v(rock3).orders.empty());
+    w.colony(far, kB, 10);
+    for (int i = 0; i < 6 && !w.v(rock3).orders.empty(); ++i) w.move();
+    CHECK(w.v(rock3).location == locationOf(w.s.galaxy, far));
+    CHECK(w.v(rock3).orders.empty());
+    CHECK(w.logged(kA, std::format("{} is already a colony.", w.s.galaxy.object(far).name)));
+}
+
+TEST_CASE("movement: Colonize needs the planet seen: a storm or a nebula hides it until a sensor reaches it (spec 03 §8, §19 Q80)") {
+    // "Seen" is the detection rule for the ship's owner applied to the
+    // planet, with the sensors of the moment, the colonizing ship's own
+    // counted; it is tested before the movement test, each time the Colonize
+    // heads the list. No system here starts explored: the ship's arrival
+    // explores it.
+    World w;
+    const SystemId fog = w.system("Fog");
+    w.s.galaxy.system(fog).abilities = {ab(AbilityKind::SectorSightObscuration, 3)};  // a nebula: 3 in every sight type
+    const ObjectId veiled = w.planet(fog, {5, 6});
+    const ObjectId veiled2 = w.planet(fog, {7, 7});
+    const SystemId clear = w.system("Clear", 20, 0);
+    const ObjectId open = w.planet(clear, {4, 4});
+    const ObjectId stormy = w.planet(clear, {3, 3});
+    const ObjectId storm = w.object(clear, ObjectKind::Storm, {3, 3});
+    w.s.galaxy.object(storm).abilities = {ab(AbilityKind::SectorSightObscuration, 3)};
+
+    auto settler = [&](std::string name, Location where, std::initializer_list<std::string_view> extra = {"Test Rock Pod"}) {
+        const VehicleId id = w.spawn(w.ship(kA, std::move(name), 4, extra), where);
+        fuel(w, id);
+        w.v(id).cargo.population.push_back({kA, 1});
+        return id;
+    };
+    const std::string noPlanet = "There is no planet here to colonize.";
+
+    // A planet in clear space is seen by the ship that reaches it, with no
+    // other sensor of its owner in the system.
+    const VehicleId plain = settler("Plain", at(clear, 4, 4));
+    w.order(plain, mk(OrderKind::Colonize, {}, open));
+    w.move();
+    REQUIRE(w.s.colony(open));
+    CHECK(w.s.colony(open)->owner == kA);
+
+    // In the storm's sector the planet is hidden from base sensors: it fails
+    // with "no planet here", as a planet that is gone does.
+    const VehicleId gusty = settler("Gusty", at(clear, 3, 3));
+    w.order(gusty, mk(OrderKind::Colonize, {}, stormy));
+    w.move();
+    CHECK_FALSE(w.s.colony(stormy));
+    CHECK(w.v(gusty).orders.empty());
+    CHECK(w.logged(kA, noPlanet));
+    CHECK(w.logged(kA, "Gusty"));
+
+    // The nebula, reached on the last acting day (three steps on days 8, 16
+    // and 23, so no movement is left): the sight test comes before the
+    // movement test and fails at once, for a player's Move To and Colonize
+    // as for a computer player's Colonize. A planet it sees would wait.
+    const VehicleId late = settler("Late", at(fog, 2, 6));
+    REQUIRE(movement::actionDays(vehicleMaxMovement(w.rules(), w.s, w.v(late)), movement::kDayCounterMode) == std::vector<int>{8, 16, 23});
+    w.give(late, {mk(OrderKind::Colonize, {}, veiled)});
+    REQUIRE(w.v(late).orders.size() == 2);  // Move To, Colonize: it carries its colonists
+    const VehicleId lateAi = settler("Late AI", at(fog, 2, 6));
+    w.order(lateAi, mk(OrderKind::Colonize, {}, veiled));
+    w.s.empire(kA).log.clear();
+    w.move();
+    for (VehicleId id : {late, lateAi}) {
+        CHECK(w.v(id).location == at(fog, 5, 6));
+        CHECK(w.v(id).orders.empty());
+    }
+    CHECK(w.logged(kA, noPlanet));
+    CHECK(w.logged(kA, "Late AI"));
+    CHECK_FALSE(w.s.colony(veiled));
+
+    // The colonizing ship's own sensors count: one with a level 3 sensor sees
+    // the planet and settles it.
+    const VehicleId seer = settler("Seer", at(fog, 5, 6), {"Test Rock Pod", "Mv Sensor 3"});
+    w.order(seer, mk(OrderKind::Colonize, {}, veiled));
+    w.move();
+    REQUIRE(w.s.colony(veiled));
+    CHECK(w.s.colony(veiled)->owner == kA);
+
+    // A partner's sensor in the system counts too, through the Partnership's
+    // shared sight (spec 01 §6.1); without the treaty it does not.
+    const VehicleId eye = w.spawn(w.ship(kB, "Eye", 1, {"Mv Sensor 3"}), at(fog, 0, 0));
+    const VehicleId again = settler("Again", at(fog, 7, 7));
+    w.order(again, mk(OrderKind::Colonize, {}, veiled2));
+    w.s.empire(kA).log.clear();
+    w.move();
+    CHECK(w.logged(kA, noPlanet));
+    CHECK(w.v(again).orders.empty());
+    w.setTreaty(kA, kB, Treaty::Partnership);
+    w.order(again, mk(OrderKind::Colonize, {}, veiled2));
+    w.move();
+    REQUIRE(w.s.colony(veiled2));
+    CHECK(w.s.colony(veiled2)->owner == kA);
+    CHECK(w.s.vehicle(eye));
+
+    // With the omnipresent view the hidden planet still needs real sensors (spec 01 §6.5).
+    w.s.options.omnipresent = true;
+    const VehicleId omni = settler("Omni", at(clear, 3, 3));
+    w.order(omni, mk(OrderKind::Colonize, {}, stormy));
+    w.s.empire(kA).log.clear();
+    w.move();
+    CHECK_FALSE(w.s.colony(stormy));
+    CHECK(w.logged(kA, noPlanet));
+}
+
+TEST_CASE("movement: a cloaked colony is no planet here to a colonizer that does not detect it, and a colony once it does (spec 03 §8)") {
+    World w;
+    const SystemId a = w.system("A");
+    const ObjectId hidden = w.planet(a, {6, 6});
+    Colony& c = w.colony(hidden, kB, 0, {"Mv Planet Cloak"});
+    c.cloaked = true;
+    const VehicleId first = w.spawn(w.ship(kA, "First", 4, {"Test Rock Pod"}), at(a, 6, 6));
+    fuel(w, first);
+    w.order(first, mk(OrderKind::Colonize, {}, hidden));
+    w.move();
+    CHECK(w.v(first).orders.empty());
+    CHECK(w.logged(kA, "There is no planet here to colonize."));
+    CHECK_FALSE(w.logged(kA, "already a colony"));
+    // A sensor that reaches the cloak (level 3) detects the colony: the same
+    // order now fails because the planet is a colony.
+    w.spawn(w.ship(kA, "Eye", 1, {"Mv Sensor 3"}), at(a, 0, 0));
+    w.order(first, mk(OrderKind::Colonize, {}, hidden));
+    w.s.empire(kA).log.clear();
+    w.move();
+    CHECK(w.v(first).orders.empty());
+    CHECK(w.logged(kA, std::format("{} is already a colony.", w.s.galaxy.object(hidden).name)));
+    CHECK(w.s.colony(hidden)->owner == kB);
 }
 
 TEST_CASE("movement: colony ships found colonies during the phases, on an acting day with movement left") {
