@@ -129,6 +129,16 @@ bool parseInt(std::string_view s, auto& out) {
     return ec == std::errc{} && ptr == s.data() + s.size();
 }
 
+// OPENSE4_CRASH_TEST: crash on purpose, with an exception nothing catches or a
+// fault. A function of its own, as MSVC does not let main, which SDL makes
+// extern "C", throw itself (C4297).
+[[noreturn]] void crashOnPurpose(std::string_view kind) {
+    if (kind == "exception") throw std::runtime_error("a test of the crash report");
+    volatile int* nowhere = nullptr;
+    *nowhere = 1;
+    std::abort();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -321,9 +331,7 @@ int main(int argc, char** argv) {
     // Checking the crash report (docs/BUILDING.md "Crash reports"): crash on purpose now.
     if (const auto test = core::environment("OPENSE4_CRASH_TEST")) {
         log::info("OPENSE4_CRASH_TEST={}: crashing on purpose", *test);
-        if (*test == "exception") throw std::runtime_error("a test of the crash report");
-        volatile int* nowhere = nullptr;
-        *nowhere = 1;
+        crashOnPurpose(*test);
     }
     return client::App().run(options);
 }
