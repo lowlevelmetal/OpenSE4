@@ -849,6 +849,40 @@ TEST_CASE("events: planet effects") {
     CHECK(s.colony(third)->owner == kA);
 }
 
+TEST_CASE("events: a colony's destroyed facility counts are never reset (spec 08 §11.2)") {
+    GameState s = newPoliticsGame();
+    const ObjectId home = homeworld(s, kA).planet;
+    auto target = [&](ObjectId o) { return onObject(kA, o); };
+    Colony& c = homeworld(s, kA);
+    REQUIRE(politicsRules().data().facilities.size() >= 2);
+    const uint32_t a = 0, b = 1;
+    c.facilities = {a, a, a, a, b, b, b, b};
+    c.destroyedFacilities.clear();
+
+    // The first destruction removes what it destroyed, as before; its count stays.
+    auto out = hit(s, Effect::PlanetFacilityDamage, target(home), 1, 3);
+    CHECK(out.actual == 1);
+    CHECK(c.facilities.size() == 7);
+    REQUIRE(c.destroyedFacilities.size() == 1);
+    CHECK(c.destroyedFacilities.front().count == 1);
+    // The next one adds its own and the pass takes every count off again:
+    // the colony loses the earlier facility a second time.
+    hit(s, Effect::PlanetFacilityDamage, target(home), 1, 4);
+    CHECK(c.facilities.size() == 5);
+    int counted = 0;
+    for (const DestroyedFacilities& d : c.destroyedFacilities) counted += d.count;
+    CHECK(counted == 2);
+    hit(s, Effect::PlanetFacilityDamage, target(home), 1, 5);
+    CHECK(c.facilities.size() == 2);
+
+    // A kind whose last facility goes loses its count with it (inferred).
+    c.facilities = {a, b, b, b};
+    c.destroyedFacilities = {{a, 3}};
+    hit(s, Effect::PlanetFacilityDamage, target(home), 1, 6);
+    for (const DestroyedFacilities& d : c.destroyedFacilities) CHECK(std::count(c.facilities.begin(), c.facilities.end(), d.facility) > 0);
+    CHECK(std::count(c.facilities.begin(), c.facilities.end(), a) == 0);
+}
+
 TEST_CASE("events: a rebel empire keeps its former owner's ministers' state, anger and experience (spec 05 Q41)") {
     // Two neutral races in a scratch install: one whose pictures an empire
     // uses, one free.

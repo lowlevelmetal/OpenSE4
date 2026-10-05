@@ -108,6 +108,11 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(IntelProjectOrder);
     CHECK_ALL_FIELDS(Relation);
     CHECK_ALL_FIELDS(LogEntry);
+    CHECK_ALL_FIELDS(ClassicLogFields);
+    CHECK_ALL_FIELDS(ClassicBattleSide);
+    CHECK_ALL_FIELDS(ClassicBattleShip);
+    CHECK_ALL_FIELDS(ClassicBattleSurvivor);
+    CHECK_ALL_FIELDS(DestroyedFacilities);
     CHECK_ALL_FIELDS(HistoryEntry);
     CHECK_ALL_FIELDS(SeenDesign);
     CHECK_ALL_FIELDS(TurnStats);
@@ -613,6 +618,37 @@ GameState goldenState() {
 
 } // namespace
 
+TEST_CASE("serialize: format 7 files still read") {
+    // Format 8 added LogEntry::classic and Colony::destroyedFacilities; a
+    // format-7 file reads with them empty.
+    GameState g = goldenState();
+    REQUIRE_FALSE(g.empires.empty());
+    LogEntry entry;
+    entry.title = "Old entry";
+    entry.classic.kind = 4;
+    g.empires[0].log.push_back(entry);
+    for (auto& c : g.colonies)
+        if (c) c->destroyedFacilities = {{0, 2}};
+    const std::vector<uint8_t> old = serial::encode(g, 7);
+    std::vector<uint8_t> blob = wrapEnvelope("OSE4STAT", old);
+    blob[8] = 7;   // the envelope's format version
+    auto env = unwrapEnvelope(blob, "OSE4STAT", "game state");
+    REQUIRE_MESSAGE(env.has_value(), (env ? std::string{} : env.error()));
+    CHECK(env->version == 7u);
+    GameState back;
+    std::string error;
+    REQUIRE_MESSAGE(serial::decode(env->payload, back, error, env->version), error);
+    CHECK(back.empires[0].log.back().title == "Old entry");
+    CHECK(back.empires[0].log.back().classic.kind == 0);
+    for (const auto& c : back.colonies)
+        if (c) CHECK(c->destroyedFacilities.empty());
+    CHECK(serial::encode(back, 7) == old);
+    // Today's format keeps them.
+    GameState now;
+    REQUIRE(serial::decode(serial::encode(g), now, error));
+    CHECK(now.empires[0].log.back().classic.kind == 4);
+}
+
 TEST_CASE("serialize: checksums are stable") {
     const GameState g = goldenState();
     GameState copy = g;
@@ -621,8 +657,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x5cef4d57e3fecc3dull;
-    constexpr size_t kGoldenSize = 1820;
+    constexpr uint64_t kGoldenChecksum = 0x1af0685c5550faddull;
+    constexpr size_t kGoldenSize = 1824;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

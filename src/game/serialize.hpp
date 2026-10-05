@@ -72,7 +72,11 @@ class Rules;
 // "Players can see the complete tech tree" option (GameOptions::completeTechTree,
 // spec 06 §7 Q92); the designer's To Hit Modifiers and Condensed View options
 // (InterfaceOptions::designToHit, designCondensed, spec 06 §7 Q94).
-inline constexpr uint32_t kSaveVersion = 7;
+// Version 8: what a log entry imported from the original's saved games held
+// besides OpenSE4's own fields (LogEntry::classic, docs/spec/08 §3.6.11), and
+// each colony's never-reset counts of destroyed facilities
+// (Colony::destroyedFacilities, spec 08 §11.2). Format 7 still reads, without them.
+inline constexpr uint32_t kSaveVersion = 8;
 inline constexpr uint32_t kMinSaveVersion = 7;
 
 inline constexpr size_t kEnvelopeSize = 32;

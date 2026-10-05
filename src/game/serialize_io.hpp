@@ -278,6 +278,15 @@ void fields(Ar& ar, T&... v) {
     (io(ar, v), ...);
 }
 
+// The format version being read or written (kSaveVersion for archives that
+// do not say, such as the field guard's counter): readers branch on it to
+// keep reading older files.
+template <class Ar>
+uint32_t formatVersion(const Ar& ar) {
+    if constexpr (requires { ar.version(); }) return ar.version();
+    else return kSaveVersion;
+}
+
 // Members kept only in memory: never saved, sent or hashed. Reading leaves
 // them empty, as a loaded game starts without them. The field guard of
 // tests/test_serialize.cpp counts them with the others.
@@ -344,7 +353,20 @@ void io(Ar& ar, AiMemory& m) {
 
 template <class Ar> void io(Ar& ar, PoliticsMark& m) { fields(ar, m.set, m.turn, m.battles, m.logs, m.nextMessage); }
 
-template <class Ar> void io(Ar& ar, LogEntry& l) { fields(ar, l.turn, l.category, l.title, l.text, l.location, l.picture, l.target, l.message); }
+template <class Ar> void io(Ar& ar, ClassicBattleShip& b) { fields(ar, b.name, b.hullCode, b.hull); }
+template <class Ar> void io(Ar& ar, ClassicBattleSurvivor& b) { fields(ar, b.name, b.damage); }
+template <class Ar> void io(Ar& ar, ClassicBattleSide& b) { fields(ar, b.player, b.tookPart, b.forces, b.survivors); }
+
+template <class Ar>
+void io(Ar& ar, ClassicLogFields& c) {
+    fields(ar, c.kind, c.owner, c.system, c.sector, c.pictureKey, c.otherEmpire, c.eventNotice, c.eventKind, c.techArea, c.battleNumber, c.battle);
+}
+
+template <class Ar>
+void io(Ar& ar, LogEntry& l) {
+    fields(ar, l.turn, l.category, l.title, l.text, l.location, l.picture, l.target, l.message);
+    if (formatVersion(ar) >= 8) fields(ar, l.classic);   // format 7 had none
+}
 
 template <class Ar> void io(Ar& ar, HistoryEntry& h) { fields(ar, h.turn, h.empire, h.text, h.location); }
 
@@ -411,11 +433,14 @@ void io(Ar& ar, ConstructionQueue& q) {
     fields(ar, q.items, q.onHold, q.repeat, q.emergency, q.emergencyTurns, q.slowTurns, q.autoWaypoint);
 }
 
+template <class Ar> void io(Ar& ar, DestroyedFacilities& d) { fields(ar, d.facility, d.count); }
+
 template <class Ar>
 void io(Ar& ar, Colony& c) {
     fields(ar, c.planet, c.owner, c.colonyType, c.population, c.anger, c.facilities, c.cargo, c.queue, c.plagueLevel, c.atmosphereTurns,
            c.minister, c.homeworld, c.foundedTurn, c.militia, c.invader, c.landedTroops, c.orders, c.repeatOrders);
     fields(ar, c.cloaked, c.cloakLevels, c.sensorLevels);
+    if (formatVersion(ar) >= 8) fields(ar, c.destroyedFacilities);   // format 7 had none
 }
 
 // ---- Designs and vehicles -----------------------------------------------------------------------

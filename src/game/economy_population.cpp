@@ -315,6 +315,25 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
 
 // ---- Cargo over capacity ------------------------------------------------------------------------
 
+void addDestroyedFacilities(Colony& c, uint32_t facility, int count) {
+    auto it = std::lower_bound(c.destroyedFacilities.begin(), c.destroyedFacilities.end(), facility,
+                               [](const DestroyedFacilities& d, uint32_t f) { return d.facility < f; });
+    if (it == c.destroyedFacilities.end() || it->facility != facility) it = c.destroyedFacilities.insert(it, DestroyedFacilities{facility, 0});
+    it->count += count;
+}
+
+void removeDestroyedFacilities(Colony& c) {
+    for (const DestroyedFacilities& d : c.destroyedFacilities)
+        for (int k = 0; k < d.count; ++k) {
+            const auto it = std::find(c.facilities.begin(), c.facilities.end(), d.facility);
+            if (it == c.facilities.end()) break;
+            c.facilities.erase(it);
+        }
+    std::erase_if(c.destroyedFacilities, [&](const DestroyedFacilities& d) {
+        return d.count <= 0 || std::find(c.facilities.begin(), c.facilities.end(), d.facility) == c.facilities.end();
+    });
+}
+
 void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c, int64_t deadSpace, bool keepEmptyStacks) {
     const int64_t capacity = colonyCargoCapacity(r, s, c);
     auto over = [&] { return cargoSpaceUsed(r, s, c.cargo) + deadSpace > capacity; };

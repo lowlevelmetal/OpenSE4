@@ -140,6 +140,39 @@ struct PoliticsMark {
 // entry with the last three, which the original's handler also knows.
 enum class LogGoto : uint8_t { None, Location, Research, Intelligence, Empires, ConstructionQueues, EmpireOptions, Designs };
 
+// What an entry imported from one of the original's saved games held that
+// OpenSE4's own entries do not (docs/spec/08 §3.6.11), kept so that an export
+// writes it back: its kind, picture key, the other empire, the event fields and
+// a combat entry's battle details, which the original's Log pictures and its
+// computer players' anger read. Kind 0: an entry OpenSE4 made.
+struct ClassicBattleShip {
+    std::string name, hullCode;
+    uint16_t hull = 0;          // VehicleSize.txt position, 0 none
+};
+struct ClassicBattleSurvivor {
+    std::string name;
+    uint8_t damage = 0;         // percent
+};
+struct ClassicBattleSide {
+    uint8_t player = 0;
+    bool tookPart = false;
+    std::vector<ClassicBattleShip> forces;
+    std::vector<ClassicBattleSurvivor> survivors;
+};
+struct ClassicLogFields {
+    uint8_t kind = 0;
+    // The owner, system and sector bytes as the file had them (the owner is not
+    // always the log's empire, observed; a sector may lie outside the grid).
+    uint8_t owner = 0, system = 0, sector = 0;
+    uint16_t pictureKey = 0;
+    EmpireId otherEmpire;
+    bool eventNotice = false;
+    uint8_t eventKind = 0;
+    uint16_t techArea = 0;
+    uint16_t battleNumber = 0;
+    std::vector<ClassicBattleSide> battle;   // one per player 1..20 when the entry had battle details
+};
+
 struct LogEntry {
     uint32_t turn = 0;
     LogCategory category = LogCategory::Misc;
@@ -152,6 +185,8 @@ struct LogEntry {
     LogGoto target = LogGoto::Location;
     // A delivered diplomatic message's entry: the message (Send Reply, the details).
     MessageId message;
+    // Imported from one of the original's saved games: what it held besides.
+    ClassicLogFields classic;
 };
 
 // One dated line of an empire's long record, the History window (spec 05
@@ -506,6 +541,17 @@ struct ConstructionQueue {
     int autoWaypoint = -1;    // new vehicles get Move To this waypoint slot
 };
 
+// A colony's count of destroyed facilities of one kind (docs/spec/08 §3.8.5,
+// §11.2, confirmed: binary): each destruction by sabotage or an event adds to
+// it, and the removal pass that follows takes the count off the colony's
+// facilities of that kind; the count is never reset, so every later removal
+// pass at the colony takes it off again.
+struct DestroyedFacilities {
+    uint32_t facility = 0;   // Facility.txt index
+    int count = 0;
+    bool operator==(const DestroyedFacilities&) const = default;
+};
+
 struct Colony {
     ObjectId planet;
     EmpireId owner;
@@ -544,6 +590,9 @@ struct Colony {
     bool cloaked = false;
     std::array<int, kSightTypes> cloakLevels{1, 1, 1, 1, 1};    // at least 1 in each type
     std::array<int, kSightTypes> sensorLevels{1, 0, 0, 0, 0};   // EM Active at least 1
+    // Never reset (DestroyedFacilities); sorted by facility. Kinds the colony
+    // no longer has go with their last facility (inferred).
+    std::vector<DestroyedFacilities> destroyedFacilities;
 
     int64_t totalPopulation() const {
         int64_t n = 0;

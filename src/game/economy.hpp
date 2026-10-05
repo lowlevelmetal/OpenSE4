@@ -254,6 +254,15 @@ std::vector<Order> conversionOrders(Resource from, Resource to, int64_t amount);
 
 // ---- Cargo over capacity (spec 02 §2, §13 Q49) --------------------------------------------------------
 
+// A colony's never-reset counts of destroyed facilities (Colony::destroyedFacilities,
+// spec 08 §3.8.5, §11.2, confirmed: binary): a destruction by sabotage or an
+// event adds to its kind's count; the removal pass then takes each count off
+// the colony's facilities of that kind (as many as it has), and the counts
+// stay. A kind whose last facility goes loses its count with it (inferred).
+// Battles remove what they destroyed once (spec 04 §19.1).
+void addDestroyedFacilities(Colony& c, uint32_t facility, int count);
+void removeDestroyedFacilities(Colony& c);
+
 // A colony's cargo above its capacity (after a dome, a capture or a lost
 // `Cargo Storage` facility) stays until the planet next takes a space-combat
 // hit of a hull-damaging type that gets past its shields, or loses population

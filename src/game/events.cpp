@@ -1094,21 +1094,27 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             // n = min(Amount, facilities), nothing when n <= 0. Each of the n
             // draws picks a kind with a chance in proportion to how many of it
             // the planet had at the start; a kind with none left is drawn
-            // again (spec 05 §2.3, confirmed: binary).
+            // again (spec 05 §2.3, confirmed: binary). The draws add to the
+            // colony's never-reset counts of destroyed facilities, and the
+            // removal pass then takes every count off, the leftovers of
+            // earlier passes included (spec 08 §3.8.5, §11.2, confirmed: binary).
             if (!col) return out;
             const int64_t n = std::min<int64_t>(amount, static_cast<int64_t>(col->facilities.size()));
             if (n <= 0) return out;
             const std::vector<uint32_t> start = col->facilities;
-            for (int64_t k = 0; k < n && !col->facilities.empty(); ++k) {
+            std::map<uint32_t, int> drawn;
+            for (int64_t k = 0; k < n; ++k) {
                 for (;;) {
                     const uint32_t kind = start[rng.index(start.size())];
-                    const auto it = std::find(col->facilities.begin(), col->facilities.end(), kind);
-                    if (it == col->facilities.end()) continue;
+                    const auto have = std::count(col->facilities.begin(), col->facilities.end(), kind);
+                    if (have - drawn[kind] <= 0) continue;
                     out.tokens.facilityName = r.facility(kind).name;
-                    col->facilities.erase(it);
+                    ++drawn[kind];
                     break;
                 }
             }
+            for (const auto& [kind, count] : drawn) economy::addDestroyedFacilities(*col, kind, count);
+            economy::removeDestroyedFacilities(*col);
             out.actual = n;
             break;
         }
