@@ -556,7 +556,7 @@ jobs:
         run: |
           $dir = $env:INSTALL_DIR
           Get-ChildItem $dir | Format-Table Name, Length -AutoSize
-          foreach ($f in 'opense4.exe', 'opense4-server.exe', 'opense4-datacheck.exe', 'README.md', 'LICENSE',
+          foreach ($f in 'opense4.exe', 'opense4-server.exe', 'opense4-datacheck.exe', 'opense4-convert.exe', 'README.md', 'LICENSE',
                          'THIRD_PARTY_NOTICES.txt', 'uninstall.exe') {
             if (-not (Test-Path -LiteralPath (Join-Path $dir $f))) { throw "Not installed: $f" }
           }

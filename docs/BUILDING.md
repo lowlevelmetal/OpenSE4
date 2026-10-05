@@ -13,6 +13,7 @@ What gets built:
 | `opense4` | The game client: Vulkan 1.3 with an OpenGL 3.3 fallback |
 | `opense4-server` | Dedicated multiplayer host, and the PBEM turn processor |
 | `opense4-datacheck` | Loads and validates an installed or modded classic data set |
+| `opense4-convert` | Converts saved games between the original's format and OpenSE4's, and describes the original's (see "Saved games of the original") |
 | `opense4-observe` | Linux-only harness for observing the original game (see docs/CLEANROOM.md) |
 | `opense4_tests` | Unit tests. They use only our own fixtures |
 
@@ -234,7 +235,7 @@ natively instead. Either way they come from the `dist-windows` preset:
 - `dist/OpenSE4-<version>-windows-x86_64-setup.exe`, the same programs as an installer
 - `dist/OpenSE4-<version>-SHA256SUMS.txt`
 
-Each package holds `opense4`, `opense4-server` and `opense4-datacheck`, stripped,
+Each package holds `opense4`, `opense4-server`, `opense4-datacheck` and `opense4-convert`, stripped,
 with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
 Font License) are built into the game, so nothing else needs to sit next to it.
 The Linux package also holds the desktop entry, icons and AppStream metadata under
@@ -507,6 +508,21 @@ fights it, and each turn compared with the same turn played without stops
 (`_OPP` computer players, 4; `_SYSTEMS` systems, 12; `_SIM=1` for simultaneous turns). Under
 the `asan` build it finds memory errors in the battle flow.
 
+`tests/test_classic_save.cpp` checks the original's saved-game format (docs/spec/08): the
+container's test vector, OpenSE4 games of both turn styles through export and import, and
+damaged files and other data sets. Three opt-in variables add the original's own saves,
+which are never fixtures (keep them out of the repository):
+
+```sh
+# Every .gam of a folder (and of the install's SaveGame folder): decoded to the end, the
+# spec's invariants and counts, imported, played on without desync, exported again with only
+# the differences the spec explains (OPENSE4_ORIGINAL_SAVES_TURNS turns each, default 2).
+OPENSE4_CLASSIC_DATA=auto OPENSE4_ORIGINAL_SAVES=/path/to/saves ./build/debug/tests/opense4_tests -tc="classic save*"
+# One game played on for 5 turns, saved and loaded in OpenSE4's format, exported again
+# (OPENSE4_ORIGINAL_SAVE_EXPORT=FILE.gam keeps that export, to load it in the original).
+OPENSE4_CLASSIC_DATA=auto OPENSE4_ORIGINAL_SAVE_PLAY=/path/to/GAME.gam ./build/debug/tests/opense4_tests -tc="classic save*"
+```
+
 The audio check plays the scripts of `tests/audio` with sound on, through SDL's `disk`
 audio driver, which writes the mix to a file in real time instead of to a sound card, and
 then reads that file. It fails on clicks (a jump between neighbouring samples far above the
@@ -748,6 +764,29 @@ client's windows or the learning content.
 `tools/cleanroom_check.py` is not part of CI, because it needs the installed game.
 Run it yourself before committing documentation or content.
 
+## Saved games of the original
+
+`opense4-convert` converts saved games between the original's format (version 1.95) and
+OpenSE4's, both ways, and describes the original's. The client does the same through Load
+Game and Save Game's *Save for SE IV* (docs/SETUP.md, "Games of the original"); the format
+and what it holds are in docs/spec/08-saved-games.md. It needs the data set the game was
+played with: the installed game found automatically, or `--classic-dir`.
+
+```sh
+./build/debug/opense4-convert --info GAME.gam                        # versions, date, empires, counts per section
+./build/debug/opense4-convert GAME.gam out.gam --to=opense4          # import: an OpenSE4 save
+./build/debug/opense4-convert mine.gam ForSE4.gam --to=original      # export: a save for the original
+./build/debug/opense4-convert GAME.gam again.gam --to=original       # an original save through OpenSE4 and back
+./build/debug/opense4-convert --compare GAME.gam again.gam           # every field that differs, by its path
+```
+
+`--seed=N` fixes the keys of a written file (by default they are random, as the original's
+are), and `-v` lists every detail of what was approximated. Exit status: 0 done, 1 a file
+could not be read or written (the message names the section, record and byte), 2 no data
+set or bad arguments, 3 `--compare` found differences. The library behind it is
+`src/game/classic_save.hpp`: the container and its keys, a typed model of every section,
+and the import into and export from a `GameState`.
+
 ## Headless runs
 
 The client runs without a display through SDL's offscreen driver. This is useful for
@@ -757,6 +796,7 @@ screenshots in CI. It needs an installed copy of the game, as every run does;
 ```sh
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --seed=7 --turns=20 --screenshot=/tmp/classic.png
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turn-style=simultaneous --seed=7 --turns=20 --screenshot=/tmp/simultaneous.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --load=/path/to/GAME.gam --turns=5 --screenshot=/tmp/loaded.png   # a saved game, OpenSE4's or the original's
 ```
 
 Without an installed copy the client logs why and exits with status 1.

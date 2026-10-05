@@ -303,7 +303,7 @@ a new options record. Everything **(confirmed: binary)**.
 | byte | Event frequency, code: None, Low, Medium, High (2) | `eventFrequency` |
 | byte | Maximum event severity, code: Low .. Catastrophic (4) | `maxEventSeverity` |
 | byte | Technology cost, code: Low, Medium, High (2) | `techCost` |
-| word n, n × string | Allowed tech areas: the names of the areas that can be removed and are checked, alphabetical. An area is allowed when it cannot be removed or its name is listed (compared without regard to case). | `techAreasAllowed` (by name) |
+| word n, n × string | Allowed tech areas: the names of the areas that can be removed and are checked, alphabetical. An area is allowed when it cannot be removed or its name is listed (compared without regard to case). A Quick Start game lists every area, the fixed ones too (85 names with the stock data); a game made through Game Setup lists only the removable ones (57) **(observed)**; both read the same. | `techAreasAllowed` (by name) |
 | byte | Starting resources, code: 5000, 20000, 100000 (2) | `startingResources` |
 | byte | Home planet value, code: Bad, Average, Good (2) | `homePlanetValue` |
 | byte | Starting planets, code: 1, 3, 5, 10 (1) | `startingPlanets` |
@@ -629,7 +629,7 @@ The log position and scroll are not stored; import 0.
 | bool | Computer makes no changes in simultaneous games | | `aiMinimalChanges` |
 | 20 × (byte, word) | Per player 1..20: anger (default 50); turns since war (default 999, 0 while at war) | | `Relation::anger`, `Relation::turnsSinceWar` |
 | byte | Always 0 | | export 0 |
-| byte ×7 | Unused | | export 0 |
+| byte ×7 | Unused | 0, 0, 0, 1, 1, 1, 0 in 204 of the 206 empires of the sample saves, 0, 0, 0, 1, 0, 1, 0 in the other two **(observed)** | export 0, 0, 0, 1, 1, 1, 0 |
 | word | Last index used in the ship-name file | | none; derive from the vehicle names, or 0 |
 | bool ×8 | Enemy design capability flags | Recomputed every turn; the seventh marks a star destroyer | none; export 0 |
 | word | Drone name counter | | none; export the number of drone groups |
@@ -689,7 +689,7 @@ no other empire: that kind shows a generic picture and does not count for anger.
 
 | Type | Field | Meaning |
 |---|---|---|
-| byte | Message type | 1..38: General; Propose, Accept, Refuse, Counter Treaty; Break Treaty; Declare War; Propose, Accept, Refuse, Counter Trade; Give, Accept, Refuse Gift; Offer, Accept, Refuse Tribute; the demands and requests (18..33); Surrender; Grant Independence; Accept, Refuse Demand. Map to `MessageType` by name; OpenSE4 has no Accept/Refuse Tribute. |
+| byte | Message type | 1..38, in the order of spec 05 §7.3's message types: 1 General; 2..5 Propose, Accept, Refuse, Counter Treaty; 6 Break Treaty; 7 Declare War; 8..11 Propose, Accept, Refuse, Counter Trade; 12..14 Give, Accept, Refuse Gift; 15..17 Offer, Accept, Refuse Tribute; 18..34 the seventeen demands and requests (18 want a gift, 19 want a tribute, 20 demand surrender, 21 remove ships, 22 remove colonies, 23 leave planet, 24 stop hostile actions, 25 break a treaty, 26 declare war on, 27 make peace with, 28 support us against, 29 attack an empire in a system, 30 attack a planet, 31 stop espionage, 32 stop sabotage, 33 stop attacks in a system, 34 the generic demand); 35 Surrender; 36 Grant Independence; 37, 38 Accept, Refuse Demand **(observed: in the sample saves 20 is a computer player's surrender demand and 38 a refusal of a request about a third empire; inferred for the types not seen)**. Map to `MessageType` by name; OpenSE4 has no Accept/Refuse Tribute and no generic demand. |
 | byte | Sender | Player |
 | byte | Recipient | Player |
 | byte | Tone | 1 pleading, 2 neutral, 3 demanding (`tone` = value − 1) |
@@ -792,13 +792,40 @@ free slot for the next design. Everything **(confirmed: binary)**.
 | int ×3 | Cost | Minerals, organics, radioactives, cached: hull plus components with their mount adjustments | none; **export the computed value** |
 | word n, n × (word, byte) | Parts | Component (Components.txt position); mount (CompEnhancement.txt position, 0 = none) | `entries`: component − 1, mount − 1 (0 → −1) |
 | word | Strategy | Position in the owner's strategy list | `strategy` = value − 1 |
-| word | Computer type code | 1..39 from a fixed list (1 Attack Ship, 2 Defense Ship, 3 Attack Base, 4 Defense Base, ..., 25 Satellite, 28 Fighter, 39 Drone Carrier), taken from the design type name when it is one of the 39, else worked out from the abilities. The computer players use it to retire older designs of the same code. | none; export by design type name (open question Q5) |
+| word | Computer type code | 1..39 from a fixed list (§3.7.1), taken from the design type name when it is one of the 39, else worked out from the abilities. The computer players use it to retire older designs of the same code. Free slots keep 0 or an old value. | none; export by design type name (open question Q5) |
 | 20 × int | Last seen, per player 1..20 | Date the player last saw the design, 0 never; forgotten after 50 turns. The owner's own entry holds the date of the design's last battle. | other players: their `Knowledge::seenDesigns`; owner: `AiMemory::designsFought` (inferred) |
 | ability list | Extra abilities | Always empty in every save seen | none; export count 0 |
 | int ×4 | Statistics | Built, lost, scrapped (retrofits and gifts count as scrapped for the old design), enemy tonnage destroyed | `built`, `lost`, `scrapped`, `enemyTonnageDestroyed` |
 | bool | Changed this turn | Only for player changes files | none; export off |
 
 The original never recomputes the cached speed and cost on load **(confirmed: binary)**.
+OpenSE4's designer Movement (spec 03 §4.4) and design cost give the stored speed and cost
+of every owned design of the 24 sample saves, 1,673 designs **(observed)**.
+
+#### 3.7.1 Design type codes
+
+Every code with its name, each seen in the sample saves with the design type name it is
+taken from **(observed)**:
+
+| Code | Name | Code | Name | Code | Name |
+|---|---|---|---|---|---|
+| 1 | Attack Ship | 14 | Boarding Ship | 27 | Troop |
+| 2 | Defense Ship | 15 | Open Warp Point | 28 | Fighter |
+| 3 | Attack Base | 16 | Close Warp Point | 29 | Create Black Hole |
+| 4 | Defense Base | 17 | Create Planet | 30 | Destroy Black Hole |
+| 5 | Base Space Yard | 18 | Destroy Planet | 31 | Create Nebulae |
+| 6 | Population Transport | 19 | Create Star | 32 | Destroy Nebulae |
+| 7 | Troop Transport | 20 | Destroy Star | 33 | Satellite Layer |
+| 8 | Carrier | 21 | Create Storm | 34 | Kamikaze Attack Ship |
+| 9 | Colony (Rock) | 22 | Destroy Storm | 35 | Recon Satellite |
+| 10 | Colony (Ice) | 23 | Space Yard Ship | 36 | Cargo Transport |
+| 11 | Colony (Gas) | 24 | Mine | 37 | Anti-Planet Drone |
+| 12 | Mine Layer | 25 | Satellite | 38 | Anti-Ship Drone |
+| 13 | Mine Sweeper | 26 | Weapon Platform | 39 | Drone Carrier |
+
+Designs whose type name is not one of the 39 had the codes spec 05 §7.5's automatic typing
+gives (a scout or a missile boat 1, a cargo design 6, a stellar manipulation design 15, a
+weapon platform under another name 26) **(observed, eight such names)**.
 The stored cost of a stock Quick Start design matches the data with components counted
 from 1 and the first hull being "Escort" (confirmed against the data).
 
@@ -886,7 +913,7 @@ A colony has no name of its own.
 | bool | Cloaked | | `cloaked` |
 | byte | Atmosphere counter | Turns with an unbreathable atmosphere (at most 200) | `atmosphereTurns` |
 | cargo | Stored cargo | §3.8.7 | `cargo` |
-| word n, n × (word, byte, byte) | Facilities | Facility.txt position; how many; how many were destroyed in the current battle (0 between turns). One entry per facility kind; at most 255 entries. | `facilities`: count copies of position − 1 |
+| word n, n × (word, byte, byte) | Facilities | Facility.txt position; how many; how many were destroyed in the current battle (0 between turns, except 30 entries of the large sample, **observed**: stale counts nothing reads, inferred). One entry per facility kind; at most 255 entries. | `facilities`: count copies of position − 1 |
 | queue | Construction queue | §3.8.7 | `queue` |
 | unit list | Landed enemy troops | §3.8.7 | `landedTroops` |
 | byte | Invading player | 0 none | `invader` |
@@ -938,7 +965,9 @@ the turn it was built, the movement-blocked turn, arrival stamps.
   battle, 0 between turns). Design ids from 65000 up are militia of race (id − 65000),
   made during ground combat (whether they reach a save is open, question 9). OpenSE4:
   `UnitStack`.
-- **Cargo**: population list, then a bool "units follow" and, when set, a unit list.
+- **Cargo**: population list, then a bool "units follow" and, when set, a unit list. The
+  flag may be set with an empty list (144 of about 1,500 cargo records of the sample saves,
+  **observed**); such a list reads like no list.
   OpenSE4: `Cargo`.
 - **Construction queue**: word item count, bool on hold, bool emergency, bool repeat,
   byte rally waypoint (1..10, 0 none), byte emergency or slow-mode turns counter, three
@@ -984,6 +1013,12 @@ comes first; export the current order as 1.
 | 59 | Use facility | target = position in the grouped facility list (1-based) | UseFacility |
 | 64 | Abandon planet | target = 1: scrap the facilities first | none |
 | 65 | Convert resources | extra = from (1..3), system = to (1..3), target = amount (at most 65,000) | ConvertResources |
+
+What the saves hold **(observed)**: a Move To or a Seek of a location gives the system and
+sector; a Colonize gives the planet with its system and sector and an empty target name; a
+Seek of a target gives it with its place and name; a Load gives only the cargo kind, a Drop
+the kind and the planet, without system or sector. No list of the samples had a current
+order other than 1.
 
 Kinds 12 and 13 last one movement phase in simultaneous games. Explore, Resupply, Repair,
 Cloak and Decloak are never stored: the original turns the first three into Move To
@@ -1382,7 +1417,8 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
 - Spec 02 §1.10: empire files use this container and the empire record of §3.6.
 - Spec 05 §9.2: player changes files and the multiplayer flow; their content is the
   "player" form of these sections.
-- docs/PARITY_GAPS.md: import and export are not implemented yet.
+- docs/PARITY_GAPS.md: import and export are implemented since 2026-10-04 (§12).
+- docs/SETUP.md "Games of the original": what players see of import and export.
 
 ---
 
@@ -1411,6 +1447,23 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
     game opened directly on the current player's main window (observed, with the large
     sample), but whether the start-of-turn steps run again is not settled.
 
+15. The game name of an exported simultaneous game: §7.3 says to export it empty, but the
+    host saves a simultaneous game under it (§1.1), and every simultaneous sample has one.
+    OpenSE4 writes the name of the exported file there (inferred); whether the original also
+    handles an empty name is not checked.
+16. The unit kind of Launch and Recover orders (kinds 34, 35): no sample holds one. OpenSE4
+    reads and writes the vehicle-type numbers of the closing list (§3.9: 3 fighters, 4
+    satellites, 5 mines, 7 drones) (inferred).
+17. The Seek kinds 10 and 11: OpenSE4's Seek is the one-phase pursuit of 12 and 13, so an
+    imported 10 or 11 becomes one and is written back as 12 or 13. What gives 10 and 11 (a
+    player's order or a minister's) and how long they last is open.
+18. The display text of a package item (§3.6.11): the samples hold none. OpenSE4 writes the
+    item's subject in its own words ("5000 Minerals", a planet's or empire's name) (inferred).
+19. The "units follow" flag set over an empty unit list (§3.8.7): when the original leaves it
+    so, and whether writing it clear changes anything.
+20. Whether the original takes the History files OpenSE4 writes beside an export (§1.2):
+    they follow the layouts of spec 06 §6.1, the statistics lines inferred there.
+
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 
 - Each system's object list is rebuilt in slot order after every load, move, warp and
@@ -1425,6 +1478,68 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
 - The victory peace counter and the game-completed flag are part of the saved game.
 - A new human empire starts with all 25 minister switches off **(observed)**; OpenSE4's
   `Empire::ministers` starts with the individual areas on.
+
+---
+
+## 12. Our engine
+
+Implemented on 2026-10-04 from this spec.
+
+- **Where.** `src/game/classic_save.hpp` holds the typed model of a file (every field of §3
+  in file order, with the spec's meanings and numbering) and the API;
+  `classic_save_codec.cpp` the container (§2) and one routine per section that both reads
+  and writes it, so that a decoded file encodes back to the same values;
+  `classic_save_import.cpp` and `classic_save_export.cpp` the mappings of §6 and §7;
+  `classic_save_tables.cpp` Appendix A and §3.7.1. The client imports on Load Game and
+  `--load` (the file's first bytes tell the formats apart) and exports from Save Game's
+  *Save for SE IV*; `opense4-convert` converts on the command line (docs/BUILDING.md).
+- **Text** is Latin-1 in the file and UTF-8 in OpenSE4; a character Latin-1 lacks is
+  written as "?". **Floats** are kept as their 80-bit pattern and converted with the
+  emulated x87 arithmetic (`xmath.hpp`): conditions exactly, experience in tenths.
+- **Import** runs OpenSE4's own load-time steps afterwards: sight, the colonies' cloak and
+  sensor levels, the income report. It refuses a save whose tech-area count differs from
+  the data set's, whose racial-trait count does (the file then decodes only with another
+  count, which the message names) or that names a record past the end of a data file.
+- **Choices where this spec leaves room:**
+  - A system's type: the first type with the same description and background bitmap,
+    else the first of the same physical type (§11.1 Q13).
+  - Free design slots become placeholders no empire lists (owner 0, obsolete), keeping
+    their old fields when the data set still has them; a design no empire lists is
+    written as a free slot unless something still uses it.
+  - Free object slots are not kept by OpenSE4: export writes each empty slot as a blank
+    storm and stops at the last object, so trailing blanks of an imported file are gone.
+    Free fleet slots go too, and fleet numbers close up (every reference follows).
+  - Free timed-event slots are dropped on import, so an imported game schedules events
+    again (§11.2).
+  - Fleets with no member in their own sector are disbanded on import, as the original
+    does on loading; their members keep their orders.
+  - Load, Drop, Launch and Recover orders: by kind in the file, by design in OpenSE4. An
+    imported order takes the first design of that kind in the vehicle's or colony's cargo
+    (a Drop or Launch), else the owner's newest design of that kind; an exported one is
+    written by its design's kind and as much as fits.
+  - An imported Colonize order counts as given (its colonists were loaded then); a Use
+    Facility position is turned between the grouped list and OpenSE4's own; Abandon Planet
+    orders are dropped (OpenSE4 abandons at once).
+  - Log entries: OpenSE4's are written as kind 36 with picture key 0 and the read date
+    equal to the entry's, unanswered messages as kind 19 with their record (a delivered
+    message whose entry the log no longer holds gets one); imported entries keep title,
+    text, place, category and go-to, and a picture from their kind and key where the kind
+    names one (vehicle and facility built, item developed, message). Battle details are not
+    kept, nor written.
+  - Turn-based games: the current player's turn counts as started (§11.1 Q14); the
+    closing list (§3.9) is the turn's launch budget.
+  - Passwords: imported as OpenSE4's check of the trimmed lower-case password; none is
+    exported (§7.4). The game master password is dropped.
+  - The windows' sort keys are not carried in either direction (§11.1 Q4).
+  - Race folders are written as the installed folder is spelt.
+- **Checked** on the 24 saves this spec was checked with (§8): every one decodes to the end,
+  meets §8's invariants and counts, imports into a state that `validateState` accepts and
+  that plays on without desync, and is written again with only the differences listed
+  above, the window memories and other fields OpenSE4 does not hold (§7.3), and the float
+  noise of experience (tenths are kept). OpenSE4 games of both turn styles come back from
+  an export and import with every field the format carries, and a second round trip
+  changes nothing. The large sample, imported and played on for five turns, saves and
+  loads in OpenSE4's format and exports again.
 
 ---
 

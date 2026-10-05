@@ -24,6 +24,7 @@ player / AI / network ─> game::Command ────┘         │
 | `setup.hpp` | `createGame`: the quadrant, the empires and their races, homeworlds, starting technology, planets and pools (spec 01 §3, spec 02 §9). No empire gets a ship or a design of its own (spec 01 §3.6): only an empire file's designs, and what `StartExtras` asks for: the Quick Start player's one Design minister run (`ai::designMinisterRun`) and a tutorial's ships (`starting_ships`, an OpenSE4 lesson extension). `StartExtras` is never saved or sent |
 | `orders.hpp` | Orders as they are given: Explore, Resupply, Repair and the composite orders expanded into simple ones (spec 03 §8) |
 | `map_file.hpp` | Map files in our own text format ([MAPS.md](MAPS.md)): Save Map, and loaded maps with starting points |
+| `classic_save.hpp` | The original's saved games ([spec 08](spec/08-saved-games.md)): the container and its keys, a typed model of every section, import into a `GameState` and export from one, with a report of what came across only approximately |
 | `query.hpp` | Read-only questions: what is where, space yards, capacities, hostility |
 | `scrap.hpp` | The Scrap window's actions (spec 03 §15): each action's test and effect, Analyze's requirement pairs and research potential word, Fire On's armed test, the retrofit checks |
 

@@ -97,6 +97,10 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
   - combat replays can list each turn's events.
 - **Mods:** `opense4-datacheck` checks a modded data set and names the file, line and
   record of anything it doesn't understand.
+- **Your games from the original:** Load Game opens the original's saved games and
+  converts them, and Save Game can write a game back for the original, so a game moves
+  between the two (docs/SETUP.md, "Games of the original"). `opense4-convert` does the same
+  on the command line.
 
 ## System requirements
 
@@ -205,6 +209,8 @@ addition).
 ./build/debug/opense4 --classic-dir=/path/to/se4     # or point at it
 ./build/debug/opense4 --quick-start=Terran           # skip the intro
 ./build/debug/opense4-datacheck                      # validate an installed or modded data set
+./build/debug/opense4 --load=/path/to/se4/SaveGame/GAME.gam   # play on a saved game of the original
+./build/debug/opense4-convert --info GAME.gam        # describe a saved game of the original
 ./build/debug/opense4-server --players=2 --ai=3      # host a network game without playing
 ```
 
@@ -267,7 +273,7 @@ src/server    opense4-server: dedicated host and PBEM turn processor
 src/assets    runtime access to the installed classic art
 src/gfx       RHI with Vulkan and OpenGL backends, 2D batch renderer, ImGui bridge
 src/client    the app shell and the classic client (windows, front end, multiplayer)
-tools/        opense4-datacheck, opense4-observe (drive the original), cleanroom_check.py
+tools/        opense4-datacheck, opense4-convert (saved games), opense4-observe (drive the original), cleanroom_check.py
 docs/spec/    rules specs, written in our own words
 shaders/      GLSL shared by both backends
 assets/       fonts (Noto Sans, SIL OFL)

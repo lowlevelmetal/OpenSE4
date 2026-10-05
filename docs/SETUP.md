@@ -166,6 +166,68 @@ exclusive mode in the device's properties are worth switching off as well.
 that is how `tools/check_audio.py` checks OpenSE4's sound without a sound card
 (docs/BUILDING.md "Tests").
 
+## Games of the original
+
+OpenSE4 reads the saved games of the original (version 1.95, the last release) and writes
+games back in its format, so a game can move between the two. The format is described in
+[spec/08-saved-games.md](spec/08-saved-games.md).
+
+- **Load an original game.** Load Game lists `.gam` files; both games use that extension,
+  and OpenSE4 tells them apart by their first bytes. Use Change Directory to open the
+  original's `SaveGame` folder (or any folder you copied a save to), or start with
+  `opense4 --load=PATH/GAME.gam`. The game is converted when it loads; a note lists what
+  came across only approximately, and `opense4.log` has every detail. Nothing is written
+  next to the original's file: Save Game then saves it in OpenSE4's own format, in
+  OpenSE4's saves folder. The players' `<game>_plr_*` History files next to the original's
+  save are read as with OpenSE4's own saves.
+- **Save a game for the original.** In Save Game, *Save for SE IV* writes the game as a
+  saved game of the original. It goes to the `Space Empires IV` folder inside OpenSE4's
+  saves folder unless you type another; OpenSE4 never writes into the installation by
+  itself. The players' History files go beside it, as the original's own saves keep them.
+  To play it there, copy the `.gam` file (and the files beside it named after it) into the
+  original's `SaveGame` folder, or open that folder with the original's Change Directory.
+  OpenSE4's own saves of the game are not changed. Network and play-by-e-mail games cannot
+  be saved this way: a player's copy holds only what that player knows.
+- **On the command line,** `opense4-convert` converts in both directions and describes a
+  saved game of the original (see docs/BUILDING.md, "Tools"):
+
+  ```sh
+  opense4-convert --info GAME.gam                        # what an original save holds
+  opense4-convert GAME.gam converted.gam --to=opense4    # an original save as an OpenSE4 save
+  opense4-convert mine.gam ForSE4.gam --to=original      # an OpenSE4 save for the original
+  opense4-convert --compare A.gam B.gam                  # the fields two original saves differ in
+  ```
+
+- **The data set must be the same.** A saved game of the original names data-file records
+  by their position, so it only means something with the data set it was played with:
+  the installed game, or the same mod. A save made with another number of racial traits
+  or tech areas, or one that names a record the data set lacks, is refused with a message
+  that says so. Saves of versions other than 1.95 are refused too.
+
+What carries over, both ways: the galaxy (systems, stars, planets with their conditions
+and values, storms, warp points, comets, stellar abilities), every empire (race,
+traits and characteristics, treasury, technology, research and intelligence projects,
+treaties and trade, the computer players' anger and attack plans, ministers, name lists,
+waypoints, systems to avoid, mine field tags, combat strategies, Empire Options, the log),
+colonies (population, mood, facilities, cargo, construction queues, invasions in
+progress, orders), designs (with the original's cached speed, cost and type code
+computed again), ships, bases, fleets and unit groups (damage, supply, movement, cargo,
+experience, orders, space yard queues), timed events, unanswered diplomatic messages, the
+victory conditions and every game option, and whose turn it is in a turn-based game.
+
+What does not, or only approximately:
+
+| From the original into OpenSE4 | From OpenSE4 into the original |
+|---|---|
+| Load, drop, launch and recover orders act on all units of a kind in the original; in OpenSE4 they name one design of that kind | They act on every unit of the design's kind |
+| The computer players start with partly empty memories (OpenSE4 keeps more about each empire than the original's file holds) | OpenSE4's additional memory is not written |
+| The random numbers start again from the game's seed, as in the original after every load | The same: the original's next turn differs from OpenSE4's |
+| Combat log entries keep their text but not their battle details; when treaties were signed, colonies founded and ships built is not stored | Log entries are written as plain entries, without pictures or battle details; OpenSE4's combat records are not written |
+| A warp point that leads to a sector without a warp point (the original allows one-way links) leads nowhere | Ships keep only destroyed or intact parts: partial damage is lost |
+| Saved construction queue templates, the game master password and the window sort orders are dropped | Passwords are not written (OpenSE4 keeps only a check of them): every empire is open in the original until you set new ones there with Change Password |
+| Passwords carry over; type them in lower case | Messages not yet delivered, and Explore, Resupply, Repair, Cloak and Decloak orders still in a list, are not written |
+| Ships under construction in the original arrive finished | Vehicles held in place by sabotage or an event can move again |
+
 ## Mods
 
 Classic mods are replacement data files, and sometimes replacement art. To play one,
@@ -176,7 +238,8 @@ apply it to a **copy** of the game directory and pass that copy with
 ## Where OpenSE4 keeps its own files
 
 Saves (`saves/`, including the autosaves `AutoSav0` to `AutoSav9`, named after the
-last digit of the turn count, and the players' history files copied beside each save),
+last digit of the turn count, the players' history files copied beside each save, and the
+games saved for the original in `saves/Space Empires IV/`),
 the players' statistics, history and log files of the game being played (`History/`),
 maps (`maps/`,
 see [MAPS.md](MAPS.md)), empire files (`empires/`), settings and logs go in your user
@@ -208,6 +271,7 @@ game again first, the report is in `opense4.previous.log`.
 | The game crashed | Send `opense4.log` (or `opense4.previous.log` after a restart) from the folder above with your report: its end holds the crash report. |
 | Text looks wrong in names | The data files are Latin-1 and are converted to UTF-8 on load. Report any file that still looks wrong. |
 | A mod fails to load | Run `opense4-datacheck` on its data directory. The errors show the file and line. |
+| "the game was saved with a data set of N racial traits" or "another data set" when loading a game of the original | The game was played with a mod or another version of the data files: start OpenSE4 with `--classic-dir` on a copy of the game with that mod (see "Mods"). |
 | No movement line after Move To | The line is the per-computer option "Display Ship Movement Lines" (Game Menu → Options, or Ctrl+L), off on a fresh install as in the original. Starting a new simultaneous game switches it on; joining one does not. It shows for the ship, base, unit group or fleet whose report is open. |
 | No music, or no sound | See "No sound, no music, or clicks: what the log says" above: `opense4.log` names the device, the settings, each track and every file that cannot be played. Music Off in Game Menu → Options and `Allow CD Music` in the game's `Settings.txt` both silence the music, and the game is silent while it is in the background (see "Sound and music"). |
 | Clicks, pops or crackling | The same section: the log shows whether the music ran dry; another device format (`SDL_AUDIO_FREQUENCY`, `SDL_AUDIO_FORMAT`) or sound interface (`SDL_AUDIO_DRIVER`) can be tried. |

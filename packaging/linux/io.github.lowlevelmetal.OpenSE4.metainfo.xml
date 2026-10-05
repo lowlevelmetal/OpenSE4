@@ -40,6 +40,7 @@
     <binary>opense4</binary>
     <binary>opense4-server</binary>
     <binary>opense4-datacheck</binary>
+    <binary>opense4-convert</binary>
   </provides>
 
   <url type="homepage">https://github.com/lowlevelmetal/OpenSE4</url>

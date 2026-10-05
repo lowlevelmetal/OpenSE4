@@ -139,7 +139,7 @@ installer() {  # installer <staged Windows folder> <output .exe>
 # a backend out.
 check_linux_libraries() {  # check_linux_libraries <build dir>
     local bin lib status=0
-    for bin in "$1/opense4" "$1/opense4-server" "$1/opense4-datacheck"; do
+    for bin in "$1/opense4" "$1/opense4-server" "$1/opense4-datacheck" "$1/opense4-convert"; do
         for lib in $(readelf -d "$bin" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
             case "$lib" in
                 libc.so.6 | libm.so.6 | ld-linux*.so.*) ;;
@@ -249,7 +249,7 @@ for target in "${targets[@]}"; do
         strip=$(sed -n 's/^CMAKE_STRIP:FILEPATH=//p' "$build/CMakeCache.txt")  # the toolchain's
         echo "==> $target: imports (Windows 7 SP1)"
         python3 tools/check_windows_imports.py "$build/opense4.exe" "$build/opense4-server.exe" \
-            "$build/opense4-datacheck.exe" "$build/tests/opense4_tests.exe"
+            "$build/opense4-datacheck.exe" "$build/opense4-convert.exe" "$build/tests/opense4_tests.exe"
     fi
 
     if [ "$tests" = 1 ]; then
@@ -260,7 +260,7 @@ for target in "${targets[@]}"; do
             else
                 "${run[@]}" "$build/tests/opense4_tests"
             fi
-            tools/check_glibc.sh "$build/opense4" "$build/opense4-server" "$build/opense4-datacheck"
+            tools/check_glibc.sh "$build/opense4" "$build/opense4-server" "$build/opense4-datacheck" "$build/opense4-convert"
             check_linux_libraries "$build"
         elif [ "$native_windows" = 1 ]; then
             "$build/tests/opense4_tests.exe"
@@ -287,7 +287,7 @@ for target in "${targets[@]}"; do
     stage="$dist/$name"
     rm -rf "$stage"
     mkdir -p "$stage"
-    for bin in opense4 opense4-server opense4-datacheck; do
+    for bin in opense4 opense4-server opense4-datacheck opense4-convert; do
         cp "$build/$bin$exe" "$stage/"
         "$strip" "$stage/$bin$exe"
     done

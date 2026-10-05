@@ -100,15 +100,32 @@ inline constexpr std::array<TargetCategory, kStrategyCategories> kStrategyCatego
     TargetCategory::Transports,     TargetCategory::BasesNoWeapons, TargetCategory::ShipsNoWeapons, TargetCategory::SeekersOnUs,
     TargetCategory::SeekersOnOthers, TargetCategory::Drones,
 };
-// Movement strategies 1..8 as the data files write them.
+// The movement strategy codes as the data files write them (code: index + 1).
 inline constexpr std::array<std::string_view, 8> kMovementNames{
-    "Don't Get Hurt", "Drop Troops (if carrying)", "Maximum Weapons Range", "Optimal Weapons Range", "Short Weapons Range",
-    "Point Blank",    "Board Enemy Ships",         "Ram",
+    "Don't Get Hurt",              // 1
+    "Drop Troops (if carrying)",   // 2
+    "Maximum Weapons Range",       // 3
+    "Optimal Weapons Range",       // 4
+    "Short Weapons Range",         // 5
+    "Point Blank",                 // 6
+    "Board Enemy Ships",           // 7
+    "Ram",                         // 8
 };
-// Targeting priorities 1..12 (0 none).
+// The target choice codes (code: index; 0 none).
 inline constexpr std::array<std::string_view, 13> kTargetingNames{
-    "None",    "Nearest", "Farthest",  "Largest",   "Smallest",    "Most Damaged",          "Least Damaged",
-    "Fastest", "Slowest", "Strongest", "Weakest",   "Has Weapons", "Does Not Have Weapons",
+    "None",                    // 0
+    "Nearest",                 // 1
+    "Farthest",                // 2
+    "Largest",                 // 3
+    "Smallest",                // 4
+    "Most Damaged",            // 5
+    "Least Damaged",           // 6
+    "Fastest",                 // 7
+    "Slowest",                 // 8
+    "Strongest",               // 9
+    "Weakest",                 // 10
+    "Has Weapons",             // 11
+    "Does Not Have Weapons",   // 12
 };
 
 // §3.8.8 and §3.9: cargo kinds of Load and Drop (1 population, 2 troops, 3
