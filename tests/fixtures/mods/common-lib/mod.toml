@@ -1,0 +1,8 @@
+# A test fixture: a library other mods require.
+[mod]
+id = "test.common-lib"
+name = "Common Library"
+version = "1.2.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "Declares an ability other test mods use."

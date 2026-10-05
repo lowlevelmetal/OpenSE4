@@ -1,0 +1,7 @@
+[[ai.anger.change]]
+files = "default"
+set = { "Regular Decrease" = -6 }
+
+[[ai.research.add]]
+files = "default"
+set = { "AI State" = "Exploration", "Tech Area Name" = "Applied Physics", "Tech Area Level" = 3, "Tech Area Min Percent" = 40 }

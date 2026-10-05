@@ -1,0 +1,3 @@
+[[components.change]]
+name = "Spark Drive"
+add = { abilities = [{ "Ability Type" = "Hyperspace Anchor", "Ability Descr" = "Holds the ship in place.", "Ability Val 1" = 4 }] }

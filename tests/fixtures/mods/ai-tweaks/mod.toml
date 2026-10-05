@@ -1,0 +1,8 @@
+# A test fixture: changes to the computer players' tables.
+[mod]
+id = "test.ai-tweaks"
+name = "AI Tweaks"
+version = "2.0.1"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "Patches the default anger table and adds a minister style."
