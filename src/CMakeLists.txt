@@ -109,6 +109,17 @@ add_library(opense4_game STATIC
     game/types.cpp)
 target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE tomlplusplus opense4_warnings)
 
+# --- sdk: the engine's side of the modding SDK (docs/MODDING_SDK.md) ---------------
+# The view scripts read, their queries and the command codec, on script::Value.
+add_library(opense4_sdk STATIC
+    sdk/codec.cpp
+    sdk/names.cpp
+    sdk/parts.cpp
+    sdk/queries.cpp
+    sdk/rules_view.cpp
+    sdk/view.cpp)
+target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_script PRIVATE opense4_warnings)
+
 # --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------
 # Headless: the content model, its loaders and the condition evaluator. The
 # client draws it; the tests check the built-in content with it.
