@@ -194,6 +194,7 @@ void checkCarried(const Rules& r, const GameState& a, const GameState& b) {
         std::sort(fa.begin(), fa.end());
         std::sort(fb.begin(), fb.end());
         CHECK(fa == fb);   // grouped per kind in the file
+        CHECK(ca->destroyedFacilities == cb->destroyedFacilities);
         CHECK(ca->cargo.population == cb->cargo.population);
         CHECK(ca->cargo.units == cb->cargo.units);
         REQUIRE(ca->queue.items.size() == cb->queue.items.size());
@@ -1088,6 +1089,38 @@ TEST_CASE("classic save: a turn-based export before the player's turn starts giv
     CHECK(checked > 0);
 }
 
+TEST_CASE("classic save: a colony's destroyed facility counts carry over both ways (§3.8.5, §11.2)") {
+    const Rules& r = test::engineRules();
+    GameState s = playedGame(true, 2, 101);
+    Colony* col = nullptr;
+    for (auto& c : s.colonies)
+        if (c && c->facilities.size() >= 2) {
+            col = &*c;
+            break;
+        }
+    REQUIRE(col);
+    const uint32_t kind = col->facilities.front();
+    col->destroyedFacilities = {{kind, 2}};
+    const uint32_t slot = s.galaxy.object(col->planet).slot;
+
+    ClassicSave save = exportOrFail(r, s);
+    REQUIRE(save.objects[slot].colony.has_value());
+    for (const FacilityEntry& f : save.objects[slot].colony->facilities) CHECK(f.destroyed == (f.facility == kind + 1 ? 2 : 0));
+    const GameState t = importOrFail(r, save);
+    const Colony* back = t.colony(objectsBySlot(t).at(slot)->id);
+    REQUIRE(back);
+    CHECK(back->destroyedFacilities == col->destroyedFacilities);
+
+    // A count on an entry with no facility left is dropped, as the engine
+    // drops a kind's count with its last facility.
+    uint32_t absent = 0;
+    while (absent < r.data().facilities.size() && std::count(col->facilities.begin(), col->facilities.end(), absent) > 0) ++absent;
+    REQUIRE(absent < r.data().facilities.size());
+    save.objects[slot].colony->facilities.push_back({static_cast<uint16_t>(absent + 1), 0, 3});
+    const GameState u = importOrFail(r, save);
+    CHECK(u.colony(objectsBySlot(u).at(slot)->id)->destroyedFacilities == col->destroyedFacilities);
+}
+
 // ---- Errors -----------------------------------------------------------------------------------------------------
 
 TEST_CASE("classic save: damaged files and other data sets give clear messages") {
@@ -1253,8 +1286,7 @@ bool explained(const std::string& line) {
                  R"(^empire \d+ > strategy \d+ > break formation)",                                          // the seekers' flags
                  R"(^empire \d+ > race > culture:)",                                                          // 0 (none) becomes the first
                  R"(^timed event)",                                                                           // free slots are dropped
-                 R"(^object \d+ > (colony > )?order \d+ > (kind: 10 != 12|kind: 11 != 13|target name:))",    // Seek lasts one phase; names shown again (§3.8.8)
-                 R"(^object \d+ > colony > facility \d+ > destroyed:)",                                    // 0 between turns (§3.8.5)
+                 R"(^object \d+ > (colony > )?order \d+ > (kind: 10 != 1|target name:))",                  // kind 10 is a Move To; names shown again (§3.8.8)
                  R"(^object \d+ > (destination system|destination sector))",                                 // one-way links (§3.8.3)
                  R"(^launch)",
                  R"(^object( count)?: )",                                                                     // trailing free slots are not kept

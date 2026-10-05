@@ -968,7 +968,7 @@ A colony has no name of its own.
 | bool | Cloaked | | `cloaked` |
 | byte | Atmosphere counter | Turns with an unbreathable atmosphere (at most 200) | `atmosphereTurns` |
 | cargo | Stored cargo | §3.8.7 | `cargo` |
-| word n, n × (word, byte, byte) | Facilities | Facility.txt position; how many; how many were destroyed and not yet removed. Each destruction (sabotage, natural events, hazard damage) adds to it and is then removed by subtracting it from the count, but the byte is never reset, so a nonzero value stays behind and is subtracted again at the colony's next removal pass **(confirmed: binary)**; 30 entries of the large sample hold such leftovers **(observed)**. Import and export 0 (§11.2). One entry per facility kind; at most 255 entries. | `facilities`: count copies of position − 1 |
+| word n, n × (word, byte, byte) | Facilities | Facility.txt position; how many; how many were destroyed and not yet removed. Each destruction (sabotage, natural events, hazard damage) adds to it and is then removed by subtracting it from the count, but the byte is never reset, so a nonzero value stays behind and is subtracted again at the colony's next removal pass **(confirmed: binary)**; 30 entries of the large sample hold such leftovers, and no entry whose count is 0 holds one **(observed)**. One entry per facility kind; at most 255 entries. | `facilities`: count copies of position − 1; the destroyed count: `destroyedFacilities` (§11.2, §12) |
 | queue | Construction queue | §3.8.7 | `queue` |
 | unit list | Landed enemy troops | §3.8.7 | `landedTroops` |
 | byte | Invading player | 0 none | `invader` |
@@ -1573,7 +1573,7 @@ What also showed:
 - A colony's facility entries keep a count of destroyed facilities that the removal pass
   subtracts but never resets; every later removal pass at that colony (after sabotage, a
   natural event or hazard damage) subtracts the leftover again, so the colony loses those facilities
-  a second time. OpenSE4 removes destroyed facilities once (docs/PARITY_GAPS.md).
+  a second time. OpenSE4 keeps the counts as the original does since 2026-10-04 (§12).
 
 - Each system's object list is rebuilt in slot order after every load, move, warp and
   creation. Spec 05 §7.5 ("Placement") and `Vehicle::arrival` assume arrival order; this
@@ -1664,12 +1664,14 @@ Implemented on 2026-10-04 from this spec.
     with (`Rules::data().dataDir`, read as written: `classic_save_checksums.cpp`) and
     written in every export; import computes them too and notes which files differ from a
     save that carries them.
-  - Facility entries' destroyed counts: import and export 0. OpenSE4's engine keeps the
-    counts per colony (`Colony::destroyedFacilities`) and follows §11.2 for the removal
-    passes it has, those after sabotage and events (`Planet - Facility Damage`); a kind
-    whose last facility goes loses its count (inferred). Battles remove what they
-    destroyed once, as spec 04 §19.1 chose, and do not touch the counts; OpenSE4 has no
-    hazard damage to colonies.
+  - Facility entries' destroyed counts: OpenSE4's engine keeps them per colony
+    (`Colony::destroyedFacilities`) and follows §11.2 for the removal passes it has, those
+    after sabotage and events (`Planet - Facility Damage`); a kind whose last facility goes
+    loses its count (inferred). Battles remove what they destroyed once, as spec 04 §19.1
+    chose, and do not touch the counts; OpenSE4 has no hazard damage to colonies. Import
+    and export carry the counts as they are, so the colony's next removal pass takes them
+    off in either game; a count on an entry with no facility left is dropped on import
+    (none was seen).
   - Passwords: imported as OpenSE4's check of the trimmed lower-case password; none is
     exported (§7.4). The game master password is dropped.
   - The windows' sort keys are not carried in either direction (§11.1 Q4).

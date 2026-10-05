@@ -836,7 +836,11 @@ private:
                 const auto index = position(f.facility, d_.facilities.size(), "Facility.txt", where);
                 if (!index) return;
                 for (int k = 0; k < f.count; ++k) c.facilities.push_back(*index);
-                if (f.destroyed) count("facilities marked destroyed in a battle in progress");
+                // The never-reset count of destroyed facilities (§3.8.5, §11.2): the
+                // colony's next removal pass takes it off again. A kind the colony no
+                // longer has keeps none (Colony::destroyedFacilities).
+                if (f.destroyed > 0 && f.count > 0) economy::addDestroyedFacilities(c, *index, f.destroyed);
+                else if (f.destroyed > 0) count("destroyed facility counts of kinds the colony no longer has (dropped)");
             }
             c.queue = queue(in.queue, where);
             for (const UnitEntry& u : in.landedTroops) {

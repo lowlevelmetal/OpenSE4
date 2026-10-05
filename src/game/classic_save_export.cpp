@@ -922,6 +922,11 @@ private:
             if (it == rec.facilities.end()) rec.facilities.push_back({clampWord(int64_t{f} + 1), 1, 0});
             else ++it->count;
         }
+        // The never-reset destroyed counts (§3.8.5, §11.2), on the entries of their kinds.
+        for (const DestroyedFacilities& d : c.destroyedFacilities) {
+            auto it = std::find_if(rec.facilities.begin(), rec.facilities.end(), [&](const FacilityEntry& x) { return x.facility == d.facility + 1; });
+            if (it != rec.facilities.end()) it->destroyed = clampByte(d.count);
+        }
         rec.queue = queue(c.queue);
         rec.landedTroops = units(c.landedTroops);
         rec.invader = player(c.invader);

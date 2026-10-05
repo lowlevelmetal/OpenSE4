@@ -109,6 +109,7 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
         c->cargo = {};
         c->queue = {};
         c->facilities.clear();
+        c->destroyedFacilities.clear();
         c->minister = false;
         c->orders.clear();
         if (c->invader != viewer) c->landedTroops.clear();   // another empire's landed troops stay hidden

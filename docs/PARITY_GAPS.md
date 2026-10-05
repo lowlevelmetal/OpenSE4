@@ -30,15 +30,17 @@ state (the row "Random generator after a load" above).
 The seven rows the analyst's check of OpenSE4's exports in the original added on
 2026-10-04 (spec 08 §9.1) were closed the same day: exports carry the data-set checksums
 computed from the data files (spec 08 §3.2.1), so players sign in to a simultaneous game;
-log entries are written unread, and those imported from the original keep their kind,
-picture key, other empire, event fields and battle details (`LogEntry::classic`); a
+OpenSE4's log entries are written unread, and those imported from the original keep their
+kind, read date, picture key, other empire, event fields and battle details
+(`LogEntry::classic`); a
 pursuing Attack is written as kind 11 and read back as an Attack, an Attack without a
 target as kind 8; Launch and Recover name their unit kind in the cargo-kind numbering; a
 turn-based game exported before the current player's turn has started gives that player's
 vehicles the movement of the turn's start. The engine keeps each colony's never-reset
 counts of destroyed facilities (`Colony::destroyedFacilities`): every removal pass after
-sabotage or an event takes them off again (spec 08 §11.2). Battles still remove what they
-destroyed once, the choice of spec 04 §19.1, and OpenSE4 has no hazard damage to colonies.
+sabotage or an event takes them off again (spec 08 §11.2), and the original's saved games
+carry them both ways. Battles still remove what they destroyed once, the choice of spec 04
+§19.1, and OpenSE4 has no hazard damage to colonies.
 The save format is 8 and the network protocol 6 since then.
 
 ## Economy and population (spec 02)

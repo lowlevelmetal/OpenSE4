@@ -31,6 +31,9 @@ TEST_CASE("redact: an empire's view hides what it does not know") {
     s.design(theirs).enemyTonnageDestroyed = 750;
     s.design(ours).enemyTonnageDestroyed = 120;
     seeDesign(s.empire(me).knowledge, theirs, s.turn);
+    // A colony's destroyed facility counts are its owner's, like its facilities.
+    for (auto& c : s.colonies)
+        if (c && !c->facilities.empty()) c->destroyedFacilities = {{c->facilities.front(), 1}};
 
     const GameState v = redactForEmpire(r, s, me);
     CHECK(v.design(theirs).name == s.design(theirs).name);  // seen: the design itself is known
@@ -66,9 +69,11 @@ TEST_CASE("redact: an empire's view hides what it does not know") {
     }
     // Foreign colonies only in explored systems, without facilities or queues.
     for (const auto& c : v.colonies) {
+        if (c && c->owner == me) CHECK(c->destroyedFacilities == s.colony(c->planet)->destroyedFacilities);
         if (!c || c->owner == me) continue;
         CHECK(s.empire(me).hasExplored(s.galaxy.object(c->planet).system));
         CHECK(c->facilities.empty());
+        CHECK(c->destroyedFacilities.empty());
         CHECK(c->queue.items.empty());
     }
     // Serializes and loads like any state.
