@@ -380,6 +380,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     fields(ar, o.replayAnimate, o.replayFast, o.replayViewRect, o.replayGrid);
     fields(ar, o.shipsTab, o.shipsShown);
     fields(ar, o.designToHit, o.designCondensed);
+    if (ar.version() >= 8) fields(ar, o.designsHideObsolete, o.designsStatsView);   // format 7 files keep the defaults
 }
 
 template <class Ar>

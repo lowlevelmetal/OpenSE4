@@ -270,6 +270,11 @@ struct InterfaceOptions {
     // of the empire (spec 06 §7 Q94).
     bool designToHit = false;
     bool designCondensed = false;
+    // The Designs window's Hide Obsolete and Stats\Strategy check boxes: the
+    // original keeps both with the empire's options in the saved game (spec 08
+    // §3.6.7), so they come back on every opening (save format 8).
+    bool designsHideObsolete = false;
+    bool designsStatsView = false;
 
     bool operator==(const InterfaceOptions&) const = default;
 };

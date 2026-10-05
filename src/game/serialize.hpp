@@ -72,7 +72,10 @@ class Rules;
 // "Players can see the complete tech tree" option (GameOptions::completeTechTree,
 // spec 06 §7 Q92); the designer's To Hit Modifiers and Condensed View options
 // (InterfaceOptions::designToHit, designCondensed, spec 06 §7 Q94).
-inline constexpr uint32_t kSaveVersion = 7;
+// Version 8: the Designs window's Hide Obsolete and Stats\Strategy check boxes
+// (InterfaceOptions::designsHideObsolete, designsStatsView, spec 08 §3.6.7).
+// Format 7 files are still read: those two keep their defaults.
+inline constexpr uint32_t kSaveVersion = 8;
 inline constexpr uint32_t kMinSaveVersion = 7;
 
 inline constexpr size_t kEnvelopeSize = 32;

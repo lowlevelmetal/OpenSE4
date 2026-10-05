@@ -4680,6 +4680,12 @@ choices (inferred):
     an enemy design shows its owner in place of its design type; the default strategy is a
     drop-down; an obsolete design's button reads Make Current; a design just made is selected
     and scrolled into view, and our notes (a design made, a refusal) go in the title strip.
+    Hide Obsolete and Stats\Strategy are kept with the empire's options in the saved game, as
+    the original keeps them (spec 08 §3.6.7), so the window opens again as it was left: ours
+    since 2026-10-04 (`InterfaceOptions::designsHideObsolete`, `designsStatsView`, save format
+    8; GitHub issue #1), where v0.9.0 forgot them at every closing. The window's tab, which
+    the original keeps too, still opens on Ship Designs (or the tab of the design it was
+    opened for).
 94. **Create Design.** Ours: the vehicle-type picker is a list window titled "Select Vehicle
     Type", the same from every tab; the designer is a 780x475 window. Places in its content
     area: the picture at (3,3); Size, Design Type and Design Name at x 140 with their boxes

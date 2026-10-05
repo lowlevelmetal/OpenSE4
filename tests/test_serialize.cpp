@@ -32,6 +32,7 @@ namespace opense4::game::serial {
 struct FieldCounter {
     static constexpr bool kReading = false;
     size_t count = 0;
+    uint32_t version() const { return kSaveVersion; }   // every field of the current format
 };
 template <class... T>
 void fields(FieldCounter& c, T&...) {
@@ -621,8 +622,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x5cef4d57e3fecc3dull;
-    constexpr size_t kGoldenSize = 1820;
+    constexpr uint64_t kGoldenChecksum = 0x41b6cf888cf4cc85ull;
+    constexpr size_t kGoldenSize = 1822;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -635,6 +636,38 @@ TEST_CASE("serialize: checksums are stable") {
     copy = g;
     copy.colonies[0]->population[0].millions += 1;
     CHECK(stateChecksum(copy) != stateChecksum(g));
+}
+
+// Format 8 added the Designs window's Hide Obsolete and Stats\Strategy to the
+// empire's options (GitHub issue #1, spec 08 §3.6.7). Games saved in format 7
+// (OpenSE4 0.8 and 0.9.0) still load, with both off.
+TEST_CASE("serialize: format 7 games load; format 8 keeps the Designs window's check boxes") {
+    GameState g = busyGame();
+    g.empires[0].interfaceOptions.designsHideObsolete = true;
+    g.empires[0].interfaceOptions.designsStatsView = true;
+    g.empires[0].interfaceOptions.designToHit = true;
+    auto now = deserializeState(serializeState(g));
+    REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
+    CHECK(now->empires[0].interfaceOptions.designsHideObsolete);
+    CHECK(now->empires[0].interfaceOptions.designsStatsView);
+
+    // The same game as format 7 wrote it: no such fields, version 7 in the envelope.
+    const std::vector<uint8_t> current = serializeState(g);
+    const std::string magic(current.begin(), current.begin() + 8);
+    std::vector<uint8_t> payload;
+    serial::write(payload, g, 7);
+    std::vector<uint8_t> old = wrapEnvelope(magic, payload);
+    old[8] = 7;
+    CHECK(payload.size() + 2 * g.empires.size() == payloadOf(current).size());   // the two booleans of each empire
+    auto before = deserializeState(old);
+    REQUIRE_MESSAGE(before.has_value(), (before ? std::string{} : before.error()));
+    CHECK_FALSE(before->empires[0].interfaceOptions.designsHideObsolete);
+    CHECK_FALSE(before->empires[0].interfaceOptions.designsStatsView);
+    CHECK(before->empires[0].interfaceOptions.designToHit);   // what format 7 holds comes through
+    GameState expected = g;
+    expected.empires[0].interfaceOptions.designsHideObsolete = false;
+    expected.empires[0].interfaceOptions.designsStatsView = false;
+    CHECK(stateChecksum(*before) == stateChecksum(expected));
 }
 
 // ---- Save files --------------------------------------------------------------------------------------------

@@ -1,0 +1,38 @@
+# The Designs window's Hide Obsolete and Stats\Strategy (GitHub issue #1): the original keeps
+# both with the empire's options in the saved game (spec 08 §3.6.7), so the window opens again
+# as it was left (and a saved game keeps them: tests/test_serialize.cpp). v0.9.0 forgot them at
+# every closing (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start=Terran --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 5
+assert { not = { option = "designs-hide-obsolete" } }
+assert { not = { option = "designs-stats-view" } }
+click tag:command:designs
+wait-window designs
+click item:"Hide Obsolete" in=designs
+click item:"Stats*Strategy" in=designs
+wait 2
+assert { option = "designs-hide-obsolete" }
+assert { option = "designs-stats-view" }
+key Escape
+wait-closed designs
+# Opened again: both as they were left.
+click tag:command:designs
+wait-window designs
+wait 2
+assert { option = "designs-hide-obsolete" }
+assert { option = "designs-stats-view" }
+screenshot designs-reopened.png
+# An enemy tab switches Stats\Strategy off (spec 06 §7 Q93), and that is kept too.
+click item:"Enemy Ship Dsgn" in=designs
+wait 2
+assert { not = { option = "designs-stats-view" } }
+assert { option = "designs-hide-obsolete" }
+# Hide Obsolete off again.
+click item:"Hide Obsolete" in=designs
+wait 2
+assert { not = { option = "designs-hide-obsolete" } }
+key Escape
+wait-closed designs
