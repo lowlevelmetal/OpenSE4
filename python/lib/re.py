@@ -2,10 +2,11 @@
 functions of CPython's that it lacks: findall, finditer, fullmatch, escape, split
 with a maximum, and compiled patterns with the same methods.
 
-The engine is a small backtracking matcher: . [] [^] * + ? *? +? | ( ) ^ $ \\d \\w \\s
-and their capitals work; counted repetition {m,n}, named or non-capturing groups,
-lookarounds and flags do not. fullmatch accepts a match that ends at the end of the
-text, so with alternatives it may miss a longer full match that CPython finds.
+The engine is a small backtracking matcher: . [] [^] * + ? *? +? | ( ) (?: ) ^ $ and
+\\d \\w \\s with their capitals work; counted repetition does not ("a{2}" matches the
+text "a{2}"), nor do named groups, lookarounds or flags. fullmatch accepts a match
+that ends at the end of the text, so with alternatives it may miss a longer full
+match that CPython finds.
 """
 
 import ure as _ure

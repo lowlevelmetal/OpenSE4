@@ -35,6 +35,9 @@ CMake fetches the remaining dependencies at pinned versions with verified hashes
 
 The first configure therefore needs network access. Later builds do not.
 
+MicroPython, the interpreter of the modding SDK's scripts, is part of the source tree
+(`third_party/micropython`, see "MicroPython"): nothing to install or fetch.
+
 The Vulkan loader is **not** linked. It is loaded at runtime, so the game still starts,
 on OpenGL, on machines without Vulkan.
 
@@ -428,6 +431,33 @@ For the release package, `install-desktop-entry.sh` does the same for one user. 
 copies the entry and icons into `~/.local/share` (or `$XDG_DATA_HOME`), with `Exec`
 pointing at the unpacked folder.
 
+## MicroPython
+
+In-game scripts run on MicroPython (docs/sdk/runtime.md). `cmake/MicroPython.cmake`
+builds it as a static C library, `opense4_micropython`, from
+`third_party/micropython`: the pinned release (1.29.0) with our patches applied and
+the headers MicroPython generates for its configuration
+(`src/script/port/mpconfigport.h`), all committed. Generating those headers takes
+Python, make and a C preprocessor run over MicroPython's sources; doing that at build
+time would have to work the same with GCC, Clang, MSVC, llvm-mingw and the ARM cross
+compilers, and offline. So it is done once, by `tools/update_micropython.sh`, and
+every compiler builds the same files with nothing generated or fetched.
+
+Run the script (on Linux or macOS; it needs curl, make, patch, python3 and cc) after
+changing `mpconfigport.h` or a patch in `third_party/micropython/patches/`, or to move
+to a new MicroPython release (change its version and SHA-256, then refresh the
+patches). It downloads the release once into `build/_tools`, checks its SHA-256,
+applies the patches, generates the headers and replaces `third_party/micropython`
+(keeping `patches/` and `licenses/`). CMake stops with a message when
+`mpconfigport.h` no longer matches the generated headers.
+
+MicroPython is third-party code: our warning flags stay off it, and in the `asan`
+preset its undefined-behaviour checks are off (its garbage collector's own stack scan
+is exempt from the address checks). Our port (`src/script/port/*.c`) is ours and stays
+warning-free. Its licence (MIT), musl's for the bundled math functions (MIT) and
+re1.5's for the regular expression engine (BSD 3-clause) go into the release
+packages' `THIRD_PARTY_NOTICES.txt`.
+
 ## Offline builds
 
 Point FetchContent at already-downloaded sources:
@@ -438,7 +468,8 @@ cmake --preset debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
 ```
 
 The dependency names are `IMGUI`, `VOLK`, `VMA`, `VULKANHEADERS`, `TOMLPLUSPLUS`,
-`STB`, `DRLIBS`, `MONOCYPHER`, `DOCTEST` and `MINIUPNPC`. The sources for each dependency are also under
+`STB`, `DRLIBS`, `MONOCYPHER`, `DOCTEST` and `MINIUPNPC`. MicroPython needs nothing:
+it is in the source tree. The sources for each dependency are also under
 `build/<preset>/_deps/<name>-src` after any online configure. You can reuse them for other build directories or worktrees
 with `FETCHCONTENT_SOURCE_DIR_<NAME>`.
 
