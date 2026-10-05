@@ -300,6 +300,7 @@ void unsaved(Ar&, T&... v) {
 
 template <class Ar> void io(Ar& ar, ruleset::Ability& a) { fields(ar, a.type, a.description, a.value1, a.value2); }
 template <class Ar> void io(Ar& ar, ruleset::CombatStrategy& c) { fields(ar, c.name, c.settings); }
+template <class Ar> void io(Ar& ar, ruleset::ModRecord& m) { fields(ar, m.id, m.version, m.hash, m.affectsGame); }
 
 // ---- types.hpp, galaxy.hpp ------------------------------------------------------------------
 
@@ -565,6 +566,7 @@ void io(Ar& ar, GameState& s) {
     fields(ar, s.turn, s.seed, s.options, s.galaxy, s.colonies, s.empires, s.designs, s.vehicles, s.fleets, s.messages, s.pendingEvents,
            s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng, s.playerTurn,
            s.startingPoints, s.leftFacilities, s.arrivals);
+    if (formatVersion(ar) >= 9) fields(ar, s.mods);   // format 8 had no mods
     // The happiness events waiting for an empire's next update are not saved:
     // a loaded game starts with none (spec 02 §4, confirmed: binary).
     unsaved(ar, s.pendingMood);
@@ -661,6 +663,9 @@ template <class Ar> void io(Ar& ar, GameSetup& g) { fields(ar, g.seed, g.options
 template <class Ar>
 void io(Ar& ar, SaveInfo& i) {
     fields(ar, i.gameName, i.dataSet, i.turn, i.empires, i.gameId, i.players, i.masterPasswordVerifier);
+    if (formatVersion(ar) >= 9) fields(ar, i.mods);   // format 8 had no mods
+    // The format the file was written in: filled in by the reader.
+    unsaved(ar, i.formatVersion);
 }
 
 // ---- Helpers -----------------------------------------------------------------------------------------

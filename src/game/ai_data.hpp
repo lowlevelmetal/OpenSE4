@@ -16,6 +16,8 @@
 
 #include "game/ai.hpp"
 #include "game/types.hpp"
+#include "datafile/datafile.hpp"
+#include "ruleset/files.hpp"
 #include "ruleset/ruleset.hpp"
 
 #include <array>
@@ -287,6 +289,8 @@ const AiProfile& builtinProfile();
 // folder ("Terran", "Neutral003"); `ministerStyle` is a folder under Ai/
 // ("Aggressive", ...) or empty for the race's own files.
 AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view raceStyle, std::string_view ministerStyle = {});
+// The same from a game folder's files (the install, perhaps with mods).
+AiProfile loadProfile(const ruleset::GameFiles& files, std::string_view raceStyle, std::string_view ministerStyle = {});
 
 // Cached profile for this rules set (thread-safe; references stay valid for the
 // life of the program).
@@ -302,6 +306,16 @@ std::vector<std::string> ministerStyles(const Rules& r);
 // The race's design-name file (Dsgnname/<file> in the install), one name per
 // line; empty without an install or file. Cached.
 const std::vector<std::string>& designNameList(const Rules& r, std::string_view file);
+// The design-name files there are (Dsgnname/*.txt), by name in any case.
+std::vector<std::string> designNameFiles(const Rules& r);
+
+// The twelve tables' names as their files end (`<prefix>_AI_<Name>.txt`), and
+// the units file's: "Anger", "Politics", ... "Construction_Units".
+std::span<const std::string_view> tableNames();
+// The fields of one table's file that a mod's patch wrote (Field::origin)
+// and the table's reader does not read: typos, or keys the table does not
+// have. The patch layer reports them (docs/sdk/packages-and-data.md).
+std::vector<const datafile::Field*> unreadPatchedFields(std::string_view table, const datafile::DataFile& file);
 
 // Name helpers shared by the tables.
 bool parseTreatyName(std::string_view text, Treaty& out);   // accepts "Trade and Research Alliance"

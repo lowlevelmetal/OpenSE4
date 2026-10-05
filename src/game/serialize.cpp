@@ -342,6 +342,7 @@ std::vector<uint8_t> serializeSave(const GameState& s, const SaveInfo& info) {
     header.turn = s.turn;
     header.empires.clear();
     for (const Empire& e : s.empires) header.empires.push_back(e.name);
+    header.mods = s.mods;
     std::vector<uint8_t> state = serializeState(s);
     std::vector<uint8_t> buf(kEnvelopeSize);
     buf.reserve(kEnvelopeSize + state.size() + 1024);
@@ -358,6 +359,7 @@ std::expected<std::pair<GameState, SaveInfo>, std::string> deserializeSave(std::
     SaveInfo info;
     std::vector<uint8_t> blob;
     serial::io(r, info);
+    info.formatVersion = env->version;
     serial::io(r, blob);
     if (r.ok() && r.remaining() != 0) r.fail("unexpected data after the end");
     if (!r.ok()) return std::unexpected(std::format("the saved game is corrupt: {} (at byte {})", r.error(), r.position()));
@@ -389,16 +391,20 @@ std::expected<SaveInfo, std::string> readSaveInfo(const std::filesystem::path& f
     serial::Reader r(env->payload, env->version);
     SaveInfo info;
     serial::io(r, info);
+    info.formatVersion = env->version;
     if (!r.ok()) return std::unexpected(std::format("{}: the saved game is corrupt: {}", file.string(), r.error()));
     return info;
 }
 
 // ---- Data set identity -----------------------------------------------------------------------------
 
-std::string dataSetIdentity(const Rules& r) {
+namespace {
+
+// The part of the identity every format computes: the loaded tables and the
+// data folder's files. `label` gets the data folder's name.
+void hashDataFolder(const Rules& r, Hasher& h, std::string& label) {
     namespace fs = std::filesystem;
     const ruleset::Ruleset& d = r.data();
-    Hasher h;
     // The loaded tables: catches data sets built in memory and mods that
     // differ outside the data directory (race presets).
     auto names = [&](const auto& list) {
@@ -439,16 +445,51 @@ std::string dataSetIdentity(const Rules& r) {
         }
     }
 
-    std::string label = "data";
+    label = "data";
     if (!d.dataDir.empty()) {
         const fs::path dir = d.dataDir.filename().empty() ? d.dataDir.parent_path() : d.dataDir;
         label = dir.parent_path().filename().empty() ? dir.filename().string()
                                                      : dir.parent_path().filename().string() + "/" + dir.filename().string();
     }
+}
+
+} // namespace
+
+std::string legacyDataSetIdentity(const Rules& r) {
+    Hasher h;
+    std::string label;
+    hashDataFolder(r, h, label);
     return std::format("{}#{:016x}", label, h.value());
 }
 
+std::string dataSetIdentity(const Rules& r) {
+    Hasher h;
+    std::string label;
+    hashDataFolder(r, h, label);
+    // Format 9: also the game folder's AI tables, race files and design-name
+    // lists, and the mods that change the game (their patches, tables and
+    // scripts are in their own identities).
+    h.add(r.files() ? r.files()->fingerprint() : uint64_t{0});
+    const std::string mods = ruleset::modSetIdentity(r.mods());
+    h.add(std::string_view(mods));
+    size_t count = 0;
+    for (const ruleset::ModRecord& m : r.mods()) count += m.affectsGame ? 1 : 0;
+    if (count > 0) label += std::format("+{} mod{}", count, count == 1 ? "" : "s");
+    return std::format("{}#{:016x}", label, h.value());
+}
+
+
+
 bool sameDataSet(std::string_view a, std::string_view b) { return fingerprintOf(a) == fingerprintOf(b); }
+
+bool sameDataSet(const SaveInfo& info, const Rules& r) {
+    if (info.dataSet.empty()) return true;
+    return sameDataSet(info.dataSet, info.formatVersion <= 8 ? legacyDataSetIdentity(r) : dataSetIdentity(r));
+}
+
+std::vector<std::string> modDifferences(std::span<const ruleset::ModRecord> game, const Rules& r, std::string_view theirs) {
+    return ruleset::compareModSets(game, r.mods(), theirs);
+}
 
 // ---- Files ---------------------------------------------------------------------------------------------
 

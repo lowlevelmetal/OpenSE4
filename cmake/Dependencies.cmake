@@ -88,7 +88,13 @@ FetchContent_Declare(monocypher
     URL https://github.com/LoupVaillant/Monocypher/releases/download/4.0.2/monocypher-4.0.2.tar.gz
     URL_HASH SHA256=38d07179738c0c90677dba3ceb7a7b8496bcfea758ba1a53e803fed30ae0879c
     SOURCE_SUBDIR _no_cmake)
-FetchContent_MakeAvailable(imgui volk vma tomlplusplus stb drlibs monocypher)
+# miniz (MIT): reads and writes mod packages as .zip files (src/mods, opense4-sdk
+# pack). The release archive with the single-file library, as its author publishes it.
+FetchContent_Declare(miniz
+    URL https://github.com/richgel999/miniz/releases/download/3.1.2/miniz-3.1.2.zip
+    URL_HASH SHA256=f0446d863f9c19926ad9483c523fdc42e42b8d4a6a431d27e09d49c79a140d9a
+    SOURCE_SUBDIR _no_cmake)
+FetchContent_MakeAvailable(imgui volk vma tomlplusplus stb drlibs monocypher miniz)
 add_library(drlibs INTERFACE)
 target_include_directories(drlibs SYSTEM INTERFACE "${drlibs_SOURCE_DIR}")
 
@@ -98,6 +104,15 @@ target_include_directories(monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/sr
 # a debug build's Argon2 would take ten times as long to check a password.
 target_compile_options(monocypher PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/w,-w> $<$<NOT:$<C_COMPILER_ID:MSVC>>:-O2>)
 set_target_properties(monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Only the archive functions in memory: no file I/O (we read and write the
+# files ourselves, with paths as the rest of the program has them) and no
+# clock (a packed mod's bytes depend only on its files).
+add_library(miniz STATIC "${miniz_SOURCE_DIR}/miniz.c")
+target_include_directories(miniz SYSTEM PUBLIC "${miniz_SOURCE_DIR}")
+target_compile_definitions(miniz PUBLIC MINIZ_NO_STDIO MINIZ_NO_TIME)
+target_compile_options(miniz PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/w,-w>)
+set_target_properties(miniz PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(OPENSE4_BUILD_TESTS)
     FetchContent_Declare(doctest

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Writes the binary test fixtures of tests/fixtures/install: a tiny raster font
-(.fon, an NE module with one FNT resource) and pointer files (.cur), all drawn
-here for OpenSE4's tests, nothing taken from any game. Run it again after
-changing it; the tests read the files it writes.
+(.fon, an NE module with one FNT resource) and pointer files (.cur), and the
+pictures of the fixture mods in tests/fixtures/mods (24-bit BMPs of simple
+shapes on black), all drawn here for OpenSE4's tests, nothing taken from any
+game. Run it again after changing it; the tests read the files it writes.
 
     python3 tools/make_test_fixtures.py
 """
@@ -136,6 +137,60 @@ POINTER = [
     "BB.X....",
     "B.......",
 ]
+
+def bmp(width, height, pixel):
+    """A 24-bit bottom-up BMP; pixel(x, y) gives (r, g, b) with y = 0 at the top."""
+    row = (width * 3 + 3) // 4 * 4
+    data = bytearray()
+    for y in range(height - 1, -1, -1):
+        line = bytearray()
+        for x in range(width):
+            r, g, b = pixel(x, y)
+            line += bytes((b, g, r))
+        data += line + bytes(row - len(line))
+    header = struct.pack("<2sIHHI", b"BM", 54 + len(data), 0, 0, 54)
+    info = struct.pack("<IiiHHIIiiII", 40, width, height, 1, 24, 0, len(data), 2835, 2835, 0, 0)
+    return header + info + bytes(data)
+
+
+def carrier(size):
+    """A wedge-shaped hull with a flight deck stripe, pointing up, on black."""
+    def pixel(x, y):
+        cx = (size - 1) / 2
+        u, v = (x - cx) / size, y / size          # v: 0 at the nose, 1 at the stern
+        half = 0.08 + 0.32 * v                     # the hull widens towards the stern
+        if not (0.08 <= v <= 0.92 and abs(u) <= half):
+            return (0, 0, 0)
+        if abs(u) <= 0.04 and v > 0.25:
+            return (240, 200, 60)                  # the deck stripe
+        if v > 0.85:
+            return (90, 160, 255)                  # the engines' glow
+        shade = int(150 + 80 * (1 - abs(u) / half))
+        return (shade // 2, shade, shade)          # a teal hull, brighter along the keel
+    return bmp(size, size, pixel)
+
+
+def cutter(size):
+    """A small diamond, for the classic fixture mod's replacement picture."""
+    def pixel(x, y):
+        c = (size - 1) / 2
+        return (220, 90, 200) if abs(x - c) + abs(y - c) <= size * 0.35 else (0, 0, 0)
+    return bmp(size, size, pixel)
+
+
+MODS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "fixtures", "mods")
+
+
+def write_mod(path, data):
+    full = os.path.join(MODS, path)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "wb") as f:
+        f.write(data)
+
+
+write_mod("escort-hull/assets/Pictures/RaceGeneric/Generic_Mini_EscortCarrier.bmp", carrier(36))
+write_mod("escort-hull/assets/Pictures/RaceGeneric/Generic_Portrait_EscortCarrier.bmp", carrier(128))
+write_mod("classic-names/Pictures/RaceGeneric/Generic_Mini_Cutter.bmp", cutter(36))
 
 write("Path.txt", b"*BEGIN*\r\nUsing Mod Directory   := TestMod\r\n*END*\r\n")
 write("Fonts/TestFace.fon", fon(fnt("Base Face", GLYPHS, 5, 4, 1)))

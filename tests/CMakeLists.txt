@@ -72,10 +72,18 @@ add_executable(opense4_tests
     test_winfont.cpp
     test_xmath.cpp
     sdk/sdk_test_util.cpp
+    sdk/test_mod_identity.cpp
+    sdk/test_mod_installed.cpp
+    sdk/test_mod_layers.cpp
+    sdk/test_mod_manifest.cpp
+    sdk/test_mod_packages.cpp
+    sdk/test_mod_patches.cpp
+    sdk/test_mod_sets.cpp
     sdk/test_sdk_codec.cpp
     sdk/test_sdk_docs.cpp
     sdk/test_sdk_queries.cpp
     sdk/test_sdk_rules_view.cpp
+    sdk/test_sdk_tool.cpp
     sdk/test_sdk_view.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
@@ -120,9 +128,12 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
-target_link_libraries(opense4_tests PRIVATE opense4_sdk opense4_script opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
+target_link_libraries(opense4_tests PRIVATE opense4_sdk opense4_script opense4_mods opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
 target_include_directories(opense4_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+# The SDK tool's tests run it (tests/sdk/test_sdk_tool.cpp).
+add_dependencies(opense4_tests opense4-sdk)
 target_compile_definitions(opense4_tests PRIVATE
+    OPENSE4_SDK_EXE="$<TARGET_FILE:opense4-sdk>"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
     OPENSE4_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")

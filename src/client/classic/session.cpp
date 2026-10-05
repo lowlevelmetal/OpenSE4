@@ -726,6 +726,13 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     }
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& s = loaded->first;
+    // A game made with mods that change the game plays only with the same
+    // ones (asset-only and interface-only mods may differ).
+    if (const auto mods = game::modDifferences(s.mods, *rules, "the saved game"); !mods.empty()) {
+        std::string why = std::format("{} needs other mods than this session has (start OpenSE4 with the same ones, see --mod):", file.filename().string());
+        for (const std::string& m : mods) why += "\n  " + m;
+        return std::unexpected(why);
+    }
     // Reading a game file recalculates every colony's cloak and sensor levels,
     // a colony that can no longer cloak decloaking as by Decloak (spec 01
     // §6.9, §14 Q44, confirmed: binary).

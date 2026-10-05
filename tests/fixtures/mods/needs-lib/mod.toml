@@ -1,0 +1,14 @@
+# A test fixture: a mod that requires another (for the fixture data set).
+[mod]
+id = "test.needs-lib"
+name = "Needs the Library"
+version = "0.3.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "Gives the Spark Drive the library's ability."
+
+[requires]
+"test.common-lib" = ">=1.0, <2"
+
+[load]
+after = ["test.common-lib"]

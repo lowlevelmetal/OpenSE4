@@ -75,6 +75,11 @@ const VehicleSize* Ruleset::findVehicleSize(std::string_view name) const {
     auto i = lookup(vehicleIndex_, name);
     return i ? &vehicleSizes[*i] : nullptr;
 }
+const DeclaredAbility* Ruleset::findDeclaredAbility(std::string_view name) const {
+    for (const DeclaredAbility& d : declaredAbilities)
+        if (datafile::keysEqual(d.name, name)) return &d;
+    return nullptr;
+}
 
 AbilityNameStatus abilityNameStatus(std::string_view type) {
     static const std::unordered_map<std::string, AbilityNameStatus> kNames = [] {

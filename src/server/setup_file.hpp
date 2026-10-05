@@ -36,6 +36,11 @@ struct SetupEmpire {
 
 struct SetupFile {
     std::string gameName;
+    // `mods = [...]`: the mods to play with, each a package's path (relative
+    // to the setup file's folder) or the id of one in the mods folder, in
+    // load order (docs/sdk/packages-and-data.md). Read before the data set
+    // loads (setupFileMods), as the rules depend on them.
+    std::vector<std::string> mods;
     std::optional<uint64_t> seed;
     // The game's id, which salts its passwords: needed for verifiers made in
     // advance (opense4-server password-verifier --game-id=N).
@@ -52,6 +57,12 @@ struct SetupFile {
     }();
     std::vector<SetupEmpire> empires;
 };
+
+// Only the `mods` of a setup file, with relative paths made relative to its
+// folder: what the data set needs before the rest can be read.
+std::expected<std::vector<std::string>, std::string> setupFileMods(const std::filesystem::path& file);
+std::expected<std::vector<std::string>, std::string> parseSetupMods(std::string_view text, const std::string& sourceName,
+                                                                   const std::filesystem::path& baseDir);
 
 // Parses a setup file; `rules` checks race and quadrant names.
 std::expected<SetupFile, std::string> loadSetupFile(const std::filesystem::path& file, const game::Rules& rules);

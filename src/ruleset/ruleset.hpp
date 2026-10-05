@@ -10,10 +10,14 @@
 
 #include "core/id.hpp"
 #include "datafile/reader.hpp"
+#include "ruleset/files.hpp"
+#include "ruleset/mods.hpp"
 
 #include <array>
 #include <filesystem>
+#include <span>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -356,6 +360,14 @@ struct NameLists {
 
 struct Ruleset {
     std::filesystem::path dataDir;
+    // The files the data set came from: the install, with mods layered over
+    // it. Null for a data set read straight from a data folder (loadRuleset
+    // with a path); game::Rules then reads its game folder, if it has one.
+    std::shared_ptr<const GameFiles> files;
+    // The mods it was built with, in load order (docs/sdk/packages-and-data.md).
+    std::vector<ModRecord> mods;
+    // Ability names mods declared: data may carry them besides the engine's own.
+    std::vector<DeclaredAbility> declaredAbilities;
 
     std::vector<TechArea> techAreas;
     std::vector<VehicleSize> vehicleSizes;
@@ -383,6 +395,7 @@ struct Ruleset {
     const Component* findComponent(std::string_view name) const;
     const Facility* findFacility(std::string_view name) const;
     const VehicleSize* findVehicleSize(std::string_view name) const;
+    const DeclaredAbility* findDeclaredAbility(std::string_view name) const;
 
     const TechArea& techArea(TechAreaId id) const { return techAreas[id.index()]; }
 
@@ -401,6 +414,23 @@ struct LoadResult {
 // Loads every data file of a data set from `dataDir` (the directory holding
 // Components.txt etc.).
 LoadResult loadRuleset(const std::filesystem::path& dataDir);
+
+struct LoadOptions {
+    // Ability names besides the engine's that the data may use (mods declare them).
+    std::vector<DeclaredAbility> declaredAbilities;
+};
+
+// The same from a game folder's files (the install, perhaps with mods: the
+// data files come patched). The result keeps `files` (Ruleset::files).
+LoadResult loadRuleset(std::shared_ptr<const GameFiles> files, const LoadOptions& options = {});
+
+// The data files the loader reads, in the order it reads them; `required`
+// ones must exist.
+struct DataFileName {
+    std::string_view name;
+    bool required = true;
+};
+std::span<const DataFileName> dataFileNames();
 
 // Finds the data directory of an installed classic game, if any: checks
 // `hint` first, then common Steam library locations (on Windows also the

@@ -230,6 +230,7 @@ void ClientSession::handleServerHello(std::span<const uint8_t> payload) {
     // Who we are, sealed. The proofs sign this session only.
     proto::Login login;
     login.dataSet = config_.dataSet;
+    login.mods = config_.mods;
     login.player = config_.playerName;
     login.clientId = clientId_;
     login.passwordVerifier = mine ? mine->verifier() : std::string{};

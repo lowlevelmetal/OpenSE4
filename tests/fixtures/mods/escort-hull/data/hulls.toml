@@ -1,0 +1,30 @@
+# The hull is written out in full, so the mod needs no particular record of
+# the data set it is played with. Its pictures are in assets/.
+
+[[vehicle_sizes.add]]
+name = "Escort Carrier"
+
+[vehicle_sizes.add.set]
+# In alphabetical order: a patch may set fields in any order.
+"Alternate Bitmap Name" = "EscortCarrier"
+"Code" = "EC"
+"Cost Minerals" = 300
+"Cost Organics" = 0
+"Cost Radioactives" = 20
+"Description" = "A light carrier hull, made for OpenSE4's mod tests."
+"Engines Per Move" = 2
+"Number of Abilities" = 0
+"Number of Tech Req" = 0
+"Primary Bitmap Name" = "EscortCarrier"
+"Requirement Can Have Aux Con" = true
+"Requirement Max Engines" = 6
+"Requirement Min Crew Quarters" = 1
+"Requirement Min Life Support" = 1
+"Requirement Must Have Bridge" = true
+"Requirement Pct Cargo" = 50
+"Requirement Pct Colony Mods" = 0
+"Requirement Pct Fighter Bays" = 60
+"Requirement Uses Engines" = true
+"Short Name" = "Escort Carrier"
+"Tonnage" = 350
+"Vehicle Type" = "Ship"

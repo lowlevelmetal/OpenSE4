@@ -1082,6 +1082,10 @@ struct GameState {
     // generated game has none.
     std::vector<StartingPoint> startingPoints;
     std::vector<LeftFacilities> leftFacilities;   // sorted by planet
+    // The mods the game is played with, in load order (save format 9): a game
+    // whose game-affecting mods a computer lacks does not load there
+    // (docs/sdk/packages-and-data.md). Empty for a game without mods.
+    std::vector<ruleset::ModRecord> mods;
 
     // Accessors.
     Empire& empire(EmpireId id) { return empires[id.index()]; }

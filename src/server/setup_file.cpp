@@ -87,7 +87,16 @@ public:
     Parser(std::string source, const game::Rules& rules) : source_(std::move(source)), rules_(rules) {}
 
     std::expected<SetupFile, std::string> run(const toml::table& root) {
-        allowOnly(root, "", {"name", "seed", "game_id", "master_password", "master_password_verifier", "master_password_hash", "options", "empire"});
+        allowOnly(root, "", {"name", "seed", "game_id", "master_password", "master_password_verifier", "master_password_hash", "options", "empire", "mods"});
+        if (const toml::node* n = root.get("mods")) {
+            const auto* arr = n->as_array();
+            if (!arr) error(*n, "'mods' must be a list of mods (paths, or ids of mods in the mods folder)");
+            else
+                for (const toml::node& m : *arr) {
+                    if (const auto* s = m.as_string(); s && !s->get().empty()) out_.mods.push_back(s->get());
+                    else error(m, "each of 'mods' must be a mod's path or id");
+                }
+        }
         if (const toml::node* n = root.get("master_password_hash")) error(*n, kOldHash);
         out_.gameName = string(root, "name").value_or("OpenSE4 game");
         if (const toml::node* n = root.get("seed")) {
@@ -271,6 +280,39 @@ std::expected<SetupFile, std::string> parseSetup(std::string_view text, const st
         return std::unexpected(std::format("{}:{}:{}: {}", sourceName, begin.line, begin.column, e.description()));
     }
     return Parser(sourceName, rules).run(root);
+}
+
+std::expected<std::vector<std::string>, std::string> parseSetupMods(std::string_view text, const std::string& sourceName,
+                                                                   const std::filesystem::path& baseDir) {
+    toml::table root;
+    try {
+        root = toml::parse(text, sourceName);
+    } catch (const toml::parse_error& e) {
+        const auto& begin = e.source().begin;
+        return std::unexpected(std::format("{}:{}:{}: {}", sourceName, begin.line, begin.column, e.description()));
+    }
+    std::vector<std::string> out;
+    const toml::node* n = root.get("mods");
+    if (!n) return out;
+    const auto* arr = n->as_array();
+    if (!arr) return std::unexpected(std::format("{}: 'mods' must be a list of mods (paths, or ids of mods in the mods folder)", where(sourceName, *n)));
+    for (const toml::node& m : *arr) {
+        const auto* str = m.as_string();
+        if (!str || str->get().empty()) return std::unexpected(std::format("{}: each of 'mods' must be a mod's path or id", where(sourceName, m)));
+        // A path (it names a folder or file there) is taken from the setup file's folder.
+        const std::filesystem::path relative = baseDir / std::filesystem::path(str->get());
+        std::error_code ec;
+        out.push_back(std::filesystem::path(str->get()).is_relative() && std::filesystem::exists(relative, ec) ? relative.string() : str->get());
+    }
+    return out;
+}
+
+std::expected<std::vector<std::string>, std::string> setupFileMods(const std::filesystem::path& file) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) return std::unexpected(std::format("{}: cannot open the file", file.string()));
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    return parseSetupMods(buffer.str(), file.string(), file.parent_path());
 }
 
 std::expected<SetupFile, std::string> loadSetupFile(const std::filesystem::path& file, const game::Rules& rules) {

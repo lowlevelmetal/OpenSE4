@@ -18,7 +18,7 @@ player / AI / network ─> game::Command ────┘         │
 | `types.hpp` | Ids, `Resources`, treaties, moods, sight types, characteristics |
 | `galaxy.hpp` | Systems, space objects, warp links, `Location` (system + sector) |
 | `state.hpp` | The whole game: empires (race, research, intel, relations, knowledge, lists, Empire Options), colonies, designs, vehicles, fleets, messages, pending events, combat records (with each piece's damage at the end, for the Log), options |
-| `rules.hpp` | `Rules`: the loaded data set plus caches (parsed abilities, tech gates, settings with defaults, race presets) |
+| `rules.hpp` | `Rules`: the loaded data set plus caches (parsed abilities, tech gates, settings with defaults, race presets), the game folder's files (`ruleset::GameFiles`: the install, with mods layered over it, from which the AI tables, race files and design names are read), the mods it was built with, and the values of abilities mods declare |
 | `abilities.hpp` | The closed list of ability identifiers used by the data, parsed once |
 | `design.hpp` | Mounts, design validation, unique design names and statistics, movement points, supply, cargo |
 | `setup.hpp` | `createGame`: the quadrant, the empires and their races, homeworlds, starting technology, planets and pools (spec 01 §3, spec 02 §9). No empire gets a ship or a design of its own (spec 01 §3.6): only an empire file's designs, and what `StartExtras` asks for: the Quick Start player's one Design minister run (`ai::designMinisterRun`) and a tutorial's ships (`starting_ships`, an OpenSE4 lesson extension). `StartExtras` is never saved or sent |
@@ -30,6 +30,14 @@ player / AI / network ─> game::Command ────┘         │
 
 `GameState` is plain data. Every field is serialized (`serialize.hpp`), and
 `stateChecksum` hashes the serialized bytes for desync detection.
+
+Mods (`src/mods`, [docs/sdk/packages-and-data.md](sdk/packages-and-data.md)) change
+the data set before the engine sees it: their data patches apply to the parsed data
+files, their game files are layered over the install's (`mods::GameData`, a
+`ruleset::GameFiles`), and `mods::loadDataSet` gives the `Ruleset` the engine is built
+from. The engine itself does not know about packages: it reads its files through
+`GameFiles`, and a game records its mods (`GameState::mods`) only to refuse loading them
+elsewhere without them.
 
 - **One object list.** Stars, planets, asteroid fields, storms, warp points, ships, bases
   and unit groups each hold a slot of one object list (`SpaceObject::slot`,
@@ -519,8 +527,9 @@ second click on End Turn does not end the next turn too.
 pointers from the player's install (docs/spec/06 §2.1.1, §5.4, §5.8). The layout
 follows the desktop width as in the original (800 px or less: 800×600); the Graphics
 setting or `--layout` can force one. `src/assets` reads the install's files: pictures
-(`assets.*`, with case-insensitive lookup and, for fonts and pointers, the mod folder
-named by `Path.txt` first), Windows raster fonts (`winfont.*`) and cursors
+(`assets.*`, with case-insensitive lookup, the mods' `assets/` folders over the install
+(docs/sdk/packages-and-data.md) and, for fonts and pointers, the mod folder named by
+`Path.txt` before the install), Windows raster fonts (`winfont.*`) and cursors
 (`wincursor.*`); `tiny_font.*` is OpenSE4's own small raster face for the map numbers,
 which the original draws in the system's Small Fonts.
 

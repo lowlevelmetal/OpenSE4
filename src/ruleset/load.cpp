@@ -8,7 +8,9 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <expected>
 #include <functional>
+#include <span>
 #include <sstream>
 
 namespace opense4::ruleset {
@@ -58,9 +60,15 @@ std::optional<int> parsePerVehicleRestriction(std::string_view text) {
 
 bool isNone(std::string_view s) { return s.empty() || datafile::keysEqual(s, "None"); }
 
+using Source = std::function<std::expected<DataFile, std::string>(std::string_view name)>;
+
 class Loader {
 public:
-    explicit Loader(std::filesystem::path dir) : dir_(std::move(dir)) { rs_.dataDir = dir_; }
+    Loader(std::filesystem::path dir, Source source, const LoadOptions& options)
+        : dir_(std::move(dir)), source_(std::move(source)), declared_(options.declaredAbilities) {
+        rs_.dataDir = dir_;
+        rs_.declaredAbilities = declared_;
+    }
 
     LoadResult run() {
         // Tech areas first: nearly everything else refers to them by name.
@@ -103,7 +111,7 @@ private:
 
     template <class Fn>
     bool loadRequired(const char* name, Fn&& fn) {
-        auto file = datafile::load(childIgnoringCase(dir_, name));
+        auto file = source_(name);
         if (!file) {
             diag_.errors.push_back(std::format("{}: {}", name, file.error()));
             return false;
@@ -122,7 +130,7 @@ private:
     }
 
     void loadList(const char* name, std::vector<std::string>& out) {
-        auto file = datafile::load(childIgnoringCase(dir_, name));
+        auto file = source_(name);
         if (!file) {
             diag_.warnings.push_back(std::format("{}: {}", name, file.error()));
             return;
@@ -158,12 +166,16 @@ private:
 
     // A type name the original does not know is a data error; a few names that
     // file headers list but the original never accepted load with a warning
-    // and do nothing (spec 03 §2.1, spec 01 §4.4).
-    static void checkAbilityType(const RecordReader& r, std::string_view type) {
+    // and do nothing (spec 03 §2.1, spec 01 §4.4). Names a mod declared load
+    // too (docs/sdk/packages-and-data.md).
+    void checkAbilityType(const RecordReader& r, std::string_view type) const {
         switch (abilityNameStatus(type)) {
             case AbilityNameStatus::Known: break;
             case AbilityNameStatus::Ignored: r.warn(std::format("ability type '{}' has no effect", type)); break;
-            case AbilityNameStatus::Unknown: r.error(std::format("unknown ability type '{}'", type)); break;
+            case AbilityNameStatus::Unknown:
+                if (std::none_of(declared_.begin(), declared_.end(), [&](const DeclaredAbility& d) { return datafile::keysEqual(d.name, type); }))
+                    r.error(std::format("unknown ability type '{}'", type));
+                break;
         }
     }
 
@@ -652,6 +664,8 @@ private:
     };
 
     std::filesystem::path dir_;
+    Source source_;
+    std::vector<DeclaredAbility> declared_;
     Ruleset rs_;
     Diagnostics diag_;
     std::vector<PendingSystemType> pendingQuadrantTypes_;
@@ -664,6 +678,28 @@ std::string_view displayName(VehicleType t) { return kVehicleNames[static_cast<s
 int64_t Ability::number1() const { return datafile::parseInteger(value1).value_or(0); }
 int64_t Ability::number2() const { return datafile::parseInteger(value2).value_or(0); }
 
-LoadResult loadRuleset(const std::filesystem::path& dataDir) { return Loader(dataDir).run(); }
+LoadResult loadRuleset(const std::filesystem::path& dataDir) {
+    return Loader(dataDir, [&](std::string_view name) { return datafile::load(childIgnoringCase(dataDir, name)); }, LoadOptions{}).run();
+}
+
+LoadResult loadRuleset(std::shared_ptr<const GameFiles> files, const LoadOptions& options) {
+    const GameFiles& source = *files;
+    LoadResult result = Loader(source.dataDir(), [&](std::string_view name) { return source.dataFile(name); }, options).run();
+    if (result.ruleset) result.ruleset->files = std::move(files);
+    return result;
+}
+
+std::span<const DataFileName> dataFileNames() {
+    static constexpr std::array<DataFileName, 27> kNames{{
+        {"TechArea.txt"},          {"VehicleSize.txt"},      {"Components.txt"},       {"Facility.txt"},
+        {"PlanetSize.txt"},        {"RacialTraits.txt"},     {"Cultures.txt"},         {"SectType.txt"},
+        {"StellarAbilityTypes.txt"}, {"SystemTypes.txt"},    {"QuadrantTypes.txt"},    {"CompEnhancement.txt"},
+        {"Formations.txt"},        {"Happiness.txt"},        {"IntelProjects.txt"},    {"Events.txt"},
+        {"DefaultStrategies.txt"}, {"Settings.txt"},         {"DefaultDesignTypes.txt"}, {"DefaultColonyTypes.txt"},
+        {"EmpireNames.txt", false}, {"EmpireTypes.txt", false}, {"EmperorNames.txt", false}, {"EmperorTitles.txt", false},
+        {"Demeanors.txt", false},  {"SystemNames.txt", false}, {"RepairPriorities.txt", false},
+    }};
+    return kNames;
+}
 
 } // namespace opense4::ruleset

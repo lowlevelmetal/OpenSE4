@@ -97,6 +97,9 @@ int App::run(const AppOptions& options) {
     std::string error;
     ClassicOptions co;
     co.installDir = dataDir->string();
+    co.mods = options.mods;
+    co.modsGiven = options.modsGiven;
+    co.modsDir = options.modsDir;
     co.seed = options.seed;
     co.seedGiven = options.seedGiven;
     co.systemCount = options.systemCount;

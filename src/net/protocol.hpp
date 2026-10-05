@@ -32,7 +32,7 @@ void io(Ar& ar, LobbySlot& s) {
 }
 template <class Ar>
 void io(Ar& ar, LobbyInfo& l) {
-    game::serial::fields(ar, l.gameName, l.gameId, l.humanSlots, l.started, l.turnTimeoutSeconds, l.seed, l.options, l.slots);
+    game::serial::fields(ar, l.gameName, l.gameId, l.humanSlots, l.started, l.turnTimeoutSeconds, l.seed, l.options, l.slots, l.mods);
 }
 template <class Ar>
 void io(Ar& ar, EmpireTurnStatus& e) {
@@ -85,7 +85,8 @@ inline constexpr uint8_t kSealedFrame = 0xf0;
 // OldPassword: the player's empire still has a verifier of OpenSE4 0.6; the
 // host needs that password's old hash once (Login::legacyPasswordHash), which
 // the player's game sends only when the player agrees.
-enum class RejectReason : uint8_t { Protocol, DataSet, Password, Name, Full, NotInGame, Banned, ShuttingDown, OldPassword };
+// Mods: the player's game-affecting mods differ from the host's (protocol 7).
+enum class RejectReason : uint8_t { Protocol, DataSet, Password, Name, Full, NotInGame, Banned, ShuttingDown, OldPassword, Mods };
 
 enum class AdminAction : uint8_t { StartGame, AddComputer, RemoveSlot, Kick, ProcessTurn, SetAiControl, SetTurnTimeout, ResetPasswords };
 
@@ -123,6 +124,7 @@ struct ServerHello {
 // of this very session, so they are worthless anywhere else.
 struct Login {
     std::string dataSet;
+    std::vector<ruleset::ModRecord> mods;  // the player's mods, in load order (protocol 7)
     std::string player;
     uint64_t clientId = 0;               // random per ClientSession: a request repeated after a reconnect is recognized
     std::string passwordVerifier;        // passwordVerifier() of the player's password in this game (empty: none)
@@ -262,7 +264,8 @@ void io(Ar& ar, ServerHello& m) {
 }
 template <class Ar>
 void io(Ar& ar, Login& m) {
-    game::serial::fields(ar, m.dataSet, m.player, m.clientId, m.passwordVerifier, m.passwordProof, m.master, m.masterProof, m.legacyPasswordHash);
+    game::serial::fields(ar, m.dataSet, m.mods, m.player, m.clientId, m.passwordVerifier, m.passwordProof, m.master, m.masterProof,
+                         m.legacyPasswordHash);
 }
 template <class Ar> void io(Ar& ar, BaseState& m) { game::serial::fields(ar, m.serial, m.checksum, m.parts); }
 template <class Ar>

@@ -72,6 +72,8 @@ class Rules;
 // "Players can see the complete tech tree" option (GameOptions::completeTechTree,
 // spec 06 §7 Q92); the designer's To Hit Modifiers and Condensed View options
 // (InterfaceOptions::designToHit, designCondensed, spec 06 §7 Q94).
+// Version 9: the game's mods (GameState::mods, SaveInfo::mods; the modding
+// SDK, docs/sdk/packages-and-data.md). Format 8 still reads, without them.
 // Version 8: what a log entry imported from the original's saved games held
 // besides OpenSE4's own fields (LogEntry::classic, docs/spec/08 §3.6.11), and
 // each colony's never-reset counts of destroyed facilities
@@ -81,7 +83,7 @@ class Rules;
 // spec 06 §2.5); the Designs window's Hide Obsolete and Stats\Strategy check
 // boxes (InterfaceOptions::designsHideObsolete, designsStatsView, spec 08
 // §3.6.7). Format 7 still reads, without them.
-inline constexpr uint32_t kSaveVersion = 8;
+inline constexpr uint32_t kSaveVersion = 9;
 inline constexpr uint32_t kMinSaveVersion = 7;
 
 inline constexpr size_t kEnvelopeSize = 32;
@@ -125,6 +127,8 @@ struct SaveInfo {
     uint64_t gameId = 0;               // random id chosen at creation (matches order files to games)
     std::vector<std::string> players;  // per empire: the player's login name in network games (may be empty)
     std::string masterPasswordVerifier;  // net::passwordVerifier() of the master password; empty = none
+    std::vector<ruleset::ModRecord> mods;  // the game's mods (format 9), as GameState::mods
+    uint32_t formatVersion = kSaveVersion;  // the format the file was written in (not saved: readers fill it in)
 };
 
 std::vector<uint8_t> serializeSave(const GameState& s, const SaveInfo& info);
@@ -137,10 +141,24 @@ std::expected<std::pair<GameState, SaveInfo>, std::string> loadGame(const std::f
 std::expected<SaveInfo, std::string> readSaveInfo(const std::filesystem::path& file);
 
 // Identity of a data set: "<label>#<16 hex digits>", where the digits hash the
-// data files and the loaded tables. Two machines can play together only when
-// the hashes match (sameDataSet); the label is for messages.
+// data files, the loaded tables, the AI tables, race files and design-name
+// lists of the game folder, and the game-affecting mods (save format 9 on).
+// Two machines can play together only when the hashes match (sameDataSet);
+// the label is for messages.
 std::string dataSetIdentity(const Rules& r);
+// The identity as format 8 and older computed it (the data files and the
+// loaded tables only): what their saves hold.
+std::string legacyDataSetIdentity(const Rules& r);
 bool sameDataSet(std::string_view a, std::string_view b);
+// Whether a game file's data set is this one: its identity compared with the
+// one its format computed (legacyDataSetIdentity for format 8 and older), so
+// that older saves made with the same install are not taken for another data
+// set. A header without an identity matches.
+bool sameDataSet(const SaveInfo& info, const Rules& r);
+// What keeps this data set's mods from playing a game made with `game`'s
+// (ruleset::compareModSets); empty when they match. `theirs` names the game's
+// side in the messages ("the saved game", "the host").
+std::vector<std::string> modDifferences(std::span<const ruleset::ModRecord> game, const Rules& r, std::string_view theirs = "the saved game");
 
 // File helpers (shared with the PBEM and network code).
 std::expected<std::vector<uint8_t>, std::string> readFileBytes(const std::filesystem::path& file, size_t maxBytes = size_t{1} << 30);

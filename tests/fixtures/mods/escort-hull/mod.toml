@@ -1,0 +1,8 @@
+# A test fixture: a new hull with pictures of its own (OpenSE4's own content).
+[mod]
+id = "test.escort-hull"
+name = "Escort Hull"
+version = "1.0.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "Adds the Escort Carrier hull and its pictures. Works with any data set."

@@ -14,3 +14,5 @@ skips shields and armor quad damage to shields
 half damage to shields quarter damage to shields
 plague level 1 plague level 2
 movement strategy drop troops if carrying
+number of tech req tech area req tech level req
+ability type ability descr ability val 1 ability val 2

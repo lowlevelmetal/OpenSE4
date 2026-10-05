@@ -39,6 +39,11 @@ struct AppOptions {
 
     // The player's installed copy of the game (its data set and art).
     std::string installDir;          // game, se4 or Data directory; empty = auto-detect
+    // Mods (docs/sdk/packages-and-data.md): --mod, in order, in place of the
+    // ones the settings enable; --mods-dir where ids are looked up.
+    std::vector<std::string> mods;
+    bool modsGiven = false;
+    std::string modsDir;
 
     // New games.
     uint64_t seed = 0;               // 0 = from the clock

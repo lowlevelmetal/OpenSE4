@@ -65,6 +65,10 @@ Rendering:
 
 Game:
   --classic-dir=DIR               Game directory of your installed copy (default: auto-detect)
+  --mod=MOD                       Play with this mod (a folder or .zip, or the id of one in the mods folder);
+                                  repeat for several, in load order. In place of the mods the settings enable
+  --no-mods                       Play without the mods the settings enable
+  --mods-dir=DIR                  Where mods are looked up by id (default: Mods in OpenSE4's user folder)
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --load=GAME.gam                 Open a saved game at once: OpenSE4's, or the original's (imported,
                                   see docs/SETUP.md "Games of the original")
@@ -245,6 +249,16 @@ int main(int argc, char** argv) {
             options.audio = true;
         } else if (key == "--classic-dir") {
             options.installDir = std::string(value);
+        } else if (key == "--mod") {
+            options.mods.emplace_back(value);
+            options.modsGiven = true;
+            ok = !value.empty();
+        } else if (key == "--no-mods") {
+            options.mods.clear();
+            options.modsGiven = true;
+        } else if (key == "--mods-dir") {
+            options.modsDir = std::string(value);
+            ok = !value.empty();
         } else if (key == "--quick-start") {
             options.quickStart = true;
             if (!value.empty()) options.race = std::string(value);

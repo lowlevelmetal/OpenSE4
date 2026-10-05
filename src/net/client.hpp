@@ -52,6 +52,7 @@ struct ClientConfig {
     // whose key the player trusted (hostKey given, not just seen).
     bool sendOldPassword = false;
     std::string dataSet;               // game::dataSetIdentity() of the local rules
+    std::vector<ruleset::ModRecord> mods;  // the local rules' mods (game::Rules::mods), in load order
     // The host key this player trusts for the host (secure::KnownHosts); a
     // host with another key is refused. None: trust the first key seen, which
     // is then kept here for reconnects.

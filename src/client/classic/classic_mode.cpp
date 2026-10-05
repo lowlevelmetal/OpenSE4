@@ -13,6 +13,7 @@
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
+#include "mods/data_set.hpp"
 #include "learn/access.hpp"
 #include "learn/ids.hpp"
 #include "learn/markdown.hpp"
@@ -70,18 +71,39 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         error = missingInstallMessage(options.installDir);
         return nullptr;
     }
-    auto loaded = ruleset::loadRuleset(*dataDir);
+    const std::filesystem::path gameRoot = dataDir->parent_path();
+    // Mods (docs/sdk/packages-and-data.md): the command line's, else the ones
+    // the settings enable, layered over the install.
+    const std::filesystem::path userDir = userDataDirectory();
+    mods::ModChoice choice;
+    choice.mods = options.modsGiven ? options.mods : settings().enabledMods;
+    choice.modsDir = options.modsDir.empty() ? mods::modsFolderIn(userDir) : std::filesystem::path(options.modsDir);
+    choice.open.cacheDir = mods::modCacheIn(userDir);
+    auto modSet = mods::selectMods(choice);
+    if (!modSet) {
+        error = "The mods could not be loaded:\n";
+        for (size_t i = 0; i < std::min<size_t>(modSet.error().size(), 15); ++i) error += "\n" + modSet.error()[i];
+        return nullptr;
+    }
+    auto loaded = mods::loadDataSet(gameRoot, *dataDir, *modSet);
     if (!loaded.ruleset || !loaded.diagnostics.errors.empty()) {
-        error = std::format("The data set at {} has errors:\n", dataDir->string());
+        error = modSet->empty() ? std::format("The data set at {} has errors:\n", dataDir->string())
+                                : std::format("The data set at {} with the mods {} has errors:\n", dataDir->string(),
+                                              ruleset::describeMods(modSet->records()));
         for (size_t i = 0; i < std::min<size_t>(loaded.diagnostics.errors.size(), 15); ++i) error += "\n" + loaded.diagnostics.errors[i];
         return nullptr;
     }
-    const std::filesystem::path gameRoot = dataDir->parent_path();
 
     std::unique_ptr<ClassicMode> mode(new ClassicMode(platform));
     mode->options_ = options;
     mode->rules_ = std::make_shared<const game::Rules>(std::move(*loaded.ruleset), gameRoot);
-    mode->art_ = std::make_unique<Art>(*platform.device, assets::InstallFiles(gameRoot));
+    assets::InstallFiles files(gameRoot);
+    for (const mods::Package& p : modSet->packages) {
+        log::info("Mod {} ({}) from {}", p.label(), mods::ModManager::summary(p), p.source.string());
+        for (const std::string& w : p.warnings) log::warn("Mod {}: {}", p.id(), w);
+        if (const std::filesystem::path assets = p.assetRoot(); !assets.empty()) files.addLayer(assets, p.label());
+    }
+    mode->art_ = std::make_unique<Art>(*platform.device, std::move(files));
     Art::setColorSource(mode->art_.get());  // empire colours come from the race art (docs/spec/06 §5.3)
     log::info("Classic data set: {} ({} components, {} race presets)", dataDir->string(), mode->rules_->data().components.size(),
               mode->rules_->racePresets().size());

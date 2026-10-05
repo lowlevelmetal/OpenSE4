@@ -56,6 +56,11 @@ struct ClassicSettings {
     // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;
 
+    // Mods (docs/sdk/packages-and-data.md): the ids of the mods in
+    // <user data>/Mods to play with, in the player's order. --mod on the
+    // command line takes their place for one run.
+    std::vector<std::string> enabledMods;
+
     // Learning to play (docs/LEARNING.md): the tutorials and training games
     // finished on this machine, as "tutorial:<slug>" and "training:<slug>".
     std::vector<std::string> learnDone;

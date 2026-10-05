@@ -1,0 +1,17 @@
+# A mod's new hull with pictures of its own in the ship designer (docs/sdk/packages-and-data.md):
+# the fixture mod tests/fixtures/mods/escort-hull adds the Escort Carrier, which needs no
+# technology, and its Mini_ and Portrait_ pictures come from the mod's assets/ folder.
+options --quick-start=Terran --seed=7 --open=designs --layout=1024x768 --size=1280x800 --mod=tests/fixtures/mods/escort-hull
+
+wait-window designs
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+click item:##size in=create-design
+click item:"Escort Carrier (350 kT)"
+wait 3
+assert { design_hull_chosen = true }
+screenshot mod-hull-designer.png
+wait 2
+key Escape
+wait-closed create-design

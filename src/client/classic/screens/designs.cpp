@@ -68,7 +68,8 @@ std::string_view mountCode(const game::Rules& r, int32_t mount) {
 std::vector<std::string> loadNameList(UiContext& ui) {
     const std::string& file = ui.me().race.designNameFile;
     if (file.empty()) return {};
-    const auto path = ui.art.files().find("Dsgnname/" + file);
+    const ruleset::GameFiles* files = ui.rules().files();
+    const auto path = files ? files->path("Dsgnname/" + file) : std::nullopt;
     if (!path) return {};
     std::ifstream in(*path, std::ios::binary);
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());

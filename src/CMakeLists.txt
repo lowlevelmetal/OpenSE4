@@ -46,7 +46,9 @@ target_include_directories(opense4_datafile PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
 target_link_libraries(opense4_datafile PRIVATE opense4_warnings)
 
 add_library(opense4_ruleset STATIC
+    ruleset/files.cpp
     ruleset/load.cpp
+    ruleset/mods.cpp
     ruleset/races.cpp
     ruleset/ruleset.cpp)
 target_link_libraries(opense4_ruleset PUBLIC opense4_core opense4_datafile PRIVATE opense4_warnings)
@@ -109,6 +111,21 @@ add_library(opense4_game STATIC
     game/types.cpp)
 target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE tomlplusplus opense4_warnings)
 
+# --- mods: packages, mod sets, the layered game files and data patches -------------
+# (docs/MODDING_SDK.md, docs/sdk/packages-and-data.md)
+add_library(opense4_mods STATIC
+    mods/apply.cpp
+    mods/data_set.cpp
+    mods/generator.cpp
+    mods/manifest.cpp
+    mods/mod_set.cpp
+    mods/package.cpp
+    mods/patch.cpp
+    mods/tables.cpp
+    mods/version.cpp
+    mods/zip.cpp)
+target_link_libraries(opense4_mods PUBLIC opense4_game opense4_script PRIVATE tomlplusplus miniz monocypher opense4_warnings)
+
 # --- sdk: the engine's side of the modding SDK (docs/MODDING_SDK.md) ---------------
 # The view scripts read, their queries and the command codec, on script::Value.
 add_library(opense4_sdk STATIC
@@ -165,7 +182,7 @@ endif()
 add_executable(opense4-server
     server/main.cpp
     server/setup_file.cpp)
-target_link_libraries(opense4-server PRIVATE opense4_net opense4_game tomlplusplus opense4_warnings)
+target_link_libraries(opense4-server PRIVATE opense4_net opense4_mods opense4_game tomlplusplus opense4_warnings)
 set_target_properties(opense4-server PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 opense4_windows_manifest(opense4-server)
 

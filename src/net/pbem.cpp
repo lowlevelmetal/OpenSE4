@@ -117,6 +117,7 @@ std::expected<TurnFile, std::string> decodeTurnFile(std::span<const uint8_t> byt
     std::string error;
     if (!game::serial::decode(env->payload, f, error, env->version))
         return std::unexpected(std::format("the {} is corrupt: {}", kTurnWhat, error));
+    f.info.formatVersion = env->version;
     return f;
 }
 
@@ -617,10 +618,14 @@ std::expected<ProcessReport, std::string> processGameFileWithKeys(const game::Ru
         return std::unexpected(std::string("This game has a master password, and the one given does not match."));
     // A master password of OpenSE4 0.6 moves to the current kind, from the password itself.
     if (isLegacyVerifier(info.masterPasswordVerifier)) info.masterPasswordVerifier = passwordVerifier(options.masterPassword, info.gameId);
-    if (!options.allowDataSetMismatch && !info.dataSet.empty()) {
-        const std::string mine = game::dataSetIdentity(rules);
-        if (!game::sameDataSet(info.dataSet, mine))
-            return std::unexpected(std::format("The game was created with data set {}, but this data set is {}.", info.dataSet, mine));
+    if (!options.allowDataSetMismatch) {
+        if (const auto mods = game::modDifferences(state.mods, rules, "the game"); !mods.empty())
+            return std::unexpected(std::format("The game needs other mods: {}.", mods.front()));
+        if (!game::sameDataSet(info, rules))
+            return std::unexpected(std::format("The game was created with data set {}, but this data set is {}.", info.dataSet,
+                                               info.formatVersion <= 8 ? game::legacyDataSetIdentity(rules) : game::dataSetIdentity(rules)));
+        // Saved again in the current format, with the identity it computes.
+        if (!info.dataSet.empty()) info.dataSet = game::dataSetIdentity(rules);
     }
     if (std::string problem = game::validateState(state, &rules); !problem.empty())
         return std::unexpected("The game does not fit this data set: " + problem);

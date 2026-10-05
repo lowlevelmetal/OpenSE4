@@ -87,11 +87,16 @@ std::string settingsToToml(const ClassicSettings& s) {
         resume.push_back(std::move(t));
     }
     learn.insert("resume", std::move(resume));
+    toml::array enabled;
+    for (const std::string& id : s.enabledMods) enabled.push_back(id);
+    toml::table mods;
+    mods.insert("enabled", std::move(enabled));
     toml::table root;
     root.insert("options", std::move(options));
     root.insert("sound", std::move(sound));
     root.insert("learn", std::move(learn));
     root.insert("games", std::move(games));
+    root.insert("mods", std::move(mods));
     std::ostringstream out;
     out << "# OpenSE4 classic client preferences\n" << root << "\n";
     return out.str();
@@ -122,6 +127,9 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
     if (const toml::array* done = root["learn"]["done"].as_array())
         for (const toml::node& d : *done)
             if (auto v = d.value<std::string>()) s.learnDone.push_back(*v);
+    if (const toml::array* enabled = root["mods"]["enabled"].as_array())
+        for (const toml::node& n : *enabled)
+            if (auto v = n.value<std::string>(); v && !v->empty()) s.enabledMods.push_back(*v);
     if (auto v = root["learn"]["free_play"].value<bool>()) s.learnFreePlay = *v;
     if (auto v = root["learn"]["started"].value<bool>()) s.learnStarted = *v;
     if (const toml::array* resume = root["learn"]["resume"].as_array())

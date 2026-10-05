@@ -22,13 +22,35 @@ RecordReader::RecordReader(const DataFile& file, const Record& record, Diagnosti
     : file_(file), record_(record), diag_(diag), read_(record.fields.size(), false) {}
 
 RecordReader::~RecordReader() {
-    for (size_t i = 0; i < record_.fields.size(); ++i)
-        if (!read_[i]) ++diag_.unreadFields[std::format("{}: {}", file_.name, record_.fields[i].key)];
+    for (size_t i = 0; i < record_.fields.size(); ++i) {
+        if (read_[i]) continue;
+        const Field& f = record_.fields[i];
+        ++diag_.unreadFields[std::format("{}: {}", file_.name, f.key)];
+        if (!f.origin.empty())
+            diag_.unreadPatched.push_back({file_.name, record_.fields.empty() ? std::string{} : record_.fields.front().value, f.key, f.origin});
+    }
 }
 
 std::string RecordReader::context() const {
     const std::string& label = record_.fields.empty() ? std::string{} : record_.fields.front().value;
-    return std::format("{}:{} [{}]", file_.name, record_.line, label);
+    if (!record_.origin.empty()) return std::format("{} [{}] ({})", file_.name, label, record_.origin);
+    // A record a patch changed: the last patch that did.
+    std::string changed;
+    for (const Field& f : record_.fields)
+        if (!f.origin.empty()) changed = f.origin;
+    const std::string where = file_.origin.empty() ? std::format("{}:{} [{}]", file_.name, record_.line, label)
+                                                   : std::format("{}:{} [{}] ({})", file_.name, record_.line, label, file_.origin);
+    return changed.empty() ? where : std::format("{} (changed by {})", where, changed);
+}
+
+std::string RecordReader::where(const Field& f) const {
+    if (!f.origin.empty()) {
+        const std::string& label = record_.fields.empty() ? std::string{} : record_.fields.front().value;
+        return std::format("{} [{}] ({})", file_.name, label, f.origin);
+    }
+    if (!record_.origin.empty()) return context();
+    if (!file_.origin.empty()) return std::format("{}:{} ({})", file_.name, f.line, file_.origin);
+    return std::format("{}:{}", file_.name, f.line);
 }
 
 void RecordReader::error(std::string_view message) const { diag_.errors.push_back(std::format("{}: {}", context(), message)); }
@@ -57,7 +79,7 @@ int64_t RecordReader::integer(std::string_view key, Need need, int64_t fallback)
     if (!f) return fallback;
     if (f->value.empty()) return fallback;  // blank numbers mean "not used" in these files
     if (auto v = parseInteger(f->value)) return *v;
-    diag_.errors.push_back(std::format("{}:{}: '{}' should be a whole number, not '{}'", file_.name, f->line, f->key, f->value));
+    diag_.errors.push_back(std::format("{}: '{}' should be a whole number, not '{}'", where(*f), f->key, f->value));
     return fallback;
 }
 
@@ -74,7 +96,7 @@ bool RecordReader::boolean(std::string_view key, Need need, bool fallback) {
     const Field* f = take(key, need);
     if (!f || f->value.empty()) return fallback;
     if (auto v = parseBoolean(f->value)) return *v;
-    diag_.errors.push_back(std::format("{}:{}: '{}' should be True or False, not '{}'", file_.name, f->line, f->key, f->value));
+    diag_.errors.push_back(std::format("{}: '{}' should be True or False, not '{}'", where(*f), f->key, f->value));
     return fallback;
 }
 
@@ -118,7 +140,7 @@ std::vector<int> RecordReader::intList(std::string_view key, Need need) {
         if (auto v = parseInteger(rest.substr(0, n)); v && *v >= INT32_MIN && *v <= INT32_MAX) {
             out.push_back(static_cast<int>(*v));
         } else {
-            diag_.errors.push_back(std::format("{}:{}: '{}' has a non-numeric entry '{}'", file_.name, f->line, f->key, rest.substr(0, n)));
+            diag_.errors.push_back(std::format("{}: '{}' has a non-numeric entry '{}'", where(*f), f->key, rest.substr(0, n)));
         }
         rest.remove_prefix(n);
     }

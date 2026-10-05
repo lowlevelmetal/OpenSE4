@@ -1,0 +1,5 @@
+A minister style of the AI Tweaks test mod.
+*BEGIN*
+Per Attack Location := 9
+Regular Decrease := -3
+*END*

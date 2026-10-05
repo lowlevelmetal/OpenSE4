@@ -16,11 +16,21 @@
 
 namespace opense4::datafile {
 
+// A field a mod's data patch wrote that the loader never read: a typo, or a
+// field the table does not have (the patch layer decides, mods/patch.hpp).
+struct UnreadPatchedField {
+    std::string file;    // "Components.txt"
+    std::string record;  // the record's label (its first field's value)
+    std::string key;
+    std::string origin;  // Field::origin
+};
+
 struct Diagnostics {
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
     // Field keys present in data but never read by a loader: "File.txt: Key" -> count.
     std::map<std::string, int> unreadFields;
+    std::vector<UnreadPatchedField> unreadPatched;
 
     bool ok() const { return errors.empty(); }
 };
@@ -34,7 +44,9 @@ public:
     RecordReader(const RecordReader&) = delete;
     RecordReader& operator=(const RecordReader&) = delete;
 
-    std::string context() const;  // "Components.txt:1234 [Rock Colony]"
+    // "Components.txt:1234 [Rock Colony]"; a record from a mod names it:
+    // "Components.txt [Heavy Bay] (mod x, data/carriers.toml:3)".
+    std::string context() const;
     void error(std::string_view message) const;
     void warn(std::string_view message) const;
 
@@ -59,6 +71,9 @@ public:
 
 private:
     const Field* take(std::string_view key, Need need);
+    // Where one field is, for messages: "Components.txt:1234", or the patch
+    // that wrote it.
+    std::string where(const Field& f) const;
 
     const DataFile& file_;
     const Record& record_;

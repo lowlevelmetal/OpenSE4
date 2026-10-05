@@ -14,7 +14,7 @@
 namespace opense4::net {
 
 inline constexpr uint16_t kDefaultPort = 6720;       // TCP, as in the classic game
-inline constexpr uint32_t kProtocolVersion = 6;
+inline constexpr uint32_t kProtocolVersion = 7;
 inline constexpr uint32_t kNoSlot = 0xffffffffu;
 inline constexpr size_t kMaxPlayerNameLength = 32;
 inline constexpr size_t kMaxChatLength = 500;
@@ -47,6 +47,7 @@ struct LobbyInfo {
     uint64_t seed = 0;               // always 0: the galaxy's seed stays with the host
     game::GameOptions options;
     std::vector<LobbySlot> slots;    // in empire order once started
+    std::vector<ruleset::ModRecord> mods;  // the host's mods, in load order (protocol 7)
 
     const LobbySlot* slot(uint32_t id) const {
         for (const LobbySlot& s : slots)
