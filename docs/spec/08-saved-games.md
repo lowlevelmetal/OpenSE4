@@ -39,22 +39,27 @@ data file or list is number 1.
 - In a turn-based game on different machines, ending a human turn saves the game as
   `<game name>_<player number>_<date counter>.gam` (the game name is the one chosen at
   setup, §3.2) and marks it as such a hand-over file (§3.1) **(confirmed: binary)**.
-- The original also keeps two copies of the current game in its `temp\` folder,
-  `<game>_LastTurn.gam` and `<game>_CurrTurn.gam`, for the movement replay. They have the
-  same format and are not needed to load a game **(confirmed: binary)**.
+- In a simultaneous game every turn processing (the host's work) saves the game as
+  `<game name>.gam` in the game's save folder; that is the file the players load next.
+  Its current player is the empire count and its turn code is new **(observed)**.
+- The original also keeps copies of the current game in its `temp\` folder,
+  `<game>_LastTurn.gam` (the state at the start of the turn, with current player 0,
+  **observed**) and `<game>_CurrTurn.gam`, for the movement replay. They have the same
+  format and are not needed to load a game **(confirmed: binary)**.
 
 ### 1.2 Companion files
 
-The game keeps per-player history files (statistics, history lines) and the combat
-replays in the installation's `history\` folder while a game is played. **Saving** copies
-every file of that folder next to the game file under the name `<name>_<file name>` (at
-most 5,000 files); **loading** first empties the folder, then copies back each
+The game keeps per-player history files (statistics, history lines) and the combat replays
+in the installation's `history\` folder while a game is played. **Saving** copies every
+file of that folder next to the game file under the name `<name>_<file name>` (at most
+5,000 files); **loading** first empties the folder, then copies back each
 `<name>_plr_*.txt` file found next to the game file, without the `<name>_` prefix
-**(confirmed: binary; observed: a save after one turn produced `<name>_plr_1_stats.txt`)**.
-Combat replay files are copied both ways in turn-based games when the Settings.txt switch
-for creating replays is on. Separately, the turn processing of a game that has a game name
-(multiplayer setups) writes `<game>_Log.trn` and `<game>_Combat.cmb` into the game's save
-folder **(confirmed: binary; the file names observed with the small test game)**.
+**(confirmed: binary; observed: a save after one turn produced
+`<name>_plr_1_stats.txt`)**. Combat replay files are copied both ways in turn-based games
+when the Settings.txt switch for creating replays is on. Separately, the turn processing
+of a simultaneous game writes `<game>_Log.trn` and `<game>_Combat.cmb` next to its host
+save, named after the game **(observed, in both simultaneous games; a Quick Start
+turn-based game wrote neither)**.
 
 | File next to the game | Holds | Needed to load |
 |---|---|---|
@@ -417,7 +422,7 @@ Then **(confirmed: binary)**:
 | bool | Notes or claims changed this turn | Only for player changes files | none; export off |
 | ability list | System abilities | §3.8.1 | `abilities` |
 | set | Explored, per empire | Bit p − 1 for player p; usually 20 bits; missing bits are clear | `Knowledge::explored` |
-| set | Claimed, per empire | The home system is claimed at setup; grows to the highest player that claimed it **(observed)** | `Empire::claimedSystems` |
+| set | Claimed, per empire | The home system is claimed at setup. The set's capacity varies (after the first turn it was the empire count in every system of our game) and bits beyond it are clear **(observed)** | `Empire::claimedSystems` |
 | 20 × string | Notes, per player 1..20 | The Notes window | `Knowledge::notes` |
 
 The system type itself is not stored: generation and stellar manipulation copy the
@@ -492,7 +497,7 @@ combat strategies. Everything below is **(confirmed: binary)** unless marked.
 | bool | Divide points evenly | **(observed: on in a new game)** | `researchEvenly` |
 | word n, n × word | Unique areas unlocked | The tech areas' "Unique Area" values granted by ruins (values, not positions) | `uniqueAreasUnlocked` |
 | word n, n × word | Tech levels | Level of tech area 1..n in TechArea.txt order; n is the number of tech areas in the data set when saved | `techLevels` |
-| word n, then n × (word, byte, int) | Research queue, at most 12 | Tech area (TechArea.txt position); a share weight, always 2; points spent toward the next level **(observed)** | `research` (area − 1, progress); export weight 2 |
+| word n, then n × (word, byte, int) | Research queue, at most 12 | Tech area (TechArea.txt position); a share weight, always 2; points spent toward the next level **(observed, also by loading projects written by our encoder)** | `research` (area − 1, progress); export weight 2 |
 
 Spent points exist only for queued areas.
 
@@ -619,7 +624,7 @@ The log position and scroll are not stored; import 0.
 | word n, n × byte | Systems to defend | | `aiMemory.defend` |
 | word n, n × byte | Attack targets, at most 3, may repeat | | `aiMemory.targets` |
 | string | Minister style folder | Empty: the race's own AI files | `ministerStyle` |
-| 25 × bool | Minister switches | In the order of OpenSE4's `Minister` enumeration (the fifth is Research, **observed**); a new human empire has all off | `ministers` (bit k − 1); `ministerAll` = all 25 on (inferred) |
+| 25 × bool | Minister switches | In the order of OpenSE4's `Minister` enumeration (the fifth is Research, **observed**); a new human empire has all off (**observed** in a Quick Start and a Game Setup game) | `ministers` (bit k − 1); `ministerAll` = all 25 on (inferred) |
 | bool | New vehicles get individual ministers | | `ministersForNewVehicles` |
 | bool | Computer makes no changes in simultaneous games | | `aiMinimalChanges` |
 | 20 × (byte, word) | Per player 1..20: anger (default 50); turns since war (default 999, 0 while at war) | | `Relation::anger`, `Relation::turnsSinceWar` |
@@ -749,7 +754,7 @@ The fields map to the keys of the strategy data files (spec 04):
 |---|---|
 | word | Position (reassigned on load) |
 | string | Name |
-| byte, byte | Primary and secondary movement strategy, 1..8: Don't Get Hurt, Drop Troops (if carrying), Maximum, Optimal or Short Weapons Range, Point Blank, Board Enemy Ships, Ram |
+| byte, byte | Primary and secondary movement strategy: 1 Don't Get Hurt, 2 Drop Troops (if carrying), 3 Maximum Weapons Range, 4 Optimal Weapons Range, 5 Short Weapons Range, 6 Point Blank, 7 Board Enemy Ships, 8 Ram |
 | bool | Use type priority first |
 | byte ×4 | Targeting priorities 1..4, each 1..12: Nearest, Farthest, Largest, Smallest, Most Damaged, Least Damaged, Fastest, Slowest, Strongest, Weakest, Has Weapons, Does Not Have Weapons |
 | 14 × (byte, bool) | Per target category: type priority rank, don't fire on |
@@ -948,9 +953,9 @@ the turn it was built, the movement-blocked turn, arrival stamps.
 #### 3.8.8 Orders
 
 `word n`, bool repeat, word current order (1-based), then n orders, each: byte kind, byte
-system, byte sector, byte extra, word target, string target name (shown in windows). OpenSE4 keeps the
-current order first: on import rotate the list so that the current order comes first;
-export the current order as 1.
+system, byte sector, byte extra, word target, string target name (shown in windows).
+OpenSE4 keeps the current order first: on import rotate the list so that the current order
+comes first; export the current order as 1.
 
 | Kind | Order | Parameters | OpenSE4 `OrderKind` |
 |---|---|---|---|
@@ -1050,8 +1055,9 @@ For OpenSE4 this means:
 - Many saves carry seven data-set checksums in the options (§3.2). Three saves made with
   the stock data (two simultaneous, one turn-based) carry the same seven values, and a
   Quick Start hotseat game still had all seven at 0 after two turns **(observed)**. When
-  set they identify a data set even though their formula is not documented here (§11.1 question 6): an
-  importer can keep a table of known values per data set and warn on a mismatch.
+  set they identify a data set even though their formula is not documented here (§11.1
+  question 6): an importer can keep a table of known values per data set and warn on a
+  mismatch.
 
 ## 5. Loading in the original
 
@@ -1356,7 +1362,9 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
   fields this spec gives for it.
 - Files written by our own encoder were loaded: a re-encoded save with new keys; the same
   with the homeworld renamed (the new name and the construction queue appeared); and a
-  file with a correct selector but a wrong K6 (it loaded).
+  file with a correct selector but a wrong K6 (it loaded); and a save with two research
+  projects inserted (a count changed and items added): the Research window showed both,
+  the first with its progress bar a quarter full for 5,000 of 20,000 points.
 - The large third-party save loaded in the original. Its date, the current player's
   empire, leader and treasury, the system shown, the display switches of the empire
   options (planet and warp point names, grids, markers) and one planet's sector, size,
@@ -1399,9 +1407,9 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
 11. Whether fighters and drones can cloak at all (the flag is not saved for them).
 12. Why the turn counter starts at 367 (nothing reads it).
 13. The best rule for finding a system's type on import (§3.5).
-14. `playerTurn.started` and the turn-based turn state on import: whether the original
-    resumes a loaded turn-based game at the start of the current player's turn or within
-    it.
+14. `playerTurn.started` and the turn-based turn state on import: a loaded turn-based
+    game opened directly on the current player's main window (observed, with the large
+    sample), but whether the start-of-turn steps run again is not settled.
 
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 
@@ -1415,6 +1423,8 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
 - The trade counter of every pair goes up by one per turn whatever the treaty, and is
   reset only when a treaty changes to or from one below Trade (compare spec 05 §3.3).
 - The victory peace counter and the game-completed flag are part of the saved game.
+- A new human empire starts with all 25 minister switches off **(observed)**; OpenSE4's
+  `Empire::ministers` starts with the individual areas on.
 
 ---
 

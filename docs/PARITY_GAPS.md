@@ -18,6 +18,7 @@ outcomes, **L** is an edge case.
 | The original's saved games (spec 08) | OpenSE4 reads and writes only its own save format; it can neither import a `.gam` nor export one | The format, the mapping to and from `GameState`, what export must write and what is lost are in spec 08 §2–§7 | M |
 | Random generator after a load | A saved game keeps the generator's state, so a loaded game continues the same random sequence | Every load reseeds the generator from the game's stored seed, which never changes in play (spec 08 §3.4, §11.2, confirmed: binary) | L |
 | Timed events (`events.cpp`) | Any number of scheduled events wait in `GameState::pendingEvents` | The list keeps fired events as free slots, and nothing is scheduled once it has five slots, free or not, so after five events were pending together no timed event is scheduled again (spec 08 §3.4, §11.2, confirmed: binary) | L |
+| Minister switches of a new empire (`Empire::ministers`) | A new human empire starts with the 14 individual minister areas on | A new human empire, from Quick Start or Game Setup, starts with all 25 switches off (spec 08 §3.6.9, §11.2, observed) | L |
 
 ## Economy and population (spec 02)
 
