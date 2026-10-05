@@ -1496,6 +1496,26 @@ What also showed:
 - A simultaneous game exported with an empty game name plays, but the host then saves it
   as a file named only `.gam` (and `_Log.trn` and so on) in the save folder.
 
+### 9.2 The corrected exports (2026-10-04, third round)
+
+All **(observed)**, in a fresh scratch copy of the original under Wine, with exports made
+after the fixes of §9.1. Every file decodes to its last byte with an independent decoder,
+meets §8's invariants and carries the seven data-set checksums of the stock data.
+
+| File | Result |
+|---|---|
+| The OpenSE4 simultaneous game; our two original simultaneous saves through OpenSE4 | Players sign in directly, no "Invalid Data Files"; the Log lists the entries; a turn ended by the signed-in player is processed |
+| A simultaneous game with a pursuit and a launch | Signs in; the Log lists 28 entries, among them a declaration of war with the sender's portrait. Over two turns the pursuing ship (kind 11 on an enemy ship 12 sectors away in the same system) moved 6 sectors toward its target, then followed it when it moved off, keeping the order. The homeworld's Launch order of kind 5 released exactly its 3 satellites, which joined the satellite group already there, left its 5 weapon platforms in storage, and completed |
+| The OpenSE4 turn-based game, made after the player's turn started; and one made before it | Both load and the Log lists the entries. In the second, the current player's ships have their full movement (6/6) and keep their Move To orders; after End Turn the orders ran at the next turn start (one ship reached home and its order completed, the other moved on) |
+| Our original turn-based saves through OpenSE4 | The Log lists the three entries, the tech-level entry with its picture again (its kind kept) |
+| The large third-party game, imported, played 5 turns in OpenSE4 and exported | Loads, the Log lists OpenSE4's entries (battle summaries, order notices, intelligence reports); two full turns played with battles, colonizations and a "Launch Warning" from an exported satellite launch that hit the original's limit of 100 satellites per location (the order was read as a satellite launch, as intended); saved by the original and decoded again |
+
+What also showed: an export made before the current player's turn has started gives the
+ships their movement but not the continuing of their orders, which the original carries
+out only at a turn start; the ships keep their orders and act a turn later unless the
+player moves them (observed for the two ships above; that End Turn does not run them is
+inferred from where they stood after the next turn start).
+
 ---
 
 ## 10. Cross-references
@@ -1565,9 +1585,18 @@ What also showed:
 
 21. An imported log entry's read date: OpenSE4 writes it back as the file had it (§12), so
     entries the computer players had counted stay counted and entries read on an earlier
-    turn stay out of the Log window. Whether a player would rather see the imported game's
-    last messages again in the original (read date 0, as §7.3 writes for OpenSE4's own
-    entries) is open.
+    turn stay out of the Log window. **Reviewed (confirmed: binary):** the read date has
+    exactly these two uses. Opening the Log window lists the entries whose read date is 0
+    or the current date and stamps the unread ones with the current date; a computer
+    player's political step counts only entries with read date 0 (by the other empire
+    involved, the kind and the event kind, and notes unread diplomatic messages by sender),
+    then stamps every unread entry the same way. Keeping the imported value therefore leaves
+    the original exactly where the imported file left it; writing 0 instead would make the
+    computer players count those entries a second time. The original prunes
+    each log to entries dated from one turn ago up to two turns ahead, so an imported entry
+    read on an earlier turn would be hidden in the original as well. Whether a human player
+    would like the imported game's last messages shown again stays a choice; 0 for human
+    empires only would be harmless to the computer players' counting (inferred).
 
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 
