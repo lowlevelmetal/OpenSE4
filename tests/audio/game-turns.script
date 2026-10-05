@@ -19,7 +19,13 @@ click tag:command:ships
 key Escape
 wait 120
 repeat 8 until { turn = 66 }
-  click item:"*(suggested)" optional
+  # The Log that opens each turn, then every Colony Type question (they come once
+  # the Log is closed): End Turn waits while a window or a question is open.
+  click tag:log:close optional
+  repeat 12
+    click item:"*(suggested)" optional
+    wait 5
+  end
   click tag:button:end-turn
   click item:Yes in="End Turn" optional
   wait 300
