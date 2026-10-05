@@ -371,6 +371,7 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     s.seed = setup.seed;
     s.options = setup.options;
     s.rng.reseed(setup.seed);
+    s.mods.assign(r.mods().begin(), r.mods().end());
 
     // ---- Quadrant (spec 01 §3.7 steps 1-6).
     QuadrantOptions qo;

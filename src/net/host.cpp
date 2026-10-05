@@ -260,8 +260,15 @@ std::expected<void, std::string> HostSession::resume(game::GameState state, cons
     } catch (const PasswordWorkError& e) {
         return std::unexpected(std::string(e.what()));
     }
-    if (!info.dataSet.empty() && !game::sameDataSet(info.dataSet, config_.dataSet))
-        return std::unexpected(std::format("This game was saved with data set {}, but the host has {}.", info.dataSet, config_.dataSet));
+    if (const auto mods = game::modDifferences(state.mods, rules_, "the saved game"); !mods.empty()) {
+        std::string why = "This saved game needs other mods:";
+        for (const std::string& m : mods) why += "\n  " + m;
+        return std::unexpected(why);
+    }
+    // Saves of format 8 and older hold the identity as they computed it.
+    const std::string current = info.formatVersion <= 8 ? game::legacyDataSetIdentity(rules_) : config_.dataSet;
+    if (!info.dataSet.empty() && !game::sameDataSet(info.dataSet, current))
+        return std::unexpected(std::format("This game was saved with data set {}, but the host has {}.", info.dataSet, current));
     if (state.empires.empty() || state.empires.size() > kMaxSlots) return std::unexpected(std::string("The saved game has no usable empires."));
     if (std::string problem = game::validateState(state, &rules_); !problem.empty())
         return std::unexpected("The saved game does not fit this data set: " + problem);
@@ -604,6 +611,13 @@ void HostSession::handleLogin(Peer& peer, std::span<const uint8_t> payload) {
     if (!proto::decode(payload, h, error)) {
         dropPeer(peer, "protocol error: " + error, false);
         return;
+    }
+    // The mods first: their differences say what to do about them.
+    if (const auto mods = ruleset::compareModSets(rules_.mods(), h.mods, "the host"); !mods.empty()) {
+        std::string why = "Your mods differ from the host's: ";
+        for (size_t i = 0; i < mods.size() && i < 6; ++i) why += (i ? "; " : "") + proto::sanitize(mods[i], 150);
+        if (mods.size() > 6) why += std::format("; and {} more", mods.size() - 6);
+        return reject(peer, code(RR::Mods), why + ".");
     }
     if (!game::sameDataSet(h.dataSet, config_.dataSet))
         return reject(peer, code(RR::DataSet),
@@ -969,6 +983,7 @@ void HostSession::refreshLobby() {
     lobby_.turnTimeoutSeconds = config_.turnTimeoutSeconds;
     lobby_.seed = 0;  // the galaxy's seed stays with the host: it would rebuild the whole map
     lobby_.options = state_ ? state_->options : config_.setup.options;
+    lobby_.mods.assign(rules_.mods().begin(), rules_.mods().end());
     lobby_.slots.clear();
     for (const auto& s : slots_) {
         LobbySlot info = s->info;

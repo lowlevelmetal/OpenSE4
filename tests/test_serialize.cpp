@@ -95,6 +95,7 @@ void checkCommandFields(std::index_sequence<I...>) {
 TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(ruleset::Ability);
     CHECK_ALL_FIELDS(ruleset::CombatStrategy);
+    CHECK_ALL_FIELDS(ruleset::ModRecord);
     CHECK_ALL_FIELDS(Location);
     CHECK_ALL_FIELDS(GalaxyPos);
     CHECK_ALL_FIELDS(Conditions);
@@ -669,8 +670,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x933770c7b7260925ull;
-    constexpr size_t kGoldenSize = 1826;
+    constexpr uint64_t kGoldenChecksum = 0xba9062b8fdeb59f5ull;
+    constexpr size_t kGoldenSize = 1830;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

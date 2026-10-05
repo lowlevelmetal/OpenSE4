@@ -295,6 +295,7 @@ private:
         cfg.password = password_;
         cfg.joinPassword = joinPassword_;
         cfg.dataSet = game::dataSetIdentity(*ctx.rules);
+        cfg.mods.assign(ctx.rules->mods().begin(), ctx.rules->mods().end());
         // The host's key as trusted before (none: trusted on this first connection).
         cfg.hostKey = knownHosts().find(address_, static_cast<uint16_t>(port_));
         // Agreed by the player in the prompt below, for this connection only.

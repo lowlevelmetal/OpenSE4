@@ -55,6 +55,7 @@ public:
         s_.turn = static_cast<uint32_t>(in_.prologue.date - kDateBase);
         s_.seed = static_cast<uint64_t>(std::max(0, in_.globals.seed));
         s_.rng.reseed(s_.seed);
+        s_.mods.assign(r_.mods().begin(), r_.mods().end());   // played on with the data set it was read with
         checkDataSet();
         options();
         systems();

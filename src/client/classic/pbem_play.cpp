@@ -43,11 +43,11 @@ std::expected<PbemGame, std::string> loadPbemGame(const game::Rules& rules, cons
     g.file = std::move(*file);
     // The host refuses a game made with another data set; so do we, since the
     // turn would not play the same here.
-    if (!g.info.dataSet.empty()) {
-        const std::string mine = game::dataSetIdentity(rules);
-        if (!game::sameDataSet(g.info.dataSet, mine))
-            return std::unexpected(std::format("The game was created with data set {}, but this data set is {}.", g.info.dataSet, mine));
-    }
+    if (const auto mods = game::modDifferences(g.info.mods, rules, "the game"); !mods.empty())
+        return std::unexpected(std::format("The game needs other mods: {}.", mods.front()));
+    if (!game::sameDataSet(g.info, rules))
+        return std::unexpected(std::format("The game was created with data set {}, but this data set is {}.", g.info.dataSet,
+                                           g.info.formatVersion <= 8 ? game::legacyDataSetIdentity(rules) : game::dataSetIdentity(rules)));
     if (!g.empire.valid() || g.empire.index() >= g.info.empires.size())
         return std::unexpected(std::string("The turn file is damaged: it names no empire of the game."));
     return g;

@@ -867,7 +867,8 @@ message type and payload encrypted with XChaCha20-Poly1305, then the 16-byte tag
 2. The host answers `ServerHello` in the clear: its fresh key, its long-term key,
    whether it has a join password, and the game's id (which salts the passwords). Both
    sides then switch to sealed frames.
-3. The client sends `Login`: data-set fingerprint, player name, a random id of its
+3. The client sends `Login`: data-set fingerprint, its mods (id, version, identity and
+   whether each changes the game), player name, a random id of its
    session object, the player's verifier in this game (`pk2:<KiB>:<passes>:<keys>`) and
    its signature, and the master password's signature if it has one. The host refuses
    a player whose empire still has an OpenSE4 0.6 verifier with `OldPassword` (or with
@@ -875,8 +876,12 @@ message type and payload encrypted with XChaCha20-Poly1305, then the 16-byte tag
    player, and only with the player's consent and a host key trusted beforehand does
    the next `Login` also carry the password's 0.6 hash.
 4. The host answers `Reject` (with a reason and a readable text) or `Welcome` (game
-   name and id, the player's slot, admin rights). Then it sends the `Lobby`, and,
-   during a game, the `State` and `TurnStatus`.
+   name and id, the player's slot, admin rights). A player whose game-changing mods
+   differ from the host's is refused with `Mods` and a text that names each mod missing,
+   in another version or with other files, or not used by the host (mods with only
+   pictures, sounds or interface do not count); then a different data set is refused
+   with `DataSet`. After the `Welcome` the host sends the `Lobby` (which lists the host's
+   mods), and, during a game, the `State` and `TurnStatus`.
 5. In the lobby: `SubmitSetup` (the empire setup), `SetReady`, `ChatSend`, and
    `Admin` requests. The host sends `Lobby` after every change.
 6. At the start and after every turn, the host sends `State`: the turn, the
@@ -912,7 +917,14 @@ that share it play together. It was 2 from turn-based games on, 3 in 0.5.0, 4 in
 Protocol 6 and save format 8 (the log fields of games imported from the original, the
 colonies' destroyed facility counts, orders given to tagged vehicles as one group, the
 fleet leader command and the Designs window's check boxes kept with the empire) came with
-0.10.0, so it does not play with 0.9.0; it still loads 0.9.0's saves.
+0.10.0, so it does not play with 0.9.0; it still loads 0.9.0's saves. Protocol 7 and save
+format 9 come with the modding SDK (docs/MODDING_SDK.md §14.5): the game's mods in the
+state and the save header, the player's mods in `Login`, the host's in `Lobby`, and the
+`Mods` refusal; later SDK changes add their fields under these numbers until the next
+release. The data set's identity of format 9 also covers the game folder's AI tables,
+race files and design-name lists and the game-changing mods; a save of format 8 or older
+is compared with the identity as its format computed it, so it is not taken for another
+data set. Protocol 7 does not play with 0.10.0; format 8 and 7 saves still load.
 
 ### Save format
 
