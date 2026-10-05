@@ -18,7 +18,6 @@ outcomes, **L** is an edge case.
 | Random generator after a load | A saved game keeps the generator's state, so a loaded game continues the same random sequence | Every load reseeds the generator from the game's stored seed, which never changes in play (spec 08 §3.4, §11.2, confirmed: binary) | L |
 | Timed events (`events.cpp`) | Any number of scheduled events wait in `GameState::pendingEvents` | The list keeps fired events as free slots, and nothing is scheduled once it has five slots, free or not, so after five events were pending together no timed event is scheduled again (spec 08 §3.4, §11.2, confirmed: binary) | L |
 | Minister switches of a new empire (`Empire::ministers`) | A new human empire starts with the 14 individual minister areas on | A new human empire, from Quick Start or Game Setup, starts with all 25 switches off (spec 08 §3.6.9, §11.2, observed) | L |
-| Turn-based export before the player's turn has started (`classic_save_export.cpp`) | The current player's vehicles get the movement of the turn's start, but their continuing orders have not run | The original continues a vehicle's orders only at a turn start and never on loading, so those orders wait one turn unless the player moves the vehicles; carrying out OpenSE4's start of that player's turn before writing would match (spec 08 §9.2, observed; End Turn not running them is inferred) | L |
 
 Since 2026-10-04 the original's saved games (spec 08) are read and written, closing the row
 that said OpenSE4 could neither import nor export them: Load Game and `--load` import a
@@ -37,11 +36,15 @@ kind, read date, picture key, other empire, event fields and battle details
 pursuing Attack is written as kind 11 and read back as an Attack, an Attack without a
 target as kind 8; Launch and Recover name their unit kind in the cargo-kind numbering; a
 turn-based game exported before the current player's turn has started gives that player's
-vehicles the movement of the turn's start. The engine keeps each colony's never-reset
-counts of destroyed facilities (`Colony::destroyedFacilities`): every removal pass after
-sabotage or an event takes them off again (spec 08 §11.2), and the original's saved games
-carry them both ways. Battles still remove what they destroyed once, the choice of spec 04
-§19.1, and OpenSE4 has no hazard damage to colonies.
+vehicles the movement of the turn's start. On 2026-10-05 the row that followed from the
+third check (spec 08 §9.2), that such an export did not continue the vehicles' orders, was
+closed too: before writing, the export carries out OpenSE4's start of a human current
+player's turn on a copy of the game (`startHumanTurn`), since the original never starts a
+turn on loading; what is left open is spec 08 §11.1 question 22. The engine keeps each
+colony's never-reset counts of destroyed facilities (`Colony::destroyedFacilities`): every
+removal pass after sabotage or an event takes them off again (spec 08 §11.2), and the
+original's saved games carry them both ways. Battles still remove what they destroyed
+once, the choice of spec 04 §19.1, and OpenSE4 has no hazard damage to colonies.
 The save format is 8 and the network protocol 6 since then.
 
 ## Economy and population (spec 02)

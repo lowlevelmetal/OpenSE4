@@ -1249,7 +1249,7 @@ memory between turns and have no source are a loss on import (§7.6).
 | `gameOver` | Victory "game completed" | Same |
 | `winner` | Not stored: derive from the victory rules, else invalid | — |
 | `playerTurn.empire` | Current player (turn-based games) | Current player (simultaneous games: the empire count, as in the simultaneous sample, observed) |
-| `playerTurn.started` | Not stored: true (the original saves within a player's turn, inferred) | — |
+| `playerTurn.started` | Not stored: true (the original saves within a player's turn, inferred) | Not stored: a human current player's turn that has not started is started on a copy first (§12) |
 | `playerTurn.moves`, `questions` | Not stored: empty | — |
 | `playerTurn.launched` | Closing list (§3.9) | Closing list |
 | `startingPoints` | Starting-point lists (§3.5) | Same |
@@ -1514,7 +1514,8 @@ What also showed: an export made before the current player's turn has started gi
 ships their movement but not the continuing of their orders, which the original carries
 out only at a turn start; the ships keep their orders and act a turn later unless the
 player moves them (observed for the two ships above; that End Turn does not run them is
-inferred from where they stood after the next turn start).
+inferred from where they stood after the next turn start). Since 2026-10-05 such an export
+carries out OpenSE4's start of that player's turn before writing (§12).
 
 ---
 
@@ -1555,7 +1556,12 @@ inferred from where they stood after the next turn start).
 13. The best rule for finding a system's type on import (§3.5).
 14. `playerTurn.started` and the turn-based turn state on import: a loaded turn-based
     game opened directly on the current player's main window (observed, with the large
-    sample), but whether the start-of-turn steps run again is not settled.
+    sample). **Answered (observed)** for a file without the autosave and hand-over flags
+    (§3.1): loading starts no turn. The current player's vehicles keep the movement the
+    file gives them (§9.1) and continue their orders only at a later turn start (§9.2); the
+    other start-of-turn steps (the ministers, the destruction check) are taken not to run
+    either (inferred). Import therefore counts the current player's turn as started, and
+    export writes a human current player's turn as started (§12, question 22).
 
 15. **Answered (observed):** with an empty game name a simultaneous game plays, but each
     host turn saves it as a file named only `.gam` (with `_Log.trn`, `_Combat.cmb` and
@@ -1597,6 +1603,27 @@ inferred from where they stood after the next turn start).
     read on an earlier turn would be hidden in the original as well. Whether a human player
     would like the imported game's last messages shown again stays a choice; 0 for human
     empires only would be harmless to the computer players' counting (inferred).
+
+22. **The start of a turn on export (inferred).** OpenSE4 carries out a human current
+    player's turn start on a copy of the game before writing (§12). Not settled:
+    - What the original does with a file whose current player is a computer. Its own files
+      are saved inside a human's turn, since the computer players' turns run within the End
+      Turn before it (spec 05 §9.1; inferred for Save Game). OpenSE4 writes such a player's
+      vehicles with the movement of their turn's start only, as before 2026-10-05. Playing
+      the computer players' turns on the copy up to the next human, as OpenSE4's own resume
+      does, would give a file like the original's own.
+    - Between two game turns the file names the first living human, and the empires before
+      it do not play that game turn in the original. Playing them on the copy first would
+      avoid that.
+    - The original asks the player during the turn start: Tactical or Strategic for a
+      battle, and whether to enter a sector with enemies. The export fights the battle
+      strategically and leaves the group before the sector with its orders, unasked; in the
+      original it goes on when the order is given again (which asks) or at its next turn
+      start.
+    - The autosave and hand-over flags (§3.1) open the next-player screen on loading, and a
+      loaded hand-over file starts the turn of the empire it names (spec 05 §9.1). Writing
+      one of them might let the original carry out the start itself, but how a game on one
+      machine (play style 1) treats them has not been tried.
 
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 
@@ -1680,16 +1707,29 @@ Implemented on 2026-10-04 from this spec.
     step has counted (spec 05 §7.3), so the original neither counts those entries again nor
     lists those read on an earlier turn, as before the import. A kept kind 19 whose message
     is gone is written as kind 36.
-  - Turn-based games: the current player's turn counts as started (§11.1 Q14); the
-    closing list (§3.9) is the turn's launch budget. An export made before the current
-    player's turn has started (OpenSE4 between two players' turns) writes that player's
-    vehicles with the movement the start of the turn gives (`movement::refilledMovement`:
-    each vehicle's maximum, a fleet at its location the slowest member's, nothing while
-    held in place), since the original never refills on loading (§9.1). The turn-based
-    export of §9.1 was made after the player's turn had started: its ships had spent their
-    movement carrying out their Move To orders at the start of that turn (one reached home
-    and resupplied there), so its 0 movement left was OpenSE4's state as well, and is
-    still written as it is.
+  - Turn-based games: on import the current player's turn counts as started (§11.1 Q14);
+    the closing list (§3.9) is the turn's launch budget. The file's current player is the
+    empire whose turn is in progress, or between two game turns the first living human.
+    When that player is a living human whose turn has not started (OpenSE4 between two
+    players' turns or two game turns), the export carries out OpenSE4's start of that turn
+    on a copy of the game and writes the copy (`startHumanTurn`): the destruction check,
+    the start-of-turn step with the player's ministers, the movement refill and every
+    group's orders continued (spec 05 §8 "Turn-based game"), because the original resumes
+    inside the turn and never starts it on loading (§9.1, §9.2, Q14). The game itself does
+    not change, and the copy goes on with the game's own random sequence, so the same game
+    always gives the same file. Where that start would stop for the player, it goes on
+    without asking (inferred, Q22): a battle is fought strategically, and a group about to
+    enter a sector with enemies stops before it with its orders kept and the question
+    unasked, as the file holds no open question. The conversion report says so, and also
+    counts the questions still open in a turn that had started, which are lost the same
+    way. Between two game turns the empires before that human do not play the game turn in
+    the exported file, and a computer player whose turn has not started gets only the
+    movement its start gives (`movement::refilledMovement`: each vehicle's maximum, a fleet
+    at its location the slowest member's, nothing while held in place), as before (both
+    inferred, Q22). The turn-based export of §9.1 was made after the player's turn had
+    started: its ships had spent their movement carrying out their Move To orders at the
+    start of that turn (one reached home and resupplied there), so its 0 movement left was
+    OpenSE4's state as well, and is still written as it is.
   - The data-set checksums (§3.2.1) are computed from the data files the game was played
     with (`Rules::data().dataDir`, read as written: `classic_save_checksums.cpp`) and
     written in every export; import computes them too and notes which files differ from a
@@ -1710,8 +1750,9 @@ Implemented on 2026-10-04 from this spec.
   and play; simultaneous ones need the data-set checksums (§3.2.1) for players to sign in.
   The fixes of that check (the checksums, the read date, Attack kinds 11 and 8, the
   Launch and Recover kind byte, the kept log fields, the movement of an export made before
-  the player's turn) followed the same day. The checksums computed from the installed
-  data set are the seven values of every sample save that carries them (five saves).
+  the player's turn) followed the same day, and on 2026-10-05 the whole start of that
+  turn (§9.2). The checksums computed from the installed data set are the seven values of
+  every sample save that carries them (five saves).
 - **Checked** on the 24 saves this spec was checked with (§8): every one decodes to the end,
   meets §8's invariants and counts, imports into a state that `validateState` accepts and
   that plays on without desync, and is written again with only the differences listed

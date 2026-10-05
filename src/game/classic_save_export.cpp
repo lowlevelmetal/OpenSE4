@@ -14,6 +14,7 @@
 #include "game/query.hpp"
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
+#include "game/turn.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -35,10 +36,37 @@ int32_t clampInt(int64_t v) {
 uint8_t clampByte(int64_t v) { return static_cast<uint8_t>(std::clamp<int64_t>(v, 0, 255)); }
 uint16_t clampWord(int64_t v) { return static_cast<uint16_t>(std::clamp<int64_t>(v, 0, 65535)); }
 
+// The empire whose turn the file resumes in (§3.4): in a turn-based game the
+// one whose turn is in progress, else the first living human; in a
+// simultaneous game the last empire (the file itself names the empire count).
+EmpireId fileCurrentPlayer(const GameState& s) {
+    if (!s.options.simultaneous && s.playerTurn.empire.valid() && s.playerTurn.empire.index() < s.empires.size()) return s.playerTurn.empire;
+    if (s.options.simultaneous) return EmpireId{s.empires.size() - 1};
+    for (const Empire& e : s.empires)
+        if (e.alive && e.kind == PlayerKind::Human) return e.id;
+    return EmpireId{0u};
+}
+
+// Whether the file's current player is a living human whose turn has not
+// started: the export then carries out its start first (§12).
+bool turnStartDue(const GameState& s, EmpireId cur) {
+    if (s.options.simultaneous || s.gameOver) return false;
+    if (cur.index() >= s.empires.size()) return false;
+    const Empire& e = s.empire(cur);
+    if (!e.alive || e.kind != PlayerKind::Human) return false;
+    return !s.playerTurn.empire.valid() || (s.playerTurn.empire == cur && !s.playerTurn.started);
+}
+
+// What carrying out the start of the current player's turn on the copy did.
+struct TurnStart {
+    bool carriedOut = false;
+    size_t battles = 0;   // fought on the way, strategically
+};
+
 class Exporter {
 public:
-    Exporter(const Rules& r, const GameState& s, ConversionReport& report, const ExportOptions& options)
-        : r_(r), d_(r.data()), s_(s), report_(report), options_(options) {}
+    Exporter(const Rules& r, const GameState& s, ConversionReport& report, const ExportOptions& options, TurnStart turnStart = {})
+        : r_(r), d_(r.data()), s_(s), report_(report), options_(options), turnStart_(turnStart) {}
 
     std::expected<ClassicSave, std::string> run() {
         checkLimits();
@@ -76,14 +104,23 @@ private:
     std::vector<std::vector<FleetId>> fleetsOf_;     // per empire, in number order
     std::map<std::string, int> counts_;
     size_t replaced_ = 0;
+    TurnStart turnStart_;
     std::map<uint32_t, int> refilled_;               // per VehicleId value: movement after the start-of-turn refill
 
     // A turn-based game whose current player's turn has not started: the
-    // original resumes inside that turn and never refills on loading, so the
-    // player's vehicles get the movement the start of the turn gives them
-    // (§9.1). Their orders are carried out at the next turn's start.
+    // original resumes inside that turn and never starts it on loading
+    // (§9.1, §9.2). A human's start has been carried out on a copy of the
+    // game, which is what this writes (exportClassicSave). Any other
+    // player's vehicles get only the movement the start of the turn gives
+    // them (inferred, §11.1 question 22).
     void startOfTurnMovement() {
         if (s_.options.simultaneous) return;
+        count("open questions whether to enter a sector with enemies, not written", static_cast<int>(s_.playerTurn.questions.size()));
+        if (turnStart_.carriedOut) {
+            count("the start of the current player's turn carried out before writing (it had not started)");
+            count("battles of that start fought strategically", static_cast<int>(turnStart_.battles));
+            return;
+        }
         const EmpireId cur = currentPlayer();
         if (s_.playerTurn.empire == cur && s_.playerTurn.started) return;
         for (const auto& [id, points] : movement::refilledMovement(r_, s_, cur)) refilled_[id.value] = points;
@@ -276,14 +313,7 @@ private:
         v.completed = s_.gameOver;
     }
 
-    EmpireId currentPlayer() const {
-        if (!s_.options.simultaneous && s_.playerTurn.empire.valid() && s_.playerTurn.empire.index() < s_.empires.size())
-            return s_.playerTurn.empire;
-        if (s_.options.simultaneous) return EmpireId{s_.empires.size() - 1};
-        for (const Empire& e : s_.empires)
-            if (e.alive && e.kind == PlayerKind::Human) return e.id;
-        return EmpireId{0u};
-    }
+    EmpireId currentPlayer() const { return fileCurrentPlayer(s_); }
 
     void globals() {
         Globals& g = out_.globals;
@@ -1280,6 +1310,14 @@ private:
         if (has("messages not yet delivered")) report_.note("Messages not yet delivered are not exported.");
         if (has("Explore, Resupply")) report_.note("Explore, Resupply, Repair, Cloak and Decloak orders are not exported; give them again in the original.");
         if (has("vehicles held in place")) report_.note("Vehicles held in place by sabotage or an event can move again in the original.");
+        if (turnStart_.carriedOut)
+            report_.note("The current player's turn had not started: its start was carried out before writing (movement, orders "
+                         "continued, ministers), as the original resumes inside a turn and never starts one on loading.");
+        if (turnStart_.battles > 0)
+            report_.note("Battles at the start of that turn were fought strategically; the original would have asked Tactical or Strategic.");
+        if (has("open questions whether to enter"))
+            report_.note("Groups stopped before a sector with enemies keep their orders without the question whether to enter: in the "
+                         "original they go on when the order is given again, or at their next turn's start.");
         if (replaced_ > 0) report_.note("Characters the original cannot show are written as '?'.");
         report_.note("OpenSE4's own log entries are exported as plain entries, without pictures or battle details; entries that came from the original keep theirs.");
         report_.note("History and score graphs are not exported; the original's graphs start at the export date.");
@@ -1290,6 +1328,20 @@ private:
 } // namespace
 
 std::expected<ClassicSave, std::string> exportClassicSave(const Rules& rules, const GameState& s, ConversionReport& report, const ExportOptions& options) {
+    // A turn-based game exported before a human current player's turn has
+    // started: the original resumes inside that turn and never starts it on
+    // loading, so the file holds the game as that start leaves it, carried
+    // out on a copy (§12). The game itself does not change.
+    if (const EmpireId cur = fileCurrentPlayer(s); turnStartDue(s, cur)) {
+        GameState started = s;
+        const size_t battles = started.combats.size();
+        startHumanTurn(rules, started, cur);
+        if (started.playerTurn.empire == cur && started.playerTurn.started) {
+            const TurnStart done{true, started.combats.size() > battles ? started.combats.size() - battles : 0};
+            Exporter exporter(rules, started, report, options, done);
+            return exporter.run();
+        }
+    }
     Exporter exporter(rules, s, report, options);
     return exporter.run();
 }

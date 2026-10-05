@@ -324,6 +324,19 @@ EmpireId activePlayer(const GameState& s);
 TurnResult resumeTurnBased(const Rules& r, GameState& s, const LiveOptions& options = {},
                            const std::vector<BattleAnswer>* battles = nullptr);
 
+// Starts human player `e`'s turn and nothing else: what resumeTurnBased does
+// when that turn comes up, without playing any other player's turn before
+// or after it. For a copy of the game that is to resume inside that turn:
+// the export to the original's saved games, whose loading never starts a
+// turn (docs/spec/08 §12). `e` must be a living human whose turn is the one
+// due and not started, or, when no game turn is in progress, any living
+// human (the empires before it then do not play in this game turn). Every
+// battle is fought strategically, and a group about to enter a sector with
+// enemies stops before it with its orders kept and its question left open
+// (TurnResult::questions, GameState::playerTurn). Refused otherwise
+// (TurnResult::rejected, the game unchanged).
+TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e);
+
 // Applies one command of the player whose turn it is and carries out at once
 // what it sets in motion: the vehicles, fleets or planets whose orders it
 // set act now (moving, fighting, launching), colony ships at their planet

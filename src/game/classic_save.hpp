@@ -687,6 +687,10 @@ struct ExportOptions {
     // writeClassicGame uses the file's name when this is empty.
     std::string gameName;
 };
+// A turn-based game whose current player, a human, has not started its turn
+// is written as the start of that turn leaves it, carried out on a copy
+// (startHumanTurn), since the original never starts a turn on loading
+// (§12); `s` itself does not change. The same state gives the same file.
 std::expected<ClassicSave, std::string> exportClassicSave(const Rules& rules, const GameState& s, ConversionReport& report,
                                                           const ExportOptions& options = {});
 
