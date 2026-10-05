@@ -908,8 +908,10 @@ message type and payload encrypted with XChaCha20-Poly1305, then the 16-byte tag
 `net::kProtocolVersion` must change whenever the messages or the save format
 change; the host refuses any other version and compares nothing else, so releases
 that share it play together. It was 2 from turn-based games on, 3 in 0.5.0, 4 in
-0.6.0, 5 from 0.7.0 (encrypted connections), and is 6 since save format 8 (the log fields
-of games imported from the original and the colonies' destroyed facility counts).
+0.6.0 and 5 from 0.7.0 (encrypted connections) through 0.9.0, whose save format was 7.
+Protocol 6 and save format 8 (the log fields of games imported from the original and
+the colonies' destroyed facility counts) come with the next release, so it does not play
+with 0.9.0; it still loads 0.9.0's saves.
 
 ### Save format
 

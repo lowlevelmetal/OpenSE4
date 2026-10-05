@@ -2082,18 +2082,18 @@ namespace {
 // The movement each vehicle gets at a turn start (of every empire, or of `only`).
 std::vector<std::pair<VehicleId, int>> refill(const Rules& r, const GameState& s, std::optional<EmpireId> only) {
     std::vector<std::pair<VehicleId, int>> out;
-    std::map<VehicleId, int> movement;
+    std::map<VehicleId, int> given;
     for (const Vehicle& v : s.vehicles)
-        if (alive(v) && (!only || v.owner == *only)) movement[v.id] = turnMovement(r, s, v);  // 0 while held by sabotage or an event
+        if (alive(v) && (!only || v.owner == *only)) given[v.id] = turnMovement(r, s, v);  // 0 while held by sabotage or an event
     // Fleet members at the fleet's location get the lowest maximum among them (§6.3 step 1).
     for (const Fleet& f : s.fleets) {
         if (only && f.owner != *only) continue;
         const std::vector<VehicleId> here = fleetMembersAt(s, f);
         int lowest = INT_MAX;
-        for (VehicleId id : here) lowest = std::min(lowest, movement[id]);
-        for (VehicleId id : here) movement[id] = lowest;
+        for (VehicleId id : here) lowest = std::min(lowest, given[id]);
+        for (VehicleId id : here) given[id] = lowest;
     }
-    out.assign(movement.begin(), movement.end());
+    out.assign(given.begin(), given.end());
     return out;
 }
 

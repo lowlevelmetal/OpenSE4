@@ -1113,7 +1113,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
                     break;
                 }
             }
-            for (const auto& [kind, count] : drawn) economy::addDestroyedFacilities(*col, kind, count);
+            for (const auto& [kind, destroyed] : drawn) economy::addDestroyedFacilities(*col, kind, destroyed);
             economy::removeDestroyedFacilities(*col);
             out.actual = n;
             break;

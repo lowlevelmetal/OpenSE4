@@ -1276,7 +1276,7 @@ private:
         if (has("Explore, Resupply")) report_.note("Explore, Resupply, Repair, Cloak and Decloak orders are not exported; give them again in the original.");
         if (has("vehicles held in place")) report_.note("Vehicles held in place by sabotage or an event can move again in the original.");
         if (replaced_ > 0) report_.note("Characters the original cannot show are written as '?'.");
-        report_.note("The log is exported as plain entries (the original's pictures and battle details are not rebuilt).");
+        report_.note("OpenSE4's own log entries are exported as plain entries, without pictures or battle details; entries that came from the original keep theirs.");
         report_.note("History and score graphs are not exported; the original's graphs start at the export date.");
         report_.note("The original restarts its random numbers from the game's seed, so its next turn differs from OpenSE4's.");
     }
