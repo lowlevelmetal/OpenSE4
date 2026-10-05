@@ -6,12 +6,15 @@
 // so all lookups are case-insensitive.
 
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace opense4::assets {
@@ -24,9 +27,36 @@ struct Image {
     bool empty() const { return width <= 0 || height <= 0; }
 };
 
+// What a picture file holds, by its first bytes (not its name: a ".bmp" may
+// hold PNG data).
+enum class ImageFormat { Unknown, Bmp, Png, Jpeg };
+ImageFormat imageFormat(std::span<const uint8_t> head);
+std::string_view formatName(ImageFormat f);  // "BMP", "PNG", "JPEG", "unknown"
+
 // Loads BMP/JPG/PNG. With `blackIsTransparent`, pure black pixels get alpha 0
-// (the classic art has no alpha channel and uses black backgrounds).
+// (the classic art has no alpha channel and uses black backgrounds). A PNG
+// keeps its own transparency: its alpha channel, and black is opaque in it
+// (docs/sdk/packages-and-data.md "Pictures").
 std::optional<Image> loadImage(const std::filesystem::path& path, bool blackIsTransparent);
+std::optional<Image> loadImageMemory(std::span<const uint8_t> bytes, bool blackIsTransparent, std::string* error = nullptr);
+
+// A picture file's size and format without decoding it all; the reason when
+// it cannot be read.
+struct ImageInfo {
+    int width = 0;
+    int height = 0;
+    ImageFormat format = ImageFormat::Unknown;
+    bool alpha = false;  // PNG with an alpha channel (or a transparent colour)
+};
+std::expected<ImageInfo, std::string> probeImage(const std::filesystem::path& path);
+// Only the width and height, from the file's header.
+std::optional<std::pair<int, int>> probeImageSize(const std::filesystem::path& path);
+
+// The picture resampled to w×h by averaging the source pixels each target
+// pixel covers (an area filter: for making a larger picture smaller, with no
+// ringing), weighted by alpha so that transparent pixels do not darken the
+// edges. Deterministic, the same on every platform.
+Image downscale(const Image& src, int w, int h);
 
 // Copies a w×h rectangle; out-of-range parts are transparent.
 Image crop(const Image& src, int x, int y, int w, int h);
@@ -61,6 +91,23 @@ public:
     // `relative` uses '/' separators, any case: "Pictures/Planets/Planets.bmp".
     // The mods' layers first, then the install.
     std::optional<std::filesystem::path> find(std::string_view relative) const;
+    // A picture asked for by its classic name ("Pictures/Events/Plague.bmp"):
+    // that file or a PNG with the same base name. In each layer (the mods'
+    // from the last, then the install) the PNG comes first; a later layer wins
+    // over an earlier one whatever their formats. `fromInstall`: set to whether
+    // the file found is the install's own.
+    std::optional<std::filesystem::path> findPicture(std::string_view relative, bool* fromInstall = nullptr) const;
+    // A sound or a music track by its classic name ("Sounds/button.wav",
+    // "Music/Track 01.mp3"): that file or an OGG Vorbis file with the same base
+    // name, the OGG first in each layer, as findPicture.
+    std::optional<std::filesystem::path> findSound(std::string_view relative) const;
+    // findPicture in the install alone, without the mods' layers: the classic
+    // picture a mod's replaces (its size is the classic size, docs/sdk/packages-and-data.md).
+    std::optional<std::filesystem::path> findInstalledPicture(std::string_view relative) const;
+    // The files of the mods' layers under a folder ("Pictures/RaceGeneric"),
+    // as paths relative to the layer with '/' and their spelling on disk,
+    // each once (the later layer's spelling), sorted by lowercase path.
+    std::vector<std::string> layerFiles(std::string_view folder) const;
     // First existing file among several candidates.
     std::optional<std::filesystem::path> findAny(std::initializer_list<std::string_view> candidates) const;
 
@@ -86,6 +133,8 @@ private:
         std::unordered_map<std::string, std::filesystem::path> index;
     };
     std::optional<std::filesystem::path> findInLayers(const std::string& key) const;
+    // The first of `keys` in each layer, then in the install.
+    std::optional<std::filesystem::path> findFirstOf(std::span<const std::string> keys, bool layers, bool* fromInstall) const;
 
     std::filesystem::path root_;
     std::unordered_map<std::string, std::filesystem::path> index_;  // lowercase relative path -> real path

@@ -909,6 +909,7 @@ void ClassicMode::background() {
 
 bool ClassicMode::updateFrame(const FrameState& fs) {
     art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
+    art_->setDetail(mapping_.scale);   // mods' larger pictures, made down to the frame's resolution
 
     if (!session_) {
         MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, options_.seedGiven, platform_.app, {}, {}, {}, {}, frontError_};

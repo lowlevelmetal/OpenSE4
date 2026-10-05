@@ -51,6 +51,7 @@ add_executable(opense4_tests
     test_net_resilience.cpp
     test_net_secure.cpp
     test_pbem_client.cpp
+    test_pictures.cpp
     test_platform.cpp
     test_redact.cpp
     test_research.cpp
@@ -101,6 +102,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/ui/imgui_errors.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/art.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp
