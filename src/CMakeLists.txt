@@ -111,6 +111,21 @@ add_library(opense4_game STATIC
     game/types.cpp)
 target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE tomlplusplus opense4_warnings)
 
+# --- mods: packages, mod sets, the layered game files and data patches -------------
+# (docs/MODDING_SDK.md, docs/sdk/packages-and-data.md)
+add_library(opense4_mods STATIC
+    mods/apply.cpp
+    mods/data_set.cpp
+    mods/generator.cpp
+    mods/manifest.cpp
+    mods/mod_set.cpp
+    mods/package.cpp
+    mods/patch.cpp
+    mods/tables.cpp
+    mods/version.cpp
+    mods/zip.cpp)
+target_link_libraries(opense4_mods PUBLIC opense4_game opense4_script PRIVATE tomlplusplus miniz monocypher opense4_warnings)
+
 # --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------
 # Headless: the content model, its loaders and the condition evaluator. The
 # client draws it; the tests check the built-in content with it.
