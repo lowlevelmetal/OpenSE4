@@ -232,10 +232,30 @@ What does not, or only approximately:
 
 ## Mods
 
-Classic mods are replacement data files, and sometimes replacement art. To play one,
-apply it to a **copy** of the game directory and pass that copy with
-`--classic-dir`. OpenSE4 reads whatever that directory contains. Run
+OpenSE4 layers mods over your installed game and never changes the game's own files.
+Put a mod (a folder or a `.zip`) in the `Mods` folder of OpenSE4's user folder (see
+below) and list its id in `classic_settings.toml` there:
+
+```toml
+[mods]
+enabled = ["example.common-lib", "example.better-carriers"]
+```
+
+or name it for one run with `--mod=PATH` (a folder or `.zip`, or the id of a mod in the
+mods folder; repeat for several, in load order). `--no-mods` plays without the mods the
+settings list, `--mods-dir=DIR` looks for ids in another folder. The log names every mod
+loaded, and a mod with an error stops the game with a message that names the mod, its
+file, the line and the record.
+
+Classic mods for the original (a folder of replacement data files and pictures, without
+a `mod.toml`) load the same way: `--mod=path/to/the/mod`. Applying one to a **copy** of
+the game directory and passing that copy with `--classic-dir` works too, as before; run
 `opense4-datacheck` on the copy first.
+
+Everyone in a network or e-mail game needs the same mods, apart from mods with only
+pictures and sounds; the lobby refuses a player whose mods differ and says which. A saved
+game remembers its mods. Making mods: [docs/sdk/packages-and-data.md](sdk/packages-and-data.md)
+and the `opense4-sdk` tool.
 
 ## Where OpenSE4 keeps its own files
 

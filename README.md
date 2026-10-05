@@ -95,15 +95,18 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
   - the Galaxy Map can show jump distances;
   - Help can search;
   - combat replays can list each turn's events.
-- **Mods:** `opense4-datacheck` checks a modded data set and names the file, line and
-  record of anything it doesn't understand.
+- **Mods:** packages of pictures, sounds and data patches layer over your installed game
+  without changing it; patches change single records, so mods combine. Classic mods load
+  as packages too. `opense4-sdk` makes, checks and packs mods, and `opense4-datacheck`
+  checks a modded data set and names the file, line and record of anything it doesn't
+  understand.
 - **Your games from the original:** Load Game opens the original's saved games and
   converts them, and Save Game can write a game back for the original, so a game moves
   between the two (docs/SETUP.md, "Games of the original"). `opense4-convert` does the same
   on the command line.
 
-**Planned:** a Steam release with multiplayer through Steam, Steam Workshop support, and a
-modding SDK with Python scripts. See "Future goals" in
+**Planned:** a Steam release with multiplayer through Steam, Steam Workshop support, and
+the rest of the modding SDK, with Python scripts (docs/MODDING_SDK.md). See "Future goals" in
 [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md#future-goals).
 
 ## System requirements
@@ -213,6 +216,7 @@ addition).
 ./build/debug/opense4 --classic-dir=/path/to/se4     # or point at it
 ./build/debug/opense4 --quick-start=Terran           # skip the intro
 ./build/debug/opense4-datacheck                      # validate an installed or modded data set
+./build/debug/opense4 --mod=path/to/a/mod            # play with a mod (docs/sdk/packages-and-data.md)
 ./build/debug/opense4 --load=/path/to/se4/SaveGame/GAME.gam   # play on a saved game of the original
 ./build/debug/opense4-convert --info GAME.gam        # describe a saved game of the original
 ./build/debug/opense4-server --players=2 --ai=3      # host a network game without playing
@@ -258,12 +262,25 @@ SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --layout=8
 
 ## Modding
 
-Mods for the original game are replacement data files, and sometimes replacement
-art. OpenSE4 plays whatever data set the game directory holds: apply the mod to a
-copy of the game directory and pass that copy with `--classic-dir`. Run
-`opense4-datacheck` on it first. It loads every data file and reports anything it
-does not understand with the file, line and record. See
-[docs/SETUP.md](docs/SETUP.md#mods).
+A mod is a folder or a `.zip` with a `mod.toml`. It can bring pictures, sounds, music and
+fonts, and change the data: **data patches** add, change and remove single records of
+any data file or computer players' table, by the data files' own field names, so several
+mods combine. Mods may declare new ability names. Everything is layered over your
+installed game in memory; nothing is written into it. Classic mods (replacement data
+files and pictures) load as packages too.
+
+```sh
+opense4 --mod=path/to/mymod                    # play with a mod (or list it in the settings)
+opense4-sdk new data mymod --id=me.mymod       # start one from a template
+opense4-sdk check mymod                        # apply it to your game and report every problem
+opense4-sdk pack mymod                         # a .zip to share
+```
+
+Every error names the mod, file, line and record; typos are errors. Network and e-mail
+games check that every player has the same game-changing mods. See
+[docs/sdk/packages-and-data.md](docs/sdk/packages-and-data.md) and
+[docs/SETUP.md](docs/SETUP.md#mods). Python scripts (computer players, rules hooks) come
+with later steps of the SDK ([docs/MODDING_SDK.md](docs/MODDING_SDK.md)).
 
 ## Layout
 
@@ -271,6 +288,7 @@ does not understand with the file, line and record. See
 src/core      math, deterministic RNG, typed ids, logging
 src/datafile  reader for the classic "Key := Value" data format
 src/ruleset   typed model of a complete classic data set
+src/mods      mod packages, mod sets, the layered game files, data patches
 src/game      classic-rules engine (implemented from docs/spec/)
 src/net       multiplayer: sessions, protocol, UPnP port mapping
 src/server    opense4-server: dedicated host and PBEM turn processor
