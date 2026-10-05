@@ -2846,14 +2846,14 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
 
 - **Files**:
   - `.emp`: a player's empire, sent before the start.
-  - `.gam`: the full state, produced by the host. (confirmed: binary) There is one game file
-    for all players. It holds every empire's full record, every design and every object,
-    including those a player cannot see (cloaked ships and colonies, mines, other empires'
-    fleets); nothing is filtered per player. A player's copy hides them only in its windows
-    (spec 01 §6.9 "What other players see"), so a player reading the file with another tool
-    sees everything. The e-mail host writes this one file; a TCP/IP host sends every player the
-    same game file, the same combat-replay and movement-replay files, and that player's own
-    history and statistics files.
+  - `.gam`: the full state, produced by the host (format: spec 08). (confirmed: binary)
+    There is one game file for all players. It holds every empire's full record, every
+    design and every object, including those a player cannot see (cloaked ships and
+    colonies, mines, other empires' fleets); nothing is filtered per player. A player's
+    copy hides them only in its windows (spec 01 §6.9 "What other players see"), so a
+    player reading the file with another tool sees everything. The e-mail host writes this
+    one file; a TCP/IP host sends every player the same game file, the same combat-replay
+    and movement-replay files, and that player's own history and statistics files.
   - `.plr`: one player's turn changes, deleted after processing.
   - `.trn`: the movement replay.
   - `.cmb`: the combat replays.

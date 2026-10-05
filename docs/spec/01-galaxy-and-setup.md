@@ -1492,7 +1492,7 @@ highlighted, and an X marks each empire that has met one.
     are not written as starting points.
   - OpenSE4's map format is described in [docs/MAPS.md](../MAPS.md). Maps live in the
     user's data folder, never in the install. The file layout is an OpenSE4 extension; the
-    original writes its own binary format.
+    original writes its own binary format, the saved-game container (spec 08 §1.3, §2).
 - **Scenarios/.** Each scenario is a triple:
   - `<Name>_Settings.txt`: one record with `Name`, `Description` and `Starting Game`,
     the filename of a prepared savegame in the same folder.

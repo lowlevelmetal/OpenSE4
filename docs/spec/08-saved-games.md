@@ -15,9 +15,9 @@ Sources checked:
   described here consumes every byte of both, ending exactly at the end of the file
   **(observed)**. Neither file, nor anything taken from it, is in this repository; §8
   gives counts only.
-- Fifteen saves of our own from one Quick Start game played in a scratch copy of the
-  original under Wine: a fresh start, then saves one action apart, diffed field by field
-  after decoding (§9).
+- Sixteen saves of our own made in a scratch copy of the original under Wine: a Quick
+  Start game saved fresh and then one action apart, diffed field by field after decoding,
+  and a simultaneous game made through Game Setup (§9).
 - Files written by our own encoder and loaded by the original (§9).
 
 Notation: integers are little-endian. `byte` is an unsigned 8-bit value, `word` an
@@ -335,10 +335,20 @@ a new options record. Everything **(confirmed: binary)**.
 | bool | Turn-based movement (on) | `simultaneous` = off |
 | bool | Simultaneous movement | `simultaneous` |
 | int | Combat replay counter | none; export 0 |
-| int | Game code: random, set at the first host save (0 before) | none; export 0 |
+| int | Game code: random 1..999,999,999 | none; export 0 |
 | int | Host turn code: new at each host save; a player changes file must carry the same game and turn codes | none; export 0 |
 | int | Byte sum of the host's program, never checked | none; export 0 |
 | int ×7 | Data-set checksums: components, facilities, vehicle sizes, planet sizes, tech areas, mounts, racial traits. Recomputed when a host processes a turn and compared only when a player signs in to a multiplayer game ("Invalid Data Files"); never on a normal load. | none; export 0 (§11.1 question 6 for multiplayer) |
+
+The game code, the turn code and the seven checksums were already set in a new
+simultaneous game saved right after its creation, and all 0 in a Quick Start
+(turn-based) game even after two turns **(observed)**.
+
+Setup choices checked by saving a new game made with them **(observed)**: quadrant type
+Spiral Arm (the fourth listed) is 4, Small is 1, finite resources on, event frequency
+High is 4, maximum severity Medium is 2, number of computer players Low is 1, difficulty
+High is 3, bonus Low is 2, autosave every 3 turns is 3, the game name typed is stored,
+and simultaneous movement sets the simultaneous flag and clears the turn-based one.
 
 None of these 32-bit values is a random-number state **(confirmed: binary)**.
 
@@ -1037,8 +1047,8 @@ For OpenSE4 this means:
   areas) or whose positions fall outside it.
 - **Export** must write positions for the data set the original will load. An OpenSE4
   game made with another ruleset cannot be exported meaningfully.
-- Many saves carry seven data-set checksums in the options (§3.2). Two saves made with
-  the stock data, one simultaneous and one turn-based, carry the same seven values, and a
+- Many saves carry seven data-set checksums in the options (§3.2). Three saves made with
+  the stock data (two simultaneous, one turn-based) carry the same seven values, and a
   Quick Start hotseat game still had all seven at 0 after two turns **(observed)**. When
   set they identify a data set even though their formula is not documented here (§11.1 question 6): an
   importer can keep a table of known values per data set and warn on a mismatch.
@@ -1307,7 +1317,8 @@ Tests an implementer can write without the original:
 3. **Parse to the end**: decoding must consume the file exactly; a remainder or an
    overrun means a wrong count or type. Run it on every `.gam` in the installed
    SaveGame folder as an opt-in test under `OPENSE4_CLASSIC_DATA` (no saves are fixtures).
-4. **Invariants** that held in every save examined (two foreign, eight of our own):
+4. **Invariants** that held in every save examined (the two found ones, our sixteen and
+   three files of our encoder):
    - player number = position + 1; system number = position + 1; design id = position +
      1; object id = position + 1; fleet number = position + 1;
    - every ship's design id is within the design list; every ship's fleet number is
@@ -1346,6 +1357,13 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
 - Files written by our own encoder were loaded: a re-encoded save with new keys; the same
   with the homeworld renamed (the new name and the construction queue appeared); and a
   file with a correct selector but a wrong K6 (it loaded).
+- The large third-party save loaded in the original. Its date, the current player's
+  empire, leader and treasury, the system shown, the display switches of the empire
+  options (planet and warp point names, grids, markers) and one planet's sector, size,
+  surface, atmosphere (through its sector type) and three values all matched the decoded
+  fields.
+- A new game made through Game Setup with non-default choices (§3.2) was saved and its
+  option codes read back.
 - The Load Game window lists `.gam` files by name and file date only.
 
 ---

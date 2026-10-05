@@ -336,8 +336,8 @@ type gets 10.0 % calmer.
 
 ### 1.10 Empire files and race presets
 
-**`Empires/*.emp`** files are binary and look scrambled. Do not decode them: clean-room
-rules forbid it and we do not need them. Our engine defines its own TOML empire format.
+**`Empires/*.emp`** files are binary: the saved-game container holding one empire record
+(spec 08 §1.3, §3.6). Our engine defines its own TOML empire format.
 
 A saved empire holds:
 - everything in §9;
