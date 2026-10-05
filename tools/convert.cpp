@@ -17,6 +17,8 @@
 #include "ruleset/ruleset.hpp"
 
 #include <cstdio>
+#include <cstdlib>
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <memory>

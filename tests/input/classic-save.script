@@ -9,6 +9,9 @@ options --quick-start --empires=3 --seed=7 --turns=3 --open=none --layout=1024x7
 
 wait-screen game
 wait 5
+# On the fixtures the player is soon alone: the conquest ending, then play on.
+click item:Close in=finale optional
+click item:Yes in=finale optional
 click item:"*(suggested)" in="Colony Type" optional
 # Save Game, then Save for SE IV under the save's name ("<empire> 2400.3").
 key F2
@@ -40,7 +43,10 @@ key Enter
 wait-gone item:Default in="Change Directory"
 wait-for item:"* 2400.3" in=load-game
 click item:"* 2400.3" in=load-game
-# The import's note, then the game.
+# The import's note, then the game (on the fixtures the conquest ending first, again).
+wait 5
+click item:Close in=finale optional
+click item:Yes in=finale optional
 wait-for item:OK in="Space Empires IV Game Imported"
 screenshot imported.png
 click item:OK in="Space Empires IV Game Imported"
