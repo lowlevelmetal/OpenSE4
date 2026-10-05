@@ -1,0 +1,1047 @@
+OpenSE4's changes to MicroPython 1.29.0 (tools/update_micropython.sh applies them).
+They add hooks that the script runtime's port (src/script/port) fills in; with the
+hooks left at their defaults MicroPython behaves as before.
+
+- Budget: MICROPY_VM_HOOK_OPCODE runs before every bytecode (py/vm.c). Native work
+  that has no bytecode of its own is charged with MICROPY_BUDGET_CHARGE (C-level
+  iteration in py/runtime.c, big-number multiplication, division and conversion in
+  py/mpz.c, regular expression backtracking in extmod/modre.c, substring search in
+  py/objstr.c) or, where raising mid-change would be unsafe, MICROPY_BUDGET_DEBIT
+  (hash collisions in py/map.c).
+- Call depth: MICROPY_CALL_DEPTH_CHECK/ENTER/EXIT around the execution of bytecode
+  functions and generators (py/objfun.c, py/objgenerator.c).
+- Hashes the same on every platform: integers (small or big) and whole-valued floats
+  hash as their value modulo MICROPY_HASH_INT_MODULUS (py/runtime.c, py/mpz.c,
+  py/objfloat.c); every hash is limited by MICROPY_HASH_MASK; tuples, frozensets and
+  bound methods hash from their parts, never from an address (py/objtuple.c,
+  py/objset.c, py/objboundmeth.c).
+- Object identity without addresses: MICROPY_OBJ_IDENTITY for hash() of objects
+  without a value hash, MICROPY_OBJ_ID_VALUE for id() of objects and interned
+  strings, an identity field in class instances set from MICROPY_OBJ_NEW_IDENTITY
+  (py/objtype.h, py/objtype.c, py/obj.c), and MICROPY_PRINT_POINTER_VALUE for "%p"
+  in reprs (py/mpprint.c).
+- MICROPY_PORT_IMPORT_LOAD lets the port supply a module's compiled code, e.g. from
+  a cache (py/builtinimport.c).
+- MICROPY_MAP_INSERTION_ORDER: dicts, instance attributes and module globals keep
+  their keys in insertion order, as in CPython, with their hashes stored and an
+  index beside the entries (py/map.c, py/obj.h; dict.copy and dict.popitem in
+  py/objdict.c).
+- MICROPY_COMP_CLASS_ANNOTATIONS: annotated names in a class body are recorded,
+  in order, in the class's __annotations__ as short texts (py/compile.c,
+  py/scope.h), so that dataclasses can find their fields.
+- MICROPY_PY_MATH_EXTENSIBLE makes math an extensible built-in, so that a math.py
+  can add functions to it (py/modmath.c).
+- MICROPY_PY_DICT_UPDATE_FROM_SUBCLASS: dict(x) and d.update(x) read a Python
+  subclass of dict (defaultdict, Counter) as a dict (py/objdict.c).
+- MICROPY_LIST_SORT lets the port provide list.sort (py/objlist.c).
+- MICROPY_PY_BUILTINS_OPEN leaves out open() while keeping io's in-memory streams
+  (py/modbuiltins.c, py/modio.c).
+- MICROPY_FLOAT_C_FUN may be defined by the port (py/mpconfig.h); MP_SYS_MAXSIZE
+  sets sys.maxsize (py/objint_mpz.c); MICROPY_NATIVE_LONG_SIZE sets the size of the
+  native 'l' and 'L' codes of struct and array (py/binary.c).
+
+diff -ru a/extmod/modre.c b/extmod/modre.c
+--- a/extmod/modre.c
++++ b/extmod/modre.c
+@@ -39,7 +39,7 @@
+ 
+ #if MICROPY_PY_RE
+ 
+-#define re1_5_stack_chk() mp_cstack_check()
++#define re1_5_stack_chk() do { mp_cstack_check(); MICROPY_BUDGET_CHARGE(1); } while (0)
+ 
+ #include "lib/re1.5/re1.5.h"
+ 
+diff -ru a/py/binary.c b/py/binary.c
+--- a/py/binary.c
++++ b/py/binary.c
+@@ -117,8 +117,12 @@
+                     break;
+                 case 'l':
+                 case 'L':
++                    #ifdef MICROPY_NATIVE_LONG_SIZE
++                    align = size = MICROPY_NATIVE_LONG_SIZE;
++                    #else
+                     align = alignof(long);
+                     size = sizeof(long);
++                    #endif
+                     break;
+                 case 'q':
+                 case 'Q':
+diff -ru a/py/builtinimport.c b/py/builtinimport.c
+--- a/py/builtinimport.c
++++ b/py/builtinimport.c
+@@ -201,6 +201,19 @@
+     const char *file_str = vstr_null_terminated_str(file);
+     #endif
+ 
++    #if defined(MICROPY_PORT_IMPORT_LOAD) && MICROPY_HAS_FILE_READER && MICROPY_PERSISTENT_CODE_LOAD
++    // The port may provide the module's compiled code itself (e.g. from a cache);
++    // MICROPY_PORT_IMPORT_LOAD returns false to load the file as usual.
++    {
++        mp_compiled_module_t cm;
++        cm.context = module_obj;
++        if (MICROPY_PORT_IMPORT_LOAD(vstr_null_terminated_str(file), &cm)) {
++            do_execute_proto_fun(cm.context, cm.rc, qstr_from_str(vstr_null_terminated_str(file)));
++            return;
++        }
++    }
++    #endif
++
+     // If we support frozen modules (either as str or mpy) then try to find the
+     // requested filename in the list of frozen module filenames.
+     #if MICROPY_MODULE_FROZEN
+diff -ru a/py/compile.c b/py/compile.c
+--- a/py/compile.c
++++ b/py/compile.c
+@@ -2003,6 +2003,60 @@
+ }
+ #endif
+ 
++#if MICROPY_COMP_CLASS_ANNOTATIONS
++// The text recorded for an annotation: names, attributes and brackets kept as
++// written ("typing.ClassVar[...]"), a string's own text, "..." for anything else.
++static void annotation_text(vstr_t *vstr, mp_parse_node_t pn) {
++    if (MP_PARSE_NODE_IS_ID(pn) || (MP_PARSE_NODE_IS_LEAF(pn) && MP_PARSE_NODE_LEAF_KIND(pn) == MP_PARSE_NODE_STRING)) {
++        vstr_add_str(vstr, qstr_str(MP_PARSE_NODE_LEAF_ARG(pn)));
++        return;
++    }
++    if (!MP_PARSE_NODE_IS_STRUCT_KIND(pn, PN_atom_expr_normal)) {
++        vstr_add_str(vstr, "...");
++        return;
++    }
++    mp_parse_node_struct_t *pns = (mp_parse_node_struct_t *)pn;
++    annotation_text(vstr, pns->nodes[0]);
++    mp_parse_node_t *trailers = &pns->nodes[1];
++    size_t n = 1;
++    if (MP_PARSE_NODE_IS_STRUCT_KIND(pns->nodes[1], PN_atom_expr_trailers)) {
++        mp_parse_node_struct_t *pns1 = (mp_parse_node_struct_t *)pns->nodes[1];
++        trailers = pns1->nodes;
++        n = MP_PARSE_NODE_STRUCT_NUM_NODES(pns1);
++    }
++    for (size_t i = 0; i < n; i++) {
++        if (MP_PARSE_NODE_IS_STRUCT_KIND(trailers[i], PN_trailer_period)) {
++            mp_parse_node_struct_t *t = (mp_parse_node_struct_t *)trailers[i];
++            vstr_add_char(vstr, '.');
++            vstr_add_str(vstr, qstr_str(MP_PARSE_NODE_LEAF_ARG(t->nodes[0])));
++        } else if (MP_PARSE_NODE_IS_STRUCT_KIND(trailers[i], PN_trailer_bracket)) {
++            vstr_add_str(vstr, "[...]");
++        } else {
++            vstr_add_str(vstr, "(...)");
++        }
++    }
++}
++
++// In a class body: __annotations__[name] = '<annotation text>'.
++static void compile_class_annotation(compiler_t *comp, qstr name, mp_parse_node_t pn_annotation) {
++    if (comp->pass == MP_PASS_SCOPE) {
++        comp->scope_cur->has_annotations = true;
++        compile_store_id(comp, MP_QSTR___annotations__);
++        compile_load_id(comp, MP_QSTR___annotations__);
++        return;
++    }
++    vstr_t vstr;
++    vstr_init(&vstr, 16);
++    annotation_text(&vstr, pn_annotation);
++    qstr text = qstr_from_strn(vstr.buf, vstr.len);
++    vstr_clear(&vstr);
++    EMIT_ARG(load_const_str, text);
++    compile_load_id(comp, MP_QSTR___annotations__);
++    EMIT_ARG(load_const_str, name);
++    EMIT_ARG(subscr, MP_EMIT_SUBSCR_STORE);
++}
++#endif
++
+ static void compile_expr_stmt(compiler_t *comp, mp_parse_node_struct_t *pns) {
+     mp_parse_node_t pn_rhs = pns->nodes[1];
+     if (MP_PARSE_NODE_IS_NULL(pn_rhs)) {
+@@ -2027,7 +2081,12 @@
+         mp_parse_node_struct_t *pns1 = (mp_parse_node_struct_t *)pn_rhs;
+         int kind = MP_PARSE_NODE_STRUCT_KIND(pns1);
+         if (kind == PN_annassign) {
+-            // the annotation is in pns1->nodes[0] and is ignored
++            // the annotation is in pns1->nodes[0] and is ignored (but see below)
++            #if MICROPY_COMP_CLASS_ANNOTATIONS
++            if (comp->scope_cur->kind == SCOPE_CLASS && MP_PARSE_NODE_IS_ID(pns->nodes[0])) {
++                compile_class_annotation(comp, MP_PARSE_NODE_LEAF_ARG(pns->nodes[0]), pns1->nodes[0]);
++            }
++            #endif
+             if (MP_PARSE_NODE_IS_NULL(pns1->nodes[1])) {
+                 // an annotation of the form "x: y"
+                 // inside a function this declares "x" as a local
+@@ -3185,6 +3244,14 @@
+         EMIT_ARG(load_const_str, MP_PARSE_NODE_LEAF_ARG(pns->nodes[0])); // 0 is class name
+         compile_store_id(comp, MP_QSTR___qualname__);
+ 
++        #if MICROPY_COMP_CLASS_ANNOTATIONS
++        // known from the first pass, which visits the body's annotations
++        if (comp->pass != MP_PASS_SCOPE && scope->has_annotations) {
++            EMIT_ARG(build, 0, MP_EMIT_BUILD_MAP);
++            compile_store_id(comp, MP_QSTR___annotations__);
++        }
++        #endif
++
+         check_for_doc_string(comp, pns->nodes[2]);
+         compile_node(comp, pns->nodes[2]); // 2 is class body
+ 
+diff -ru a/py/map.c b/py/map.c
+--- a/py/map.c
++++ b/py/map.c
+@@ -86,13 +86,89 @@
+ /******************************************************************************/
+ /* map                                                                        */
+ 
++#if MICROPY_MAP_INSERTION_ORDER
++// A hash map keeps its entries in the order they were added, as CPython's dicts
++// do: table[0, alloc) holds the entries (a deleted one keeps its place, with a
++// SENTINEL key; entries past the used ones have a NULL key), so iterating over the
++// table as before visits them in insertion order. After the entries, in the same
++// block: the number of entries used so far, their hashes, and an open-addressing
++// index from hash to entry number + 1 (0: empty, MAP_INDEX_DUMMY: deleted).
++// Ordered maps (OrderedDict, fixed tables) are linear arrays, as before.
++#define MAP_INDEX_DUMMY (0xffffffffu)
++
++static size_t map_index_size(size_t alloc) {
++    size_t n = 4;
++    while (n < alloc + alloc / 2 + 1) {
++        n *= 2;
++    }
++    return n;
++}
++
++static size_t map_block_bytes(size_t alloc) {
++    return alloc * sizeof(mp_map_elem_t) + sizeof(uint32_t) * (1 + alloc + map_index_size(alloc));
++}
++
++static inline uint32_t *map_meta(const mp_map_t *map) {
++    return (uint32_t *)(void *)(map->table + map->alloc);
++}
++#define MAP_FILLED(map) (map_meta(map)[0])
++#define MAP_HASHES(map) (map_meta(map) + 1)
++#define MAP_INDEX(map) (map_meta(map) + 1 + (map)->alloc)
++
++// Moves the live entries, in order, into a new block of `alloc` entries. Allocation
++// happens first, so a MemoryError leaves the map as it was; nothing else can fail.
++static void map_rebuild(mp_map_t *map, size_t alloc) {
++    mp_map_elem_t *old = map->table;
++    uint32_t old_filled = old != NULL ? MAP_FILLED(map) : 0;
++    const uint32_t *old_hashes = old != NULL ? MAP_HASHES(map) : NULL;
++    mp_map_elem_t *table = m_malloc0(map_block_bytes(alloc));
++    map->table = table;
++    map->alloc = alloc;
++    uint32_t *hashes = MAP_HASHES(map);
++    uint32_t *index = MAP_INDEX(map);
++    size_t mask = map_index_size(alloc) - 1;
++    uint32_t n = 0;
++    for (uint32_t i = 0; i < old_filled; i++) {
++        if (old[i].key != MP_OBJ_NULL && old[i].key != MP_OBJ_SENTINEL) {
++            table[n] = old[i];
++            hashes[n] = old_hashes[i];
++            size_t pos = hashes[n] & mask;
++            while (index[pos] != 0) {
++                pos = (pos + 1) & mask;
++            }
++            index[pos] = n + 1;
++            n++;
++        }
++    }
++    MAP_FILLED(map) = n;
++    if (old != NULL) {
++        m_free(old);
++    }
++}
++
++size_t mp_map_table_bytes(const mp_map_t *map) {
++    if (map->is_ordered || map->table == NULL) {
++        return map->alloc * sizeof(mp_map_elem_t);
++    }
++    return map_block_bytes(map->alloc);
++}
++#else
++size_t mp_map_table_bytes(const mp_map_t *map) {
++    return map->alloc * sizeof(mp_map_elem_t);
++}
++#endif
++
+ void mp_map_init(mp_map_t *map, size_t n) {
+     if (n == 0) {
+         map->alloc = 0;
+         map->table = NULL;
+     } else {
+         map->alloc = n;
++        #if MICROPY_MAP_INSERTION_ORDER
++        map->table = m_malloc0(map_block_bytes(n));
++        #else
+         map->table = m_new0(mp_map_elem_t, map->alloc);
++        #endif
+     }
+     map->used = 0;
+     map->all_keys_are_qstrs = 1;
+@@ -128,6 +204,7 @@
+     map->table = NULL;
+ }
+ 
++#if !MICROPY_MAP_INSERTION_ORDER
+ static void mp_map_rehash(mp_map_t *map) {
+     size_t old_alloc = map->alloc;
+     size_t new_alloc = get_hash_alloc_greater_or_equal_to(map->alloc + 1);
+@@ -146,6 +223,7 @@
+     }
+     m_del(mp_map_elem_t, old_table, old_alloc);
+ }
++#endif
+ 
+ // MP_MAP_LOOKUP behaviour:
+ //  - returns NULL if not found, else the slot it was found in with key,value non-null
+@@ -190,6 +268,7 @@
+ 
+     // if the map is an ordered array then we must do a brute force linear search
+     if (map->is_ordered) {
++        MICROPY_BUDGET_DEBIT(map->used >> 3);
+         for (mp_map_elem_t *elem = &map->table[0], *top = &map->table[map->used]; elem < top; elem++) {
+             if (elem->key == index || (!compare_only_ptrs && mp_obj_equal(elem->key, index))) {
+                 #if MICROPY_PY_COLLECTIONS_ORDEREDDICT
+@@ -233,6 +312,72 @@
+ 
+     // map is a hash table (not an ordered array), so do a hash lookup
+ 
++    #if MICROPY_MAP_INSERTION_ORDER
++    if (map->alloc == 0) {
++        if (lookup_kind != MP_MAP_LOOKUP_ADD_IF_NOT_FOUND) {
++            return NULL;
++        }
++        map_rebuild(map, get_hash_alloc_greater_or_equal_to(1));
++    }
++    uint32_t hash32;
++    if (mp_obj_is_qstr(index)) {
++        hash32 = (uint32_t)qstr_hash(MP_OBJ_QSTR_VALUE(index));
++    } else {
++        hash32 = (uint32_t)MP_OBJ_SMALL_INT_VALUE(mp_unary_op(MP_UNARY_OP_HASH, index));
++    }
++    for (;;) {
++        uint32_t *hashes = MAP_HASHES(map);
++        uint32_t *idx = MAP_INDEX(map);
++        size_t mask = map_index_size(map->alloc) - 1;
++        size_t pos = hash32 & mask;
++        size_t avail = (size_t)-1;
++        for (;;) {
++            uint32_t s = idx[pos];
++            if (s == 0) {
++                break;
++            }
++            if (s == MAP_INDEX_DUMMY || map->table[s - 1].key == MP_OBJ_SENTINEL) {
++                // deleted (a SENTINEL key: deleted without the index, e.g. by popitem)
++                if (avail == (size_t)-1) {
++                    avail = pos;
++                }
++            } else {
++                mp_map_elem_t *elem = &map->table[s - 1];
++                if (elem->key == index || (!compare_only_ptrs && hashes[s - 1] == hash32 && mp_obj_equal(elem->key, index))) {
++                    if (lookup_kind == MP_MAP_LOOKUP_REMOVE_IF_FOUND) {
++                        // keep elem->value so that the caller can access it
++                        map->used--;
++                        elem->key = MP_OBJ_SENTINEL;
++                        idx[pos] = MAP_INDEX_DUMMY;
++                    }
++                    return elem;
++                }
++            }
++            MICROPY_BUDGET_DEBIT(1);
++            pos = (pos + 1) & mask;
++        }
++        if (lookup_kind != MP_MAP_LOOKUP_ADD_IF_NOT_FOUND) {
++            return NULL;
++        }
++        uint32_t filled = MAP_FILLED(map);
++        if (filled == map->alloc) {
++            // no room after the last entry: drop the deleted ones, or grow
++            map_rebuild(map, map->used + map->used / 3 < map->alloc ? map->alloc : get_hash_alloc_greater_or_equal_to(map->alloc + 1));
++            continue;
++        }
++        mp_map_elem_t *elem = &map->table[filled];
++        elem->key = index;
++        elem->value = MP_OBJ_NULL;
++        hashes[filled] = hash32;
++        idx[avail != (size_t)-1 ? avail : pos] = filled + 1;
++        MAP_FILLED(map) = filled + 1;
++        map->used++;
++        if (!mp_obj_is_qstr(index)) {
++            map->all_keys_are_qstrs = 0;
++        }
++        return elem;
++    }
++    #else
+     if (map->alloc == 0) {
+         if (lookup_kind == MP_MAP_LOOKUP_ADD_IF_NOT_FOUND) {
+             mp_map_rehash(map);
+@@ -294,6 +439,7 @@
+         }
+ 
+         // not yet found, keep searching in this table
++        MICROPY_BUDGET_DEBIT(1);
+         pos = (pos + 1) % map->alloc;
+ 
+         if (pos == start_pos) {
+@@ -319,6 +465,7 @@
+             }
+         }
+     }
++    #endif
+ }
+ 
+ /******************************************************************************/
+@@ -396,6 +543,7 @@
+         }
+ 
+         // not yet found, keep searching in this table
++        MICROPY_BUDGET_DEBIT(1);
+         pos = (pos + 1) % set->alloc;
+ 
+         if (pos == start_pos) {
+diff -ru a/py/modbuiltins.c b/py/modbuiltins.c
+--- a/py/modbuiltins.c
++++ b/py/modbuiltins.c
+@@ -724,7 +724,7 @@
+     #endif
+     { MP_ROM_QSTR(MP_QSTR_next), MP_ROM_PTR(&mp_builtin_next_obj) },
+     { MP_ROM_QSTR(MP_QSTR_oct), MP_ROM_PTR(&mp_builtin_oct_obj) },
+-    #if MICROPY_PY_IO
++    #if MICROPY_PY_IO && MICROPY_PY_BUILTINS_OPEN
+     { MP_ROM_QSTR(MP_QSTR_open), MP_ROM_PTR(&mp_builtin_open_obj) },
+     #endif
+     { MP_ROM_QSTR(MP_QSTR_ord), MP_ROM_PTR(&mp_builtin_ord_obj) },
+diff -ru a/py/modio.c b/py/modio.c
+--- a/py/modio.c
++++ b/py/modio.c
+@@ -211,7 +211,9 @@
+     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_io) },
+     // Note: mp_builtin_open_obj should be defined by port, it's not
+     // part of the core.
++    #if MICROPY_PY_BUILTINS_OPEN
+     { MP_ROM_QSTR(MP_QSTR_open), MP_ROM_PTR(&mp_builtin_open_obj) },
++    #endif
+     #if MICROPY_PY_IO_IOBASE
+     { MP_ROM_QSTR(MP_QSTR_IOBase), MP_ROM_PTR(&mp_type_iobase) },
+     #endif
+diff -ru a/py/modmath.c b/py/modmath.c
+--- a/py/modmath.c
++++ b/py/modmath.c
+@@ -454,6 +454,10 @@
+     .globals = (mp_obj_dict_t *)&mp_module_math_globals,
+ };
+ 
++#if MICROPY_PY_MATH_EXTENSIBLE
++MP_REGISTER_EXTENSIBLE_MODULE(MP_QSTR_math, mp_module_math);
++#else
+ MP_REGISTER_MODULE(MP_QSTR_math, mp_module_math);
++#endif
+ 
+ #endif // MICROPY_PY_BUILTINS_FLOAT && MICROPY_PY_MATH
+diff -ru a/py/mpconfig.h b/py/mpconfig.h
+--- a/py/mpconfig.h
++++ b/py/mpconfig.h
+@@ -759,6 +759,95 @@
+ #define MICROPY_VM_HOOK_RETURN
+ #endif
+ 
++// Hook called before each bytecode is dispatched (it may RAISE an exception as if
++// that bytecode had raised it).
++#ifndef MICROPY_VM_HOOK_OPCODE
++#define MICROPY_VM_HOOK_OPCODE
++#endif
++
++// Charges native work to a port's execution budget; may raise.
++#ifndef MICROPY_BUDGET_CHARGE
++#define MICROPY_BUDGET_CHARGE(units) ((void)0)
++#endif
++
++// Charges native work without raising (for places where raising would leave a
++// structure half-built); the next bytecode or charge reports an exhausted budget.
++#ifndef MICROPY_BUDGET_DEBIT
++#define MICROPY_BUDGET_DEBIT(units) ((void)0)
++#endif
++
++// Python call depth: checked (may raise) before a bytecode function or generator
++// runs, counted around its execution.
++#ifndef MICROPY_CALL_DEPTH_CHECK
++#define MICROPY_CALL_DEPTH_CHECK() ((void)0)
++#define MICROPY_CALL_DEPTH_ENTER() ((void)0)
++#define MICROPY_CALL_DEPTH_EXIT() ((void)0)
++#endif
++
++// Hashing. MICROPY_HASH_MASK limits every hash; MICROPY_HASH_INT_MODULUS, when
++// non-zero, hashes an integer of any size as its value modulo this number, so that
++// small and big representations agree on every word size.
++#ifndef MICROPY_HASH_MASK
++#define MICROPY_HASH_MASK (MP_SMALL_INT_POSITIVE_MASK)
++#endif
++#ifndef MICROPY_HASH_INT_MODULUS
++#define MICROPY_HASH_INT_MODULUS (0)
++#endif
++
++// The identity of an object without a value hash, for hash() and id(). The default
++// is its address; a port may number objects instead.
++#ifndef MICROPY_OBJ_IDENTITY
++#define MICROPY_OBJ_IDENTITY(o) ((mp_uint_t)(o))
++#endif
++#ifndef MICROPY_OBJ_ID_VALUE
++#define MICROPY_OBJ_ID_VALUE(o) ((mp_uint_t)(o))
++#endif
++// The identity stored in each new class instance (0: none, use the default).
++#ifndef MICROPY_OBJ_NEW_IDENTITY
++#define MICROPY_OBJ_NEW_IDENTITY() (0)
++#endif
++
++// The value printed for %p (object addresses in reprs).
++#ifndef MICROPY_PRINT_POINTER_VALUE
++#define MICROPY_PRINT_POINTER_VALUE(p) (p)
++#endif
++
++// Whether open() exists (builtins and io), when MICROPY_PY_IO is on.
++#ifndef MICROPY_PY_BUILTINS_OPEN
++#define MICROPY_PY_BUILTINS_OPEN (MICROPY_PY_IO)
++#endif
++
++// Hash maps (dict, instance attributes, module globals) iterate in insertion
++// order, as in CPython 3.7+, instead of hash order.
++#ifndef MICROPY_MAP_INSERTION_ORDER
++#define MICROPY_MAP_INSERTION_ORDER (0)
++#endif
++
++// Annotated names in a class body ("x: int", "y: int = 0") are recorded in the
++// class's __annotations__ dict, in order, each as a short text ("int",
++// "ClassVar[...]"), as with "from __future__ import annotations". Lets
++// dataclasses find their fields.
++#ifndef MICROPY_COMP_CLASS_ANNOTATIONS
++#define MICROPY_COMP_CLASS_ANNOTATIONS (0)
++#endif
++
++// Whether "math" is an extensible built-in module (a math.py on the path then
++// takes its place and can import the built-in one as umath).
++#ifndef MICROPY_PY_MATH_EXTENSIBLE
++#define MICROPY_PY_MATH_EXTENSIBLE (0)
++#endif
++
++// dict(x), d.update(x) and {**x} read an instance of a Python subclass of dict
++// (a defaultdict, a Counter) as the dict it is, not as a sequence of pairs.
++#ifndef MICROPY_PY_DICT_UPDATE_FROM_SUBCLASS
++#define MICROPY_PY_DICT_UPDATE_FROM_SUBCLASS (0)
++#endif
++
++// sys.maxsize
++#ifndef MP_SYS_MAXSIZE
++#define MP_SYS_MAXSIZE MP_SSIZE_MAX
++#endif
++
+ // Hook for mp_sched_schedule when a function gets scheduled on sched_queue
+ // (this macro executes within an atomic section)
+ #ifndef MICROPY_SCHED_HOOK_SCHEDULED
+@@ -973,7 +1062,9 @@
+ #elif MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
+ #define MICROPY_PY_BUILTINS_FLOAT (1)
+ #define MICROPY_FLOAT_CONST(x) x
++#ifndef MICROPY_FLOAT_C_FUN
+ #define MICROPY_FLOAT_C_FUN(fun) fun
++#endif
+ typedef double mp_float_t;
+ #else
+ #define MICROPY_PY_BUILTINS_FLOAT (0)
+diff -ru a/py/mpprint.c b/py/mpprint.c
+--- a/py/mpprint.c
++++ b/py/mpprint.c
+@@ -565,7 +565,7 @@
+                 char fmt_chr = *fmt;
+                 mp_uint_t val;
+                 if (fmt_chr == 'p' || fmt_chr == 'P') {
+-                    val = va_arg(args, uintptr_t);
++                    val = MICROPY_PRINT_POINTER_VALUE(va_arg(args, uintptr_t));
+                 }
+                 #if SUPPORT_LL_FORMAT
+                 else if (long_long_arg) {
+diff -ru a/py/mpz.c b/py/mpz.c
+--- a/py/mpz.c
++++ b/py/mpz.c
+@@ -433,6 +433,7 @@
+    can have j, k point to same memory
+ */
+ static size_t mpn_mul(mpz_dig_t *idig, mpz_dig_t *jdig, size_t jlen, mpz_dig_t *kdig, size_t klen) {
++    MICROPY_BUDGET_CHARGE(((uint64_t)jlen * klen) >> 4);
+     mpz_dig_t *oidig = idig;
+     size_t ilen = 0;
+ 
+@@ -464,6 +465,7 @@
+    assumes quo_dig is filled with zeros
+ */
+ static void mpn_div(mpz_dig_t *num_dig, size_t *num_len, const mpz_dig_t *den_dig, size_t den_len, mpz_dig_t *quo_dig, size_t *quo_len) {
++    MICROPY_BUDGET_CHARGE(((uint64_t)*num_len * den_len) >> 4);
+     mpz_dig_t *orig_num_dig = num_dig;
+     mpz_dig_t *orig_quo_dig = quo_dig;
+     mpz_dig_t norm_shift = 0;
+@@ -820,6 +822,7 @@
+     const char *cur = str;
+     const char *top = str + len;
+ 
++    MICROPY_BUDGET_CHARGE(((uint64_t)len * len) >> 6);
+     mpz_need_dig(z, len * 8 / DIG_SIZE + 1);
+ 
+     if (neg) {
+@@ -1543,6 +1546,19 @@
+ 
+ // must return actual int value if it fits in mp_int_t
+ mp_int_t mpz_hash(const mpz_t *z) {
++    #if MICROPY_HASH_INT_MODULUS
++    {
++        const uint64_t m = (uint64_t)MICROPY_HASH_INT_MODULUS;
++        uint64_t r = 0;
++        for (size_t i = z->len; i > 0; i--) {
++            r = ((r << DIG_SIZE) | z->dig[i - 1]) % m;
++        }
++        if (z->neg != 0 && r != 0) {
++            r = m - r;
++        }
++        return (mp_int_t)r;
++    }
++    #endif
+     mp_uint_t val = 0;
+     mpz_dig_t *d = z->dig + z->len;
+ 
+@@ -1688,6 +1704,7 @@
+     assert(2 <= base && base <= 32);
+ 
+     size_t ilen = i->len;
++    MICROPY_BUDGET_CHARGE(((uint64_t)ilen * ilen) >> 4);
+ 
+     int n_comma = (base == 10) ? 3 : 4;
+ 
+diff -ru a/py/objboundmeth.c b/py/objboundmeth.c
+--- a/py/objboundmeth.c
++++ b/py/objboundmeth.c
+@@ -86,8 +86,11 @@
+ static mp_obj_t bound_meth_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
+     mp_obj_bound_meth_t *self = MP_OBJ_TO_PTR(self_in);
+     switch (op) {
+-        case MP_UNARY_OP_HASH:
+-            return MP_OBJ_NEW_SMALL_INT((mp_uint_t)self->self ^ (mp_uint_t)self->meth);
++        case MP_UNARY_OP_HASH: {
++            mp_uint_t h1 = (mp_uint_t)MP_OBJ_SMALL_INT_VALUE(mp_unary_op(MP_UNARY_OP_HASH, self->self));
++            mp_uint_t h2 = (mp_uint_t)MP_OBJ_SMALL_INT_VALUE(mp_unary_op(MP_UNARY_OP_HASH, self->meth));
++            return MP_OBJ_NEW_SMALL_INT((mp_int_t)(((h1 * 1000003u) ^ h2) & (mp_uint_t)MICROPY_HASH_MASK));
++        }
+         default:
+             return MP_OBJ_NULL; // op not supported
+     }
+diff -ru a/py/obj.c b/py/obj.c
+--- a/py/obj.c
++++ b/py/obj.c
+@@ -518,9 +518,12 @@
+ 
+ mp_obj_t mp_obj_id(mp_obj_t o_in) {
+     mp_int_t id = (mp_int_t)o_in;
+-    if (!mp_obj_is_obj(o_in)) {
++    if (!mp_obj_is_obj(o_in) && !mp_obj_is_qstr(o_in)) {
+         return mp_obj_new_int(id);
+-    } else if (id >= 0) {
++    }
++    // objects, and interned strings (whose numbers depend on when they were interned)
++    id = (mp_int_t)MICROPY_OBJ_ID_VALUE(o_in);
++    if (id >= 0) {
+         // Many OSes and CPUs have affinity for putting "user" memories
+         // into low half of address space, and "system" into upper half.
+         // We're going to take advantage of that and return small int
+diff -ru a/py/objdict.c b/py/objdict.c
+--- a/py/objdict.c
++++ b/py/objdict.c
+@@ -269,7 +269,7 @@
+     other->map.all_keys_are_qstrs = self->map.all_keys_are_qstrs;
+     other->map.is_fixed = 0;
+     other->map.is_ordered = self->map.is_ordered;
+-    memcpy(other->map.table, self->map.table, self->map.alloc * sizeof(mp_map_elem_t));
++    memcpy(other->map.table, self->map.table, mp_map_table_bytes(&self->map));
+     return other_out;
+ }
+ static MP_DEFINE_CONST_FUN_OBJ_1(dict_copy_obj, mp_obj_dict_copy);
+@@ -364,6 +364,12 @@
+         cur = self->map.used - 1;
+     }
+     #endif
++    #if MICROPY_MAP_INSERTION_ORDER
++    // the last item inserted, as in CPython
++    for (cur = self->map.alloc; cur > 0 && !mp_map_slot_is_filled(&self->map, cur - 1); cur--) {
++    }
++    cur--;
++    #endif
+     mp_map_elem_t *next = dict_iter_next(self, &cur);
+     assert(next);
+     self->map.used--;
+@@ -385,13 +391,23 @@
+ 
+     if (n_args == 2) {
+         // given a positional argument
++        mp_obj_t other = args[1];
++        #if MICROPY_PY_DICT_UPDATE_FROM_SUBCLASS
++        if (!mp_obj_is_dict_or_ordereddict(other) && mp_obj_is_obj(other)
++            && (mp_obj_get_type(other)->flags & MP_TYPE_FLAG_INSTANCE_TYPE)) {
++            mp_obj_t base = mp_obj_cast_to_native_base(other, MP_OBJ_FROM_PTR(&mp_type_dict));
++            if (base != MP_OBJ_NULL && mp_obj_is_dict_or_ordereddict(base)) {
++                other = base;
++            }
++        }
++        #endif
+ 
+-        if (mp_obj_is_dict_or_ordereddict(args[1])) {
++        if (mp_obj_is_dict_or_ordereddict(other)) {
+             // update from other dictionary (make sure other is not self)
+-            if (args[1] != args[0]) {
++            if (other != args[0]) {
+                 size_t cur = 0;
+                 mp_map_elem_t *elem = NULL;
+-                while ((elem = dict_iter_next((mp_obj_dict_t *)MP_OBJ_TO_PTR(args[1]), &cur)) != NULL) {
++                while ((elem = dict_iter_next((mp_obj_dict_t *)MP_OBJ_TO_PTR(other), &cur)) != NULL) {
+                     mp_map_lookup(&self->map, elem->key, MP_MAP_LOOKUP_ADD_IF_NOT_FOUND)->value = elem->value;
+                 }
+             }
+diff -ru a/py/objfloat.c b/py/objfloat.c
+--- a/py/objfloat.c
++++ b/py/objfloat.c
+@@ -72,7 +72,43 @@
+ 
+ #define MICROPY_FLOAT_ZERO MICROPY_FLOAT_CONST(0.0)
+ 
+-#if MICROPY_FLOAT_HIGH_QUALITY_HASH
++#if MICROPY_FLOAT_HIGH_QUALITY_HASH && MICROPY_HASH_INT_MODULUS && MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
++// A whole number hashes as its value modulo MICROPY_HASH_INT_MODULUS, as an int of
++// the same value does; anything else hashes by its bits. The result is the same on
++// every word size.
++mp_int_t mp_float_hash(mp_float_t src) {
++    const uint64_t m = (uint64_t)MICROPY_HASH_INT_MODULUS;
++    mp_float_union_t u = {.f = src};
++    const int adj_exp = (int)u.p.exp - MP_FLOAT_EXP_BIAS;
++    if (src == 0) {
++        return 0;
++    }
++    if (adj_exp >= 0 && adj_exp <= MP_FLOAT_EXP_BIAS) {
++        uint64_t frc = (uint64_t)u.p.frc | ((uint64_t)1 << MP_FLOAT_FRAC_BITS);
++        bool whole = true;
++        uint64_t r;
++        if (adj_exp >= MP_FLOAT_FRAC_BITS) {
++            // frc * 2^(adj_exp - FRAC_BITS)
++            r = frc % m;
++            for (int i = MP_FLOAT_FRAC_BITS; i < adj_exp; i++) {
++                r = (r * 2) % m;
++            }
++        } else {
++            int shift = MP_FLOAT_FRAC_BITS - adj_exp;
++            whole = (frc & (((uint64_t)1 << shift) - 1)) == 0;
++            r = (frc >> shift) % m;
++        }
++        if (whole) {
++            if (u.p.sgn && r != 0) {
++                r = m - r;
++            }
++            return (mp_int_t)r;
++        }
++    }
++    uint64_t bits = (uint64_t)u.i;
++    return (mp_int_t)((uint32_t)(bits ^ (bits >> 32)) & (uint32_t)MICROPY_HASH_MASK);
++}
++#elif MICROPY_FLOAT_HIGH_QUALITY_HASH
+ // must return actual integer value if it fits in mp_int_t
+ mp_int_t mp_float_hash(mp_float_t src) {
+     mp_float_union_t u = {.f = src};
+diff -ru a/py/objfun.c b/py/objfun.c
+--- a/py/objfun.c
++++ b/py/objfun.c
+@@ -289,9 +289,13 @@
+ 
+     INIT_CODESTATE(code_state, self, n_state, n_args, n_kw, args);
+ 
++    MICROPY_CALL_DEPTH_CHECK();
++
+     // execute the byte code with the correct globals context
+     mp_globals_set(self->context->module.globals);
++    MICROPY_CALL_DEPTH_ENTER();
+     mp_vm_return_kind_t vm_return_kind = mp_execute_bytecode(code_state, MP_OBJ_NULL);
++    MICROPY_CALL_DEPTH_EXIT();
+     mp_globals_set(code_state->old_globals);
+ 
+     #if MICROPY_DEBUG_VM_STACK_OVERFLOW
+diff -ru a/py/objgenerator.c b/py/objgenerator.c
+--- a/py/objgenerator.c
++++ b/py/objgenerator.c
+@@ -152,6 +152,7 @@
+ 
+ mp_vm_return_kind_t mp_obj_gen_resume(mp_obj_t self_in, mp_obj_t send_value, mp_obj_t throw_value, mp_obj_t *ret_val) {
+     mp_cstack_check();
++    MICROPY_CALL_DEPTH_CHECK();
+     mp_check_self(mp_obj_is_type(self_in, &mp_type_gen_instance));
+     mp_obj_gen_instance_t *self = MP_OBJ_TO_PTR(self_in);
+     if (self->code_state.ip == 0) {
+@@ -207,7 +208,9 @@
+     #endif
+     {
+         // A bytecode generator
++        MICROPY_CALL_DEPTH_ENTER();
+         ret_kind = mp_execute_bytecode(&self->code_state, throw_value);
++        MICROPY_CALL_DEPTH_EXIT();
+     }
+ 
+     mp_globals_set(self->code_state.old_globals);
+diff -ru a/py/obj.h b/py/obj.h
+--- a/py/obj.h
++++ b/py/obj.h
+@@ -501,6 +501,7 @@
+ }
+ 
+ void mp_map_init(mp_map_t *map, size_t n);
++size_t mp_map_table_bytes(const mp_map_t *map);
+ void mp_map_init_fixed_table(mp_map_t *map, size_t n, const mp_obj_t *table);
+ void mp_map_deinit(mp_map_t *map);
+ mp_map_elem_t *mp_map_lookup(mp_map_t *map, mp_obj_t index, mp_map_lookup_kind_t lookup_kind);
+diff -ru a/py/objint_mpz.c b/py/objint_mpz.c
+--- a/py/objint_mpz.c
++++ b/py/objint_mpz.c
+@@ -45,21 +45,21 @@
+ #define DIG_MASK ((MPZ_LONG_1 << MPZ_DIG_SIZE) - 1)
+ static const mpz_dig_t maxsize_dig[] = {
+     #define NUM_DIG 1
+-    (MP_SSIZE_MAX >> MPZ_DIG_SIZE * 0) & DIG_MASK,
+-    #if (MP_SSIZE_MAX >> MPZ_DIG_SIZE * 0) > DIG_MASK
++    (MP_SYS_MAXSIZE >> MPZ_DIG_SIZE * 0) & DIG_MASK,
++    #if (MP_SYS_MAXSIZE >> MPZ_DIG_SIZE * 0) > DIG_MASK
+      #undef NUM_DIG
+      #define NUM_DIG 2
+-     (MP_SSIZE_MAX >> MPZ_DIG_SIZE * 1) & DIG_MASK,
+-     #if (MP_SSIZE_MAX >> MPZ_DIG_SIZE * 1) > DIG_MASK
++     (MP_SYS_MAXSIZE >> MPZ_DIG_SIZE * 1) & DIG_MASK,
++     #if (MP_SYS_MAXSIZE >> MPZ_DIG_SIZE * 1) > DIG_MASK
+       #undef NUM_DIG
+       #define NUM_DIG 3
+-      (MP_SSIZE_MAX >> MPZ_DIG_SIZE * 2) & DIG_MASK,
+-      #if (MP_SSIZE_MAX >> MPZ_DIG_SIZE * 2) > DIG_MASK
++      (MP_SYS_MAXSIZE >> MPZ_DIG_SIZE * 2) & DIG_MASK,
++      #if (MP_SYS_MAXSIZE >> MPZ_DIG_SIZE * 2) > DIG_MASK
+        #undef NUM_DIG
+        #define NUM_DIG 4
+-       (MP_SSIZE_MAX >> MPZ_DIG_SIZE * 3) & DIG_MASK,
+-       #if (MP_SSIZE_MAX >> MPZ_DIG_SIZE * 3) > DIG_MASK
+-        #error cannot encode MP_SSIZE_MAX as mpz
++       (MP_SYS_MAXSIZE >> MPZ_DIG_SIZE * 3) & DIG_MASK,
++       #if (MP_SYS_MAXSIZE >> MPZ_DIG_SIZE * 3) > DIG_MASK
++        #error cannot encode MP_SYS_MAXSIZE as mpz
+        #endif
+       #endif
+      #endif
+diff -ru a/py/objlist.c b/py/objlist.c
+--- a/py/objlist.c
++++ b/py/objlist.c
+@@ -287,6 +287,7 @@
+ // These unusual choices allows structuring the partitioning
+ // process as a do/while loop, which generates smaller code than the equivalent
+ // code with usual C bounds & a while or for loop.
++#ifndef MICROPY_LIST_SORT
+ static void mp_quicksort(mp_obj_t *head, mp_obj_t *tail, mp_obj_t key_fn, mp_obj_t binop_less_result) {
+     mp_cstack_check();
+     while (tail - head > 1) { // So long as at least 2 elements remain
+@@ -320,6 +321,7 @@
+         }
+     }
+ }
++#endif
+ 
+ // TODO Python defines sort to be stable but ours is not
+ mp_obj_t mp_obj_list_sort(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+@@ -338,11 +340,15 @@
+     mp_check_self(mp_obj_is_type(pos_args[0], &mp_type_list));
+     mp_obj_list_t *self = MP_OBJ_TO_PTR(pos_args[0]);
+ 
++    #ifdef MICROPY_LIST_SORT
++    MICROPY_LIST_SORT(self, args.key.u_obj == mp_const_none ? MP_OBJ_NULL : args.key.u_obj, args.reverse.u_bool);
++    #else
+     if (self->len > 1) {
+         mp_quicksort(self->items - 1, self->items + self->len - 1,
+             args.key.u_obj == mp_const_none ? MP_OBJ_NULL : args.key.u_obj,
+             args.reverse.u_bool ? mp_const_false : mp_const_true);
+     }
++    #endif
+ 
+     return mp_const_none;
+ }
+diff -ru a/py/objset.c b/py/objset.c
+--- a/py/objset.c
++++ b/py/objset.c
+@@ -432,17 +432,17 @@
+         #if MICROPY_PY_BUILTINS_FROZENSET
+         case MP_UNARY_OP_HASH:
+             if (mp_obj_is_type(self_in, &mp_type_frozenset)) {
+-                // start hash with unique value
+-                mp_int_t hash = (mp_int_t)(uintptr_t)&mp_type_frozenset;
++                // a sum, so that the order of the items doesn't matter
++                mp_uint_t hash = 0x1d3a5fu;
+                 size_t max = self->set.alloc;
+                 mp_set_t *set = &self->set;
+ 
+                 for (size_t i = 0; i < max; i++) {
+                     if (mp_set_slot_is_filled(set, i)) {
+-                        hash += MP_OBJ_SMALL_INT_VALUE(mp_unary_op(MP_UNARY_OP_HASH, set->table[i]));
++                        hash += (mp_uint_t)MP_OBJ_SMALL_INT_VALUE(mp_unary_op(MP_UNARY_OP_HASH, set->table[i]));
+                     }
+                 }
+-                return MP_OBJ_NEW_SMALL_INT(hash);
++                return MP_OBJ_NEW_SMALL_INT((mp_int_t)(hash & (mp_uint_t)MICROPY_HASH_MASK));
+             }
+             MP_FALLTHROUGH
+         #endif
+diff -ru a/py/objstr.c b/py/objstr.c
+--- a/py/objstr.c
++++ b/py/objstr.c
+@@ -451,7 +451,11 @@
+             str_index = hlen - nlen;
+             str_index_end = 0;
+         }
++        size_t positions = 0;
+         for (;;) {
++            if ((++positions & 63) == 0) {
++                MICROPY_BUDGET_CHARGE(1 + (nlen >> 6));
++            }
+             if (memcmp(&haystack[str_index], needle, nlen) == 0) {
+                 // found
+                 return haystack + str_index;
+diff -ru a/py/objtuple.c b/py/objtuple.c
+--- a/py/objtuple.c
++++ b/py/objtuple.c
+@@ -133,12 +133,13 @@
+         case MP_UNARY_OP_BOOL:
+             return mp_obj_new_bool(self->len != 0);
+         case MP_UNARY_OP_HASH: {
+-            // start hash with pointer to empty tuple, to make it fairly unique
+-            mp_int_t hash = (mp_int_t)mp_const_empty_tuple;
++            // depends on the items and their order only; unsigned arithmetic wraps, and
++            // the low bits kept by the mask are the same on every word size
++            mp_uint_t hash = 0x345678u + self->len;
+             for (size_t i = 0; i < self->len; i++) {
+-                hash += MP_OBJ_SMALL_INT_VALUE(mp_unary_op(MP_UNARY_OP_HASH, self->items[i]));
++                hash = (hash * 1000003u) ^ (mp_uint_t)MP_OBJ_SMALL_INT_VALUE(mp_unary_op(MP_UNARY_OP_HASH, self->items[i]));
+             }
+-            return MP_OBJ_NEW_SMALL_INT(hash);
++            return MP_OBJ_NEW_SMALL_INT((mp_int_t)(hash & (mp_uint_t)MICROPY_HASH_MASK));
+         }
+         case MP_UNARY_OP_LEN:
+             return MP_OBJ_NEW_SMALL_INT(self->len);
+diff -ru a/py/objtype.c b/py/objtype.c
+--- a/py/objtype.c
++++ b/py/objtype.c
+@@ -103,6 +103,7 @@
+     assert(num_native_bases < 2);
+     mp_obj_instance_t *o = mp_obj_malloc_var(mp_obj_instance_t, subobj, mp_obj_t, num_native_bases, class);
+     mp_map_init(&o->members, 0);
++    o->identity = MICROPY_OBJ_NEW_IDENTITY();
+     // Initialise the native base-class slot (should be 1 at most) with a valid
+     // object.  It doesn't matter which object, so long as it can be uniquely
+     // distinguished from a native class that is initialised.
+@@ -463,7 +464,7 @@
+                 // with them, all objects compare unequal (except with themselves) and
+                 // x.__hash__() returns an appropriate value such that x == y implies
+                 // both that x is y and hash(x) == hash(y)."
+-                return MP_OBJ_NEW_SMALL_INT((mp_uint_t)self_in);
++                return MP_OBJ_NEW_SMALL_INT((mp_int_t)(MICROPY_OBJ_IDENTITY(self_in) & (mp_uint_t)MICROPY_HASH_MASK));
+             }
+             // "A class that overrides __eq__() and does not define __hash__() will have its __hash__() implicitly set to None.
+             // When the __hash__() method of a class is None, instances of the class will raise an appropriate TypeError"
+diff -ru a/py/objtype.h b/py/objtype.h
+--- a/py/objtype.h
++++ b/py/objtype.h
+@@ -33,6 +33,7 @@
+ typedef struct _mp_obj_instance_t {
+     mp_obj_base_t base;
+     mp_map_t members;
++    mp_uint_t identity; // MICROPY_OBJ_NEW_IDENTITY() when created
+     mp_obj_t subobj[];
+     // TODO maybe cache __getattr__ and __setattr__ for efficient lookup of them
+ } mp_obj_instance_t;
+diff -ru a/py/runtime.c b/py/runtime.c
+--- a/py/runtime.c
++++ b/py/runtime.c
+@@ -310,7 +310,18 @@
+             case MP_UNARY_OP_BOOL:
+                 return mp_obj_new_bool(val != 0);
+             case MP_UNARY_OP_HASH:
++                #if MICROPY_HASH_INT_MODULUS
++                {
++                    // the value modulo MICROPY_HASH_INT_MODULUS, as mpz_hash computes it
++                    mp_int_t r = val % (mp_int_t)MICROPY_HASH_INT_MODULUS;
++                    if (r < 0) {
++                        r += (mp_int_t)MICROPY_HASH_INT_MODULUS;
++                    }
++                    return MP_OBJ_NEW_SMALL_INT(r);
++                }
++                #else
+                 return arg;
++                #endif
+             case MP_UNARY_OP_POSITIVE:
+             case MP_UNARY_OP_INT_MAYBE:
+                 return arg;
+@@ -347,11 +358,15 @@
+         if (MP_OBJ_TYPE_HAS_SLOT(type, unary_op)) {
+             mp_obj_t result = MP_OBJ_TYPE_GET_SLOT(type, unary_op)(op, arg);
+             if (result != MP_OBJ_NULL) {
++                if (op == MP_UNARY_OP_HASH) {
++                    // keep every hash within the same range on every word size
++                    result = MP_OBJ_NEW_SMALL_INT((mp_int_t)((mp_uint_t)MP_OBJ_SMALL_INT_VALUE(result) & (mp_uint_t)MICROPY_HASH_MASK));
++                }
+                 return result;
+             }
+         } else if (op == MP_UNARY_OP_HASH) {
+             // Type doesn't have unary_op so use hash of object instance.
+-            return MP_OBJ_NEW_SMALL_INT((mp_uint_t)arg);
++            return MP_OBJ_NEW_SMALL_INT((mp_int_t)(MICROPY_OBJ_IDENTITY(arg) & (mp_uint_t)MICROPY_HASH_MASK));
+         }
+         if (op == MP_UNARY_OP_BOOL) {
+             // Type doesn't have unary_op (or didn't handle MP_UNARY_OP_BOOL),
+@@ -1364,6 +1379,7 @@
+ // may return MP_OBJ_STOP_ITERATION as an optimisation instead of raise StopIteration()
+ // may also raise StopIteration()
+ mp_obj_t mp_iternext_allow_raise(mp_obj_t o_in) {
++    MICROPY_BUDGET_CHARGE(1);
+     const mp_obj_type_t *type = mp_obj_get_type(o_in);
+     if (TYPE_HAS_ITERNEXT(type)) {
+         MP_STATE_THREAD(stop_iteration_arg) = MP_OBJ_NULL;
+@@ -1390,6 +1406,7 @@
+ // may raise other exceptions
+ mp_obj_t mp_iternext(mp_obj_t o_in) {
+     mp_cstack_check(); // enumerate, filter, map and zip can recursively call mp_iternext
++    MICROPY_BUDGET_CHARGE(1);
+     const mp_obj_type_t *type = mp_obj_get_type(o_in);
+     if (TYPE_HAS_ITERNEXT(type)) {
+         MP_STATE_THREAD(stop_iteration_arg) = MP_OBJ_NULL;
+diff -ru a/py/scope.h b/py/scope.h
+--- a/py/scope.h
++++ b/py/scope.h
+@@ -91,6 +91,9 @@
+     uint16_t id_info_alloc;
+     uint16_t id_info_len;
+     id_info_t *id_info;
++    #if MICROPY_COMP_CLASS_ANNOTATIONS
++    bool has_annotations; // a class body with annotated names
++    #endif
+ } scope_t;
+ 
+ scope_t *scope_new(scope_kind_t kind, mp_parse_node_t pn, mp_uint_t emit_options);
+diff -ru a/py/vm.c b/py/vm.c
+--- a/py/vm.c
++++ b/py/vm.c
+@@ -248,6 +248,7 @@
+         TRACE(ip); \
+         MARK_EXC_IP_GLOBAL(); \
+         TRACE_TICK(ip, sp, false); \
++        MICROPY_VM_HOOK_OPCODE \
+         goto *entry_table[*ip++]; \
+     } while (0)
+     #define DISPATCH_WITH_PEND_EXC_CHECK() goto pending_exception_check
+@@ -329,6 +330,7 @@
+                 TRACE(ip);
+                 MARK_EXC_IP_GLOBAL();
+                 TRACE_TICK(ip, sp, false);
++                MICROPY_VM_HOOK_OPCODE
+                 switch (*ip++) {
+                 #endif
+ 
