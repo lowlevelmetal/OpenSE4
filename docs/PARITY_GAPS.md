@@ -503,6 +503,24 @@ Q88–Q96 (their remaining choices are noted beside each answer):
 - **Help** and the **Galaxy Map** (spec 07 session 5): the original's layout, frame, places and
   button slots; Help's Weap Mount tab and Manual button.
 
+The players' reports on v0.9.0 (GitHub issues #1 to #4, #6, #9 and #10) were answered on
+2026-10-04:
+
+- **Designs' Hide Obsolete and Stats\Strategy** are kept with the empire's options, saved with
+  the game as the original does (spec 08 §3.6.7; save format 8, network protocol 6).
+- **The system report's picture** sits inside the panel's frame rail (spec 06 §1.4); it is
+  opaque and covered the rail.
+- **The Treaty Grid and Scores** fit the original's large dialog: ten empires a page, each
+  column headed by its flag; Scores is a column per empire with a row per figure, as spec 06
+  §1.5 describes the original's window.
+- **Empires' "Inbox: N waiting"**, OpenSE4's line, counts a message only while the Log lists
+  it, the only place it can be answered (spec 06 §4.1).
+- **Set Construction Queue's progress** counts each resource up to the item's cost (spec 02
+  §6.3): it never shows more than 100 %.
+- **Dear ImGui's errors** go to opense4.log; release builds never show their red tooltip or
+  stop. The Log's details pane on an entry without a body no longer makes one.
+- **The Log** restores its scroll position only with the stored entry (spec 06 §4.1).
+
 OpenSE4's own additions in these windows, none of which moves an original control: the Find
 box in Help's heading row; the Galaxy Map's Show Distances (in an empty slot), the legend (in
 three empty slots) and the notes line under the map's hint; the target pickers of an
@@ -512,6 +530,7 @@ design; the hover tooltips of the Research and Intelligence lists. What remains 
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
+| Designs window's tab | Opens on Ship Designs, or on the tab of the design it is opened for | Kept with the empire's options in the saved game, as its Hide Obsolete and Stats\Strategy are (spec 08 §3.6.7) | L |
 | E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Last turn of a human defeated in its own turn-based turn (`turn_based.cpp` `finishPlayerTurn`) | Marked dead at the end of that turn, without a Lose ending first | Marked dead only after its Lose window (spec 06 §7 Q83); the original's check when a human loses everything during its own turn is not described (inferred) | L |
 
