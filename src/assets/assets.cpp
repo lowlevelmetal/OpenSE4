@@ -107,15 +107,25 @@ bool isBlank(const Image& img) {
     return true;
 }
 
-InstallFiles::InstallFiles(std::filesystem::path root) : root_(std::move(root)) {
+namespace {
+
+std::unordered_map<std::string, std::filesystem::path> indexFolder(const std::filesystem::path& root) {
+    std::unordered_map<std::string, std::filesystem::path> index;
     std::error_code ec;
-    for (auto it = std::filesystem::recursive_directory_iterator(root_, std::filesystem::directory_options::skip_permission_denied, ec);
+    for (auto it = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec);
          it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
         if (ec) break;
         if (!it->is_regular_file(ec)) continue;
-        const auto rel = std::filesystem::relative(it->path(), root_, ec);
-        index_.emplace(lowerSlashed(rel.generic_string()), it->path());
+        const auto rel = std::filesystem::relative(it->path(), root, ec);
+        index.emplace(lowerSlashed(rel.generic_string()), it->path());
     }
+    return index;
+}
+
+} // namespace
+
+InstallFiles::InstallFiles(std::filesystem::path root) : root_(std::move(root)) {
+    index_ = indexFolder(root_);
     if (const auto path = find("Path.txt")) {
         std::ifstream in(*path, std::ios::binary);
         const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
@@ -145,16 +155,34 @@ std::string modDirectoryFromPathTxt(std::string_view text) {
     return {};
 }
 
+void InstallFiles::addLayer(const std::filesystem::path& folder, std::string name) {
+    Layer layer{std::move(name), indexFolder(folder)};
+    log::info("Mod files: {} ({} files from {})", layer.name, layer.index.size(), folder.string());
+    layers_.push_back(std::move(layer));
+}
+
+std::optional<std::filesystem::path> InstallFiles::findInLayers(const std::string& key) const {
+    for (auto it = layers_.rbegin(); it != layers_.rend(); ++it)
+        if (const auto hit = it->index.find(key); hit != it->index.end()) return hit->second;
+    return std::nullopt;
+}
+
 std::optional<std::filesystem::path> InstallFiles::find(std::string_view relative) const {
-    const auto it = index_.find(lowerSlashed(relative));
+    const std::string key = lowerSlashed(relative);
+    if (auto p = findInLayers(key)) return p;
+    const auto it = index_.find(key);
     if (it == index_.end()) return std::nullopt;
     return it->second;
 }
 
 std::optional<std::filesystem::path> InstallFiles::findModFirst(std::string_view relative) const {
+    const std::string key = lowerSlashed(relative);
+    if (auto p = findInLayers(key)) return p;
     if (!mod_.empty())
-        if (auto p = find(mod_ + "/" + std::string(relative))) return p;
-    return find(relative);
+        if (const auto it = index_.find(mod_ + "/" + key); it != index_.end()) return it->second;
+    const auto it = index_.find(key);
+    if (it == index_.end()) return std::nullopt;
+    return it->second;
 }
 
 void InstallFiles::noteMissing(std::string_view relative) const {

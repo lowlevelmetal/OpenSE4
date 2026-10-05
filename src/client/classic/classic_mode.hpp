@@ -25,6 +25,11 @@ namespace opense4::client {
 
 struct ClassicOptions {
     std::string installDir;  // empty = auto-detect
+    // Mods: these (paths, or ids in modsDir) when modsGiven, else the ones
+    // the settings enable (docs/sdk/packages-and-data.md).
+    std::vector<std::string> mods;
+    bool modsGiven = false;
+    std::string modsDir;     // empty: <user data>/Mods
     uint64_t seed = 1;
     bool seedGiven = false;  // the player gave the seed (--seed, or a script run)
     int systemCount = 0;     // 0 = default

@@ -528,6 +528,7 @@ optional, and an unknown key is an error, to catch typos:
 
 ```toml
 name = "Campaign"              # game name
+mods = ["example.better-carriers", "mods/my-tweaks"]   # mods: ids in the mods folder, or paths from this file's folder
 seed = 1234                    # galaxy seed; random when missing
 game_id = 4711                 # the game's id, which salts its passwords; random when missing
 master_password = "boss"       # or master_password_verifier = "<password-verifier output>" (needs game_id)
@@ -578,8 +579,11 @@ minister_style = "Aggressive"  # a folder under Ai/ of the install; default: non
 use_race_minister_style = false
 ```
 
-The network server takes the name, seed, game id, options, master password and computer
-empires from the file. Human players join through the lobby, so it ignores human
+The network server takes the name, seed, game id, options, master password, mods and
+computer empires from the file. `--mod` on the command line takes the place of the file's
+`mods`. Without either, a host continuing a saved game (`--load`, `pbem process`, `pbem
+turn-files`) finds the game's own mods by id and identity in the mods folder (`Mods/` in
+the user folder, or `--mods-dir`). Human players join through the lobby, so it ignores human
 `[[empire]]` entries.
 
 Setup files hold passwords in plain text. To avoid that, the host fixes the game's id

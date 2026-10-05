@@ -13,6 +13,7 @@
 #include "net/pbem.hpp"
 #include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
+#include "mods/data_set.hpp"
 #include "server/setup_file.hpp"
 
 #include <algorithm>
@@ -52,6 +53,12 @@ Usage:
 
 Network game options:
   --data=DIR             The classic game's Data directory (default: auto-detect)
+  --mod=MOD              Play with this mod: a folder or .zip, or the id of one in the
+                         mods folder; repeat for several, in load order (default: the
+                         setup file's mods; a loaded game's own, from the mods folder).
+                         Every command that reads the data set takes --mod and --mods-dir
+  --mods-dir=DIR         Where mods are looked up by id (default: Mods in OpenSE4's
+                         user folder)
   --port=N               TCP port (default 6720; 0 = any free port)
   --bind=ADDRESS         Listen on one address only (default: all IPv4 interfaces)
   --upnp / --no-upnp     Forward the port on the router with UPnP (default: on)
@@ -163,10 +170,15 @@ int fail(std::string_view message, int code = 1) {
 // ---- Command line ------------------------------------------------------------------------------
 
 struct Options {
-    std::map<std::string, std::string, std::less<>> values;
+    std::map<std::string, std::string, std::less<>> values;              // the last value of each option
+    std::map<std::string, std::vector<std::string>, std::less<>> all;    // every value, for repeatable options (--mod)
     std::vector<std::string> positional;
 
     bool has(std::string_view key) const { return values.contains(key); }
+    std::vector<std::string> getAll(std::string_view key) const {
+        auto it = all.find(key);
+        return it == all.end() ? std::vector<std::string>{} : it->second;
+    }
     std::string get(std::string_view key, std::string fallback = {}) const {
         auto it = values.find(key);
         return it == values.end() ? fallback : it->second;
@@ -208,19 +220,39 @@ std::expected<Options, std::string> parseArgs(std::span<char*> args, std::initia
         } else {
             return std::unexpected(std::format("--{} needs a value", key));
         }
+        if (!isFlag) o.all[key].push_back(o.values[key]);
     }
     return o;
 }
 
 // ---- Shared helpers -----------------------------------------------------------------------------
 
-std::expected<std::unique_ptr<game::Rules>, std::string> loadRules(const std::string& dataArg) {
+// The data set with its mods (docs/sdk/packages-and-data.md): --mod (paths,
+// or ids in --mods-dir), else `fallbackMods` (a setup file's), else the
+// game-affecting mods a saved game recorded, found in the mods folder.
+std::expected<std::unique_ptr<game::Rules>, std::string> loadRules(const Options& o, std::vector<std::string> fallbackMods = {},
+                                                                   std::span<const ruleset::ModRecord> recorded = {}) {
+    const std::string dataArg = o.get("data");
     const auto dir = ruleset::findInstalledDataDir(dataArg);
     if (!dir)
         return std::unexpected(dataArg.empty() ? std::string("No installed data set found; pass --data=<the game's Data directory>.")
                                                : std::format("No data set at {}.", dataArg));
-    auto loaded = ruleset::loadRuleset(*dir);
-    if (!loaded.ruleset) {
+    const std::filesystem::path userDir = net::secure::userDataDir();
+    mods::ModChoice choice;
+    choice.mods = o.has("mod") ? o.getAll("mod") : std::move(fallbackMods);
+    choice.modsDir = o.has("mods-dir") ? std::filesystem::path(o.get("mods-dir")) : mods::modsFolderIn(userDir);
+    choice.open.cacheDir = mods::modCacheIn(userDir);
+    auto modSet = choice.mods.empty() && !recorded.empty() ? mods::modsForGame(recorded, choice.modsDir, choice.open) : mods::selectMods(choice);
+    if (!modSet) {
+        std::string why = "The mods could not be loaded:";
+        for (const auto& e : modSet.error()) why += "\n  " + e;
+        return std::unexpected(why);
+    }
+    for (const mods::Package& p : modSet->packages) say(std::format("Mod {} ({}) from {}", p.label(), mods::ModManager::summary(p), p.source.string()));
+    auto loaded = mods::loadDataSet(dir->parent_path(), *dir, *modSet);
+    // Without mods, as before: only a data set that cannot be read at all is
+    // refused. A mod's problems are always errors.
+    if (!loaded.ruleset || (!modSet->empty() && !loaded.diagnostics.errors.empty())) {
         std::string why = std::format("Could not load the data set at {}", dir->string());
         for (const auto& e : loaded.diagnostics.errors) why += "\n  " + e;
         return std::unexpected(why);
@@ -295,7 +327,7 @@ std::string turnSummary(const net::TurnStatus& t) {
 int runServer(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
-                             "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key"},
+                             "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key", "mod", "mods-dir"},
                             {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "no-password-migration", "verbose", "help", "version"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
@@ -319,7 +351,17 @@ int runServer(std::span<char*> args) {
     for (const auto* v : {&port, &players, &ai, &systems, &quadrantSize, &timeout, &autosave, &maxTurns, &seed})
         if (!*v) return fail(v->error(), 2);
 
-    auto rules = loadRules(o.get("data"));
+    // The mods: --mod, else the setup file's, else those a saved game recorded.
+    std::vector<std::string> setupMods;
+    if (o.has("setup")) {
+        auto m = server::setupFileMods(o.get("setup"));
+        if (!m) return fail(m.error(), 2);
+        setupMods = std::move(*m);
+    }
+    std::vector<ruleset::ModRecord> recorded;
+    if (o.has("load"))
+        if (auto info = game::readSaveInfo(o.get("load"))) recorded = info->mods;
+    auto rules = loadRules(o, std::move(setupMods), recorded);
     if (!rules) return fail(rules.error(), 2);
     say(std::format("{}; data set {}", net::appVersion(), game::dataSetIdentity(**rules)));
 
@@ -478,11 +520,13 @@ void listTurnFiles(const std::vector<std::pair<game::EmpireId, std::filesystem::
 }
 
 int pbemNew(std::span<char*> args) {
-    auto o = parseArgs(args, {"setup", "out", "data", "turn-files", "host-key"}, {"help"});
+    auto o = parseArgs(args, {"setup", "out", "data", "turn-files", "host-key", "mod", "mods-dir"}, {"help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("setup") || !o->has("out")) return fail("pbem new needs --setup=FILE.toml and --out=GAME.gam", 2);
-    auto rules = loadRules(o->get("data"));
+    auto setupMods = server::setupFileMods(o->get("setup"));
+    if (!setupMods) return fail(setupMods.error(), 2);
+    auto rules = loadRules(*o, std::move(*setupMods));
     if (!rules) return fail(rules.error(), 2);
     auto setup = server::loadSetupFile(o->get("setup"), **rules);
     if (!setup) return fail(setup.error(), 2);
@@ -527,11 +571,13 @@ int pbemNew(std::span<char*> args) {
 }
 
 int pbemTurnFiles(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "out", "data", "host-key"}, {"help"});
+    auto o = parseArgs(args, {"game", "out", "data", "host-key", "mod", "mods-dir"}, {"help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game")) return fail("pbem turn-files needs --game=GAME.gam", 2);
-    auto rules = loadRules(o->get("data"));
+    std::vector<ruleset::ModRecord> recorded;
+    if (auto saved = game::readSaveInfo(o->get("game"))) recorded = saved->mods;
+    auto rules = loadRules(*o, {}, recorded);
     if (!rules) return fail(rules.error(), 2);
     const std::filesystem::path game = o->get("game");
     auto info = game::readSaveInfo(game);
@@ -549,12 +595,14 @@ int pbemTurnFiles(std::span<char*> args) {
 }
 
 int pbemProcess(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords", "turn-files", "host-key"},
+    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords", "turn-files", "host-key", "mod", "mods-dir"},
                        {"keep-orders", "allow-data-mismatch", "no-password-migration", "help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game") || !o->has("orders")) return fail("pbem process needs --game=GAME.gam and --orders=DIR", 2);
-    auto rules = loadRules(o->get("data"));
+    std::vector<ruleset::ModRecord> recorded;
+    if (auto saved = game::readSaveInfo(o->get("game"))) recorded = saved->mods;
+    auto rules = loadRules(*o, {}, recorded);
     if (!rules) return fail(rules.error(), 2);
     net::pbem::ProcessOptions options;
     options.masterPassword = o->get("password");
@@ -690,7 +738,8 @@ int pbemInfo(std::span<char*> args) {
 
 int runBot(std::span<char*> args) {
     auto parsed = parseArgs(args,
-                            {"connect", "port", "name", "password", "join-password", "master-password", "data", "race", "turns", "timeout", "host-key"},
+                            {"connect", "port", "name", "password", "join-password", "master-password", "data", "race", "turns", "timeout", "host-key",
+                             "mod", "mods-dir"},
                             {"start", "old-password", "help"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
@@ -701,7 +750,7 @@ int runBot(std::span<char*> args) {
     auto port = o.integer("port", net::kDefaultPort, 1, 65535);
     for (const auto* v : {&turns, &timeout, &port})
         if (!*v) return fail(v->error(), 2);
-    auto rules = loadRules(o.get("data"));
+    auto rules = loadRules(o);
     if (!rules) return fail(rules.error(), 2);
 
     net::ClientConfig cfg;
@@ -722,6 +771,7 @@ int runBot(std::span<char*> args) {
     // An OpenSE4 0.6 game: show the host the old form of the password once (with --host-key only).
     cfg.sendOldPassword = o.has("old-password");
     cfg.dataSet = game::dataSetIdentity(**rules);
+    cfg.mods.assign((*rules)->mods().begin(), (*rules)->mods().end());
     if (o.has("host-key")) {
         cfg.hostKey = net::crypto::keyFromHex(o.get("host-key"));
         if (!cfg.hostKey) return fail("--host-key must be the host's public key (64 hex digits)", 2);

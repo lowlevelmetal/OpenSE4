@@ -40,6 +40,10 @@ Image rotateNearest(const Image& src, double degrees, bool transparentOutside);
 // True if the image has no visible pixel (e.g. an unused sprite-sheet cell).
 bool isBlank(const Image& img);
 
+// The install's files, with the pictures, sounds, music, fonts and pointers of
+// mods layered over them (docs/sdk/packages-and-data.md): every lookup tries
+// the mods, the last in load order first, then the install. Nothing is ever
+// written into the install.
 class InstallFiles {
 public:
     InstallFiles() = default;
@@ -48,7 +52,14 @@ public:
     bool valid() const { return !index_.empty(); }
     const std::filesystem::path& root() const { return root_; }
 
+    // A mod's folder in the game folder's layout ("Pictures/Races/...",
+    // "Sounds/...", "Music/..."), over the install and the layers added
+    // before it. `name` is for the log.
+    void addLayer(const std::filesystem::path& folder, std::string name);
+    size_t layerCount() const { return layers_.size(); }
+
     // `relative` uses '/' separators, any case: "Pictures/Planets/Planets.bmp".
+    // The mods' layers first, then the install.
     std::optional<std::filesystem::path> find(std::string_view relative) const;
     // First existing file among several candidates.
     std::optional<std::filesystem::path> findAny(std::initializer_list<std::string_view> candidates) const;
@@ -56,7 +67,8 @@ public:
     // The mod folder Path.txt names (`Using Mod Directory`; "None" or no
     // file: none), as a lowercase path relative to the root, and a lookup
     // that tries the mod's copy first and then the base tree, the way the
-    // classic game finds its fonts and pointers (docs/spec/06 §5.1, §5.4, §5.8).
+    // classic game finds its fonts and pointers (docs/spec/06 §5.1, §5.4,
+    // §5.8). The mods' layers come before both.
     const std::string& modDirectory() const { return mod_; }
     std::optional<std::filesystem::path> findModFirst(std::string_view relative) const;
 
@@ -69,8 +81,15 @@ public:
     const std::set<std::string>& missing() const { return missing_; }
 
 private:
+    struct Layer {
+        std::string name;
+        std::unordered_map<std::string, std::filesystem::path> index;
+    };
+    std::optional<std::filesystem::path> findInLayers(const std::string& key) const;
+
     std::filesystem::path root_;
     std::unordered_map<std::string, std::filesystem::path> index_;  // lowercase relative path -> real path
+    std::vector<Layer> layers_;                                     // in load order
     std::string mod_;
     mutable std::set<std::string> missing_;  // lowercase relative paths noted missing
 };

@@ -171,7 +171,7 @@ endif()
 add_executable(opense4-server
     server/main.cpp
     server/setup_file.cpp)
-target_link_libraries(opense4-server PRIVATE opense4_net opense4_game tomlplusplus opense4_warnings)
+target_link_libraries(opense4-server PRIVATE opense4_net opense4_mods opense4_game tomlplusplus opense4_warnings)
 set_target_properties(opense4-server PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 opense4_windows_manifest(opense4-server)
 
