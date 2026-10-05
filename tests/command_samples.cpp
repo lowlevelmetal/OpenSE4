@@ -90,6 +90,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     Design design = warbirdDesign(r);
     design.obsolete = true;
     design.lost = 4;
+    design.picture = "Warbird2";   // a design's own picture (save format 9)
     DiplomaticMessage message;
     message.id = MessageId{8u};
     message.from = EmpireId{0u};

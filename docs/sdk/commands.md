@@ -534,10 +534,15 @@ advance whether it is legal and why not).
 
 | Field | Type | Meaning |
 |---|---|---|
-| `design` | design | The design: name, type, hull and components matter. |
+| `design` | design | The design: name, type, hull, components, strategy and picture matter. |
+
+A design may name a picture of its own (`picture`), such as one a mod adds;
+the engine refuses a name with folders in it, and a computer without the
+picture shows the hull's.
 
 ```json
 {"kind": "create_design", "design": {"name": "Lancer", "design_type": "Attack Ship", "hull": 3, "entries": [{"component": 0, "mount": -1}, {"component": 14, "mount": 2}]}}
+{"kind": "create_design", "design": {"name": "Escort", "design_type": "Attack Ship", "hull": 3, "picture": "Corvette2", "entries": [{"component": 0, "mount": -1}]}}
 ```
 
 ### `edit_design`
@@ -1063,8 +1068,8 @@ yard. Name one.
 ### `design`
 
 A design as `create_design` and `edit_design` take it. Only `name`,
-`design_type`, `hull`, `entries` and `strategy` matter there; the engine sets
-the rest.
+`design_type`, `hull`, `entries`, `strategy` and `picture` matter there; the
+engine sets the rest.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1084,6 +1089,7 @@ the rest.
 | `lost` | int | Vehicles lost. |
 | `enemy_tonnage_destroyed` | int | Tonnage of enemies its vehicles destroyed. |
 | `scrapped` | int | Vehicles scrapped. |
+| `picture` | text | Its own picture: a base name looked up as a hull's bitmap names are (`Mini_<picture>`, `Portrait_<picture>`), in place of its hull's; empty for the hull's. At most 64 characters, no folders ([packages-and-data.md](packages-and-data.md#a-designs-own-picture)). |
 
 ### `design_entry`
 

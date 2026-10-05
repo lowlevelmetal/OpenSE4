@@ -267,6 +267,8 @@ TEST_CASE("serialize: orders round trip for every command type") {
     REQUIRE(loaded->commands.size() == c.size());
     for (size_t i = 0; i < c.size(); ++i) CHECK(loaded->commands[i].index() == c[i].index());
     CHECK(serializeOrders(*loaded) == bytes);
+    for (const Command& k : loaded->commands)
+        if (const auto* create = std::get_if<cmd::CreateDesign>(&k)) CHECK(create->design.picture == "Warbird2");   // format 9
     const auto& transfer = std::get<cmd::TransferCargo>(loaded->commands[19]);
     CHECK(transfer.amount == 1234567890123);
     const auto& sent = std::get<cmd::SendMessage>(loaded->commands[25]).message;
@@ -514,8 +516,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xba9062b8fdeb59f5ull;
-    constexpr size_t kGoldenSize = 1830;
+    constexpr uint64_t kGoldenChecksum = 0x1a4fd0755297bda5ull;
+    constexpr size_t kGoldenSize = 1834;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -566,6 +568,46 @@ TEST_CASE("serialize: format 7 games load; format 8 keeps the Designs window's c
     expected.empires[0].interfaceOptions.designsHideObsolete = false;
     expected.empires[0].interfaceOptions.designsStatsView = false;
     CHECK(stateChecksum(*before) == stateChecksum(expected));
+}
+
+// Format 9 added a design's own picture (Design::picture, the modding SDK:
+// docs/sdk/packages-and-data.md). Games saved in format 8 (OpenSE4 0.10.0)
+// still load, every design with its hull's pictures.
+TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture") {
+    GameState g = busyGame();
+    REQUIRE(g.designs.size() >= 2);
+    g.designs[0].picture = "EscortCarrier";
+    g.designs[1].picture = "Hull With Spaces";
+    auto now = deserializeState(serializeState(g));
+    REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
+    CHECK(now->designs[0].picture == "EscortCarrier");
+    CHECK(now->designs[1].picture == "Hull With Spaces");
+    CHECK(stateChecksum(*now) == stateChecksum(g));
+
+    // The same game as format 8 wrote it: no pictures, version 8 in the envelope.
+    const std::vector<uint8_t> current = serializeState(g);
+    const std::string magic(current.begin(), current.begin() + 8);
+    std::vector<uint8_t> payload;
+    serial::write(payload, g, 8);
+    std::vector<uint8_t> old = wrapEnvelope(magic, payload);
+    old[8] = 8;
+    GameState plain = g;
+    for (Design& d : plain.designs) d.picture.clear();
+    std::vector<uint8_t> plainPayload;
+    serial::write(plainPayload, plain, 8);
+    CHECK(payload == plainPayload);   // format 8 holds no picture
+    auto before = deserializeState(old);
+    REQUIRE_MESSAGE(before.has_value(), (before ? std::string{} : before.error()));
+    for (const Design& d : before->designs) CHECK(d.picture.empty());
+    CHECK(stateChecksum(*before) == stateChecksum(plain));
+    // A design without a picture adds one empty text to format 9: four bytes
+    // (and the game's empty list of mods four more).
+    REQUIRE(plain.mods.empty());
+    std::vector<uint8_t> nine;
+    serial::write(nine, plain, 9);
+    std::vector<uint8_t> eight;
+    serial::write(eight, plain, 8);
+    CHECK(nine.size() == eight.size() + 4 * plain.designs.size() + 4);
 }
 
 // ---- Save files --------------------------------------------------------------------------------------------

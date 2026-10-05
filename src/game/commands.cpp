@@ -765,6 +765,7 @@ struct Applier {
         Design d = c.design;
         if (d.name.empty()) return R::fail("A design needs a name");
         if (d.hull >= r.data().vehicleSizes.size()) return R::fail("Unknown hull");
+        if (auto why = designPictureProblem(d.picture)) return R::fail(*why);
         for (const auto& en : d.entries) {
             if (en.component >= r.data().components.size()) return R::fail("Unknown component");
             if (en.mount >= static_cast<int32_t>(r.data().weaponMounts.size())) return R::fail("Unknown mount");
@@ -801,6 +802,7 @@ struct Applier {
         Design d = c.with;
         if (d.name.empty()) return R::fail("A design needs a name");
         if (d.hull >= r.data().vehicleSizes.size()) return R::fail("Unknown hull");
+        if (auto why = designPictureProblem(d.picture)) return R::fail(*why);
         for (const auto& en : d.entries) {
             if (en.component >= r.data().components.size()) return R::fail("Unknown component");
             if (en.mount >= static_cast<int32_t>(r.data().weaponMounts.size())) return R::fail("Unknown mount");
@@ -812,6 +814,7 @@ struct Applier {
         current.designType = d.designType;
         current.hull = d.hull;
         current.entries = d.entries;
+        current.picture = d.picture;
         current.strategy = d.strategy < std::max<size_t>(1, emp().strategies.size()) ? d.strategy : 0;
         current.obsolete = false;
         current.retrofitted = false;
