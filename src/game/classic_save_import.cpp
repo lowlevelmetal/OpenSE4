@@ -30,6 +30,9 @@ using datafile::keysEqual;
 
 namespace {
 
+// A 1-based position within a list of n items.
+constexpr bool inRange(size_t position, size_t n) { return position >= 1 && position <= n; }
+
 // A reference to an object of the file's list: a stellar object or a vehicle.
 struct ObjectRef {
     ObjectId object;
@@ -156,7 +159,7 @@ private:
     void options() {
         const Options& o = in_.options;
         GameOptions& g = s_.options;
-        if (o.quadrantType >= 1 && o.quadrantType <= d_.quadrantTypes.size()) g.quadrantType = d_.quadrantTypes[o.quadrantType - 1u].name;
+        if (inRange(o.quadrantType, d_.quadrantTypes.size())) g.quadrantType = d_.quadrantTypes[o.quadrantType - 1u].name;
         s_.galaxy.quadrantType = g.quadrantType;
         auto code = [](uint8_t c, int hi) { return std::clamp(int{c} - 1, 0, hi); };
         g.quadrantSize = code(o.quadrantSize, 2);
@@ -248,7 +251,7 @@ private:
             sys.physicalType = std::string(kPhysicalTypes[static_cast<size_t>(std::clamp(int{y.physicalType}, 1, 3) - 1)]);
             sys.abilities = abilities(y.abilities);
             sys.type = systemType(y);
-            if (y.number != i + 1) count("system numbers that differ from their positions");
+            if (size_t{y.number} != i + 1) count("system numbers that differ from their positions");
             s_.galaxy.systems.push_back(std::move(sys));
         }
     }
@@ -276,7 +279,7 @@ private:
                 c == ObjectClass::DroneGroup || o.blank())
                 continue;
             const std::string where = std::format("object {} ({})", i + 1, displayName(c));
-            if (o.id != i + 1) count("object ids that differ from their positions");
+            if (size_t{o.id} != i + 1) count("object ids that differ from their positions");
             const auto type = position(o.sectorType, d_.sectorObjectTypes.size(), "SectType.txt", where);
             const SystemId sys = system(o.system, where);
             if (!type || !sys.valid()) {
@@ -319,7 +322,7 @@ private:
             const ObjectRecord& o = in_.objects[i];
             if (!refs_[i].object.valid() || o.objectClass() != ObjectClass::WarpPoint) continue;
             SpaceObject& wp = s_.galaxy.object(refs_[i].object);
-            const SystemId to = o.destSystem >= 1 && o.destSystem <= s_.galaxy.systems.size() ? SystemId{o.destSystem - 1u} : SystemId{};
+            const SystemId to = inRange(o.destSystem, s_.galaxy.systems.size()) ? SystemId{o.destSystem - 1u} : SystemId{};
             ObjectId far;
             if (to.valid())
                 for (ObjectId x : s_.galaxy.system(to).objects) {
@@ -327,7 +330,7 @@ private:
                     if (cand.kind != ObjectKind::WarpPoint || cand.sector != sector(o.destSector)) continue;
                     // Prefer the one that leads back here.
                     const ObjectRecord& back = in_.objects[cand.slot];
-                    const bool pairs = back.destSystem == wp.system.index() + 1 && sector(back.destSector) == wp.sector;
+                    const bool pairs = size_t{back.destSystem} == wp.system.index() + 1 && sector(back.destSector) == wp.sector;
                     if (!far.valid() || pairs) far = x;
                     if (pairs) break;
                 }
@@ -348,7 +351,7 @@ private:
         for (size_t i = 0; i < n && error_.empty(); ++i) {
             const EmpireRecord& in = in_.empires[i];
             const std::string where = std::format("empire {} ({})", i + 1, in.name);
-            if (in.player != i + 1) fail(std::format("{} has player number {}", where, in.player));
+            if (size_t{in.player} != i + 1) fail(std::format("{} has player number {}", where, in.player));
             Empire e;
             e.id = EmpireId{i};
             e.name = in.name;
@@ -609,9 +612,9 @@ private:
                 // fields are kept when they still fit the data set.
                 d.owner = EmpireId{0u};
                 d.obsolete = true;
-                const bool fits = in.hull >= 1 && in.hull <= d_.vehicleSizes.size() &&
+                const bool fits = inRange(in.hull, d_.vehicleSizes.size()) &&
                                   std::all_of(in.parts.begin(), in.parts.end(), [&](const DesignPart& p) {
-                                      return p.component >= 1 && p.component <= d_.components.size() && p.mount <= d_.weaponMounts.size();
+                                      return inRange(p.component, d_.components.size()) && size_t{p.mount} <= d_.weaponMounts.size();
                                   });
                 if (fits) {
                     d.hull = in.hull - 1u;
@@ -662,7 +665,7 @@ private:
             const bool group = c == ObjectClass::MineField || c == ObjectClass::SatelliteGroup || c == ObjectClass::FighterGroup || c == ObjectClass::DroneGroup;
             if ((!ship && !group) || o.blank()) continue;
             const std::string where = std::format("object {} ({})", i + 1, displayName(c));
-            if (o.id != i + 1) count("object ids that differ from their positions");
+            if (size_t{o.id} != i + 1) count("object ids that differ from their positions");
             Vehicle v;
             v.id = VehicleId{s_.nextVehicleId++};
             v.slot = static_cast<uint32_t>(i);
@@ -679,7 +682,7 @@ private:
                 v.name = o.name;
                 v.count = 1;
                 v.damage.assign(d.entries.size(), 0);
-                if (o.destroyedParts.capacity != d.entries.size()) count("ships whose destroyed-part set does not match the design");
+                if (size_t{o.destroyedParts.capacity} != d.entries.size()) count("ships whose destroyed-part set does not match the design");
                 for (size_t p = 0; p < d.entries.size(); ++p)
                     if (o.destroyedParts.test(p)) v.damage[p] = entryStructure(r_, d, p);
                 v.supply = o.supply;
@@ -852,7 +855,7 @@ private:
                 fleet.owner = EmpireId{e};
                 fleet.name = f.name;
                 fleet.location = {system(f.system, std::format("fleet {} of empire {}", k + 1, e + 1)), sector(f.sector)};
-                fleet.formation = f.formation >= 1 && f.formation <= d_.formations.size() ? f.formation - 1u : 0;
+                fleet.formation = inRange(f.formation, d_.formations.size()) ? f.formation - 1u : 0;
                 const size_t strategies = s_.empires[e].strategies.size();
                 fleet.strategy = f.strategy >= 1 && f.strategy <= strategies ? f.strategy - 1u : 0;
                 const int64_t tenths = std::clamp<int64_t>(float80Tenths(f.experience), 0, 100'000);
@@ -939,7 +942,7 @@ private:
             else converted.push_back(Order{OrderKind::Count});   // a placeholder keeps the positions
         }
         // OpenSE4 keeps the current order first: rotate (§3.8.8).
-        const size_t current = list.current >= 1 && list.current <= converted.size() ? list.current - 1u : 0;
+        const size_t current = inRange(list.current, converted.size()) ? list.current - 1u : 0;
         if (current > 0) count("order lists turned to start at their current order");
         for (size_t k = 0; k < converted.size(); ++k) {
             const Order& o = converted[(current + k) % converted.size()];
@@ -950,7 +953,7 @@ private:
 
     std::optional<Order> order(const OrderRecord& rec, EmpireId owner, const Vehicle* vehicle, const Colony* colony) {
         Order o;
-        const SystemId sys = rec.system >= 1 && rec.system <= s_.galaxy.systems.size() ? SystemId{rec.system - 1u} : SystemId{};
+        const SystemId sys = inRange(rec.system, s_.galaxy.systems.size()) ? SystemId{rec.system - 1u} : SystemId{};
         const Location at{sys, sector(rec.sector)};
         const ObjectRef target = objectRef(rec.target);
         auto stellar = [&](StellarAction a) {
@@ -1022,7 +1025,7 @@ private:
                 return o;
             case 15: o.kind = OrderKind::SweepMines; return o;
             case 17: {
-                if (rec.target < 1 || rec.target > s_.galaxy.systems.size()) return dropped("orders with a missing target (dropped)");
+                if (!inRange(rec.target, s_.galaxy.systems.size())) return dropped("orders with a missing target (dropped)");
                 stellar(StellarAction::OpenWarpPoint);
                 o.location = {SystemId{rec.target - 1u}, Sector{}};
                 return o;
@@ -1113,7 +1116,7 @@ private:
         switch (p.kind) {
             case 1:
                 item.kind = PackageItem::Kind::System;
-                item.system = p.value >= 1 && p.value <= s_.galaxy.systems.size() ? SystemId{p.value - 1u} : SystemId{};
+                item.system = inRange(p.value, s_.galaxy.systems.size()) ? SystemId{p.value - 1u} : SystemId{};
                 return item;
             case 2:
                 item.kind = PackageItem::Kind::Planet;
@@ -1125,7 +1128,7 @@ private:
                 item.resources.v[p.value - 1u] = int64_t{p.quantity} * 1000;
                 return item;
             case 4:
-                if (p.value < 1 || p.value > d_.techAreas.size()) break;
+                if (!inRange(p.value, d_.techAreas.size())) break;
                 item.kind = PackageItem::Kind::Technology;
                 item.tech = ruleset::TechAreaId{p.value - 1u};
                 return item;
@@ -1136,7 +1139,7 @@ private:
                 return item;
             case 7:
                 item.kind = PackageItem::Kind::StarChart;
-                item.system = p.value >= 1 && p.value <= s_.galaxy.systems.size() ? SystemId{p.value - 1u} : SystemId{};
+                item.system = inRange(p.value, s_.galaxy.systems.size()) ? SystemId{p.value - 1u} : SystemId{};
                 return item;
             case 8:
                 item.kind = PackageItem::Kind::Treaty;
@@ -1162,8 +1165,8 @@ private:
                 entry.category = static_cast<LogCategory>(std::clamp(int{l.category}, 1, 7) - 1);
                 entry.title = l.title;
                 entry.text = l.text;
-                if (l.system >= 1 && l.system <= s_.galaxy.systems.size()) entry.location = Location{SystemId{l.system - 1u}, sector(l.sector)};
-                entry.target = l.target < kGoto.size() ? kGoto[l.target] : LogGoto::None;
+                if (inRange(l.system, s_.galaxy.systems.size())) entry.location = Location{SystemId{l.system - 1u}, sector(l.sector)};
+                entry.target = size_t{l.target} < kGoto.size() ? kGoto[l.target] : LogGoto::None;
                 entry.picture = picture(l);
                 if (l.battle) count("battle details of combat log entries (the entries keep their text)");
                 if (l.message) {
@@ -1182,26 +1185,26 @@ private:
         const auto& d = d_;
         switch (l.kind) {
             case 4:
-                if (key >= 1 && key <= s_.designs.size()) return logpicture::hull(DesignId{key - 1});
+                if (inRange(key, s_.designs.size())) return logpicture::hull(DesignId{key - 1});
                 break;
             case 5:
-                if (key >= 1 && key <= d.facilities.size()) return logpicture::facility(static_cast<uint32_t>(key - 1));
+                if (inRange(key, d.facilities.size())) return logpicture::facility(static_cast<uint32_t>(key - 1));
                 break;
             case 29:
-                if (key >= 1 && key <= d.components.size()) return logpicture::developed(r_, key - 1);
+                if (inRange(key, d.components.size())) return logpicture::developed(r_, key - 1);
                 break;
             case 30:
-                if (key >= 1 && key <= d.facilities.size()) return logpicture::developed(r_, d.components.size() + key - 1);
+                if (inRange(key, d.facilities.size())) return logpicture::developed(r_, d.components.size() + key - 1);
                 break;
             case 31:
-                if (key >= 1 && key <= d.vehicleSizes.size()) return logpicture::developed(r_, d.components.size() + d.facilities.size() + key - 1);
+                if (inRange(key, d.vehicleSizes.size())) return logpicture::developed(r_, d.components.size() + d.facilities.size() + key - 1);
                 break;
             case 37:
-                if (key >= 1 && key <= d.intelProjects.size())
+                if (inRange(key, d.intelProjects.size()))
                     return logpicture::developed(r_, d.components.size() + d.facilities.size() + d.vehicleSizes.size() + key - 1);
                 break;
             case 19:
-                if (l.message && l.message->sender >= 1 && l.message->sender <= s_.empires.size())
+                if (l.message && inRange(l.message->sender, s_.empires.size()))
                     return logpicture::race(EmpireId{l.message->sender - 1u});
                 break;
             default: break;
@@ -1224,7 +1227,7 @@ private:
         m.text = l.text;
         m.treaty = in.treaty == kNoContact ? Treaty::None : treatyFromCode(in.treaty).value_or(Treaty::None);
         m.thirdEmpire = player(in.third);
-        m.system = in.system >= 1 && in.system <= s_.galaxy.systems.size() ? SystemId{in.system - 1u} : SystemId{};
+        m.system = inRange(in.system, s_.galaxy.systems.size()) ? SystemId{in.system - 1u} : SystemId{};
         m.planet = objectRef(in.planet).object;
         for (const PackageItemRecord& p : in.offered)
             if (auto item = packageItem(p)) m.offer.push_back(*item);
@@ -1245,13 +1248,13 @@ private:
             PendingEvent pe;
             pe.eventType = *type;
             pe.fireTurn = date(t.date);
-            pe.system = t.system >= 1 && t.system <= s_.galaxy.systems.size() ? SystemId{t.system - 1u} : SystemId{};
+            pe.system = inRange(t.system, s_.galaxy.systems.size()) ? SystemId{t.system - 1u} : SystemId{};
             pe.empire = player(t.player);
             switch (eventTarget(r_, *type)) {
                 case EventTarget::Vehicle: pe.vehicle = objectRef(t.target).vehicle; break;
                 case EventTarget::Object: pe.object = objectRef(t.target).object; break;
                 case EventTarget::System:
-                    if (t.target >= 1 && t.target <= s_.galaxy.systems.size()) pe.system = SystemId{t.target - 1u};
+                    if (inRange(t.target, s_.galaxy.systems.size())) pe.system = SystemId{t.target - 1u};
                     break;
                 case EventTarget::Empire:
                     if (EmpireId e = player(t.target); e.valid()) pe.empire = e;
@@ -1262,7 +1265,7 @@ private:
         const size_t slots = in_.events.size();
         if (slots >= 5) count("timed-event slots: the original schedules no more timed events in this game (spec 08 §11.2)");
         auto add = [&](const StartPointRecord& p, int who) {
-            if (p.system < 1 || p.system > s_.galaxy.systems.size()) return;
+            if (!inRange(p.system, s_.galaxy.systems.size())) return;
             const StartingPoint sp{SystemId{p.system - 1u}, sector(p.sector), who};
             if (std::find(s_.startingPoints.begin(), s_.startingPoints.end(), sp) == s_.startingPoints.end()) s_.startingPoints.push_back(sp);
         };

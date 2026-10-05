@@ -51,6 +51,9 @@ struct AppOptions {
     std::string openWindow;          // window to open at start
     bool turnBased = true;           // a quick game's turn style: turn-based, as a new game (spec 01 §2.2, §14 Q39; spec 05 §8)
 
+    // Open this saved game at once, OpenSE4's or the original's (--load).
+    std::string loadFile;
+
     // Play by e-mail: open this game file and play the turn (docs/MULTIPLAYER.md).
     std::string pbemFile;
     int pbemEmpire = 0;              // 1-based; 0 = the only empire that can play now

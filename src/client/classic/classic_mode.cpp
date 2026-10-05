@@ -157,6 +157,24 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             }
             mode->openScreen(*id, {});
         }
+    } else if (!options.loadFile.empty()) {
+        // --load: a saved game, OpenSE4's or the original's, at once.
+        auto session = ClassicSession::load(mode->rules_, options.loadFile);
+        if (!session) {
+            error = session.error();
+            return nullptr;
+        }
+        restoreHistoryFrom(options.loadFile);
+        mode->startGame(std::move(*session));
+        mode->session_->simulateTurns(options.autoTurns);
+        if (auto problem = mode->selectForAutomation(options.select)) {
+            error = *problem;
+            return nullptr;
+        }
+        if (auto problem = mode->openAutomationWindow(options.openWindow)) {
+            error = *problem;
+            return nullptr;
+        }
     } else if (!options.tutorial.empty() || !options.training.empty()) {
         // --tutorial / --training: the lesson's game at once; "<slug>:<step>"
         // starts a tutorial at that step (1-based), for checking content.
@@ -573,6 +591,7 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
         gameMark_ = learn::markNow(session_->rules(), session_->state(), session_->player(), scriptTracker_);
     }
     logSeen_ = session_->me().log.size();  // what the game brought is not news
+    importNotes_ = session_->takeImportNotes();
     handoffPlayer_ = {};
     handoff_ = false;
     front_.reset();
@@ -989,7 +1008,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     // result, a host's question) or a message box (a failed Colonize). The key
     // that answers one (N, Enter) is not also a main-window key (Change Name,
     // End Turn).
-    const bool prompted = asking || battleAsking || choosing.has_value() || confirmEndTurn_ || !lessonError_.empty() || !messageBoxes_.empty() ||
+    const bool prompted = asking || battleAsking || choosing.has_value() || confirmEndTurn_ || !lessonError_.empty() || !importNotes_.empty() ||
+                          !messageBoxes_.empty() ||
                           ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     const bool modalOpen = !screens_.empty() || prompted || session_->tactical() != nullptr;
     modalOpen_ = modalOpen;
@@ -1151,10 +1171,36 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::End();
         ImGui::PopFont();
     }
+    if (!importNotes_.empty()) drawImportNotes(ui);
     keepFocusOnFrontWindow();
     updateLock(ui);
     if (options_.lessonCheck) lessonCheckReport(ui);
     return !ui.requests.quitGame;
+}
+
+// After loading a saved game of the original (docs/spec/08): what came
+// across only approximately, once. The details are in the log file.
+void ClassicMode::drawImportNotes(UiContext& ui) {
+    ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 460) * 0.5f), 200 * frameH() / kFrameH}));
+    ImGui::SetNextWindowSize(ui.size({460, 0}));
+    ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
+    ImGui::Begin("Space Empires IV Game Imported", nullptr,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
+    ui.promptWindow();
+    if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextUnformatted("This game was saved by the original Space Empires IV and converted. Some things came across only approximately:");
+    ImGui::Spacing();
+    for (const std::string& note : importNotes_) {
+        ImGui::Bullet();
+        ImGui::TextUnformatted(note.c_str());
+    }
+    ImGui::Spacing();
+    ImGui::TextDisabled("Every detail is in opense4.log. Save Game keeps the game in OpenSE4's format.");
+    ImGui::PopTextWrapPos();
+    if (ImGui::Button("OK", ui.size({120, 26})) || okKey()) importNotes_.clear();   // a message box: Esc or Enter is OK
+    ImGui::End();
+    ImGui::PopFont();
 }
 
 void ClassicMode::keepFocusOnFrontWindow() {

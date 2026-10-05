@@ -142,7 +142,6 @@ namespace {
 class Decoder {
 public:
     static constexpr bool kReading = true;
-    static constexpr bool kRecording = false;
 
     explicit Decoder(std::span<const uint8_t> in) : in_(in) {}
 
@@ -316,7 +315,6 @@ private:
 class Encoder {
 public:
     static constexpr bool kReading = false;
-    static constexpr bool kRecording = false;
 
     bool ok() const { return error_.empty(); }
     const std::string& error() const { return error_; }
@@ -409,7 +407,6 @@ private:
 class Recorder {
 public:
     static constexpr bool kReading = false;
-    static constexpr bool kRecording = true;
 
     std::vector<std::pair<std::string, std::string>> values;
 

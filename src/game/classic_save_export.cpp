@@ -15,6 +15,7 @@
 #include "game/serialize.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <limits>
 #include <map>

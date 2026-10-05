@@ -225,8 +225,19 @@ public:
     // in network and PBEM games (their host keeps the game) and for a value
     // that is not one of the choices (setup::kAutosaveTurns).
     bool setAutosaveTurns(int everyTurns);
+    // An OpenSE4 save, or a saved game of the original, which is imported
+    // (docs/spec/08; told apart by the file's first bytes, both are .gam).
     static std::expected<std::unique_ptr<ClassicSession>, std::string> load(std::shared_ptr<const game::Rules> rules,
                                                                             const std::filesystem::path& file);
+    // After loading a saved game of the original: what the import
+    // approximated, short lines for the player (the details are in the log
+    // file). Taken once.
+    std::vector<std::string> takeImportNotes() { return std::exchange(importNotes_, {}); }
+    // Writes the game as a saved game of the original (docs/spec/08 §7), with
+    // the History files beside it as the original's save does. Only the
+    // whole game can be written: local and hotseat games. Returns what the
+    // export could not carry, short lines for the player.
+    std::expected<std::vector<std::string>, std::string> exportClassic(const std::filesystem::path& file) const;
 
     // Hotseat: switches the local player (after a password check by the UI).
     void setPlayer(game::EmpireId e);
@@ -315,6 +326,7 @@ private:
     // A network or PBEM game file opened with Load Game (SaveInfo::gameId set):
     // its empire passwords are verifiers, and saving keeps the game id.
     uint64_t multiplayerGameId_ = 0;
+    std::vector<std::string> importNotes_;
     // The master password verifier of a network or PBEM game file opened
     // here (SaveInfo::masterPasswordVerifier); kept when the game is saved.
     std::string masterVerifier_;

@@ -66,6 +66,8 @@ Rendering:
 Game:
   --classic-dir=DIR               Game directory of your installed copy (default: auto-detect)
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
+  --load=GAME.gam                 Open a saved game at once: OpenSE4's, or the original's (imported,
+                                  see docs/SETUP.md "Games of the original")
   --seed=N                        Seed for new games (default: random)
   --systems=N                     Number of star systems in a quick game
   --empires=N                     Number of empires in a quick game, including yours: N - 1 computer
@@ -249,6 +251,9 @@ int main(int argc, char** argv) {
         } else if (key == "--open") {
             options.openWindow = std::string(value);
             options.quickStart = true;
+        } else if (key == "--load") {
+            options.loadFile = std::string(value);
+            ok = !value.empty();
         } else if (key == "--pbem") {
             options.pbemFile = std::string(value);
             ok = !value.empty();

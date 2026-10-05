@@ -19,6 +19,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -613,14 +614,14 @@ TEST_CASE("classic save: files on disk, and the original's own values the export
     CHECK(save->summary.date == save->prologue.date);
     CHECK(save->prologue.turnCounter == kTurnCounterBase + static_cast<int32_t>(s.turn));
     // Ids equal positions (§7.2).
-    for (size_t i = 0; i < save->designs.size(); ++i) CHECK(save->designs[i].id == i + 1);
-    for (size_t i = 0; i < save->objects.size(); ++i) CHECK(save->objects[i].id == i + 1);
-    for (size_t i = 0; i < save->systems.size(); ++i) CHECK(save->systems[i].number == i + 1);
+    for (size_t i = 0; i < save->designs.size(); ++i) CHECK(size_t{save->designs[i].id} == i + 1);
+    for (size_t i = 0; i < save->objects.size(); ++i) CHECK(size_t{save->objects[i].id} == i + 1);
+    for (size_t i = 0; i < save->systems.size(); ++i) CHECK(size_t{save->systems[i].number} == i + 1);
     // The cached values, as OpenSE4 computes them.
     for (const Design& d : s.designs) {
         const DesignRecord& rec = save->designs[d.id.index()];
         const DesignStats st = computeDesignStats(r, nullptr, d);
-        CHECK(rec.speed == designMovement(r, d.hull, d.entries));
+        CHECK(int{rec.speed} == designMovement(r, d.hull, d.entries));
         CHECK(rec.cost[0] == st.cost.v[0]);
         CHECK(rec.parts.size() == d.entries.size());
         CHECK(rec.typeCode >= 1);
@@ -630,8 +631,8 @@ TEST_CASE("classic save: files on disk, and the original's own values the export
         if (v.count <= 0) continue;
         const ObjectRecord& o = save->objects[v.slot];
         if (o.objectClass() != ObjectClass::Ship) continue;
-        CHECK(o.maxMovement == vehicleMaxMovement(r, s, v));
-        CHECK(o.destroyedParts.capacity == s.design(v.design).entries.size());
+        CHECK(int{o.maxMovement} == vehicleMaxMovement(r, s, v));
+        CHECK(size_t{o.destroyedParts.capacity} == s.design(v.design).entries.size());
     }
     // The empty slots are blanks.
     for (const ObjectRecord& o : save->objects)
@@ -825,23 +826,23 @@ bool explained(const std::string& line) {
 void checkInvariants(const Rules& r, const ClassicSave& s) {
     CHECK(s.summary.empires == static_cast<int>(s.prologue.empireCount));
     for (size_t i = 0; i < s.empires.size(); ++i) {
-        CHECK(s.empires[i].player == i + 1);
+        CHECK(size_t{s.empires[i].player} == i + 1);
         CHECK(s.empires[i].techLevels.size() == r.data().techAreas.size());
         CHECK(s.empires[i].traits.size() == r.data().racialTraits.size());
-        for (size_t k = 0; k < s.empires[i].fleets.size(); ++k) CHECK(s.empires[i].fleets[k].number == k + 1);
+        for (size_t k = 0; k < s.empires[i].fleets.size(); ++k) CHECK(size_t{s.empires[i].fleets[k].number} == k + 1);
     }
-    for (size_t i = 0; i < s.systems.size(); ++i) CHECK(s.systems[i].number == i + 1);
-    for (size_t i = 0; i < s.designs.size(); ++i) CHECK(s.designs[i].id == i + 1);
+    for (size_t i = 0; i < s.systems.size(); ++i) CHECK(size_t{s.systems[i].number} == i + 1);
+    for (size_t i = 0; i < s.designs.size(); ++i) CHECK(size_t{s.designs[i].id} == i + 1);
     size_t oneWay = 0;
     for (size_t i = 0; i < s.objects.size(); ++i) {
         const ObjectRecord& o = s.objects[i];
-        CHECK(o.id == i + 1);
+        CHECK(size_t{o.id} == i + 1);
         if (o.blank()) continue;
         if (o.objectClass() == ObjectClass::Ship) {
             REQUIRE(o.design >= 1);
-            REQUIRE(o.design <= s.designs.size());
-            CHECK(o.destroyedParts.capacity == s.designs[o.design - 1u].parts.size());
-            if (o.fleet) CHECK(o.fleet <= s.empires[o.owner - 1u].fleets.size());
+            REQUIRE(size_t{o.design} <= s.designs.size());
+            CHECK(size_t{o.destroyedParts.capacity} == s.designs[o.design - 1u].parts.size());
+            if (o.fleet) CHECK(size_t{o.fleet} <= s.empires[o.owner - 1u].fleets.size());
         }
         if (o.objectClass() == ObjectClass::WarpPoint) {
             // Warp points pair up, except the one-way links (§8).
@@ -945,5 +946,66 @@ TEST_CASE("classic save: the original's saves import, play on and export again (
             CHECK_MESSAGE(problem.empty(), problem);
             CHECK(stateChecksum(*game) == stateChecksum(*twin));
         }
+    }
+}
+
+// A long game of the original, played on (opt-in): OPENSE4_ORIGINAL_SAVE_PLAY
+// names one saved game, which is imported, played for
+// OPENSE4_ORIGINAL_SAVES_TURNS turns (5 by default), saved in OpenSE4's format
+// and loaded again, and exported back to the original's format.
+TEST_CASE("classic save: a game of the original is played on, saved, loaded and exported (opt-in)") {
+    const Rules* r = installRules();
+    const char* file = std::getenv("OPENSE4_ORIGINAL_SAVE_PLAY");
+    if (!r || !file) return;
+    const int turns = std::getenv("OPENSE4_ORIGINAL_SAVES_TURNS") ? std::atoi(std::getenv("OPENSE4_ORIGINAL_SAVES_TURNS")) : 5;
+    ConversionReport report;
+    auto game = readClassicGame(*r, file, report);
+    REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+    for (const std::string& n : report.notes) MESSAGE("import note: " << n);
+    const uint32_t start = game->turn;
+    for (int t = 0; t < turns && !game->gameOver; ++t) {
+        processTurn(*r, *game, {});
+        const std::string problem = validateState(*game, r);
+        CHECK_MESSAGE(problem.empty(), problem);
+    }
+    CHECK(game->turn == start + static_cast<uint32_t>(turns));
+    size_t alive = 0, vehicles = 0, colonies = 0;
+    for (const Empire& e : game->empires) alive += e.alive;
+    for (const Vehicle& v : game->vehicles) vehicles += v.count > 0;
+    for (const auto& c : game->colonies) colonies += c.has_value();
+    MESSAGE(std::format("after {} turns: date {}, {} empires alive, {} vehicles, {} colonies", turns, describeDate(game->turn), alive, vehicles, colonies));
+
+    // OpenSE4's own format, and back: the same game, which plays on the same.
+    // No game file keeps the mood events waiting for the next update (spec
+    // 02 §4): a loaded game starts without them, so the game here drops them too.
+    game->pendingMood.clear();
+    SaveInfo info;
+    info.gameName = "imported";
+    auto loaded = deserializeSave(serializeSave(*game, info));
+    REQUIRE_MESSAGE(loaded.has_value(), (loaded ? std::string{} : loaded.error()));
+    CHECK(stateChecksum(loaded->first) == stateChecksum(*game));
+    GameState again = loaded->first;
+    processTurn(*r, again, {});
+    processTurn(*r, *game, {});
+    CHECK(stateChecksum(again) == stateChecksum(*game));
+
+    // Back to the original's format: it decodes, and imports again.
+    ConversionReport out;
+    auto exported = exportClassicSave(*r, *game, out, {17, "imported"});
+    REQUIRE_MESSAGE(exported.has_value(), (exported ? std::string{} : exported.error()));
+    for (const std::string& n : out.notes) MESSAGE("export note: " << n);
+    auto bytes = encodeClassicSave(*exported);
+    REQUIRE(bytes.has_value());
+    MESSAGE("exported file: " << bytes->size() << " bytes");
+    auto decoded = decodeClassicSave(*bytes, r->data().racialTraits.size());
+    REQUIRE_MESSAGE(decoded.has_value(), (decoded ? std::string{} : decoded.error()));
+    checkInvariants(*r, *decoded);
+    ConversionReport back;
+    auto reimported = importClassicSave(*r, *decoded, back);
+    REQUIRE_MESSAGE(reimported.has_value(), (reimported ? std::string{} : reimported.error()));
+    CHECK(validateState(*reimported, r).empty());
+    if (const char* keep = std::getenv("OPENSE4_ORIGINAL_SAVE_EXPORT")) {
+        auto written = writeFileAtomic(keep, *bytes);
+        CHECK(written.has_value());
     }
 }

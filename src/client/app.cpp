@@ -107,6 +107,7 @@ int App::run(const AppOptions& options) {
     co.select = options.select;
     co.openWindow = options.openWindow;
     co.turnBased = options.turnBased;
+    co.loadFile = options.loadFile;
     co.pbemFile = options.pbemFile;
     co.pbemEmpire = options.pbemEmpire;
     co.pbemPassword = options.pbemPassword;

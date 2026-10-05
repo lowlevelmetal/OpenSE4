@@ -404,11 +404,85 @@ public:
         }
         if (confirmPopup(ui, "Overwrite", std::format("A saved game named \"{}\" exists. Replace it?", clean)))
             save(ui, ruleset::childIgnoringCase(savesDir(), clean + ".gam"), clean);
+        // A saved game for the original's Load Game (docs/spec/08 §7), in a folder of the player's.
+        const bool whole = ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat;
+        if (d.button("Save for SE IV", whole && !clean.empty())) {
+            classicName_ = clean;
+            classicFolder_ = classicSavesDirectory().string();
+            classicNotes_.clear();
+            classicResult_.clear();
+            ImGui::OpenPopup("Save for Space Empires IV");
+        }
+        classicPopup(ui);
         d.close();
         return d.keepOpen();
     }
 
 private:
+    // The folder the original's saves are written to: the player's user data
+    // folder until one is typed, kept for the session (never the installation's).
+    static std::filesystem::path& classicSavesDirectory() {
+        static std::filesystem::path dir;
+        if (dir.empty()) dir = userDataDir() / "Space Empires IV saves";
+        return dir;
+    }
+
+    void classicPopup(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({460, 0}));
+        if (!ImGui::BeginPopupModal("Save for Space Empires IV", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted("Writes this game as a saved game of the original Space Empires IV, for its Load Game. "
+                               "The game here, and its OpenSE4 saves, stay as they are.");
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+        ImGui::TextColored(kLabelBlue, "Folder");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        inputString("##classicfolder", classicFolder_, 1024);
+        ImGui::TextColored(kLabelBlue, "File name");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = inputString("##classicname", classicName_, 80, ImGuiInputTextFlags_EnterReturnsTrue);
+        const std::string name = cleanName(classicName_);
+        const std::filesystem::path file = std::filesystem::path(classicFolder_) / (name + ".gam");
+        std::error_code ec;
+        if (!name.empty() && std::filesystem::exists(file, ec)) wrappedDim(std::format("{} exists and will be replaced.", file.filename().string()).c_str());
+        if (!classicResult_.empty()) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextColored(classicSaved_ ? kGoodText : kErrorText, "%s", classicResult_.c_str());
+            for (const std::string& note : classicNotes_) {
+                ImGui::Bullet();
+                ImGui::TextUnformatted(note.c_str());
+            }
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::Spacing();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if ((ImGui::Button("Save", ImVec2(w, ui.px(26))) || enter) && !name.empty() && !classicFolder_.empty()) {
+            const BusyPointer busy;
+            auto notes = ui.session.exportClassic(file);
+            classicSaved_ = notes.has_value();
+            if (notes) {
+                classicSavesDirectory() = classicFolder_;
+                classicResult_ = std::format("Saved as {}. Copy it to the original's SaveGame folder, or open this folder with "
+                                             "its Change Directory, to load it there. Not carried over:",
+                                             file.string());
+                classicNotes_ = std::move(*notes);
+            } else {
+                classicResult_ = "Not saved: " + notes.error();
+                classicNotes_.clear();
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    std::string classicName_;
+    std::string classicFolder_;
+    std::string classicResult_;
+    std::vector<std::string> classicNotes_;
+    bool classicSaved_ = false;
+
     void save(UiContext& ui, const std::filesystem::path& file, const std::string& name) {
         const BusyPointer busy;  // the Hourglass while it saves (spec 06 §5.8)
         const auto result = ui.session.save(file, name);

@@ -38,6 +38,8 @@ struct ClassicOptions {
     bool turnBased = true;   // quick game in the turn-based style (the default, spec 01 §14 Q39)
     // Play by e-mail (--pbem): open this game file for `pbemEmpire` (1-based;
     // 0: the only empire that can play now) and play its turn.
+    // --load: open this saved game (OpenSE4's or the original's) at once.
+    std::string loadFile;
     std::string pbemFile;
     int pbemEmpire = 0;
     std::string pbemPassword;
@@ -165,6 +167,7 @@ private:
     // The tutorial or training game being played, if any.
     std::unique_ptr<classic::LessonRunner> lesson_;
     std::string lessonError_;   // a lesson that could not start
+    std::vector<std::string> importNotes_;   // a saved game of the original was imported: what it approximated
     // The lesson was chosen by the player (startLesson): leaving it keeps its place.
     bool lessonResumable_ = false;
     // The tutorial input lock, made at the end of each frame for the next.
@@ -175,6 +178,7 @@ private:
     std::vector<std::string> lockWindows(const classic::UiContext& ui) const;
     std::string refusedKey_;    // a key the lock refused since the last frame (its name)
     bool navKeyboardOff_ = false;   // Dear ImGui's keyboard navigation is off for the lock (updateLock)
+    void drawImportNotes(classic::UiContext& ui);
     // The keyboard goes to the classic window in front (keepFocusOnFrontWindow).
     void keepFocusOnFrontWindow();
     ImGuiID frontWindow_ = 0;   // the Dear ImGui window of the window in front (0: none)

@@ -5,6 +5,7 @@
 #include "client/classic/settings.hpp"
 #include "core/log.hpp"
 #include "game/ai.hpp"
+#include "game/classic_save.hpp"
 #include "game/diplomacy.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
@@ -15,6 +16,7 @@
 #include <exception>
 #include <format>
 #include <fstream>
+#include <random>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -681,9 +683,48 @@ std::expected<void, std::string> ClassicSession::save(const std::filesystem::pat
     return saved;
 }
 
+namespace {
+
+// Writes what an import or export approximated to the log file.
+void logReport(std::string_view what, const std::filesystem::path& file, const game::classic::ConversionReport& report) {
+    log::info("{} {}", what, file.string());
+    for (const std::string& n : report.notes) log::info("  {}", n);
+    for (const std::string& d : report.details) log::info("  detail: {}", d);
+}
+
+} // namespace
+
+std::expected<std::vector<std::string>, std::string> ClassicSession::exportClassic(const std::filesystem::path& file) const {
+    if (kind_ != SessionKind::Local && kind_ != SessionKind::Hotseat)
+        return std::unexpected(std::string("Only a local or hotseat game can be saved for Space Empires IV: this copy of a network or "
+                                           "play-by-e-mail game holds only what your empire knows."));
+    game::classic::ConversionReport report;
+    game::classic::ExportOptions options;
+    options.keySeed = std::random_device{}();
+    options.gameName = file.stem().string();
+    auto written = game::classic::writeClassicGame(*rules_, state_, file, report, options);
+    if (!written) return std::unexpected(written.error());
+    // The players' History files go beside it, as the original's own saves keep them (spec 08 §1.2).
+    copyHistoryNextTo(file);
+    logReport("Saved for Space Empires IV:", file, report);
+    return report.notes;
+}
+
 std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load(std::shared_ptr<const game::Rules> rules,
                                                                                  const std::filesystem::path& file) {
-    auto loaded = game::loadGame(file);
+    std::vector<std::string> importNotes;
+    std::expected<std::pair<game::GameState, game::SaveInfo>, std::string> loaded;
+    if (auto bytes = game::readFileBytes(file); bytes && game::classic::looksLikeClassicSave(*bytes)) {
+        // A saved game of the original: imported (docs/spec/08).
+        game::classic::ConversionReport report;
+        auto imported = game::classic::readClassicGame(*rules, file, report);
+        if (!imported) return std::unexpected(imported.error());
+        logReport("Imported the Space Empires IV saved game", file, report);
+        importNotes = std::move(report.notes);
+        loaded = std::pair<game::GameState, game::SaveInfo>{std::move(*imported), game::SaveInfo{}};
+    } else {
+        loaded = game::loadGame(file);
+    }
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& s = loaded->first;
     // Reading a game file recalculates every colony's cloak and sensor levels,
@@ -704,6 +745,7 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     // on here as a local game; its passwords are the verifiers the host checks.
     session->multiplayerGameId_ = loaded->second.gameId;
     session->masterVerifier_ = loaded->second.masterPasswordVerifier;
+    session->importNotes_ = std::move(importNotes);
     return session;
 }
 

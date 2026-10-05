@@ -175,7 +175,7 @@ std::array<std::string, 20> aiTags() {
 
 std::string_view abilityName(uint16_t id) {
     static const std::array<std::string, 20> tags = aiTags();
-    if (id < kAbilities.size()) return kAbilities[id];
+    if (size_t{id} < kAbilities.size()) return kAbilities[id];
     if (id < 164) return tags[id - 144];
     if (id < kAbilityIds) return kAbilitiesTail[id - 164];
     return {};
