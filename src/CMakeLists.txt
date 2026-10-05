@@ -6,10 +6,35 @@ target_include_directories(opense4_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(opense4_core PRIVATE opense4_warnings)
 
 # --- script: the modding SDK's values and script runtime (docs/MODDING_SDK.md) ---------
+# MicroPython (cmake/MicroPython.cmake) with our port (script/port), the conversions,
+# JSON, and the runtime's own Python modules (python/lib), always built in.
+include(MicroPython)
+file(GLOB_RECURSE script_library RELATIVE "${CMAKE_SOURCE_DIR}/python/lib" CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/python/lib/*.py")
+list(SORT script_library)
+list(TRANSFORM script_library PREPEND "${CMAKE_SOURCE_DIR}/python/lib/" OUTPUT_VARIABLE script_library_paths)
+list(JOIN script_library "|" script_library_arg)
+set(script_library_cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/script_library.cpp")
+add_custom_command(
+    OUTPUT "${script_library_cpp}"
+    COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${script_library_cpp}" "-DROOT=${CMAKE_SOURCE_DIR}/python/lib"
+            "-DFILES=${script_library_arg}" -P "${CMAKE_SOURCE_DIR}/cmake/EmbedPython.cmake"
+    DEPENDS ${script_library_paths} "${CMAKE_SOURCE_DIR}/cmake/EmbedPython.cmake"
+    COMMENT "Embedding the script runtime's Python modules"
+    VERBATIM)
 add_library(opense4_script STATIC
-    script/value.cpp)
+    script/json.cpp
+    script/port/port.c
+    script/runtime.cpp
+    script/value.cpp
+    "${script_library_cpp}")
 target_include_directories(opense4_script PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(opense4_script PRIVATE opense4_warnings)
+target_link_libraries(opense4_script PRIVATE opense4_micropython opense4_warnings)
+if(OPENSE4_ASAN_STACK_OPTION)
+    # Python objects held in the runtime's own frames must be on the real stack
+    # (cmake/MicroPython.cmake).
+    target_compile_options(opense4_script PRIVATE ${OPENSE4_ASAN_STACK_OPTION})
+endif()
 
 # --- embedded: our own fonts and learning content built into the executable ---------
 # (core/embedded.hpp). Only our own files: nothing from the original game.
