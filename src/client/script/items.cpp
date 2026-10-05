@@ -43,7 +43,7 @@ bool visiblePart(ImVec2& min, ImVec2& max) {
     return max.x > min.x && max.y > min.y;
 }
 
-void add(std::string_view label, ImVec2 min, ImVec2 max, bool disabled, bool text = false, bool overflow = false) {
+void add(std::string_view label, ImVec2 min, ImVec2 max, bool disabled, bool text = false, bool overflow = false, bool cut = false) {
     Registry& r = registry();
     const ImVec2 fullMin = min, fullMax = max;
     if (!visiblePart(min, max)) return;
@@ -53,6 +53,7 @@ void add(std::string_view label, ImVec2 min, ImVec2 max, bool disabled, bool tex
     if (const ImGuiContext* g = ImGui::GetCurrentContext(); g && g->CurrentWindow)
         item.scrolls = g->CurrentWindow->ScrollMax.x > 0.0f || g->CurrentWindow->ScrollMax.y > 0.0f || g->CurrentTable != nullptr;
     item.overflow = overflow;
+    item.cut = cut;
     (text ? r.currentTexts : r.current).push_back(std::move(item));
 }
 
@@ -155,9 +156,9 @@ void reportText(std::string_view text, ImVec2 min, ImVec2 max) {
     add(text, min, max, false, true);
 }
 
-void reportFit(std::string_view text, ImVec2 min, ImVec2 max, bool overflow) {
+void reportFit(std::string_view text, ImVec2 min, ImVec2 max, bool overflow, bool cut) {
     if (!collectingTexts()) return;
-    add(text, min, max, false, true, overflow);
+    add(text, min, max, false, true, overflow, cut);
 }
 
 void reportItem(std::string_view label) {

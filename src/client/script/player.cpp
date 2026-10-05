@@ -609,6 +609,19 @@ Player::Status Player::check(const Step& st, const Probe& probe) {
             if (faults.size() > 8) list += std::format("; and {} more", faults.size() - 8);
             return fail(list);
         }
+        case Op::AssertWhole: {
+            // Every text drawn into a box of its own is drawn whole: none cut
+            // short with "…" to fit, none running out of its box.
+            std::vector<std::string> faults;
+            for (const Item& text : probe.texts())
+                if ((text.cut || text.overflow) && scopeMatches(text, st.text, probe))
+                    faults.push_back(std::format("text {} {}", quoteWord(text.label), text.cut ? "is cut short" : "runs out of its box"));
+            if (faults.empty()) return Status::Done;
+            std::string list;
+            for (size_t i = 0; i < faults.size() && i < 8; ++i) list += (i ? "; " : "") + faults[i];
+            if (faults.size() > 8) list += std::format("; and {} more", faults.size() - 8);
+            return fail(list);
+        }
         case Op::AssertInside: {
             const auto a = resolve(st.target, probe, why);
             if (!a) return fail(why);

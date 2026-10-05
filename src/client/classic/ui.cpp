@@ -242,7 +242,7 @@ TextFit drawFitted(const Painter& p, ImDrawList* dl, ImFont* font, float framePx
     const float x = pos.x + std::max(0.0f, maxWidth - f.extent.x) * align;
     dl->AddText(font, f.size, {std::floor(x + 0.5f), std::floor(pos.y + 0.5f)}, color, f.text.c_str());
     script::reportFit(f.text, {x, pos.y}, {x + f.extent.x, pos.y + f.extent.y},
-                      f.extent.x > maxWidth + 0.5f || (maxHeight > 0.0f && f.extent.y > maxHeight + 0.5f));
+                      f.extent.x > maxWidth + 0.5f || (maxHeight > 0.0f && f.extent.y > maxHeight + 0.5f), f.cut);
     if (f.cut && hoverOver(dl, pos, {pos.x + maxWidth, pos.y + f.extent.y})) ImGui::SetTooltip("%.*s", int(text.size()), text.data());
     return f;
 }
@@ -254,7 +254,7 @@ void fittedText(std::string_view text, float maxWidth, ImU32 color) {
     const TextFit f = fitSized(font, ImGui::GetFontSize(), ImGui::GetFontSize(), 1.0f, text, maxWidth, 0.0f);
     const ImVec2 at = ImGui::GetCursorScreenPos();
     ImGui::GetWindowDrawList()->AddText(font, f.size, at, color ? color : ImGui::GetColorU32(ImGuiCol_Text), f.text.c_str());
-    script::reportFit(f.text, at, {at.x + f.extent.x, at.y + f.extent.y}, f.extent.x > maxWidth + 0.5f);
+    script::reportFit(f.text, at, {at.x + f.extent.x, at.y + f.extent.y}, f.extent.x > maxWidth + 0.5f, f.cut);
     ImGui::Dummy(ImVec2(f.extent.x, ImGui::GetTextLineHeight()));
     if (f.cut && ImGui::IsItemHovered()) ImGui::SetTooltip("%.*s", int(text.size()), text.data());
 }
@@ -372,7 +372,7 @@ bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int sty
     const float top = a.y + ui.px(std::floor((frameSize.y - textH) * 0.5f) + 2.0f);
     dl->AddText(ImGui::GetFont(), fit.size, {std::floor(x), std::floor(top)}, text, fit.text.c_str());
     script::reportFit(fit.text, {std::floor(x), std::floor(top)}, {std::floor(x) + fit.extent.x, std::floor(top) + fit.extent.y},
-                      std::floor(x) < a.x || std::floor(x) + fit.extent.x > b.x + 0.5f || std::floor(top) + fit.extent.y > b.y + 0.5f);
+                      std::floor(x) < a.x || std::floor(x) + fit.extent.x > b.x + 0.5f || std::floor(top) + fit.extent.y > b.y + 0.5f, fit.cut);
     // A caption cut short shows whole under the pointer (the original's never are).
     if (fit.cut && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%.*s", int(caption.size()), caption.data());
     ImGui::PopFont();

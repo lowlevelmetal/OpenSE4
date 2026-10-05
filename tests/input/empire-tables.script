@@ -1,0 +1,39 @@
+# The Treaty Grid and Scores of a twelve-empire game (GitHub issue #3), in the original's large
+# dialog (780x475, spec 06 §1): ten empires a page, each column headed by the empire's flag over
+# the first letters of its name; every name, treaty code and figure fits its place and is drawn
+# whole, without "…" (assert-fits, assert-whole), on both pages (docs/BUILDING.md "Input
+# scripts"). v0.9.0 squeezed the last columns of the grid and cut the scores' figures.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --empires=12 --systems=16 --seed=3 --turns=40 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+repeat 20
+  click item:"*(suggested)" optional timeout=5
+end
+key F9
+wait-window empires
+click item:"Treaty Grid" in=empires
+wait-window treaty-grid
+assert-present item:"Empires 11-12" in=treaty-grid
+assert-fits treaty-grid
+assert-whole treaty-grid
+screenshot treaty-grid.png
+click item:"Empires 11-12" in=treaty-grid
+wait 2
+assert-fits treaty-grid
+assert-whole treaty-grid
+key Escape
+wait-closed treaty-grid
+click item:Scores in=empires
+wait-window scores
+assert-fits scores
+assert-whole scores
+screenshot scores.png
+click item:"Empires 11-12" in=scores
+wait 2
+assert-fits scores
+assert-whole scores
+key Escape
+wait-closed scores
+key Escape
+wait-closed empires

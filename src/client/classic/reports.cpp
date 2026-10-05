@@ -100,7 +100,7 @@ public:
     void text(float x, float y, ImU32 color, std::string_view t) const {
         const TextFit f = fitText(ui_.painter(), ImGui::GetFont(), ImGui::GetFontSize() / ui_.k(), t, ui_.px(kRight - x));
         dl_->AddText(ImGui::GetFont(), f.size, snap(at(x, y)), color, f.text.c_str());
-        script::reportFit(f.text, at(x, y), ImVec2(at(x, y).x + f.extent.x, at(x, y).y + f.extent.y), f.extent.x > ui_.px(kRight - x) + 0.5f);
+        script::reportFit(f.text, at(x, y), ImVec2(at(x, y).x + f.extent.x, at(x, y).y + f.extent.y), f.extent.x > ui_.px(kRight - x) + 0.5f, f.cut);
         if (f.cut && ImGui::IsMouseHoveringRect(at(x, y), at(kRight, y + 14)) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows))
             ImGui::SetTooltip("%.*s", int(t.size()), t.data());
     }
