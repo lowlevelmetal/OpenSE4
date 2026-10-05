@@ -458,15 +458,8 @@ private:
         ui.tagItem("designs:edit");
         const bool upgrade = d.button("Upgrade", own != nullptr);
         ui.tagItem("designs:upgrade");
-        if (upgrade) {
-            std::vector<game::DesignEntry> entries = own->entries;
-            if (upgradeEntries(ui.rules(), ui.me(), entries)) {
-                openDesigner("upgrade");
-            } else {
-                note_ = std::format("{} already uses the newest components.", own->name);
-                noteIsError_ = false;
-            }
-        }
+        // The candidate opens in the designer even when nothing changed (spec 03 §4.1).
+        if (upgrade) openDesigner("upgrade");
         const bool obsolete = own && own->obsolete;
         if (d.button(obsolete ? "Make Current" : "Make Obsolete", own != nullptr)) {
             const game::CommandResult res = ui.session.issue(game::cmd::SetDesignObsolete{own->id, !obsolete});

@@ -15,20 +15,17 @@ using ruleset::WeaponKind;
 bool isUnitHull(VehicleType t) { return t != VehicleType::Ship && t != VehicleType::Base; }
 
 bool isLatestComponent(const game::Rules& r, const game::Empire& e, uint32_t component) {
-    const int family = r.component(component).family;
-    if (family == 0) return true;
-    const auto latest = r.latestComponentOfFamily(e, family);
-    return !latest || *latest == component || r.component(*latest).romanNumeral <= r.component(component).romanNumeral;
+    const auto target = r.componentUpgradeTarget(e, r.component(component).family);
+    return !target || *target == component;
 }
 
 bool upgradeEntries(const game::Rules& r, const game::Empire& e, std::vector<game::DesignEntry>& entries) {
     bool changed = false;
     for (game::DesignEntry& entry : entries) {
-        const ruleset::Component& c = r.component(entry.component);
-        if (c.family == 0) continue;
-        const auto latest = r.latestComponentOfFamily(e, c.family);
-        if (!latest || *latest == entry.component || r.component(*latest).romanNumeral <= c.romanNumeral) continue;
-        entry.component = *latest;
+        // Each entry on its own, its mount kept; none of the family researched: it stays.
+        const auto target = r.componentUpgradeTarget(e, r.component(entry.component).family);
+        if (!target || *target == entry.component) continue;
+        entry.component = *target;
         changed = true;
     }
     return changed;

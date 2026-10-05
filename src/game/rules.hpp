@@ -73,10 +73,15 @@ public:
     // kMaxTechLevelCost (spec 05 §1.3).
     int64_t techLevelCost(ruleset::TechAreaId a, int level, int techCost) const;
 
-    // Newest available facility/component of a family (highest Roman
-    // Numeral): the target of upgrades (spec 02 §6.6) and of design Upgrade.
+    // The target of a facility upgrade (spec 02 §6.6, confirmed: binary): the
+    // available facility of the family with the highest Roman Numeral, the
+    // first in data-file order on a tie.
     std::optional<uint32_t> latestFacilityOfFamily(const Empire& e, int family) const;
-    std::optional<uint32_t> latestComponentOfFamily(const Empire& e, int family) const;
+    // What a design's Upgrade puts in place of a component of this family
+    // (spec 03 §4.1, confirmed: binary): the last component in data-file
+    // order with that Family whose tech requirements the empire meets. Any
+    // family, 0 included; numerals and names play no part.
+    std::optional<uint32_t> componentUpgradeTarget(const Empire& e, int family) const;
     // Only Latest (spec 02 §6.4, confirmed: binary): `items` are data-file
     // indices in data-file order that passed a window's other filters; every
     // item whose next one in that list has the same family (`Facility

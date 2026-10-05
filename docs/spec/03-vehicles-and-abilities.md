@@ -486,10 +486,9 @@ type, none = defined but unused.
   accepted, it is added as a **new** design under its own name; the original is untouched
   (confirmed: binary; observed, spec 07 session 7: with every large engine researched, an Ion
   Engine I became Quantum Engine III). Facility upgrades choose their target differently, by
-  the highest numeral (spec 02 §6.6). Our client differs (§19 Q81): it takes the highest
-  numeral of the family, the first on a tie, so once Ion Engine III is researched every
-  large engine of numeral I or II, whatever its line, becomes Ion Engine III; it opens
-  nothing when that changes no part, and it proposes a new name.
+  the highest numeral (spec 02 §6.6). Since 2026-10-05 our client follows (§19 Q81); in
+  place of the design's own name the designer proposes the next free one ("Lancer II"), an
+  OpenSE4 convenience.
 - Whenever the designer accepts a design (Create, Copy, Edit or Upgrade), the result starts as a
   prototype that is not obsolete, with no sightings by other empires (§4.1 Obsolete) and empty
   statistics (confirmed: binary).
@@ -2579,16 +2578,17 @@ fleet's row in the sector list is spec 06 §7 Q110.
     order on a tie (spec 02 §6.6), so the highest-numeral rule is right for facility upgrades
     and wrong only for designs.
 
-    The engine differs: `upgradeEntries` (`client/classic/screens/design_tools.cpp`) takes
-    `Rules::latestComponentOfFamily`, the highest numeral available in the family and the first
-    of them on a tie, skips family 0 and keeps an entry when that numeral is not higher. The
-    stock engines of numeral III tie, so any large engine of numeral I or II becomes Ion Engine
-    III, the newest lines included (in the report the upgraded design shows six Ion Engine III
-    and movement 6, against 7 before). Upgrade with nothing to change shows a note instead of
-    opening the designer (`designs.cpp`), and `isLatestComponent` follows the same numeral rule.
-    Proposing the next free name (`nextVersionName`) where the original keeps the old one is an
-    OpenSE4 convenience. `Rules::latestFacilityOfFamily` (facility upgrades, the Upgrade
-    Facilities button, the computer's upgrades) matches the original.
+    Since 2026-10-05 the engine follows: `upgradeEntries`
+    (`client/classic/screens/design_tools.cpp`) replaces each entry with
+    `Rules::componentUpgradeTarget`, the family's last researched component in data-file
+    order, for every family, and keeps the entry when none is researched; `isLatestComponent`
+    asks the same question. Upgrade opens the designer every time (`designs.cpp`), with no
+    note. Proposing the next free name (`nextVersionName`) where the original keeps the old
+    one stays an OpenSE4 convenience. `Rules::latestFacilityOfFamily` (facility upgrades, the
+    Upgrade Facilities button, the computer's upgrades) keeps the highest numeral, as the
+    original does. Nothing else used the old numeral rule for components: the computer
+    players' test whether a design can be improved (a researched successor of a higher
+    numeral, spec 05 §7.5) is their own rule and is unchanged.
 82. **Tagged ships ordered to attack.** "Multiple ships that are not in a fleet but are all
     selected and ordered to attack together do not attack together, only one at a time." In
     the report's turn-based game each tagged ship was asked on its own whether to enter the

@@ -5064,7 +5064,7 @@ windows; the population move between colonies is spec 03 §19 Q79.
      Set Construction Queue's boxes write the Empire Options rows back. Upgrades keep the
      highest numeral researched (`latestFacilityOfFamily`, spec 02 §6.6), which is right for
      facility upgrades; a design's Upgrade takes the family's last researched component in
-     file order instead, and ours does not yet (spec 03 §4.1, §19 Q81).
+     file order instead, and since 2026-10-05 ours does too (spec 03 §4.1, §19 Q81).
 
 **Players' reports on v0.9.0 (2026-10-05).** Three reports: the design Upgrade and tagged
 ships attacking together are spec 03 §19 Q81 and Q82; the fleet in the sector list is Q110.
