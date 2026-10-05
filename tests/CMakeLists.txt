@@ -70,7 +70,10 @@ add_executable(opense4_tests
     test_unit_groups.cpp
     test_wincursor.cpp
     test_winfont.cpp
-    test_xmath.cpp)
+    test_xmath.cpp
+    sdk/sdk_test_util.cpp
+    sdk/test_sdk_codec.cpp
+    sdk/test_sdk_docs.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
 target_sources(opense4_tests PRIVATE
@@ -114,10 +117,12 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
-target_link_libraries(opense4_tests PRIVATE opense4_script opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
+target_link_libraries(opense4_tests PRIVATE opense4_sdk opense4_script opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
+target_include_directories(opense4_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-    OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
+    OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
+    OPENSE4_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")
 
 opense4_copy_runtime_dlls(opense4_tests)
 
