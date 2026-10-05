@@ -11,7 +11,7 @@
 //     auto interp = script::Interpreter::create(limits);   // at most one per process
 //     interp->addFile("ai/__init__.py", text);              // a mod's files, as text
 //     interp->addNativeFunction("engine", "rng", fn);       // the engine's side
-//     auto result = interp->call("ai", "economy", {view});  // Result<Value>
+//     auto result = interp->call("ai", "economy", std::vector<Value>{view});  // Result<Value>
 //
 // Compiled bytecode is cached per process, keyed by file and text, so creating an
 // interpreter and importing a module again is cheap.
@@ -90,8 +90,8 @@ using Result = std::expected<T, Error>;
 // Thrown by a native function to raise a Python exception in the script, e.g.
 // NativeError("ValueError", "no such fleet"). Recognised types: ArithmeticError,
 // AssertionError, AttributeError, Exception, IndexError, KeyError, LookupError,
-// NameError, NotImplementedError, OverflowError, RuntimeError, TypeError,
-// ValueError, ZeroDivisionError; any other name raises RuntimeError. Any other C++
+// MemoryError, NameError, NotImplementedError, OverflowError, RuntimeError,
+// TypeError, ValueError, ZeroDivisionError; any other name raises RuntimeError. Any other C++
 // exception from a native function raises RuntimeError with its what().
 class NativeError : public std::runtime_error {
 public:

@@ -167,8 +167,12 @@ Error makeError(ErrorKind kind, std::string message) {
     return e;
 }
 
-void appendTo(void* ctx, const char* text, size_t len) {
-    static_cast<std::string*>(ctx)->append(text, len);
+// Called from MicroPython's C code while it prints: no exception may leave it.
+void appendTo(void* ctx, const char* text, size_t len) noexcept {
+    try {
+        static_cast<std::string*>(ctx)->append(text, len);
+    } catch (...) {
+    }
 }
 
 // --- Values: Python -> engine ------------------------------------------------------------
@@ -380,29 +384,45 @@ struct Interpreter::Impl {
     }
 
     // --- host callbacks ---
-    static void hostOutput(void* ctx, const char* text, size_t len) {
+    // MicroPython's C code calls these: no C++ exception may leave them.
+    static void hostOutput(void* ctx, const char* text, size_t len) noexcept {
         auto* self = static_cast<Impl*>(ctx);
         if (self->outputFull) return;
-        size_t room = self->limits.outputBytes - std::min(self->output.size(), self->limits.outputBytes);
-        if (len > room) {
-            self->output.append(text, room);
-            self->output += "\n[further output dropped]\n";
+        try {
+            size_t room = self->limits.outputBytes - std::min(self->output.size(), self->limits.outputBytes);
+            if (len > room) {
+                self->output.append(text, room);
+                self->output += "\n[further output dropped]\n";
+                self->outputFull = true;
+                return;
+            }
+            self->output.append(text, len);
+        } catch (...) {
             self->outputFull = true;
-            return;
         }
-        self->output.append(text, len);
     }
 
-    static const char* hostSource(void* ctx, const char* path, size_t* len) {
-        return static_cast<Impl*>(ctx)->source(path, len);
+    static const char* hostSource(void* ctx, const char* path, size_t* len) noexcept {
+        try {
+            return static_cast<Impl*>(ctx)->source(path, len);
+        } catch (...) {
+            return nullptr;
+        }
     }
 
-    static int hostIsPackage(void* ctx, const char* path) {
+    static int hostIsPackage(void* ctx, const char* path) noexcept {
         return static_cast<Impl*>(ctx)->isPackage(path) ? 1 : 0;
     }
 
-    static const uint8_t* hostCompiled(void* ctx, const char* path, size_t* len) {
-        auto* self = static_cast<Impl*>(ctx);
+    static const uint8_t* hostCompiled(void* ctx, const char* path, size_t* len) noexcept {
+        try {
+            return compiled(static_cast<Impl*>(ctx), path, len);
+        } catch (...) {
+            return nullptr;   // compiled again
+        }
+    }
+
+    static const uint8_t* compiled(Impl* self, const char* path, size_t* len) {
         size_t textLen = 0;
         const char* text = self->source(path, &textLen);
         if (!text) return nullptr;
@@ -420,8 +440,16 @@ struct Interpreter::Impl {
         return it->second->code.data();
     }
 
-    static const uint8_t* hostStoreCompiled(void* ctx, const char* path, const uint8_t* data, size_t len, size_t* keptLen) {
-        auto* self = static_cast<Impl*>(ctx);
+    static const uint8_t* hostStoreCompiled(void* ctx, const char* path, const uint8_t* data, size_t len,
+                                            size_t* keptLen) noexcept {
+        try {
+            return storeCompiled(static_cast<Impl*>(ctx), path, data, len, keptLen);
+        } catch (...) {
+            return nullptr;   // not cached; MicroPython compiles the file itself
+        }
+    }
+
+    static const uint8_t* storeCompiled(Impl* self, const char* path, const uint8_t* data, size_t len, size_t* keptLen) {
         size_t textLen = 0;
         const char* text = self->source(path, &textLen);
         if (!text) return nullptr;
@@ -446,8 +474,24 @@ struct Interpreter::Impl {
 
     // A native function: its arguments become Values, its result a Python object, and
     // whatever it throws a Python exception. Runs inside the script's call.
-    static int hostCallNative(void* ctx, size_t index, size_t nArgs, const ose_obj* args, ose_obj* result) {
-        auto* self = static_cast<Impl*>(ctx);
+    static int hostCallNative(void* ctx, size_t index, size_t nArgs, const ose_obj* args, ose_obj* result) noexcept {
+        try {
+            return callNative(static_cast<Impl*>(ctx), index, nArgs, args, result);
+        } catch (...) {
+            // no memory for the conversions: report it as MicroPython would
+            struct Make {
+                ose_obj made;
+            } make{nullptr};
+            ose_obj failure = nullptr;
+            if (ose_protect([](void* p) { static_cast<Make*>(p)->made = ose_new_exception("MemoryError", "", 0); }, &make,
+                            &failure) != 0)
+                make.made = failure;
+            *result = make.made;
+            return 1;
+        }
+    }
+
+    static int callNative(Impl* self, size_t index, size_t nArgs, const ose_obj* args, ose_obj* result) {
         const Native& native = self->natives[index];
         std::string errorType;
         std::string errorMessage;
@@ -578,11 +622,12 @@ struct Run {
     std::string_view source;
     bool wantResult = false;
     // results
-    std::string missing;                // a function that doesn't exist
-    FromPython conversion;
-    bool converted = false;
-    Value result;
+    size_t missing = SIZE_MAX;          // the attribute that doesn't exist
+    bool hasValue = false;              // the value is kept (ose_keep) for converting
 };
+
+// Inside ose_protect only plain data changes: a C++ exception must not pass
+// MicroPython's C frames, so nothing here allocates on the C++ side.
 
 void runProtected(void* p) {
     Run& r = *static_cast<Run*>(p);
@@ -603,10 +648,10 @@ void runProtected(void* p) {
     case Run::What::Import: ose_import(r.module.c_str()); break;
     case Run::What::Call: {
         fn = ose_import(r.module.c_str());
-        for (const std::string& attr : r.attributes) {
-            fn = ose_getattr_maybe(fn, attr.c_str());
+        for (size_t i = 0; i < r.attributes.size(); ++i) {
+            fn = ose_getattr_maybe(fn, r.attributes[i].c_str());
             if (!fn) {
-                r.missing = attr;
+                r.missing = i;
                 break;
             }
         }
@@ -619,9 +664,9 @@ void runProtected(void* p) {
     r.budgetAtEnd = ose_budget_get();
     ose_budget_set(OSE_BUDGET_UNLIMITED);
     r.phase = Phase::Result;
-    if (r.wantResult && value && r.missing.empty()) {
-        r.conversion.where = "the result";
-        r.converted = r.conversion.convert(value, r.result, 0);
+    if (r.wantResult && value) {
+        ose_keep(value);   // reachable while it is converted, after this returns
+        r.hasValue = true;
     }
 }
 
@@ -788,10 +833,19 @@ Result<Value> execute(Interpreter::Impl& impl, Run& run, const CallOptions& opti
         }
         return std::unexpected(std::move(e));
     }
-    if (!run.missing.empty())
-        return std::unexpected(makeError(ErrorKind::NotFound, std::format("module '{}' has no '{}'", run.module, run.missing)));
-    if (run.wantResult && !run.converted) return std::unexpected(makeError(ErrorKind::Conversion, run.conversion.error));
-    return std::move(run.result);
+    if (run.missing != SIZE_MAX)
+        return std::unexpected(makeError(ErrorKind::NotFound,
+                                         std::format("module '{}' has no '{}'", run.module, run.attributes[run.missing])));
+    if (!run.hasValue) return Value();
+    // Reading Python objects allocates nothing in the interpreter, so no collection
+    // can run while the kept value is converted.
+    FromPython conversion;
+    conversion.where = "the result";
+    Value result;
+    bool converted = conversion.convert(ose_kept(), result, 0);
+    ose_keep(nullptr);
+    if (!converted) return std::unexpected(makeError(ErrorKind::Conversion, conversion.error));
+    return result;
 }
 
 } // namespace

@@ -51,6 +51,7 @@ static struct {
     mp_obj_t budget_exception;
     mp_obj_t recursion_error;
     mp_obj_t last_exception;     // kept reachable while the engine describes it
+    mp_obj_t kept;               // ose_keep()
     // Objects the port holds on to (garbage collection roots).
     mp_obj_t *pins;
     size_t pins_len, pins_cap;
@@ -87,6 +88,7 @@ void gc_collect(void) {
         gc_collect_root((void **)ose.id_keys, ose.id_cap);
     }
     gc_collect_root((void **)&ose.last_exception, 1);
+    gc_collect_root((void **)&ose.kept, 1);
     gc_collect_end();
 }
 
@@ -164,7 +166,9 @@ int mp_opense4_import_load(const char *path, mp_compiled_module_t *cm) {
             mp_compile_to_raw_code(&tree, name, false, &compiled);
             vstr_t vstr;
             vstr_init(&vstr, 1024);
-            mp_print_t print = {&vstr, (mp_print_strn_t)vstr_add_strn};
+            mp_print_t print;
+            print.data = &vstr;
+            print.print_strn = (mp_print_strn_t)vstr_add_strn;
             mp_raw_code_save(&compiled, &print);
             mpy = h->store_compiled(h->ctx, path, (const uint8_t *)vstr.buf, vstr.len, &mpy_len);
             vstr_clear(&vstr);
@@ -593,11 +597,10 @@ int ose_protect(void (*fn)(void *ctx), void *ctx, ose_obj *exception) {
 
 static mp_obj_t make_class(const char *name, const mp_obj_type_t *base) {
     mp_obj_t base_obj = MP_OBJ_FROM_PTR(base);
-    mp_obj_t args[3] = {
-        MP_OBJ_NEW_QSTR(qstr_from_str(name)),
-        mp_obj_new_tuple(1, &base_obj),
-        mp_obj_new_dict(0),
-    };
+    mp_obj_t args[3];
+    args[0] = MP_OBJ_NEW_QSTR(qstr_from_str(name));
+    args[1] = mp_obj_new_tuple(1, &base_obj);
+    args[2] = mp_obj_new_dict(0);
     return mp_call_function_n_kw(MP_OBJ_FROM_PTR(&mp_type_type), 3, 0, args);
 }
 
@@ -615,6 +618,14 @@ void ose_setup(void) {
     }
     mp_obj_dict_store(MP_OBJ_FROM_PTR(MP_STATE_VM(mp_module_builtins_override_dict)),
         MP_OBJ_NEW_QSTR(qstr_from_str("RecursionError")), ose.recursion_error);
+}
+
+void ose_keep(ose_obj obj) {
+    ose.kept = (mp_obj_t)obj;
+}
+
+ose_obj ose_kept(void) {
+    return ose.kept;
 }
 
 ose_obj ose_import(const char *module) {
@@ -695,7 +706,9 @@ static void format_strn(void *data, const char *str, size_t len) {
 
 static void format_run(void *data) {
     ose_format_t *f = data;
-    mp_print_t print = {f, format_strn};
+    mp_print_t print;
+    print.data = f;
+    print.print_strn = format_strn;
     if (f->traceback) {
         mp_obj_print_exception(&print, f->exc);
     } else {
@@ -706,7 +719,11 @@ static void format_run(void *data) {
 // A script's own __str__ may fail or run long: it gets a budget of its own, and the
 // type name stands in when it fails.
 static void format_exception(ose_obj exc, bool traceback, void (*out)(void *ctx, const char *text, size_t len), void *ctx) {
-    ose_format_t f = {out, ctx, (mp_obj_t)exc, traceback};
+    ose_format_t f;
+    f.out = out;
+    f.ctx = ctx;
+    f.exc = (mp_obj_t)exc;
+    f.traceback = traceback;
     int64_t saved_budget = mp_opense4_budget_left;
     size_t saved_depth = mp_opense4_depth;
     mp_obj_t saved_exception = ose.last_exception;
@@ -743,6 +760,7 @@ ose_obj ose_new_exception(const char *type, const char *message, size_t len) {
         {"IndexError", &mp_type_IndexError},
         {"KeyError", &mp_type_KeyError},
         {"LookupError", &mp_type_LookupError},
+        {"MemoryError", &mp_type_MemoryError},
         {"NameError", &mp_type_NameError},
         {"NotImplementedError", &mp_type_NotImplementedError},
         {"OverflowError", &mp_type_OverflowError},
@@ -763,10 +781,21 @@ ose_obj ose_new_exception(const char *type, const char *message, size_t len) {
 
 // --- port.h: values -----------------------------------------------------------------------
 
+// A tuple, or a type made by namedtuple (a built-in subtype of tuple).
+static bool is_tuple_like(mp_obj_t o) {
+    if (!mp_obj_is_obj(o)) {
+        return false;
+    }
+    const mp_obj_type_t *type = mp_obj_get_type(o);
+    return type == &mp_type_tuple
+           || (!(type->flags & MP_TYPE_FLAG_INSTANCE_TYPE)
+               && mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(type), MP_OBJ_FROM_PTR(&mp_type_tuple)));
+}
+
 // An instance of a class derived from dict, list or tuple (a Counter, a namedtuple
 // subclass...) converts as its built-in part.
 static mp_obj_t native_part(mp_obj_t o) {
-    if (!mp_obj_is_obj(o) || mp_obj_is_tuple_compatible(o)) {
+    if (!mp_obj_is_obj(o) || is_tuple_like(o)) {
         return o;
     }
     const mp_obj_type_t *type = mp_obj_get_type(o);
@@ -779,7 +808,7 @@ static mp_obj_t native_part(mp_obj_t o) {
         || mp_obj_is_subclass_fast(t, MP_OBJ_FROM_PTR(&mp_type_tuple))) {
         mp_obj_t sub = ((const mp_obj_instance_t *)MP_OBJ_TO_PTR(o))->subobj[0];
         if (mp_obj_is_type(sub, &mp_type_dict) || mp_obj_is_type(sub, &mp_type_ordereddict)
-            || mp_obj_is_type(sub, &mp_type_list) || mp_obj_is_tuple_compatible(sub)) {
+            || mp_obj_is_type(sub, &mp_type_list) || is_tuple_like(sub)) {
             return sub;
         }
     }
@@ -803,7 +832,7 @@ int ose_kind(ose_obj obj) {
     if (mp_obj_is_str(o)) {
         return OSE_STR;
     }
-    if (mp_obj_is_type(o, &mp_type_list) || mp_obj_is_tuple_compatible(o)) {
+    if (mp_obj_is_type(o, &mp_type_list) || is_tuple_like(o)) {
         return OSE_LIST;
     }
     if (mp_obj_is_type(o, &mp_type_ordereddict)) {

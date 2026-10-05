@@ -61,6 +61,10 @@ ose_obj ose_call(ose_obj fn, size_t n_args, const ose_obj *args);
 ose_obj ose_exec(const char *source, size_t len, const char *name, int mode);
 // Sets up the runtime's own names: the BudgetExceeded and RecursionError classes.
 void ose_setup(void);
+// Keeps one object reachable for the garbage collector outside protected code (NULL
+// lets it go), and returns it.
+void ose_keep(ose_obj obj);
+ose_obj ose_kept(void);
 
 // --- Budget, in bytecodes (plus native work in the same units) --------------------------
 void ose_budget_set(int64_t left);
