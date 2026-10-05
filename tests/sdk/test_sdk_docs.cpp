@@ -1,6 +1,7 @@
-// The SDK's docs are its schema (docs/sdk/commands.md): these tests fail when
-// a command kind, an order kind, an enumeration value or a field is missing
-// from them, or when they describe one the code does not make.
+// The SDK's docs are its schema (docs/sdk/commands.md, docs/sdk/view.md):
+// these tests fail when a command kind, an order kind, an enumeration value
+// or a field is missing from them, or when they describe one the code does
+// not make. The view's own fields are checked in test_sdk_view.cpp.
 
 #include "command_samples.hpp"
 #include "engine_fixture.hpp"
@@ -34,6 +35,15 @@ void checkEnum(std::string_view docName) {
     CHECK(s->values == names);
 }
 
+void checkStructKeys(std::string_view docName, std::span<const std::string_view> keys) {
+    INFO("`" << docName << "`");
+    const Schema::Section* s = docsSchema().find(docName);
+    REQUIRE(s != nullptr);
+    std::vector<std::string> rows, expected(keys.begin(), keys.end());
+    for (const auto& row : s->rows) rows.push_back(row.field);
+    CHECK(rows == expected);
+}
+
 std::string readDoc(std::string_view name) {
     std::ifstream in(std::filesystem::path(OPENSE4_DOCS_DIR) / "sdk" / name);
     std::stringstream out;
@@ -51,7 +61,7 @@ std::vector<Command> defaultCommands(std::index_sequence<I...>) {
 TEST_CASE("sdk docs: the schema tables read cleanly") {
     const Schema& s = docsSchema();
     CHECK_MESSAGE(s.problems.empty(), joined(s.problems));
-    CHECK(s.sections.size() > 80);
+    CHECK(s.sections.size() > 100);
 }
 
 TEST_CASE("sdk docs: every command kind has its section, its fields and an example") {
@@ -115,4 +125,21 @@ TEST_CASE("sdk docs: every enumeration lists exactly its names, in order") {
     checkEnum<EncounterClear>("encounter_clear");
     checkEnum<Minister>("minister");
     checkEnum<combat::TacticalOrder::Kind>("tactical_order_kind");
+    checkEnum<VehicleStatus>("vehicle_status");
+    checkEnum<ObjectKind>("object_kind");
+    checkEnum<PlayerKind>("player_kind");
+    checkEnum<LogCategory>("log_category");
+    checkEnum<LogGoto>("log_goto");
+    checkEnum<Mood>("mood");
+    checkEnum<ruleset::VehicleType>("vehicle_type");
+    checkEnum<ruleset::WeaponKind>("weapon_kind");
+    checkEnum<Aggregation>("aggregation");
+    checkEnum<economy::ConditionsBand>("conditions_band");
+    checkEnum<CombatPiece::Kind>("battle_piece_kind");
+    // Enumerations that are the keys of a map.
+    checkStructKeys("characteristics", sdk::enumNames<Characteristic>());
+    checkStructKeys("sight_levels", sdk::enumNames<SightType>());
+    const Schema::Section* style = docsSchema().find("turn_style");
+    REQUIRE(style != nullptr);
+    CHECK(style->values == std::vector<std::string>{"simultaneous", "turn_based"});
 }

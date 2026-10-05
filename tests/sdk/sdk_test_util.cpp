@@ -204,6 +204,7 @@ const Schema& docsSchema() {
         Schema s;
         const std::filesystem::path dir = std::filesystem::path(OPENSE4_DOCS_DIR) / "sdk";
         parseFile(s, dir / "commands.md");
+        parseFile(s, dir / "view.md");
         return s;
     }();
     return schema;

@@ -73,7 +73,10 @@ add_executable(opense4_tests
     test_xmath.cpp
     sdk/sdk_test_util.cpp
     sdk/test_sdk_codec.cpp
-    sdk/test_sdk_docs.cpp)
+    sdk/test_sdk_docs.cpp
+    sdk/test_sdk_queries.cpp
+    sdk/test_sdk_rules_view.cpp
+    sdk/test_sdk_view.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
 target_sources(opense4_tests PRIVATE

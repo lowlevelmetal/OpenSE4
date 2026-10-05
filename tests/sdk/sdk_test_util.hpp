@@ -1,7 +1,7 @@
 #pragma once
 
-// Helpers for the SDK's tests: the schema the docs give (docs/sdk/commands.md),
-// read from their tables, and a check of values
+// Helpers for the SDK's tests: the schema the docs give (docs/sdk/view.md and
+// docs/sdk/commands.md), read from their tables, and a check of values
 // against it. The docs are the schema, so a field the code adds without
 // documenting it, or documents without making it, fails a test.
 //
@@ -52,7 +52,7 @@ struct Schema {
     }
 };
 
-// docs/sdk/commands.md, read once.
+// docs/sdk/commands.md and docs/sdk/view.md, read once.
 const Schema& docsSchema();
 
 // The ids a value names, by kind ("vehicle", "system", ...), from its `id` fields.

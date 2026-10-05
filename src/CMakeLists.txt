@@ -113,7 +113,11 @@ target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE tomlplusplus o
 # The view scripts read, their queries and the command codec, on script::Value.
 add_library(opense4_sdk STATIC
     sdk/codec.cpp
-    sdk/names.cpp)
+    sdk/names.cpp
+    sdk/parts.cpp
+    sdk/queries.cpp
+    sdk/rules_view.cpp
+    sdk/view.cpp)
 target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_script PRIVATE opense4_warnings)
 
 # --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------
