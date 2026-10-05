@@ -3,6 +3,7 @@ find_package(Threads REQUIRED)
 add_executable(opense4_tests
     main.cpp
     combat_fixture.cpp
+    command_samples.cpp
     engine_fixture.cpp
     test_ai.cpp
     test_app_settings.cpp
