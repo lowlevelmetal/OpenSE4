@@ -66,6 +66,7 @@ std::expected<void, std::string> ClientSession::connect() {
     hostKeyChanged_ = false;
     hostKeyUnconfirmed_ = false;
     hostAskedOldPassword_ = false;
+    refusedForMods_ = false;
     return {};
 }
 
@@ -292,6 +293,7 @@ void ClientSession::handleFrame(uint8_t type, std::span<const uint8_t> payload, 
             proto::Reject m;
             if (!proto::decode(payload, m, error)) break;
             if (m.reason == proto::RejectReason::OldPassword && sealed) hostAskedOldPassword_ = true;
+            refusedForMods_ = m.reason == proto::RejectReason::Mods;
             // A refusal in the clear came before the connection was secured:
             // anyone could have sent it, so it is shown as the host's word only.
             const std::string text = proto::sanitize(m.text, 1000);

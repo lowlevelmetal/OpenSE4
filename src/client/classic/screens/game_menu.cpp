@@ -2,6 +2,7 @@
 // Delete Game (docs/spec/06 §1.1-§1.2).
 
 #include "client/audio.hpp"
+#include "client/classic/mods_model.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/file_dialog.hpp"
 #include "client/classic/screens/list_widgets.hpp"
@@ -359,6 +360,18 @@ private:
     std::string masterNote_ = "The Game Master password is not correct.";
 };
 
+// Whether the installed game itself (not a mod) has a ship picture of this
+// base name, for one of the game's races or the generic one.
+bool installHasShipPicture(UiContext& ui, std::string_view name) {
+    const assets::InstallFiles& files = ui.art.files();
+    if (files.findInstalledPicture(std::format("Pictures/RaceGeneric/Generic_Mini_{}.bmp", name))) return true;
+    for (const game::Empire& e : ui.state().empires)
+        for (std::string_view folder : {"Races", "RaceNeutral"})
+            if (!e.race.style.empty() && files.findInstalledPicture(std::format("Pictures/{}/{}/{}_Mini_{}.bmp", folder, e.race.style, e.race.style, name)))
+                return true;
+    return false;
+}
+
 // ---- Save Game -------------------------------------------------------------------------------
 
 class SaveGameScreen final : public Screen {
@@ -462,7 +475,9 @@ private:
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         if ((ImGui::Button("Save", ImVec2(w, ui.px(26))) || enter) && !name.empty() && !classicFolder_.empty()) {
             const BusyPointer busy;
-            auto notes = ui.session.exportClassic(file);
+            // What the game's mods hold that the original cannot (docs/sdk/packages-and-data.md "Saving for the original").
+            auto notes = ui.session.exportClassic(file, scriptedMods(loadedMods().packages),
+                                                  [&ui](std::string_view picture) { return installHasShipPicture(ui, picture); });
             classicSaved_ = notes.has_value();
             if (notes) {
                 classicSavesDirectory() = classicFolder_;

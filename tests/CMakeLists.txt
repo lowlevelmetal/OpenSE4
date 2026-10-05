@@ -73,6 +73,7 @@ add_executable(opense4_tests
     test_winfont.cpp
     test_xmath.cpp
     sdk/sdk_test_util.cpp
+    sdk/test_mod_client.cpp
     sdk/test_mod_identity.cpp
     sdk/test_mod_installed.cpp
     sdk/test_mod_layers.cpp
@@ -111,6 +112,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_lock.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_panel.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/mods_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_line.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_replay.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/net_transport.cpp

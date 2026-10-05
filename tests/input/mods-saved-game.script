@@ -1,0 +1,95 @@
+# Saved games played with other mods (docs/sdk/packages-and-data.md "Choosing mods in the
+# game"): a game saved without mods and one with the fixture escort hull. In a game with the
+# mod, the Game Menu's Load of the other ends this game, and the front end's Other Mods window
+# names what differs and loads it without the mod; from the main menu without mods, Load
+# Game of the modded one names the mod, and Load with Its Mods reads the data again with it
+# from the mods folder, then loads the game (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --layout=1024x768 --size=1280x800 --seed=7
+
+wait-screen front
+# A quick game without mods, saved as Plain.
+click item:"Quick Start" in=front
+wait-for item:"Begin Game" in=front
+click item:##portrait in=front nth=1
+click item:"Begin Game" in=front
+wait-screen game
+wait 5
+key F2
+wait-window game-menu
+click item:"Save Game" in=game-menu
+wait-window save-game
+click item:##name in=save-game
+key Ctrl+A
+type "Plain"
+key Enter
+wait 3
+key Escape
+wait-closed save-game
+key F2
+wait-window game-menu
+click item:New in=game-menu
+click item:Yes in="New Game"
+wait-screen front
+# The escort hull on, a quick game with it, saved as Modded.
+click item:Mods in=front
+wait-for item:"mod:test.escort-hull" in=front
+double-click item:"mod:test.escort-hull" in=front
+click item:Done in=front
+wait-for item:"Quick Start" in=front
+click item:"Quick Start" in=front
+wait-for item:"Begin Game" in=front
+click item:##portrait in=front nth=1
+click item:"Begin Game" in=front
+wait-screen game
+wait 5
+key F2
+wait-window game-menu
+click item:"Save Game" in=game-menu
+wait-window save-game
+click item:##name in=save-game
+key Ctrl+A
+type "Modded"
+key Enter
+wait 3
+key Escape
+wait-closed save-game
+# In this game, Load of Plain: the front end says it was played without the mod.
+key F2
+wait-window game-menu
+click item:Load in=game-menu
+wait-for item:PLAIN in=load-game
+click item:PLAIN in=load-game
+wait-screen front
+wait-for item:"Load Without Mods" in=front
+assert-present item:"mod test.escort-hull 1.0.0 changes the game, and the game does not use it: turn it off" in=front
+assert-fits front
+screenshot saved-game-without.png
+click item:"Load Without Mods" in=front
+wait-screen game
+# From the main menu (now without mods), Load Game of Modded: the mod it needs, and loading with it.
+key F2
+wait-window game-menu
+click item:New in=game-menu
+click item:Yes in="New Game"
+wait-screen front
+click item:"Load Game" in=front
+wait-for item:MODDED in=front
+click item:MODDED in=front
+wait-for item:"Load with Its Mods" in=front
+assert-present item:"the game uses mod test.escort-hull 1.0.0, which you do not have enabled" in=front
+assert-fits front
+screenshot saved-game-mods.png
+click item:"Load with Its Mods" in=front
+wait-screen game
+# The mods in use are the game's.
+key F2
+wait-window game-menu
+click item:New in=game-menu
+click item:Yes in="New Game"
+wait-screen front
+click item:Mods in=front
+wait-for item:"on:test.escort-hull" in=front
+assert-present item:"load-order:test.escort-hull" in=front
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front

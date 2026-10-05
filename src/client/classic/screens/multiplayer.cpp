@@ -8,6 +8,7 @@
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/settings.hpp"
+#include "client/script/items.hpp"
 #include "game/redact.hpp"
 #include "game/serialize.hpp"
 #include "net/auth.hpp"
@@ -22,6 +23,7 @@
 #include <cstdlib>
 #include <format>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -33,6 +35,35 @@ namespace crypto = net::crypto;
 
 enum class Mode { Choose, Host, Join, Lobby };
 
+// What the player typed, kept while the front end shows other screens (the
+// Mods window after a refusal for mods): the screen is made afresh then.
+struct Form {
+    int race = 0;
+    std::string name = "Player";
+    std::string gameName = "OpenSE4 game";
+    std::string address = "127.0.0.1";
+    int port = net::kDefaultPort;
+    int humans = 2;
+    int computers = 2;
+    int quadrantSize = 1;   // Medium, the default
+    int timeout = 0;
+    int turnStyle = 0;      // 0 simultaneous, 1 turn-based
+    bool upnp = true;
+};
+Form& lastForm() {
+    static Form form;
+    return form;
+}
+
+// "Mods: a 1.0 (changes the game), b 2.0 (pictures and sounds)": the host's, in the lobby.
+std::string modsLineText(std::span<const ruleset::ModRecord> mods) {
+    if (mods.empty()) return "Mods: none";
+    std::string out = "Mods: ";
+    for (size_t i = 0; i < mods.size(); ++i)
+        out += std::format("{}{} {} ({})", i ? ", " : "", mods[i].id, mods[i].version, mods[i].affectsGame ? "changes the game" : "pictures and sounds");
+    return out;
+}
+
 void textField(const char* label, std::string& value, float width, ImGuiInputTextFlags flags = 0) {
     char buffer[256] = {};
     std::snprintf(buffer, sizeof buffer, "%s", value.c_str());
@@ -42,7 +73,21 @@ void textField(const char* label, std::string& value, float width, ImGuiInputTex
 
 class MultiplayerScreen final : public FrontScreen {
 public:
-    explicit MultiplayerScreen(std::string_view automation) : automation_(automation) {}
+    explicit MultiplayerScreen(std::string_view automation) : automation_(automation) {
+        const Form& f = lastForm();
+        race_ = f.race;
+        name_ = f.name;
+        gameName_ = f.gameName;
+        address_ = f.address;
+        port_ = f.port;
+        humans_ = f.humans;
+        computers_ = f.computers;
+        quadrantSize_ = f.quadrantSize;
+        timeout_ = f.timeout;
+        turnStyle_ = f.turnStyle;
+        upnp_ = f.upnp;
+    }
+    ~MultiplayerScreen() override { lastForm() = Form{race_, name_, gameName_, address_, port_, humans_, computers_, quadrantSize_, timeout_, turnStyle_, upnp_}; }
 
     void draw(MenuContext& ctx) override {
         if (!automation_.empty()) {
@@ -83,7 +128,11 @@ public:
             case Mode::Join: joinForm(ctx); break;
             case Mode::Lobby: lobby(ctx); break;
         }
-        if (!error_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", error_.c_str());
+        if (!error_.empty() && !(mode_ == Mode::Lobby && client_ && client_->refusedForMods())) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", error_.c_str());
+            ImGui::PopTextWrapPos();
+        }
         ImGui::End();
         ImGui::PopFont();
     }
@@ -380,6 +429,31 @@ private:
         }
     }
 
+    // Refused for mods: each difference on a line of its own, and the way to the Mods window.
+    void modsRefusal(MenuContext& ctx) {
+        const ImVec4 warn(1, 0.6f, 0.4f, 1);
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(warn, "The host plays with other mods than yours:");
+        std::string_view rest = error_;
+        if (const size_t colon = rest.find(": "); colon != std::string_view::npos) rest.remove_prefix(colon + 2);
+        if (rest.ends_with('.')) rest.remove_suffix(1);
+        while (!rest.empty()) {
+            const size_t end = rest.find("; ");
+            const std::string line(rest.substr(0, end));
+            ImGui::Bullet();
+            ImGui::TextColored(warn, "%s", line.c_str());
+            script::reportText(line, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+            if (end == std::string_view::npos) break;
+            rest.remove_prefix(end + 2);
+        }
+        ImGui::TextWrapped("Choose the same mods in the Mods window (pictures and sounds may differ), then join again.");
+        ImGui::PopTextWrapPos();
+        if (ImGui::Button("Mods", ctx.size({150, 30}))) {
+            leave();
+            ctx.goTo(makeModsScreen([] { return makeMultiplayerScreen("browse"); }));
+        }
+    }
+
     void leave() {
         if (host_) host_->stop();
         if (client_) client_->disconnect();
@@ -468,8 +542,18 @@ private:
             if (!hostKey_.empty()) ImGui::TextDisabled("Encrypted. Host key: %s", hostKey_.c_str());
             if (prompt_ != Prompt::None) hostPrompt(ctx);
         }
-        ImGui::TextDisabled("%s", info.options.simultaneous ? "Simultaneous turns: everyone gives orders, then the host runs the turn."
-                                                             : "Turn-based: players take their turns one after another.");
+        // What the host set up, once it said (a refused player never hears it):
+        // the turn style, and the mods every player needs the same of (those that change the game).
+        if (host_ || client_->phase() == net::ClientPhase::Lobby || client_->phase() == net::ClientPhase::Playing) {
+            ImGui::TextDisabled("%s", info.options.simultaneous ? "Simultaneous turns: everyone gives orders, then the host runs the turn."
+                                                                 : "Turn-based: players take their turns one after another.");
+            const std::string mods = modsLineText(info.mods);
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", mods.c_str());
+            ImGui::PopTextWrapPos();
+            script::reportText(mods, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+        }
+        if (client_ && client_->refusedForMods()) modsRefusal(ctx);
         ImGui::Separator();
 
         // Slots.
@@ -577,10 +661,10 @@ private:
     Mode mode_ = Mode::Choose;
     std::vector<size_t> presets_;
     int race_ = 0;
-    std::string name_ = "Player";
+    std::string name_;
     std::string password_;
-    std::string gameName_ = "OpenSE4 game";
-    std::string address_ = "127.0.0.1";
+    std::string gameName_;
+    std::string address_;
     std::string joinPassword_;
     int port_ = net::kDefaultPort;
     int humans_ = 2;

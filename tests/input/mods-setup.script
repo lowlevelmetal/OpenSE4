@@ -1,0 +1,53 @@
+# The mods a new game will use in the setup screens (docs/sdk/packages-and-data.md "Choosing
+# mods in the game"): Game Setup's line and its Mods button, OpenSE4's own in the corner under
+# the page buttons; the Mods window over it and back, the line naming the mods chosen; Quick
+# Start's line; a game begun with the mods, whose hull the designer offers
+# (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --layout=1024x768 --size=1280x800 --seed=7
+
+wait-screen front
+click item:"New Game" in=front
+wait-for item:"Mods: none" in=front
+assert-fits front
+# The Mods window, and Cancel back to the setup as it was.
+click item:Players in=front
+click item:Mods in=front
+wait-for item:"mod:test.escort-hull" in=front
+click item:Cancel in=front
+wait-for item:"Mods: none" in=front
+# The escort hull and the picture pack: the setup comes back with them.
+click item:Mods in=front
+wait-for item:"mod:test.escort-hull" in=front
+double-click item:"mod:test.escort-hull" in=front
+double-click item:"mod:test.picture-pack" in=front
+click item:Done in=front
+wait-for item:"Mods: Escort Hull, Picture Pack (1 of them changes the game)" in=front
+assert-fits front
+screenshot setup-mods.png
+# Quick Start says the same.
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front
+click item:"Quick Start" in=front
+wait-for item:"Mods: Escort Hull, Picture Pack (1 of them changes the game)" in=front
+assert-fits front
+screenshot quickstart-mods.png
+click item:Cancel in=front
+# A quick game with them: the designer has the mod's hull.
+wait-for item:"Quick Start" in=front
+click item:"Quick Start" in=front
+wait-for item:"Begin Game" in=front
+click item:##portrait in=front nth=1
+click item:"Begin Game" in=front
+wait-screen game
+click tag:command:designs
+wait-window designs
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+click item:##size in=create-design
+click item:"Escort Carrier (350 kT)"
+wait 3
+assert { design_hull_chosen = true }
+key Escape
+wait-closed create-design
