@@ -1135,6 +1135,8 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     // The panels lessons point at (docs/LEARNING.md "UI tags").
     ui.tagFrame("panel:system", geo.systemPanel);
     ui.tagFrame("panel:report", geo.reportPanel);
+    // The spec's report region, from just inside the frame rail (ours starts 4 px right and 8 px below).
+    ui.tagFrame("panel:report-area", Rect{geo.reportPanel.min - Vec2{4, 8}, geo.reportPanel.max});
     ui.tagFrame("panel:galaxy", geo.galaxyPanel);
     // And the homeworld's sector, while its system is shown.
     for (const auto& c : ui.state().colonies)

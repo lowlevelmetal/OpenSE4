@@ -1,0 +1,16 @@
+# The system report of an empty sector (spec 06 §1.4): the system type's 128x128 picture at the
+# report's top left, just inside the panel's frame rail. It is opaque, and v0.9.0 drew it 3 px
+# higher, over the rail (GitHub issue #2); its corners now lie, to a pixel, in the report's
+# region below the rail. The texts fit their places (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start=Terran --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+click system:home
+wait 3
+click sector:empty
+wait-for item:system-picture
+assert-inside item:system-picture@1,1 tag:panel:report-area
+assert-inside item:system-picture@-2,-2 tag:panel:report-area
+assert-fits main
+screenshot system-report.png
