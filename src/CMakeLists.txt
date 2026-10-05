@@ -60,6 +60,9 @@ add_library(opense4_game STATIC
     game/ai_explore.cpp
     game/ai_military.cpp
     game/ai_research.cpp
+    game/classic_save_codec.cpp
+    game/classic_save_import.cpp
+    game/classic_save_tables.cpp
     game/combat.cpp
     game/combat_ground.cpp
     game/combat_space.cpp
