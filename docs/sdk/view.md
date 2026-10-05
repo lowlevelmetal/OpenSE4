@@ -1219,8 +1219,8 @@ or not, unless `omniscient` is false.
 
 | Argument | Type | Meaning |
 |---|---|---|
-| `from` | location, or system id | Where from (a system id stands for its centre). Default: the group's place. |
-| `to` | location, or system id | Where to. |
+| `origin` | location, or system id | Where from (a system id stands for its centre). Default: the group's place. |
+| `destination` | location, or system id | Where to. |
 | `vehicle` | vehicle id | A group to route: one of our vehicles... |
 | `fleet` | fleet id | ...or fleets. Its route options apply and `turns` is given. |
 | `omniscient` | bool | Route over everything, known or not: a whole view's default, refused in an empire's own view. |

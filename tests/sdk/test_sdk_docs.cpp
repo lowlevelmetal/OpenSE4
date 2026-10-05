@@ -12,6 +12,8 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -142,4 +144,17 @@ TEST_CASE("sdk docs: every enumeration lists exactly its names, in order") {
     const Schema::Section* style = docsSchema().find("turn_style");
     REQUIRE(style != nullptr);
     CHECK(style->values == std::vector<std::string>{"simultaneous", "turn_based"});
+}
+
+TEST_CASE("sdk docs: no field is named after a Python keyword") {
+    // Scripts read fields as attributes (view.my.fleets), and Python cannot
+    // spell an attribute that is a keyword.
+    static constexpr std::array<std::string_view, 35> kKeywords{
+        "False", "None",   "True",    "and",      "as",   "assert", "async",  "await", "break",  "class", "continue", "def",
+        "del",   "elif",   "else",    "except",   "finally", "for", "from",   "global", "if",    "import", "in",       "is",
+        "lambda", "nonlocal", "not", "or",       "pass", "raise",  "return", "try",   "while", "with",  "yield"};
+    for (const auto& [name, section] : docsSchema().sections)
+        for (const auto& row : section.rows)
+            CHECK_MESSAGE(std::find(kKeywords.begin(), kKeywords.end(), row.field) == kKeywords.end(),
+                          "`" << row.field << "` of `" << name << "` is a Python keyword");
 }

@@ -222,8 +222,8 @@ TEST_CASE("sdk codec: every order kind round trips, alone and in an order list")
     convert.from = 1;
     convert.to = 9;
     const Value v = sdk::encodeOrder(convert);
-    CHECK(at(v, "from") == Value("organics"));
-    CHECK(at(v, "to") == Value(9));
+    CHECK(at(v, "from_resource") == Value("organics"));
+    CHECK(at(v, "to_resource") == Value(9));
     CHECK(*sdk::decodeOrder(v) == convert);
 }
 

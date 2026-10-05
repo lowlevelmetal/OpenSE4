@@ -7,7 +7,10 @@
 // value's shape and fills the C++ value, naming the path to the first bad
 // value. Structs list their fields once, in a fields() overload below that
 // both directions use (as serialize_io.hpp does for the save format): the
-// field names are the docs' (docs/sdk/commands.md), lower_snake_case.
+// field names are the docs' (docs/sdk/commands.md), lower_snake_case, and
+// never a Python keyword, so scripts can read them as attributes (an order's
+// `from` is `from_resource`, a message's `from_empire`, Edit Design's `with`
+// `new_design`).
 //
 // Encoding always writes every field, so a script can read any key without
 // testing for it; decoding leaves a missing field at its default and refuses
@@ -431,8 +434,8 @@ void fields(A& a, game::Order& x) {
     a("vehicle", x.vehicle);
     a("design", x.design);
     a("amount", x.amount);
-    a("from", ResourceCode{&x.from});
-    a("to", ResourceCode{&x.to});
+    a("from_resource", ResourceCode{&x.from});
+    a("to_resource", ResourceCode{&x.to});
 }
 template <class A>
 void fields(A& a, game::PopulationGroup& x) {
@@ -515,8 +518,8 @@ void fields(A& a, game::PackageItem& x) {
 template <class A>
 void fields(A& a, game::DiplomaticMessage& x) {
     a("id", x.id);
-    a("from", x.from);
-    a("to", x.to);
+    a("from_empire", x.from);
+    a("to_empire", x.to);
     a("sent_turn", x.sentTurn);
     a("type", x.type);
     a("tone", x.tone);
@@ -754,8 +757,8 @@ void fields(A& a, cmd::QueueRemove& x) {
 template <class A>
 void fields(A& a, cmd::QueueMove& x) {
     a("target", x.target);
-    a("from", x.from);
-    a("to", x.to);
+    a("from_index", x.from);
+    a("to_index", x.to);
 }
 template <class A>
 void fields(A& a, cmd::QueueSetCount& x) {
@@ -820,7 +823,7 @@ void fields(A& a, cmd::CreateDesign& x) {
 template <class A>
 void fields(A& a, cmd::EditDesign& x) {
     a("design", x.design);
-    a("with", x.with);
+    a("new_design", x.with);
 }
 template <class A>
 void fields(A& a, cmd::SetDesignObsolete& x) {

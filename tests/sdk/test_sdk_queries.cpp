@@ -80,7 +80,7 @@ TEST_CASE("sdk queries: paths are the engine's routes over what the empire knows
     for (const StarSystem& sys : s.galaxy.systems) {
         if (!s.empire(me).hasExplored(sys.id)) continue;
         const Location to{sys.id, Sector{2, 9}};
-        const Value res = ask(q, "path", map({{"from", loc(scout.location)}, {"to", loc(to)}}), "path_result");
+        const Value res = ask(q, "path", map({{"origin", loc(scout.location)}, {"destination", loc(to)}}), "path_result");
         const auto engine = movement::findPath(r, s, me, scout.location, to);
         CHECK(at(res, "found") == Value(engine.has_value()));
         if (!engine) continue;
@@ -102,32 +102,32 @@ TEST_CASE("sdk queries: paths are the engine's routes over what the empire knows
     // For a vehicle: from where it is, with its estimate of turns.
     const Location home = scout.location;
     const Location target{home.system, Sector{0, 0}};
-    const Value res = ask(q, "path", map({{"vehicle", Value(scout.id.value)}, {"to", loc(target)}}), "path_result");
+    const Value res = ask(q, "path", map({{"vehicle", Value(scout.id.value)}, {"destination", loc(target)}}), "path_result");
     CHECK(at(res, "found") == Value(true));
     CHECK(intAt(res, "turns") == movement::etaTurns(r, s, scout, target));
     CHECK(intAt(res, "jumps") == 0);
     // A system id stands for the system's centre.
-    const Value bySystem = ask(q, "path", map({{"from", Value(home.system.value)}, {"to", Value(home.system.value)}}), "path_result");
+    const Value bySystem = ask(q, "path", map({{"origin", Value(home.system.value)}, {"destination", Value(home.system.value)}}), "path_result");
     CHECK(at(bySystem, "found") == Value(true));
 
     // What it does not know it cannot route through, unless the view is whole.
-    CHECK(askError(q, "path", map({{"from", loc(home)}, {"to", loc(home)}, {"omniscient", true}})).starts_with("omniscient: "));
+    CHECK(askError(q, "path", map({{"origin", loc(home)}, {"destination", loc(home)}, {"omniscient", true}})).starts_with("omniscient: "));
     const sdk::Queries whole(r, s, me, {.whole = true});
     const Location far{g.unexplored, Sector{3, 3}};
-    const Value known = ask(q, "path", map({{"from", loc(home)}, {"to", loc(far)}}), "path_result");
-    const Value all = ask(whole, "path", map({{"from", loc(home)}, {"to", loc(far)}, {"omniscient", true}}), "path_result");
+    const Value known = ask(q, "path", map({{"origin", loc(home)}, {"destination", loc(far)}}), "path_result");
+    const Value all = ask(whole, "path", map({{"origin", loc(home)}, {"destination", loc(far)}, {"omniscient", true}}), "path_result");
     CHECK(at(known, "found") == Value(movement::findPath(r, s, me, home, far).has_value()));
     CHECK(at(all, "found") == Value(movement::findPath(r, s, EmpireId{}, home, far).has_value()));
     // A whole view routes over everything by default, and as the empire knows when asked.
-    CHECK(ask(whole, "path", map({{"from", loc(home)}, {"to", loc(far)}}), "path_result") == all);
-    CHECK(ask(whole, "path", map({{"from", loc(home)}, {"to", loc(far)}, {"omniscient", false}}), "path_result") == known);
+    CHECK(ask(whole, "path", map({{"origin", loc(home)}, {"destination", loc(far)}}), "path_result") == all);
+    CHECK(ask(whole, "path", map({{"origin", loc(home)}, {"destination", loc(far)}, {"omniscient", false}}), "path_result") == known);
 
-    CHECK(askError(q, "path", map({{"to", loc(home)}})) == "from: missing: give a place, a vehicle or a fleet");
-    CHECK(askError(q, "path", map({{"from", loc(home)}})) == "to: missing");
-    CHECK(askError(q, "path", map({{"vehicle", Value(g.hiddenForeign.value)}, {"to", loc(home)}})) == "vehicle: no such vehicle in view");
-    CHECK(askError(q, "path", map({{"vehicle", Value(g.seenForeign.value)}, {"to", loc(home)}})) == "vehicle: not one of our vehicles");
-    CHECK(askError(q, "path", map({{"from", 5000}, {"to", loc(home)}})) == "from: no such place");
-    CHECK(askError(q, "path", map({{"from", "home"}})) == "from: expected a map");
+    CHECK(askError(q, "path", map({{"destination", loc(home)}})) == "origin: missing: give a place, a vehicle or a fleet");
+    CHECK(askError(q, "path", map({{"origin", loc(home)}})) == "destination: missing");
+    CHECK(askError(q, "path", map({{"vehicle", Value(g.hiddenForeign.value)}, {"destination", loc(home)}})) == "vehicle: no such vehicle in view");
+    CHECK(askError(q, "path", map({{"vehicle", Value(g.seenForeign.value)}, {"destination", loc(home)}})) == "vehicle: not one of our vehicles");
+    CHECK(askError(q, "path", map({{"origin", 5000}, {"destination", loc(home)}})) == "origin: no such place");
+    CHECK(askError(q, "path", map({{"origin", "home"}})) == "origin: expected a map");
 }
 
 TEST_CASE("sdk queries: movement and supply range") {
@@ -323,7 +323,7 @@ TEST_CASE("sdk queries: asking changes nothing") {
     const sdk::Queries whole(r, g.state, EmpireId{0u}, {.whole = true});
     const Vehicle& scout = ownScout(g.state, EmpireId{0u});
     for (const sdk::Queries* q : {&fair, &whole}) {
-        (void)q->call("path", map({{"vehicle", Value(scout.id.value)}, {"to", loc({scout.location.system, Sector{1, 1}})}}));
+        (void)q->call("path", map({{"vehicle", Value(scout.id.value)}, {"destination", loc({scout.location.system, Sector{1, 1}})}}));
         (void)q->call("movement", map({{"vehicle", Value(scout.id.value)}}));
         (void)q->call("research_forecast", map({{"area", 0}, {"level", 5}}));
     }

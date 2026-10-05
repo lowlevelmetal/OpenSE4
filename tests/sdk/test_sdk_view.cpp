@@ -168,7 +168,7 @@ TEST_CASE("sdk view: an empire sees only what it knows, the whole view everythin
     CHECK(sameResources(at(*wthem, "stored"), s.empire(other).stockpile));
 
     // Messages to or from us only; in the whole view every one.
-    for (const Value& m : at(fair, "messages").asList()) CHECK((intAt(m, "from") == 0 || intAt(m, "to") == 0));
+    for (const Value& m : at(fair, "messages").asList()) CHECK((intAt(m, "from_empire") == 0 || intAt(m, "to_empire") == 0));
     CHECK(at(whole, "messages").size() == s.messages.size());
 
     // Designs: foreign ones known by sight show their parts, not their records.

@@ -23,6 +23,9 @@ The view a script reads, and the types it shares with this page, are in
   default the table names), a list empty, a flag as the table says. So
   `{"kind": "leave_fleet", "vehicle": 12}` is a whole command.
 - **Unknown fields are refused**, so a misspelt field is noticed.
+- **No field is a Python keyword**, so a script can read every field as an
+  attribute: an order's resources are `from_resource` and `to_resource`, a
+  message's empires `from_empire` and `to_empire`.
 - **Encoding writes every field**, so a command read back from the engine (a
   journal, a replay, an external bot's echo) always has all its keys.
 - **The same tree is JSON** for external bots: a command is a JSON object, ids
@@ -391,11 +394,11 @@ Moves an item within the queue.
 | Field | Type | Meaning |
 |---|---|---|
 | `target` | queue_target | Whose queue. |
-| `from` | int | Its position now. |
-| `to` | int | Its new position. |
+| `from_index` | int | Its position now. |
+| `to_index` | int | Its new position. |
 
 ```json
-{"kind": "queue_move", "target": {"planet": 7}, "from": 3, "to": 0}
+{"kind": "queue_move", "target": {"planet": 7}, "from_index": 3, "to_index": 0}
 ```
 
 ### `queue_set_count`
@@ -545,10 +548,10 @@ retrofitted to, or is in a queue.
 | Field | Type | Meaning |
 |---|---|---|
 | `design` | design id, or null | The design to change. |
-| `with` | design | Its new contents. |
+| `new_design` | design | Its new contents. |
 
 ```json
-{"kind": "edit_design", "design": 12, "with": {"name": "Lancer II", "design_type": "Attack Ship", "hull": 3, "entries": [{"component": 0, "mount": -1}]}}
+{"kind": "edit_design", "design": 12, "new_design": {"name": "Lancer II", "design_type": "Attack Ship", "hull": 3, "entries": [{"component": 0, "mount": -1}]}}
 ```
 
 ### `set_design_obsolete`
@@ -621,7 +624,7 @@ whose requests about a third empire are not checked as a player's are.
 | `minister` | bool | Written by a minister. |
 
 ```json
-{"kind": "send_message", "message": {"to": 1, "type": "propose_treaty", "treaty": "non_aggression", "text": "Peace?"}}
+{"kind": "send_message", "message": {"to_empire": 1, "type": "propose_treaty", "treaty": "non_aggression", "text": "Peace?"}}
 ```
 
 ### `answer_message`
@@ -871,11 +874,12 @@ same fields; each kind uses some of them.
 | `vehicle` | vehicle ref, or null | A vehicle: an attack's target, a pursuit, the unit group to recover from. |
 | `design` | design ref, or null | A design: the units to load, launch or recover, a retrofit's design. |
 | `amount` | int | A number whose meaning depends on the kind (see below). |
-| `from` | resource | Convert Resources: the resource converted. |
-| `to` | resource | Convert Resources: the resource it becomes. |
+| `from_resource` | resource | Convert Resources: the resource converted. |
+| `to_resource` | resource | Convert Resources: the resource it becomes. |
 
-`from` and `to` are `"minerals"` unless the order converts resources. An order
-whose `from` or `to` is no resource does nothing; it reads as a number.
+`from_resource` and `to_resource` are `"minerals"` unless the order converts
+resources. An order whose resource is no resource does nothing; it reads as a
+number.
 
 ### `order_kind`
 
@@ -901,7 +905,7 @@ whose `from` or `to` is no resource does nothing; it reads as a number.
 | `move_to_waypoint` | amount | Move to the waypoint in slot `amount`. | `{"kind": "move_to_waypoint", "amount": 2}` |
 | `self_destruct` | | Destroy the whole vehicle or group. | `{"kind": "self_destruct"}` |
 | `use_facility` | amount | A colony's: use the facility at position `amount`. | `{"kind": "use_facility", "amount": 0}` |
-| `convert_resources` | amount, from, to | A colony's: convert `amount` (at most 65,000) of one resource into another. | `{"kind": "convert_resources", "amount": 5000, "from": "organics", "to": "minerals"}` |
+| `convert_resources` | amount, from_resource, to_resource | A colony's: convert `amount` (at most 65,000) of one resource into another. | `{"kind": "convert_resources", "amount": 5000, "from_resource": "organics", "to_resource": "minerals"}` |
 | `scrap` | | Scrap the vehicle (the Scrap window's command). | `{"kind": "scrap"}` |
 | `analyze` | | Take the vehicle apart to learn from it. | `{"kind": "analyze"}` |
 | `mothball` | | Mothball the vehicle. | `{"kind": "mothball"}` |
@@ -1115,8 +1119,8 @@ hold.
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | message id, or null | Its id (set by the engine). |
-| `from` | empire id, or null | The sender (set by the engine). |
-| `to` | empire id, or null | The recipient. |
+| `from_empire` | empire id, or null | The sender (set by the engine). |
+| `to_empire` | empire id, or null | The recipient. |
 | `sent_turn` | int | When it was sent. |
 | `type` | message_type | What kind of message. |
 | `tone` | int | 0 pleading, 1 neutral (the default), 2 demanding. |

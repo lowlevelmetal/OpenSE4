@@ -53,15 +53,15 @@ namespace {
 // ---- Arguments --------------------------------------------------------------------------------------------
 
 struct PathArgs {
-    Place from, to;
+    Place origin, destination;
     VehicleId vehicle;
     FleetId fleet;
     std::optional<bool> omniscient;   // default: whether the view is whole
 };
 template <class A>
 void fields(A& a, PathArgs& x) {
-    a("from", x.from);
-    a("to", x.to);
+    a("origin", x.origin);
+    a("destination", x.destination);
     a("vehicle", x.vehicle);
     a("fleet", x.fleet);
     a("omniscient", x.omniscient);
@@ -240,14 +240,14 @@ Result path(const Perspective& p, const Value& args) {
     const auto g = findGroup(p, a->vehicle, a->fleet, false);
     if (!g) return std::unexpected(g.error());
     Location from;
-    if (a->from.at) from = *a->from.at;
+    if (a->origin.at) from = *a->origin.at;
     else if (g->fleet) from = g->fleet->location;
     else if (g->lead) from = g->lead->location;
-    else return bad("from", "missing: give a place, a vehicle or a fleet");
-    if (!validLocation(s, from)) return bad("from", "no such place");
-    if (!a->to.at) return bad("to", "missing");
-    const Location to = *a->to.at;
-    if (!validLocation(s, to)) return bad("to", "no such place");
+    else return bad("origin", "missing: give a place, a vehicle or a fleet");
+    if (!validLocation(s, from)) return bad("origin", "no such place");
+    if (!a->destination.at) return bad("destination", "missing");
+    const Location to = *a->destination.at;
+    if (!validLocation(s, to)) return bad("destination", "no such place");
 
     // The group's own route options, as its moves and movement::etaTurns use them.
     game::movement::RouteOptions options;
