@@ -251,7 +251,7 @@ private:
                 }
                 if (const Sprite& lampSprite = selected ? green : blue)
                     drawSprite(dl, lampSprite, {b.x + ui.px(4), b.y + ui.px(11)}, {b.x + ui.px(17), b.y + ui.px(24)});
-                if (const Sprite pic = ui.art.shipMini(style, hull)) drawSprite(dl, pic, {b.x + ui.px(21), b.y}, {b.x + ui.px(57), b.y + ui.px(36)});
+                if (const Sprite pic = ui.art.designMini(style, hull, d.picture)) drawSprite(dl, pic, {b.x + ui.px(21), b.y}, {b.x + ui.px(57), b.y + ui.px(36)});
                 dl->PushClipRect(b, {b.x + rowW, b.y + ui.px(kRow)}, true);
                 dl->AddText({b.x + ui.px(61), b.y + ui.px(-2 + kTextLead)}, IM_COL32_WHITE, d.name.c_str());
                 ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
@@ -289,7 +289,8 @@ private:
         // The picture in its frame; a click opens the hull's report.
         dl->AddRect(dlg.at(top + Vec2{4, 4}), dlg.at(top + Vec2{135, 135}), imColor(palette::kButton));
         ImGui::SetCursorScreenPos(dlg.at(top + Vec2{5, 5}));
-        image(ui, ui.art.shipPortrait(style, hull), {128, 128});
+        image(ui, ui.art.designPortrait(style, hull, d.picture), {128, 128});
+        script::reportItem("design-picture:" + (d.picture.empty() ? std::string("hull") : d.picture));   // input scripts see which picture it shows
         hullReportOnClick(ui, d.hull);
         textAt(ui, dlg, ui.fonts.bold, kTitleSize, kTitleLead, top + Vec2{140, 4}, white, d.name);
         text(top + Vec2{140, 40}, blue, "Size");
@@ -641,6 +642,7 @@ private:
             entries_ = t.entries;
             designType_ = t.designType;
             strategy_ = t.strategy;
+            picture_ = t.picture;   // a copy, an upgrade and an edit keep the design's own picture
             if (args_.text == "upgrade") {
                 upgradeEntries(r, me, entries_);
                 setName(nextVersionName(s, me, t.name));
@@ -687,9 +689,67 @@ private:
         return 0;
     }
 
+    // The pictures the design may show (OpenSE4's own, docs/sdk/packages-and-data.md
+    // "A design's own picture"): its hull's, the hull's other picture, and the
+    // ship pictures mods add for the race. "" stands for the hull's.
+    std::vector<std::string> pictureChoices(UiContext& ui) const {
+        std::vector<std::string> out{std::string{}};
+        if (!hull_) return out;
+        const ruleset::VehicleSize& h = ui.rules().hull(*hull_);
+        const std::string& style = ui.me().race.style;
+        auto offered = [&](std::string_view name) {
+            return std::any_of(out.begin(), out.end(), [&](const std::string& o) { return datafile::keysEqual(o, name); }) ||
+                   datafile::keysEqual(name, h.primaryBitmap);
+        };
+        if (!h.alternateBitmap.empty() && !offered(h.alternateBitmap) && ui.art.hasShipPicture(style, h.alternateBitmap)) out.push_back(h.alternateBitmap);
+        for (const std::string& name : ui.art.modShipPictures(style))
+            if (!offered(name)) out.push_back(name);
+        // A picture the design shows that is offered no more (a mod's not here) stays one to keep.
+        if (!picture_.empty() && !offered(picture_)) out.push_back(picture_);
+        return out;
+    }
+
+    bool hasPictureChoice(UiContext& ui) {
+        if (choicesFor_ != hull_) {
+            pictures_ = pictureChoices(ui);
+            choicesFor_ = hull_;
+        }
+        return pictures_.size() >= 2;
+    }
+
+    // A small arrow in the picture's corner opens the choice, when there is one.
+    static constexpr Vec2 kPictureArrow = cd::kPicture + Vec2{114, 114};
+    void pictureChoice(UiContext& ui, const Dialog& d) {
+        if (!hasPictureChoice(ui)) return;
+        const ImVec2 back = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(d.at(kPictureArrow));
+        if (arrowButton(ui, "##pictures", ArrowGlyph::Down, {16, 16}, true)) ImGui::OpenPopup("##picturelist");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("The design's picture");
+        ImGui::SetCursorScreenPos(back);
+        if (!ImGui::BeginPopup("##picturelist")) return;
+        const ruleset::VehicleSize& h = ui.rules().hull(*hull_);
+        const std::string& style = ui.me().race.style;
+        for (size_t i = 0; i < pictures_.size(); ++i) {
+            const std::string& name = pictures_[i];
+            const std::string label = name.empty() ? std::format("{} (the hull's)", h.primaryBitmap) : name;
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            if (ImGui::Selectable(std::format("##picture{}", i).c_str(), datafile::keysEqual(picture_, name), 0, ui.size({200, 38}))) {
+                picture_ = name;
+                error_.clear();
+            }
+            script::reportItem("picture:" + (name.empty() ? std::string("hull") : name));   // input scripts pick a picture by its name
+            ImDrawList* pdl = ImGui::GetWindowDrawList();
+            if (const Sprite mini = ui.art.designMini(style, h, name)) drawSprite(pdl, mini, {at.x + ui.px(1), at.y + ui.px(1)}, {at.x + ui.px(37), at.y + ui.px(37)});
+            pdl->AddText({at.x + ui.px(44), at.y + ui.px(11)}, IM_COL32_WHITE, label.c_str());
+        }
+        ImGui::EndPopup();
+    }
+
     void setHull(const UiContext& ui, uint32_t hull) {
         hullChosen_ = true;
         if (hull_ == hull) return;
+        // The other hull's own second picture is no choice for this one.
+        if (hull_ && datafile::keysEqual(picture_, ui.rules().hull(*hull_).alternateBitmap)) picture_.clear();
         hull_ = hull;
         mounts_ = hullMounts(ui.rules(), ui.me(), hull);
         if (mount_ >= 0 && std::find(mounts_.begin(), mounts_.end(), static_cast<uint32_t>(mount_)) == mounts_.end()) mount_ = -1;
@@ -759,8 +819,12 @@ private:
         dl->AddRect(d.at(cd::kPicture), d.at(cd::kPicture + Vec2{131, 131}), imColor(palette::kButton));
         ImGui::SetCursorScreenPos(d.at(cd::kPicture + Vec2{1, 1}));
         if (hull_) {
-            image(ui, ui.art.shipPortrait(ui.me().race.style, r.hull(*hull_)), {128, 128});
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Hull, *hull_});
+            image(ui, ui.art.designPortrait(ui.me().race.style, r.hull(*hull_), picture_), {128, 128});
+            script::reportItem("design-picture:" + (picture_.empty() ? std::string("hull") : picture_));
+            // The picture's arrow (ours, over its corner) is not a click on the picture.
+            const bool overArrow = hasPictureChoice(ui) && ImGui::IsMouseHoveringRect(d.at(kPictureArrow), d.at(kPictureArrow + Vec2{16, 16}));
+            if (!overArrow && (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right))) popup_.open({Kind::Hull, *hull_});
+            pictureChoice(ui, d);
         } else {
             ImGui::Dummy(ui.size({128, 128}));
         }
@@ -1109,6 +1173,7 @@ private:
         d.hull = *hull_;
         d.entries = entries_;
         d.strategy = strategy_;
+        d.picture = picture_;
         const game::CommandResult res =
             editing_.valid() ? ui.session.issue(game::cmd::EditDesign{editing_, std::move(d)}) : ui.session.issue(game::cmd::CreateDesign{std::move(d)});
         if (res.ok) done_ = true;
@@ -1127,6 +1192,9 @@ private:
     std::array<char, 64> name_{};
     std::vector<game::DesignEntry> entries_;
     uint32_t strategy_ = 0;
+    std::string picture_;   // the design's own picture; empty: the hull's
+    std::vector<std::string> pictures_;   // the choices for the hull below
+    std::optional<std::optional<uint32_t>> choicesFor_;
     std::string error_;
 
     std::string group_;  // Comp Type filter; empty = all

@@ -738,9 +738,10 @@ private:
     // The picture of a piece for the panels.
     Sprite piecePicture(UiContext& ui, const game::GameState& s, const TacticalPiece& p, const CombatMapPainter& paint) const {
         if (p.design.valid() && p.design.index() < s.designs.size()) {
-            const ruleset::VehicleSize& hull = ui.rules().hull(s.design(p.design).hull);
-            if (Sprite pic = ui.art.shipPortrait(paint.styleOf(p.owner), hull)) return pic;
-            return ui.art.shipMini(paint.styleOf(p.owner), hull);
+            const game::Design& design = s.design(p.design);
+            const ruleset::VehicleSize& hull = ui.rules().hull(design.hull);
+            if (Sprite pic = ui.art.designPortrait(paint.styleOf(p.owner), hull, design.picture)) return pic;
+            return ui.art.designMini(paint.styleOf(p.owner), hull, design.picture);
         }
         if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) return objectSprite(ui, s.galaxy.object(p.planet));
         return {};
@@ -1507,9 +1508,10 @@ private:
         if (p.kind == PieceKind::Seeker) {
             if (p.seekComponent >= 0 && size_t(p.seekComponent) < r.data().components.size()) pic = ui.art.component(r.component(uint32_t(p.seekComponent)).picture);
         } else if (p.design.valid() && p.design.index() < s.designs.size()) {
-            const ruleset::VehicleSize& hull = r.hull(s.design(p.design).hull);
-            pic = ui.art.shipPortrait(style, hull);
-            if (!pic) pic = ui.art.shipMini(style, hull);
+            const game::Design& design = s.design(p.design);
+            const ruleset::VehicleSize& hull = r.hull(design.hull);
+            pic = ui.art.designPortrait(style, hull, design.picture);
+            if (!pic) pic = ui.art.designMini(style, hull, design.picture);
         } else if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) {
             const game::SpaceObject& obj = s.galaxy.object(p.planet);
             if (obj.sectorType < r.data().sectorObjectTypes.size()) pic = ui.art.planetPortrait(r.data().sectorObjectTypes[obj.sectorType].picture);
@@ -1609,7 +1611,7 @@ private:
             if (st.design.index() >= s.designs.size()) continue;
             if (col > 0) ImGui::SameLine(0, ui.px(4));
             ImGui::BeginGroup();
-            image(ui, ui.art.shipMini(style, ui.rules().hull(s.design(st.design).hull)), {36, 36});
+            image(ui, ui.art.designMini(style, ui.rules().hull(s.design(st.design).hull), s.design(st.design).picture), {36, 36});
             ImGui::Text("%d", st.count);
             ImGui::EndGroup();
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.design(st.design).name.c_str());

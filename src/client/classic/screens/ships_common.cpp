@@ -181,7 +181,7 @@ Sprite designMini(UiContext& ui, game::DesignId d) {
     if (!d.valid() || d.index() >= s.designs.size()) return {};
     const game::Design& design = s.design(d);
     const std::string& style = design.owner.valid() ? s.empire(design.owner).race.style : std::string{};
-    return ui.art.shipMini(style, ui.rules().hull(design.hull));
+    return ui.art.designMini(style, ui.rules().hull(design.hull), design.picture);
 }
 
 Sprite unitMini(UiContext& ui, const game::Vehicle& v) {

@@ -152,13 +152,13 @@ bool knownVehicle(const UiContext& ui, const game::Vehicle& v) {
 Sprite vehicleMini(UiContext& ui, const game::Vehicle& v) {
     const game::GameState& s = ui.state();
     const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
-    return ui.art.shipMini(style, ui.rules().hull(s.design(v.design).hull));
+    return ui.art.designMini(style, ui.rules().hull(s.design(v.design).hull), s.design(v.design).picture);
 }
 
 Sprite vehiclePortrait(UiContext& ui, const game::Vehicle& v) {
     const game::GameState& s = ui.state();
     const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
-    return ui.art.shipPortrait(style, ui.rules().hull(s.design(v.design).hull));
+    return ui.art.designPortrait(style, ui.rules().hull(s.design(v.design).hull), s.design(v.design).picture);
 }
 
 Sprite objectSprite(UiContext& ui, const game::SpaceObject& o) { return ui.art.planet(ui.rules().data().sectorObjectTypes[o.sectorType].picture); }

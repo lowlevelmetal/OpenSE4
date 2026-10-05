@@ -1,0 +1,77 @@
+# A design's own picture (docs/sdk/packages-and-data.md "A design's own picture"): with the
+# fixture mod tests/fixtures/mods/picture-pack, whose ship picture "Lancer" is a PNG at twice
+# the classic size, the ship designer's picture has a small arrow in its corner. Its list
+# offers the hull's picture and the mod's; the chosen one shows in the designer, and the
+# design made (a copy of a starting design, so that it is complete) keeps it in Designs and
+# when it is edited; Save for SE IV refuses the game while a design shows a picture the
+# installed game lacks (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start=Terran --seed=7 --open=designs --layout=1024x768 --size=1280x800 --mod=tests/fixtures/mods/picture-pack
+
+wait-window designs
+# A new design has no hull yet: no picture to choose.
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+assert-absent item:##pictures in=create-design
+key Escape
+wait-closed create-design
+# A copy of the first ship design: its hull's picture, and the choice.
+click item:##row in=designs nth=1
+assert-present item:design-picture:hull in=designs
+click item:Copy in=designs
+wait-window create-design
+assert-present item:design-picture:hull in=create-design
+click item:##pictures in=create-design
+wait-for item:picture:Lancer
+assert-present item:picture:hull
+screenshot designer-picture-choice.png
+click item:picture:Lancer
+wait 2
+assert-present item:design-picture:Lancer in=create-design
+assert-fits create-design
+screenshot designer-picture.png
+click tag:create-design:name
+type "Lancer Prime"
+wait 2
+click tag:create-design:save
+wait-closed create-design
+assert { command = "CreateDesign" }
+# In Designs, with its picture.
+click item:"Lancer Prime" in=designs
+assert-present item:design-picture:Lancer in=designs
+screenshot designs-picture.png
+# Save for SE IV refuses the game: the original cannot show a picture only the mod has.
+key Escape
+wait-closed designs
+key F2
+wait-window game-menu
+click item:"Save Game" in=game-menu
+wait-window save-game
+click item:"Save for SE IV" in=save-game
+wait-for item:Close in="Save for Space Empires IV"
+click item:Save in="Save for Space Empires IV"
+wait-for item:result:failed in="Save for Space Empires IV"
+screenshot save-for-se4-refused.png
+click item:Close in="Save for Space Empires IV"
+wait-gone item:Close in="Save for Space Empires IV"
+key Escape
+wait-closed save-game
+click tag:command:designs
+wait-window designs
+click item:"Lancer Prime" in=designs
+# Edited (a prototype), it keeps the picture; back to the hull's.
+click item:Edit in=designs
+wait-window create-design
+assert-present item:design-picture:Lancer in=create-design
+click item:##pictures in=create-design
+wait-for item:picture:hull
+click item:picture:hull
+wait 2
+assert-present item:design-picture:hull in=create-design
+click tag:create-design:save
+wait-closed create-design
+click item:"Lancer Prime" in=designs
+assert-present item:design-picture:hull in=designs
+key Escape
+wait-closed designs
