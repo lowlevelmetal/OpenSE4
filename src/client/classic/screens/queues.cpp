@@ -991,8 +991,8 @@ private:
                 ImGui::TableSetColumnIndex(1);
                 itemNameCell(ui, item, queueItemName(r, s, item), i == 0 ? kTextHighlight : ImVec4(1, 1, 1, 1));
                 ImGui::TableSetColumnIndex(2);
-                const int64_t total = est[i].cost.total();
-                const float frac = total > 0 ? float(item.spent.total()) / float(total) : 0.0f;
+                // Each resource counts up to the item's cost of it (spec 02 §6.3).
+                const float frac = float(est[i].progress);
                 cellProgress(ui, frac, std::format("{}%", int(frac * 100)));
                 ImGui::TableSetColumnIndex(3);
                 cellText(ui, multi_ ? std::string("-") : turnsText(est[i].doneIn), kTextDim);

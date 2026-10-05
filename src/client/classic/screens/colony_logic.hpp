@@ -282,9 +282,16 @@ game::Resources displayCost(const game::Rules& r, const game::GameState& s, game
 struct ItemEstimate {
     game::Resources cost;
     game::Resources remaining;
+    double progress = 0;   // the share of the cost paid, 0 to 1 (queueProgress)
     int turns = -1;    // for this item alone, once it reaches the top (-1 = never)
     int doneIn = -1;   // counting the items ahead of it (-1 = never)
 };
+// The share of an item's cost paid so far, from 0 to 1: each resource counts
+// up to what the item costs of it. The progress of every resource grows by
+// the queue's whole rate each turn (spec 02 §6.3, confirmed: binary), so a
+// resource the item needs little of soon runs past its cost while another
+// is still short; the item is done only when every resource is covered.
+double queueProgress(const game::Resources& cost, const game::Resources& spent);
 // Build-time estimates for every item of a queue at a per-turn rate.
 std::vector<ItemEstimate> estimateQueue(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t,
                                         const game::ConstructionQueue& q, const game::Resources& rate);

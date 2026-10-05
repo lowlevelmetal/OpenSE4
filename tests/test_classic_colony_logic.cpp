@@ -430,6 +430,47 @@ TEST_CASE("classic ui: queue build-time estimates") {
     CHECK(queueUsage(r, s, kMe, target, q, rate).isZero());
 }
 
+// GitHub issue #6: "Items in Construction Queues can have more than 100%
+// progress". The engine adds the queue's whole rate to every resource's
+// progress each turn (spec 02 §6.3), so a resource the item needs little of
+// runs past its cost while another is still short; the Progress column
+// summed them all and showed 177% for an item still a turn away.
+TEST_CASE("classic ui: queue progress counts each resource up to its cost (issue 6)") {
+    // The player's case: a rate of 2020 of each after one turn, on an item
+    // that needs mostly minerals.
+    const Resources cost{3000, 0, 420};
+    const Resources spent{2020, 2020, 2020};
+    REQUIRE(double(spent.total()) / double(cost.total()) > 1.7);   // what v0.9.0 showed
+    CHECK(queueProgress(cost, spent) == doctest::Approx(double(2020 + 420) / 3420.0));
+    CHECK(queueProgress(cost, spent) < 1.0);
+    CHECK(queueProgress(cost, {}) == 0.0);
+    CHECK(queueProgress(cost, cost) == 1.0);
+    CHECK(queueProgress(cost, Resources{9000, 9000, 9000}) == 1.0);
+    CHECK(queueProgress({}, spent) == 0.0);   // nothing to pay (an upgrade's cost not yet known)
+
+    // In the window's estimates, on a real queue.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(3, 2, 12);
+    const cmd::QueueTarget target{homeworld(s, kMe).planet, {}};
+    ConstructionQueue q;
+    QueueItem a;
+    a.kind = QueueItem::Kind::Facility;
+    a.facility = facilityIndex(r, "Test Mine");
+    q.items = {a};
+    const Resources full = displayCost(r, s, kMe, target, a);
+    REQUIRE_FALSE(full.isZero());
+    // Far more than the cost in the resources it needs least of, short in the one it needs most.
+    size_t most = 0;
+    for (size_t i = 1; i < 3; ++i)
+        if (full.v[i] > full.v[most]) most = i;
+    for (size_t i = 0; i < 3; ++i) q.items[0].spent.v[i] = i == most ? full.v[i] / 2 : full.v[most] * 3;
+    const auto est = estimateQueue(r, s, kMe, target, q, Resources{100, 100, 100});
+    REQUIRE(est.size() == 1);
+    CHECK(est[0].progress < 1.0);
+    CHECK(est[0].progress >= 0.5);
+    CHECK(est[0].remaining.v[most] == full.v[most] - full.v[most] / 2);
+}
+
 TEST_CASE("classic ui: queue lists and item names") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(3, 2, 12);

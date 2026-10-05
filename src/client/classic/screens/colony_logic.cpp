@@ -526,6 +526,16 @@ game::Resources displayCost(const game::Rules& r, const game::GameState& s, game
     return c;
 }
 
+double queueProgress(const game::Resources& cost, const game::Resources& spent) {
+    int64_t need = 0, paid = 0;
+    for (size_t i = 0; i < cost.v.size(); ++i) {
+        const int64_t c = std::max<int64_t>(0, cost.v[i]);
+        need += c;
+        paid += std::clamp<int64_t>(spent.v[i], 0, c);
+    }
+    return need > 0 ? double(paid) / double(need) : 0.0;
+}
+
 std::vector<ItemEstimate> estimateQueue(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t,
                                         const game::ConstructionQueue& q, const game::Resources& rate) {
     std::vector<ItemEstimate> out;
@@ -535,6 +545,7 @@ std::vector<ItemEstimate> estimateQueue(const game::Rules& r, const game::GameSt
         ItemEstimate est;
         est.cost = displayCost(r, s, e, t, item);
         est.remaining = game::max(est.cost - item.spent, game::Resources{});
+        est.progress = queueProgress(est.cost, item.spent);
         est.turns = game::economy::turnsToComplete(est.remaining, rate);
         if (est.turns >= 0) est.turns = std::max(1, est.turns);  // an item takes at least one turn
         if (est.turns < 0) never = true;
