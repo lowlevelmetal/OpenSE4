@@ -343,7 +343,7 @@ a new options record. Everything **(confirmed: binary)**.
 | int | Game code: random 1..999,999,999 | none; export 0 |
 | int | Host turn code: new at each host save; a player changes file must carry the same game and turn codes | none; export 0 |
 | int | Byte sum of the host's program, never checked | none; export 0 |
-| int ×7 | Data-set checksums: components, facilities, vehicle sizes, planet sizes, tech areas, mounts, racial traits. Recomputed when a host processes a turn and compared only when a player signs in to a multiplayer game ("Invalid Data Files"); never on a normal load. | none; export 0 (§11.1 question 6 for multiplayer) |
+| int ×7 | Data-set checksums: components, facilities, vehicle sizes, planet sizes, tech areas, mounts, racial traits (§3.2.1). Recomputed when a host processes a turn. Compared when a player (not the game master) signs in to a simultaneous game, hotseat included: a mismatch refuses the sign-in with "Invalid Data Files" **(observed)**. Never checked on a normal load. | none; **export the values computed from the data set (§3.2.1)** |
 
 The game code, the turn code and the seven checksums were already set in a new
 simultaneous game saved right after its creation, and all 0 in a Quick Start
@@ -356,6 +356,54 @@ High is 3, bonus Low is 2, autosave every 3 turns is 3, the game name typed is s
 and simultaneous movement sets the simultaneous flag and clears the turn-based one.
 
 None of these 32-bit values is a random-number state **(confirmed: binary)**.
+
+#### 3.2.1 Data-set checksums
+
+Each of the seven is a sum over the records of one data file, in file order, of the
+record's terms below, as 32-bit integers **(confirmed: binary; the formulas give exactly
+the seven values found in every save made with the stock data, checked by recomputing
+them from the installed files)**. Common rules:
+
+- **p** is the record's 1-based position in its file.
+- A text field counts as its length in characters, the value as read (surrounding spaces
+  removed).
+- A yes/no field counts 1 for True, 0 for False.
+- **Cost** counts 2 × minerals + 4 × organics + 6 × radioactives.
+- **Requirements** count, for each tech requirement, 4 × the required area's TechArea.txt
+  position + 7 × the required level.
+- **Abilities** count, for each ability, its ability id (Appendix A) + the length of its
+  description + value 1 + value 2. For the abilities Cloak Level and Sensor Level, value 1
+  is a sight type name read as EM Active 1, EM Passive 2, Psychic 3, Gravitic 4, Temporal 5;
+  every other value is a number.
+- Named choices count as their code in the original's list for that field: Physical Type
+  1 Planet, 2 Asteroids, 3 Storm, 4 Star, 5 Warp Point, 6 Destroyed Star, 7 Comet; Stellar
+  Size 1 Tiny .. 5 Huge; a hull's Vehicle Type 1 Ship, 2 Base, 3 Fighter, 4 Satellite,
+  5 Mine, 6 Troop, 7 Drone, 8 Weapon Platform; a component's Vehicle Type 1 Ship, 2 Base,
+  3 Fighter, 4 Satellite, 5 Mine, 6 Troop, 7 Drone, 8 WeapPlatform, 9 Ship\Base,
+  10 Ftr\Trp, 11 Ship\Base\Sat\WeapPlat\Drone, 12 Ship\Base\Sat\Drone, 13 Ship\Base\Sat,
+  14 Ship\Base\Drone, 15 All (the whole text); component Restrictions 1 None,
+  2 One Per Vehicle .. 11 Ten Per Vehicle; facility Restrictions 1 None, 2 One Per Planet;
+  Weapon Type (and a mount's Weapon Type Requirement) 0 None, 1 Direct Fire, 2 Seeking,
+  3 Point-Defense, 4 Warhead, 5 Any; Weapon Damage Type 1..32 and
+  Trait Type 1..33 as listed in Appendix B (the damage list differs from the order the
+  data files' own notes give); Weapon Display Type 1 None, 2 Beam, 3 Torp,
+  4 Seeker; a trait's General Type 1 Advantage, 2 Disadvantage, 3 Neither. Unknown
+  names count 0.
+
+| Checksum | Terms per record |
+|---|---|
+| Components | p + Pic Num + 3 × Tonnage Space Taken + 5 × Tonnage Structure + cost + Vehicle Type + Supply Amount Used + Restrictions + Family + Roman Numeral + Custom Group + requirements + abilities + text of Name, Description and General Group + Weapon Type; and, for a weapon (type not 0): the damages at range (only the numbers followed by a space in the line, at most 20; a last number with nothing after it is not stored) + Damage Type + Reload Rate + Display Type + Weapon Display + Weapon Modifier + text of Weapon Sound + Weapon Family, plus for a Seeking weapon Seeker Speed + Seeker Dmg Res |
+| Facilities | p + text of Name, Description and Facility Group + Facility Family + Roman Numeral + Restrictions + Pic Num + cost + requirements + abilities |
+| Vehicle sizes | p + text of Name, Short Name, Description, Code, Primary and Alternate Bitmap Name + Vehicle Type + cost + Tonnage + Engines Per Move + requirements + abilities + the yes/no Must Have Bridge, Can Have Aux Con and Uses Engines + Min Life Support + Min Crew Quarters + Max Engines + Pct Fighter Bays + Pct Colony Mods + Pct Cargo |
+| Planet sizes | p + Physical Type + Stellar Size + Max Facilities + Max Population + Max Cargo Spaces + Max Facilities Domed + Max Cargo Spaces Domed + Special Ability ID (Max Population Domed is not counted) |
+| Tech areas | p + text of Name, Group and Description + Maximum Level + Level Cost + Start Level + Raise Level + Racial Area + Unique Area + requirements |
+| Mounts (CompEnhancement.txt) | p + Cost Percent + Tonnage Percent + Tonnage Structure Percent + Damage Percent + Supply Percent + Range Modifier + Weapon To Hit Modifier + Vehicle Size Minimum + Weapon Type Requirement (Shield Percent and Vehicle Size Maximum are not counted) |
+| Racial traits | p + Pic Num + General Type + Cost + Trait Type + Value 1 + Value 2 + the positions (in RacialTraits.txt, 0 for None) of Required Trait 1..3 and Restricted Trait 1..3 |
+
+A game made through Game Setup carries them from its creation; a Quick Start game still
+carried 0 after two turn-based turns, and a host's turn processing fills them in
+**(observed)**. The game code and turn code need not be
+set for a sign-in: a file with both at 0 and correct checksums signs in **(observed)**.
 
 ### 3.3 Victory conditions
 
@@ -629,7 +677,7 @@ The log position and scroll are not stored; import 0.
 | bool | Computer makes no changes in simultaneous games | | `aiMinimalChanges` |
 | 20 × (byte, word) | Per player 1..20: anger (default 50); turns since war (default 999, 0 while at war) | | `Relation::anger`, `Relation::turnsSinceWar` |
 | byte | Always 0 | | export 0 |
-| byte ×7 | Unused | 0, 0, 0, 1, 1, 1, 0 in 204 of the 206 empires of the sample saves, 0, 0, 0, 1, 0, 1, 0 in the other two **(observed)** | export 0, 0, 0, 1, 1, 1, 0 |
+| byte ×7 | Unused | 0, 0, 0, 1, 1, 1, 0 in 204 of the 206 empires of the sample saves, 0, 0, 0, 1, 0, 1, 0 in the other two **(observed)**. These are the values a new ministers record gets; the fifth is cleared when the computer player first notices an enemy star destroyer, and nothing reads any of them **(confirmed: binary)** | export 0, 0, 0, 1, 1, 1, 0 |
 | word | Last index used in the ship-name file | | none; derive from the vehicle names, or 0 |
 | bool ×8 | Enemy design capability flags | Recomputed every turn; the seventh marks a star destroyer | none; export 0 |
 | word | Drone name counter | | none; export the number of drone groups |
@@ -664,7 +712,7 @@ here, and the computer players' anger counts unread entries.
 | byte | Other empire involved | Player, 0 none; the computer players' anger reads it | none (needed only to rebuild anger inputs) |
 | byte | Entry kind | See below | none (derive `picture`, `message`) |
 | byte | Category | 1 Construction, 2 Research, 3 Intelligence, 4 Events, 5 Politics, 6 Combat, 7 Misc | `category` = value − 1 |
-| int | Date first read | 0 unread | none; export the entry's date |
+| int | Date first read | 0 unread. The Log window lists only the entries whose read date is 0 or the current date, and stamps the unread ones with the current date; entries read on an earlier turn are hidden **(confirmed: binary; observed: a file whose entries had their own dates as read dates showed an empty Log, the same file with 0 showed them)** | none; **export 0** |
 | byte | Event kind | On event entries | none |
 | word | Tech area | On new-tech-level entries | none |
 | bool, record | Diplomatic message follows | Present on message entries (kind 19) | `message` → a delivered `DiplomaticMessage` |
@@ -689,7 +737,7 @@ no other empire: that kind shows a generic picture and does not count for anger.
 
 | Type | Field | Meaning |
 |---|---|---|
-| byte | Message type | 1..38, in the order of spec 05 §7.3's message types: 1 General; 2..5 Propose, Accept, Refuse, Counter Treaty; 6 Break Treaty; 7 Declare War; 8..11 Propose, Accept, Refuse, Counter Trade; 12..14 Give, Accept, Refuse Gift; 15..17 Offer, Accept, Refuse Tribute; 18..34 the seventeen demands and requests (18 want a gift, 19 want a tribute, 20 demand surrender, 21 remove ships, 22 remove colonies, 23 leave planet, 24 stop hostile actions, 25 break a treaty, 26 declare war on, 27 make peace with, 28 support us against, 29 attack an empire in a system, 30 attack a planet, 31 stop espionage, 32 stop sabotage, 33 stop attacks in a system, 34 the generic demand); 35 Surrender; 36 Grant Independence; 37, 38 Accept, Refuse Demand **(observed: in the sample saves 20 is a computer player's surrender demand and 38 a refusal of a request about a third empire; inferred for the types not seen)**. Map to `MessageType` by name; OpenSE4 has no Accept/Refuse Tribute and no generic demand. |
+| byte | Message type | 1..38, in the order of spec 05 §7.3's message types: 1 General; 2..5 Propose, Accept, Refuse, Counter Treaty; 6 Break Treaty; 7 Declare War; 8..11 Propose, Accept, Refuse, Counter Trade; 12..14 Give, Accept, Refuse Gift; 15..17 Offer, Accept, Refuse Tribute; 18..34 the seventeen demands and requests (18 want a gift, 19 want a tribute, 20 demand surrender, 21 remove ships, 22 remove colonies, 23 leave planet, 24 stop hostile actions, 25 break a treaty, 26 declare war on, 27 make peace with, 28 support us against, 29 attack an empire in a system, 30 attack a planet, 31 stop espionage, 32 stop sabotage, 33 stop attacks in a system, 34 the generic demand); 35 Surrender; 36 Grant Independence; 37, 38 Accept, Refuse Demand **(confirmed: binary: the original's own name list for message types has exactly this order; observed: in the sample saves 20 is a computer player's surrender demand and 38 a refusal of a request about a third empire)**. Map to `MessageType` by name; OpenSE4 has no Accept/Refuse Tribute and no generic demand. |
 | byte | Sender | Player |
 | byte | Recipient | Player |
 | byte | Tone | 1 pleading, 2 neutral, 3 demanding (`tone` = value − 1) |
@@ -700,10 +748,16 @@ no other empire: that kind shows a generic picture and does not count for anger.
 | word n, n × item | Offered | |
 | word n, n × item | Requested | |
 
-Package item: string (display text), byte kind, word value, byte quantity. Kinds: 1
+Package item: string (display text), byte kind, word value, byte quantity. The text is a
+guard, not only a label: whenever an item is shown or carried out, the original compares
+it with the current name of the item's subject (the system for kinds 1 and 7, the object's
+name for kinds 2, 5 and 6, the tech area's name for kind 4) and treats a mismatch as "Item
+Unavailable"; an empty text is not checked, and kinds 3, 8, 9 and the placeholders are
+never checked **(confirmed: binary)**. Export must write the subject's current name (as
+OpenSE4 does) or nothing; any other wording disables the item. Kinds: 1
 system (value = system), 2 planet (object), 3 resource (value = resource 1..5, quantity
-= amount in thousands), 4 technology (tech area), 5 ship (object), 6 units (object,
-inferred: the carrier), 7 star chart (system), 8 treaty (treaty code), 9 comm channel
+= amount in thousands), 4 technology (tech area), 5 ship (object), 6 units (an object: the guard
+above compares the object's name, confirmed: binary; the carrier, inferred), 7 star chart (system), 8 treaty (treaty code), 9 comm channel
 (player), 10..15 "any" placeholders for planet, technology, ship, units, star chart,
 comm channel (quantity = how many, at most 250). OpenSE4's `PackageItem` has no units
 kind and no placeholders.
@@ -804,8 +858,9 @@ of every owned design of the 24 sample saves, 1,673 designs **(observed)**.
 
 #### 3.7.1 Design type codes
 
-Every code with its name, each seen in the sample saves with the design type name it is
-taken from **(observed)**:
+Every code with its name **(confirmed: binary: the original's own name list for these
+codes; observed: each seen in the sample saves with the design type name it is taken
+from)**:
 
 | Code | Name | Code | Name | Code | Name |
 |---|---|---|---|---|---|
@@ -913,7 +968,7 @@ A colony has no name of its own.
 | bool | Cloaked | | `cloaked` |
 | byte | Atmosphere counter | Turns with an unbreathable atmosphere (at most 200) | `atmosphereTurns` |
 | cargo | Stored cargo | §3.8.7 | `cargo` |
-| word n, n × (word, byte, byte) | Facilities | Facility.txt position; how many; how many were destroyed in the current battle (0 between turns, except 30 entries of the large sample, **observed**: stale counts nothing reads, inferred). One entry per facility kind; at most 255 entries. | `facilities`: count copies of position − 1 |
+| word n, n × (word, byte, byte) | Facilities | Facility.txt position; how many; how many were destroyed and not yet removed. Each destruction (sabotage, natural events, hazard damage) adds to it and is then removed by subtracting it from the count, but the byte is never reset, so a nonzero value stays behind and is subtracted again at the colony's next removal pass **(confirmed: binary)**; 30 entries of the large sample hold such leftovers **(observed)**. Import and export 0 (§11.2). One entry per facility kind; at most 255 entries. | `facilities`: count copies of position − 1 |
 | queue | Construction queue | §3.8.7 | `queue` |
 | unit list | Landed enemy troops | §3.8.7 | `landedTroops` |
 | byte | Invading player | 0 none | `invader` |
@@ -966,8 +1021,11 @@ the turn it was built, the movement-blocked turn, arrival stamps.
   made during ground combat (whether they reach a save is open, question 9). OpenSE4:
   `UnitStack`.
 - **Cargo**: population list, then a bool "units follow" and, when set, a unit list. The
-  flag may be set with an empty list (144 of about 1,500 cargo records of the sample saves,
-  **observed**); such a list reads like no list.
+  flag says whether the cargo holds a unit list at all: the list is made when units are
+  first added and freed only by two tidying paths when it is empty, so the flag may be set
+  over an empty list (144 of about 1,500 cargo records of the sample saves, **observed**).
+  Every reader tests the flag first, so a clear flag and an empty list read the same
+  **(confirmed: binary)**.
   OpenSE4: `Cargo`.
 - **Construction queue**: word item count, bool on hold, bool emergency, bool repeat,
   byte rally waypoint (1..10, 0 none), byte emergency or slow-mode turns counter, three
@@ -994,10 +1052,10 @@ comes first; export the current order as 1.
 | 4 | Colonize | target = planet | Colonize |
 | 6 | Load cargo | extra = cargo kind: 1 population, 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms (loads all of that kind) | LoadCargo (by kind, not by design: lossy both ways) |
 | 7 | Drop cargo | extra = kind, target = planet (0 here) | DropCargo |
-| 8 | Attack | | Attack |
+| 8 | Attack | none: it attacks where the group stands (the turn-based Attack of spec 03 §8) | Attack without a target |
 | 9 | Scrap | | Scrap |
-| 10, 12 | Seek a location | system, sector | Seek |
-| 11, 13 | Seek a target | target = object (its system, sector and name when given) | Seek |
+| 10, 12 | Seek a location | system, sector. Nothing in this version creates kind 10; kind 12 comes only from the ministers and computer players **(confirmed: binary)** | 10: MoveTo (inferred); 12: Seek |
+| 11, 13 | Seek a target | target = object (its system, sector and name when given). Kind 11 is the player's Attack on a target in a simultaneous game, or by drones in any game: the pursuit of spec 03 §8, kept until the target is gone. Kind 13 comes only from the ministers and computer players and lasts one movement phase **(confirmed: binary)** | 11: Attack with the target (the pursuit); 13: Seek |
 | 15 | Sweep mines | | SweepMines |
 | 17 | Open warp point | target = the system to link to | StellarManipulation |
 | 18, 20, 22, 24 | Close warp point, destroy storm, destroy planet, destroy star | target = the object | StellarManipulation |
@@ -1005,7 +1063,7 @@ comes first; export the current order as 1.
 | 60, 62 | Create nebulae, create black hole | target = an object (a star for nebulae) | StellarManipulation |
 | 66 | Stellar construction | target = object, a planet-size parameter (inferred: in extra) | StellarManipulation (CreateConstructedPlanet) |
 | 25 | Sentry | | Sentry |
-| 34, 35 | Launch, recover units | extra = unit kind | LaunchUnits, RecoverUnits (by kind) |
+| 34, 35 | Launch, recover units | extra = unit kind in the cargo-kind numbering of Load: 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms; 0 every kind **(confirmed: binary)**. Not the closing list's vehicle types (§3.9), which number mines and satellites the other way round | LaunchUnits, RecoverUnits (by kind) |
 | 42..46 | Analyze, mothball, unmothball, self-destruct, fire on | | Analyze, Mothball, Unmothball, SelfDestruct, FireOn |
 | 47 | Join fleet | target = fleet number | JoinFleet |
 | 52 | Retrofit | target = design | Retrofit |
@@ -1090,9 +1148,8 @@ For OpenSE4 this means:
 - Many saves carry seven data-set checksums in the options (§3.2). Three saves made with
   the stock data (two simultaneous, one turn-based) carry the same seven values, and a
   Quick Start hotseat game still had all seven at 0 after two turns **(observed)**. When
-  set they identify a data set even though their formula is not documented here (§11.1
-  question 6): an importer can keep a table of known values per data set and warn on a
-  mismatch.
+  set they identify the data set: an importer can recompute them from its ruleset's files
+  (§3.2.1) and warn on a mismatch, and an exporter must write them for simultaneous games.
 
 ## 5. Loading in the original
 
@@ -1307,11 +1364,11 @@ Write them correctly or the game misbehaves silently **(confirmed: binary)**:
 |---|---|
 | Summary | As §2.6, from the same values as the body |
 | Prologue | Unused flags off; autosave and hand-over flags off; copies equal to the real values; turn counter 367 + `turn` |
-| Options | Setup-only fields at their defaults (random empires on, number of computer players 2); game master password, game name and save folder empty; play style 1 (same machine) and connection 1; replay counter, codes, program sum and checksums 0 (§11.1 question 6) |
+| Options | Setup-only fields at their defaults (random empires on, number of computer players 2); game master password, game name and save folder empty; play style 1 (same machine) and connection 1; replay counter, codes and program sum 0; **the seven checksums computed from the data set (§3.2.1)**, without which no player can sign in to a simultaneous game **(observed)** |
 | Globals | Main-window system and sector: the current player's home system and sector; scenario fields off, empty, 1 |
 | Systems | "Changed" off; type attributes copied from the system's SystemTypes.txt record |
 | Empires | Art folder = race folder; emblem folder, network name and password empty; unused fields as stated in §3.6; default formation, fleet strategy and planet strategy 1; capability flags off; name counters from the vehicles; window memories without counterparts at their defaults (tabs 1, transfer tabs 3); the system and sector shown at turn end: home system and sector |
-| Log | OpenSE4's entries as kind 36, picture key 0, no other empire, read date = entry date; diplomatic entries as kind 19 with the message record; combat entries as kinds 9..14 with their battle details |
+| Log | OpenSE4's entries as kind 36, picture key 0, no other empire, **read date 0** (§3.6.11); imported entries with the kind, picture key, other empire, event kind and tech area they came with; diplomatic entries as kind 19 with the message record; combat entries as kinds 9..14 with their battle details |
 | Designs | Speed, cost and type code computed; last-seen dates from `seenDesigns`; changed flag off; empty ability list |
 | Objects | Day accumulators 0; changed flags off; killed units 0; militia 0 without an invader; blanks for free slots |
 
@@ -1409,6 +1466,35 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
   option codes read back.
 - The Load Game window lists `.gam` files by name and file date only.
 
+### 9.1 Files exported by OpenSE4 (2026-10-04, second round)
+
+All **(observed)**, in a fresh scratch copy of the original under Wine. Each file was also
+decoded with an independent decoder: every one reads to its last byte and meets §8's
+invariants. "Played" means End Turn ran and the computer players took their turns with no
+error message.
+
+| File | Kind | Loaded | What was looked at | Played |
+|---|---|---|---|---|
+| A game made in OpenSE4, turn-based, 5 empires, 30 turns | Export | Yes | Empires (none met yet, as in the file), Colonies (7 colonies, values, moods), Ships\Units (2 ships, a satellite group, 2 fleets), Construction Queues (a facility item that completed on the next turn) | 3 turns; saved by the original and decoded again: a blank storm slot written by OpenSE4 was reused by the original for a new ship |
+| The same game, simultaneous | Export | Yes, but no player could sign in: "Invalid Data Files", because the seven data-set checksums were 0 (§3.2.1). The game master could, and processing a turn as host filled them in | Ships\Units and fleets | 3 turns through the host; the same file with the checksums written signs the player in directly |
+| Our original turn-based save with a fleet and a waypoint, through OpenSE4 and back | Round trip | Yes | Waypoint, queue, the fleet with its leader, formation, strategy and supply as in the original's file | 2 turns; the fleet kept |
+| Our original simultaneous save at creation, through OpenSE4 and back | Round trip | Yes; sign-in refused as above (the original file had the checksums, the export did not) | Finite-resource values | 2 turns through the host |
+| Our original simultaneous host save after one turn, through OpenSE4 and back | Round trip | Yes; sign-in refused as above | | 2 turns through the host |
+| Our original turn-based save after two turns, through OpenSE4 and back | Round trip | Yes | The Log was empty although the file holds three entries: their read date was their own date (§3.6.11); with 0 they showed, the tech-level entry without its picture because its kind became 36. Designs window: costs, movement, supply and parts as in the original | 2 turns |
+| The large third-party game, imported, played 5 turns in OpenSE4 and exported | Export | Yes | The shown system and its objects | 2 full turns with battles (answered Strategic) and four colonizations from exported Colonize orders (each asked for a colony type, as the empire's option says); saved by the original and decoded again |
+| An OpenSE4 client export with its statistics file beside it (the name contains a space and a dot) | Export | Yes | The original copied the statistics file into its history folder and the Comparisons window plotted its three lines | |
+
+What also showed:
+
+- The current player's ships in the turn-based export had 0 movement left on loading, one
+  of them idle at home with full supply; the original does not refill movement on load
+  (it resumes inside the current player's turn), so they could not move until the next
+  turn. Export of a turn-based game should write the movement available in the current
+  player's turn (its start-of-turn refill done) (inferred cause: OpenSE4 refills at its own
+  start-of-turn step, which had not run).
+- A simultaneous game exported with an empty game name plays, but the host then saves it
+  as a file named only `.gam` (and `_Log.trn` and so on) in the save folder.
+
 ---
 
 ## 10. Cross-references
@@ -1428,13 +1514,16 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
 
 1. What the log's "event-style notice" flag is for (no reader found).
 2. Which of the log entry kinds 15..18 is which intelligence outcome.
-3. The value of a package item of kind 6 (units): the carrier's object (inferred).
+3. The value of a package item of kind 6 (units): an object, since the item check compares
+   its name (confirmed: binary); that it is the carrier is inferred.
 4. Which column numbers the sort-key slots store, per window, and whether they match
    OpenSE4's column identities.
 5. The full rule that gives a design its computer type code when its type name is not
    one of the 39 standard ones.
-6. When the seven data-set checksums are set, and their formulas (needed only for a
-   multiplayer-valid export).
+6. **Answered:** the formulas are in §3.2.1 (confirmed: binary; they reproduce the stock
+   values). They are set when a game is made through Game Setup and whenever a host
+   processes a turn, and they are needed by every simultaneous game, hotseat included
+   (observed).
 7. The exact parameters of the Stellar Construction order.
 8. The formats of the statistics and events companion files, for exporting OpenSE4's
    history (the statistics file is plain text, one line per turn).
@@ -1447,24 +1536,38 @@ All **(observed)**, in a scratch copy of the original under Wine, 2026-10-04:
     game opened directly on the current player's main window (observed, with the large
     sample), but whether the start-of-turn steps run again is not settled.
 
-15. The game name of an exported simultaneous game: §7.3 says to export it empty, but the
-    host saves a simultaneous game under it (§1.1), and every simultaneous sample has one.
-    OpenSE4 writes the name of the exported file there (inferred); whether the original also
-    handles an empty name is not checked.
-16. The unit kind of Launch and Recover orders (kinds 34, 35): no sample holds one. OpenSE4
-    reads and writes the vehicle-type numbers of the closing list (§3.9: 3 fighters, 4
-    satellites, 5 mines, 7 drones) (inferred).
-17. The Seek kinds 10 and 11: OpenSE4's Seek is the one-phase pursuit of 12 and 13, so an
-    imported 10 or 11 becomes one and is written back as 12 or 13. What gives 10 and 11 (a
-    player's order or a minister's) and how long they last is open.
-18. The display text of a package item (§3.6.11): the samples hold none. OpenSE4 writes the
-    item's subject in its own words ("5000 Minerals", a planet's or empire's name) (inferred).
-19. The "units follow" flag set over an empty unit list (§3.8.7): when the original leaves it
-    so, and whether writing it clear changes anything.
-20. Whether the original takes the History files OpenSE4 writes beside an export (§1.2):
-    they follow the layouts of spec 06 §6.1, the statistics lines inferred there.
+15. **Answered (observed):** with an empty game name a simultaneous game plays, but each
+    host turn saves it as a file named only `.gam` (with `_Log.trn`, `_Combat.cmb` and
+    `_plr_1_stats.txt`). Writing a name, as OpenSE4 does (the exported file's), is right; the
+    host then overwrites that file each turn, as for the original's own games.
+16. **Answered (confirmed: binary):** the kind byte of Launch and Recover orders uses the
+    cargo-kind numbering of Load and Drop (3 fighters, 4 mines, 5 satellites, 6 drones,
+    2 troops, 7 weapon platforms, 0 every kind), not the closing list's vehicle types:
+    OpenSE4's 4 and 5 swap mines and satellites, and its 7 for drones reads as weapon
+    platforms (docs/PARITY_GAPS.md).
+17. **Answered (confirmed: binary):** kind 11 is the player's Attack on a target in a
+    simultaneous game or by drones (the pursuit of spec 03 §8, kept until the target is
+    gone), so it maps to OpenSE4's Attack with a target, not to Seek; kind 10 is executed but
+    nothing in this version creates it; 12 and 13 come only from ministers and computer
+    players and last one movement phase. OpenSE4's pursuing Attack must be written as 11,
+    not as 8, whose stored form ignores the target and attacks where the group stands.
+18. **Answered (confirmed: binary):** the text is checked against the subject's current name
+    for kinds 1, 2, 4, 5, 6 and 7 and a mismatch makes the item unavailable; an empty text
+    is not checked (§3.6.11). OpenSE4's texts (the subject's name, and free wording only for
+    unchecked kinds) pass.
+19. **Answered (confirmed: binary):** the flag only says whether a unit list exists; readers
+    test it first, so writing it clear for an empty list changes nothing (§3.8.7).
+20. **Answered for the statistics file (observed):** the original copies an OpenSE4-written
+    `<name>_plr_<n>_stats.txt` into its history folder on loading, even with a space and a
+    dot in the name, and plots its lines in the Comparisons window. The events file was not
+    tested (no export carried one).
 
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
+
+- A colony's facility entries keep a count of destroyed facilities that the removal pass
+  subtracts but never resets; every later removal pass at that colony (after sabotage, a
+  natural event or hazard damage) subtracts the leftover again, so the colony loses those facilities
+  a second time. OpenSE4 removes destroyed facilities once (docs/PARITY_GAPS.md).
 
 - Each system's object list is rebuilt in slot order after every load, move, warp and
   creation. Spec 05 §7.5 ("Placement") and `Vehicle::arrival` assume arrival order; this
@@ -1516,7 +1619,9 @@ Implemented on 2026-10-04 from this spec.
   - Load, Drop, Launch and Recover orders: by kind in the file, by design in OpenSE4. An
     imported order takes the first design of that kind in the vehicle's or colony's cargo
     (a Drop or Launch), else the owner's newest design of that kind; an exported one is
-    written by its design's kind and as much as fits.
+    written by its design's kind and as much as fits. (Checked on 2026-10-04: the kind
+    of Launch and Recover must use the cargo-kind numbering, §11.1 Q16; and OpenSE4's
+    pursuing Attack must be written as kind 11 and kind 11 read as Attack, §11.1 Q17.)
   - An imported Colonize order counts as given (its colonists were loaded then); a Use
     Facility position is turned between the grouped list and OpenSE4's own; Abandon Planet
     orders are dropped (OpenSE4 abandons at once).
@@ -1525,13 +1630,18 @@ Implemented on 2026-10-04 from this spec.
     message whose entry the log no longer holds gets one); imported entries keep title,
     text, place, category and go-to, and a picture from their kind and key where the kind
     names one (vehicle and facility built, item developed, message). Battle details are not
-    kept, nor written.
+    kept, nor written. (Checked on 2026-10-04: the read date must be 0, or the Log hides
+    the entries, §3.6.11; imported entries lose their kind, so their pictures, §9.1.)
   - Turn-based games: the current player's turn counts as started (§11.1 Q14); the
-    closing list (§3.9) is the turn's launch budget.
+    closing list (§3.9) is the turn's launch budget. (Checked on 2026-10-04: an export
+    made before the current player's start-of-turn step leaves their vehicles with no
+    movement in the original's first turn, §9.1.)
   - Passwords: imported as OpenSE4's check of the trimmed lower-case password; none is
     exported (§7.4). The game master password is dropped.
   - The windows' sort keys are not carried in either direction (§11.1 Q4).
   - Race folders are written as the installed folder is spelt.
+- **Checked in the running original** on 2026-10-04 with seven exports (§9.1): all load
+  and play; simultaneous ones need the data-set checksums (§3.2.1) for players to sign in.
 - **Checked** on the 24 saves this spec was checked with (§8): every one decodes to the end,
   meets §8's invariants and counts, imports into a state that `validateState` accepts and
   that plays on without desync, and is written again with only the differences listed
@@ -1598,3 +1708,25 @@ Maintenance Cost - System; 140 Shield Modifier - System; 141 Combat To Hit Offen
 142 Combat To Hit Defense Minus; 143 Launch Drones; 144..163 AI Tag 01..20; 164 Generate
 Points Minerals; 165 Generate Points Organics; 166 Generate Points Radioactives; 167
 Generate Points Research; 168 Generate Points Intelligence.
+
+## Appendix B. Code lists used by the data-set checksums
+
+**(confirmed: binary)**
+
+Weapon Damage Type: 1 Normal; 2 Shields Only; 3 Skips Normal Shields; 4 Only Engines;
+5 Only Weapons; 6 to 10 Plague Level 1 to 5; 11 Only Planet Population; 12 Only Planet
+Conditions; 13 Only Resupply Depots; 14 Only Spaceports; 15 Pushes Target; 16 Pulls
+Target; 17 Random Target Movement; 18 Only Shield Generators; 19 Only Boarding Parties;
+20 Only Security Stations; 21 Only Planet Destroyers; 22 Skips Armor; 23 Skips Shields And
+Armor; 24 Quad Damage To Shields; 25 Increase Reload Time; 26 Disrupt Reload Time; 27 Crew
+Conversion; 28 Skips All Shields; 29 Only Master Computers; 30 Double Damage To Shields;
+31 Half Damage To Shields; 32 Quarter Damage To Shields.
+
+Trait Type: 1 Reproduction; 2 Mineral Production; 3 Organics Production; 4 Radioactives
+Production; 5 Research Production; 6 Intelligence Production; 7 SY Rate; 8 Maintenance
+Cost; 9 Supply Cost; 10 No Plagues; 11 Luck; 12 No Spaceports; 13 Population Happiness;
+14 Vehicle Speed; 15 Galaxy Seen; 16 Planet Storage Space; 17 Planetary SY Rate; 18 Troops
+Bonus; 19 Fighter Bonus; 20 Ship Bonus; 21 Mineral Storage; 22 Organics Storage;
+23 Radioactives Storage; 24 Production; 25 Trade; 26 Space Combat; 27 Ground Combat;
+28 Repair; 29 Tech Area; 30 Tollerance (spelt so in the data); 31 Ship Attack; 32 Ship
+Defense; 33 Population Emotionless.
