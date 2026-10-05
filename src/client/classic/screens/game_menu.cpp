@@ -9,6 +9,7 @@
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
+#include "client/script/items.hpp"
 #include "game/map_file.hpp"
 #include "ruleset/ruleset.hpp"
 
@@ -419,11 +420,12 @@ public:
     }
 
 private:
-    // The folder the original's saves are written to: the player's user data
-    // folder until one is typed, kept for the session (never the installation's).
+    // The folder the original's saves are written to: "Space Empires IV" in
+    // the saves folder (the player's user data, never the installation) until
+    // another is typed, kept for the session.
     static std::filesystem::path& classicSavesDirectory() {
         static std::filesystem::path dir;
-        if (dir.empty()) dir = userDataDir() / "Space Empires IV saves";
+        if (dir.empty()) dir = savesDir() / "Space Empires IV";
         return dir;
     }
 
@@ -449,6 +451,7 @@ private:
         if (!classicResult_.empty()) {
             ImGui::PushTextWrapPos(0.0f);
             ImGui::TextColored(classicSaved_ ? kGoodText : kErrorText, "%s", classicResult_.c_str());
+            script::reportItem(classicSaved_ ? "result:saved" : "result:failed", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());   // for input scripts
             for (const std::string& note : classicNotes_) {
                 ImGui::Bullet();
                 ImGui::TextUnformatted(note.c_str());

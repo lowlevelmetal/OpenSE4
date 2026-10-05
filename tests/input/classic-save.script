@@ -1,0 +1,48 @@
+# Games of the original (docs/spec/08, docs/SETUP.md "Games of the original"): Save Game's
+# "Save for SE IV" writes the game as a saved game of the original into the saves folder's
+# "Space Empires IV" folder; Load Game's Change Directory finds it there, and loading it
+# imports it, with the note of what came across only approximately (docs/BUILDING.md
+# "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --empires=3 --seed=7 --turns=3 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 5
+click item:"*(suggested)" in="Colony Type" optional
+# Save Game, then Save for SE IV under the save's name ("<empire> 2400.3").
+key F2
+wait-window game-menu
+click item:"Save Game" in=game-menu
+wait-window save-game
+click item:"Save for SE IV" in=save-game
+wait-for item:Close in="Save for Space Empires IV"
+click item:Save in="Save for Space Empires IV"
+wait-for item:result:saved in="Save for Space Empires IV"
+screenshot save-for-se4.png
+click item:Close in="Save for Space Empires IV"
+wait-gone item:Close in="Save for Space Empires IV"
+key Escape
+wait-closed save-game
+
+# Load Game: the saves folder's "Space Empires IV" folder holds it.
+key F2
+wait-window game-menu
+click item:Load in=game-menu
+wait-for item:"Change Directory" in=load-game
+click item:"Change Directory" in=load-game
+wait-for item:Default in="Change Directory"
+click item:Default in="Change Directory"
+click item:##folder in="Change Directory"
+key End
+type "/Space Empires IV"
+key Enter
+wait-gone item:Default in="Change Directory"
+wait-for item:"* 2400.3" in=load-game
+click item:"* 2400.3" in=load-game
+# The import's note, then the game.
+wait-for item:OK in="Space Empires IV Game Imported"
+screenshot imported.png
+click item:OK in="Space Empires IV Game Imported"
+wait-gone item:OK in="Space Empires IV Game Imported"
+assert-screen game

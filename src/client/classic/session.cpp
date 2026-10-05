@@ -704,8 +704,11 @@ std::expected<std::vector<std::string>, std::string> ClassicSession::exportClass
     options.gameName = file.stem().string();
     auto written = game::classic::writeClassicGame(*rules_, state_, file, report, options);
     if (!written) return std::unexpected(written.error());
-    // The players' History files go beside it, as the original's own saves keep them (spec 08 §1.2).
+    // The players' History files go beside it, as the original's own saves
+    // keep them (spec 08 §1.2): the original's Scores and History windows
+    // read them, so the graphs are not lost after all.
     copyHistoryNextTo(file);
+    std::erase_if(report.notes, [](const std::string& n) { return n.starts_with("History and score graphs"); });
     logReport("Saved for Space Empires IV:", file, report);
     return report.notes;
 }
