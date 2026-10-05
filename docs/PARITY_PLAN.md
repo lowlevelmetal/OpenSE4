@@ -170,3 +170,61 @@ questions are what the observation sessions still have to settle.
    "Security"). Two improvements are left:
    - a password-authenticated key exchange, for the first connection to an open game;
    - Argon2 off the interface thread.
+
+## Future goals
+
+Beyond parity, three larger goals are planned. None of them has started. Each keeps the
+rule above: OpenSE4 always plays on the player's own copy of the original.
+
+### A Steam release, with multiplayer through Steam
+
+OpenSE4 on Steam as a free program that finds the player's Space Empires IV Deluxe
+through Steam and plays on it.
+- **Steam multiplayer:**
+  - lobbies, and invites from the friends list;
+  - connections through Steam's relay network, so nobody has to open ports.
+
+  Network games over plain TCP, the dedicated server and play by e-mail stay as they are,
+  with the same rules and protocol, so Steam and non-Steam players can share a game.
+- **Steam integration:** cloud saves, and rich presence (the game, turn and empire shown to
+  friends).
+- **Builds without Steam stay complete.** Steam support is an optional part, used only when
+  Steam is running. The GitHub downloads, the ARM builds and `opense4-server` don't need it.
+- **To settle first:**
+  - The Steamworks SDK is not free software. Shipping it with OpenSE4, which is under the
+    GPL, needs an added permission in OpenSE4's licence, or a separate Steam component.
+  - The store page.
+  - How the Steam build checks that the original is installed.
+
+### Steam Workshop
+
+Players publish mods from inside the game and subscribe to them.
+- **Data-set mods:** the original's mod format, checked with `opense4-datacheck` before
+  publishing. A mod is layered over the installed game and never changes it.
+- **Script mods:** from the SDK below.
+- **Matching mods in multiplayer:** every player in a network or e-mail game must have the
+  same mods. The data-set checksums already make sure of this for data files; scripts
+  will join them.
+
+### A modding SDK with Python scripts
+
+- **Tools:**
+  - a mod template;
+  - the data-format reference (the specs in `docs/spec/`, rewritten as a modder's guide);
+  - `opense4-datacheck`;
+  - a tool that packages a mod for the Workshop.
+- **Python scripts:** hooks for the rules, events, the computer players' ministers,
+  victory conditions, scenarios and training games.
+- **What the engine requires of scripts:**
+  - **Same result everywhere:** a turn must resolve the same way on every computer
+    (network games compare checksums). Scripts therefore run only inside turn processing,
+    take every random number from the game's generator, use whole numbers where the engine
+    does, and change the game only through the engine's commands and hooks.
+  - **One set of scripts per game:** each script's version and checksum become part of the
+    data set's identity, so every player in a game runs the same scripts.
+- **To settle first:**
+  - Embedding CPython on every platform OpenSE4 supports, Windows 7 and 32-bit ARM
+    included.
+  - A sandbox: Workshop scripts come from strangers, so they must not reach the player's
+    files or the network. Python is hard to sandbox, so this choice comes before any
+    scripting API.
