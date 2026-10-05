@@ -135,7 +135,7 @@ all five sight types. Drone hulls grant `Extra Movement Generation` with `Val 2 
 | `Supply Amount Used` | Supply consumed each time the component is activated. For an engine this is per move, for a weapon per shot, for a one-shot device per use (§7). |
 | `Restrictions` | `None`, or `One Per Vehicle` through `Ten Per Vehicle`: the maximum count of this component **family** on one design (§4.2 rule 10). |
 | `General Group` | Category used for UI filtering and **repair priority** (§13). Stock groups are Weapons, Sensors, Engines, Stellar Manipulation, Shields, Armor, Unit Launch, Vehicle Control, Remote Mining, Supply, Construction, Cargo, Miscellaneous, Colonizing and Religious. |
-| `Family` | Integer lineage id. All numeral versions of one part share it, and different lines may too (all stock large engines share one). It drives "Only Latest", which keeps the last of each run of neighbouring same-family entries in file order (spec 02 §6.4), and design Upgrade. |
+| `Family` | Integer lineage id. All numeral versions of one part share it, and different lines may too (all stock large engines share one). It drives "Only Latest", which keeps the last of each run of neighbouring same-family entries in file order (spec 02 §6.4), and design Upgrade, which takes the family's last researched entry in file order (§4.1). Neither looks at the numeral. |
 | `Roman Numeral` | 0–20. The version within the family (0 means no numeral). |
 | `Custom Group` | Integer tag that `Constructed Planet Requirements` looks up. |
 | Tech requirement block | As for hulls. It gates whether the component is visible in the designer. |
@@ -469,10 +469,27 @@ type, none = defined but unused.
   same design, which may keep its name. After a design is built, changes go through **Copy**,
   which clones it with an empty name, or **Upgrade**; both are enabled for any own design, built
   or not (confirmed: binary).
-- **Upgrade** builds a candidate design that replaces every component with the highest-numeral
-  known component of the same `Family`, keeping the mount, and opens it in the designer (even
-  when nothing changed). When accepted, it is added as a **new** design under its own name; the
-  original is untouched (confirmed: binary).
+- **Upgrade** builds a candidate design from a copy of the selected one and replaces each
+  component entry on its own: the new component is the **last one in Components.txt order** that
+  has the entry's `Family` and whose tech requirements the design's owner meets (every required
+  area at or above its level). With no such component the entry is kept as it is. Roman numerals
+  and names play no part, family 0 is an ordinary family, and neither the hull's vehicle type
+  nor the mount is checked; each entry keeps its mount. The stock large engines (Ion,
+  Contra-Terrene, Jacketed-Photon and Quantum, I to III each) share one family in that order, so
+  once Contra-Terrene Engine I is researched every large engine of the design becomes
+  Contra-Terrene Engine I, Ion Engine III included; the other stock families that hold more
+  than one line (shields, torpedoes, beams, the small engines and armours) move to the newest
+  line researched the same way. Where a family's entries are neighbours in the file, as in the
+  stock data, this is the component Only Latest shows in the designer (spec 02 §6.4). The
+  candidate opens in the designer even when nothing changed, and it keeps the design's name, so
+  Create Design refuses it as a name already in use until the player gives another. When
+  accepted, it is added as a **new** design under its own name; the original is untouched
+  (confirmed: binary; observed, spec 07 session 7: with every large engine researched, an Ion
+  Engine I became Quantum Engine III). Facility upgrades choose their target differently, by
+  the highest numeral (spec 02 §6.6). Our client differs (§19 Q81): it takes the highest
+  numeral of the family, the first on a tie, so once Ion Engine III is researched every
+  large engine of numeral I or II, whatever its line, becomes Ion Engine III; it opens
+  nothing when that changes no part, and it proposes a new name.
 - Whenever the designer accepts a design (Create, Copy, Edit or Upgrade), the result starts as a
   prototype that is not obsolete, with no sightings by other empires (§4.1 Obsolete) and empty
   statistics (confirmed: binary).
@@ -1024,8 +1041,44 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   of a warp, which clear every group member's list, companions included (§6.4, §19 Q77). For a human player only a drone
   group outside fleets gathers the other drone groups outside fleets in its sector with an
   identical head order; human ships never form ad-hoc groups. In turn-based games the vehicles the
-  player selected together act as the group. A group moves only while every member has MP left
-  (confirmed: binary).
+  player selected together act as the group (below). A group moves only while every member has
+  MP left (confirmed: binary).
+- **Tagged vehicles** (confirmed: binary; observed, spec 07 session 7). An order given while
+  vehicles are tagged in the report panel's list (spec 06 §2.5) is appended to the own list of
+  every tagged vehicle, in the order they were tagged. Tagging a fleet member tags every member
+  at the fleet's location, so each of them gets the order in its own list. All tagged vehicles
+  stand in the list's sector, since every click on a sector clears the tags.
+  - **Simultaneous game.** Nothing else happens. During the turn each vehicle (or its fleet)
+    carries its own list out alone, as every human player's ship does: an Attack is a pursuit
+    for each of them, each moves on its own day schedule (§6.3), and those that step into the
+    target's sector on the same day are in the battle of that day's check; one arriving on a
+    later day starts another battle there, which the earlier arrivals still in the sector join
+    (spec 04 §2).
+  - **Turn-based game.** The orders run at once, as one group. The acting vehicle is the first
+    one tagged, and its list runs as usual (from its first order, completed orders chaining, up
+    to 21 executions). The group that carries out each of its orders is every tagged vehicle,
+    whatever its fleet and whatever its own list holds: nothing is compared with the acting
+    vehicle's order. Each order completed removes the entry at the acting vehicle's list
+    position from every tagged vehicle's list, and a failure clears every tagged vehicle's
+    list. The group steps with all its members together and only while every member has
+    movement left, so the tagged vehicles arrive together, are asked once about entering a
+    sector with enemies (§6.2), and a battle on entry, or the Attack order at the end, takes
+    them all into one battle (spec 04 §2). If any of them has no movement left when the
+    order is given, the whole group waits where it is.
+  - The tags are cleared once the order is given and carried out (spec 06 §2.5). Whatever is
+    left of the orders when movement runs out, because the target is further away than the
+    slowest tagged vehicle can go this turn, is carried out at the start of the next turn by
+    each vehicle (or fleet) alone, one after another in object order and each at its own speed
+    (spec 05 §8): the first to reach a sector with enemies is asked and fights alone, and the
+    battle clears its list; the others follow one at a time. Only a fleet keeps vehicles
+    together from one turn to the next.
+
+  The engine differs (§19 Q82): the client gives the order with one command per tagged
+  vehicle or fleet, and a turn-based game carries out each command before the next one is
+  applied, so the first tagged ship moves and fights alone before the others have the order,
+  and each of them then does the same. Its turn-based group also takes only vehicles outside
+  fleets whose first order equals the acting vehicle's, and an acting fleet member takes only
+  its fleet.
 
 Several orders are expanded into simpler ones at the moment they are given; they never exist as
 stored orders (confirmed: binary). "Composite" orders below become Move To (when the target
@@ -1784,7 +1837,9 @@ All rules in this section are (confirmed: binary).
 
   The window also shows total maintenance.
 - **Fleet Report:** name, movement, supply pool, fleet experience, formation, strategy, member
-  count, and the member list with the leader marked. Clicking a member makes it the leader.
+  count, and the member list with the leader marked. Clicking a member makes it the leader; a
+  right-click opens its Ship Report as a popup. In the report panel's sector list the player's
+  own fleet is one row that opens this report (spec 06 §2.5) (confirmed: binary).
 - **Component and hull reports:** every field from §2.2 and §2.3, the allowed vehicle types, and
   ability descriptions.
 - **Status icons:** Space Yard, Repeat Orders, Sentry, Low Supplies, No Supplies, Mothballed,
@@ -2499,3 +2554,68 @@ rules in §8); this one is ours:
     - The client's Pick Object takes the Colonize candidates from every planet of the clicked
       sector of an explored system, hidden ones included (`colonizeCandidates`,
       `client/classic/sector_view.hpp`); one alone gives the order at once (spec 06 §2.9).
+
+**Players' reports on v0.9.0 (2026-10-05).** Two reports turned on rules of this spec; the
+fleet's row in the sector list is spec 06 §7 Q110.
+
+81. **Upgrade and the engine families.** "When clicking Upgrade on the Designs page, it has the
+    same issue [as Only Latest] with engines, using Ion Engine III instead of Contra-Terra
+    Engine I, even if a previous design had Contra-Terra Engines." Ours replaces each component
+    with the highest numeral its empire has of the component's family, leaves family 0 alone and
+    changes nothing when that numeral is not higher. Which component does the original's Upgrade
+    take?
+
+    **Answer** (confirmed: binary): the last component in Components.txt order that has the same
+    `Family` and whose tech requirements the design's owner meets, for every entry and every
+    family, family 0 included; with none the entry stays; numerals, names, the vehicle type and
+    the mount play no part, and each entry keeps its mount (§4.1). The stock large engines are
+    one family in the order Ion, Contra-Terrene, Jacketed-Photon, Quantum, so with
+    Contra-Terrene Engine I researched an upgraded design gets it in place of Ion Engine III,
+    whatever the design held before. The candidate always opens in the designer, also when
+    nothing changed, under the design's own name, which Create Design refuses as in use until it
+    is changed (observed, spec 07 session 7: an Ion Engine I upgraded to Quantum Engine III with
+    every large engine researched). Facilities are different: an upgrade's target is the highest
+    numeral above the facility's own that the empire has researched, the first in Facility.txt
+    order on a tie (spec 02 §6.6), so the highest-numeral rule is right for facility upgrades
+    and wrong only for designs.
+
+    The engine differs: `upgradeEntries` (`client/classic/screens/design_tools.cpp`) takes
+    `Rules::latestComponentOfFamily`, the highest numeral available in the family and the first
+    of them on a tie, skips family 0 and keeps an entry when that numeral is not higher. The
+    stock engines of numeral III tie, so any large engine of numeral I or II becomes Ion Engine
+    III, the newest lines included (in the report the upgraded design shows six Ion Engine III
+    and movement 6, against 7 before). Upgrade with nothing to change shows a note instead of
+    opening the designer (`designs.cpp`), and `isLatestComponent` follows the same numeral rule.
+    Proposing the next free name (`nextVersionName`) where the original keeps the old one is an
+    OpenSE4 convenience. `Rules::latestFacilityOfFamily` (facility upgrades, the Upgrade
+    Facilities button, the computer's upgrades) matches the original.
+82. **Tagged ships ordered to attack.** "Multiple ships that are not in a fleet but are all
+    selected and ordered to attack together do not attack together, only one at a time." In
+    the report's turn-based game each tagged ship was asked on its own whether to enter the
+    enemy's sector, and fought alone. What does the original do with an order given to tagged
+    vehicles?
+
+    **Answer** (confirmed: binary; observed, spec 07 session 7, without an enemy): §8 "Tagged
+    vehicles". In a turn-based game the order goes into every tagged vehicle's list and runs at
+    once with all of them as one group, acting through the first one tagged: they step together
+    while every one has movement left, the entry question comes once for the group, and they
+    fight one battle together. What is left when movement runs out is carried out at the next
+    turn's start by each vehicle alone, at its own speed and one after another, so ships whose
+    attack takes more than one turn's movement do arrive and fight one at a time in the original
+    as well, unless they are in a fleet. In a simultaneous game every tagged vehicle pursues on
+    its own: those that enter the target's sector on the same day fight in one battle, later
+    arrivals in another.
+
+    The engine differs in turn-based games:
+    - `MainWindow::giveOrder` (`client/classic/main_window.cpp`) issues one `cmd::SetOrders`
+      per tagged vehicle or fleet, and `applyLive` carries out each command before the next
+      is applied (`applyEach` and `settle` in `game/turn_based.cpp`, a network host's
+      `HostSession::runLive` likewise), so the first tagged ship runs its new orders alone,
+      meets the enemy alone and fights alone, before the second ship has its order.
+    - `Mover::build` (`game/movement.cpp`) joins the vehicles listed together only when they
+      are in no fleet, stand where the actor stands and hold the actor's first order, and an
+      acting fleet member takes its fleet alone; the original takes every tagged vehicle.
+    - The entry question and its answer (`EntryQuestion`, `cmd::EnterSector`) name one vehicle
+      or fleet, so an answered question moves that one on alone.
+
+    Simultaneous games match: each tagged vehicle gets its own pursuit and acts alone.

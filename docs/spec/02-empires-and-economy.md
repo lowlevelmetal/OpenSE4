@@ -1044,7 +1044,9 @@ use emergency build (confirmed: binary).
   Since 2026-10-04 our client follows (`Rules::onlyLatestComponents` and
   `onlyLatestFacilities`), and its two boxes write the Empire Options rows back (spec 06 §7
   Q109). Upgrades keep their own target, the highest numeral researched (§6.6,
-  `Rules::latestFacilityOfFamily`).
+  `Rules::latestFacilityOfFamily`), which is the original's rule for facilities. A design's
+  Upgrade is different again: it takes the family's last researched component in file order,
+  whatever its numeral (spec 03 §4.1, §19 Q81).
 
 ### 6.5 Items
 
@@ -1092,6 +1094,13 @@ once (confirmed: binary).
   whose level (`Roman Numeral`) is below the target's. The player cannot choose a
   smaller count. With no such facility, the Upgrades tab says there is nothing to
   upgrade.
+- The target for a facility type on the colony is the facility of the same `Facility
+  Family` with the highest `Roman Numeral` above that type's own that the empire has
+  researched, the first in Facility.txt order on a tie; with none, that type offers no
+  upgrade. The Upgrades tab lists each such target once, and the Upgrade Facilities button
+  and the computer players use the same choice. The numeral decides here, unlike a
+  design's Upgrade (spec 03 §4.1) and Only Latest (§6.4); in the stock data every facility
+  family rises in numeral in file order, so the two orders agree (confirmed: binary).
 - A queue refuses a second upgrade to the same target. There is no tech check at that
   point.
 - Cost per resource: `trunc(current cost of the target × Upgrade % / 100) × stored
