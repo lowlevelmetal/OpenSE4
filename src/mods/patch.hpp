@@ -53,6 +53,10 @@ class Value;
 
 namespace opense4::mods {
 
+// A map entry of a Node. Not std::pair: a pair of an incomplete Node isn't
+// allowed by every standard library.
+struct NodeEntry;
+
 // A patch file as a tree: TOML's values, or a generator's script::Value.
 struct Node {
     enum class Type : uint8_t { Null, Bool, Int, String, List, Map, Other };
@@ -61,10 +65,15 @@ struct Node {
     int64_t i = 0;
     std::string s;  // String; Other: what it was ("a floating-point number")
     std::vector<Node> list;
-    std::vector<std::pair<std::string, Node>> map;  // in the order written
+    std::vector<NodeEntry> map;  // in the order written
     int line = 0;   // in the patch file; 0 when not known
 
     const Node* find(std::string_view key) const;
+};
+
+struct NodeEntry {
+    std::string first;
+    Node second;
 };
 
 // Where a patch comes from.

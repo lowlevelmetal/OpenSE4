@@ -28,7 +28,11 @@ Run sdk(const std::string& args) {
     static TempDir outputs("sdk_tool_output");
     static int n = 0;
     const fs::path file = outputs / std::format("run{}.txt", ++n);
-    std::string command = std::format("\"{}\" {} > \"{}\" 2>&1", OPENSE4_SDK_EXE, args, file.string());
+    // Cross-compiled tests run the tool through the same emulator as themselves
+    // (OPENSE4_TEST_RUNNER, e.g. "qemu-arm -L /usr/arm-linux-gnueabihf").
+    const char* runner = std::getenv("OPENSE4_TEST_RUNNER");
+    std::string command = std::format("{}{}\"{}\" {} > \"{}\" 2>&1", runner ? runner : "", runner ? " " : "", OPENSE4_SDK_EXE, args,
+                                      file.string());
 #if defined(_WIN32)
     command = "\"" + command + "\"";  // cmd.exe drops the outer quotes
 #endif

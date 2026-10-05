@@ -125,7 +125,7 @@ double tgamma(double x)
 	/* raise inexact when non-integer */
 	if (x == floor(x)) {
 		if (sign)
-			return 0/0.0;
+			return (x - x) / (x - x);  /* NaN; MSVC refuses a constant 0/0.0 */
 		if (x <= sizeof fact/sizeof *fact)
 			return fact[(int)x - 1];
 	}

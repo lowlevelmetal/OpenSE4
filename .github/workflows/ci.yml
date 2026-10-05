@@ -219,7 +219,7 @@ jobs:
           file build/armhf/tests/opense4_tests
           printf '#!/bin/sh\nexec qemu-arm -L /usr/arm-linux-gnueabihf "%s" "$@"\n' "$PWD/build/armhf/tests/opense4_tests" > "$RUNNER_TEMP/opense4_tests"
           chmod +x "$RUNNER_TEMP/opense4_tests"
-          .github/scripts/run_tests_parallel.sh "$RUNNER_TEMP/opense4_tests" 4
+          OPENSE4_TEST_RUNNER="qemu-arm -L /usr/arm-linux-gnueabihf" .github/scripts/run_tests_parallel.sh "$RUNNER_TEMP/opense4_tests" 4
 
       - name: Start the programs
         run: |
