@@ -190,8 +190,8 @@ private:
                 if (std::llabs(values[i] - v) < std::llabs(values[best] - v)) best = i;
             return static_cast<uint8_t>(best + 1);
         };
-        static constexpr std::array<int64_t, 3> kResources{5000, 20000, 100000};
-        o.startingResources = nearest(g.startingResources.v[0], kResources);
+        static constexpr std::array<int64_t, 3> kStartResourceAmounts{5000, 20000, 100000};
+        o.startingResources = nearest(g.startingResources.v[0], kStartResourceAmounts);
         o.homePlanetValue = code(g.homePlanetValue, 2);
         static constexpr std::array<int64_t, 4> kPlanets{1, 3, 5, 10};
         o.startingPlanets = nearest(g.startingPlanets, kPlanets);

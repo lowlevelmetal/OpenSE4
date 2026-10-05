@@ -183,8 +183,8 @@ private:
             all = all && allowed[i];
         }
         if (!all) g.techAreasAllowed = allowed;
-        static constexpr std::array<int64_t, 3> kResources{5000, 20000, 100000};
-        const int64_t start = kResources[static_cast<size_t>(code(o.startingResources, 2))];
+        static constexpr std::array<int64_t, 3> kStartResourceAmounts{5000, 20000, 100000};
+        const int64_t start = kStartResourceAmounts[static_cast<size_t>(code(o.startingResources, 2))];
         g.startingResources = Resources{start, start, start};
         g.homePlanetValue = code(o.homePlanetValue, 2);
         static constexpr std::array<int, 4> kPlanets{1, 3, 5, 10};
