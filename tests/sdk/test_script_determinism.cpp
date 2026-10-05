@@ -17,8 +17,8 @@ using namespace opense4::script::test;
 
 namespace {
 
-constexpr uint64_t kGoldenChecksum = 0x0093fe2712cd3d9eull;
-constexpr int64_t kGoldenBudget = 281353;
+constexpr uint64_t kGoldenChecksum = 0xa1a0c57795b46fe6ull;
+constexpr int64_t kGoldenBudget = 305950;
 
 std::string determinismSource() {
     std::ifstream in(std::string(OPENSE4_SDK_TEST_DIR) + "/python/determinism.py", std::ios::binary);

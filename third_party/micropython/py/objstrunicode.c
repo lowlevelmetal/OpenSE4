@@ -142,6 +142,11 @@ const byte *str_index_to_ptr(const mp_obj_type_t *type, const byte *self_data, s
     // string; an out-of-bounds index will be caught in the loops below.)
     if (mp_obj_is_small_int(index)) {
         i = MP_OBJ_SMALL_INT_VALUE(index);
+        #if MICROPY_MACHINE_INT_32
+        if (i < -INT32_MAX || i > INT32_MAX) {
+            mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("overflow converting long int to machine word"));
+        }
+        #endif
     } else if (!mp_obj_get_int_maybe(index, &i)) {
         mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("string indices must be integers, not %s"), mp_obj_get_type_str(index));
     }

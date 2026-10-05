@@ -29,6 +29,13 @@
 #define MICROPY_FLOAT_IMPL (MICROPY_FLOAT_IMPL_DOUBLE)
 #define MICROPY_PY_BUILTINS_COMPLEX (0)
 #define MICROPY_FLOAT_HIGH_QUALITY_HASH (1)
+// Float formatting and parsing in double arithmetic only, on every platform. (The
+// "exact" variant uses long double, which is 64, 80 or 128 bits depending on the
+// platform, so its output would differ between them.)
+#define MICROPY_FLOAT_FORMAT_IMPL (MICROPY_FLOAT_FORMAT_IMPL_APPROX)
+// Ints converted to machine words (sizes, indices, range() bounds) must fit in 32
+// bits on every build, as on 32-bit ARM (our patch to py/obj.c).
+#define MICROPY_MACHINE_INT_32 (1)
 // Transcendental functions come from the bundled musl-derived library (lib/libm_dbl),
 // not the platform's: glibc, msvcrt and Apple's libm round some results differently.
 #define MICROPY_FLOAT_C_FUN(fun) mp_libm_##fun
@@ -76,7 +83,14 @@
 // setjmp everywhere: the same non-local return on every compiler (MSVC has no inline
 // assembly), and one that the address sanitizer understands.
 #define MICROPY_NLR_SETJMP (1)
+// The garbage collector finds pointers held in registers through setjmp on Windows
+// (its 64-bit calling convention keeps more registers than the assembly helper saves),
+// through MicroPython's assembly helper elsewhere.
+#if defined(_WIN32)
+#define MICROPY_GCREGS_SETJMP (1)
+#else
 #define MICROPY_GCREGS_SETJMP (0)
+#endif
 #define MICROPY_KBD_EXCEPTION (0)
 #define MICROPY_ASYNC_KBD_INTR (0)
 #define MICROPY_ENABLE_SCHEDULER (0)
@@ -264,9 +278,7 @@ typedef long mp_off_t;
 #define MP_SSIZE_MAX (INTPTR_MAX)
 
 #if defined(_MSC_VER)
-// Visual C++ (CI only): no GCC attributes or inline assembly.
-#undef MICROPY_GCREGS_SETJMP
-#define MICROPY_GCREGS_SETJMP (1)
+// Visual C++ (CI only): no GCC attributes.
 #define MP_NORETURN __declspec(noreturn)
 #define MP_WEAK
 #define MP_NOINLINE __declspec(noinline)

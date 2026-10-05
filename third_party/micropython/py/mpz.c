@@ -433,7 +433,10 @@ static size_t mpn_mul_dig_add_dig(mpz_dig_t *idig, size_t ilen, mpz_dig_t dmul, 
    can have j, k point to same memory
 */
 static size_t mpn_mul(mpz_dig_t *idig, mpz_dig_t *jdig, size_t jlen, mpz_dig_t *kdig, size_t klen) {
-    MICROPY_BUDGET_CHARGE(((uint64_t)jlen * klen) >> 4);
+    // charged only beyond 64 bits, where every word size uses big integers alike
+    if (jlen > 4 || klen > 4) {
+        MICROPY_BUDGET_CHARGE(((uint64_t)jlen * klen) >> 4);
+    }
     mpz_dig_t *oidig = idig;
     size_t ilen = 0;
 
@@ -465,7 +468,9 @@ static size_t mpn_mul(mpz_dig_t *idig, mpz_dig_t *jdig, size_t jlen, mpz_dig_t *
    assumes quo_dig is filled with zeros
 */
 static void mpn_div(mpz_dig_t *num_dig, size_t *num_len, const mpz_dig_t *den_dig, size_t den_len, mpz_dig_t *quo_dig, size_t *quo_len) {
-    MICROPY_BUDGET_CHARGE(((uint64_t)*num_len * den_len) >> 4);
+    if (*num_len > 4 || den_len > 4) {
+        MICROPY_BUDGET_CHARGE(((uint64_t)*num_len * den_len) >> 4);
+    }
     mpz_dig_t *orig_num_dig = num_dig;
     mpz_dig_t *orig_quo_dig = quo_dig;
     mpz_dig_t norm_shift = 0;
@@ -822,7 +827,9 @@ size_t mpz_set_from_str(mpz_t *z, const char *str, size_t len, bool neg, unsigne
     const char *cur = str;
     const char *top = str + len;
 
-    MICROPY_BUDGET_CHARGE(((uint64_t)len * len) >> 6);
+    if (len > 64) {
+        MICROPY_BUDGET_CHARGE(((uint64_t)len * len) >> 6);
+    }
     mpz_need_dig(z, len * 8 / DIG_SIZE + 1);
 
     if (neg) {
@@ -1544,21 +1551,22 @@ mpz_t *mpz_mod(const mpz_t *lhs, const mpz_t *rhs) {
 }
 #endif
 
+#if MICROPY_HASH_INT_MODULUS
+// The value modulo m, from 0 to m - 1 (also for negative values).
+mp_int_t mpz_hash_modulo(const mpz_t *z, uint64_t m) {
+    uint64_t r = 0;
+    for (size_t i = z->len; i > 0; i--) {
+        r = ((r << DIG_SIZE) | z->dig[i - 1]) % m;
+    }
+    if (z->neg != 0 && r != 0) {
+        r = m - r;
+    }
+    return (mp_int_t)r;
+}
+#endif
+
 // must return actual int value if it fits in mp_int_t
 mp_int_t mpz_hash(const mpz_t *z) {
-    #if MICROPY_HASH_INT_MODULUS
-    {
-        const uint64_t m = (uint64_t)MICROPY_HASH_INT_MODULUS;
-        uint64_t r = 0;
-        for (size_t i = z->len; i > 0; i--) {
-            r = ((r << DIG_SIZE) | z->dig[i - 1]) % m;
-        }
-        if (z->neg != 0 && r != 0) {
-            r = m - r;
-        }
-        return (mp_int_t)r;
-    }
-    #endif
     mp_uint_t val = 0;
     mpz_dig_t *d = z->dig + z->len;
 
@@ -1704,7 +1712,9 @@ size_t mpz_as_str_inpl(const mpz_t *i, unsigned int base, const char *prefix, ch
     assert(2 <= base && base <= 32);
 
     size_t ilen = i->len;
-    MICROPY_BUDGET_CHARGE(((uint64_t)ilen * ilen) >> 4);
+    if (ilen > 4) {
+        MICROPY_BUDGET_CHARGE(((uint64_t)ilen * ilen) >> 4);
+    }
 
     int n_comma = (base == 10) ? 3 : 4;
 

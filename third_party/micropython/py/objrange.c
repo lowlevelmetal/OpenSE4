@@ -42,7 +42,13 @@ static mp_obj_t range_it_iternext(mp_obj_t o_in) {
     mp_obj_range_it_t *o = MP_OBJ_TO_PTR(o_in);
     if ((o->step > 0 && o->cur < o->stop) || (o->step < 0 && o->cur > o->stop)) {
         mp_int_t cur = o->cur;
+        #if MICROPY_MACHINE_INT_32
+        // past the 32-bit bounds is past the stop: no wrapping around
+        int64_t next = (int64_t)o->cur + o->step;
+        o->cur = next > INT32_MAX || next < INT32_MIN ? o->stop : (mp_int_t)next;
+        #else
         o->cur += o->step;
+        #endif
         return mp_obj_new_int(cur);
     } else {
         return MP_OBJ_STOP_ITERATION;
@@ -111,6 +117,19 @@ static mp_obj_t range_make_new(const mp_obj_type_t *type, size_t n_args, size_t 
 }
 
 static mp_int_t range_len(mp_obj_range_t *self) {
+    #if MICROPY_MACHINE_INT_32
+    // computed in 64 bits; a length beyond 32 bits is an error on every word size
+    int64_t len64 = (int64_t)self->stop - self->start + self->step;
+    len64 += self->step > 0 ? -1 : 1;
+    len64 /= self->step;
+    if (len64 < 0) {
+        len64 = 0;
+    }
+    if (len64 > INT32_MAX) {
+        mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("overflow converting long int to machine word"));
+    }
+    return (mp_int_t)len64;
+    #endif
     // When computing length, need to take into account step!=1 and step<0.
     mp_int_t len = self->stop - self->start + self->step;
     if (self->step > 0) {

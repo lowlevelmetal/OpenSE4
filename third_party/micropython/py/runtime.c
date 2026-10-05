@@ -312,7 +312,7 @@ mp_obj_t mp_unary_op(mp_unary_op_t op, mp_obj_t arg) {
             case MP_UNARY_OP_HASH:
                 #if MICROPY_HASH_INT_MODULUS
                 {
-                    // the value modulo MICROPY_HASH_INT_MODULUS, as mpz_hash computes it
+                    // the value modulo MICROPY_HASH_INT_MODULUS, as mpz_hash_modulo computes it
                     mp_int_t r = val % (mp_int_t)MICROPY_HASH_INT_MODULUS;
                     if (r < 0) {
                         r += (mp_int_t)MICROPY_HASH_INT_MODULUS;

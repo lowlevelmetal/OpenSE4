@@ -843,6 +843,13 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_PY_DICT_UPDATE_FROM_SUBCLASS (0)
 #endif
 
+// Conversions of ints to machine words (sizes, indices, range() and slice bounds,
+// counts) accept only values that fit in 32 bits on every word size, so that a
+// 64-bit build accepts no more than a 32-bit one.
+#ifndef MICROPY_MACHINE_INT_32
+#define MICROPY_MACHINE_INT_32 (0)
+#endif
+
 // sys.maxsize
 #ifndef MP_SYS_MAXSIZE
 #define MP_SYS_MAXSIZE MP_SSIZE_MAX

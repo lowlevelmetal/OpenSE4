@@ -7,12 +7,13 @@ hooks left at their defaults MicroPython behaves as before.
   iteration in py/runtime.c, big-number multiplication, division and conversion in
   py/mpz.c, regular expression backtracking in extmod/modre.c, substring search in
   py/objstr.c) or, where raising mid-change would be unsafe, MICROPY_BUDGET_DEBIT
-  (hash collisions in py/map.c).
+  (hash collisions in py/map.c). Big-integer work is charged only beyond 64 bits,
+  where every word size uses big integers alike.
 - Call depth: MICROPY_CALL_DEPTH_CHECK/ENTER/EXIT around the execution of bytecode
   functions and generators (py/objfun.c, py/objgenerator.c).
 - Hashes the same on every platform: integers (small or big) and whole-valued floats
   hash as their value modulo MICROPY_HASH_INT_MODULUS (py/runtime.c, py/mpz.c,
-  py/objfloat.c); every hash is limited by MICROPY_HASH_MASK; tuples, frozensets and
+  py/mpz.h, py/objint_mpz.c, py/objfloat.c); every hash is limited by MICROPY_HASH_MASK; tuples, frozensets and
   bound methods hash from their parts, never from an address (py/objtuple.c,
   py/objset.c, py/objboundmeth.c).
 - Object identity without addresses: MICROPY_OBJ_IDENTITY for hash() of objects
@@ -33,6 +34,11 @@ hooks left at their defaults MicroPython behaves as before.
   can add functions to it (py/modmath.c).
 - MICROPY_PY_DICT_UPDATE_FROM_SUBCLASS: dict(x) and d.update(x) read a Python
   subclass of dict (defaultdict, Counter) as a dict (py/objdict.c).
+- MICROPY_MACHINE_INT_32: conversions of ints to machine words (sizes, indices,
+  range() bounds) accept 32-bit values on every word size (py/obj.c,
+  py/objstrunicode.c); struct, array and int.to_bytes still take whole small ints
+  (py/binary.c, py/objint_mpz.c); range lengths and steps can't overflow a 32-bit
+  word (py/objrange.c).
 - MICROPY_LIST_SORT lets the port provide list.sort (py/objlist.c).
 - MICROPY_PY_BUILTINS_OPEN leaves out open() while keeping io's in-memory streams
   (py/modbuiltins.c, py/modio.c).
@@ -68,6 +74,26 @@ diff -ru a/py/binary.c b/py/binary.c
                      break;
                  case 'q':
                  case 'Q':
+@@ -483,7 +487,8 @@
+                 return;
+             }
+             #endif
+-            val = mp_obj_get_int(val_in);
++            // a small int is packed whole (a 32-bit build has it as a big int)
++            val = mp_obj_is_small_int(val_in) ? MP_OBJ_SMALL_INT_VALUE(val_in) : mp_obj_get_int(val_in);
+             break; // Fall through to mp_binary_set_int
+     }
+ 
+@@ -538,7 +543,8 @@
+                 return;
+             }
+             #endif
+-            mp_binary_set_val_array_from_int(typecode, p, index, mp_obj_get_int(val_in));
++            mp_binary_set_val_array_from_int(typecode, p, index,
++                mp_obj_is_small_int(val_in) ? MP_OBJ_SMALL_INT_VALUE(val_in) : mp_obj_get_int(val_in));
+     }
+ }
+ 
 diff -ru a/py/builtinimport.c b/py/builtinimport.c
 --- a/py/builtinimport.c
 +++ b/py/builtinimport.c
@@ -440,7 +466,7 @@ diff -ru a/py/modmath.c b/py/modmath.c
 diff -ru a/py/mpconfig.h b/py/mpconfig.h
 --- a/py/mpconfig.h
 +++ b/py/mpconfig.h
-@@ -759,6 +759,95 @@
+@@ -759,6 +759,102 @@
  #define MICROPY_VM_HOOK_RETURN
  #endif
  
@@ -528,6 +554,13 @@ diff -ru a/py/mpconfig.h b/py/mpconfig.h
 +#define MICROPY_PY_DICT_UPDATE_FROM_SUBCLASS (0)
 +#endif
 +
++// Conversions of ints to machine words (sizes, indices, range() and slice bounds,
++// counts) accept only values that fit in 32 bits on every word size, so that a
++// 64-bit build accepts no more than a 32-bit one.
++#ifndef MICROPY_MACHINE_INT_32
++#define MICROPY_MACHINE_INT_32 (0)
++#endif
++
 +// sys.maxsize
 +#ifndef MP_SYS_MAXSIZE
 +#define MP_SYS_MAXSIZE MP_SSIZE_MAX
@@ -536,7 +569,7 @@ diff -ru a/py/mpconfig.h b/py/mpconfig.h
  // Hook for mp_sched_schedule when a function gets scheduled on sched_queue
  // (this macro executes within an atomic section)
  #ifndef MICROPY_SCHED_HOOK_SCHEDULED
-@@ -973,7 +1062,9 @@
+@@ -973,7 +1069,9 @@
  #elif MICROPY_FLOAT_IMPL == MICROPY_FLOAT_IMPL_DOUBLE
  #define MICROPY_PY_BUILTINS_FLOAT (1)
  #define MICROPY_FLOAT_CONST(x) x
@@ -561,58 +594,79 @@ diff -ru a/py/mpprint.c b/py/mpprint.c
 diff -ru a/py/mpz.c b/py/mpz.c
 --- a/py/mpz.c
 +++ b/py/mpz.c
-@@ -433,6 +433,7 @@
+@@ -433,6 +433,10 @@
     can have j, k point to same memory
  */
  static size_t mpn_mul(mpz_dig_t *idig, mpz_dig_t *jdig, size_t jlen, mpz_dig_t *kdig, size_t klen) {
-+    MICROPY_BUDGET_CHARGE(((uint64_t)jlen * klen) >> 4);
++    // charged only beyond 64 bits, where every word size uses big integers alike
++    if (jlen > 4 || klen > 4) {
++        MICROPY_BUDGET_CHARGE(((uint64_t)jlen * klen) >> 4);
++    }
      mpz_dig_t *oidig = idig;
      size_t ilen = 0;
  
-@@ -464,6 +465,7 @@
+@@ -464,6 +468,9 @@
     assumes quo_dig is filled with zeros
  */
  static void mpn_div(mpz_dig_t *num_dig, size_t *num_len, const mpz_dig_t *den_dig, size_t den_len, mpz_dig_t *quo_dig, size_t *quo_len) {
-+    MICROPY_BUDGET_CHARGE(((uint64_t)*num_len * den_len) >> 4);
++    if (*num_len > 4 || den_len > 4) {
++        MICROPY_BUDGET_CHARGE(((uint64_t)*num_len * den_len) >> 4);
++    }
      mpz_dig_t *orig_num_dig = num_dig;
      mpz_dig_t *orig_quo_dig = quo_dig;
      mpz_dig_t norm_shift = 0;
-@@ -820,6 +822,7 @@
+@@ -820,6 +827,9 @@
      const char *cur = str;
      const char *top = str + len;
  
-+    MICROPY_BUDGET_CHARGE(((uint64_t)len * len) >> 6);
++    if (len > 64) {
++        MICROPY_BUDGET_CHARGE(((uint64_t)len * len) >> 6);
++    }
      mpz_need_dig(z, len * 8 / DIG_SIZE + 1);
  
      if (neg) {
-@@ -1543,6 +1546,19 @@
+@@ -1541,6 +1551,20 @@
+ }
+ #endif
  
++#if MICROPY_HASH_INT_MODULUS
++// The value modulo m, from 0 to m - 1 (also for negative values).
++mp_int_t mpz_hash_modulo(const mpz_t *z, uint64_t m) {
++    uint64_t r = 0;
++    for (size_t i = z->len; i > 0; i--) {
++        r = ((r << DIG_SIZE) | z->dig[i - 1]) % m;
++    }
++    if (z->neg != 0 && r != 0) {
++        r = m - r;
++    }
++    return (mp_int_t)r;
++}
++#endif
++
  // must return actual int value if it fits in mp_int_t
  mp_int_t mpz_hash(const mpz_t *z) {
-+    #if MICROPY_HASH_INT_MODULUS
-+    {
-+        const uint64_t m = (uint64_t)MICROPY_HASH_INT_MODULUS;
-+        uint64_t r = 0;
-+        for (size_t i = z->len; i > 0; i--) {
-+            r = ((r << DIG_SIZE) | z->dig[i - 1]) % m;
-+        }
-+        if (z->neg != 0 && r != 0) {
-+            r = m - r;
-+        }
-+        return (mp_int_t)r;
-+    }
-+    #endif
      mp_uint_t val = 0;
-     mpz_dig_t *d = z->dig + z->len;
- 
-@@ -1688,6 +1704,7 @@
+@@ -1688,6 +1712,9 @@
      assert(2 <= base && base <= 32);
  
      size_t ilen = i->len;
-+    MICROPY_BUDGET_CHARGE(((uint64_t)ilen * ilen) >> 4);
++    if (ilen > 4) {
++        MICROPY_BUDGET_CHARGE(((uint64_t)ilen * ilen) >> 4);
++    }
  
      int n_comma = (base == 10) ? 3 : 4;
  
+diff -ru a/py/mpz.h b/py/mpz.h
+--- a/py/mpz.h
++++ b/py/mpz.h
+@@ -143,6 +143,7 @@
+     return z->len * MPZ_DIG_SIZE;
+ }
+ mp_int_t mpz_hash(const mpz_t *z);
++mp_int_t mpz_hash_modulo(const mpz_t *z, uint64_t m);
+ bool mpz_as_int_checked(const mpz_t *z, mp_int_t *value);
+ bool mpz_as_uint_checked(const mpz_t *z, mp_uint_t *value);
+ // Returns true if 'z' fit into 'len' bytes of 'buf' without overflowing, 'buf' is truncated otherwise.
 diff -ru a/py/objboundmeth.c b/py/objboundmeth.c
 --- a/py/objboundmeth.c
 +++ b/py/objboundmeth.c
@@ -633,7 +687,31 @@ diff -ru a/py/objboundmeth.c b/py/objboundmeth.c
 diff -ru a/py/obj.c b/py/obj.c
 --- a/py/obj.c
 +++ b/py/obj.c
-@@ -518,9 +518,12 @@
+@@ -372,6 +372,11 @@
+             return false;
+         }
+     }
++    #if MICROPY_MACHINE_INT_32
++    if (*value < -INT32_MAX || *value > INT32_MAX) {   // as a 32-bit build converts big ints
++        mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("overflow converting long int to machine word"));
++    }
++    #endif
+     return true;
+ }
+ 
+@@ -483,6 +488,11 @@
+     mp_int_t i;
+     if (mp_obj_is_small_int(index)) {
+         i = MP_OBJ_SMALL_INT_VALUE(index);
++        #if MICROPY_MACHINE_INT_32
++        if (i < -INT32_MAX || i > INT32_MAX) {
++            mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("overflow converting long int to machine word"));
++        }
++        #endif
+     } else if (!mp_obj_get_int_maybe(index, &i)) {
+         #if MICROPY_ERROR_REPORTING <= MICROPY_ERROR_REPORTING_TERSE
+         mp_raise_TypeError(MP_ERROR_TEXT("indices must be integers"));
+@@ -518,9 +528,12 @@
  
  mp_obj_t mp_obj_id(mp_obj_t o_in) {
      mp_int_t id = (mp_int_t)o_in;
@@ -831,6 +909,27 @@ diff -ru a/py/objint_mpz.c b/py/objint_mpz.c
         #endif
        #endif
       #endif
+@@ -139,7 +139,11 @@
+         case MP_UNARY_OP_BOOL:
+             return mp_obj_new_bool(!mpz_is_zero(&o->mpz));
+         case MP_UNARY_OP_HASH:
++            #if MICROPY_HASH_INT_MODULUS
++            return MP_OBJ_NEW_SMALL_INT(mpz_hash_modulo(&o->mpz, MICROPY_HASH_INT_MODULUS));
++            #else
+             return MP_OBJ_NEW_SMALL_INT(mpz_hash(&o->mpz));
++            #endif
+         case MP_UNARY_OP_POSITIVE:
+             return o_in;
+         case MP_UNARY_OP_NEGATIVE: { mp_obj_int_t *o2 = mp_obj_int_new_mpz();
+@@ -476,7 +480,7 @@
+         }
+     } else {
+         // self_in is either a smallint, or another type convertible to mp_int_t (i.e. bool)
+-        mp_int_t val = mp_obj_get_int(self_in);
++        mp_int_t val = mp_obj_is_small_int(self_in) ? MP_OBJ_SMALL_INT_VALUE(self_in) : mp_obj_get_int(self_in);
+         mp_obj_small_int_to_bytes(val, buf_len, buf, big_endian, is_signed, overflow_check);
+     }
+ }
 diff -ru a/py/objlist.c b/py/objlist.c
 --- a/py/objlist.c
 +++ b/py/objlist.c
@@ -866,6 +965,43 @@ diff -ru a/py/objlist.c b/py/objlist.c
  
      return mp_const_none;
  }
+diff -ru a/py/objrange.c b/py/objrange.c
+--- a/py/objrange.c
++++ b/py/objrange.c
+@@ -42,7 +42,13 @@
+     mp_obj_range_it_t *o = MP_OBJ_TO_PTR(o_in);
+     if ((o->step > 0 && o->cur < o->stop) || (o->step < 0 && o->cur > o->stop)) {
+         mp_int_t cur = o->cur;
++        #if MICROPY_MACHINE_INT_32
++        // past the 32-bit bounds is past the stop: no wrapping around
++        int64_t next = (int64_t)o->cur + o->step;
++        o->cur = next > INT32_MAX || next < INT32_MIN ? o->stop : (mp_int_t)next;
++        #else
+         o->cur += o->step;
++        #endif
+         return mp_obj_new_int(cur);
+     } else {
+         return MP_OBJ_STOP_ITERATION;
+@@ -111,6 +117,19 @@
+ }
+ 
+ static mp_int_t range_len(mp_obj_range_t *self) {
++    #if MICROPY_MACHINE_INT_32
++    // computed in 64 bits; a length beyond 32 bits is an error on every word size
++    int64_t len64 = (int64_t)self->stop - self->start + self->step;
++    len64 += self->step > 0 ? -1 : 1;
++    len64 /= self->step;
++    if (len64 < 0) {
++        len64 = 0;
++    }
++    if (len64 > INT32_MAX) {
++        mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("overflow converting long int to machine word"));
++    }
++    return (mp_int_t)len64;
++    #endif
+     // When computing length, need to take into account step!=1 and step<0.
+     mp_int_t len = self->stop - self->start + self->step;
+     if (self->step > 0) {
 diff -ru a/py/objset.c b/py/objset.c
 --- a/py/objset.c
 +++ b/py/objset.c
@@ -906,6 +1042,21 @@ diff -ru a/py/objstr.c b/py/objstr.c
              if (memcmp(&haystack[str_index], needle, nlen) == 0) {
                  // found
                  return haystack + str_index;
+diff -ru a/py/objstrunicode.c b/py/objstrunicode.c
+--- a/py/objstrunicode.c
++++ b/py/objstrunicode.c
+@@ -142,6 +142,11 @@
+     // string; an out-of-bounds index will be caught in the loops below.)
+     if (mp_obj_is_small_int(index)) {
+         i = MP_OBJ_SMALL_INT_VALUE(index);
++        #if MICROPY_MACHINE_INT_32
++        if (i < -INT32_MAX || i > INT32_MAX) {
++            mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("overflow converting long int to machine word"));
++        }
++        #endif
+     } else if (!mp_obj_get_int_maybe(index, &i)) {
+         mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("string indices must be integers, not %s"), mp_obj_get_type_str(index));
+     }
 diff -ru a/py/objtuple.c b/py/objtuple.c
 --- a/py/objtuple.c
 +++ b/py/objtuple.c
@@ -967,7 +1118,7 @@ diff -ru a/py/runtime.c b/py/runtime.c
              case MP_UNARY_OP_HASH:
 +                #if MICROPY_HASH_INT_MODULUS
 +                {
-+                    // the value modulo MICROPY_HASH_INT_MODULUS, as mpz_hash computes it
++                    // the value modulo MICROPY_HASH_INT_MODULUS, as mpz_hash_modulo computes it
 +                    mp_int_t r = val % (mp_int_t)MICROPY_HASH_INT_MODULUS;
 +                    if (r < 0) {
 +                        r += (mp_int_t)MICROPY_HASH_INT_MODULUS;

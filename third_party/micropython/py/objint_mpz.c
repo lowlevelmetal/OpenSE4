@@ -139,7 +139,11 @@ mp_obj_t mp_obj_int_unary_op(mp_unary_op_t op, mp_obj_t o_in) {
         case MP_UNARY_OP_BOOL:
             return mp_obj_new_bool(!mpz_is_zero(&o->mpz));
         case MP_UNARY_OP_HASH:
+            #if MICROPY_HASH_INT_MODULUS
+            return MP_OBJ_NEW_SMALL_INT(mpz_hash_modulo(&o->mpz, MICROPY_HASH_INT_MODULUS));
+            #else
             return MP_OBJ_NEW_SMALL_INT(mpz_hash(&o->mpz));
+            #endif
         case MP_UNARY_OP_POSITIVE:
             return o_in;
         case MP_UNARY_OP_NEGATIVE: { mp_obj_int_t *o2 = mp_obj_int_new_mpz();
@@ -476,7 +480,7 @@ void mp_obj_int_to_bytes(mp_obj_t self_in, size_t buf_len, byte *buf, bool big_e
         }
     } else {
         // self_in is either a smallint, or another type convertible to mp_int_t (i.e. bool)
-        mp_int_t val = mp_obj_get_int(self_in);
+        mp_int_t val = mp_obj_is_small_int(self_in) ? MP_OBJ_SMALL_INT_VALUE(self_in) : mp_obj_get_int(self_in);
         mp_obj_small_int_to_bytes(val, buf_len, buf, big_endian, is_signed, overflow_check);
     }
 }

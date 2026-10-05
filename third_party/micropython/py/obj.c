@@ -372,6 +372,11 @@ bool mp_obj_get_int_maybe(mp_const_obj_t arg, mp_int_t *value) {
             return false;
         }
     }
+    #if MICROPY_MACHINE_INT_32
+    if (*value < -INT32_MAX || *value > INT32_MAX) {   // as a 32-bit build converts big ints
+        mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("overflow converting long int to machine word"));
+    }
+    #endif
     return true;
 }
 
@@ -483,6 +488,11 @@ size_t mp_get_index(const mp_obj_type_t *type, size_t len, mp_obj_t index, bool 
     mp_int_t i;
     if (mp_obj_is_small_int(index)) {
         i = MP_OBJ_SMALL_INT_VALUE(index);
+        #if MICROPY_MACHINE_INT_32
+        if (i < -INT32_MAX || i > INT32_MAX) {
+            mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("overflow converting long int to machine word"));
+        }
+        #endif
     } else if (!mp_obj_get_int_maybe(index, &i)) {
         #if MICROPY_ERROR_REPORTING <= MICROPY_ERROR_REPORTING_TERSE
         mp_raise_TypeError(MP_ERROR_TEXT("indices must be integers"));

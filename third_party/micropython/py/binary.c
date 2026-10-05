@@ -487,7 +487,8 @@ void mp_binary_set_val(char struct_type, char val_type, mp_obj_t val_in, byte *p
                 return;
             }
             #endif
-            val = mp_obj_get_int(val_in);
+            // a small int is packed whole (a 32-bit build has it as a big int)
+            val = mp_obj_is_small_int(val_in) ? MP_OBJ_SMALL_INT_VALUE(val_in) : mp_obj_get_int(val_in);
             break; // Fall through to mp_binary_set_int
     }
 
@@ -542,7 +543,8 @@ void mp_binary_set_val_array(char typecode, void *p, size_t index, mp_obj_t val_
                 return;
             }
             #endif
-            mp_binary_set_val_array_from_int(typecode, p, index, mp_obj_get_int(val_in));
+            mp_binary_set_val_array_from_int(typecode, p, index,
+                mp_obj_is_small_int(val_in) ? MP_OBJ_SMALL_INT_VALUE(val_in) : mp_obj_get_int(val_in));
     }
 }
 

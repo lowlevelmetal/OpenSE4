@@ -106,9 +106,9 @@ TEST_CASE("script sandbox: native work counts against the budget") {
     CallOptions call;
     call.budget = 2'000'000;
     // loops in C over iterators, with no bytecode of their own
-    CHECK(execFails(*interp, "sum(range(10**12))", call).kind == ErrorKind::Budget);
-    CHECK(execFails(*interp, "max(range(10**18))", call).kind == ErrorKind::Budget);
-    CHECK(execFails(*interp, "any(x > 10**15 for x in range(10**16))", call).kind == ErrorKind::Budget);
+    CHECK(execFails(*interp, "sum(range(10**9))", call).kind == ErrorKind::Budget);
+    CHECK(execFails(*interp, "max(range(2**31 - 1))", call).kind == ErrorKind::Budget);
+    CHECK(execFails(*interp, "any(x > 10**15 for x in range(2**31 - 1))", call).kind == ErrorKind::Budget);
     // huge integer arithmetic
     CHECK(execFails(*interp, "x = 7 ** (10**7)", call).kind == ErrorKind::Budget);
     CHECK(execFails(*interp, "x = str(10 ** 200000)", call).kind == ErrorKind::Budget);
@@ -143,7 +143,7 @@ TEST_CASE("script sandbox: running out of memory is an error the engine survives
     execOk(*interp, "x = None");
     CHECK(evalOk(*interp, "len([0] * 100000)") == Value(100000));
     // a script may catch MemoryError itself
-    execOk(*interp, "try:\n    big = [0] * (1 << 40)\nexcept MemoryError:\n    big = 'too big'\n");
+    execOk(*interp, "try:\n    big = [0] * (1 << 28)\nexcept MemoryError:\n    big = 'too big'\n");
     CHECK(evalOk(*interp, "big") == Value("too big"));
 }
 
@@ -188,6 +188,26 @@ TEST_CASE("script sandbox: the C stack limit stops recursion that has no Python 
     Error e2 = execFails(*interp, "def f(n):\n    return f(n + 1)\nf(0)");
     CHECK(e2.kind == ErrorKind::Recursion);
     CHECK(evalOk(*interp, "len(deep)") == Value(1));
+}
+
+TEST_CASE("script sandbox: machine-word ints are 32-bit on every build") {
+    auto interp = makeInterpreter();
+    // what a 32-bit build can't take, no build takes
+    CHECK(execFails(*interp, "range(2**31)").type == "OverflowError");
+    CHECK(execFails(*interp, "[1, 2][:2**40]").type == "OverflowError");
+    CHECK(execFails(*interp, "'abc'.find('c', 0, 2**32)").type == "OverflowError");
+    CHECK(execFails(*interp, "len(range(-2**31, 2**31 - 1))").type == "OverflowError");
+    CHECK(evalOk(*interp, "list(range(2**31 - 10, 2**31 - 1, 7))") == Value(ValueList{Value(2147483638), Value(2147483645)}));
+    CHECK(evalOk(*interp, "list(range(-2**31 + 5, -2**31 + 1, -3))") == Value(ValueList{Value(-2147483643), Value(-2147483646)}));
+    CHECK(execFails(*interp, "range(-2**31)").type == "OverflowError");   // as a 32-bit build converts it
+    CHECK(evalOk(*interp, "len(range(0, 2**31 - 1, 2**30))") == Value(2));
+    // numbers themselves are unlimited, and pack whole
+    execOk(*interp, "import struct, array");
+    CHECK(evalOk(*interp, "struct.unpack('<q', struct.pack('<q', -2**40))[0]") == Value(-(int64_t{1} << 40)));
+    CHECK(evalOk(*interp, "[struct.unpack('<q', struct.pack('<q', v))[0] == v for v in (2**62, 2**63 - 1, -2**63)]") ==
+          Value(ValueList{true, true, true}));
+    CHECK(evalOk(*interp, "list(array.array('q', [2**40, -3]))") == Value(ValueList{Value(int64_t{1} << 40), Value(-3)}));
+    CHECK(evalOk(*interp, "(2**40).to_bytes(6, 'little') == bytes([0, 0, 0, 0, 0, 1])") == Value(true));
 }
 
 TEST_CASE("script sandbox: hashes and identities never show addresses") {

@@ -92,6 +92,30 @@ def run():
     put(str(int("9" * 80) - int("1" * 79)))
     put(repr(divmod(-(10 ** 40), 7)))
 
+    # integers around the word sizes: small on 64-bit builds, big on 32-bit ones
+    mids = [2 ** 30 - 1, 2 ** 30, 2 ** 31 - 1, 2 ** 31, 2 ** 32 + 7, 2 ** 40 + 3, 2 ** 52, 2 ** 62 - 1, 2 ** 62,
+            2 ** 63 - 1, 2 ** 63, 2 ** 64 - 1, 2 ** 64, -2 ** 30, -2 ** 31 - 1, -2 ** 62 - 5, -2 ** 63]
+    mixed_bits = 0
+    for a in mids:
+        for b in mids:
+            mixed_bits ^= (a * b) ^ (a + b) ^ (a - b) ^ (a // (b or 1)) ^ (a % (b or 1)) ^ (a & b) ^ (a | b)
+            mixed_bits ^= (a >> 3) ^ (b << 5) ^ (a ** 2 // (abs(b) + 1))
+    put(str(mixed_bits))
+    put(repr([str(m) for m in mids]) + repr([int(str(m)) == m for m in mids]) + repr([hex(m) for m in mids]))
+    put(repr(sorted(set(mids))) + repr({m: i for i, m in enumerate(mids)}))
+    put(repr([pow(m, 3, 10 ** 9 + 7) for m in mids]) + repr([divmod(m, 97) for m in mids]))
+    put(repr([(m % 2 ** 64).to_bytes(8, "little") for m in mids]))
+    put(repr([struct.pack("<q", m) for m in mids if -2 ** 63 <= m < 2 ** 63]))
+    outcomes = []
+    for m in [2 ** 31, 2 ** 40, -2 ** 31 - 1, 2 ** 31 - 1]:
+        for attempt in (lambda: range(m), lambda: [0][m], lambda: "abc"[m], lambda: [1, 2][:m], lambda: "x" * (m % 3)):
+            try:
+                attempt()
+                outcomes.append("ok")
+            except Exception as e:
+                outcomes.append(type(e).__name__ + ": " + str(e))
+    put(repr(outcomes))
+
     # floats: arithmetic, math functions, rounded to ints and printed
     acc = []
     for i in range(1, 400):

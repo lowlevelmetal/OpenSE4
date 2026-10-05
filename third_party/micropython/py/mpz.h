@@ -143,6 +143,7 @@ static inline size_t mpz_max_num_bits(const mpz_t *z) {
     return z->len * MPZ_DIG_SIZE;
 }
 mp_int_t mpz_hash(const mpz_t *z);
+mp_int_t mpz_hash_modulo(const mpz_t *z, uint64_t m);
 bool mpz_as_int_checked(const mpz_t *z, mp_int_t *value);
 bool mpz_as_uint_checked(const mpz_t *z, mp_uint_t *value);
 // Returns true if 'z' fit into 'len' bytes of 'buf' without overflowing, 'buf' is truncated otherwise.
