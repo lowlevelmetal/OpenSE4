@@ -659,8 +659,12 @@ TEST_CASE("classic save: damaged files and other data sets give clear messages")
     auto none = decodeClassicSave(text, traits);
     REQUIRE_FALSE(none.has_value());
     CHECK(none.error().find("not a Space Empires IV saved game") != std::string::npos);
-    // OpenSE4's own saves are told apart by their header.
+    // OpenSE4's own saves are told apart by their header, and OpenSE4's loader
+    // names a save of the original for what it is.
     CHECK_FALSE(looksLikeClassicSave(serializeSave(s, SaveInfo{})));
+    auto asOurs = deserializeSave(bytes);
+    REQUIRE_FALSE(asOurs.has_value());
+    CHECK(asOurs.error().find("saved game of the original") != std::string::npos);
 
     // Cut short: the message names where reading stopped.
     const std::vector<uint8_t> cut(bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(bytes.size() / 2));

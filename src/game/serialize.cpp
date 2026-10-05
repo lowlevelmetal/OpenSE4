@@ -1,5 +1,6 @@
 #include "game/serialize.hpp"
 
+#include "game/classic_save.hpp"
 #include "game/rules.hpp"
 #include "game/serialize_io.hpp"
 
@@ -113,6 +114,10 @@ std::expected<Envelope, std::string> unwrapEnvelope(std::span<const uint8_t> byt
         for (const KnownMagic& k : kKnownMagics)
             if (head == k.magic) return std::unexpected(std::format("this is an OpenSE4 {}, not a {}", k.what, what));
         if (bytes.size() < 8) return std::unexpected(std::format("the {} is truncated ({} bytes)", what, bytes.size()));
+        if (classic::looksLikeClassicSave(bytes))
+            return std::unexpected(std::format("this is a saved game of the original Space Empires IV, not an OpenSE4 {}: open it with "
+                                               "Load Game, or convert it with opense4-convert",
+                                               what));
         return std::unexpected(std::format("not an OpenSE4 {}", what));
     }
     if (bytes.size() < kEnvelopeSize) return std::unexpected(std::format("the {} is truncated ({} bytes)", what, bytes.size()));

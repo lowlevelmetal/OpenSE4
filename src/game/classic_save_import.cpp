@@ -1375,7 +1375,6 @@ private:
         if (has("saved construction queue templates")) report_.note("Saved construction queue templates are not carried over.");
         if (has("fleets without a member")) report_.note("Fleets with no ship in their own sector were disbanded, as the original does on loading.");
         report_.note("The computer players start with partly empty memories, and the random sequence starts again from the game's seed.");
-        report_.note("Partial damage to components does not exist in the original's saves: a damaged part is whole or destroyed.");
         report_.note("History graphs start at the import date.");
     }
 };
