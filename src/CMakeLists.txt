@@ -46,7 +46,9 @@ target_include_directories(opense4_datafile PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
 target_link_libraries(opense4_datafile PRIVATE opense4_warnings)
 
 add_library(opense4_ruleset STATIC
+    ruleset/files.cpp
     ruleset/load.cpp
+    ruleset/mods.cpp
     ruleset/races.cpp
     ruleset/ruleset.cpp)
 target_link_libraries(opense4_ruleset PUBLIC opense4_core opense4_datafile PRIVATE opense4_warnings)

@@ -28,28 +28,32 @@ int number(const datafile::Record& r, std::string_view key) {
     return static_cast<int>(datafile::parseInteger(f->value).value_or(0));
 }
 
-void scan(const std::filesystem::path& dir, bool neutral, std::vector<RacePreset>& out) {
-    std::error_code ec;
-    if (!std::filesystem::is_directory(dir, ec)) return;
-    std::vector<std::filesystem::path> folders;
-    for (const auto& e : std::filesystem::directory_iterator(dir, ec))
-        if (e.is_directory(ec)) folders.push_back(e.path());
-    std::sort(folders.begin(), folders.end());
-    for (const auto& folder : folders) {
-        // Case-insensitive search for *_AI_General.txt and *_AI_Settings.txt.
-        std::filesystem::path general, settings;
-        for (const auto& f : std::filesystem::directory_iterator(folder, ec)) {
-            // The first name in sorted order when a folder holds more than one.
-            const std::string n = lower(f.path().filename().string());
-            if (n.ends_with("_ai_general.txt") && (general.empty() || f.path() < general)) general = f.path();
-            if (n.ends_with("_ai_settings.txt") && (settings.empty() || f.path() < settings)) settings = f.path();
+// Entries by their names as written, byte by byte: the order every platform
+// agrees on.
+std::vector<FileEntry> byName(std::vector<FileEntry> entries) {
+    std::sort(entries.begin(), entries.end(), [](const FileEntry& a, const FileEntry& b) { return a.name < b.name; });
+    return entries;
+}
+
+void scan(const GameFiles& files, const std::string& dir, bool neutral, std::vector<RacePreset>& out) {
+    // Folders by name; in each, the first *_AI_General.txt and
+    // *_AI_Settings.txt by name when there are several.
+    for (const FileEntry& folder : byName(files.list(dir))) {
+        if (!folder.directory) continue;
+        const std::string path = dir + "/" + folder.name;
+        std::string general, settings;
+        for (const FileEntry& f : byName(files.list(path))) {
+            if (f.directory) continue;
+            const std::string n = lower(f.name);
+            if (n.ends_with("_ai_general.txt") && general.empty()) general = path + "/" + f.name;
+            if (n.ends_with("_ai_settings.txt") && settings.empty()) settings = path + "/" + f.name;
         }
         if (general.empty()) continue;
-        auto file = datafile::load(general);
+        auto file = files.file(general);
         if (!file || file->records.empty()) continue;
         const datafile::Record& r = file->records.front();
         RacePreset p;
-        p.folder = folder.filename().string();
+        p.folder = folder.name;
         p.neutral = neutral;
         p.name = field(r, "Name");
         p.description = field(r, "Description");
@@ -78,7 +82,7 @@ void scan(const std::filesystem::path& dir, bool neutral, std::vector<RacePreset
             if (nc > 0 || nt > 0) p.tiers.push_back(std::move(tier));
         }
         if (!settings.empty())
-            if (auto s = datafile::load(settings); s && !s->records.empty()) p.personalityGroup = number(s->records.front(), "Personality Group");
+            if (auto s = files.file(settings); s && !s->records.empty()) p.personalityGroup = number(s->records.front(), "Personality Group");
         if (p.name.empty()) p.name = p.folder;
         out.push_back(std::move(p));
     }
@@ -86,20 +90,26 @@ void scan(const std::filesystem::path& dir, bool neutral, std::vector<RacePreset
 
 } // namespace
 
-std::vector<RacePreset> loadRacePresets(const std::filesystem::path& gameRoot) {
+std::vector<RacePreset> loadRacePresets(const std::filesystem::path& gameRoot) { return loadRacePresets(*openInstallFiles(gameRoot)); }
+
+std::vector<RacePreset> loadRacePresets(const GameFiles& files) {
     std::vector<RacePreset> out;
-    // Folder names differ in case between installs; accept any spelling. Normal
-    // races come first, then neutral ones, whatever order the directory lists them
-    // in: the list's order must be the same on every platform.
-    std::error_code ec;
-    std::filesystem::path races, neutral;
-    for (const auto& e : std::filesystem::directory_iterator(childIgnoringCase(gameRoot, "Pictures"), ec)) {
-        const std::string n = lower(e.path().filename().string());
-        if (n == "races" && (races.empty() || e.path() < races)) races = e.path();
-        if (n == "raceneutral" && (neutral.empty() || e.path() < neutral)) neutral = e.path();
+    // Folder names differ in case between installs; any spelling is found.
+    // Normal races come first, then neutral ones: the list's order must be the
+    // same on every platform.
+    std::string pictures;
+    for (const FileEntry& e : files.list(""))
+        if (e.directory && lower(e.name) == "pictures") pictures = e.name;
+    if (pictures.empty()) return out;
+    std::string races, neutral;
+    for (const FileEntry& e : files.list(pictures)) {
+        if (!e.directory) continue;
+        const std::string n = lower(e.name);
+        if (n == "races") races = pictures + "/" + e.name;
+        if (n == "raceneutral") neutral = pictures + "/" + e.name;
     }
-    if (!races.empty()) scan(races, false, out);
-    if (!neutral.empty()) scan(neutral, true, out);
+    if (!races.empty()) scan(files, races, false, out);
+    if (!neutral.empty()) scan(files, neutral, true, out);
     return out;
 }
 

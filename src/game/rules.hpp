@@ -10,6 +10,7 @@
 #include "ruleset/ruleset.hpp"
 
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -22,12 +23,33 @@ inline constexpr int64_t kMaxTechLevelCost = 2'000'000'000;
 class Rules {
 public:
     Rules() = default;
-    // gameRoot: directory holding Data/, Pictures/, Ai/ (empty for test data sets).
+    // gameRoot: directory holding Data/, Pictures/, Ai/ (empty for test data
+    // sets). A data set loaded with its files (ruleset::Ruleset::files: the
+    // install, perhaps with mods) reads its AI tables and races from them;
+    // otherwise from gameRoot as the install has them.
     Rules(ruleset::Ruleset data, std::filesystem::path gameRoot = {});
 
     const ruleset::Ruleset& data() const { return data_; }
     const std::filesystem::path& gameRoot() const { return gameRoot_; }
+    // The game folder's files (AI tables, race files, design names); null
+    // without a game folder.
+    const ruleset::GameFiles* files() const { return data_.files.get(); }
     const std::vector<ruleset::RacePreset>& racePresets() const { return races_; }
+    // The mods the data set was built with, in load order.
+    std::span<const ruleset::ModRecord> mods() const { return data_.mods; }
+
+    // A mod's declared ability (docs/sdk/packages-and-data.md): its value over
+    // a list of abilities, combined as the declaration says (sum, largest or
+    // smallest Val 1; 0 when none carries it), or nullopt when no mod declared
+    // that name. On a design, the hull's and every component's abilities; on a
+    // colony, its facilities'; on a system, its own and its objects'.
+    std::optional<int64_t> declaredAbility(std::span<const ParsedAbility> list, std::string_view name) const;
+    std::optional<int64_t> declaredAbilityOfComponent(uint32_t component, std::string_view name) const;
+    std::optional<int64_t> declaredAbilityOfFacility(uint32_t facility, std::string_view name) const;
+    std::optional<int64_t> declaredAbilityOfHull(uint32_t hull, std::string_view name) const;
+    std::optional<int64_t> declaredAbilityOfDesign(const Design& design, std::string_view name) const;
+    std::optional<int64_t> declaredAbilityOfColony(const Colony& colony, std::string_view name) const;
+    std::optional<int64_t> declaredAbilityOfSystem(const Galaxy& galaxy, SystemId system, std::string_view name) const;
 
     // Pre-parsed abilities.
     std::span<const ParsedAbility> componentAbilities(uint32_t component) const { return components_[component]; }

@@ -1,5 +1,6 @@
 #include "datafile/datafile.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -66,6 +67,66 @@ std::string latin1ToUtf8(std::string_view text) {
             out += static_cast<char>(0x80 | (c & 0x3F));
         }
     }
+    return out;
+}
+
+std::string utf8ToLatin1(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size();) {
+        const auto c = static_cast<unsigned char>(text[i]);
+        if (c < 0x80) {
+            out += text[i++];
+            continue;
+        }
+        // A two-byte sequence of U+0080..U+00FF maps back; anything else is '?'.
+        if ((c == 0xC2 || c == 0xC3) && i + 1 < text.size() && (static_cast<unsigned char>(text[i + 1]) & 0xC0) == 0x80) {
+            out += static_cast<char>(((c & 0x03) << 6) | (static_cast<unsigned char>(text[i + 1]) & 0x3F));
+            i += 2;
+            continue;
+        }
+        size_t length = 1;
+        if ((c & 0xE0) == 0xC0) length = 2;
+        else if ((c & 0xF0) == 0xE0) length = 3;
+        else if ((c & 0xF8) == 0xF0) length = 4;
+        out += '?';
+        i += std::min(length, text.size() - i);
+    }
+    return out;
+}
+
+std::string keyPattern(std::string_view key) {
+    const std::string normal = normalizeKey(key);
+    std::string out;
+    out.reserve(normal.size());
+    for (size_t i = 0; i < normal.size(); ++i) {
+        if (normal[i] >= '0' && normal[i] <= '9') {
+            if (out.empty() || out.back() != '#') out += '#';
+            continue;
+        }
+        out += normal[i];
+    }
+    return out;
+}
+
+std::string write(const DataFile& file, std::string_view header) {
+    std::string out;
+    auto line = [&](std::string_view text) {
+        out += utf8ToLatin1(text);
+        out += "\r\n";
+    };
+    if (!file.hasDataSection) {
+        for (const std::string& entry : file.entries) line(entry);
+        return out;
+    }
+    if (!header.empty()) line(header);
+    line("*BEGIN*");
+    for (const Record& record : file.records) {
+        line("");
+        for (const Field& field : record.fields) line(field.value.empty() ? field.key + " :=" : field.key + " := " + field.value);
+    }
+    line("");
+    line("*END*");
     return out;
 }
 

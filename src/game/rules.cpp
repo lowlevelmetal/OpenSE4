@@ -12,7 +12,11 @@ Rules::Rules(ruleset::Ruleset data, std::filesystem::path gameRoot) : data_(std:
     for (const auto& f : data_.facilities) facilities_.push_back(parseAbilities(f.abilities));
     for (const auto& h : data_.vehicleSizes) hulls_.push_back(parseAbilities(h.abilities));
     for (const auto& t : data_.systemTypes) systemTypes_.push_back(parseAbilities(t.abilities));
-    if (!gameRoot_.empty()) races_ = ruleset::loadRacePresets(gameRoot_);
+    // The game folder's files: those the data set came with (mods layered
+    // over the install), else the install at gameRoot.
+    if (gameRoot_.empty() && data_.files) gameRoot_ = data_.files->root();
+    if (!gameRoot_.empty() && (!data_.files || data_.files->root() != gameRoot_)) data_.files = ruleset::openInstallFiles(gameRoot_, data_.dataDir);
+    if (data_.files) races_ = ruleset::loadRacePresets(*data_.files);
     // Rows past the ones the file lists read as amount 0 at 100 %; a sane
     // bound keeps a broken row count from filling memory.
     const int64_t rows = std::min<int64_t>(setting("Number Of Population Modifiers", 0), 10'000);
@@ -20,6 +24,65 @@ Rules::Rules(ruleset::Ruleset data, std::filesystem::path gameRoot) : data_(std:
         populationRows_.push_back({setting(std::format("Pop Modifier {} Population Amount", row), 0),
                                    static_cast<int>(setting(std::format("Pop Modifier {} Production Modifier Percent", row), 100)),
                                    static_cast<int>(setting(std::format("Pop Modifier {} SY Rate Modifier Percent", row), 100))});
+}
+
+std::optional<int64_t> Rules::declaredAbility(std::span<const ParsedAbility> list, std::string_view name) const {
+    const ruleset::DeclaredAbility* d = data_.findDeclaredAbility(name);
+    if (!d) return std::nullopt;
+    int64_t sum = 0;
+    std::optional<int64_t> best;
+    for (const ParsedAbility& a : list) {
+        if (a.kind != AbilityKind::Unknown || !datafile::keysEqual(a.raw, d->name)) continue;
+        switch (d->combine) {
+            case ruleset::Combine::Sum: sum = std::min(sum + a.value1, kAbilitySumCap); break;
+            case ruleset::Combine::Max: best = best ? std::max(*best, a.value1) : a.value1; break;
+            case ruleset::Combine::Min: best = best ? std::min(*best, a.value1) : a.value1; break;
+            case ruleset::Combine::Count: break;
+        }
+    }
+    return d->combine == ruleset::Combine::Sum ? sum : best.value_or(0);
+}
+
+std::optional<int64_t> Rules::declaredAbilityOfComponent(uint32_t component, std::string_view name) const {
+    if (component >= components_.size()) return data_.findDeclaredAbility(name) ? std::optional<int64_t>(0) : std::nullopt;
+    return declaredAbility(components_[component], name);
+}
+
+std::optional<int64_t> Rules::declaredAbilityOfFacility(uint32_t facility, std::string_view name) const {
+    if (facility >= facilities_.size()) return data_.findDeclaredAbility(name) ? std::optional<int64_t>(0) : std::nullopt;
+    return declaredAbility(facilities_[facility], name);
+}
+
+std::optional<int64_t> Rules::declaredAbilityOfHull(uint32_t hull, std::string_view name) const {
+    if (hull >= hulls_.size()) return data_.findDeclaredAbility(name) ? std::optional<int64_t>(0) : std::nullopt;
+    return declaredAbility(hulls_[hull], name);
+}
+
+std::optional<int64_t> Rules::declaredAbilityOfDesign(const Design& design, std::string_view name) const {
+    std::vector<ParsedAbility> list;
+    if (design.hull < hulls_.size()) list.insert(list.end(), hulls_[design.hull].begin(), hulls_[design.hull].end());
+    for (const DesignEntry& e : design.entries)
+        if (e.component < components_.size()) list.insert(list.end(), components_[e.component].begin(), components_[e.component].end());
+    return declaredAbility(list, name);
+}
+
+std::optional<int64_t> Rules::declaredAbilityOfColony(const Colony& colony, std::string_view name) const {
+    std::vector<ParsedAbility> list;
+    for (uint32_t f : colony.facilities)
+        if (f < facilities_.size()) list.insert(list.end(), facilities_[f].begin(), facilities_[f].end());
+    return declaredAbility(list, name);
+}
+
+std::optional<int64_t> Rules::declaredAbilityOfSystem(const Galaxy& galaxy, SystemId system, std::string_view name) const {
+    if (!system.valid() || system.index() >= galaxy.systems.size()) return data_.findDeclaredAbility(name) ? std::optional<int64_t>(0) : std::nullopt;
+    const StarSystem& s = galaxy.system(system);
+    std::vector<ParsedAbility> list = parseAbilities(s.abilities);
+    for (ObjectId o : s.objects) {
+        if (!o.valid() || o.index() >= galaxy.objects.size()) continue;
+        const std::vector<ParsedAbility> own = parseAbilities(galaxy.object(o).abilities);
+        list.insert(list.end(), own.begin(), own.end());
+    }
+    return declaredAbility(list, name);
 }
 
 bool Rules::meets(const Empire& e, std::span<const ruleset::TechRequirement> reqs) const {

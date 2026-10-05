@@ -10,6 +10,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
+#include <tuple>
 
 namespace opense4::game::ai {
 
@@ -49,80 +51,105 @@ std::string lowerAscii(std::string s) {
     return s;
 }
 
+// ---- Which patched fields the tables read (unreadPatchedFields) ------------------------------
+//
+// While a check runs, the parsers note every field a mod's patch wrote that
+// they read. Rows can be copied (parseUnits), so a field is known by its key,
+// line and origin.
+
+using ReadKey = std::tuple<std::string, int, std::string>;
+thread_local std::set<ReadKey>* gReadLog = nullptr;
+
+void noteRead(const datafile::Field* f) {
+    if (gReadLog && f && !f->origin.empty()) gReadLog->emplace(datafile::normalizeKey(f->key), f->line, f->origin);
+}
+
 // ---- A record with typed, defaulted access ---------------------------------------------------
 
 class Fields {
 public:
     explicit Fields(const datafile::Record* r) : r_(r) {}
-    bool has(std::string_view key) const { return r_ && r_->find(key); }
+    bool has(std::string_view key) const { return get(key) != nullptr; }
     std::string text(std::string_view key, std::string fallback = {}) const {
-        const datafile::Field* f = r_ ? r_->find(key) : nullptr;
+        const datafile::Field* f = get(key);
         return f ? f->value : fallback;
     }
     int num(std::string_view key, int fallback) const {
-        const datafile::Field* f = r_ ? r_->find(key) : nullptr;
+        const datafile::Field* f = get(key);
         if (!f) return fallback;
         const auto v = datafile::parseInteger(f->value);
         if (!v) return fallback;
         return static_cast<int>(std::clamp<int64_t>(*v, INT32_MIN, INT32_MAX));
     }
     int64_t num64(std::string_view key, int64_t fallback) const {
-        const datafile::Field* f = r_ ? r_->find(key) : nullptr;
+        const datafile::Field* f = get(key);
         return f ? datafile::parseInteger(f->value).value_or(fallback) : fallback;
     }
     bool flag(std::string_view key, bool fallback) const {
-        const datafile::Field* f = r_ ? r_->find(key) : nullptr;
+        const datafile::Field* f = get(key);
         return f ? datafile::parseBoolean(f->value).value_or(fallback) : fallback;
     }
 
 private:
+    const datafile::Field* get(std::string_view key) const {
+        const datafile::Field* f = r_ ? r_->find(key) : nullptr;
+        noteRead(f);
+        return f;
+    }
     const datafile::Record* r_;
 };
 
 // ---- File lookup (names differ in case between installs) --------------------------------------
+//
+// Through the game folder's files (ruleset::GameFiles): the install, with any
+// mods layered over it. Paths are relative to the game folder; "" is no folder.
 
-std::filesystem::path findChild(const std::filesystem::path& dir, std::string_view name, bool wantDirectory) {
-    std::error_code ec;
-    if (dir.empty() || !std::filesystem::is_directory(dir, ec)) return {};
-    std::vector<std::filesystem::path> hits;
-    for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
-        if (wantDirectory != e.is_directory(ec)) continue;
-        if (keysEqual(e.path().filename().string(), name)) hits.push_back(e.path());
-    }
-    std::sort(hits.begin(), hits.end());
-    return hits.empty() ? std::filesystem::path{} : hits.front();
+std::string joinPath(std::string_view dir, std::string_view name) {
+    return dir.empty() ? std::string(name) : std::format("{}/{}", dir, name);
+}
+
+// The entries of a folder by their names as written, byte by byte: the order
+// every platform agrees on.
+std::vector<ruleset::FileEntry> entriesByName(const ruleset::GameFiles& files, std::string_view dir) {
+    std::vector<ruleset::FileEntry> entries = files.list(dir);
+    std::sort(entries.begin(), entries.end(), [](const ruleset::FileEntry& a, const ruleset::FileEntry& b) { return a.name < b.name; });
+    return entries;
+}
+
+std::string findChild(const ruleset::GameFiles& files, std::string_view dir, std::string_view name, bool wantDirectory, bool topLevel = false) {
+    if (dir.empty() && !topLevel) return {};
+    for (const ruleset::FileEntry& e : entriesByName(files, dir))
+        if (e.directory == wantDirectory && keysEqual(e.name, name)) return joinPath(dir, e.name);
+    return {};
 }
 
 // A file in `dir` whose name ends with "_AI_<table>.txt" (any case).
-std::filesystem::path findTable(const std::filesystem::path& dir, std::string_view table, std::string_view prefix = {}) {
-    std::error_code ec;
-    if (dir.empty() || !std::filesystem::is_directory(dir, ec)) return {};
+std::string findTable(const ruleset::GameFiles& files, std::string_view dir, std::string_view table, std::string_view prefix = {}) {
+    if (dir.empty()) return {};
     const std::string suffix = lowerAscii(std::format("_ai_{}.txt", table));
     const std::string wantPrefix = lowerAscii(std::string(prefix));
-    std::vector<std::filesystem::path> hits;
-    for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
-        if (!e.is_regular_file(ec)) continue;
-        const std::string n = lowerAscii(e.path().filename().string());
-        if (n.ends_with(suffix) && (wantPrefix.empty() || n.starts_with(wantPrefix))) hits.push_back(e.path());
+    for (const ruleset::FileEntry& e : entriesByName(files, dir)) {
+        if (e.directory) continue;
+        const std::string n = lowerAscii(e.name);
+        if (n.ends_with(suffix) && (wantPrefix.empty() || n.starts_with(wantPrefix))) return joinPath(dir, e.name);
     }
-    std::sort(hits.begin(), hits.end());
-    return hits.empty() ? std::filesystem::path{} : hits.front();
+    return {};
 }
 
 struct Locations {
-    std::filesystem::path aiDir;       // <root>/Ai
-    std::filesystem::path ownDir;      // Ai/<style>, or the race folder when there is no style
+    std::string aiDir;       // Ai
+    std::string ownDir;      // Ai/<style>, or the race folder when there is no style
 };
 
-Locations locate(const std::filesystem::path& root, std::string_view raceStyle, std::string_view ministerStyle) {
+Locations locate(const ruleset::GameFiles& files, std::string_view raceStyle, std::string_view ministerStyle) {
     Locations l;
-    l.aiDir = findChild(root, "Ai", true);
+    l.aiDir = findChild(files, "", "Ai", true, true);
     if (!ministerStyle.empty()) {
-        l.ownDir = findChild(l.aiDir, ministerStyle, true);
+        l.ownDir = findChild(files, l.aiDir, ministerStyle, true);
     } else if (!raceStyle.empty()) {
-        const auto pictures = findChild(root, "Pictures", true);
+        const auto pictures = findChild(files, "", "Pictures", true, true);
         for (std::string_view group : {"Races", "RaceNeutral"})
-            if (auto d = findChild(findChild(pictures, group, true), raceStyle, true); !d.empty()) {
+            if (auto d = findChild(files, findChild(files, pictures, group, true), raceStyle, true); !d.empty()) {
                 l.ownDir = d;
                 break;
             }
@@ -131,17 +158,17 @@ Locations locate(const std::filesystem::path& root, std::string_view raceStyle, 
 }
 
 // Spec 05 §7.2: the style's (or race's) own file, else Ai/Default_AI_<Name>.txt.
-std::filesystem::path lookup(const Locations& l, std::string_view table) {
-    if (auto f = findTable(l.ownDir, table); !f.empty()) return f;
-    return findTable(l.aiDir, table, "default_");
+std::string lookup(const ruleset::GameFiles& files, const Locations& l, std::string_view table) {
+    if (auto f = findTable(files, l.ownDir, table); !f.empty()) return f;
+    return findTable(files, l.aiDir, table, "default_");
 }
 
-std::optional<datafile::DataFile> readTable(const Locations& l, std::string_view table, AiProfile& p) {
-    const auto path = lookup(l, table);
+std::optional<datafile::DataFile> readTable(const ruleset::GameFiles& files, const Locations& l, std::string_view table, AiProfile& p) {
+    const auto path = lookup(files, l, table);
     if (path.empty()) return std::nullopt;
-    auto file = datafile::load(path);
+    auto file = files.file(path);
     if (!file || file->records.empty()) return std::nullopt;
-    p.sources.push_back(path.string());
+    p.sources.push_back(file->origin.empty() ? (files.root() / path).string() : std::format("{} ({})", path, file->origin));
     return std::move(*file);
 }
 
@@ -645,6 +672,7 @@ std::vector<UnitQueue> parseUnits(const datafile::DataFile& file) {
     for (const auto& rec : file.records)
         for (const auto& fld : rec.fields) {
             if (keysEqual(fld.key, "Colony Type") && rows.back().find(fld.key)) rows.emplace_back();
+            if (keysEqual(fld.key, "Percentage of Resources To Reserve For Unit Construction")) noteRead(&fld);
             rows.back().fields.push_back(fld);
         }
     std::vector<UnitQueue> out;
@@ -717,6 +745,7 @@ Speech parseSpeech(const datafile::DataFile& file) {
     std::vector<std::pair<std::string, int>> counts;
     for (const auto& rec : file.records)
         for (const auto& fld : rec.fields) {
+            noteRead(&fld);
             const std::string key = datafile::normalizeKey(fld.key);
             values.emplace(key, fld.value);
             if (key.starts_with("number of "))
@@ -741,6 +770,7 @@ std::vector<ruleset::CombatStrategy> parseStrategies(const datafile::DataFile& f
     for (const auto& rec : file.records) {
         ruleset::CombatStrategy st;
         for (const auto& fld : rec.fields) {
+            noteRead(&fld);
             if (keysEqual(fld.key, "Name") && st.name.empty()) st.name = fld.value;
             else st.settings.emplace_back(fld.key, fld.value);
         }
@@ -893,28 +923,33 @@ const AiProfile& builtinProfile() {
 }
 
 AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view raceStyle, std::string_view ministerStyle) {
+    return loadProfile(*ruleset::openInstallFiles(gameRoot), raceStyle, ministerStyle);
+}
+
+AiProfile loadProfile(const ruleset::GameFiles& files, std::string_view raceStyle, std::string_view ministerStyle) {
     AiProfile p = builtinProfile();
     p.sources.clear();
-    const Locations where = locate(gameRoot, raceStyle, ministerStyle);
+    const Locations where = locate(files, raceStyle, ministerStyle);
+    auto read = [&](std::string_view table, AiProfile& profile) { return readTable(files, where, table, profile); };
 
-    if (auto f = readTable(where, "Anger", p)) parseAnger(f->records.front(), p.anger);
-    if (auto f = readTable(where, "Politics", p)) parsePolitics(f->records.front(), p.politics);
-    if (auto f = readTable(where, "Settings", p)) parseSettings(f->records.front(), p.settings);
-    if (auto f = readTable(where, "General", p)) parseGeneral(f->records.front(), p.general);
-    if (auto f = readTable(where, "Fleets", p)) parseFleets(f->records.front(), p.fleets);
-    if (auto f = readTable(where, "Research", p)) p.research = parseResearch(*f);
-    if (auto f = readTable(where, "DesignCreation", p)) p.designs = parseDesigns(*f);
-    if (auto f = readTable(where, "Construction_Facilities", p)) p.facilities = parseFacilities(*f);
-    if (auto f = readTable(where, "Construction_Vehicles", p)) p.vehicles = parseVehicles(*f);
-    if (auto f = readTable(where, "Planet_Types", p)) p.planetTypes = parsePlanetTypes(*f);
-    if (auto f = readTable(where, "Speech", p)) {
+    if (auto f = read("Anger", p)) parseAnger(f->records.front(), p.anger);
+    if (auto f = read("Politics", p)) parsePolitics(f->records.front(), p.politics);
+    if (auto f = read("Settings", p)) parseSettings(f->records.front(), p.settings);
+    if (auto f = read("General", p)) parseGeneral(f->records.front(), p.general);
+    if (auto f = read("Fleets", p)) parseFleets(f->records.front(), p.fleets);
+    if (auto f = read("Research", p)) p.research = parseResearch(*f);
+    if (auto f = read("DesignCreation", p)) p.designs = parseDesigns(*f);
+    if (auto f = read("Construction_Facilities", p)) p.facilities = parseFacilities(*f);
+    if (auto f = read("Construction_Vehicles", p)) p.vehicles = parseVehicles(*f);
+    if (auto f = read("Planet_Types", p)) p.planetTypes = parsePlanetTypes(*f);
+    if (auto f = read("Speech", p)) {
         auto speech = parseSpeech(*f);
         if (!speech.pools.empty()) p.speech = std::move(speech);
     }
-    if (auto f = readTable(where, "Strategies", p)) p.strategies = parseStrategies(*f);
+    if (auto f = read("Strategies", p)) p.strategies = parseStrategies(*f);
     // Not shipped with the stock install (spec 05 §7.5 "Units file"): the
     // reserve for units in the first record, then the rows.
-    if (auto f = readTable(where, "Construction_Units", p)) {
+    if (auto f = read("Construction_Units", p)) {
         p.unitsFile = true;
         p.unitReservePercent = Fields(&f->records.front()).num("Percentage of Resources To Reserve For Unit Construction", 0);
         p.units = parseUnits(*f);
@@ -924,31 +959,67 @@ AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view ra
 }
 
 const AiProfile& profileFor(const Rules& r, std::string_view raceStyle, std::string_view ministerStyle) {
-    if (r.gameRoot().empty()) return builtinProfile();
+    const ruleset::GameFiles* files = r.files();
+    if (!files) return builtinProfile();
     static std::mutex mutex;
     static std::map<std::string, std::unique_ptr<const AiProfile>> cache;
-    const std::string key = std::format("{}|{}|{}", r.gameRoot().string(), datafile::normalizeKey(raceStyle),
-                                        datafile::normalizeKey(ministerStyle));
+    const std::string key = std::format("{}|{}|{}", files->cacheKey(), datafile::normalizeKey(raceStyle), datafile::normalizeKey(ministerStyle));
     std::lock_guard lock(mutex);
     auto it = cache.find(key);
-    if (it == cache.end())
-        it = cache.emplace(key, std::make_unique<const AiProfile>(loadProfile(r.gameRoot(), raceStyle, ministerStyle))).first;
+    if (it == cache.end()) it = cache.emplace(key, std::make_unique<const AiProfile>(loadProfile(*files, raceStyle, ministerStyle))).first;
     return *it->second;
 }
 
 const AiProfile& profileFor(const Rules& r, const Empire& e) { return profileFor(r, e.race.style, ministerStyleOf(e)); }
 
+std::span<const std::string_view> tableNames() {
+    static constexpr std::array<std::string_view, 13> kTables{
+        "Anger",           "Politics", "Settings",          "General",                 "Fleets",
+        "Research",        "DesignCreation",                "Construction_Facilities", "Construction_Vehicles",
+        "Planet_Types",    "Speech",   "Strategies",        "Construction_Units",
+    };
+    return kTables;
+}
+
+std::vector<const datafile::Field*> unreadPatchedFields(std::string_view table, const datafile::DataFile& file) {
+    std::set<ReadKey> read;
+    gReadLog = &read;
+    AiProfile p = builtinProfile();
+    const datafile::Record* first = file.records.empty() ? nullptr : &file.records.front();
+    auto is = [&](std::string_view name) { return keysEqual(table, name); };
+    if (first && is("Anger")) parseAnger(*first, p.anger);
+    else if (first && is("Politics")) parsePolitics(*first, p.politics);
+    else if (first && is("Settings")) parseSettings(*first, p.settings);
+    else if (first && is("General")) parseGeneral(*first, p.general);
+    else if (first && is("Fleets")) parseFleets(*first, p.fleets);
+    else if (is("Research")) parseResearch(file);
+    else if (is("DesignCreation")) parseDesigns(file);
+    else if (is("Construction_Facilities")) parseFacilities(file);
+    else if (is("Construction_Vehicles")) parseVehicles(file);
+    else if (is("Planet_Types")) parsePlanetTypes(file);
+    else if (is("Speech")) parseSpeech(file);
+    else if (is("Strategies")) parseStrategies(file);
+    else if (is("Construction_Units")) parseUnits(file);
+    gReadLog = nullptr;
+    std::vector<const datafile::Field*> out;
+    for (const auto& rec : file.records)
+        for (const auto& fld : rec.fields)
+            if (!fld.origin.empty() && !read.contains(ReadKey{datafile::normalizeKey(fld.key), fld.line, fld.origin})) out.push_back(&fld);
+    return out;
+}
+
 std::vector<std::string> ministerStyles(const Rules& r) {
     std::vector<std::string> out;
-    const auto aiDir = findChild(r.gameRoot(), "Ai", true);
-    std::error_code ec;
-    if (aiDir.empty() || !std::filesystem::is_directory(aiDir, ec)) return out;
-    for (const auto& dir : std::filesystem::directory_iterator(aiDir, ec)) {
-        if (!dir.is_directory(ec)) continue;
+    const ruleset::GameFiles* files = r.files();
+    if (!files) return out;
+    const std::string aiDir = findChild(*files, "", "Ai", true, true);
+    if (aiDir.empty()) return out;
+    for (const ruleset::FileEntry& dir : files->list(aiDir)) {
+        if (!dir.directory) continue;
         bool tables = false;
-        for (const auto& f : std::filesystem::directory_iterator(dir.path(), ec))
-            tables = tables || (f.is_regular_file(ec) && lowerAscii(f.path().filename().string()).find("_ai_") != std::string::npos);
-        if (tables) out.push_back(dir.path().filename().string());
+        for (const ruleset::FileEntry& f : files->list(joinPath(aiDir, dir.name)))
+            tables = tables || (!f.directory && lowerAscii(f.name).find("_ai_") != std::string::npos);
+        if (tables) out.push_back(dir.name);
     }
     // By name in any case, then as written (folders that differ only in case
     // exist on Linux; the directory order is unspecified).
@@ -961,19 +1032,34 @@ std::vector<std::string> ministerStyles(const Rules& r) {
 
 const std::vector<std::string>& designNameList(const Rules& r, std::string_view file) {
     static const std::vector<std::string> kNone;
-    if (r.gameRoot().empty() || file.empty()) return kNone;
+    const ruleset::GameFiles* files = r.files();
+    if (!files || file.empty()) return kNone;
     static std::mutex mutex;
     static std::map<std::string, std::unique_ptr<const std::vector<std::string>>> cache;
-    const std::string key = std::format("{}|{}", r.gameRoot().string(), datafile::normalizeKey(file));
+    const std::string key = std::format("{}|{}", files->cacheKey(), datafile::normalizeKey(file));
     std::lock_guard lock(mutex);
     auto it = cache.find(key);
     if (it == cache.end()) {
         auto names = std::make_unique<std::vector<std::string>>();
-        if (auto path = findChild(findChild(r.gameRoot(), "Dsgnname", true), file, false); !path.empty())
-            if (auto loaded = datafile::load(path)) *names = loaded->entries;
+        if (auto path = findChild(*files, findChild(*files, "", "Dsgnname", true, true), file, false); !path.empty())
+            if (auto loaded = files->file(path)) *names = loaded->entries;
         it = cache.emplace(key, std::move(names)).first;
     }
     return *it->second;
+}
+
+std::vector<std::string> designNameFiles(const Rules& r) {
+    std::vector<std::string> out;
+    const ruleset::GameFiles* files = r.files();
+    if (!files) return out;
+    const std::string dir = findChild(*files, "", "Dsgnname", true, true);
+    if (dir.empty()) return out;
+    for (const ruleset::FileEntry& f : files->list(dir))
+        if (!f.directory && lowerAscii(f.name).ends_with(".txt")) out.push_back(f.name);
+    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) {
+        return std::pair(lowerAscii(a), a) < std::pair(lowerAscii(b), b);
+    });
+    return out;
 }
 
 } // namespace opense4::game::ai

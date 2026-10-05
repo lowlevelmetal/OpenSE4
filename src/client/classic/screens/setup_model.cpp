@@ -578,18 +578,7 @@ void setUseRaceMinisterStyle(game::EmpireSetup& e, bool on) {
     if (on) e.ministerStyle.clear();
 }
 
-std::vector<std::string> designNameFiles(const game::Rules& r) {
-    std::vector<std::string> out;
-    if (r.gameRoot().empty()) return out;
-    std::error_code ec;
-    for (const auto& dir : std::filesystem::directory_iterator(r.gameRoot(), ec)) {
-        if (!dir.is_directory(ec) || lowerAscii(dir.path().filename().string()) != "dsgnname") continue;
-        for (const auto& f : std::filesystem::directory_iterator(dir.path(), ec))
-            if (f.is_regular_file(ec) && lowerAscii(f.path().extension().string()) == ".txt") out.push_back(f.path().filename().string());
-    }
-    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) { return std::pair(lowerAscii(a), a) < std::pair(lowerAscii(b), b); });
-    return out;
-}
+std::vector<std::string> designNameFiles(const game::Rules& r) { return game::ai::designNameFiles(r); }
 
 std::optional<int> planetPicture(const game::Rules& r, std::string_view surface, std::string_view atmosphere) {
     std::optional<int> any;

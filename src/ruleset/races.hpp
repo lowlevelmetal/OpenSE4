@@ -4,6 +4,8 @@
 // (and RaceNeutral/). Each preset has identity text plus three build tiers of
 // characteristics and advanced traits (docs/spec/02 §1.10).
 
+#include "ruleset/files.hpp"
+
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -30,5 +32,7 @@ struct RacePreset {
 
 // gameRoot is the directory holding Data/ and Pictures/.
 std::vector<RacePreset> loadRacePresets(const std::filesystem::path& gameRoot);
+// The same from a game folder's files (the install, perhaps with mods).
+std::vector<RacePreset> loadRacePresets(const GameFiles& files);
 
 } // namespace opense4::ruleset
