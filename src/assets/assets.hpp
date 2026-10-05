@@ -27,6 +27,9 @@ struct Image {
     bool empty() const { return width <= 0 || height <= 0; }
 };
 
+// A whole file, or why it cannot be read.
+std::expected<std::vector<uint8_t>, std::string> readFileBytes(const std::filesystem::path& path);
+
 // What a picture file holds, by its first bytes (not its name: a ".bmp" may
 // hold PNG data).
 enum class ImageFormat { Unknown, Bmp, Png, Jpeg };

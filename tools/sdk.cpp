@@ -329,8 +329,12 @@ void checkPicture(const mods::PackageFile& f, const std::string& rel, const asse
 
 // A sound or music file of the mod: it reads as what its name says.
 void checkSound(const mods::PackageFile& f, const std::string& ext, std::vector<std::string>& errors) {
-    std::ifstream in(f.real, std::ios::binary);
-    const std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    const auto read = assets::readFileBytes(f.real);
+    if (!read) {
+        errors.push_back(std::format("{}: {}", f.path, read.error()));
+        return;
+    }
+    const std::vector<uint8_t>& bytes = *read;
     if (ext == ".ogg") {
         if (auto info = assets::probeOgg(bytes); !info) errors.push_back(std::format("{}: the OGG Vorbis file cannot be read: {}", f.path, info.error()));
     } else if (ext == ".wav") {

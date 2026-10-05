@@ -84,8 +84,10 @@ Art::Picture Art::loadPicture(std::string_view relative, bool colorKey) {
     pic.image = std::move(*img);
     pic.width = pic.image.width;
     pic.height = pic.image.height;
-    // A picture larger than the classic one of its kind keeps the classic
-    // size in the layout: the kind's, else the install's own copy's.
+    // A mod's picture larger than the classic one of its kind keeps the
+    // classic size in the layout: the kind's, else the install's own copy's.
+    // The install's own pictures are the classic ones, whatever their size.
+    if (installed) return pic;
     auto fitsInto = [&](int w, int h) {
         return w > 0 && h > 0 && pic.image.width >= w && pic.image.height >= h && (pic.image.width > w || pic.image.height > h);
     };
@@ -93,12 +95,11 @@ Art::Picture Art::loadPicture(std::string_view relative, bool colorKey) {
     if (fitsInto(int(kind.x), int(kind.y))) {
         pic.width = int(kind.x);
         pic.height = int(kind.y);
-    } else if (!installed) {
-        if (const auto base = files_.findInstalledPicture(relative))
-            if (const auto info = assets::probeImageSize(*base); info && fitsInto(info->first, info->second)) {
-                pic.width = info->first;
-                pic.height = info->second;
-            }
+    } else if (const auto base = files_.findInstalledPicture(relative)) {
+        if (const auto info = assets::probeImageSize(*base); info && fitsInto(info->first, info->second)) {
+            pic.width = info->first;
+            pic.height = info->second;
+        }
     }
     return pic;
 }
@@ -380,28 +381,30 @@ Sprite Art::combatBackground(std::string_view name, uint64_t seed) {
     constexpr int kSize = 432, kTile = 72;
     const std::string key = std::format("#combat#{}#{}", lower(name), seed);
     if (auto it = textures_.find(key); it != textures_.end()) return it->second.id ? whole(it->second.id, it->second.width, it->second.height) : Sprite{};
-    std::vector<assets::Image> tiles;
+    // Each tile's pixels and how many it has a classic pixel (a mod's larger tiles more than one).
+    std::vector<std::pair<assets::Image, double>> tiles;
     for (int n = 1; n <= 100 && hasCombatTiles(name); ++n) {
         const std::string file = std::format("Pictures/Systems/{}Tile{}.bmp", name, n);
         if (!files_.findPicture(file)) break;
-        if (Picture tile = loadPicture(file, false); tile && tile.image.width >= kTile && tile.image.height >= kTile) tiles.push_back(std::move(tile.image));
+        if (Picture tile = loadPicture(file, false); tile && tile.image.width >= kTile && tile.image.height >= kTile)
+            tiles.emplace_back(std::move(tile.image), double(tile.image.width) / tile.width);
     }
     assets::Image picture;
     if (!tiles.empty()) {
-        // Larger tiles (a mod's): the picture at the resolution of the
-        // smallest, up to the detail; every other tile made to that size.
-        int tile = INT_MAX;
-        for (const assets::Image& t : tiles) tile = std::min({tile, t.width, t.height});
-        tile = std::clamp(tile, kTile, std::max(kTile, int(std::ceil(float(kTile) * detail_))));
-        for (assets::Image& t : tiles)
-            if (t.width != tile || t.height != tile) t = assets::downscale(t, tile, tile);
+        // At the resolution of the coarsest tile, up to the detail: classic
+        // tiles give their top left 72x72 as before, larger ones are made to that size.
+        double factor = 1e9;
+        for (const auto& [t, f] : tiles) factor = std::min(factor, f);
+        const int tile = std::clamp(int(std::lround(kTile * factor)), kTile, std::max(kTile, int(std::ceil(float(kTile) * detail_))));
+        for (auto& [t, f] : tiles)
+            if (t.width != tile || t.height != tile) t = f <= 1.0 && tile == kTile ? assets::crop(t, 0, 0, kTile, kTile) : assets::downscale(t, tile, tile);
         const int size = kSize / kTile * tile;
         picture.width = picture.height = size;
         picture.rgba.assign(size_t(size) * size_t(size) * 4, 255);
         Rng rng(seed);
         for (int ty = 0; ty < kSize / kTile; ++ty)
             for (int tx = 0; tx < kSize / kTile; ++tx) {
-                const assets::Image& t = tiles[static_cast<size_t>(rng.below(tiles.size()))];
+                const assets::Image& t = tiles[static_cast<size_t>(rng.below(tiles.size()))].first;
                 for (int y = 0; y < tile; ++y)
                     std::memcpy(&picture.rgba[(size_t(ty * tile + y) * size_t(size) + size_t(tx * tile)) * 4], &t.rgba[size_t(y) * size_t(t.width) * 4],
                                 size_t(tile) * 4);

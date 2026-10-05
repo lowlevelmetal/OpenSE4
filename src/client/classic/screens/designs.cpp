@@ -731,7 +731,7 @@ private:
         const std::string& style = ui.me().race.style;
         for (size_t i = 0; i < pictures_.size(); ++i) {
             const std::string& name = pictures_[i];
-            const std::string label = name.empty() ? std::format("{} (the hull's)", h.primaryBitmap) : name;
+            const std::string caption = name.empty() ? std::format("{} (the hull's)", h.primaryBitmap) : name;
             const ImVec2 at = ImGui::GetCursorScreenPos();
             if (ImGui::Selectable(std::format("##picture{}", i).c_str(), datafile::keysEqual(picture_, name), 0, ui.size({200, 38}))) {
                 picture_ = name;
@@ -740,7 +740,7 @@ private:
             script::reportItem("picture:" + (name.empty() ? std::string("hull") : name));   // input scripts pick a picture by its name
             ImDrawList* pdl = ImGui::GetWindowDrawList();
             if (const Sprite mini = ui.art.designMini(style, h, name)) drawSprite(pdl, mini, {at.x + ui.px(1), at.y + ui.px(1)}, {at.x + ui.px(37), at.y + ui.px(37)});
-            pdl->AddText({at.x + ui.px(44), at.y + ui.px(11)}, IM_COL32_WHITE, label.c_str());
+            pdl->AddText({at.x + ui.px(44), at.y + ui.px(11)}, IM_COL32_WHITE, caption.c_str());
         }
         ImGui::EndPopup();
     }

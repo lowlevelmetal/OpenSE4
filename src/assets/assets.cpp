@@ -63,15 +63,26 @@ std::string_view formatName(ImageFormat f) {
     return "unknown";
 }
 
+std::expected<std::vector<uint8_t>, std::string> readFileBytes(const std::filesystem::path& path) {
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec) return std::unexpected(std::string("it cannot be opened"));
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return std::unexpected(std::string("it cannot be opened"));
+    std::vector<uint8_t> out(static_cast<size_t>(size));
+    if (!in.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size()))) return std::unexpected(std::string("it cannot be read"));
+    return out;
+}
+
 namespace {
 
 bool readBytes(const std::filesystem::path& path, std::vector<uint8_t>& out, std::string& error) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) {
-        error = "it cannot be opened";
+    auto bytes = readFileBytes(path);
+    if (!bytes) {
+        error = bytes.error();
         return false;
     }
-    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    out = std::move(*bytes);
     return true;
 }
 
