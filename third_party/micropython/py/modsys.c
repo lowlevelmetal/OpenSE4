@@ -211,6 +211,15 @@ static mp_obj_t mp_sys_print_exception(size_t n_args, const mp_obj_t *args) {
     mp_print_t print = {stream_obj, mp_stream_write_adaptor};
     mp_obj_print_exception(&print, args[0]);
     #else
+    #if MICROPY_PY_IO
+    // Without the standard files, a stream that is given still receives the text.
+    if (n_args > 1) {
+        mp_get_stream_raise(args[1], MP_STREAM_OP_WRITE);
+        mp_print_t print = {MP_OBJ_TO_PTR(args[1]), mp_stream_write_adaptor};
+        mp_obj_print_exception(&print, args[0]);
+        return mp_const_none;
+    }
+    #endif
     (void)n_args;
     mp_obj_print_exception(&mp_plat_print, args[0]);
     #endif
