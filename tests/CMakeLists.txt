@@ -6,6 +6,7 @@ add_executable(opense4_tests
     engine_fixture.cpp
     test_ai.cpp
     test_app_settings.cpp
+    test_classic_save.cpp
     test_audio.cpp
     test_audio_mix.cpp
     test_classic_colony_logic.cpp

@@ -1398,6 +1398,14 @@ KeyRows keyRows(const Keys& keys, size_t n) {
     return r;
 }
 
+std::vector<uint32_t> keySample(const Keys& keys, std::string_view text, size_t numbers) {
+    KeyStream k(keys);
+    std::vector<uint32_t> out;
+    for (size_t i = 0; i < text.size(); ++i) out.push_back(k.character());
+    for (size_t i = 0; i < numbers; ++i) out.push_back(k.number());
+    return out;
+}
+
 // ---- Decoding and encoding ------------------------------------------------------------------------------------------
 
 bool looksLikeClassicSave(std::span<const uint8_t> bytes) {

@@ -109,7 +109,7 @@ int run(const Options& o) {
             std::fprintf(stderr, "%s\n", (!a ? a.error() : b.error()).c_str());
             return 1;
         }
-        const std::vector<std::string> diff = game::classic::compareSaves(*a, *b, 1000);
+        const std::vector<std::string> diff = game::classic::compareSaves(*a, *b, 1000000);
         for (const std::string& d : diff) std::printf("%s\n", d.c_str());
         std::printf("%zu differences\n", diff.size());
         return diff.empty() ? 0 : 3;

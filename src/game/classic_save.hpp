@@ -648,6 +648,9 @@ struct KeyRows {
     std::vector<uint8_t> r1, r57, r123;
 };
 KeyRows keyRows(const Keys& keys, size_t n);
+// The keys a file with these keys uses first: one character key per
+// character of `text` (the version string), then `numbers` number keys.
+std::vector<uint32_t> keySample(const Keys& keys, std::string_view text, size_t numbers);
 
 // The plain-text summary block of §2.6, laid out (Latin-1).
 std::string summaryText(const Summary& s);

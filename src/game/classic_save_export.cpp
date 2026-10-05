@@ -991,9 +991,11 @@ private:
             rec.system = sys(l.system);
             rec.sector = sec(l.sector);
         };
-        auto targetObject = [&](ObjectId obj) {
+        // The target, its name and its place (observed: a Colonize order
+        // carries the planet's place without its name).
+        auto targetObject = [&](ObjectId obj, bool named = true) {
             rec.target = objectId(obj);
-            rec.targetName = text(objectName(obj));
+            if (named) rec.targetName = text(objectName(obj));
             if (obj.valid() && obj.index() < s_.galaxy.objects.size()) place(locationOf(s_.galaxy, obj));
         };
         auto targetVehicle = [&](VehicleId v) {
@@ -1011,7 +1013,7 @@ private:
             case OrderKind::MoveTo: rec.kind = 1; place(o.location); break;
             case OrderKind::MoveToWaypoint: rec.kind = 2; rec.target = clampWord(o.amount + 1); break;
             case OrderKind::Warp: rec.kind = 3; targetObject(o.object); break;
-            case OrderKind::Colonize: rec.kind = 4; targetObject(o.object); break;
+            case OrderKind::Colonize: rec.kind = 4; targetObject(o.object, false); break;
             case OrderKind::LoadCargo:
             case OrderKind::DropCargo: {
                 rec.kind = o.kind == OrderKind::LoadCargo ? 6 : 7;
@@ -1032,9 +1034,9 @@ private:
             }
             case OrderKind::Attack:
                 rec.kind = 8;
-                place(o.location);
                 if (o.vehicle.valid()) targetVehicle(o.vehicle);
                 else if (o.object.valid()) targetObject(o.object);
+                place(o.location);   // where it was given, when it was
                 break;
             case OrderKind::Scrap: rec.kind = 9; break;
             case OrderKind::Seek:
