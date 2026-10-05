@@ -134,7 +134,7 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
             }
             return missing("the system view, the report or a selection cycle");
         case Fact::Command: {
-            if (c.text == "SetOrders") {
+            if (c.text == "SetOrders" || c.text == "OrderTagged") {
                 for (const std::string& t : a.tags)
                     if (t.starts_with("order:") || t == "panel:system" || t == "planets:send-colony-ship") return std::nullopt;
                 return missing("an order button or the system view");

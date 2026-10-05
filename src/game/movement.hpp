@@ -219,13 +219,19 @@ void runColonization(TurnContext& ctx);
 struct LiveMove {
     EmpireId empire;
     // Only these groups act: vehicles, fleets (a fleet member listed in
-    // `vehicles` names its fleet), planets. With all three empty, every group
-    // of the empire that has orders. A human player's vehicles listed
-    // together move as one group when their head orders are identical (spec
-    // 03 §8).
+    // `vehicles` names its fleet), planets. With all four empty, every group
+    // of the empire that has orders, each on its own.
     std::vector<VehicleId> vehicles;
     std::vector<FleetId> fleets;
     std::vector<ObjectId> planets;
+    // A tagged group given an order (spec 03 §8 "Tagged vehicles", confirmed:
+    // binary), in tag order with fleets expanded (taggedVehicles): it acts
+    // alone, as one group of every one of them, whatever their fleets and
+    // lists, through the first one's list; each order completed leaves every
+    // one of their lists and a failure clears them all. It steps only while
+    // every member has movement left, and it is asked about a sector with
+    // enemies once (EntryQuestion::tagged).
+    std::vector<VehicleId> tagged;
     // A human player's groups stop before an in-system step into a sector
     // with enemy objects they see, and ask (orders carried over included;
     // computer players decide themselves).

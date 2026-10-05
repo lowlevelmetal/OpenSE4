@@ -1367,8 +1367,10 @@ void ClassicMode::drawPbem(UiContext& ui) {
 void ClassicMode::drawEntryQuestion(UiContext& ui) {
     const game::GameState& s = ui.state();
     const game::EntryQuestion q = session_->questions().front();
+    // A tagged group is asked once, naming no ship (spec 03 §8 "Tagged vehicles").
     std::string who;
-    if (const game::Fleet* f = s.fleet(q.fleet)) who = f->name;
+    if (!q.tagged.empty()) who = "the tagged ships";
+    else if (const game::Fleet* f = s.fleet(q.fleet)) who = f->name;
     else if (const game::Vehicle* v = s.vehicle(q.vehicle)) who = v->name;
     std::string where = "an adjacent sector";
     if (q.where.system.valid() && q.where.system.index() < s.galaxy.systems.size())

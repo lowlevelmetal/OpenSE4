@@ -548,7 +548,11 @@ void io(Ar& ar, GameOptions& o) {
 
 template <class Ar> void io(Ar& ar, TurnMoves& m) { fields(ar, m.vehicle, m.steps, m.bonus); }
 template <class Ar> void io(Ar& ar, TurnLaunches& l) { fields(ar, l.vehicle, l.planet, l.kind, l.count); }
-template <class Ar> void io(Ar& ar, EntryQuestion& q) { fields(ar, q.vehicle, q.fleet, q.where); }
+template <class Ar>
+void io(Ar& ar, EntryQuestion& q) {
+    fields(ar, q.vehicle, q.fleet, q.where);
+    if (formatVersion(ar) >= 8) fields(ar, q.tagged);   // format 7 had no tagged groups' questions
+}
 template <class Ar> void io(Ar& ar, PlayerTurn& t) { fields(ar, t.empire, t.started, t.moves, t.launched, t.questions); }
 
 // ---- The game -----------------------------------------------------------------------------------------
@@ -624,13 +628,19 @@ template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) {
     fields(ar, c.clearOrdersOnEncounter, c.avoidTaggedMinefields, c.avoidRestrictedSystems);
 }
 
-template <class Ar> void io(Ar& ar, cmd::EnterSector& c) { fields(ar, c.vehicle, c.fleet, c.where, c.enter); }
+template <class Ar>
+void io(Ar& ar, cmd::EnterSector& c) {
+    fields(ar, c.vehicle, c.fleet, c.where, c.enter);
+    if (formatVersion(ar) >= 8) fields(ar, c.tagged);   // format 7 had no tagged groups' questions
+}
 template <class Ar> void io(Ar& ar, cmd::OpenVehicleReport& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::JettisonCargo& c) { fields(ar, c.vehicle, c.planet, c.population, c.units); }
 template <class Ar> void io(Ar& ar, cmd::CloakColony& c) { fields(ar, c.planet, c.cloak); }
 template <class Ar> void io(Ar& ar, cmd::Analyze& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::SelfDestruct& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::FireOn& c) { fields(ar, c.vehicle); }
+template <class Ar> void io(Ar& ar, cmd::OrderTagged& c) { fields(ar, c.vehicles, c.orders, c.repeat); }
+template <class Ar> void io(Ar& ar, cmd::SetFleetLeader& c) { fields(ar, c.fleet, c.vehicle); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

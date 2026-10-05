@@ -754,3 +754,209 @@ TEST_CASE("turn-based: Use Facility clears the colony's list and waits for the c
     const VehicleId ship = d.w.spawn(d.w.ship(kA, "Ship", 1), at(d.a, 6, 6));
     CHECK(hasRejection(applyLive(d.r(), d.s(), kA, ordersFor(ship, {use}))));
 }
+
+// ---- Tagged vehicles (spec 03 §8 "Tagged vehicles", §19 Q82) ----------------------------------------
+
+namespace {
+
+bool inBattle(const CombatRecord& c, VehicleId v) {
+    return std::any_of(c.pieces.begin(), c.pieces.end(), [&](const CombatPiece& p) { return p.vehicle == v; });
+}
+
+} // namespace
+
+TEST_CASE("turn-based: tagged vehicles of different speeds and a fleet move as one group, asked once, into one battle") {
+    Duel d;
+    // Two ships in no fleet, of speeds 4 and 3, and a fleet of two, all at (0, 6).
+    const VehicleId fast = d.w.spawn(d.w.ship(kA, "Fast", 4), at(d.a, 0, 6));
+    const VehicleId slow = d.w.spawn(d.w.ship(kA, "Slow", 3), at(d.a, 0, 6));
+    const VehicleId lead = d.w.spawn(d.w.ship(kA, "Lead", 3), at(d.a, 0, 6));
+    const VehicleId mate = d.w.spawn(d.w.ship(kA, "Mate", 3), at(d.a, 0, 6));
+    for (VehicleId v : {fast, slow, lead, mate}) fuel(d.w, v);
+    REQUIRE(apply(d.r(), d.s(), kA, cmd::CreateFleet{"Pack", {lead, mate}}).ok);
+    const VehicleId picket = d.w.spawn(d.w.ship(kB, "Picket", 1, {"Test Laser"}), at(d.a, 3, 6));
+    resumeTurnBased(d.r(), d.s());
+    REQUIRE(d.s().playerTurn.empire == kA);
+
+    // Tagged in this order: the fast ship first (it acts), the fleet by one member.
+    Order attack;
+    attack.kind = OrderKind::Attack;
+    attack.location = at(d.a, 3, 6);
+    attack.vehicle = picket;
+    const TurnResult res = applyLive(d.r(), d.s(), kA, cmd::OrderTagged{{fast, mate, slow}, {attack}});
+    CHECK_FALSE(hasRejection(res));
+    // Every tagged list holds the order, the fleet's members each a copy.
+    for (VehicleId v : {fast, slow, lead, mate}) CHECK(d.w.v(v).orders == std::vector<Order>{attack});
+    // They step together and stop before the picket's sector: one question for the group.
+    REQUIRE(res.questions.size() == 1);
+    const std::vector<VehicleId> group{fast, lead, mate, slow};
+    CHECK(res.questions[0] == EntryQuestion{{}, {}, at(d.a, 3, 6), group});
+    for (VehicleId v : {fast, slow, lead, mate}) CHECK(d.w.v(v).location == at(d.a, 2, 6));
+    CHECK(d.w.v(slow).movement == 1);
+    CHECK(d.s().combats.empty());
+
+    // Entering takes them all into one battle; the failed order clears every list.
+    const TurnResult in = applyLive(d.r(), d.s(), kA, cmd::EnterSector{{}, {}, at(d.a, 3, 6), true, group});
+    CHECK_FALSE(hasRejection(in));
+    CHECK(in.questions.empty());
+    CHECK(d.s().playerTurn.questions.empty());
+    REQUIRE(d.s().combats.size() == 1);
+    for (VehicleId v : group) {
+        CAPTURE(v.value);
+        CHECK(inBattle(d.s().combats[0], v));
+        if (const Vehicle* x = d.s().vehicle(v)) {
+            CHECK(x->location == at(d.a, 3, 6));
+            CHECK(x->orders.empty());
+        }
+    }
+}
+
+TEST_CASE("turn-based: a tagged group waits for its slowest member; what is left runs vehicle by vehicle next turn") {
+    Duel d;
+    const VehicleId fast = d.w.spawn(d.w.ship(kA, "Fast", 4), at(d.a, 0, 0));
+    const VehicleId slow = d.w.spawn(d.w.ship(kA, "Slow", 3), at(d.a, 0, 0));
+    fuel(d.w, fast);
+    fuel(d.w, slow);
+    resumeTurnBased(d.r(), d.s());
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, cmd::OrderTagged{{slow, fast}, {moveTo(d.a, 9, 0)}})));
+    // Together while both have movement: three steps.
+    CHECK(d.w.v(fast).location == at(d.a, 3, 0));
+    CHECK(d.w.v(slow).location == at(d.a, 3, 0));
+    CHECK(d.w.v(fast).movement == 1);
+    CHECK(d.w.v(slow).movement == 0);
+    // A second order while one of them has no movement left: the group waits,
+    // though the fast ship could still step.
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, cmd::OrderTagged{{fast, slow}, {moveTo(d.a, 3, 9)}})));
+    CHECK(d.w.v(fast).location == at(d.a, 3, 0));
+    CHECK(d.w.v(fast).orders.size() == 2);
+    CHECK(d.w.v(slow).orders.size() == 2);
+    // At the next turn's start each carries its list out alone, at its own speed.
+    endPlayerTurn(d.r(), d.s(), kA);
+    endPlayerTurn(d.r(), d.s(), kB);
+    REQUIRE(d.s().playerTurn.empire == kA);
+    CHECK(d.w.v(fast).location == at(d.a, 7, 0));
+    CHECK(d.w.v(slow).location == at(d.a, 6, 0));
+}
+
+TEST_CASE("turn-based: a tagged group's completed order leaves every tagged list, and a failure clears them all") {
+    Duel d;
+    const SystemId far = d.w.system("Far", 20, 20);   // no link: no route there
+    const VehicleId first = d.w.spawn(d.w.ship(kA, "First", 3), at(d.a, 0, 0));
+    const VehicleId second = d.w.spawn(d.w.ship(kA, "Second", 3), at(d.a, 0, 0));
+    fuel(d.w, first);
+    fuel(d.w, second);
+    resumeTurnBased(d.r(), d.s());
+    // The second already has an order of its own; the group acts through the
+    // first one tagged and carries out its list.
+    d.w.v(second).orders = {moveTo(d.a, 0, 9)};
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, cmd::OrderTagged{{first, second}, {moveTo(d.a, 1, 1)}})));
+    CHECK(d.w.v(first).location == at(d.a, 1, 1));
+    CHECK(d.w.v(second).location == at(d.a, 1, 1));
+    CHECK(d.w.v(first).orders.empty());
+    // The completed order took the entry at the head of each list.
+    CHECK(d.w.v(second).orders == std::vector<Order>{moveTo(d.a, 1, 1)});
+
+    // A failure (no route) clears every tagged list, earlier orders included.
+    d.w.v(second).orders = {moveTo(d.a, 0, 9)};
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, cmd::OrderTagged{{first, second}, {moveTo(far, 5, 5)}})));
+    CHECK(d.w.v(first).orders.empty());
+    CHECK(d.w.v(second).orders.empty());
+    CHECK(d.w.v(first).location == at(d.a, 1, 1));
+    CHECK(d.w.v(second).location == at(d.a, 1, 1));
+}
+
+TEST_CASE("turn-based: declining a tagged group's question clears every tagged list; tagged orders are refused across sectors") {
+    Duel d;
+    const VehicleId one = d.w.spawn(d.w.ship(kA, "One", 3), at(d.a, 0, 6));
+    const VehicleId two = d.w.spawn(d.w.ship(kA, "Two", 3), at(d.a, 0, 6));
+    const VehicleId away = d.w.spawn(d.w.ship(kA, "Away", 3), at(d.a, 0, 0));
+    for (VehicleId v : {one, two, away}) fuel(d.w, v);
+    d.w.spawn(d.w.ship(kB, "Picket", 1, {"Test Laser"}), at(d.a, 1, 6));
+    resumeTurnBased(d.r(), d.s());
+    CHECK(hasRejection(applyLive(d.r(), d.s(), kA, cmd::OrderTagged{{one, away}, {moveTo(d.a, 1, 6)}})));
+    CHECK(d.w.v(one).orders.empty());
+    CHECK(d.w.v(away).orders.empty());
+    CHECK(hasRejection(applyLive(d.r(), d.s(), kB, cmd::OrderTagged{{one}, {moveTo(d.a, 1, 6)}})));
+
+    const TurnResult res = applyLive(d.r(), d.s(), kA, cmd::OrderTagged{{one, two}, {moveTo(d.a, 1, 6), moveTo(d.a, 5, 6)}});
+    REQUIRE(res.questions.size() == 1);
+    CHECK(res.questions[0].tagged == std::vector<VehicleId>{one, two});
+    // Saved with the game: a loaded game asks it again.
+    auto copy = deserializeState(serializeState(d.s()));
+    REQUIRE(copy.has_value());
+    CHECK(copy->playerTurn.questions == res.questions);
+    applyLive(d.r(), d.s(), kA, cmd::EnterSector{{}, {}, at(d.a, 1, 6), false, {one, two}});
+    CHECK(d.s().playerTurn.questions.empty());
+    CHECK(d.w.v(one).orders.empty());
+    CHECK(d.w.v(two).orders.empty());
+    CHECK(d.w.v(one).location == at(d.a, 0, 6));
+    CHECK(d.s().combats.empty());
+    CHECK(d.w.logged(kA, " and 1 other: orders cancelled"));
+}
+
+TEST_CASE("simultaneous: an order to tagged vehicles is only appended to each list") {
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId one = w.spawn(w.ship(kA, "One", 3), at(a, 0, 0));
+    const VehicleId two = w.spawn(w.ship(kA, "Two", 2), at(a, 0, 0));
+    w.v(two).orders = {moveTo(a, 0, 9)};
+    const TurnResult res = applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {moveTo(a, 5, 5)}});
+    CHECK_FALSE(hasRejection(res));
+    CHECK(w.v(one).orders == std::vector<Order>{moveTo(a, 5, 5)});
+    CHECK(w.v(two).orders == std::vector<Order>{moveTo(a, 0, 9), moveTo(a, 5, 5)});
+    CHECK(w.v(one).location == at(a, 0, 0));
+    // Set Patrol's: Repeat on in each list.
+    CHECK_FALSE(hasRejection(applyLive(w.rules(), w.s, kA, cmd::OrderTagged{{one, two}, {moveTo(a, 1, 1), moveTo(a, 2, 2)}, true})));
+    CHECK(w.v(one).repeatOrders);
+    CHECK(w.v(two).repeatOrders);
+    CHECK(w.v(one).orders.size() == 3);
+}
+
+TEST_CASE("turn-based: tagged orders and a fleet's new leader replay from an order file as they were given") {
+    auto play = [](bool fromFile) {
+        Duel d;
+        const VehicleId lead = d.w.spawn(d.w.ship(kA, "Lead", 3), at(d.a, 0, 0));
+        const VehicleId mate = d.w.spawn(d.w.ship(kA, "Mate", 3), at(d.a, 0, 0));
+        const VehicleId solo = d.w.spawn(d.w.ship(kA, "Solo", 4), at(d.a, 0, 0));
+        for (VehicleId v : {lead, mate, solo}) fuel(d.w, v);
+        REQUIRE(apply(d.r(), d.s(), kA, cmd::CreateFleet{"Pack", {lead, mate}}).ok);
+        const FleetId fleet = d.s().fleets.back().id;
+        resumeTurnBased(d.r(), d.s());
+        EmpireOrders orders{kA, d.s().turn, {cmd::SetFleetLeader{fleet, mate}, cmd::OrderTagged{{solo, lead}, {moveTo(d.a, 5, 0)}}}};
+        if (fromFile) {
+            auto loaded = deserializeOrders(serializeOrders(orders));
+            REQUIRE(loaded.has_value());
+            orders = std::move(*loaded);
+        }
+        for (const Command& c : orders.commands) CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, c)));
+        CHECK(d.s().fleet(fleet)->leader == mate);
+        for (VehicleId v : {lead, mate, solo}) CHECK(d.w.v(v).location == at(d.a, 3, 0));
+        return stateChecksum(d.s());
+    };
+    CHECK(play(false) == play(true));
+}
+
+TEST_CASE("fleets: a fleet's leader is set by its owner, to one of its members at its location") {
+    Duel d;
+    const VehicleId lead = d.w.spawn(d.w.ship(kA, "Lead", 3), at(d.a, 0, 0));
+    const VehicleId mate = d.w.spawn(d.w.ship(kA, "Mate", 3), at(d.a, 0, 0));
+    const VehicleId loner = d.w.spawn(d.w.ship(kA, "Loner", 3), at(d.a, 0, 0));
+    const VehicleId theirs = d.w.spawn(d.w.ship(kB, "Theirs", 3), at(d.a, 0, 0));
+    REQUIRE(apply(d.r(), d.s(), kA, cmd::CreateFleet{"Pack", {lead, mate}}).ok);
+    const FleetId fleet = d.s().fleets.back().id;
+    CHECK(fleetLeader(d.s(), *d.s().fleet(fleet))->id == lead);
+    CHECK(apply(d.r(), d.s(), kA, cmd::SetFleetLeader{fleet, mate}).ok);
+    CHECK(fleetLeader(d.s(), *d.s().fleet(fleet))->id == mate);
+    // Saved with the game.
+    auto copy = deserializeState(serializeState(d.s()));
+    REQUIRE(copy.has_value());
+    CHECK(copy->fleet(fleet)->leader == mate);
+    // Refused: a ship of no fleet, another empire's ship, another empire's fleet.
+    CHECK_FALSE(apply(d.r(), d.s(), kA, cmd::SetFleetLeader{fleet, loner}).ok);
+    CHECK_FALSE(apply(d.r(), d.s(), kA, cmd::SetFleetLeader{fleet, theirs}).ok);
+    CHECK_FALSE(apply(d.r(), d.s(), kB, cmd::SetFleetLeader{fleet, lead}).ok);
+    CHECK(d.s().fleet(fleet)->leader == mate);
+    // The chosen leader leaving: the first member leads again (spec 03 §9).
+    REQUIRE(apply(d.r(), d.s(), kA, cmd::LeaveFleet{mate}).ok);
+    CHECK(fleetLeader(d.s(), *d.s().fleet(fleet))->id == lead);
+}

@@ -91,8 +91,8 @@ title = "Move the fleet"
 text = """
 **Press the Move To order** (or `M`). The fleet then waits for you to pick where it goes.
 
-The report now shows the **fleet** above the ship: its speed, supplies, formation, strategy and
-members. Orders you give now go to the whole fleet.
+The report now shows the **fleet**: its speed, supplies, formation, strategy and members.
+Orders you give now go to the whole fleet.
 """
 highlight = ["order:move-to"]
 show = ["panel:report"]
@@ -151,8 +151,8 @@ manual = "ships-and-fleets#waypoints"
 [[step]]
 title = "Your fleet again"
 text = """
-**Select your fleet again**: an attack ship, with the ship arrows. The report shows the fleet
-above the ship.
+**Select your fleet again**: an attack ship, with the ship arrows. The report shows the
+fleet.
 """
 highlight = ["cycle:ship"]
 show = ["panel:report"]

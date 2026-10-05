@@ -1,11 +1,15 @@
 #include "client/classic/sector_view.hpp"
 
+#include "game/design.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <string>
 #include <string_view>
+#include <tuple>
 
 namespace opense4::client::classic {
 
@@ -105,6 +109,79 @@ SectorView sectorView(const game::Rules& r, const game::GameState& s, game::Empi
         out.count = std::max(1, shown->count);
         out.unitCount = true;
     }
+    return out;
+}
+
+namespace {
+
+std::string lowerName(std::string_view name) {
+    std::string out(name);
+    for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return out;
+}
+
+// The list's order of vehicles and fleet rows (spec 06 §2.5, confirmed: binary).
+struct RowKey {
+    bool inFleet = false;
+    uint32_t fleet = 0;       // the fleet number; highest first
+    size_t owner = 0;         // the owner's player number
+    bool unit = false;        // unit groups after ships
+    uint32_t hull = 0;        // VehicleSize.txt order
+    std::string name;         // ignoring case
+    bool operator<(const RowKey& o) const {
+        if (inFleet != o.inFleet) return inFleet;
+        if (fleet != o.fleet) return fleet > o.fleet;
+        return std::tie(owner, unit, hull, name) < std::tie(o.owner, o.unit, o.hull, o.name);
+    }
+};
+
+RowKey keyOf(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, const std::string& name) {
+    RowKey k;
+    k.inFleet = v.fleet.valid();
+    k.fleet = v.fleet.valid() ? v.fleet.value : 0;
+    k.owner = v.owner.valid() ? v.owner.index() : s.empires.size();
+    k.unit = game::isUnitType(game::vehicleType(r, s, v));
+    k.hull = v.design.valid() && v.design.index() < s.designs.size() ? s.design(v.design).hull : 0;
+    k.name = lowerName(name);
+    return k;
+}
+
+} // namespace
+
+std::vector<SectorListRow> sectorListRows(const game::Rules& r, const game::GameState& s, game::EmpireId viewer,
+                                          std::span<const game::ObjectId> objects, std::span<const game::Vehicle* const> vehicles) {
+    std::vector<SectorListRow> out;
+    std::vector<std::pair<std::string, game::ObjectId>> stellar;
+    for (game::ObjectId id : objects) stellar.emplace_back(lowerName(s.galaxy.object(id).name), id);
+    std::stable_sort(stellar.begin(), stellar.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [name, id] : stellar) out.push_back(SectorListRow{id, {}, {}});
+    std::vector<std::pair<RowKey, SectorListRow>> rows;
+    for (const game::Vehicle* v : vehicles) {
+        const game::Fleet* f = v->owner == viewer && v->fleet.valid() ? s.fleet(v->fleet) : nullptr;
+        if (!f) {
+            rows.emplace_back(keyOf(r, s, *v, v->name), SectorListRow{{}, v->id, {}});
+            continue;
+        }
+        // The viewer's fleet: one row, standing for its first member here in object order.
+        auto same = std::find_if(rows.begin(), rows.end(), [&](const auto& row) { return row.second.fleet == f->id; });
+        if (same == rows.end()) {
+            rows.emplace_back(keyOf(r, s, *v, f->name), SectorListRow{{}, v->id, f->id});
+        } else if (const game::Vehicle* first = s.vehicle(same->second.vehicle); !first || game::objectOrderKey(*v) < game::objectOrderKey(*first)) {
+            same->second.vehicle = v->id;
+        }
+    }
+    std::stable_sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [key, row] : rows) out.push_back(row);
+    return out;
+}
+
+std::vector<game::VehicleId> fleetReportMembers(const game::Rules& r, const game::GameState& s, const game::Fleet& f) {
+    std::vector<std::pair<RowKey, game::VehicleId>> rows;
+    for (game::VehicleId id : game::fleetMembersAt(s, f))
+        if (const game::Vehicle* v = s.vehicle(id)) rows.emplace_back(keyOf(r, s, *v, v->name), id);
+    std::stable_sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<game::VehicleId> out;
+    for (const auto& [key, id] : rows) out.push_back(id);
     return out;
 }
 

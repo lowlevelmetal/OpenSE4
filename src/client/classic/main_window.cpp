@@ -307,7 +307,10 @@ void MainWindow::selectSector(UiContext& ui, game::Sector sec, bool cycle) {
     ++selections_;
     const auto objects = objectsAt(ui, sec);
     const auto vehicles = vehiclesAt(ui, {shown_, sec});
-    const size_t total = objects.size() + vehicles.size();
+    // Each of the player's own fleets counts as one object, its row of the
+    // list (spec 06 §2.5 "Fleets in the list").
+    const std::vector<SectorListRow> rows = sectorListRows(ui.rules(), ui.state(), ui.session.player(), objects, vehicles);
+    const size_t total = rows.size();
     clearSelection();
     tagged_.clear();  // every click on a sector clears the tags, on the same sector too (§2.5)
     (void)cycle;
@@ -317,8 +320,8 @@ void MainWindow::selectSector(UiContext& ui, game::Sector sec, bool cycle) {
     }
     sector_ = sec;
     if (total == 1) {
-        if (!objects.empty()) object_ = objects.front();
-        else selectVehicle(ui, vehicles.front()->id);
+        if (rows.front().object.valid()) object_ = rows.front().object;
+        else selectVehicle(ui, rows.front().vehicle);
         return;
     }
     listMode_ = true;
@@ -445,7 +448,12 @@ void MainWindow::toggleTag(UiContext& ui, game::VehicleId id) {
     const game::Vehicle* v = s.vehicle(id);
     if (!v || v->owner != ui.session.player()) return;
     std::vector<game::VehicleId> group{id};
-    if (const game::Fleet* f = s.fleet(v->fleet)) group = f->members;  // a fleet is tagged whole
+    // A fleet is tagged whole: every member there, its row of the list (§2.5).
+    if (const game::Fleet* f = s.fleet(v->fleet)) {
+        group.clear();
+        for (game::VehicleId m : f->members)
+            if (const game::Vehicle* w = s.vehicle(m); w && w->location == v->location) group.push_back(m);
+    }
     const bool on = !tagged(id);
     for (game::VehicleId m : group) {
         std::erase(tagged_, m);
@@ -548,6 +556,13 @@ std::vector<MainWindow::OrderOwner> MainWindow::orderOwners(UiContext& ui) const
 
 void MainWindow::giveOrder(UiContext& ui, game::Order o) {
     const game::GameState& s = ui.state();
+    if (!tagged_.empty()) {
+        // One command for the whole tagged group: the order goes into every
+        // tagged vehicle's list, and in a turn-based game the group carries it
+        // out at once, together (spec 03 §8 "Tagged vehicles").
+        giveTagged(ui, {o}, false);
+        return;
+    }
     for (const OrderOwner& w : orderOwners(ui)) {
         game::cmd::SetOrders c;
         c.vehicle = w.vehicle;
@@ -582,6 +597,12 @@ void MainWindow::replaceOrders(UiContext& ui, std::vector<game::Order> orders, b
         const game::CommandResult r = ui.session.issue(c);
         if (!r.ok) note(ui, r.error);
     }
+    orderDone();
+}
+
+void MainWindow::giveTagged(UiContext& ui, std::vector<game::Order> orders, bool repeat) {
+    const game::CommandResult r = ui.session.issue(game::cmd::OrderTagged{tagged_, std::move(orders), repeat});
+    if (!r.ok) note(ui, r.error);
     orderDone();
 }
 
@@ -850,8 +871,10 @@ void MainWindow::finishPatrol(UiContext& ui) {
     for (const auto& l : patrol_) orders.push_back(game::Order{game::OrderKind::MoveTo, l});
     pick_ = Pick::None;
     if (orders.empty()) return;
-    // A patrol of one point is just a move (spec 03 §8 Set Patrol).
+    // A patrol of one point is just a move (spec 03 §8 Set Patrol). A tagged
+    // group's patrol is appended to every tagged list, Repeat on.
     if (orders.size() == 1) giveOrder(ui, orders.front());
+    else if (!tagged_.empty()) giveTagged(ui, std::move(orders), true);
     else replaceOrders(ui, std::move(orders), true);
 }
 
@@ -1132,6 +1155,8 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     statusButtons(ui);
     // A facility's or component's report, from a right-click on the report's page (spec 06 §1.4).
     itemReport_.draw(ui);
+    // A fleet member's Ship Report, from a right-click on its row in the Fleet Report (spec 06 §2.5).
+    shipReport_.draw(ui);
     // The panels lessons point at (docs/LEARNING.md "UI tags").
     ui.tagFrame("panel:system", geo.systemPanel);
     ui.tagFrame("panel:report", geo.reportPanel);
@@ -1421,22 +1446,31 @@ void MainWindow::reportPanel(UiContext& ui) {
     const float tabsY = geo.reportPanel.size().y - 31;
     bool tabsFor = false, planetTabs = false;
     const bool single = object_ || vehicle_;
+    // The Fleet Report has no tabs: its body takes the whole panel.
+    const bool fleetOnly = vehicle_ && tagged_.empty() && fleet_ && s.fleet(*fleet_) && s.vehicle(*vehicle_);
+    const float bodyH = fleetOnly ? geo.reportPanel.size().y : tabsY - 1;
     // The report body scrolls above the tabs; the portrait, flag and name reach over the frame rail above it.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({4, 2}));
-    ImGui::BeginChild("##body", ui.size({geo.reportPanel.size().x, tabsY - 1}), ImGuiChildFlags_AlwaysUseWindowPadding,
-                      ImGuiWindowFlags_NoBackground);
+    ImGui::BeginChild("##body", ui.size({geo.reportPanel.size().x, bodyH}), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoBackground);
     ImGui::PopStyleVar();
-    ImGui::PushClipRect(ui.at(geo.reportPanel.min - Vec2{8, 12}), ui.at(geo.reportPanel.min + Vec2{geo.reportPanel.size().x, tabsY}), false);
+    ImGui::PushClipRect(ui.at(geo.reportPanel.min - Vec2{8, 12}), ui.at(geo.reportPanel.min + Vec2{geo.reportPanel.size().x, fleetOnly ? bodyH : tabsY}),
+                        false);
     if (vehicle_ && tagged_.empty()) {
         if (const game::Vehicle* v = s.vehicle(*vehicle_)) {
-            if (fleet_) {
-                if (const game::Fleet* f = s.fleet(*fleet_)) {
-                    fleetReport(ui, *f);
-                    ImGui::Separator();
+            if (const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr) {
+                // One of the player's fleets: the Fleet Report fills the panel
+                // alone, with no tabs; the lit orders are the fleet's. A member's
+                // own report opens as a popup from its row (spec 06 §2.5).
+                const FleetReportClick click = fleetReport(ui, *f);
+                if (click.leader && (!f->leader.valid() || f->leader != *click.leader)) {
+                    const game::CommandResult res = ui.session.issue(game::cmd::SetFleetLeader{f->id, *click.leader});
+                    if (!res.ok) note(ui, res.error);
                 }
+                if (click.report) shipReport_.vehicle(*click.report);
+            } else {
+                if (const auto item = vehicleReport(ui, *v, tab_)) itemReport_.open(*item);
+                tabsFor = true;
             }
-            if (const auto item = vehicleReport(ui, *v, tab_)) itemReport_.open(*item);
-            tabsFor = true;
         }
     } else if (object_ && tagged_.empty()) {
         const game::SpaceObject& o = s.galaxy.object(*object_);
@@ -1477,14 +1511,26 @@ void MainWindow::reportPanel(UiContext& ui) {
             iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
             ImGui::PopID();
         }
-        for (const game::Vehicle* v : vehiclesAt(ui, at)) {
+        // Each of the player's own fleets is one row, with the fleet's
+        // picture, name and status icons and no class line; it opens the
+        // Fleet Report. Other empires' fleet members are listed one by one
+        // (spec 06 §2.5 "Fleets in the list").
+        const std::vector<const game::Vehicle*> here = vehiclesAt(ui, at);
+        for (const SectorListRow& row : sectorListRows(r, s, me, {}, here)) {
+            const game::Vehicle* v = s.vehicle(row.vehicle);
+            if (!v) continue;
+            const game::Fleet* fleet = s.fleet(row.fleet);
             ImGui::PushID(int(v->id.value) + 1000000);
             const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-            image(ui, vehicleMini(ui, *v), {36, 36});
+            const std::string& style = s.empire(me).race.style;
+            image(ui, fleet ? ui.art.groupMini(style, "Fleet") : vehicleMini(ui, *v), {36, 36});
             ImGui::SameLine();
-            const std::string label = std::format("{}\n{}", v->name, vehicleSummary(ui, *v));
-            if (ImGui::Selectable(label.c_str(), tagged(v->id), 0, ImVec2(0, rowH))) {
-                if (ImGui::GetIO().KeyShift) {
+            const std::string label = fleet ? fleet->name : std::format("{}\n{}", v->name, vehicleSummary(ui, *v));
+            const bool left = ImGui::Selectable(label.c_str(), tagged(v->id), 0, ImVec2(0, rowH));
+            // A right-click opens the row's report too; only Shift with the left button tags.
+            const bool right = ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !inputBlocked_;
+            if (left || right) {
+                if (left && ImGui::GetIO().KeyShift) {
                     toggleTag(ui, v->id);
                 } else {
                     // The row's report; the system shown stays as it is.
@@ -1497,8 +1543,10 @@ void MainWindow::reportPanel(UiContext& ui) {
                     reportFromList_ = true;
                 }
             }
-            script::reportItem(v->owner == me ? "report:ship" : "report:other");   // input scripts: rows by kind
-            if (v->owner == me) iconStrip(ui, dl, vehicleStatusCells(r, s, *v), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
+            // Input scripts and lessons: rows by kind.
+            script::reportItem(fleet ? "report:fleet" : v->owner == me ? "report:ship" : "report:other");
+            if (fleet) iconStrip(ui, dl, fleetStatusCells(s, *fleet), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
+            else if (v->owner == me) iconStrip(ui, dl, vehicleStatusCells(r, s, *v), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
             if (tagged(v->id)) {
                 // The tag: a green arrow on the row.
                 const float y = rowMin.y + rowH * 0.5f;
@@ -1506,10 +1554,15 @@ void MainWindow::reportPanel(UiContext& ui) {
             }
             ImGui::PopID();
         }
-        if (!tagged_.empty()) ImGui::TextColored(kDimText, "%zu tagged: orders go to all of them.", tagged_.size());
+        if (!tagged_.empty()) {
+            ImGui::TextColored(kDimText, "%zu tagged: orders go to all of them.", tagged_.size());
+            script::reportItem(std::format("tagged:{}", tagged_.size()));   // input scripts: the tag count
+        }
     } else if (shown_.valid() && !emptyReport_) {
         systemReport(ui, shown_);
     }
+    ImGui::PopClipRect();
+    ImGui::EndChild();
     if (reportFromList_ && single && tagged_.empty()) {
         // Back to the list of everything in the sector: the up-arrow button of
         // DetailUp.bmp, one 33x21 cell flush with the report's top right
@@ -1517,20 +1570,21 @@ void MainWindow::reportPanel(UiContext& ui) {
         // the pointer, held and disabled. Only a report opened from the sector's
         // list has it. A click selects the shown object's sector again: several
         // visible objects bring the list back, one its report (spec 06 §7 Q98,
-        // confirmed: binary). Drawn in the report's body, which takes the
-        // pointer there; disabled while the movement log replays, as the
-        // selectors are (inferred).
+        // confirmed: binary). Drawn in a child window of its own over the
+        // report's body, so the body's scroll bar never takes its clicks;
+        // disabled while the movement log replays, as the selectors are
+        // (inferred).
         const Vec2 at = geo.reportPanel.min + Vec2{257, 0};
-        const ImVec2 keep = ImGui::GetCursorScreenPos();
         const bool enabled = !replay_.active();
         ImGui::SetCursorScreenPos(ui.at(at));
+        ImGui::BeginChild("##toListArrow", ui.size({33, 21}), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::BeginDisabled(!enabled);
         const bool clicked = ImGui::InvisibleButton("##toList", ui.size({33, 21}));
         ImGui::EndDisabled();
         const int state = !enabled ? 3 : ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
         drawAt(ui, ImGui::GetWindowDrawList(), ui.art.region("Pictures/Game/Buttons/DetailUp.bmp", 0, state * 21, 33, 21, false), at, {33, 21});
-        ImGui::SetCursorScreenPos(keep);
-        ImGui::Dummy(ImVec2(0, 0));
+        ImGui::EndChild();
         if (clicked && enabled) {
             std::optional<game::Location> where;
             if (const game::Vehicle* v = vehicle_ ? s.vehicle(*vehicle_) : nullptr) where = v->location;
@@ -1541,8 +1595,6 @@ void MainWindow::reportPanel(UiContext& ui) {
             }
         }
     }
-    ImGui::PopClipRect();
-    ImGui::EndChild();
     if (tabsFor) {
         ImGui::SetCursorPos(ImVec2(ui.px(-4), ui.px(tabsY)));
         // The strip reaches 4 px left of the panel, over the rail: not cut off there.

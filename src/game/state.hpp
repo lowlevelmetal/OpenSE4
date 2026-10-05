@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -1007,11 +1008,15 @@ struct TurnLaunches {
 
 // A human player's group stopped before a sector with enemy forces: the
 // player is asked whether to enter it (spec 03 §6.2) and answers with
-// cmd::EnterSector. `vehicle` is invalid when a fleet moves together.
+// cmd::EnterSector. `vehicle` is invalid when a fleet moves together. A
+// tagged group (spec 03 §8 "Tagged vehicles") is asked once for all its
+// vehicles: `tagged` lists them in tag order, the first acting, and
+// `vehicle` and `fleet` are invalid.
 struct EntryQuestion {
     VehicleId vehicle;
     FleetId fleet;
     Location where;
+    std::vector<VehicleId> tagged;
     bool operator==(const EntryQuestion&) const = default;
 };
 
@@ -1157,6 +1162,12 @@ std::vector<VehicleId> fleetMembersAt(const GameState& s, const Fleet& f);
 std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f);
 // The vehicle is one of its fleet's group (fleetGroup).
 bool inFleetGroup(const GameState& s, const Vehicle& v);
+// The vehicles an order to a tagged selection goes to (spec 03 §8 "Tagged
+// vehicles", spec 06 §2.5): `tagged` in tag order, each of the empire's
+// living vehicles once, a fleet member standing for every member of its
+// fleet's group (fleetGroup), in member order, at the place of the first one
+// of them named. Others' vehicles and missing ones are left out.
+std::vector<VehicleId> taggedVehicles(const GameState& s, EmpireId empire, std::span<const VehicleId> tagged);
 // The fleet's orders as one list: the list of the first member of its group,
 // in object order, that has orders; that member acts for the fleet. Each
 // member holds its own copy, so a member that joined after orders were given

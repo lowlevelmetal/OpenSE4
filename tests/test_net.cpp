@@ -1385,6 +1385,66 @@ TEST_CASE("net: turn-based: a battle in a player's turn is asked about, fought a
     CHECK(game::stateChecksum(local) == game::stateChecksum(*host.state()));
 }
 
+TEST_CASE("net: turn-based: an order to tagged ships and a fleet's new leader go through the host like any command") {
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(13, 2, 12, true);
+    s.options.simultaneous = false;
+    const game::EmpireId aliceE{0u}, bobE{1u};
+    s.empire(aliceE).passwordHash = net::passwordVerifier("a-secret", 31);
+    s.empire(bobE).passwordHash = net::passwordVerifier("b-secret", 31);
+    const game::Location home = game::locationOf(s.galaxy, homeworld(s, aliceE).planet);
+    const game::DesignId fast = addTestDesign(s, r, aliceE, "Fast", "Test Frigate",
+                                              {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Engine"});
+    const game::DesignId slow = addTestDesign(s, r, aliceE, "Slow", "Test Frigate",
+                                              {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine"});
+    const game::VehicleId runner = addTestVehicle(s, r, fast, home).id;
+    const game::VehicleId lead = addTestVehicle(s, r, slow, home).id;
+    const game::VehicleId mate = addTestVehicle(s, r, slow, home).id;
+    for (const game::VehicleId id : {runner, lead, mate}) s.vehicle(id)->supply = 100000;
+    REQUIRE(game::apply(r, s, aliceE, game::cmd::CreateFleet{"Pack", {lead, mate}}).ok);
+    const game::FleetId pack = s.fleets.back().id;
+    game::SaveInfo info;
+    info.gameName = "Tags";
+    info.gameId = 31;
+    info.dataSet = game::dataSetIdentity(r);
+    info.players = {"alice", "bob"};
+    net::HostSession host(r, hostConfig(2, true));
+    REQUIRE(host.resume(s, info).has_value());
+    REQUIRE(host.activeEmpire() == aliceE);
+    const game::GameState start = *host.state();
+    net::ClientSession alice(clientConfig(host, "alice", "a-secret"));
+    net::ClientSession bob(clientConfig(host, "bob", "b-secret"));
+    Loop loop(host, {&alice, &bob});
+    REQUIRE(alice.connect().has_value());
+    REQUIRE(bob.connect().has_value());
+    REQUIRE(loop.until([&] { return alice.myTurn() && bob.state(); }));
+
+    std::vector<Sent> log;
+    playOne(loop, alice, game::cmd::SetFleetLeader{pack, mate}, log);
+    CHECK(host.state()->fleet(pack)->leader == mate);
+    // The runner and the fleet, tagged together, move as one group at the fleet's speed.
+    game::Location there = home;
+    there.sector.x = static_cast<int8_t>(home.sector.x < game::kSystemSize / 2 ? game::kSystemSize - 1 : 0);
+    game::Order move;
+    move.kind = game::OrderKind::MoveTo;
+    move.location = there;
+    playOne(loop, alice, game::cmd::OrderTagged{{runner, mate}, {move}}, log);
+    const game::GameState& h = *host.state();
+    CHECK(h.vehicle(runner)->location != home);
+    for (const game::VehicleId id : {lead, mate}) CHECK(h.vehicle(id)->location == h.vehicle(runner)->location);
+    CHECK(viewMatches(alice, host));
+
+    // The same inputs on one computer give the same game.
+    endTurn(loop, alice, log);
+    REQUIRE(loop.until([&] { return bob.myTurn(); }));
+    game::GameState local = start;
+    for (const Sent& x : log) {
+        if (x.command) game::applyLive(r, local, x.empire, *x.command);
+        else game::endPlayerTurn(r, local, x.empire);
+    }
+    CHECK(game::stateChecksum(local) == game::stateChecksum(*host.state()));
+}
+
 // ---- Turn-based games by e-mail ---------------------------------------------------------------------------
 
 TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr of commands") {

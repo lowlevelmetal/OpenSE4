@@ -405,6 +405,9 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::SelfDestruct{VehicleId{40u}});
     c.push_back(cmd::FireOn{VehicleId{41u}});
     c.push_back(cmd::SetEmail{"someone@example.org"});
+    c.push_back(cmd::EnterSector{{}, {}, {SystemId{32u}, Sector{5, 6}}, true, {VehicleId{42u}, VehicleId{43u}}});
+    c.push_back(cmd::OrderTagged{{VehicleId{44u}, VehicleId{45u}}, {Order{OrderKind::MoveTo, {SystemId{1u}, Sector{2, 3}}}}, true});
+    c.push_back(cmd::SetFleetLeader{FleetId{46u}, VehicleId{47u}});
 
     std::set<size_t> kinds;
     for (const Command& cmd : c) kinds.insert(cmd.index());
@@ -424,7 +427,15 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(sent.request.front().planet == ObjectId{12u});
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
-    CHECK(std::get<cmd::SetEmail>(loaded->commands.back()).email == "someone@example.org");
+    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 4]).email == "someone@example.org");
+    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 3]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
+    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 2]);
+    CHECK(tagged.vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
+    CHECK(tagged.orders.size() == 1);
+    CHECK(tagged.repeat);
+    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands.back());
+    CHECK(leader.fleet == FleetId{46u});
+    CHECK(leader.vehicle == VehicleId{47u});
 }
 
 // ---- Hostile input ------------------------------------------------------------------------------------

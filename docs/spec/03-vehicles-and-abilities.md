@@ -1072,12 +1072,20 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
     battle clears its list; the others follow one at a time. Only a fleet keeps vehicles
     together from one turn to the next.
 
-  The engine differs (§19 Q82): the client gives the order with one command per tagged
-  vehicle or fleet, and a turn-based game carries out each command before the next one is
-  applied, so the first tagged ship moves and fights alone before the others have the order,
-  and each of them then does the same. Its turn-based group also takes only vehicles outside
-  fleets whose first order equals the acting vehicle's, and an acting fleet member takes only
-  its fleet.
+  Since 2026-10-05 the engine follows (§19 Q82). The client gives an order to tagged vehicles
+  as one command (`cmd::OrderTagged`) that names them in tag order; a fleet member stands for
+  every member at its fleet's location (`taggedVehicles`), and the vehicles named must share
+  a sector. Each tagged list gets the orders appended as an order given to that vehicle (or
+  fleet) alone would: composite orders are expanded from where that list leaves it, so lists
+  that held different orders can get different expansions (inferred, §19 Q83). In a
+  turn-based game the group then runs at once (`LiveMove::tagged`): the first tagged vehicle
+  still in the game acts, every tagged vehicle in its sector is a member and a holder, a
+  member whose maximum movement is 0 makes the group wait as it does a fleet (inferred), and
+  the Attack Sector question names the whole group once (`EntryQuestion::tagged`, answered
+  by `cmd::EnterSector::tagged`; declining clears every tagged list, logged under the first
+  vehicle's name "and N others"). The question stays open while the first tagged vehicle
+  still in the game has orders (inferred). Set Patrol given to tagged vehicles appends its
+  Move To orders to each list and switches Repeat on in each (inferred).
 
 Several orders are expanded into simpler ones at the moment they are given; they never exist as
 stored orders (confirmed: binary). "Composite" orders below become Move To (when the target
@@ -1344,7 +1352,9 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   does not list it (§15, §19 Q74).
 - **Leader:** the player-chosen leader when one is set, otherwise the first member in the sector's
   object order. If the chosen leader leaves or is destroyed, the choice is cleared and the first
-  member leads again. The leader only matters for the formation.
+  member leads again. The leader only matters for the formation. The player chooses it with
+  a left-click on a member in the Fleet Report (spec 06 §2.5); our client gives that as
+  `cmd::SetFleetLeader`, which takes only a member at the fleet's location.
 - **Movement:** the fleet's movement is the minimum of its members' MP left (and of their maximum
   MP for display), over the members at its location. During turn processing every member's MP
   there is set to that minimum, so the fleet moves at its slowest member's speed; a member with
@@ -2606,16 +2616,30 @@ fleet's row in the sector list is spec 06 §7 Q110.
     its own: those that enter the target's sector on the same day fight in one battle, later
     arrivals in another.
 
-    The engine differs in turn-based games:
-    - `MainWindow::giveOrder` (`client/classic/main_window.cpp`) issues one `cmd::SetOrders`
-      per tagged vehicle or fleet, and `applyLive` carries out each command before the next
-      is applied (`applyEach` and `settle` in `game/turn_based.cpp`, a network host's
-      `HostSession::runLive` likewise), so the first tagged ship runs its new orders alone,
-      meets the enemy alone and fights alone, before the second ship has its order.
-    - `Mover::build` (`game/movement.cpp`) joins the vehicles listed together only when they
-      are in no fleet, stand where the actor stands and hold the actor's first order, and an
-      acting fleet member takes its fleet alone; the original takes every tagged vehicle.
-    - The entry question and its answer (`EntryQuestion`, `cmd::EnterSector`) name one vehicle
-      or fleet, so an answered question moves that one on alone.
+    Since 2026-10-05 the engine follows (§8 "Tagged vehicles"):
+    - `MainWindow::giveOrder` (`client/classic/main_window.cpp`) gives an order to tagged
+      vehicles as one `cmd::OrderTagged`, which a network host and an order file carry like
+      any command; `applyLive` appends it to every tagged list and then runs the group once
+      (`noteEffects` in `game/turn_based.cpp`).
+    - `Mover::build` (`game/movement.cpp`) makes the tagged group of `LiveMove::tagged`:
+      every tagged vehicle there, whatever its fleet and list, acting through the first one
+      tagged; each order completed leaves the head of every tagged list, and a failure clears
+      them all. The old turn-based grouping of vehicles listed together, which compared first
+      orders and left fleets out, is gone.
+    - `EntryQuestion::tagged` and `cmd::EnterSector::tagged` carry the whole group, so it is
+      asked once and an answer carries it on, or clears every tagged list, together.
 
-    Simultaneous games match: each tagged vehicle gets its own pursuit and acts alone.
+    Simultaneous games did not change: each tagged vehicle gets its own pursuit and acts
+    alone. The choices this left open are Q83.
+83. **Orders expanded for a tagged group (§8 "Tagged vehicles").** Composite orders (Explore,
+    Resupply, Repair, Colonize's Load Cargo, the Move To in front of Warp or Drop Cargo) are
+    expanded when they are given, from where the list being given them leaves its group. When
+    tagged vehicles hold different lists, does the original expand the order once (for the
+    first one tagged, or for the group) and append the same orders to every list, or expand it
+    for each vehicle's own list? OpenSE4 expands it for each list (or each fleet), as an order
+    given to that vehicle alone would be (inferred); Explore therefore picks a different warp
+    point for each list, which matters only when the group's run leaves the lists' tails to
+    later turns. Also open: whether the question of a tagged group stays answerable while its
+    first tagged vehicle has orders (OpenSE4) or ends with the order run, and whether a member
+    whose maximum movement is 0 (a base, a mothballed ship) makes the group wait (OpenSE4, as
+    for a fleet, §19 Q74) or makes the order fail.

@@ -1702,9 +1702,11 @@ report is shown in the panel, and the lit orders are the fleet's (§2.8). In the
 a left-click makes that member the fleet's leader (spec 03 §9) and redraws the list; a
 right-click opens the member's Ship Report as a popup window, on Detail like every report
 popup. Neither changes the panel, the order buttons or the selection. The up-arrow returns
-to the sector's list. Our client differs (§7 Q110): it lists every member as a ship row, and
-a click on one shows the Fleet Report with that ship's report under it, whose member list
-takes no clicks.
+to the sector's list. Since 2026-10-05 our client follows (§7 Q110), with these choices of
+its own: the stellar objects are sorted among themselves by name (inferred); a fleet member
+selected any other way (the ship arrows, a Goto) shows the Fleet Report alone too
+(inferred, §7 Q111); and the Fleet Report ends with the fleet's order list, as our Ship
+Report does (an OpenSE4 addition).
 
 **What replaces the report** (confirmed: binary; observed, spec 07 session 6). The panel
 changes only when the player selects something:
@@ -5081,10 +5083,16 @@ ships attacking together are spec 03 §19 Q81 and Q82; the fleet in the sector l
      report as a popup window, so any member's report is one right-click away without going
      back to the list (§2.5 "Fleets in the list", "The Fleet Report") (confirmed: binary;
      observed, spec 07 session 7).
-     Our client differs: the sector's list (`MainWindow`, `client/classic/main_window.cpp`)
-     shows every vehicle there as its own row, fleet members included, planets first and
-     then the vehicles in their own order; a click on a member selects that ship and its
-     fleet, and the panel shows `fleetReport` with the ship's `vehicleReport` under it.
-     `fleetReport` (`client/classic/reports.cpp`) draws the members as plain text marked
-     "(leader)", which takes no clicks; no command sets a fleet's leader (`Fleet::leader` is
-     set only when a fleet is made).
+     Since 2026-10-05 our client follows: `sectorListRows` (`client/classic/sector_view.cpp`)
+     makes the list's rows, one per own fleet, in the original's order, and a sector whose
+     only row is a fleet opens its report at once; `fleetReport`
+     (`client/classic/reports.cpp`) fills the panel alone, its member rows taking a
+     left-click (`cmd::SetFleetLeader`) and a right-click (the Ship Report popup of
+     `MainWindow`); Shift and a click on the fleet's row tag every member there.
+
+111. **A fleet member selected without the list.** The ship arrows (next and previous ship),
+     the next-fleet buttons, a Goto from the Ships\Units window and the Log select one
+     vehicle, which can be a member of one of the player's fleets. Does the original's panel
+     then show the Fleet Report, as for the fleet's row of the list, or the member's own Ship
+     Report? OpenSE4 shows the Fleet Report alone, whatever selected the member, so the
+     panel never shows a member's own report (inferred, §2.5).

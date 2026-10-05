@@ -4,6 +4,7 @@
 
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/list_widgets.hpp"
+#include "client/classic/sector_view.hpp"
 #include "client/classic/status_icons.hpp"
 
 #include "game/combat.hpp"
@@ -393,17 +394,26 @@ std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, Repo
     return opened;
 }
 
-void fleetReport(UiContext& ui, const game::Fleet& f) {
+FleetReportClick fleetReport(UiContext& ui, const game::Fleet& f) {
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
+    const bool own = f.owner == ui.session.player();
+    const std::string& style = f.owner.valid() ? s.empire(f.owner).race.style : std::string{};
+    FleetReportClick click;
+    if (Sprite flag = ui.art.flag(style)) {
+        image(ui, flag, {26, 18});
+        ImGui::SameLine();
+    }
     title(ui, f.name);
-    if (f.owner == ui.session.player()) statusRow(ui, fleetStatusCells(s, f));
-    int mp = 1 << 30;
+    // Its figures are those of the members at its location (spec 03 §9).
+    const std::vector<game::VehicleId> members = fleetReportMembers(r, s, f);
+    int mp = members.empty() ? 0 : 1 << 30, maxMp = members.empty() ? 0 : 1 << 30;
     int64_t supply = 0, capacity = 0;
-    bool endless = !f.members.empty();
-    for (game::VehicleId id : f.members)
+    bool endless = !members.empty();
+    for (game::VehicleId id : members)
         if (const game::Vehicle* v = s.vehicle(id)) {
             mp = std::min(mp, v->movement);
+            maxMp = std::min(maxMp, game::vehicleMaxMovement(r, s, *v));
             // Fighter groups and members with unlimited supply are left out (spec 03 §9).
             if (game::vehicleHasUnlimitedSupply(r, s, *v)) continue;
             endless = false;
@@ -411,24 +421,52 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
             supply += v->supply;
             capacity += game::vehicleSupplyCapacity(r, s, *v);
         }
-    if (f.members.empty()) mp = 0;
-    labelValue(ui, "Movement", std::to_string(mp));
-    labelValue(ui, "Supplies", endless ? std::string("Endless") : std::format("{} / {}", formatNumber(supply), formatNumber(capacity)));
-    labelValue(ui, "Experience", game::combat::experienceLabel(f.experience, f.experienceTenths));
+    image(ui, ui.art.groupPortrait(style, "Fleet"), {110, 110});
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    labelValue(ui, "Ships In Fleet", std::to_string(members.size()), 100);
+    labelValue(ui, "Movement", std::format("{} / {}", mp, maxMp), 100);
+    ImGui::EndGroup();
+    if (own) statusRow(ui, fleetStatusCells(s, f));
+    labelValue(ui, "Supply Pool", endless ? std::string("Endless") : std::format("{} / {}", formatNumber(supply), formatNumber(capacity)));
+    labelValue(ui, "Fleet Experience", game::combat::experienceLabel(f.experience, f.experienceTenths));
     if (f.formation < r.data().formations.size()) labelValue(ui, "Formation", r.data().formations[f.formation].name);
     const auto& strategies = s.empire(f.owner).strategies;
     if (f.strategy < strategies.size()) labelValue(ui, "Strategy", strategies[f.strategy].name);
     heading(ui, "Ships");
-    for (game::VehicleId id : f.members)
-        if (const game::Vehicle* v = s.vehicle(id)) {
-            image(ui, vehicleMini(ui, *v), {20, 20});
-            ImGui::SameLine();
-            ImGui::Text("%s%s", v->name.c_str(), id == f.leader ? " (leader)" : "");
+    // The members: a left-click makes one the leader, a right-click opens its
+    // report; neither changes the panel or the selection (spec 06 §2.5).
+    const game::Vehicle* leader = game::fleetLeader(s, f);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float rowH = ui.px(36);
+    for (game::VehicleId id : members) {
+        const game::Vehicle* v = s.vehicle(id);
+        if (!v) continue;
+        ImGui::PushID(int(id.value));
+        image(ui, vehicleMini(ui, *v), {36, 36});
+        ImGui::SameLine();
+        const std::string label = leader && leader->id == id ? v->name + " (Fleet Leader)" : v->name;
+        if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(0, rowH)) && own) click.leader = id;
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) click.report = id;
+        script::reportItem(own ? "report:fleet-member" : "report:other");   // input scripts: rows by kind
+        if (own) {
+            const std::vector<int> cells = vehicleStatusCells(r, s, *v);
+            const ImVec2 right{ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y};
+            for (size_t i = 0; i < cells.size(); ++i) {
+                const Sprite icon = ui.art.statusIcon(cells[i] + 1);
+                if (!icon) continue;
+                const float x = right.x - ui.px(20) * float(i % 6 + 1), y = right.y + ui.px(20) * float(i / 6);
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), {x, y}, {x + ui.px(20), y + ui.px(20)}, {icon.uv.min.x, icon.uv.min.y},
+                             {icon.uv.max.x, icon.uv.max.y});
+            }
         }
+        ImGui::PopID();
+    }
     heading(ui, "Orders");
     const std::vector<game::Order>& orders = game::fleetOrders(s, f);  // the copies its members at its location hold
     if (orders.empty()) ImGui::TextColored(kDim, "None");
     for (const auto& o : orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
+    return click;
 }
 
 std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab, bool simulator) {

@@ -822,6 +822,64 @@ TEST_CASE("main window: what a sector shows") {
     CHECK(flagStep(6, 50) == 8);
 }
 
+TEST_CASE("main window: the sector's list shows each own fleet as one row, sorted as the original sorts it (spec 06 §2.5)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    constexpr EmpireId kOther{1u};
+    const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const DesignId frigate = design(s, r, "Frigate", "Test Frigate", kShipBasics);
+    const DesignId cruiser = design(s, r, "Cruiser", "Test Cruiser", kShipBasics);
+    const DesignId theirs = addTestDesign(s, r, kOther, "Theirs", "Test Frigate", kShipBasics);
+    auto add = [&](DesignId d, std::string name) {
+        const VehicleId id = addTestVehicle(s, r, d, where).id;
+        s.vehicle(id)->name = std::move(name);
+        return id;
+    };
+    const VehicleId zeta = add(frigate, "Zeta");
+    const VehicleId big = add(cruiser, "alpha");
+    const VehicleId alpha = add(frigate, "Alpha");
+    const VehicleId c = add(frigate, "Charlie");
+    const VehicleId b = add(cruiser, "Bravo");
+    const VehicleId e = add(frigate, "Echo");
+    const VehicleId t1 = add(theirs, "Tango");
+    const VehicleId t2 = add(theirs, "Sierra");
+    const VehicleId lone = add(theirs, "Lima");
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"First", {b, c}}).ok);
+    const FleetId first = s.fleets.back().id;
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Second", {e}}).ok);
+    const FleetId second = s.fleets.back().id;
+    REQUIRE(apply(r, s, kOther, cmd::CreateFleet{"Their Fleet", {t1, t2}}).ok);
+    std::vector<const Vehicle*> here;
+    for (VehicleId id : {zeta, big, alpha, c, b, e, t1, t2, lone}) here.push_back(s.vehicle(id));
+    const ObjectId planet = homeworld(s, kMe).planet;
+    const std::vector<ObjectId> objects{planet};
+    const std::vector<SectorListRow> rows = sectorListRows(r, s, kMe, objects, here);
+    // The first of a fleet's members in object order stands for its row.
+    const VehicleId firstRep = objectOrderKey(*s.vehicle(b)) < objectOrderKey(*s.vehicle(c)) ? b : c;
+    const std::vector<SectorListRow> want{
+        {planet, {}, {}},
+        // Fleets by number, highest first; another empire's fleet member by member.
+        {{}, t2, {}}, {{}, t1, {}},
+        {{}, e, second},
+        {{}, firstRep, first},
+        // Then vehicles in no fleet: by owner, by hull (frigates first), by name ignoring case.
+        {{}, alpha, {}}, {{}, zeta, {}}, {{}, big, {}},
+        {{}, lone, {}},
+    };
+    CHECK(rows == want);
+    // Another empire sees our fleets' members one by one, and its own fleet as one row.
+    const std::vector<SectorListRow> theirView = sectorListRows(r, s, kOther, {}, here);
+    CHECK(theirView.size() == 8);
+    CHECK(std::count_if(theirView.begin(), theirView.end(), [](const SectorListRow& x) { return x.fleet.valid(); }) == 1);
+    for (VehicleId ours : {b, c, e})
+        CHECK(std::count(theirView.begin(), theirView.end(), SectorListRow{{}, ours, {}}) == 1);
+    // A sector holding one of our fleets and nothing else: one row.
+    const std::vector<const Vehicle*> fleetOnly{s.vehicle(b), s.vehicle(c)};
+    CHECK(sectorListRows(r, s, kMe, {}, fleetOnly).size() == 1);
+    // The Fleet Report's members, sorted as the list: by hull, then name.
+    CHECK(fleetReportMembers(r, s, *s.fleet(first)) == std::vector<VehicleId>{c, b});
+}
+
 TEST_CASE("main window: the stellar object a sector shows") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();

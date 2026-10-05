@@ -75,7 +75,10 @@ class Rules;
 // Version 8: what a log entry imported from the original's saved games held
 // besides OpenSE4's own fields (LogEntry::classic, docs/spec/08 §3.6.11), and
 // each colony's never-reset counts of destroyed facilities
-// (Colony::destroyedFacilities, spec 08 §11.2). Format 7 still reads, without them.
+// (Colony::destroyedFacilities, spec 08 §11.2); a tagged group's Attack Sector
+// question and its answer (EntryQuestion::tagged, cmd::EnterSector::tagged),
+// and the commands cmd::OrderTagged and cmd::SetFleetLeader (spec 03 §8, §9,
+// spec 06 §2.5). Format 7 still reads, without them.
 inline constexpr uint32_t kSaveVersion = 8;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

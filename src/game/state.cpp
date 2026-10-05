@@ -256,6 +256,23 @@ bool inFleetGroup(const GameState& s, const Vehicle& v) {
     return f && v.location == f->location && std::find(f->members.begin(), f->members.end(), v.id) != f->members.end();
 }
 
+std::vector<VehicleId> taggedVehicles(const GameState& s, EmpireId empire, std::span<const VehicleId> tagged) {
+    std::vector<VehicleId> out;
+    auto add = [&](VehicleId id) {
+        if (std::find(out.begin(), out.end(), id) == out.end()) out.push_back(id);
+    };
+    for (VehicleId id : tagged) {
+        const Vehicle* v = s.vehicle(id);
+        if (!v || v->count <= 0 || v->owner != empire) continue;
+        if (const Fleet* f = v->fleet.valid() ? s.fleet(v->fleet) : nullptr) {
+            for (VehicleId member : fleetGroup(s, *f)) add(member);
+        } else {
+            add(id);
+        }
+    }
+    return out;
+}
+
 const Vehicle* fleetOrderHolder(const GameState& s, const Fleet& f) {
     const Vehicle* holder = nullptr;
     for (VehicleId id : fleetGroup(s, f))

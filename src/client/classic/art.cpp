@@ -175,6 +175,8 @@ Sprite Art::groupMini(std::string_view style, std::string_view group, bool color
     return rotated(raceFile(style, std::format("Mini_{}.bmp", group)), heading, colorKey);
 }
 
+Sprite Art::groupPortrait(std::string_view style, std::string_view group) { return image(raceFile(style, std::format("Portrait_{}.bmp", group))); }
+
 Sprite Art::flag(std::string_view style, bool large) {
     const std::string file = raceFile(style, "Main.bmp");
     return large ? region(file, 0, 0, 26, 18, false) : region(file, 26, 0, 14, 10, false);

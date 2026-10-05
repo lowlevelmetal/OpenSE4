@@ -161,8 +161,9 @@ Base"`, ...), or `"Colony"` for every colony ship type (`"Colony (Rock)"` and th
 letter case does not matter. An order counts when it went to a vehicle of that type, or to a
 fleet with one in it (so a ship added to a fleet by mistake never blocks a later step);
 `selected` reads the selected vehicle's design (`ship`, `base`, `unit` or `fleet` only);
-among the commands it qualifies `SetOrders`, `QueueAdd` (a ship or base of that type),
-`CreateDesign`, `JoinFleet` (the ship that joined) and `CreateFleet` (one of its ships);
+among the commands it qualifies `SetOrders`, `OrderTagged` (one of the tagged ships or their
+fleets), `QueueAdd` (a ship or base of that type), `CreateDesign`, `JoinFleet` (the ship that
+joined) and `CreateFleet` (one of its ships);
 `fleet_ships` counts only the fleet's ships of that type. Anywhere else it is a load error.
 Prefer it whenever a step names a kind of ship: a step that any ship can do can be done with the
 wrong one.
@@ -1027,7 +1028,9 @@ ones a lesson is likely to wait for:
 | Name | The player... |
 |---|---|
 | `SetOrders` | gave a ship, fleet or planet orders (`order` names the kind) |
+| `OrderTagged` | gave an order to the ships tagged in a sector's list (`order` counts these too) |
 | `CreateFleet`, `JoinFleet`, `LeaveFleet`, `DisbandFleet`, `SetFleetOptions` | worked with fleets (Fleet Transfer) |
+| `SetFleetLeader` | made a ship its fleet's leader (the Fleet Report) |
 | `QueueAdd`, `QueueRemove`, `QueueMove`, `QueueSetCount`, `QueueFlags` | changed a construction queue |
 | `CreateDesign`, `EditDesign` | created a design, saved an edited one |
 | `SetResearch` | changed the research projects or their options |

@@ -46,7 +46,9 @@ The strip of small buttons in the middle of the command panel holds the **orders
 have selected. Buttons that do not apply are dimmed. Point at a button to see its name and its
 key at the top of the system panel. Most orders have a key, listed in [Hotkeys](hotkeys). To give
 one order to several ships, hold `Shift` and click them in the list of a sector (`Shift+A` tags
-them all); the next order goes to every tagged ship.
+them all); the next order goes to every tagged ship. In a turn-based game the tagged ships carry
+it out at once, together: they move while every one of them has movement left, and fight as one
+group. What is left for later turns each ship then carries out on its own.
 
 With one of your **ships** selected you can, for example, move it, warp, attack, colonize,
 explore, resupply, repair, set a patrol, change its fleet, transfer cargo, launch units, cloak,
@@ -118,8 +120,11 @@ special ability: a planet's own, then for your colonies what your race, its cult
 population and the mood add; a ship's hull's, then what your race and culture add. A facility's
 or component's abilities are on its own report.
 
-A ship in a fleet shows the fleet's report above its own: the fleet's speed, supplies,
-experience, formation, strategy and members.
+Each of your fleets is **one row** in the list of a sector, with the fleet's picture and name.
+It opens the **fleet's report** in place of a ship's: the fleet's speed, supply pool,
+experience, formation, strategy and members, and no tabs. A ship of the fleet selected any other
+way shows it too. In its list of members, **click** a ship to make it the fleet's leader (the
+leader matters for the formation), or **right-click** it to read its own report in a window.
 
 You see less about other empires' ships and planets: never their cargo, and their components
 only if your scanners reach them (see [The galaxy](galaxy#scanning-enemy-ships)).

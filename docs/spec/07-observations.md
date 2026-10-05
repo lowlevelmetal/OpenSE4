@@ -2006,6 +2006,9 @@ attack ships had 9 movement and the colony ship 8.
   movement left, the attack ship's list holding the last Move To and Attack. No enemy was
   near, so the entry question and the battle were not seen.
 
+Since 2026-10-05 our client follows the original in all three (spec 03 §19 Q81, Q82; spec 06
+§7 Q110).
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
