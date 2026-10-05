@@ -210,7 +210,9 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    The check is one-directional: the group's owner must see a
    hostile object there, or, for a wholly cloaked group, another empire must see it. A
    human is first asked whether to enter a sector with visible enemies, and answers with
-   `cmd::EnterSector`. Colony ships that reach their planet with movement left found the
+   `cmd::EnterSector`. An order to tagged vehicles (`cmd::OrderTagged`) goes into every
+   tagged list, and the tagged vehicles then act as one group through the first one
+   tagged, asked once and fighting together (spec 03 §8 "Tagged vehicles"). Colony ships that reach their planet with movement left found the
    colony at once. Messages take effect when
    sent (`diplomacy::deliverMessages`), and sight follows every move (first contact only at the moments of step 5).
 3. **End of the player's turn** (`endPlayerTurn`): `empireEndOfTurn`, then the next living

@@ -66,6 +66,7 @@ public:
     Sprite shipMini(std::string_view style, const ruleset::VehicleSize& hull, bool colorKey = true, int heading = 0);
     Sprite shipPortrait(std::string_view style, const ruleset::VehicleSize& hull);
     Sprite groupMini(std::string_view style, std::string_view group, bool colorKey = true, int heading = 0);  // "Fleet", "FighterGroup", ...
+    Sprite groupPortrait(std::string_view style, std::string_view group);  // the race's Portrait_<group>, RaceGeneric's without one
     Sprite flag(std::string_view style, bool large = true);
     Sprite racePortrait(std::string_view style);
     // A picture of a race's folder, "<Style>_<suffix>"; with `generic`, the

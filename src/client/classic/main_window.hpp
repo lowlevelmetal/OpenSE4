@@ -9,6 +9,7 @@
 #include "client/classic/order_rules.hpp"
 #include "client/classic/movement_line.hpp"
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/ships_common.hpp"
 #include "client/classic/sector_view.hpp"
 #include "client/classic/ship_glides.hpp"
 #include "client/classic/ui.hpp"
@@ -112,6 +113,8 @@ private:
     std::vector<OrderOwner> orderOwners(UiContext& ui) const;
     void runOrder(UiContext& ui, OrderId o);
     void giveOrder(UiContext& ui, game::Order o);
+    // Orders for the tagged group, as one cmd::OrderTagged; `repeat` switches Repeat on (Set Patrol).
+    void giveTagged(UiContext& ui, std::vector<game::Order> orders, bool repeat);
     void replaceOrders(UiContext& ui, std::vector<game::Order> orders, bool repeat);
     void orderDone();  // the tagged group dissolves after an order
     void startPick(UiContext& ui, Pick p, std::string prompt);
@@ -196,6 +199,7 @@ private:
     std::vector<game::VehicleId> tagged_;
     ReportTab tab_ = ReportTab::Detail;
     ItemReportPopup itemReport_;   // a facility's or component's report, from a right-click on Facil or Comps
+    shipui::ReportPopup shipReport_;   // a fleet member's Ship Report, from a right-click on its row in the Fleet Report
 
     Pick pick_ = Pick::None;
     std::string pickPrompt_;

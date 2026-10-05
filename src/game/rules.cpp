@@ -89,14 +89,10 @@ std::optional<uint32_t> Rules::latestFacilityOfFamily(const Empire& e, int famil
     return best;
 }
 
-std::optional<uint32_t> Rules::latestComponentOfFamily(const Empire& e, int family) const {
-    std::optional<uint32_t> best;
-    for (uint32_t i = 0; i < data_.components.size(); ++i) {
-        const auto& c = data_.components[i];
-        if (c.family != family || !componentAvailable(e, i)) continue;
-        if (!best || c.romanNumeral > data_.components[*best].romanNumeral) best = i;
-    }
-    return best;
+std::optional<uint32_t> Rules::componentUpgradeTarget(const Empire& e, int family) const {
+    for (uint32_t i = static_cast<uint32_t>(data_.components.size()); i-- > 0;)
+        if (data_.components[i].family == family && componentAvailable(e, i)) return i;
+    return std::nullopt;
 }
 
 namespace {

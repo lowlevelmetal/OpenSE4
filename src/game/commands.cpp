@@ -256,6 +256,57 @@ struct Applier {
         return {};
     }
 
+    // Tagged vehicles (spec 03 §8, confirmed: binary): the orders are appended
+    // to each tagged vehicle's own list, in tag order, as cmd::SetOrders
+    // appends them; a fleet's members at its location each hold the copy. The
+    // checks come first, so the command changes every list or none.
+    R operator()(const cmd::OrderTagged& c) {
+        if (c.orders.empty()) return R::fail("No orders given");
+        if (c.vehicles.empty()) return R::fail("No vehicles tagged");
+        std::optional<Location> where;
+        for (VehicleId id : c.vehicles) {
+            const Vehicle* v = ownVehicle(s, e, id);
+            if (!v || v->count <= 0) return R::fail("Not your vehicle");
+            if (where && v->location != *where) return R::fail("Tagged vehicles must share a sector");
+            where = v->location;
+        }
+        for (const Order& o : c.orders) {
+            if (auto p = orderProblem(s, e, o); !p.empty()) return R::fail(p);
+            if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources) return R::fail("Only colonies carry out that order");
+            if (scrapWindowOrder(o.kind)) return R::fail("That order is given only in the Scrap window");
+        }
+        std::vector<FleetId> fleetsDone;
+        for (VehicleId id : taggedVehicles(s, e, c.vehicles)) {
+            const Vehicle& v = *s.vehicle(id);
+            cmd::SetOrders one;
+            if (v.fleet.valid()) {
+                // Each member at the location holds a copy: one change for them all.
+                if (std::find(fleetsDone.begin(), fleetsDone.end(), v.fleet) != fleetsDone.end()) continue;
+                fleetsDone.push_back(v.fleet);
+                const Fleet& f = *s.fleet(v.fleet);
+                one.fleet = f.id;
+                one.orders = fleetOrders(s, f);
+                one.repeat = c.repeat || fleetRepeats(s, f);
+            } else {
+                one.vehicle = id;
+                one.orders = v.orders;
+                one.repeat = c.repeat || v.repeatOrders;
+            }
+            one.orders.insert(one.orders.end(), c.orders.begin(), c.orders.end());
+            if (R res = (*this)(one); !res.ok) return res;
+        }
+        return {};
+    }
+
+    R operator()(const cmd::SetFleetLeader& c) {
+        Fleet* f = ownFleet(s, e, c.fleet);
+        if (!f) return R::fail("Not your fleet");
+        const Vehicle* v = ownVehicle(s, e, c.vehicle);
+        if (!v || v->fleet != f->id || !inFleetGroup(s, *v)) return R::fail("Not a ship of the fleet");
+        f->leader = v->id;
+        return {};
+    }
+
     R operator()(const cmd::CreateFleet& c) {
         if (c.members.empty()) return R::fail("A fleet needs members");
         const Vehicle* first = ownVehicle(s, e, c.members.front());
@@ -1109,7 +1160,24 @@ struct Applier {
     R operator()(const cmd::EnterSector& c) {
         if (s.options.simultaneous) return R::fail("Only in turn-based games");
         std::string name, picture;
-        if (c.fleet.valid()) {
+        if (!c.tagged.empty()) {
+            // A tagged group's question (spec 03 §8 "Tagged vehicles"): asked once
+            // for the group, whose failure clears every tagged vehicle's list.
+            std::vector<Vehicle*> group;
+            for (VehicleId id : c.tagged)
+                if (Vehicle* v = ownVehicle(s, e, id); v && v->count > 0) group.push_back(v);
+            if (group.empty()) return R::fail("Not your vehicles");
+            if (std::none_of(group.begin(), group.end(), [](const Vehicle* v) { return !v->orders.empty(); }))
+                return R::fail("The tagged ships have no orders");
+            if (c.enter) return {};
+            name = group.size() == 1 ? group.front()->name
+                                     : std::format("{} and {} other{}", group.front()->name, group.size() - 1, group.size() == 2 ? "" : "s");
+            picture = logpicture::vehicle(r, s, *group.front());
+            for (Vehicle* v : group) {
+                v->orders.clear();
+                v->repeatOrders = false;
+            }
+        } else if (c.fleet.valid()) {
             Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
             if (fleetOrders(s, *f).empty()) return R::fail("The fleet has no orders");
@@ -1206,6 +1274,8 @@ OPENSE4_CMD_NAME(Analyze)
 OPENSE4_CMD_NAME(SelfDestruct)
 OPENSE4_CMD_NAME(FireOn)
 OPENSE4_CMD_NAME(SetEmail)
+OPENSE4_CMD_NAME(OrderTagged)
+OPENSE4_CMD_NAME(SetFleetLeader)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

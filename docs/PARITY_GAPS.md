@@ -189,12 +189,23 @@ A planet hidden from its colonizer, settled from the executable and implemented 
 
 No row remains.
 
-Players' reports on 0.9.0, settled from the executable on 2026-10-05 (spec 03 §19 Q81, Q82):
+Players' reports on 0.9.0, settled from the executable on 2026-10-05 (spec 03 §19 Q81, Q82),
+were implemented the same day:
 
-| Item | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Design Upgrade (`client/classic/screens/design_tools.cpp` `upgradeEntries`, `Rules::latestComponentOfFamily`, `designs.cpp`) | Each component becomes the highest numeral available in its family, the first on a tie (so engines of numeral I or II of any line become Ion Engine III); family 0 is skipped; an entry stays when that numeral is not higher; with nothing to change the designer does not open | Each entry becomes the last component of its family in Components.txt order whose tech the owner meets, any family, numerals ignored, mount kept; the designer always opens (spec 03 §4.1). With Contra-Terrene Engine I researched, Ion Engine III becomes Contra-Terrene Engine I (observed: an Ion Engine I became Quantum Engine III, spec 07 session 7). Facility upgrades keep the highest numeral (`latestFacilityOfFamily`, spec 02 §6.6), as now | M |
-| Orders to tagged vehicles in a turn-based game (`MainWindow::giveOrder`, `turn_based.cpp` `applyEach`, `movement.cpp` `Mover::build`, `EntryQuestion` and `cmd::EnterSector`, the network host's `runLive`) | One command per tagged vehicle or fleet, each carried out before the next is applied: each ship moves, is asked about the enemy sector and fights alone. The live group takes only vehicles in no fleet that hold the actor's first order | The order goes into every tagged vehicle's list, then runs at once as one group acting through the first one tagged: every tagged vehicle, fleets and own lists regardless; they step together while all have movement, are asked once and fight one battle; a completed order leaves every tagged list, a failure clears them all. What is left at the next turn's start runs vehicle by vehicle (spec 03 §8 "Tagged vehicles"; observed, spec 07 session 7) | M |
+- **Design Upgrade** (`client/classic/screens/design_tools.cpp` `upgradeEntries`,
+  `Rules::componentUpgradeTarget`, `designs.cpp`): each entry becomes the last component of
+  its family in Components.txt order that the owner has researched, any family, numerals
+  ignored, mount kept, and the designer always opens (spec 03 §4.1). Facility upgrades keep
+  the highest numeral (`latestFacilityOfFamily`, spec 02 §6.6).
+- **Orders to tagged vehicles** (`MainWindow::giveOrder`, `cmd::OrderTagged`,
+  `turn_based.cpp` `noteEffects`, `movement.cpp` `Mover::tagged`, `EntryQuestion::tagged`,
+  `cmd::EnterSector::tagged`): one command appends the order to every tagged list; in a
+  turn-based game the group then runs at once through the first one tagged, stepping while
+  all have movement, asked once and fighting one battle; leftovers run vehicle by vehicle at
+  the next turn's start (spec 03 §8 "Tagged vehicles"). The choices this left open are
+  spec 03 §19 Q83.
+
+No row remains.
 
 ## Combat (spec 04)
 
@@ -637,11 +648,15 @@ Settled on 2026-10-04 with spec 03 §19 Q80:
   hidden planet alone is taken without a window (spec 06 §2.9, spec 03 §8). Implemented on
   2026-10-04.
 
-Players' reports on 0.9.0, settled from the executable on 2026-10-05 (spec 06 §7 Q110):
+Players' reports on 0.9.0, settled from the executable on 2026-10-05 (spec 06 §7 Q110), were
+implemented the same day:
 
-| Where | Client now | Original | Impact |
-|---|---|---|---|
-| A fleet in the sector's list and the Fleet Report (`client/classic/main_window.cpp`, `reports.cpp` `fleetReport`) | Every fleet member is a ship row; a click shows the Fleet Report with that ship's report under it; the member rows take no clicks, and no command sets the leader | One row per own fleet (its picture, name and status icons), the rows sorted by stellar objects first, fleet number, owner, hull and name; the Fleet Report alone; a left-click on a member makes it the leader, a right-click opens its Ship Report popup (spec 06 §2.5; observed, spec 07 session 7) | L |
+- **A fleet in the sector's list and the Fleet Report** (`sector_view.cpp` `sectorListRows`,
+  `main_window.cpp`, `reports.cpp` `fleetReport`, `cmd::SetFleetLeader`): one row per own
+  fleet (its picture, name and status icons), the rows in the original's order; the Fleet
+  Report alone; a left-click on a member makes it the leader, a right-click opens its Ship
+  Report popup (spec 06 §2.5). A member selected any other way shows the Fleet Report too
+  (inferred, spec 06 §7 Q111).
 
 What remains, in network and e-mail games only:
 

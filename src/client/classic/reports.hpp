@@ -21,7 +21,16 @@ enum class ReportTab { Detail, Components, Cargo, Abilities, Facilities };
 // `simulator`: a report in the Combat Simulator, whose Ability page leaves
 // the racial and culture lines out.
 std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab, bool simulator = false);
-void fleetReport(UiContext& ui, const game::Fleet& f);
+// The Fleet Report (spec 06 §2.5 "The Fleet Report", spec 03 §17): the
+// fleet's figures and its members at its location, each row with its
+// picture, name ("(Fleet Leader)" on the leader's) and status icons. A
+// left-click on a member asks to make it the leader, a right-click for its
+// Ship Report as a popup; the caller acts on them.
+struct FleetReportClick {
+    std::optional<game::VehicleId> leader;
+    std::optional<game::VehicleId> report;
+};
+FleetReportClick fleetReport(UiContext& ui, const game::Fleet& f);
 std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab, bool simulator = false);
 void systemReport(UiContext& ui, game::SystemId sys);
 // Stars, storms, warp points; `state`: another game than the session's (a

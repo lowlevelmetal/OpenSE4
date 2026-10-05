@@ -486,10 +486,9 @@ type, none = defined but unused.
   accepted, it is added as a **new** design under its own name; the original is untouched
   (confirmed: binary; observed, spec 07 session 7: with every large engine researched, an Ion
   Engine I became Quantum Engine III). Facility upgrades choose their target differently, by
-  the highest numeral (spec 02 §6.6). Our client differs (§19 Q81): it takes the highest
-  numeral of the family, the first on a tie, so once Ion Engine III is researched every
-  large engine of numeral I or II, whatever its line, becomes Ion Engine III; it opens
-  nothing when that changes no part, and it proposes a new name.
+  the highest numeral (spec 02 §6.6). Since 2026-10-05 our client follows (§19 Q81); in
+  place of the design's own name the designer proposes the next free one ("Lancer II"), an
+  OpenSE4 convenience.
 - Whenever the designer accepts a design (Create, Copy, Edit or Upgrade), the result starts as a
   prototype that is not obsolete, with no sightings by other empires (§4.1 Obsolete) and empty
   statistics (confirmed: binary).
@@ -1073,12 +1072,20 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
     battle clears its list; the others follow one at a time. Only a fleet keeps vehicles
     together from one turn to the next.
 
-  The engine differs (§19 Q82): the client gives the order with one command per tagged
-  vehicle or fleet, and a turn-based game carries out each command before the next one is
-  applied, so the first tagged ship moves and fights alone before the others have the order,
-  and each of them then does the same. Its turn-based group also takes only vehicles outside
-  fleets whose first order equals the acting vehicle's, and an acting fleet member takes only
-  its fleet.
+  Since 2026-10-05 the engine follows (§19 Q82). The client gives an order to tagged vehicles
+  as one command (`cmd::OrderTagged`) that names them in tag order; a fleet member stands for
+  every member at its fleet's location (`taggedVehicles`), and the vehicles named must share
+  a sector. Each tagged list gets the orders appended as an order given to that vehicle (or
+  fleet) alone would: composite orders are expanded from where that list leaves it, so lists
+  that held different orders can get different expansions (inferred, §19 Q83). In a
+  turn-based game the group then runs at once (`LiveMove::tagged`): the first tagged vehicle
+  still in the game acts, every tagged vehicle in its sector is a member and a holder, a
+  member whose maximum movement is 0 makes the group wait as it does a fleet (inferred), and
+  the Attack Sector question names the whole group once (`EntryQuestion::tagged`, answered
+  by `cmd::EnterSector::tagged`; declining clears every tagged list, logged under the first
+  vehicle's name "and N others"). The question stays open while the first tagged vehicle
+  still in the game has orders (inferred). Set Patrol given to tagged vehicles appends its
+  Move To orders to each list and switches Repeat on in each (inferred).
 
 Several orders are expanded into simpler ones at the moment they are given; they never exist as
 stored orders (confirmed: binary). "Composite" orders below become Move To (when the target
@@ -1345,7 +1352,9 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   does not list it (§15, §19 Q74).
 - **Leader:** the player-chosen leader when one is set, otherwise the first member in the sector's
   object order. If the chosen leader leaves or is destroyed, the choice is cleared and the first
-  member leads again. The leader only matters for the formation.
+  member leads again. The leader only matters for the formation. The player chooses it with
+  a left-click on a member in the Fleet Report (spec 06 §2.5); our client gives that as
+  `cmd::SetFleetLeader`, which takes only a member at the fleet's location.
 - **Movement:** the fleet's movement is the minimum of its members' MP left (and of their maximum
   MP for display), over the members at its location. During turn processing every member's MP
   there is set to that minimum, so the fleet moves at its slowest member's speed; a member with
@@ -2579,16 +2588,17 @@ fleet's row in the sector list is spec 06 §7 Q110.
     order on a tie (spec 02 §6.6), so the highest-numeral rule is right for facility upgrades
     and wrong only for designs.
 
-    The engine differs: `upgradeEntries` (`client/classic/screens/design_tools.cpp`) takes
-    `Rules::latestComponentOfFamily`, the highest numeral available in the family and the first
-    of them on a tie, skips family 0 and keeps an entry when that numeral is not higher. The
-    stock engines of numeral III tie, so any large engine of numeral I or II becomes Ion Engine
-    III, the newest lines included (in the report the upgraded design shows six Ion Engine III
-    and movement 6, against 7 before). Upgrade with nothing to change shows a note instead of
-    opening the designer (`designs.cpp`), and `isLatestComponent` follows the same numeral rule.
-    Proposing the next free name (`nextVersionName`) where the original keeps the old one is an
-    OpenSE4 convenience. `Rules::latestFacilityOfFamily` (facility upgrades, the Upgrade
-    Facilities button, the computer's upgrades) matches the original.
+    Since 2026-10-05 the engine follows: `upgradeEntries`
+    (`client/classic/screens/design_tools.cpp`) replaces each entry with
+    `Rules::componentUpgradeTarget`, the family's last researched component in data-file
+    order, for every family, and keeps the entry when none is researched; `isLatestComponent`
+    asks the same question. Upgrade opens the designer every time (`designs.cpp`), with no
+    note. Proposing the next free name (`nextVersionName`) where the original keeps the old
+    one stays an OpenSE4 convenience. `Rules::latestFacilityOfFamily` (facility upgrades, the
+    Upgrade Facilities button, the computer's upgrades) keeps the highest numeral, as the
+    original does. Nothing else used the old numeral rule for components: the computer
+    players' test whether a design can be improved (a researched successor of a higher
+    numeral, spec 05 §7.5) is their own rule and is unchanged.
 82. **Tagged ships ordered to attack.** "Multiple ships that are not in a fleet but are all
     selected and ordered to attack together do not attack together, only one at a time." In
     the report's turn-based game each tagged ship was asked on its own whether to enter the
@@ -2606,16 +2616,30 @@ fleet's row in the sector list is spec 06 §7 Q110.
     its own: those that enter the target's sector on the same day fight in one battle, later
     arrivals in another.
 
-    The engine differs in turn-based games:
-    - `MainWindow::giveOrder` (`client/classic/main_window.cpp`) issues one `cmd::SetOrders`
-      per tagged vehicle or fleet, and `applyLive` carries out each command before the next
-      is applied (`applyEach` and `settle` in `game/turn_based.cpp`, a network host's
-      `HostSession::runLive` likewise), so the first tagged ship runs its new orders alone,
-      meets the enemy alone and fights alone, before the second ship has its order.
-    - `Mover::build` (`game/movement.cpp`) joins the vehicles listed together only when they
-      are in no fleet, stand where the actor stands and hold the actor's first order, and an
-      acting fleet member takes its fleet alone; the original takes every tagged vehicle.
-    - The entry question and its answer (`EntryQuestion`, `cmd::EnterSector`) name one vehicle
-      or fleet, so an answered question moves that one on alone.
+    Since 2026-10-05 the engine follows (§8 "Tagged vehicles"):
+    - `MainWindow::giveOrder` (`client/classic/main_window.cpp`) gives an order to tagged
+      vehicles as one `cmd::OrderTagged`, which a network host and an order file carry like
+      any command; `applyLive` appends it to every tagged list and then runs the group once
+      (`noteEffects` in `game/turn_based.cpp`).
+    - `Mover::build` (`game/movement.cpp`) makes the tagged group of `LiveMove::tagged`:
+      every tagged vehicle there, whatever its fleet and list, acting through the first one
+      tagged; each order completed leaves the head of every tagged list, and a failure clears
+      them all. The old turn-based grouping of vehicles listed together, which compared first
+      orders and left fleets out, is gone.
+    - `EntryQuestion::tagged` and `cmd::EnterSector::tagged` carry the whole group, so it is
+      asked once and an answer carries it on, or clears every tagged list, together.
 
-    Simultaneous games match: each tagged vehicle gets its own pursuit and acts alone.
+    Simultaneous games did not change: each tagged vehicle gets its own pursuit and acts
+    alone. The choices this left open are Q83.
+83. **Orders expanded for a tagged group (§8 "Tagged vehicles").** Composite orders (Explore,
+    Resupply, Repair, Colonize's Load Cargo, the Move To in front of Warp or Drop Cargo) are
+    expanded when they are given, from where the list being given them leaves its group. When
+    tagged vehicles hold different lists, does the original expand the order once (for the
+    first one tagged, or for the group) and append the same orders to every list, or expand it
+    for each vehicle's own list? OpenSE4 expands it for each list (or each fleet), as an order
+    given to that vehicle alone would be (inferred); Explore therefore picks a different warp
+    point for each list, which matters only when the group's run leaves the lists' tails to
+    later turns. Also open: whether the question of a tagged group stays answerable while its
+    first tagged vehicle has orders (OpenSE4) or ends with the order run, and whether a member
+    whose maximum movement is 0 (a base, a mothballed ship) makes the group wait (OpenSE4, as
+    for a fleet, §19 Q74) or makes the order fail.

@@ -202,6 +202,7 @@ struct Group {
     VehicleId actor;                  // the vehicle whose order the group carries out
     VehicleId lead;                   // the acting vehicle when it is a member, else the first member: the group's place and name
     FleetId fleet;                    // the actor's fleet: its members at the fleet's location are the group
+    bool tagged = false;              // turn-based: a tagged group (LiveMove::tagged)
     bool stopped = false;             // gone, or stopped by a hazard
     bool encountered = false;         // the last warp transit cleared the lists (§6.4)
 };
@@ -272,6 +273,14 @@ public:
         live_ = &m;
         budget_.turnBased = true;
         loadPlayerTurn();
+        if (!m.tagged.empty()) {
+            // A tagged group acts alone, through its first vehicle still there
+            // (spec 03 §8 "Tagged vehicles").
+            if (const auto actor = taggedActor()) liveActor(ActorRef{*actor, {}});
+            endSeeks([&](const Vehicle& v) { return v.owner == m.empire; });
+            savePlayerTurn();
+            return;
+        }
         const bool all = m.vehicles.empty() && m.fleets.empty() && m.planets.empty();
         auto has = [](const auto& list, auto id) { return std::find(list.begin(), list.end(), id) != list.end(); };
         std::set<FleetId> fleetsDone;
@@ -401,8 +410,8 @@ private:
     // members, cloaked and mothballed ones), each alone, never its whole
     // fleet; a human player's ships never group, only a drone group outside
     // fleets gathers the other drone groups there with the same head order.
-    // In a turn-based game the vehicles the player moves together form the
-    // group. Only the holders' lists change (Group::holders).
+    // In a turn-based game a tagged group is every tagged vehicle (tagged()).
+    // Only the holders' lists change (Group::holders).
     Group build(ActorRef ref) const {
         Group g;
         if (ref.planet.valid()) {
@@ -417,6 +426,7 @@ private:
             g.stopped = true;
             return g;
         }
+        if (live_ && !live_->tagged.empty()) return tagged(*v);
         g.owner = v->owner;
         g.actor = v->id;
         auto has = [&](VehicleId id) { return std::find(g.members.begin(), g.members.end(), id) != g.members.end(); };
@@ -437,17 +447,6 @@ private:
         const Order head = v->orders.front();
         const Location here = s_.vehicle(g.lead)->location;
         auto joins = [&](const Vehicle& w) { return alive(w) && w.owner == v->owner && w.location == here && !has(w.id); };
-        if (live_ && !live_->vehicles.empty() && !computerPlayer(s_, v->owner)) {
-            // Turn-based: the vehicles the player moves together; each of
-            // their lists changes (spec 03 §19 Q75).
-            if (own) return g;
-            for (VehicleId id : live_->vehicles)
-                if (const Vehicle* w = s_.vehicle(id); w && joins(*w) && !w->fleet.valid() && !w->orders.empty() && w->orders.front() == head) {
-                    g.members.push_back(id);
-                    g.holders.push_back(id);
-                }
-            return g;
-        }
         if (computerPlayer(s_, v->owner)) {
             // Each vehicle joins alone, a fleet member too (spec 03 §19 Q75).
             for (VehicleId id : objectOrder_)
@@ -461,6 +460,30 @@ private:
             }
         }
         return g;
+    }
+
+    // A tagged group (spec 03 §8 "Tagged vehicles", confirmed: binary): every
+    // tagged vehicle still in the game and standing with the actor, in tag
+    // order, whatever its fleet and whatever its own list holds; each of their
+    // lists is a holder. The actor's list is the one carried out.
+    Group tagged(const Vehicle& actor) const {
+        Group g;
+        g.owner = actor.owner;
+        g.actor = actor.id;
+        g.lead = actor.id;
+        g.tagged = true;
+        for (VehicleId id : live_->tagged)
+            if (const Vehicle* w = s_.vehicle(id); w && alive(*w) && w->owner == actor.owner && w->location == actor.location)
+                g.members.push_back(id);
+        g.holders = g.members;
+        return g;
+    }
+
+    // The tagged group's acting vehicle: the first one tagged that is still in the game.
+    std::optional<VehicleId> taggedActor() const {
+        for (VehicleId id : live_->tagged)
+            if (const Vehicle* v = s_.vehicle(id); v && alive(*v) && v->owner == live_->empire) return id;
+        return std::nullopt;
     }
 
     void prune(Group& g) {
@@ -799,7 +822,7 @@ private:
             for (VehicleId id : g.members) capLive(id);
         // A fleet with a member of maximum movement 0 (a mothballed ship, a
         // base) is frozen: its movement orders wait (spec 03 §9, §19 Q74).
-        if (immobile(g)) return held(g) || g.fleet.valid() ? Travel::Wait : Travel::Immobile;
+        if (immobile(g)) return held(g) || g.fleet.valid() || g.tagged ? Travel::Wait : Travel::Immobile;
         if (yardBusy(g)) return Travel::Busy;
         if (remaining(g) <= 0) return Travel::Wait;
         return std::nullopt;
@@ -1998,7 +2021,8 @@ private:
     bool asks(const Group& g, Location next) {
         if (!live_ || !live_->ask || g.planet.valid() || onlyDrones(g)) return false;
         if (all(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; })) return false;
-        const EntryQuestion q{g.fleet.valid() ? VehicleId{} : g.lead, g.fleet, next};
+        // A tagged group is asked once, for all its vehicles (spec 03 §8).
+        const EntryQuestion q = g.tagged ? EntryQuestion{{}, {}, next, live_->tagged} : EntryQuestion{g.fleet.valid() ? VehicleId{} : g.lead, g.fleet, next, {}};
         if (live_->allowed && *live_->allowed == q) return false;
         if (!enemiesAt(g.owner, next)) return false;
         if (std::find(questions_.begin(), questions_.end(), q) == questions_.end()) questions_.push_back(q);

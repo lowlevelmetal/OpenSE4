@@ -70,17 +70,15 @@ Control liveControl(const GameState& s, EmpireId e, const LiveOptions& options) 
 
 // ---- Attack Sector questions --------------------------------------------------------------------
 
-bool sameGroup(const EntryQuestion& q, VehicleId vehicle, FleetId fleet) {
-    return fleet.valid() ? q.fleet == fleet : !q.fleet.valid() && q.vehicle == vehicle;
-}
-
-void dropQuestions(GameState& s, VehicleId vehicle, FleetId fleet) {
-    std::erase_if(s.playerTurn.questions, [&](const EntryQuestion& q) { return sameGroup(q, vehicle, fleet); });
-}
-
-// A question stays while its group exists and still has orders to go on with.
+// A question stays while its group exists and still has orders to go on with:
+// for a tagged group, its first vehicle still in the game.
 void pruneQuestions(GameState& s) {
     std::erase_if(s.playerTurn.questions, [&](const EntryQuestion& q) {
+        if (!q.tagged.empty()) {
+            for (VehicleId id : q.tagged)
+                if (const Vehicle* v = s.vehicle(id); v && v->count > 0) return v->orders.empty();
+            return true;
+        }
         if (q.fleet.valid()) {
             const Fleet* f = s.fleet(q.fleet);
             return !f || fleetOrders(s, *f).empty();
@@ -117,11 +115,14 @@ void carryOut(LiveContext& lc, const movement::LiveMove& move) {
 struct Effects {
     movement::LiveMove move;
     bool messages = false;
-    bool any() const { return !move.vehicles.empty() || !move.fleets.empty() || !move.planets.empty(); }
+    bool any() const { return !move.vehicles.empty() || !move.fleets.empty() || !move.planets.empty() || !move.tagged.empty(); }
 };
 
-void noteEffects(Effects& fx, const Command& c) {
-    if (const auto* o = std::get_if<cmd::SetOrders>(&c)) {
+void noteEffects(Effects& fx, const GameState& s, EmpireId e, const Command& c) {
+    if (const auto* t = std::get_if<cmd::OrderTagged>(&c)) {
+        // The tagged vehicles act at once as one group (spec 03 §8 "Tagged vehicles").
+        fx.move.tagged = taggedVehicles(s, e, t->vehicles);
+    } else if (const auto* o = std::get_if<cmd::SetOrders>(&c)) {
         // A colony's list runs at once when the player gives it an order,
         // except Use Facility: the immediate run covers vehicle lists only,
         // so that order waits for the colony's next run (spec 03 §8).
@@ -147,9 +148,10 @@ void settle(LiveContext& lc, Effects& fx) {
 void applyEach(LiveContext& lc, EmpireId e, std::span<const Command> commands, bool ask) {
     for (const Command& c : commands) {
         const CommandResult res = apply(lc.ctx.rules, lc.ctx.state, e, c);
-        // An answer settles its question, even one the rules refuse.
+        // An answer settles its question, even one the rules refuse; new
+        // orders replace the ones a question was about.
+        dropSettledQuestions(lc.ctx.state, c, res.ok);
         const auto* answer = std::get_if<cmd::EnterSector>(&c);
-        if (answer) dropQuestions(lc.ctx.state, answer->vehicle, answer->fleet);
         if (!res.ok) {
             lc.ctx.rejected.emplace_back(e, std::format("{}: {}", commandName(c), res.error));
             continue;
@@ -159,18 +161,19 @@ void applyEach(LiveContext& lc, EmpireId e, std::span<const Command> commands, b
             Effects fx;
             fx.move.empire = e;
             fx.move.ask = ask;
-            if (answer->fleet.valid()) fx.move.fleets.push_back(answer->fleet);
+            if (!answer->tagged.empty()) fx.move.tagged = answer->tagged;
+            else if (answer->fleet.valid()) fx.move.fleets.push_back(answer->fleet);
             else fx.move.vehicles.push_back(answer->vehicle);
-            fx.move.allowed = EntryQuestion{answer->fleet.valid() ? VehicleId{} : answer->vehicle, answer->fleet, answer->where};
+            fx.move.allowed = answer->tagged.empty()
+                                  ? EntryQuestion{answer->fleet.valid() ? VehicleId{} : answer->vehicle, answer->fleet, answer->where, {}}
+                                  : EntryQuestion{{}, {}, answer->where, answer->tagged};
             settle(lc, fx);
             continue;
         }
-        // New orders replace the ones a question was about.
-        if (const auto* o = std::get_if<cmd::SetOrders>(&c); o && !o->planet.valid()) dropQuestions(lc.ctx.state, o->vehicle, o->fleet);
         Effects fx;
         fx.move.empire = e;
         fx.move.ask = ask;
-        noteEffects(fx, c);
+        noteEffects(fx, lc.ctx.state, e, c);
         settle(lc, fx);
     }
 }
@@ -181,7 +184,7 @@ void applyBatch(LiveContext& lc, EmpireId e, std::vector<Command> commands) {
     if (commands.empty()) return;
     Effects fx;
     fx.move.empire = e;
-    for (const Command& c : commands) noteEffects(fx, c);
+    for (const Command& c : commands) noteEffects(fx, lc.ctx.state, e, c);
     detail::applyCommands(lc.ctx, e, std::move(commands));
     settle(lc, fx);
 }
@@ -423,6 +426,37 @@ TurnResult refused(EmpireId e, std::string why) {
 }
 
 } // namespace
+
+void dropSettledQuestions(GameState& s, const Command& c, bool applied) {
+    std::vector<EntryQuestion>& open = s.playerTurn.questions;
+    if (const auto* a = std::get_if<cmd::EnterSector>(&c)) {
+        std::erase_if(open, [&](const EntryQuestion& q) {
+            if (!a->tagged.empty()) return q.tagged == a->tagged;
+            return q.tagged.empty() && (a->fleet.valid() ? q.fleet == a->fleet : !q.fleet.valid() && q.vehicle == a->vehicle);
+        });
+        return;
+    }
+    if (!applied) return;
+    std::vector<VehicleId> given;
+    if (const auto* o = std::get_if<cmd::SetOrders>(&c); o && !o->planet.valid()) {
+        if (const Fleet* f = o->fleet.valid() ? s.fleet(o->fleet) : nullptr) given = f->members;
+        else given.push_back(o->vehicle);
+    } else if (const auto* t = std::get_if<cmd::OrderTagged>(&c)) {
+        given = t->vehicles;
+    }
+    if (given.empty()) return;
+    // Whether the question is about vehicle `v`: one of its tagged group, of
+    // its fleet, or the vehicle itself.
+    auto about = [&](const EntryQuestion& q, VehicleId v) {
+        if (!q.tagged.empty()) return std::find(q.tagged.begin(), q.tagged.end(), v) != q.tagged.end();
+        if (q.fleet.valid()) {
+            const Vehicle* x = s.vehicle(v);
+            return x && x->fleet == q.fleet;
+        }
+        return q.vehicle == v;
+    };
+    std::erase_if(open, [&](const EntryQuestion& q) { return std::any_of(given.begin(), given.end(), [&](VehicleId v) { return about(q, v); }); });
+}
 
 bool LiveOptions::computerPlaysFor(EmpireId e) const { return std::find(computerPlays.begin(), computerPlays.end(), e) != computerPlays.end(); }
 bool tacticalOffered(const GameState& s) { return turnBased(s) && !s.options.noTacticalCombat; }

@@ -157,7 +157,7 @@ public:
         auto qualify = [&](Condition& c) -> bool {
             if (designType.empty() || c.op != Condition::Op::Fact) return true;
             if (c.fact == Fact::Command && !commandTakesDesignType(c.text)) {
-                error(n, std::format("'design_type' cannot qualify the command '{}' (it can: SetOrders, QueueAdd, CreateDesign, JoinFleet, "
+                error(n, std::format("'design_type' cannot qualify the command '{}' (it can: SetOrders, OrderTagged, QueueAdd, CreateDesign, JoinFleet, "
                                      "CreateFleet)",
                                      c.text));
                 return false;

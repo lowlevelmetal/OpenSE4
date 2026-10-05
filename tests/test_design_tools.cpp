@@ -57,34 +57,100 @@ const Rules& rulesWithMount() {
 
 } // namespace
 
-TEST_CASE("design tools: upgrade replaces components with the newest of their family") {
-    const Rules& r = engineRules();
-    const uint32_t engine1 = componentIndex(r, "Test Engine"), engine2 = componentIndex(r, "Test Engine II");
-    const uint32_t laser1 = componentIndex(r, "Test Laser"), laser2 = componentIndex(r, "Test Laser II");
-    const uint32_t bridge = componentIndex(r, "Test Bridge");
-    const std::vector<DesignEntry> original{{bridge, -1}, {engine1, -1}, {laser1, 0}, {engine1, -1}};
+namespace {
 
-    SUBCASE("nothing newer known") {
-        const Empire e = empireWith(r, {{"Test Construction", 1}, {"Test Propulsion", 1}, {"Test Beams", 1}});
+// The test rules with a family of its own for every part that had family 0,
+// plus, appended so the test game's indices still hold: one engine family
+// holding two lines (the later line's first numeral after the earlier line's
+// third), and two plates of family 0.
+const Rules& rulesWithFamilies() {
+    static const Rules rules = [] {
+        ruleset::Ruleset rs = buildEngineRuleset();
+        for (size_t i = 0; i < rs.components.size(); ++i)
+            if (rs.components[i].family == 0) rs.components[i].family = 1000 + static_cast<int>(i);
+        auto areaOf = [&](std::string_view name) {
+            for (uint32_t i = 0; i < rs.techAreas.size(); ++i)
+                if (rs.techAreas[i].name == name) return ruleset::TechAreaId{i};
+            return ruleset::TechAreaId{};
+        };
+        auto add = [&](std::string name, int family, int numeral, std::string_view area, int level) {
+            ruleset::Component c = rs.components.front();
+            c.abilities.clear();
+            c.name = std::move(name);
+            c.family = family;
+            c.romanNumeral = numeral;
+            c.requirements = {ruleset::TechRequirement{areaOf(area), level}};
+            rs.components.push_back(std::move(c));
+        };
+        add("Test Ion Drive", 300, 1, "Test Propulsion", 1);
+        add("Test Ion Drive II", 300, 2, "Test Propulsion", 2);
+        add("Test Ion Drive III", 300, 3, "Test Propulsion", 3);
+        add("Test Warp Drive", 300, 1, "Test Propulsion", 4);
+        add("Test Warp Drive II", 300, 2, "Test Propulsion", 5);
+        add("Test Hull Plate", 0, 0, "Test Armor", 1);
+        add("Test Hull Plate Mk2", 0, 0, "Test Armor", 2);
+        rs.reindex();
+        return Rules{std::move(rs)};
+    }();
+    return rules;
+}
+
+} // namespace
+
+TEST_CASE("design tools: Upgrade takes the last researched component of each family in data order (spec 03 §4.1)") {
+    const Rules& r = rulesWithFamilies();
+    const uint32_t ion1 = componentIndex(r, "Test Ion Drive"), ion3 = componentIndex(r, "Test Ion Drive III");
+    const uint32_t warp1 = componentIndex(r, "Test Warp Drive"), warp2 = componentIndex(r, "Test Warp Drive II");
+    const uint32_t plate = componentIndex(r, "Test Hull Plate"), plate2 = componentIndex(r, "Test Hull Plate Mk2");
+    const uint32_t bridge = componentIndex(r, "Test Bridge");
+    const std::vector<DesignEntry> original{{bridge, -1}, {ion1, -1}, {ion3, 0}, {plate, -1}};
+    auto upgraded = [&](std::initializer_list<std::pair<std::string_view, int>> levels, std::vector<DesignEntry> entries = {}) {
+        if (entries.empty()) entries = original;
+        const Empire e = empireWith(r, levels);
+        upgradeEntries(r, e, entries);
+        return entries;
+    };
+
+    SUBCASE("nothing newer researched: every entry stays") {
+        const Empire e = empireWith(r, {{"Test Construction", 1}, {"Test Propulsion", 1}, {"Test Armor", 1}});
         auto entries = original;
+        entries[2] = {ion1, 0};
+        const auto before = entries;
         CHECK_FALSE(upgradeEntries(r, e, entries));
-        CHECK(entries == original);
-        CHECK(isLatestComponent(r, e, engine1));
-        CHECK(isLatestComponent(r, e, bridge));  // no family
+        CHECK(entries == before);
+        CHECK(isLatestComponent(r, e, ion1));
+        CHECK(isLatestComponent(r, e, bridge));
+        CHECK(isLatestComponent(r, e, plate));
     }
-    SUBCASE("newer engines and lasers known") {
-        const Empire e = empireWith(r, {{"Test Construction", 1}, {"Test Propulsion", 3}, {"Test Beams", 3}});
+    SUBCASE("within one line: the highest researched numeral, which is also the last") {
+        const std::vector<DesignEntry> want{{bridge, -1}, {ion3, -1}, {ion3, 0}, {plate, -1}};
+        CHECK(upgraded({{"Test Construction", 1}, {"Test Propulsion", 3}, {"Test Armor", 1}}) == want);
+    }
+    SUBCASE("a later line's first numeral replaces an earlier line's third; mounts stay") {
+        const Empire e = empireWith(r, {{"Test Construction", 1}, {"Test Propulsion", 4}, {"Test Armor", 1}});
         auto entries = original;
         CHECK(upgradeEntries(r, e, entries));
-        const std::vector<DesignEntry> want{{bridge, -1}, {engine2, -1}, {laser2, 0}, {engine2, -1}};
-        CHECK(entries == want);  // order and mounts kept
-        CHECK_FALSE(isLatestComponent(r, e, engine1));
-        CHECK(isLatestComponent(r, e, engine2));
+        const std::vector<DesignEntry> want{{bridge, -1}, {warp1, -1}, {warp1, 0}, {plate, -1}};
+        CHECK(entries == want);
+        CHECK_FALSE(isLatestComponent(r, e, ion3));
+        CHECK(isLatestComponent(r, e, warp1));
+        CHECK(upgraded({{"Test Propulsion", 5}}, {{ion3, -1}})[0].component == warp2);
+    }
+    SUBCASE("only what the owner researched counts: a newer part the owner lacks becomes the last it has") {
+        CHECK(upgraded({{"Test Propulsion", 3}}, {{warp2, -1}})[0].component == ion3);
+        // None of the family researched: the entry stays.
+        CHECK(upgraded({}, {{warp2, -1}})[0].component == warp2);
+    }
+    SUBCASE("family 0 is an ordinary family") {
+        CHECK(upgraded({{"Test Armor", 2}}, {{plate, -1}})[0].component == plate2);
+        const Empire e = empireWith(r, {{"Test Armor", 2}});
+        CHECK_FALSE(isLatestComponent(r, e, plate));
+        CHECK(isLatestComponent(r, e, plate2));
     }
 }
 
 TEST_CASE("design tools: an upgraded design is valid and can be created") {
-    const Rules& r = engineRules();
+    const Rules& r = rulesWithFamilies();
     GameState s = newEngineGame(5, 2, 10);
     Empire& e = s.empires[0];
     const DesignId made = addTestDesign(s, r, e.id, "Courier", "Test Frigate",
@@ -93,6 +159,8 @@ TEST_CASE("design tools: an upgraded design is valid and can be created") {
     e.techLevels[techArea(r, "Test Propulsion").index()] = 3;
     std::vector<DesignEntry> entries = scout.entries;
     REQUIRE(upgradeEntries(r, e, entries));
+    CHECK(entries.back().component == componentIndex(r, "Test Engine II"));
+    CHECK(entries.front() == scout.entries.front());
 
     Design d;
     d.name = nextVersionName(s, e, scout.name);

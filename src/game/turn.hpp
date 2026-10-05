@@ -337,6 +337,13 @@ TurnResult resumeTurnBased(const Rules& r, GameState& s, const LiveOptions& opti
 // for a missing battle answer leaves them as they were.
 TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles = nullptr);
 
+// The open Attack Sector questions a command settles (applyLive; a network
+// player's copy drops them the same way): an answer drops its own question,
+// refused or not; orders given to vehicles (cmd::SetOrders for a vehicle or
+// fleet, cmd::OrderTagged), once applied, drop every question about any of
+// them, a fleet's or a tagged group's they belong to included.
+void dropSettledQuestions(GameState& s, const Command& c, bool applied);
+
 // Ends `e`'s turn: its end-of-turn processing; the turn passes to the next
 // living empire, or after the last one the once-per-game-turn steps run.
 // Then resumeTurnBased with `options`. When `options` has the computer play

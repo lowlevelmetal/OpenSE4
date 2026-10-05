@@ -29,11 +29,15 @@ std::vector<uint32_t> hullsOfType(const game::Rules& r, const game::Empire& e, r
 // The designer's title for a vehicle type: "Ship Design", "Weapon Platform Design".
 std::string designWindowTitle(ruleset::VehicleType t);
 
-// Replaces every component with the newest available member of its family,
-// keeping the mount (docs/spec/03 §4.1 Upgrade). Returns true if anything changed.
+// Upgrade (docs/spec/03 §4.1, confirmed: binary): replaces every entry's
+// component, on its own, with the last component of its Family in data-file
+// order that the empire has researched (Rules::componentUpgradeTarget), any
+// family, 0 included; numerals and names play no part, neither the hull's
+// vehicle type nor the mount is checked, and each entry keeps its mount.
+// With none researched the entry stays. Returns true if anything changed.
 bool upgradeEntries(const game::Rules& r, const game::Empire& e, std::vector<game::DesignEntry>& entries);
 
-// True if `component` is the newest available numeral of its family (or has no family).
+// True if Upgrade would keep `component` as it is (upgradeEntries).
 bool isLatestComponent(const game::Rules& r, const game::Empire& e, uint32_t component);
 
 // Identical (component, mount) entries collapsed for the condensed view, in

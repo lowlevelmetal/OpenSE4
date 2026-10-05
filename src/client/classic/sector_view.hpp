@@ -84,6 +84,28 @@ SectorView sectorView(const game::Rules& r, const game::GameState& s, game::Empi
 // number of owners when they would not fit.
 int flagStep(int owners, int cellHeight);
 
+// One row of the report panel's list of a sector (spec 06 §2.5 "Fleets in
+// the list", confirmed: binary): a stellar object, a vehicle, or one of the
+// viewer's own fleets, whose members in the sector stand as one entry.
+struct SectorListRow {
+    game::ObjectId object;     // a stellar object
+    game::VehicleId vehicle;   // a vehicle; for a fleet's row the first of its members there in object order
+    game::FleetId fleet;       // the viewer's own fleet: its row
+    bool operator==(const SectorListRow&) const = default;
+};
+// The rows for `objects` (the stellar objects the viewer sees there) and
+// `vehicles` (the vehicles it sees there): each of the viewer's own fleets is
+// one row, other empires' fleet members are listed one by one. The rows are
+// sorted: stellar objects first (among themselves by name, ignoring case,
+// inferred); then by fleet number, highest first, vehicles in no fleet last;
+// then by the owner's player number; then by hull in VehicleSize.txt order,
+// unit groups after ships; then by name, ignoring case (confirmed: binary).
+std::vector<SectorListRow> sectorListRows(const game::Rules& r, const game::GameState& s, game::EmpireId viewer,
+                                          std::span<const game::ObjectId> objects, std::span<const game::Vehicle* const> vehicles);
+// The Fleet Report's member list (spec 06 §2.5 "The Fleet Report"): the
+// fleet's members at its location, sorted as the sector's list.
+std::vector<game::VehicleId> fleetReportMembers(const game::Rules& r, const game::GameState& s, const game::Fleet& f);
+
 // A planet's size for the choice above: its PlanetSize's Stellar Size, Tiny 1
 // to Huge 5; 0 for anything that is not a planet.
 int stellarSizeRank(const game::Rules& r, const game::SpaceObject& o);

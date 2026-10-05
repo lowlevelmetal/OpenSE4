@@ -1,0 +1,79 @@
+# One of the player's fleets in a sector's list (spec 06 §2.5 "Fleets in the list", "The Fleet
+# Report", §7 Q110), on tutorial 5's fleet: the fleet is one row (Shift and a click tag it);
+# the row opens the Fleet Report alone, with no report tabs; a left-click on a member makes it
+# the leader, a right-click opens its Ship Report in a window while the panel keeps the Fleet
+# Report; the up-arrow brings the list back. Then the fleet and the colony ship, tagged
+# together, are given one order (cmd::OrderTagged, spec 03 §8 "Tagged vehicles")
+# (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --tutorial=fleets-and-movement --layout=1024x768 --size=1280x800
+
+wait-lesson fleets-and-movement
+click item:Next in=lesson
+wait-step 2
+click item:next in=tag:cycle:ship
+wait-step 3
+click tag:order:fleet-transfer
+wait-window fleet-transfer
+wait-step 4
+click tag:fleet-transfer:create-fleet
+click item:OK in="Create Fleet"
+wait-step 5
+wait-for tag:fleet-transfer:ships:named
+click item:##row in=fleet-transfer nth=1
+wait-step 6
+click tag:fleet-transfer:close
+wait-closed fleet-transfer
+# Free Play (at 800x600 More shows it first): the lesson lets everything through.
+click item:More in=lesson optional
+click tag:lesson:free-play
+# The home sector's list: the colony, one row for the fleet of two, the colony ship.
+click sector:home
+wait-for item:report:fleet
+assert-present item:report:colony
+assert-present item:report:ship
+assert-absent item:report:fleet-member
+# Shift and a click on the fleet's row tag the fleet: both its ships.
+click item:report:fleet shift
+wait-for item:tagged:2
+# A click on the sector clears the tags; the fleet's row opens the Fleet Report alone.
+click sector:home
+wait-gone item:tagged:*
+click item:report:fleet
+wait-for item:report:fleet-member nth=2
+assert-absent item:report:ship
+assert-absent item:Comps
+assert-present item:"*(Fleet Leader)"
+# A left-click on a member makes it the leader; the Fleet Report stays.
+click item:report:fleet-member nth=1
+wait 5
+assert-inside item:"*(Fleet Leader)" item:report:fleet-member nth=1
+click item:report:fleet-member nth=2
+wait 5
+assert-inside item:"*(Fleet Leader)" item:report:fleet-member nth=2
+assert { command = "SetFleetLeader" }
+# A right-click opens the member's Ship Report in a window, on Detail; Close closes it.
+right-click item:report:fleet-member nth=1
+wait-for item:Comps
+assert-present item:report:fleet-member
+click item:Close
+wait-gone item:Comps
+assert-present item:report:fleet-member nth=2
+# The up-arrow: the sector's list again.
+click item:##toList
+wait-for item:report:fleet
+# The fleet and the colony ship tagged together get one order, carried out together.
+click item:report:fleet shift
+click item:report:ship shift
+wait-for item:tagged:3
+key M
+wait-until { picking = "move-to" }
+click sector:empty nth=150
+wait 5
+assert { command = "OrderTagged" }
+assert { order = "move-to", design_type = "Colony" }
+assert { not = { command = "SetOrders" } }
+# The tags are gone, and the fleet and the colony ship left the home sector together.
+assert-absent item:tagged:*
+assert-absent item:report:fleet
+assert-absent item:report:ship

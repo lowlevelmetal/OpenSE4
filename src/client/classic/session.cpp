@@ -131,18 +131,19 @@ game::CommandResult ClassicSession::issue(game::Command c) {
 // as a change is ours (inferred, spec 06 §7 Q99).
 void ClassicSession::carryFlags(const game::Command& c) {
     if (!switchedOwn_ || (kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem)) return;
-    const auto* o = std::get_if<game::cmd::SetOrders>(&c);
-    if (!o) return;
     std::vector<game::VehicleId> vehicles;
-    if (o->vehicle.valid()) vehicles.push_back(o->vehicle);
-    if (const game::Fleet* f = state_.fleet(o->fleet)) vehicles.insert(vehicles.end(), f->members.begin(), f->members.end());
+    const auto* o = std::get_if<game::cmd::SetOrders>(&c);
+    if (const auto* t = std::get_if<game::cmd::OrderTagged>(&c)) vehicles = game::taggedVehicles(state_, player_, t->vehicles);
+    else if (!o) return;
+    if (o && o->vehicle.valid()) vehicles.push_back(o->vehicle);
+    if (const game::Fleet* f = o ? state_.fleet(o->fleet) : nullptr) vehicles.insert(vehicles.end(), f->members.begin(), f->members.end());
     for (game::VehicleId id : vehicles) {
         const game::Vehicle* v = state_.vehicle(id);
         if (!v || v->owner != player_ || std::find(flagged_.begin(), flagged_.end(), id) != flagged_.end()) continue;
         flagged_.push_back(id);
         issue(game::cmd::SetMinister{id, {}, false, v->minister});
     }
-    if (const game::Colony* col = o->planet.valid() ? state_.colony(o->planet) : nullptr;
+    if (const game::Colony* col = o && o->planet.valid() ? state_.colony(o->planet) : nullptr;
         col && col->owner == player_ && std::find(flaggedPlanets_.begin(), flaggedPlanets_.end(), o->planet) == flaggedPlanets_.end()) {
         flaggedPlanets_.push_back(o->planet);
         issue(game::cmd::SetMinister{{}, o->planet, false, col->minister});
@@ -166,15 +167,10 @@ game::CommandResult ClassicSession::issueCommand(game::Command c) {
         if (!myTurn()) return game::CommandResult::fail("It is not your turn.");
         game::CommandResult r = game::apply(*rules_, state_, player_, c);
         // As the engine does: an answer (even a refused one), or new orders, drop the group's question.
-        auto drop = [&](game::VehicleId v, game::FleetId f) {
-            std::erase_if(state_.playerTurn.questions, [&](const game::EntryQuestion& q) {
-                return f.valid() ? q.fleet == f : !q.fleet.valid() && q.vehicle == v;
-            });
-            ++revision_;
-        };
-        if (const auto* a = std::get_if<game::cmd::EnterSector>(&c)) drop(a->vehicle, a->fleet);
+        const size_t open = state_.playerTurn.questions.size();
+        game::dropSettledQuestions(state_, c, r.ok);
+        if (state_.playerTurn.questions.size() != open) ++revision_;
         if (!r.ok) return r;
-        if (const auto* o = std::get_if<game::cmd::SetOrders>(&c); o && !o->planet.valid()) drop(o->vehicle, o->fleet);
         if (transport_) transport_->playCommand(c);
         record(std::move(c));
         ++revision_;
@@ -224,7 +220,7 @@ std::expected<bool, std::string> ClassicSession::passwordMatches(const game::Emp
 void ClassicSession::answer(bool enter) {
     if (questions().empty()) return;
     const game::EntryQuestion q = questions().front();  // the answer drops it (applyLive, or issue() on a network copy)
-    issue(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, enter});
+    issue(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, enter, q.tagged});
 }
 
 std::vector<size_t> ClassicSession::takeStrategicBattles() {

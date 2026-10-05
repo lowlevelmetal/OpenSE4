@@ -79,7 +79,7 @@ These rules from [Combat](combat) matter when you design:
 
 - A new design is a **prototype** until you build one. You can **Edit** a prototype freely, as long as it is not in a construction queue.
 - Once a design has been built, it cannot change. Use **Copy** to start a new design from it.
-- **Upgrade** makes a new design with the newest version of every component you have, and keeps the old one. Then build the new design, or retrofit old ships to it (see [Supply, cargo and repair](logistics#scrapping-and-mothballing)).
+- **Upgrade** opens the designer on a copy of the design in which every component is replaced by the newest one of its family that you have researched, the one listed last in the game's component list (so a newer line of engines replaces an older line's best). Create it as a new design; the old one stays. Then build the new design, or retrofit old ships to it (see [Supply, cargo and repair](logistics#scrapping-and-mothballing)).
 - **Make Obsolete** marks a design you no longer want; **Hide Obsolete** hides such designs from your lists. An obsolete design is removed for good once no vehicle of it exists, it is in no queue and no other empire has seen it for 50 turns.
 - Design names must be unique among all the designs in the game, every empire's included.
 

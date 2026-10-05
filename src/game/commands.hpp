@@ -34,10 +34,29 @@ struct CreateFleet {         // new fleet from vehicles in one sector; first is 
     std::string name;
     std::vector<VehicleId> members;
 };
+// An order given to the vehicles tagged in the report panel's list (spec 03
+// §8 "Tagged vehicles", confirmed: binary): `orders` are appended to the own
+// list of every tagged vehicle, in the order they were tagged, a fleet member
+// standing for every member at its fleet's location (game::taggedVehicles),
+// each list expanding them as cmd::SetOrders does; `repeat` (Set Patrol)
+// switches Repeat on in each of those lists. The vehicles named must share a
+// sector. In a turn-based game the orders then run at once, as one group of
+// every tagged vehicle acting through the first one (applyLive); in a
+// simultaneous game nothing else happens.
+struct OrderTagged {
+    std::vector<VehicleId> vehicles;
+    std::vector<Order> orders;
+    bool repeat = false;
+};
 struct JoinFleet { FleetId fleet; VehicleId vehicle; };
 struct LeaveFleet { VehicleId vehicle; };
 struct DisbandFleet { FleetId fleet; };
 struct SetFleetOptions { FleetId fleet; uint32_t formation = 0; uint32_t strategy = 0; };
+// A left-click on a member in the Fleet Report makes it the fleet's leader
+// (spec 03 §9, spec 06 §2.5 "The Fleet Report", confirmed: binary): one of
+// the fleet's members at its location. The leader matters only for the
+// formation.
+struct SetFleetLeader { FleetId fleet; VehicleId vehicle; };
 struct SetVehicleStrategy { DesignId design; uint32_t strategy = 0; };
 struct Rename {              // vehicle, fleet, design or planet
     VehicleId vehicle;
@@ -73,8 +92,17 @@ struct SetMinister { VehicleId vehicle; ObjectId planet; bool empireWide = false
 // Turn-based games: the answer to the Attack Sector question (spec 03 §6.2).
 // A move of the vehicle (or fleet) stopped before a sector with enemies;
 // `enter` carries it on into that sector and its battle, otherwise the move
-// stops and its order fails (the list is cleared).
-struct EnterSector { VehicleId vehicle; FleetId fleet; Location where; bool enter = true; };
+// stops and its order fails (the list is cleared). A tagged group's question
+// (EntryQuestion::tagged) is answered with the same vehicles in `tagged`,
+// `vehicle` and `fleet` left invalid: entering carries the whole group on,
+// declining clears every one of their lists (spec 03 §8 "Tagged vehicles").
+struct EnterSector {
+    VehicleId vehicle;
+    FleetId fleet;
+    Location where;
+    bool enter = true;
+    std::vector<VehicleId> tagged;
+};
 
 // ---- Construction queues ------------------------------------------------------------------
 struct QueueTarget {         // a planet queue, or a vehicle with a Space Yard
@@ -240,7 +268,7 @@ using Command = std::variant<
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
-    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail>;
+    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

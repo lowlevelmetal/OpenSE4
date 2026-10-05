@@ -127,6 +127,12 @@ bool commandOfType(const game::GameState& s, const game::Command& cmd, std::stri
     if (wanted.empty()) return true;
     if (const auto* o = std::get_if<game::cmd::SetOrders>(&cmd))
         return o->vehicle.valid() ? vehicleOfType(s, o->vehicle, wanted) : fleetOfType(s, o->fleet, wanted);
+    // Tagged vehicles: one of them, or of their fleets, is of the type.
+    if (const auto* t = std::get_if<game::cmd::OrderTagged>(&cmd))
+        return std::any_of(t->vehicles.begin(), t->vehicles.end(), [&](game::VehicleId v) {
+            const game::Vehicle* x = s.vehicle(v);
+            return vehicleOfType(s, v, wanted) || (x && fleetOfType(s, x->fleet, wanted));
+        });
     if (const auto* q = std::get_if<game::cmd::QueueAdd>(&cmd))
         return q->item.kind == game::QueueItem::Kind::Vehicle && designOfType(s, q->item.design, wanted);
     if (const auto* d = std::get_if<game::cmd::CreateDesign>(&cmd)) return designTypeMatches(d->design.designType, wanted);
@@ -174,7 +180,8 @@ bool designTypeMatches(std::string_view actual, std::string_view wanted) {
 }
 
 bool commandTakesDesignType(std::string_view command) {
-    return command == "SetOrders" || command == "QueueAdd" || command == "CreateDesign" || command == "JoinFleet" || command == "CreateFleet";
+    return command == "SetOrders" || command == "OrderTagged" || command == "QueueAdd" || command == "CreateDesign" || command == "JoinFleet" ||
+           command == "CreateFleet";
 }
 
 void Tracker::observe(const game::GameState& state, game::EmpireId empire) {
@@ -354,11 +361,15 @@ bool holds(const Condition& c, const EvalContext& ctx) {
         case Fact::Order: {
             const auto kind = orderKindFromId(c.text);
             if (!kind) return false;
-            for (const game::Command& cmd : commandsSince(ctx))
-                if (const auto* o = std::get_if<game::cmd::SetOrders>(&cmd))
-                    if (std::any_of(o->orders.begin(), o->orders.end(), [&](const game::Order& order) { return order.kind == *kind; }) &&
-                        commandOfType(ctx.state, cmd, c.designType))
-                        return true;
+            auto gives = [&](const std::vector<game::Order>& orders) {
+                return std::any_of(orders.begin(), orders.end(), [&](const game::Order& order) { return order.kind == *kind; });
+            };
+            // An order given to one vehicle, fleet or planet, or to tagged vehicles.
+            for (const game::Command& cmd : commandsSince(ctx)) {
+                const auto* o = std::get_if<game::cmd::SetOrders>(&cmd);
+                const auto* t = std::get_if<game::cmd::OrderTagged>(&cmd);
+                if (((o && gives(o->orders)) || (t && gives(t->orders))) && commandOfType(ctx.state, cmd, c.designType)) return true;
+            }
             return false;
         }
         default: return factValue(c.fact, ctx) >= c.number;
