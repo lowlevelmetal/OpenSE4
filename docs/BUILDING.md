@@ -632,6 +632,10 @@ recorder is tested.
 | `colonize-pick.script`, `follow-warp.script` | On a training game of our own in `tests/input/learn-orders` (two colony ships at home): Colonize's Pick Object window and Cancel, a wrong pick failing on arrival with the "Colonize" message box, the moons settled, population moved between them with Cargo Transfer; a warp the view follows to the arrival system |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
 | `game-setup.script` | The setup screens: Load Game with Change Directory, Quick Start's picker, Game Setup's pages, Add New with a name from the list picker and an e-mail address, Begin Game, and Change Email in Empire Status |
+| `mods-window.script` | The Mods window on the fixture mods of `tests/fixtures/mods` (`--mods-dir`): each mod's details, enabling by button and double click, a requirement missing then met, the order and Move Up, Done refused with the reason when a patch does not fit the installed data, then Done reading the data again; Cancel keeping the choice (docs/sdk/packages-and-data.md "Choosing mods in the game") |
+| `mods-setup.script` | Game Setup's and Quick Start's line about the mods and their Mods button, the setup kept across Cancel, a quick game with the mods whose hull the designer offers |
+| `mods-saved-game.script` | Saved games played with other mods: the Game Menu's Load of one ending the game and the front end's Other Mods window loading it without the mod; Load Game of a modded game from the title screen, Load with Its Mods reading the data again with the game's mod |
+| `designer-picture.script`, `mod-hull-designer.script` | A design's own picture from the fixture `picture-pack` (the designer's choice, Designs, an edit, Save for SE IV refusing the game); a mod's new hull with its pictures in the designer |
 
 Scripts marked `# ci: fixture-data` need nothing but our own content and also run on a game
 folder made from `tests/fixtures` (CI). Scripts marked `# layouts: both` also play at 800x600

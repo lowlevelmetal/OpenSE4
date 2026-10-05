@@ -42,7 +42,10 @@ type the host's address and port yourself for a game over the internet. Enter yo
 optional password, and the join password if the host set one, then press `Connect`.
 
 Your copy of the game data must match the host's, and both of you must run the same OpenSE4
-version; the list warns you when the data differs.
+version; the list warns you when the data differs. The same goes for mods that change the game
+(see [Mods](settings#mods)): the lobby lists the host's mods, and a player whose mods differ is
+turned away with each difference named and a `Mods` button to choose the same ones. Mods with
+only pictures and sounds may differ.
 
 To come back to a game after a disconnection, join again with the **same name and password**. The
 host sends you the current turn, and orders you already sent still count.

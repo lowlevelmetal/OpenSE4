@@ -96,10 +96,11 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
   - Help can search;
   - combat replays can list each turn's events.
 - **Mods:** packages of pictures, sounds and data patches layer over your installed game
-  without changing it; patches change single records, so mods combine. Classic mods load
-  as packages too. `opense4-sdk` makes, checks and packs mods, and `opense4-datacheck`
-  checks a modded data set and names the file, line and record of anything it doesn't
-  understand.
+  without changing it; patches change single records, so mods combine. Choose them in the
+  Mods window. Pictures may be PNG and larger than the original's, sounds and music OGG
+  Vorbis, and a design may show a picture of its own. Classic mods load as packages too.
+  `opense4-sdk` makes, checks and packs mods, and `opense4-datacheck` checks a modded data
+  set and names the file, line and record of anything it doesn't understand.
 - **Your games from the original:** Load Game opens the original's saved games and
   converts them, and Save Game can write a game back for the original, so a game moves
   between the two (docs/SETUP.md, "Games of the original"). `opense4-convert` does the same
@@ -270,7 +271,7 @@ installed game in memory; nothing is written into it. Classic mods (replacement 
 files and pictures) load as packages too.
 
 ```sh
-opense4 --mod=path/to/mymod                    # play with a mod (or list it in the settings)
+opense4 --mod=path/to/mymod                    # play with a mod (or choose it in the Mods window)
 opense4-sdk new data mymod --id=me.mymod       # start one from a template
 opense4-sdk check mymod                        # apply it to your game and report every problem
 opense4-sdk pack mymod                         # a .zip to share

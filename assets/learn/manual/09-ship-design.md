@@ -135,6 +135,10 @@ name: their boxes read *Size*, *Design Type* and *Design Name*.
    design breaks, a missing size or name too, each after a red dot.
 4. Press `Create Design` when the Warnings box has nothing left; `Cancel` closes the designer.
 
+With mods that add ship pictures (see [Mods](settings#mods)), a small arrow appears in the
+corner of the design's picture: it lists the hull's picture and the mods' pictures, and the
+one you pick becomes the design's own. Copies and upgrades of the design keep it.
+
 The buttons on the right help:
 
 | Button | What it does |
