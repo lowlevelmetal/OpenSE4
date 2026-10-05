@@ -198,10 +198,9 @@ private:
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();
         std::vector<Row> out;
-        auto thisTurn = [&](uint32_t turn) { return turn + 1 >= s.turn; };
         for (size_t i = 0; i < me.log.size(); ++i) {
             const game::LogEntry& l = me.log[i];
-            if (!thisTurn(l.turn)) continue;
+            if (!logListsEntry(s, l)) continue;
             Row r;
             r.turn = l.turn;
             r.category = l.category;

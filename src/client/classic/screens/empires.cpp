@@ -78,13 +78,6 @@ void pageButtons(Dialog& d, int& page, size_t count, int perPage) {
     d.spacer();
 }
 
-int pendingFrom(const UiContext& ui, EmpireId from) {
-    int n = 0;
-    for (const auto& m : ui.state().messages)
-        if (m.from == from && m.to == ui.session.player() && m.delivered && !m.answered) ++n;
-    return n;
-}
-
 void statLine(UiContext& ui, const char* label, const std::string& value, ImVec4 color = ImVec4(0.9f, 0.92f, 0.97f, 1.0f)) {
     ImGui::TextColored(kTextBlue, "%s", label);
     ImGui::SameLine(ui.px(58));
@@ -287,7 +280,8 @@ private:
                     const int anger = them.relation(ui.session.player()).anger;
                     statLine(ui, "Mood", std::format("{} ({})", moodWord(anger), anger));
                 }
-                const int waiting = pendingFrom(ui, them.id);
+                // Only while a reply is still possible: the message is in the Log (issue #4).
+                const int waiting = messagesAwaitingReply(ui.state(), ui.session.player(), them.id);
                 if (waiting > 0) statLine(ui, "Inbox", std::format("{} waiting", waiting), kTextWarn);
                 if (rel.messageSentThisTurn) statLine(ui, "Sent", "Message sent this turn", kTextDim);
                 break;

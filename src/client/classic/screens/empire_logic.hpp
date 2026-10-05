@@ -47,6 +47,12 @@ MessageNeeds messageNeeds(game::MessageType t);
 std::vector<game::MessageType> sendableMessageTypes(game::Treaty t, const game::GameOptions& o);
 // Whether a received message can be accepted or refused (cmd::AnswerMessage).
 bool answerable(game::MessageType t);
+// How many messages from `from` wait for `me` to answer them: delivered, not
+// answered, of a type that takes an answer, and still in the Log. Only the
+// Log's Send Reply answers a message (spec 06 §4.1), so once its entry has
+// left the Log (spec 05 §3.4 "Log lifetime") the chance to reply has passed
+// and it waits no more (Empires' "Inbox: N waiting", GitHub issue #4).
+int messagesAwaitingReply(const game::GameState& s, game::EmpireId me, game::EmpireId from);
 // The counter-proposal type for a received proposal (General when there is none).
 game::MessageType counterType(game::MessageType received);
 // Treaties that may be proposed while the current treaty is `current`.
@@ -146,6 +152,11 @@ std::vector<HistoryLine> historyLines(const game::Rules& r, const game::GameStat
 // ---- Log (spec 06 §4.1) ------------------------------------------------------------------------
 
 inline constexpr int kLogCategories = int(game::LogCategory::Misc) + 1;
+
+// Whether the Log lists an entry: those of the turn in progress and of the
+// one before (an empire's end-of-turn processing keeps only these, spec 05
+// §3.4 "Log lifetime").
+bool logListsEntry(const game::GameState& s, const game::LogEntry& l);
 
 // The filter the Log opens with: the one stored with the empire
 // (InterfaceOptions::logFilter: 0 All, else the category + 1), or All when

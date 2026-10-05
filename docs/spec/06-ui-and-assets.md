@@ -2116,7 +2116,12 @@ Exact rules (confirmed: binary):
   is stored, a later turn re-selects whatever entry now has it.
 - **Send Reply** is enabled only for diplomatic messages. It opens Communicate addressed
   to the sender, or shows a "Cannot Reply" notice when a message already went to that
-  empire this turn.
+  empire this turn. It is the only way to answer a message, so the chance to reply ends
+  when the message's entry leaves the Log (spec 05 §3.4 "Log lifetime"). Our client's
+  Empires window (Treaty tab) also counts each empire's messages that wait for an answer,
+  "Inbox: N waiting", an OpenSE4 line: since 2026-10-04 only those still in the Log, as
+  the count stayed for the ten turns OpenSE4 keeps a message (GitHub issue #4;
+  `messagesAwaitingReply`).
 - **Combat Replay** is enabled only for combat entries, and only when Settings.txt
   `Create Combat Replay` is TRUE. When the replay closes, a new background track starts.
 - **Constr. Queues** is always enabled and opens Construction Queues over the Log.
