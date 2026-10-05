@@ -128,7 +128,7 @@ add_subdirectory(tools)
 # `cmake --install`: the programs, and on Linux the desktop entry, icons and
 # AppStream metadata that let desktops list the game (packaging/linux).
 include(GNUInstallDirs)
-install(TARGETS opense4-server opense4-datacheck RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(TARGETS opense4-server opense4-datacheck opense4-sdk RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 if(TARGET opense4)
     install(TARGETS opense4 RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 endif()
