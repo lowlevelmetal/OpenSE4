@@ -661,8 +661,8 @@ private:
             rec.text = text(l.text);
             rec.target = gotoCode(l.target);
             rec.category = static_cast<uint8_t>(static_cast<uint8_t>(l.category) + 1);
-            // Unread: the original's Log lists only entries read never or this
-            // turn (§3.6.11, observed).
+            // OpenSE4's entries unread: the original's Log lists only entries
+            // read never or this turn (§3.6.11, observed).
             rec.dateRead = 0;
             if (l.classic.kind != 0) {
                 // An entry imported from the original: what it came with (§7.3).
@@ -671,6 +671,10 @@ private:
                 rec.owner = c.owner;
                 rec.system = c.system;
                 rec.sector = c.sector;
+                // Its read mark as the original had it: entries read on an
+                // earlier turn stay hidden in the Log and are not counted again
+                // by the computer players' anger (spec 05 §7.3).
+                rec.dateRead = c.dateRead;
                 rec.picture = c.pictureKey;
                 rec.otherEmpire = player(c.otherEmpire);
                 rec.eventNotice = c.eventNotice;

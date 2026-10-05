@@ -164,6 +164,9 @@ struct ClassicLogFields {
     // The owner, system and sector bytes as the file had them (the owner is not
     // always the log's empire, observed; a sector may lie outside the grid).
     uint8_t owner = 0, system = 0, sector = 0;
+    // The date it was first read: the Log window's mark, which is also what a
+    // computer player's political step has counted (spec 05 §7.3); 0 unread.
+    int32_t dateRead = 0;
     uint16_t pictureKey = 0;
     EmpireId otherEmpire;
     bool eventNotice = false;

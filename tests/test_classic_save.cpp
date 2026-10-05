@@ -897,7 +897,7 @@ TEST_CASE("classic save: the export writes the data set's checksums") {
 
 // ---- Log entries, Attack, Launch and Recover, movement (§3.6.11, §3.8.8, §9.1) ---------------------------------
 
-TEST_CASE("classic save: log entries are unread on export and keep the kind they were imported with") {
+TEST_CASE("classic save: OpenSE4's log entries are unread on export; imported ones keep what they came with") {
     const Rules& r = test::engineRules();
     GameState s = playedGame(true, 6, 61);
     addLog(s, EmpireId{0u}, LogCategory::Misc, "Our own entry", "Written by OpenSE4.");
@@ -924,7 +924,7 @@ TEST_CASE("classic save: log entries are unread on export and keep the kind they
     l.eventNotice = true;
     l.eventKind = 4;
     l.techArea = 5;
-    l.dateRead = 0;
+    l.dateRead = l.date;   // read (and counted) this turn
     BattleRecord& b = l.battle.emplace();
     b.number = 7;
     b.sides[0].player = 1;
@@ -953,7 +953,7 @@ TEST_CASE("classic save: log entries are unread on export and keep the kind they
     CHECK(back.eventNotice);
     CHECK(back.eventKind == 4);
     CHECK(back.techArea == 5);
-    CHECK(back.dateRead == 0);
+    CHECK(back.dateRead == date);   // an imported entry keeps its read mark
     REQUIRE(back.battle.has_value());
     CHECK(*back.battle == battle);
     const LogRecord& tech = again.empires[0].log.back();
@@ -1246,7 +1246,6 @@ bool explained(const std::string& line) {
                  R"(^empire \d+ > computer player > (ship-name index|unused|drone name counter|enemy capability|incursion system))",
                  R"(^empire \d+ > computer player > (anger|turns since war)( #\d+)?: )",                    // own entry and absent players
                  R"(^empire \d+ > empire options > (turn end system|turn end sector|sort key|set queue tab|designs tab|politics tab|colonies tab|cargo transfer tab|units transfer tab|designs statistics view|designs hide obsolete|galaxy names|galaxy distances|pause|unused))",
-                 R"(^empire \d+ > log entry \d+ > date read:)",                                             // written unread (§3.6.11)
                  R"(^empire \d+ > queue template)",                                                            // not held (§3.6.6)
                  R"(^empire \d+ > intelligence > project \d+ > specific target)",                           // system targets (now any)
                  R"(^empire \d+ > fleet)",                                                                     // free slots close up

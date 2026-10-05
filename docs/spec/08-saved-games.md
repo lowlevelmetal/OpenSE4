@@ -1562,6 +1562,12 @@ What also showed:
     dot in the name, and plots its lines in the Comparisons window. The events file was not
     tested (no export carried one).
 
+21. An imported log entry's read date: OpenSE4 writes it back as the file had it (§12), so
+    entries the computer players had counted stay counted and entries read on an earlier
+    turn stay out of the Log window. Whether a player would rather see the imported game's
+    last messages again in the original (read date 0, as §7.3 writes for OpenSE4's own
+    entries) is open.
+
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 
 - A colony's facility entries keep a count of destroyed facilities that the removal pass
@@ -1631,15 +1637,19 @@ Implemented on 2026-10-04 from this spec.
   - An imported Colonize order counts as given (its colonists were loaded then); a Use
     Facility position is turned between the grouped list and OpenSE4's own; Abandon Planet
     orders are dropped (OpenSE4 abandons at once).
-  - Log entries are written unread (read date 0, §3.6.11). OpenSE4's are written as kind
-    36 with picture key 0, unanswered messages as kind 19 with their record (a delivered
-    message whose entry the log no longer holds gets one). Imported entries keep title,
-    text, place, category and go-to, and a picture from their kind and key where the kind
-    names one (vehicle and facility built, item developed, message); and they keep what
+  - Log entries: OpenSE4's are written unread (read date 0, §3.6.11) as kind 36 with
+    picture key 0, unanswered messages as kind 19 with their record (a delivered message
+    whose entry the log no longer holds gets one). Imported entries keep title, text,
+    place, category and go-to, and a picture from their kind and key where the kind names
+    one (vehicle and facility built, item developed, message); and they keep what
     OpenSE4's entries do not hold (`LogEntry::classic`: the kind, the owner, system and
-    sector bytes as written, the picture key, the other empire, the event-style notice, the
-    event kind, the tech area and a combat entry's battle details), which the export writes
-    back. A kept kind 19 whose message is gone is written as kind 36.
+    sector bytes as written, the read date, the picture key, the other empire, the
+    event-style notice, the event kind, the tech area and a combat entry's battle details),
+    which the export writes back. An imported entry's read date is kept rather than set to
+    0 (an OpenSE4 choice, question 21): it is the mark of what a computer player's political
+    step has counted (spec 05 §7.3), so the original neither counts those entries again nor
+    lists those read on an earlier turn, as before the import. A kept kind 19 whose message
+    is gone is written as kind 36.
   - Turn-based games: the current player's turn counts as started (§11.1 Q14); the
     closing list (§3.9) is the turn's launch budget. An export made before the current
     player's turn has started (OpenSE4 between two players' turns) writes that player's

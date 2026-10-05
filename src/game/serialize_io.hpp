@@ -359,7 +359,7 @@ template <class Ar> void io(Ar& ar, ClassicBattleSide& b) { fields(ar, b.player,
 
 template <class Ar>
 void io(Ar& ar, ClassicLogFields& c) {
-    fields(ar, c.kind, c.owner, c.system, c.sector, c.pictureKey, c.otherEmpire, c.eventNotice, c.eventKind, c.techArea, c.battleNumber, c.battle);
+    fields(ar, c.kind, c.owner, c.system, c.sector, c.dateRead, c.pictureKey, c.otherEmpire, c.eventNotice, c.eventKind, c.techArea, c.battleNumber, c.battle);
 }
 
 template <class Ar>

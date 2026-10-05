@@ -1230,6 +1230,7 @@ private:
                 c.owner = l.owner;
                 c.system = l.system;
                 c.sector = l.sector;
+                c.dateRead = l.dateRead;
                 c.pictureKey = l.picture;
                 c.otherEmpire = player(l.otherEmpire);
                 c.eventNotice = l.eventNotice;
