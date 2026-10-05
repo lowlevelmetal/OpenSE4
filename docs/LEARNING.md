@@ -1013,8 +1013,10 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
   `system-grid`, `coordinate-location`, `galaxy-grid-lines`, `galaxy-warp-lines`,
   `latest-construction-only`, `latest-components-only`, `auto-claim-colonized`;
 - what windows remember: `planets-no-sys-to-avoid`, `simulator-no-obsolete`,
-  `replay-animate`, `replay-fast`, `replay-view-rect`, `replay-grid`, and the designer's
-  `design-to-hit` (To Hit Modifiers) and `design-condensed` (Condensed View).
+  `replay-animate`, `replay-fast`, `replay-view-rect`, `replay-grid`, the designer's
+  `design-to-hit` (To Hit Modifiers) and `design-condensed` (Condensed View), and the
+  Designs window's `designs-hide-obsolete` (Hide Obsolete) and `designs-stats-view`
+  (Stats\Strategy).
 
 **Treaty kinds** (`treaty`): `war`, `non-intercourse`, `non-aggression`,
 `subjugation`, `protectorate`, `trade-alliance`, `trade-research-alliance`,

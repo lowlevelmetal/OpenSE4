@@ -114,6 +114,10 @@ public:
     FrameOutput tick(const Probe& probe);
     // What became of the events tick() gave, in order.
     void verdicts(std::span<const Verdict> v);
+    // Fails the script at the step under way for something that went wrong
+    // during the frame (Dear ImGui reported an error, App::frame): what to
+    // print and the picture to save, as a failed step gives.
+    FrameOutput abort(std::string why, const Probe& probe);
 
     bool finished() const { return finished_; }
     bool failed() const { return failed_; }

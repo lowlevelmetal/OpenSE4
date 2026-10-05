@@ -548,6 +548,20 @@ std::vector<HistoryEvent> statsEvents(const std::vector<game::TurnStats>& series
 
 // ---- Log ------------------------------------------------------------------------------------------
 
+bool logListsEntry(const game::GameState& s, const game::LogEntry& l) { return l.turn + 1 >= s.turn; }
+
+int messagesAwaitingReply(const game::GameState& s, game::EmpireId me, game::EmpireId from) {
+    if (!me.valid() || me.index() >= s.empires.size()) return 0;
+    const std::vector<game::LogEntry>& log = s.empire(me).log;
+    int n = 0;
+    for (const game::DiplomaticMessage& m : s.messages) {
+        if (m.from != from || m.to != me || !m.delivered || m.answered || !answerable(m.type)) continue;
+        const bool listed = std::any_of(log.begin(), log.end(), [&](const game::LogEntry& l) { return l.message == m.id && logListsEntry(s, l); });
+        if (listed) ++n;
+    }
+    return n;
+}
+
 uint8_t logOpeningFilter(uint8_t stored, const std::vector<int>& counts) {
     if (stored == 0 || stored > counts.size()) return 0;
     return counts[stored - 1] > 0 ? stored : uint8_t{0};
@@ -557,6 +571,18 @@ int logOpeningRow(int32_t stored, const std::vector<int32_t>& shown) {
     if (shown.empty()) return -1;
     const auto it = std::find(shown.begin(), shown.end(), stored);
     return it == shown.end() ? 0 : int(it - shown.begin());
+}
+
+int logOpeningScroll(int32_t storedEntry, int32_t storedScroll, const std::vector<int32_t>& shown) {
+    if (std::find(shown.begin(), shown.end(), storedEntry) == shown.end()) return 0;
+    return std::max(0, storedScroll);
+}
+
+int logCombatRecord(const game::GameState& s, const game::LogEntry& l) {
+    if (l.category != game::LogCategory::Combat || !l.location) return -1;
+    for (size_t i = 0; i < s.combats.size(); ++i)
+        if (s.combats[i].location == *l.location) return int(i);
+    return -1;
 }
 
 std::optional<LogWindow> logWindowTarget(game::LogGoto target) {

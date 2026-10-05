@@ -47,6 +47,12 @@ MessageNeeds messageNeeds(game::MessageType t);
 std::vector<game::MessageType> sendableMessageTypes(game::Treaty t, const game::GameOptions& o);
 // Whether a received message can be accepted or refused (cmd::AnswerMessage).
 bool answerable(game::MessageType t);
+// How many messages from `from` wait for `me` to answer them: delivered, not
+// answered, of a type that takes an answer, and still in the Log. Only the
+// Log's Send Reply answers a message (spec 06 §4.1), so once its entry has
+// left the Log (spec 05 §3.4 "Log lifetime") the chance to reply has passed
+// and it waits no more (Empires' "Inbox: N waiting", GitHub issue #4).
+int messagesAwaitingReply(const game::GameState& s, game::EmpireId me, game::EmpireId from);
 // The counter-proposal type for a received proposal (General when there is none).
 game::MessageType counterType(game::MessageType received);
 // Treaties that may be proposed while the current treaty is `current`.
@@ -147,6 +153,11 @@ std::vector<HistoryLine> historyLines(const game::Rules& r, const game::GameStat
 
 inline constexpr int kLogCategories = int(game::LogCategory::Misc) + 1;
 
+// Whether the Log lists an entry: those of the turn in progress and of the
+// one before (an empire's end-of-turn processing keeps only these, spec 05
+// §3.4 "Log lifetime").
+bool logListsEntry(const game::GameState& s, const game::LogEntry& l);
+
 // The filter the Log opens with: the one stored with the empire
 // (InterfaceOptions::logFilter: 0 All, else the category + 1), or All when
 // this turn has no entry of that category (the window then stores All).
@@ -158,6 +169,14 @@ uint8_t logOpeningFilter(uint8_t stored, const std::vector<int>& counts);
 // that entry, else the first row; -1 for an empty list. `shown` lists the
 // log index of each row.
 int logOpeningRow(int32_t stored, const std::vector<int32_t>& shown);
+// The scroll position (rows) the Log opens with: the stored one when the
+// stored entry is in the filtered list, else the top, where the first row is
+// selected (spec 06 §4.1 "Selection": both are restored, or neither).
+int logOpeningScroll(int32_t storedEntry, int32_t storedScroll, const std::vector<int32_t>& shown);
+// The battle a combat entry reports, for its details and Combat Replay: the
+// index in GameState::combats of the record at the entry's place (the battles
+// of the game turn in progress and the one before), or -1.
+int logCombatRecord(const game::GameState& s, const game::LogEntry& l);
 
 // Windows Goto opens over the Log (game::LogGoto; spec 06 §4.1, §7 Q41).
 enum class LogWindow : uint8_t { ConstructionQueues, Research, Intelligence, EmpireOptions, Designs, Empires };

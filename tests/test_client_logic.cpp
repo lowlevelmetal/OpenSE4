@@ -2,9 +2,13 @@
 // log windows (client/classic/screens/empire_logic.hpp).
 
 #include "engine_fixture.hpp"
+#include "politics_fixture.hpp"
 
 #include "client/classic/screens/empire_logic.hpp"
 #include "client/classic/ship_glides.hpp"
+#include "game/commands.hpp"
+#include "game/diplomacy.hpp"
+#include "game/turn.hpp"
 
 #include <doctest/doctest.h>
 
@@ -84,6 +88,53 @@ TEST_CASE("client logic: message parameters, answers and counters") {
     CHECK(defaultMessageText(MessageType::ProposeTreaty, Treaty::TradeAlliance).find("Trade Alliance") != std::string::npos);
     CHECK(toneName(0) == "Pleading");
     CHECK(toneName(2) == "Demanding");
+}
+
+// GitHub issue #4: a demand left unanswered kept Empires' "Inbox: 1 waiting"
+// for the ten turns OpenSE4 keeps a message, though only the Log's Send
+// Reply answers a message and its entry leaves the Log at the end of the
+// player's next turn (spec 05 §3.4 "Log lifetime", spec 06 §4.1).
+TEST_CASE("client logic: a message waits for a reply only while the Log lists it (issue 4)") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    const EmpireId me{0u}, them{1u};
+    setContact(s, me, them);
+    TurnContext ctx = turnContext(r, s);
+    auto send = [&](MessageType type) {
+        DiplomaticMessage m;
+        m.to = me;
+        m.type = type;
+        REQUIRE(apply(r, s, them, cmd::SendMessage{m}).ok);
+        const MessageId id = s.messages.back().id;
+        diplomacy::deliverMessages(ctx);
+        s.empire(them).relation(me).messageSentThisTurn = false;
+        return id;
+    };
+    // A demand arrives: it waits, and the Log lists its entry (Send Reply).
+    const MessageId demand = send(MessageType::DemandGift);
+    CHECK(messagesAwaitingReply(s, me, them) == 1);
+    CHECK(messagesAwaitingReply(s, them, me) == 0);
+    // Still at the player's next turn, as the Log still lists it.
+    ++s.turn;
+    CHECK(messagesAwaitingReply(s, me, them) == 1);
+    // Not answered: the player's end-of-turn processing drops the entry from
+    // the Log; the chance to reply has passed, though the message is kept.
+    empireEndOfTurn(ctx, me, false);
+    const auto kept = std::find_if(s.messages.begin(), s.messages.end(), [&](const DiplomaticMessage& m) { return m.id == demand; });
+    REQUIRE(kept != s.messages.end());
+    CHECK_FALSE(kept->answered);
+    for (const LogEntry& l : s.empire(me).log) CHECK(l.message != demand);
+    CHECK(messagesAwaitingReply(s, me, them) == 0);
+    ++s.turn;
+    CHECK(messagesAwaitingReply(s, me, them) == 0);
+
+    // An answered message and one that takes no answer never wait.
+    const MessageId proposal = send(MessageType::ProposeTreaty);
+    CHECK(messagesAwaitingReply(s, me, them) == 1);
+    REQUIRE(apply(r, s, me, cmd::AnswerMessage{proposal, false, {}}).ok);
+    CHECK(messagesAwaitingReply(s, me, them) == 0);
+    send(MessageType::General);
+    CHECK(messagesAwaitingReply(s, me, them) == 0);
 }
 
 TEST_CASE("client logic: treaty codes are distinct") {

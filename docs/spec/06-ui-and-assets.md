@@ -287,7 +287,7 @@ reports render inside the right-hand panel (§2.5).
 | Planet Report | Detail (owner flag, picture, status icons, physical data, value, description, then colony data: type, population, mood, output, construction), Facil, Cargo, Ability. An "Empty" variant without tabs for planets that are not ours. |
 | Race Report | Detail, Descr (free-text blocks), Race (characteristics, traits), Tech (known tech). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); Detail in the object report's places (the race's portrait with the flag on it, the name from x 120 at y 4, label lines at x 130 every 30 px with values at x 140); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate) and closes with it; Esc closes it (inferred, as the Combat Piece Report). |
 | Fleet, Storm reports | Fleet: movement, supply pool, experience, formation, strategy, ships. Storm: picture, size, description, abilities. |
-| System Report | Shown when empty space in the system panel is clicked. The 128x128 picture `Pictures/Systems/<Background Bitmap>` (the system type's background name, folder root; normal systems use `Starmap.bmp`) at the top left; "<Name> System" right-aligned at the top (left edge at most x 120, y 4); the type's description in grey (160,160,160) from y 140, in a box 42 px tall; the system's abilities from y 197 (confirmed: binary). Our client follows these places since 2026-10-04 and adds the type and the location as label lines beside the picture; it wraps the description and every ability (a black hole's are long), and when they do not fit the panel (a long text, a larger Text size) the description and the abilities scroll together with the lists' arrow column from y 140 down (inferred: what the original does with text longer than its boxes is not described). |
+| System Report | Shown when empty space in the system panel is clicked. The 128x128 picture `Pictures/Systems/<Background Bitmap>` (the system type's background name, folder root; normal systems use `Starmap.bmp`) at the top left; "<Name> System" right-aligned at the top (left edge at most x 120, y 4); the type's description in grey (160,160,160) from y 140, in a box 42 px tall; the system's abilities from y 197 (confirmed: binary). Our client follows these places since 2026-10-04 and adds the type and the location as label lines beside the picture; the picture, opaque where a planet's portrait is keyed, sits at (0,0) just inside the panel's frame rail and is clipped there (v0.9.0 drew it 3 px higher, over the rail: GitHub issue #2); it wraps the description and every ability (a black hole's are long), and when they do not fit the panel (a long text, a larger Text size) the description and the abilities scroll together with the lists' arrow column from y 140 down (inferred: what the original does with text longer than its boxes is not described). |
 | Component / Facility / Ship Size / Formation reports | Cost with resource icons, size, damage resistance, vehicle types, weapon data including damage by range, abilities; formation diagram. |
 
 **Right-clicks inside a report's pages** (confirmed: binary; observed, spec 07 session 6).
@@ -374,11 +374,11 @@ cultural, population-level and mood lines.
 | Communicate | Compose a political message: target race portrait, Message Type, Message Tone, free text; Report, View Trade/Tribute/Gift (enabled when last turn's offer exists), Edit Package, Edit Trade, Start Again, Send Message, Cancel. | Empires → portrait; Log → Send Reply. |
 | Select Package | Build a give/take package from tabs Systems, Planets, Resources, Technology, Ships, Units, Star Charts, Treaty, Comm Channels; Clear Package. | Communicate. |
 | History | Per-empire timeline with galaxy map highlight. | Empires. |
-| Treaty Grid | Empire × empire treaty abbreviations with legend; paged 10 empires at a time. | Empires. |
+| Treaty Grid | Empire × empire treaty abbreviations with legend; paged 10 empires at a time. Our client (since 2026-10-04, GitHub issue #3) keeps the large dialog's size: the row names take 124 px and the ten columns of a page share the rest, each headed by the empire's flag over the first three letters of its name (the whole name on hover); every code is drawn whole, a long name ends in "…" with a tooltip, and the rows scroll when they do not fit above the legend. v0.9.0 gave every column 52 px, which the dialog could not hold: the last four were squeezed to slivers. | Empires. |
 | Intelligence | Intel points, project list, current projects in pages of four, Repeat, Divide Evenly, Reorder. The Research window's layout: points in the title strip, projects under silver group headings with their cost, four 140 px project boxes side by side, Repeat Projects and Divide Pts Evenly in slots 5 and 6, Reorder Projects in slot 13 (observed, spec 07 session 5). | Empires. |
 | Borders | Map of claimed systems with empire filter (Select All, Allies, Enemies, Us). | Empires. |
 | Victory Conditions | Grid of conditions × empires, paged by 10. | Empires. |
-| Scores | Flags with score, resources, research, intel, tech levels, systems, planets, population, units, ships, bases, rank. | Empires. |
+| Scores | Flags with score, resources, research, intel, tech levels, systems, planets, population, units, ships, bases, rank. Our client (since 2026-10-04, GitHub issue #3) follows that description in the large dialog: a column per empire, ten to a page (Empires 1-10, ...), headed by its flag over the first letters of its name and ordered by rank, under them a row per figure named in full, rank last; a figure too wide for its column is given in thousands, millions or billions with the exact value on hover. v0.9.0 gave each empire a row of eleven figures, which the dialog's width cut to "Sc…" and "1196" (inferred: the original's places are not described). | Empires. |
 | Comparisons | Line graph over time of one chosen metric (same metrics as Scores) for selected empires. | Empires. |
 
 ### 1.6 Combat screens
@@ -2146,7 +2146,12 @@ Exact rules (confirmed: binary):
   is stored, a later turn re-selects whatever entry now has it.
 - **Send Reply** is enabled only for diplomatic messages. It opens Communicate addressed
   to the sender, or shows a "Cannot Reply" notice when a message already went to that
-  empire this turn.
+  empire this turn. It is the only way to answer a message, so the chance to reply ends
+  when the message's entry leaves the Log (spec 05 §3.4 "Log lifetime"). Our client's
+  Empires window (Treaty tab) also counts each empire's messages that wait for an answer,
+  "Inbox: N waiting", an OpenSE4 line: since 2026-10-04 only those still in the Log, as
+  the count stayed for the ten turns OpenSE4 keeps a message (GitHub issue #4;
+  `messagesAwaitingReply`).
 - **Combat Replay** is enabled only for combat entries, and only when Settings.txt
   `Create Combat Replay` is TRUE. When the replay closes, a new background track starts.
 - **Constr. Queues** is always enabled and opens Construction Queues over the Log.
@@ -3540,7 +3545,10 @@ something open; all are now settled from the executable:
     Our client follows this: each delivered message is a "Message" entry (it also names
     the message, for the details and Send Reply), the Log lists only entries in the
     order they were made, stores the entry's index in the whole log and, falling back to
-    All, stores All. It differs only for commands a network or play-by-e-mail host
+    All, stores All. Since 2026-10-04 it restores the scroll position only with the stored
+    entry (§4.1 "Selection"); it used to restore it always, so a list whose stored entry
+    was gone opened part way down, its first rows (those of the computer players' turns
+    among them) above the view (looked at for GitHub issue #10). It differs only for commands a network or play-by-e-mail host
     refused, which have no counterpart in the original: they follow the entries as Misc
     rows "Order not carried out" without a Goto (Q71).
 43. **Log damage of planets.** Our battle records keep no planet hit points, so a planet
@@ -4705,6 +4713,12 @@ choices (inferred):
     an enemy design shows its owner in place of its design type; the default strategy is a
     drop-down; an obsolete design's button reads Make Current; a design just made is selected
     and scrolled into view, and our notes (a design made, a refusal) go in the title strip.
+    Hide Obsolete and Stats\Strategy are kept with the empire's options in the saved game, as
+    the original keeps them (spec 08 §3.6.7), so the window opens again as it was left: ours
+    since 2026-10-04 (`InterfaceOptions::designsHideObsolete`, `designsStatsView`, save format
+    8; GitHub issue #1), where v0.9.0 forgot them at every closing. The window's tab, which
+    the original keeps too, still opens on Ship Designs (or the tab of the design it was
+    opened for).
 94. **Create Design.** Ours: the vehicle-type picker is a list window titled "Select Vehicle
     Type", the same from every tab; the designer is a 780x475 window. Places in its content
     area: the picture at (3,3); Size, Design Type and Design Name at x 140 with their boxes

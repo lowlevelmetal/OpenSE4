@@ -12,6 +12,7 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/classic/screens/item_reports.hpp"
+#include "client/script/items.hpp"
 #include "game/log_picture.hpp"
 
 #include <algorithm>
@@ -87,7 +88,9 @@ public:
             std::vector<int32_t> indices;
             for (const Row* r : shown) indices.push_back(r->index);
             selected_ = logOpeningRow(startFilter_ ? -1 : ui.options().logPosition, indices);
-            scrollRows_ = ui.options().logScroll;
+            // The stored scroll only with the stored entry: else the list starts at
+            // its top, on the first row (an old scroll hid the rows above it).
+            scrollRows_ = startFilter_ ? 0 : logOpeningScroll(ui.options().logPosition, ui.options().logScroll, indices);
             restoreScroll_ = true;
         } else {
             filterRows();
@@ -197,10 +200,9 @@ private:
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();
         std::vector<Row> out;
-        auto thisTurn = [&](uint32_t turn) { return turn + 1 >= s.turn; };
         for (size_t i = 0; i < me.log.size(); ++i) {
             const game::LogEntry& l = me.log[i];
-            if (!thisTurn(l.turn)) continue;
+            if (!logListsEntry(s, l)) continue;
             Row r;
             r.turn = l.turn;
             r.category = l.category;
@@ -247,6 +249,7 @@ private:
             ImGui::PushID(int(i));
             const ImVec2 a = ImGui::GetCursorScreenPos();
             if (ImGui::InvisibleButton("##row", ImVec2(width, ui.px(kRowH)))) selected_ = int(i);
+            if (script::collectingItems()) script::reportItem("log:" + shown[i]->title);   // input scripts: rows by title
             const ImVec2 b{a.x + width, a.y + ui.px(kRowH)};
             if (ImGui::IsItemHovered() && grid) drawSprite(dl, grid, a, b);
             const Sprite& lampSprite = int(i) == selected_ ? green : blue;
@@ -317,13 +320,7 @@ private:
     }
 
     // The battle a combat entry reports (battles of the last processed turn).
-    static int combatIndex(const UiContext& ui, const Row* r) {
-        if (!r || !r->entry || r->entry->category != LogCategory::Combat || !r->entry->location) return -1;
-        const auto& combats = ui.state().combats;
-        for (size_t i = 0; i < combats.size(); ++i)
-            if (combats[i].location == *r->entry->location) return int(i);
-        return -1;
-    }
+    static int combatIndex(const UiContext& ui, const Row* r) { return r && r->entry ? logCombatRecord(ui.state(), *r->entry) : -1; }
 
     void cannotReplyPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({340, 0}));
@@ -444,18 +441,24 @@ private:
         dl->AddText({origin.x + ui.px(4), origin.y + ui.px(dateY)}, ImGui::ColorConvertFloat4ToU32(kLabelBlue), "Date:");
         const std::string date = formatDate(r->turn);
         dl->AddText({origin.x + ui.px(40), origin.y + ui.px(dateY)}, IM_COL32_WHITE, date.c_str());
+        // The cursor goes to the body only when an item follows there: Dear
+        // ImGui refuses a cursor placed past the content with nothing after it
+        // (an entry without a body, such as a retrofit, showed its error).
         const int combat = combatIndex(ui, r);
-        ImGui::SetCursorScreenPos({origin.x + ui.px(4), origin.y + ui.px(top + 30)});
+        const ImVec2 bodyAt{origin.x + ui.px(4), origin.y + ui.px(top + 30)};
         if (combat >= 0) {
+            ImGui::SetCursorScreenPos(bodyAt);
             combatDetails(ui, *r, s.combats[size_t(combat)]);
             return;
         }
         if (r->message) {
+            ImGui::SetCursorScreenPos(bodyAt);
             messageDetails(ui, *r->message);
             return;
         }
         const std::string& body = r->entry ? r->entry->text : r->notice ? *r->notice : std::string{};
         if (body.empty()) return;
+        ImGui::SetCursorScreenPos(bodyAt);
         ImGui::BeginChild("##body", ui.size({areaW - 8, std::min(300.0f, ImGui::GetContentRegionAvail().y / ui.k())}), ImGuiChildFlags_None,
                           ImGuiWindowFlags_NoBackground);
         {

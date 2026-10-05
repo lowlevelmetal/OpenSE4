@@ -984,6 +984,12 @@ and `Supply Generation`; then all other queues in the empire's queue order.
   next item.
 - The UI estimates the build time as `max_r ceil(cost_r / rate_r)`; for example, 6000 at
   a rate of 2000 takes 3 turns.
+- Because the progress grows by the full rate of every resource, a resource the item needs
+  little of runs past its cost while another is still short. Our client's Progress column
+  in Set Construction Queue (an OpenSE4 column) shows the share of the cost paid, each
+  resource counted only up to the item's cost of it, so it stays under 100 % until the item
+  is built (`queueProgress`; v0.9.0 summed the progress of all three and showed 177 % for an
+  item still a turn away, GitHub issue #6).
 
 **Editing the queue** [H]
 - Deleting the item in progress discards its progress.

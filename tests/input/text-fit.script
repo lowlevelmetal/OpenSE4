@@ -76,6 +76,17 @@ click item:Tech in=race-report
 assert-fits race-report
 key Escape
 wait-closed race-report
+# The Treaty Grid and Scores: every name, code and figure whole or cut to its column.
+click item:"Treaty Grid" in=empires
+wait-window treaty-grid
+assert-fits treaty-grid
+key Escape
+wait-closed treaty-grid
+click item:Scores in=empires
+wait-window scores
+assert-fits scores
+key Escape
+wait-closed scores
 key Escape
 wait-closed empires
 # The system report of an empty sector, then End Turn's question.

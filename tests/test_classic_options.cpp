@@ -39,6 +39,12 @@ TEST_CASE("classic log: the filter and the row a new opening starts with") {
     CHECK(logOpeningRow(4, shown) == 0);   // that entry is not listed: the first row
     CHECK(logOpeningRow(-1, shown) == 0);
     CHECK(logOpeningRow(2, {}) == -1);
+    // The stored scroll comes back with the stored entry, or not at all: a
+    // list started part way down hid its first rows, the selected one too.
+    CHECK(logOpeningScroll(9, 7, shown) == 7);
+    CHECK(logOpeningScroll(4, 7, shown) == 0);
+    CHECK(logOpeningScroll(-1, 7, shown) == 0);
+    CHECK(logOpeningScroll(5, -3, shown) == 0);
 
     // Goto's window targets (spec 06 §7 Q41).
     CHECK(logWindowTarget(LogGoto::ConstructionQueues) == LogWindow::ConstructionQueues);

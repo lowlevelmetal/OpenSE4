@@ -113,6 +113,7 @@ add_executable(opense4
     client/script/script.cpp
     client/script/sdl_input.cpp
     client/ui/bitmap_font.cpp
+    client/ui/imgui_errors.cpp
     client/ui/theme.cpp)
 target_link_libraries(opense4 PRIVATE opense4_game opense4_learn opense4_net opense4_assets opense4_gfx opense4_embedded imgui tomlplusplus drlibs Threads::Threads opense4_warnings)
 target_compile_definitions(opense4 PRIVATE OPENSE4_CLIENT_VERSION="${PROJECT_VERSION}")

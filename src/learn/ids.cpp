@@ -227,6 +227,8 @@ constexpr OptionInfo kOptions[] = {
     {"replay-grid", [](const game::Empire& e) { return e.interfaceOptions.replayGrid; }},
     {"design-to-hit", [](const game::Empire& e) { return e.interfaceOptions.designToHit; }},
     {"design-condensed", [](const game::Empire& e) { return e.interfaceOptions.designCondensed; }},
+    {"designs-hide-obsolete", [](const game::Empire& e) { return e.interfaceOptions.designsHideObsolete; }},
+    {"designs-stats-view", [](const game::Empire& e) { return e.interfaceOptions.designsStatsView; }},
 };
 
 constexpr std::pair<game::Treaty, std::string_view> kTreaties[] = {

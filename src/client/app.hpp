@@ -127,6 +127,7 @@ private:
     std::unique_ptr<Mode> mode_;
     std::unique_ptr<script::Player> player_;
     std::unique_ptr<script::Recorder> recorder_;
+    size_t imguiErrorsSeen_ = 0;                    // Dear ImGui's errors an input script has been failed for
     std::vector<std::filesystem::path> captures_;   // this frame's picture goes to these files
     WindowPresence presence_;                       // the window in the background mutes the audio
     ImVec2 scriptPointer_{-FLT_MAX, -FLT_MAX};      // where the script has the pointer

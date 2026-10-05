@@ -571,7 +571,16 @@ same scripts (checked under Wine, where it opens a real window: a pointer step m
 frame more to aim, as the layout settles at that window's size). When a step fails, the client prints the
 script line, why it failed and where the game was, saves a picture of that frame and exits
 with 1; a script that ends exits with 0 and prints
-`input-script FILE: passed (N steps, M frames)`.
+`input-script FILE: passed (N steps, M frames)`. A script also fails at the step under way
+when Dear ImGui reports one of its recoverable errors in a frame (a widget used the wrong
+way, such as the cursor placed past a window's content with no item after it), with Dear
+ImGui's message: such a window shows players nothing, but must not pass.
+
+**Dear ImGui's errors.** Players never see Dear ImGui's red error tooltip or its assert:
+every distinct error (window and message) is written once to `opense4.log`, and release
+builds stop there (`client/ui/imgui_errors.hpp`); they show no tooltip for widgets that share
+an id either. Debug builds keep the tooltip and the assert, so that a developer sees the error
+at once; under an input script they do not assert, and the script fails instead.
 
 ```sh
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --input-script=tests/input/tutorial-first-steps.script \
@@ -599,7 +608,8 @@ recorder is tested.
 | `lesson-skip.script`, `lesson-long-step.script` | Skip only after ten seconds without a way back, and no cascade after it; no Skip on a step that waits on the turns; End Turn refused under a window, with the way back (close it) |
 | `lesson-prompt-keys.script`, `lesson-result-keys.script` | Keys that answer a lesson's questions are not also main-window keys; the notes after refused clicks and keys; Free Play off at a lesson's start |
 | `end-turn-question.script` | End Turn while a window is open does nothing, by click or key (every window is modal); with the window closed its question comes up and takes the input |
-| `text-fit.script` | Text size 1.5 (`--text-size=1.5`): `assert-fits` in the main window, the command buttons' windows, Ministers, Empires, every page of the Race Report, End Turn's question and the manual; Colony Type and the reading text grow with the setting |
+| `text-fit.script` | Text size 1.5 (`--text-size=1.5`): `assert-fits` in the main window, the command buttons' windows, Ministers, Empires, every page of the Race Report, the Treaty Grid, Scores, End Turn's question and the manual; Colony Type and the reading text grow with the setting |
+| `empire-tables.script` | The Treaty Grid and Scores of a twelve-empire game, both pages: every name, code and figure fits and is whole (`assert-fits`, `assert-whole`; GitHub issue #3) |
 | `race-report.script` | The Race Report from Empires' Our Race: its four tabs and Close; modal over Empires (Empires' Close and Our Race do nothing under it), Esc closing the report and not Empires |
 | `modal-designer.script`, `modal-battle.script` | Every window is modal: under the ship designer and under a battle in Strategic Combat, End Turn (click, F12, Enter), the command buttons and their keys and the selectors do nothing; Esc goes to the window in front; once the window closes End Turn works |
 | `front-learn.script` | The intro's Tutorial and Scenario buttons, the Learn window's tabs, starting a lesson and leaving it |
@@ -610,11 +620,14 @@ recorder is tested.
 | `list-windows.script` | Planets, Colonies, Ships and Construction Queues: sort headings, tabs and filters, the arrow column and the wheel; item and Design Report pop-ups from right-clicks |
 | `combat-windows.script` | Tactical Combat on a sample battle: zoom and pan, the Combat Piece Report, Combat Options, the Orders menu and Resolve Combat |
 | `ground-combat.script` | Ground Combat on a sample strategic battle (`--open=ground-combat`): Begin, the rounds, Close, then the rest of the battle |
+| `log-details.script` | The Log's details pane on an entry without a body (a ship scrapped at the home yard; GitHub issue #9): no Dear ImGui error |
 | `combat-replay.script` | Combat Replay on a battle of the last turn: the overview, Combat Replay Options' check boxes, Next to the last combat turn, Stop Replay |
 | `battle-strategic.script` | A battle that stops the player's End Turn: an enemy ship comes through a warp point into the player's sector in a computer player's turn; the notice, Strategic Combat's question, Strategic, End Turn doing nothing over the battle's window, Close; the turn then ends exactly once, and the next End Turn ends the next one. Play it with the `asan` client too (v0.8.1 crashed here: see "Crash reports") |
+| `system-report.script` | The system report of an empty sector: the system's picture inside the panel's frame rail (GitHub issue #2), its texts fitting their places |
 | `report-up-arrow.script` | The report panel's up-arrow back to a sector's list: shown only for a report opened from the list |
 | `fleet-row.script` | On tutorial 5's fleet: the fleet as one row of the sector's list (Shift and a click tag it), the Fleet Report alone, a member made the leader with a click and its Ship Report opened with a right-click, the up-arrow; the fleet and a ship tagged together given one order |
 | `selection-other-system.script` | Another system shown keeps the selection: the report and its tab across a galaxy-panel click and the Galaxy Map's Goto System, a right-click in the system panel doing nothing, a facility's report from Facil, Detail again when a report is filled afresh |
+| `designs-options.script` | The Designs window's Hide Obsolete and Stats\Strategy are the empire's options: closed and opened again, the window is as it was left; an enemy tab switches Stats\Strategy off (GitHub issue #1) |
 | `only-latest.script` | The Only Latest boxes of Set Construction Queue and Create Design write the Empire Options rows |
 | `colonize-pick.script`, `follow-warp.script` | On a training game of our own in `tests/input/learn-orders` (two colony ships at home): Colonize's Pick Object window and Cancel, a wrong pick failing on arrival with the "Colonize" message box, the moons settled, population moved between them with Cargo Transfer; a warp the view follows to the arrival system |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
@@ -665,6 +678,7 @@ from a double click.
 | `wait-until { condition }`, `wait-turn N` | until a lesson condition holds ("since" counters from the start of the wait); until the game reaches turn N |
 | `assert-present T`, `assert-absent T`, `assert-enabled T`, `assert-disabled T`, `assert-inside T T2` | T is on screen, or not; enabled or dim; T's point lies in T2's rectangle |
 | `assert-fits SCOPE` | in that scope (a window id, `main`, `lesson`, `front`, or a Dear ImGui window's name): every text drawn into a box of its own (a button's caption, a text kept to its place) fits the box, and no labelled widget is cut off by its window by more than 4 frame pixels (a window that scrolls and a table's cells excepted) |
+| `assert-whole SCOPE` | in that scope, every text drawn into a box of its own is drawn whole: none cut short with "…" to fit, none running out of its box |
 | `assert-window ID`, `assert-no-window ID`, `assert-step N`, `assert-result R`, `assert-lesson SLUG`, `assert-screen S`, `assert-turn N` | as the waits, at once |
 | `assert { condition }`, `assert-log "TEXT"`, `assert-no-log "TEXT"` | a lesson condition ("since" counters from the start of the game); some entry of the player's log has that text (letter case ignored), or none |
 | `repeat N [until { condition }] ... end` | the steps between up to N times; with `until`, leaves as soon as the condition holds (checked before each pass, counters from the first) and fails if it never did |

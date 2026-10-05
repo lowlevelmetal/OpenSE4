@@ -73,10 +73,12 @@ When the game ends, an ending window shows one of the pictures your copy lists f
 
 ## The Scores window
 
-[Scores](window:scores) (from the [Empires](window:empires) window) shows, for each empire whose
-score you can see: its rank, score, resources produced, research, intelligence, technology
-levels, systems, planets, population, units, ships and bases. Hover over a column heading for its
-full name. Empires whose scores are hidden show only dashes.
+[Scores](window:scores) (from the [Empires](window:empires) window) has a column for each empire,
+headed by its flag and the first letters of its name (hover over it for the full name), best
+rank first, ten empires to a page. Under each flag: its score, resources produced, research,
+intelligence, technology levels, systems, planets, population, units, ships and bases, and its
+rank. A figure too large for its column is shortened ("123k", "4.5M"); hover over it for the exact
+value. Empires whose scores are hidden show only dashes.
 
 ## The Comparisons window
 

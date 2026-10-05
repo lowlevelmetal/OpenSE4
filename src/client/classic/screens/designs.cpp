@@ -103,8 +103,13 @@ public:
 private:
     void init(UiContext& ui) {
         initialized_ = true;
+        // Hide Obsolete and Stats\Strategy are the empire's options, saved with
+        // the game: they come back on every opening (spec 08 §3.6.7).
+        hideObsolete_ = ui.options().designsHideObsolete;
+        statsView_ = ui.options().designsStatsView;
         if (!ui.me().designs.empty()) newest_ = ui.me().designs.back();
         if (selected_.valid() && selected_.index() < ui.state().designs.size()) tab_ = tabOf(ui, ui.state().design(selected_));
+        if (enemyTab(tab_)) statsView_ = false;   // opened on an enemy design: no service record to show
     }
 
     DesignTab tabOf(const UiContext& ui, const game::Design& d) const {
@@ -430,7 +435,7 @@ private:
                 tab_ = static_cast<DesignTab>(i);
                 note_.clear();
                 // The enemy tabs switch Stats\Strategy off (spec 06 §7 Q93).
-                if (enemyTab(tab_)) statsView_ = false;
+                if (enemyTab(tab_)) setStatsView(ui, false);
             }
             ui.tagTab(kTabIds[i], tab_ == static_cast<DesignTab>(i));
         }
@@ -467,10 +472,24 @@ private:
             noteIsError_ = !res.ok;
         }
         // On/off settings: check boxes (observed, spec 07 session 3).
-        if (d.check("Hide Obsolete", hideObsolete_)) hideObsolete_ = !hideObsolete_;
-        if (d.check("Stats\\Strategy", statsView_)) statsView_ = !statsView_;
+        if (d.check("Hide Obsolete", hideObsolete_)) setHideObsolete(ui, !hideObsolete_);
+        if (d.check("Stats\\Strategy", statsView_)) setStatsView(ui, !statsView_);
         if (d.button("Simulator")) ui.open(ScreenId::CombatSimulator);
         ui.tagItem("designs:simulator");
+    }
+
+    void setHideObsolete(UiContext& ui, bool on) {
+        hideObsolete_ = on;
+        game::InterfaceOptions o = ui.options();
+        o.designsHideObsolete = on;
+        ui.setOptions(o);
+    }
+
+    void setStatsView(UiContext& ui, bool on) {
+        statsView_ = on;
+        game::InterfaceOptions o = ui.options();
+        o.designsStatsView = on;
+        ui.setOptions(o);
     }
 
     // "Select Vehicle Type": a list window with one "Name" column, the vehicle

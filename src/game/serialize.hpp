@@ -78,7 +78,9 @@ class Rules;
 // (Colony::destroyedFacilities, spec 08 §11.2); a tagged group's Attack Sector
 // question and its answer (EntryQuestion::tagged, cmd::EnterSector::tagged),
 // and the commands cmd::OrderTagged and cmd::SetFleetLeader (spec 03 §8, §9,
-// spec 06 §2.5). Format 7 still reads, without them.
+// spec 06 §2.5); the Designs window's Hide Obsolete and Stats\Strategy check
+// boxes (InterfaceOptions::designsHideObsolete, designsStatsView, spec 08
+// §3.6.7). Format 7 still reads, without them.
 inline constexpr uint32_t kSaveVersion = 8;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

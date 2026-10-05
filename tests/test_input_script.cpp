@@ -424,6 +424,32 @@ TEST_CASE("input script: assert-fits") {
     CHECK(problems("assert-fits\n").size() == 1);
 }
 
+TEST_CASE("input script: assert-whole") {
+    FakeProbe probe;
+    Item code = item("TA", "treaty-grid", ImVec2(0, 0), ImVec2(20, 10));
+    Item name = item("Praetorian", "treaty-grid", ImVec2(0, 10), ImVec2(60, 20));
+    probe.textList = {code, name};
+    Player p(parse("assert-whole treaty-grid\n"), "/tmp");
+    play(p, probe);
+    CHECK(p.finished());
+    // A text cut short with "…" fits its box (assert-fits) but is not whole.
+    name.label = "Praeto\xE2\x80\xA6";
+    name.cut = true;
+    probe.textList = {code, name};
+    Player fits(parse("assert-fits treaty-grid\n"), "/tmp");
+    play(fits, probe);
+    CHECK(fits.finished());
+    Player q(parse("assert-whole treaty-grid\n"), "/tmp");
+    play(q, probe);
+    REQUIRE(q.failed());
+    CHECK(q.failure().find("is cut short") != std::string::npos);
+    // Another scope's texts are not its business.
+    Player r(parse("assert-whole scores\n"), "/tmp");
+    play(r, probe);
+    CHECK(r.finished());
+    CHECK(problems("assert-whole\n").size() == 1);
+}
+
 TEST_CASE("input script: loops") {
     FakeProbe probe;
     probe.tags["a"] = {Box{ImVec2(0, 0), ImVec2(10, 10)}};

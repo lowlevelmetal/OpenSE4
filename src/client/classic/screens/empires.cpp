@@ -78,13 +78,6 @@ void pageButtons(Dialog& d, int& page, size_t count, int perPage) {
     d.spacer();
 }
 
-int pendingFrom(const UiContext& ui, EmpireId from) {
-    int n = 0;
-    for (const auto& m : ui.state().messages)
-        if (m.from == from && m.to == ui.session.player() && m.delivered && !m.answered) ++n;
-    return n;
-}
-
 void statLine(UiContext& ui, const char* label, const std::string& value, ImVec4 color = ImVec4(0.9f, 0.92f, 0.97f, 1.0f)) {
     ImGui::TextColored(kTextBlue, "%s", label);
     ImGui::SameLine(ui.px(58));
@@ -287,7 +280,8 @@ private:
                     const int anger = them.relation(ui.session.player()).anger;
                     statLine(ui, "Mood", std::format("{} ({})", moodWord(anger), anger));
                 }
-                const int waiting = pendingFrom(ui, them.id);
+                // Only while a reply is still possible: the message is in the Log (issue #4).
+                const int waiting = messagesAwaitingReply(ui.state(), ui.session.player(), them.id);
                 if (waiting > 0) statLine(ui, "Inbox", std::format("{} waiting", waiting), kTextWarn);
                 if (rel.messageSentThisTurn) statLine(ui, "Sent", "Message sent this turn", kTextDim);
                 break;
@@ -441,6 +435,52 @@ private:
 
 // ---- Treaty Grid -----------------------------------------------------------------------------------
 
+// A text in the current table cell, cut short with "…" to the cell (the whole
+// text as a tooltip), placed by `align` (0 left, 0.5 centred), and reported
+// to assert-fits (input scripts).
+void cellFitted(std::string_view text, ImU32 color, float align = 0.0f) {
+    const float w = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+    const float tw = ImGui::CalcTextSize(text.data(), text.data() + text.size()).x;
+    if (align > 0.0f && tw < w) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::floor((w - tw) * align));
+    fittedText(text, std::min(w, std::max(1.0f, ImGui::GetContentRegionAvail().x)), color);
+}
+
+// The first three letters of a name, for a column heading (whole UTF-8 characters).
+std::string firstLetters(const std::string& name) {
+    size_t end = 0;
+    for (int letters = 0; end < name.size() && letters < 3; ++letters) {
+        ++end;
+        while (end < name.size() && (static_cast<unsigned char>(name[end]) & 0xC0) == 0x80) ++end;
+    }
+    return name.substr(0, end);
+}
+
+// An empire's small flag and name in a table cell, the name cut to the cell.
+void empireCell(UiContext& ui, EmpireId e, Vec2 flagSize) {
+    const game::GameState& s = ui.state();
+    const game::Empire& emp = s.empire(e);
+    const float textH = ImGui::GetTextLineHeight();
+    const float y = ImGui::GetCursorPosY();
+    const float flagY = y + std::max(0.0f, (textH - ui.px(flagSize.y)) * 0.5f);
+    ImGui::SetCursorPosY(flagY);
+    if (const Sprite flag = ui.art.flag(emp.race.style, flagSize.x > 20)) {
+        image(ui, flag, flagSize);
+    } else {
+        const ImVec2 p = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + ui.px(flagSize.x), p.y + ui.px(flagSize.y)), empireColor(s, e));
+        ImGui::Dummy(ui.size(flagSize));
+    }
+    ImGui::SameLine(0, ui.px(4));
+    ImGui::SetCursorPosY(y + std::max(0.0f, (ui.px(flagSize.y) - textH) * 0.5f));
+    cellFitted(emp.name, empireColor(s, e));
+}
+
+// The grid of the original's large dialog (780x475, spec 06 §1): ten empires
+// a page, their columns sharing the width the row names leave, so every page
+// keeps the same places. Each column is headed by the empire's flag over the
+// first letters of its name (the whole name on hover); every code is drawn
+// whole, and a name too long for its place ends in "…" with a tooltip. With
+// more empires than fit above the legend, the rows scroll.
 class TreatyGridScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
@@ -450,73 +490,87 @@ public:
         const auto all = usAndKnown(ui);
         d.beginContent();
         heading(ui, "Treaties between empires");
-        ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "Rows and columns are empires; ?? = unknown (we see treaties of our allies only).");
+        ImGui::TextColored(kTextDim, "?? = unknown: we see the treaties of our allies only.");
 
         const size_t first = size_t(page_) * kPerPage;
         const size_t cols = std::min(all.size() - std::min(all.size(), first), size_t(kPerPage));
-        const ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
-        if (ImGui::BeginTable("##grid", int(cols) + 1, flags)) {
-            ImGui::TableSetupColumn("Empire", ImGuiTableColumnFlags_WidthFixed, ui.px(170));
-            for (size_t c = 0; c < cols; ++c)
-                ImGui::TableSetupColumn(s.empire(all[first + c]).name.c_str(), ImGuiTableColumnFlags_WidthFixed, ui.px(52));
-            // Header: small flags with a short name.
-            ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+        // The legend's room is kept below the grid.
+        const float legendH = ImGui::GetTextLineHeightWithSpacing() * 5.0f + ui.px(16);
+        const float rowH = std::max(ImGui::GetTextLineHeight(), ui.px(13)) + ui.px(4);
+        const float headH = ui.px(13) + ImGui::GetTextLineHeight() + ui.px(6);
+        const float needed = headH + rowH * float(all.size()) + ui.px(8);
+        const float gridH = std::max(headH + rowH * 3.0f, std::min(needed, ImGui::GetContentRegionAvail().y - legendH));
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(2), ui.px(2)));
+        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+        if (beginListTable(ui, "##grid", kPerPage + 1, flags, ImVec2(0, gridH), rowH)) {
+            ImGui::TableSetupScrollFreeze(1, 1);
+            ImGui::TableSetupColumn("Empire", ImGuiTableColumnFlags_WidthFixed, ui.px(kNameW));
+            for (int c = 0; c < kPerPage; ++c) ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+            // Header: each empire's flag over the first letters of its name.
+            ImGui::TableNextRow(ImGuiTableRowFlags_Headers, headH);
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextColored(kTextBlue, "Empire");
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ui.px(13));
+            cellFitted("Empire", ImGui::ColorConvertFloat4ToU32(kTextBlue));
             for (size_t c = 0; c < cols; ++c) {
                 ImGui::TableSetColumnIndex(int(c) + 1);
                 const game::Empire& e = s.empire(all[first + c]);
+                const ImVec2 cellMin = ImGui::GetCursorScreenPos();
+                const float w = ImGui::GetContentRegionAvail().x;
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, std::floor((w - ui.px(18)) * 0.5f)));
                 image(ui, ui.art.flag(e.race.style, false), {18, 13});
-                ImGui::SameLine(0, ui.px(3));
-                ImGui::PushStyleColor(ImGuiCol_Text, empireColor(s, e.id));
-                ImGui::TextUnformatted(e.name.substr(0, 3).c_str());
-                ImGui::PopStyleColor();
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", e.name.c_str());
+                cellFitted(firstLetters(e.name), empireColor(s, e.id), 0.5f);
+                if (ImGui::IsMouseHoveringRect(cellMin, ImVec2(cellMin.x + w, cellMin.y + headH)) && ImGui::IsWindowHovered())
+                    ImGui::SetTooltip("%s", e.name.c_str());
             }
             for (EmpireId row : all) {
-                ImGui::TableNextRow();
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, rowH);
                 ImGui::TableSetColumnIndex(0);
-                empireLabel(ui, row);
+                empireCell(ui, row, {18, 13});
                 for (size_t c = 0; c < cols; ++c) {
                     ImGui::TableSetColumnIndex(int(c) + 1);
                     const EmpireId col = all[first + c];
-                    if (row == col) {
-                        ImGui::TextColored(kTextDim, " ");
-                        continue;
-                    }
+                    if (row == col) continue;
                     if (!treatyVisibleTo(s, ui.session.player(), row, col)) {
-                        ImGui::TextColored(kTextDim, "??");
+                        cellFitted("??", ImGui::ColorConvertFloat4ToU32(kTextDim), 0.5f);
                         continue;
                     }
                     const Treaty t = s.empire(row).relation(col).treaty;
-                    ImGui::PushStyleColor(ImGuiCol_Text, treatyColor(t));
-                    ImGui::TextUnformatted(std::string(treatyCode(t)).c_str());
-                    ImGui::PopStyleColor();
+                    cellFitted(treatyCode(t), treatyColor(t), 0.5f);
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("%s - %s: %s", s.empire(row).name.c_str(), s.empire(col).name.c_str(),
                                           std::string(game::displayName(t)).c_str());
                 }
             }
-            ImGui::EndTable();
+            endListTable(ui);
         }
-        // Legend.
-        ImGui::Dummy(ui.size({0, 12}));
+        ImGui::PopStyleVar();
+        // Legend: three columns, each as wide as its longest name needs.
+        ImGui::Dummy(ui.size({0, 4}));
         heading(ui, "Legend");
-        if (ImGui::BeginTable("##legend", 4, ImGuiTableFlags_None)) {
-            for (int i = 0; i < int(Treaty::Count); ++i) {
-                const auto t = static_cast<Treaty>(i);
+        struct Entry {
+            std::string_view code;
+            ImU32 color;
+            std::string_view name;
+        };
+        std::vector<Entry> entries;
+        for (int i = 0; i < int(Treaty::Count); ++i) {
+            const auto t = static_cast<Treaty>(i);
+            entries.push_back({treatyCode(t), treatyColor(t), game::displayName(t)});
+        }
+        entries.push_back({"??", ImGui::ColorConvertFloat4ToU32(kTextDim), "Unknown"});
+        constexpr int kLegendColumns = 3;
+        std::array<float, kLegendColumns> widths{};
+        for (size_t i = 0; i < entries.size(); ++i)
+            widths[i % kLegendColumns] = std::max(widths[i % kLegendColumns], ImGui::CalcTextSize(entries[i].name.data(), entries[i].name.data() + entries[i].name.size()).x);
+        if (ImGui::BeginTable("##legend", kLegendColumns, ImGuiTableFlags_None)) {
+            for (int c = 0; c < kLegendColumns; ++c)
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch, ui.px(28) + widths[size_t(c)] + ui.px(8));
+            for (const Entry& e : entries) {
                 ImGui::TableNextColumn();
-                ImGui::PushStyleColor(ImGuiCol_Text, treatyColor(t));
-                ImGui::TextUnformatted(std::string(treatyCode(t)).c_str());
-                ImGui::PopStyleColor();
-                ImGui::SameLine(ui.px(30));
-                ImGui::TextUnformatted(std::string(game::displayName(t)).c_str());
+                fittedText(e.code, ui.px(26), e.color);
+                ImGui::SameLine(ui.px(28));   // from the column's start
+                fittedText(e.name);
             }
-            ImGui::TableNextColumn();
-            ImGui::TextColored(kTextDim, "??");
-            ImGui::SameLine(ui.px(30));
-            ImGui::TextUnformatted("Unknown");
             ImGui::EndTable();
         }
         d.beginButtons();
@@ -527,11 +581,40 @@ public:
 
 private:
     static constexpr int kPerPage = 10;
+    static constexpr float kNameW = 124;   // the row names' column (frame pixels); the ten empire columns share the rest
     int page_ = 0;
 };
 
 // ---- Scores ------------------------------------------------------------------------------------------
 
+// A figure as wide as `width` (ImGui units) allows: whole as formatNumber
+// writes it, else in thousands, millions or billions ("123k", "4.5M").
+std::string numberFitting(int64_t v, float width) {
+    std::string full = formatNumber(v);
+    auto fits = [&](const std::string& t) { return ImGui::CalcTextSize(t.c_str()).x <= width; };
+    if (fits(full)) return full;
+    const int64_t a = v < 0 ? -v : v;
+    const char* sign = v < 0 ? "-" : "";
+    std::vector<std::string> shorter;
+    for (const auto& [unit, letter] : {std::pair<int64_t, char>{1'000'000'000, 'B'}, {1'000'000, 'M'}, {1'000, 'k'}}) {
+        if (a < unit) continue;
+        const int64_t tenths = a * 10 / unit;
+        if (tenths < 100) shorter.push_back(std::format("{}{}.{}{}", sign, tenths / 10, tenths % 10, letter));
+        shorter.push_back(std::format("{}{}{}", sign, a / unit, letter));
+    }
+    for (const std::string& t : shorter)
+        if (fits(t)) return t;
+    return shorter.empty() ? full : shorter.back();
+}
+
+// The scores as the spec describes the original's window, "flags with
+// score, resources, research, ..., rank" (spec 06 §1.5): a column per empire,
+// headed by its flag over the first letters of its name (the whole name on
+// hover), ten to a page, best rank first; a row per figure, named in full.
+// That fits the original's large dialog (780x475, spec 06 §1): v0.9.0 gave
+// each empire a row of eleven figures, which had to be cut to fit. A figure
+// too wide for its column is given in thousands, millions or billions, with
+// the exact value on hover.
 class ScoresScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
@@ -541,11 +624,12 @@ public:
         const game::Rules& r = ui.rules();
         d.beginContent();
         heading(ui, "Scores");
-        ImGui::SameLine();
         static constexpr std::array<const char*, 3> kDisplay{"Only our own statistics are shown in this game.",
                                                              "Statistics are shown for us and empires at Non-Aggression or better.",
                                                              "Every empire's statistics are public in this game."};
+        ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(kTextDim, "%s", s.gameOver ? "The game is over: every score is shown." : kDisplay[size_t(std::clamp(s.options.scoreDisplay, 0, 2))]);
+        ImGui::PopTextWrapPos();
 
         // Rank among every living empire.
         std::vector<std::pair<int64_t, EmpireId>> ranking;
@@ -557,60 +641,81 @@ public:
                 if (ranking[i].second == e) return int(i) + 1;
             return 0;
         };
-        std::vector<EmpireId> rows;
+        std::vector<EmpireId> order;
         if (s.options.scoreDisplay == 2 || s.gameOver) {
-            for (const auto& [score, e] : ranking) rows.push_back(e);
+            for (const auto& [score, e] : ranking) order.push_back(e);
         } else {
-            rows = usAndKnown(ui);
-            std::stable_sort(rows.begin(), rows.end(), [&](EmpireId a, EmpireId b) {
+            order = usAndKnown(ui);
+            std::stable_sort(order.begin(), order.end(), [&](EmpireId a, EmpireId b) {
                 return statsVisible(ui, a) != statsVisible(ui, b) ? statsVisible(ui, a) : rankOf(a) < rankOf(b);
             });
         }
+        const size_t first = size_t(page_) * kPerPage;
+        const size_t cols = std::min(order.size() - std::min(order.size(), first), size_t(kPerPage));
 
-        static constexpr std::array<Metric, 11> kColumns{Metric::Score, Metric::Resources, Metric::Research, Metric::Intelligence,
-                                                         Metric::TechLevels, Metric::Systems, Metric::Planets, Metric::Population,
-                                                         Metric::Units, Metric::Ships, Metric::Bases};
-        static constexpr std::array<const char*, 11> kHeads{"Score", "Resrc", "Resch", "Intel", "Tech", "Systm", "Plnts", "Pop (M)",
-                                                            "Units", "Ships", "Bases"};
-        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV;
-        if (beginListTable(ui, "##scores", int(kColumns.size()) + 2, flags, ImVec2(0, 0), kListLineStep)) {
-            ImGui::TableSetupScrollFreeze(2, 1);
-            ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed, ui.px(34));
-            ImGui::TableSetupColumn("Empire", ImGuiTableColumnFlags_WidthFixed, ui.px(150));
-            for (size_t i = 0; i < kColumns.size(); ++i) ImGui::TableSetupColumn(kHeads[i], ImGuiTableColumnFlags_WidthStretch);
-            // Headers with the full metric name on hover.
-            ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
-            for (int c = 0; c < int(kColumns.size()) + 2; ++c) {
-                ImGui::TableSetColumnIndex(c);
-                ImGui::TableHeader(ImGui::TableGetColumnName(c));
-                if (c >= 2 && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", std::string(metricName(kColumns[size_t(c - 2)])).c_str());
+        static constexpr std::array<Metric, 11> kRows{Metric::Score, Metric::Resources, Metric::Research, Metric::Intelligence,
+                                                      Metric::TechLevels, Metric::Systems, Metric::Planets, Metric::Population,
+                                                      Metric::Units, Metric::Ships, Metric::Bases};
+        const float rowH = ImGui::GetTextLineHeight() + ui.px(4);
+        const float headH = ui.px(13) + ImGui::GetTextLineHeight() + ui.px(6);
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(2), ui.px(2)));
+        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+        const float tableH = std::min(ImGui::GetContentRegionAvail().y, headH + rowH * float(kRows.size() + 1) + ui.px(8));
+        if (beginListTable(ui, "##scores", kPerPage + 1, flags, ImVec2(0, tableH), rowH)) {
+            ImGui::TableSetupScrollFreeze(1, 1);
+            ImGui::TableSetupColumn("Statistic", ImGuiTableColumnFlags_WidthFixed, ui.px(kNameW));
+            for (int c = 0; c < kPerPage; ++c) ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+            // Header: each empire's flag over the first letters of its name.
+            ImGui::TableNextRow(ImGuiTableRowFlags_Headers, headH);
+            for (size_t c = 0; c < cols; ++c) {
+                ImGui::TableSetColumnIndex(int(c) + 1);
+                const game::Empire& e = s.empire(order[first + c]);
+                const ImVec2 cellMin = ImGui::GetCursorScreenPos();
+                const float w = ImGui::GetContentRegionAvail().x;
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, std::floor((w - ui.px(18)) * 0.5f)));
+                image(ui, ui.art.flag(e.race.style, false), {18, 13});
+                cellFitted(firstLetters(e.name), empireColor(s, e.id), 0.5f);
+                if (ImGui::IsMouseHoveringRect(cellMin, ImVec2(cellMin.x + w, cellMin.y + headH)) && ImGui::IsWindowHovered())
+                    ImGui::SetTooltip("%s", e.name.c_str());
             }
-            for (EmpireId e : rows) {
-                const bool visible = statsVisible(ui, e);
-                ImGui::TableNextRow(ImGuiTableRowFlags_None, ui.px(24));
+            auto row = [&](std::string_view label, auto&& value) {
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, rowH);
                 ImGui::TableSetColumnIndex(0);
-                if (visible) ImGui::Text("%d", rankOf(e));
-                else ImGui::TextColored(kTextDim, "?");
-                ImGui::TableSetColumnIndex(1);
-                empireLabel(ui, e, true);
-                const game::TurnStats st = game::score::currentStats(r, s, e);
-                for (size_t c = 0; c < kColumns.size(); ++c) {
-                    ImGui::TableSetColumnIndex(int(c) + 2);
-                    if (!visible) {
-                        ImGui::TextColored(kTextDim, "-");
-                        continue;
-                    }
-                    const int64_t v = kColumns[c] == Metric::Score ? game::score::empireScore(r, s, e) : metricValue(st, kColumns[c]);
-                    ImGui::TextUnformatted(formatNumber(v).c_str());
+                cellFitted(label, ImGui::ColorConvertFloat4ToU32(kTextBlue));
+                for (size_t c = 0; c < cols; ++c) {
+                    ImGui::TableSetColumnIndex(int(c) + 1);
+                    value(order[first + c]);
                 }
-            }
+            };
+            for (Metric m : kRows)
+                row(m == Metric::Population ? std::string("Population (M)") : std::string(metricName(m)), [&](EmpireId e) {
+                    if (!statsVisible(ui, e)) {
+                        cellFitted("-", ImGui::ColorConvertFloat4ToU32(kTextDim), 1.0f);
+                        return;
+                    }
+                    const int64_t v = m == Metric::Score ? game::score::empireScore(r, s, e) : metricValue(game::score::currentStats(r, s, e), m);
+                    const std::string shown = numberFitting(v, ImGui::GetContentRegionAvail().x);
+                    cellFitted(shown, ImGui::GetColorU32(ImGuiCol_Text), 1.0f);
+                    if (shown != formatNumber(v) && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", formatNumber(v).c_str());
+                });
+            row("Rank", [&](EmpireId e) {
+                if (statsVisible(ui, e)) cellFitted(std::to_string(rankOf(e)), ImGui::GetColorU32(ImGuiCol_Text), 1.0f);
+                else cellFitted("?", ImGui::ColorConvertFloat4ToU32(kTextDim), 1.0f);
+            });
             endListTable(ui);
         }
+        ImGui::PopStyleVar();
         d.beginButtons();
+        pageButtons(d, page_, order.size(), kPerPage);
         if (d.button("Comparisons")) ui.open(ScreenId::Comparisons);
         d.close();
         return d.keepOpen();
     }
+
+private:
+    static constexpr int kPerPage = 10;
+    static constexpr float kNameW = 100;   // the figures' names (frame pixels); the ten empire columns share the rest
+    int page_ = 0;
 };
 
 // ---- Comparisons ----------------------------------------------------------------------------------------

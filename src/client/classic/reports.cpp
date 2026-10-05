@@ -101,7 +101,7 @@ public:
     void text(float x, float y, ImU32 color, std::string_view t) const {
         const TextFit f = fitText(ui_.painter(), ImGui::GetFont(), ImGui::GetFontSize() / ui_.k(), t, ui_.px(kRight - x));
         dl_->AddText(ImGui::GetFont(), f.size, snap(at(x, y)), color, f.text.c_str());
-        script::reportFit(f.text, at(x, y), ImVec2(at(x, y).x + f.extent.x, at(x, y).y + f.extent.y), f.extent.x > ui_.px(kRight - x) + 0.5f);
+        script::reportFit(f.text, at(x, y), ImVec2(at(x, y).x + f.extent.x, at(x, y).y + f.extent.y), f.extent.x > ui_.px(kRight - x) + 0.5f, f.cut);
         if (f.cut && ImGui::IsMouseHoveringRect(at(x, y), at(kRight, y + 14)) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows))
             ImGui::SetTooltip("%.*s", int(t.size()), t.data());
     }
@@ -605,7 +605,17 @@ void systemReport(UiContext& ui, game::SystemId sysId) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 origin = ImGui::GetWindowPos();
     auto at = [&](float x, float y) { return ImVec2(origin.x + ui.px(x), origin.y + ui.px(y)); };
-    if (const Sprite picture = ui.art.systemPicture(type.backgroundBitmap)) pen.sprite(picture, -5, -11, 128, 128);
+    // The picture at the top left, (0,0) of the spec's places: just inside the
+    // panel's frame rail. It is opaque (a star field), unlike a planet's keyed
+    // portrait, which reaches over the rail (-1,-3): drawn there it covered the
+    // rail (GitHub issue #2). Clipped to the panel, so no scale can bring it over.
+    if (const Sprite picture = ui.art.systemPicture(type.backgroundBitmap)) {
+        constexpr Vec2 kPicture{-4, -8};   // the spec's (0,0)
+        dl->PushClipRect(at(kPicture.x, kPicture.y), ImVec2(FLT_MAX, FLT_MAX), true);
+        pen.sprite(picture, kPicture.x, kPicture.y, 128, 128);
+        dl->PopClipRect();
+        script::reportItem("system-picture", at(kPicture.x, kPicture.y), at(kPicture.x + 128, kPicture.y + 128));   // input scripts: where it is
+    }
     ImFont* button = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
     ImFont* body = ui.fonts.medium ? ui.fonts.medium : ImGui::GetFont();
     ImFont* small = ui.fonts.small ? ui.fonts.small : body;
