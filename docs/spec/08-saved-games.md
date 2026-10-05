@@ -700,23 +700,23 @@ here, and the computer players' anger counts unread entries.
 
 | Type | Field | Meaning | OpenSE4 `LogEntry` |
 |---|---|---|---|
-| byte | Owner | The player whose log it is | (the list it is in) |
+| byte | Owner | The player whose log it is | (the list it is in); imported entries keep the byte in `classic.owner` |
 | byte | System | 0 none | `location.system` |
 | byte | Sector | | `location.sector` |
 | int | Date | | `turn` = date − 24000 |
 | string | Title | The row text | `title` |
 | string | Text | CR LF line breaks | `text` |
 | byte | Go-to target | 0 none, 1 location, 2 construction queues, 3 research, 4 intelligence, 5 empire options, 6 designs, 7 empires | `target` (map by meaning) |
-| word | Picture key | Meaning depends on the entry kind (below) | `picture` (derive) |
-| bool | Event-style notice | Set on events, mine encounters, stellar changes and riots; no reader found | none |
-| byte | Other empire involved | Player, 0 none; the computer players' anger reads it | none (needed only to rebuild anger inputs) |
-| byte | Entry kind | See below | none (derive `picture`, `message`) |
+| word | Picture key | Meaning depends on the entry kind (below) | `picture` (derive); kept in `classic.pictureKey` |
+| bool | Event-style notice | Set on events, mine encounters, stellar changes and riots; no reader found | `classic.eventNotice` (imported entries) |
+| byte | Other empire involved | Player, 0 none; the computer players' anger reads it | `classic.otherEmpire` (imported entries) |
+| byte | Entry kind | See below | `classic.kind` (imported entries; 0 for OpenSE4's own); derive `picture`, `message` |
 | byte | Category | 1 Construction, 2 Research, 3 Intelligence, 4 Events, 5 Politics, 6 Combat, 7 Misc | `category` = value − 1 |
-| int | Date first read | 0 unread. The Log window lists only the entries whose read date is 0 or the current date, and stamps the unread ones with the current date; entries read on an earlier turn are hidden **(confirmed: binary; observed: a file whose entries had their own dates as read dates showed an empty Log, the same file with 0 showed them)** | none; **export 0** |
-| byte | Event kind | On event entries | none |
-| word | Tech area | On new-tech-level entries | none |
+| int | Date first read | 0 unread. The Log window lists only the entries whose read date is 0 or the current date, and stamps the unread ones with the current date; entries read on an earlier turn are hidden **(confirmed: binary; observed: a file whose entries had their own dates as read dates showed an empty Log, the same file with 0 showed them)** | `classic.dateRead` (imported entries, §12); **export 0** for OpenSE4's own |
+| byte | Event kind | On event entries | `classic.eventKind` (imported entries) |
+| word | Tech area | On new-tech-level entries | `classic.techArea` (imported entries) |
 | bool, record | Diplomatic message follows | Present on message entries (kind 19) | `message` → a delivered `DiplomaticMessage` |
-| bool, record | Battle details follow | Present on combat entries (kinds 9..14) | none (see below) |
+| bool, record | Battle details follow | Present on combat entries (kinds 9..14) | `classic.battleNumber`, `classic.battle` (imported entries; see below) |
 
 Entry kinds found **(confirmed: binary; the split of 15..18 is inferred)**: 1 natural
 damage to a vehicle, 2 colonization result, 4 vehicle built (picture key = design), 5
@@ -769,9 +769,10 @@ files); a message exists in a `.gam` only as a log entry.
 then for each player 1..20: byte player number, word n, bool took part, n × (string
 ship name, string hull code, word hull position or 0) for the forces at the start, word
 m, m × (string name, byte damage percent) for the survivors. OpenSE4 has no direct
-counterpart; an importer can build a minimal `CombatRecord` per battle (participants,
-location, date, outcome per empire from the entry kinds), which is what the anger rules
-read (inferred).
+counterpart: it keeps an imported record as it is (`LogEntry::classic`) to write it back.
+An importer could also build a minimal `CombatRecord` per battle (participants, location,
+date, outcome per empire from the entry kinds), which is what the anger rules read
+(inferred).
 
 #### 3.6.12 Fleets
 
@@ -1368,7 +1369,7 @@ Write them correctly or the game misbehaves silently **(confirmed: binary)**:
 | Globals | Main-window system and sector: the current player's home system and sector; scenario fields off, empty, 1 |
 | Systems | "Changed" off; type attributes copied from the system's SystemTypes.txt record |
 | Empires | Art folder = race folder; emblem folder, network name and password empty; unused fields as stated in §3.6; default formation, fleet strategy and planet strategy 1; capability flags off; name counters from the vehicles; window memories without counterparts at their defaults (tabs 1, transfer tabs 3); the system and sector shown at turn end: home system and sector |
-| Log | OpenSE4's entries as kind 36, picture key 0, no other empire, **read date 0** (§3.6.11); imported entries with the kind, picture key, other empire, event kind and tech area they came with; diplomatic entries as kind 19 with the message record; combat entries as kinds 9..14 with their battle details |
+| Log | OpenSE4's entries as kind 36, picture key 0, no other empire, **read date 0** (§3.6.11); imported entries with the kind, picture key, other empire, event kind, tech area and read date they came with (§12); diplomatic entries as kind 19 with the message record; combat entries as kinds 9..14 with their battle details |
 | Designs | Speed, cost and type code computed; last-seen dates from `seenDesigns`; changed flag off; empty ability list |
 | Objects | Day accumulators 0; changed flags off; killed units 0; militia 0 without an invader; blanks for free slots |
 
