@@ -911,8 +911,8 @@ that share it play together. It was 2 from turn-based games on, 3 in 0.5.0, 4 in
 0.6.0 and 5 from 0.7.0 (encrypted connections) through 0.9.0, whose save format was 7.
 Protocol 6 and save format 8 (the log fields of games imported from the original, the
 colonies' destroyed facility counts, orders given to tagged vehicles as one group, the
-fleet leader command and the Designs window's check boxes kept with the empire) come with
-the next release, so it does not play with 0.9.0; it still loads 0.9.0's saves.
+fleet leader command and the Designs window's check boxes kept with the empire) came with
+0.10.0, so it does not play with 0.9.0; it still loads 0.9.0's saves.
 
 ### Save format
 

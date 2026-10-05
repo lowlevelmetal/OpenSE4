@@ -72,6 +72,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.10.0" date="2026-10-05" type="development">
+      <description>
+        <p>Loads the original game's saved games and saves games back for it, mutes the sound while the window is in the background, moves tagged ships as one group, shows your fleets as one row, and fixes the problems players reported on 0.9.0; does not play with 0.9.0 over the network but reads its saves.</p>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-10-04" type="development">
       <description>
         <p>Runs on Windows 7 SP1 and on 64-bit and 32-bit ARM Linux; fixes a crash after a battle, music that stopped and popping sound, buttons usable under open windows, and several screens that differed from the original game.</p>
