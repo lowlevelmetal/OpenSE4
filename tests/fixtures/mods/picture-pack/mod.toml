@@ -1,0 +1,12 @@
+# A test fixture: pictures and a sound beyond the original's formats, all
+# OpenSE4's own content made for the tests: a ship picture "Lancer" drawn by a
+# script as PNGs with transparency at twice the classic size (a 72x72 mini, a
+# 256x256 portrait), and the one-second tone of tests/fixtures/audio as an
+# OGG Vorbis file in place of the interface's button sound.
+[mod]
+id = "test.picture-pack"
+name = "Picture Pack"
+version = "1.0.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "A ship picture at twice the classic size (PNG) and an OGG Vorbis button sound. Works with any data set."

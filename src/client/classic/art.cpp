@@ -67,36 +67,8 @@ void Art::setDetail(float scale) {
 }
 
 Vec2 Art::classicSize(std::string_view relative) {
-    // The sizes the classic art has, kind by kind (the layout draws them there).
-    const std::string p = lower(relative);
-    const size_t slash = p.rfind('/');
-    const std::string_view name = slash == std::string::npos ? std::string_view(p) : std::string_view(p).substr(slash + 1);
-    const std::string_view stem = name.substr(0, name.rfind('.'));
-    auto under = [&](std::string_view folder) { return p.starts_with(folder); };
-    if (under("pictures/races/") || under("pictures/raceneutral/") || under("pictures/racegeneric/")) {
-        // "<Style>_<suffix>": the suffix names the kind.
-        const size_t sep = stem.find('_');
-        const std::string_view suffix = sep == std::string_view::npos ? stem : stem.substr(sep + 1);
-        if (suffix.starts_with("mini_")) return {36, 36};
-        if (suffix.starts_with("portrait_") || suffix == "race_portrait") return {128, 128};
-        if (suffix == "pop_mini") return {20, 20};
-        if (suffix == "pop_portrait") return {36, 36};
-        if (suffix == "main") return {100, 20};
-        if (suffix == "shields") return {288, 36};
-        if (suffix == "bigexplosion") return {576, 72};
-        return {};
-    }
-    if (under("pictures/components/comp_") || under("pictures/facilities/facil_") || under("pictures/planets/p") || under("pictures/events/"))
-        return name.ends_with(".bmp") || name.ends_with(".png") ? Vec2{128, 128} : Vec2{};
-    if (under("pictures/systems/1024x768/")) return {660, 660};
-    if (under("pictures/systems/800x600/")) return {490, 490};
-    if (under("pictures/systems/")) {
-        if (p.find('/', std::string_view("pictures/systems/").size()) != std::string::npos) return {};
-        return stem.find("tile") != std::string_view::npos ? Vec2{72, 72} : Vec2{128, 128};
-    }
-    if (p == "pictures/game/screens/1024x768/intro.bmp") return {1024, 768};
-    if (p == "pictures/game/screens/800x600/intro.bmp") return {800, 600};
-    return {};
+    const auto size = assets::classicPictureSize(relative);
+    return size ? Vec2{float(size->first), float(size->second)} : Vec2{};
 }
 
 Art::Picture Art::loadPicture(std::string_view relative, bool colorKey) {

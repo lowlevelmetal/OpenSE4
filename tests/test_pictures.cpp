@@ -112,6 +112,11 @@ TEST_CASE("pictures: a PNG beside a BMP of the same name, the PNG first in each 
     CHECK(files.findSound("Sounds/ping.wav")->filename() == "Ping.ogg");
     CHECK(files.findSound("Music/Theme.mp3")->filename() == "Theme.ogg");
     CHECK(files.findSound("Sounds/other.wav") == std::nullopt);
+    // Several names of one sound: a mod's under the second name before the install's under the first.
+    writeBytes(install / "Sounds/New/ping.wav", {6});
+    const std::vector<std::string> names{"Sounds/New/ping.wav", "Sounds/ping.wav"};
+    CHECK(files.findSoundAmong(names)->filename() == "Ping.ogg");
+    CHECK(assets::InstallFiles(install).findSoundAmong(names)->generic_string().ends_with("New/ping.wav"));
     // find() itself is as it was: the name as given.
     CHECK(files.find("Sounds/ping.wav")->filename() == "ping.wav");
     // The mods' files under a folder, as spelled.

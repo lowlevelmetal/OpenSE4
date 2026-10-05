@@ -130,6 +130,41 @@ std::expected<ImageInfo, std::string> probeImage(const std::filesystem::path& pa
     return info;
 }
 
+std::optional<std::pair<int, int>> classicPictureSize(std::string_view relative) {
+    // The sizes the classic art has, kind by kind (the layout draws them there).
+    using Size = std::optional<std::pair<int, int>>;
+    const std::string p = lowerSlashed(relative);
+    const size_t slash = p.rfind('/');
+    const std::string_view name = slash == std::string::npos ? std::string_view(p) : std::string_view(p).substr(slash + 1);
+    const std::string_view stem = name.substr(0, name.rfind('.'));
+    auto under = [&](std::string_view folder) { return p.starts_with(folder); };
+    if (under("pictures/races/") || under("pictures/raceneutral/") || under("pictures/racegeneric/")) {
+        // "<Style>_<suffix>": the suffix names the kind.
+        const size_t sep = stem.find('_');
+        const std::string_view suffix = sep == std::string_view::npos ? stem : stem.substr(sep + 1);
+        if (suffix.starts_with("mini_")) return Size{{36, 36}};
+        if (suffix.starts_with("portrait_") || suffix == "race_portrait") return Size{{128, 128}};
+        if (suffix == "pop_mini") return Size{{20, 20}};
+        if (suffix == "pop_portrait") return Size{{36, 36}};
+        if (suffix == "main") return Size{{100, 20}};
+        if (suffix == "shields") return Size{{288, 36}};
+        if (suffix == "bigexplosion") return Size{{576, 72}};
+        return std::nullopt;
+    }
+    const bool picture = name.ends_with(".bmp") || name.ends_with(".png");
+    if (under("pictures/components/comp_") || under("pictures/facilities/facil_") || under("pictures/planets/p") || under("pictures/events/"))
+        return picture ? Size{{128, 128}} : std::nullopt;
+    if (under("pictures/systems/1024x768/")) return Size{{660, 660}};
+    if (under("pictures/systems/800x600/")) return Size{{490, 490}};
+    if (under("pictures/systems/")) {
+        if (p.find('/', std::string_view("pictures/systems/").size()) != std::string::npos) return std::nullopt;
+        return stem.find("tile") != std::string_view::npos ? Size{{72, 72}} : Size{{128, 128}};
+    }
+    if (p == "pictures/game/screens/1024x768/intro.bmp" || p == "pictures/game/screens/1024x768/intro.png") return Size{{1024, 768}};
+    if (p == "pictures/game/screens/800x600/intro.bmp" || p == "pictures/game/screens/800x600/intro.png") return Size{{800, 600}};
+    return std::nullopt;
+}
+
 std::optional<std::pair<int, int>> probeImageSize(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) return std::nullopt;
@@ -352,6 +387,13 @@ std::optional<std::filesystem::path> InstallFiles::findPicture(std::string_view 
 
 std::optional<std::filesystem::path> InstallFiles::findSound(std::string_view relative) const {
     return findFirstOf(variantKeys(relative, ".ogg"), true, nullptr);
+}
+
+std::optional<std::filesystem::path> InstallFiles::findSoundAmong(std::span<const std::string> names) const {
+    std::vector<std::string> keys;
+    for (const std::string& n : names)
+        for (std::string& k : variantKeys(n, ".ogg")) keys.push_back(std::move(k));
+    return findFirstOf(keys, true, nullptr);
 }
 
 std::optional<std::filesystem::path> InstallFiles::findInstalledPicture(std::string_view relative) const {

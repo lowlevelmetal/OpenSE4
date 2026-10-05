@@ -10,6 +10,7 @@
 // It reads the player's installed game (or --data=DIR) and never writes into it.
 
 #include "assets/assets.hpp"
+#include "assets/sound.hpp"
 #include "core/environment.hpp"
 #include "datafile/datafile.hpp"
 #include "mods/data_set.hpp"
@@ -291,6 +292,52 @@ int cmdInfo(const std::vector<std::string>& argv) {
 
 // ---- check -------------------------------------------------------------------------------------
 
+// A picture of the mod: it reads, and it fits the classic picture it stands
+// for (its kind's size, else the install's copy's): the same size or a whole
+// multiple of it (docs/sdk/packages-and-data.md "Larger pictures").
+void checkPicture(const mods::PackageFile& f, const std::string& rel, const assets::InstallFiles& files, std::vector<std::string>& warnings,
+                  std::vector<std::string>& errors) {
+    const auto info = assets::probeImage(f.real);
+    if (!info) {
+        errors.push_back(std::format("{}: the picture cannot be read: {}", f.path, info.error()));
+        return;
+    }
+    const std::string ext = lower(fs::path(rel).extension().string());
+    if (ext == ".png" && info->format != assets::ImageFormat::Png)
+        warnings.push_back(std::format("{}: it is named .png but holds {} data: it is read, without a PNG's transparency", f.path, assets::formatName(info->format)));
+    // The classic picture of the same name (a .png stands for the .bmp the game asks for).
+    std::string asked = rel;
+    if (ext == ".png") asked = rel.substr(0, rel.size() - 4) + ".bmp";
+    std::optional<std::pair<int, int>> classic = assets::classicPictureSize(asked);
+    std::string from = "its kind's";
+    if (!classic)
+        if (const auto base = files.findInstalledPicture(asked)) {
+            classic = assets::probeImageSize(*base);
+            from = "the installed game's";
+        }
+    if (!classic || (classic->first == info->width && classic->second == info->height)) return;
+    const auto [cw, ch] = *classic;
+    if (info->width < cw || info->height < ch) {
+        warnings.push_back(std::format("{}: it is {}x{}, smaller than {} {}x{}: it is drawn stretched to that size", f.path, info->width, info->height, from,
+                                       cw, ch));
+        return;
+    }
+    if (info->width % cw != 0 || info->height % ch != 0 || info->width / cw != info->height / ch)
+        warnings.push_back(std::format("{}: it is {}x{}, not a whole multiple of {} {}x{}: it is drawn scaled to {}x{} and may look uneven", f.path,
+                                       info->width, info->height, from, cw, ch, cw, ch));
+}
+
+// A sound or music file of the mod: it reads as what its name says.
+void checkSound(const mods::PackageFile& f, const std::string& ext, std::vector<std::string>& errors) {
+    std::ifstream in(f.real, std::ios::binary);
+    const std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    if (ext == ".ogg") {
+        if (auto info = assets::probeOgg(bytes); !info) errors.push_back(std::format("{}: the OGG Vorbis file cannot be read: {}", f.path, info.error()));
+    } else if (ext == ".wav") {
+        if (!assets::isWav(bytes)) errors.push_back(std::format("{}: it is not a WAV file", f.path));
+    }
+}
+
 // The asset checks: pictures records name, formats, files nothing reads.
 void checkAssets(const mods::Package& p, const mods::GameData& data, const DataPaths& paths, const mods::ModSet& set, std::vector<std::string>& warnings,
                  std::vector<std::string>& errors) {
@@ -308,9 +355,9 @@ void checkAssets(const mods::Package& p, const mods::GameData& data, const DataP
     std::set<std::string> raceFolders;
     for (const ruleset::FileEntry& e : data.list("Pictures/Races")) raceFolders.insert(e.name);
     auto hullPicture = [&](std::string_view kind, std::string_view bitmap) {
-        if (files.find(std::format("Pictures/RaceGeneric/Generic_{}_{}.bmp", kind, bitmap))) return true;
+        if (files.findPicture(std::format("Pictures/RaceGeneric/Generic_{}_{}.bmp", kind, bitmap))) return true;
         for (const std::string& race : raceFolders)
-            if (files.find(std::format("Pictures/Races/{}/{}_{}_{}.bmp", race, race, kind, bitmap))) return true;
+            if (files.findPicture(std::format("Pictures/Races/{}/{}_{}_{}.bmp", race, race, kind, bitmap))) return true;
         return false;
     };
     std::set<std::string> bitmaps;
@@ -336,10 +383,12 @@ void checkAssets(const mods::Package& p, const mods::GameData& data, const DataP
     }
     // Component and facility pictures: a cell of their sheet.
     auto sheetCells = [&](std::string_view sheet, int cell) -> int {
-        const auto path = files.find(sheet);
+        // A mod's larger sheet has its cells at the install's places, scaled.
+        const auto path = files.findPicture(sheet);
         if (!path) return -1;
-        const auto img = assets::loadImage(*path, false);
-        return img ? (img->width / cell) * (img->height / cell) : -1;
+        auto size = assets::probeImageSize(*path);
+        if (const auto base = files.findInstalledPicture(sheet)) size = assets::probeImageSize(*base);
+        return size ? (size->first / cell) * (size->second / cell) : -1;
     };
     for (const auto& [file, sheet] : {std::pair<std::string_view, std::string_view>{"Components.txt", "Pictures/Components/Components.bmp"},
                                       {"Facility.txt", "Pictures/Facilities/Facility.bmp"}}) {
@@ -374,24 +423,25 @@ void checkAssets(const mods::Package& p, const mods::GameData& data, const DataP
                 warnings.push_back(std::format("{}: the game reads pictures, sounds, music and fonts only (Pictures/, Sounds/, Music/, Fonts/)", f.path));
             continue;
         }
-        static const std::set<std::string> kPictures{".bmp", ".cur", ".ani"};
-        static const std::set<std::string> kSounds{".wav", ".mp3"};
+        // Pictures: BMP, or PNG under the same base name (docs/sdk/packages-and-data.md "Pictures");
+        // sounds and music: WAV and MP3, or OGG Vorbis under the same base name.
+        static const std::set<std::string> kPictures{".bmp", ".png", ".cur", ".ani"};
+        static const std::set<std::string> kSounds{".wav", ".mp3", ".ogg"};
         static const std::set<std::string> kFonts{".fon", ".fnt", ".ttf", ".otf"};
         const bool ok = (top == "pictures" && kPictures.contains(ext)) || ((top == "sounds" || top == "music") && kSounds.contains(ext)) ||
                         (top == "fonts" && kFonts.contains(ext)) || ext == ".txt" || ext == ".md";
-        if (top == "pictures" && (ext == ".png" || ext == ".jpg" || ext == ".jpeg")) {
-            warnings.push_back(std::format("{}: the game asks for pictures by names ending in .bmp, so it never finds this one: rename it to .bmp "
-                                           "(PNG or JPG inside is fine)",
+        if (top == "pictures" && (ext == ".jpg" || ext == ".jpeg")) {
+            warnings.push_back(std::format("{}: the game asks for pictures by names ending in .bmp (or .png), so it never finds this one: "
+                                           "rename it to .bmp (JPEG inside is fine) or make it a PNG",
                                            f.path));
             continue;
         }
         if (!ok) {
-            errors.push_back(std::format("{}: a {} file is not a format the game reads here{}", f.path, ext.empty() ? "nameless" : ext,
-                                         ext == ".ogg" ? " (OGG is not supported yet: use WAV or MP3)" : ""));
+            errors.push_back(std::format("{}: a {} file is not a format the game reads here", f.path, ext.empty() ? "nameless" : ext));
             continue;
         }
-        if (top == "pictures" && kPictures.contains(ext) && ext != ".cur" && ext != ".ani" && !assets::loadImage(f.real, false))
-            errors.push_back(std::format("{}: the picture cannot be read", f.path));
+        if (top == "pictures" && (ext == ".bmp" || ext == ".png")) checkPicture(f, rel, files, warnings, errors);
+        if (top == "sounds" || top == "music") checkSound(f, ext, errors);
         // A hull picture no hull names.
         const std::string name = fs::path(l).stem().string();
         for (std::string_view kind : {"mini_", "portrait_"}) {
@@ -402,7 +452,9 @@ void checkAssets(const mods::Package& p, const mods::GameData& data, const DataP
             static const std::set<std::string> kGroups{"fleet", "fightergroup", "minegroup", "satellitegroup", "troopgroup", "dronegroup",
                                                        "weaponplatformgroup"};
             if (!bitmaps.contains(bitmap) && !kGroups.contains(bitmap))
-                warnings.push_back(std::format("{}: no hull's Primary or Alternate Bitmap Name is '{}', so nothing shows this picture", f.path, bitmap));
+                warnings.push_back(std::format("{}: no hull's Primary or Alternate Bitmap Name is '{}': only designs that choose it as their own "
+                                               "picture show it",
+                                               f.path, bitmap));
         }
     }
 }

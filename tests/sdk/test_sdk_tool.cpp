@@ -1,6 +1,7 @@
 // opense4-sdk's commands, run as a player runs them, on our own fixtures
 // (docs/sdk/packages-and-data.md "opense4-sdk").
 
+#include "image_files.hpp"
 #include "mod_fixture.hpp"
 #include "mods/zip.hpp"
 #include "ruleset/ruleset.hpp"
@@ -107,10 +108,27 @@ TEST_CASE("sdk tool: check finds the dependencies and reports problems") {
     const Run p = sdk(std::format("check {} --data={}", q(pictures.root), q(g.root)));
     CHECK(p.code == 1);
     CHECK(p.out.find("the hull [Test Lighter] has no Mini picture 'Lighter'") != std::string::npos);
-    CHECK(p.out.find("assets/Music/Theme.ogg: a .ogg file is not a format the game reads here (OGG is not supported yet") != std::string::npos);
+    CHECK(p.out.find("assets/Music/Theme.ogg: the OGG Vorbis file cannot be read") != std::string::npos);
     CHECK(p.out.find("assets/Pictures/RaceGeneric/Generic_Mini_Nobody.bmp: the picture cannot be read") != std::string::npos);
     CHECK(p.out.find("no hull's Primary or Alternate Bitmap Name is 'nobody'") != std::string::npos);
     CHECK(p.out.find("assets/Docs/notes.pdf: the game reads pictures, sounds, music and fonts only") != std::string::npos);
+
+    // Beyond the original's formats: PNG pictures at twice their classic size and an OGG Vorbis sound.
+    const Run pack = sdk(std::format("check {} --data={}", q(fixtureMod("picture-pack")), q(g.root)));
+    CHECK_MESSAGE(pack.code == 0, pack.out);
+    CHECK_MESSAGE(pack.out.find("no hull's Primary or Alternate Bitmap Name is 'lancer'") != std::string::npos, pack.out);   // a picture for designs
+    CHECK_MESSAGE(pack.out.find("cannot be read") == std::string::npos, pack.out);
+    ModDir sizes("tool_sizes", "test.sizes");
+    writePng(sizes.root / "assets/Pictures/RaceGeneric/Generic_Portrait_Odd.png", 200, 150, solid(1, 2, 3));
+    writePng(sizes.root / "assets/Pictures/RaceGeneric/Generic_Mini_Small.png", 20, 20, solid(1, 2, 3));
+    writeBmp(sizes.root / "assets/Pictures/Events/Fine.png", 256, 256, solid(1, 2, 3));   // BMP data under a PNG's name
+    writeBytes(sizes.root / "assets/Sounds/ping.wav", {'R', 'I', 'F', 'F'});
+    const Run z = sdk(std::format("check {} --data={}", q(sizes.root), q(g.root)));
+    CHECK(z.out.find("Generic_Portrait_Odd.png: it is 200x150, not a whole multiple of its kind's 128x128") != std::string::npos);
+    CHECK(z.out.find("Generic_Mini_Small.png: it is 20x20, smaller than its kind's 36x36") != std::string::npos);
+    CHECK(z.out.find("Fine.png: it is named .png but holds BMP data") != std::string::npos);
+    CHECK(z.out.find("Events/Fine.png: it is 256x256") == std::string::npos);   // twice the classic size: fine
+    CHECK(z.out.find("assets/Sounds/ping.wav: it is not a WAV file") != std::string::npos);
 }
 
 TEST_CASE("sdk tool: dump writes the patched data set elsewhere") {

@@ -52,6 +52,15 @@ std::expected<ImageInfo, std::string> probeImage(const std::filesystem::path& pa
 // Only the width and height, from the file's header.
 std::optional<std::pair<int, int>> probeImageSize(const std::filesystem::path& path);
 
+// The size a picture of the classic game has in its layout, by its kind
+// (docs/sdk/packages-and-data.md "Larger pictures"): minis 36×36, portraits
+// 128×128, population pictures 20×20 and 36×36, a race's Main.bmp 100×20,
+// component, facility, planet, event and system pictures 128×128, combat
+// tiles 72×72, the system panels' backgrounds and the intro pictures at their
+// layout's size. Nullopt when the kind has no fixed size (sheets, frame
+// pieces): the install's own copy of the picture gives its classic size.
+std::optional<std::pair<int, int>> classicPictureSize(std::string_view relative);
+
 // The picture resampled to w×h by averaging the source pixels each target
 // pixel covers (an area filter: for making a larger picture smaller, with no
 // ringing), weighted by alpha so that transparent pixels do not darken the
@@ -101,6 +110,10 @@ public:
     // "Music/Track 01.mp3"): that file or an OGG Vorbis file with the same base
     // name, the OGG first in each layer, as findPicture.
     std::optional<std::filesystem::path> findSound(std::string_view relative) const;
+    // The first of several names of a sound ("Sounds/New/button.wav", then
+    // "Sounds/button.wav"), each with its OGG first, in the mods' layers before
+    // the install: a mod's sound under either name wins over the install's.
+    std::optional<std::filesystem::path> findSoundAmong(std::span<const std::string> names) const;
     // findPicture in the install alone, without the mods' layers: the classic
     // picture a mod's replaces (its size is the classic size, docs/sdk/packages-and-data.md).
     std::optional<std::filesystem::path> findInstalledPicture(std::string_view relative) const;
