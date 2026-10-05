@@ -69,7 +69,15 @@ add_executable(opense4_tests
     test_unit_groups.cpp
     test_wincursor.cpp
     test_winfont.cpp
-    test_xmath.cpp)
+    test_xmath.cpp
+    # The modding SDK's own tests (docs/MODDING_SDK.md, section 14.6)
+    sdk/test_script_cache.cpp
+    sdk/test_script_convert.cpp
+    sdk/test_script_determinism.cpp
+    sdk/test_script_json.cpp
+    sdk/test_script_library.cpp
+    sdk/test_script_runtime.cpp
+    sdk/test_script_sandbox.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
 target_sources(opense4_tests PRIVATE
@@ -116,6 +124,7 @@ target_sources(opense4_tests PRIVATE
 target_link_libraries(opense4_tests PRIVATE opense4_script opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    OPENSE4_SDK_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/sdk"
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 
 opense4_copy_runtime_dlls(opense4_tests)
