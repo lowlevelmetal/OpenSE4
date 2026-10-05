@@ -16,6 +16,7 @@
 #include "game/movement.hpp"
 #include "datafile/datafile.hpp"
 #include "game/serialize.hpp"
+#include "game/sight.hpp"
 #include "game/turn.hpp"
 
 #include <doctest/doctest.h>
@@ -28,8 +29,10 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <regex>
 #include <set>
+#include <tuple>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -1063,30 +1066,266 @@ TEST_CASE("classic save: Launch and Recover name the unit kind as Load does") {
     CHECK(every == std::set<DesignId>{sat, mine, drone});
 }
 
-TEST_CASE("classic save: a turn-based export before the player's turn starts gives the movement of its start") {
-    const Rules& r = test::engineRules();
-    GameState s = playedGame(false, 4, 91);
-    const EmpireId player = s.playerTurn.empire;
-    REQUIRE(player.valid());
-    REQUIRE(s.playerTurn.started);
-    // Started: the movement left as it is.
-    for (Vehicle& v : s.vehicles)
-        if (v.owner == player && v.count > 0) v.movement = 0;
-    ClassicSave started = exportOrFail(r, s);
-    for (const Vehicle& v : s.vehicles)
-        if (v.owner == player && v.count > 0 && started.objects[v.slot].objectClass() == ObjectClass::Ship)
-            CHECK(started.objects[v.slot].movement == 0);
-    // Not started: what the start of the turn gives.
-    s.playerTurn.started = false;
-    const ClassicSave waiting = exportOrFail(r, s);
-    size_t checked = 0;
-    for (const auto& [id, points] : movement::refilledMovement(r, s, player)) {
+// ---- The start of the current player's turn (spec 08 §9.1, §9.2, §12) ----------------------------------------
+
+namespace {
+
+// The player's first ship that moves alone (in no fleet), with the movement
+// the start of its turn gives it.
+std::pair<VehicleId, int> loneShip(const Rules& r, const GameState& s, EmpireId e) {
+    for (const auto& [id, points] : movement::refilledMovement(r, s, e)) {
         const Vehicle* v = s.vehicle(id);
-        if (waiting.objects[v->slot].objectClass() != ObjectClass::Ship) continue;
-        CHECK(int{waiting.objects[v->slot].movement} == points);
-        checked += points > 0;
+        if (v && points > 0 && !v->fleet.valid() && r.hull(s.design(v->design).hull).type == ruleset::VehicleType::Ship) return {id, points};
     }
-    CHECK(checked > 0);
+    return {};
+}
+
+Order moveOrder(Location to) {
+    Order o;
+    o.kind = OrderKind::MoveTo;
+    o.location = to;
+    return o;
+}
+
+cmd::SetOrders ordersOf(VehicleId v, std::vector<Order> orders) {
+    cmd::SetOrders c;
+    c.vehicle = v;
+    c.orders = std::move(orders);
+    return c;
+}
+
+bool hasNote(const ConversionReport& report, std::string_view start) {
+    return std::any_of(report.notes.begin(), report.notes.end(), [&](const std::string& n) { return n.starts_with(start); });
+}
+
+constexpr std::string_view kTurnStartNote = "The current player's turn had not started";
+constexpr std::string_view kQuestionNote = "Groups stopped before a sector with enemies";
+
+// A turn-based game between two game turns: the human player gave a
+// ship a Move To that takes several turns and ended the turn, and the
+// computer players took theirs. `ship` is that ship, `points` its movement
+// per turn.
+struct BetweenTurns {
+    GameState s;
+    EmpireId player;
+    VehicleId ship;
+    int points = 0;
+
+    explicit BetweenTurns(uint64_t seed = 91) : s(playedGame(false, 4, seed)) {
+        const Rules& r = test::engineRules();
+        player = s.playerTurn.empire;
+        REQUIRE(player.valid());
+        REQUIRE(s.empire(player).kind == PlayerKind::Human);
+        REQUIRE(s.playerTurn.started);
+        std::tie(ship, points) = loneShip(r, s, player);
+        REQUIRE(ship.valid());
+        const Location from = s.vehicle(ship)->location;
+        const Location to{from.system, Sector{from.sector.x < 6 ? 12 : 0, from.sector.y < 6 ? 12 : 0}};
+        REQUIRE(std::max(std::abs(to.sector.x - from.sector.x), std::abs(to.sector.y - from.sector.y)) > 2 * points);
+        const TurnResult given = applyLive(r, s, player, ordersOf(ship, {moveOrder(to)}));
+        REQUIRE(given.rejected.empty());
+        REQUIRE(s.vehicle(ship)->location != from);
+        REQUIRE(s.vehicle(ship)->orders.size() == 1);
+        TurnOptions o;
+        o.aiForMissing = false;
+        processTurn(r, s, {}, o);
+        REQUIRE_FALSE(s.playerTurn.empire.valid());
+        REQUIRE(s.vehicle(ship)->orders.size() == 1);
+    }
+};
+
+} // namespace
+
+TEST_CASE("classic save: a turn-based export before a human's turn has started writes the game as that start leaves it") {
+    const Rules& r = test::engineRules();
+    BetweenTurns b;
+    // Between two game turns (no turn in progress), and with the player's turn due but not started.
+    GameState due = b.s;
+    due.playerTurn = PlayerTurn{b.player, false, {}, {}};
+    for (const GameState* waiting : {&b.s, &due}) {
+        CAPTURE(waiting == &due);
+        const GameState& s = *waiting;
+        const Vehicle& live = *s.vehicle(b.ship);
+        const std::vector<uint8_t> before = serializeState(s);
+
+        // What OpenSE4 itself does next: that player's turn starts.
+        GameState resumed = s;
+        resumeTurnBased(r, resumed);
+        REQUIRE(resumed.playerTurn.empire == b.player);
+        REQUIRE(resumed.playerTurn.started);
+        const Vehicle& moved = *resumed.vehicle(b.ship);
+        REQUIRE(moved.location != live.location);   // the Move To went on at the turn's start
+        REQUIRE(moved.movement < b.points);         // spending movement
+        REQUIRE(moved.orders.size() == 1);          // and is not done yet
+
+        ConversionReport report;
+        auto save = exportClassicSave(r, s, report, {3, "test"});
+        REQUIRE(save.has_value());
+        CHECK(serializeState(s) == before);  // the game itself does not change
+        CHECK(hasNote(report, kTurnStartNote));
+        CHECK_FALSE(hasNote(report, kQuestionNote));
+        // The file is the game at the start of that turn.
+        CHECK(compareSaves(*save, exportOrFail(r, resumed), 20).empty());
+        const ObjectRecord& o = save->objects[live.slot];
+        CHECK(o.system == live.location.system.value + 1);
+        CHECK(o.sector == moved.location.sector.y * 13 + moved.location.sector.x);
+        CHECK(int{o.movement} == moved.movement);
+        CHECK(o.orders.orders.size() == 1);
+        CHECK(save->globals.currentPlayer == b.player.value + 1);
+
+        // The same game gives the same file.
+        ConversionReport again;
+        auto second = exportClassicSave(r, s, again, {3, "test"});
+        REQUIRE(second.has_value());
+        CHECK(encodeOrFail(*second) == encodeOrFail(*save));
+        CHECK(again.notes == report.notes);
+    }
+}
+
+TEST_CASE("classic save: a turn-based export after the player's turn has started writes the game as it is") {
+    const Rules& r = test::engineRules();
+    BetweenTurns b;
+    GameState s = b.s;
+    resumeTurnBased(r, s);
+    REQUIRE(s.playerTurn.started);
+    // Movement left as it is, spent or not; positions and orders as they are.
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == b.player && v.count > 0 && v.id != b.ship) v.movement = 0;
+    const std::vector<uint8_t> before = serializeState(s);
+    ConversionReport report;
+    auto save = exportClassicSave(r, s, report, {3, "test"});
+    REQUIRE(save.has_value());
+    CHECK(serializeState(s) == before);
+    CHECK_FALSE(hasNote(report, kTurnStartNote));
+    for (const Vehicle& v : s.vehicles) {
+        if (v.owner != b.player || v.count <= 0 || save->objects[v.slot].objectClass() != ObjectClass::Ship) continue;
+        CAPTURE(v.id.value);
+        const ObjectRecord& o = save->objects[v.slot];
+        CHECK(int{o.movement} == v.movement);
+        CHECK(o.sector == v.location.sector.y * 13 + v.location.sector.x);
+        CHECK(o.orders.orders.size() == v.orders.size());
+    }
+    // Nothing starts a turn that has started.
+    GameState copy = s;
+    CHECK_FALSE(startHumanTurn(r, copy, b.player).rejected.empty());
+    CHECK(serializeState(copy) == before);
+}
+
+TEST_CASE("classic save: a turn start that meets a sector with enemies writes the group stopped before it, its orders kept") {
+    const Rules& r = test::engineRules();
+    BetweenTurns b;
+    const Vehicle& live = *b.s.vehicle(b.ship);
+    const Location from = live.location;
+    const EmpireId enemy{1u};
+    REQUIRE(b.s.empire(enemy).kind != PlayerKind::Human);
+    DesignId enemyScout;
+    for (const Design& d : b.s.designs)
+        if (d.owner == enemy && d.designType == "Scout") enemyScout = d.id;
+    REQUIRE(enemyScout.valid());
+    // A sensor ship of the player beside it, to see the enemy, and an enemy
+    // ship two sectors on, where the ship is heading (steps never go around
+    // their destination): the ship stops next to it, asked.
+    GameState base = b.s;
+    test::addTestVehicle(base, r,
+                         test::addTestDesign(base, r, b.player, "Picket Sensor", "Test Frigate",
+                                             {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Sensor"}),
+                         from);
+    std::optional<GameState> found;
+    for (const auto& [dx, dy] : {std::pair{2, 0}, std::pair{-2, 0}, std::pair{0, 2}, std::pair{0, -2}}) {
+        const Sector at{from.sector.x + dx, from.sector.y + dy};
+        if (!at.valid()) continue;
+        GameState trial = base;
+        test::addTestVehicle(trial, r, enemyScout, Location{from.system, at});
+        trial.vehicle(b.ship)->orders = {moveOrder(Location{from.system, at})};
+        sight::updateKnowledge(r, trial);
+        GameState probe = trial;
+        if (resumeTurnBased(r, probe).questions.size() == 1) {
+            found = std::move(trial);
+            break;
+        }
+    }
+    REQUIRE(found.has_value());
+    const GameState& s = *found;
+    GameState resumed = s;
+    const TurnResult asked = resumeTurnBased(r, resumed);
+    REQUIRE(asked.questions.size() == 1);
+    const Vehicle& stopped = *resumed.vehicle(b.ship);
+    CHECK(stopped.location != from);
+    CHECK(stopped.orders.size() == 1);
+    CHECK(resumed.combats.size() == s.combats.size());  // nobody entered
+
+    const std::vector<uint8_t> before = serializeState(s);
+    ConversionReport report;
+    auto save = exportClassicSave(r, s, report, {3, "test"});
+    REQUIRE(save.has_value());
+    CHECK(serializeState(s) == before);
+    CHECK(hasNote(report, kTurnStartNote));
+    CHECK(hasNote(report, kQuestionNote));
+    const ObjectRecord& o = save->objects[live.slot];
+    CHECK(o.sector == stopped.location.sector.y * 13 + stopped.location.sector.x);
+    CHECK(int{o.movement} == stopped.movement);
+    REQUIRE(o.orders.orders.size() == 1);
+    CHECK(compareSaves(*save, exportOrFail(r, resumed), 20).empty());
+    // Imported again, the ship waits there with its order, and no question is open.
+    const GameState back = importOrFail(r, *save);
+    CHECK(back.playerTurn.questions.empty());
+    const Vehicle* again = bySlot(back).at(live.slot);
+    CHECK(again->location == stopped.location);
+    CHECK(again->orders.size() == 1);
+}
+
+TEST_CASE("classic save: a computer player's turn not yet started gets only its movement; simultaneous games are written as they are") {
+    const Rules& r = test::engineRules();
+    SUBCASE("a computer player whose turn has not started") {
+        BetweenTurns b;
+        GameState s = b.s;
+        const EmpireId computer{1u};
+        REQUIRE(s.empire(computer).kind != PlayerKind::Human);
+        s.playerTurn = PlayerTurn{computer, false, {}, {}};
+        GameState refused = s;
+        CHECK_FALSE(startHumanTurn(r, refused, computer).rejected.empty());
+        const std::vector<uint8_t> before = serializeState(s);
+        ConversionReport report;
+        auto save = exportClassicSave(r, s, report, {3, "test"});
+        REQUIRE(save.has_value());
+        CHECK(serializeState(s) == before);
+        CHECK_FALSE(hasNote(report, kTurnStartNote));
+        CHECK(save->globals.currentPlayer == computer.value + 1);
+        size_t checked = 0;
+        for (const auto& [id, points] : movement::refilledMovement(r, s, computer)) {
+            const Vehicle* v = s.vehicle(id);
+            if (save->objects[v->slot].objectClass() != ObjectClass::Ship) continue;
+            CHECK(int{save->objects[v->slot].movement} == points);
+            CHECK(save->objects[v->slot].sector == v->location.sector.y * 13 + v->location.sector.x);
+            checked += points > 0;
+        }
+        CHECK(checked > 0);
+        // The human's ship has not moved on either.
+        const Vehicle& ship = *s.vehicle(b.ship);
+        CHECK(save->objects[ship.slot].sector == ship.location.sector.y * 13 + ship.location.sector.x);
+    }
+    SUBCASE("a simultaneous game") {
+        GameState s = playedGame(true, 2, 93);
+        const EmpireId player{0u};
+        REQUIRE(s.empire(player).kind == PlayerKind::Human);
+        const auto [ship, points] = loneShip(r, s, player);
+        REQUIRE(ship.valid());
+        Vehicle& v = *s.vehicle(ship);
+        v.orders = {moveOrder(Location{v.location.system, Sector{v.location.sector.x < 6 ? 12 : 0, 0}})};
+        v.movement = points > 1 ? 1 : 0;
+        GameState refused = s;
+        CHECK_FALSE(startHumanTurn(r, refused, player).rejected.empty());
+        const std::vector<uint8_t> before = serializeState(s);
+        ConversionReport report;
+        auto save = exportClassicSave(r, s, report, {3, "test"});
+        REQUIRE(save.has_value());
+        CHECK(serializeState(s) == before);
+        CHECK_FALSE(hasNote(report, kTurnStartNote));
+        const ObjectRecord& o = save->objects[v.slot];
+        CHECK(int{o.movement} == v.movement);
+        CHECK(o.sector == v.location.sector.y * 13 + v.location.sector.x);
+        CHECK(o.orders.orders.size() == 1);
+    }
 }
 
 TEST_CASE("classic save: a colony's destroyed facility counts carry over both ways (§3.8.5, §11.2)") {

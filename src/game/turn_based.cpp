@@ -476,6 +476,15 @@ TurnResult resumeTurnBased(const Rules& r, GameState& s, const LiveOptions& opti
     });
 }
 
+TurnResult startHumanTurn(const Rules& r, GameState& s, EmpireId e) {
+    if (!turnBased(s) || s.gameOver) return refused(e, "No turn starts: the game is not turn-based, or it is over.");
+    if (!living(s, e) || s.empire(e).kind != PlayerKind::Human) return refused(e, "Only a living human player's turn starts on its own.");
+    if (s.playerTurn.empire.valid() && (s.playerTurn.empire != e || s.playerTurn.started)) return refused(e, "It is not the start of your turn.");
+    LiveContext lc(r, s);
+    startPlayerTurn(lc, e, Control::Player);
+    return lc.result();
+}
+
 TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles) {
     if (!turnBased(s)) {
         const CommandResult res = apply(r, s, e, c);
