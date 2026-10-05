@@ -1,7 +1,8 @@
 # Modding SDK: outline
 
-Status: an outline, to be discussed. Nothing here is built yet. It fills in the third
-goal under "Future goals" in [PARITY_PLAN.md](PARITY_PLAN.md).
+Status: being built (from 2026-10-05). Section 14 records the decisions the
+implementation follows; where it differs from the outline, section 14 wins. This fills in
+the third goal under "Future goals" in [PARITY_PLAN.md](PARITY_PLAN.md).
 
 The SDK aims to let players:
 - **write their own computer players**, with full control: everything a human player can
@@ -491,3 +492,97 @@ example mods and their tests in CI.
    movement, cargo and every window, so it is left for after S4.
 7. **Licensing of mods** on the Workshop, and whether example mods ship with OpenSE4 or
    separately.
+
+## 14. Implementation decisions (2026-10-05)
+
+These settle the open questions the implementation can't wait for, and fix the shared
+contracts between its parts.
+
+### 14.1 The runtime: MicroPython inside the game, CPython outside
+
+- **In-game scripts** (data generators, AIs, rules hooks, interface extensions) run on
+  **MicroPython**, built from source as part of OpenSE4 on every platform. It is small,
+  plain C, and links statically on every build: Windows 7 with msvcrt, 32-bit ARM, MSVC and
+  macOS included.
+- **Sandboxed by construction:** only the modules we compile in exist. There is no file,
+  socket, OS, time, threading or random module. Each interpreter has:
+  - a fixed memory heap;
+  - a budget counted in executed bytecodes, the same on every computer, so running out is
+    deterministic;
+  - a stack limit.
+- **The language** is Python 3 as MicroPython implements it: classes, generators, closures,
+  comprehensions, f-strings, exceptions, big integers, sets and dictionaries. The SDK ships
+  small pure-Python versions of what's missing (`typing`, `dataclasses`, parts of
+  `itertools`, `functools` and `bisect`) so that AI code also runs unchanged under CPython.
+- **External bots** run on any CPython 3.10 or newer, with any library, and use the same
+  `opense4` package (section 6.3).
+- **Why not CPython compiled to WebAssembly** (the outline's recommendation): a full
+  CPython plus a WebAssembly runtime would add about 25 MB to every download, run Python
+  inside a second interpreter, and no runtime was known to cover Windows 7 and 32-bit ARM
+  together. MicroPython has none of these costs. CPython remains available to anyone who
+  needs numpy or machine learning, as an external bot.
+
+### 14.2 Values: `script::Value`
+
+Everything that crosses between the engine and scripts is a `script::Value`
+(`src/script/value.hpp`): null, bool, a 64-bit whole number, text, a list, or a map that
+keeps its insertion order. There is no floating point: what scripts give the game is whole
+numbers, as the engine uses.
+- **The AI view** and the rules' read access are built as `Value` trees.
+- **Commands** are `Value` maps: `{"kind": "SetOrders", ...}`.
+- **Mod data and AI memory** are `Value` trees too, kept in the game state.
+- **Two representations** of the same tree: in-game, the interpreter converts each `Value`
+  to and from its own objects (lists, dicts, ints, str). For external bots, the tree is JSON
+  text. One schema, documented in `docs/sdk/`, serves both.
+
+### 14.3 Interpreters live for one engine call
+
+- **A fresh interpreter per call:** each engine entry point that runs scripts gets one, then
+  discards it. That means a simultaneous turn, a turn-based player's turn start or end, game
+  setup, or loading the data. Compiled bytecode is cached per process, so this is cheap.
+- **Nothing persists in globals:** a module's globals never outlive the call. Whatever a
+  script must remember goes in its AI memory or mod data, which are saved, sent and
+  checksummed with the game. A game saved and loaded therefore continues exactly as one
+  that wasn't.
+
+### 14.4 Determinism
+
+- **Rules scripts and in-game AIs run on the host,** inside turn processing, and resolve
+  identically everywhere:
+  - the engine's random numbers only;
+  - whole numbers out;
+  - bytecode budgets instead of clocks;
+  - dictionary and set order that doesn't depend on memory addresses. The runtime is
+    configured or patched for this, and tests compare script results across the native,
+    32-bit ARM and Windows builds.
+- **AI decisions are also journaled** with the turn (section 6.3), so replays never run an
+  AI again.
+- **Unmodded games don't change:** a game without mods hashes, at save format 8, to the
+  same golden checksums as before the SDK. Each part of the work checks this.
+
+### 14.5 Versions
+
+- **Save format 9 and network protocol 7** cover all SDK state (mod sets, mod data, AI
+  memory, journals, new commands). The first change that needs a field bumps them; later
+  SDK changes add their fields under 9 and 7 without bumping again until the next release.
+- **The SDK's own interface** is `api = 1`.
+
+### 14.6 Where things live
+
+| Path | What |
+|---|---|
+| `src/script/` | `script::Value`, JSON, the MicroPython runtime and its sandbox (library `opense4_script`) |
+| `src/mods/` | Mod packages, manifests, mod sets and identity, the layered file system, data patches (library `opense4_mods`) |
+| `src/sdk/` | The engine's side of the SDK: the view, the command codec, controllers, hooks, the effects API, the journal (library `opense4_sdk`) |
+| `python/opense4/` | The Python package used by scripts in the game and by external bots |
+| `tools/sdk.cpp` | `opense4-sdk` |
+| `mods/examples/` | Example mods, each with tests |
+| `docs/sdk/` | The modder's guide, the API reference and the schemas |
+| `tests/sdk/` | The SDK's own tests: C++ unit tests, Python tests run under both runtimes, and example-mod tests |
+
+### 14.7 Not in this round
+
+- **Steam Workshop** publishing waits for the Steam release goal. `opense4-sdk pack`
+  already makes the package an upload would use.
+- **New vehicle types** (question 6) remain for later.
+

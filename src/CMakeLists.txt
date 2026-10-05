@@ -5,6 +5,12 @@ add_library(opense4_core STATIC
 target_include_directories(opense4_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(opense4_core PRIVATE opense4_warnings)
 
+# --- script: the modding SDK's values and script runtime (docs/MODDING_SDK.md) ---------
+add_library(opense4_script STATIC
+    script/value.cpp)
+target_include_directories(opense4_script PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(opense4_script PRIVATE opense4_warnings)
+
 # --- embedded: our own fonts and learning content built into the executable ---------
 # (core/embedded.hpp). Only our own files: nothing from the original game.
 if(OPENSE4_EMBED_RESOURCES)
