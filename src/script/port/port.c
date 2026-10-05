@@ -140,6 +140,10 @@ void mp_reader_new_file(mp_reader_t *reader, qstr filename) {
     mp_reader_new_mem(reader, (const byte *)text, len, MP_READER_IS_ROM);
 }
 
+static void print_to_vstr(void *data, const char *str, size_t len) {
+    vstr_add_strn((vstr_t *)data, str, len);
+}
+
 // Imports run cached bytecode: compiled once per process (see runtime.cpp), then
 // loaded in place by every interpreter. Compiling and loading are set aside from the
 // budget, so a module costs the same whether or not the cache already had it.
@@ -168,7 +172,7 @@ int mp_opense4_import_load(const char *path, mp_compiled_module_t *cm) {
             vstr_init(&vstr, 1024);
             mp_print_t print;
             print.data = &vstr;
-            print.print_strn = (mp_print_strn_t)vstr_add_strn;
+            print.print_strn = print_to_vstr;
             mp_raw_code_save(&compiled, &print);
             mpy = h->store_compiled(h->ctx, path, (const uint8_t *)vstr.buf, vstr.len, &mpy_len);
             vstr_clear(&vstr);

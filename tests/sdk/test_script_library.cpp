@@ -22,7 +22,9 @@ std::string readSdkTestFile(const char* name) {
 } // namespace
 
 TEST_CASE("script library: typing, dataclasses, itertools, functools, bisect, collections, heapq, math...") {
-    auto interp = makeInterpreter();
+    Limits limits;
+    limits.cStackBytes = size_t{1} << 20;   // sanitizer builds use more stack per call
+    auto interp = makeInterpreter(limits);
     REQUIRE(interp->addFile("test_library.py", readSdkTestFile("test_library.py")).has_value());
     auto r = interp->call("test_library", "run");
     REQUIRE_MESSAGE(r.has_value(), explain(r.error()));
