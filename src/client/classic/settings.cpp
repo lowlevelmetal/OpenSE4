@@ -67,6 +67,7 @@ std::string settingsToToml(const ClassicSettings& s) {
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
     sound.insert("music_percent", s.musicVolume);
+    sound.insert("mute_in_background", s.muteInBackground);
     toml::table games;
     games.insert("last_saved", s.lastSavedGame);
     toml::array done;
@@ -116,6 +117,7 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
             if (std::abs(int(*v) - step) < std::abs(int(*v) - best)) best = step;
         s.musicVolume = best;
     }
+    if (auto v = root["sound"]["mute_in_background"].value<bool>()) s.muteInBackground = *v;
     if (auto v = root["games"]["last_saved"].value<std::string>()) s.lastSavedGame = *v;
     if (const toml::array* done = root["learn"]["done"].as_array())
         for (const toml::node& d : *done)

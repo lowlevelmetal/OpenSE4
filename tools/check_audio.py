@@ -13,7 +13,11 @@ reads that file and fails on:
   played once and never started again);
 - clipping: samples at full scale;
 - the log (opense4.log) reporting a track or sound that could not be played,
-  or music that ran dry.
+  or music that ran dry;
+- muting gone wrong: for each time the log says the game was muted in the
+  background (a script's window-event steps), the capture must fall to digital
+  silence through a fade, stay silent until the log says it was unmuted, and
+  have its music back right after (the stretch counts as no music missing).
 
 The scripts play the player's installed game, so this is opt-in:
 
@@ -54,6 +58,15 @@ CLICK_RATIO = 12.0
 # Music is missing in a second whose level is below -60 dBFS.
 SILENT_DB = -60.0
 MAX_SILENT_SECONDS = 3
+# The log's lines and their time (seconds since the client started).
+LOG_LINE = re.compile(r"^\[\s*([\d.]+) \w+\s*\] (.*)$")
+# Muting in the background: the mix fades out over MUTE_FADE seconds
+# (audio_mixer.hpp kMuteSeconds). A stretch of digital silence of at least
+# MUTE_MIN_RUN seconds is a mute; the capture's time runs within MUTE_SLACK
+# seconds (and SDL's disk driver a few per cent) of the log's.
+MUTE_FADE = 0.25
+MUTE_MIN_RUN = 0.5
+MUTE_SLACK = 0.35
 
 
 def samples(path, fmt, channels):
@@ -75,7 +88,74 @@ def samples(path, fmt, channels):
     return [values[c::channels] for c in range(channels)]
 
 
-def analyse(chans, rate, start):
+def mutes_from_log(log):
+    """The times the log says the game was muted, as (from, to) seconds after the
+    audio device opened; `to` is None when it was still muted at the end."""
+    opened, spans = None, []
+    for line in log.splitlines():
+        m = LOG_LINE.match(line)
+        if not m:
+            continue
+        t, text = float(m.group(1)), m.group(2)
+        if opened is None and DEVICE.search(text):
+            opened = t
+        elif opened is not None and text.startswith("Audio: muted"):
+            spans.append([t - opened, None])
+        elif opened is not None and text.startswith("Audio: unmuted") and spans and spans[-1][1] is None:
+            spans[-1][1] = t - opened
+    return [tuple(s) for s in spans]
+
+
+def silent_runs(chans, rate, first, seconds):
+    """The stretches of digital silence at least `seconds` long, as (start, end) frames."""
+    n, runs, i = len(chans[0]), [], first
+    least = int(seconds * rate)
+    while i < n:
+        if all(ch[i] == 0.0 for ch in chans):
+            j = i
+            while j < n and all(ch[j] == 0.0 for ch in chans):
+                j += 1
+            if j - i >= least:
+                runs.append((i, j))
+            i = j
+        else:
+            i += 1
+    return runs
+
+
+def check_mutes(chans, rate, first, mutes):
+    """Each mute must be a fade into digital silence that lasts until the unmute,
+    and the music must be back right after; nothing else may fall silent that long.
+    Returns the problems and the silent stretches (frames) the mutes explain."""
+    problems, explained = [], []
+    if not mutes:
+        return problems, explained
+    runs = silent_runs(chans, rate, first, MUTE_MIN_RUN)
+    if len(runs) != len(mutes):
+        problems.append(f"the log has {len(mutes)} mute(s) in the background, the capture {len(runs)} "
+                        f"silent stretch(es) of {MUTE_MIN_RUN} s or more")
+    n = len(chans[0])
+    for k, ((t0, t1), (a, b)) in enumerate(zip(mutes, runs), 1):
+        start, end = a / rate, b / rate
+        drift = 0.03 * start
+        if abs(start - (t0 + MUTE_FADE)) > MUTE_SLACK + drift:
+            problems.append(f"mute {k}: silent from {start:.2f} s, but the log muted at {t0:.2f} s (+{MUTE_FADE} s of fade)")
+        if t1 is None:
+            if b < n:
+                problems.append(f"mute {k}: sound again at {end:.2f} s, though the log never unmuted")
+        else:
+            if abs(end - t1) > MUTE_SLACK + drift:
+                problems.append(f"mute {k}: silent until {end:.2f} s, but the log unmuted at {t1:.2f} s")
+            # The music comes back with the fade-in: sound in the half second after it.
+            seg = chans[0][b + int(MUTE_FADE * rate): b + int((MUTE_FADE + 0.5) * rate)]
+            rms = math.sqrt(sum(v * v for v in seg) / len(seg)) if seg else 0.0
+            if rms == 0 or 20 * math.log10(rms) < SILENT_DB:
+                problems.append(f"mute {k}: no music after the unmute at {end:.2f} s")
+        explained.append((a, b))
+    return problems, explained
+
+
+def analyse(chans, rate, start, mutes=()):
     """The problems of a capture, and a summary line."""
     problems = []
     n = len(chans[0])
@@ -86,6 +166,15 @@ def analyse(chans, rate, start):
     if first >= n:
         return ["no sound at all"], "silent"
 
+    # Muted in the background: silence where the log says, and nowhere else.
+    found, muted = check_mutes(chans, rate, first, mutes)
+    problems += found
+    def in_mute(sec):
+        # A second that overlaps a mute or its fades.
+        lo, hi = sec * rate, (sec + 1) * rate
+        pad = int(MUTE_FADE * rate * 2)
+        return any(lo < b + pad and hi > a - pad for a, b in muted)
+
     # Loudness per second: music missing.
     levels = []
     for s in range(first // rate, n // rate):
@@ -94,7 +183,7 @@ def analyse(chans, rate, start):
         levels.append(-200.0 if rms == 0 else 20 * math.log10(rms))
     run = 0
     for i, db in enumerate(levels[1:], 1):   # the first second may start mid-way
-        run = run + 1 if db < SILENT_DB else 0
+        run = run + 1 if db < SILENT_DB and not in_mute(first // rate + i) else 0
         if run == MAX_SILENT_SECONDS:
             problems.append(f"no music for {MAX_SILENT_SECONDS} s or more from {first / rate + i - run + 1:.0f} s")
 
@@ -155,6 +244,8 @@ def analyse(chans, rate, start):
     loud = sum(1 for db in levels if db >= SILENT_DB)
     summary = (f"{(n - first) / rate:.1f} s of sound, music in {loud} of {len(levels)} s, "
                f"{len(clicks)} clicks, peak {max(peak_abs(k) for k in range(first, n)):.2f}")
+    if mutes:
+        summary += f", muted {len(muted)} time(s) for {sum(b - a for a, b in muted) / rate:.1f} s"
     return problems, summary
 
 
@@ -215,7 +306,7 @@ def run(exe, script, keep, classic_dir, renderer, timeout):
     if rate and not raw.exists():
         problems.append("no audio was written")
     elif rate:
-        found, summary = analyse(samples(raw, fmt, channels), rate, 0)
+        found, summary = analyse(samples(raw, fmt, channels), rate, 0, mutes_from_log(log))
         problems += found
     for line in log.splitlines():
         missing = "Not in the installed game" in line and ("Sounds/" in line or "Music/" in line)

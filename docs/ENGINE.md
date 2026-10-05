@@ -435,6 +435,15 @@ hashed sizes at their own width.
   Windows reports minimizing, and the host dropped such a client after a minute).
   Nothing that changes the game depends on frame time or the wall clock; the tactical
   map scrolls by time, not per frame.
+- **In the background.** The game mutes itself while its window is in the background
+  (docs/SETUP.md "Sound and music"), and each system says so its own way, so any of
+  these counts (`client/window_presence.hpp`): the focus lost (everywhere; on Wayland
+  usually the only sign of a minimized window), minimized (Windows, X11, macOS), hidden,
+  and covered (X11 for a minimized window, Wayland for a suspended one, macOS for a
+  window on another Space). The window counts as in front until the system says
+  otherwise, so a system that never reports the focus never mutes the game. This was
+  checked on Wayland in a headless mutter, minimizing with Super+H and coming back
+  with Alt+Tab through its virtual keyboard.
 - **Not the same.** These differences remain:
   - the default window size (1600×900) is in pixels on Windows and in points on
     Wayland and macOS; the frame fills the window either way;
@@ -488,6 +497,10 @@ grow, for example with more pipelines or offscreen targets, without touching gam
 `src/client/app.cpp` is the shell. It finds the player's install first, and without one
 explains where it looked and exits with an error. It then opens the window, the render
 device (Vulkan, else OpenGL) and Dear ImGui, and runs the frame loop and screenshots.
+After each frame's events it tells the audio whether the window is in the background
+(`WindowPresence`, from the system's window events in a player's run and only from a
+script's `window-event` steps in a screenshot or script run, so automation keeps its
+sound).
 
 `src/client/crash_report.*` installs the crash handler (main.cpp): a fault or an exception
 nothing caught appends a report to `opense4.log` (version, what happened, the stack as
@@ -552,7 +565,11 @@ effect cut off by the next one fades out over 6 ms, every clip ramps in and out 
 (some of the remastered sounds start or end mid-wave), a track change or stop fades out
 over a quarter second, volume changes ramp over 30 ms, music that runs dry fades out on a
 10 ms reserve and back in, and peaks above 0.9 bend smoothly towards full scale instead of
-clipping. `audio_playlist.cpp` holds the playlists, the music cues (`MusicDirector`, with
+clipping. Muted in the background, the whole mix fades out over a quarter second; then the
+mixer stops reading the music's ring, so the decoder waits on it full and the music goes
+on from the very frame it paused on, with no underrun, when the mix fades back in. The
+device keeps running on silence meanwhile. Effects asked for while muted are dropped, and
+a track change while silent takes place unheard. `audio_playlist.cpp` holds the playlists, the music cues (`MusicDirector`, with
 its own random source) and the volume steps. `tools/check_audio.py` listens to the client
 headless (docs/BUILDING.md "Tests").
 

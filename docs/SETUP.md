@@ -98,6 +98,12 @@ You can control sound in Game Menu → Options (kept on this computer):
 - music can be switched off ("Music Off") or set to one of five volumes;
 - the effects volume is in Options → Settings → Sound.
 
+While the game is in the background (another window has the focus, or the game is
+minimized or hidden), its sound effects and music fade out. The music pauses where it is
+and goes on from there when you come back; sound effects meanwhile are not played. To
+keep hearing the game in the background, turn off "Mute when the game is in the
+background" in Options → Settings → Sound (on by default).
+
 `--no-audio` starts without sound.
 
 ### Where the music comes from
@@ -136,7 +142,8 @@ files" below). Its audio lines tell what happened, in this order:
 | `Music: Music/..., named by Settings.txt, is not in the installed game (...)` | A track the playlists name is missing; it is never played. On Steam, "Verify integrity of game files" restores it. |
 | `Audio: <device> through <driver>: 48000 Hz, 2 channels, SDL_AUDIO_F32LE, 1024 frames a buffer; mixing at 48000 Hz` | The sound device that opened, and its format. |
 | `Audio: no sound or music: ...` | No sound device could be opened; the reason follows. Check the system's sound output (on Linux, that PipeWire or PulseAudio runs). |
-| `Audio settings: sound effects on at 80 % (...), music on at step 5 of 5` | This computer's settings at the start, and again whenever they change. "music off" means Music Off is lit in Game Menu → Options. |
+| `Audio settings: sound effects on at 80 % (...), music on at step 5 of 5, muted in the background` | This computer's settings at the start, and again whenever they change. "music off" means Music Off is lit in Game Menu → Options; "not muted in the background", that "Mute when the game is in the background" is off. |
+| `Audio: muted: the game is in the background`, `Audio: unmuted: ...` | The game's window went into the background and the sound faded out, or it came back. |
 | `Music: playing Music/Space Empires IV - Track 08.mp3 (22050 Hz, 2 channels, 48 s, looped)` | A track started. |
 | `Music: cannot play Music/...: <why>` | The file could not be read, or holds no MP3 audio. It is not tried again in that run. |
 | `Sound: cannot play .../Sounds/New/....wav: <why>` | A sound effect could not be read or decoded. |
@@ -202,6 +209,6 @@ game again first, the report is in `opense4.previous.log`.
 | Text looks wrong in names | The data files are Latin-1 and are converted to UTF-8 on load. Report any file that still looks wrong. |
 | A mod fails to load | Run `opense4-datacheck` on its data directory. The errors show the file and line. |
 | No movement line after Move To | The line is the per-computer option "Display Ship Movement Lines" (Game Menu → Options, or Ctrl+L), off on a fresh install as in the original. Starting a new simultaneous game switches it on; joining one does not. It shows for the ship, base, unit group or fleet whose report is open. |
-| No music, or no sound | See "No sound, no music, or clicks: what the log says" above: `opense4.log` names the device, the settings, each track and every file that cannot be played. Music Off in Game Menu → Options and `Allow CD Music` in the game's `Settings.txt` both silence the music. |
+| No music, or no sound | See "No sound, no music, or clicks: what the log says" above: `opense4.log` names the device, the settings, each track and every file that cannot be played. Music Off in Game Menu → Options and `Allow CD Music` in the game's `Settings.txt` both silence the music, and the game is silent while it is in the background (see "Sound and music"). |
 | Clicks, pops or crackling | The same section: the log shows whether the music ran dry; another device format (`SDL_AUDIO_FREQUENCY`, `SDL_AUDIO_FORMAT`) or sound interface (`SDL_AUDIO_DRIVER`) can be tried. |
 | Something looks or behaves differently on another computer | Compare the per-computer settings first (`classic_settings.toml` and `settings.toml` in the folder above), then `opense4.log`. The game itself plays the same on every platform. |

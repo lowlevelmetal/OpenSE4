@@ -563,6 +563,49 @@ TEST_CASE("input script: SDL events as a keyboard and mouse send them") {
     CHECK_FALSE(isUserInput(quit));
 }
 
+TEST_CASE("input script: window-event tells the game's window what the system would") {
+    const Script s = parse("window-event focus-lost\nwait 5\nwindow-event minimized\nwindow-event restored\nwindow-event focus-gained\n"
+                           "window-event hidden\nwindow-event shown\nwindow-event occluded\nwindow-event exposed\n");
+    REQUIRE(s.steps.size() == 9);
+    CHECK(s.steps[0].op == Op::WindowEvent);
+    CHECK(s.steps[0].window == WindowChange::FocusLost);
+    CHECK(s.steps[2].window == WindowChange::Minimized);
+    CHECK(s.steps[8].window == WindowChange::Exposed);
+    CHECK(windowChangeName(WindowChange::FocusGained) == "focus-gained");
+    auto e = problems("window-event blurred\n");
+    REQUIRE(e.size() == 1);
+    CHECK(e[0].starts_with("t.txt:1: 'window-event' takes focus-lost, focus-gained, minimized"));
+    e = problems("window-event\n");
+    CHECK(e[0].starts_with("t.txt:1: 'window-event' takes"));
+
+    // One event a step, in the script's order.
+    FakeProbe probe;
+    Player p(s, "/tmp");
+    const auto events = play(p, probe);
+    REQUIRE(p.finished());
+    CHECK_FALSE(p.failed());
+    REQUIRE(events.size() == 8);
+    for (const InputEvent& ev : events) CHECK(ev.kind == InputEvent::Kind::Window);
+    CHECK(events[0].window == WindowChange::FocusLost);
+    CHECK(events[3].window == WindowChange::FocusGained);
+
+    // As SDL events of the game's window.
+    const std::pair<WindowChange, Uint32> kinds[] = {
+        {WindowChange::FocusLost, SDL_EVENT_WINDOW_FOCUS_LOST}, {WindowChange::FocusGained, SDL_EVENT_WINDOW_FOCUS_GAINED},
+        {WindowChange::Minimized, SDL_EVENT_WINDOW_MINIMIZED},  {WindowChange::Restored, SDL_EVENT_WINDOW_RESTORED},
+        {WindowChange::Hidden, SDL_EVENT_WINDOW_HIDDEN},        {WindowChange::Shown, SDL_EVENT_WINDOW_SHOWN},
+        {WindowChange::Occluded, SDL_EVENT_WINDOW_OCCLUDED},    {WindowChange::Exposed, SDL_EVENT_WINDOW_EXPOSED},
+    };
+    for (const auto& [change, type] : kinds) {
+        InputEvent w;
+        w.kind = InputEvent::Kind::Window;
+        w.window = change;
+        const SDL_Event ev = toSdlEvent(w, 7);
+        CHECK(ev.type == type);
+        CHECK(ev.window.windowID == 7);
+    }
+}
+
 namespace {
 
 SDL_Event mouse(Uint32 type, float x, float y, Uint8 button = SDL_BUTTON_LEFT) {

@@ -796,7 +796,8 @@ void ClassicMode::cueMusic(MusicCue cue) {
 
 void ClassicMode::updateAudio() {
     const ClassicSettings& prefs = settings();
-    audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, float(prefs.musicVolume) / 100.0f, !prefs.classicSoundEffects});
+    audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, float(prefs.musicVolume) / 100.0f, !prefs.classicSoundEffects,
+                                    prefs.muteInBackground});
     // The music rules (docs/spec/06 §5.5): the cues come from the intro, loading,
     // new turns and the combat windows; here music off stops it, and music on
     // with nothing playing starts the intro or background list.

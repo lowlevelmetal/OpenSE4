@@ -512,19 +512,22 @@ audio driver, which writes the mix to a file in real time instead of to a sound 
 then reads that file. It fails on clicks (a jump between neighbouring samples far above the
 sound around it: a sound started, cut off or broken off without a fade), on digital silence
 that begins or ends away from zero, on three seconds or more without music, on clipping,
-and on any track or sound the log says could not be played or music that ran dry. It needs
-your install and about a minute of real time:
+and on any track or sound the log says could not be played or music that ran dry. Where
+the log says the game was muted in the background, the capture must fade into digital
+silence, stay silent until the log says it was unmuted and have its music back right
+after. It needs your install and about a minute of real time:
 
 ```sh
-OPENSE4_CLASSIC_DATA=auto python3 tools/check_audio.py                  # both scripts, side by side
+OPENSE4_CLASSIC_DATA=auto python3 tools/check_audio.py                  # every script, side by side
 OPENSE4_CLASSIC_DATA=auto python3 tools/check_audio.py --keep /tmp/audio intro-loop   # keep the capture and log
 ```
 
 `intro-loop` stays on the intro screen past the end of its 48-second track, with the device
 at 32-bit float and 48 kHz as Windows usually mixes (a script's `# device: F32 2 48000`
 header line); `game-turns` cuts effects off with others, ends turns and changes the
-background track at turn 65, at the disk driver's 16-bit 44.1 kHz. Run it after changing
-`src/client/audio*`. The mixer's fades and ramps, the decoding and the music thread have
+background track at turn 65, at the disk driver's 16-bit 44.1 kHz; `background-mute`
+takes the focus from the game's window, minimizes and covers it (`window-event` steps)
+and presses buttons while it is muted. Run it after changing `src/client/audio*`. The mixer's fades and ramps, the decoding and the music thread have
 unit tests of their own (`tests/test_audio_mix.cpp`, on our own `tests/fixtures/audio`).
 
 The Windows tests also run under Wine. `tools/package_release.sh` runs them in a Wine
@@ -637,6 +640,7 @@ from a double click.
 | `drag T to T2` | press at T, move to T2 in `frames=N` steps (default 8), let go; `middle` or `right` for that button |
 | `move T`, `wheel T N` | point there; turn the wheel N notches (one a frame, positive away from you) |
 | `key CHORD`, `type "TEXT"` | a key chord as lessons write them (`F12`, `Ctrl+H`, `Shift+F1`, `Alt+LeftArrow`; `refused` as above); text into the field that has the keyboard |
+| `window-event E` | the window event the system sends when the player leaves the game's window or comes back: `focus-lost`, `focus-gained`, `minimized`, `restored`, `hidden`, `shown`, `occluded` (covered) or `exposed`. A script run ignores the system's own (the game mutes itself in the background only when the script says so) |
 | `wait N` | N frames |
 | `wait-for T`, `wait-gone T` | until T is on screen, or no longer |
 | `wait-window ID`, `wait-closed ID` | until that window is open, or closed |

@@ -111,6 +111,19 @@ SDL_Event toSdlEvent(const InputEvent& e, SDL_WindowID window) {
             ev.text.windowID = window;
             ev.text.text = e.text.c_str();
             break;
+        case InputEvent::Kind::Window:
+            switch (e.window) {
+                case WindowChange::FocusLost: ev.type = SDL_EVENT_WINDOW_FOCUS_LOST; break;
+                case WindowChange::FocusGained: ev.type = SDL_EVENT_WINDOW_FOCUS_GAINED; break;
+                case WindowChange::Minimized: ev.type = SDL_EVENT_WINDOW_MINIMIZED; break;
+                case WindowChange::Restored: ev.type = SDL_EVENT_WINDOW_RESTORED; break;
+                case WindowChange::Hidden: ev.type = SDL_EVENT_WINDOW_HIDDEN; break;
+                case WindowChange::Shown: ev.type = SDL_EVENT_WINDOW_SHOWN; break;
+                case WindowChange::Occluded: ev.type = SDL_EVENT_WINDOW_OCCLUDED; break;
+                case WindowChange::Exposed: ev.type = SDL_EVENT_WINDOW_EXPOSED; break;
+            }
+            ev.window.windowID = window;
+            break;
     }
     return ev;
 }

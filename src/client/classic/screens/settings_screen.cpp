@@ -229,6 +229,10 @@ void soundSettingsPage(float px) {
         changed = true;
     }
     changed |= ImGui::Checkbox("Classic sound effects (the original set instead of the remastered one)", &s.classicSoundEffects);
+    changed |= ImGui::Checkbox("Mute when the game is in the background", &s.muteInBackground);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("While another window has the focus, or the game is minimized or hidden, its sound effects and\n"
+                          "music fade out. The music pauses where it is and goes on from there when you come back.");
     ImGui::TextDisabled("Sounds and music are read from the game's Sounds and Music folders.");
     if (changed) saveSettings();
 }

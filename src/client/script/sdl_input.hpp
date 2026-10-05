@@ -21,8 +21,9 @@ struct SdlKey {
 // keys a script cannot press.
 std::optional<SdlKey> sdlKey(ImGuiKey key);
 
-// The SDL event for a script's event in the window `window`. A Text event's
-// text points into `e`, which must outlive the SDL event's handling.
+// The SDL event for a script's event in the window `window` (a Window event:
+// the window event the system would send). A Text event's text points into
+// `e`, which must outlive the SDL event's handling.
 SDL_Event toSdlEvent(const InputEvent& e, SDL_WindowID window);
 
 // Whether an SDL event is the player's input (mouse, keyboard, text, and the

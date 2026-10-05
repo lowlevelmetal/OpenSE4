@@ -307,6 +307,11 @@ EventVerdict App::handleEvent(SDL_Event& event, bool& running) {
 
 bool App::frame() {
     bool running = true;
+    // A screenshot or script run (automation) must give the same picture on
+    // every machine: a fixed frame time instead of the wall clock, and no
+    // pointer over the window but the script's (the desktop's pointer would
+    // hover over whatever is under it).
+    const bool automation = !options_.screenshotPath.empty() || player_;
     audio().update();
     // An input script: this frame's events, from what the frame drawn last
     // showed (docs/BUILDING.md "Input scripts").
@@ -324,20 +329,25 @@ bool App::frame() {
         captures_ = std::move(scripted.captures);
     }
     if (recorder_ && probe) recorder_->frame(*probe, time_);
+    const SDL_WindowID window = SDL_GetWindowID(window_);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (player_ && script::isUserInput(event)) continue;   // a script plays alone
         if (recorder_ && probe && script::isUserInput(event)) recorder_->event(event, *probe, time_);
         handleEvent(event, running);
+        // The window going into the background or coming back: a player's own
+        // run follows the system; automation keeps its sound unless its script
+        // says otherwise (a window-event step, below).
+        if (!automation) presence_.follow(event, window);
     }
     // The script's events go the same way as a player's.
     if (player_) {
         std::vector<script::Verdict> verdicts;
-        const SDL_WindowID window = SDL_GetWindowID(window_);
         for (const script::InputEvent& e : scripted.events) {
             SDL_Event ev = script::toSdlEvent(e, window);
             if (recorder_ && probe) recorder_->event(ev, *probe, time_);   // recording a script run tests the recorder
             const EventVerdict verdict = handleEvent(ev, running);
+            presence_.follow(ev, window);
             // Where Dear ImGui has the pointer now: the event's place, or nowhere when the lock said so.
             const bool pointer = e.kind == script::InputEvent::Kind::Motion || e.kind == script::InputEvent::Kind::ButtonDown ||
                                  e.kind == script::InputEvent::Kind::ButtonUp || e.kind == script::InputEvent::Kind::Wheel;
@@ -356,6 +366,9 @@ bool App::frame() {
             running = false;
         }
     }
+    // Once per frame, after all of its events: a window covered and uncovered
+    // in one go (as Wayland does while resizing) does not dip the sound.
+    audio().setBackground(presence_.background());
     if (SDL_GetWindowFlags(window_) & SDL_WINDOW_MINIMIZED) {
         // Windows reports minimizing (Wayland mostly does not): keep the game's
         // network traffic going, or the host would drop us.
@@ -365,11 +378,6 @@ bool App::frame() {
         return running;
     }
 
-    // A screenshot or script run (automation) must give the same picture on
-    // every machine: a fixed frame time instead of the wall clock, and no
-    // pointer over the window but the script's (the desktop's pointer would
-    // hover over whatever is under it).
-    const bool automation = !options_.screenshotPath.empty() || player_;
     const uint64_t now = SDL_GetTicksNS();
     const float dt = automation ? 1.0f / 60.0f : std::min(static_cast<float>(now - lastTicks_) * 1e-9f, 0.1f);
     lastTicks_ = now;

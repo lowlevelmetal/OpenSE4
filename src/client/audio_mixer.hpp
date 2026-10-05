@@ -8,8 +8,9 @@
 // Nothing here starts or stops a sound abruptly: an effect cut off by the next
 // one fades out over a few milliseconds, every clip starts and ends with a
 // short ramp, a track change fades the old track out before the new one
-// starts, volume changes ramp, and music that runs dry (its decoder fell
-// behind) fades out and back in instead of breaking off.
+// starts, volume changes ramp, music that runs dry (its decoder fell
+// behind) fades out and back in instead of breaking off, and muting fades the
+// whole mix out and back in.
 
 #include <atomic>
 #include <condition_variable>
@@ -128,6 +129,17 @@ public:
     bool musicSounding() const { return music_ != nullptr && level_ > 0.0f; }
     void setMusicGain(float gain);
 
+    // Muting (the game's window in the background, docs/SETUP.md "Sound and
+    // music"): the whole mix fades out over kMuteSeconds. Once it is silent the
+    // music pauses where it is (its ring is not read, so its decoder waits on
+    // the full ring, and nothing runs dry) and the effects are let go. Effects
+    // asked for while muted are dropped. A track change or stop while silent
+    // takes place at once, unheard. Unmuted, the music goes on from the frame
+    // where it paused and the mix fades back in over kMuteSeconds.
+    void setMuted(bool muted) { muted_ = muted; }
+    bool muted() const { return muted_; }
+    bool silent() const { return muted_ && master_ <= 0.0f; }  // muted and faded out
+
     // Fills `frames` interleaved stereo frames.
     void mix(float* out, size_t frames);
 
@@ -143,6 +155,7 @@ public:
     static constexpr float kRampSeconds = 0.03f;     // a volume change
     static constexpr float kPrimeSeconds = 0.1f;     // music buffered before it starts
     static constexpr float kReserveSeconds = 0.01f;  // music kept back to fade out on if it runs dry
+    static constexpr float kMuteSeconds = 0.25f;     // the whole mix fading out when muted, and back in
 
 private:
     struct Voice {
@@ -153,10 +166,16 @@ private:
     void mixEffects(float* out, size_t frames);
     void mixMusic(float* out, size_t frames);
     bool addVoice(Voice& v, float* out, size_t frames, bool fading);
+    void takePending();  // the next ring (or none) replaces what plays
+    void applyMaster(float* out, size_t frames);
+    void whileSilent();
 
     int rate_;
     size_t edgeFrames_, cutFrames_, primeFrames_, reserveFrames_;
-    float trackFadeStep_, resumeStep_, rampStep_;
+    float trackFadeStep_, resumeStep_, rampStep_, muteStep_;
+
+    bool muted_ = false;
+    float master_ = 1.0f;  // the mute envelope over the whole mix
 
     Voice effect_;
     std::vector<Voice> fading_;  // effects cut off, fading out

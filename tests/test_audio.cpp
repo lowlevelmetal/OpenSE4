@@ -1,7 +1,10 @@
-// Sound and music lookup (client/audio.hpp; no audio device needed).
+// Sound and music lookup (client/audio.hpp; no audio device needed), and
+// when the game's window counts as in the background (client/window_presence.hpp).
 
 #include "assets/assets.hpp"
 #include "client/audio.hpp"
+#include "client/classic/settings.hpp"
+#include "client/window_presence.hpp"
 #include "ruleset/ruleset.hpp"
 
 #include <doctest/doctest.h>
@@ -10,11 +13,70 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <initializer_list>
 #include <set>
 #include <string>
 #include <vector>
 
 using namespace opense4;
+
+namespace {
+
+SDL_Event windowEvent(Uint32 type, SDL_WindowID window = 7) {
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = type;
+    e.window.windowID = window;
+    return e;
+}
+
+} // namespace
+
+TEST_CASE("audio: the game's window in the background, as each system reports it") {
+    client::WindowPresence p;
+    auto follow = [&](std::initializer_list<Uint32> types) {
+        for (const Uint32 t : types) p.follow(windowEvent(t), 7);
+        return p.background();
+    };
+    CHECK_FALSE(p.background());  // it starts in the foreground
+    // Another window takes the focus (Alt+Tab, a click elsewhere), and back.
+    CHECK(follow({SDL_EVENT_WINDOW_FOCUS_LOST}));
+    CHECK_FALSE(follow({SDL_EVENT_WINDOW_FOCUS_GAINED}));
+    // Windows: minimized and restored; the focus comes back after the restore.
+    CHECK(follow({SDL_EVENT_WINDOW_FOCUS_LOST, SDL_EVENT_WINDOW_MINIMIZED}));
+    CHECK(follow({SDL_EVENT_WINDOW_RESTORED}));
+    CHECK_FALSE(follow({SDL_EVENT_WINDOW_FOCUS_GAINED}));
+    // X11: minimized and covered, then shown, restored and exposed.
+    CHECK(follow({SDL_EVENT_WINDOW_MINIMIZED, SDL_EVENT_WINDOW_OCCLUDED, SDL_EVENT_WINDOW_FOCUS_LOST}));
+    CHECK(follow({SDL_EVENT_WINDOW_RESTORED, SDL_EVENT_WINDOW_FOCUS_GAINED}));  // still covered
+    CHECK_FALSE(follow({SDL_EVENT_WINDOW_EXPOSED}));
+    // Wayland: a suspended window is only covered, even with the focus kept.
+    CHECK(follow({SDL_EVENT_WINDOW_OCCLUDED}));
+    CHECK_FALSE(follow({SDL_EVENT_WINDOW_EXPOSED}));
+    // macOS: the application hidden (Cmd+H), then shown again.
+    CHECK(follow({SDL_EVENT_WINDOW_FOCUS_LOST, SDL_EVENT_WINDOW_HIDDEN, SDL_EVENT_WINDOW_OCCLUDED}));
+    CHECK(follow({SDL_EVENT_WINDOW_SHOWN, SDL_EVENT_WINDOW_EXPOSED}));
+    CHECK_FALSE(follow({SDL_EVENT_WINDOW_FOCUS_GAINED}));
+    // Shown again counts as no longer minimized, as SDL keeps its flags.
+    CHECK(follow({SDL_EVENT_WINDOW_MINIMIZED}));
+    CHECK_FALSE(follow({SDL_EVENT_WINDOW_SHOWN}));
+    // Other windows' events and other events change nothing.
+    p.follow(windowEvent(SDL_EVENT_WINDOW_FOCUS_LOST, 8), 7);
+    p.follow(windowEvent(SDL_EVENT_KEY_DOWN), 7);
+    p.follow(windowEvent(SDL_EVENT_WINDOW_RESIZED), 7);
+    CHECK_FALSE(p.background());
+}
+
+TEST_CASE("audio: muting in the background is on by default and kept with the sound settings") {
+    CHECK(client::AudioOptions{}.muteInBackground);
+    client::classic::ClassicSettings s;
+    CHECK(s.muteInBackground);
+    s.muteInBackground = false;
+    const std::string text = client::classic::settingsToToml(s);
+    CHECK(text.find("mute_in_background = false") != std::string::npos);
+    CHECK_FALSE(client::classic::settingsFromToml(text).muteInBackground);
+    CHECK(client::classic::settingsFromToml("[sound]\neffects_volume = 0.5\n").muteInBackground);  // older files
+}
 
 TEST_CASE("audio: playlists come from the Settings song keys") {
     ruleset::Settings s;

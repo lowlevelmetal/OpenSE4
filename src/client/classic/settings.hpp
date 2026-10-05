@@ -44,6 +44,10 @@ struct ClassicSettings {
 
     // OpenSE4's own.
     float soundVolume = 0.8f;            // effects volume (the original has none)
+    // Sound effects and music fade out while the game's window is in the
+    // background (another window has the focus, or it is minimized), the
+    // music pausing where it is. On by default.
+    bool muteInBackground = true;
     // Combat Replay lists each combat turn's events in words, and the battle's
     // summary at its end, in place of its empty weapon grid (Combat Replay
     // Options; the original has no such list, spec 06 §7 Q39). Off by default.

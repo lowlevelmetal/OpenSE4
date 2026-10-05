@@ -205,6 +205,7 @@ Player::Status Player::run(const Step& st, const Probe& probe, FrameOutput& out)
         case Op::Move:
         case Op::Wheel: return pointerStep(st, probe, out);
         case Op::Key: return keyStep(st, out);
+        case Op::WindowEvent: return windowStep(st, out);
         case Op::Type: {
             if (!queued_ && !probe.typing()) {
                 if (stepFrames_ >= st.timeout)
@@ -452,6 +453,17 @@ Player::Status Player::typeStep(const Step& st, FrameOutput& out) {
             first = false;
             queue_.push_back({std::move(e)});
         }
+        queued_ = true;
+    }
+    return playQueue(st, out);
+}
+
+Player::Status Player::windowStep(const Step& st, FrameOutput& out) {
+    if (!queued_) {
+        InputEvent e;
+        e.kind = InputEvent::Kind::Window;
+        e.window = st.window;
+        queue_.push_back({e});
         queued_ = true;
     }
     return playQueue(st, out);

@@ -57,9 +57,15 @@ struct Target {
     std::string text;     // as written, for messages
 };
 
+// What a window-event step says happened to the game's window: the events the
+// system sends when the player switches to another window, minimizes the game,
+// and back (client/window_presence.hpp).
+enum class WindowChange : uint8_t { FocusLost, FocusGained, Minimized, Restored, Hidden, Shown, Occluded, Exposed };
+std::string_view windowChangeName(WindowChange c);   // "focus-lost", ...
+
 enum class Op : uint8_t {
-    // Pointer and keyboard.
-    Click, DoubleClick, RightClick, MiddleClick, Drag, Move, Wheel, Key, Type,
+    // Pointer and keyboard, and the window.
+    Click, DoubleClick, RightClick, MiddleClick, Drag, Move, Wheel, Key, Type, WindowEvent,
     // Waiting.
     Wait, WaitFor, WaitGone, WaitWindow, WaitClosed, WaitStep, WaitUntil, WaitTurn, WaitResult, WaitScreen, WaitLesson,
     // Checks.
@@ -81,6 +87,7 @@ struct Step {
     std::string text;       // type: the text; key: the chord as written; windows, results, screens, lessons, log text, files
     std::vector<std::string> facts;   // print: condition keys
     KeyChord chord;         // key
+    WindowChange window = WindowChange::FocusLost;   // window-event
     bool shift = false, ctrl = false, alt = false;   // held during a click, a drag or a wheel turn
     bool refused = false;   // the tutorial input lock must refuse the press or key
     int button = 0;         // drag: 2 middle, 3 right (default left)

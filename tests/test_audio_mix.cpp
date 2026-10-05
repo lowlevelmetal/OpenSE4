@@ -274,6 +274,180 @@ TEST_CASE("audio mix: music that runs dry fades out on its last frames and back 
     CHECK(m.underruns() == 1);
 }
 
+// Muting (the game's window in the background): Mixer::kMuteSeconds of fade
+// is 12000 frames at 48 kHz; a frame or two more may go by as the float
+// envelope reaches 0.
+constexpr size_t kMuteFrames = 12000;
+
+TEST_CASE("audio mix: muted, the mix fades out, the music pauses where it is and goes on from there") {
+    Mixer m(kRate);
+    auto ring = constantRing(0.5f, 40000);
+    m.setMusic(ring);
+    std::vector<float> out = mixFrames(m, 4800);
+    m.playEffect(constantClip(0.3f, kRate));
+    append(out, mixFrames(m, 2400));
+    CHECK(out.back() == doctest::Approx(0.8f));
+    m.setMuted(true);
+    CHECK(m.muted());
+    // Halfway through the fade, both at half their level.
+    append(out, mixFrames(m, kMuteFrames / 2));
+    CHECK_FALSE(m.silent());
+    CHECK(out.back() == doctest::Approx(0.4f).epsilon(0.01));
+    append(out, mixFrames(m, kMuteFrames / 2 + 16));
+    CHECK(m.silent());
+    CHECK(out.back() == 0.0f);
+    CHECK_FALSE(m.effectPlaying());  // let go once silent
+    // The music stopped right where the fade ended: what was heard, no more.
+    const size_t left = ring->available();
+    CHECK(left <= 40000 - 4800 - 2400 - kMuteFrames);
+    CHECK(left + 16 >= 40000 - 4800 - 2400 - kMuteFrames);
+    // Silent: the ring is not read (the decoder would wait on it full), and an
+    // effect asked for meanwhile is dropped.
+    std::vector<float> quiet = mixFrames(m, kRate);
+    m.playEffect(constantClip(0.3f, kRate));
+    CHECK_FALSE(m.effectPlaying());
+    append(quiet, mixFrames(m, kRate));
+    CHECK(peak(quiet) == 0.0f);
+    CHECK(ring->available() == left);
+    append(out, quiet);
+    // Unmuted: the music goes on from the frame where it paused and fades in;
+    // the dropped effect does not come back.
+    m.setMuted(false);
+    CHECK_FALSE(m.silent());
+    append(out, mixFrames(m, kMuteFrames / 2));
+    CHECK(out.back() == doctest::Approx(0.25f).epsilon(0.01));
+    append(out, mixFrames(m, kMuteFrames / 2 + 2400));
+    CHECK(out.back() == doctest::Approx(0.5f));
+    CHECK(ring->available() == left - kMuteFrames - 2400);
+    CHECK(maxStep(out) < 0.005f);  // the clip's own 2 ms ramp is the steepest
+    CHECK(m.underruns() == 0);
+}
+
+TEST_CASE("audio mix: unmuted before the fade ends, the mix comes straight back") {
+    Mixer m(kRate);
+    auto ring = constantRing(0.5f, 40000);
+    m.setMusic(ring);
+    std::vector<float> out = mixFrames(m, 2400);
+    m.setMuted(true);
+    append(out, mixFrames(m, 3000));
+    m.setMuted(false);
+    append(out, mixFrames(m, 6000));
+    CHECK(out.back() == doctest::Approx(0.5f));
+    float least = 1.0f;
+    for (size_t i = 2400 * kChannels; i < out.size(); ++i) least = std::min(least, out[i]);
+    CHECK(least > 0.3f);  // it never went silent, nor paused
+    CHECK(ring->available() == 40000 - 11400);
+    CHECK(maxStep(out) < 0.002f);
+}
+
+TEST_CASE("audio mix: a track changed or stopped while muted changes unheard") {
+    Mixer m(kRate);
+    auto first = constantRing(0.5f, 30000);
+    m.setMusic(first);
+    std::vector<float> out = mixFrames(m, 2400);
+    m.setMuted(true);
+    append(out, mixFrames(m, kMuteFrames + 16));
+    REQUIRE(m.silent());
+    // The next track: the old one is let go at once, the new one waits unread.
+    auto second = constantRing(-0.5f, 30000);
+    m.setMusic(second);
+    append(out, mixFrames(m, 2400));
+    CHECK(m.takeRetired() == std::vector<std::shared_ptr<FrameRing>>{first});
+    CHECK(second->available() == 30000);
+    // Unmuted, the new track fades in.
+    m.setMuted(false);
+    append(out, mixFrames(m, kMuteFrames + 2400));
+    CHECK(out.back() == doctest::Approx(-0.5f));
+    // Stopped while muted: silence once unmuted.
+    m.setMuted(true);
+    append(out, mixFrames(m, kMuteFrames + 16));
+    REQUIRE(m.silent());
+    m.setMusic(nullptr);
+    append(out, mixFrames(m, 512));
+    CHECK(m.takeRetired() == std::vector<std::shared_ptr<FrameRing>>{second});
+    m.setMuted(false);
+    const std::vector<float> after = mixFrames(m, 4800);
+    CHECK(peak(after) == 0.0f);
+    append(out, after);
+    CHECK(maxStep(out) < 0.002f);
+    CHECK(m.underruns() == 0);
+}
+
+TEST_CASE("audio mix: a track muted for a while goes on where it paused, its decoder waiting meanwhile") {
+    using namespace std::chrono_literals;
+    auto waitFor = [](auto done) {
+        const auto deadline = std::chrono::steady_clock::now() + 20s;
+        while (!done() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
+        return done();
+    };
+    // The track as it plays without a pause, to compare with.
+    MusicTrack whole(toneMp3(), kRate, 4.0);
+    REQUIRE(waitFor([&] { return whole.ring()->available() >= static_cast<size_t>(kRate) * 3; }));
+    std::vector<float> reference(static_cast<size_t>(kRate) * 3 * kChannels);
+    whole.ring()->read(reference.data(), static_cast<size_t>(kRate) * 3);
+
+    Mixer m(kRate);
+    MusicTrack track(toneMp3(), kRate, 0.5);
+    // Decoded ahead first, so the music starts at once and every frame mixed is a frame of the track.
+    REQUIRE(waitFor([&] { return track.ring()->space() < 4096; }));
+    m.setMusic(track.ring());
+    // Mixes as the audio thread would, never faster than the decoder fills the ring.
+    std::vector<float> out;
+    std::vector<float> buf(512 * kChannels);
+    auto play = [&](size_t frames) {
+        for (size_t done = 0; done < frames;) {
+            if (!m.silent()) REQUIRE(waitFor([&] { return track.ring()->available() >= 2048; }));
+            const size_t n = std::min<size_t>(512, frames - done);
+            m.mix(buf.data(), n);
+            out.insert(out.end(), buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(n * kChannels));
+            done += n;
+        }
+    };
+    play(static_cast<size_t>(kRate) * 3 / 10);  // 0.3 s of the one-second tone
+    m.setMuted(true);
+    play(kMuteFrames + 512);
+    REQUIRE(m.silent());
+    const size_t heard = out.size() / kChannels;
+    // 2.7 seconds of silence: the decoder fills the ring and waits; it does not
+    // run on through the track.
+    play(static_cast<size_t>(kRate) * 27 / 10);
+    REQUIRE(waitFor([&] { return track.ring()->space() < 4096; }));
+    const uint64_t loops = track.loops();
+    std::this_thread::sleep_for(200ms);
+    CHECK(track.loops() == loops);
+    CHECK(track.ring()->space() < 4096);
+    // Unmuted: once faded in, the music is the track again from where it paused.
+    m.setMuted(false);
+    const size_t back = out.size() / kChannels;
+    play(static_cast<size_t>(kRate) * 3 / 2);
+    CHECK(m.underruns() == 0);
+    CHECK(maxStep(out) < 0.05f);  // as the tone itself
+    // Where the silence began: the frames heard, the fade's included.
+    size_t paused = heard;
+    while (paused > 0 && out[2 * (paused - 1)] == 0.0f && out[2 * (paused - 1) + 1] == 0.0f) --paused;
+    CHECK(paused + 1024 > heard);
+    // The track goes on from there: the frame the fade ended on (silent, but
+    // read), give or take the float envelope's last step or two.
+    const size_t from = kMuteFrames + 256;
+    float best = 1.0f, level = 0.0f;
+    size_t bestShift = 0;
+    for (size_t shift = 0; shift < 8; ++shift) {
+        float diff = 0.0f;
+        const size_t at = back * kChannels, ref = (paused + shift) * kChannels;
+        for (size_t i = from * kChannels; i < (from + 9600) * kChannels; ++i) {
+            diff = std::max(diff, std::fabs(out[at + i] - reference[ref + i]));
+            level = std::max(level, std::fabs(out[at + i]));
+        }
+        if (diff < best) {
+            best = diff;
+            bestShift = shift;
+        }
+    }
+    CHECK(level > 0.3f);
+    CHECK(best < 1e-4f);
+    CHECK(bestShift >= 1);  // the frame the fade reached 0 on was read
+}
+
 TEST_CASE("audio mix: the sum bends smoothly towards full scale instead of clipping") {
     CHECK(softClip(0.5f) == 0.5f);
     CHECK(softClip(-0.9f) == -0.9f);

@@ -213,12 +213,14 @@ Mixer::Mixer(int rate)
       primeFrames_(framesFor(rate, kPrimeSeconds)), reserveFrames_(framesFor(rate, kReserveSeconds)),
       trackFadeStep_(1.0f / static_cast<float>(framesFor(rate, kTrackFadeSeconds))),
       resumeStep_(1.0f / static_cast<float>(framesFor(rate, kResumeSeconds))),
-      rampStep_(1.0f / static_cast<float>(framesFor(rate, kRampSeconds))), scratch_(kScratchFrames * kChannels) {
+      rampStep_(1.0f / static_cast<float>(framesFor(rate, kRampSeconds))),
+      muteStep_(1.0f / static_cast<float>(framesFor(rate, kMuteSeconds))), scratch_(kScratchFrames * kChannels) {
     fading_.reserve(kMaxFading);
     retired_.reserve(8);
 }
 
 void Mixer::playEffect(std::shared_ptr<const Clip> clip) {
+    if (muted_) return;  // nobody would hear it: dropped, not kept for later
     stopEffects();
     if (clip && clip->frames() > 0) effect_ = Voice{std::move(clip), 0, 1.0f};
 }
@@ -299,17 +301,19 @@ void Mixer::mixEffects(float* out, size_t frames) {
     }
 }
 
+void Mixer::takePending() {
+    if (music_) retired_.push_back(std::move(music_));
+    music_ = std::move(pending_);
+    pending_.reset();
+    switching_ = false;
+    musicState_ = MusicState::Waiting;
+    level_ = 0.0f;
+}
+
 void Mixer::mixMusic(float* out, size_t frames) {
     size_t done = 0;
     while (done < frames) {
-        if (switching_ && (!music_ || level_ <= 0.0f || musicState_ == MusicState::Waiting)) {
-            if (music_) retired_.push_back(std::move(music_));
-            music_ = std::move(pending_);
-            pending_.reset();
-            switching_ = false;
-            musicState_ = MusicState::Waiting;
-            level_ = 0.0f;
-        }
+        if (switching_ && (!music_ || level_ <= 0.0f || musicState_ == MusicState::Waiting)) takePending();
         if (!music_) return;
         if (musicState_ == MusicState::Waiting) {
             if (music_->available() < primeFrames_) return;  // silent until enough is buffered
@@ -346,13 +350,46 @@ void Mixer::mixMusic(float* out, size_t frames) {
     }
 }
 
+void Mixer::applyMaster(float* out, size_t frames) {
+    const float target = muted_ ? 0.0f : 1.0f;
+    if (master_ == target) {
+        if (target == 1.0f) return;
+        std::fill_n(out, frames * kChannels, 0.0f);
+        return;
+    }
+    for (size_t k = 0; k < frames; ++k) {
+        master_ = approach(master_, target, muteStep_);
+        out[2 * k] *= master_;
+        out[2 * k + 1] *= master_;
+    }
+}
+
+void Mixer::whileSilent() {
+    // Nothing is heard: the effects go, a volume change applies at once, and a
+    // track change or stop takes place now (the new track fades in when the mix
+    // comes back). The music that plays keeps its place: its ring is not read.
+    effect_ = {};
+    fading_.clear();
+    effectsGain_ = effectsTarget_;
+    musicGain_ = musicTarget_;
+    if (switching_) takePending();
+}
+
 void Mixer::mix(float* out, size_t frames) {
     while (frames > 0) {
-        const size_t n = std::min(frames, kScratchFrames);
+        size_t n = std::min(frames, kScratchFrames);
         std::fill_n(out, n * kChannels, 0.0f);
-        mixMusic(out, n);
-        mixEffects(out, n);
-        for (size_t i = 0; i < n * kChannels; ++i) out[i] = softClip(out[i]);
+        if (silent()) {
+            whileSilent();
+        } else {
+            // Fading out: mix no further than the frame where the fade ends, so
+            // the music pauses right after the last frame heard.
+            if (muted_) n = std::min(n, std::max<size_t>(1, static_cast<size_t>(std::ceil(master_ / muteStep_))));
+            mixMusic(out, n);
+            mixEffects(out, n);
+            applyMaster(out, n);
+            for (size_t i = 0; i < n * kChannels; ++i) out[i] = softClip(out[i]);
+        }
         out += n * kChannels;
         frames -= n;
     }

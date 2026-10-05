@@ -48,6 +48,8 @@ struct Audio::Impl {
     uint64_t trackLoops = 0;
     std::set<std::string> failedTracks;  // logged once, not tried again
     uint64_t underrunsLogged = 0, underrunLogTicks = 0;
+    bool background = false;  // the game's window is in the background
+    bool muted = false;       // and that mutes it
 
     // Main-thread calls into the mixer hold the output stream's lock, which the
     // audio thread holds while it mixes.
@@ -76,9 +78,11 @@ struct Audio::Impl {
     void logSettings() {
         const AudioOptions& o = options;
         const std::string line =
-            std::format("Audio settings: sound effects {}{}, music {}", o.sound ? "on at " + percent(o.soundVolume) : std::string("off"),
+            std::format("Audio settings: sound effects {}{}, music {}, {} in the background",
+                        o.sound ? "on at " + percent(o.soundVolume) : std::string("off"),
                         o.sound ? (o.remastered ? " (the remastered set in Sounds/New)" : " (the classic set in Sounds)") : "",
-                        o.music ? std::format("on at step {} of 5", musicStep(o.musicVolume)) : std::string("off"));
+                        o.music ? std::format("on at step {} of 5", musicStep(o.musicVolume)) : std::string("off"),
+                        o.muteInBackground ? "muted" : "not muted");
         if (line == settingsLogged || SDL_GetTicks() < settingsLogTicks) return;
         log::info("{}", line);
         settingsLogged = line;
@@ -94,6 +98,17 @@ struct Audio::Impl {
         mixer->setEffectsGain(effectsGainNow());
         mixer->setMusicGain(musicGainNow());
         if (!options.sound) mixer->stopEffects();
+    }
+
+    // Mutes or unmutes the mix as the window and the setting say.
+    void applyMute() {
+        const bool mute = background && options.muteInBackground;
+        if (mute == muted) return;
+        muted = mute;
+        if (!output) return;
+        log::info("{}", mute ? "Audio: muted: the game is in the background" : "Audio: unmuted: the game is in the foreground again");
+        const Lock lock(output);
+        mixer->setMuted(mute);
     }
 
     std::shared_ptr<const audiomix::Clip> clip(std::string_view name) {
@@ -170,6 +185,7 @@ bool Audio::open() {
               SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "?", a.deviceSpec.freq, a.deviceSpec.channels,
               SDL_GetAudioFormatName(a.deviceSpec.format), sampleFrames, rate);
     a.applyGains();
+    a.mixer->setMuted(a.muted);
     return true;
 }
 
@@ -202,13 +218,14 @@ void Audio::setOptions(const AudioOptions& options) {
     o.musicVolume = std::clamp(o.musicVolume, 0.0f, 1.0f);
     const AudioOptions& old = a.options;
     const bool changed = !a.optionsSet || o.sound != old.sound || o.music != old.music || o.soundVolume != old.soundVolume ||
-                         o.musicVolume != old.musicVolume || o.remastered != old.remastered;
+                         o.musicVolume != old.musicVolume || o.remastered != old.remastered || o.muteInBackground != old.muteInBackground;
     if (!changed) return;
     const bool musicWasOn = a.options.music;
     a.options = o;
     a.optionsSet = true;
     a.logSettings();
     a.applyGains();
+    a.applyMute();
     if (musicWasOn && !o.music) stopMusic();
 }
 
@@ -217,6 +234,10 @@ const AudioOptions& Audio::options() const { return impl_->options; }
 void Audio::play(std::string_view name) {
     Impl& a = *impl_;
     if (!a.device || !a.options.sound || name.empty()) return;
+    if (a.muted) {
+        log::debug("Sound: {} (dropped: muted in the background)", name);
+        return;
+    }
     auto c = a.clip(name);
     if (!c) return;
     log::debug("Sound: {}", name);
@@ -260,6 +281,12 @@ void Audio::stopMusic() {
 }
 
 bool Audio::musicPlaying() const { return impl_->musicPlaying; }
+
+void Audio::setBackground(bool background) {
+    Impl& a = *impl_;
+    a.background = background;
+    a.applyMute();
+}
 
 void Audio::update() {
     Impl& a = *impl_;

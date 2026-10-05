@@ -1,0 +1,29 @@
+# Muting in the background (tools/check_audio.py): the game's window loses the
+# focus (another window comes to the front), is minimized and restored (as
+# Windows and X11 report it), and is covered and uncovered (as Wayland and
+# macOS report a window minimized or on another workspace). Each time the sound
+# must fade out into digital silence, stay silent until the window comes back
+# (the command button and Esc pressed meanwhile make no sound: their effects
+# are dropped) and fade back in, the music going on where it paused.
+options --quick-start=Terran --seed=7 --open=none --layout=1024x768 --size=1280x800 --audio
+timeout 7200
+wait-screen game
+wait 300
+window-event focus-lost
+wait 40
+click tag:command:research
+wait 4
+key Escape
+wait 90
+window-event focus-gained
+wait 240
+window-event focus-lost
+window-event minimized
+wait 150
+window-event restored
+window-event focus-gained
+wait 240
+window-event occluded
+wait 120
+window-event exposed
+wait 300

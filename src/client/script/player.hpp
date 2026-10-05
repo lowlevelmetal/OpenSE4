@@ -84,7 +84,7 @@ public:
 
 // One input event for the app to make into an SDL event.
 struct InputEvent {
-    enum class Kind : uint8_t { Motion, ButtonDown, ButtonUp, Wheel, KeyDown, KeyUp, Text };
+    enum class Kind : uint8_t { Motion, ButtonDown, ButtonUp, Wheel, KeyDown, KeyUp, Text, Window };
     Kind kind = Kind::Motion;
     ImVec2 pos;                  // pointer events (ImGui units = window coordinates)
     int button = 1;              // SDL's numbers: 1 left, 2 middle, 3 right
@@ -92,6 +92,7 @@ struct InputEvent {
     ImGuiKey key = ImGuiKey_None;
     bool ctrl = false, shift = false, alt = false;   // the modifiers held (key events)
     std::string text;            // Text
+    WindowChange window = WindowChange::FocusLost;   // Window
     bool decisive = false;       // the press or key whose fate (lock) the step checks
 };
 
@@ -128,6 +129,7 @@ private:
     Status pointerStep(const Step& st, const Probe& probe, FrameOutput& out);
     Status keyStep(const Step& st, FrameOutput& out);
     Status typeStep(const Step& st, FrameOutput& out);
+    Status windowStep(const Step& st, FrameOutput& out);
     Status playQueue(const Step& st, FrameOutput& out);
     Status waitStep(const Step& st, const Probe& probe);
     Status check(const Step& st, const Probe& probe);

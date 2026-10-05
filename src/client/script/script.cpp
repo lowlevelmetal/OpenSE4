@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iterator>
 #include <sstream>
+#include <utility>
 
 namespace opense4::client::script {
 
@@ -174,6 +175,7 @@ constexpr OpInfo kOps[] = {
     {"wheel", Op::Wheel},
     {"key", Op::Key},
     {"type", Op::Type},
+    {"window-event", Op::WindowEvent},
     {"wait", Op::Wait},
     {"wait-for", Op::WaitFor},
     {"wait-gone", Op::WaitGone},
@@ -210,6 +212,12 @@ constexpr OpInfo kOps[] = {
     {"end", Op::End},
 };
 
+constexpr std::pair<WindowChange, std::string_view> kWindowChanges[] = {
+    {WindowChange::FocusLost, "focus-lost"}, {WindowChange::FocusGained, "focus-gained"}, {WindowChange::Minimized, "minimized"},
+    {WindowChange::Restored, "restored"},    {WindowChange::Hidden, "hidden"},            {WindowChange::Shown, "shown"},
+    {WindowChange::Occluded, "occluded"},    {WindowChange::Exposed, "exposed"},
+};
+
 bool takesTarget(Op op) {
     switch (op) {
         case Op::Click:
@@ -236,6 +244,12 @@ bool isPointer(Op op) {
 }
 
 } // namespace
+
+std::string_view windowChangeName(WindowChange c) {
+    for (const auto& [change, name] : kWindowChanges)
+        if (change == c) return name;
+    return "?";
+}
 
 std::string_view opName(Op op) {
     for (const OpInfo& i : kOps)
@@ -534,6 +548,19 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
                     ok = false;
                 }
                 break;
+            case Op::WindowEvent: {
+                constexpr std::string_view what = "focus-lost, focus-gained, minimized, restored, hidden, shown, occluded or exposed";
+                ok = needArgs(1, what);
+                if (!ok) break;
+                ok = false;
+                for (const auto& [change, name] : kWindowChanges)
+                    if (args[0]->text == name) {
+                        st.window = change;
+                        ok = true;
+                    }
+                if (!ok) fail(std::format("'window-event' takes {}", what));
+                break;
+            }
             case Op::Wait: ok = needArgs(1, "a number of frames") && number(args[0], 1, "a number of frames"); break;
             case Op::WaitStep:
             case Op::AssertStep: ok = needArgs(1, "a step number (from 1)") && number(args[0], 1, "a step number (from 1)"); break;

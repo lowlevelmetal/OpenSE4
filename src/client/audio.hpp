@@ -31,6 +31,7 @@ struct AudioOptions {
     float soundVolume = 0.8f;   // 0..1
     float musicVolume = 1.0f;   // 0..1, played in the six steps of musicStep()
     bool remastered = true;     // prefer Sounds/New/ when the install has it
+    bool muteInBackground = true;  // silent while the game's window is in the background
 };
 
 // The three playlists of Settings.txt ("Num Intro Songs", "Intro Song N
@@ -111,6 +112,12 @@ public:
     void stopMusic();  // fades out
     // A track is playing or starting (false again when it fails).
     bool musicPlaying() const;
+    // The game's window went into the background (another window has the
+    // focus, or it is minimized, hidden or covered) or came back. With
+    // AudioOptions::muteInBackground, everything fades out meanwhile: the music
+    // pauses where it is and goes on from there when the window comes back, and
+    // sound effects asked for meanwhile are dropped (docs/SETUP.md "Sound and music").
+    void setBackground(bool background);
     // Call every frame: reports the music's progress and problems to the log.
     void update();
 
