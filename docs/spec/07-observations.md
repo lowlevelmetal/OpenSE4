@@ -1965,6 +1965,47 @@ the loop matters only where planets are hidden, which no generated galaxy has at
 created storms and nebulae, ships that obscure their sector and cloaked colonies can make
 them during play.
 
+## Session 7: the players' reports on v0.9.0 (2026-10-05)
+
+Three reports turned on what the original does (spec 03 §19 Q81, Q82; spec 06 §7 Q110). The
+executable settled each; this session checked them in a running game. The game was made in
+OpenSE4: a training game of our own (not tracked) with the Terran preset, two computer
+players, no events, the "high" starting technology and four attack ships and a colony ship
+at the homeworld, exported with Save for SE IV and loaded in the original (turn-based). The
+attack ships had 9 movement and the colony ship 8.
+
+- **Upgrade** (Q81). The empire had every large engine researched up to Quantum Engine III,
+  and the stock attack design used Quantum Engine III. Upgrade on that design opened Ship
+  Design with nothing changed, under the design's own name. In that window one Quantum
+  Engine III was removed, an Ion Engine I added (movement fell from 9 to 6), and the design
+  created as a new one under another name. Upgrade on the new design opened Ship Design with
+  the Ion Engine I replaced by Quantum Engine III: cost, movement 9 and supply equal to the
+  stock design again. The candidate kept the design's name, and Create Design answered that
+  the name was already in use. Our client, from the same game, says on Upgrade that the
+  stock design already uses the newest components and opens nothing; by its numeral rule it
+  would turn the Ion Engine I into Ion Engine III.
+- **A fleet in the sector's list** (Q110). Two attack ships were put in a new fleet with
+  Fleet Transfer. A click on the homeworld's sector listed the planet, then one row for the
+  fleet (a picture of several ships, the fleet's name, no class line), then the two other
+  attack ships and the colony ship. A click on the fleet's row filled the panel with the
+  Fleet Report alone: the fleet picture, Movement 9/9, Supply Pool, Fleet Experience,
+  Formation, Strategy, "Ships In Fleet 2" and a list of the two ships with "(Fleet Leader)"
+  after the first, and the up-arrow; no ship report and no tabs. A left-click on the second
+  ship moved "(Fleet Leader)" to it. A right-click on the first opened its Ship Report in a
+  window over the system panel, on Detail, with the four tabs and a Close button, while the
+  panel kept the Fleet Report. Shift and a click on the fleet's row tagged it (a green
+  arrow on the row).
+- **Tagged ships ordered to attack** (Q82). An attack ship and the colony ship were tagged
+  in the homeworld's list (green arrows), A pressed and a sector 9 steps away clicked. Both
+  moved at once, together, and stopped in the same sector one step short: the attack ship
+  with 1 of 9 movement left, the colony ship with 0 of 8, both holding "Move to … (0, 12)"
+  and "Attack". The tags were gone afterwards. Both were tagged again and given a second
+  Attack 12 steps away: neither moved, although the attack ship had 1 movement left, and
+  both lists held four orders. At the next turn's start each carried its orders out on its
+  own: the attack ship ended in (7, 12) and the colony ship in (6, 12), each with no
+  movement left, the attack ship's list holding the last Move To and Attack. No enemy was
+  near, so the entry question and the battle were not seen.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
@@ -2030,3 +2071,8 @@ Session 5 (2026-10-03), the same harness as session 4:
 Session 6 (2026-10-04): the harness of session 5 without a debugger: a copy of the install,
 its own Wine prefix and the nested display, driven by the XTest script of session 4 and
 captured with `import`; the captures are in `reference/observe/2026-10-04/` (not tracked).
+
+Session 7 (2026-10-05): the harness of session 6 on display :8, with a scratch XTest helper for
+Shift held over a click; the game came from an OpenSE4 export (a training game of our own made
+for it, saved with Save for SE IV) copied into the scratch copy's save folder. The captures,
+the scenario and the exported file are in `reference/observe/2026-10-05/` (not tracked).

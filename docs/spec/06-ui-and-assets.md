@@ -1676,7 +1676,35 @@ tags several ships (a green arrow is drawn on each) so one order goes to all of 
 the group dissolves after the order; Shift+A tags all, Shift+C clears [T]. Tagging a ship
 that is in a fleet tags the whole fleet; Shift+A tags every own object in the list, with
 fleets expanded; every left-click on a sector clears the tags, on the same sector too
-(confirmed: binary). The orders a tagged group can take are in §2.8.
+(confirmed: binary). The orders a tagged group can take are in §2.8, and how the tagged
+vehicles carry an order out is spec 03 §8 "Tagged vehicles".
+
+**Fleets in the list** (confirmed: binary; observed, spec 07 session 7). The list holds the
+objects of the sector that the player sees, except that each of the player's own fleets is
+one row: its members in the sector stand as one entry (the first of them in the system's
+object order), drawn as the fleet, with the fleet's picture, the fleet's name and the
+fleet's status icons (§4.4), and no class line. Other empires' ships are listed one by one,
+fleet members included. So a sector holding one of the player's fleets and nothing else the
+player sees counts one object, and a click on it opens the Fleet Report at once (§2.4). The
+rows are sorted: stellar objects (planets, stars, warp points, storms) first; then by fleet
+number, highest first, vehicles in no fleet last; then by the owner's player number; then by
+hull, in VehicleSize.txt order, unit groups after ships; then by name, ignoring case. A
+left-click on a row opens its report (a fleet's row the Fleet Report), and so does a
+right-click; Shift with the left button tags the row instead, a fleet's row tagging every
+member at the fleet's location.
+
+**The Fleet Report** (confirmed: binary; observed, spec 07 session 7). Opened for an own
+fleet, it fills the panel alone: the fleet's name, Movement, Supply Pool, Fleet Experience,
+Formation, Strategy and the count of Ships In Fleet, then a list of the members at the
+fleet's location, sorted as the sector's list, each row with the member's picture, its name
+followed by "(Fleet Leader)" on the leader's row, and its status icons. No member's own
+report is shown in the panel, and the lit orders are the fleet's (§2.8). In the member list
+a left-click makes that member the fleet's leader (spec 03 §9) and redraws the list; a
+right-click opens the member's Ship Report as a popup window, on Detail like every report
+popup. Neither changes the panel, the order buttons or the selection. The up-arrow returns
+to the sector's list. Our client differs (§7 Q110): it lists every member as a ship row, and
+a click on one shows the Fleet Report with that ship's report under it, whose member list
+takes no clicks.
 
 **What replaces the report** (confirmed: binary; observed, spec 07 session 6). The panel
 changes only when the player selects something:
@@ -5034,4 +5062,29 @@ windows; the population move between colonies is spec 03 §19 Q79.
      Since 2026-10-04 our client follows: `Rules::onlyLatestComponents` and
      `Rules::onlyLatestFacilities` keep the last of each run of neighbours; the designer's and
      Set Construction Queue's boxes write the Empire Options rows back. Upgrades keep the
-     highest numeral researched (`latestFacilityOfFamily`, spec 02 §6.6).
+     highest numeral researched (`latestFacilityOfFamily`, spec 02 §6.6), which is right for
+     facility upgrades; a design's Upgrade takes the family's last researched component in
+     file order instead, and ours does not yet (spec 03 §4.1, §19 Q81).
+
+**Players' reports on v0.9.0 (2026-10-05).** Three reports: the design Upgrade and tagged
+ships attacking together are spec 03 §19 Q81 and Q82; the fleet in the sector list is Q110.
+
+110. **A fleet in the sector list.** "Fleets show all ships in the sector pane instead of as a
+     fleet. Is this intentional? It does select the fleet, which is nice, and gives
+     information about the selected ship beneath the fleet information, but you also can't
+     select a different ship in the fleet for information without backing out first."
+     **Answer:** no. In the original each of the player's own fleets is one row of the
+     sector's list, with the fleet's picture, name and status icons; other empires' fleet
+     members are listed one by one. The row opens the Fleet Report, which fills the panel
+     alone (no ship report under it) and lists the members at the fleet's location: a
+     left-click on a member makes it the fleet's leader, a right-click opens that ship's
+     report as a popup window, so any member's report is one right-click away without going
+     back to the list (§2.5 "Fleets in the list", "The Fleet Report") (confirmed: binary;
+     observed, spec 07 session 7).
+     Our client differs: the sector's list (`MainWindow`, `client/classic/main_window.cpp`)
+     shows every vehicle there as its own row, fleet members included, planets first and
+     then the vehicles in their own order; a click on a member selects that ship and its
+     fleet, and the panel shows `fleetReport` with the ship's `vehicleReport` under it.
+     `fleetReport` (`client/classic/reports.cpp`) draws the members as plain text marked
+     "(leader)", which takes no clicks; no command sets a fleet's leader (`Fleet::leader` is
+     set only when a fleet is made).
