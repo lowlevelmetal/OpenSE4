@@ -529,7 +529,7 @@ Everything that crosses between the engine and scripts is a `script::Value`
 keeps its insertion order. There is no floating point: what scripts give the game is whole
 numbers, as the engine uses.
 - **The AI view** and the rules' read access are built as `Value` trees.
-- **Commands** are `Value` maps: `{"kind": "SetOrders", ...}`.
+- **Commands** are `Value` maps: `{"kind": "set_orders", ...}` (the command names in lower_snake_case, docs/sdk/commands.md).
 - **Mod data and AI memory** are `Value` trees too, kept in the game state.
 - **Two representations** of the same tree: in-game, the interpreter converts each `Value`
   to and from its own objects (lists, dicts, ints, str). For external bots, the tree is JSON
