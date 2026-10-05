@@ -571,7 +571,16 @@ same scripts (checked under Wine, where it opens a real window: a pointer step m
 frame more to aim, as the layout settles at that window's size). When a step fails, the client prints the
 script line, why it failed and where the game was, saves a picture of that frame and exits
 with 1; a script that ends exits with 0 and prints
-`input-script FILE: passed (N steps, M frames)`.
+`input-script FILE: passed (N steps, M frames)`. A script also fails at the step under way
+when Dear ImGui reports one of its recoverable errors in a frame (a widget used the wrong
+way, such as the cursor placed past a window's content with no item after it), with Dear
+ImGui's message: such a window shows players nothing, but must not pass.
+
+**Dear ImGui's errors.** Players never see Dear ImGui's red error tooltip or its assert:
+every distinct error (window and message) is written once to `opense4.log`, and release
+builds stop there (`client/ui/imgui_errors.hpp`); they show no tooltip for widgets that share
+an id either. Debug builds keep the tooltip and the assert, so that a developer sees the error
+at once; under an input script they do not assert, and the script fails instead.
 
 ```sh
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --input-script=tests/input/tutorial-first-steps.script \
@@ -610,6 +619,7 @@ recorder is tested.
 | `list-windows.script` | Planets, Colonies, Ships and Construction Queues: sort headings, tabs and filters, the arrow column and the wheel; item and Design Report pop-ups from right-clicks |
 | `combat-windows.script` | Tactical Combat on a sample battle: zoom and pan, the Combat Piece Report, Combat Options, the Orders menu and Resolve Combat |
 | `ground-combat.script` | Ground Combat on a sample strategic battle (`--open=ground-combat`): Begin, the rounds, Close, then the rest of the battle |
+| `log-details.script` | The Log's details pane on an entry without a body (a ship scrapped at the home yard; GitHub issue #9): no Dear ImGui error |
 | `combat-replay.script` | Combat Replay on a battle of the last turn: the overview, Combat Replay Options' check boxes, Next to the last combat turn, Stop Replay |
 | `battle-strategic.script` | A battle that stops the player's End Turn: an enemy ship comes through a warp point into the player's sector in a computer player's turn; the notice, Strategic Combat's question, Strategic, End Turn doing nothing over the battle's window, Close; the turn then ends exactly once, and the next End Turn ends the next one. Play it with the `asan` client too (v0.8.1 crashed here: see "Crash reports") |
 | `report-up-arrow.script` | The report panel's up-arrow back to a sector's list: shown only for a report opened from the list |

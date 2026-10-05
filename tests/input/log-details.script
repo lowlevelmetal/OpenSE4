@@ -1,0 +1,38 @@
+# The Log's details pane on an entry without a body (GitHub issue #9): a ship scrapped at the
+# home system's space yard makes "<ship> scrapped", whose details are a picture, a title and a
+# date. v0.9.0 placed the cursor for a body that never came; Dear ImGui showed players its red
+# error tooltip over the window (release builds) or stopped the program (debug builds). Every
+# script fails on such an error now (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --seed=7 --turns=20 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+# New colonies ask for their type first (questions are modal).
+repeat 10
+  click item:"*(suggested)" optional timeout=5
+end
+click system:home
+wait 5
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+# Scrap (G) at the yard, asked first by the Empire Option.
+key G
+wait-window scrap
+click item:Scrap in=scrap
+click item:Yes in="Confirm Action" optional
+wait 5
+key Escape
+wait-closed scrap
+assert-log "scrapped"
+key F10
+wait-window log
+click item:"log:*scrapped" in=log
+wait 5
+# The pointer rests on the list, where the error's tooltip came up.
+move item:"log:*scrapped" in=log
+wait 10
+assert-window log
+screenshot log-scrapped.png
+key Escape
+wait-closed log

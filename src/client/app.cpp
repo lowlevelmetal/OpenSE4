@@ -5,6 +5,7 @@
 #include "client/classic/classic_mode.hpp"
 #include "client/script/items.hpp"
 #include "client/script/sdl_input.hpp"
+#include "client/ui/imgui_errors.hpp"
 #include "client/ui/theme.hpp"
 #include "core/log.hpp"
 #include "ruleset/ruleset.hpp"
@@ -276,6 +277,15 @@ void App::initImGui() {
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;  // fixed layout for now
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // A widget used the wrong way goes to opense4.log. Players never see Dear
+    // ImGui's tooltip or assert: release builds only log. Debug builds keep
+    // both, but an input script fails with the message instead of asserting.
+#ifdef NDEBUG
+    constexpr bool kRelease = true;
+#else
+    constexpr bool kRelease = false;
+#endif
+    setupImGuiErrors(io, kRelease, options_.inputScript.has_value());
     ImGui_ImplSDL3_InitForOther(window_);
     fonts_ = loadFonts(assetsDir_);
     updateUiScale();
@@ -418,6 +428,15 @@ bool App::frame() {
     if (!mode_->update(fs)) running = false;
     script::endItemFrame();
     ImGui::Render();
+    // An input script fails on any error Dear ImGui reported in the frame: a
+    // window that misuses a widget shows players nothing, but must not pass.
+    if (player_ && probe && imguiErrorCount() != imguiErrorsSeen_) {
+        imguiErrorsSeen_ = imguiErrorCount();
+        const script::FrameOutput failed = player_->abort("Dear ImGui reported an error: " + lastImGuiError(), *probe);
+        for (const std::string& m : failed.messages) log::error("{}", m);
+        captures_.insert(captures_.end(), failed.captures.begin(), failed.captures.end());
+        running = false;
+    }
 
     // Frame limit when vsync is off.
     if (const int limit = prefs.graphics.frameLimit; limit > 0 && !prefs.graphics.vsync) {

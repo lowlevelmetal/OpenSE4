@@ -184,6 +184,19 @@ FrameOutput Player::tick(const Probe& probe) {
     return out;
 }
 
+FrameOutput Player::abort(std::string why, const Probe& probe) {
+    FrameOutput out;
+    if (finished_ || failed_) return out;
+    failed_ = true;
+    const std::string at = step_ < script_.steps.size()
+                               ? std::format("{}:{}: {}", script_.file, script_.steps[step_].line, script_.steps[step_].source)
+                               : script_.file;
+    failure_ = std::format("{}\n  {}\n  ({})", at, why, context(probe));
+    out.messages.push_back("FAILED " + failure_);
+    out.captures.push_back(failureShot());
+    return out;
+}
+
 void Player::verdicts(std::span<const Verdict> v) {
     if (!awaitingVerdict_) return;
     for (size_t i = 0; i < v.size() && i < sentDecisive_.size(); ++i) {

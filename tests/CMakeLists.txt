@@ -33,6 +33,7 @@ add_executable(opense4_tests
     test_generate.cpp
     test_hidden_colonies.cpp
     test_history.cpp
+    test_imgui_errors.cpp
     test_input_script.cpp
     test_integration.cpp
     test_intel.cpp
@@ -81,6 +82,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/script/recorder.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/script.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/sdl_input.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/ui/imgui_errors.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp

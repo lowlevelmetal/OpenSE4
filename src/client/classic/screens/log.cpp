@@ -12,6 +12,7 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/classic/screens/item_reports.hpp"
+#include "client/script/items.hpp"
 #include "game/log_picture.hpp"
 
 #include <algorithm>
@@ -247,6 +248,7 @@ private:
             ImGui::PushID(int(i));
             const ImVec2 a = ImGui::GetCursorScreenPos();
             if (ImGui::InvisibleButton("##row", ImVec2(width, ui.px(kRowH)))) selected_ = int(i);
+            if (script::collectingItems()) script::reportItem("log:" + shown[i]->title);   // input scripts: rows by title
             const ImVec2 b{a.x + width, a.y + ui.px(kRowH)};
             if (ImGui::IsItemHovered() && grid) drawSprite(dl, grid, a, b);
             const Sprite& lampSprite = int(i) == selected_ ? green : blue;
@@ -444,18 +446,24 @@ private:
         dl->AddText({origin.x + ui.px(4), origin.y + ui.px(dateY)}, ImGui::ColorConvertFloat4ToU32(kLabelBlue), "Date:");
         const std::string date = formatDate(r->turn);
         dl->AddText({origin.x + ui.px(40), origin.y + ui.px(dateY)}, IM_COL32_WHITE, date.c_str());
+        // The cursor goes to the body only when an item follows there: Dear
+        // ImGui refuses a cursor placed past the content with nothing after it
+        // (an entry without a body, such as a retrofit, showed its error).
         const int combat = combatIndex(ui, r);
-        ImGui::SetCursorScreenPos({origin.x + ui.px(4), origin.y + ui.px(top + 30)});
+        const ImVec2 bodyAt{origin.x + ui.px(4), origin.y + ui.px(top + 30)};
         if (combat >= 0) {
+            ImGui::SetCursorScreenPos(bodyAt);
             combatDetails(ui, *r, s.combats[size_t(combat)]);
             return;
         }
         if (r->message) {
+            ImGui::SetCursorScreenPos(bodyAt);
             messageDetails(ui, *r->message);
             return;
         }
         const std::string& body = r->entry ? r->entry->text : r->notice ? *r->notice : std::string{};
         if (body.empty()) return;
+        ImGui::SetCursorScreenPos(bodyAt);
         ImGui::BeginChild("##body", ui.size({areaW - 8, std::min(300.0f, ImGui::GetContentRegionAvail().y / ui.k())}), ImGuiChildFlags_None,
                           ImGuiWindowFlags_NoBackground);
         {
