@@ -152,6 +152,21 @@ private:
             if (e.techLevels.size() != d_.techAreas.size())
                 return fail(std::format("the empires know {} tech areas; the data set has {}: the save was made with another data set",
                                         e.techLevels.size(), d_.techAreas.size()));
+        // The data-set checksums, when the save has them (§3.2.1, §4): a
+        // warning, since the counts and positions already passed.
+        const DataSetChecksums& stored = in_.options.checksums;
+        if (std::all_of(stored.begin(), stored.end(), [](int32_t v) { return v == 0; })) return;
+        const auto computed = dataSetChecksums(d_.dataDir);
+        if (!computed || *computed == stored) return;
+        static constexpr std::array<std::string_view, 7> kFiles{"Components.txt", "Facility.txt",  "VehicleSize.txt", "PlanetSize.txt",
+                                                                "TechArea.txt",   "CompEnhancement.txt", "RacialTraits.txt"};
+        std::string differ;
+        for (size_t i = 0; i < kFiles.size(); ++i)
+            if ((*computed)[i] != stored[i]) differ += std::format("{}{}", differ.empty() ? "" : ", ", kFiles[i]);
+        report_.note(std::format("The game was saved with data files that differ from the loaded ones ({}): positions in them may mean "
+                                 "other things here.",
+                                 differ));
+        report_.detail(std::format("data-set checksums differ for {}", differ));
     }
 
     // ---- Options (§3.2, §3.3) ----------------------------------------------------------------------------
@@ -937,6 +952,16 @@ private:
         std::vector<Order> out;
         std::vector<Order> converted;
         for (const OrderRecord& rec : list.orders) {
+            // Launch or Recover of every unit kind (kind byte 0): one order per kind (§3.8.8).
+            if ((rec.kind == 34 || rec.kind == 35) && rec.extra == 0) {
+                std::vector<Order> each = everyUnitKind(rec, owner, vehicle, colony);
+                if (each.empty()) {
+                    count("launch and recover orders of every unit kind with nothing to act on (dropped)");
+                    converted.push_back(Order{OrderKind::Count});
+                }
+                for (Order& o : each) converted.push_back(o);
+                continue;
+            }
             std::optional<Order> o = order(rec, owner, vehicle, colony);
             if (o) converted.push_back(*o);
             else converted.push_back(Order{OrderKind::Count});   // a placeholder keeps the positions
@@ -948,6 +973,30 @@ private:
             const Order& o = converted[(current + k) % converted.size()];
             if (o.kind != OrderKind::Count) out.push_back(o);
         }
+        return out;
+    }
+
+    // A Launch or Recover of every unit kind: a launch per kind the launcher
+    // carries, a recovery per kind that comes back (fighters, satellites) of
+    // which the owner has a design.
+    std::vector<Order> everyUnitKind(const OrderRecord& rec, EmpireId owner, const Vehicle* vehicle, const Colony* colony) {
+        using V = ruleset::VehicleType;
+        std::vector<Order> out;
+        const Cargo* from = vehicle ? &vehicle->cargo : colony ? &colony->cargo : nullptr;
+        const bool launch = rec.kind == 34;
+        const std::array<V, 4> kinds = launch ? std::array<V, 4>{V::Fighter, V::Satellite, V::Mine, V::Drone}
+                                              : std::array<V, 4>{V::Fighter, V::Satellite, V::Count, V::Count};
+        for (V type : kinds) {
+            if (type == V::Count) continue;
+            const DesignId d = unitOfKind(owner, type, launch ? from : nullptr);
+            if (!d.valid() || (launch && (!from || from->unitCount(d) <= 0))) continue;
+            Order o;
+            o.kind = launch ? OrderKind::LaunchUnits : OrderKind::RecoverUnits;
+            o.amount = -1;
+            o.design = d;
+            out.push_back(o);
+        }
+        if (!out.empty()) count("launch and recover orders of every unit kind (now one order per kind)");
         return out;
     }
 
@@ -1003,13 +1052,17 @@ private:
                 return o;
             }
             case 8:
+                // Attack where the group stands: no target, no place (§3.8.8).
                 o.kind = OrderKind::Attack;
-                if (sys.valid()) o.location = at;
-                o.vehicle = target.vehicle;
-                o.object = target.object;
                 return o;
             case 9: o.kind = OrderKind::Scrap; return o;
             case 10:
+                // Nothing in the last version makes it; a Move To (inferred, §3.8.8).
+                if (!sys.valid()) return dropped("orders with a missing target (dropped)");
+                o.kind = OrderKind::MoveTo;
+                o.location = at;
+                count("seek orders of kind 10 (now Move To)");
+                return o;
             case 12:
                 if (!sys.valid()) return dropped("orders with a missing target (dropped)");
                 o.kind = OrderKind::Seek;
@@ -1017,8 +1070,9 @@ private:
                 return o;
             case 11:
             case 13:
+                // 11: the pursuing Attack on a target; 13: a minister's one-phase Seek (§3.8.8, Q17).
                 if (!target.vehicle.valid() && !target.object.valid()) return dropped("orders with a missing target (dropped)");
-                o.kind = OrderKind::Seek;
+                o.kind = rec.kind == 11 ? OrderKind::Attack : OrderKind::Seek;
                 o.vehicle = target.vehicle;
                 o.object = target.object;
                 if (sys.valid()) o.location = at;
@@ -1051,7 +1105,8 @@ private:
             case 35: {
                 o.kind = rec.kind == 34 ? OrderKind::LaunchUnits : OrderKind::RecoverUnits;
                 o.amount = -1;
-                const auto type = unitKindType(rec.extra);
+                // The kind byte is a cargo kind, as Load's (§3.8.8, Q16).
+                const auto type = cargoKindType(rec.extra);
                 if (!type) return dropped("launch and recover orders of an unknown unit kind (dropped)");
                 const Cargo* from = vehicle ? &vehicle->cargo : colony ? &colony->cargo : nullptr;
                 o.design = unitOfKind(owner, *type, rec.kind == 34 ? from : nullptr);
@@ -1168,7 +1223,29 @@ private:
                 if (inRange(l.system, s_.galaxy.systems.size())) entry.location = Location{SystemId{l.system - 1u}, sector(l.sector)};
                 entry.target = size_t{l.target} < kGoto.size() ? kGoto[l.target] : LogGoto::None;
                 entry.picture = picture(l);
-                if (l.battle) count("battle details of combat log entries (the entries keep their text)");
+                // Kept for the export: the kind, its picture key, the other
+                // empire, the event fields and the battle details (§7.3).
+                ClassicLogFields& c = entry.classic;
+                c.kind = l.kind == 0 ? uint8_t{36} : l.kind;
+                c.owner = l.owner;
+                c.system = l.system;
+                c.sector = l.sector;
+                c.pictureKey = l.picture;
+                c.otherEmpire = player(l.otherEmpire);
+                c.eventNotice = l.eventNotice;
+                c.eventKind = l.eventKind;
+                c.techArea = l.techArea;
+                if (l.battle) {
+                    c.battleNumber = l.battle->number;
+                    for (const BattleSide& side : l.battle->sides) {
+                        ClassicBattleSide& to = c.battle.emplace_back();
+                        to.player = side.player;
+                        to.tookPart = side.tookPart;
+                        for (const BattleShip& sh : side.forces) to.forces.push_back({sh.name, sh.hullCode, sh.hull});
+                        for (const BattleSurvivor& sv : side.survivors) to.survivors.push_back({sv.name, sv.damage});
+                    }
+                    count("combat log entries (their battle details are kept for an export, not shown)");
+                }
                 if (l.message) {
                     if (auto m = message(*l.message, l, EmpireId{e})) {
                         entry.message = m->id;
@@ -1370,7 +1447,7 @@ private:
             report_.note("Load, drop, launch and recover orders now name one unit design of their kind.");
         if (has("one-way warp points")) report_.note("One-way warp points of the original lead nowhere in OpenSE4.");
         if (has("passwords")) report_.note("Empire passwords carry over; type them in lower case.");
-        if (has("battle details")) report_.note("Combat log entries keep their text but not their battle details.");
+        if (has("combat log entries")) report_.note("Combat log entries show their text; their battle details are kept for an export to the original.");
         if (has("ships under construction")) report_.note("Ships the original had under construction are finished.");
         if (has("saved construction queue templates")) report_.note("Saved construction queue templates are not carried over.");
         if (has("fleets without a member")) report_.note("Fleets with no ship in their own sector were disbanded, as the original does on loading.");

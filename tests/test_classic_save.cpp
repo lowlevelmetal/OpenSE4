@@ -13,6 +13,8 @@
 #include "game/classic_save.hpp"
 #include "game/combat.hpp"
 #include "game/design.hpp"
+#include "game/movement.hpp"
+#include "datafile/datafile.hpp"
 #include "game/serialize.hpp"
 #include "game/turn.hpp"
 
@@ -645,6 +647,447 @@ TEST_CASE("classic save: files on disk, and the original's own values the export
     checkCarried(r, s, *t);
 }
 
+// ---- The data-set checksums (§3.2.1) -------------------------------------------------------------------------
+
+namespace {
+
+// Small data files of our own, written for these sums.
+constexpr std::string_view kTechAreasText = R"(*BEGIN*
+Name := Alpha
+Group := Physics
+Description := Abc
+Maximum Level := 5
+Level Cost := 100
+Start Level := 1
+Raise Level := 0
+Racial Area := 0
+Unique Area := 0
+Number of Tech Req := 0
+Name := Beta
+Group := X
+Description :=
+Maximum Level := 2
+Level Cost := 10
+Start Level := 0
+Raise Level := 0
+Racial Area := 0
+Unique Area := 0
+Number of Tech Req := 1
+Tech Area Req 1 := Alpha
+Tech Level Req 1 := 2
+*END*
+)";
+
+constexpr std::string_view kComponentsText = R"(*BEGIN*
+Name := Gun
+Description := Hits
+Pic Num := 3
+Tonnage Space Taken := 10
+Tonnage Structure := 20
+Cost Minerals := 5
+Cost Organics := 1
+Cost Radioactives := 2
+Vehicle Type := Ship\Base
+Supply Amount Used := 4
+Restrictions := One Per Vehicle
+General Group := Weapons
+Family := 7
+Roman Numeral := 2
+Custom Group := 0
+Number of Tech Req := 1
+Tech Area Req 1 := Beta
+Tech Level Req 1 := 1
+Number of Abilities := 1
+Ability 1 Type := Sensor Level
+Ability 1 Descr := Sees
+Ability 1 Val 1 := Psychic
+Ability 1 Val 2 := 3
+Weapon Type := Seeking
+Weapon Damage At Rng := 10 20 30
+Weapon Damage Type := Skips Armor
+Weapon Reload Rate := 2
+Weapon Display Type := Torp
+Weapon Display := 5
+Weapon Modifier := 1
+Weapon Sound := Boom
+Weapon Family := 9
+Weapon Seeker Speed := 6
+Weapon Seeker Dmg Res := 8
+*END*
+)";
+
+constexpr std::string_view kFacilitiesText = R"(*BEGIN*
+Name := Lab
+Description := Labs
+Facility Group := Research
+Facility Family := 3
+Roman Numeral := 1
+Restrictions := One Per Planet
+Pic Num := 2
+Cost Minerals := 100
+Cost Organics := 0
+Cost Radioactives := 0
+Number of Tech Req := 0
+Number of Abilities := 1
+Ability 1 Type := Point Generation - Research
+Ability 1 Descr :=
+Ability 1 Val 1 := 50
+Ability 1 Val 2 := 0
+*END*
+)";
+
+constexpr std::string_view kHullsText = R"(*BEGIN*
+Name := Frigate
+Short Name := FG
+Description := Small
+Code := FG
+Primary Bitmap Name := Frig
+Alternate Bitmap Name := Frig2
+Vehicle Type := Weapon Platform
+Tonnage := 150
+Cost Minerals := 10
+Cost Organics := 0
+Cost Radioactives := 0
+Engines Per Move := 2
+Number of Tech Req := 0
+Number of Abilities := 0
+Requirement Must Have Bridge := True
+Requirement Can Have Aux Con := False
+Requirement Min Life Support := 1
+Requirement Min Crew Quarters := 1
+Requirement Uses Engines := True
+Requirement Max Engines := 4
+Requirement Pct Fighter Bays := 50
+Requirement Pct Colony Mods := 0
+Requirement Pct Cargo := 25
+*END*
+)";
+
+constexpr std::string_view kPlanetSizesText = R"(*BEGIN*
+Name := Big Rocks
+Physical Type := Asteroids
+Stellar Size := Large
+Max Facilities := 10
+Max Population := 2000
+Max Cargo Spaces := 5
+Max Facilities Domed := 3
+Max Population Domed := 999
+Max Cargo Spaces Domed := 1
+Special Ability ID := 0
+*END*
+)";
+
+constexpr std::string_view kMountsText = R"(*BEGIN*
+Long Name := Heavy Mount
+Cost Percent := 150
+Tonnage Percent := 120
+Tonnage Structure Percent := 110
+Damage Percent := 200
+Supply Percent := 100
+Shield Percent := 77
+Range Modifier := -1
+Weapon To Hit Modifier := 5
+Vehicle Size Minimum := 200
+Vehicle Size Maximum := 900
+Weapon Type Requirement := Any
+*END*
+)";
+
+constexpr std::string_view kTraitsText = R"(*BEGIN*
+Name := Lucky
+Description := x
+Pic Num := 4
+General Type := Advantage
+Cost := 500
+Trait Type := Luck
+Value 1 := 10
+Value 2 := 0
+Required Trait 1 := None
+Required Trait 2 := None
+Required Trait 3 := None
+Restricted Trait 1 := Unlucky
+Restricted Trait 2 := None
+Restricted Trait 3 := None
+Name := Unlucky
+Pic Num := 5
+General Type := Disadvantage
+Cost := -300
+Trait Type := Luck
+Value 1 := -10
+Value 2 := 0
+Required Trait 1 := None
+Required Trait 2 := None
+Required Trait 3 := None
+Restricted Trait 1 := Lucky
+Restricted Trait 2 := None
+Restricted Trait 3 := None
+*END*
+)";
+
+ChecksumFiles checksumFiles() {
+    ChecksumFiles f;
+    f.techAreas = datafile::parse(kTechAreasText, "TechArea.txt");
+    f.components = datafile::parse(kComponentsText, "Components.txt");
+    f.facilities = datafile::parse(kFacilitiesText, "Facility.txt");
+    f.vehicleSizes = datafile::parse(kHullsText, "VehicleSize.txt");
+    f.planetSizes = datafile::parse(kPlanetSizesText, "PlanetSize.txt");
+    f.mounts = datafile::parse(kMountsText, "CompEnhancement.txt");
+    f.racialTraits = datafile::parse(kTraitsText, "RacialTraits.txt");
+    return f;
+}
+
+} // namespace
+
+TEST_CASE("classic save: the data-set checksums, piece by piece (§3.2.1)") {
+    using namespace checksum;
+    const ChecksumFiles f = checksumFiles();
+    REQUIRE(f.techAreas.records.size() == 2);
+    // Shared terms.
+    CHECK(textLength("Café") == 4);   // characters, as the Latin-1 file has them
+    CHECK(cost(f.components.records[0]) == 2 * 5 + 4 * 1 + 6 * 2);
+    CHECK(requirements(f.techAreas.records[1], f.techAreas) == 4 * 1 + 7 * 2);   // Alpha is record 1
+    CHECK(requirements(f.components.records[0], f.techAreas) == 4 * 2 + 7 * 1);
+    CHECK(abilities(f.components.records[0]) == 45 + 4 + 3 + 3);   // Sensor Level, "Sees", Psychic, 3
+    CHECK(abilities(f.facilities.records[0]) == 15 + 0 + 50 + 0);
+    // Damage at range: only the numbers followed by a space, at most 20.
+    CHECK(damages("10 20 30") == 30);
+    CHECK(damages("10 20 30 ") == 60);
+    CHECK(damages("1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 ") == 20);
+    CHECK(weaponTypeCode("None") == 0);
+    CHECK(weaponTypeCode("Point-Defense") == 3);
+    CHECK(weaponTypeCode("Any") == 5);
+    CHECK(damageTypeCode("Normal") == 1);
+    CHECK(damageTypeCode("Quarter Damage To Shields") == 32);
+    CHECK(damageTypeCode("No Such Type") == 0);
+    CHECK(traitTypeCode("Reproduction") == 1);
+    CHECK(traitTypeCode("Tollerance") == 30);
+    CHECK(traitTypeCode("Population Emotionless") == 33);
+    // One record per file.
+    CHECK(component(f.components.records[0], 1, f.techAreas) == 360);
+    CHECK(facility(f.facilities.records[0], 1, f.techAreas) == 289);
+    CHECK(vehicleSize(f.vehicleSizes.records[0], 1, f.techAreas) == 289);
+    CHECK(planetSize(f.planetSizes.records[0], 1) == 2026);
+    CHECK(techArea(f.techAreas.records[0], 1, f.techAreas) == 122);
+    CHECK(techArea(f.techAreas.records[1], 2, f.techAreas) == 37);
+    CHECK(mount(f.mounts.records[0], 1) == 890);
+    CHECK(racialTrait(f.racialTraits.records[0], 1, f.racialTraits) == 529);
+    CHECK(racialTrait(f.racialTraits.records[1], 2, f.racialTraits) == -289);
+    // The sums, as 32-bit integers.
+    CHECK(dataSetChecksums(f) == DataSetChecksums{360, 289, 289, 2026, 159, 890, 240});
+    ChecksumFiles big = f;
+    big.techAreas = datafile::parse("*BEGIN*\nName := A\nLevel Cost := 4294967290\n*END*\n", "TechArea.txt");
+    CHECK(dataSetChecksums(big)[4] == -4);   // 1 + 1 + 4294967290, modulo 2^32
+}
+
+TEST_CASE("classic save: the export writes the data set's checksums") {
+    const Rules& r = test::engineRules();
+    const GameState s = playedGame(true, 2, 51);
+    const ClassicSave save = exportOrFail(r, s);
+    auto sums = dataSetChecksums(r.data().dataDir);
+    REQUIRE_MESSAGE(sums.has_value(), (sums ? std::string{} : sums.error()));
+    CHECK(save.options.checksums == *sums);
+    CHECK(std::any_of(sums->begin(), sums->end(), [](int32_t v) { return v != 0; }));
+    // A save whose checksums differ from the data set imports, with a note.
+    ClassicSave other = save;
+    other.options.checksums[0] += 1;
+    ConversionReport report;
+    importOrFail(r, other, &report);
+    CHECK(std::any_of(report.notes.begin(), report.notes.end(), [](const std::string& n) { return n.find("Components.txt") != std::string::npos; }));
+}
+
+// ---- Log entries, Attack, Launch and Recover, movement (§3.6.11, §3.8.8, §9.1) ---------------------------------
+
+TEST_CASE("classic save: log entries are unread on export and keep the kind they were imported with") {
+    const Rules& r = test::engineRules();
+    GameState s = playedGame(true, 6, 61);
+    addLog(s, EmpireId{0u}, LogCategory::Misc, "Our own entry", "Written by OpenSE4.");
+    ClassicSave save = exportOrFail(r, s);
+    size_t entries = 0;
+    for (const EmpireRecord& e : save.empires)
+        for (const LogRecord& l : e.log) {
+            ++entries;
+            CHECK(l.dateRead == 0);   // the original's Log hides entries read on an earlier turn
+            if (!l.message) CHECK(l.kind == 36);
+        }
+    REQUIRE(entries > 0);
+    // Entries of the original: their kind, key, other empire, event fields and
+    // battle details come back on export.
+    LogRecord& l = save.empires[0].log.emplace_back();
+    l.owner = 1;
+    l.date = kDateBase + static_cast<int32_t>(s.turn);
+    l.title = "Battle";
+    l.text = "A battle.";
+    l.kind = 10;
+    l.category = 6;
+    l.picture = 3;
+    l.otherEmpire = 2;
+    l.eventNotice = true;
+    l.eventKind = 4;
+    l.techArea = 5;
+    l.dateRead = 0;
+    BattleRecord& b = l.battle.emplace();
+    b.number = 7;
+    b.sides[0].player = 1;
+    b.sides[0].tookPart = true;
+    b.sides[0].forces = {{"Ship A", "FG", 1}};
+    b.sides[0].survivors = {{"Ship A", 30}};
+    const BattleRecord battle = b;
+    const int32_t date = l.date;
+    LogRecord& t = save.empires[0].log.emplace_back();   // (l is gone after this)
+    t.owner = 1;
+    t.date = date;
+    t.title = "New tech";
+    t.kind = 7;
+    t.category = 2;
+    t.techArea = 3;
+    const GameState imported = importOrFail(r, save);
+    const LogEntry& kept = imported.empires[0].log[imported.empires[0].log.size() - 2];
+    CHECK(kept.classic.kind == 10);
+    CHECK(kept.classic.otherEmpire == EmpireId{1u});
+    CHECK(kept.classic.battle.size() == static_cast<size_t>(kMaxPlayers));
+    const ClassicSave again = exportOrFail(r, imported);
+    const LogRecord& back = again.empires[0].log[again.empires[0].log.size() - 2];
+    CHECK(back.kind == 10);
+    CHECK(back.picture == 3);
+    CHECK(back.otherEmpire == 2);
+    CHECK(back.eventNotice);
+    CHECK(back.eventKind == 4);
+    CHECK(back.techArea == 5);
+    CHECK(back.dateRead == 0);
+    REQUIRE(back.battle.has_value());
+    CHECK(*back.battle == battle);
+    const LogRecord& tech = again.empires[0].log.back();
+    CHECK(tech.kind == 7);
+    CHECK(tech.techArea == 3);
+    CHECK_FALSE(tech.battle.has_value());
+}
+
+TEST_CASE("classic save: a pursuing Attack is kind 11 and an Attack where the group stands kind 8, both ways") {
+    const Rules& r = test::engineRules();
+    GameState s = test::newEngineGame(71, 2, 12, true);
+    test::addHomeShips(s, r);
+    REQUIRE(s.vehicles.size() >= 4);
+    Vehicle* hunter = nullptr;
+    Vehicle* prey = nullptr;
+    Vehicle* still = nullptr;
+    for (Vehicle& v : s.vehicles) {
+        if (v.owner == EmpireId{0u} && !hunter) hunter = &v;
+        else if (v.owner == EmpireId{0u} && !still) still = &v;
+        else if (v.owner == EmpireId{1u} && !prey) prey = &v;
+    }
+    REQUIRE(hunter);
+    REQUIRE(prey);
+    REQUIRE(still);
+    Order pursue;
+    pursue.kind = OrderKind::Attack;
+    pursue.vehicle = prey->id;
+    hunter->orders = {pursue};
+    Order here;
+    here.kind = OrderKind::Attack;
+    still->orders = {here};
+    const uint32_t hunterSlot = hunter->slot, preySlot = prey->slot, stillSlot = still->slot;
+
+    const ClassicSave save = exportOrFail(r, s);
+    const OrderRecord& a = save.objects[hunterSlot].orders.orders.at(0);
+    CHECK(a.kind == 11);
+    CHECK(size_t{a.target} == size_t{preySlot} + 1);
+    CHECK(a.system == save.objects[preySlot].system);
+    CHECK(a.targetName == prey->name);
+    const OrderRecord& h = save.objects[stillSlot].orders.orders.at(0);
+    CHECK(h.kind == 8);
+    CHECK(h.target == 0);
+    CHECK(h.system == 0);
+
+    const GameState t = importOrFail(r, save);
+    const auto bySlotT = bySlot(t);
+    const Order& back = bySlotT.at(hunterSlot)->orders.at(0);
+    CHECK(back.kind == OrderKind::Attack);
+    REQUIRE(back.vehicle.valid());
+    CHECK(t.vehicle(back.vehicle)->slot == preySlot);
+    const Order& backHere = bySlotT.at(stillSlot)->orders.at(0);
+    CHECK(backHere.kind == OrderKind::Attack);
+    CHECK_FALSE(backHere.vehicle.valid());
+    CHECK_FALSE(backHere.object.valid());
+    CHECK_FALSE(backHere.location.system.valid());
+}
+
+TEST_CASE("classic save: Launch and Recover name the unit kind as Load does") {
+    const Rules& r = test::engineRules();
+    GameState s = test::newEngineGame(81, 2, 12, true);
+    test::addHomeShips(s, r);
+    const EmpireId me{0u};
+    const DesignId sat = test::addTestDesign(s, r, me, "Probe Sat", "Test Satellite Hull", {"Test Satellite Gun"});
+    const DesignId mine = test::addTestDesign(s, r, me, "Probe Mine", "Test Mine Hull", {"Test Warhead"});
+    const DesignId drone = test::addTestDesign(s, r, me, "Probe Drone", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    const DesignId fighter = test::addTestDesign(s, r, me, "Probe Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    Vehicle* carrier = nullptr;
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == me) carrier = &v;
+    REQUIRE(carrier);
+    auto order = [](OrderKind k, DesignId d) {
+        Order o;
+        o.kind = k;
+        o.design = d;
+        o.amount = -1;
+        return o;
+    };
+    carrier->orders = {order(OrderKind::LaunchUnits, sat), order(OrderKind::LaunchUnits, mine), order(OrderKind::LaunchUnits, drone),
+                       order(OrderKind::RecoverUnits, fighter)};
+    carrier->cargo.units = {{sat, 2}, {mine, 3}, {drone, 1}};
+    const uint32_t slot = carrier->slot;
+    ClassicSave save = exportOrFail(r, s);
+    const auto& orders = save.objects[slot].orders.orders;
+    REQUIRE(orders.size() == 4);
+    CHECK(orders[0].kind == 34);
+    CHECK(orders[0].extra == 5);   // satellites
+    CHECK(orders[1].extra == 4);   // mines
+    CHECK(orders[2].extra == 6);   // drones
+    CHECK(orders[3].kind == 35);
+    CHECK(orders[3].extra == 3);   // fighters
+    // Back: each kind its design; kind 0 (every kind) one order per kind carried.
+    save.objects[slot].orders.orders.push_back({34, 0, 0, 0, 0, {}});
+    const GameState t = importOrFail(r, save);
+    const std::vector<Order>& back = bySlot(t).at(slot)->orders;
+    REQUIRE(back.size() == 4 + 3);
+    CHECK(back[0].design == sat);
+    CHECK(back[1].design == mine);
+    CHECK(back[2].design == drone);
+    CHECK(back[3].kind == OrderKind::RecoverUnits);
+    CHECK(r.hull(t.design(back[3].design).hull).type == ruleset::VehicleType::Fighter);
+    std::set<DesignId> every;
+    for (size_t k = 4; k < back.size(); ++k) {
+        CHECK(back[k].kind == OrderKind::LaunchUnits);
+        every.insert(back[k].design);
+    }
+    CHECK(every == std::set<DesignId>{sat, mine, drone});
+}
+
+TEST_CASE("classic save: a turn-based export before the player's turn starts gives the movement of its start") {
+    const Rules& r = test::engineRules();
+    GameState s = playedGame(false, 4, 91);
+    const EmpireId player = s.playerTurn.empire;
+    REQUIRE(player.valid());
+    REQUIRE(s.playerTurn.started);
+    // Started: the movement left as it is.
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == player && v.count > 0) v.movement = 0;
+    ClassicSave started = exportOrFail(r, s);
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == player && v.count > 0 && started.objects[v.slot].objectClass() == ObjectClass::Ship)
+            CHECK(started.objects[v.slot].movement == 0);
+    // Not started: what the start of the turn gives.
+    s.playerTurn.started = false;
+    const ClassicSave waiting = exportOrFail(r, s);
+    size_t checked = 0;
+    for (const auto& [id, points] : movement::refilledMovement(r, s, player)) {
+        const Vehicle* v = s.vehicle(id);
+        if (waiting.objects[v->slot].objectClass() != ObjectClass::Ship) continue;
+        CHECK(int{waiting.objects[v->slot].movement} == points);
+        checked += points > 0;
+    }
+    CHECK(checked > 0);
+}
+
 // ---- Errors -----------------------------------------------------------------------------------------------------
 
 TEST_CASE("classic save: damaged files and other data sets give clear messages") {
@@ -803,7 +1246,7 @@ bool explained(const std::string& line) {
                  R"(^empire \d+ > computer player > (ship-name index|unused|drone name counter|enemy capability|incursion system))",
                  R"(^empire \d+ > computer player > (anger|turns since war)( #\d+)?: )",                    // own entry and absent players
                  R"(^empire \d+ > empire options > (turn end system|turn end sector|sort key|set queue tab|designs tab|politics tab|colonies tab|cargo transfer tab|units transfer tab|designs statistics view|designs hide obsolete|galaxy names|galaxy distances|pause|unused))",
-                 R"(^empire \d+ > log entry)",                                                                 // generic entries (§7.3)
+                 R"(^empire \d+ > log entry \d+ > date read:)",                                             // written unread (§3.6.11)
                  R"(^empire \d+ > queue template)",                                                            // not held (§3.6.6)
                  R"(^empire \d+ > intelligence > project \d+ > specific target)",                           // system targets (now any)
                  R"(^empire \d+ > fleet)",                                                                     // free slots close up
@@ -879,6 +1322,13 @@ TEST_CASE("classic save: the original's saves import, play on and export again (
         auto save = decodeClassicSave(*bytes, r->data().racialTraits.size());
         REQUIRE_MESSAGE(save.has_value(), (save ? std::string{} : save.error()));
         checkInvariants(*r, *save);
+        // Saves that carry the data-set checksums carry the installed data set's (§3.2.1).
+        const DataSetChecksums& stored = save->options.checksums;
+        if (std::any_of(stored.begin(), stored.end(), [](int32_t v) { return v != 0; })) {
+            auto sums = dataSetChecksums(r->data().dataDir);
+            REQUIRE(sums.has_value());
+            CHECK(stored == *sums);
+        }
         // The counts of spec 08 §8 for the two saves it describes.
         std::map<int, size_t> classes;
         size_t colonies = 0;
@@ -1012,4 +1462,28 @@ TEST_CASE("classic save: a game of the original is played on, saved, loaded and 
         auto written = writeFileAtomic(keep, *bytes);
         CHECK(written.has_value());
     }
+}
+
+// The seven checksums computed from the installed data set are those of every
+// save of the original that carries them (opt-in: OPENSE4_CLASSIC_DATA, and
+// OPENSE4_ORIGINAL_SAVES or a save in the install's SaveGame folder).
+TEST_CASE("classic save: the installed data set's checksums are the original's (opt-in)") {
+    const Rules* r = installRules();
+    if (!r) return;
+    auto sums = dataSetChecksums(r->data().dataDir);
+    REQUIRE_MESSAGE(sums.has_value(), (sums ? std::string{} : sums.error()));
+    size_t carried = 0;
+    for (const std::filesystem::path& file : originalSaves(*r)) {
+        INFO(file.filename().string());
+        auto bytes = readFileBytes(file);
+        REQUIRE(bytes.has_value());
+        auto save = decodeClassicSave(*bytes, r->data().racialTraits.size());
+        REQUIRE(save.has_value());
+        const DataSetChecksums& stored = save->options.checksums;
+        if (std::all_of(stored.begin(), stored.end(), [](int32_t v) { return v == 0; })) continue;
+        ++carried;
+        CHECK(stored == *sums);
+    }
+    if (carried == 0) MESSAGE("no save with data-set checksums found: set OPENSE4_ORIGINAL_SAVES");
+    MESSAGE("saves with the data-set checksums: " << carried);
 }

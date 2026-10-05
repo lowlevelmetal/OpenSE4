@@ -10,6 +10,7 @@
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
 #include "game/design.hpp"
+#include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
@@ -44,6 +45,7 @@ public:
         if (!error_.empty()) return std::unexpected(error_);
         numberObjects();
         numberFleets();
+        startOfTurnMovement();
         out_.keys = drawKeys(options_.keySeed);
         out_.version = std::string(kVersion);
         out_.traitCount = d_.racialTraits.size();
@@ -74,6 +76,23 @@ private:
     std::vector<std::vector<FleetId>> fleetsOf_;     // per empire, in number order
     std::map<std::string, int> counts_;
     size_t replaced_ = 0;
+    std::map<uint32_t, int> refilled_;               // per VehicleId value: movement after the start-of-turn refill
+
+    // A turn-based game whose current player's turn has not started: the
+    // original resumes inside that turn and never refills on loading, so the
+    // player's vehicles get the movement the start of the turn gives them
+    // (§9.1). Their orders are carried out at the next turn's start.
+    void startOfTurnMovement() {
+        if (s_.options.simultaneous) return;
+        const EmpireId cur = currentPlayer();
+        if (s_.playerTurn.empire == cur && s_.playerTurn.started) return;
+        for (const auto& [id, points] : movement::refilledMovement(r_, s_, cur)) refilled_[id.value] = points;
+        if (!refilled_.empty()) count("vehicles given their start-of-turn movement (the player's turn had not started)", static_cast<int>(refilled_.size()));
+    }
+    int movementOf(const Vehicle& v) const {
+        const auto it = refilled_.find(v.id.value);
+        return it != refilled_.end() ? it->second : v.movement;
+    }
 
     void fail(std::string why) {
         if (error_.empty()) error_ = std::move(why);
@@ -225,8 +244,19 @@ private:
         o.turnBased = !g.simultaneous;
         o.simultaneous = g.simultaneous;
         // A simultaneous game's host saves under its game name (§1.1): the
-        // name of the file written (inferred, §11.1).
+        // name of the file written (§11.1 Q15).
         if (g.simultaneous) o.gameName = text(options_.gameName);
+        // The data-set checksums, without which no player signs in to a
+        // simultaneous game (§3.2.1, §7.3).
+        if (auto sums = dataSetChecksums(d_.dataDir)) {
+            o.checksums = *sums;
+        } else {
+            o.checksums = {};
+            if (g.simultaneous)
+                report_.note(std::format("The data-set checksums could not be computed ({}): players can sign in to this game in the original only "
+                                         "after its host has processed a turn.",
+                                         sums.error()));
+        }
 
         const VictoryConditions& w = g.victory;
         Victory& v = out_.victory;
@@ -631,12 +661,43 @@ private:
             rec.text = text(l.text);
             rec.target = gotoCode(l.target);
             rec.category = static_cast<uint8_t>(static_cast<uint8_t>(l.category) + 1);
-            rec.dateRead = rec.date;
-            rec.kind = 36;   // a generic entry: no picture key, not counted by the computer players (§3.6.11)
+            // Unread: the original's Log lists only entries read never or this
+            // turn (§3.6.11, observed).
+            rec.dateRead = 0;
+            if (l.classic.kind != 0) {
+                // An entry imported from the original: what it came with (§7.3).
+                const ClassicLogFields& c = l.classic;
+                rec.kind = c.kind;
+                rec.owner = c.owner;
+                rec.system = c.system;
+                rec.sector = c.sector;
+                rec.picture = c.pictureKey;
+                rec.otherEmpire = player(c.otherEmpire);
+                rec.eventNotice = c.eventNotice;
+                rec.eventKind = c.eventKind;
+                rec.techArea = c.techArea;
+                if (c.battle.size() == static_cast<size_t>(kMaxPlayers)) {
+                    BattleRecord& b = rec.battle.emplace();
+                    b.number = c.battleNumber;
+                    for (size_t i = 0; i < b.sides.size(); ++i) {
+                        const ClassicBattleSide& from = c.battle[i];
+                        BattleSide& to = b.sides[i];
+                        to.player = from.player;
+                        to.tookPart = from.tookPart;
+                        for (const ClassicBattleShip& sh : from.forces) to.forces.push_back({text(sh.name), text(sh.hullCode), sh.hull});
+                        for (const ClassicBattleSurvivor& sv : from.survivors) to.survivors.push_back({text(sv.name), sv.damage});
+                    }
+                }
+            } else {
+                rec.kind = 36;   // a generic entry: no picture key, not counted by the computer players (§3.6.11)
+            }
             if (const DiplomaticMessage* m = l.message.valid() ? findMessage(l.message) : nullptr; m && m->to == e.id) {
                 rec.kind = 19;
                 rec.message = message(*m);
                 written.insert(m->id.value);
+            } else if (rec.kind == 19) {
+                rec.kind = 36;   // its message is answered or gone: no record to write
+                rec.picture = 0;
             }
             return rec;
         };
@@ -666,9 +727,9 @@ private:
         rec.sender = player(m.from);
         rec.recipient = player(m.to);
         rec.tone = static_cast<uint8_t>(std::clamp(m.tone, 0, 2) + 1);
+        // Treaty proposals and their answers name one; a broken treaty names none (observed).
         const bool treatyMessage = m.type == MessageType::ProposeTreaty || m.type == MessageType::AcceptTreaty ||
-                                   m.type == MessageType::RefuseTreaty || m.type == MessageType::CounterTreaty ||
-                                   m.type == MessageType::BreakTreaty;
+                                   m.type == MessageType::RefuseTreaty || m.type == MessageType::CounterTreaty;
         rec.treaty = treatyMessage || m.treaty != Treaty::None ? treatyCode(m.treaty) : 0;
         rec.third = player(m.thirdEmpire);
         rec.system = sys(m.system);
@@ -940,7 +1001,7 @@ private:
             const Design& d = s_.design(v.design);
             o.design = designId(v.design);
             o.heading = kHeadingCode[v.heading & 7u];
-            o.movement = clampByte(v.movement);
+            o.movement = clampByte(movementOf(v));
             o.maxMovement = clampByte(vehicleMaxMovement(r_, s_, v));   // trusted as stored (§7.2)
             o.supply = clampInt(v.supply);
             o.status = v.status == VehicleStatus::Mothballed ? 3 : 0;
@@ -962,7 +1023,7 @@ private:
         }
         o.units = units(groupStacks(v));
         if (c == ObjectClass::FighterGroup || c == ObjectClass::DroneGroup) {
-            o.movement = clampByte(v.movement);
+            o.movement = clampByte(movementOf(v));
             o.maxMovement = clampByte(vehicleMaxMovement(r_, s_, v));
             o.supply = clampInt(v.supply);
             o.heading = kHeadingCode[v.heading & 7u];
@@ -1008,7 +1069,8 @@ private:
         };
         auto unitKind = [&](DesignId d) -> uint8_t {
             if (!d.valid() || d.index() >= s_.designs.size()) return 0;
-            return unitKindOf(r_.hull(s_.design(d).hull).type);
+            // The cargo-kind numbering of Load and Drop (§3.8.8, Q16).
+            return cargoKindOf(r_.hull(s_.design(d).hull).type);
         };
         switch (o.kind) {
             case OrderKind::MoveTo: rec.kind = 1; place(o.location); break;
@@ -1034,10 +1096,19 @@ private:
                 break;
             }
             case OrderKind::Attack:
-                rec.kind = 8;
-                if (o.vehicle.valid()) targetVehicle(o.vehicle);
-                else if (o.object.valid()) targetObject(o.object);
-                place(o.location);   // where it was given, when it was
+                // On a target: the pursuit, kind 11 with the target's place and
+                // name. Without one: kind 8, which attacks where the group
+                // stands and names nothing (§3.8.8, Q17).
+                if (o.vehicle.valid()) {
+                    rec.kind = 11;
+                    targetVehicle(o.vehicle);
+                } else if (o.object.valid()) {
+                    rec.kind = 11;
+                    targetObject(o.object);
+                } else {
+                    rec.kind = 8;
+                    if (o.location.system.valid()) count("Attack orders on a place (now where the group stands)");
+                }
                 break;
             case OrderKind::Scrap: rec.kind = 9; break;
             case OrderKind::Seek:

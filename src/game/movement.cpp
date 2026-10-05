@@ -34,6 +34,7 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <map>
 #include <climits>
 #include <format>
 #include <optional>
@@ -2078,24 +2079,34 @@ int movesPerTurn(const GameState& s, int speed) {
 namespace {
 
 // Movement points back to the maximum: every vehicle, or one empire's.
-void refillMovement(TurnContext& ctx, std::optional<EmpireId> only) {
-    const Rules& r = ctx.rules;
-    GameState& s = ctx.state;
-    for (Vehicle& v : s.vehicles)
-        if (alive(v) && (!only || v.owner == *only)) v.movement = turnMovement(r, s, v);  // 0 while held by sabotage or an event
+// The movement each vehicle gets at a turn start (of every empire, or of `only`).
+std::vector<std::pair<VehicleId, int>> refill(const Rules& r, const GameState& s, std::optional<EmpireId> only) {
+    std::vector<std::pair<VehicleId, int>> out;
+    std::map<VehicleId, int> movement;
+    for (const Vehicle& v : s.vehicles)
+        if (alive(v) && (!only || v.owner == *only)) movement[v.id] = turnMovement(r, s, v);  // 0 while held by sabotage or an event
     // Fleet members at the fleet's location get the lowest maximum among them (§6.3 step 1).
     for (const Fleet& f : s.fleets) {
         if (only && f.owner != *only) continue;
         const std::vector<VehicleId> here = fleetMembersAt(s, f);
         int lowest = INT_MAX;
-        for (VehicleId id : here) lowest = std::min(lowest, s.vehicle(id)->movement);
-        for (VehicleId id : here) s.vehicle(id)->movement = lowest;
+        for (VehicleId id : here) lowest = std::min(lowest, movement[id]);
+        for (VehicleId id : here) movement[id] = lowest;
     }
+    out.assign(movement.begin(), movement.end());
+    return out;
+}
+
+void refillMovement(TurnContext& ctx, std::optional<EmpireId> only) {
+    for (const auto& [id, points] : refill(ctx.rules, ctx.state, only))
+        if (Vehicle* v = ctx.state.vehicle(id)) v->movement = points;
 }
 
 } // namespace
 
 void startTurn(TurnContext& ctx) { refillMovement(ctx, std::nullopt); }
+
+std::vector<std::pair<VehicleId, int>> refilledMovement(const Rules& r, const GameState& s, EmpireId empire) { return refill(r, s, empire); }
 
 void startTurn(TurnContext& ctx, EmpireId empire) {
     refillMovement(ctx, empire);

@@ -1619,29 +1619,57 @@ Implemented on 2026-10-04 from this spec.
   - Load, Drop, Launch and Recover orders: by kind in the file, by design in OpenSE4. An
     imported order takes the first design of that kind in the vehicle's or colony's cargo
     (a Drop or Launch), else the owner's newest design of that kind; an exported one is
-    written by its design's kind and as much as fits. (Checked on 2026-10-04: the kind
-    of Launch and Recover must use the cargo-kind numbering, §11.1 Q16; and OpenSE4's
-    pursuing Attack must be written as kind 11 and kind 11 read as Attack, §11.1 Q17.)
+    written by its design's kind and as much as fits. Launch and Recover use the
+    cargo-kind numbering both ways (§11.1 Q16); a kind byte of 0 (every kind) becomes one
+    order per kind: a launch for each unit kind the launcher carries, a recovery for
+    fighters and for satellites.
+  - Attack: OpenSE4's Attack on a target (a vehicle or an object) is written as kind 11
+    with the target, its place and its name, and one without a target as kind 8, which
+    names nothing; kind 11 is read as an Attack on its target, kind 8 as an Attack where
+    the group stands, kind 10 as a Move To and kinds 12 and 13 as OpenSE4's one-phase
+    Seek (§11.1 Q17).
   - An imported Colonize order counts as given (its colonists were loaded then); a Use
     Facility position is turned between the grouped list and OpenSE4's own; Abandon Planet
     orders are dropped (OpenSE4 abandons at once).
-  - Log entries: OpenSE4's are written as kind 36 with picture key 0 and the read date
-    equal to the entry's, unanswered messages as kind 19 with their record (a delivered
-    message whose entry the log no longer holds gets one); imported entries keep title,
+  - Log entries are written unread (read date 0, §3.6.11). OpenSE4's are written as kind
+    36 with picture key 0, unanswered messages as kind 19 with their record (a delivered
+    message whose entry the log no longer holds gets one). Imported entries keep title,
     text, place, category and go-to, and a picture from their kind and key where the kind
-    names one (vehicle and facility built, item developed, message). Battle details are not
-    kept, nor written. (Checked on 2026-10-04: the read date must be 0, or the Log hides
-    the entries, §3.6.11; imported entries lose their kind, so their pictures, §9.1.)
+    names one (vehicle and facility built, item developed, message); and they keep what
+    OpenSE4's entries do not hold (`LogEntry::classic`: the kind, the owner, system and
+    sector bytes as written, the picture key, the other empire, the event-style notice, the
+    event kind, the tech area and a combat entry's battle details), which the export writes
+    back. A kept kind 19 whose message is gone is written as kind 36.
   - Turn-based games: the current player's turn counts as started (§11.1 Q14); the
-    closing list (§3.9) is the turn's launch budget. (Checked on 2026-10-04: an export
-    made before the current player's start-of-turn step leaves their vehicles with no
-    movement in the original's first turn, §9.1.)
+    closing list (§3.9) is the turn's launch budget. An export made before the current
+    player's turn has started (OpenSE4 between two players' turns) writes that player's
+    vehicles with the movement the start of the turn gives (`movement::refilledMovement`:
+    each vehicle's maximum, a fleet at its location the slowest member's, nothing while
+    held in place), since the original never refills on loading (§9.1). The turn-based
+    export of §9.1 was made after the player's turn had started: its ships had spent their
+    movement carrying out their Move To orders at the start of that turn (one reached home
+    and resupplied there), so its 0 movement left was OpenSE4's state as well, and is
+    still written as it is.
+  - The data-set checksums (§3.2.1) are computed from the data files the game was played
+    with (`Rules::data().dataDir`, read as written: `classic_save_checksums.cpp`) and
+    written in every export; import computes them too and notes which files differ from a
+    save that carries them.
+  - Facility entries' destroyed counts: import and export 0. OpenSE4's engine keeps the
+    counts per colony (`Colony::destroyedFacilities`) and follows §11.2 for the removal
+    passes it has, those after sabotage and events (`Planet - Facility Damage`); a kind
+    whose last facility goes loses its count (inferred). Battles remove what they
+    destroyed once, as spec 04 §19.1 chose, and do not touch the counts; OpenSE4 has no
+    hazard damage to colonies.
   - Passwords: imported as OpenSE4's check of the trimmed lower-case password; none is
     exported (§7.4). The game master password is dropped.
   - The windows' sort keys are not carried in either direction (§11.1 Q4).
   - Race folders are written as the installed folder is spelt.
 - **Checked in the running original** on 2026-10-04 with seven exports (§9.1): all load
   and play; simultaneous ones need the data-set checksums (§3.2.1) for players to sign in.
+  The fixes of that check (the checksums, the read date, Attack kinds 11 and 8, the
+  Launch and Recover kind byte, the kept log fields, the movement of an export made before
+  the player's turn) followed the same day. The checksums computed from the installed
+  data set are the seven values of every sample save that carries them (five saves).
 - **Checked** on the 24 saves this spec was checked with (§8): every one decodes to the end,
   meets §8's invariants and counts, imports into a state that `validateState` accepts and
   that plays on without desync, and is written again with only the differences listed

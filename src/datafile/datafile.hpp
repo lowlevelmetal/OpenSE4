@@ -22,6 +22,7 @@ struct Field {
     std::string key;    // trimmed
     std::string value;  // trimmed, may be empty
     int line = 0;       // 1-based line number in the file
+    std::string raw;    // the value as written, untrimmed (without the line end)
 };
 
 struct Record {

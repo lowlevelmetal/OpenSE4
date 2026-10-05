@@ -18,6 +18,7 @@
 // the only floating-point step, done in the exact x87 emulation of
 // xmath.hpp, never in the host's floating point.
 
+#include "datafile/datafile.hpp"
 #include "game/state.hpp"
 #include "game/xmath.hpp"
 
@@ -704,6 +705,39 @@ std::string describe(const ClassicSave& save);
 // Differences between two decoded files, field by field ("empire 2 > log
 // entry 3 > kind: 4 != 36"), at most `limit` lines. Keys are ignored.
 std::vector<std::string> compareSaves(const ClassicSave& a, const ClassicSave& b, size_t limit = 200);
+
+// ---- The data-set checksums (§3.2.1) ---------------------------------------------------------------
+
+// Components, facilities, vehicle sizes, planet sizes, tech areas, mounts and
+// racial traits, in the options' order (§3.2).
+using DataSetChecksums = std::array<int32_t, 7>;
+// The seven data files they are summed over, as written.
+struct ChecksumFiles {
+    datafile::DataFile components, facilities, vehicleSizes, planetSizes, techAreas, mounts, racialTraits;
+};
+DataSetChecksums dataSetChecksums(const ChecksumFiles& files);
+// From a data folder (Rules::data().dataDir): the files OpenSE4 played with.
+std::expected<DataSetChecksums, std::string> dataSetChecksums(const std::filesystem::path& dataDir);
+
+// The pieces of §3.2.1, for tests: one record's terms (`position` is 1-based)
+// and the shared terms.
+namespace checksum {
+int64_t textLength(std::string_view utf8);
+int64_t cost(const datafile::Record& r);
+int64_t requirements(const datafile::Record& r, const datafile::DataFile& techAreas);
+int64_t abilities(const datafile::Record& r);
+int64_t damages(std::string_view raw);
+int64_t weaponTypeCode(std::string_view name);
+int64_t damageTypeCode(std::string_view name);
+int64_t traitTypeCode(std::string_view name);
+int32_t component(const datafile::Record& r, size_t position, const datafile::DataFile& techAreas);
+int32_t facility(const datafile::Record& r, size_t position, const datafile::DataFile& techAreas);
+int32_t vehicleSize(const datafile::Record& r, size_t position, const datafile::DataFile& techAreas);
+int32_t planetSize(const datafile::Record& r, size_t position);
+int32_t techArea(const datafile::Record& r, size_t position, const datafile::DataFile& techAreas);
+int32_t mount(const datafile::Record& r, size_t position);
+int32_t racialTrait(const datafile::Record& r, size_t position, const datafile::DataFile& traits);
+} // namespace checksum
 
 // The design type code of §3.7 for a design type name (one of the 39 the
 // computer players know); nullopt for another name.

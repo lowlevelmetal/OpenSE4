@@ -187,7 +187,9 @@ games back in its format, so a game can move between the two. The format is desc
   To play it there, copy the `.gam` file (and the files beside it named after it) into the
   original's `SaveGame` folder, or open that folder with the original's Change Directory.
   OpenSE4's own saves of the game are not changed. Network and play-by-e-mail games cannot
-  be saved this way: a player's copy holds only what that player knows.
+  be saved this way: a player's copy holds only what that player knows. The file carries
+  the data set's checksums, which the original compares when a player signs in to a
+  simultaneous game, so it must be played with the same data files there.
 - **On the command line,** `opense4-convert` converts in both directions and describes a
   saved game of the original (see docs/BUILDING.md, "Tools"):
 
@@ -222,7 +224,7 @@ What does not, or only approximately:
 | Load, drop, launch and recover orders act on all units of a kind in the original; in OpenSE4 they name one design of that kind | They act on every unit of the design's kind |
 | The computer players start with partly empty memories (OpenSE4 keeps more about each empire than the original's file holds) | OpenSE4's additional memory is not written |
 | The random numbers start again from the game's seed, as in the original after every load | The same: the original's next turn differs from OpenSE4's |
-| Combat log entries keep their text but not their battle details; when treaties were signed, colonies founded and ships built is not stored | Log entries are written as plain entries, without pictures or battle details; OpenSE4's combat records are not written |
+| Combat log entries show their text but not their battle details (they are kept and written back to the original); when treaties were signed, colonies founded and ships built is not stored | OpenSE4's own log entries are written as plain entries, without pictures or battle details, and OpenSE4's combat records are not written; entries that came from the original keep theirs |
 | A warp point that leads to a sector without a warp point (the original allows one-way links) leads nowhere | Ships keep only destroyed or intact parts: partial damage is lost |
 | Saved construction queue templates, the game master password and the window sort orders are dropped | Passwords are not written (OpenSE4 keeps only a check of them): every empire is open in the original until you set new ones there with Change Password |
 | Passwords carry over; type them in lower case | Messages not yet delivered, and Explore, Resupply, Repair, Cloak and Decloak orders still in a list, are not written |

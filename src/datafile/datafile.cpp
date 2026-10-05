@@ -109,7 +109,9 @@ DataFile parse(std::string_view text, std::string name) {
         if (trim(line).starts_with("*END*")) break;
         const size_t sep = line.find(":=");
         if (sep == std::string_view::npos) continue;
-        Field field{latin1ToUtf8(trim(line.substr(0, sep))), latin1ToUtf8(trim(line.substr(sep + 2))), static_cast<int>(i + 1)};
+        std::string_view raw = line.substr(sep + 2);
+        if (!raw.empty() && raw.back() == '\r') raw.remove_suffix(1);
+        Field field{latin1ToUtf8(trim(line.substr(0, sep))), latin1ToUtf8(trim(raw)), static_cast<int>(i + 1), latin1ToUtf8(raw)};
         if (field.key.empty()) continue;
         if (firstKey.empty()) firstKey = field.key;
         if (file.records.empty() || keysEqual(field.key, firstKey)) file.records.push_back(Record{{}, field.line});

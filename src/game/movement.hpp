@@ -239,6 +239,10 @@ struct LiveMove {
 // and the turn's records of steps, emergency movement and launches
 // (GameState::playerTurn) start afresh.
 void startTurn(TurnContext& ctx, EmpireId empire);
+// The movement points startTurn would give the empire's vehicles, without
+// changing the game (the export of a turn-based game whose player's turn has
+// not started, docs/spec/08 §9.1), by vehicle.
+std::vector<std::pair<VehicleId, int>> refilledMovement(const Rules& r, const GameState& s, EmpireId empire);
 
 // Turn-based games: the groups carry out their orders at once, spending
 // movement points, action after action until each has no movement left,
