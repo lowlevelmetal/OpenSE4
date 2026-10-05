@@ -17,6 +17,7 @@
 #include "ruleset/ruleset.hpp"
 
 #include <cstdio>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
@@ -113,8 +114,64 @@ int run(const Options& o) {
         std::printf("%zu differences\n", diff.size());
         return diff.empty() ? 0 : 3;
     }
-    std::fprintf(stderr, "conversion is not available yet\n");
-    return 2;
+    const std::string& in = o.files[0];
+    const std::string& out = o.files[1];
+    auto bytes = game::readFileBytes(in);
+    if (!bytes) {
+        std::fprintf(stderr, "%s\n", bytes.error().c_str());
+        return 1;
+    }
+    const bool original = game::classic::looksLikeClassicSave(*bytes);
+    game::classic::ConversionReport report;
+    game::GameState state;
+    std::string gameName = std::filesystem::path(in).stem().string();
+    if (original) {
+        auto imported = game::classic::readClassicGame(*rules, in, report);
+        if (!imported) {
+            std::fprintf(stderr, "%s\n", imported.error().c_str());
+            return 1;
+        }
+        state = std::move(*imported);
+    } else {
+        auto loaded = game::loadGame(in);
+        if (!loaded) {
+            std::fprintf(stderr, "%s\n", loaded.error().c_str());
+            return 1;
+        }
+        if (!loaded->second.gameName.empty()) gameName = loaded->second.gameName;
+        if (o.to == "opense4") {
+            std::fprintf(stderr, "%s is already an OpenSE4 saved game.\n", in.c_str());
+            return 1;
+        }
+        state = std::move(loaded->first);
+    }
+    if (std::string problem = game::validateState(state, rules.get()); !problem.empty()) {
+        std::fprintf(stderr, "%s: the game does not fit the data set: %s\n", in.c_str(), problem.c_str());
+        return 1;
+    }
+    if (o.to == "opense4") {
+        game::SaveInfo info;
+        info.gameName = gameName;
+        info.dataSet = rules->data().dataDir.parent_path().filename().string();
+        if (auto saved = game::saveGame(out, state, info); !saved) {
+            std::fprintf(stderr, "%s\n", saved.error().c_str());
+            return 1;
+        }
+        std::printf("Imported %s (%s, %zu empires) into %s.\n", in.c_str(), game::classic::describeDate(state.turn).c_str(), state.empires.size(),
+                    out.c_str());
+    } else {
+        game::classic::ExportOptions options;
+        options.keySeed = o.seed ? *o.seed : std::random_device{}();
+        options.gameName = std::filesystem::path(out).stem().string();
+        if (auto written = game::classic::writeClassicGame(*rules, state, out, report, options); !written) {
+            std::fprintf(stderr, "%s\n", written.error().c_str());
+            return 1;
+        }
+        std::printf("Exported %s (%s, %zu empires) to %s.\n", in.c_str(), game::classic::describeDate(state.turn).c_str(), state.empires.size(),
+                    out.c_str());
+    }
+    printReport(report, o.verbose);
+    return 0;
 }
 
 } // namespace

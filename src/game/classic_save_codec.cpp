@@ -85,6 +85,58 @@ private:
 
 constexpr uint8_t kTagInt8 = 2, kTagInt16 = 3, kTagInt32 = 4, kTagFloat = 5, kTagString = 6, kTagFalse = 8, kTagTrue = 9, kTagLongString = 12;
 
+} // namespace
+
+// The file's text is Latin-1 (§2.5); OpenSE4's strings are UTF-8.
+std::string latin1ToUtf8(std::string_view latin1) {
+    std::string out;
+    out.reserve(latin1.size());
+    for (char c : latin1) {
+        const auto u = static_cast<unsigned char>(c);
+        if (u < 0x80) {
+            out += c;
+        } else {
+            out += static_cast<char>(0xC0 | (u >> 6));
+            out += static_cast<char>(0x80 | (u & 0x3F));
+        }
+    }
+    return out;
+}
+
+std::string utf8ToLatin1(std::string_view utf8, size_t* replaced) {
+    std::string out;
+    out.reserve(utf8.size());
+    for (size_t i = 0; i < utf8.size();) {
+        const auto b = static_cast<unsigned char>(utf8[i]);
+        size_t len = b < 0x80 ? 1 : (b >> 5) == 0x6 ? 2 : (b >> 4) == 0xE ? 3 : (b >> 3) == 0x1E ? 4 : 0;
+        bool valid = len > 0 && i + len <= utf8.size();
+        uint32_t cp = len == 1 ? b : len == 2 ? (b & 0x1Fu) : len == 3 ? (b & 0x0Fu) : (b & 0x07u);
+        for (size_t k = 1; valid && k < len; ++k) {
+            const auto c = static_cast<unsigned char>(utf8[i + k]);
+            if ((c & 0xC0) != 0x80) valid = false;
+            cp = (cp << 6) | (c & 0x3Fu);
+        }
+        if (!valid) {
+            // Not UTF-8: the byte as it is.
+            out += static_cast<char>(b);
+            ++i;
+            continue;
+        }
+        if (cp <= 0xFF) {
+            out += static_cast<char>(cp);
+        } else {
+            out += '?';
+            if (replaced) ++*replaced;
+        }
+        i += len;
+    }
+    return out;
+}
+
+std::string latin1Safe(std::string_view utf8, size_t* replaced) { return latin1ToUtf8(utf8ToLatin1(utf8, replaced)); }
+
+namespace {
+
 // ---- Reading ---------------------------------------------------------------------------------------------
 
 class Decoder {
@@ -200,9 +252,10 @@ public:
             failAt_ = pos_;
             return fail(std::format("{} is longer ({} characters) than the rest of the file", name, n));
         }
-        v.resize(n);
-        for (size_t i = 0; i < n; ++i) v[i] = static_cast<char>(in_[pos_ + i] ^ keys_->character());
+        std::string raw(n, '\0');
+        for (size_t i = 0; i < n; ++i) raw[i] = static_cast<char>(in_[pos_ + i] ^ keys_->character());
         pos_ += n;
+        v = latin1ToUtf8(raw);
     }
     // Plain characters (the version string has a tag and keys; the summary does not).
     void text(std::string& v, size_t n, const char* name) {
@@ -304,14 +357,15 @@ public:
         out_.push_back(v != even ? kTagTrue : kTagFalse);
     }
     void str(std::string& v, const char*) {
-        if (v.size() < 256) {
+        const std::string t = utf8ToLatin1(v, nullptr);
+        if (t.size() < 256) {
             out_.push_back(kTagString);
-            out_.push_back(static_cast<uint8_t>(v.size()));
+            out_.push_back(static_cast<uint8_t>(t.size()));
         } else {
             out_.push_back(kTagLongString);
-            putU32(static_cast<uint32_t>(v.size()));
+            putU32(static_cast<uint32_t>(t.size()));
         }
-        for (char c : v) out_.push_back(static_cast<uint8_t>(static_cast<uint8_t>(c) ^ keys_->character()));
+        for (char c : t) out_.push_back(static_cast<uint8_t>(static_cast<uint8_t>(c) ^ keys_->character()));
     }
     void text(std::string& v, size_t n, const char*) {
         std::string t = v;
@@ -1239,9 +1293,9 @@ std::expected<Summary, std::string> parseSummary(std::string_view head, std::str
         const std::string_view r = rows.substr(static_cast<size_t>(i) * kSummaryRow, kSummaryRow);
         SummaryRow row;
         row.number = parseSmall(r.substr(0, 3));
-        row.name = trim(r.substr(3, 40));
-        row.leader = trim(r.substr(43, 40));
-        row.email = trim(r.substr(83, 40));
+        row.name = latin1ToUtf8(trim(r.substr(3, 40)));
+        row.leader = latin1ToUtf8(trim(r.substr(43, 40)));
+        row.email = latin1ToUtf8(trim(r.substr(83, 40)));
         row.alive = trim(r.substr(123, 6)) != "Dead";
         s.rows.push_back(std::move(row));
     }
@@ -1255,7 +1309,8 @@ std::string summaryText(const Summary& s) {
                       fit(s.simultaneous ? "Simultaneous " : "Turn Based   ", 13) +
                       fit(s.differentMachines ? "Different Machines  " : "Same Machine        ", 20) + fit(std::to_string(s.humans), 3);
     for (const SummaryRow& r : s.rows)
-        out += fit(std::to_string(r.number), 3) + fit(r.name, 40) + fit(r.leader, 40) + fit(r.email, 40) + fit(r.alive ? "Alive " : "Dead  ", 6);
+        out += fit(std::to_string(r.number), 3) + fit(utf8ToLatin1(r.name, nullptr), 40) + fit(utf8ToLatin1(r.leader, nullptr), 40) +
+               fit(utf8ToLatin1(r.email, nullptr), 40) + fit(r.alive ? "Alive " : "Dead  ", 6);
     return out;
 }
 
@@ -1422,6 +1477,8 @@ std::expected<std::vector<uint8_t>, std::string> encodeClassicSave(const Classic
 }
 
 // ---- Describe and compare ----------------------------------------------------------------------------------------------
+
+std::string describeDate(uint32_t turn) { return std::format("{}.{}", 2400 + turn / 10, turn % 10); }
 
 std::string describe(const ClassicSave& s) {
     std::string out;

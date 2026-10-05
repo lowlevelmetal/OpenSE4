@@ -324,7 +324,7 @@ struct EmpireOptions {
             cargoTransferTab = 3, unitsTransferTab = 3;
     std::array<bool, 3> shipsShown{true, true, true};
     std::array<bool, 4> queuesShown{true, true, true, true};
-    bool designerCondensed = false, designerToHit = false, galaxyNames = true, galaxyDistances = false, planetsHideAvoided = false,
+    bool designerCondensed = false, designerToHit = false, galaxyNames = false, galaxyDistances = false, planetsHideAvoided = false,
          simulatorNoObsolete = false, systemGrid = false;
     bool replayFast = false, replayAnimate = true, replayGrid = false, replayViewRect = true;
     // Slot k (0..4) of the sort-key history: Colonies, Planets, Ships\Units, Construction Queues.
@@ -484,7 +484,7 @@ struct EmpireRecord {
     std::array<uint8_t, kMaxPlayers> anger{};
     std::array<uint16_t, kMaxPlayers> turnsSinceWar{};
     uint8_t zero = 0;
-    std::array<uint8_t, 7> unused7{};
+    std::array<uint8_t, 7> unused7{0, 0, 0, 1, 1, 1, 0};   // as the original writes them (observed)
     uint16_t shipNameIndex = 0;
     std::array<bool, 8> enemyCapabilities{};
     uint16_t droneNameCounter = 0;
@@ -649,8 +649,15 @@ struct KeyRows {
 };
 KeyRows keyRows(const Keys& keys, size_t n);
 
-// The plain-text summary block of §2.6, laid out.
+// The plain-text summary block of §2.6, laid out (Latin-1).
 std::string summaryText(const Summary& s);
+
+// Text: the file holds Latin-1, the model and OpenSE4 UTF-8. A character
+// Latin-1 lacks becomes '?' (counted in `replaced`).
+std::string latin1ToUtf8(std::string_view latin1);
+std::string utf8ToLatin1(std::string_view utf8, size_t* replaced);
+// UTF-8 holding only characters Latin-1 has.
+std::string latin1Safe(std::string_view utf8, size_t* replaced);
 
 // ---- Import and export -------------------------------------------------------------------------------------------
 
@@ -672,6 +679,9 @@ std::expected<GameState, std::string> importClassicSave(const Rules& rules, cons
 
 struct ExportOptions {
     uint64_t keySeed = 0;     // draws the keys (drawKeys)
+    // A simultaneous game's name, which its host saves under (§1.1);
+    // writeClassicGame uses the file's name when this is empty.
+    std::string gameName;
 };
 std::expected<ClassicSave, std::string> exportClassicSave(const Rules& rules, const GameState& s, ConversionReport& report,
                                                           const ExportOptions& options = {});
@@ -680,6 +690,9 @@ std::expected<ClassicSave, std::string> exportClassicSave(const Rules& rules, co
 std::expected<GameState, std::string> readClassicGame(const Rules& rules, const std::filesystem::path& file, ConversionReport& report);
 std::expected<void, std::string> writeClassicGame(const Rules& rules, const GameState& s, const std::filesystem::path& file,
                                                   ConversionReport& report, const ExportOptions& options = {});
+
+// "2400.3" for GameState::turn 3.
+std::string describeDate(uint32_t turn);
 
 // A readable summary of a decoded file (the converter's --info): versions,
 // date, empires, counts per section and object class.
