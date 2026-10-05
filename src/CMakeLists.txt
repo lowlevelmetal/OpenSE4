@@ -22,18 +22,29 @@ add_custom_command(
     DEPENDS ${script_library_paths} "${CMAKE_SOURCE_DIR}/cmake/EmbedPython.cmake"
     COMMENT "Embedding the script runtime's Python modules"
     VERBATIM)
+# The port is our C code: our warnings, in their C form on MSVC (/permissive- is C++).
+add_library(opense4_script_port OBJECT script/port/port.c)
+target_link_libraries(opense4_script_port PRIVATE opense4_micropython)
+set_target_properties(opense4_script_port PROPERTIES C_STANDARD 11)
+if(MSVC)
+    target_compile_options(opense4_script_port PRIVATE /W4 /utf-8 $<$<BOOL:${OPENSE4_WARNINGS_AS_ERRORS}>:/WX>)
+    target_compile_definitions(opense4_script_port PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+    target_link_libraries(opense4_script_port PRIVATE opense4_warnings)
+endif()
 add_library(opense4_script STATIC
     script/json.cpp
-    script/port/port.c
     script/runtime.cpp
     script/value.cpp
-    "${script_library_cpp}")
+    "${script_library_cpp}"
+    $<TARGET_OBJECTS:opense4_script_port>)
 target_include_directories(opense4_script PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(opense4_script PRIVATE opense4_micropython opense4_warnings)
 if(OPENSE4_ASAN_STACK_OPTION)
     # Python objects held in the runtime's own frames must be on the real stack
     # (cmake/MicroPython.cmake).
     target_compile_options(opense4_script PRIVATE ${OPENSE4_ASAN_STACK_OPTION})
+    target_compile_options(opense4_script_port PRIVATE ${OPENSE4_ASAN_STACK_OPTION})
 endif()
 
 # --- embedded: our own fonts and learning content built into the executable ---------
