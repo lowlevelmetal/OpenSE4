@@ -51,6 +51,8 @@ size_t ose_heap_used(void);
 // --- Running code ---------------------------------------------------------------------
 // Runs fn(ctx); returns 0, or 1 with the Python exception in *exception.
 int ose_protect(void (*fn)(void *ctx), void *ctx, ose_obj *exception);
+// Before each call of the engine's into scripts: resets what one call counts.
+void ose_begin_call(void);
 
 // Inside ose_protect: imports a module ("ai.strategy") and returns it.
 ose_obj ose_import(const char *module);

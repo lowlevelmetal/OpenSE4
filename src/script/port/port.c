@@ -580,6 +580,14 @@ size_t ose_heap_used(void) {
     return info.used;
 }
 
+void ose_begin_call(void) {
+    mp_opense4_depth = 0;
+    // the budget exception is one object: its traceback starts afresh each call
+    if (ose.budget_exception != MP_OBJ_NULL) {
+        mp_obj_exception_clear_traceback(ose.budget_exception);
+    }
+}
+
 int ose_protect(void (*fn)(void *ctx), void *ctx, ose_obj *exception) {
     if (ose.protect_depth++ == 0) {
         mp_opense4_depth = 0;

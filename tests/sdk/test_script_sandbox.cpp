@@ -69,6 +69,20 @@ TEST_CASE("script sandbox: the budget stops an endless loop at the same bytecode
     CHECK(reached[0] == 200000);   // five bytecodes per iteration
 }
 
+TEST_CASE("script sandbox: each exhausted budget has its own traceback") {
+    auto interp = makeInterpreter();
+    REQUIRE(interp->addFile("loops.py", "def first():\n    while True:\n        pass\n\n\ndef second():\n    while True:\n        pass\n").has_value());
+    CallOptions call;
+    call.budget = 10'000;
+    auto a = interp->call("loops", "first", {}, call);
+    auto b = interp->call("loops", "second", {}, call);
+    REQUIRE_FALSE(a.has_value());
+    REQUIRE_FALSE(b.has_value());
+    CHECK(a.error().traceback.find("in first") != std::string::npos);
+    CHECK(b.error().traceback.find("in second") != std::string::npos);
+    CHECK(b.error().traceback.find("in first") == std::string::npos);
+}
+
 TEST_CASE("script sandbox: the interpreter's budget runs out for good") {
     Limits limits;
     limits.budget = 50'000;

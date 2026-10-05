@@ -817,6 +817,7 @@ Result<Value> execute(Interpreter::Impl& impl, Run& run, const CallOptions& opti
 
     char stackTop = 0;
     ose_enter(&stackTop, impl.limits.cStackBytes);
+    ose_begin_call();
     ose_obj exception = nullptr;
     int status = ose_protect(&runProtected, &run, &exception);
     int64_t leftAtEnd = status != 0 && run.phase == Phase::Script ? ose_budget_get() : run.budgetAtEnd;
