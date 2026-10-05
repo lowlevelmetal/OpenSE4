@@ -188,6 +188,9 @@ notices() {  # notices <build dir> <target> <output file>
         section "miniupnpc (BSD 3-clause licence)" "$deps/miniupnpc-src/LICENSE"
         section "Monocypher (BSD 2-clause licence or CC0 1.0)" "$deps/monocypher-src/LICENCE.md"
         section "miniz (MIT licence)" "$deps/miniz-src/LICENSE"
+        section "MicroPython (MIT licence)" "third_party/micropython/LICENSE"
+        section "MicroPython's double-precision math functions, from musl (MIT licence)" "third_party/micropython/lib/libm_dbl/README"
+        section "re1.5, MicroPython's regular expression engine (BSD 3-clause licence)" "third_party/micropython/licenses/re1.5.txt"
         echo; echo; echo "------------------------------------------------------------------------"
         echo "Khronos OpenGL headers (MIT licence)"; echo "------------------------------------------------------------------------"; echo
         sed -n '/Copyright/,/\*\//p' third_party/khronos/GL/glcorearb.h

@@ -71,6 +71,7 @@ add_executable(opense4_tests
     test_wincursor.cpp
     test_winfont.cpp
     test_xmath.cpp
+    # The modding SDK's own tests (docs/MODDING_SDK.md, section 14.6)
     sdk/sdk_test_util.cpp
     sdk/test_mod_identity.cpp
     sdk/test_mod_installed.cpp
@@ -79,6 +80,13 @@ add_executable(opense4_tests
     sdk/test_mod_packages.cpp
     sdk/test_mod_patches.cpp
     sdk/test_mod_sets.cpp
+    sdk/test_script_cache.cpp
+    sdk/test_script_convert.cpp
+    sdk/test_script_determinism.cpp
+    sdk/test_script_json.cpp
+    sdk/test_script_library.cpp
+    sdk/test_script_runtime.cpp
+    sdk/test_script_sandbox.cpp
     sdk/test_sdk_codec.cpp
     sdk/test_sdk_docs.cpp
     sdk/test_sdk_queries.cpp
@@ -135,6 +143,7 @@ add_dependencies(opense4_tests opense4-sdk)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_SDK_EXE="$<TARGET_FILE:opense4-sdk>"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    OPENSE4_SDK_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/sdk"
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
     OPENSE4_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")
 

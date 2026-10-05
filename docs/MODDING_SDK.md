@@ -521,6 +521,10 @@ contracts between its parts.
   inside a second interpreter, and no runtime was known to cover Windows 7 and 32-bit ARM
   together. MicroPython has none of these costs. CPython remains available to anyone who
   needs numpy or machine learning, as an external bot.
+- **As built (S2):** [docs/sdk/runtime.md](sdk/runtime.md) describes the runtime: the
+  dialect and the modules scripts get, the sandbox, the limits and their defaults (heap,
+  bytecode budget, call depth, C stack), the errors, the values that cross, and what is
+  the same on every computer.
 
 ### 14.2 Values: `script::Value`
 
