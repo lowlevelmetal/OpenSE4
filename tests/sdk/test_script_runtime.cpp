@@ -3,6 +3,7 @@
 
 #include "script_test_util.hpp"
 
+#include <atomic>
 #include <thread>
 #include <vector>
 
@@ -280,4 +281,45 @@ TEST_CASE("script runtime: print output is kept up to its limit") {
     CHECK(interp->output().size() < 200);
     CHECK(interp->output().starts_with("line 0\nline 1\n"));
     CHECK(interp->output().ends_with("[further output dropped]\n"));
+}
+
+TEST_CASE("script runtime: a second thread's call while one runs is refused") {
+    auto interp = makeInterpreter();
+    std::atomic<int> stage{0};
+    Error refused;
+    REQUIRE(interp->addNativeFunction("engine", "wait",
+                                      [&](std::span<const Value>) -> Value {
+                                          stage = 1;
+                                          while (stage.load() != 2) std::this_thread::yield();
+                                          return Value();
+                                      })
+                .has_value());
+    std::thread other([&] {
+        while (stage.load() != 1) std::this_thread::yield();
+        auto r = interp->eval("1");
+        if (!r) refused = r.error();
+        stage = 2;
+    });
+    execOk(*interp, "import engine\nengine.wait()");
+    other.join();
+    CHECK(refused.kind == ErrorKind::Usage);
+    CHECK(evalOk(*interp, "2") == Value(2));
+}
+
+TEST_CASE("script runtime: running out of memory while values cross") {
+    Limits limits;
+    limits.heapBytes = size_t{256} << 10;
+    auto interp = makeInterpreter(limits);
+    ValueList many;
+    for (int i = 0; i < 50000; ++i) many.push_back(Value(std::string(40, 'x')));
+    REQUIRE(interp->addFile("m.py", "def count(items):\n    return len(items)\n").has_value());
+    // the arguments don't fit
+    auto r = interp->call("m", "count", std::vector<Value>{Value(many)});
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == ErrorKind::Memory);
+    // an engine function's result doesn't fit: a MemoryError in the script, which may catch it
+    REQUIRE(interp->addNativeFunction("engine", "everything", [&](std::span<const Value>) { return Value(many); }).has_value());
+    execOk(*interp, "import engine\ntry:\n    engine.everything()\n    fits = True\nexcept MemoryError:\n    fits = False\n");
+    CHECK(evalOk(*interp, "fits") == Value(false));
+    CHECK(*interp->call("m", "count", std::vector<Value>{Value(ValueList{1, 2, 3})}) == Value(3));
 }
