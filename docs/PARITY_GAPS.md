@@ -18,6 +18,7 @@ outcomes, **L** is an edge case.
 | Random generator after a load | A saved game keeps the generator's state, so a loaded game continues the same random sequence | Every load reseeds the generator from the game's stored seed, which never changes in play (spec 08 §3.4, §11.2, confirmed: binary) | L |
 | Timed events (`events.cpp`) | Any number of scheduled events wait in `GameState::pendingEvents` | The list keeps fired events as free slots, and nothing is scheduled once it has five slots, free or not, so after five events were pending together no timed event is scheduled again (spec 08 §3.4, §11.2, confirmed: binary) | L |
 | Minister switches of a new empire (`Empire::ministers`) | A new human empire starts with the 14 individual minister areas on | A new human empire, from Quick Start or Game Setup, starts with all 25 switches off (spec 08 §3.6.9, §11.2, observed) | L |
+| Turn-based export before the player's turn has started (`classic_save_export.cpp`) | The current player's vehicles get the movement of the turn's start, but their continuing orders have not run | The original continues a vehicle's orders only at a turn start and never on loading, so those orders wait one turn unless the player moves the vehicles; carrying out OpenSE4's start of that player's turn before writing would match (spec 08 §9.2, observed; End Turn not running them is inferred) | L |
 
 Since 2026-10-04 the original's saved games (spec 08) are read and written, closing the row
 that said OpenSE4 could neither import nor export them: Load Game and `--load` import a
