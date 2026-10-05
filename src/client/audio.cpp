@@ -119,13 +119,14 @@ struct Audio::Impl {
         bool found = false;
         if (files)
             for (const std::string& candidate : candidates) {
-                const auto path = files->find(candidate);
+                // The name as given (".wav"), or an OGG Vorbis file of the same base name (a mod's).
+                const auto path = files->findSound(candidate);
                 if (!path) continue;
                 found = true;
                 std::vector<uint8_t> bytes;
                 std::string why = audiomix::readFileBytes(*path, bytes);
                 if (why.empty()) {
-                    if (auto c = audiomix::decodeWav(bytes, mixer->rate(), why)) {
+                    if (auto c = audiomix::decodeSound(bytes, mixer->rate(), why)) {
                         loaded = std::make_shared<const audiomix::Clip>(std::move(*c));
                         break;
                     }
@@ -251,7 +252,7 @@ void Audio::playTrack(const std::string& file) {
     if (a.musicPlaying && a.trackFile == file) return;  // already playing it
     if (a.failedTracks.contains(file)) return;          // logged when it failed
     const std::string relative = "Music/" + file;
-    const auto path = a.files ? a.files->find(relative) : std::nullopt;
+    const auto path = a.files ? a.files->findSound(relative) : std::nullopt;   // or an OGG of the same base name
     if (!path) {
         a.failedTracks.insert(file);
         if (a.files) a.files->noteMissing(relative);
@@ -304,9 +305,10 @@ void Audio::update() {
                 break;
             case audiomix::MusicTrack::State::Playing:
                 if (!a.trackReported) {
-                    const audiomix::Mp3Info& i = a.track->info();
-                    log::info("Music: playing Music/{} ({} Hz, {} channel{}, {:.0f} s, looped)", a.trackFile, i.sampleRate, i.channels,
-                              i.channels == 1 ? "" : "s", i.seconds);
+                    const audiomix::TrackInfo& i = a.track->info();
+                    log::info("Music: playing Music/{} ({}, {} Hz, {} channel{}, {:.0f} s, looped)", a.trackFile,
+                              i.format == audiomix::AudioFormat::Ogg ? "OGG Vorbis" : "MP3", i.sampleRate, i.channels, i.channels == 1 ? "" : "s",
+                              i.seconds);
                     a.trackReported = true;
                 }
                 if (const uint64_t loops = a.track->loops(); loops != a.trackLoops) {

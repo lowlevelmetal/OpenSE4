@@ -10,6 +10,11 @@
 //     -af "volume=5.66,afade=t=in:d=0.05,afade=t=out:st=0.95:d=0.05" -ac 2 -ar 22050
 //     -c:a libmp3lame -b:a 32k -write_xing 0 -id3v2_version 0 -write_id3v1 0 tone.mp3
 // (MPEG-2 layer III at 22.05 kHz, the format of the classic game's music).
+// tests/fixtures/audio/tone.ogg is the same tone in OGG Vorbis, as a mod may
+// give music and sounds (docs/sdk/packages-and-data.md), mono at half scale:
+//   ffmpeg -f lavfi -i "sine=frequency=440:duration=1:sample_rate=22050"
+//     -af "volume=4,afade=t=in:d=0.05,afade=t=out:st=0.95:d=0.05" -ac 1 -ar 22050
+//     -c:a libvorbis -q:a 0 -map_metadata -1 -fflags +bitexact -flags:a +bitexact tone.ogg
 
 #include "assets/assets.hpp"
 #include "client/audio.hpp"
@@ -105,6 +110,19 @@ std::vector<uint8_t> toneMp3() {
     return bytes;
 }
 
+std::vector<uint8_t> toneOgg() {
+    std::vector<uint8_t> bytes;
+    REQUIRE(readFileBytes(std::filesystem::path(OPENSE4_FIXTURE_DIR) / "audio" / "tone.ogg", bytes).empty());
+    return bytes;
+}
+
+// Sign changes of the left channel: twice the frequency times the length.
+int crossings(const std::vector<float>& s) {
+    int n = 0;
+    for (size_t i = 2; i < s.size(); i += 2) n += (s[i - 2] < 0.0f) != (s[i] < 0.0f) ? 1 : 0;
+    return n;
+}
+
 float peak(const std::vector<float>& s) {
     float p = 0.0f;
     for (float v : s) p = std::max(p, std::fabs(v));
@@ -148,6 +166,48 @@ TEST_CASE("audio mix: WAV files decode to stereo float at the mix rate") {
     CHECK_FALSE(why.empty());
 }
 
+TEST_CASE("audio mix: WAV files at any rate decode to the mix rate at their pitch") {
+    std::string why;
+    for (const int rate : {8000, 11025, 22050, 44100, 48000, 96000}) {
+        INFO(rate << " Hz");
+        // A tenth of a second of 1 kHz.
+        const auto clip = decodeWav(makeWav(rate, 2, 16, static_cast<size_t>(rate / 10), 0.5f, 1000.0f), kRate, why);
+        REQUIRE(clip);
+        CHECK(clip->frames() == doctest::Approx(kRate / 10).epsilon(0.02));
+        CHECK(crossings(clip->samples) == doctest::Approx(200).epsilon(0.03));
+        CHECK(peak(clip->samples) == doctest::Approx(0.5).epsilon(0.05));
+    }
+    // decodeSound tells the formats apart by their bytes.
+    CHECK(audioFormat(makeWav(22050, 1, 8, 10, 0.1f, 100.0f)) == AudioFormat::Wav);
+    CHECK(decodeSound(makeWav(22050, 1, 16, 2205, 0.5f, 500.0f), kRate, why).has_value());
+}
+
+TEST_CASE("audio mix: OGG Vorbis sounds decode to stereo float at the mix rate") {
+    std::string why;
+    const std::vector<uint8_t> ogg = toneOgg();
+    CHECK(audioFormat(ogg) == AudioFormat::Ogg);
+    const auto clip = decodeSound(ogg, kRate, why);
+    REQUIRE_MESSAGE(clip, why);
+    CHECK(clip->frames() == doctest::Approx(kRate).epsilon(0.02));      // one second
+    CHECK(peak(clip->samples) == doctest::Approx(0.5).epsilon(0.1));   // half scale, through a lossy codec
+    CHECK(crossings(clip->samples) == doctest::Approx(880).epsilon(0.03));
+    for (size_t i = 0; i < clip->frames(); i += 101) CHECK(clip->samples[2 * i] == clip->samples[2 * i + 1]);   // mono on both sides
+    // Its format, as music.
+    const auto info = probeTrack(ogg, why);
+    REQUIRE(info);
+    CHECK(info->format == AudioFormat::Ogg);
+    CHECK(info->sampleRate == 22050);
+    CHECK(info->channels == 1);
+    CHECK(info->seconds == doctest::Approx(1.0).epsilon(0.05));
+    // Damaged: why.
+    std::vector<uint8_t> broken(ogg.begin(), ogg.begin() + 60);
+    CHECK_FALSE(decodeOgg(broken, kRate, why));
+    CHECK_FALSE(why.empty());
+    const std::vector<uint8_t> other{'O', 'g', 'g', 'S', 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0};
+    CHECK_FALSE(decodeSound(other, kRate, why));
+    CHECK_FALSE(why.empty());
+}
+
 TEST_CASE("audio mix: MP3 files are probed for their format") {
     std::string why;
     const auto info = probeMp3(toneMp3(), why);
@@ -180,6 +240,30 @@ TEST_CASE("audio mix: a music track decodes on its own thread and loops without 
     CHECK(maxStep(got) < 0.05f);
     CHECK(peak(got) == doctest::Approx(0.5).epsilon(0.15));
     // The tone sounds in every play, not just the first.
+    for (int play = 0; play < 3; ++play) {
+        const size_t mid = (static_cast<size_t>(play) * kRate + kRate / 2) * kChannels;
+        float level = 0.0f;
+        for (size_t i = mid; i < mid + 4800 * kChannels; ++i) level = std::max(level, std::fabs(got[i]));
+        CHECK(level > 0.3f);
+    }
+}
+
+TEST_CASE("audio mix: an OGG Vorbis music track decodes on its own thread and loops without a click") {
+    MusicTrack track(toneOgg(), kRate, 0.5);
+    std::vector<float> got;
+    std::vector<float> buf(4096 * kChannels);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (got.size() < static_cast<size_t>(3.5 * kRate) * kChannels && std::chrono::steady_clock::now() < deadline) {
+        const size_t n = track.ring()->read(buf.data(), 4096);
+        got.insert(got.end(), buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(n * kChannels));
+        if (n == 0) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(track.state() == MusicTrack::State::Playing);
+    CHECK(track.info().format == AudioFormat::Ogg);
+    CHECK(track.info().sampleRate == 22050);
+    CHECK(track.loops() >= 3);
+    REQUIRE(got.size() >= static_cast<size_t>(3.5 * kRate) * kChannels);
+    CHECK(maxStep(got) < 0.05f);
     for (int play = 0; play < 3; ++play) {
         const size_t mid = (static_cast<size_t>(play) * kRate + kRate / 2) * kChannels;
         float level = 0.0f;

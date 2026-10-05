@@ -39,19 +39,33 @@ struct Clip {
     size_t frames() const { return samples.size() / kChannels; }
 };
 
-// Decodes a WAV file (any PCM or float format SDL reads) to the mix rate. On
-// failure, nullopt and why in `error`.
-std::optional<Clip> decodeWav(std::span<const uint8_t> bytes, int mixRate, std::string& error);
+// What a sound or music file holds, by its first bytes (not its name).
+enum class AudioFormat { Unknown, Wav, Ogg, Mp3 };
+AudioFormat audioFormat(std::span<const uint8_t> head);
 
-// What an MP3 holds, read from its first frames.
-struct Mp3Info {
+// Decodes a WAV file (any PCM or float format SDL reads, at any rate) to the
+// mix rate. On failure, nullopt and why in `error`.
+std::optional<Clip> decodeWav(std::span<const uint8_t> bytes, int mixRate, std::string& error);
+// Decodes an OGG Vorbis file (any rate, mono or stereo) to the mix rate.
+std::optional<Clip> decodeOgg(std::span<const uint8_t> bytes, int mixRate, std::string& error);
+// A sound effect in either format, by its bytes (docs/sdk/packages-and-data.md "Sounds and music").
+std::optional<Clip> decodeSound(std::span<const uint8_t> bytes, int mixRate, std::string& error);
+
+// What a music track holds, read from its first frames.
+struct TrackInfo {
     int sampleRate = 0;
     int channels = 0;
     double seconds = 0;  // 0 when unknown
+    AudioFormat format = AudioFormat::Unknown;
 };
+using Mp3Info = TrackInfo;
 
 // Opens an MP3 in memory: its format, or nullopt and why in `error`.
-std::optional<Mp3Info> probeMp3(std::span<const uint8_t> bytes, std::string& error);
+std::optional<TrackInfo> probeMp3(std::span<const uint8_t> bytes, std::string& error);
+// Opens an OGG Vorbis file in memory.
+std::optional<TrackInfo> probeOgg(std::span<const uint8_t> bytes, std::string& error);
+// A music track in either format, by its bytes.
+std::optional<TrackInfo> probeTrack(std::span<const uint8_t> bytes, std::string& error);
 
 // Single producer (a decoder thread), single consumer (the audio thread) queue
 // of stereo frames. Lock-free.
@@ -70,23 +84,24 @@ private:
     std::atomic<size_t> readPos_{0}, writePos_{0};  // in frames, ever increasing
 };
 
-// A music track: an MP3 decoded on its own thread, converted to the mix rate
-// and looped without a gap, into a FrameRing the mixer reads.
+// A music track: an MP3 or OGG Vorbis file decoded on its own thread,
+// converted to the mix rate and looped without a gap, into a FrameRing the
+// mixer reads.
 class MusicTrack {
 public:
     enum class State { Opening, Playing, Failed };
 
     // Reads the file on the decoding thread.
     MusicTrack(std::filesystem::path file, int mixRate, double bufferSeconds = 1.0);
-    // From an MP3 already in memory (tests).
-    MusicTrack(std::vector<uint8_t> mp3, int mixRate, double bufferSeconds = 1.0);
+    // From a file already in memory (tests).
+    MusicTrack(std::vector<uint8_t> bytes, int mixRate, double bufferSeconds = 1.0);
     ~MusicTrack();  // stops the thread; the ring lives on while the mixer holds it
     MusicTrack(const MusicTrack&) = delete;
     MusicTrack& operator=(const MusicTrack&) = delete;
 
     State state() const { return state_.load(std::memory_order_acquire); }
     // Valid once the state is Playing (the format) or Failed (why).
-    const Mp3Info& info() const { return info_; }
+    const TrackInfo& info() const { return info_; }
     const std::string& error() const { return error_; }
     uint64_t loops() const { return loops_.load(std::memory_order_relaxed); }
     const std::shared_ptr<FrameRing>& ring() const { return ring_; }
@@ -94,13 +109,17 @@ public:
 private:
     void start();
     void run();
+    // Decodes the whole file again and again into the ring until stopped:
+    // `read` gives up to `frames` 16-bit frames (0 at the end), `rewind` goes back to the start.
+    template <class Read, class Rewind>
+    void pump(int channels, int rate, Read read, Rewind rewind);
 
     std::filesystem::path file_;
     std::vector<uint8_t> bytes_;
     int mixRate_;
     std::shared_ptr<FrameRing> ring_;
     std::atomic<State> state_{State::Opening};
-    Mp3Info info_;
+    TrackInfo info_;
     std::string error_;
     std::atomic<uint64_t> loops_{0};
     std::mutex mutex_;
