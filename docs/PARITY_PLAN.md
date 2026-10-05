@@ -208,6 +208,8 @@ Players publish mods from inside the game and subscribe to them.
 
 ### A modding SDK with Python scripts
 
+The outline is in [MODDING_SDK.md](MODDING_SDK.md).
+
 - **Tools:**
   - a mod template;
   - the data-format reference (the specs in `docs/spec/`, rewritten as a modder's guide);

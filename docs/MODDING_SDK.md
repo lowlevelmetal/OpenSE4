@@ -1,0 +1,493 @@
+# Modding SDK: outline
+
+Status: an outline, to be discussed. Nothing here is built yet. It fills in the third
+goal under "Future goals" in [PARITY_PLAN.md](PARITY_PLAN.md).
+
+The SDK aims to let players:
+- **write their own computer players**, with full control: everything a human player can
+  do, every decision the built-in AI makes, and memory of their own;
+- **add, remove and change units**, from hulls, components and facilities to designs and
+  races, together with their pictures and sounds;
+- **change the rules and the game around them** far beyond what the original's data files
+  allow: new abilities, events, victory conditions, galaxy generators, game options,
+  orders and interface panels.
+
+The original's data and AI files can still be modded with a text editor, as they always
+could. The SDK adds a package format, data patches, Python scripts and tools on top.
+
+---
+
+## 1. Principles
+
+1. **The classic game stays as it is.** With no mods, OpenSE4 plays exactly as it does now;
+   the golden determinism checksums prove it. Mods are chosen per game.
+2. **The original stays required.** Mods are layered over the player's own install and
+   never change it. OpenSE4 still needs that install, even with a mod that replaces every
+   picture and data file. Players buy the original.
+3. **The same game on every computer.**
+   - Data patches, rules scripts and in-game AIs decide how a turn resolves, so they are
+     part of the game's identity: every player in a game has exactly the same ones.
+   - Rules scripts resolve the same way on every platform.
+   - Every AI decision is recorded with the turn, so a turn can be replayed without
+     running the AI again.
+4. **Mods use published interfaces.** Mods change the game through:
+   - data patches;
+   - the player commands;
+   - named hooks;
+   - an effects API that keeps the game state valid.
+
+   They never touch engine internals. The interface carries a version number (`api = 1`),
+   and a mod names the version it needs.
+5. **Scripts are untrusted.** Workshop mods come from strangers, so their scripts run in a
+   sandbox with no access to files, the network, the clock or other programs. Mods contain
+   no native code.
+6. **The built-in AI and rules are a library.** A mod can call the built-in Research
+   minister and keep everything else, or start from the classic combat rules and change
+   one step. Replacing everything is possible, not required.
+
+## 2. Tiers
+
+Each tier works without the ones after it, and each can ship on its own.
+
+| Tier | What a mod can do | Code? | Affects the game's identity? |
+|---|---|---|---|
+| 0 Assets | Pictures, sounds, music, fonts, text | No | No (cosmetic) |
+| 1 Data | Add, change or remove records in the classic data files; the AI's data tables; starting designs | No (optional Python generators) | Yes |
+| 2 AI | Python computer players with full control | Yes | Yes, when run inside the game |
+| 3 Rules | Python hooks in turn processing; new abilities, events, orders, options, victory conditions, galaxy generators | Yes | Yes |
+| 4 Interface | New panels and reports, extra columns, key bindings | Yes | No |
+
+AI comes before rules because the engine already has the right shape for it. A computer
+player's planner is a function from the game to a list of commands, and every command
+goes through `game::apply`. Rules hooks need more engine work (sections 6 and 7).
+
+## 3. Mod packages
+
+A mod is a folder or a `.zip` with a manifest:
+
+```text
+better-carriers/
+  mod.toml          the manifest
+  data/             data patches (*.toml), replacement classic files (*.txt), generators (*.py)
+  assets/           Pictures/, Sounds/, Music/, Fonts/, in the install's own layout
+  ai/               computer players (Python)
+  scripts/          rules hooks (Python)
+  ui/               interface extensions
+  text/             strings and translations
+  tests/            the mod's own tests, run by `opense4-sdk test`
+```
+
+```toml
+[mod]
+id = "example.better-carriers"      # unique; reverse-domain style
+name = "Better Carriers"
+version = "1.2.0"
+api = 1                             # the SDK interface version it needs
+authors = ["..."]
+description = "..."
+
+[requires]
+"example.common-lib" = ">=1.0"
+
+[load]
+after = ["example.common-lib"]      # load order hints; the user can reorder
+```
+
+- **Load order:** the install, then each enabled mod in order, then the game's own
+  settings. A later mod wins.
+- **Identity:** the manifest, plus a hash of every file except `assets/` and `ui/`, gives
+  the mod's identity. A game's mod set (id, version, hash) is saved with the game, sent in
+  the lobby and checked when a player joins, next to today's data-set identity
+  (`game::dataSetIdentity`).
+- **Classic mods** (a folder of replacement data files and pictures) load as a package
+  without a manifest, so existing SE4 mods keep working.
+
+## 4. Assets (tier 0)
+
+**Engine work: a layered file system.** `assets::InstallFiles` indexes one folder, and
+only fonts and pointers honour `Path.txt`'s mod folder. It becomes a stack of layers: the
+install first, then each mod's `assets/`. Every lookup goes through the stack: pictures,
+sounds, music, fonts and pointers. Nothing is ever written into the install.
+
+**What a mod can add or replace:**
+- **Ship and unit pictures:** a hull names its pictures (`Primary Bitmap Name`,
+  `Alternate Bitmap Name`), and the client looks for `Mini_<name>` and `Portrait_<name>`
+  in the race's style folder, then the shared folders. A new hull with new pictures is a
+  data record plus two files; a new race style is a folder.
+- **Component, facility and planet pictures** (`Pic Num` into the sheets, or a picture
+  of its own), event pictures, flags, race portraits.
+- **Sounds:** weapon sounds are named by the weapon; the interface sounds get names a
+  mod can replace.
+- **Music:** playlists in a mod's settings. Today music comes only from the base
+  `Music/` folder.
+
+**Beyond the original's formats:**
+- PNG with real transparency, next to BMP with black as transparent. stb already decodes
+  PNG; callers just stop asking for `.bmp` by name.
+- Larger pictures for sharper screens, scaled into the classic layout (for example a
+  portrait at twice the size).
+- OGG music and sounds, and WAV at any rate.
+- A design may name its own picture, not only its hull's.
+
+**Checks:** `opense4-sdk check` reports missing pictures, wrong sizes, unsupported
+formats and files no record uses.
+
+## 5. Data (tier 1)
+
+**Patches, not whole files.** Replacing a whole `Components.txt` means two mods can
+never be combined. Data patches name records and fields, so several mods apply one after
+another:
+
+```toml
+# data/carriers.toml
+[[components.add]]
+name = "Heavy Fighter Bay"
+copy_from = "<an existing fighter bay>"   # start from an existing record
+set = { "Tonnage Space Taken" = 40, "Supply Amount Used" = 2 }
+
+[[components.change]]
+name = "Ion Engine I"
+set = { "Supply Amount Used" = 3 }
+
+[[components.remove]]
+name = "<a component the mod retires>"
+
+[[vehicle_sizes.add]]                  # a new hull
+name = "Escort Carrier"
+copy_from = "<an existing hull>"
+set = { "Primary Bitmap Name" = "EscortCarrier", "Tonnage" = 350 }
+```
+
+- **Field names** are the data files' own, as `opense4-datacheck` already reports them.
+  Lists such as abilities and requirements have `add` and `remove` of their own.
+- **Every table:** components, facilities, hulls, techs, races and racial traits,
+  cultures, planets and systems, quadrants, events, intel projects, formations, combat
+  strategies, settings, the name lists, starting designs, and the AI's data tables (anger,
+  politics, research, design templates, construction, colony types).
+- **Removing a record checks its references.** A removed component still named by a
+  design, a tech or an AI table is reported with the file and line of each reference.
+  The mod then removes those too, or asks for `cascade = true`.
+- **Python generators** (`data/*.py`) can build records programmatically, for example
+  twelve levels of a new weapon line. They run once when the game loads, in the sandbox,
+  and their output is an ordinary patch: it is hashed into the identity and can be
+  printed with `opense4-sdk dump`.
+- **Diagnostics** keep today's quality: every error names the mod, file, line and record,
+  and unread fields are reported.
+
+**"Units"** here means every vehicle type the game has: ships, bases, fighters, troops,
+mines, satellites, drones and weapon platforms, with their hulls, components and designs. New hull sizes,
+components and designs are plain data. A new vehicle *type* is not: the eight types are
+built into the rules everywhere (question 6).
+
+**Engine work:**
+- **Patches:** the ruleset loader applies patches after reading the classic files, and
+  records where each value came from.
+- **New ability names:** abilities are a closed list today (`OPENSE4_ABILITIES`), and an
+  unknown name is a load error. A mod may declare new ability names with how values
+  combine (sum, highest, lowest), so data can carry them and scripts can read them
+  (tier 3 gives them effects). Unknown names that no mod declares stay an error.
+- **Identity:** `dataSetIdentity` also covers the AI's data tables. Today it misses the
+  `Ai/` folder and the race AI files, which already decide how computer players behave.
+  That gap is worth closing even before the SDK.
+
+## 6. Computer players (tier 2)
+
+### 6.1 What "full control" means
+
+A script AI controls an empire completely:
+- **Every command a human has:** all 54 kinds of `cmd::Command`, among them orders, fleets,
+  construction queues, designs, research, intelligence, diplomacy, empire settings and
+  the Scrap window. Also the AI-only orders such as Seek.
+- **Every decision the built-in AI makes**, each as a callback:
+
+| Decision | Today, in the engine | Callback |
+|---|---|---|
+| Diplomacy before messages are delivered | `ai::planPoliticsOrders` | `politics(view, orders)` |
+| Orders: movement, colonizing, attack, defence, exploration, fleets, supply, scrapping, retrofits | `ai::planOrdersAfterPolitics` | `orders(view, orders)` |
+| Economy: designs, research, intelligence, construction | `ai::planEconomyStep` (end of turn) | `economy(view, orders)` |
+| A new colony's type | `ai::colonyTypeAtColonization` | `colony_type(view, colony)` |
+| Entering a sector with enemies | computer groups always enter | `enter_sector(view, question)` |
+| Space combat, round by round: movement, targets, launching, boarding, ramming | the combat strategies (`combat::Strategy`) | `battle_round(battle, orders)`, or keep strategies |
+| Decloaking for orders and attacks | the Ship Cloaking minister inside movement | `decloak(view, vehicle, reason)` |
+| Its own memory and mood | `aiMemory`, `aiState`, anger (`updateAiState`, `politicalStep`) | `self.memory`, owned by the script |
+
+- **Its own memory:** a script AI keeps whatever it likes in `self.memory`. It is saved with
+  the game, counts in the checksums and has a size limit. The built-in AI's own steps
+  (state machine, anger, territory claims, recorded decisions) don't run for an empire a
+  script controls. Rules that apply to every computer player still do, such as difficulty
+  bonuses.
+- **Optional parts:** any callback left out falls back to the built-in AI for that decision.
+
+### 6.2 The API, sketched
+
+```python
+from opense4 import ai, cmd
+
+class Admiral(ai.Player):
+    """A computer player that keeps the classic economy and plays its own war."""
+
+    def economy(self, view, orders):
+        orders.extend(ai.builtin.economy(view))             # the classic ministers
+
+    def orders(self, view, orders):
+        for fleet in view.my.fleets:
+            target = self.pick_target(view, fleet)
+            if target:
+                orders.add(cmd.SetOrders(fleet, [cmd.Attack(target)]))
+        # anything else: the built-in Defense, Exploration, Supply... ministers
+        orders.extend(ai.builtin.orders(view, skip={"Attack"}))
+
+    def colony_type(self, view, colony):
+        return "Research" if colony.planet.size >= 4 else "Mining"
+
+    def battle_round(self, battle, orders):
+        for ship in battle.my.ships:
+            orders.target(ship, battle.weakest_enemy_in_range(ship))
+```
+
+- **The view:**
+  - `view` is the empire's own knowledge, made by `game::redactForEmpire`: what a human
+    player of that empire would see, as objects with typed fields.
+  - Queries: paths and jump counts, supply range, a design's figures, what a component
+    does.
+  - Forecasts: what a queue will finish, what research costs.
+- **A whole-galaxy view:** the original's AI deliberately reads more than it can see, such as
+  every empire's strength. A game option "computer players see everything" gives script
+  AIs the whole state too. It is off by default and shown in the lobby, so games between
+  AIs can be fair.
+- **Commands** are checked by `game::apply` as for a human. A refused command comes back
+  with the engine's reason, and the AI may try something else in the same call.
+- **The built-in AI as a library:** `ai.builtin` exposes the ministers one by one
+  (Research, Design, Colonization, Attack and the rest) and the AI's data tables. A mod
+  can take their commands, filter them, or change their tables, and doesn't start from
+  nothing.
+- **Notes:** `self.note(object, text)` attaches notes the client can show on the map in
+  an AI debug view.
+
+### 6.3 Where the AI runs
+
+| | In the game | External bot |
+|---|---|---|
+| How | Inside OpenSE4, in the sandbox | A separate Python program that connects to the game |
+| For | Mods and the Workshop; playing against it | Research, machine learning, heavy computation |
+| Libraries | The standard library (and what the runtime can offer, question 1) | Any (numpy, torch, …) |
+| Limits | Time and memory budget per turn; on overrun or error the built-in AI takes over for that turn and the log says why | None; the host's turn timer applies |
+| Network games | Runs on the host only | Joins as a player, like `opense4-server bot` today |
+
+- **Same API in both places:** the same `opense4.ai` package runs inside the game and as
+  an external bot, so an AI can be developed outside and shipped inside.
+- **Decision journal:** every answer an AI gives during a turn (colony types, battle
+  rounds, questions) is recorded with the turn's orders. Replays, play by e-mail and
+  desync repair use the journal and never run an AI twice. That is why an external bot
+  need not be deterministic.
+
+### 6.4 Tools for serious AIs
+
+- **The arena:**
+
+  ```sh
+  opense4-sdk arena --ai mine.py --ai builtin --games 200 --turns 150
+  ```
+
+  It plays headless games in parallel (the engine has no window and already plays turns
+  without one) and reports wins, scores, colonies, battles and research over time, with
+  the seeds to replay any game.
+- **A step-by-step environment** (`opense4.env`) for training machine-learning players:
+  - reset with a seed;
+  - each step takes a turn's commands and returns the next view and the score.
+- **Replays and logs:** a game played in the arena opens in the client, with the AI's notes
+  and its decision journal.
+- **Tests:** `opense4-sdk test` runs the mod's own tests against fixed seeds.
+
+### 6.5 Engine work
+
+- **A controller per empire:** built-in, script (mod and class), or external. Every place
+  listed in 6.1 asks the controller:
+  - steps 4 and 6 of the simultaneous turn (`turn.cpp`);
+  - `startPlayerTurn` and `computerTurn` (`turn_based.cpp`);
+  - `colonyTypeAtColonization`;
+  - the cloaking calls in `movement.cpp`.
+- **A round hook** in `Battle::act` and `Battle::move` for `battle_round`. Without the
+  callback, the strategies decide, as now.
+- **State:** an `Empire` field for the script's memory and controller, listed in `io()`,
+  in a new save format.
+- **The decision journal,** stored with the turn's orders.
+- **A local connection for external bots** that skips the network encryption on the same
+  computer, plus Python bindings for the existing protocol for remote ones.
+
+## 7. Rules (tier 3)
+
+### 7.1 Hooks
+
+Hooks follow the turn order in `docs/ENGINE.md`. A rules script registers for the ones
+it needs:
+
+```python
+from opense4 import rules
+
+@rules.on("colony_end_of_turn")
+def overcrowding(game, colony, fx):
+    if colony.population > colony.planet.max_population * 9 // 10:
+        fx.change_happiness(colony, -1)
+        fx.log(colony.owner, f"{colony.name} is overcrowded")
+```
+
+| Stage | Hooks |
+|---|---|
+| Setup | `new_game` (options, empires), `generate_galaxy` (replace or adjust), `after_galaxy` |
+| Turn start | `turn_start`, `orders_applied` |
+| Movement and combat | `movement_day`, `vehicle_entered_sector`, `before_battle`, `after_battle`, `vehicle_destroyed` |
+| End of turn | `empire_end_of_turn` around each step: income, maintenance, research, intelligence, construction, population, happiness, repair, supply, ground combat; and `colony_end_of_turn` |
+| Events | `colony_founded`, `vehicle_built`, `tech_researched`, `treaty_changed`, `message_sent`, `event_fired` |
+| Turn end | `check_victory`, `turn_end` |
+
+### 7.2 Changing the game
+
+- **Through effects:** hooks change the game only through `fx`, the effects API. It is a
+  set of engine functions that keep the state valid:
+  - resources and population;
+  - damage, repair and supply;
+  - creating and removing vehicles and facilities;
+  - treaties, log entries and events.
+
+  Reading uses the same typed objects as the AI view, but sees the whole state.
+- **A mod's own state:** a mod can keep data on the game, an empire, a colony or a vehicle
+  (`game.mod_data`). It is saved, checksummed and limited in size.
+- **New abilities:** a mod declares an ability name (section 5) and gives it an effect in a
+  hook. Components, facilities, hulls and systems can then carry it like any other.
+- **New orders:** a mod declares an order with its arguments, its check and its effect. It
+  travels as one new command kind (`cmd::ModCommand`), so it works over the network, by
+  e-mail and in replays. Script AIs can give it too. Tier 4 gives it a button.
+- **New events and intelligence projects:** declared with their chances and an effect
+  hook, next to the classic ones.
+- **Victory conditions and scenarios:**
+  - `check_victory` can end the game.
+  - Scenarios combine a setup with objectives written in the lessons' `when` condition
+    language (docs/LEARNING.md) and hooks for their actions.
+- **Game options:** declared in the manifest with type, range and default. They are shown
+  in the setup screen and the lobby, and saved with the game.
+
+### 7.3 Determinism
+
+Rules scripts are part of the rules, so they must resolve every turn identically on every
+computer, as the engine itself does. The sandbox enforces it:
+- **Random numbers** only from `game.rng`, the engine's generator. Python's `random`
+  module is not available.
+- **Whole numbers** in everything written back to the game; the effects API refuses
+  floats. Calculations inside a script may use floats; question 1 covers what makes them
+  repeatable.
+- **No clock, files, threads or network.** Hash randomisation is fixed, so set order is
+  the same everywhere.
+- **Golden tests:** `opense4-sdk test` plays a mod's games twice and on both the native
+  and the 32-bit build, and compares checksums.
+
+## 8. Interface (tier 4)
+
+Later and smaller:
+- **Panels and reports:** a mod adds a panel to a report, a column to a list, a page to the
+  Empires window, or a button for its own order.
+- **Text:** strings and translations.
+- **Key bindings.**
+
+The interface is drawn by Dear ImGui. A small declarative layout (a TOML or Python
+description of rows, labels, values and buttons) keeps mods working across interface
+changes better than raw drawing calls would. Interface code runs on each player's own
+computer and never changes the game except through commands.
+
+## 9. Multiplayer, saves and the original's saves
+
+- **Saved games** record the mod set and all mod state. A game whose mods are missing
+  doesn't load; the error names what is missing. Asset-only mods may be missing; the
+  game then shows the original's pictures.
+- **Network and e-mail games:**
+  - The host's mod set must match every player's, except asset and interface mods.
+  - With the Workshop, a joining player is offered the missing mods.
+  - Script AIs run on the host.
+- **Export to the original** stays possible while every change is something the original
+  understands (data within its format). It is refused, with the reason, when a game uses
+  new abilities, scripts or mod state.
+
+## 10. Security
+
+- **Sandboxed scripts:** scripts from mods run in a sandbox: no files, no network, no
+  clock, no processes, no native modules. There are limits on memory and time per call
+  and per turn. Running out ends that script's turn safely.
+- **Code:** mods carry no native code (no DLLs or shared libraries).
+- **External bots** are ordinary programs the player starts on purpose. They are outside
+  the sandbox and are never installed or started by a mod.
+- **Package checks:** the client shows what a mod contains (assets, data, AI, rules,
+  interface) before enabling it.
+
+## 11. The SDK itself
+
+- **`opense4-sdk`**, one command-line tool:
+  - `new` (templates for an asset, data, AI or rules mod);
+  - `check` (data, references, assets, scripts, API version);
+  - `run` (start the game with the mod);
+  - `test`;
+  - `arena`;
+  - `dump` (the patched data set);
+  - `pack`;
+  - `publish` (with the Workshop).
+- **The `opense4` Python package:** type stubs for editors, and the same API in the
+  game and for external bots.
+- **Documentation:**
+  - a modder's guide to the data files, written in our own words from `docs/spec/`;
+  - the API reference, generated from the stubs;
+  - tutorials: first picture mod, first new unit, first AI, first rules hook.
+- **Example mods:**
+  - a new hull with its pictures;
+  - a weapon line from a generator;
+  - a new ability with its effect;
+  - a scenario;
+  - "the classic AI with my own research";
+  - a complete small AI.
+- **A mod manager in the client:** enable, order, inspect, and per game.
+
+## 12. Milestones
+
+| | Milestone | Contents |
+|---|---|---|
+| S0 | Foundations | Layered file system; manifests and mod identity in saves, the lobby and `dataSetIdentity` (with the AI tables); `opense4-sdk check`; the mod manager. No scripting. |
+| S1 | Units and assets | Data patches (add, change, remove) for every table; new ability names; PNG, larger pictures, OGG; reference checks; classic mods as packages. |
+| S2 | Runtime | A prototype of the Python runtime on every platform (question 1), measured against the built-in AI's workload; the sandbox and its limits. |
+| S3 | Computer players | Controllers per empire; the AI API and view; every decision callback; script memory; the built-in AI as a library; the decision journal; external bots; the arena. |
+| S4 | Rules | Hooks; the effects API; mod state; abilities with effects; mod orders, events, options, victory conditions; generators and scenarios. |
+| S5 | Interface | Panels, columns, buttons for mod orders, text, key bindings. |
+| S6 | Workshop | Publishing and subscribing with the Steam goal; mod sets offered on joining. |
+
+Each milestone ends with the golden checksums unchanged for unmodded games, and with
+example mods and their tests in CI.
+
+## 13. Open questions
+
+1. **The Python runtime.** The main decision:
+   - **Native CPython embedded in the game** is fast and complete. But:
+     - current CPython has dropped Windows 7;
+     - its Windows builds use a different C runtime from ours;
+     - it can't be sandboxed inside our own process.
+   - **CPython compiled to WebAssembly,** run by a small WebAssembly runtime inside the
+     game:
+     - It is sandboxed by construction.
+     - It is identical on every platform, floating point and its maths library included.
+     - It can be limited by memory and instruction count.
+
+     It is slower, though, and native modules such as numpy are only available if they
+     are built for it. Which runtime covers Windows 7 and 32-bit ARM is to be checked.
+   - **Recommendation, to be confirmed by the S2 prototype:**
+     - WebAssembly for everything that runs inside the game;
+     - ordinary Python for external bots.
+2. **Full or fair view by default** for script AIs, and whether the lobby can require fair
+   AIs.
+3. **Budgets:** how much time per turn an in-game AI gets, and who sets it (the host, per
+   game).
+4. **Rules scripts and the classic combat:**
+   - Should battles allow hooks inside a round (damage, to-hit) or only around a battle?
+   - Inside-round hooks give the most freedom but run thousands of times a turn.
+5. **API stability:** how long an `api` version is supported, and how mods are told about
+   a change.
+6. **New vehicle types** beyond the eight the rules know (ships, bases, fighters, troops,
+   mines, satellites, drones and weapon platforms). It is possible, but it touches combat,
+   movement, cargo and every window, so it is left for after S4.
+7. **Licensing of mods** on the Workshop, and whether example mods ship with OpenSE4 or
+   separately.
