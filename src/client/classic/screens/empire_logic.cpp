@@ -573,6 +573,18 @@ int logOpeningRow(int32_t stored, const std::vector<int32_t>& shown) {
     return it == shown.end() ? 0 : int(it - shown.begin());
 }
 
+int logOpeningScroll(int32_t storedEntry, int32_t storedScroll, const std::vector<int32_t>& shown) {
+    if (std::find(shown.begin(), shown.end(), storedEntry) == shown.end()) return 0;
+    return std::max(0, storedScroll);
+}
+
+int logCombatRecord(const game::GameState& s, const game::LogEntry& l) {
+    if (l.category != game::LogCategory::Combat || !l.location) return -1;
+    for (size_t i = 0; i < s.combats.size(); ++i)
+        if (s.combats[i].location == *l.location) return int(i);
+    return -1;
+}
+
 std::optional<LogWindow> logWindowTarget(game::LogGoto target) {
     switch (target) {
         case game::LogGoto::ConstructionQueues: return LogWindow::ConstructionQueues;

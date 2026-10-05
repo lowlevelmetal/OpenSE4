@@ -169,6 +169,14 @@ uint8_t logOpeningFilter(uint8_t stored, const std::vector<int>& counts);
 // that entry, else the first row; -1 for an empty list. `shown` lists the
 // log index of each row.
 int logOpeningRow(int32_t stored, const std::vector<int32_t>& shown);
+// The scroll position (rows) the Log opens with: the stored one when the
+// stored entry is in the filtered list, else the top, where the first row is
+// selected (spec 06 §4.1 "Selection": both are restored, or neither).
+int logOpeningScroll(int32_t storedEntry, int32_t storedScroll, const std::vector<int32_t>& shown);
+// The battle a combat entry reports, for its details and Combat Replay: the
+// index in GameState::combats of the record at the entry's place (the battles
+// of the game turn in progress and the one before), or -1.
+int logCombatRecord(const game::GameState& s, const game::LogEntry& l);
 
 // Windows Goto opens over the Log (game::LogGoto; spec 06 §4.1, §7 Q41).
 enum class LogWindow : uint8_t { ConstructionQueues, Research, Intelligence, EmpireOptions, Designs, Empires };

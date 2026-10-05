@@ -10,6 +10,7 @@
 
 #include "client/classic/replay.hpp"
 #include "client/classic/screens/combat_logic.hpp"
+#include "client/classic/screens/empire_logic.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/session.hpp"
 
@@ -286,6 +287,84 @@ TEST_CASE("battle flow: an enemy warps in at waiting ships; Strategic; the turn 
     session.endTurn();
     for (int guard = 0; session.battleQuestion() && guard < 20; ++guard) fightStrategic(session, rules);
     CHECK(session.state().turn == t0 + 2);
+}
+
+namespace {
+
+// The human's combat entry for the battle at `where`, as the Log lists it.
+const LogEntry* combatEntry(const GameState& s, EmpireId human, Location where) {
+    for (const LogEntry& l : s.empire(human).log)
+        if (l.category == LogCategory::Combat && l.location && *l.location == where && l.title.starts_with("Battle at") &&
+            classic::logListsEntry(s, l))
+            return &l;
+    return nullptr;
+}
+
+} // namespace
+
+// GitHub issue #10: "Combat logs are missing ... if I'm attacked during the
+// computers' turns". A battle fought in a computer player's turn of a
+// turn-based game, stopped to be shown and answered Strategic or Tactical,
+// leaves the human its battle report (spec 04 §15, every participant), which
+// the Log lists at the human's next turn with its Combat Replay, and which
+// the human's own end-of-turn processing drops only at the end of that turn
+// (spec 05 §3.4 "Log lifetime").
+TEST_CASE("battle flow: a battle in a computer player's turn leaves a combat entry in the human's Log (issue 10)") {
+    const Rules& rules = ctest::combatRules();
+    for (const bool tactical : {false, true}) {
+        CAPTURE(tactical);
+        const WarpAmbush w = warpAmbush();
+        classic::ClassicSession session(fixtureRules(), w.ar.s, w.ar.a, classic::SessionKind::Local);
+        const uint32_t t0 = session.state().turn;
+        session.endTurn();
+        REQUIRE(session.battleQuestion().has_value());
+        CHECK(session.battleQuestion()->state->playerTurn.empire == w.ar.b);   // the computer's turn
+        if (tactical) {
+            // The Tactical Combat window: the human's side fought by hand, here left to its strategies.
+            const BattleQuestion q = *session.battleQuestion();
+            auto battle = std::make_unique<combat::TacticalBattle>(rules, *q.state,
+                                                                   combat::TacticalBattle::Setup{q.where, q.entering, q.humans, std::nullopt,
+                                                                                                 std::nullopt, std::nullopt, q.check});
+            REQUIRE(battle->started());
+            classic::TacticalFight f;
+            f.kind = classic::TacticalFight::Kind::Game;
+            f.battle = std::move(battle);
+            f.players = q.humans;
+            session.startTactical(std::move(f));
+            session.endTactical();
+        } else {
+            REQUIRE(fightStrategic(session, rules));
+        }
+        REQUIRE_FALSE(session.battleQuestion().has_value());
+        REQUIRE(session.state().turn == t0 + 1);
+        REQUIRE(session.myTurn());
+
+        // The human's next turn: the report is in its Log, dated the turn of the battle.
+        const GameState& s = session.state();
+        const LogEntry* entry = combatEntry(s, w.ar.a, w.exit);
+        REQUIRE(entry);
+        CHECK(entry->turn == t0);
+        CHECK_FALSE(entry->text.empty());
+        CHECK_FALSE(entry->picture.empty());
+        // With its battle record, which Combat Replay plays.
+        const int record = classic::logCombatRecord(s, *entry);
+        REQUIRE(record >= 0);
+        const CombatRecord& c = s.combats[size_t(record)];
+        CHECK(std::find(c.participants.begin(), c.participants.end(), w.ar.a) != c.participants.end());
+        CHECK_FALSE(c.events.empty());
+        // The attacker has its report too.
+        CHECK(combatEntry(s, w.ar.b, w.exit));
+
+        // It stays through the human's whole turn and goes with its end.
+        session.endTurn();
+        for (int guard = 0; session.battleQuestion() && guard < 20; ++guard) {
+            if (session.battleQuestion()->kind == BattleQuestion::Kind::Ground) session.answerBattle({});
+            else fightStrategic(session, rules);
+        }
+        CHECK(session.state().turn == t0 + 2);
+        const LogEntry* later = combatEntry(session.state(), w.ar.a, w.exit);
+        CHECK((!later || later->turn != t0));
+    }
 }
 
 TEST_CASE("battle flow: a fault in a call that can stop for battles puts the game back as it was") {

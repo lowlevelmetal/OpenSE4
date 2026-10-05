@@ -88,7 +88,9 @@ public:
             std::vector<int32_t> indices;
             for (const Row* r : shown) indices.push_back(r->index);
             selected_ = logOpeningRow(startFilter_ ? -1 : ui.options().logPosition, indices);
-            scrollRows_ = ui.options().logScroll;
+            // The stored scroll only with the stored entry: else the list starts at
+            // its top, on the first row (an old scroll hid the rows above it).
+            scrollRows_ = startFilter_ ? 0 : logOpeningScroll(ui.options().logPosition, ui.options().logScroll, indices);
             restoreScroll_ = true;
         } else {
             filterRows();
@@ -318,13 +320,7 @@ private:
     }
 
     // The battle a combat entry reports (battles of the last processed turn).
-    static int combatIndex(const UiContext& ui, const Row* r) {
-        if (!r || !r->entry || r->entry->category != LogCategory::Combat || !r->entry->location) return -1;
-        const auto& combats = ui.state().combats;
-        for (size_t i = 0; i < combats.size(); ++i)
-            if (combats[i].location == *r->entry->location) return int(i);
-        return -1;
-    }
+    static int combatIndex(const UiContext& ui, const Row* r) { return r && r->entry ? logCombatRecord(ui.state(), *r->entry) : -1; }
 
     void cannotReplyPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({340, 0}));

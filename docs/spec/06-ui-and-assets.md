@@ -3515,7 +3515,10 @@ something open; all are now settled from the executable:
     Our client follows this: each delivered message is a "Message" entry (it also names
     the message, for the details and Send Reply), the Log lists only entries in the
     order they were made, stores the entry's index in the whole log and, falling back to
-    All, stores All. It differs only for commands a network or play-by-e-mail host
+    All, stores All. Since 2026-10-04 it restores the scroll position only with the stored
+    entry (§4.1 "Selection"); it used to restore it always, so a list whose stored entry
+    was gone opened part way down, its first rows (those of the computer players' turns
+    among them) above the view (looked at for GitHub issue #10). It differs only for commands a network or play-by-e-mail host
     refused, which have no counterpart in the original: they follow the entries as Misc
     rows "Order not carried out" without a Goto (Q71).
 43. **Log damage of planets.** Our battle records keep no planet hit points, so a planet

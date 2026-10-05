@@ -4,8 +4,9 @@
 # warp point into a sector where the player's forces are. The notice comes first; Strategic
 # Combat then asks Tactical or Strategic, and Strategic fights the battle by the strategies.
 # The game stays as it was until Close lets the turn go on, and the turn then ends exactly
-# once; a second End Turn ends the next one. Play it with the asan preset's client too:
-# v0.8.1 crashed here, the main window drawing from vehicles the stopped turn had freed.
+# once, and the Log lists the battle's report; a second End Turn ends the next one. Play it
+# with the asan preset's client too: v0.8.1 crashed here, the main window drawing from
+# vehicles the stopped turn had freed.
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --quick-start --seed=23 --systems=10 --empires=7 --turns=40 --open=none --layout=1024x768 --size=1280x800
 
@@ -41,6 +42,14 @@ wait-turn 41
 wait 120
 assert-turn 41
 assert-no-window strategic-combat
+# The battle in the computer's turn left the player its report: the Log, open at the turn's
+# start, lists it with its Combat Replay (GitHub issue #10).
+assert-log "Battle at"
+wait-window log
+click item:"log:Battle at*" in=log
+wait 2
+assert-enabled item:"Combat Replay" in=log
+screenshot battle-log.png
 # The next End Turn plays the next turn (any battle it brings answered Strategic too).
 key Escape
 click tag:button:end-turn
