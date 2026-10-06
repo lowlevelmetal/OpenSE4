@@ -269,6 +269,33 @@ bring pictures as PNG (also larger than the original's, for sharper screens) and
 and music as OGG Vorbis. Making mods: [docs/sdk/packages-and-data.md](sdk/packages-and-data.md)
 and the `opense4-sdk` tool.
 
+### Computer players
+
+A mod may bring computer players of its own, written in Python
+([docs/sdk/python-api.md](sdk/python-api.md)). When the mods you play with offer some, the
+setup screens let you choose who plays the computer empires; without such mods they are
+exactly the original's.
+
+| Where | What |
+|---|---|
+| Game Setup, Players | `Computer Players` (under `Move Down`) opens a window listing the classic AI and each mod's players, with the mod and a description. The one you light plays every computer empire that has no player of its own, the random ones included; the line under the button names it. |
+| Empire Setup, General | For a computer-controlled empire, `Computer Player` and its ▽ button: the game's choice (the Players page's), the classic AI, or one of the mods' players, for this empire alone. |
+| Game Setup, Game Settings | `Computer players see everything`: their view is the whole game instead of what their empire knows (off by default, so that they play fair). `Computer Player Limits` sets how much they may do for one request of the game: bytecodes for a turn's planning, bytecodes for any other request, and the memory each keeps. A player that goes over fails that request, and the classic AI answers it. |
+| Quick Start | `Computer Players` in the left column: who plays the quick game's computer empires, and whether they see everything. |
+| Multiplayer | The host form chooses who plays the computer empires and whether they see everything; in the lobby the host changes each computer empire's player and the option, and joining players see both. The players run on the host's computer. |
+| Command line | `--ai=MOD:PLAYER` plays every computer empire of a `--quick-start` game with that player. |
+
+In a game, when such a player fails (an error in its Python, or a request over its limits),
+the classic AI answers in its place and the game goes on. The host's main window says so
+over the bottom of the system view, with `Details` (the error and the traceback of each
+failure) and `Dismiss`; the log file (`opense4.log`) has them too.
+
+Settings → Modding switches on the **AI notes view**, which shows the notes these players
+write about what they think on the system and galaxy views and in the reports;
+`Ctrl+Shift+N` switches it in a game. It shows the notes of every player your computer
+runs, whatever your empire knows, so it is a view for making computer players rather than
+for playing against them.
+
 ## Where OpenSE4 keeps its own files
 
 Saves (`saves/`, including the autosaves `AutoSav0` to `AutoSav9`, named after the

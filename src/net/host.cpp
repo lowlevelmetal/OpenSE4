@@ -1077,6 +1077,13 @@ std::expected<void, std::string> HostSession::setSlotSetup(uint32_t id, game::Em
     return {};
 }
 
+std::expected<void, std::string> HostSession::setOptions(game::GameOptions options) {
+    if (phase_ != HostPhase::Lobby) return std::unexpected(std::string("The game has already started."));
+    config_.setup.options = std::move(options);
+    broadcastLobby();
+    return {};
+}
+
 std::expected<void, std::string> HostSession::setLocalReady(bool ready) {
     for (auto& s : slots_)
         if (s->info.local) {

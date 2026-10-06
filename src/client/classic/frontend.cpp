@@ -5,13 +5,16 @@
 #include "client/app_settings.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/file_dialog.hpp"
+#include "client/classic/mods_model.hpp"
 #include "client/classic/screens/setup_model.hpp"
+#include "client/classic/screens/setup_players.hpp"
 #include "client/classic/screens/setup_widgets.hpp"
 #include "client/script/items.hpp"
 #include "client/classic/learn_content.hpp"
 #include "client/classic/settings.hpp"
 #include "client/settings_window.hpp"
 #include "datafile/datafile.hpp"
+#include "game/players.hpp"
 
 #include <algorithm>
 #include <array>
@@ -243,6 +246,20 @@ public:
     }
 };
 
+// Quick Start's computer players (OpenSE4's own, when the game's mods offer
+// some): who plays every computer empire of a quick game, and whether they
+// see everything. Kept while the mods stay the same.
+struct QuickPlayers {
+    game::Controller player;
+    bool seesEverything = false;
+    uint64_t generation = 0;   // LoadedMods::generation they were chosen with
+};
+QuickPlayers& quickPlayers() {
+    static QuickPlayers chosen;
+    if (chosen.generation != loadedMods().generation) chosen = QuickPlayers{{}, false, loadedMods().generation};
+    return chosen;
+}
+
 // Quick Start's picker in the setup frame (spec 07 session 5): "Select Empire"
 // and a two-line hint, the races of Settings.txt's Quick Start Style list in
 // pages of eight, two columns of four filled column by column, each a 128×128
@@ -293,6 +310,25 @@ public:
             ctx.goTo(makeModsScreen([] { return makeFrontScreen(FrontId::QuickStart); }));
             return;
         }
+        // OpenSE4's own, when the game's mods offer computer players: who plays
+        // the computer empires, above the mods' line.
+        if (!offersKnown_) {
+            offers_ = setup::offersComputerPlayers(*ctx.rules);
+            offersKnown_ = true;
+        }
+        if (offers_) {
+            QuickPlayers& q = quickPlayers();
+            const std::string text =
+                "Computer players: " + setup::computerPlayerName(*ctx.rules, q.player) + (q.seesEverything ? ", seeing everything" : "");
+            if (setup::playersLine(ctx, text, a.at({4, 468}).y, a.at({4, 468}), a.at({2, 474}), a.size({203, 26}), a.px(203))) players_.open();
+            if (players_.isOpen()) {
+                std::optional<game::Controller> choice = q.player;
+                setup::PlayerPicker::Options o;
+                o.question = "Who plays the computer empires of the quick game?";
+                o.seesEverything = &q.seesEverything;
+                if (players_.draw(ctx, *ctx.rules, choice, o)) q.player = choice.value_or(game::Controller{});
+            }
+        }
         // Begin Game is lit before a portrait is chosen (observed); without one it
         // only asks for a choice (ours).
         if (a.beginButton("Begin Game")) {
@@ -314,6 +350,16 @@ private:
 
     void begin(MenuContext& ctx, size_t preset) {
         auto setup = quickStartSetup(*ctx.rules, ctx.rules->racePresets()[preset].folder, ctx.seed);
+        if (offers_) {
+            // The computer players chosen (docs/sdk/ai-protocol.md §1).
+            const QuickPlayers& q = quickPlayers();
+            if (!q.player.builtin())
+                if (auto problem = setup::useComputerPlayer(*ctx.rules, setup, game::controllerText(q.player))) {
+                    error_ = *problem;
+                    return;
+                }
+            setup.options.aiSeesEverything = q.seesEverything;
+        }
         auto session = startLocalGame(ctx.rules, setup, quickStartExtras());
         if (!session) {
             error_ = session.error();
@@ -327,6 +373,8 @@ private:
     size_t page_ = 0;
     int chosen_ = -1;
     std::string error_;
+    bool offers_ = false, offersKnown_ = false;   // the game's mods offer computer players
+    setup::PlayerPicker players_;
 };
 
 class SettingsFrontScreen final : public FrontScreen {
@@ -351,15 +399,16 @@ public:
                     if (ctx.app) graphicsSettingsPage(state_, *ctx.app, ctx.k());
                     break;
                 case 1: controlsSettingsPage(state_, ctx.k()); break;
-                default: soundSettingsPage(ctx.k()); break;
+                case 2: soundSettingsPage(ctx.k()); break;
+                default: moddingSettingsPage(ctx.k()); break;
             }
             ImGui::EndChild();
-            static constexpr std::array<const char*, 3> kPages{"Graphics", "Controls", "Sound"};
-            for (int i = 0; i < 3; ++i) {
+            static constexpr std::array<const char*, 4> kPages{"Graphics", "Controls", "Sound", "Modding"};
+            for (int i = 0; i < int(kPages.size()); ++i) {
                 ImGui::SetCursorPos(ctx.size({585, 35 + 31 * float(i)}));
                 if (classicButton(p, kPages[size_t(i)], {180, 28}, 1, page_ == i)) page_ = i;
             }
-            for (int i = 3; i < 13; ++i) {
+            for (int i = int(kPages.size()); i < 13; ++i) {
                 ImGui::SetCursorPos(ctx.size({585, 35 + 31 * float(i)}));
                 emptySlot(p, {180, 28});
             }

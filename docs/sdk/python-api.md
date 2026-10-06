@@ -124,12 +124,57 @@ first session starts with an empty dict, or with what the player's own `__init__
 **Notes and the log.** `self.note(thing, text)` attaches a note for the client's AI view
 to a vehicle, fleet, colony, stellar object, system, empire, design or message (an object
 of the view, or an id with `kind="vehicle"` and so on). A later note on the same thing in
-the same turn replaces it. `self.log(text)` writes a line to the game's log file.
+the same turn replaces it, and an empty text removes it; a note lasts for the turn it was
+given and the next. `self.log(text)` writes a line to the game's log file.
 
 **Errors.** An exception in a callback ends that call: the engine logs it with its
 traceback (file and line of each call) and the classic AI decides that one thing instead.
 The session goes on. After three failures in one turn, the classic AI plays the empire for
 the rest of the turn. Running out of budget or memory counts as a failure too.
+
+### Watching a player think
+
+The client's **AI notes view** shows the notes your players write, in the game they play.
+Switch it on in Settings → Modding ("Show the computer players' notes"), or with
+`Ctrl+Shift+N` in a game (a key of the Settings' Controls page). Then:
+
+| Where | What |
+|---|---|
+| The system view | A list at its top right: the notes about the system shown and what is in it first, then the others (empires, designs, messages, other systems, named in brackets), each with its empire and player. Each noted thing's sector is framed in yellow, with its newest note. |
+| The galaxy view | A yellow ring around every system something noted is in (or that is noted itself). |
+| The reports | The report of a noted ship, base, fleet (its ships' notes too), planet or colony shows its notes in a box above the tabs, with the empire, player and date. |
+
+The view shows every note of the players the computer runs, whatever your empire knows: it
+is for making players, not for playing against them. Notes live where the players run: in
+a game on this computer, or a network game it hosts; a joined player's or an e-mail
+player's copy has none. To watch players play each other, start a game whose computer
+empires they play (Game Setup's Computer Players, or `opense4 --quick-start
+--ai=MOD:PLAYER`), with the Quadrant page's "Omnipresent view of all systems" to see all
+of it, and end turns; `--turns=N` lets the computer play every empire, yours too, for N
+turns first.
+
+A minimal player that explains itself:
+
+```python
+class Scout(ai.Player):
+    def orders(self, view, orders):
+        for ship in view.my.idle_vehicles:
+            target = view.galaxy.nearest(ship, view.unexplored_systems)
+            if target is not None:
+                orders.add(cmd.give(ship, [order.move_to(target)]))
+                self.note(ship, "exploring " + target.name)
+        self.note(view.me, str(len(view.my.colonies)) + " colonies")
+```
+
+### When a player fails
+
+When a request fails, the game goes on with the classic AI's answer, and the host's main
+window says so in a notice over the bottom of the system view: the player, the empire it
+plays, what it was asked (its orders, a colony's type, a combat turn...) and the error.
+`Details` opens Computer Player Errors, which lists the game's failures, newest first, each
+with its traceback (select it to copy it); `Dismiss` hides the notice until the next one.
+`opense4.log` in OpenSE4's user folder has every failure with its traceback too, and the
+lines the player wrote with `self.log`.
 
 ### Asking the engine
 

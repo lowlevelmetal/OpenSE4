@@ -26,6 +26,7 @@ add_executable(opense4
     client/classic/art.cpp
     client/classic/classic_mode.cpp
     client/classic/classic_probe.cpp
+    client/classic/computer_players.cpp
     client/classic/data_export.cpp
     client/classic/finale.cpp
     client/classic/frontend.cpp
@@ -84,6 +85,7 @@ add_executable(opense4
     client/classic/screens/multiplayer.cpp
     client/classic/screens/pbem.cpp
     client/classic/screens/planets.cpp
+    client/classic/screens/player_errors.cpp
     client/classic/screens/queues.cpp
     client/classic/screens/registry.cpp
     client/classic/screens/research.cpp
@@ -93,6 +95,7 @@ add_executable(opense4
     client/classic/screens/simulator.cpp
     client/classic/screens/setup_empire.cpp
     client/classic/screens/setup_model.cpp
+    client/classic/screens/setup_players.cpp
     client/classic/screens/setup_widgets.cpp
     client/classic/screens/file_dialog.cpp
     client/classic/screens/ships.cpp

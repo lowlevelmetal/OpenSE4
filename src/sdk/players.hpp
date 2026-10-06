@@ -85,6 +85,19 @@ struct RequestEvent {
     std::string_view error;             // Failed: why
 };
 
+// A request a player failed (docs/sdk/ai-protocol.md §7), as the engine logs
+// it: the classic AI answered in its place.
+struct PlayerFailure {
+    game::EmpireId empire;
+    std::string empireName;
+    std::string player;       // the controller as text: "<mod id>:<player>", "external:<slot>"
+    uint32_t turn = 0;        // the game turn
+    std::string call;         // "orders", "colony_type", "battle_round"...
+    std::string error;        // what went wrong, in one line ("ValueError: no such ship")
+    std::string traceback;    // the player's traceback as the runtime wrote it (empty: none)
+    bool outForTurn = false;  // its third failure of the game turn: the classic AI plays the rest of the turn
+};
+
 struct PlayerSetup {
     // The `opense4` package's files, in place of the built-in one (tests).
     std::vector<std::pair<std::string, std::string>> package;
@@ -97,6 +110,10 @@ struct PlayerSetup {
     size_t heapBytes = size_t{64} << 20;
     // Told of every request (none: nobody is).
     std::function<void(const RequestEvent&)> observe;
+    // Told of each failure as it happens, on the engine call's thread (the
+    // client's notice). An answer the journal gives again is not a new
+    // failure: it is not told twice.
+    std::function<void(const PlayerFailure&)> failures;
 };
 
 // Installs the SDK's sessions for every engine call in this process

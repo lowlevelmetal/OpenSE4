@@ -60,6 +60,9 @@ struct Geometry {
 };
 Geometry geo;
 
+// OpenSE4's AI notes view: the colour of its marks and notes (ours).
+constexpr uint32_t kAiNoteRgb = 0xffdc5a;
+
 void layOut(float left, float right) {
     Geometry g;
     const LayoutGeometry& l = layoutGeometry();
@@ -1148,11 +1151,17 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     // selectors and report panel take no input (no click, no hover hint), and
     // neither do the map panels and the keys (below).
     inputBlocked_ = blocked || chooser_.has_value() || pickObject_.has_value();
+    // The AI notes view, in the whole game this computer holds (the players run here).
+    notes_.clear();
+    if (settings().showAiNotes)
+        if (const game::GameState* whole = wholeGame(ui.session)) notes_ = computerPlayerNotes(*whole);
     statusBar(ui);
     commandPanel(ui);
     reportPanel(ui);
     overlayText(ui);
+    aiNotesOverlay(ui);
     statusButtons(ui);
+    playerFailureNotice(ui);
     // A facility's or component's report, from a right-click on the report's page (spec 06 §1.4).
     itemReport_.draw(ui);
     // A fleet member's Ship Report, from a right-click on its row in the Fleet Report (spec 06 §2.5).
@@ -1464,6 +1473,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 // alone, with no tabs; the lit orders are the fleet's. A member's
                 // own report opens as a popup from its row (spec 06 §2.5).
                 const FleetReportClick click = fleetReport(ui, *f);
+                aiNotesInReport(ui, "fleet", f->id.value, &f->members);
                 if (click.leader && (!f->leader.valid() || f->leader != *click.leader)) {
                     const game::CommandResult res = ui.session.issue(game::cmd::SetFleetLeader{f->id, *click.leader});
                     if (!res.ok) note(ui, res.error);
@@ -1471,6 +1481,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 if (click.report) shipReport_.vehicle(*click.report);
             } else {
                 if (const auto item = vehicleReport(ui, *v, tab_)) itemReport_.open(*item);
+                aiNotesInReport(ui, "vehicle", v->id.value);
                 tabsFor = true;
             }
         }
@@ -1478,9 +1489,11 @@ void MainWindow::reportPanel(UiContext& ui) {
         const game::SpaceObject& o = s.galaxy.object(*object_);
         if (o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids) {
             if (const auto item = planetReport(ui, *object_, tab_)) itemReport_.open(*item);
+            aiNotesInReport(ui, "object", object_->value);
             tabsFor = planetTabs = true;
         } else {
             objectReport(ui, *object_);
+            aiNotesInReport(ui, "object", object_->value);
         }
     } else if ((listMode_ || !tagged_.empty()) && listAt_) {
         // Everything in the sector the list was built for, which another
@@ -1800,6 +1813,159 @@ void MainWindow::overlayText(UiContext& ui) {
     }
 }
 
+void MainWindow::aiNotesOverlay(UiContext& ui) {
+    if (!settings().showAiNotes || !shown_.valid()) return;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    const float k = ui.k();
+    const ImU32 yellow = imColor(kAiNoteRgb);
+    const ImU32 shade = IM_COL32(0, 0, 0, 200);
+    // The classic faces at their own sizes (the bitmap fonts have no others):
+    // the body face for the list, the small one on the sectors.
+    ImFont* font = ui.fonts.regular ? ui.fonts.regular : ImGui::GetFont();
+    ImFont* small = ui.fonts.small ? ui.fonts.small : font;
+    const float size = ui.fontPx(kTextSize), smallSize = ui.fontPx(kSmallSize);
+    const float lineH = size * 1.2f / k, smallH = smallSize * 1.2f / k;   // frame pixels
+    auto width = [&](ImFont* f, float px, const std::string& s) { return f->CalcTextSizeA(px, FLT_MAX, 0.0f, s.c_str()).x / k; };
+    // Cut to `w` frame pixels with "...".
+    auto cut = [&](ImFont* f, float px, std::string s, float w) {
+        if (width(f, px, s) <= w) return s;
+        while (!s.empty() && width(f, px, s + "...") > w) s.pop_back();
+        return s + "...";
+    };
+    const Rect& panel = geo.systemPanel;
+
+    // Each noted thing's sector of the shown system: a yellow frame, and the
+    // newest note's text under its top edge (a count when there are more).
+    std::map<game::Sector, std::vector<const ShownNote*>> at;
+    for (const ShownNote& n : notes_)
+        if (n.system == shown_ && n.sector) at[*n.sector].push_back(&n);
+    for (const auto& [sector, list] : at) {
+        const Vec2 cell = cellOrigin(sector);
+        dl->AddRect(ui.at(cell), ui.at(cell + Vec2{geo.cell, geo.cell}), yellow, 0.0f, std::max(1.0f, k));
+        std::string label = list.back()->text;
+        if (list.size() > 1) label = std::format("{} (+{})", label, list.size() - 1);
+        label = cut(small, smallSize, label, geo.cell * 2.5f);
+        const Vec2 textAt{cell.x + 1, cell.y + 1};
+        dl->AddRectFilled(ui.at(textAt), ui.at(textAt + Vec2{width(small, smallSize, label) + 2, smallH}), shade);
+        dl->AddText(small, smallSize, ui.at(textAt + Vec2{1, 0}), yellow, label.c_str());
+        // Input scripts find a note on the map by its line: ai-note:<subject>: <text>.
+        for (const ShownNote* n : list) script::reportItem("ai-note:" + noteLine(*n), ui.at(cell), ui.at(cell + Vec2{geo.cell, geo.cell}));
+    }
+
+    // The list, at the system panel's top right: the notes about this system
+    // and what is in it first, then the others (empires, designs, messages,
+    // other systems), each with its author.
+    std::vector<const ShownNote*> order;
+    for (const ShownNote& n : notes_)
+        if (n.system == shown_) order.push_back(&n);
+    for (const ShownNote& n : notes_)
+        if (n.system != shown_) order.push_back(&n);
+    const float boxW = std::min(330.0f, panel.size().x * 0.55f);
+    const Vec2 origin{panel.max.x - 8 - boxW, panel.min.y + 8};
+    constexpr size_t kLines = 10;
+    std::vector<std::pair<std::string, ImU32>> lines;
+    const std::string keys = chordName(appSettings().controls.bindings.chords(Action::AiNotes)[0]);
+    lines.emplace_back(cut(font, size, std::format("Computer players' notes ({}; {} hides them)", notes_.size(), keys), boxW - 8), yellow);
+    // The notes live where the players run: none on a network player's or an e-mail player's computer.
+    if (notes_.empty())
+        lines.emplace_back(cut(font, size, wholeGame(ui.session) ? "None yet." : "The host's computer holds them, not this one.", boxW - 8),
+                           IM_COL32(180, 180, 180, 255));
+    for (size_t i = 0; i < order.size() && i < kLines; ++i) {
+        const ShownNote& n = *order[i];
+        std::string where = n.system.valid() && n.system != shown_ && n.system.index() < ui.state().galaxy.systems.size()
+                                ? " [" + ui.state().galaxy.system(n.system).name + "]"
+                                : std::string();
+        lines.emplace_back(cut(font, size, std::format("{}{}: {}", noteLine(n), where, n.author), boxW - 8), IM_COL32_WHITE);
+        script::reportItem("ai-note:" + noteLine(n), ui.at(origin + Vec2{0, lineH * float(lines.size() - 1)}),
+                           ui.at(origin + Vec2{boxW, lineH * float(lines.size())}));
+    }
+    if (order.size() > kLines) lines.emplace_back(std::format("and {} more", order.size() - kLines), IM_COL32(180, 180, 180, 255));
+    dl->AddRectFilled(ui.at(origin - Vec2{4, 3}), ui.at(origin + Vec2{boxW, lineH * float(lines.size()) + 3}), shade);
+    dl->AddRect(ui.at(origin - Vec2{4, 3}), ui.at(origin + Vec2{boxW, lineH * float(lines.size()) + 3}), imColor(kAiNoteRgb, 0.6f));
+    for (size_t i = 0; i < lines.size(); ++i) dl->AddText(font, size, ui.at(origin + Vec2{0, lineH * float(i)}), lines[i].second, lines[i].first.c_str());
+}
+
+void MainWindow::aiNotesInReport(UiContext& ui, std::string_view kind, int64_t id, const std::vector<game::VehicleId>* members) {
+    if (notes_.empty()) return;
+    std::vector<ShownNote> about = notesAbout(notes_, kind, id);
+    if (members)   // a fleet's report: its ships' notes too
+        for (game::VehicleId v : *members)
+            for (ShownNote& n : notesAbout(notes_, "vehicle", v.value)) about.push_back(std::move(n));
+    if (about.empty()) return;
+    // A box over the bottom of the report's body (OpenSE4's own: the report
+    // keeps its places), above the tabs: the notes, newest last, each with its author.
+    const bool fleetOnly = kind == "fleet";
+    const Rect& panel = geo.reportPanel;
+    const float bottom = panel.min.y + (fleetOnly ? panel.size().y : panel.size().y - 31) - 3;
+    const float width = panel.size().x - 12;
+    ImFont* font = ui.fonts.regular ? ui.fonts.regular : ImGui::GetFont();
+    const float size = ui.fontPx(kTextSize);
+    std::vector<std::pair<std::string, ImU32>> lines{{"Computer players' notes", imColor(kAiNoteRgb)}};
+    for (const ShownNote& n : about) lines.emplace_back(std::format("{} ({}): {}", n.author, formatDate(n.turn), n.text), IM_COL32_WHITE);
+    float height = 0;
+    std::vector<float> heights;
+    for (const auto& [text, color] : lines) {
+        heights.push_back(font->CalcTextSizeA(size, FLT_MAX, ui.px(width - 8), text.c_str()).y / ui.k());
+        height += heights.back();
+    }
+    const Vec2 min{panel.min.x + 4, bottom - height - 6};
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(ui.at(min), ui.at({min.x + width, bottom}), IM_COL32(0, 0, 0, 225));
+    dl->AddRect(ui.at(min), ui.at({min.x + width, bottom}), imColor(kAiNoteRgb, 0.6f));
+    float y = min.y + 3;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        dl->AddText(font, size, ui.at({min.x + 4, y}), lines[i].second, lines[i].first.c_str(), nullptr, ui.px(width - 8));
+        if (i > 0) script::reportItem("report-note:" + about[i - 1].text, ui.at({min.x, y}), ui.at({min.x + width, y + heights[i]}));
+        y += heights[i];
+    }
+}
+
+void MainWindow::playerFailureNotice(UiContext& ui) {
+    // Only in the game whose players run on this computer (they fail on the host).
+    const size_t count = playerFailureCount();
+    if (count < failuresSeen_) failuresSeen_ = 0;   // forgotten: another game
+    if (count == failuresSeen_) return;
+    const std::vector<sdk::PlayerFailure> all = playerFailures();
+    if (all.empty()) return;
+    const size_t fresh = all.size() - std::min(failuresSeen_, all.size());
+    std::string text = failureNotice(all.back());
+    if (fresh > 1) text = std::format("{} failures of computer players. The last: {}", fresh, text);
+    // A strip over the bottom of the system panel, above our own notes line.
+    const Rect& panel = geo.systemPanel;
+    const Vec2 size{std::min(panel.size().x - 12, 620.0f), 50};
+    const Vec2 min{panel.min.x + 6, panel.max.y - 46 - size.y};
+    ImGui::SetNextWindowPos(ui.at(min));
+    ImGui::SetNextWindowSize(ui.size(size));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    if (ImGui::Begin("##playernotice", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                                    ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBackground | blockedFlags())) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(ui.at(min), ui.at(min + size), IM_COL32(24, 8, 8, 225));
+        dl->AddRect(ui.at(min), ui.at(min + size), IM_COL32(255, 128, 100, 255), 0.0f, std::max(1.0f, ui.k()));
+        const float buttonsW = 92;
+        // Wrapped in the body face, as much as its three lines hold (Details has it all).
+        ImFont* font = ui.fonts.regular ? ui.fonts.regular : ImGui::GetFont();
+        const float fontSize = ui.fontPx(kTextSize), wrap = ui.px(size.x - buttonsW - 14);
+        std::string shown = text;
+        while (shown.size() > 3 && font->CalcTextSizeA(fontSize, FLT_MAX, wrap, shown.c_str()).y > ui.px(size.y - 4)) {
+            shown.resize(shown.size() - 4);
+            shown += "...";
+        }
+        dl->AddText(font, fontSize, ui.at(min + Vec2{6, 2}), IM_COL32(255, 200, 180, 255), shown.c_str(), nullptr, wrap);
+        script::reportItem("player-failure:" + text, ui.at(min), ui.at(min + Vec2{size.x - buttonsW, size.y}));
+        ImGui::SetCursorScreenPos(ui.at(min + Vec2{size.x - buttonsW - 4, 3}));
+        if (classicButton(ui, "Details", {buttonsW, 21})) {
+            failuresSeen_ = all.size();
+            ui.open(ScreenId::PlayerErrors);
+        }
+        ImGui::SetCursorScreenPos(ui.at(min + Vec2{size.x - buttonsW - 4, 26}));
+        if (classicButton(ui, "Dismiss", {buttonsW, 21})) failuresSeen_ = all.size();
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+}
+
 std::optional<game::SystemId> MainWindow::galaxySystemAt(const UiContext& ui, Vec2 p, bool exploredOnly) const {
     const GalaxyGrid g = galaxyGrid();
     std::optional<game::SystemId> best;
@@ -1908,6 +2074,12 @@ void MainWindow::hotkeys(UiContext& ui) {
         settings().showMovementLines = !settings().showMovementLines;
         saveSettings();
         note(ui, settings().showMovementLines ? "Movement lines on" : "Movement lines off");  // OpenSE4's own, as for Ctrl+S
+    }
+    // OpenSE4's AI notes view (Settings, Modding).
+    if (pressed(Action::AiNotes)) {
+        settings().showAiNotes = !settings().showAiNotes;
+        saveSettings();
+        note(ui, settings().showAiNotes ? "Computer players' notes shown" : "Computer players' notes hidden");
     }
     if (pressed(Action::ToggleSound)) {
         // The Sound On switch; music is not touched (§3.2).
@@ -2493,6 +2665,12 @@ void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {
         if (current) r.ring(c, radius + 2.0f, 1.0f, col);
         if (galaxyHover_ && *galaxyHover_ == sys.id) r.ring(c, radius + 2.0f, 1.0f, rgb(map_style::kHover));
     }
+    // The AI notes view: a yellow ring around each system something noted is in.
+    std::vector<game::SystemId> noted;
+    for (const ShownNote& n : notes_)
+        if (n.system.valid() && n.system.index() < g.systems.size() && std::find(noted.begin(), noted.end(), n.system) == noted.end())
+            noted.push_back(n.system);
+    for (game::SystemId id : noted) r.ring(galaxyCenter(grid, g.system(id)), radius + 3.5f, 1.5f, rgb(kAiNoteRgb));
 }
 
 // ---- Input scripts ---------------------------------------------------------------------------
@@ -2586,9 +2764,11 @@ std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view 
                 else if (word == "ship") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner == me; });
                 else if (word == "enemy") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner != me; });
                 else if (word == "selected") holds = sector_ && *sector_ == sec;
+                else if (word == "noted")   // the AI notes view: something in it has a computer player's note
+                    holds = std::any_of(notes_.begin(), notes_.end(), [&](const ShownNote& n) { return n.system == shown_ && n.sector == sec; });
                 else {
                     error = std::format("unknown sector word '{}' (empty, home, colony, planet, colonizable, star, warp-point, ship, enemy, "
-                                        "selected, any; joined with +, negated with !)",
+                                        "selected, noted, any; joined with +, negated with !)",
                                         word);
                     return {};
                 }
@@ -2605,7 +2785,7 @@ std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view 
 std::optional<game::Sector> MainWindow::sectorAtFrame(Vec2 p) const { return sectorAt(p); }
 
 bool MainWindow::ownsWindow(ImGuiID window) {
-    for (const char* name : {"##commands", "##report", "##statusbuttons"})
+    for (const char* name : {"##commands", "##report", "##statusbuttons", "##playernotice"})
         if (ImHashStr(name) == window) return true;
     return false;
 }
@@ -2637,8 +2817,12 @@ std::vector<Vec2> MainWindow::findSystems(const UiContext& ui, std::string_view 
             else if (word == "home") holds = sys.id == ui.me().homeSystem;
             else if (word == "shown") holds = sys.id == shown_;
             else if (word == "explored") holds = ui.me().hasExplored(sys.id);
+            else if (word == "noted")   // the AI notes view: something in it, or it, has a computer player's note
+                holds = std::any_of(notes_.begin(), notes_.end(), [&](const ShownNote& n) { return n.system == sys.id; });
             else {
-                error = std::format("unknown system word '{}' (home, shown, explored, any, or a system's number; joined with +, negated with !)", word);
+                error = std::format("unknown system word '{}' (home, shown, explored, noted, any, or a system's number; joined with +, negated "
+                                    "with !)",
+                                    word);
                 return {};
             }
             if (holds == negated) {

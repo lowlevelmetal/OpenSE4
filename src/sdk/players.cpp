@@ -207,7 +207,7 @@ public:
         if (!answer || answer->isNull()) return std::nullopt;
         const std::vector<std::string>& types = s.empire(e).colonyTypes;
         if (answer->isString() && std::find(types.begin(), types.end(), answer->asString()) != types.end()) return answer->asString();
-        fail(ctx, e, std::format("colony_type: {} is not one of the empire's colony types", script::describe(*answer, 80)));
+        fail(ctx, e, "colony_type", std::format("{} is not one of the empire's colony types", script::describe(*answer, 80)));
         return std::nullopt;
     }
 
@@ -244,7 +244,7 @@ public:
         if (!answer || answer->isNull()) return std::nullopt;
         const Value* orders = answer->find("orders");
         if (!answer->isMap() || !orders || !orders->isList()) {
-            fail(ctx, e, "battle_round: the answer should be {orders: [tactical orders]} or null");
+            fail(ctx, e, "battle_round", "the answer should be {orders: [tactical orders]} or null");
             return std::nullopt;
         }
         std::vector<game::combat::TacticalOrder> out;
@@ -324,14 +324,16 @@ private:
         const Value* answer = response ? response->find("answer") : nullptr;
         if (!answer || answer->isNull()) return std::nullopt;
         if (answer->isBool()) return answer->asBool();
-        fail(ctx, e, std::format("{}: the answer should be true, false or null, not {}", call, script::describe(*answer, 80)));
+        fail(ctx, e, call, std::format("the answer should be true, false or null, not {}", script::describe(*answer, 80)));
         return std::nullopt;
     }
 
     // A failed request (docs/sdk/ai-protocol.md §7): logged and counted; the
     // classic answer stands. After three in a game turn the classic answers
-    // stand for the rest of it.
-    void fail(game::TurnContext& ctx, EmpireId e, const std::string& what, const std::string& traceback = {}) {
+    // stand for the rest of it. A failure the journal gives again (the
+    // request's answer was replayed) is not told to PlayerSetup::failures
+    // again.
+    void fail(game::TurnContext& ctx, EmpireId e, std::string_view call, const std::string& error, const std::string& traceback = {}) {
         game::GameState& s = ctx.state;
         game::ScriptPlayerState& st = s.empire(e).script;
         if (st.failureTurn != s.turn) {
@@ -339,10 +341,14 @@ private:
             st.failures = 0;
         }
         ++st.failures;
-        log::warn("Computer player {}: {}; the built-in AI answers{}", who(s, e), what,
-                  st.failures >= game::kPlayerFailuresPerTurn ? " for the rest of the turn" : " this request");
+        const bool out = st.failures >= game::kPlayerFailuresPerTurn;
+        log::warn("Computer player {}: {}: {}; the built-in AI answers{}", who(s, e), call, error, out ? " for the rest of the turn" : " this request");
         if (!traceback.empty()) log::warn("{}", traceback);
-        tell(RequestEvent::Kind::Failed, e, s.turn, {}, {}, what);
+        if (setup_->failures && !replayed_) {
+            const game::Empire& emp = s.empire(e);
+            setup_->failures(PlayerFailure{e, emp.name, game::controllerText(emp.controller), s.turn, std::string(call), error, traceback, out});
+        }
+        tell(RequestEvent::Kind::Failed, e, s.turn, {}, {}, error);
     }
 
     // What became of a request, for whoever measures the players (PlayerSetup::observe).
@@ -384,6 +390,7 @@ private:
 
         Value response;
         bool replayed = false;
+        replayed_ = false;
         if (!replay_.empty()) {
             const game::JournalEntry& next = replay_.front();
             if (next.turn == s.turn && next.empire == e && next.call == call && next.digest == digest) {
@@ -407,6 +414,7 @@ private:
             }
         }
         if (!replayed) response = live(ctx, e, call, args, seed, sink);
+        replayed_ = replayed;   // what fail() says of this response (and of the caller's checks of its answer)
 
         // The journal keeps the response, with the memory only when it changed.
         game::Empire& emp = s.empire(e);
@@ -428,8 +436,8 @@ private:
             const Value* type = error->find("type");
             const Value* message = error->find("message");
             const Value* traceback = error->find("traceback");
-            fail(ctx, e,
-                 std::format("{} failed: {}{}{}", call, type && type->isString() ? type->asString() : std::string("Error"),
+            fail(ctx, e, call,
+                 std::format("{}{}{}", type && type->isString() ? type->asString() : std::string("Error"),
                              message && message->isString() && !message->asString().empty() ? ": " : "",
                              message && message->isString() ? message->asString() : std::string()),
                  traceback && traceback->isString() ? traceback->asString() : std::string());
@@ -791,6 +799,7 @@ private:
     std::vector<std::string> modsUsed_;
     std::vector<Slot> slots_;
     std::deque<game::JournalEntry> replay_;
+    bool replayed_ = false;   // the last request's response came from the journal
     Active* active_ = nullptr;
     size_t applied_ = 0;             // commands `apply` carried out during the current planning call
     Value rulesView_;

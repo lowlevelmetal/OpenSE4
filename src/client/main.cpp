@@ -1,4 +1,5 @@
 #include "client/app.hpp"
+#include "client/classic/computer_players.hpp"
 #include "client/crash_report.hpp"
 #include "client/script/script.hpp"
 #include "core/environment.hpp"
@@ -18,6 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 // SDL's entry point: on Windows it provides WinMain for the windowed build and
@@ -387,7 +389,9 @@ int main(int argc, char** argv) {
         crashOnPurpose(*test);
     }
     // Script computer players play in the games this program plays (docs/sdk/ai-protocol.md),
-    // and external bots when asked for (docs/sdk/bots-and-arena.md).
+    // and external bots when asked for (docs/sdk/bots-and-arena.md); their failures make
+    // the main window's notice.
+    const auto failures = [](const sdk::PlayerFailure& f) { client::classic::notePlayerFailure(f); };
     if (const auto c = opense4::game::parseController(options.aiPlayer); c && c->kind == opense4::game::Controller::Kind::External) botsWanted = true;
     std::unique_ptr<sdk::BotHost> bots;
     if (botsWanted) {
@@ -405,9 +409,13 @@ int main(int argc, char** argv) {
         bots = std::move(*opened);
         log::info("Bots: external bots connect to {} with the token {} (python -m opense4.bot MODULE:CLASS --port {} --slot N)", bots->address(),
                   bots->token(), bots->port());
-        sdk::installPlayers(bots->playerSetup());
+        sdk::PlayerSetup players = bots->playerSetup();
+        players.failures = failures;
+        sdk::installPlayers(std::move(players));
     } else {
-        sdk::installPlayers();
+        sdk::PlayerSetup players;
+        players.failures = failures;
+        sdk::installPlayers(std::move(players));
     }
     const int code = client::App().run(options);
     sdk::installPlayers();   // the bots go before the sessions that point to them

@@ -125,6 +125,10 @@ public:
     std::expected<void, std::string> kick(uint32_t slot, std::string reason = {});
     // Setup of the local player's slot, or of a computer slot.
     std::expected<void, std::string> setSlotSetup(uint32_t slot, game::EmpireSetup setup);
+    // The new game's options, before it starts (the lobby shows them to
+    // every player): the in-game host's choices, such as whether computer
+    // players see everything.
+    std::expected<void, std::string> setOptions(game::GameOptions options);
     std::expected<void, std::string> setLocalReady(bool ready);
     uint32_t localSlot() const;
     // Why the game cannot start yet (empty: it can).

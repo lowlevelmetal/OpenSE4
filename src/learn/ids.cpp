@@ -30,7 +30,7 @@ constexpr WindowInfo kWindows[] = {
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},
     {"tactical-launch", false}, {"combat-piece-report", false}, {"combat-replay-options", false},
     {"combat-simulator"}, {"strategic-combat", false}, {"ground-combat", false}, {"finale", false},
-    {"save-game"}, {"load-game"}, {"options"}, {"settings"},
+    {"save-game"}, {"load-game"}, {"options"}, {"settings"}, {"player-errors", false},
     {"learn"}, {"manual"},
 };
 

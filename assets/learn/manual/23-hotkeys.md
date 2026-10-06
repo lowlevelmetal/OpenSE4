@@ -98,6 +98,7 @@ moves are being played, these keys are ignored.
 | `Ctrl+L` | Show or hide the selected ship's movement line |
 | `Ctrl+S` | Sound effects on or off |
 | `Alt+Enter` | Switch between window and fullscreen |
+| `Ctrl+Shift+N` | Show or hide the notes of the computer players of mods (see [Settings](settings#modding)) |
 
 ## Mouse in the main window
 

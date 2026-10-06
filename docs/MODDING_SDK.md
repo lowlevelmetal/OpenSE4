@@ -267,8 +267,8 @@ messages between it and the engine.
   (Research, Design, Colonization, Attack and the rest) and the AI's data tables. A mod
   can take their commands, filter them, or change their tables, and doesn't start from
   nothing.
-- **Notes:** `self.note(object, text)` attaches notes the client can show on the map in
-  an AI debug view.
+- **Notes:** `self.note(object, text)` attaches notes the client shows on the map and in
+  the reports in its AI notes view.
 
 ### 6.3 Where the AI runs
 
@@ -326,6 +326,16 @@ messages between it and the engine.
   the controllers, sessions, every call and when it comes, the services and their costs,
   the budgets and failures, the journal (kept with the game in memory, not saved), and the
   built-in AI's steps an empire a player plays skips.
+- **As built (S3, client side):** when the game's mods offer players, Game Setup (its
+  Players and Game Settings pages), Empire Setup, Quick Start and the network lobby choose
+  who plays each computer empire, whether they see everything, and their limits
+  ([docs/SETUP.md](SETUP.md) "Computer players", [docs/MULTIPLAYER.md](MULTIPLAYER.md));
+  without such mods the screens are the original's. Battles shown in a window fight the
+  script sides through their players and carry their answers into the turn
+  (ai-protocol.md §8). The AI notes view (Settings → Modding, `Ctrl+Shift+N`) shows the
+  players' notes on the maps and in the reports, and the host's main window tells of a
+  player that failed, with its traceback ([python-api.md](sdk/python-api.md) "Watching a
+  player think", "When a player fails").
 
 ## 7. Rules (tier 3)
 

@@ -482,8 +482,16 @@ void ClassicSession::endTactical() {
     // Phases left are played by the strategies, as a script that runs out does.
     fight->battle->finish();
     fought_.push_back(fight->battle->record());
-    // Fought by hand, or by the strategies while the Strategic Combat window showed it.
-    answerBattle(game::BattleAnswer{fight->players, fight->battle->script()});
+    // Fought by hand, or by the strategies while the Strategic Combat window
+    // showed it; the script players' answers, when the window asked them, so
+    // that the battle is fought again with them (docs/sdk/ai-protocol.md §8).
+    std::optional<std::vector<game::JournalEntry>> decisions;
+    if (fight->scriptPlayers) decisions = fight->battle->decisions();
+    game::BattleAnswer answer{fight->players, fight->battle->script(), std::move(decisions)};
+    // The window's players let go of the script runtime (one per program)
+    // before the call made again asks the players: the battle first, then them.
+    fight.reset();
+    answerBattle(std::move(answer));
 }
 
 void ClassicSession::endTurn() {

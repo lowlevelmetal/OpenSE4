@@ -47,6 +47,7 @@ public:
     const net::TurnStatus& turnStatus() const override { return host_->turnStatus(); }
     bool hosting() const override { return true; }
     net::HostSession& host() { return *host_; }
+    const net::HostSession& host() const { return *host_; }
 
 private:
     std::shared_ptr<const game::Rules> rules_;  // outlives host_

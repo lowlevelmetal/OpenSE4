@@ -277,8 +277,12 @@ std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r,
         return std::unexpected(std::format("A game holds at most {} empires.", kMaxEmpires));
     addRandomPlayers(r, g, s.computers, s.neutrals);
     // The computer empires without a player of their own get the game's (docs/sdk/ai-protocol.md).
-    for (game::EmpireSetup& e : g.empires)
-        if (e.kind == game::PlayerKind::Computer && e.controller.builtin()) e.controller = s.computerPlayer;
+    for (game::EmpireSetup& e : g.empires) {
+        if (e.kind == game::PlayerKind::Computer) e.controller = ownComputerPlayer(e).value_or(s.computerPlayer);
+        // A human's is never used (the computer plays a human who is away with
+        // the built-in AI); the classic AI's mark stays in the setup.
+        else if (e.kind == game::PlayerKind::Human || e.controller.builtin()) e.controller = game::Controller{};
+    }
     if (const std::vector<std::string> problems = sdk::checkControllers(g.empires, sdk::gamePackages(r)); !problems.empty())
         return std::unexpected(problems.front());
     return g;
@@ -286,11 +290,40 @@ std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r,
 
 std::vector<ComputerPlayerChoice> computerPlayerChoices(const game::Rules& r) {
     std::vector<ComputerPlayerChoice> out;
+    const std::span<const mods::Package> packages = sdk::gamePackages(r);
     for (const sdk::PlayerChoice& p : sdk::availablePlayers(r)) {
         const game::Controller c = p.controller();
-        out.push_back({c, game::controllerText(c), p.description});
+        std::string modName = p.mod;
+        for (const mods::Package& pkg : packages)
+            if (pkg.id() == p.mod && !pkg.manifest.name.empty()) modName = pkg.manifest.name;
+        out.push_back({c, game::controllerText(c), p.description, p.name, std::move(modName)});
     }
     return out;
+}
+
+std::string computerPlayerName(const game::Rules& r, const game::Controller& c) {
+    if (c.builtin()) return "Classic AI";
+    if (c.kind == game::Controller::Kind::Script)
+        for (const ComputerPlayerChoice& choice : computerPlayerChoices(r))
+            if (choice.controller == c) return std::format("{} ({})", choice.name, choice.modName);
+    return game::controllerText(c);
+}
+
+namespace {
+// EmpireSetup::controller of a listed empire the classic AI plays by its own
+// choice (Empire Setup), not by the game's: the built-in kind with this name.
+constexpr std::string_view kOwnClassicMark = "classic";
+} // namespace
+
+std::optional<game::Controller> ownComputerPlayer(const game::EmpireSetup& e) {
+    if (!e.controller.builtin()) return e.controller;
+    if (e.controller.player == kOwnClassicMark) return game::Controller{};
+    return std::nullopt;
+}
+
+void setOwnComputerPlayer(game::EmpireSetup& e, std::optional<game::Controller> c) {
+    e.controller = c.value_or(game::Controller{});
+    if (c && c->builtin()) e.controller.player = std::string(kOwnClassicMark);
 }
 
 std::optional<std::string> useComputerPlayer(const game::Rules& r, game::GameSetup& g, std::string_view controller) {

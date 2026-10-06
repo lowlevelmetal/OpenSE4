@@ -36,7 +36,9 @@ The in-game lobby is built on `net::HostSession` (see [For developers](#for-deve
 The host is one of the players: it has its own slot, picks its empire, and plays like
 everyone else. On top of that it can:
 
-- add and remove computer empires before the start;
+- add and remove computer empires before the start, and, when the game's mods offer
+  computer players of their own ([Computer players of mods](#computer-players-of-mods)),
+  choose who plays each one;
 - kick a player (in the lobby the slot opens up again; in a running game the computer
   takes over the empire). A kicked name cannot rejoin;
 - start the game when everyone is ready, or force the start;
@@ -51,6 +53,19 @@ The lobby shows the host's key fingerprint (see [Security](#security)). It is th
 computer's identity as a host, kept in `host_key.txt` in OpenSE4's user folder and made
 the first time this computer hosts. Players' games remember it. If other users of the
 computer can read that file, the lobby's log says so: make it private.
+
+#### Computer players of mods
+
+When the game's mods offer computer players (docs/sdk/ai-protocol.md), the host form
+chooses who plays the computer empires (the classic AI or one of those players) and
+whether the computer players see everything (their view is the whole game, not what their
+empire knows; off by default, so that they play fair). In the lobby each computer slot
+names its player, and the host changes it, and the option, until the start. Joining
+players see both: the slot's player, and the line under the mods ("Computer players see
+everything: ..." or "Computer players see what their empires know."). The players run on
+the host's computer, which alone sees when one fails (a notice in its main window) and
+their notes (Settings → Modding). A dedicated server sets the same with its setup file
+(`ai`, `ai_sees_everything`, an `[[empire]]`'s `ai`) or `--ai=MOD:PLAYER`.
 
 A game hosted from the client gets its galaxy's seed from the system's cryptographic
 random source, since the players must not be able to guess it; `--seed=N` on the

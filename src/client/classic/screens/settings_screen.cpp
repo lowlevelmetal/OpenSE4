@@ -3,6 +3,7 @@
 // Settings (Options → Settings, Ctrl+, or the intro): OpenSE4's
 // graphics, controls and sound pages, in the classic dialog layout.
 
+#include "client/app_settings.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -20,7 +21,7 @@ namespace opense4::client::classic {
 
 namespace {
 
-enum class Page { Graphics, Controls, Sound };
+enum class Page { Graphics, Controls, Sound, Modding };
 
 class SettingsScreen final : public Screen {
 public:
@@ -35,12 +36,14 @@ public:
                 break;
             case Page::Controls: controlsSettingsPage(state_, ui.k()); break;
             case Page::Sound: soundSettingsPage(ui.k()); break;
+            case Page::Modding: moddingSettingsPage(ui.k()); break;
         }
         ImGui::EndChild();
         d.beginButtons();
         if (d.tab("Graphics", page_ == Page::Graphics)) page_ = Page::Graphics;
         if (d.tab("Controls", page_ == Page::Controls)) page_ = Page::Controls;
         if (d.tab("Sound", page_ == Page::Sound)) page_ = Page::Sound;
+        if (d.tab("Modding", page_ == Page::Modding)) page_ = Page::Modding;
         // While a key is being captured, Escape cancels the capture instead of closing.
         if (!state_.capturing) d.close();
         return d.keepOpen();
@@ -234,6 +237,27 @@ void soundSettingsPage(float px) {
         ImGui::SetTooltip("While another window has the focus, or the game is minimized or hidden, its sound effects and\n"
                           "music fade out. The music pauses where it is and goes on from there when you come back.");
     ImGui::TextDisabled("Sounds and music are read from the game's Sounds and Music folders.");
+    if (changed) saveSettings();
+}
+
+void moddingSettingsPage(float px) {
+    ClassicSettings& s = settings();
+    bool changed = false;
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(0.44f, 0.61f, 1.0f, 1.0f), "Computer players of mods");
+    ImGui::Separator();
+    const std::string keys = chordName(appSettings().controls.bindings.chords(Action::AiNotes)[0]);
+    changed |= ImGui::Checkbox(std::format("Show the computer players' notes ({} in a game)", keys).c_str(), &s.showAiNotes);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 520 * px);
+    ImGui::TextDisabled("A debug view for making computer players: the notes a mod's computer players write about what they "
+                        "think, on the system and galaxy maps and in the reports. It shows the notes of every computer player "
+                        "this computer runs, whatever your empire knows: in a game on this computer, or in a network game you host.");
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 520 * px);
+    ImGui::TextDisabled("When such a player fails, the game says so in the main window, and its Details show what went wrong. "
+                        "The game's log file (opense4.log in OpenSE4's user folder) has every failure too.");
+    ImGui::PopTextWrapPos();
     if (changed) saveSettings();
 }
 

@@ -1,0 +1,101 @@
+# Computer players of a mod in the setup screens and the game (docs/SETUP.md "Computer players",
+# docs/sdk/python-api.md "Watching a player think"), with the fixture mod's players
+# (tests/fixtures/mods/ai-fixture): Game Setup's Players page offers who plays the computer
+# empires (the Computer Players window: the classic AI and each player with its mod and
+# description) and says who does; Empire Setup gives a listed computer empire a player of its
+# own (here the classic AI); Game Settings has "Computer players see everything" and Computer
+# Player Limits. In the game begun so, the computer empires that have no player of their own are
+# played by Captain, whose notes the AI notes view shows (Ctrl+Shift+N): the list, the galaxy
+# panel's rings, a noted sector, and the report of the noted colony (the omnipresent view lets the
+# player sees it).
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --layout=1024x768 --size=1280x800 --seed=7
+
+wait-screen front
+click item:"New Game" in=front
+wait-for item:"Computer empires: Classic AI" in=front
+assert-fits front
+# Who plays the computer empires.
+click item:"Computer Players" in=front
+wait-for item:"player:test.ai-fixture:Captain"
+assert-present item:"player:builtin"
+assert-present item:"player:test.ai-fixture:Faulty"
+assert-absent item:"player:game"
+click item:"player:test.ai-fixture:Captain"
+wait 2
+screenshot setup-players-window.png
+click item:Done
+wait-for item:"Computer empires: Captain (AI fixture)" in=front
+screenshot setup-players.png
+
+# The player's empire, its name from the list picker.
+click item:"Add New" in=front
+wait-for item:"Create Empire" in=front
+assert-absent item:##computerplayer in=front
+click item:##pick in=front nth=1
+wait-for item:##pick in=##listpicker
+click item:##pick in=##listpicker nth=1
+wait-gone item:##pick in=##listpicker
+click item:"Create Empire" in=front
+wait-for item:"Add New" in=front
+# A listed computer empire of its own player: the classic AI, whatever the game's choice.
+click item:"Add New" in=front
+wait-for item:"Create Empire" in=front
+click item:##pick in=front nth=1
+wait-for item:##pick in=##listpicker
+click item:##pick in=##listpicker nth=2
+wait-gone item:##pick in=##listpicker
+click item:"Controlled by Player" in=front
+wait-for item:"Computer player: The game's choice" in=front
+click item:##computerplayer in=front
+wait-for item:"player:game"
+click item:"player:builtin"
+click item:Done
+wait-for item:"Computer player: Classic AI" in=front
+assert-fits front
+screenshot empire-setup-player.png
+click item:"Create Empire" in=front
+wait-for item:"Add New" in=front
+
+# A few random computer players, no neutral ones; a small quadrant everyone sees whole.
+click item:"Random computer controlled neutral empires" in=front
+click item:Low in=front nth=1
+click item:Quadrant in=front
+wait-for item:"Omnipresent view of all systems" in=front
+click item:"Omnipresent view of all systems" in=front
+click item:Small in=front
+# The computer players' options, OpenSE4's own, with the other game options.
+click item:"Game Settings" in=front
+wait-for item:"Computer players see everything" in=front
+click item:"Computer players see everything" in=front
+assert-fits front
+click item:"Computer Player Limits" in=front
+wait-for item:"Planning (politics, orders, economy), million bytecodes"
+screenshot setup-limits.png
+click item:Done
+wait-gone item:"Planning (politics, orders, economy), million bytecodes"
+screenshot setup-game-settings.png
+click item:"Begin Game" in=front
+wait-screen game
+
+# A turn: the computer players play theirs, Captain writing notes about its first colony.
+click tag:button:end-turn
+click item:Yes in="End Turn" optional
+repeat 10
+  click item:"*(suggested)" optional timeout=5
+end
+wait-turn 1
+assert-absent item:"ai-note:*"
+key Ctrl+Shift+N
+wait-for item:"ai-note:*colony, turn 0"
+screenshot notes-view.png
+# A noted colony's system and sector, and its report.
+click system:noted nth=1
+wait 2
+click sector:noted nth=1
+wait-for item:"report-note:colony, turn 0"
+screenshot notes-report.png
+# Off again.
+key Ctrl+Shift+N
+wait-gone item:"ai-note:*"
+assert-absent item:"report-note:*"
