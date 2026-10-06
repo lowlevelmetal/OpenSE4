@@ -178,13 +178,6 @@ target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
     OPENSE4_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")
 
-# GCC 15's optimizer reports false "may be used uninitialized" warnings inside
-# std::variant's copies of the SDK's values (script::Value, the patch operations);
-# only release builds with warnings as errors see them (also in src/CMakeLists.txt).
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(opense4_tests PRIVATE -Wno-maybe-uninitialized)
-endif()
-
 opense4_copy_runtime_dlls(opense4_tests)
 
 opense4_windows_manifest(opense4_tests)
