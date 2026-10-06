@@ -154,24 +154,32 @@ notes on the map.
 ## 5. Measure it
 
 How good is it? Put it in the arena with the classic AI, and with a player that overrides
-nothing (a `Player` subclass with no methods: every decision `ai.builtin`'s), which is the
-fair baseline ([Computer players](../computer-players.md#the-classic-ai-as-a-library)):
+nothing (a `Player` subclass with no methods: every decision `ai.builtin`'s), which plays
+exactly the classic AI's games ([Computer players](../computer-players.md#the-classic-ai-as-a-library)):
 
 ```sh
 opense4-sdk arena --mod=settler --mod=plain --ai=me.settler:Settler --ai=me.plain:Plain --ai=builtin \
-    --games=6 --turns=80 --seed=1
+    --games=24 --turns=80 --seed=1
 ```
 
-Six games of 80 turns on the classic data set, the three in each galaxy (a debug build):
+Twenty-four games of 80 turns on the classic data set, the three in each galaxy, each
+playing every seat in turn (a debug build):
 
 | Player | Wins | Mean score | Colonies |
 |---|---|---|---|
-| Settler | 3 | 112,095 | 22.5 |
-| Plain (overrides nothing) | 0 | 67,690 | 15.8 |
-| builtin | 3 | 107,476 | 23.8 |
+| Settler | 9 | 120,380 | 19.0 |
+| Plain (overrides nothing) | 6 | 103,896 | 19.2 |
+| builtin | 9 | 108,758 | 21.0 |
 
-Choosing its colony ships' targets itself is worth seven colonies a game over the classic
-ministers run through the library, and brings Settler level with the built-in AI.
+Seats and races weigh a lot in so few games: Plain, which plays as the classic AI does,
+won 6 to builtin's 9. To see what Settler's own decision is worth, compare it with the
+classic AI in its very seat: the same games with the classic AI in all three seats
+(`--ai=A=builtin --ai=B=builtin --ai=builtin`, the same seeds) give, seat by seat, what the
+classic AI did where Settler played. Against that, Settler scored 4,800 more a game (95 %
+interval −10,300 to +19,900) with 1.8 fewer colonies (−3.6 to 0.0): choosing targets by
+size and distance alone is about as good as the classic Colonization minister, no better.
+To do better, weigh what a planet yields and how safe it is; Pioneer's
+[expansion.py](../../../../mods/examples/small-ai/ai/expansion.py) is a start.
 
 ## 6. Read a complete player
 

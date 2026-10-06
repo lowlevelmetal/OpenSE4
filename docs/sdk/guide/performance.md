@@ -67,6 +67,12 @@ the classic data set in games of 80 turns:
 | [classic-ai-research](../../../mods/examples/classic-ai-research/) (the Scholar) | about 110 ms | the same, and its planner over every component, facility and hull |
 | [small-ai](../../../mods/examples/small-ai/) (Pioneer) | about 115 ms | its own decisions, a few dozen queries, and `apply` for new designs |
 
+The engine's own work for a player's empire is not in these times. The classic AI's
+bookkeeping, which keeps `ai.builtin` playing as the built-in AI would
+([ai-protocol.md](../ai-protocol.md), section 9), costs about 1.4 ms a turn per empire in a
+debug build on a 14-system quadrant; a player that never asks `ai.builtin` can turn it off
+with `classic_state = false` in its `[[ai.players]]` entry.
+
 ## Writing a fast player
 
 - **Work out once per call what you need many times.** Build a dict of what you look up

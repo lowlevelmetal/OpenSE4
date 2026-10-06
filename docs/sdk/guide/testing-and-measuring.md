@@ -154,9 +154,11 @@ builtin                      8     5  62.5%    110754    104673     24.2     6.2
   dozens tell you something. Keep the same `--seed` when comparing two versions of a player,
   so both meet the same galaxies.
 - **Compare with the right baseline.** A player that overrides nothing, every decision made
-  by `ai.builtin`, does not play as well as the built-in AI (its own steps between decisions
-  do not run for an empire a player plays: [Computer players](computer-players.md#the-classic-ai-as-a-library)).
-  Put such a player in the arena beside yours to see what your own decisions are worth.
+  by `ai.builtin`, plays exactly the built-in AI's games (the classic AI's own bookkeeping
+  runs for it: [Computer players](computer-players.md#the-classic-ai-as-a-library)), so
+  `builtin` itself is the baseline: what your player wins or loses against it, its own
+  decisions win or lose. A player with `classic_state = false` that still asks `ai.builtin`
+  plays worse, because the classic ministers then read a classic state that never moves.
 - **Look at `over_time.csv`** to see when a player falls behind (colonies by turn 30?
   ships by turn 60?), and at a game's saved game to see why.
 - **Three players at once** (`--ai` three times) put each in the same galaxies: a direct
