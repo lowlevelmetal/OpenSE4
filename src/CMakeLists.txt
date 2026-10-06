@@ -209,12 +209,11 @@ add_library(opense4_sdk STATIC
 target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_mods opense4_script opense4_learn PRIVATE opense4_net Threads::Threads tomlplusplus opense4_warnings)
 
 # GCC 15's optimizer reports false "may be used uninitialized" warnings inside
-# std::variant's copies of the SDK's values; release builds with warnings as errors
-# stop on them (tests/CMakeLists.txt does the same for the tests).
+# std::variant's copies of the SDK's values (script::Value and what holds it);
+# release builds with warnings as errors stop on them. Everything that uses the
+# values links opense4_script, so the option travels with it.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    foreach(_sdk_target opense4_script opense4_mods opense4_sdk)
-        target_compile_options(${_sdk_target} PRIVATE -Wno-maybe-uninitialized)
-    endforeach()
+    target_compile_options(opense4_script PUBLIC -Wno-maybe-uninitialized)
 endif()
 
 # --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------

@@ -22,7 +22,7 @@ jobs:
   linux:
     name: Linux / ${{ matrix.name }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 60   # the sanitizer build runs the SDK's script and game tests slowly
     strategy:
       fail-fast: false
       matrix:
