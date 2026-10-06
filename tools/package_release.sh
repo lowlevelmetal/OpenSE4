@@ -288,7 +288,13 @@ for target in "${targets[@]}"; do
             if [ "${run[0]:-}" = false ]; then
                 echo "    ($qemu not installed: $arch tests skipped)"
             else
-                "${run[@]}" "$build/tests/opense4_tests"
+                # Tests that start our own programs start them through the same
+                # emulator (tests/sdk: OPENSE4_TEST_RUNNER).
+                if [ ${#run[@]} -gt 0 ]; then
+                    OPENSE4_TEST_RUNNER="${run[*]}" "${run[@]}" "$build/tests/opense4_tests"
+                else
+                    "$build/tests/opense4_tests"
+                fi
             fi
             tools/check_glibc.sh "$build/opense4" "$build/opense4-server" "$build/opense4-datacheck" "$build/opense4-convert" "$build/opense4-sdk"
             check_linux_libraries "$build"
