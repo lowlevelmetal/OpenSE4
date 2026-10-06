@@ -213,11 +213,15 @@ A script AI controls an empire completely:
 | Its own memory and mood | `aiMemory`, `aiState`, anger (`updateAiState`, `politicalStep`) | `self.memory`, owned by the script |
 
 - **Its own memory:** a script AI keeps whatever it likes in `self.memory`. It is saved with
-  the game, counts in the checksums and has a size limit. The built-in AI's own steps
-  (state machine, anger, territory claims, recorded decisions) don't run for an empire a
-  script controls. Rules that apply to every computer player still do, such as difficulty
-  bonuses.
-- **Optional parts:** any callback left out falls back to the built-in AI for that decision.
+  the game, counts in the checksums and has a size limit. The built-in AI's own
+  bookkeeping (state machine, anger, counters, lists) keeps running for an empire a script
+  controls, so the built-in ministers it calls on see what they would see for a computer
+  empire; a script that makes every decision itself can turn it off (`classic_state =
+  false`). What the built-in AI writes into an empire directly (claims, movement options)
+  is the script's to give, as commands of the classic answers. Rules that apply to every
+  computer player still do, such as difficulty bonuses.
+- **Optional parts:** any callback left out falls back to the built-in AI for that decision;
+  a script that overrides nothing plays exactly the built-in AI's game.
 
 ### 6.2 The API, sketched
 
@@ -324,8 +328,9 @@ messages between it and the engine.
   computer, plus Python bindings for the existing protocol for remote ones.
 - **As built (S3, engine side):** [docs/sdk/ai-protocol.md](sdk/ai-protocol.md) describes
   the controllers, sessions, every call and when it comes, the services and their costs,
-  the budgets and failures, the journal (kept with the game in memory, not saved), and the
-  built-in AI's steps an empire a player plays skips.
+  the budgets and failures, the journal (kept with the game in memory, not saved), and
+  which of the built-in AI's own steps run for an empire a player plays (its bookkeeping,
+  unless `classic_state = false`) and which become commands of its classic answers.
 - **As built (S3, client side):** when the game's mods offer players, Game Setup (its
   Players and Game Settings pages), Empire Setup, Quick Start and the network lobby choose
   who plays each computer empire, whether they see everything, and their limits

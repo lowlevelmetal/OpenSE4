@@ -1057,6 +1057,81 @@ std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, Empi
     return p.report().commands;
 }
 
+std::vector<Command> politicsStartCommands(const Rules& r, const GameState& s, EmpireId id) {
+    if (!planFor(s, id)) return {};
+    const Empire& e = s.empire(id);
+    if (e.kind == PlayerKind::Human || !ministerOn(e, Minister::Politics)) return {};
+    std::vector<Command> out;
+    // The four AI_Settings movement flags, as the state update copies them
+    // into the empire's Ship Movement and Ship Orders options (spec 05 §7.5).
+    const SettingsTable& set = profileFor(r, e).settings;
+    const EncounterClear clear = set.clearOrdersOnAll ? EncounterClear::Any : set.clearOrdersOnEnemy ? EncounterClear::Enemy : EncounterClear::Never;
+    cmd::SetEncounterOptions options;
+    if (e.clearOrdersOnEncounter != clear) options.clearOrdersOnEncounter = clear;
+    if (e.avoidTaggedMinefields != set.avoidMinefields) options.avoidTaggedMinefields = set.avoidMinefields;
+    if (e.avoidRestrictedSystems != set.avoidRestrictedSystems) options.avoidRestrictedSystems = set.avoidRestrictedSystems;
+    if (options.clearOrdersOnEncounter || options.avoidTaggedMinefields || options.avoidRestrictedSystems) out.emplace_back(options);
+    // The systems it agreed to leave become its systems to avoid (the state
+    // update), and it claims its territory anew (claimTerritory). The flags
+    // keep each list sorted, so toggling what differs leaves exactly the
+    // lists the classic AI writes; a list that is not sorted is written anew.
+    std::vector<SystemId> avoid = e.aiMemory.avoid;
+    std::sort(avoid.begin(), avoid.end());
+    avoid.erase(std::unique(avoid.begin(), avoid.end()), avoid.end());
+    const std::vector<SystemId> claims = detail::computeTerritory(s, id);
+    auto tidy = [](const std::vector<SystemId>& list) {
+        return std::is_sorted(list.begin(), list.end()) && std::adjacent_find(list.begin(), list.end()) == list.end();
+    };
+    const bool avoidTidy = tidy(e.systemsToAvoid), claimsTidy = tidy(e.claimedSystems);
+    auto has = [](const std::vector<SystemId>& list, SystemId sys) { return std::find(list.begin(), list.end(), sys) != list.end(); };
+    std::vector<SystemId> systems;
+    for (const std::vector<SystemId>* list : std::array<const std::vector<SystemId>*, 4>{&avoid, &claims, &e.systemsToAvoid, &e.claimedSystems})
+        systems.insert(systems.end(), list->begin(), list->end());
+    std::sort(systems.begin(), systems.end());
+    systems.erase(std::unique(systems.begin(), systems.end()), systems.end());
+    // An untidy list: every entry goes first, then the new ones come in order.
+    std::vector<Command> adds;
+    for (SystemId sys : systems) {
+        if (!sys.valid() || sys.index() >= s.galaxy.systems.size()) continue;
+        cmd::SetSystemFlags clearOut{sys, {}, {}}, setIn{sys, {}, {}};
+        const bool avoidNow = has(e.systemsToAvoid, sys), avoidThen = has(avoid, sys);
+        const bool claimNow = has(e.claimedSystems, sys), claimThen = has(claims, sys);
+        if (!avoidTidy) {
+            if (avoidNow) clearOut.avoid = false;
+            if (avoidThen) setIn.avoid = true;
+        } else if (avoidNow != avoidThen) {
+            setIn.avoid = avoidThen;
+        }
+        if (!claimsTidy) {
+            if (claimNow) clearOut.claim = false;
+            if (claimThen) setIn.claim = true;
+        } else if (claimNow != claimThen) {
+            setIn.claim = claimThen;
+        }
+        if (clearOut.avoid || clearOut.claim) out.emplace_back(clearOut);
+        if (setIn.avoid || setIn.claim) adds.emplace_back(setIn);
+    }
+    out.insert(out.end(), std::make_move_iterator(adds.begin()), std::make_move_iterator(adds.end()));
+    return out;
+}
+
+std::vector<Command> planPlayerPolitics(const Rules& r, const GameState& s, EmpireId e, uint32_t ministers) {
+    if (!planFor(s, e)) return {};
+    std::vector<Command> first;
+    if (ministers & ministerBit(Minister::Politics)) first = politicsStartCommands(r, s, e);
+    if (first.empty()) return planPoliticsOrders(r, s, e, ministers);
+    // The Politics minister plans on the empire as those commands leave it,
+    // as it does for a computer empire whose state update and claims wrote
+    // the same directly.
+    GameState after = s;
+    std::vector<Command> out;
+    for (Command& c : first)
+        if (apply(r, after, e, c).ok) out.push_back(std::move(c));
+    std::vector<Command> rest = planPoliticsOrders(r, after, e, ministers);
+    out.insert(out.end(), std::make_move_iterator(rest.begin()), std::make_move_iterator(rest.end()));
+    return out;
+}
+
 StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, EmpireId e) {
     if (!planFor(s, e)) return {};
     return {detail::netIncomeOf(r, s, e), detail::capRevenueOf(r, s, e)};
@@ -1078,6 +1153,16 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
     }
     p.runOrders(false, true);
     return p.report().commands;
+}
+
+std::vector<ObjectId> colonyTargetsNow(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory) {
+    if (!planFor(s, e)) return {};
+    const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
+    const detail::Planner p(r, s, e, mode, kSaltOrders, territory);
+    std::vector<ObjectId> out;
+    out.reserve(p.sit.colonyTargets.size());
+    for (const detail::ColonyTarget& t : p.sit.colonyTargets) out.push_back(t.planet);
+    return out;
 }
 
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve,

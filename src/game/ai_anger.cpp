@@ -547,10 +547,10 @@ void recordAiDecisions(TurnContext& ctx) {
         e.aiDifficulty = randomPlayer || s.turn == 0 ? difficultyOf(s, e.id) : rebels;
     }
     // The counters (the queues are forgotten every 10 turns), then this turn's
-    // decisions; not for an empire a script or external player plays, whose
-    // memory is its own (game/players.hpp).
+    // decisions; not for an empire a script or external player plays that
+    // keeps no classic state (game/players.hpp).
     for (Empire& e : s.empires) {
-        if (!e.alive || playedByController(ctx, e.id)) continue;
+        if (!e.alive || !classicStateKept(ctx, e.id)) continue;
         keepCounters(s, s.empire(e.id));
         Rng rng = stepRng(s, e.id);
         recordDecisions(ctx, e.id, rng);
@@ -567,7 +567,7 @@ void recordAiDecisions(TurnContext& ctx, EmpireId id) {
         const bool randomPlayer = id.index() < random.size() && random[id.index()] != 0;
         e.aiDifficulty = randomPlayer || s.turn == 0 ? difficultyOf(s, id) : rebelDifficulty(s);
     }
-    if (!e.alive || playedByController(ctx, id)) return;
+    if (!e.alive || !classicStateKept(ctx, id)) return;
     keepCounters(s, e);
     Rng rng = stepRng(s, id);
     recordDecisions(ctx, id, rng);
@@ -656,11 +656,11 @@ void updateAiStates(TurnContext& ctx) {
         if (e.alive) decideState(ctx.rules, s, e.id);
 }
 
-void updateAiState(TurnContext& ctx, EmpireId id) {
+void updateAiState(TurnContext& ctx, EmpireId id, bool options) {
     GameState& s = ctx.state;
     if (!id.valid() || id.index() >= s.empires.size() || !s.empire(id).alive) return;
     forgetDemands(s, s.empire(id));
-    keepAiOptions(ctx.rules, s.empire(id));
+    if (options) keepAiOptions(ctx.rules, s.empire(id));
     decideState(ctx.rules, s, id);
 }
 
@@ -708,7 +708,7 @@ void politicalStep(TurnContext& ctx, EmpireId id, const PoliticalWindow& window)
 void rememberAiEvents(TurnContext& ctx) {
     GameState& s = ctx.state;
     for (Empire& e : s.empires)
-        if (e.alive && !playedByController(ctx, e.id)) rememberEvents(s, e, territoryOf(s, e.id));
+        if (e.alive && classicStateKept(ctx, e.id)) rememberEvents(s, e, territoryOf(s, e.id));
 }
 
 void updateAnger(TurnContext& ctx) {

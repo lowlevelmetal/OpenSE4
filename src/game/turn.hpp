@@ -196,6 +196,10 @@ struct TurnContext {
     // income*, *Revenue*, confirmed: binary), by empire index; the economy
     // step takes them.
     std::vector<std::optional<ai::StartOfTurnFigures>> aiStartFigures;
+    // An empire a script or external player plays: the claims its
+    // start-of-turn step began with, which the classic orders plan with after
+    // its politics call rewrote them (game::classicPlan), by empire index.
+    std::vector<std::optional<std::vector<SystemId>>> aiStartTerritory;
 
     // Simultaneous games: called after each of the 30 movement days with the
     // state as that day left it (TurnOptions::movementDay; the client's

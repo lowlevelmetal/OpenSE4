@@ -99,6 +99,7 @@ add_executable(opense4_tests
     sdk/test_sdk_player_setup.cpp
     sdk/test_sdk_players.cpp
     sdk/test_sdk_players_golden.cpp
+    sdk/test_sdk_players_classic.cpp
     sdk/test_sdk_players_replay.cpp
     sdk/test_sdk_python.cpp
     sdk/test_sdk_queries.cpp

@@ -12,6 +12,8 @@ research = ai.builtin.economy(view, ministers=["research"])  # one minister only
 
 Each returns the commands as maps (docs/sdk/commands.md), nothing applied yet: keep them, filter them (`[c for c in cs if c["kind"] != "set_research"]`), or change them before adding them to `orders`. Minister names are those of the `minister` enumeration (opense4.enums.MINISTER).
 
+They plan as the engine does when a player leaves a decision out, from the classic AI's own state, which keeps running for the player's empire unless its `[[ai.players]]` entry says `classic_state = false` (docs/sdk/ai-protocol.md, section 9): a player that overrides nothing plays the classic AI's game exactly.
+
 Source: [python/opense4/builtin.py](../../../python/opense4/builtin.py). Index: [the API reference](README.md).
 
 Contents: [`politics`](#politics), [`orders`](#orders), [`economy`](#economy), [`answer`](#answer).

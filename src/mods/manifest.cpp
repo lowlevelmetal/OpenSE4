@@ -160,7 +160,10 @@ std::expected<Manifest, std::vector<std::string>> parseManifest(std::string_view
                         else if (pk == "module") p.module = text_of(pv, "module");
                         else if (pk == "class") p.className = text_of(pv, "class");
                         else if (pk == "description") p.description = text_of(pv, "description");
-                        else error(pv, std::format("unknown key '{}' in [[ai.players]] (name, module, class, description)", pk.str()));
+                        else if (pk == "classic_state") {
+                            if (const auto* b = pv.as_boolean()) p.classicState = b->get();
+                            else error(pv, "'classic_state' should be true or false");
+                        } else error(pv, std::format("unknown key '{}' in [[ai.players]] (name, module, class, description, classic_state)", pk.str()));
                     }
                     if (p.name.empty()) error(e, "[[ai.players]] needs a name, such as name = \"Admiral\"");
                     else if (std::any_of(m.aiPlayers.begin(), m.aiPlayers.end(), [&](const AiPlayer& o) { return o.name == p.name; }))
@@ -228,6 +231,7 @@ std::string writeManifest(const Manifest& m) {
     for (const AiPlayer& p : m.aiPlayers) {
         out += std::format("\n[[ai.players]]\nname = {}\nmodule = {}\nclass = {}\n", tomlString(p.name), tomlString(p.module), tomlString(p.className));
         if (!p.description.empty()) out += std::format("description = {}\n", tomlString(p.description));
+        if (!p.classicState) out += "classic_state = false\n";
     }
     return out;
 }

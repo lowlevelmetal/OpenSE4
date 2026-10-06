@@ -1,5 +1,6 @@
 #include "game/players.hpp"
 
+#include "game/ai.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
@@ -49,6 +50,27 @@ bool hasPlayerController(const GameState& s, EmpireId e) {
 }
 
 bool playedByController(const TurnContext& ctx, EmpireId e) { return ctx.players && hasPlayerController(ctx.state, e); }
+
+bool classicStateKept(const TurnContext& ctx, EmpireId e) { return !playedByController(ctx, e) || ctx.players->classicState(e); }
+
+std::vector<Command> classicPlan(const TurnContext& ctx, EmpireId e, PlanCall call, uint32_t ministers) {
+    const Rules& r = ctx.rules;
+    const GameState& s = ctx.state;
+    const ai::StartOfTurnFigures* figures = e.index() < ctx.aiStartFigures.size() && ctx.aiStartFigures[e.index()] ? &*ctx.aiStartFigures[e.index()] : nullptr;
+    switch (call) {
+        case PlanCall::Politics: return ai::planPlayerPolitics(r, s, e, ministers);
+        case PlanCall::Orders: {
+            const bool kept = e.index() < ctx.aiStartTerritory.size() && ctx.aiStartTerritory[e.index()];
+            const std::vector<SystemId> territory = kept ? *ctx.aiStartTerritory[e.index()] : s.empire(e).claimedSystems;
+            return ai::planOrdersAfterPolitics(r, s, e, &territory, nullptr, figures, ministers);
+        }
+        case PlanCall::Economy:
+            return ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0, ctx.aiColonyTargets ? &*ctx.aiColonyTargets : nullptr,
+                                       figures, ministers);
+        case PlanCall::Count: break;
+    }
+    return {};
+}
 
 std::string_view callName(PlanCall c) {
     switch (c) {

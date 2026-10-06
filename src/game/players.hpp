@@ -12,17 +12,24 @@
 // Without one every empire is played by the built-in AI.
 //
 // For an empire its player plays (playedByController):
-//   - the built-in AI's own steps do not run: the AI state machine
-//     (ai::updateAiState), the political step and its marks (anger), the
-//     territory claims (ai::claimTerritory), the decisions and counters
-//     ai::recordAiDecisions keeps and the memory of the turn
-//     (ai::rememberAiEvents). What applies to every computer player still
-//     does: its difficulty is assigned, and the computer bonuses apply;
 //   - every decision goes to the player first. An answer of "nothing" (null)
 //     or a failed request falls back to the classic answer for that decision
-//     (the planners, colonyTypeAtColonization, entering, the Ship Cloaking
+//     (classicPlan, colonyTypeAtColonization, entering, the Ship Cloaking
 //     minister, the combat strategies); after three failures in a game turn
-//     the classic answers stand for the rest of that turn.
+//     the classic answers stand for the rest of that turn;
+//   - the classic AI's own bookkeeping runs as for a computer empire, unless
+//     the player asked for none (`classic_state = false`, Players::classicState;
+//     classicStateKept): the start-of-turn figures, the AI state machine
+//     (ai::updateAiState, without the options), the political step and its
+//     marks (anger), the colonization lists, the decisions and counters
+//     ai::recordAiDecisions keeps, the memory of the turn
+//     (ai::rememberAiEvents), and the economy step's lists and units
+//     reserve. What touches the game stays the player's: the movement
+//     options, systems to avoid and claims the classic AI writes directly
+//     are commands of its classic `politics` answer
+//     (ai::politicsStartCommands). What applies to every computer player
+//     still does: its difficulty is assigned, and the computer bonuses apply
+//     (docs/sdk/ai-protocol.md §9).
 
 #include "game/commands.hpp"
 #include "game/hooks.hpp"
@@ -54,8 +61,11 @@ std::optional<Controller> parseController(std::string_view text);
 // computer-controlled empire (not human) whose controller is not the built-in AI.
 bool hasPlayerController(const GameState& s, EmpireId e);
 // The same, in an engine call that has a session: the empire's decisions
-// go to its player, and the built-in AI's own steps do not run for it.
+// go to its player.
 bool playedByController(const TurnContext& ctx, EmpireId e);
+// Whether the classic AI's own bookkeeping runs for the empire this call:
+// for every empire but one its player plays with `classic_state = false`.
+bool classicStateKept(const TurnContext& ctx, EmpireId e);
 // Failures of a player in a game turn after which the classic answers
 // stand for the rest of that turn (docs/sdk/ai-protocol.md §7).
 inline constexpr int kPlayerFailuresPerTurn = 3;
@@ -63,6 +73,16 @@ inline constexpr int kPlayerFailuresPerTurn = 3;
 // The planning calls (docs/sdk/ai-protocol.md §3).
 enum class PlanCall : uint8_t { Politics, Orders, Economy, Count };
 std::string_view callName(PlanCall c);   // "politics", "orders", "economy"
+
+// The classic answer to a planning call of an empire a player plays, from
+// the ministers named (`ministers`, Minister bits), with what the turn keeps
+// for the classic AI where it keeps it (docs/sdk/ai-protocol.md §6, §9):
+// politics, ai::planPlayerPolitics; orders, with the claims and figures its
+// start of turn began with (TurnContext::aiStartTerritory, aiStartFigures);
+// economy, with the units reserve, the colonization lists and its figures as
+// the classic economy step reads them. The commands are not applied. The
+// engine's fallback and the SDK's `builtin` service both plan with it.
+std::vector<Command> classicPlan(const TurnContext& ctx, EmpireId e, PlanCall call, uint32_t ministers = kAllMinisters);
 
 // How the engine carries out a planning call's commands at this moment of
 // the turn: each one as it comes (`apply`: game::apply, plus what this
@@ -120,6 +140,9 @@ public:
     // The engine call's context, as the session starts (CallSession): what a
     // mod's order given during the call (game::apply) works with.
     virtual void begin(TurnContext&) {}
+    // Whether the classic AI's own bookkeeping runs for an empire the session
+    // plays (a mod's player's `classic_state`, true by default).
+    virtual bool classicState(EmpireId) { return true; }
 };
 
 // Makes the session of one engine call. The SDK installs one

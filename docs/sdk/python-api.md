@@ -207,7 +207,11 @@ names the ministers to ask (None: all) and `skip` those to leave out, by the nam
 `minister` enumeration (`opense4.enums.MINISTER`: `"research"`, `"attack"`,
 `"exploration"`...). Filter them as lists: `cmd.without(cs, "set_research")`,
 `[c for c in cs if c.get("vehicle") != flagship.id]`. `answer()` gives the classic answer
-to the question being asked (`colony_type`, `enter_sector` or `decloak`).
+to the question being asked (`colony_type`, `enter_sector` or `decloak`). They plan as the
+engine's own fallback does, from the classic AI's state, which keeps up with the game for
+the player's empire unless its `[[ai.players]]` entry says `classic_state = false`
+([ai-protocol.md](ai-protocol.md) §9); `politics()` begins with the commands for the claims
+and movement options the classic AI writes directly.
 
 ## The view (`opense4.view`)
 

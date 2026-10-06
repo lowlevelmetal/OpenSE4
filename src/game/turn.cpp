@@ -68,11 +68,17 @@ void keepStartFigures(TurnContext& ctx, EmpireId e, const std::optional<ai::Star
     ctx.aiStartFigures[e.index()] = figures;
 }
 
+void keepStartTerritory(TurnContext& ctx, EmpireId e, std::optional<std::vector<SystemId>> territory) {
+    if (ctx.aiStartTerritory.size() <= e.index()) ctx.aiStartTerritory.resize(e.index() + 1);
+    ctx.aiStartTerritory[e.index()] = std::move(territory);
+}
+
 } // namespace detail
 
 using detail::applyCommand;
 using detail::applyCommands;
 using detail::keepStartFigures;
+using detail::keepStartTerritory;
 using detail::planCall;
 using detail::Control;
 using detail::living;
@@ -103,8 +109,12 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // the step removes them (spec 05 §7.2 "Whose lists the economy step reads").
     // An empire a script or external player plays gets its `economy` call
     // instead (docs/sdk/ai-protocol.md); without an answer the ministers act
-    // as for any computer player. A player's answer leaves the shared lists
-    // and the units reserve as an empire whose ministers do not act does.
+    // as for any computer player. When it keeps the classic state, the step's
+    // own bookkeeping follows whoever answered: the lists and its figures are
+    // read (the classic answers of the call plan with them) and removed, and
+    // its units step leaves the reserve. Otherwise a player's answer leaves
+    // the shared lists and the units reserve as an empire whose ministers do
+    // not act does.
     auto ministersAct = [&] {
         const std::optional<std::vector<ObjectId>> lists = std::move(ctx.aiColonyTargets);
         ctx.aiColonyTargets.reset();
@@ -117,6 +127,12 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     if (ministers && playedByController(ctx, e)) {
         const CommandSink sink{[&](const Command& c) { return applyCommand(ctx, e, c); }, [] {}};
         planCall(ctx, e, PlanCall::Economy, sink, ministersAct);
+        if (classicStateKept(ctx, e)) {
+            ctx.aiColonyTargets.reset();
+            keepStartFigures(ctx, e, std::nullopt);
+            if (living(s, e) && ai::ministerOn(s.empire(e), Minister::ShipConstruction)) ctx.unitReserve = ai::unitReserveLeft(r, s.empire(e));
+        }
+        keepStartTerritory(ctx, e, std::nullopt);
     } else if (ministers) {
         ministersAct();
     }
@@ -309,20 +325,39 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
         if (!s.empire(id).alive) continue;
-        // An empire a script or external player plays (players.hpp): the
-        // built-in AI's own steps do not run; its player gets the `politics`
-        // and `orders` calls in the ministers' place, the classic ministers
-        // answering only when it gives no answer (docs/sdk/ai-protocol.md).
+        // An empire a script or external player plays (players.hpp): its
+        // player gets the `politics` and `orders` calls in the ministers'
+        // place, the classic ministers answering only when it gives no answer
+        // (docs/sdk/ai-protocol.md). Unless it asked for none, the classic
+        // AI's own steps run around them as for a computer empire: the
+        // figures, the state update (its options and claims are commands of
+        // the classic politics answer instead), the political step, and the
+        // lists the orders step builds, which the economy step reads.
         if (playedByController(ctx, id)) {
+            const bool own = classicStateKept(ctx, id);
+            std::optional<ai::StartOfTurnFigures> figures;
+            if (own) {
+                figures = ai::startOfTurnFigures(r, s, id);
+                ai::updateAiState(ctx, id, false);
+            }
             const std::vector<SystemId> territory = s.empire(id).claimedSystems;
+            if (own) {
+                ai::politicalStep(ctx, id, ai::simultaneousWindow(s, id));
+                ai::recordPoliticalStep(s, id);
+            }
+            keepStartFigures(ctx, id, figures);
+            keepStartTerritory(ctx, id, territory);
             const CommandSink sink{[&](const Command& c) { return applyCommand(ctx, id, c); }, [] {}};
-            planCall(ctx, id, PlanCall::Politics, sink, [&] { applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id)); });
+            planCall(ctx, id, PlanCall::Politics, sink, [&] { applyCommands(ctx, id, classicPlan(ctx, id, PlanCall::Politics)); });
             diplomacy::deliverMessages(ctx, date);
+            std::optional<std::vector<ObjectId>> lists;
+            if (own) lists = ai::colonyTargetsNow(r, s, id, &territory);
             planCall(ctx, id, PlanCall::Orders, sink, [&] {
                 std::vector<ObjectId> targets;
-                applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets));
-                ctx.aiColonyTargets = std::move(targets);
+                applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets, figures ? &*figures : nullptr));
+                if (!own) ctx.aiColonyTargets = std::move(targets);
             });
+            if (own) ctx.aiColonyTargets = std::move(lists);   // the step's lists stay in place
             diplomacy::deliverMessages(ctx, date);
             continue;
         }

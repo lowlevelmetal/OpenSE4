@@ -75,8 +75,9 @@ after = ["example.common-lib", "example.ui-tweaks"]
 - **load.after**: mods this one should load after when they are enabled. It is a hint,
   not a requirement.
 - **ai.players**: the computer players the mod offers, one `[[ai.players]]` table each
-  with `name`, `module` (under the mod's `ai/` folder), `class` and `description`
-  (docs/sdk/ai-protocol.md §1). A game chooses one as `<mod id>:<name>`.
+  with `name`, `module` (under the mod's `ai/` folder), `class`, `description` and
+  `classic_state` (true by default: the classic AI's bookkeeping runs for the player's
+  empires; docs/sdk/ai-protocol.md §1, §9). A game chooses one as `<mod id>:<name>`.
 - **rules**: what the mod's rules scripts declare: its game options, orders, events,
   intelligence project types and victory conditions, and whether computer players see
   its data ([rules.md](rules.md)).
