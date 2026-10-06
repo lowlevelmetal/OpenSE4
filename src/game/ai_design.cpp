@@ -147,9 +147,9 @@ std::vector<uint32_t> candidateHulls(const Rules& r, uint32_t date, const Empire
         if (hull.type != t.vehicleType || !r.hullAvailable(e, h)) continue;
         if (hull.tonnage < t.minTonnage || hull.tonnage > t.maxTonnage) continue;
         if (hull.maxEngines < t.minSpeed) continue;
-        if ((hull.maxPercentFighterBays > 0) != majorityIs(t, AbilityKind::LaunchRecoverFighters)) continue;
-        if ((hull.maxPercentColonyModules > 0) != colonyMajority) continue;
-        if ((hull.maxPercentCargo > 0) != majorityIs(t, AbilityKind::CargoStorage)) continue;
+        if ((hull.minPercentFighterBays > 0) != majorityIs(t, AbilityKind::LaunchRecoverFighters)) continue;
+        if ((hull.minPercentColonyModules > 0) != colonyMajority) continue;
+        if ((hull.minPercentCargo > 0) != majorityIs(t, AbilityKind::CargoStorage)) continue;
         bool capped = false;
         for (const auto& [amount, turns] : settings.tonnageCaps)
             if (amount > 0 && static_cast<int64_t>(date) < turns && hull.tonnage > amount) capped = true;  // the date the ministers see
@@ -264,10 +264,10 @@ private:
             const int n = static_cast<int>(xmath::pctTrunc(hull_.tonnage, pct) / size + 1);  // trunc(tonnage x pct / 100) / size + 1
             for (int i = 0; i < n; ++i) add(part);
         };
-        if (hull_.maxPercentFighterBays > 0) share(hull_.maxPercentFighterBays, AbilityKind::LaunchRecoverFighters);
-        if (hull_.maxPercentCargo > 0) share(hull_.maxPercentCargo, AbilityKind::CargoStorage);
+        if (hull_.minPercentFighterBays > 0) share(hull_.minPercentFighterBays, AbilityKind::LaunchRecoverFighters);
+        if (hull_.minPercentCargo > 0) share(hull_.minPercentCargo, AbilityKind::CargoStorage);
         AbilityKind colonize;
-        if (hull_.maxPercentColonyModules > 0 && colonizeAbility(t_.majority.ability, colonize)) add(parts_.best(colonize));
+        if (hull_.minPercentColonyModules > 0 && colonizeAbility(t_.majority.ability, colonize)) add(parts_.best(colonize));
     }
 
     // "Spaces Per One" N: floor(hull tonnage / N) copies, at least one; 0 or less adds none.

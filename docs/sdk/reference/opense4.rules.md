@@ -224,14 +224,14 @@ A hull (vehicle size).
 | `requirements` | `List[Requirement]` | The technology it needs. |
 | `abilities` | `List[Ability]` | Its abilities. |
 | `must_have_bridge` | `bool` | A design needs a bridge. |
-| `can_have_aux_control` | `bool` | An auxiliary control may stand in for the bridge. |
+| `can_have_aux_control` | `bool` | A design may have at most one auxiliary control; when false their number is not checked. |
 | `min_life_support` | `int` | Life support needed. |
 | `min_crew_quarters` | `int` | Crew quarters needed. |
 | `uses_engines` | `bool` | It takes engines. |
-| `max_engines` | `int` | The most engines. |
-| `max_percent_fighter_bays` | `int` | The most space for fighter bays, in percent. |
-| `max_percent_colony_modules` | `int` | ... for colony modules. |
-| `max_percent_cargo` | `int` | ... for cargo. |
+| `max_engines` | `int` | The most engines; 0 no limit. |
+| `min_percent_fighter_bays` | `int` | The least share of the hull's space a design gives fighter bays, in percent; 0 none. |
+| `min_percent_colony_modules` | `int` | The least share of the hull's space a design gives colony modules, in percent; 0 none. |
+| `min_percent_cargo` | `int` | The least share of the hull's space a design gives cargo space, in percent; 0 none. |
 
 ### `Hull.has_ability`
 

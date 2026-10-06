@@ -262,16 +262,30 @@ class Scholar(ai.Player):
 Its planner is a plain function of plain values (`ai/planner.py`), so it is tested without a
 game. It ranks tech areas by what their next levels unlock for what they cost.
 
-**What the library cannot give.** An empire that a player plays does not run the classic
-AI's own steps between decisions: its state machine, anger, territory claims and the
-figures its ministers prepare at the start of a turn ([ai-protocol.md](../ai-protocol.md),
-section 9). The ministers that `ai.builtin` runs read that state as it was. So a player that
-overrides nothing, every decision made by `ai.builtin`, plays noticeably worse than the
-built-in AI itself: in eight games of 80 turns on the classic data set it scored a mean of
-91,000 against the built-in AI's 118,000, with 18.5 colonies against 25 (a debug build,
-seeds 1 to 8). Compare your player with such a player, not only with `builtin`, to see what
-your own decisions are worth; the [classic-ai-research README](../../../mods/examples/classic-ai-research/README.md)
-does.
+**The classic AI's own state.** Between its decisions the built-in AI keeps state of its
+own: its state machine, anger toward each empire, counters, the figures it prepares at the
+start of a turn and the lists its economy step reads. That bookkeeping keeps running for an
+empire a player plays ([ai-protocol.md](../ai-protocol.md), section 9), so `ai.builtin`
+plans from the state the built-in AI would have, and a player that overrides nothing plays
+exactly the built-in AI's game: in 48 games of 100 turns on the classic data set against
+the built-in AI, every game was the very game the built-in AI plays against itself. Your
+player's results against `builtin` therefore measure your own decisions.
+
+What the built-in AI writes into its empire directly, its claims, the systems it agreed to
+leave and its movement options, comes as commands at the start of `ai.builtin.politics()`
+(`set_system_flags`, `set_encounter_options`). A player that writes its own politics decides
+them; to keep the classic ones:
+
+```python
+    def politics(self, view, orders):
+        orders.extend(cmd.only(ai.builtin.politics(view), "set_system_flags", "set_encounter_options"))
+        ...                                                     # your own diplomacy
+```
+
+A player that makes every decision itself and never asks `ai.builtin` can save the
+bookkeeping's time with `classic_state = false` in its `[[ai.players]]` entry; the classic
+ministers that still answer for it (a question it leaves out, a failed request) then read
+the classic state as the player found it.
 
 ## A full player
 

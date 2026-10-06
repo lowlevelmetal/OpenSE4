@@ -97,9 +97,9 @@ struct VehicleSize {
     int minCrewQuarters = 0;
     bool usesEngines = false;
     int maxEngines = 0;
-    int maxPercentFighterBays = 0;
-    int maxPercentColonyModules = 0;
-    int maxPercentCargo = 0;
+    int minPercentFighterBays = 0;
+    int minPercentColonyModules = 0;
+    int minPercentCargo = 0;
 };
 
 // ---- Components.txt -------------------------------------------------------------
@@ -108,7 +108,7 @@ enum class WeaponKind : uint8_t { None, DirectFire, Seeking, Warhead, PointDefen
 struct Weapon {
     WeaponKind kind = WeaponKind::None;
     std::vector<std::string> targets;  // "Ships", "Planets", "Ftr", "Sat", "Seekers", "Drone"
-    std::vector<int> damageAtRange;    // index = range in squares
+    std::vector<int> damageAtRange;    // the damage at range i + 1 squares, at index i
     std::string damageType;            // identifier, e.g. "Skips Armor"
     int reloadRate = 0;
     std::string displayType;

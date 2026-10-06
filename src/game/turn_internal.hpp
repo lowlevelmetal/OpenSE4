@@ -50,6 +50,9 @@ void planCall(TurnContext& ctx, EmpireId e, PlanCall call, const CommandSink& si
 // Keeps the figures an empire's start-of-turn step worked out for its
 // economy step (TurnContext::aiStartFigures).
 void keepStartFigures(TurnContext& ctx, EmpireId e, const std::optional<ai::StartOfTurnFigures>& figures);
+// Keeps the claims the start-of-turn step of an empire a player plays began
+// with (TurnContext::aiStartTerritory); nullopt forgets them.
+void keepStartTerritory(TurnContext& ctx, EmpireId e, std::optional<std::vector<SystemId>> territory);
 
 // Thrown by space combat when a battle's answer is missing (turn.hpp,
 // "Tactical combat in turn-based games"); the turn-based calls catch it and

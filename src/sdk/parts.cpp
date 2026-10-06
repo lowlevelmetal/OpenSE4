@@ -39,7 +39,7 @@ std::string_view abilityName(const ParsedAbility& a) {
     return game::identifier(a.kind);
 }
 
-Value abilityTotals(std::span<const ParsedAbility> list) {
+Value abilityTotals(const game::Rules& r, std::span<const ParsedAbility> list) {
     std::vector<const ParsedAbility*> firsts;
     for (const ParsedAbility& a : list) {
         const std::string_view name = abilityName(a);
@@ -49,9 +49,16 @@ Value abilityTotals(std::span<const ParsedAbility> list) {
     ValueList out;
     out.reserve(firsts.size());
     for (const ParsedAbility* f : firsts) {
-        const game::Aggregation mode = game::aggregationOf(f->kind);
+        game::Aggregation mode = game::aggregationOf(f->kind);
         int64_t value = 0;
-        if (f->kind == AbilityKind::AITag || f->kind == AbilityKind::Unknown) {
+        const ruleset::DeclaredAbility* declared = f->kind == AbilityKind::Unknown ? r.data().findDeclaredAbility(f->raw) : nullptr;
+        if (declared) {
+            // A mod's declared ability combines as declared (docs/sdk/packages-and-data.md).
+            mode = declared->combine == ruleset::Combine::Max   ? game::Aggregation::Largest
+                   : declared->combine == ruleset::Combine::Min ? game::Aggregation::Smallest
+                                                                : game::Aggregation::Sum;
+            value = r.declaredAbility(list, declared->name).value_or(0);
+        } else if (f->kind == AbilityKind::AITag || f->kind == AbilityKind::Unknown) {
             // Several names share one kind: each name on its own, its values summed.
             for (const ParsedAbility& a : list)
                 if (a.raw == f->raw) value += a.value1;

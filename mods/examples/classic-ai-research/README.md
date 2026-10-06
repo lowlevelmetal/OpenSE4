@@ -20,35 +20,26 @@ for what those levels cost, plus five turns of research per level, so that cheap
 not always come first. Areas already under way stay at the front, so no points are lost.
 It gives the classic economy's commands except its `set_research`, and its own queue.
 
-**How it does.** Eight games of 80 turns on the installed game against the classic AI, seeds
-1 to 8, the players changing seats each game (`opense4-sdk arena --games=8 --turns=80
---seed=1`, a debug build):
+**How it does.** Forty-eight games of 100 turns on the installed game against the classic
+AI, seeds 1 to 48, the players changing seats each game (`opense4-sdk arena --games=48
+--turns=100 --seed=1`, a debug build):
 
 | Player | Games | Wins | Mean score | Median score | Colonies | Systems | Tech levels | Ships | Battles won/lost | Failures | Time a turn |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Scholar | 8 | 2 | 90,305 | 94,671 | 21.4 | 5.4 | 23.9 | 8.9 | 6/11 | 0 | 110 ms |
-| builtin | 8 | 6 | 116,024 | 105,016 | 24.5 | 6.6 | 34.2 | 13.5 | 11/6 | 0 |  |
+| Scholar | 48 | 26 | 155,754 | 146,498 | 29.6 | 6.3 | 26.0 | 19.1 | 257/290 | 0 | 118 ms |
+| builtin | 48 | 22 | 144,887 | 136,320 | 25.6 | 6.9 | 39.2 | 16.1 | 293/272 | 0 |  |
 
-The fair comparison is a player that overrides nothing: every decision is the classic AI's,
-through `ai.builtin`. Such a player trails the built-in AI the same way, because an empire a
-player plays does not run the classic AI's own steps between its decisions (its state
-machine, anger, territory claims and start-of-turn figures:
-[ai-protocol.md](../../../docs/sdk/ai-protocol.md), section 9), and its colonization suffers
-most. Against that baseline the Scholar's own research holds its own:
-
-| Player | Games | Wins | Mean score | Median score | Colonies | Systems | Tech levels | Ships | Battles won/lost | Failures | Time a turn |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| a player that overrides nothing | 8 | 3 | 91,172 | 87,904 | 18.5 | 5.2 | 32.5 | 10.1 | 9/9 | 0 | 43 ms |
-| builtin | 8 | 5 | 117,895 | 105,016 | 25.0 | 6.5 | 34.4 | 13.6 | 9/9 | 0 |  |
-
-The Scholar settles more planets than the classic research minister run through the
-library (21.4 colonies to 18.5) and scores about the same, with fewer tech levels: it
-spends its points on what colonizes, produces and builds rather than on many cheap levels.
-Both are about a fifth behind the built-in AI's score. What closes that gap is choosing the
-colony ships' targets: the tutorial's Settler, which does only that, draws level with the
-built-in AI ([A first computer player](../../../docs/sdk/guide/tutorials/computer-player.md)).
+Everything but its research is the classic AI's, and a player that overrides nothing plays
+exactly the classic AI's games (the classic AI's own bookkeeping runs for it:
+[ai-protocol.md](../../../docs/sdk/ai-protocol.md), section 9), so what the Scholar gains
+or loses is its research's. Measured game by game against the classic AI in the same seat
+of the same 48 games (the classic AI playing itself, `--ai=A=builtin --ai=builtin`), the
+Scholar won 12 more games in a hundred (95 % interval 3 to 22), scored 18,900 more (6,800
+to 31,000), and had 5.1 more colonies (2.4 to 7.9) and 4.5 more ships (2.4 to 6.5), with
+10.9 fewer tech levels (9.3 to 12.5): it spends its points on what colonizes, produces and
+builds rather than on many cheap levels.
 
 ```sh
 opense4-sdk test mods/examples/classic-ai-research
-opense4-sdk arena --mod=mods/examples/classic-ai-research --ai=example.classic-ai-research:Scholar --ai=builtin --games=8 --turns=80
+opense4-sdk arena --mod=mods/examples/classic-ai-research --ai=example.classic-ai-research:Scholar --ai=builtin --games=48 --turns=100 --seed=1
 ```

@@ -19,7 +19,7 @@ def test_the_hull_is_in_the_data_set():
     assert hull.type == "ship"
     assert hull.tonnage == 120
     assert hull.requirements == [], "no technology needed"
-    assert hull.max_percent_cargo == 30
+    assert hull.min_percent_cargo == 30
 
 
 def test_the_cargo_rack_holds_cargo():
@@ -52,4 +52,4 @@ def test_an_empire_can_fit_a_courier_from_the_start():
     used = sum(c.tonnage for c in parts) + 2 * rack.tonnage
     assert used <= hull.tonnage, "a courier needs {} kT".format(used)
     # "Requirement Pct Cargo" is a least share: cargo components must fill at least it.
-    assert 2 * rack.tonnage * 100 >= hull.max_percent_cargo * hull.tonnage
+    assert 2 * rack.tonnage * 100 >= hull.min_percent_cargo * hull.tonnage

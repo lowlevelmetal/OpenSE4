@@ -321,6 +321,6 @@ nothing; removing a tech area with `cascade = true` removes the hulls that need 
   [packages-and-data.md](../../packages-and-data.md) for pictures and the patch format.
 - Computer players read hulls as the `hull` records of the rules view and a design's
   figures as `design_figures` ([view.md](../../view.md) "The rules view", "Designs"). The
-  record's `max_percent_fighter_bays`, `max_percent_colony_modules` and `max_percent_cargo`
-  are the minimum shares described above, despite their names, and `can_have_aux_control`
-  only limits auxiliary controls to one.
+  record's `min_percent_fighter_bays`, `min_percent_colony_modules` and `min_percent_cargo`
+  are the minimum shares described above, and `can_have_aux_control` only limits
+  auxiliary controls to one.

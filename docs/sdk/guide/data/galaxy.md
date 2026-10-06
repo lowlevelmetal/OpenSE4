@@ -35,7 +35,7 @@ stellar size (Tiny to Huge); a constructed world has a name of its own.
 | Field | What it does | Values |
 |---|---|---|
 | `Name` | The size's name. A sector type's `Planet Size` names it, and so do the computer players' planet types (`Minimum Planet Size for Type`). | Text. Required. |
-| `Physical Type` | Which kind of object uses the record: a planet or an asteroid field. Generation looks a sector type's `Planet Size` up among the records of the object's own kind first. | `Planet` or `Asteroids`. Required. |
+| `Physical Type` | Which kind of object uses the record: a planet or an asteroid field. Records are known by their physical type and name together: generation, and everything that reads an object's size, look a `Planet Size` up among the records of the object's own kind first. | `Planet` or `Asteroids`. Required. |
 | `Stellar Size` | The size category that generation filters (`Obj Size`), homeworld sizes and `Create Planet Size` compare. | `Tiny`, `Small`, `Medium`, `Large` or `Huge`. A constructed world is normally `Huge`. Required. |
 | `Max Facilities` | Facility slots of a colony whose races all breathe the planet's air. | Whole number. Required. |
 | `Max Population` | The most population such a colony holds. | Millions (M). Required. |

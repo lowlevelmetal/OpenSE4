@@ -23,9 +23,10 @@ Value abilityNumberOrText(const std::string& raw);
 Value abilityEntry(const ruleset::Ability& a);
 Value abilityEntries(std::span<const ruleset::Ability> list);
 // The value of every ability type in the list, each read in its own mode
-// (game::aggregationOf), in order of first appearance: {name, aggregation,
-// value, value2, per_sight_type}.
-Value abilityTotals(std::span<const game::ParsedAbility> list);
+// (game::aggregationOf; an ability a mod declares as it declares: sum,
+// largest or smallest), in order of first appearance: {name, aggregation,
+// value, per_sight_type}.
+Value abilityTotals(const game::Rules& r, std::span<const game::ParsedAbility> list);
 // An ability type's name: the data's identifier ("Supply Storage"); AI tags
 // and abilities the engine does not know keep their own text.
 std::string_view abilityName(const game::ParsedAbility& a);

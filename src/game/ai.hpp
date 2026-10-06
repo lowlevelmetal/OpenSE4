@@ -83,6 +83,21 @@ std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e);
 // of them by default (the SDK's `builtin` service restricts them,
 // docs/sdk/ai-protocol.md §6).
 std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e, uint32_t ministers = kAllMinisters);
+// For an empire a script or external player plays (game/players.hpp), what
+// the classic AI writes into a computer empire directly before its Politics
+// minister plans, given as the commands a human would give for it: the
+// AI_Settings movement options and the systems it agreed to leave as its
+// systems to avoid (the state update's, spec 05 §7.5; cmd::SetEncounterOptions,
+// cmd::SetSystemFlags), then its claims (the Politics minister's first act,
+// claimTerritory, spec 05 §7.2; cmd::SetSystemFlags). Only what differs from
+// the empire's state now; none for a human empire or one whose Politics
+// minister is off (docs/sdk/ai-protocol.md §9).
+std::vector<Command> politicsStartCommands(const Rules& r, const GameState& s, EmpireId e);
+// The classic answer to such an empire's `politics` call: those commands
+// (when `ministers` holds the Politics minister), then the Politics
+// minister's own, planned on the state after them, as the classic AI plans
+// them for a computer empire.
+std::vector<Command> planPlayerPolitics(const Rules& r, const GameState& s, EmpireId e, uint32_t ministers = kAllMinisters);
 // The figures an empire's start-of-turn step works out first thing, before
 // the AI state update and the Politics minister (spec 05 §7.5 *Net income*,
 // *Revenue*, confirmed: binary): the net income, which its economy step
@@ -104,6 +119,11 @@ StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, Empire
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory = nullptr,
                                              std::vector<ObjectId>* colonyTargets = nullptr, const StartOfTurnFigures* figures = nullptr,
                                              uint32_t ministers = kAllMinisters);
+// The colonization targets of the lists those ministers would plan with now
+// (what planOrdersAfterPolitics gives in `colonyTargets`), without planning:
+// the lists an empire a player plays leaves for the economy step when it
+// keeps the classic state (docs/sdk/ai-protocol.md §9).
+std::vector<ObjectId> colonyTargetsNow(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory = nullptr);
 // Group 2 above: Design, Research, Intelligence and the construction ministers.
 // `unitReserve`: the percentage the vehicle list holds back for units, which
 // the turn passes on (the reserve quirk of spec 05 §7.5 "Units file"; see
@@ -174,7 +194,11 @@ void recordAiDecisions(TurnContext& ctx, EmpireId e);
 // claimed during the previous turn): every empire, or one empire at the start
 // of its turn;
 void updateAiStates(TurnContext& ctx);
-void updateAiState(TurnContext& ctx, EmpireId e);
+// `options` false: without copying the AI_Settings movement options and the
+// systems agreed to leave into the empire's options (an empire a player
+// plays, whose classic politics answer gives them as commands:
+// politicsStartCommands).
+void updateAiState(TurnContext& ctx, EmpireId e, bool options = true);
 // then the political step (anger, §7.3) before Politics decides: every
 // empire counting this turn's events, or one empire counting the events of
 // `eventsTurn` (the turn processed before, as a simultaneous game does; none

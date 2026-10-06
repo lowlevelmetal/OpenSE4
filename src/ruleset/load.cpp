@@ -1,6 +1,7 @@
 #include "ruleset/ruleset.hpp"
 
 #include "ruleset/ability_names.hpp"
+#include "ruleset/effect_names.hpp"
 
 #include <algorithm>
 #include <array>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <expected>
 #include <functional>
+#include <initializer_list>
 #include <span>
 #include <sstream>
 
@@ -241,6 +243,7 @@ private:
     std::vector<Message> messages(RecordReader& r, const char* countKey, const char* titleFmt, const char* textFmt) {
         std::vector<Message> out;
         const int count = r.int32(countKey, Need::Optional);
+        if (count < 0) r.error(std::format("'{}' must not be negative, not {}", countKey, count));
         for (int n = 1; n <= count; ++n) {
             Message m;
             if (titleFmt) m.title = r.str(std::vformat(titleFmt, std::make_format_args(n)), Need::Optional);
@@ -307,9 +310,9 @@ private:
         v.minCrewQuarters = r.int32("Requirement Min Crew Quarters", Need::Optional);
         v.usesEngines = r.boolean("Requirement Uses Engines", Need::Optional);
         v.maxEngines = r.int32("Requirement Max Engines", Need::Optional);
-        v.maxPercentFighterBays = r.int32("Requirement Pct Fighter Bays", Need::Optional);
-        v.maxPercentColonyModules = r.int32("Requirement Pct Colony Mods", Need::Optional);
-        v.maxPercentCargo = r.int32("Requirement Pct Cargo", Need::Optional);
+        v.minPercentFighterBays = r.int32("Requirement Pct Fighter Bays", Need::Optional);
+        v.minPercentColonyModules = r.int32("Requirement Pct Colony Mods", Need::Optional);
+        v.minPercentCargo = r.int32("Requirement Pct Cargo", Need::Optional);
         // Documented unit-only flags that the original never reads (spec 03 §2.2).
         r.str("Launched from Ship", Need::Optional);
         r.str("Launched from Planet", Need::Optional);
@@ -599,7 +602,28 @@ private:
         e.picture = r.str("Picture", Need::Optional);
         e.turnsToComplete = r.int32("Time Till Completion", Need::Optional);
         e.startMessages = messages(r, "Num Start Messages", "Start Message Title {}", "Start Message {}");
+        checkEvent(r, e);
         rs_.eventTypes.push_back(std::move(e));
+    }
+
+    // What spec 01 §10 and spec 05 §4 allow an event record. A type the
+    // engine does not know loads, as the original's does, but the event never
+    // fires; an amount a magnitude effect cannot use does nothing.
+    void checkEvent(RecordReader& r, const EventType& e) {
+        const bool known = std::any_of(kEffectTypes.begin(), kEffectTypes.end(), [&](std::string_view t) { return datafile::keysEqual(t, e.type); });
+        if (!known) r.warn(std::format("unknown event type '{}': the event never fires", e.type));
+        auto oneOf = [](std::string_view value, std::initializer_list<std::string_view> allowed) {
+            return std::any_of(allowed.begin(), allowed.end(), [&](std::string_view a) { return datafile::keysEqual(a, value); });
+        };
+        if (!e.severity.empty() && !oneOf(e.severity, {"Low", "Medium", "High", "Catastrophic"}))
+            r.error(std::format("'Severity' must be Low, Medium, High or Catastrophic, not '{}'", e.severity));
+        if (!e.messageTo.empty() && !oneOf(e.messageTo, {"None", "Owner", "Sector", "System", "All"}))
+            r.error(std::format("'Message To' must be None, Owner, Sector, System or All, not '{}'", e.messageTo));
+        if (e.turnsToComplete < 0)
+            r.error(std::format("'Time Till Completion' must be 0 (at once) or a number of turns, not {}", e.turnsToComplete));
+        if (e.effectAmount <= 0 &&
+            oneOf(e.type, {"Ship - Damage", "Ship - Lose Movement", "Ship - Lose Supply", "Planet - Cargo Damage", "Planet - Facility Damage"}))
+            r.warn(std::format("an event of type '{}' with 'Effect Amount' {} has no effect", e.type, e.effectAmount));
     }
 
     void loadStrategy(RecordReader& r) {

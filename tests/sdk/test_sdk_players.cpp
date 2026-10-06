@@ -191,7 +191,7 @@ TEST_CASE("sdk players: opense4-sdk check finds a player's missing module or cla
     write("ai/helpers.py", "X = 1\n");
     write("ai/pack/__init__.py", "");
     write("ai/pack/inner.py", "class Inner(object):\n    pass\n");
-    write("ai/broken.py", "def f(:\n    pass\n");
+    write("ai/broken.py", "x = 1\n\ndef f(:\n    pass\n");
     write("ai/bad-name.py", "x = 1\n");
     auto p = mods::openPackage(dir.path());
     REQUIRE(p.has_value());
@@ -203,7 +203,8 @@ TEST_CASE("sdk players: opense4-sdk check finds a player's missing module or cla
     CHECK(check.errors.size() == 3);
     CHECK(errors.find("'Lost' is in module nowhere") != std::string::npos);
     CHECK(errors.find("'Classless' is class Other, but ai/good.py defines no class Other") != std::string::npos);
-    CHECK(errors.find("ai/broken.py") != std::string::npos);
+    CHECK(errors.find("ai/broken.py (line 3): ") != std::string::npos);
+    CHECK(errors.find("SyntaxError") != std::string::npos);
     CHECK(warnings.find("ai/bad-name.py: not a Python module name") != std::string::npos);
     // The fixture mod is clean.
     const sdk::PlayerCheck fixture = sdk::checkModPlayers(aiFixtureMod());

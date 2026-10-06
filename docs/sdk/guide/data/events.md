@@ -17,13 +17,13 @@ rules.
 
 | Field | What it does | Values |
 |---|---|---|
-| `Type` | The effect. OpenSE4 does not check it when the data loads: a record of an unknown type loads, and never fires. | One of the type names in "What each type does". Required. |
-| `Severity` | Game Setup's *Maximum Event Severity* allows records up to this level (see "How the game chooses an event"). High and Catastrophic planet and star events also spare every empire's home planet location. | `Low`, `Medium`, `High` or `Catastrophic`. OpenSE4 reads anything else, a blank included, as `Low`. |
-| `Effect Amount` | The effect's parameter. Its meaning and unit depend on the type. | A whole number, positive or negative. Default 0. |
-| `Message To` | Who is told. `None`: nobody. `Owner`: the empire hit (the owner of the ship or colony). `Sector`, `System`: the empire hit and every empire with a ship, base, unit group or colony in the target's sector or system. `All`: every living empire. | One of those five. OpenSE4 reads anything else as `Owner`. |
-| `Num Messages`, `Message Title N`, `Message N` | The messages sent when the effect strikes: list `messages`. One entry is drawn at random each time, and title N goes with text N. | Text with tokens (below). |
+| `Type` | The effect. A record of a type OpenSE4 does not know loads, as in the original, and never fires; the load warns about it. | One of the type names in "What each type does". Required. |
+| `Severity` | Game Setup's *Maximum Event Severity* allows records up to this level (see "How the game chooses an event"). High and Catastrophic planet and star events also spare every empire's home planet location. | `Low`, `Medium`, `High` or `Catastrophic`; a blank reads as `Low`. Anything else is an error. |
+| `Effect Amount` | The effect's parameter. Its meaning and unit depend on the type. | A whole number, positive or negative. Default 0. The load warns when it is 0 or less for a type that then does nothing (`Ship - Damage`, `Ship - Lose Movement`, `Ship - Lose Supply`, `Planet - Cargo Damage`, `Planet - Facility Damage`). |
+| `Message To` | Who is told. `None`: nobody. `Owner`: the empire hit (the owner of the ship or colony). `Sector`, `System`: the empire hit and every empire with a ship, base, unit group or colony in the target's sector or system. `All`: every living empire. | One of those five; a blank reads as `Owner`. Anything else is an error. |
+| `Num Messages`, `Message Title N`, `Message N` | The messages sent when the effect strikes: list `messages`. One entry is drawn at random each time, and title N goes with text N. | Text with tokens (below). A negative count is an error. |
 | `Picture` | The picture shown with the messages, `Pictures/Events/<Picture>.bmp` (128×128). Write the base name without ".bmp"; a mod may bring a PNG of the same name. | A base name. |
-| `Time Till Completion` | 0: the event strikes at once. N above 0: the start message goes out now, and the effect with its message follows exactly N turns later. | Turns (10 turns are one game year). Default 0. |
+| `Time Till Completion` | 0: the event strikes at once. N above 0: the start message goes out now, and the effect with its message follows exactly N turns later. | Turns (10 turns are one game year). Default 0; a negative number is an error. |
 | `Num Start Messages`, `Start Message Title N`, `Start Message N` | The messages sent when a timed event begins: list `start_messages`. A timed event without them begins silently. | Text with tokens (below). |
 
 The two lists are patched as entries ([packages-and-data.md](../../packages-and-data.md#lists-in-a-record)):

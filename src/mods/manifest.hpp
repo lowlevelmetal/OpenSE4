@@ -22,6 +22,7 @@
 //     module = "admiral"               # a module or package under the mod's ai/ folder
 //     class = "Admiral"
 //     description = "..."
+//     classic_state = true             # the classic AI's bookkeeping runs for its empires (§9)
 //
 //     [rules]                          # rules scripts (docs/sdk/rules.md)
 //     players_see_mod_data = true      # computer players see their own things' mod data
@@ -57,6 +58,11 @@ struct AiPlayer {
     std::string module;       // a module or package under ai/: "admiral", "fleet.admiral"
     std::string className;    // a class of that module (`class` in mod.toml)
     std::string description;
+    // Whether the classic AI's own bookkeeping (its state machine, anger,
+    // counters, lists and figures) runs for the empires the player plays, so
+    // that `ai.builtin` and the callbacks it leaves out see what the classic
+    // AI would (docs/sdk/ai-protocol.md §9). `classic_state` in mod.toml.
+    bool classicState = true;
     int line = 0;             // in mod.toml
 };
 

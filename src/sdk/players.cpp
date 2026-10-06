@@ -164,6 +164,12 @@ public:
             if (e.controller.kind == game::Controller::Kind::Script &&
                 std::find(modsUsed_.begin(), modsUsed_.end(), e.controller.mod) == modsUsed_.end())
                 modsUsed_.push_back(e.controller.mod);
+        classicState_.assign(s.empires.size(), 1);
+        for (const game::Empire& e : s.empires) {
+            if (e.controller.kind != game::Controller::Kind::Script) continue;
+            if (const mods::Package* mod = findMod(e.controller.mod))
+                if (const mods::AiPlayer* p = mod->manifest.aiPlayer(e.controller.player)) classicState_[e.id.index()] = p->classicState ? 1 : 0;
+        }
         // The rules hooks of the game's mods (docs/sdk/rules.md), if it has any.
         if (std::vector<const mods::Package*> rules = detail::rulesModsOf(r, s, setup_->mods); !rules.empty()) {
             rulesEngine_ = std::make_unique<detail::RulesEngine>(r, s, std::move(rules), setup_->package.empty(), *this);
@@ -193,6 +199,14 @@ public:
 
     game::RulesHooks* hooks() override { return rulesEngine_.get(); }
     void begin(game::TurnContext& ctx) override { callCtx_ = &ctx; }
+
+    // A mod's player keeps the classic state unless its [[ai.players]] entry
+    // says `classic_state = false`; an external bot, and a player whose mod is
+    // missing (the classic AI answers for it), keep it.
+    bool classicState(EmpireId e) override {
+        if (!e.valid() || e.index() >= classicState_.size()) return true;
+        return classicState_[e.index()] != 0;
+    }
     detail::RulesEngine* rulesEngine() { return rulesEngine_.get(); }
     game::TurnContext* callContext() { return callCtx_; }
 
@@ -797,7 +811,6 @@ private:
 
     // The classic planners for the empire now, some ministers only.
     Value builtin(Active& a, const Value& arg) {
-        const game::GameState& s = a.ctx->state;
         const Value& call = field(arg, "call", "builtin");
         uint32_t mask = game::kAllMinisters;
         auto ministers = [&](std::string_view key) -> std::optional<uint32_t> {
@@ -814,19 +827,15 @@ private:
         };
         if (auto only = ministers("ministers")) mask = *only;
         if (auto skip = ministers("skip")) mask &= ~*skip;
-        std::vector<game::Command> commands;
         const std::string what = call.isString() ? call.asString() : std::string();
-        if (what == "politics") {
-            commands = game::ai::planPoliticsOrders(rules_, s, a.empire, mask);
-        } else if (what == "orders") {
-            const std::vector<game::SystemId> territory = s.empire(a.empire).claimedSystems;
-            commands = game::ai::planOrdersAfterPolitics(rules_, s, a.empire, &territory, nullptr, nullptr, mask);
-        } else if (what == "economy") {
-            commands = game::ai::planEconomyStep(rules_, s, a.empire, 0, nullptr, nullptr, mask);
-        } else {
-            throw script::NativeError("ValueError", "builtin: 'call' should be \"politics\", \"orders\" or \"economy\"");
-        }
-        Value out = encodeCommands(commands);
+        game::PlanCall planned = game::PlanCall::Count;
+        if (what == "politics") planned = game::PlanCall::Politics;
+        else if (what == "orders") planned = game::PlanCall::Orders;
+        else if (what == "economy") planned = game::PlanCall::Economy;
+        else throw script::NativeError("ValueError", "builtin: 'call' should be \"politics\", \"orders\" or \"economy\"");
+        // The classic ministers as the engine's own fallback plans with them,
+        // with what the turn keeps for the classic AI (§9).
+        Value out = encodeCommands(game::classicPlan(*a.ctx, a.empire, planned, mask));
         charge(kBuiltinCost + nodeCost(out, kNodeCost));
         return out;
     }
@@ -877,6 +886,7 @@ private:
     game::TurnContext* callCtx_ = nullptr;
     bool inCall_ = false;   // a script call is running on the session's thread
     std::vector<std::string> modsUsed_;
+    std::vector<uint8_t> classicState_;   // by empire: whether its classic AI's bookkeeping runs (classicState)
     std::vector<Slot> slots_;
     std::deque<game::JournalEntry> replay_;
     bool replayed_ = false;   // the last request's response came from the journal

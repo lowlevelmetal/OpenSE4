@@ -28,6 +28,14 @@ std::vector<ruleset::VehicleType> designableTypes(const game::Rules& r, const ga
 std::vector<uint32_t> hullsOfType(const game::Rules& r, const game::Empire& e, ruleset::VehicleType t, std::optional<uint32_t> keep = std::nullopt);
 // The designer's title for a vehicle type: "Ship Design", "Weapon Platform Design".
 std::string designWindowTitle(ruleset::VehicleType t);
+// The design rules a hull's report lists, in our own words, as the designer
+// checks them (docs/spec/03 §2.2, §4.2): a bridge; at most one auxiliary
+// control when `Can Have Aux Con` is set (nothing is checked otherwise);
+// life support and crew quarters minimums; no engines, at most N or no limit
+// (`Max Engines` 0) and engines per movement point; the minimum shares of
+// fighter bays, colony modules and cargo. The original's Ship Size report
+// shows no such list (spec 06 §1.4); ours adds it.
+std::vector<std::string> hullRuleLines(const ruleset::VehicleSize& h);
 
 // Upgrade (docs/spec/03 §4.1, confirmed: binary): replaces every entry's
 // component, on its own, with the last component of its Family in data-file

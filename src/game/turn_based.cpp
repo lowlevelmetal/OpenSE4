@@ -26,6 +26,7 @@ namespace opense4::game {
 using detail::Control;
 using detail::living;
 using detail::keepStartFigures;
+using detail::keepStartTerritory;
 using detail::ministersPlan;
 using detail::withBattles;
 
@@ -306,27 +307,35 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     // confirmed: binary). The Politics minister rewrites the claims first
     // thing in its run; the state update and the ministers after it use
     // those of the previous turn (spec 05 §7.2).
-    // An empire a script or external player plays (players.hpp): the
-    // built-in AI's own steps do not run, and its player's `politics` and
-    // `orders` calls give the orders in the ministers' place (the classic
-    // ministers only when it gives no answer).
+    // An empire a script or external player plays (players.hpp): its
+    // player's `politics` and `orders` calls give the orders in the
+    // ministers' place (the classic ministers only when it gives no answer).
+    // Unless it asked for none, the classic AI's own steps run around them as
+    // for a computer empire; its options and claims are commands of the
+    // classic politics answer instead (docs/sdk/ai-protocol.md §9).
     const bool player = playedByController(ctx, e);
+    const bool own = classicStateKept(ctx, e);
     std::optional<ai::StartOfTurnFigures> figures;
-    if (!player && ministersPlan(s, e, control)) figures = ai::startOfTurnFigures(r, s, e);
-    if (!player) ai::updateAiState(ctx, e);
+    if (own && ministersPlan(s, e, control)) figures = ai::startOfTurnFigures(r, s, e);
+    if (own) ai::updateAiState(ctx, e, !player);
     const std::vector<SystemId> territory = s.empire(e).claimedSystems;
-    if (control != Control::Absent && !player) {
+    if (control != Control::Absent && own) {
         ai::politicalStep(ctx, e, politicalWindow(s, e));
         markPoliticalStep(s, e);
-        ai::claimTerritory(ctx, e);
+        if (!player) ai::claimTerritory(ctx, e);
     }
     if (player) {
-        playerPlans(lc, e, PlanCall::Politics, false, [&] { giveOrders(lc, e, ai::planPoliticsOrders(r, s, e)); });
+        keepStartFigures(ctx, e, figures);
+        keepStartTerritory(ctx, e, territory);
+        playerPlans(lc, e, PlanCall::Politics, false, [&] { giveOrders(lc, e, classicPlan(ctx, e, PlanCall::Politics)); });
+        std::optional<std::vector<ObjectId>> lists;
+        if (own) lists = ai::colonyTargetsNow(r, s, e, &territory);
         playerPlans(lc, e, PlanCall::Orders, false, [&] {
             std::vector<ObjectId> targets;
-            giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets));
-            ctx.aiColonyTargets = std::move(targets);
+            giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets, figures ? &*figures : nullptr));
+            if (!own) ctx.aiColonyTargets = std::move(targets);
         });
+        if (own) ctx.aiColonyTargets = std::move(lists);   // the step's lists stay in place for its economy step
     } else if (ministersPlan(s, e, control)) {
         giveOrders(lc, e, ai::planPoliticsOrders(r, s, e));
         std::vector<ObjectId> targets;
@@ -464,8 +473,8 @@ void computerTurn(LiveContext& lc, EmpireId e, Control control) {
         // rest of the turn now, politics first, and its orders are carried
         // out at once (docs/sdk/ai-protocol.md; the classic ministers when it
         // gives no answer).
-        playerPlans(lc, e, PlanCall::Politics, true, [&] { applyBatch(lc, e, ai::planPoliticsOrders(ctx.rules, s, e)); });
-        playerPlans(lc, e, PlanCall::Orders, true, [&] { applyBatch(lc, e, ai::planOrdersAfterPolitics(ctx.rules, s, e)); });
+        playerPlans(lc, e, PlanCall::Politics, true, [&] { applyBatch(lc, e, classicPlan(ctx, e, PlanCall::Politics)); });
+        playerPlans(lc, e, PlanCall::Orders, true, [&] { applyBatch(lc, e, classicPlan(ctx, e, PlanCall::Orders)); });
     } else if (control != Control::Computer && ministersPlan(s, e, control)) {
         // Taking over a human's turn in progress: the ministers plan the rest
         // of it now, the Politics minister first, as at a start of turn, and

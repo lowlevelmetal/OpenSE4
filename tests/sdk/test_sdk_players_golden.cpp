@@ -90,13 +90,13 @@ void playGolden(std::string_view name, uint64_t seed, bool simultaneous, std::sp
 TEST_CASE("sdk players golden: a simultaneous game two script players play gives the golden checksums") {
     static constexpr std::array<Milestone, 8> kGolden{{
         {0, 0xc7c9ef95c17cf5dbull},
-        {1, 0x9b54a591ee6612a9ull},
-        {2, 0x7f73e0088bb1aab3ull},
-        {5, 0x8d9ecacf16b4df37ull},
-        {10, 0xa610e9debfbe3a05ull},
-        {20, 0x3644b5c20a6def9cull},
-        {40, 0xa984191185fcd86aull},
-        {60, 0xe1760790fde173e5ull},
+        {1, 0xcc8bd5713ebf48feull},
+        {2, 0x82787cd1619d4b40ull},
+        {5, 0x9902eee9b68d7c5full},
+        {10, 0x2ca9e298070c1c65ull},
+        {20, 0x3eb4db537442ceb9ull},
+        {40, 0xb5b36e1158a9f502ull},
+        {60, 0xf2071fcd672edc9full},
     }};
     playGolden("simultaneous", 51, true, kGolden);
 }
@@ -104,13 +104,13 @@ TEST_CASE("sdk players golden: a simultaneous game two script players play gives
 TEST_CASE("sdk players golden: a turn-based game two script players play gives the golden checksums") {
     static constexpr std::array<Milestone, 8> kGolden{{
         {0, 0x900ff020b01d01d3ull},
-        {1, 0x1dc4101033f9b8e0ull},
-        {2, 0x89b2f6c70dc18a24ull},
-        {5, 0x8821803a5ec45028ull},
-        {10, 0xe56a5f118ba5db19ull},
-        {20, 0xe1dbd3a19a4eda1aull},
-        {40, 0x67be18a539f4c983ull},
-        {60, 0x301f501352d07d26ull},
+        {1, 0x7e28805585c72bdfull},
+        {2, 0xf6b3a65a81cb535eull},
+        {5, 0x47c708e9b9129375ull},
+        {10, 0xb7211059e819efbaull},
+        {20, 0x67c2849380812c83ull},
+        {40, 0x3f185b425b3fe912ull},
+        {60, 0x739befbab43e6874ull},
     }};
     playGolden("turn-based", 46, false, kGolden);
 }
@@ -121,8 +121,9 @@ TEST_CASE("sdk players golden: a turn-based game two script players play gives t
 // converted for each planning call, the requests. Against the same empire
 // played by nobody (a human without orders). Two players that do nothing: one
 // written straight to the protocol (the fixture's Idle, with the stand-in
-// package), one written with OpenSE4's own package (it wraps the view). Run it
-// in a release build:
+// package), one written with OpenSE4's own package (it wraps the view); and
+// what the classic AI's bookkeeping for the empire adds (the packaged player
+// again with classic_state = false). Run it in a release build:
 //     OPENSE4_SDK_BENCH=1 ./opense4_tests -tc="sdk players bench*"
 TEST_CASE("sdk players bench: the cost of a script empire that does nothing" * doctest::skip(std::getenv("OPENSE4_SDK_BENCH") == nullptr)) {
     const Rules& r = test::engineRules();
@@ -130,7 +131,8 @@ TEST_CASE("sdk players bench: the cost of a script empire that does nothing" * d
     test::ModDir bystander("bench", "test.bystander");
     test::writeText(bystander.root / "mod.toml",
               "[mod]\nid = \"test.bystander\"\nname = \"Bystander\"\nversion = \"1.0\"\napi = 1\n"
-              "[[ai.players]]\nname = \"Bystander\"\nmodule = \"bystander\"\nclass = \"Bystander\"\n");
+              "[[ai.players]]\nname = \"Bystander\"\nmodule = \"bystander\"\nclass = \"Bystander\"\n"
+              "[[ai.players]]\nname = \"Hermit\"\nmodule = \"bystander\"\nclass = \"Bystander\"\nclassic_state = false\n");
     bystander.file("ai/bystander.py", "from opense4 import ai\n\n\nclass Bystander(ai.Player):\n"
                                       "    def politics(self, view, orders):\n        pass\n\n"
                                       "    def orders(self, view, orders):\n        pass\n\n"
@@ -148,7 +150,7 @@ TEST_CASE("sdk players bench: the cost of a script empire that does nothing" * d
         CHECK(s.empire(EmpireId{1u}).script.failures == 0);
         return std::pair{ms / kTurns, s};
     };
-    double nobody = 0, idle = 0, packaged = 0;
+    double nobody = 0, idle = 0, packaged = 0, hermit = 0;
     GameState scripted;
     {
         InstalledPlayers installed;
@@ -164,6 +166,9 @@ TEST_CASE("sdk players bench: the cost of a script empire that does nothing" * d
         c.mod = "test.bystander";
         c.player = "Bystander";
         packaged = play(c).first;
+        // The same player without the classic AI's bookkeeping (classic_state = false).
+        c.player = "Hermit";
+        hermit = play(c).first;
     }
     // The view alone, three times a turn, as the planning calls build it.
     const auto start = std::chrono::steady_clock::now();
@@ -172,7 +177,7 @@ TEST_CASE("sdk players bench: the cost of a script empire that does nothing" * d
     const double view = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / kTurns;
     MESSAGE(std::format("a turn: {:.3f} ms with the empire played by nobody; {:.3f} ms more with a player straight to the protocol, "
                         "{:.3f} ms more with one written with the opense4 package; of it {:.3f} ms building its three views "
-                        "({} systems, {} vehicles)",
-                        nobody, idle - nobody, packaged - nobody, view, scripted.galaxy.systems.size(), scripted.vehicles.size()));
+                        "({} systems, {} vehicles), and {:.3f} ms the classic AI's bookkeeping (the same player with classic_state = false)",
+                        nobody, idle - nobody, packaged - nobody, view, scripted.galaxy.systems.size(), scripted.vehicles.size(), packaged - hermit));
     CHECK(nodes > 0);
 }
