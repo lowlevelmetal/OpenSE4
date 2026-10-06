@@ -352,25 +352,28 @@ memory) hold whole numbers, never floats.
 
 Planning calls get a budget of 200 million bytecodes, questions 5 million (the host may
 change them). What the package itself costs, measured on a view of 480 systems, 4160
-stellar objects, 160 colonies and 8160 vehicles (the engine fixture's view copied forty
-times), in bytecodes (the same on every computer) and in time on a desktop computer:
+stellar objects, 160 colonies and 8160 vehicles (the engine fixture's whole view copied
+forty times; tests/sdk/python/sdk_bench.py), in bytecodes, which are the same on every
+computer, and in time on a desktop computer (an optimized build; in brackets, the same
+view copied ten times, with 2040 vehicles):
 
-| | Bytecodes | Game's runtime | CPython 3.14 |
+| Each step after the one before | Bytecodes | Game's runtime | CPython 3.14 |
 |---|---|---|---|
-| Wrapping the view | 91 | 0.6 ms | under 0.01 ms |
-| Reading `view.vehicles` the first time (8160 wrapped) | 286,000 | 37 ms | 0.75 ms |
-| 1000 lookups by id (the index built on the first) | 279,000 | 6 ms | 0.7 ms |
-| `view.my.vehicles` | 93,000 | 0.6 ms | 0.2 ms |
-| Five fields of every vehicle, through the objects | 1,413,000 | 79 ms | 3.1 ms |
-| The same five fields, through the maps (`record.raw`) | 588,000 | 3 ms | |
-| Jumps from home to every system | 242,000 | 1.6 ms | 0.9 ms |
-| Importing the package's main modules (compiled once per process) | 27,000 | 2 ms | |
+| Wrapping the view | 104 | 0.6 ms | under 0.01 ms |
+| 1000 lookups by id (the first builds the index; no other vehicle is wrapped) | 398,000 | 2.6 ms (1.9 ms) | 1.0 ms |
+| `view.my.vehicles` (only ours are wrapped) | 335,000 | 13.5 ms (0.7 ms) | 0.8 ms |
+| `view.my.idle_vehicles`, `.ships`, `.units` | 271,000 | 1.5 ms (0.4 ms) | 0.7 ms |
+| `view.vehicles`, every vehicle wrapped | 247,000 | 10.7 ms (0.5 ms) | 0.5 ms |
+| Five fields of every vehicle, through the objects | 1,432,000 | 59 ms (5.5 ms) | 3.0 ms |
+| The same five fields, through the maps (`record.raw`) | 588,000 | 2.9 ms (0.5 ms) | 1.2 ms |
+| Jumps from home to every system | 257,000 | 1.5 ms (0.3 ms) | 0.8 ms |
+| Importing the package's main modules (compiled once per process) | 27,000 | 2.2 ms | |
 
-Each object the package makes costs an allocation, and in the game's runtime making many
-objects takes far more time than its bytecodes suggest: the allocator searches longer for
-room the more the heap holds. In a loop over thousands of vehicles that only reads a few
-fields, read the maps: `for v in view.raw["vehicles"]: ...`. (Times from an optimized
-build; the budget counts only bytecodes.)
+Each object the package makes is an allocation, and in the game's runtime making many
+objects takes more time than its bytecodes suggest, the more so the more the heap holds:
+the view four times larger costs ten to twenty times as much above. Lists and lookups wrap only
+what they give back, and each thing once. In a loop over thousands of vehicles that only
+reads a few fields, read the maps: `for v in view.raw["vehicles"]: ...`.
 
 ## For SDK developers
 

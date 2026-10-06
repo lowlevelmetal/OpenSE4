@@ -15,10 +15,10 @@ _STATE = {}
 
 PHASES = (
     "wrap",
-    "vehicles_list",
     "lookup_1000_by_id",
     "my_vehicles",
     "idle_and_by_type",
+    "vehicles_list",
     "read_5_fields_each_vehicle",
     "read_5_fields_each_raw_map",
     "colonies_planets_systems",

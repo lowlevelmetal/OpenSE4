@@ -57,18 +57,81 @@ class View(_records.ViewFields):
     def __init__(self, data: Dict[str, Any], rules: Any = None) -> None:
         _records.ViewFields.__init__(self, self, data)
         self._rules = rules
-        self._lists: Dict[str, Any] = {}
-        self._index: Dict[str, Dict[int, Any]] = {}
+        self._wrapped: Dict[str, List[Any]] = {}   # field: one record per element, None until made
+        self._full: Dict[str, List[Any]] = {}      # field: the whole list, once made
+        self._index: Dict[str, Dict[int, int]] = {}   # kind of id: {id: position in its list}
+        self._found: Dict[str, Dict[int, Any]] = {}   # kind of id: {id: record}, as looked up
         self._cache: Dict[str, Any] = {}
 
-    # ---- lists, wrapped once ----
+    # ---- lists: each element wrapped once, when first needed ----
+
+    def _made(self, field: str) -> List[Any]:
+        made = self._wrapped.get(field)
+        if made is None:
+            made = [None] * len(self._d[field])
+            self._wrapped[field] = made
+        return made
+
+    def _at(self, field: str, kind: str, i: int) -> Any:
+        """The record of element `i` of a list of the view."""
+        made = self._wrapped.get(field)
+        if made is None:
+            made = self._made(field)
+        r = made[i]
+        if r is None:
+            r = CLASSES[kind](self, self._d[field][i])
+            made[i] = r
+        return r
 
     def _list(self, field: str, kind: str) -> List[Any]:
-        items = self._lists.get(field)
-        if items is None:
-            items = wrap_list(kind, self, self._d[field])
-            self._lists[field] = items
-        return items
+        full = self._full.get(field)
+        if full is not None:
+            return full
+        made = self._wrapped.get(field)
+        if made is None:
+            full = wrap_list(kind, self, self._d[field])
+        else:
+            raw = self._d[field]
+            cls = CLASSES[kind]
+            for i in range(len(made)):
+                if made[i] is None:
+                    made[i] = cls(self, raw[i])
+            full = made
+        self._wrapped[field] = full
+        self._full[field] = full
+        return full
+
+    def _select(self, field: str, kind: str, test: Callable[[Dict[str, Any]], bool]) -> List[Any]:
+        """The records of the elements whose maps pass `test`; only those are wrapped."""
+        raw = self._d[field]
+        made = self._made(field)
+        cls = CLASSES[kind]
+        out = []
+        for i in range(len(raw)):
+            d = raw[i]
+            if test(d):
+                r = made[i]
+                if r is None:
+                    r = cls(self, d)
+                    made[i] = r
+                out.append(r)
+        return out
+
+    def _owned(self, field: str, kind: str, owner: Any, theirs: bool = False) -> List[Any]:
+        """The records whose owner is `owner` (or, `theirs`, is not); only those are wrapped."""
+        raw = self._d[field]
+        made = self._made(field)
+        cls = CLASSES[kind]
+        out = []
+        for i in range(len(raw)):
+            d = raw[i]
+            if (d["owner"] == owner) != theirs:
+                r = made[i]
+                if r is None:
+                    r = cls(self, d)
+                    made[i] = r
+                out.append(r)
+        return out
 
     @property
     def empires(self) -> List["Empire"]:
@@ -122,26 +185,44 @@ class View(_records.ViewFields):
 
     # ---- lookups by id ----
 
-    def _by_id(self, kind: str) -> Dict[int, Any]:
+    def _positions(self, kind: str) -> Dict[int, int]:
+        """{id: position} for a kind of id, from the maps (nothing is wrapped)."""
         index = self._index.get(kind)
         if index is None:
             field, record, key = _LISTS[kind]
-            index = {}
-            for item in self._list(field, record):
-                index[item._d[key]] = item
+            raw = self._d[field]
+            index = {raw[i][key]: i for i in range(len(raw))}
             self._index[kind] = index
         return index
+
+    def raw_of(self, kind: str, id: Optional[int]) -> Optional[Dict[str, Any]]:
+        """The map of the thing of that kind ("vehicle", "object"...) with that id, or None."""
+        if id is None:
+            return None
+        i = self._positions(kind).get(id)
+        return None if i is None else self._d[_LISTS[kind][0]][i]
 
     def resolve(self, kind: str, id: Optional[int]) -> Any:
         """The object of the kind ("vehicle", "system", ...) with that id, or None."""
         if id is None:
             return None
-        return self._by_id(kind).get(id)
+        found = self._found.get(kind)
+        if found is None:
+            found = {}
+            self._found[kind] = found
+        r = found.get(id)
+        if r is None:
+            i = self._positions(kind).get(id)
+            if i is None:
+                return None
+            field, record, key = _LISTS[kind]
+            r = self._at(field, record, i)
+            found[id] = r
+        return r
 
     def resolve_all(self, kind: str, ids: Iterable[int]) -> List[Any]:
         """The objects with those ids (None for one the view does not list)."""
-        index = self._by_id(kind)
-        return [index.get(i) for i in ids]
+        return [self.resolve(kind, i) for i in ids]
 
     def empire(self, id: Any) -> Optional["Empire"]:
         """The empire with that id, or None."""
@@ -215,7 +296,7 @@ class View(_records.ViewFields):
     def foreign_vehicles(self) -> List["Vehicle"]:
         """The vehicles of other empires that we see."""
         me = self._d["empire"]
-        return self._cached("foreign_vehicles", lambda: [v for v in self.vehicles if v._d["owner"] != me])
+        return self._cached("foreign_vehicles", lambda: self._owned("vehicles", "vehicle", me, True))
 
     @property
     def enemy_vehicles(self) -> List["Vehicle"]:
@@ -226,7 +307,7 @@ class View(_records.ViewFields):
     def foreign_colonies(self) -> List["Colony"]:
         """The colonies of other empires that we know."""
         me = self._d["empire"]
-        return self._cached("foreign_colonies", lambda: [c for c in self.colonies if c._d["owner"] != me])
+        return self._cached("foreign_colonies", lambda: self._owned("colonies", "colony", me, True))
 
     @property
     def enemy_colonies(self) -> List["Colony"]:
@@ -238,37 +319,39 @@ class View(_records.ViewFields):
     @property
     def explored_systems(self) -> List["System"]:
         """The systems we have explored."""
-        return self._cached("explored", lambda: [s for s in self.systems if s._d["explored"]])
+        return self._cached("explored", lambda: self._select("systems", "system", lambda d: d["explored"]))
 
     @property
     def unexplored_systems(self) -> List["System"]:
         """The systems we have not explored."""
-        return self._cached("unexplored", lambda: [s for s in self.systems if not s._d["explored"]])
+        return self._cached("unexplored", lambda: self._select("systems", "system", lambda d: not d["explored"]))
 
     @property
     def planets(self) -> List["SpaceObject"]:
         """The planets of the systems whose contents are shown."""
-        return self._cached("planets", lambda: [o for o in self.objects if o._d["kind"] == "planet"])
+        return self._cached("planets", lambda: self._select("objects", "space_object", lambda d: d["kind"] == "planet"))
 
     @property
     def warp_points(self) -> List["SpaceObject"]:
         """The warp points of the systems whose contents are shown."""
-        return self._cached("warp_points", lambda: [o for o in self.objects if o._d["kind"] == "warp_point"])
+        return self._cached("warp_points", lambda: self._select("objects", "space_object", lambda d: d["kind"] == "warp_point"))
 
-    def _by_system(self, key: str, items: Callable[[], List[Any]], system_of: Callable[[Any], Optional[int]]) -> Dict[int, List[Any]]:
-        def make() -> Dict[int, List[Any]]:
-            out: Dict[int, List[Any]] = {}
-            for x in items():
-                s = system_of(x)
+    def _by_system(self, field: str, system_of: Callable[[Dict[str, Any]], Optional[int]]) -> Dict[int, List[int]]:
+        # {system id: positions in the list}, from the maps.
+        def make() -> Dict[int, List[int]]:
+            out: Dict[int, List[int]] = {}
+            raw = self._d[field]
+            for i in range(len(raw)):
+                s = system_of(raw[i])
                 if s is None:
                     continue
                 group = out.get(s)
                 if group is None:
-                    out[s] = [x]
+                    out[s] = [i]
                 else:
-                    group.append(x)
+                    group.append(i)
             return out
-        return self._cached(key, make)
+        return self._cached(field + "_by_system", make)
 
     def objects_in(self, system: Any) -> List["SpaceObject"]:
         """The stellar objects of a system, in the game's order (empty when it is not shown)."""
@@ -279,16 +362,16 @@ class View(_records.ViewFields):
 
     def vehicles_in(self, system: Any) -> List["Vehicle"]:
         """The vehicles we see in a system."""
-        by = self._by_system("vehicles_by_system", lambda: self.vehicles, lambda v: v._d["location"]["system"])
-        return by.get(id_of(system, "system"), [])
+        by = self._by_system("vehicles", lambda d: d["location"]["system"])
+        return [self._at("vehicles", "vehicle", i) for i in by.get(id_of(system, "system"), ())]
 
     def colonies_in(self, system: Any) -> List["Colony"]:
         """The colonies we know in a system."""
-        def system_of(c: Any) -> Optional[int]:
-            planet = self.resolve("object", c._d["planet"])
-            return None if planet is None else planet._d["system"]
-        by = self._by_system("colonies_by_system", lambda: self.colonies, system_of)
-        return by.get(id_of(system, "system"), [])
+        def system_of(c: Dict[str, Any]) -> Optional[int]:
+            planet = self.raw_of("object", c["planet"])
+            return None if planet is None else planet["system"]
+        by = self._by_system("colonies", system_of)
+        return [self._at("colonies", "colony", i) for i in by.get(id_of(system, "system"), ())]
 
     def vehicles_at(self, location: Any) -> List["Vehicle"]:
         """The vehicles we see in a sector (a location, or what stands for one)."""
@@ -338,29 +421,30 @@ class MyEmpire(_records.MyEmpireFields):
         """Our empire as the empires list shows it."""
         return self._v.empire(self._d["id"])
 
-    def _mine(self, key: str, items: Callable[[], List[Any]]) -> List[Any]:
+    def _mine(self, field: str, kind: str) -> List[Any]:
         me = self._d["id"]
-        return self._v._cached("my_" + key, lambda: [x for x in items() if x._d["owner"] == me])
+        v = self._v
+        return v._cached("my_" + field, lambda: v._owned(field, kind, me))
 
     @property
     def vehicles(self) -> List["Vehicle"]:
         """Our vehicles: ships, bases and unit groups."""
-        return self._mine("vehicles", lambda: self._v.vehicles)
+        return self._mine("vehicles", "vehicle")
 
     @property
     def fleets(self) -> List["Fleet"]:
         """Our fleets."""
-        return self._mine("fleets", lambda: self._v.fleets)
+        return self._mine("fleets", "fleet")
 
     @property
     def colonies(self) -> List["Colony"]:
         """Our colonies."""
-        return self._mine("colonies", lambda: self._v.colonies)
+        return self._mine("colonies", "colony")
 
     @property
     def designs(self) -> List["Design"]:
         """Our designs."""
-        return self._mine("designs", lambda: self._v.designs)
+        return self._mine("designs", "view_design")
 
     def vehicles_of_type(self, *types: str) -> List["Vehicle"]:
         """Our vehicles of these vehicle types ("ship", "base", "fighter"...)."""
@@ -425,13 +509,13 @@ class Empire(_records.EmpireFields):
     def vehicles(self) -> List["Vehicle"]:
         """Its vehicles that we see."""
         me = self._d["id"]
-        return [v for v in self._v.vehicles if v._d["owner"] == me]
+        return self._v._owned("vehicles", "vehicle", me)
 
     @property
     def colonies(self) -> List["Colony"]:
         """Its colonies that we know."""
         me = self._d["id"]
-        return [c for c in self._v.colonies if c._d["owner"] == me]
+        return self._v._owned("colonies", "colony", me)
 
 
 class System(_records.SystemFields):

@@ -61,7 +61,8 @@ class Galaxy:
         if my is not None and settings is not None and (avoid is None or avoid) and settings["avoid_tagged_minefields"]:
             for loc in my["tagged_minefields"]:
                 tagged[(loc["system"], loc["x"], loc["y"])] = True
-        objects = view._by_id("object")
+        positions = view._positions("object")
+        objects = view._d["objects"]
         for sys in view._d["systems"]:
             ids = sys["objects"]
             if not ids:
@@ -69,10 +70,10 @@ class Galaxy:
             links = []
             warp_points = 0
             for oid in ids:
-                o = objects.get(oid)
-                if o is None:
+                at = positions.get(oid)
+                if at is None:
                     continue
-                d = o._d
+                d = objects[at]
                 if d["kind"] != "warp_point":
                     continue
                 warp_points += 1
@@ -81,8 +82,9 @@ class Galaxy:
                 far_system = d["destination_system"]
                 if far_system is None or (known_only and not d["link_known"]):
                     continue
-                far = objects.get(d["destination"]) if d["destination"] is not None else None
-                fx, fy = (far._d["sector"]["x"], far._d["sector"]["y"]) if far is not None else (6, 6)
+                far_at = positions.get(d["destination"]) if d["destination"] is not None else None
+                far = objects[far_at] if far_at is not None else None
+                fx, fy = (far["sector"]["x"], far["sector"]["y"]) if far is not None else (6, 6)
                 sx, sy = d["sector"]["x"], d["sector"]["y"]
                 if tagged and ((sys["id"], sx, sy) in tagged or (far_system, fx, fy) in tagged):
                     continue
