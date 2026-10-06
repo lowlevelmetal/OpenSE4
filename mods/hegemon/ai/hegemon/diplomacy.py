@@ -62,9 +62,17 @@ class Diplomacy:
                     self.commands.append({"kind": "send_message", "message": {"to_empire": eid, "type": "break_treaty",
                                                                              "treaty": treaty, "text": "Our agreement ends."}})
                 continue
-            if treaty in PEACE:
-                continue
             if rel["message_sent_this_turn"]:
+                continue
+            anger = e["anger_toward_me"]
+            if treaty in PEACE:
+                # Keep a friend friendly: a small gift when its anger climbs.
+                if anger is not None and anger >= self.tune.get("keep_anger", 55) and self.can_gift():
+                    self.gift(eid)
+                continue
+            # An angry rival is calmed with gifts first: only the message counts, not its size.
+            if anger is not None and anger >= self.tune.get("calm_anger", 35) and self.can_gift():
+                self.gift(eid)
                 continue
             last = offered.get(key, -99)
             if w.turn - last < OFFER_EVERY:
@@ -73,3 +81,16 @@ class Diplomacy:
             self.commands.append({"kind": "send_message", "message": {"to_empire": eid, "type": "propose_treaty",
                                                                      "treaty": "non_aggression", "text": "Let us keep the peace."}})
         return self.commands
+
+    def can_gift(self):
+        return bool(self.w.options["allow_gifts"])
+
+    def gift(self, eid):
+        """A token gift of whatever we hold most of."""
+        st = self.w.my["stored"]
+        r = max(("minerals", "organics", "radioactives"), key=lambda k: st[k])
+        amount = min(500, st[r] // 20)
+        res = {"minerals": 0, "organics": 0, "radioactives": 0}
+        res[r] = max(1, amount)
+        self.commands.append({"kind": "send_message", "message": {"to_empire": eid, "type": "gift", "text": "A token of friendship.",
+                                                                 "offer": [{"kind": "resources", "resources": res}]}})

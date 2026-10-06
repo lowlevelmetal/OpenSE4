@@ -133,8 +133,17 @@ class Strategy:
         st = self.st
         turn = w.turn
         threat = Force()
-        for s, f in self.intel.threat_by_system().items():
+        threats = self.intel.threat_by_system()
+        for s, f in threats.items():
             threat.add(f.attack, f.hp, 0)
+        near = Force()
+        for s, f in self.intel.threat_near(threats, 1).items():
+            near.add(f.attack, f.hp, 0)
+        self.near = near
+        at_war_near = False
+        for key, r in self.rivals.items():
+            if w.treaty(int(key)) == "war" and r["dist"] <= 2:
+                at_war_near = True
         target = self.pick_target()
         st["target"] = target
         phase = st["phase"]
@@ -143,7 +152,8 @@ class Strategy:
             r = self.rivals[str(target)]
             tf.add(r["force"][0], r["force"][1], 0)
         if phase == "expand":
-            if turn >= self.tune.get("arm_turn", 45) or (turn >= 25 and good_targets < 2) or threat.power() > 1.5 * my_force.power() and turn > 15:
+            if turn >= self.tune.get("arm_turn", 45) or (turn >= 25 and good_targets < 2) or \
+                    (turn > 10 and (near.power() > 0.5 * my_force.power() or at_war_near)):
                 phase = "arm"
         elif phase == "arm":
             if target is not None and my_force.count >= self.tune.get("war_ships", 8) and my_force.beats(tf, 1.5):
@@ -159,11 +169,23 @@ class Strategy:
         self.threat = threat
         return phase
 
+    def assess(self):
+        """The threat near our colonies now, without moving the phase on (economy calls)."""
+        near = Force()
+        threats = self.intel.threat_by_system()
+        for s, f in self.intel.threat_near(threats, 1).items():
+            near.add(f.attack, f.hp, 0)
+        self.near = near
+        return near
+
     # ---- what the phase asks of the planners ----
 
     def upkeep_share(self):
         p = self.phase
         base = {"expand": 0.10, "arm": 0.35, "war": 0.45}.get(p, 0.2)
+        near = getattr(self, "near", None)
+        if near is not None and near.power() > 0:
+            base += 0.15
         return base + self.tune.get("upkeep_bonus", 0.0)
 
     def research_weights(self):

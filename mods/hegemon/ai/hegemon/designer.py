@@ -260,7 +260,7 @@ class Designer:
             n += 1
         return total / n / (reload if reload > 0 else 1)
 
-    def warship(self, speed=None, vehicle_type="ship", role="Warship", max_hulls=None):
+    def warship(self, speed=None, vehicle_type="ship", role="Warship", max_hulls=None, planets=None):
         """The warship (or base) design worth most per cost squared, or None."""
         parts = self.available(vehicle_type)
         engine = self.best_engine(parts) if vehicle_type == "ship" else None
@@ -303,7 +303,7 @@ class Designer:
                 continue
             base_cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k, m in base)
             base_hp = sum(c.structure * k for c, k, m in base) * 0.6
-            options = self.weapon_options(hull, parts, against_planets=True)
+            options = self.weapon_options(hull, parts, against_planets=True) if (planets if planets is not None else vehicle_type == "ship") else []
             if not options:
                 options = self.weapon_options(hull, parts)
             if not options:
@@ -398,3 +398,134 @@ class Designer:
     @staticmethod
     def kn_yard_rate(c):
         return c.yard_rate
+
+    def mine(self):
+        """A mine: the most warhead damage per cost on a mine hull."""
+        parts = self.available("mine")
+        heads = [c for c in parts if c.weapon is not None and c.weapon.kind == "warhead" and c.tonnage > 0]
+        if not heads:
+            self.why = "no warhead for mines"
+            return None
+        best = None
+        for hull in self.hulls("mine"):
+            ctl = self.control(hull, parts)
+            if ctl is None:
+                continue
+            base = [(c, k) for c, k in ctl]
+            room = hull.tonnage - self.tonnage(base)
+            for h in heads:
+                n = room // h.tonnage
+                if h.max_per > 0:
+                    n = min(n, h.max_per)
+                if n <= 0:
+                    continue
+                dmg = max(h.weapon.damage) * n
+                cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k in base) + res_total(h.cost) * n
+                v = dmg / float(max(1, cost))
+                if best is None or v > best[0]:
+                    best = (v, hull, base + [(h, n)])
+        if best is None:
+            self.why = "no mine hull holds a warhead"
+            return None
+        v, hull, entries = best
+        p = self.proposal("Mine", self.design_type("mine"), hull, [(c, k, -1) for c, k in entries])
+        if p is not None:
+            p["value"] = v
+        return p
+
+    def troop(self):
+        """A troop unit: ground attack (each weapon's best damage) times hit points, per cost squared."""
+        parts = self.available("troop")
+        weapons = [c for c in parts if c.weapon is not None and c.weapon.kind in ("direct_fire", "seeking") and c.tonnage > 0]
+        armor = None
+        for c in parts:
+            if c.armor and c.tonnage > 0:
+                key = c.structure / (c.tonnage + res_total(c.cost) / 40.0)
+                if armor is None or key > armor[0]:
+                    armor = (key, c)
+        armor = armor[1] if armor is not None else None
+        best = None
+        for hull in self.hulls("troop"):
+            ctl = self.control(hull, parts)
+            if ctl is None:
+                continue
+            base = [(c, k) for c, k in ctl]
+            room = hull.tonnage - self.tonnage(base)
+            base_cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k in base)
+            base_hp = sum(c.structure * k for c, k in base)
+            for wpn in weapons + [None]:
+                wmax = room // wpn.tonnage if wpn is not None else 0
+                if wpn is not None and wpn.max_per > 0:
+                    wmax = min(wmax, wpn.max_per)
+                for nw in range(0 if wpn is None else 1, wmax + 1):
+                    left = room - (nw * wpn.tonnage if wpn is not None else 0)
+                    na = left // armor.tonnage if armor is not None and armor.tonnage > 0 else 0
+                    if armor is not None and armor.max_per > 0:
+                        na = min(na, armor.max_per)
+                    att = nw * max(wpn.weapon.damage) if wpn is not None else 0
+                    hp = base_hp + (nw * wpn.structure if wpn is not None else 0) + (na * armor.structure if na else 0)
+                    cost = base_cost + (nw * res_total(wpn.cost) if wpn is not None else 0) + (na * res_total(armor.cost) if na else 0)
+                    if att <= 0:
+                        continue
+                    v = att * hp / float(cost * cost)
+                    if best is None or v > best[0]:
+                        entries = list(base)
+                        if nw:
+                            entries.append((wpn, nw))
+                        if na:
+                            entries.append((armor, na))
+                        best = (v, hull, entries)
+        if best is None:
+            self.why = "no troop hull with a weapon"
+            return None
+        v, hull, entries = best
+        p = self.proposal("Troop", self.design_type("troop"), hull, [(c, k, -1) for c, k in entries])
+        if p is not None:
+            p["value"] = v
+        return p
+
+    def transport(self, speed=None):
+        """A troop transport: the most cargo space per cost at a fleet's speed."""
+        parts = self.available("ship")
+        holds = [c for c in parts if c.cargo > 0 and c.weapon is None and c.engine <= 0 and not c.colonize and c.tonnage > 0]
+        if not holds:
+            self.why = "no cargo component"
+            return None
+        hold = max(holds, key=lambda c: c.cargo / (c.tonnage + res_total(c.cost) / 40.0))
+        engine = self.best_engine(parts)
+        target = speed if speed is not None else self.tune.get("speed", 6)
+        best = None
+        for hull in self.hulls("ship", plain=False):
+            if hull.pct_colony > 0 or hull.pct_bays > 0:
+                continue
+            ctl = self.control(hull, parts)
+            if ctl is None:
+                continue
+            for sp in (target, target - 1, target - 2):
+                if sp < 2:
+                    break
+                n = self.engines_for(hull, engine, sp)
+                entries = [(c, k) for c, k in ctl] + ([(engine, n)] if n > 0 else [])
+                room = hull.tonnage - self.tonnage(entries)
+                k = room // hold.tonnage
+                if hold.max_per > 0:
+                    k = min(k, hold.max_per)
+                if k <= 0:
+                    continue
+                if hull.pct_cargo > 0 and k * hold.tonnage < hull.tonnage * hull.pct_cargo // 100:
+                    continue
+                entries.append((hold, k))
+                cargo = k * hold.cargo
+                cost = res_total(hull.cost) + sum(res_total(c.cost) * j for c, j in entries)
+                v = cargo / float(cost) * (1.0 + 0.1 * sp)
+                if best is None or v > best[0]:
+                    best = (v, hull, entries)
+                break
+        if best is None:
+            self.why = "no hull for a transport"
+            return None
+        v, hull, entries = best
+        p = self.proposal("Trooper", self.design_type("troop transport", "transport"), hull, [(c, k, -1) for c, k in entries])
+        if p is not None:
+            p["value"] = v
+        return p

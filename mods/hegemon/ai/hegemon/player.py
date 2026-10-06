@@ -15,7 +15,9 @@ from .strategy import Strategy
 from .diplomacy import Diplomacy
 from .explore import Explorer
 from .logistics import Logistics
-from .intel import Force, design_strength
+from .tactics import Tactics
+from .invasion import Invasion
+from .intel import Force, design_strength, planet_strength
 
 DEBUG = False
 
@@ -28,7 +30,7 @@ TUNE = {
 def role_of_name(name):
     if name is None:
         return None
-    for prefix in ("Scout", "Colonist", "Warship", "Guard", "Trooper", "Yard"):
+    for prefix in ("Scout", "Colonist", "Warship", "Guard", "Trooper", "Yard", "Sentinel", "Mine", "Troop"):
         if name.startswith(prefix + " "):
             return prefix.lower()
     return None
@@ -128,10 +130,32 @@ class Hegemon(ai.Player):
         strategy.update(my_force, good)
         mil = Military(w, self.kn, self.memory, intel, roles, strategy=strategy, logistics=logi)
         orders.extend(mil.plan())
+        book = DesignBook(w, self.kn, self.memory)
+        orders.extend(mil.launches(book))
+        mil.queued_role = lambda r: 0
+        mil.queued_at = {}
+        orders.extend(Invasion(w, self.memory, roles, book, mil).plan(strategy.phase == "war"))
         for oid, text in mil.notes:
             self.note(oid, text, kind="object")
         if DEBUG:
             for b in w.d["battles"]:
+                ms = [p for p in b["pieces"] if p["owner"] == w.me and p["kind"] == "vehicle"]
+                ts = [p for p in b["pieces"] if p["owner"] not in (None, w.me) and p["kind"] == "vehicle"]
+                mp = [p for p in b["pieces"] if p["owner"] == w.me and p["kind"] == "planet"]
+                tp = [p for p in b["pieces"] if p["owner"] not in (None, w.me) and p["kind"] == "planet"]
+                self.log("T%d SHIPFIGHT ours %d lost %d theirs %d lost %d ourplanets %d lost %d theirplanets %d lost %d" % (
+                    w.turn, len(ms), sum(1 for p in ms if p["survivor"] != w.me), len(ts), sum(1 for p in ts if p["survivor"] is None),
+                    len(mp), sum(1 for p in mp if p["survivor"] != w.me), len(tp), sum(1 for p in tp if p["survivor"] is None)))
+                kinds = {}
+                for p in b["pieces"]:
+                    if p["owner"] == w.me:
+                        dd = w.designs.get(p["design"]) if p["design"] is not None else None
+                        role = role_of_name(dd["name"]) if dd is not None else p["kind"]
+                        k = "%s:%s" % (role, "ok" if p["survivor"] == w.me else "lost")
+                        kinds[k] = kinds.get(k, 0) + 1
+                self.log("T%d BKIND %s" % (w.turn, sorted(kinds.items())))
+                if sum(v for k, v in kinds.items() if k.endswith(":lost")) >= 5:
+                    self.log("T%d BOURS %s" % (w.turn, [(p["kind"], p["name"][:14], p["count"], p["damage"], p["survivor"]) for p in b["pieces"] if p["owner"] == w.me][:40]))
                 mine_n = sum(1 for p in b["pieces"] if p["owner"] == w.me)
                 mine_lost = sum(1 for p in b["pieces"] if p["owner"] == w.me and p["survivor"] != w.me)
                 theirs = sum(1 for p in b["pieces"] if p["owner"] != w.me)
@@ -154,6 +178,11 @@ class Hegemon(ai.Player):
             for b in w.d["battles"]:
                 self.log("T%d BPIECES %s" % (w.turn, [(p["kind"], p["owner"], p["name"][:12], p["damage"], p["survivor"]) for p in b["pieces"] if p["owner"] != w.me][:8]))
             if w.turn % 10 == 0:
+                sats = sum((v["count"] or 0) for v in w.my_vehicles if v["type"] == "satellite")
+                mines = sum((v["count"] or 0) for v in w.my_vehicles if v["type"] == "mine")
+                plats = sum(st["count"] for c in w.my_colonies if c["cargo"] for st in c["cargo"]["units"])
+                caps = [(c["cargo_capacity"], c["cargo_used"]) for c in w.my_colonies][:8]
+                self.log("T%d DEFENSE sats %d mines %d cargo_units %d caps %s" % (w.turn, sats, mines, plats, caps))
                 unexplored = sum(1 for x in w.systems.values() if not x["explored"])
                 frontier = sum(1 for o in w.warps if o["destination_system"] is None)
                 self.log("T%d INTEL foreign_colonies=%d rivals=%s unexplored=%d frontier=%d scouts=%d" % (
@@ -205,6 +234,71 @@ class Hegemon(ai.Player):
                 self.log("T%d DESIGN %s" % (w.turn, line))
             if book.problems:
                 self.log("design problems %s" % book.problems)
+
+    def enter_sector(self, view, question):
+        """A move would enter a sector with enemies: unarmed groups stay out; armed ones
+        go in when they are a match for what is there (or were sent to fight there)."""
+        w = getattr(self, "w", None)
+        if w is None:
+            return None
+        ours = Force()
+        armed = False
+        for vid in question.vehicle_ids:
+            v = w.vehicles.get(vid)
+            if v is None:
+                continue
+            a, h = design_strength(w.figures(v["design"]))
+            if a > 0:
+                armed = True
+            ours.add(a, h)
+        sec = question.sector or {}
+        system, x, y = sec.get("system"), sec.get("x"), sec.get("y")
+        theirs = Force()
+        for v in w.foreign_vehicles:
+            loc = v["location"]
+            if loc["system"] == system and loc["x"] == x and loc["y"] == y and w.hostile(v["owner"]):
+                a, h = design_strength(w.figures(v["design"]))
+                theirs.add(a * (v["count"] or 1), h * (v["count"] or 1))
+        planets = 0
+        for c in w.foreign_colonies:
+            o = w.objects.get(c["planet"])
+            if o is not None and o["system"] == system and o["sector"]["x"] == x and o["sector"]["y"] == y and w.hostile(c["owner"]):
+                pa, ph = planet_strength(c, w.turn, self.memory.get("planet_seen", {}).get(str(c["planet"])))
+                theirs.add(pa, ph)
+                planets += 1
+        if not armed:
+            return theirs.attack <= 0 and planets == 0
+        return ours.beats(theirs, 0.8)
+
+    def battle_round(self, battle, orders):
+        """Each phase of a space battle: our own targeting and movement (tactics.py)."""
+        data = battle.raw
+        view = self.view
+        me = self.empire_id
+        hostile_cache = getattr(self, "_hostile", None)
+        if hostile_cache is None:
+            hostile_cache = {}
+            designs = {}
+            if view is not None:
+                d = view.raw
+                for e in d["empires"]:
+                    rel = e["relation"]
+                    if e["id"] != me:
+                        hostile_cache[e["id"]] = rel is None or rel["treaty"] in ("war", "non_intercourse", "none")
+                for x in d["designs"]:
+                    designs[x["id"]] = x
+            self._hostile = hostile_cache
+            self._designs = designs
+        rules = getattr(self, "_rules_raw", None)
+        if rules is None:
+            rules = self.rules.raw
+            self._rules_raw = rules
+        t = Tactics(data, me, lambda e: hostile_cache.get(e, True), rules, self._designs)
+        orders.extend(t.plan())
+        if DEBUG:
+            mine = sum(1 for p in data["pieces"] if p["owner"] == me and p["alive"])
+            theirs = sum(1 for p in data["pieces"] if p["owner"] != me and p["owner"] is not None and p["alive"])
+            self.log("ROUND %d mine %d theirs %d orders %d refused %s" % (data["round"], mine, theirs, len(orders), [(r["reason"]) for r in (self.refused or [])][:3]))
 
     def queued_designs(self, w):
         out = {}
@@ -279,15 +373,25 @@ class Hegemon(ai.Player):
                 ships.append({"design": colony[s], "count": n, "priority": 60.0, "near": None})
         # Warships: as the military planner asks.
         intel = Intel(w, self.memory)
-        mil = Military(w, self.kn, self.memory, intel, roles, strategy=Strategy(w, intel, self.memory))
+        strategy = Strategy(w, intel, self.memory)
+        strategy.assess()
+        mil = Military(w, self.kn, self.memory, intel, roles, strategy=strategy)
         mil.rally = mil.choose_rally()
         queued_at = {}
         plat = book.design_id("platform")
         for c in w.my_colonies:
             for it in c["queue"]["items"]:
-                if it["kind"] == "vehicle" and it["design"] == plat:
-                    queued_at[c["planet"]] = queued_at.get(c["planet"], 0) + it["count"]
+                if it["kind"] == "vehicle":
+                    if it["design"] == plat:
+                        queued_at[c["planet"]] = queued_at.get(c["planet"], 0) + it["count"]
+                    key = (c["planet"], it["design"])
+                    queued_at[key] = queued_at.get(key, 0) + it["count"]
         ships.extend(mil.wants(econ, book, queued_role, queued_at))
+        mil.queued_role = queued_role
+        mil.queued_at = queued_at
+        inv = Invasion(w, self.memory, roles, book, mil)
+        inv.plan(strategy.phase == "war")
+        ships.extend(inv.wants)
         if DEBUG:
             self.log("T%d MILWANT %s" % (w.turn, getattr(mil, "debug", None)))
         # Depots: the rally point, and every colony system more than a jump from one.

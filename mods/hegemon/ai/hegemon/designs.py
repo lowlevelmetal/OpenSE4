@@ -81,6 +81,14 @@ class DesignBook:
                 p = dz.yard_base()
             elif role == "platform":
                 p = dz.warship(vehicle_type="weapon_platform", role="Guard")
+            elif role == "satellite":
+                p = dz.warship(vehicle_type="satellite", role="Sentinel")
+            elif role == "mine":
+                p = dz.mine()
+            elif role == "troop":
+                p = dz.troop()
+            elif role == "trooper":
+                p = dz.transport()
             if p is None:
                 self.problems.append((role, getattr(dz, "why", "?")))
                 continue
@@ -103,7 +111,7 @@ class DesignBook:
         return self.commands
 
     def wanted_roles(self, surfaces):
-        roles = ["scout", "warship", "yard", "platform"]
+        roles = ["scout", "warship", "yard", "platform", "satellite", "mine", "troop", "trooper"]
         for s in surfaces:
             roles.append("colony:" + s)
         return roles
@@ -119,6 +127,10 @@ class DesignBook:
             v = 1.0e9 / cost
         elif role.startswith("colony:"):
             v = (1.0 + 0.15 * f["movement"]) * 1.0e9 / cost
+        elif role in ("mine", "trooper"):
+            v = p.get("value", 0.0) * 1.0e6
+        elif role == "troop":
+            v = p.get("value", 0.0) * 1.0e12
         else:
             v = p.get("value", 0.0) * 1.0e12
         return int(v)

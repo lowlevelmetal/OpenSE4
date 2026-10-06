@@ -447,6 +447,8 @@ class Military:
             self.debug = (round(share, 2), income, int(upkeep), int(each), room, n)
             if n > 0:
                 out.append({"design": war, "count": n, "priority": 45.0 if threat.power() > mine.power() else 30.0, "near": self.rally})
+        # Satellites and mines around exposed colonies: no upkeep, launched from the planet.
+        out.extend(self.fortify(book, queued_at))
         # Weapon platforms where colonies are exposed.
         plat = book.design_id("platform")
         pfig = w.figures(plat) if plat is not None else None
@@ -470,6 +472,83 @@ class Military:
                 if n > 0:
                     out.append({"design": plat, "count": n, "priority": 50.0 + 5 * e, "at": c["planet"], "units": True})
         return out
+
+
+    def units_in_sector(self, kind, system, x, y):
+        n = 0
+        for v in self.w.my_vehicles:
+            loc = v["location"]
+            if v["type"] == kind and loc["system"] == system and loc["x"] == x and loc["y"] == y:
+                n += v["count"] or 0
+        return n
+
+    def fortify(self, book, queued_at):
+        """Satellite and mine batches for exposed colonies, up to what their cargo holds."""
+        w = self.w
+        out = []
+        exposure = self.exposure()
+        late = w.turn >= 30
+        sat_want = {3: 30, 2: 10 if late else 0}
+        mine_want = {3: 50, 2: 20 if late else 0}
+        done_sectors = set()
+        for role, want in (("satellite", sat_want), ("mine", mine_want)):
+            did = book.design_id(role)
+            fig = w.figures(did) if did is not None else None
+            if fig is None:
+                continue
+            size = fig["tonnage_max"] or fig["tonnage_used"] or 1
+            for c in w.my_colonies:
+                if c["total_population"] <= 0:
+                    continue
+                o = w.objects.get(c["planet"])
+                if o is None:
+                    continue
+                s = o["system"]
+                e = exposure.get(s, 0)
+                target = want.get(e, 0)
+                if target <= 0:
+                    continue
+                key = (role, s, o["sector"]["x"], o["sector"]["y"])
+                if key in done_sectors:
+                    continue
+                done_sectors.add(key)
+                have = self.units_in_sector(role, s, o["sector"]["x"], o["sector"]["y"])
+                for st in (c["cargo"]["units"] if c["cargo"] is not None else []):
+                    if st["design"] == did:
+                        have += st["count"]
+                have += queued_at.get((c["planet"], did), 0)
+                need = min(100, target) - have
+                if need <= 0:
+                    continue
+                free = (c["cargo_capacity"] or 0) - (c["cargo_used"] or 0)
+                n = min(need, free // size, 10)
+                if n <= 0:
+                    continue
+                out.append({"design": did, "count": n, "priority": 48.0 + 4 * e, "at": c["planet"], "units": True})
+        return out
+
+    def launches(self, book):
+        """Colonies with satellites or mines in their cargo launch them into their sector."""
+        cmds = []
+        roles = {}
+        for role in ("satellite", "mine"):
+            did = book.design_id(role)
+            if did is not None:
+                roles[did] = role
+        for c in self.w.my_colonies:
+            if c["cargo"] is None:
+                continue
+            orders = []
+            for st in c["cargo"]["units"]:
+                d = self.w.designs.get(st["design"])
+                if d is None or st["count"] <= 0:
+                    continue
+                fig = d["figures"]
+                if fig is not None and fig["vehicle_type"] in ("satellite", "mine"):
+                    orders.append({"kind": "launch_units", "design": st["design"], "amount": st["count"]})
+            if orders and not c["orders"]:
+                cmds.append({"kind": "set_orders", "planet": c["planet"], "orders": orders})
+        return cmds
 
 
 def econ_maint_pct(w):
