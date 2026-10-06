@@ -75,12 +75,12 @@ std::vector<std::string> checkControllers(std::span<const game::EmpireSetup> emp
     for (size_t i = 0; i < empires.size(); ++i) {
         const game::Controller& c = empires[i].controller;
         if (c.kind != game::Controller::Kind::Script) continue;
-        const std::string who = empires[i].name.empty() ? std::format("empire {}", i + 1) : empires[i].name;
+        const std::string named = empires[i].name.empty() ? std::format("empire {}", i + 1) : empires[i].name;
         const auto mod = std::find_if(packages.begin(), packages.end(), [&](const mods::Package& p) { return p.id() == c.mod; });
         if (mod == packages.end())
-            out.push_back(std::format("{}: the computer player {} needs the mod {}, which the game does not use", who, game::controllerText(c), c.mod));
+            out.push_back(std::format("{}: the computer player {} needs the mod {}, which the game does not use", named, game::controllerText(c), c.mod));
         else if (!mod->manifest.aiPlayer(c.player))
-            out.push_back(std::format("{}: the mod {} has no computer player named '{}'", who, c.mod, c.player));
+            out.push_back(std::format("{}: the mod {} has no computer player named '{}'", named, c.mod, c.player));
     }
     return out;
 }

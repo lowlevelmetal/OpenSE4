@@ -15,10 +15,12 @@
 
 #include "game/serialize.hpp"
 #include "game/turn.hpp"
+#include "sdk/view.hpp"
 
 #include <doctest/doctest.h>
 
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <format>
 #include <span>
@@ -110,3 +112,37 @@ TEST_CASE("sdk players golden: a turn-based game two script players play gives t
     playGolden("turn-based", 46, false, kGolden);
 }
 
+
+// What a script empire whose player does nothing costs a turn: the session
+// (the interpreter, the package and the mod imported), the view built and
+// converted for each planning call, the requests. Against the same empire
+// played by nobody (a human without orders). Run it in a release build:
+//     OPENSE4_SDK_BENCH=1 ./opense4_tests -tc="sdk players bench*"
+TEST_CASE("sdk players bench: the cost of a script empire that does nothing" * doctest::skip(std::getenv("OPENSE4_SDK_BENCH") == nullptr)) {
+    InstalledPlayers installed;
+    const Rules& r = test::engineRules();
+    constexpr int kTurns = 30;
+    auto play = [&](bool script) {
+        GameState s = playersGame(51, true, {Controller{}, Controller{}, Controller{}, Controller{}});
+        if (script) s.empire(EmpireId{1u}).controller = scriptPlayer("Idle");
+        else s.empire(EmpireId{1u}).kind = PlayerKind::Human;
+        TurnOptions o;
+        o.aiForMissing = false;
+        for (int t = 0; t < 3; ++t) processTurn(r, s, {}, o);   // past the first turn's caches
+        const auto start = std::chrono::steady_clock::now();
+        for (int t = 0; t < kTurns; ++t) processTurn(r, s, {}, o);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        return std::pair{ms / kTurns, s};
+    };
+    const auto [nobody, quiet] = play(false);
+    const auto [idle, scripted] = play(true);
+    // The view alone, three times a turn, as the planning calls build it.
+    const auto start = std::chrono::steady_clock::now();
+    size_t nodes = 0;
+    for (int t = 0; t < kTurns * 3; ++t) nodes += sdk::buildView(r, scripted, EmpireId{1u}).size();
+    const double view = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / kTurns;
+    MESSAGE(std::format("a turn: {:.3f} ms with the empire played by nobody, {:.3f} ms by an idle script player: {:.3f} ms more; "
+                        "of it {:.3f} ms building its three views ({} galaxy systems, {} vehicles)",
+                        nobody, idle, idle - nobody, view, scripted.galaxy.systems.size(), scripted.vehicles.size()));
+    CHECK(nodes > 0);
+}
