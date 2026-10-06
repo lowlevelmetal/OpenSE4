@@ -563,7 +563,10 @@ TEST_CASE("sdk python: computer players in the game, with the engine's services"
 TEST_CASE("sdk python: the ai template of opense4-sdk new plays a turn") {
     test::TempDir dir("sdk_python_template");
     const fs::path mod = dir.path() / "prospector";
-    const Shell made = shell(std::format("\"{}\" new ai {} --id=test.prospector", OPENSE4_SDK_EXE, quoted(mod)));
+    // Cross-compiled tests run the tool through their own emulator (OPENSE4_TEST_RUNNER).
+    const char* runner = std::getenv("OPENSE4_TEST_RUNNER");
+    const Shell made = shell(std::format("{}{}\"{}\" new ai {} --id=test.prospector", runner ? runner : "", runner ? " " : "", OPENSE4_SDK_EXE,
+                                         quoted(mod)));
     REQUIRE_MESSAGE(made.code == 0, made.out);
     const std::string manifest = slurp(mod / "mod.toml");
     CHECK(manifest.find("[[ai.players]]") != std::string::npos);
