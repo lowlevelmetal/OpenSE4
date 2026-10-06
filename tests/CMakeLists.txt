@@ -101,6 +101,9 @@ add_executable(opense4_tests
     sdk/test_sdk_players_replay.cpp
     sdk/test_sdk_python.cpp
     sdk/test_sdk_queries.cpp
+    sdk/test_sdk_rules.cpp
+    sdk/test_sdk_rules_golden.cpp
+    sdk/test_sdk_rules_orders.cpp
     sdk/test_sdk_rules_view.cpp
     sdk/test_sdk_tool.cpp
     sdk/test_sdk_view.cpp)

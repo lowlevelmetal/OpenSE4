@@ -15,6 +15,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <set>
@@ -277,15 +278,19 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(sent.request.front().planet == ObjectId{12u});
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
-    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 4]).email == "someone@example.org");
-    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 3]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
-    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 2]);
+    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 5]).email == "someone@example.org");
+    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 4]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
+    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 3]);
     CHECK(tagged.vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
     CHECK(tagged.orders.size() == 1);
     CHECK(tagged.repeat);
-    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands.back());
+    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands[c.size() - 2]);
     CHECK(leader.fleet == FleetId{46u});
     CHECK(leader.vehicle == VehicleId{47u});
+    // A mod's order (format 9).
+    const auto& mod = std::get<cmd::ModCommand>(loaded->commands.back());
+    CHECK(mod == std::get<cmd::ModCommand>(c.back()));
+    CHECK(mod.args == R"({"power":2,"note":"x"})");
 }
 
 // ---- Hostile input ------------------------------------------------------------------------------------
@@ -518,8 +523,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xf8b6fd32683ce5eull;
-    constexpr size_t kGoldenSize = 1884;
+    constexpr uint64_t kGoldenChecksum = 0x136cc7ee252f6d26ull;
+    constexpr size_t kGoldenSize = 1948;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -605,13 +610,19 @@ TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture
     // A design without a picture adds one empty text to format 9: four bytes
     // (and the game's empty list of mods four more; each empire's built-in
     // controller and empty script player state 25, the script players'
-    // options 25: docs/sdk/ai-protocol.md).
+    // options 25: docs/sdk/ai-protocol.md). Mods' rules (docs/sdk/rules.md):
+    // each empire's, colony's and vehicle's empty list of mod data four bytes,
+    // the options' empty list of mod options and the two budgets and the data
+    // limit 28, and the game's empty mod data, rules states, scenario (two
+    // empty texts and an empty list) and end reason 24.
     REQUIRE(plain.mods.empty());
     std::vector<uint8_t> nine;
     serial::write(nine, plain, 9);
     std::vector<uint8_t> eight;
     serial::write(eight, plain, 8);
-    CHECK(nine.size() == eight.size() + 4 * plain.designs.size() + 4 + 25 * plain.empires.size() + 25);
+    const size_t colonies = static_cast<size_t>(std::count_if(plain.colonies.begin(), plain.colonies.end(), [](const auto& c) { return c.has_value(); }));
+    CHECK(nine.size() == eight.size() + 4 * plain.designs.size() + 4 + 25 * plain.empires.size() + 25 +
+                             4 * (plain.empires.size() + colonies + plain.vehicles.size()) + 28 + 24);
 }
 
 // ---- Save files --------------------------------------------------------------------------------------------

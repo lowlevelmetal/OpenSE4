@@ -12,6 +12,7 @@
 // percentages the original applies in floating point go through xmath, and
 // the straight-line distances of Don't Get Hurt are exact integer roots.
 
+#include "game/hooks.hpp"
 #include "game/log_picture.hpp"
 #include "game/combat.hpp"
 
@@ -3708,6 +3709,7 @@ void Battle::finish() {
         Vehicle* v = s_.vehicle(p.source);
         if (!v) continue;
         if (!p.alive) {
+            noteVehicleLost(ctx_, *v, "battle");
             v->count = 0;
             v->mixed.clear();
             continue;
@@ -3979,6 +3981,22 @@ bool humanPresent(const GameState& s, Location where) {
 // detail::enteringGroups); empty: nobody entered, so no mine strikes.
 // `check`: who runs the battle check after the mines (spec 04 §2).
 void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering, const BattleCheck& check) {
+    // The mods' before_battle hooks (hooks.hpp): a battle check runs here,
+    // before the mines strike; a battle may follow.
+    if (ctx.hooks) {
+        HookArgs a;
+        a.where = where;
+        runHook(ctx, Hook::BeforeBattle, a);
+    }
+    // The mods' after_battle hooks, once the battle's record is made.
+    const size_t recordsBefore = ctx.state.combats.size();
+    auto afterBattle = [&] {
+        if (!ctx.hooks || ctx.state.combats.size() <= recordsBefore) return;
+        HookArgs a;
+        a.where = where;
+        a.battle = ctx.state.combats.size() - 1;
+        runHook(ctx, Hook::AfterBattle, a);
+    };
     // On one machine a battle stops the call once it is set up, to be shown
     // (turn.hpp, "Battles shown as they happen"): in a turn-based game one
     // with a human side, in a simultaneous game whose Settings show battles
@@ -4030,11 +4048,13 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
             battle.setPlayers(std::move(players));
             battle.play(answer.orders);
             battle.finish();
+            afterBattle();
             return;
         }
     }
     battle.run();
     battle.finish();
+    afterBattle();
 }
 
 } // namespace

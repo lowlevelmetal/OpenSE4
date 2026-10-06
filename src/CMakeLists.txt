@@ -121,6 +121,7 @@ add_library(opense4_game STATIC
     game/economy_queue.cpp
     game/events.cpp
     game/generate.cpp
+    game/hooks.cpp
     game/intel.cpp
     game/log_picture.cpp
     game/map_file.cpp
@@ -155,6 +156,7 @@ add_library(opense4_mods STATIC
     mods/data_set.cpp
     mods/generator.cpp
     mods/manifest.cpp
+    mods/manifest_rules.cpp
     mods/mod_set.cpp
     mods/package.cpp
     mods/patch.cpp
@@ -185,6 +187,7 @@ add_custom_command(
 add_library(opense4_sdk STATIC
     sdk/bots.cpp
     sdk/codec.cpp
+    sdk/generators.cpp
     sdk/match.cpp
     sdk/names.cpp
     sdk/parts.cpp
@@ -193,12 +196,17 @@ add_library(opense4_sdk STATIC
     sdk/players.cpp
     sdk/process.cpp
     sdk/queries.cpp
+    sdk/rules_api.cpp
+    sdk/rules_check.cpp
+    sdk/rules_effects.cpp
+    sdk/rules_engine.cpp
     sdk/rules_view.cpp
+    sdk/scenario.cpp
     sdk/view.cpp
     sdk/worker.cpp
     "${sdk_package_cpp}")
 # External bots connect over TCP (sdk/bots.cpp): the network library's sockets.
-target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_mods opense4_script PRIVATE opense4_net Threads::Threads opense4_warnings)
+target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_mods opense4_script opense4_learn PRIVATE opense4_net Threads::Threads tomlplusplus opense4_warnings)
 
 # GCC 15's optimizer reports false "may be used uninitialized" warnings inside
 # std::variant's copies of the SDK's values; release builds with warnings as errors

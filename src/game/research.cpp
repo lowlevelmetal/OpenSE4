@@ -1,4 +1,5 @@
 #include "game/log_picture.hpp"
+#include "game/hooks.hpp"
 #include "game/research.hpp"
 
 #include "game/economy.hpp"
@@ -229,6 +230,14 @@ void setLevel(TurnContext& ctx, EmpireId e, TechAreaId area, int newLevel, std::
     emp.techLevels[area.index()] = newLevel;
     const std::vector<uint8_t> after = availability(r, emp);
     const std::vector<uint8_t> areasAfter = openAreas(r, s, emp);
+    if (ctx.hooks) {
+        // A mod's event (hooks.hpp).
+        HookArgs a;
+        a.empire = e;
+        a.area = area;
+        a.level = newLevel;
+        runHook(ctx, Hook::TechResearched, a);
+    }
 
     const std::string& name = r.tech(area).name;
     ctx.log(e, LogCategory::Research, "New Tech Level", std::format("{} is now at level {} ({}).", name, newLevel, source), std::nullopt,

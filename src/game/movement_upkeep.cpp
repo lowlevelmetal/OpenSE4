@@ -4,6 +4,7 @@
 // spec 01 §5.3 (ruins).
 
 #include "datafile/datafile.hpp"
+#include "game/hooks.hpp"
 #include "game/log_picture.hpp"
 #include "game/ai.hpp"
 #include "game/combat.hpp"
@@ -136,6 +137,15 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
     // confirmed: binary).
     s.vehicle(id)->count = 0;  // the colony ship is consumed
     grantRuins(ctx, owner, planet);
+    if (ctx.hooks) {
+        // A mod's event (hooks.hpp).
+        HookArgs a;
+        a.empire = owner;
+        a.planet = planet;
+        a.vehicle = id;
+        a.where = locationOf(s.galaxy, planet);
+        runHook(ctx, Hook::ColonyFounded, a);
+    }
 }
 
 bool colonizeAt(const GameState& s, const Order& o, Location where) {

@@ -254,6 +254,23 @@ struct SetInterfaceOptions { InterfaceOptions options; };
 // reach it, the designs the report shows are learned (sight::learnFromReport).
 struct OpenVehicleReport { VehicleId vehicle; };
 
+// ---- Mod orders (docs/sdk/rules.md "Orders") ----------------------------------------------------
+// An order a mod declares (mod.toml [[rules.orders]]): what it applies to (a
+// vehicle, a fleet or a colony of the empire's, another empire, or the
+// empire itself) and its arguments, which the declaration checks; then the
+// mod's check and effect run (game::applyModCommand, hooks.hpp). It acts at
+// once, in both turn styles, as a cargo transfer does.
+struct ModCommand {
+    std::string mod;        // the mod's id
+    std::string name;       // the order's name in the mod
+    VehicleId vehicle;
+    FleetId fleet;
+    ObjectId planet;        // a colony, by its planet
+    EmpireId empire;        // another empire
+    std::string args;       // the arguments: a JSON object, as the SDK writes it ("{}" or empty: none)
+    bool operator==(const ModCommand&) const = default;
+};
+
 } // namespace cmd
 
 using Command = std::variant<
@@ -268,7 +285,7 @@ using Command = std::variant<
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
-    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader>;
+    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader, cmd::ModCommand>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

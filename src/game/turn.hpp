@@ -159,6 +159,7 @@ struct LiveStep {
 };
 
 class Players;
+class RulesHooks;
 
 struct TurnContext {
     const Rules& rules;
@@ -208,6 +209,9 @@ struct TurnContext {
     // The script and external players of this engine call (players.hpp); null:
     // every empire is played by the built-in AI.
     Players* players = nullptr;
+    // The rules hooks of the game's mods for this engine call (hooks.hpp);
+    // null: the game has none, and the classic rules alone apply.
+    RulesHooks* hooks = nullptr;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});

@@ -403,6 +403,36 @@ computer, as the engine itself does. The sandbox enforces it:
 - **Golden tests:** `opense4-sdk test` plays a mod's games twice and on both the native
   and the 32-bit build, and compares checksums.
 
+### 7.4 As built (S4)
+
+[docs/sdk/rules.md](sdk/rules.md) describes the rules tier as built:
+
+- **Hooks**: the table of 7.1, each with its arguments and timing in both turn styles
+  (turn-based games: `turn_start` once per game turn, `orders_applied` at the end of each
+  player's turn, `movement_day` after each live run), and `empire_end_of_turn` around ten
+  steps, narrowed by step and side. Moments run where the engine reaches them; events are
+  delivered at the next safe point, so no script runs inside the engine's loops.
+- **Reading**: `game` is the whole view (view.md) read a part at a time, with the mod's
+  options, the game's random numbers, ability values and queries.
+- **Effects**: resources, research and intelligence points, tech levels, population,
+  happiness, colony type and plague; damage, repair and supply; vehicles created and
+  removed; facilities; treaties; Log entries; mod events; planets, names and warp links;
+  the galaxy replaced at generation; options at a new game; the end of the game.
+- **Mod data** on the game, empires, colonies and vehicles (save format 9), and what
+  players' computers and computer players may see of it.
+- **Abilities** declared by mods get their effects from hooks; computer players read
+  them in the rules view.
+- **Orders** (`cmd::ModCommand`), **events**, **intelligence project types**, **game
+  options** and **victory conditions**, declared in mod.toml's `[rules]`; **scenarios**
+  in `scenarios/*.toml` with objectives in the lessons' condition language; **data
+  generators** in `data/*.py`.
+- **Budgets and failures**: per call and per game turn (game options); a failing function
+  is skipped for the turn, and three failures turn a mod's rules off for the turn.
+- **Not yet**: buttons for mod orders, the mods' options and scenarios in the setup
+  screens and the lobby (the headless setup model and the server's setup files have
+  them), hooks inside a combat round (question 4 stays open: battles have hooks around
+  them only).
+
 ## 8. Interface (tier 4)
 
 Later and smaller:

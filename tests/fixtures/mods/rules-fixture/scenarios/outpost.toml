@@ -1,0 +1,25 @@
+title = "Outpost"
+summary = "Found a second colony; the first to do it wins."
+
+[setup]
+seed = 11
+turn_style = "simultaneous"
+systems = 10
+
+[[setup.empire]]
+name = "Wardens"
+kind = "computer"
+
+[[setup.empire]]
+name = "Drifters"
+kind = "computer"
+
+[options]
+bounty = 40
+
+[[objective]]
+name = "second_colony"
+text = "Found a second colony"
+when = { colonies = 2 }
+victory = true
+action = "reward"

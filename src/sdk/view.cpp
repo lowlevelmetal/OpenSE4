@@ -11,6 +11,7 @@
 #include "game/score.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
+#include "script/json.hpp"
 #include "sdk/parts.hpp"
 
 #include <algorithm>
@@ -48,7 +49,7 @@ using game::Vehicle;
 class ViewBuilder {
 public:
     explicit ViewBuilder(const Perspective& p)
-        : r_(p.rules()), s_(p.state()), me_(p.empire()), my_(p.me()), whole_(p.whole()), want_(s_.designs.size(), 0),
+        : r_(p.rules()), s_(p.state()), me_(p.empire()), my_(p.me()), whole_(p.whole()), live_(p.options().liveOnly), want_(s_.designs.size(), 0),
           seen_(s_.designs.size(), 0) {
         if (my_)
             for (const game::SeenDesign& d : my_->knowledge.seenDesigns) mark(seen_, d.design);
@@ -67,12 +68,83 @@ public:
             .done();
     }
 
+    // One part of the view (buildViewPart).
+    Value part(std::string_view name) {
+        if (name == "game") return gameValue();
+        if (name == "my") return myEmpire();
+        if (name == "empires") return empires();
+        if (name == "systems") return systems();
+        if (name == "objects") return objects();
+        if (name == "colonies") return colonies();
+        if (name == "vehicles") return vehicles();
+        if (name == "fleets") return fleets();
+        if (name == "designs") {
+            // The designs the entities name, as build() lists them.
+            colonies();
+            vehicles();
+            return designs();
+        }
+        if (name == "messages") return messages();
+        if (name == "log") return log();
+        if (name == "battles") return battles();
+        return Value();
+    }
+
+    Value vehicleRecord(const Vehicle& v) { return vehicle(v); }
+
+    // One record (buildViewRecord), or null.
+    Value record(std::string_view kind, int64_t raw) {
+        if (raw < 0 || raw > int64_t{UINT32_MAX}) return Value();
+        const auto i = static_cast<uint32_t>(raw);
+        if (kind == "empire") return i < s_.empires.size() ? empire(s_.empires[i]) : Value();
+        if (kind == "system") {
+            if (i >= s_.galaxy.systems.size()) return Value();
+            ValueList claimedBy;
+            for (const Empire& e : s_.empires)
+                if (std::find(e.claimedSystems.begin(), e.claimedSystems.end(), SystemId{i}) != e.claimedSystems.end()) claimedBy.push_back(id(e.id));
+            return system(s_.galaxy.systems[i], std::move(claimedBy));
+        }
+        if (kind == "object") {
+            if (i >= s_.galaxy.objects.size()) return Value();
+            const SpaceObject& o = s_.galaxy.object(ObjectId{i});
+            if (!shown(o.system) || std::find(s_.galaxy.system(o.system).objects.begin(), s_.galaxy.system(o.system).objects.end(), o.id) ==
+                                         s_.galaxy.system(o.system).objects.end())
+                return Value();
+            return object(o);
+        }
+        if (kind == "colony") {
+            const Colony* c = s_.colony(ObjectId{i});
+            return c ? colony(*c) : Value();
+        }
+        if (kind == "vehicle") {
+            const Vehicle* v = s_.vehicle(game::VehicleId{i});
+            return v && (!live_ || v->count > 0) ? vehicle(*v) : Value();
+        }
+        if (kind == "fleet") {
+            const Fleet* f = s_.fleet(game::FleetId{i});
+            return f && full(f->owner) ? fleet(*f) : Value();
+        }
+        if (kind == "design") {
+            if (i >= s_.designs.size()) return Value();
+            const Design& d = s_.designs[i];
+            const bool listed = whole_ || (my_ && (d.owner == me_ || game::knowsDesign(my_->knowledge, d.id)));
+            return listed ? design(d) : Value();
+        }
+        if (kind == "message") {
+            for (const game::DiplomaticMessage& m : s_.messages)
+                if (m.id.value == i && (whole_ || m.from == me_ || m.to == me_)) return enc(m);
+            return Value();
+        }
+        return Value();
+    }
+
 private:
     const game::Rules& r_;
     const game::GameState& s_;
     EmpireId me_;
     const Empire* my_;
     bool whole_;
+    bool live_;   // ViewOptions::liveOnly
     std::vector<uint8_t> want_;   // per DesignId: the view lists it
     std::vector<uint8_t> seen_;   // per DesignId: a foreign design the empire knows
 
@@ -117,7 +189,10 @@ private:
                    "no_ruins", Value(o.noRuins))("only_breathable", Value(o.onlyBreathable))("only_home_type", Value(o.onlyHomeType))(
                    "team_mode", Value(o.teamMode))("allow_surrender", Value(o.allowSurrender))("score_display", num(o.scoreDisplay))(
                    "max_ships_per_player", num(o.maxShipsPerPlayer))("max_units_per_player", num(o.maxUnitsPerPlayer))(
-                   "ai_difficulty", num(o.aiDifficulty))("ai_bonus", num(o.aiBonus))
+                   "ai_difficulty", num(o.aiDifficulty))("ai_bonus", num(o.aiBonus))(
+                   "mod_options", listOf(o.modOptions, [](const game::ModOption& m) {
+                       return Map(3)("mod", Value(m.mod))("name", Value(m.name))("value", num(m.value)).done();
+                   }))
             .done();
     }
 
@@ -136,8 +211,34 @@ private:
                    "systems_to_avoid", enc(e.systemsToAvoid))("tagged_minefields", enc(e.taggedMinefields))("waypoints", waypoints(e))(
                    "notes", notes(e))("strategies", strategies(e))("design_types", enc(e.designTypes))("colony_types", enc(e.colonyTypes))(
                    "repair_priorities", enc(e.repairPriorities))("colony_type_choices", enc(e.colonyTypeChoices))("questions", questions())(
-                   "ai_difficulty", num(e.aiDifficulty))
+                   "ai_difficulty", num(e.aiDifficulty))("mod_data", modData(e))
             .done();
+    }
+
+    // The mods' data on the empire's own things, for the mods that let its
+    // computer player see it (docs/sdk/rules.md "Mod data"): {mod: {empire,
+    // colonies: {planet: value}, vehicles: {id: value}}}.
+    Value modData(const Empire& e) const {
+        ValueMap out;
+        for (const game::ModRulesState& m : s_.modRules) {
+            if (!m.playersSee) continue;
+            auto of = [&](const std::vector<game::ModData>& list) -> Value {
+                for (const game::ModData& d : list)
+                    if (d.mod == m.mod)
+                        if (auto v = script::parseJson(d.value)) return std::move(*v);
+                return Value();
+            };
+            ValueMap colonyData, vehicleData;
+            for (const auto& c : s_.colonies)
+                if (c && c->owner == e.id)
+                    if (Value v = of(c->modData); !v.isNull()) colonyData.emplace_back(std::to_string(c->planet.value), std::move(v));
+            for (const Vehicle& v : s_.vehicles)
+                if (v.owner == e.id && v.count > 0)
+                    if (Value x = of(v.modData); !x.isNull()) vehicleData.emplace_back(std::to_string(v.id.value), std::move(x));
+            out.emplace_back(m.mod,
+                             Map(3)("empire", of(e.modData))("colonies", Value(std::move(colonyData)))("vehicles", Value(std::move(vehicleData))).done());
+        }
+        return Value(std::move(out));
     }
 
     Value research(const Empire& e) const {
@@ -265,25 +366,24 @@ private:
                 if (sys.valid() && sys.index() < claimedBy.size()) claimedBy[sys.index()].push_back(id(e.id));
         ValueList out;
         out.reserve(s_.galaxy.systems.size());
-        for (const StarSystem& sys : s_.galaxy.systems) {
-            const size_t i = sys.id.index();
-            const bool show = shown(sys.id);
-            const game::Knowledge* k = my_ ? &my_->knowledge : nullptr;
-            auto flag = [&](const std::vector<SystemId>& list) {
-                return my_ && std::find(list.begin(), list.end(), sys.id) != list.end();
-            };
-            out.push_back(
-                Map(16)("id", id(sys.id))("name", show ? Value(sys.name) : Value())(
-                    "position", Map(2)("x", num(sys.position.x))("y", num(sys.position.y)).done())(
-                    "explored", Value(my_ && my_->hasExplored(sys.id)))("present", Value(k && i < k->present.size() && k->present[i] != 0))(
-                    "last_seen", num(k && i < k->lastSeen.size() ? k->lastSeen[i] : 0u))("type", show ? id(sys.type) : Value())(
-                    "physical_type", show ? Value(sys.physicalType) : Value())("abilities", show ? abilityEntries(sys.abilities) : Value())(
-                    "objects", show ? enc(sys.objects) : Value())("avoid", Value(flag(my_ ? my_->systemsToAvoid : std::vector<SystemId>{})))(
-                    "claimed", Value(flag(my_ ? my_->claimedSystems : std::vector<SystemId>{})))(
-                    "note", Value(k && i < k->notes.size() ? k->notes[i] : std::string()))("claimed_by", Value(std::move(claimedBy[i])))
-                    .done());
-        }
+        for (const StarSystem& sys : s_.galaxy.systems) out.push_back(system(sys, std::move(claimedBy[sys.id.index()])));
         return Value(std::move(out));
+    }
+
+    Value system(const StarSystem& sys, ValueList claimedBy) const {
+        const size_t i = sys.id.index();
+        const bool show = shown(sys.id);
+        const game::Knowledge* k = my_ ? &my_->knowledge : nullptr;
+        auto flag = [&](const std::vector<SystemId>& list) { return my_ && std::find(list.begin(), list.end(), sys.id) != list.end(); };
+        return Map(16)("id", id(sys.id))("name", show ? Value(sys.name) : Value())(
+                   "position", Map(2)("x", num(sys.position.x))("y", num(sys.position.y)).done())(
+                   "explored", Value(my_ && my_->hasExplored(sys.id)))("present", Value(k && i < k->present.size() && k->present[i] != 0))(
+                   "last_seen", num(k && i < k->lastSeen.size() ? k->lastSeen[i] : 0u))("type", show ? id(sys.type) : Value())(
+                   "physical_type", show ? Value(sys.physicalType) : Value())("abilities", show ? abilityEntries(sys.abilities) : Value())(
+                   "objects", show ? enc(sys.objects) : Value())("avoid", Value(flag(my_ ? my_->systemsToAvoid : std::vector<SystemId>{})))(
+                   "claimed", Value(flag(my_ ? my_->claimedSystems : std::vector<SystemId>{})))(
+                   "note", Value(k && i < k->notes.size() ? k->notes[i] : std::string()))("claimed_by", Value(std::move(claimedBy)))
+            .done();
     }
 
     Value objects() const {
@@ -374,7 +474,8 @@ private:
     Value vehicles() {
         ValueList out;
         out.reserve(s_.vehicles.size());
-        for (const Vehicle& v : s_.vehicles) out.push_back(vehicle(v));
+        for (const Vehicle& v : s_.vehicles)
+            if (!live_ || v.count > 0) out.push_back(vehicle(v));
         return Value(std::move(out));
     }
 
@@ -408,17 +509,19 @@ private:
 
     Value fleets() const {
         ValueList out;
-        for (const Fleet& fl : s_.fleets) {
-            if (!full(fl.owner)) continue;
-            const Vehicle* leader = game::fleetLeader(s_, fl);
-            out.push_back(Map(13)("id", id(fl.id))("owner", id(fl.owner))("name", Value(fl.name))("members", enc(fl.members))(
-                              "leader", leader ? id(leader->id) : Value())("chosen_leader", id(fl.leader))("location", enc(fl.location))(
-                              "formation", num(fl.formation))("strategy", num(fl.strategy))("experience", num(fl.experience))(
-                              "minister", Value(fl.minister))("speed", num(game::movement::fleetSpeed(r_, s_, fl)))(
-                              "orders", enc(game::fleetOrders(s_, fl)))("repeat_orders", Value(game::fleetRepeats(s_, fl)))
-                              .done());
-        }
+        for (const Fleet& fl : s_.fleets)
+            if (full(fl.owner)) out.push_back(fleet(fl));
         return Value(std::move(out));
+    }
+
+    Value fleet(const Fleet& fl) const {
+        const Vehicle* leader = game::fleetLeader(s_, fl);
+        return Map(13)("id", id(fl.id))("owner", id(fl.owner))("name", Value(fl.name))("members", enc(fl.members))(
+                   "leader", leader ? id(leader->id) : Value())("chosen_leader", id(fl.leader))("location", enc(fl.location))(
+                   "formation", num(fl.formation))("strategy", num(fl.strategy))("experience", num(fl.experience))(
+                   "minister", Value(fl.minister))("speed", num(game::movement::fleetSpeed(r_, s_, fl)))(
+                   "orders", enc(game::fleetOrders(s_, fl)))("repeat_orders", Value(game::fleetRepeats(s_, fl)))
+            .done();
     }
 
     // ---- Designs -------------------------------------------------------------------------------------------------------
@@ -484,17 +587,21 @@ private:
         ValueList out;
         for (const game::CombatRecord& c : s_.combats) {
             if (!whole_ && std::find(c.participants.begin(), c.participants.end(), me_) == c.participants.end()) continue;
-            Value pieces = listOf(c.pieces, [](const game::CombatPiece& p) {
-                return Map(9)("kind", enc(p.kind))("owner", id(p.owner))("vehicle", id(p.vehicle))("planet", id(p.planet))(
-                           "design", id(p.design))("name", Value(p.name))("count", num(p.count))("damage", num(p.damage))(
-                           "survivor", id(p.survivor))
-                    .done();
-            });
-            out.push_back(Map(5)("turn", num(c.turn))("location", enc(c.location))("participants", enc(c.participants))(
-                              "summary", enc(c.summary))("pieces", std::move(pieces))
-                              .done());
+            out.push_back(battleValue(c));
         }
         return Value(std::move(out));
+    }
+
+public:
+    static Value battleValue(const game::CombatRecord& c) {
+        Value pieces = listOf(c.pieces, [](const game::CombatPiece& p) {
+            return Map(9)("kind", enc(p.kind))("owner", id(p.owner))("vehicle", id(p.vehicle))("planet", id(p.planet))("design", id(p.design))(
+                       "name", Value(p.name))("count", num(p.count))("damage", num(p.damage))("survivor", id(p.survivor))
+                .done();
+        });
+        return Map(5)("turn", num(c.turn))("location", enc(c.location))("participants", enc(c.participants))("summary", enc(c.summary))(
+                   "pieces", std::move(pieces))
+            .done();
     }
 };
 
@@ -503,6 +610,14 @@ private:
 } // namespace detail
 
 script::Value buildView(const Perspective& p) { return detail::ViewBuilder(p).build(); }
+
+script::Value buildViewPart(const Perspective& p, std::string_view part) { return detail::ViewBuilder(p).part(part); }
+
+script::Value buildViewRecord(const Perspective& p, std::string_view kind, int64_t id) { return detail::ViewBuilder(p).record(kind, id); }
+
+script::Value battleRecord(const game::CombatRecord& c) { return detail::ViewBuilder::battleValue(c); }
+
+script::Value buildVehicleRecord(const Perspective& p, const game::Vehicle& v) { return detail::ViewBuilder(p).vehicleRecord(v); }
 
 script::Value buildView(const game::Rules& r, const game::GameState& s, game::EmpireId empire, ViewOptions options) {
     return buildView(Perspective(r, s, empire, options));

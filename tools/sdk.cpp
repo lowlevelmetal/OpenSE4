@@ -20,6 +20,7 @@
 #include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
 #include "sdk/players.hpp"
+#include "sdk/rules.hpp"
 #include "sdk_tool.hpp"
 
 #include <algorithm>
@@ -546,6 +547,10 @@ int cmdCheck(const std::vector<std::string>& argv) {
     const sdk::PlayerCheck players = sdk::checkModPlayers(*p);
     errors.insert(errors.end(), players.errors.begin(), players.errors.end());
     warnings.insert(warnings.end(), players.warnings.begin(), players.warnings.end());
+    // Its rules (docs/sdk/rules.md).
+    const sdk::PlayerCheck rules = sdk::checkModRules(*p);
+    errors.insert(errors.end(), rules.errors.begin(), rules.errors.end());
+    warnings.insert(warnings.end(), rules.warnings.begin(), rules.warnings.end());
     const std::string id = p->id();
     auto set = withDependencies({*p}, *a);
     if (!set) {
@@ -673,6 +678,8 @@ int main(int argc, char** argv) {
         return args.size() < 2 ? 2 : 0;
     }
     const std::string& command = args[1];
+    // Data generators (data/*.py) run in the script runtime (docs/sdk/rules.md).
+    mods::setDefaultGeneratorRunner(sdk::scriptGenerators());
     if (command == "new") return cmdNew(args);
     if (command == "check") return cmdCheck(args);
     if (command == "dump") return cmdDump(args);

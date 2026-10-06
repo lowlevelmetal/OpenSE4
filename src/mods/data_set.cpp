@@ -437,6 +437,10 @@ LoadedDataSet loadDataSet(const fs::path& gameRoot, const fs::path& dataDir, con
     data->checkAfterLoad(loaded.diagnostics, out.diagnostics);
     if (loaded.ruleset) {
         loaded.ruleset->mods = data->mods().records();
+        // The intelligence project types the mods' rules scripts carry out (docs/sdk/rules.md).
+        for (const Package& p : data->mods().packages)
+            for (const ModIntelDecl& d : p.manifest.rules.intelProjects)
+                if (!loaded.ruleset->isModIntelType(d.type)) loaded.ruleset->modIntelTypes.push_back(d.type);
         out.ruleset = std::move(loaded.ruleset);
     }
     out.data = std::move(data);

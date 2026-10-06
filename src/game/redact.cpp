@@ -159,6 +159,22 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
         v.playerTurn.questions.clear();
     }
 
+    // Mods' data (docs/sdk/rules.md "Mod data"): the game's and other
+    // empires' stay with the host; the empire's own things keep only the
+    // data of mods that let players see it.
+    v.modData.clear();
+    auto shown = [&](const std::string& mod) {
+        return std::any_of(s.modRules.begin(), s.modRules.end(), [&](const ModRulesState& m) { return m.mod == mod && m.playersSee; });
+    };
+    auto keepShown = [&](std::vector<ModData>& data, EmpireId owner) {
+        if (spectator || owner != viewer) data.clear();
+        else std::erase_if(data, [&](const ModData& d) { return !shown(d.mod); });
+    };
+    for (Empire& e : v.empires) keepShown(e.modData, e.id);
+    for (auto& c : v.colonies)
+        if (c) keepShown(c->modData, c->owner);
+    for (Vehicle& x : v.vehicles) keepShown(x.modData, x.owner);
+
     // A map's starting points tell where the players started.
     v.startingPoints.clear();
     // Facilities left on abandoned planets are seen only by whoever colonizes them.

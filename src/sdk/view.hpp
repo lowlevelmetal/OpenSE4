@@ -22,7 +22,9 @@
 #include "game/state.hpp"
 #include "script/value.hpp"
 
+#include <cstdint>
 #include <memory>
+#include <string_view>
 
 namespace opense4::sdk {
 
@@ -32,6 +34,9 @@ inline constexpr int kApiVersion = 1;
 struct ViewOptions {
     // The whole state, not only what the empire knows.
     bool whole = false;
+    // Rules scripts' reading (docs/sdk/rules.md): vehicles already destroyed
+    // but not yet removed from the state are left out.
+    bool liveOnly = false;
 };
 
 // What one empire's scripts may read during one engine call: the state as
@@ -60,5 +65,20 @@ private:
 
 script::Value buildView(const Perspective& p);
 script::Value buildView(const game::Rules& r, const game::GameState& s, game::EmpireId empire, ViewOptions options = {});
+
+// One part of the view, as buildView makes it: "game", "my", "empires",
+// "systems", "objects", "colonies", "vehicles", "fleets", "designs",
+// "messages", "log" or "battles" (rules scripts read the game a part at a
+// time). Null for an unknown part.
+script::Value buildViewPart(const Perspective& p, std::string_view part);
+// One record of the view: an "empire", "system", "object", "colony" (by its
+// planet's id), "vehicle", "fleet", "design" or "message" by its id, as the
+// view's list would hold it; null when the view does not list it.
+script::Value buildViewRecord(const Perspective& p, std::string_view kind, int64_t id);
+// A battle's record as the view's `battles` list holds it.
+script::Value battleRecord(const game::CombatRecord& c);
+// A vehicle's record as the view's `vehicles` list would hold it, for a
+// vehicle that need not be in the state any more (one just destroyed).
+script::Value buildVehicleRecord(const Perspective& p, const game::Vehicle& v);
 
 } // namespace opense4::sdk

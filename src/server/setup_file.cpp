@@ -1,6 +1,7 @@
 #include "server/setup_file.hpp"
 
 #include "datafile/datafile.hpp"
+#include "sdk/rules.hpp"
 #include "game/ai_data.hpp"
 #include "game/players.hpp"
 #include "mods/data_set.hpp"
@@ -194,7 +195,7 @@ private:
 
     void options(const toml::table& t) {
         std::vector<std::string_view> keys{"quadrant", "starting_resources", "victory", "ai_sees_everything", "ai_planning_budget", "ai_call_budget",
-                                           "ai_memory_limit"};
+                                           "ai_memory_limit", "rules_hook_budget", "rules_turn_budget", "mod_data_limit", "mod"};
         for (const auto& o : kIntOptions) keys.push_back(o.key);
         for (const auto& o : kBoolOptions) keys.push_back(o.key);
         for (auto&& [key, node] : t)
@@ -222,6 +223,35 @@ private:
         if (auto v = integer(t, "ai_planning_budget", 1, int64_t{1} << 50)) o.aiPlanningBudget = *v;
         if (auto v = integer(t, "ai_call_budget", 1, int64_t{1} << 50)) o.aiCallBudget = *v;
         if (auto v = integer(t, "ai_memory_limit", 0, int64_t{1} << 40)) o.aiMemoryLimit = *v;
+        // Mods' rules (docs/sdk/rules.md "Budgets and failures", "Game options").
+        if (auto v = integer(t, "rules_hook_budget", 1, int64_t{1} << 50)) o.rulesHookBudget = *v;
+        if (auto v = integer(t, "rules_turn_budget", 1, int64_t{1} << 50)) o.rulesTurnBudget = *v;
+        if (auto v = integer(t, "mod_data_limit", 0, int64_t{1} << 40)) o.modDataLimit = *v;
+        if (const toml::node* n = t.get("mod")) {
+            // [options.mod."<mod id>"] name = value: the options the game's mods declare.
+            const toml::table* mods = n->as_table();
+            const std::vector<sdk::ModOptionChoice> choices = sdk::modOptions(rules_);
+            if (!mods) error(*n, "[options.mod] must hold a table per mod: [options.mod.\"<mod id>\"]");
+            else
+                for (auto&& [mod, table] : *mods) {
+                    const toml::table* values = table.as_table();
+                    if (!values) {
+                        error(table, std::format("[options.mod.\"{}\"] must be a table of the mod's options", mod.str()));
+                        continue;
+                    }
+                    for (auto&& [name, value] : *values) {
+                        int64_t v = 0;
+                        if (const auto* b = value.as_boolean()) v = b->get() ? 1 : 0;
+                        else if (const auto* i = value.as_integer()) v = i->get();
+                        else {
+                            error(value, std::format("the option {}:{} must be a whole number, true or false", mod.str(), name.str()));
+                            continue;
+                        }
+                        if (std::string why = sdk::setModOption(o, choices, std::format("{}:{}", mod.str(), name.str()), v); !why.empty())
+                            error(value, why);
+                    }
+                }
+        }
         if (const toml::node* n = t.get("starting_resources")) {
             const auto* arr = n->as_array();
             if (!arr || arr->size() != 3 || !arr->is_homogeneous(toml::node_type::integer)) {

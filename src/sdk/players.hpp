@@ -122,6 +122,9 @@ struct PlayerSetup {
 void installPlayers(PlayerSetup setup = {});
 // Removes them: every empire is played by the built-in AI.
 void uninstallPlayers();
+// Whether an engine call on the game needs a session: an empire is played by
+// a script or external player, or the game has mods with rules scripts.
+bool needsSession(const game::Rules& r, const game::GameState& s, const PlayerSetup& setup);
 
 // A session for one engine call on `s` (what the installed factory makes;
 // also for a battle a window shows, TacticalBattle::Setup::scriptPlayers).
@@ -155,5 +158,10 @@ struct PlayerCheck {
     std::vector<std::string> warnings;
 };
 PlayerCheck checkModPlayers(const mods::Package& p);
+// The same for a mod's rules (docs/sdk/rules.md): its scripts/ files import
+// and compile, what they register matches what mod.toml declares (an order,
+// event, intelligence project type and victory condition each has its
+// function, and nothing registered is undeclared), and its scenarios read.
+PlayerCheck checkModRules(const mods::Package& p);
 
 } // namespace opense4::sdk

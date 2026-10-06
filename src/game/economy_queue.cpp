@@ -5,6 +5,7 @@
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy_internal.hpp"
+#include "game/hooks.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/turn.hpp"
@@ -325,6 +326,16 @@ bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design
     }
     s.design(design).built += placed;
     if (placed > 0) s.design(design).everBuilt = true;  // built at least once (spec 05 §2.3)
+    if (placed > 0 && ctx.hooks) {
+        // A mod's event (hooks.hpp): units go into cargo, no vehicle.
+        HookArgs a;
+        a.empire = e;
+        a.design = design;
+        a.count = placed;
+        a.planet = q.target.planet;
+        a.where = q.location;
+        runHook(ctx, Hook::VehicleBuilt, a);
+    }
     if (placed > 0)
         ctx.log(e, LogCategory::Construction, std::format("{} x {} completed", placed, name), std::format("Built at {}.", where), q.location,
                 logpicture::hull(design));
@@ -356,6 +367,17 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
                     const Vehicle& v = movement::spawnVehicle(r, s, e, design, q.location, autoWaypoint);
                     ctx.log(e, LogCategory::Construction, std::format("{} completed", v.name), std::format("Built at {}.", where), q.location,
                             logpicture::hull(design));
+                    if (ctx.hooks) {
+                        // A mod's event (hooks.hpp).
+                        HookArgs a;
+                        a.empire = e;
+                        a.vehicle = v.id;
+                        a.design = design;
+                        a.count = 1;
+                        a.planet = q.target.planet;
+                        a.where = q.location;
+                        runHook(ctx, Hook::VehicleBuilt, a);
+                    }
                     ctx.mood(e, "Ship Constructed", q.location.system, anchorAt(s, q));
                     ctx.mood(e, "Any Ship Constructed");
                     gainExperience(s.empire(e), tonnage / 10);  // the hull's tonnage div 10 per ship (confirmed: binary)

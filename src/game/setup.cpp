@@ -6,6 +6,8 @@
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/generate.hpp"
+#include "game/hooks.hpp"
+#include "game/players.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/sight.hpp"
@@ -372,6 +374,18 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     s.options = setup.options;
     s.rng.reseed(setup.seed);
     s.mods.assign(r.mods().begin(), r.mods().end());
+    s.scenario = setup.scenario;
+    s.scenario.met.clear();
+    // The rules hooks of the game's mods (hooks.hpp; none without rules
+    // mods): new_game first, with the setup, before anything is made.
+    TurnContext hookCtx{r, s, {}, {}, {}};
+    CallSession session(hookCtx);
+    if (hookCtx.hooks) {
+        HookArgs a;
+        a.setup = &setup;
+        runHook(hookCtx, Hook::NewGame, a);
+        deliverHooks(hookCtx);
+    }
 
     // ---- Quadrant (spec 01 §3.7 steps 1-6).
     QuadrantOptions qo;
@@ -395,6 +409,14 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         s.galaxy = std::move(generated->galaxy);
     }
     s.colonies.resize(s.galaxy.objects.size());
+    // The mods' generate_galaxy hooks: they may adjust the quadrant, or
+    // replace it, before the empires are placed.
+    if (hookCtx.hooks) {
+        runHook(hookCtx, Hook::GenerateGalaxy);
+        deliverHooks(hookCtx);
+        if (s.galaxy.systems.empty()) return std::unexpected("A mod's generate_galaxy hook left the quadrant without systems.");
+        s.colonies.resize(s.galaxy.objects.size());
+    }
 
     // ---- Empires.
     const size_t n = setup.empires.size();
@@ -457,6 +479,10 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     po.finiteResources = s.options.finiteResources;
     po.allPlanetsSameSize = s.options.allPlanetsSameSize;
     if (setup.map) po.startingPoints = setup.map->startingPoints;
+    // A mod's generate_galaxy hook may have changed the quadrant: the map's
+    // starting points that no longer name a system are left out.
+    if (hookCtx.hooks)
+        std::erase_if(po.startingPoints, [&](const StartingPoint& p) { return !p.system.valid() || p.system.index() >= s.galaxy.systems.size(); });
     auto homes = placeHomeworlds(s.galaxy, r.data(), starts, po, s.rng, &s.startingPoints);
     if (!homes) return std::unexpected(homes.error());
     objectsGrown(s);  // placement may have created planets
@@ -547,6 +573,14 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     // Starting Resources plus one turn of production for the stockpile and
     // research, intelligence at 0 (spec 02 §9, spec 05 §1.1, confirmed: binary).
     research::openingPools(r, s);
+    // The mods' after_galaxy hooks: the game is made; then sight follows
+    // what they changed.
+    if (hookCtx.hooks) {
+        runHook(hookCtx, Hook::AfterGalaxy);
+        session.end();
+        s.removeDeadVehicles();
+        sight::updateKnowledge(r, s);
+    }
     economy::updateReports(r, s);
     return s;
 }

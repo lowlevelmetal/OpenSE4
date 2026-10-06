@@ -153,6 +153,25 @@ void setOwnComputerPlayer(game::EmpireSetup& e, std::optional<game::Controller> 
 // empire of `g`; the problem when it is no player of the game's mods.
 std::optional<std::string> useComputerPlayer(const game::Rules& r, game::GameSetup& g, std::string_view controller);
 
+// ---- Mods' game options (docs/sdk/rules.md "Game options") -------------------------------------
+
+// The options the game's rules mods declare ([[rules.options]]), as the setup
+// screens offer them, with their values in the settings (their defaults
+// until set). A later step of the SDK draws them; the setup files of
+// opense4-server set them already.
+struct ModOptionRow {
+    std::string key;          // "<mod id>:<name>"
+    std::string label;
+    std::string description;
+    bool isSwitch = false;
+    int64_t min = 0, max = 0;
+    int64_t value = 0;
+};
+std::vector<ModOptionRow> modOptionRows(const game::Rules& r, const NewGameSettings& s);
+// Sets one by its key; the problem when it is not one of the game's or the
+// value is out of its range.
+std::optional<std::string> setModOption(const game::Rules& r, NewGameSettings& s, std::string_view key, int64_t value);
+
 // Appends the random computer players, then the neutral ones, to `g` after
 // the empires it holds: counts and races drawn from an Rng seeded from
 // g.seed (so the same seed gives the same players), races not yet in the

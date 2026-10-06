@@ -1,0 +1,14 @@
+[mod]
+id = "test.rules-golden"
+name = "Rules golden"
+version = "1.0.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "Overcrowding, field batteries and dust storms: the rules tier's golden games."
+
+[[rules.events]]
+name = "dust_storm"
+label = "Dust storm"
+chance = 25
+target = "vehicle"
+first_turn = 3

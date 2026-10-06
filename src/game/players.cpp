@@ -74,10 +74,27 @@ void setPlayersFactory(PlayersFactory f) { factory() = std::move(f); }
 std::unique_ptr<Players> makePlayers(const Rules& r, GameState& s) {
     const PlayersFactory& f = factory();
     if (!f) return nullptr;
-    bool any = false;
-    for (const Empire& e : s.empires) any = any || hasPlayerController(s, e.id);
-    if (!any) return nullptr;
     return f(r, s);
+}
+
+CallSession::CallSession(TurnContext& ctx) : ctx_(ctx), players_(makePlayers(ctx.rules, ctx.state)) {
+    ctx_.players = players_.get();
+    ctx_.hooks = players_ ? players_->hooks() : nullptr;
+    if (players_) players_->begin(ctx_);
+}
+
+CallSession::~CallSession() {
+    if (ctx_.players == players_.get()) ctx_.players = nullptr;
+    if (players_ && ctx_.hooks == players_->hooks()) ctx_.hooks = nullptr;
+}
+
+void CallSession::end() {
+    if (!players_) return;
+    deliverHooks(ctx_);
+    players_->endSession(ctx_);
+    ctx_.players = nullptr;
+    ctx_.hooks = nullptr;
+    players_.reset();
 }
 
 void replayJournal(GameState& again, const GameState& played) {

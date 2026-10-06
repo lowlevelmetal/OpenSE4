@@ -25,6 +25,7 @@
 //     the classic answers stand for the rest of that turn.
 
 #include "game/commands.hpp"
+#include "game/hooks.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
 #include "game/tactical.hpp"
@@ -113,15 +114,41 @@ public:
     virtual void replay(std::span<const JournalEntry> entries) = 0;
     // The end of the engine call: each player asked in it gets end_session.
     virtual void endSession(TurnContext& ctx) = 0;
+    // The rules hooks of the game's mods in this engine call (hooks.hpp);
+    // null when the game has none.
+    virtual RulesHooks* hooks() { return nullptr; }
+    // The engine call's context, as the session starts (CallSession): what a
+    // mod's order given during the call (game::apply) works with.
+    virtual void begin(TurnContext&) {}
 };
 
 // Makes the session of one engine call. The SDK installs one
-// (sdk::installPlayers); none is installed by default.
+// (sdk::installPlayers); none is installed by default. It makes one only for
+// a game that needs it (an empire played by a script or external player, or
+// mods with rules scripts) and gives null otherwise.
 using PlayersFactory = std::function<std::unique_ptr<Players>(const Rules& r, GameState& s)>;
 void setPlayersFactory(PlayersFactory factory);
-// The session for an engine call on `s`: null without a factory, or when no
-// living empire has a player controller.
+// The session for an engine call on `s`: null without a factory, or when the
+// game needs none.
 std::unique_ptr<Players> makePlayers(const Rules& r, GameState& s);
+
+// An engine call's session, set up on its context: the players and the rules
+// hooks (hooks.hpp). end() delivers the events still waiting and ends the
+// session (Players::endSession). Leaving without end() (a battle stop, a
+// fault) drops the session as it is: the call is put back and made again.
+class CallSession {
+public:
+    explicit CallSession(TurnContext& ctx);
+    ~CallSession();
+    CallSession(const CallSession&) = delete;
+    CallSession& operator=(const CallSession&) = delete;
+    // Delivers the waiting events and ends the session; the context loses it.
+    void end();
+
+private:
+    TurnContext& ctx_;
+    std::unique_ptr<Players> players_;
+};
 
 // Plays a turn again with the answers it was played with: `again` is the
 // state as the turn began, `played` the state after it. The answers of

@@ -865,6 +865,34 @@ Replaces the Empire Options switches and what the windows remember. Only
 {"kind": "set_interface_options", "options": {"auto_claim_colonized": false}}
 ```
 
+## Mod orders
+
+### `mod_command`
+
+An order a mod declares (`[[rules.orders]]` in its mod.toml, docs/sdk/rules.md
+"Orders"). The game checks it against the declaration: its mod is one of the
+game's rules mods, it names exactly the target the order applies to (a vehicle,
+fleet or colony of ours, another empire, or none for the empire itself), and its
+arguments are the declared ones with the declared types and ranges (those left
+out take their defaults). Then the mod's own check may refuse it with its
+reason, and its effect runs at once, in both turn styles, as a cargo transfer
+does. It travels like any other command: over the network, in e-mail games and
+in replays.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `mod` | text | The mod's id. |
+| `name` | text | The order's name in the mod. |
+| `vehicle` | vehicle id, or null | The vehicle it is given to (orders that apply to a vehicle). |
+| `fleet` | fleet id, or null | The fleet (orders that apply to a fleet). |
+| `planet` | object id, or null | The colony, by its planet (orders that apply to a colony). |
+| `empire` | empire id, or null | The other empire (orders that apply to an empire). |
+| `args` | map | Its arguments by name: whole numbers, true or false, text, or ids. |
+
+```json
+{"kind": "mod_command", "mod": "example.shields", "name": "overcharge", "vehicle": 31, "args": {"power": 2}}
+```
+
 ## Orders
 
 An order list belongs to a vehicle, a fleet (each member holds a copy) or a
