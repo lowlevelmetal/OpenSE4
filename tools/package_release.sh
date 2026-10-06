@@ -23,8 +23,10 @@
 #
 # Each holds the game, the dedicated server and the data checker, with our own
 # fonts built in, plus the README, the licence (GPL 3.0 or later) and the
-# third-party notices, and the modding SDK's documentation and example mods in
-# sdk/ beside opense4-sdk (sdk/docs from docs/sdk, sdk/examples from mods/examples).
+# third-party notices, the modding SDK's documentation and example mods in
+# sdk/ beside opense4-sdk (sdk/docs from docs/sdk, sdk/examples from mods/examples),
+# and the mods that come with OpenSE4 in mods/ beside the programs (the folders
+# mods/bundled.txt names, such as mods/hegemon; their files as git tracks them).
 # Nothing from the original game is included: players point the game at their own
 # installed copy.
 #
@@ -102,6 +104,28 @@ if [[ "$version" != *-* ]] && ! grep -q "<release version=\"$version\"" "$metain
     echo "$metainfo has no <release> entry for $version: add one first." >&2
     exit 1
 fi
+
+# The mods that come with OpenSE4: the folders mods/bundled.txt names, one a line.
+bundled_mods() {
+    sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' mods/bundled.txt | grep -v '^$'
+}
+
+# stage_mods <stage>: copies them into <stage>/mods, the files git tracks (so that
+# every package has the same files, and so the same identity, wherever it is built).
+stage_mods() {
+    local mod file
+    mkdir -p "$1/mods"
+    for mod in $(bundled_mods); do
+        if [ ! -f "mods/$mod/mod.toml" ]; then
+            echo "mods/bundled.txt names $mod, but mods/$mod has no mod.toml" >&2
+            exit 1
+        fi
+        while IFS= read -r -d '' file; do
+            mkdir -p "$1/$(dirname "$file")"
+            cp "$file" "$1/$file"
+        done < <(git ls-files -z -- "mods/$mod")
+    done
+}
 
 nsis_version=3.13
 nsis_sha256=ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8
@@ -305,6 +329,8 @@ for target in "${targets[@]}"; do
     cp -r docs/sdk "$stage/sdk/docs"
     cp -r mods/examples "$stage/sdk/examples"
     find "$stage/sdk" -name __pycache__ -type d -prune -exec rm -rf {} +
+    # The mods that come with OpenSE4, which the programs find in mods/ beside them.
+    stage_mods "$stage"
     notices "$build" "$platform" "$stage/THIRD_PARTY_NOTICES.txt"
     if [ "$platform" = linux ]; then
         mkdir -p "$stage/share/applications" "$stage/share/metainfo" "$stage/share/icons"

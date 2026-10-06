@@ -558,7 +558,8 @@ jobs:
           $dir = $env:INSTALL_DIR
           Get-ChildItem $dir | Format-Table Name, Length -AutoSize
           foreach ($f in 'opense4.exe', 'opense4-server.exe', 'opense4-datacheck.exe', 'opense4-convert.exe', 'opense4-sdk.exe', 'README.md', 'LICENSE',
-                         'THIRD_PARTY_NOTICES.txt', 'uninstall.exe', 'sdk\docs\README.md', 'sdk\examples\small-ai\mod.toml') {
+                         'THIRD_PARTY_NOTICES.txt', 'uninstall.exe', 'sdk\docs\README.md', 'sdk\examples\small-ai\mod.toml',
+                         'mods\hegemon\mod.toml', 'mods\hegemon\ai\hegemon\player.py') {
             if (-not (Test-Path -LiteralPath (Join-Path $dir $f))) { throw "Not installed: $f" }
           }
           $version = (Get-Item dist\*-setup.exe).Name -replace '^OpenSE4-(.+)-windows-x86_64-setup\.exe$', '$1'
@@ -596,6 +597,10 @@ jobs:
 
           $out = & "$dir\opense4-server.exe" --help | Out-String
           if ($LASTEXITCODE -ne 0 -or $out -notmatch 'Usage') { throw "opense4-server.exe --help failed ($LASTEXITCODE)" }
+
+          # The mods that come with OpenSE4: found by id beside the programs.
+          $out = & "$dir\opense4-sdk.exe" info opense4.hegemon 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or $out -notmatch 'opense4\.hegemon') { throw "opense4-sdk.exe info opense4.hegemon: $LASTEXITCODE $out" }
 
           # No data set in an empty folder: reported with exit status 2.
           $empty = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'no-data')
