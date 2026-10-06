@@ -213,8 +213,9 @@ private:
         Sprite picture;
         if (hull) {
             const std::string& style = paint.styleOf(owner);
-            picture = ui.art.shipPortrait(style, *hull);
-            if (!picture) picture = ui.art.shipMini(style, *hull);
+            const std::string& own = s.design(rp.design).picture;   // hullOf found the design
+            picture = ui.art.designPortrait(style, *hull, own);
+            if (!picture) picture = ui.art.designMini(style, *hull, own);
         } else if (rp.planet.valid() && rp.planet.index() < s.galaxy.objects.size()) {
             picture = objectSprite(ui, s.galaxy.object(rp.planet));
         }

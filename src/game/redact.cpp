@@ -115,7 +115,8 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
         if (c->invader != viewer) c->landedTroops.clear();   // another empire's landed troops stay hidden
     }
 
-    // Designs: foreign designs we have not seen keep only their hull. No
+    // Designs: foreign designs we have not seen keep only their hull and
+    // their picture (how their ships look, docs/sdk/packages-and-data.md). No
     // foreign design shows its statistics (built, lost, enemy tonnage
     // destroyed): they are the owner's records (confirmed: binary, spec 04 §15).
     std::vector<DesignId> seen = me ? seenDesignIds(me->knowledge) : std::vector<DesignId>{};

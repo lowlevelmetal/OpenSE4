@@ -355,7 +355,7 @@ private:
                 const game::DesignId d{p.id};
                 if (d.index() >= s.designs.size() || s.design(d).hull >= r.data().vehicleSizes.size()) return {};
                 const std::string* st = style(s.design(d).owner);
-                return ui.art.shipPortrait(st ? *st : std::string{}, r.hull(s.design(d).hull));
+                return ui.art.designPortrait(st ? *st : std::string{}, r.hull(s.design(d).hull), s.design(d).picture);
             }
             case Kind::Planet: {
                 const game::ObjectId o{p.id};

@@ -96,6 +96,9 @@ public:
     // password in OpenSE4 0.6's form: the host needs that form once
     // (ClientConfig::sendOldPassword, after the player agreed).
     bool hostAskedOldPassword() const { return hostAskedOldPassword_; }
+    // The last connection was refused because the player's game-changing mods
+    // differ from the host's (protocol 7); the refusal's text names each difference.
+    bool refusedForMods() const { return refusedForMods_; }
     bool admin() const { return admin_; }
     uint32_t slot() const { return slot_; }
     const std::string& gameName() const { return gameName_; }
@@ -191,6 +194,7 @@ private:
     bool hostKeyChanged_ = false;
     bool hostKeyUnconfirmed_ = false;
     bool hostAskedOldPassword_ = false;
+    bool refusedForMods_ = false;
     bool keyPinnedBySession_ = false;               // config_.hostKey came from a Welcome, not from the player
     std::vector<Event> events_;
 };

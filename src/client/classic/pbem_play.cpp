@@ -43,8 +43,12 @@ std::expected<PbemGame, std::string> loadPbemGame(const game::Rules& rules, cons
     g.file = std::move(*file);
     // The host refuses a game made with another data set; so do we, since the
     // turn would not play the same here.
-    if (const auto mods = game::modDifferences(g.info.mods, rules, "the game"); !mods.empty())
-        return std::unexpected(std::format("The game needs other mods: {}.", mods.front()));
+    if (const auto mods = game::modDifferences(g.info.mods, rules, "the game"); !mods.empty()) {
+        std::string all;
+        for (const std::string& m : mods) all += (all.empty() ? "" : "; ") + m;
+        return std::unexpected(
+            std::format("The game was played with other mods than the ones in use (choose them in the main menu's Mods window): {}.", all));
+    }
     if (!game::sameDataSet(g.info, rules))
         return std::unexpected(std::format("The game was created with data set {}, but this data set is {}.", g.info.dataSet,
                                            g.info.formatVersion <= 8 ? game::legacyDataSetIdentity(rules) : game::dataSetIdentity(rules)));

@@ -6,6 +6,7 @@
 // list, Restore Defaults) sit where the original's pages leave room.
 
 #include "client/classic/frontend.hpp"
+#include "client/classic/mods_model.hpp"
 #include "client/classic/screens/file_dialog.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/setup_empire.hpp"
@@ -54,12 +55,23 @@ std::optional<GamePage> gamePageFromName(std::string_view name) {
     return std::nullopt;
 }
 
-// The settings of a Game Setup left with Cancel, so returning to it keeps
-// them (ours). A game begun forgets them: the next New Game starts from the
-// defaults, as the original's does (spec 07 session 5).
-std::optional<NewGameSettings>& lastSettings() {
-    static std::optional<NewGameSettings> settings;
+// The settings of a Game Setup left with Cancel (or for the Mods window), so
+// returning to it keeps them (ours). A game begun forgets them: the next New
+// Game starts from the defaults, as the original's does (spec 07 session 5).
+// Settings made for another data set (the mods changed) are forgotten too.
+struct KeptSettings {
+    NewGameSettings settings;
+    uint64_t generation = 0;   // LoadedMods::generation they were made with
+};
+std::optional<KeptSettings>& keptSettings() {
+    static std::optional<KeptSettings> settings;
     return settings;
+}
+void keepSettings(const NewGameSettings& s) { keptSettings() = KeptSettings{s, loadedMods().generation}; }
+std::optional<NewGameSettings> lastSettings() {
+    const auto& kept = keptSettings();
+    if (!kept || kept->generation != loadedMods().generation) return std::nullopt;
+    return kept->settings;
 }
 
 struct PreviewKey {
@@ -121,13 +133,21 @@ public:
             }
         if (!status_.empty()) a.status(status_, statusError_ ? kBad : kGood);
         else a.status(summary(), kDim);
+        // OpenSE4's own: the mods the game will use, and the Mods window, under
+        // the page buttons' pictures. The settings so far are kept for the way back.
+        if (modsLine(ctx, a.at({4, 540}), a.at({2, 562}), a.size({203, 26}), a.px(203)) && !modal) {
+            keepSettings(s_);
+            ctx.goTo(makeModsScreen([] { return makeGameSetupScreen(); }));
+            ImGui::EndDisabled();
+            return;
+        }
         const bool begin = a.beginButton("Begin Game");
         const bool cancel = a.cancelButton() && !modal;
         ImGui::EndDisabled();
         if (loadEmpire_) drawLoadEmpire(a);
         if (begin && !modal && beginGame(ctx)) return;  // this screen is gone once the game starts
         if (cancel) {
-            lastSettings() = s_;
+            keepSettings(s_);
             ctx.go(FrontId::Intro);
         }
     }
@@ -137,7 +157,8 @@ private:
 
     void init(MenuContext& ctx) {
         rules_ = ctx.rules;
-        s_ = lastSettings() ? *lastSettings() : defaultSettings(rules(), ctx.seed);
+        const auto kept = lastSettings();
+        s_ = kept ? *kept : defaultSettings(rules(), ctx.seed);
         std::string_view start = startPage_;
         if (start.starts_with("empire")) {
             page_ = GamePage::Players;
@@ -184,7 +205,7 @@ private:
             setStatus(session.error(), true);
             return false;
         }
-        lastSettings().reset();
+        keptSettings().reset();
         newGameStarted(setup->options.simultaneous);
         ctx.startGame(std::move(*session));
         return true;

@@ -51,6 +51,7 @@ add_executable(opense4_tests
     test_net_resilience.cpp
     test_net_secure.cpp
     test_pbem_client.cpp
+    test_pictures.cpp
     test_platform.cpp
     test_redact.cpp
     test_research.cpp
@@ -73,6 +74,7 @@ add_executable(opense4_tests
     test_xmath.cpp
     # The modding SDK's own tests (docs/MODDING_SDK.md, section 14.6)
     sdk/sdk_test_util.cpp
+    sdk/test_mod_client.cpp
     sdk/test_mod_identity.cpp
     sdk/test_mod_installed.cpp
     sdk/test_mod_layers.cpp
@@ -109,6 +111,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/ui/imgui_errors.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/art.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp
@@ -117,6 +120,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_lock.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_panel.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/mods_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_line.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_replay.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/net_transport.cpp

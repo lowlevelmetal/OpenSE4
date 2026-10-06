@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <format>
 #include <functional>
@@ -113,27 +114,27 @@ public:
                     tutorialMax = ImGui::GetItemRectMax();
                 }
             }
-            if (!ctx.error.empty()) dl->AddText(ctx.at({left + 12, 660 + dy}), IM_COL32(255, 128, 100, 255), ctx.error.c_str());
-            if (!error_.empty()) dl->AddText(ctx.at({left + 12, 644 + dy}), IM_COL32(255, 128, 100, 255), error_.c_str());
+            const float errorTop = errors(ctx, left, right, dy);
             // OpenSE4's own: until a first lesson is started, a hint points new
             // players at Tutorial (docs/LEARNING.md), which pulses.
             if (ctx.learn && !ctx.learn->library.tutorials.empty() && !lessonsStarted() && settings().learnDone.empty())
-                tutorialHint(ctx, tutorialMin, tutorialMax, !ctx.error.empty() || !error_.empty());
+                tutorialHint(ctx, tutorialMin, tutorialMax, errorTop);
         }
         ImGui::End();
         ImGui::PopStyleVar(2);
 
         // OpenSE4's own entries, which the original does not have: multiplayer,
-        // its settings and the manual.
-        ImGui::SetNextWindowPos(ctx.at({right - 12 - 3 * 112 - 2 * 4, 10}));
-        ImGui::SetNextWindowSize(ctx.size({3 * 112 + 2 * 4, 24}));
+        // its settings, the mods and the manual.
+        constexpr int kExtras = 4;
+        ImGui::SetNextWindowPos(ctx.at({right - 12 - kExtras * 112 - (kExtras - 1) * 4, 10}));
+        ImGui::SetNextWindowSize(ctx.size({kExtras * 112 + (kExtras - 1) * 4, 24}));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ctx.px(4), 0));
         if (ImGui::Begin("##intro-extras", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                                        ImGuiWindowFlags_NoBackground)) {
-            const std::array<std::pair<const char*, FrontId>, 3> extras{
-                {{"Multiplayer", FrontId::Multiplayer}, {"Settings", FrontId::Settings}, {"Manual", FrontId::Manual}}};
+            const std::array<std::pair<const char*, FrontId>, kExtras> extras{
+                {{"Multiplayer", FrontId::Multiplayer}, {"Settings", FrontId::Settings}, {"Mods", FrontId::Mods}, {"Manual", FrontId::Manual}}};
             for (size_t i = 0; i < extras.size(); ++i) {
                 if (i > 0) ImGui::SameLine();
                 if (classicButton(p, extras[i].first, {112, 22})) ctx.go(extras[i].second);
@@ -144,7 +145,34 @@ public:
     }
 
 private:
-    static void tutorialHint(MenuContext& ctx, ImVec2 buttonMin, ImVec2 buttonMax, bool errorShown) {
+    // What went wrong (ours): a lesson or game that did not start, mods that
+    // did not load. Over the picture, just above the band of buttons, on a
+    // dark box so that it reads on any picture (drawn in the band's window it
+    // was cut off by it).
+    // Returns the box's top (ImGui units), or FLT_MAX without one.
+    float errors(MenuContext& ctx, float left, float right, float dy) const {
+        std::string text = ctx.error;
+        if (!error_.empty()) text += (text.empty() ? "" : "\n") + error_;
+        if (text.empty()) return FLT_MAX;
+        const Painter p = ctx.painter();
+        ImFont* font = ctx.fonts.regular;
+        const float size = p.fontPx(kTextSize);
+        const float wrap = ctx.px(right - left - 40);
+        const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, wrap, text.c_str());
+        const ImVec2 pad(ctx.px(6), ctx.px(3));
+        const ImVec2 corner = ctx.at({left + 12, 668 + dy});
+        const ImVec2 a(corner.x - pad.x, corner.y - extent.y - 2 * pad.y), b(corner.x + extent.x + pad.x, corner.y);
+        ImDrawList* dl = ImGui::GetBackgroundDrawList();
+        dl->AddRectFilled(a, b, IM_COL32(0, 0, 0, 210));
+        dl->AddText(font, size, ImVec2(a.x + pad.x, a.y + pad.y), IM_COL32(255, 128, 100, 255), text.c_str(), nullptr, wrap);
+        ImGui::PushClipRect(a, b, false);
+        script::reportItem("intro-error", a, b);   // input scripts see that it shows
+        ImGui::PopClipRect();
+        return a.y;
+    }
+
+    // `limit`: the hint's box ends above it (an error's box).
+    static void tutorialHint(MenuContext& ctx, ImVec2 buttonMin, ImVec2 buttonMax, float limit) {
         const Painter p = ctx.painter();
         const float pulse = 0.6f + 0.4f * std::sin(float(ctx.time) * 4.0f);
         ImDrawList* fg = ImGui::GetForegroundDrawList();
@@ -156,7 +184,7 @@ private:
         ImGui::PushFont(ctx.fonts.regular, p.fontPx(kTextSize));
         const ImVec2 text = ImGui::CalcTextSize(kText);
         const ImVec2 inner(ctx.px(8), ctx.px(5));
-        const float bottom = buttonMin.y - ctx.px(errorShown ? 98.0f : 52.0f);   // clear of the version line and the error lines
+        const float bottom = std::min(buttonMin.y - ctx.px(52.0f), limit - ctx.px(6.0f));   // clear of the version line and the error lines
         const ImVec2 a(buttonMin.x, bottom - text.y - 2 * inner.y), b(buttonMin.x + text.x + 2 * inner.x, bottom);
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
         bg->AddRectFilled(a, b, imColor(0x101c40, 0.92f));
@@ -170,15 +198,8 @@ private:
     }
 
     void resume(MenuContext& ctx, const std::filesystem::path& file) {
-        const BusyPointer busy;  // the Hourglass while it loads (spec 06 §5.8)
-        auto session = ClassicSession::load(ctx.rules, file);
-        if (!session) {
-            error_ = session.error();
-            return;
-        }
-        restoreHistoryFrom(file);
-        if (ctx.loadedFromIntro) ctx.loadedFromIntro();
-        ctx.startGame(std::move(*session));
+        // A game played with other mods first says which (screens/mods.cpp).
+        if (auto problem = loadFromFrontEnd(ctx, file, [] { return makeFrontScreen(FrontId::Intro); })) error_ = *problem;
     }
     std::string error_;
 };
@@ -206,7 +227,7 @@ public:
             ImGui::TextUnformatted("Matthew Geiger and the OpenSE4 contributors.");
             section("Built with");
             ImGui::TextUnformatted("SDL 3, Dear ImGui, the Vulkan headers, volk, Vulkan Memory Allocator, toml++, stb_image, "
-                                   "dr_mp3 and miniupnpc, each under its own licence (see THIRD_PARTY_NOTICES.txt in the release).");
+                                   "stb_vorbis, dr_mp3, miniz and miniupnpc, each under its own licence (see THIRD_PARTY_NOTICES.txt in the release).");
             section("Fonts");
             ImGui::TextUnformatted("Noto Sans, under the SIL Open Font License. In a game, the bitmap fonts are read from your installed copy.");
             section("The game's own files");
@@ -266,6 +287,12 @@ public:
         if (a.arrow("##pageup", {766, 9}, true, page_ > 0)) --page_;
         if (a.arrow("##pagedown", {766, 516}, false, page_ + 1 < pages)) ++page_;
         if (!error_.empty()) a.status(error_, setup::kBad);
+        // OpenSE4's own: the mods the game will use, and the Mods window, in the
+        // corner the picker leaves empty.
+        if (modsLine(ctx, a.at({4, 540}), a.at({2, 562}), a.size({203, 26}), a.px(203))) {
+            ctx.goTo(makeModsScreen([] { return makeFrontScreen(FrontId::QuickStart); }));
+            return;
+        }
         // Begin Game is lit before a portrait is chosen (observed); without one it
         // only asks for a choice (ours).
         if (a.beginButton("Begin Game")) {
@@ -358,16 +385,9 @@ public:
         if (r == FileDialog::Result::Cancelled) {
             ctx.go(FrontId::Intro);
         } else if (r == FileDialog::Result::Chosen) {
-            const std::filesystem::path path = dialog_.chosen().path;
-            const BusyPointer busy;
-            auto session = ClassicSession::load(ctx.rules, path);
-            if (session) {
-                restoreHistoryFrom(path);
-                if (ctx.loadedFromIntro) ctx.loadedFromIntro();
-                ctx.startGame(std::move(*session));
-            } else {
-                dialog_.setError(session.error());
-            }
+            // A game played with other mods first says which (screens/mods.cpp).
+            if (auto problem = loadFromFrontEnd(ctx, dialog_.chosen().path, [] { return makeFrontScreen(FrontId::LoadGame); }))
+                dialog_.setError(*problem);
         }
     }
 
@@ -417,6 +437,7 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id) {
         case FrontId::LearnTraining: return makeLearnFrontScreen("training");
         case FrontId::Manual: return makeLearnFrontScreen("manual:");
         case FrontId::Credits: return std::make_unique<CreditsScreen>();
+        case FrontId::Mods: return makeModsScreen();
     }
     return nullptr;
 }
@@ -434,6 +455,7 @@ std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name) {
     if (datafile::keysEqual(screen, "pbem")) return makePbemScreen(page);
     if (datafile::keysEqual(screen, "learn")) return makeLearnFrontScreen(page);
     if (datafile::keysEqual(screen, "credits")) return makeFrontScreen(FrontId::Credits);
+    if (datafile::keysEqual(screen, "mods")) return makeModsScreen();
     return nullptr;
 }
 

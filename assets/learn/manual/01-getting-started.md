@@ -36,7 +36,8 @@ The title screen offers:
 
 At the top right, `Multiplayer` hosts or joins a network game, or plays your turn of a game by
 e-mail (see [Multiplayer](multiplayer)), `Settings` sets graphics, controls and sound (see
-[Settings](settings)), and `Manual` opens this manual.
+[Settings](settings)), `Mods` chooses the mods you play with (see [Mods](settings#mods)), and
+`Manual` opens this manual.
 
 ## Quick Start
 

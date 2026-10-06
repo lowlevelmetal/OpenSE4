@@ -1,0 +1,80 @@
+# The Mods window (docs/sdk/packages-and-data.md "Choosing mods in the game") on the fixture
+# mods of tests/fixtures/mods: the intro's Mods button, each mod's details, enabling with a
+# button and a double click, a requirement missing and then met, the order, Move Up and
+# Refresh, a mod that cannot be read with the installed data (its patch names a record our
+# fixture data set has) refused at Done with the reason, then Done reading the data again
+# with the choice, which the window shows again; Cancel keeps it (docs/BUILDING.md "Input
+# scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --layout=1024x768 --size=1280x800
+
+wait-screen front
+click item:Mods in=front
+wait-for item:"mod:test.escort-hull" in=front
+assert-fits front
+# Every fixture mod is listed, none on: the game as installed.
+assert-present item:"off:test.escort-hull" in=front
+assert-present item:"off:test.picture-pack" in=front
+assert-present item:"off:classic.classic-names" in=front
+assert-present item:"load-order:none" in=front
+# A mod's details: what it holds and whether it changes the game.
+click item:"mod:test.picture-pack" in=front
+assert-present item:"details:test.picture-pack" in=front
+assert-present item:cosmetic in=front
+click item:"mod:test.needs-lib" in=front
+assert-present item:"details:test.needs-lib" in=front
+assert-present item:changes-game in=front
+assert-fits front
+# Needs the Library alone: its requirement is missing, and Done waits.
+click item:Enable in=front
+assert-present item:"on:test.needs-lib" in=front
+assert-present item:"problem:test.needs-lib" in=front
+assert-disabled item:Done in=front
+# The library too (a double click): the load order puts it first, the player's order keeps it second.
+double-click item:"mod:test.common-lib" in=front
+assert-present item:"on:test.common-lib" in=front
+assert-present item:"order:2:test.common-lib" in=front
+assert-present item:"load-order:test.common-lib,test.needs-lib" in=front
+assert-absent item:"problem:test.needs-lib" in=front
+assert-enabled item:Done in=front
+# Move Up: the library is first in the player's order too.
+click item:"mod:test.common-lib" in=front
+click item:"Move Up" in=front
+assert-present item:"order:1:test.common-lib" in=front
+assert-disabled item:"Move Up" in=front
+# Refresh reads the folder again and keeps the choice.
+click item:Refresh in=front
+assert-present item:"order:1:test.common-lib" in=front
+assert-present item:"order:2:test.needs-lib" in=front
+# The installed game has no Spark Drive for Needs the Library to change: Done says so and stays.
+click item:Done in=front
+wait-for item:load-error in=front
+assert-present item:"mod:test.needs-lib" in=front
+assert-fits front
+# Without it, the escort hull and the picture pack (pictures and a sound): Done reads the data again.
+click item:"mod:test.needs-lib" in=front
+click item:Disable in=front
+double-click item:"mod:test.escort-hull" in=front
+double-click item:"mod:test.picture-pack" in=front
+assert-present item:"order:3:test.picture-pack" in=front
+assert-present item:"load-order:test.common-lib,test.escort-hull,test.picture-pack" in=front
+click item:"mod:test.escort-hull" in=front
+assert-fits front
+screenshot mods-chosen.png
+click item:Done in=front
+wait-for item:"Quick Start" in=front
+# In again: the mods in use, in their order.
+click item:Mods in=front
+wait-for item:"on:test.escort-hull" in=front
+assert-present item:"load-order:test.common-lib,test.escort-hull,test.picture-pack" in=front
+assert-present item:"off:test.needs-lib" in=front
+# Cancel leaves them as they are.
+click item:"mod:test.common-lib" in=front
+click item:Disable in=front
+assert-present item:"off:test.common-lib" in=front
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front
+click item:Mods in=front
+wait-for item:"on:test.common-lib" in=front
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front

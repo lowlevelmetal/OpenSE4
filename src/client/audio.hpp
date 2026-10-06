@@ -2,7 +2,9 @@
 
 // Sound effects and music from the player's installed classic game
 // (docs/spec/06 §5.5): Sounds/*.wav (or the remastered Sounds/New/ set) and
-// the MP3 playlists named in Settings.txt. One SDL3 audio stream is bound to
+// the MP3 playlists named in Settings.txt. Mods may give any of them as an
+// OGG Vorbis file of the same base name, and WAV files at any rate
+// (docs/sdk/packages-and-data.md "Sounds and music"). One SDL3 audio stream is bound to
 // the device; the device's audio thread pulls the mix from it
 // (client/audio_mixer.hpp), so sound keeps going while the main thread is
 // busy (a turn being processed, a window being dragged). Music is decoded on

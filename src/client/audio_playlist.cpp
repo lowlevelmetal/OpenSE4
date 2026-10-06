@@ -41,7 +41,7 @@ std::vector<std::string> missingTracks(const Playlists& lists, const assets::Ins
     std::set<std::string> seen;
     for (const auto* list : {&lists.intro, &lists.background, &lists.combat})
         for (const std::string& track : *list)
-            if (const std::string path = "Music/" + track; seen.insert(path).second && !files.find(path)) out.push_back(path);
+            if (const std::string path = "Music/" + track; seen.insert(path).second && !files.findSound(path)) out.push_back(path);
     return out;
 }
 

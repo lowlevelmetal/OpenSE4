@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -686,7 +687,22 @@ struct ExportOptions {
     // A simultaneous game's name, which its host saves under (§1.1);
     // writeClassicGame uses the file's name when this is empty.
     std::string gameName;
+    // Mods (docs/sdk/packages-and-data.md "Saving for the original"): the
+    // ids of the game's mods that carry computer players or rules scripts,
+    // which the original cannot run; a game with one is refused.
+    std::vector<std::string> scriptedMods;
+    // Whether the installed game itself (without mods) has the ship pictures
+    // of a base name, as a hull's bitmap names (Mini_<name>, Portrait_<name>).
+    // A game with a design whose own picture (Design::picture) the install
+    // lacks is refused; null: the install has none.
+    std::function<bool(std::string_view)> installHasPicture;
 };
+// Why the original cannot hold a game played with mods, or nullopt when it
+// can (§7, docs/sdk/packages-and-data.md "Saving for the original"): ability
+// names mods declare, mods with scripts, designs with pictures of their own
+// that the install lacks. A game whose mods only change data within the
+// original's format can be written (the original then needs that data).
+std::optional<std::string> modsExportProblem(const Rules& rules, const GameState& s, const ExportOptions& options);
 // A turn-based game whose current player, a human, has not started its turn
 // is written as the start of that turn leaves it, carried out on a copy
 // (startHumanTurn), since the original never starts a turn on loading

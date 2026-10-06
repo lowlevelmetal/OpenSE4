@@ -325,6 +325,17 @@ bool designNameInUse(const GameState& s, std::string_view name) {
     return false;
 }
 
+std::optional<std::string> designPictureProblem(std::string_view picture) {
+    if (picture.empty()) return std::nullopt;
+    if (picture.size() > kMaxDesignPicture) return std::format("A design's picture name has at most {} characters", kMaxDesignPicture);
+    if (picture == "." || picture == ".." || picture.front() == ' ' || picture.back() == ' ')
+        return std::string("A design's picture is named by a picture's base name");
+    for (const char c : picture)
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7f || std::string_view("/\\:*?\"<>|").find(c) != std::string_view::npos)
+            return std::string("A design's picture is named by a picture's base name, without folders");
+    return std::nullopt;
+}
+
 std::string uniqueDesignName(const GameState& s, std::string_view wanted) {
     const std::string base = wanted.empty() ? std::string("Design") : std::string(wanted);
     if (!designNameInUse(s, base)) return base;

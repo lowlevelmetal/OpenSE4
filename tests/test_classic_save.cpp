@@ -1757,3 +1757,83 @@ TEST_CASE("classic save: the installed data set's checksums are the original's (
     if (carried == 0) MESSAGE("no save with data-set checksums found: set OPENSE4_ORIGINAL_SAVES");
     MESSAGE("saves with the data-set checksums: " << carried);
 }
+
+// ---- Mods (docs/sdk/packages-and-data.md "Saving for the original") ----------------------------------------------
+
+namespace {
+
+std::string exportError(const Rules& r, const GameState& s, ExportOptions options = {3, "test"}) {
+    ConversionReport report;
+    auto save = exportClassicSave(r, s, report, options);
+    REQUIRE_FALSE(save.has_value());
+    return save.error();
+}
+
+bool noteMentions(const ConversionReport& report, std::string_view a, std::string_view b = {}) {
+    return std::any_of(report.notes.begin(), report.notes.end(),
+                       [&](const std::string& n) { return n.find(a) != std::string::npos && n.find(b) != std::string::npos; });
+}
+
+} // namespace
+
+TEST_CASE("classic save: a game with what the original cannot hold is refused, and says why") {
+    const Rules& r = test::engineRules();
+    GameState s = playedGame(true, 1);
+    s.mods = {{"test.anchors", "1.0.0", std::string(32, 'a'), true}};
+
+    // Ability names a mod declared.
+    ruleset::Ruleset data = r.data();
+    data.declaredAbilities.push_back({"Hyperspace Anchor", ruleset::Combine::Max, "test.anchors"});
+    const Rules declared(std::move(data));
+    const std::string abilities = exportError(declared, s);
+    CHECK(abilities.find("ability names") != std::string::npos);
+    CHECK(abilities.find("Hyperspace Anchor (mod test.anchors)") != std::string::npos);
+
+    // A mod with computer players or rules scripts.
+    ExportOptions scripted{3, "test"};
+    scripted.scriptedMods = {"test.anchors"};
+    const std::string scripts = exportError(r, s, scripted);
+    CHECK(scripts.find("test.anchors 1.0.0") != std::string::npos);
+    CHECK(scripts.find("scripts") != std::string::npos);
+    // Scripts of a mod the game does not use do not matter.
+    scripted.scriptedMods = {"test.other"};
+    ConversionReport fine;
+    CHECK(exportClassicSave(r, s, fine, scripted).has_value());
+
+    // A design whose own picture the install lacks; an installed one is written, with a note.
+    REQUIRE(!s.designs.empty());
+    s.designs[0].picture = "OnlyInAMod";
+    ExportOptions pictures{3, "test"};
+    pictures.installHasPicture = [](std::string_view name) { return name == "Frigate"; };
+    const std::string missing = exportError(r, s, pictures);
+    CHECK(missing.find(std::format("{} (OnlyInAMod)", s.designs[0].name)) != std::string::npos);
+    CHECK(exportError(r, s).find("OnlyInAMod") != std::string::npos);   // no install to ask: refused
+    s.designs[0].picture = "Frigate";
+    ConversionReport report;
+    auto save = exportClassicSave(r, s, report, pictures);
+    REQUIRE_MESSAGE(save.has_value(), (save ? std::string{} : save.error()));
+    CHECK(noteMentions(report, "1 design with a picture of its own", "hull's picture"));
+    // The file holds the design as the original has it: no picture to write.
+    GameState plain = s;
+    plain.designs[0].picture.clear();
+    CHECK(compareSaves(*save, exportOrFail(r, plain), 20).empty());
+}
+
+TEST_CASE("classic save: a game whose mods only change data is written, with what the original then needs") {
+    const Rules& r = test::engineRules();
+    GameState s = playedGame(false, 2);
+    s.mods = {{"test.balance", "2.1.0", std::string(32, 'b'), true}, {"test.art", "1.0.0", std::string(32, 'c'), false}};
+    ConversionReport report;
+    auto save = exportClassicSave(r, s, report, {3, "test"});
+    REQUIRE_MESSAGE(save.has_value(), (save ? std::string{} : save.error()));
+    CHECK(noteMentions(report, "test.balance 2.1.0", "opense4-sdk dump"));
+    CHECK_FALSE(noteMentions(report, "opense4-sdk dump", "test.art"));
+    CHECK(noteMentions(report, "own pictures", "test.art 1.0.0"));
+    // Without mods, no such note.
+    GameState plain = s;
+    plain.mods.clear();
+    ConversionReport none;
+    REQUIRE(exportClassicSave(r, plain, none, {3, "test"}).has_value());
+    CHECK_FALSE(noteMentions(none, "opense4-sdk dump"));
+    CHECK(compareSaves(*save, exportOrFail(r, plain), 20).empty());   // the mods leave the file as it was
+}

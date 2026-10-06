@@ -1,5 +1,7 @@
 #include "client/audio_mixer.hpp"
 
+#include "assets/sound.hpp"
+
 #include <SDL3/SDL.h>
 
 #define DR_MP3_IMPLEMENTATION
@@ -7,6 +9,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <climits>
+#include <cstdint>
 #include <cmath>
 #include <cstring>
 #include <format>
@@ -35,25 +39,23 @@ std::string readFileBytes(const std::filesystem::path& file, std::vector<uint8_t
     return {};
 }
 
-std::optional<Clip> decodeWav(std::span<const uint8_t> bytes, int mixRate, std::string& error) {
-    SDL_IOStream* io = SDL_IOFromConstMem(bytes.data(), bytes.size());
-    if (!io) {
-        error = SDL_GetError();
-        return std::nullopt;
-    }
-    SDL_AudioSpec spec{};
-    Uint8* pcm = nullptr;
-    Uint32 length = 0;
-    if (!SDL_LoadWAV_IO(io, true, &spec, &pcm, &length)) {
-        error = std::format("not a WAV file SDL can read ({})", SDL_GetError());
-        return std::nullopt;
-    }
+AudioFormat audioFormat(std::span<const uint8_t> b) {
+    if (assets::isWav(b)) return AudioFormat::Wav;
+    if (assets::isOgg(b)) return AudioFormat::Ogg;
+    // An MP3: an ID3 tag, or a frame's sync word.
+    if (b.size() >= 3 && b[0] == 'I' && b[1] == 'D' && b[2] == '3') return AudioFormat::Mp3;
+    if (b.size() >= 2 && b[0] == 0xff && (b[1] & 0xe0) == 0xe0) return AudioFormat::Mp3;
+    return AudioFormat::Unknown;
+}
+
+namespace {
+
+// Interleaved samples of any rate and channel count to the mix's stereo float.
+std::optional<Clip> toMix(const SDL_AudioSpec& spec, const uint8_t* data, size_t length, int mixRate, std::string& error) {
     const SDL_AudioSpec dst = mixSpec(mixRate);
     Uint8* converted = nullptr;
     int convertedLength = 0;
-    const bool ok = SDL_ConvertAudioSamples(&spec, pcm, static_cast<int>(length), &dst, &converted, &convertedLength);
-    SDL_free(pcm);
-    if (!ok) {
+    if (length > static_cast<size_t>(INT32_MAX) || !SDL_ConvertAudioSamples(&spec, data, static_cast<int>(length), &dst, &converted, &convertedLength)) {
         error = std::format("its format cannot be converted ({})", SDL_GetError());
         return std::nullopt;
     }
@@ -68,13 +70,65 @@ std::optional<Clip> decodeWav(std::span<const uint8_t> bytes, int mixRate, std::
     return clip;
 }
 
-std::optional<Mp3Info> probeMp3(std::span<const uint8_t> bytes, std::string& error) {
+} // namespace
+
+std::optional<Clip> decodeOgg(std::span<const uint8_t> bytes, int mixRate, std::string& error) {
+    auto pcm = assets::decodeOgg(bytes);
+    if (!pcm) {
+        error = pcm.error();
+        return std::nullopt;
+    }
+    const SDL_AudioSpec spec{SDL_AUDIO_S16, pcm->channels, pcm->sampleRate};
+    return toMix(spec, reinterpret_cast<const uint8_t*>(pcm->samples.data()), pcm->samples.size() * sizeof(int16_t), mixRate, error);
+}
+
+std::optional<Clip> decodeSound(std::span<const uint8_t> bytes, int mixRate, std::string& error) {
+    if (audioFormat(bytes) == AudioFormat::Ogg) return decodeOgg(bytes, mixRate, error);
+    return decodeWav(bytes, mixRate, error);
+}
+
+std::optional<Clip> decodeWav(std::span<const uint8_t> bytes, int mixRate, std::string& error) {
+    SDL_IOStream* io = SDL_IOFromConstMem(bytes.data(), bytes.size());
+    if (!io) {
+        error = SDL_GetError();
+        return std::nullopt;
+    }
+    SDL_AudioSpec spec{};
+    Uint8* pcm = nullptr;
+    Uint32 length = 0;
+    if (!SDL_LoadWAV_IO(io, true, &spec, &pcm, &length)) {
+        error = std::format("not a WAV file SDL can read ({})", SDL_GetError());
+        return std::nullopt;
+    }
+    // Any rate: converted to the mix's like every source.
+    auto clip = toMix(spec, pcm, length, mixRate, error);
+    SDL_free(pcm);
+    return clip;
+}
+
+std::optional<TrackInfo> probeOgg(std::span<const uint8_t> bytes, std::string& error) {
+    auto probed = assets::probeOgg(bytes);
+    if (!probed) {
+        error = probed.error();
+        return std::nullopt;
+    }
+    return TrackInfo{probed->sampleRate, probed->channels, probed->seconds, AudioFormat::Ogg};
+}
+
+std::optional<TrackInfo> probeTrack(std::span<const uint8_t> bytes, std::string& error) {
+    if (audioFormat(bytes) == AudioFormat::Ogg) return probeOgg(bytes, error);
+    auto info = probeMp3(bytes, error);
+    if (!info) error = "no MP3 or OGG Vorbis audio found in it";
+    return info;
+}
+
+std::optional<TrackInfo> probeMp3(std::span<const uint8_t> bytes, std::string& error) {
     drmp3 mp3;
     if (!drmp3_init_memory(&mp3, bytes.data(), bytes.size(), nullptr)) {
         error = "no MP3 audio found in it";
         return std::nullopt;
     }
-    Mp3Info info{static_cast<int>(mp3.sampleRate), static_cast<int>(mp3.channels), 0.0};
+    TrackInfo info{static_cast<int>(mp3.sampleRate), static_cast<int>(mp3.channels), 0.0, AudioFormat::Mp3};
     const drmp3_uint64 frames = drmp3_get_pcm_frame_count(&mp3);
     drmp3_uninit(&mp3);
     if (frames == 0 || info.sampleRate <= 0 || info.channels <= 0) {
@@ -125,8 +179,8 @@ MusicTrack::MusicTrack(std::filesystem::path file, int mixRate, double bufferSec
     start();
 }
 
-MusicTrack::MusicTrack(std::vector<uint8_t> mp3, int mixRate, double bufferSeconds)
-    : bytes_(std::move(mp3)), mixRate_(mixRate),
+MusicTrack::MusicTrack(std::vector<uint8_t> bytes, int mixRate, double bufferSeconds)
+    : bytes_(std::move(bytes)), mixRate_(mixRate),
       ring_(std::make_shared<FrameRing>(static_cast<size_t>(std::max(0.2, bufferSeconds) * mixRate))) {
     start();
 }
@@ -150,25 +204,42 @@ void MusicTrack::run() {
     if (!file_.empty())
         if (std::string why = readFileBytes(file_, bytes_); !why.empty()) return fail(std::format("cannot read the file: {}", why));
     std::string why;
-    const auto probed = probeMp3(bytes_, why);
+    const auto probed = probeTrack(bytes_, why);
     if (!probed) return fail(why);
+    info_ = *probed;
+    if (probed->format == AudioFormat::Ogg) {
+        auto ogg = assets::OggStream::open(bytes_);
+        if (!ogg) return fail(ogg.error());
+        assets::OggStream& stream = **ogg;
+        pump(stream.info().channels, stream.info().sampleRate, [&](int16_t* out, size_t frames) { return stream.read(out, frames); },
+             [&] { stream.rewind(); });
+        return;
+    }
     drmp3 mp3;
     if (!drmp3_init_memory(&mp3, bytes_.data(), bytes_.size(), nullptr)) return fail("no MP3 audio found in it");
-    const SDL_AudioSpec src{SDL_AUDIO_S16, static_cast<int>(mp3.channels), static_cast<int>(mp3.sampleRate)};
+    pump(static_cast<int>(mp3.channels), static_cast<int>(mp3.sampleRate),
+         [&](int16_t* out, size_t frames) { return static_cast<size_t>(drmp3_read_pcm_frames_s16(&mp3, frames, out)); },
+         [&] { drmp3_seek_to_pcm_frame(&mp3, 0); });
+    drmp3_uninit(&mp3);
+}
+
+template <class Read, class Rewind>
+void MusicTrack::pump(int channels, int rate, Read read, Rewind rewind) {
+    const SDL_AudioSpec src{SDL_AUDIO_S16, channels, rate};
     const SDL_AudioSpec dst = mixSpec(mixRate_);
     SDL_AudioStream* convert = SDL_CreateAudioStream(&src, &dst);
     if (!convert) {
-        drmp3_uninit(&mp3);
-        return fail(std::format("cannot convert {} Hz, {} channels to {} Hz stereo ({})", src.freq, src.channels, dst.freq, SDL_GetError()));
+        error_ = std::format("cannot convert {} Hz, {} channels to {} Hz stereo ({})", src.freq, src.channels, dst.freq, SDL_GetError());
+        state_.store(State::Failed, std::memory_order_release);
+        return;
     }
-    info_ = *probed;
     state_.store(State::Playing, std::memory_order_release);
 
     // Decode a chunk whenever the ring has room for what it gives; the rest of
     // the time wait (woken early only to stop).
     constexpr size_t kChunk = 1152;  // one MPEG-1 layer III frame
-    const size_t chunkOut = kChunk * static_cast<size_t>(mixRate_) / mp3.sampleRate + 64;
-    std::vector<drmp3_int16> pcm(kChunk * mp3.channels);
+    const size_t chunkOut = kChunk * static_cast<size_t>(mixRate_) / static_cast<size_t>(rate) + 64;
+    std::vector<int16_t> pcm(kChunk * static_cast<size_t>(channels));
     std::vector<float> out(chunkOut * kChannels);
     int emptyReads = 0;
     std::unique_lock lock(mutex_);
@@ -178,19 +249,20 @@ void MusicTrack::run() {
             continue;
         }
         lock.unlock();
-        const drmp3_uint64 frames = drmp3_read_pcm_frames_s16(&mp3, kChunk, pcm.data());
+        const size_t frames = read(pcm.data(), kChunk);
         if (frames == 0) {
             // The end: loop from the start, without a gap (the converter keeps its state).
             if (++emptyReads > 2) {
                 lock.lock();
-                fail("decoding stopped: the file looks damaged");
+                error_ = "decoding stopped: the file looks damaged";
+                state_.store(State::Failed, std::memory_order_release);
                 break;
             }
-            drmp3_seek_to_pcm_frame(&mp3, 0);
+            rewind();
             loops_.fetch_add(1, std::memory_order_relaxed);
         } else {
             emptyReads = 0;
-            SDL_PutAudioStreamData(convert, pcm.data(), static_cast<int>(frames * mp3.channels * sizeof(drmp3_int16)));
+            SDL_PutAudioStreamData(convert, pcm.data(), static_cast<int>(frames * static_cast<size_t>(channels) * sizeof(int16_t)));
             const int room = static_cast<int>(std::min(ring_->space(), chunkOut) * kChannels * sizeof(float));
             const int got = SDL_GetAudioStreamData(convert, out.data(), room);
             if (got > 0) ring_->write(out.data(), static_cast<size_t>(got) / (kChannels * sizeof(float)));
@@ -198,7 +270,6 @@ void MusicTrack::run() {
         lock.lock();
     }
     SDL_DestroyAudioStream(convert);
-    drmp3_uninit(&mp3);
 }
 
 // --- Mixer ----------------------------------------------------------------------

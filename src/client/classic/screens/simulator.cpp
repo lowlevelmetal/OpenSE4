@@ -222,7 +222,7 @@ private:
         if (!id.valid() || id.index() >= s.designs.size()) return {};
         const game::Design& d = s.design(id);
         const std::string style = d.owner.valid() && d.owner.index() < s.empires.size() ? s.empire(d.owner).race.style : ui.me().race.style;
-        return ui.art.shipMini(style, ui.rules().hull(d.hull));
+        return ui.art.designMini(style, ui.rules().hull(d.hull), d.picture);
     }
 
     // "Combat Vehicles" at (17,75), 295x370, 36 px rows (spec 06 §1.10.4, §7

@@ -236,8 +236,12 @@ public:
     // Writes the game as a saved game of the original (docs/spec/08 §7), with
     // the History files beside it as the original's save does. Only the
     // whole game can be written: local and hotseat games. Returns what the
-    // export could not carry, short lines for the player.
-    std::expected<std::vector<std::string>, std::string> exportClassic(const std::filesystem::path& file) const;
+    // export could not carry, short lines for the player. What the game's
+    // mods hold that the original cannot (game::classic::ExportOptions):
+    // `scriptedMods`, the ids of mods with scripts, and `installHasPicture`,
+    // whether the install has a design's own picture.
+    std::expected<std::vector<std::string>, std::string> exportClassic(const std::filesystem::path& file, std::vector<std::string> scriptedMods = {},
+                                                                       std::function<bool(std::string_view)> installHasPicture = {}) const;
 
     // Hotseat: switches the local player (after a password check by the UI).
     void setPlayer(game::EmpireId e);

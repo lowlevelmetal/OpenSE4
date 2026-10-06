@@ -690,12 +690,15 @@ void logReport(std::string_view what, const std::filesystem::path& file, const g
 
 } // namespace
 
-std::expected<std::vector<std::string>, std::string> ClassicSession::exportClassic(const std::filesystem::path& file) const {
+std::expected<std::vector<std::string>, std::string> ClassicSession::exportClassic(const std::filesystem::path& file, std::vector<std::string> scriptedMods,
+                                                                                   std::function<bool(std::string_view)> installHasPicture) const {
     if (kind_ != SessionKind::Local && kind_ != SessionKind::Hotseat)
         return std::unexpected(std::string("Only a local or hotseat game can be saved for Space Empires IV: this copy of a network or "
                                            "play-by-e-mail game holds only what your empire knows."));
     game::classic::ConversionReport report;
     game::classic::ExportOptions options;
+    options.scriptedMods = std::move(scriptedMods);
+    options.installHasPicture = std::move(installHasPicture);
     options.keySeed = std::random_device{}();
     options.gameName = file.stem().string();
     auto written = game::classic::writeClassicGame(*rules_, state_, file, report, options);
@@ -729,8 +732,9 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     // A game made with mods that change the game plays only with the same
     // ones (asset-only and interface-only mods may differ).
     if (const auto mods = game::modDifferences(s.mods, *rules, "the saved game"); !mods.empty()) {
-        std::string why = std::format("{} needs other mods than this session has (start OpenSE4 with the same ones, see --mod):", file.filename().string());
+        std::string why = std::format("{} was played with other mods than the ones in use:", file.filename().string());
         for (const std::string& m : mods) why += "\n  " + m;
+        why += "\nChoose the same ones in the main menu's Mods window (or start OpenSE4 with them: --mod).";
         return std::unexpected(why);
     }
     // Reading a game file recalculates every colony's cloak and sensor levels,

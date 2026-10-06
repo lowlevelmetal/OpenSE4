@@ -488,6 +488,7 @@ void fields(A& a, game::Design& x) {
     a("lost", x.lost);
     a("enemy_tonnage_destroyed", x.enemyTonnageDestroyed);
     a("scrapped", x.scrapped);
+    a("picture", x.picture);
 }
 template <class A>
 void fields(A& a, game::ResearchProject& x) {

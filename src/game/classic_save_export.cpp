@@ -1295,6 +1295,25 @@ private:
 
     // ---- Notes ----------------------------------------------------------------------------------------------------------
 
+    // What the original needs of a game played with mods that it can hold
+    // (modsExportProblem refused the others).
+    void modNotes() {
+        std::vector<ruleset::ModRecord> data, assets;
+        for (const ruleset::ModRecord& m : s_.mods) (m.affectsGame ? data : assets).push_back(m);
+        if (!data.empty())
+            report_.note(std::format("This game was played with mods that change the game's data ({}): the original plays it as here only "
+                                     "with the same data. Write it with opense4-sdk dump (the same mods, in the same order) and put "
+                                     "those files in a copy of the original's game folder before loading the game there.",
+                                     ruleset::describeMods(data)));
+        if (!assets.empty())
+            report_.note(std::format("The original shows its own pictures and plays its own sounds, not those of {}.", ruleset::describeMods(assets)));
+        size_t pictured = 0;
+        for (const Design& d : s_.designs) pictured += d.picture.empty() ? 0 : 1;
+        if (pictured > 0)
+            report_.note(std::format("{} design{} with a picture of {} own show{} {} hull's picture in the original.", pictured, pictured == 1 ? "" : "s",
+                                     pictured == 1 ? "its" : "their", pictured == 1 ? "s" : "", pictured == 1 ? "its" : "their"));
+    }
+
     void notes() {
         for (const auto& [what, n] : counts_)
             if (n > 0) report_.detail(std::format("{}: {}", what, n));
@@ -1319,6 +1338,7 @@ private:
             report_.note("Groups stopped before a sector with enemies keep their orders without the question whether to enter: in the "
                          "original they go on when the order is given again, or at their next turn's start.");
         if (replaced_ > 0) report_.note("Characters the original cannot show are written as '?'.");
+        modNotes();
         report_.note("OpenSE4's own log entries are exported as plain entries, without pictures or battle details; entries that came from the original keep theirs.");
         report_.note("History and score graphs are not exported; the original's graphs start at the export date.");
         report_.note("The original restarts its random numbers from the game's seed, so its next turn differs from OpenSE4's.");
@@ -1327,7 +1347,48 @@ private:
 
 } // namespace
 
+std::optional<std::string> modsExportProblem(const Rules& rules, const GameState& s, const ExportOptions& options) {
+    // Ability names a mod declared: the original knows only its own (Appendix A).
+    const auto& declared = rules.data().declaredAbilities;
+    if (!declared.empty()) {
+        std::string names;
+        for (size_t i = 0; i < declared.size() && i < 5; ++i)
+            names += std::format("{}{} (mod {})", i ? ", " : "", declared[i].name, declared[i].mod);
+        if (declared.size() > 5) names += std::format(" and {} more", declared.size() - 5);
+        return std::format("the game's mods declare ability names the original does not know: {}", names);
+    }
+    // Computer players and rules hooks in Python: the original runs neither.
+    std::vector<ruleset::ModRecord> scripted;
+    for (const ruleset::ModRecord& m : s.mods)
+        if (m.affectsGame && std::find(options.scriptedMods.begin(), options.scriptedMods.end(), m.id) != options.scriptedMods.end()) scripted.push_back(m);
+    if (!scripted.empty())
+        return std::format("the game's mods {} carry computer players or rules scripts, which the original cannot run", ruleset::describeMods(scripted));
+    // (State that mods keep in the game, once games hold any, is refused here too.)
+    // Designs with pictures of their own that the install lacks: the original
+    // shows a design with its hull's picture, so a picture only a mod has
+    // cannot be kept even in name.
+    std::vector<std::string> missing;
+    std::set<std::string> checked;
+    for (const Design& d : s.designs) {
+        if (d.picture.empty()) continue;
+        const bool installed = checked.contains(d.picture) || (options.installHasPicture && options.installHasPicture(d.picture));
+        if (installed) {
+            checked.insert(d.picture);
+            continue;
+        }
+        missing.push_back(std::format("{} ({})", d.name, d.picture));
+    }
+    if (!missing.empty()) {
+        std::string list;
+        for (size_t i = 0; i < missing.size() && i < 5; ++i) list += (i ? ", " : "") + missing[i];
+        if (missing.size() > 5) list += std::format(" and {} more", missing.size() - 5);
+        return std::format("designs show pictures of their own that the installed game does not have, which the original cannot show: {}", list);
+    }
+    return std::nullopt;
+}
+
 std::expected<ClassicSave, std::string> exportClassicSave(const Rules& rules, const GameState& s, ConversionReport& report, const ExportOptions& options) {
+    if (auto problem = modsExportProblem(rules, s, options)) return std::unexpected(*problem);
     // A turn-based game exported before a human current player's turn has
     // started: the original resumes inside that turn and never starts it on
     // loading, so the file holds the game as that start leaves it, carried

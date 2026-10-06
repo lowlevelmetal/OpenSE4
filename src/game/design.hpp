@@ -6,9 +6,11 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <optional>
 #include <span>
-#include <utility>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace opense4::game {
@@ -92,6 +94,13 @@ bool designNameInUse(const GameState& s, std::string_view name);
 // `wanted` followed by the first free Roman numeral from II on ("Scout II",
 // "Scout III", ...) (inferred numbering). Empty `wanted` gives "Design".
 std::string uniqueDesignName(const GameState& s, std::string_view wanted);
+// What is wrong with a design's own picture name (Design::picture), or
+// nullopt when it can be one: empty (the hull's), or a base name of at most
+// kMaxDesignPicture characters with no folder, wildcard or control character
+// in it. Whether the picture exists is the client's affair: a missing one
+// shows the hull's.
+inline constexpr size_t kMaxDesignPicture = 64;
+std::optional<std::string> designPictureProblem(std::string_view picture);
 // Zeroes a design's statistics: built, lost and enemy tonnage destroyed
 // (a new, copied or redacted design starts without any).
 void resetDesignStatistics(Design& d);

@@ -225,10 +225,14 @@ opense4_windows_manifest(opense4-server)
 # --- assets: runtime access to the player's installed classic art ------------------
 add_library(opense4_assets STATIC
     assets/assets.cpp
+    assets/sound.cpp
     assets/tiny_font.cpp
+    assets/vorbis_impl.cpp
     assets/wincursor.cpp
     assets/winfont.cpp)
 target_link_libraries(opense4_assets PUBLIC opense4_core PRIVATE stb opense4_warnings)
+# Third-party implementation file (stb_vorbis): don't apply our strict warnings.
+set_source_files_properties(assets/vorbis_impl.cpp PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/gfx/device.hpp")
     include(Client.cmake)
