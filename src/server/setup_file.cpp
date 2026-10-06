@@ -2,6 +2,8 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai_data.hpp"
+#include "game/players.hpp"
+#include "mods/data_set.hpp"
 #include "net/auth.hpp"
 
 #include <toml++/toml.hpp>
@@ -87,7 +89,9 @@ public:
     Parser(std::string source, const game::Rules& rules) : source_(std::move(source)), rules_(rules) {}
 
     std::expected<SetupFile, std::string> run(const toml::table& root) {
-        allowOnly(root, "", {"name", "seed", "game_id", "master_password", "master_password_verifier", "master_password_hash", "options", "empire", "mods"});
+        allowOnly(root, "", {"name", "seed", "game_id", "master_password", "master_password_verifier", "master_password_hash", "options", "empire", "mods",
+                             "ai"});
+        if (root.get("ai")) out_.ai = controller(root);
         if (const toml::node* n = root.get("mods")) {
             const auto* arr = n->as_array();
             if (!arr) error(*n, "'mods' must be a list of mods (paths, or ids of mods in the mods folder)");
@@ -122,6 +126,10 @@ public:
                     else error(e, "empires are written as [[empire]] tables");
                 }
         }
+        // The file's `ai` plays the computer empires that name no player of their own.
+        if (out_.ai)
+            for (size_t i = 0; i < out_.empires.size(); ++i)
+                if (!ownAi_[i] && out_.empires[i].setup.kind == game::PlayerKind::Computer) out_.empires[i].setup.controller = *out_.ai;
         if (!errors_.empty()) {
             std::string all;
             for (const auto& e : errors_) all += (all.empty() ? "" : "\n") + e;
@@ -162,8 +170,31 @@ private:
         return i->get();
     }
 
+    // `ai = "<mod id>:<player>"` or "builtin" (docs/sdk/ai-protocol.md §1): a
+    // player one of the game's mods declares.
+    std::optional<game::Controller> controller(const toml::table& t) {
+        const auto text = string(t, "ai");
+        if (!text) return std::nullopt;
+        const toml::node& n = *t.get("ai");
+        const auto c = game::parseController(*text);
+        if (!c) {
+            error(n, std::format("'ai' must be \"builtin\" or \"<mod id>:<player>\", not '{}'", *text));
+            return std::nullopt;
+        }
+        if (c->kind != game::Controller::Kind::Script) return c;
+        const auto* data = dynamic_cast<const mods::GameData*>(rules_.files());
+        const mods::Package* mod = nullptr;
+        if (data)
+            for (const mods::Package& p : data->mods().packages)
+                if (p.id() == c->mod) mod = &p;
+        if (!mod) error(n, std::format("the computer player {} needs the mod {}, which the game does not use (add it to 'mods')", *text, c->mod));
+        else if (!mod->manifest.aiPlayer(c->player)) error(n, std::format("the mod {} has no computer player named '{}'", c->mod, c->player));
+        return c;
+    }
+
     void options(const toml::table& t) {
-        std::vector<std::string_view> keys{"quadrant", "starting_resources", "victory"};
+        std::vector<std::string_view> keys{"quadrant", "starting_resources", "victory", "ai_sees_everything", "ai_planning_budget", "ai_call_budget",
+                                           "ai_memory_limit"};
         for (const auto& o : kIntOptions) keys.push_back(o.key);
         for (const auto& o : kBoolOptions) keys.push_back(o.key);
         for (auto&& [key, node] : t)
@@ -183,6 +214,14 @@ private:
                 if (const auto* b = n->as_boolean()) o.*opt.member = b->get();
                 else error(*n, std::format("'{}' must be true or false", opt.key));
             }
+        // Script computer players (docs/sdk/ai-protocol.md §3, §7).
+        if (const toml::node* n = t.get("ai_sees_everything")) {
+            if (const auto* b = n->as_boolean()) o.aiSeesEverything = b->get();
+            else error(*n, "'ai_sees_everything' must be true or false");
+        }
+        if (auto v = integer(t, "ai_planning_budget", 1, int64_t{1} << 50)) o.aiPlanningBudget = *v;
+        if (auto v = integer(t, "ai_call_budget", 1, int64_t{1} << 50)) o.aiCallBudget = *v;
+        if (auto v = integer(t, "ai_memory_limit", 0, int64_t{1} << 40)) o.aiMemoryLimit = *v;
         if (const toml::node* n = t.get("starting_resources")) {
             const auto* arr = n->as_array();
             if (!arr || arr->size() != 3 || !arr->is_homogeneous(toml::node_type::integer)) {
@@ -217,7 +256,7 @@ private:
 
     void empire(const toml::table& t) {
         allowOnly(t, "empire", {"name", "race", "tier", "kind", "player", "password", "password_verifier", "password_hash", "color", "empire_type",
-                                "leader", "leader_title", "minister_style", "use_race_minister_style"});
+                                "leader", "leader_title", "minister_style", "use_race_minister_style", "ai"});
         if (const toml::node* n = t.get("password_hash")) error(*n, kOldHash);
         SetupEmpire e;
         game::EmpireSetup& s = e.setup;
@@ -251,6 +290,13 @@ private:
         e.player = string(t, "player").value_or("");
         if (auto pw = string(t, "password")) e.password = *pw;
         if (auto v = string(t, "password_verifier")) e.passwordVerifier = verifier(t, "password_verifier", *v);
+        // Who plays a computer empire: its own `ai`, else the file's (neutral
+        // empires: only their own).
+        ownAi_.push_back(t.get("ai") != nullptr);
+        if (t.get("ai")) {
+            if (s.kind == game::PlayerKind::Human) error(*t.get("ai"), "'ai' is for computer and neutral empires");
+            else if (auto c = controller(t)) s.controller = *c;
+        }
         out_.empires.push_back(std::move(e));
     }
 
@@ -266,6 +312,7 @@ private:
     std::string source_;
     const game::Rules& rules_;
     SetupFile out_;
+    std::vector<uint8_t> ownAi_;   // per empire: it names its own `ai`
     std::vector<std::string> errors_;
 };
 

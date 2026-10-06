@@ -55,6 +55,7 @@ struct AppOptions {
     std::string race;                // race preset for the quick game
     std::string openWindow;          // window to open at start
     bool turnBased = true;           // a quick game's turn style: turn-based, as a new game (spec 01 §2.2, §14 Q39; spec 05 §8)
+    std::string aiPlayer;            // --ai: who plays a quick game's computer empires ("<mod id>:<player>"; empty: the built-in AI)
 
     // Open this saved game at once, OpenSE4's or the original's (--load).
     std::string loadFile;

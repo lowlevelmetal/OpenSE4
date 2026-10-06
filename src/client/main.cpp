@@ -3,6 +3,8 @@
 #include "client/script/script.hpp"
 #include "core/environment.hpp"
 #include "core/log.hpp"
+#include "game/players.hpp"
+#include "sdk/players.hpp"
 
 #include <charconv>
 #include <ctime>
@@ -72,6 +74,9 @@ Game:
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --load=GAME.gam                 Open a saved game at once: OpenSE4's, or the original's (imported,
                                   see docs/SETUP.md "Games of the original")
+  --ai=MOD:PLAYER                 Every computer empire of a new game is played by this script player
+                                  of a mod (its [[ai.players]], docs/sdk/ai-protocol.md); "builtin"
+                                  for the built-in AI (the default)
   --seed=N                        Seed for new games (default: random)
   --systems=N                     Number of star systems in a quick game
   --empires=N                     Number of empires in a quick game, including yours: N - 1 computer
@@ -235,6 +240,9 @@ int main(int argc, char** argv) {
             const float scale = std::strtof(text.c_str(), &end);
             ok = !text.empty() && end == text.c_str() + text.size() && scale >= 0.75f && scale <= 1.5f;
             if (ok) saved.textScale = scale;
+        } else if (key == "--ai") {
+            ok = opense4::game::parseController(value).has_value();
+            options.aiPlayer = std::string(value);
         } else if (key == "--seed") {
             ok = parseInt(value, options.seed);
         } else if (key == "--systems") {
@@ -352,5 +360,7 @@ int main(int argc, char** argv) {
         log::info("OPENSE4_CRASH_TEST={}: crashing on purpose", *test);
         crashOnPurpose(*test);
     }
+    // Script computer players play in the games this program plays (docs/sdk/ai-protocol.md).
+    sdk::installPlayers();
     return client::App().run(options);
 }

@@ -7,6 +7,7 @@
 #include "client/classic/pointers.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "client/script/items.hpp"
 #include "client/ui/theme.hpp"
@@ -247,6 +248,13 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         if (options.systemCount > 0) setup.options.systemCount = options.systemCount;
         setup.options.quadrantType = options.quadrantType;
         setup.options.simultaneous = !options.turnBased;
+        // --ai: a script player of the game's mods plays every computer empire (docs/sdk/ai-protocol.md).
+        if (!options.aiPlayer.empty()) {
+            if (auto problem = setup::useComputerPlayer(*mode->rules_, setup, options.aiPlayer)) {
+                error = *problem;
+                return nullptr;
+            }
+        }
         auto session = startLocalGame(mode->rules_, setup, quickStartExtras());
         if (!session) {
             error = session.error();

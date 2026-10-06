@@ -47,6 +47,10 @@ struct NewGameSettings {
     // A loaded map (spec 01 §12): the game starts on it instead of a generated
     // quadrant, and its starting points place the empires first.
     std::optional<game::QuadrantMap> map;
+    // Who plays the computer empires that do not name a player of their own
+    // (EmpireSetup::controller), the random ones included: the built-in AI,
+    // or a script player of the game's mods (docs/sdk/ai-protocol.md).
+    game::Controller computerPlayer;
 };
 
 // A new game's settings (spec 01 §2.2, spec 07 session 5): no empire in the
@@ -120,6 +124,21 @@ std::pair<int, int> randomPlayerRange(const game::Rules& r, bool neutral, int le
 // random computer and neutral players (rolled from the seed), with the
 // options as edited. Fails with a message the setup screen shows.
 std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r, const NewGameSettings& s);
+
+// ---- Computer players (docs/sdk/ai-protocol.md) ------------------------------------------------
+
+// The players the game's mods declare (mod.toml [[ai.players]]), as the
+// setup screens offer them after the built-in AI: "<mod id>:<player>" and
+// its description.
+struct ComputerPlayerChoice {
+    game::Controller controller;
+    std::string label;         // "test.ai-fixture:Steady"
+    std::string description;
+};
+std::vector<ComputerPlayerChoice> computerPlayerChoices(const game::Rules& r);
+// Has `controller` ("builtin" or "<mod id>:<player>") play every computer
+// empire of `g`; the problem when it is no player of the game's mods.
+std::optional<std::string> useComputerPlayer(const game::Rules& r, game::GameSetup& g, std::string_view controller);
 
 // Appends the random computer players, then the neutral ones, to `g` after
 // the empires it holds: counts and races drawn from an Rng seeded from
