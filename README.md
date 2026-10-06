@@ -101,6 +101,8 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
   Vorbis, and a design may show a picture of its own. Classic mods load as packages too.
   `opense4-sdk` makes, checks and packs mods, and `opense4-datacheck` checks a modded data
   set and names the file, line and record of anything it doesn't understand.
+- **Hegemon, a stronger computer player,** comes with OpenSE4 as a mod: switch it on in
+  the Mods window, then choose it under Computer Players in Game Setup or Quick Start.
 - **Your games from the original:** Load Game opens the original's saved games and
   converts them, and Save Game can write a game back for the original, so a game moves
   between the two (docs/SETUP.md, "Games of the original"). `opense4-convert` does the same
@@ -277,7 +279,9 @@ and never written into it:
 - **Rules scripts**: hooks into turn processing, effects, abilities with effects, new orders,
   events, intelligence projects, game options, victory conditions and scenarios.
 
-Classic mods (replacement data files and pictures) load as packages too.
+Classic mods (replacement data files and pictures) load as packages too. Hegemon, a
+computer player written this way ([mods/hegemon](mods/hegemon/README.md)), ships with
+OpenSE4 in the `mods` folder beside the programs, ready to switch on in the Mods window.
 
 ```sh
 opense4 --mod=path/to/mymod                       # play with a mod (or choose it in the Mods window)

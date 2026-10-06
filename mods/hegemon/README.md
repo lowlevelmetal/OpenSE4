@@ -17,10 +17,35 @@ class = "Hegemon"
 classic_state = false
 ```
 
-Play against it: `opense4-sdk run mods/hegemon -- --quick-start=Terran`, or
-`opense4 --mod=mods/hegemon --ai=opense4.hegemon:Hegemon`. Measure it:
-`opense4-sdk arena --mod=mods/hegemon --ai=opense4.hegemon:Hegemon --ai=builtin`
-(see "Evaluation" below).
+## Playing against it
+
+Hegemon comes with OpenSE4: a release has it in the `mods` folder beside the programs
+(the Windows installer puts it in `C:\Program Files\OpenSE4\mods`). The classic game
+stays the default; Hegemon plays only once you switch it on:
+
+1. On the title screen, click **Mods** (top right). Hegemon is in the list, marked
+   "comes with OpenSE4".
+2. Select it, click **Enable**, then **Done**. The settings keep the choice for the
+   games you start or load from now on.
+3. In **Game Setup** (the Players page) or **Quick Start**, click **Computer Players**
+   and choose **Hegemon**: it plays every computer empire that has no player of its own.
+   Empire Setup gives a single computer empire a player of its own.
+
+Switch it off in the Mods window to play the classic game again. In a network or e-mail
+game every player needs the same game-changing mods: players of the same OpenSE4 release
+have the same Hegemon, so each one only switches it on. The host's computer runs it.
+
+From the command line it is found by its id: `opense4 --mod=opense4.hegemon
+--ai=opense4.hegemon:Hegemon --quick-start=Terran` for one game,
+`opense4-server --mod=opense4.hegemon --ai=2 --ai=opense4.hegemon:Hegemon` for a dedicated
+host, `opense4-sdk run opense4.hegemon -- --quick-start=Terran` to watch it, and
+`opense4-sdk arena --mod=opense4.hegemon --ai=opense4.hegemon:Hegemon --ai=builtin` to
+measure it (see "Evaluation" below). In the source tree, `mods/hegemon` works as well.
+
+To change it, copy this folder into your own mods folder (`Mods` in OpenSE4's user
+folder) and change the copy: a mod there replaces the one that comes with OpenSE4 with the
+same id (docs/sdk/packages-and-data.md, "Where mods are found"). The source tree's
+`mods/bundled.txt` names the mods that ship with OpenSE4.
 
 ## Design
 

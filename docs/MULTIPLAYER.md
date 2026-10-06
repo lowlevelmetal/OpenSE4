@@ -663,7 +663,8 @@ computer empires. The host runs the script players: their memory stays in its ga
 players' copies never hold it. `--mod` on the command line takes the place of the file's
 `mods`. Without either, a host continuing a saved game (`--load`, `pbem process`, `pbem
 turn-files`) finds the game's own mods by id and identity in the mods folder (`Mods/` in
-the user folder, or `--mods-dir`). Human players join through the lobby, so it ignores human
+the user folder, or `--mods-dir`), then among the mods that come with OpenSE4 (`mods/`
+beside the programs; docs/sdk/packages-and-data.md "Where mods are found"). Human players join through the lobby, so it ignores human
 `[[empire]]` entries.
 
 `scenario = "<mod id>:<name>"` starts the game from a scenario of one of the game's mods

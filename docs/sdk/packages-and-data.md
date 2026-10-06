@@ -102,10 +102,41 @@ name, its version `0`.
 | | |
 |---|---|
 | Your mods folder | `Mods/` in OpenSE4's user folder (`~/.local/share/OpenSE4/Mods` on Linux, `%APPDATA%\OpenSE4\Mods` on Windows). Each subfolder and `.zip` there is a mod. |
+| Mods that come with OpenSE4 | `mods/` beside the programs (see "Where mods are found" below): Hegemon, a computer player. They are ready to use and off until you switch them on. |
 | The game | The title screen's `Mods` window chooses them and their order (see "Choosing mods in the game" below); `classic_settings.toml` in the user folder keeps the ids of the mods to play with, in order: `[mods] enabled = ["example.common-lib", "example.better-carriers"]`. |
-| One run | `opense4 --mod=PATH` (a folder or `.zip`, or the id of a mod in the mods folder), repeated for several, takes the place of the settings' list; `--no-mods` plays without mods; `--mods-dir=DIR` looks for ids in another folder. |
-| The dedicated server | `opense4-server --mod=...` (every command that reads the data set takes `--mod` and `--mods-dir`), or `mods = [...]` in a setup file (paths relative to the setup file, or ids). |
-| A saved game | A host loading a saved game, or processing a play-by-e-mail game, finds the game's own mods in the mods folder by id and identity when no `--mod` is given. |
+| One run | `opense4 --mod=PATH` (a folder or `.zip`, or the id of a mod in the mods folder or of one that comes with OpenSE4), repeated for several, takes the place of the settings' list; `--no-mods` plays without mods; `--mods-dir=DIR` looks for ids in another folder in place of your mods folder; `--no-bundled-mods` leaves out the mods that come with OpenSE4. |
+| The dedicated server | `opense4-server --mod=...` (every command that reads the data set takes `--mod`, `--mods-dir` and `--no-bundled-mods`), or `mods = [...]` in a setup file (paths relative to the setup file, or ids). |
+| A saved game | A host loading a saved game, or processing a play-by-e-mail game, finds the game's own mods by id and identity (see below) when no `--mod` is given. |
+
+### Where mods are found
+
+A mod named by its id (in the settings, on the command line, in a setup file, or recorded
+in a saved game) is looked for in two places, in this order:
+
+1. **Your mods folder** (or the folder `--mods-dir` names).
+2. **The mods that come with OpenSE4**: the `mods/` folder beside the programs, in a
+   release package and in the Windows install (`C:\Program Files\OpenSE4\mods`). Each
+   mod there is listed in the Mods window with the note "comes with OpenSE4".
+   `--no-bundled-mods` leaves them out (`opense4`, `opense4-server`, `opense4-sdk`).
+
+A mod in your mods folder with the same id as one that comes with OpenSE4 replaces it
+everywhere: in the Mods window (which says so), on the command line and for saved games.
+That is how you try a changed copy of Hegemon: copy `mods/hegemon` into your mods folder
+and change it there. Take it out again to play with OpenSE4's own copy. A changed copy is
+a new identity, so network and e-mail games need everyone to have the same changed copy.
+
+The mods that come with OpenSE4 are the same files in every package of a release (on
+Linux, Windows and ARM alike), so their identity is the same: players of the same
+release have the same Hegemon and can play network and e-mail games with it without
+copying anything. A game recorded with another release's Hegemon needs that version: put
+it in your mods folder to play that game (and take it out afterwards).
+
+In the source tree the bundled mods are the folders of `mods/` that `mods/bundled.txt`
+names, one a line; `mods/examples` is not one of them (the example mods ship in
+`sdk/examples`). `tools/package_release.sh` copies those folders into the packages'
+`mods/`, and a developer build (`OPENSE4_DEV_PATHS`) without a `mods/` folder beside it
+reads them from the source tree. To ship another mod with OpenSE4, put it in `mods/` and
+add its folder name to that list.
 
 ### Load order
 
@@ -457,14 +488,15 @@ among the mod's patches. [rules.md](rules.md), "Data generators", has the detail
 
 The title screen's `Mods` button (at the top right) opens the Mods window:
 
-- The list shows every mod in your mods folder: those you chose first, in your order,
-  with their places, then the others. The lamp is green for a mod that is on; a double
-  click switches it.
+- The list shows every mod in your mods folder and the mods that come with OpenSE4
+  (marked "comes with OpenSE4"): those you chose first, in your order, with their places,
+  then the others. The lamp is green for a mod that is on; a double click switches it.
 - Beside it is what the selected mod is: its name, id, version and authors, its
-  description, what it holds (pictures and sounds, data, computer players, rules,
-  interface, text), whether it changes the game, what it needs and loads after, what is
-  wrong with the choice for it, what of its interface and text files does not read, and its
-  identity.
+  description, whether it comes with OpenSE4 (or, for a mod of your folder, that it
+  replaces the one that does), the computer players it offers, what it holds (pictures
+  and sounds, data, computer players, rules, interface, text), whether it changes the
+  game, what it needs and loads after, what is wrong with the choice for it, what of its
+  interface and text files does not read, and its identity.
 - `Enable` or `Disable`, `Move Up` and `Move Down` change the choice. Below, the window
   shows the load order it gives, or what keeps it from loading: a required mod that is
   off, a version outside the range, mods that require each other in a circle, mods the
@@ -493,8 +525,8 @@ screen, and the Mods window shows why. Mods given with `--mod` must load.
   names what is missing or different. Mods with only pictures, sounds or interface may
   differ. In the client, loading such a game (Resume Game, Load Game, or the Game Menu's
   Load, which first ends the game being played) opens a window that names each
-  difference; when your mods folder has the game's mods, `Load with Its Mods` reads the
-  data again with them and loads the game.
+  difference; when your mods folder (or OpenSE4's own mods) has the game's mods, `Load
+  with Its Mods` reads the data again with them and loads the game.
 - In a network game the lobby carries the host's mods (protocol 7) and lists them. A
   player whose game-affecting mods differ is refused with the same kind of message, each
   difference on a line of its own, and a `Mods` button to choose the same; pictures and
