@@ -395,11 +395,13 @@ TEST_CASE("script memory: ten times the objects take about ten times as long") {
         double small = timeWorkload(w.name, 10'000, w.heapBytes10k);
         small = std::min(small, timeWorkload(w.name, 10'000, w.heapBytes10k));
         small = std::min(small, timeWorkload(w.name, 10'000, w.heapBytes10k));
-        const double large = timeWorkload(w.name, 100'000, w.heapBytes100k);
+        const double large = std::min(timeWorkload(w.name, 100'000, w.heapBytes100k), timeWorkload(w.name, 100'000, w.heapBytes100k));
         const double ratio = large / std::max(small, 0.001);
         report += std::format("\n  {:<14} 10k: {:8.1f} ms   100k: {:8.1f} ms   x{:.1f}", w.name, small, large, ratio);
         // In proportion is about 10; a search that rescans the heap gives about 100.
-        CHECK_MESSAGE(ratio < 30.0, std::format("{}: {:.1f} ms for 10k, {:.1f} ms for 100k", w.name, small, large));
+        // Shared CI machines time noisily (a macOS run once gave 32 for `collected`),
+        // so the bound only has to tell the two apart.
+        CHECK_MESSAGE(ratio < 50.0, std::format("{}: {:.1f} ms for 10k, {:.1f} ms for 100k", w.name, small, large));
     }
     MESSAGE("object-heavy workloads:" << report);
 }
