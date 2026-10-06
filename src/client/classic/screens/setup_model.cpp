@@ -294,9 +294,9 @@ std::vector<ComputerPlayerChoice> computerPlayerChoices(const game::Rules& r) {
 }
 
 std::optional<std::string> useComputerPlayer(const game::Rules& r, game::GameSetup& g, std::string_view controller) {
+    // "external:N": the bot of slot N, connected to this program (--bot-port, docs/sdk/bots-and-arena.md).
     const std::optional<game::Controller> c = game::parseController(controller);
-    if (!c || c->kind == game::Controller::Kind::External)
-        return std::format("'{}' is not a computer player: give \"builtin\" or \"<mod id>:<player>\"", controller);
+    if (!c) return std::format("'{}' is not a computer player: give \"builtin\" or \"<mod id>:<player>\"", controller);
     for (game::EmpireSetup& e : g.empires)
         if (e.kind == game::PlayerKind::Computer) e.controller = *c;
     if (const std::vector<std::string> problems = sdk::checkControllers(g.empires, sdk::gamePackages(r)); !problems.empty()) return problems.front();

@@ -4,6 +4,7 @@
 #include "core/environment.hpp"
 #include "core/log.hpp"
 #include "game/players.hpp"
+#include "sdk/bots.hpp"
 #include "sdk/players.hpp"
 
 #include <charconv>
@@ -11,7 +12,9 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <chrono>
 #include <filesystem>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -76,7 +79,13 @@ Game:
                                   see docs/SETUP.md "Games of the original")
   --ai=MOD:PLAYER                 Every computer empire of a new game is played by this script player
                                   of a mod (its [[ai.players]], docs/sdk/ai-protocol.md); "builtin"
-                                  for the built-in AI (the default)
+                                  for the built-in AI (the default); "external:N" for the external bot
+                                  of slot N (docs/sdk/bots-and-arena.md)
+  --bot-port=N                    Let external bots connect to the games played or hosted here (default
+                                  6722 with --ai=external:N; 0 = any free port). The token they present
+                                  is --bot-token, else OPENSE4_BOT_TOKEN, else a random one in the log
+  --bot-bind=ADDRESS              Where bots may connect from (default 127.0.0.1: this computer only)
+  --bot-timeout=SEC               A bot's time for one request (default 60)
   --seed=N                        Seed for new games (default: random)
   --systems=N                     Number of star systems in a quick game
   --empires=N                     Number of empires in a quick game, including yours: N - 1 computer
@@ -165,6 +174,12 @@ int main(int argc, char** argv) {
         return 0;
     }
     client::AppOptions options;
+    // External bots (--bot-port...): the host they connect to lives as long as the program.
+    int botPort = sdk::kDefaultBotPort;
+    int botTimeout = 60;
+    bool botsWanted = false;
+    std::string botToken;
+    std::string botBind = "127.0.0.1";
     // Start from the saved settings; command-line options override them for this run.
     client::GraphicsSettings& saved = client::appSettings().graphics;
     options.renderer = saved.renderer == client::RendererChoice::Vulkan   ? client::AppOptions::Renderer::Vulkan
@@ -243,6 +258,17 @@ int main(int argc, char** argv) {
         } else if (key == "--ai") {
             ok = opense4::game::parseController(value).has_value();
             options.aiPlayer = std::string(value);
+        } else if (key == "--bot-port") {
+            ok = parseInt(value, botPort) && botPort >= 0 && botPort <= 65535;
+            botsWanted = true;
+        } else if (key == "--bot-token") {
+            botToken = std::string(value);
+            ok = !value.empty();
+        } else if (key == "--bot-bind") {
+            botBind = std::string(value);
+            ok = !value.empty();
+        } else if (key == "--bot-timeout") {
+            ok = parseInt(value, botTimeout) && botTimeout > 0;
         } else if (key == "--seed") {
             ok = parseInt(value, options.seed);
         } else if (key == "--systems") {
@@ -360,7 +386,30 @@ int main(int argc, char** argv) {
         log::info("OPENSE4_CRASH_TEST={}: crashing on purpose", *test);
         crashOnPurpose(*test);
     }
-    // Script computer players play in the games this program plays (docs/sdk/ai-protocol.md).
-    sdk::installPlayers();
-    return client::App().run(options);
+    // Script computer players play in the games this program plays (docs/sdk/ai-protocol.md),
+    // and external bots when asked for (docs/sdk/bots-and-arena.md).
+    if (const auto c = opense4::game::parseController(options.aiPlayer); c && c->kind == opense4::game::Controller::Kind::External) botsWanted = true;
+    std::unique_ptr<sdk::BotHost> bots;
+    if (botsWanted) {
+        sdk::BotHostOptions bo;
+        bo.bind = botBind;
+        bo.port = static_cast<uint16_t>(botPort);
+        bo.token = !botToken.empty() ? botToken : core::environment("OPENSE4_BOT_TOKEN").value_or("");
+        bo.gameName = "OpenSE4";
+        bo.requestTimeout = std::chrono::seconds(botTimeout);
+        auto opened = sdk::BotHost::open(std::move(bo));
+        if (!opened) {
+            std::fprintf(stderr, "%s\n", opened.error().c_str());
+            return 2;
+        }
+        bots = std::move(*opened);
+        log::info("Bots: external bots connect to {} with the token {} (python -m opense4.bot MODULE:CLASS --port {} --slot N)", bots->address(),
+                  bots->token(), bots->port());
+        sdk::installPlayers(bots->playerSetup());
+    } else {
+        sdk::installPlayers();
+    }
+    const int code = client::App().run(options);
+    sdk::installPlayers();   // the bots go before the sessions that point to them
+    return code;
 }

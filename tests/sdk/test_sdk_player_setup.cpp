@@ -89,6 +89,10 @@ TEST_CASE("sdk player setup: the setup model gives the computer empires the game
     CHECK_FALSE(setupm::useComputerPlayer(r, quick, "builtin"));
     CHECK(quick.empires[1].controller == Controller{});
     CHECK(*setupm::useComputerPlayer(r, quick, "nonsense") == "'nonsense' is not a computer player: give \"builtin\" or \"<mod id>:<player>\"");
+    // An external bot's slot (the bots connect with --bot-port).
+    CHECK_FALSE(setupm::useComputerPlayer(r, quick, "external:2"));
+    CHECK(quick.empires[1].controller == externalPlayer(2));
+    CHECK_FALSE(setupm::useComputerPlayer(r, quick, "builtin"));
     CHECK(setupm::useComputerPlayer(test::engineRules(), quick, "test.ai-fixture:Idle")->find("which the game does not use") != std::string::npos);
     // Saved with the game (format 9).
     auto created = createGame(test::engineRules(), *g);
