@@ -73,8 +73,9 @@ private:
         mods::ModLibrary library = mods::scanModsFolder(loaded.modsDir, loaded.open);
         choice_.emplace(std::move(library), settings().enabledMods);
         error_.clear();
-        if (selected_.empty() || std::none_of(rowsCache().begin(), rowsCache().end(), [&](const auto& r) { return r.id == selected_; }))
-            selected_ = rowsCache().empty() ? std::string{} : rowsCache().front().id;
+        const std::vector<ModsChoice::Row>& rows = rowsCache();
+        if (selected_.empty() || std::none_of(rows.begin(), rows.end(), [&](const auto& r) { return r.id == selected_; }))
+            selected_ = rows.empty() ? std::string{} : rows.front().id;
     }
 
     const std::vector<ModsChoice::Row>& rowsCache() {
@@ -257,26 +258,30 @@ private:
         } else if (d.button(row && row->enabled ? "Disable" : "Enable", row != nullptr)) {
             toggle(id);
         }
-        const auto& enabled = choice_->enabled();
+        // Where the mod is in the order, before either button changes it.
+        const std::vector<std::string>& enabled = choice_->enabled();
         const auto at = std::find(enabled.begin(), enabled.end(), id);
-        const bool on = at != enabled.end();
-        if (d.button("Move Up", on && at != enabled.begin())) choice_->move(id, -1);
-        if (d.button("Move Down", on && at + 1 != enabled.end())) choice_->move(id, 1);
+        const bool canUp = at != enabled.end() && at != enabled.begin();
+        const bool canDown = at != enabled.end() && at + 1 != enabled.end();
+        if (d.button("Move Up", canUp)) choice_->move(id, -1);
+        if (d.button("Move Down", canDown)) choice_->move(id, 1);
         d.spacer();
         if (d.button("Refresh")) {
-            // Mods copied into the folder meanwhile; the choice so far stays.
-            const std::vector<std::string> keep = choice_->enabled();
-            std::vector<std::string> missing = choice_->missing();
+            // Mods copied into the folder meanwhile; the choice so far stays,
+            // and Done still compares it with the one in use.
+            std::vector<std::string> ids = choice_->enabled();
+            ids.insert(ids.end(), choice_->missing().begin(), choice_->missing().end());
             const LoadedMods& loaded = loadedMods();
-            std::vector<std::string> ids = keep;
-            ids.insert(ids.end(), missing.begin(), missing.end());
-            choice_.emplace(mods::scanModsFolder(loaded.modsDir, loaded.open), ids);
+            choice_.emplace(mods::scanModsFolder(loaded.modsDir, loaded.open), std::move(ids), settings().enabledMods);
             rowsCache();
             resolved_ = choice_->resolve();
         }
         for (int i = 0; i < 7; ++i) d.spacer();
         if (d.button("Done", resolved_.has_value())) {
-            if (!choice_->changed()) {
+            // Nothing to read again when the choice is the data in use (the
+            // command line's mods and mods that failed at the start are not).
+            const LoadedMods& loaded = loadedMods();
+            if (!choice_->changed() && !loaded.fromCommandLine && loaded.startProblems.empty()) {
                 ctx.goTo(backScreen(back_));
             } else {
                 MenuContext::ModsChange change;

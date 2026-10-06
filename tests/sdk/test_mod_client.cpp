@@ -82,6 +82,11 @@ TEST_CASE("sdk client: the Mods window's choice, its order and its problems") {
     CHECK_FALSE(same.changed());
     same.move("test.picture-pack", -1);
     CHECK(same.changed());
+    // Read again (Refresh): compared with the choice in use, not with the one read again.
+    ModsChoice refreshed(fixtureLibrary(), {"test.picture-pack", "test.escort-hull"}, std::vector<std::string>{"test.escort-hull", "test.picture-pack"});
+    CHECK(refreshed.changed());
+    ModsChoice unchanged(fixtureLibrary(), {"test.escort-hull"}, std::vector<std::string>{"test.escort-hull"});
+    CHECK_FALSE(unchanged.changed());
 
     // A message names a mod by its id as a word of its own.
     CHECK(client::classic::mentionsMod("mod test.lib 1.0 is enabled twice", "test.lib"));

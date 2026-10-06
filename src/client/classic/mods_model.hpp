@@ -52,8 +52,9 @@ std::vector<std::string> scriptedMods(const std::vector<mods::Package>& packages
 class ModsChoice {
 public:
     // `enabled`: the ids chosen so far (the settings'), in order; ids not in
-    // the folder are kept as missing until the player removes them.
-    ModsChoice(mods::ModLibrary library, std::vector<std::string> enabled);
+    // the folder are kept as missing until the player removes them. `start`:
+    // the choice changed() compares with (`enabled` when not given).
+    ModsChoice(mods::ModLibrary library, std::vector<std::string> enabled, std::optional<std::vector<std::string>> start = std::nullopt);
 
     struct Row {
         std::string id;

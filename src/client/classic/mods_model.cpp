@@ -46,7 +46,8 @@ bool mentionsMod(std::string_view text, std::string_view id) {
     return false;
 }
 
-ModsChoice::ModsChoice(mods::ModLibrary library, std::vector<std::string> enabled) : manager_(std::move(library)), start_(enabled) {
+ModsChoice::ModsChoice(mods::ModLibrary library, std::vector<std::string> enabled, std::optional<std::vector<std::string>> start)
+    : manager_(std::move(library)), start_(start ? std::move(*start) : enabled) {
     for (const std::string& id : enabled) {
         if (manager_.library().find(id)) {
             manager_.enable(id);
