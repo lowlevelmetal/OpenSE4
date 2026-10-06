@@ -52,8 +52,9 @@ look things up in. The plan behind the SDK is [docs/MODDING_SDK.md](../MODDING_S
 The example mods are listed in [mods/examples/README.md](../../mods/examples/README.md);
 `opense4-sdk new --from-example <name> <folder>` copies one to start from.
 
-**Interface extensions** (panels, columns, buttons for mod orders) are the SDK's next
-tier: their page, `docs/sdk/interface.md`, comes with that tier.
+**Interface extensions** (buttons for mod orders, panels in reports, columns in lists,
+pages in the Empires window, text and key bindings) are described in
+[interface.md](interface.md).
 
 ## Reference
 

@@ -44,6 +44,7 @@ MODULES = [
     ("opense4.view", "view.py"),
     ("opense4.galaxy", "galaxy.py"),
     ("opense4.rules", "rules.py"),
+    ("opense4.ui", "ui.py"),
     ("opense4.cmd", "cmd.py"),
     ("opense4.order", "order.py"),
     ("opense4.tactical", "tactical.py"),

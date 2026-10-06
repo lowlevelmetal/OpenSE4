@@ -12,6 +12,7 @@ Every public module of the package with its classes, functions and constants, ge
 | [`opense4.view`](opense4.view.md) | The view: what one empire knows of the game (docs/sdk/view.md), as typed objects. |
 | [`opense4.galaxy`](opense4.galaxy.md) | The warp map of a view: which systems are linked, how many jumps apart they are, and how long a route is, worked out in Python from the view alone (no engine call). |
 | [`opense4.rules`](opense4.rules.md) | The rules: the data set as scripts read it (docs/sdk/view.md, "The rules view"), and the rules tier of mods (docs/sdk/rules.md). |
+| [`opense4.ui`](opense4.ui.md) | Interface extensions (docs/sdk/interface.md): the values a mod's ui/*.toml files show that its own Python works out. |
 | [`opense4.cmd`](opense4.cmd.md) | A constructor for every command (docs/sdk/commands.md) and every type a command carries. |
 | [`opense4.order`](opense4.order.md) | A constructor for every order kind (docs/sdk/commands.md, "Orders"): the orders of set_orders and order_tagged. |
 | [`opense4.tactical`](opense4.tactical.md) | A constructor for every tactical order kind (docs/sdk/commands.md, "Tactical battles"), the answer to battle_round. |
