@@ -72,6 +72,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.11.0" date="2026-10-06" type="development">
+      <description>
+        <p>A modding SDK: mod packages and data patches, new units with their own pictures and sounds, computer players and rules written in Python, interface additions, external bots and an arena, with a modder's guide and examples. Ships Hegemon, a much stronger computer opponent made with it; does not play with 0.10.0 over the network but reads its saves.</p>
+      </description>
+    </release>
     <release version="0.10.0" date="2026-10-05" type="development">
       <description>
         <p>Loads the original game's saved games and saves games back for it, mutes the sound while the window is in the background, moves tagged ships as one group, shows your fleets as one row, and fixes the problems players reported on 0.9.0; does not play with 0.9.0 over the network but reads its saves.</p>

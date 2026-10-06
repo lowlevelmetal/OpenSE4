@@ -1011,10 +1011,9 @@ Protocol 6 and save format 8 (the log fields of games imported from the original
 colonies' destroyed facility counts, orders given to tagged vehicles as one group, the
 fleet leader command and the Designs window's check boxes kept with the empire) came with
 0.10.0, so it does not play with 0.9.0; it still loads 0.9.0's saves. Protocol 7 and save
-format 9 come with the modding SDK (docs/MODDING_SDK.md §14.5): the game's mods in the
-state and the save header, the player's mods in `Login`, the host's in `Lobby`, and the
-`Mods` refusal; later SDK changes add their fields under these numbers until the next
-release. The data set's identity of format 9 also covers the game folder's AI tables,
+format 9 came with the modding SDK in 0.11.0 (docs/MODDING_SDK.md §14.5): the game's
+mods in the state and the save header, the player's mods in `Login`, the host's in
+`Lobby`, and the `Mods` refusal. The data set's identity of format 9 also covers the game folder's AI tables,
 race files and design-name lists and the game-changing mods; a save of format 8 or older
 is compared with the identity as its format computed it, so it is not taken for another
 data set. Protocol 7 does not play with 0.10.0; format 8 and 7 saves still load.
