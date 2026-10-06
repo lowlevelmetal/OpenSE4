@@ -89,6 +89,8 @@ add_executable(opense4_tests
     sdk/test_script_library.cpp
     sdk/test_script_runtime.cpp
     sdk/test_script_sandbox.cpp
+    sdk/test_sdk_arena.cpp
+    sdk/test_sdk_bots.cpp
     sdk/test_sdk_codec.cpp
     sdk/test_sdk_docs.cpp
     sdk/test_sdk_player_setup.cpp
@@ -147,10 +149,12 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
 target_link_libraries(opense4_tests PRIVATE opense4_sdk opense4_script opense4_mods opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
 target_include_directories(opense4_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-# The SDK tool's tests run it (tests/sdk/test_sdk_tool.cpp).
-add_dependencies(opense4_tests opense4-sdk)
+# The SDK tool's tests run it (tests/sdk/test_sdk_tool.cpp, test_sdk_arena.cpp), and the
+# external bots' tests the dedicated server.
+add_dependencies(opense4_tests opense4-sdk opense4-server)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_SDK_EXE="$<TARGET_FILE:opense4-sdk>"
+    OPENSE4_SERVER_EXE="$<TARGET_FILE:opense4-server>"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     OPENSE4_SDK_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/sdk"
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"

@@ -1,0 +1,13 @@
+[mod]
+id = "test.ai-tested"
+name = "AI with tests"
+version = "1.0.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "A computer player with tests of its own, for opense4-sdk test and run."
+
+[[ai.players]]
+name = "Scout"
+module = "scout"
+class = "Scout"
+description = "The classic AI, but research colonies where it may, and a count of its turns."
