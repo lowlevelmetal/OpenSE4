@@ -1,0 +1,25 @@
+[mod]
+id = "test.ai-fixture"
+name = "AI fixture"
+version = "1.0.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "Computer players for the engine's tests, written straight to the protocol."
+
+[[ai.players]]
+name = "Steady"
+module = "fixture_player"
+class = "Steady"
+description = "The classic ministers with its own research order, colony types and battle rounds."
+
+[[ai.players]]
+name = "Probe"
+module = "fixture_player"
+class = "Probe"
+description = "Does what its memory's script says and records every request."
+
+[[ai.players]]
+name = "Idle"
+module = "fixture_player"
+class = "Idle"
+description = "Answers nothing: its empire does nothing."
