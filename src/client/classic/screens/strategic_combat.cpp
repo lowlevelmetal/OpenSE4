@@ -45,6 +45,7 @@
 
 #include "game/combat.hpp"
 #include "game/economy.hpp"
+#include "game/players.hpp"
 #include "game/query.hpp"
 #include "game/tactical.hpp"
 
@@ -205,9 +206,13 @@ private:
         forces_.reset();
         game::combat::TacticalBattle::Setup setup{q.where, q.entering, {}, std::nullopt, std::nullopt, std::nullopt, q.check};
         setup.stepped = true;
-        preview_ = std::make_unique<game::combat::TacticalBattle>(ui.rules(), *q.state, std::move(setup));
+        preview_.reset();   // before the players it may hold
+        game::GameState shown = *q.state;
+        previewPlayers_ = windowPlayers(ui, shown, setup);
+        preview_ = std::make_unique<game::combat::TacticalBattle>(ui.rules(), std::move(shown), std::move(setup));
         if (!preview_->started()) {
             preview_.reset();
+            previewPlayers_.reset();
             ui.session.answerBattle(game::BattleAnswer{});
             return false;
         }
@@ -219,6 +224,7 @@ private:
         if (!preview_) return;
         TacticalFight f;
         f.kind = TacticalFight::Kind::Game;
+        f.scriptPlayers = std::move(previewPlayers_);
         f.battle = std::move(preview_);
         f.title = screenTitle(ScreenId::StrategicCombat);
         ui.session.startTactical(std::move(f));
@@ -228,20 +234,34 @@ private:
 
     bool answerTactical(UiContext& ui) {
         const game::BattleQuestion& q = *ui.session.battleQuestion();
-        auto battle = std::make_unique<game::combat::TacticalBattle>(
-            ui.rules(), *q.state, game::combat::TacticalBattle::Setup{q.where, q.entering, q.humans, std::nullopt, std::nullopt, std::nullopt, q.check});
+        game::combat::TacticalBattle::Setup setup{q.where, q.entering, q.humans, std::nullopt, std::nullopt, std::nullopt, q.check};
+        game::GameState shown = *q.state;
+        std::unique_ptr<game::Players> players = windowPlayers(ui, shown, setup);
+        auto battle = std::make_unique<game::combat::TacticalBattle>(ui.rules(), std::move(shown), std::move(setup));
         if (!battle->started()) {
             ui.session.answerBattle(game::BattleAnswer{});
             return false;
         }
         TacticalFight f;
         f.kind = TacticalFight::Kind::Game;
+        f.scriptPlayers = std::move(players);
         f.battle = std::move(battle);
         f.players = q.humans;
         f.title = screenTitle(ScreenId::TacticalCombat);
         ui.session.startTactical(std::move(f));
         ui.open(ScreenId::TacticalCombat);
         return false;
+    }
+
+    // The script and external players of a battle this window shows ask
+    // their players each combat turn, as in the engine's own battles
+    // (docs/sdk/ai-protocol.md §8): a session of their own, on the game as
+    // the battle begins, which the battle uses; none when no empire has such
+    // a player. Their answers go back with the battle's (BattleAnswer::decisions).
+    static std::unique_ptr<game::Players> windowPlayers(UiContext& ui, game::GameState& shown, game::combat::TacticalBattle::Setup& setup) {
+        std::unique_ptr<game::Players> players = game::makePlayers(ui.rules(), shown);
+        setup.scriptPlayers = players.get();
+        return players;
     }
 
     // The playback follows the record; a record that grew (the battle stepped) or moved is taken again.
@@ -401,6 +421,7 @@ private:
     }
 
     int index_ = -1;
+    std::unique_ptr<game::Players> previewPlayers_;            // its script players' session (outlives the battle)
     std::unique_ptr<game::combat::TacticalBattle> preview_;   // the question's battle, set up, not begun
     size_t previewKey_ = SIZE_MAX;
     const game::CombatRecord* record_ = nullptr;

@@ -181,12 +181,16 @@ TEST_CASE("sdk tool: pack makes a .zip that opens as the same mod") {
     CHECK(readText(dir / "out" / "escort.zip") == readText(dir / "out" / "again.zip"));
 }
 
-TEST_CASE("sdk tool: what is not there yet says so") {
-    for (std::string_view command : {"run", "test", "arena", "publish"}) {
+TEST_CASE("sdk tool: a command without what it needs says so; publish waits for the Steam release") {
+    for (std::string_view command : {"run", "test", "arena"}) {
         const Run r = sdk(std::string(command));
         CHECK(r.code == 2);
-        CHECK(r.out.find("not there yet") != std::string::npos);
+        CHECK_FALSE(r.out.empty());
     }
+    const Run publish = sdk("publish");
+    CHECK(publish.code == 2);
+    CHECK(publish.out.find("waits for the Steam release") != std::string::npos);
+    CHECK(sdk("arena --help").code == 0);
     CHECK(sdk("frobnicate").code == 2);
     CHECK(sdk("--help").code == 0);
 }

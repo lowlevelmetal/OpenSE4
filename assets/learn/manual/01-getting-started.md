@@ -100,6 +100,26 @@ loads one.
 
 > A race's happiness type matters more than it looks: it decides how your people react to war, peace and losses. Read it before you choose.
 
+### Computer players of mods
+
+A mod can bring computer players of its own. When the mods you play with offer some, the setup
+screens let you choose who plays the computer empires; without such mods they are as described
+above.
+
+- **Players** page: `Computer Players` opens a list of the classic AI and the mods' players, each
+  with its mod and what it does. The one you light plays every computer empire that has no player
+  of its own, random ones included, and the line under the button names it.
+- **Empire Setup**, General page: a computer empire's `Computer Player` row gives it a player of
+  its own: the game's choice, the classic AI, or one of the mods' players.
+- **Game Settings** page: `Computer players see everything` lets them see the whole game instead
+  of what their empire knows (off by default, so that they play fair), and `Computer Player
+  Limits` sets how much they may compute for each of their decisions.
+- **Quick Start**: `Computer Players` in the left column chooses who plays its computer empires.
+
+When one of these players fails, the classic AI decides in its place and the game goes on; a
+notice over the bottom of the system view says so, and `Details` shows what went wrong (see
+[Computer players](computer-players-and-ministers#computer-players-of-mods)).
+
 ## Saving and loading
 
 Press `F2` (or the first command button) to open the [Game Menu](window:game-menu):

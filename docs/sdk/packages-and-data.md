@@ -16,11 +16,11 @@ was.
 |---|---|---|
 | `assets/` | Pictures, sounds, music, fonts and pointers, in the game folder's own layout | No: other players may have other pictures |
 | `data/` | Data patches (`*.toml`), replacement data files (`*.txt`), data generators (`*.py`), and AI tables, race files and design-name lists in the game folder's layout | Yes |
-| `ai/` | Computer players in Python (a later step: not run yet) | Yes |
+| `ai/` | Computer players in Python ([python-api.md](python-api.md)) | Yes |
 | `scripts/` | Rules hooks in Python (a later step: not run yet) | Yes |
 | `ui/` | Interface extensions (a later step) | No |
 | `text/` | Strings and translations (a later step) | No |
-| `tests/` | The mod's own tests, for `opense4-sdk test` (a later step) | No |
+| `tests/` | The mod's own tests, for `opense4-sdk test` ([bots-and-arena.md](bots-and-arena.md)) | No |
 
 A mod that changes the game must be the same for every player of a game (see
 "Multiplayer and saved games" below). A mod with only pictures and sounds need not.
@@ -469,6 +469,9 @@ The title screen's `Mods` button (at the top right) opens the Mods window:
 Game Setup and Quick Start show the mods the new game will use in their bottom left
 corner, with a `Mods` button that opens the window. Game Setup keeps its settings while
 you look, and starts again from its defaults when the mods change, since the data has.
+When the mods offer computer players (`[[ai.players]]`), Game Setup, Empire Setup, Quick
+Start and the network lobby also choose who plays the computer empires
+([docs/SETUP.md](../SETUP.md) "Computer players").
 
 When the settings name mods that no longer load (a mod removed from the folder, one whose
 patches no longer fit your game), OpenSE4 starts without them, says so on the title
@@ -531,7 +534,10 @@ with the mods, never into the installed game. `pack` leaves out hidden files and
 `mod.identity`, which records the identity; a package whose files no longer match it
 gets a warning.
 
-`run`, `test`, `arena` and `publish` come with later steps of the SDK.
+`test` runs a mod's tests and plays a short game with each of its computer players;
+`run` starts the game with the mod; `arena` plays computer players against each other;
+`bot` and `python` serve external bots ([bots-and-arena.md](bots-and-arena.md)).
+`publish` waits for the Steam release.
 
 ## Example: a new hull with pictures
 

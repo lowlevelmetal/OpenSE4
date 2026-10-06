@@ -24,17 +24,24 @@ Screenshots that scripts take, and the picture of a failed step, go to --output
 (by default a folder under the system's temporary folder): they show the game's
 art, so keep them out of the repository (docs/CLEANROOM.md).
 
+A script whose header has "# server: ARGS" plays against a dedicated host: the
+runner starts opense4-server (beside the client) with ARGS on a free port of
+this computer, and the client joins its lobby (--open=multiplayer:join=...).
+
     python3 tools/run_input_tests.py [--exe build/debug/opense4] [--jobs N]
         [--renderer opengl] [--output DIR] [--small | --only-small] [script ...]
 """
 
 import argparse
 import concurrent.futures
+import contextlib
 import fnmatch
 import os
 import pathlib
 import re
+import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -92,6 +99,58 @@ def fixture_game(where):
     return game
 
 
+SERVER_MARK = "# server:"
+
+
+def server_args(path):
+    """The opense4-server options of a script's "# server:" header line, or None."""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("#"):
+            break
+        if line.startswith(SERVER_MARK):
+            return shlex.split(line[len(SERVER_MARK):])
+    return None
+
+
+def free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def server_exe(exe):
+    return exe.with_name("opense4-server.exe" if os.name == "nt" else "opense4-server")
+
+
+@contextlib.contextmanager
+def dedicated_host(exe, args, classic_dir, user):
+    """opense4-server with `args` on a free port, listening; yields the port."""
+    server = server_exe(exe)
+    port = free_port()
+    env = dict(os.environ)
+    env["OPENSE4_USER_DIR"] = user
+    cmd = [str(server), f"--port={port}", "--bind=127.0.0.1", "--no-upnp", "--no-lan-discovery"]
+    if classic_dir:
+        cmd.append(f"--data={pathlib.Path(classic_dir) / 'Data'}")
+    log = open(pathlib.Path(user) / "server.log", "w", encoding="utf-8")
+    proc = subprocess.Popen(cmd + args, env=env, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
+    try:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline and proc.poll() is None:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("127.0.0.1", port)) == 0:
+                    break
+            time.sleep(0.2)
+        yield port
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        log.close()
+
+
 def marked(path, mark):
     """Whether a line of the script's header comments starts with the mark."""
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -104,6 +163,17 @@ def marked(path, mark):
 
 def run(exe, script, output, classic_dir, renderer, timeout, extra, layout=None):
     """Plays one script; `layout` is (name, options) for a run in another layout."""
+    host = server_args(script)
+    if host is None:
+        return play(exe, script, output, classic_dir, renderer, timeout, extra, layout)
+    if not server_exe(exe).exists():
+        return script, False, "", f"{server_exe(exe)} not found: build it (the opense4-server target)", 0.0
+    with tempfile.TemporaryDirectory(prefix="opense4-script-server-") as user:
+        with dedicated_host(exe, host, classic_dir, user) as port:
+            return play(exe, script, output, classic_dir, renderer, timeout, extra + [f"--open=multiplayer:join=127.0.0.1:{port}"], layout)
+
+
+def play(exe, script, output, classic_dir, renderer, timeout, extra, layout=None):
     with tempfile.TemporaryDirectory(prefix="opense4-script-user-") as user:
         env = dict(os.environ)
         env.setdefault("SDL_VIDEO_DRIVER", "offscreen")

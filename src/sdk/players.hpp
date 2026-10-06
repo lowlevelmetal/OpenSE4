@@ -30,6 +30,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -67,14 +68,34 @@ public:
 
 // ---- Sessions ------------------------------------------------------------------------------
 
-// What one live request to a script or external player cost (PlayerSetup::observe).
-struct RequestCost {
+// What became of one request, for tools that measure players (the arena,
+// opense4-sdk test). Never part of the game.
+struct RequestEvent {
+    enum class Kind : uint8_t {
+        Asked,      // the player answered (or failed: a Failed event follows)
+        Replayed,   // the journal's answer was given again
+        Skipped,    // the player is out for the turn: the classic AI decided
+        Failed,     // a failed request: the classic AI decided (§7)
+    };
+    Kind kind = Kind::Asked;
     game::EmpireId empire;
-    uint32_t turn = 0;              // GameState::turn when it was asked
-    std::string call;               // "orders", "economy", "battle_round"...
-    int64_t bytecodes = 0;          // the script's count for the request, services included; 0 for an external bot
-    std::chrono::nanoseconds time{};  // wall time from building the request (its view included) to the checked response
-    bool failed = false;            // the request failed (docs/sdk/ai-protocol.md §7)
+    uint32_t turn = 0;
+    std::string_view call;              // empty for Failed
+    std::chrono::nanoseconds time{};    // Asked: how long the player took
+    std::string_view error;             // Failed: why
+};
+
+// A request a player failed (docs/sdk/ai-protocol.md §7), as the engine logs
+// it: the classic AI answered in its place.
+struct PlayerFailure {
+    game::EmpireId empire;
+    std::string empireName;
+    std::string player;       // the controller as text: "<mod id>:<player>", "external:<slot>"
+    uint32_t turn = 0;        // the game turn
+    std::string call;         // "orders", "colony_type", "battle_round"...
+    std::string error;        // what went wrong, in one line ("ValueError: no such ship")
+    std::string traceback;    // the player's traceback as the runtime wrote it (empty: none)
+    bool outForTurn = false;  // its third failure of the game turn: the classic AI plays the rest of the turn
 };
 
 struct PlayerSetup {
@@ -87,10 +108,12 @@ struct PlayerSetup {
     std::function<ExternalBot*(uint32_t slot)> externals;
     // The interpreter's heap, shared by the call's script players.
     size_t heapBytes = size_t{64} << 20;
-    // Called after every live request (never for an answer the journal gives
-    // again), on the thread that plays the turn: for tools that measure
-    // players (benchmarks, AI-against-AI games). Observes only.
-    std::function<void(const RequestCost&)> observe;
+    // Told of every request (none: nobody is).
+    std::function<void(const RequestEvent&)> observe;
+    // Told of each failure as it happens, on the engine call's thread (the
+    // client's notice). An answer the journal gives again is not a new
+    // failure: it is not told twice.
+    std::function<void(const PlayerFailure&)> failures;
 };
 
 // Installs the SDK's sessions for every engine call in this process

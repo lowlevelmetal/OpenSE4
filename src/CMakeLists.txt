@@ -183,18 +183,22 @@ add_custom_command(
     COMMENT "Embedding the opense4 Python package"
     VERBATIM)
 add_library(opense4_sdk STATIC
+    sdk/bots.cpp
     sdk/codec.cpp
+    sdk/match.cpp
     sdk/names.cpp
     sdk/parts.cpp
     sdk/player_check.cpp
     sdk/player_values.cpp
     sdk/players.cpp
+    sdk/process.cpp
     sdk/queries.cpp
     sdk/rules_view.cpp
     sdk/view.cpp
     sdk/worker.cpp
     "${sdk_package_cpp}")
-target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_mods opense4_script PRIVATE Threads::Threads opense4_warnings)
+# External bots connect over TCP (sdk/bots.cpp): the network library's sockets.
+target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_mods opense4_script PRIVATE opense4_net Threads::Threads opense4_warnings)
 
 # GCC 15's optimizer reports false "may be used uninitialized" warnings inside
 # std::variant's copies of the SDK's values; release builds with warnings as errors

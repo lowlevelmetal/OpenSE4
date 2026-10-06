@@ -1,0 +1,16 @@
+# A dedicated host's lobby with computer players of the fixture mod, for
+# tests/input/computer-players-lobby.script (tools/run_input_tests.py starts it).
+name = "Computer players"
+mods = ["../../fixtures/mods/ai-fixture"]
+ai = "test.ai-fixture:Captain"
+
+[options]
+ai_sees_everything = true
+quadrant_size = 0
+
+[[empire]]
+kind = "computer"
+
+[[empire]]
+kind = "computer"
+ai = "test.ai-fixture:Faulty"

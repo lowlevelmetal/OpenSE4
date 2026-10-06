@@ -1,0 +1,52 @@
+# A computer player of a mod that fails (docs/sdk/python-api.md "When a player fails"): Quick
+# Start's Computer Players gives the computer empires the fixture mod's Faulty
+# (tests/fixtures/mods/ai-fixture), which raises an error whenever it is asked for its orders.
+# After End Turn the main window says so over the bottom of the system panel (who failed, in
+# what and how: the classic AI answered) and the game goes on; Details opens Computer Player
+# Errors with the error and its traceback, and the notice is gone; the next turn's failures
+# bring it back, and Dismiss hides it.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --layout=1024x768 --size=1280x800 --seed=7
+
+wait-screen front
+click item:"Quick Start" in=front
+wait-for item:"Computer players: Classic AI" in=front
+click item:"Computer Players" in=front
+wait-for item:"player:test.ai-fixture:Faulty"
+click item:"player:test.ai-fixture:Faulty"
+click item:Done
+wait-for item:"Computer players: Faulty (AI fixture)" in=front
+assert-fits front
+screenshot quick-start-players.png
+click item:##portrait in=front nth=1
+click item:"Begin Game" in=front
+wait-screen game
+assert-absent item:"player-failure:*"
+
+click tag:button:end-turn
+click item:Yes in="End Turn" optional
+repeat 10
+  click item:"*(suggested)" optional timeout=5
+end
+wait-turn 1
+wait-for item:"player-failure:*failed in its orders: ValueError: no orders today*"
+assert-fits main
+screenshot failure-notice.png
+click item:Details
+wait-window player-errors
+wait-for item:"player-error:ValueError: no orders today, as this test player always says" in=player-errors
+screenshot player-errors.png
+click item:Close in=player-errors
+wait-closed player-errors
+assert-absent item:"player-failure:*"
+
+# The next turn's: the notice again, and Dismiss.
+click tag:button:end-turn
+click item:Yes in="End Turn" optional
+repeat 10
+  click item:"*(suggested)" optional timeout=5
+end
+wait-turn 2
+wait-for item:"player-failure:*failed in its orders*"
+click item:Dismiss
+wait-gone item:"player-failure:*"

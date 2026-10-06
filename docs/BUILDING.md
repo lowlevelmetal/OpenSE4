@@ -482,7 +482,11 @@ OPENSE4_CLASSIC_DATA=auto ./build/debug/tests/opense4_tests  # + checks against 
 ```
 
 By default the tests use only the original fixtures in `tests/fixtures/` and
-`tests/engine_fixture.cpp`. Setting `OPENSE4_CLASSIC_DATA` to `auto`, or to a data
+`tests/engine_fixture.cpp`. The modding SDK's tests also run `opense4-sdk` and
+`opense4-server` (built with the tests) and, where Python 3.10 or newer is installed as
+`python3` (or `python`), the `opense4` package under CPython: external bots against the
+server, the arena and the training environment (docs/sdk/bots-and-arena.md). Without
+Python they are skipped, with a message. Setting `OPENSE4_CLASSIC_DATA` to `auto`, or to a data
 directory, also runs checks against your installed game data. Those checks never
 copy anything into the repository. Each test run uses a scratch user data folder
 (`OPENSE4_USER_DIR`), so tests never touch your own settings, saves or history.
@@ -667,10 +671,17 @@ recorder is tested.
 | `mods-setup.script` | Game Setup's and Quick Start's line about the mods and their Mods button, the setup kept across Cancel, a quick game with the mods whose hull the designer offers |
 | `mods-saved-game.script` | Saved games played with other mods: the Game Menu's Load of one ending the game and the front end's Other Mods window loading it without the mod; Load Game of a modded game from the title screen, Load with Its Mods reading the data again with the game's mod |
 | `designer-picture.script`, `mod-hull-designer.script` | A design's own picture from the fixture `picture-pack` (the designer's choice, Designs, an edit, Save for SE IV refusing the game); a mod's new hull with its pictures in the designer |
+| `computer-players-setup.script` | Computer players of the fixture mod `ai-fixture` in the setup screens (docs/SETUP.md "Computer players"): Game Setup's Computer Players window and line, Empire Setup's Computer Player row for a listed empire (the classic AI), Game Settings' "Computer players see everything" and Computer Player Limits; in the game begun so, Captain's notes in the AI notes view (`Ctrl+Shift+N`): the list, the galaxy panel, a noted sector (`sector:noted`, `system:noted`) and a noted colony's report |
+| `computer-player-errors.script` | Quick Start's Computer Players with the fixture's Faulty, which fails when asked for its orders: the main window's notice after End Turn, Details and the Computer Player Errors window with the traceback, the next turn's notice and Dismiss |
+| `computer-player-battle.script` | A battle that stops End Turn (seed 23, as `battle-strategic.script`) with the fixture's Captain on the computer's side, fought in Strategic Combat with Captain giving its side's orders each combat turn; the turn going on with those answers and nothing failing; Captain's battle notes in the AI notes view |
+| `computer-players-host.script`, `computer-players-lobby.script` | Network games with computer players of a mod: the host form's choice and "Computer players see everything", the lobby's slot players changed by the host, Add Computer; and the lobby as a joining player sees it, against a dedicated host the runner starts (`# server:`, below) |
 
 Scripts marked `# ci: fixture-data` need nothing but our own content and also run on a game
 folder made from `tests/fixtures` (CI). Scripts marked `# layouts: both` also play at 800x600
-(`--small`, see "Tests").
+(`--small`, see "Tests"). A script with a `# server: ARGS` line among its first comments plays
+against a dedicated host: `tools/run_input_tests.py` starts `opense4-server` from the client's
+folder with ARGS (paths from the repository's root) on a free port of 127.0.0.1, and the
+client joins its lobby (`--open=multiplayer:join=...`); the server stops when the script ends.
 
 ### The format
 
@@ -686,8 +697,8 @@ Targets name what a pointer step points at:
 | `tag:<name>` | a UI tag (docs/LEARNING.md "UI tags"): `tag:research:queue`, `tag:lesson:next` |
 | `window:<id>` | a classic window (its `window:<id>` tag) |
 | `item:<label>` | a widget by its label: `item:"Keep Playing"`, `item:##down`, `item:"*(suggested)"` (`*` and `?` are patterns over the label as shown). Windows and pop-ups are `item:window:<name>`. Our own widgets name themselves: classic buttons, list headings, report tabs, lamp rows, lesson and design rows, manual links (`item:link:economy#trade`), the manual page and its sections in view (`item:page:research`, `item:anchor:the-research-queue`), the main window's report rows by kind (`report:colony`, `report:planet`, `report:ship`, `report:fleet` for one of the player's fleets, `report:other`, and `report:fleet-member` in the Fleet Report) and the list's tag count (`tagged:2`), the tactical map's pieces (`piece:own`, `piece:enemy`, `piece:other`) and the squares around the selected one (`square:1,-2`); a lesson's way back (`recovery:<tag>`, the part outlined, and `hint:<text>`, its line in the panel) and the note after a refused click or key (`note:<text>`, its lines joined by spaces) |
-| `sector:<x>,<y>`, `sector:<query>` | a sector of the system view; a query is words joined by `+` and negated by `!`: `empty`, `home`, `colony`, `planet`, `colonizable`, `star`, `warp-point`, `ship`, `enemy`, `selected`, `any` (`sector:planet+!colony`) |
-| `system:<n>`, `system:<query>` | a system of the galaxy panel by number, or `home`, `shown`, `explored`, `any` |
+| `sector:<x>,<y>`, `sector:<query>` | a sector of the system view; a query is words joined by `+` and negated by `!`: `empty`, `home`, `colony`, `planet`, `colonizable`, `star`, `warp-point`, `ship`, `enemy`, `selected`, `noted` (something in it has a computer player's note, while the AI notes view is on), `any` (`sector:planet+!colony`) |
+| `system:<n>`, `system:<query>` | a system of the galaxy panel by number, or `home`, `shown`, `explored`, `noted` (as for sectors), `any` |
 | `at:<x>,<y>` | a point of the classic frame, in frame pixels |
 
 After a target, `@x,y` picks a point in its rectangle in frame pixels from the left and top
@@ -782,7 +793,7 @@ input scripts CI plays run on a game folder made from our own test fixtures.
 | Windows / MSVC release (VS 2022), (VS 2026) | The `release` preset with Visual Studio 2022 (on `windows-2022`) and Visual Studio 2026 (on `windows-2025`) and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
 | Windows / llvm-mingw package (Windows 7 to 11) | `tools/package_release.sh windows` on Ubuntu, as for a release (`dist-windows`, warnings as errors): the cross build with llvm-mingw, the Windows 7 import check of every program, the unit tests under Wine (Ubuntu's Wine, set to Windows 7 SP1), the zip file and the installer (Ubuntu's NSIS), kept as the run's `opense4-windows` artifact |
 | Windows / installer | Installs that installer silently (`/S`) on Windows Server 2025, checks the files, shortcuts and Apps & features entry, starts the installed programs, has the data checker read our fixture data set, and uninstalls silently, checking that nothing is left |
-| Linux / input scripts (fixture data) | Builds the client (`debug`, GCC) and plays the input scripts marked `# ci: fixture-data` (the manual, the Learn window, a training game's results, sliders, the setup screens) with `tools/run_input_tests.py --fixture-data --small` (those marked for both layouts also at 800x600): headless (SDL's offscreen driver) on Mesa's software OpenGL (llvmpipe), on the minimal data set and pictures of `tests/fixtures` with our built-in learning content. A failed run keeps its pictures as the `input-scripts-failure` artifact |
+| Linux / input scripts (fixture data) | Builds the client and the dedicated server (`debug`, GCC) and plays the input scripts marked `# ci: fixture-data` (the manual, the Learn window, a training game's results, sliders, the setup screens, network lobbies with computer players of a mod) with `tools/run_input_tests.py --fixture-data --small` (those marked for both layouts also at 800x600): headless (SDL's offscreen driver) on Mesa's software OpenGL (llvmpipe), on the minimal data set and pictures of `tests/fixtures` with our built-in learning content. A failed run keeps its pictures as the `input-scripts-failure` artifact |
 
 The Linux and macOS jobs run the tests in one process per core
 (`.github/scripts/run_tests_parallel.sh`). The jobs keep the compiler's output

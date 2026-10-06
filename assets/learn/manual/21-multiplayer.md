@@ -35,6 +35,13 @@ Choose **Multiplayer** on the title screen.
 `Ready`. As the host you can add and remove computer players and remove players. `Start Game`
 begins when everyone is ready (`Start Anyway` starts regardless). The lobby has a chat box.
 
+When your mods offer computer players of their own (see [Computer players](computer-players-and-ministers#computer-players-of-mods)),
+the form also asks who plays the computer empires, the classic computer player or one of the
+mods' players, and whether the computer players see everything. In the lobby each computer
+player's row names who plays it: click it to choose another, until the game starts. The check box
+under the mods switches *Computer players see everything*. The players who join see both. These
+players run on your computer, so only you see their notes and the notice when one fails.
+
 ### Joining
 
 `Join a Game` lists the games running on your local network. Click one to fill in its address, or

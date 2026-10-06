@@ -48,8 +48,8 @@ struct NewGameSettings {
     // quadrant, and its starting points place the empires first.
     std::optional<game::QuadrantMap> map;
     // Who plays the computer empires that do not name a player of their own
-    // (EmpireSetup::controller), the random ones included: the built-in AI,
-    // or a script player of the game's mods (docs/sdk/ai-protocol.md).
+    // (ownComputerPlayer), the random ones included: the built-in AI, or a
+    // script player of the game's mods (docs/sdk/ai-protocol.md).
     game::Controller computerPlayer;
 };
 
@@ -134,8 +134,21 @@ struct ComputerPlayerChoice {
     game::Controller controller;
     std::string label;         // "test.ai-fixture:Steady"
     std::string description;
+    std::string name;          // the player's name: "Steady"
+    std::string modName;       // its mod's name ("AI fixture"; the id when the mod has none)
 };
 std::vector<ComputerPlayerChoice> computerPlayerChoices(const game::Rules& r);
+// The name the setup screens and the lobby give a player: "Classic AI" for
+// the built-in AI, "Steady (AI fixture)" for a player of the game's mods, and
+// its text ("<mod id>:<player>", "external:<slot>") for any other.
+std::string computerPlayerName(const game::Rules& r, const game::Controller& c);
+// A listed computer empire's own player (Empire Setup): nullopt when the
+// game's choice (NewGameSettings::computerPlayer) plays it, else the player
+// chosen for the empire itself, the classic AI included. Kept in
+// EmpireSetup::controller, where the classic AI chosen for the empire itself
+// is marked until buildGameSetup gives every computer empire its player.
+std::optional<game::Controller> ownComputerPlayer(const game::EmpireSetup& e);
+void setOwnComputerPlayer(game::EmpireSetup& e, std::optional<game::Controller> c);
 // Has `controller` ("builtin" or "<mod id>:<player>") play every computer
 // empire of `g`; the problem when it is no player of the game's mods.
 std::optional<std::string> useComputerPlayer(const game::Rules& r, game::GameSetup& g, std::string_view controller);

@@ -60,6 +60,10 @@ struct ClassicSettings {
     // <user data>/Mods to play with, in the player's order. --mod on the
     // command line takes their place for one run.
     std::vector<std::string> enabledMods;
+    // The AI notes view (docs/sdk/python-api.md "Watching a player think"):
+    // the notes script computer players write, on the maps and in the
+    // reports (Settings, Modding; Ctrl+Shift+N). Off by default.
+    bool showAiNotes = false;
 
     // Learning to play (docs/LEARNING.md): the tutorials and training games
     // finished on this machine, as "tutorial:<slug>" and "training:<slug>".

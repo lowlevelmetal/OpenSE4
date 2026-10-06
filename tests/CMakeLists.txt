@@ -90,6 +90,9 @@ add_executable(opense4_tests
     sdk/test_script_memory.cpp
     sdk/test_script_runtime.cpp
     sdk/test_script_sandbox.cpp
+    sdk/test_sdk_arena.cpp
+    sdk/test_sdk_bots.cpp
+    sdk/test_sdk_client_players.cpp
     sdk/test_sdk_codec.cpp
     sdk/test_sdk_docs.cpp
     sdk/test_sdk_player_setup.cpp
@@ -118,6 +121,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/art.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/computer_players.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp
@@ -160,10 +164,12 @@ endif()
 target_sources(opense4_tests PRIVATE $<TARGET_OBJECTS:opense4_tests_gc_probe>)
 target_link_libraries(opense4_tests PRIVATE opense4_sdk opense4_script opense4_mods opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
 target_include_directories(opense4_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-# The SDK tool's tests run it (tests/sdk/test_sdk_tool.cpp).
-add_dependencies(opense4_tests opense4-sdk)
+# The SDK tool's tests run it (tests/sdk/test_sdk_tool.cpp, test_sdk_arena.cpp), and the
+# external bots' tests the dedicated server.
+add_dependencies(opense4_tests opense4-sdk opense4-server)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_SDK_EXE="$<TARGET_FILE:opense4-sdk>"
+    OPENSE4_SERVER_EXE="$<TARGET_FILE:opense4-server>"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     OPENSE4_SDK_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/sdk"
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
@@ -181,13 +187,3 @@ opense4_copy_runtime_dlls(opense4_tests)
 opense4_windows_manifest(opense4_tests)
 
 add_test(NAME opense4_tests COMMAND opense4_tests)
-
-# Headless games between computer players on the installed data set, with
-# statistics (mods/hegemon/README.md, "Evaluation"); a stand-in until the SDK's
-# arena.
-add_executable(opense4-ai-eval tools/ai_eval.cpp)
-target_link_libraries(opense4-ai-eval PRIVATE opense4_sdk opense4_script opense4_mods opense4_game Threads::Threads opense4_warnings)
-set_target_properties(opense4-ai-eval PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(opense4-ai-eval PRIVATE -Wno-maybe-uninitialized)
-endif()

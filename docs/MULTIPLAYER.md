@@ -36,7 +36,9 @@ The in-game lobby is built on `net::HostSession` (see [For developers](#for-deve
 The host is one of the players: it has its own slot, picks its empire, and plays like
 everyone else. On top of that it can:
 
-- add and remove computer empires before the start;
+- add and remove computer empires before the start, and, when the game's mods offer
+  computer players of their own ([Computer players of mods](#computer-players-of-mods)),
+  choose who plays each one;
 - kick a player (in the lobby the slot opens up again; in a running game the computer
   takes over the empire). A kicked name cannot rejoin;
 - start the game when everyone is ready, or force the start;
@@ -51,6 +53,19 @@ The lobby shows the host's key fingerprint (see [Security](#security)). It is th
 computer's identity as a host, kept in `host_key.txt` in OpenSE4's user folder and made
 the first time this computer hosts. Players' games remember it. If other users of the
 computer can read that file, the lobby's log says so: make it private.
+
+#### Computer players of mods
+
+When the game's mods offer computer players (docs/sdk/ai-protocol.md), the host form
+chooses who plays the computer empires (the classic AI or one of those players) and
+whether the computer players see everything (their view is the whole game, not what their
+empire knows; off by default, so that they play fair). In the lobby each computer slot
+names its player, and the host changes it, and the option, until the start. Joining
+players see both: the slot's player, and the line under the mods ("Computer players see
+everything: ..." or "Computer players see what their empires know."). The players run on
+the host's computer, which alone sees when one fails (a notice in its main window) and
+their notes (Settings → Modding). A dedicated server sets the same with its setup file
+(`ai`, `ai_sees_everything`, an `[[empire]]`'s `ai`) or `--ai=MOD:PLAYER`.
 
 A game hosted from the client gets its galaxy's seed from the system's cryptographic
 random source, since the players must not be able to guess it; `--seed=N` on the
@@ -81,6 +96,8 @@ port forwarding.
 | `--upnp` / `--no-upnp` | UPnP port forwarding (default: on) |
 | `--players=N` | human player slots (default 2) |
 | `--ai=N` | computer empires (default 0) |
+| `--ai=PLAYER` | who plays the computer empires: `builtin`, a mod's player `<mod id>:<player>`, `external:N` for the external bot of slot N, or `external` for a bot of its own each (see [Bots on a host](#bots-on-a-host)) |
+| `--bot-port=N`, `--bot-bind=ADDR`, `--bot-token=T`, `--bot-timeout=SEC` | where external bots connect, with which token, and their time per request (see [Bots on a host](#bots-on-a-host)) |
 | `--seed=N`, `--quadrant-size=N`, `--systems=N`, `--quadrant=NAME` | galaxy settings (by default the number of systems is rolled from the quadrant size) |
 | `--setup=FILE.toml` | name, seed, options and computer empires from a [setup file](#setup-files) |
 | `--turn-based` | a [turn-based game](#turn-based-games) (the setup file's `simultaneous = false` does the same) |
@@ -109,6 +126,41 @@ the same name and password. If the game has a master password, pass it again wit
 `tools/server_smoke.sh` runs complete games: a server with one human slot and one
 computer empire, and the server's scripted `bot` client, which plays two turns; a
 turn-based game with two bots and a computer empire; and a turn-based PBEM game.
+
+### Bots on a host
+
+A computer empire can be played by an **external bot**: a program of your own, written in
+Python with OpenSE4's `opense4` package, that connects to the host
+([docs/sdk/bots-and-arena.md](sdk/bots-and-arena.md)). Each such empire names a slot,
+`external:N`, and the bot that connects to slot N plays it; several empires may share a
+slot and its bot.
+
+```sh
+opense4-server --players=2 --ai=1 --ai=external:0 --bot-token=3f2a...
+OPENSE4_BOT_TOKEN=3f2a... python -m opense4.bot admiral:Admiral --path mymod/ai --port 6722
+```
+
+- In a [setup file](#setup-files), `ai = "external:0"` in an `[[empire]]` (or at the top,
+  for every computer empire) does the same. `--ai=external` gives every computer empire a
+  slot of its own (0, 1, ...).
+- The server listens for bots on this computer only (127.0.0.1), port 6722
+  (`--bot-port=N`; `0` picks a free one), and writes the address, the slots and the token
+  in its log. Bots must present the token: `--bot-token`, else the server's environment
+  variable `OPENSE4_BOT_TOKEN`, else a new random one each run. `--bot-bind=0.0.0.0` lets
+  bots on other computers connect, over a connection that is not encrypted: the token is
+  then all that keeps others out.
+- A new game starts once every player is ready **and** every external slot has its bot.
+  Human players join over the network as usual; the server plays the bots' empires in
+  simultaneous and turn-based games alike.
+- A bot has `--bot-timeout` seconds per request (default: the turn timer, else 60). A bot
+  that is late, gone or wrong fails the request and the classic AI decides it; after three
+  failures in a turn, the classic AI plays its empire for the rest of the turn. A bot may
+  connect again at any time.
+- Play by e-mail: `pbem new` and `pbem process` take the same options and wait
+  `--bot-wait=SEC` (default 30) for the game's bots before playing; start the bot with
+  `--reconnect` so that it is there for each run.
+- The players' copies never hold a bot's memory, and the game's journal of its answers
+  means a turn played again never asks it twice (docs/sdk/ai-protocol.md §8).
 
 ## Joining
 

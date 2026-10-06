@@ -79,6 +79,7 @@ EmpireEditor::EmpireEditor(std::shared_ptr<const game::Rules> rules, EmpireDraft
     atmospheres_ = atmospheresInSetupOrder(*rules_);
     designFiles_ = designNameFiles(*rules_);
     ministerStyles_ = ministerStyleChoices(*rules_);
+    offersPlayers_ = offersComputerPlayers(*rules_);
 }
 
 const ruleset::RacePreset* EmpireEditor::preset() const { return presetOf(rules(), draft_.setup); }
@@ -103,6 +104,7 @@ void EmpireEditor::resetToTier(int tier) {
         next.setup.ministerStyle = draft_.setup.ministerStyle;
         next.setup.useRaceMinisterStyle = draft_.setup.useRaceMinisterStyle;
         next.setup.experience = draft_.setup.experience;
+        next.setup.controller = draft_.setup.controller;
         draft_ = std::move(next);
     }
 }
@@ -158,6 +160,16 @@ EmpireEditor::Result EmpireEditor::draw(MenuContext& ctx) {
         case EmpirePage::Count: break;
     }
     if (picker_.isOpen()) pickerResult(picker_.draw(ctx));
+    if (players_.isOpen()) {
+        std::optional<game::Controller> own = ownComputerPlayer(draft_.setup);
+        PlayerPicker::Options o;
+        o.title = "Computer Player";
+        o.question = std::format("Who plays {}? The game's choice is {}.", draft_.setup.name.empty() ? std::string("this empire") : draft_.setup.name,
+                                 gameChoice_);
+        o.gameChoiceRow = true;
+        o.gameChoice = gameChoice_;
+        if (players_.draw(ctx, rules(), own, o)) setOwnComputerPlayer(draft_.setup, own);
+    }
 
     for (size_t i = 0; i < kPageTitles.size(); ++i)
         if (a.pageButton(static_cast<int>(i), kPageTitles[i], page_ == static_cast<EmpirePage>(i))) page_ = static_cast<EmpirePage>(i);
@@ -237,6 +249,16 @@ void EmpireEditor::pageGeneral(SetupArea& a) {
     bool computer = draft_.setup.kind == game::PlayerKind::Computer;
     if (a.checkBox("##computer", {408, 362}, computer ? "Controlled by Computer" : "Controlled by Player", computer))
         draft_.setup.kind = computer ? game::PlayerKind::Computer : game::PlayerKind::Human;
+    // OpenSE4's own, when the game's mods offer computer players: who plays
+    // this computer empire (the game's choice unless it has its own).
+    if (offersPlayers_ && computer) {
+        a.heading({231, 413}, "Computer Player");
+        const std::optional<game::Controller> own = ownComputerPlayer(draft_.setup);
+        const std::string shown = own ? computerPlayerName(rules(), *own) : std::string("The game's choice");
+        a.text({406, 413}, elided(shown, a.px(155)));   // the body face is the window's
+        script::reportItem("Computer player: " + shown, a.at({406, 408}), a.at({561, 427}));   // input scripts read it
+        if (a.dropButton("##computerplayer", {566, 408})) players_.open();
+    }
     a.heading({231, 389}, "Use Race Minister Style");
     bool raceStyle = draft_.setup.useRaceMinisterStyle;
     if (a.checkBox("##racestyle", {408, 386}, raceStyle ? "Using Race Style" : "Using Selected Style", raceStyle))

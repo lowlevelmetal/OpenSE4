@@ -276,7 +276,8 @@ jobs:
         run: cmake -DDIR=.deps -DBUILD=build/debug -P .github/scripts/fetchcontent_cache.cmake
 
       - name: Build the client
-        run: cmake --build --preset debug --target opense4
+        # and the dedicated server that some scripts' lobbies join (tools/run_input_tests.py, "# server:")
+        run: cmake --build --preset debug --target opense4 opense4-server
 
       - name: Play the input scripts on the test fixtures
         env:

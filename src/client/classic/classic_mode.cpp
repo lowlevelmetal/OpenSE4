@@ -2,6 +2,7 @@
 
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
+#include "client/classic/computer_players.hpp"
 #include "client/classic/lesson_audit.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/pointers.hpp"
@@ -699,6 +700,7 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
 }
 
 std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, const std::string& slug, bool chosen) {
+    forgetPlayerFailures();   // a new game: those of the one it replaces go
     const learn::Library& lib = learn_->library;
     const learn::Lesson* lesson = lib.lesson(kind, slug);
     const char* what = kind == learn::LessonKind::Tutorial ? "tutorial" : "training game";
@@ -742,6 +744,7 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
 }
 
 std::optional<std::string> ClassicMode::resumeLesson(learn::LessonKind kind, const std::string& slug) {
+    forgetPlayerFailures();
     const learn::Lesson* lesson = learn_->library.lesson(kind, slug);
     const std::optional<LessonPlace> place = lessonPlace(kind, slug);
     if (!lesson || !place) return startLesson(kind, slug);
@@ -807,6 +810,7 @@ void ClassicMode::keepLessonPlace() {
 
 void ClassicMode::quitToLearn(learn::LessonKind kind) {
     keepLessonPlace();
+    forgetPlayerFailures();   // the game's computer players' failures go with it
     screens_.clear();
     parentOf_.clear();
     lesson_.reset();
@@ -1239,6 +1243,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         // A game played with other mods: the data set changes only outside a
         // game, so this one ends and the front end says what the other needs
         // (and loads it with its mods when the mods folder has them).
+        forgetPlayerFailures();   // the game loaded replaces this one, with its computer players
         if (savedGameMods(file, *rules_, loadedMods())) {
             keepLessonPlace();
             screens_.clear();
@@ -1265,6 +1270,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (ui.requests.quitToIntro) {
         ui.requests.quitToIntro = false;
         keepLessonPlace();
+        forgetPlayerFailures();
         screens_.clear();
         parentOf_.clear();
         lesson_.reset();
