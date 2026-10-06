@@ -170,7 +170,7 @@ jobs:
   linux-armhf:
     name: Linux armhf / GCC release (QEMU)
     runs-on: ubuntu-26.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -356,7 +356,7 @@ jobs:
   windows-msvc:
     name: Windows / MSVC release (${{ matrix.name }})
     runs-on: ${{ matrix.image }}
-    timeout-minutes: 30
+    timeout-minutes: 60   # the SDK made these builds and their tests take about half an hour
     strategy:
       fail-fast: false
       matrix:
