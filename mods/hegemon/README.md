@@ -112,7 +112,8 @@ where hostile armed ships are believed to be or where we lost an unarmed ship in
 25 turns, and less the further it is; a sector that holds a
 hostile colony is left alone. Colony ships are built for the good targets, a few at a
 time, and each idle one takes the best target it can reach on the supply it has (a ship
-out of supply hardly moves), a tenth as willingly when the way there passes through such
+out of supply has one movement point a turn, which in simultaneous play the day
+counter's arithmetic never lets it use: spec 03 §6.3), a tenth as willingly when the way there passes through such
 a system; one with no target in reach refuels first. A colony ship on its way through a
 system where we just lost an unarmed ship, or that has not moved for four turns, chooses
 again. New planet surfaces to settle are researched for the planets they would open.
