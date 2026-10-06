@@ -11,6 +11,7 @@
 // players; otherwise something differs between platforms (the engine, or
 // the runtime: see docs/sdk/runtime.md "The same on every computer").
 
+#include "mod_fixture.hpp"
 #include "players_fixture.hpp"
 
 #include "game/serialize.hpp"
@@ -23,6 +24,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <format>
+#include <optional>
+#include <tuple>
 #include <span>
 #include <string>
 
@@ -116,33 +119,60 @@ TEST_CASE("sdk players golden: a turn-based game two script players play gives t
 // What a script empire whose player does nothing costs a turn: the session
 // (the interpreter, the package and the mod imported), the view built and
 // converted for each planning call, the requests. Against the same empire
-// played by nobody (a human without orders). Run it in a release build:
+// played by nobody (a human without orders). Two players that do nothing: one
+// written straight to the protocol (the fixture's Idle, with the stand-in
+// package), one written with OpenSE4's own package (it wraps the view). Run it
+// in a release build:
 //     OPENSE4_SDK_BENCH=1 ./opense4_tests -tc="sdk players bench*"
 TEST_CASE("sdk players bench: the cost of a script empire that does nothing" * doctest::skip(std::getenv("OPENSE4_SDK_BENCH") == nullptr)) {
-    InstalledPlayers installed;
     const Rules& r = test::engineRules();
     constexpr int kTurns = 30;
-    auto play = [&](bool script) {
+    test::ModDir bystander("bench", "test.bystander");
+    test::writeText(bystander.root / "mod.toml",
+              "[mod]\nid = \"test.bystander\"\nname = \"Bystander\"\nversion = \"1.0\"\napi = 1\n"
+              "[[ai.players]]\nname = \"Bystander\"\nmodule = \"bystander\"\nclass = \"Bystander\"\n");
+    bystander.file("ai/bystander.py", "from opense4 import ai\n\n\nclass Bystander(ai.Player):\n"
+                                      "    def politics(self, view, orders):\n        pass\n\n"
+                                      "    def orders(self, view, orders):\n        pass\n\n"
+                                      "    def economy(self, view, orders):\n        pass\n");
+    auto play = [&](std::optional<Controller> player) {
         GameState s = playersGame(51, true, {Controller{}, Controller{}, Controller{}, Controller{}});
-        if (script) s.empire(EmpireId{1u}).controller = scriptPlayer("Idle");
+        if (player) s.empire(EmpireId{1u}).controller = *player;
         else s.empire(EmpireId{1u}).kind = PlayerKind::Human;
         TurnOptions o;
         o.aiForMissing = false;
-        for (int t = 0; t < 3; ++t) processTurn(r, s, {}, o);   // past the first turn's caches
+        for (int t = 0; t < 3; ++t) processTurn(r, s, {}, o);   // past the first turns' caches
         const auto start = std::chrono::steady_clock::now();
         for (int t = 0; t < kTurns; ++t) processTurn(r, s, {}, o);
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        CHECK(s.empire(EmpireId{1u}).script.failures == 0);
         return std::pair{ms / kTurns, s};
     };
-    const auto [nobody, quiet] = play(false);
-    const auto [idle, scripted] = play(true);
+    double nobody = 0, idle = 0, packaged = 0;
+    GameState scripted;
+    {
+        InstalledPlayers installed;
+        nobody = play(std::nullopt).first;
+        std::tie(idle, scripted) = play(scriptPlayer("Idle"));
+    }
+    {
+        sdk::PlayerSetup setup;
+        setup.mods.push_back(bystander.open());
+        InstalledPlayers installed(std::move(setup), true);
+        Controller c;
+        c.kind = Controller::Kind::Script;
+        c.mod = "test.bystander";
+        c.player = "Bystander";
+        packaged = play(c).first;
+    }
     // The view alone, three times a turn, as the planning calls build it.
     const auto start = std::chrono::steady_clock::now();
     size_t nodes = 0;
     for (int t = 0; t < kTurns * 3; ++t) nodes += sdk::buildView(r, scripted, EmpireId{1u}).size();
     const double view = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / kTurns;
-    MESSAGE(std::format("a turn: {:.3f} ms with the empire played by nobody, {:.3f} ms by an idle script player: {:.3f} ms more; "
-                        "of it {:.3f} ms building its three views ({} galaxy systems, {} vehicles)",
-                        nobody, idle, idle - nobody, view, scripted.galaxy.systems.size(), scripted.vehicles.size()));
+    MESSAGE(std::format("a turn: {:.3f} ms with the empire played by nobody; {:.3f} ms more with a player straight to the protocol, "
+                        "{:.3f} ms more with one written with the opense4 package; of it {:.3f} ms building its three views "
+                        "({} systems, {} vehicles)",
+                        nobody, idle - nobody, packaged - nobody, view, scripted.galaxy.systems.size(), scripted.vehicles.size()));
     CHECK(nodes > 0);
 }
