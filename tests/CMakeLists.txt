@@ -181,3 +181,13 @@ opense4_copy_runtime_dlls(opense4_tests)
 opense4_windows_manifest(opense4_tests)
 
 add_test(NAME opense4_tests COMMAND opense4_tests)
+
+# Headless games between computer players on the installed data set, with
+# statistics (mods/hegemon/README.md, "Evaluation"); a stand-in until the SDK's
+# arena.
+add_executable(opense4-ai-eval tools/ai_eval.cpp)
+target_link_libraries(opense4-ai-eval PRIVATE opense4_sdk opense4_script opense4_mods opense4_game Threads::Threads opense4_warnings)
+set_target_properties(opense4-ai-eval PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(opense4-ai-eval PRIVATE -Wno-maybe-uninitialized)
+endif()
