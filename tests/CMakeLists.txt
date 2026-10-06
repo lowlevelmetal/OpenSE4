@@ -95,6 +95,7 @@ add_executable(opense4_tests
     sdk/test_sdk_client_players.cpp
     sdk/test_sdk_codec.cpp
     sdk/test_sdk_docs.cpp
+    sdk/test_sdk_guide.cpp
     sdk/test_sdk_player_setup.cpp
     sdk/test_sdk_players.cpp
     sdk/test_sdk_players_golden.cpp
