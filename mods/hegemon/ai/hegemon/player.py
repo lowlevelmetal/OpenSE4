@@ -135,8 +135,20 @@ class Hegemon(ai.Player):
         w = self._setup(view)
         # Meeting others after a warp must not clear our orders: our plans decide.
         st = w.my["settings"]
-        if st["clear_orders_on_encounter"] != "never":
-            orders.add({"kind": "set_encounter_options", "clear_orders_on_encounter": "never"})
+        if st["clear_orders_on_encounter"] != "never" or not st["avoid_tagged_minefields"]:
+            orders.add({"kind": "set_encounter_options", "clear_orders_on_encounter": "never", "avoid_tagged_minefields": True})
+        # Sectors where mines struck our ships are tagged, so routes go around them (the
+        # combat log names them "Mines at ...", as the classic AI reads them too).
+        tagged = set()
+        for t in w.my["tagged_minefields"] or []:
+            tagged.add((t["system"], t["x"], t["y"]))
+        for e in w.d.get("log") or []:
+            loc = e["location"]
+            if e["category"] == "combat" and e["title"].startswith("Mines at ") and loc is not None:
+                key = (loc["system"], loc["x"], loc["y"])
+                if key not in tagged:
+                    tagged.add(key)
+                    orders.add({"kind": "tag_minefield", "location": {"system": key[0], "x": key[1], "y": key[2]}})
         roles = self.my_roles(w)
         mine = set()
         # Colony ships to the best targets.
@@ -221,8 +233,9 @@ class Hegemon(ai.Player):
         inv = Invasion(w, self.memory, roles, book, mil)
         orders.extend(inv.plan(strategy.phase in ("arm", "war")))
         if DEBUG and (roles.get("trooper") or inv.commands or book.design_id("troop") is not None):
-            self.log("T%d INVADE troop=%s ready=%s transports=%d cmds=%s mem=%s" % (
-                w.turn, book.design_id("troop"), mil.troops_ready, len(roles.get("trooper", [])),
+            self.log("T%d INVADE troop=%s ready=%s transports=%s cmds=%s mem=%s" % (
+                w.turn, book.design_id("troop"), mil.troops_ready,
+                [(v["id"], v["location"], v["supply"], v["fleet"], [(o["kind"], o["object"]) for o in v["orders"]]) for v in roles.get("trooper", [])],
                 [(c["kind"], c.get("vehicle"), [o["kind"] for o in c.get("orders", [])]) for c in inv.commands][:6], inv.inv))
         for oid, text in mil.notes:
             self.note(oid, text, kind="object")
@@ -375,7 +388,16 @@ class Hegemon(ai.Player):
                 theirs.add(pa, ph)
                 planets += 1
         if not armed:
-            return theirs.attack <= 0 and planets == 0
+            if theirs.attack <= 0 and planets == 0:
+                return True
+            # Our warships already there and winning: transports follow them in.
+            present = Force()
+            for v in w.my_vehicles:
+                loc = v["location"]
+                if loc["system"] == system and loc["x"] == x and loc["y"] == y and v["id"] not in question.vehicle_ids:
+                    a, h = design_strength(w.figures(v["design"]))
+                    present.add(a, h)
+            return present.attack > 0 and present.beats(theirs, 1.5)
         return ours.beats(theirs, 0.8)
 
     def battle_round(self, battle, orders):

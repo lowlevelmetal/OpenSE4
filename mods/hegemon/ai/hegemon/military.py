@@ -38,6 +38,7 @@ class Military:
         self.tune = tune or {}
         self.commands = []
         self.notes = []
+        self.main_fleet = None
         fm = mem.get("fleets")
         if not isinstance(fm, dict):
             fm = {}
@@ -245,6 +246,7 @@ class Military:
                 members.extend(gm)
         fleets = [x for x in fleets if x[0] not in merged]
         main = fleets[0] if fleets else None
+        self.main_fleet = main[0] if main is not None else None
         main_loc = main[1]["location"] if main is not None else None
         # Loose warships gather: at the rally they join a fleet there or form one.
         at_rally = []

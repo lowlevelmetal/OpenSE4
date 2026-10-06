@@ -14,6 +14,7 @@ from .intel import design_strength
 MILITIA_ATTACK = 10
 MILITIA_HP = 30
 MILITIA_PER = 20
+INVADE_WAIT = 8     # turns a transport may take to get in before it goes back
 
 
 def troop_power(fig):
@@ -99,6 +100,23 @@ class Invasion:
             if d["owner"] == w.me and d["figures"] is not None and d["figures"]["vehicle_type"] == "troop":
                 troop_ids.add(d["id"])
         transports = [v for v in self.roles.get("trooper", []) if v["fleet"] is None]
+        # Loaded transports sail with the main fleet, so they are in its battles; empty
+        # ones leave it and go back to reload.
+        main = w.fleets.get(self.mil.main_fleet) if self.mil.main_fleet is not None else None
+        for v in self.roles.get("trooper", []):
+            if v["fleet"] is not None and self.troops_aboard(v, troop_ids) == 0:
+                self.commands.append({"kind": "leave_fleet", "vehicle": v["id"]})
+                self.inv[str(v["id"])] = {"job": "stage", "turn": w.turn}
+        joined = set()
+        if main is not None and self.mil.fleet_mem.get(str(main["id"]), {}).get("task") not in ("repair", "resupply"):
+            fl = main["location"]
+            for v in transports:
+                here = v["location"]
+                if self.troops_aboard(v, troop_ids) > 0 and here["system"] == fl["system"] and here["x"] == fl["x"] and here["y"] == fl["y"]:
+                    self.commands.append({"kind": "join_fleet", "fleet": main["id"], "vehicle": v["id"]})
+                    self.inv[str(v["id"])] = {"job": "fleet", "turn": w.turn}
+                    joined.add(v["id"])
+        transports = [v for v in transports if v["id"] not in joined]
         stage = self.staging()
         # The colony the main fleet is striking.
         target = None
@@ -143,6 +161,11 @@ class Invasion:
             n = self.troops_aboard(v, troop_ids)
             key = str(v["id"])
             job = self.inv.get(key)
+            if v["orders"] and job is not None and job.get("job") == "invade" and w.turn - job.get("turn", 0) > INVADE_WAIT:
+                # Waiting outside the colony's sector too long (the fleet left): back to stage.
+                v = dict(v)
+                v["orders"] = []
+                self.inv[key] = job = {"job": "stage", "turn": w.turn}
             if v["orders"]:
                 continue
             if stage is not None:

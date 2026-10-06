@@ -184,7 +184,9 @@ merge into the strongest. Each turn each fleet gets one task:
 5. otherwise join the main fleet (in war) or hold at the rally point.
 
 Our orders are kept when we meet others after a warp (empire option). Groups that
-cannot win stay out of sectors with enemies (`enter_sector`).
+cannot win stay out of sectors with enemies (`enter_sector`); unarmed ones go in only
+where nothing armed is, or behind our own warships already there and winning. A sector
+where mines struck our ships is tagged as a minefield, so routes go around it.
 
 **Zero-upkeep defence.** Units pay no maintenance: every colony gets a weapon platform,
 exposed ones more, and exposed colonies build satellites and (with the technology) mines
@@ -192,10 +194,11 @@ and launch them into their sector.
 
 **Invasions.** In the arm and war phases, troop transports wait at a staging colony in
 the rally system, where troop units are built and loaded. Strikes prefer a colony the
-loaded troops can take (its population then need not be killed). When the main fleet is
-striking a colony and the transports carry enough troops for its militia (Lanchester
-again, with ground combat's militia per 20 million people), they go in, and the tactics
-land them once the planet's guns are silent. A taken colony keeps its facilities.
+loaded troops can take (its population then need not be killed): enough troops for its
+militia (Lanchester again, with ground combat's militia per 20 million people). Loaded
+transports join the main fleet at the rally point, so they are in its battles, where the
+tactics land them beside the colony once its guns are silent; empty ones leave the fleet
+and go back to reload. A taken colony keeps its facilities.
 
 ### Battles (`tactics.py`)
 
