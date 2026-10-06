@@ -150,7 +150,8 @@ std::unique_ptr<Screen> makeSettings(const ScreenArgs& args);
 // The Sound page (classic sound and music preferences), shared with the front end.
 void soundSettingsPage(float px);
 // The Modding page: OpenSE4's views for modders (the AI notes view), shared with the front end.
-void moddingSettingsPage(float px);
+// `rules`: the data set in use (its mods' languages and keys), or null.
+void moddingSettingsPage(float px, const game::Rules* rules = nullptr);
 // player_errors.cpp: Computer Player Errors, the failures of the game's computer players of mods.
 std::unique_ptr<Screen> makePlayerErrors(const ScreenArgs& args);
 

@@ -6,6 +6,7 @@
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy_internal.hpp"
+#include "game/hooks.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/turn.hpp"
@@ -810,6 +811,7 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
         for (const UnitStack& st : groupStacks(v)) s.design(st.design).lost += st.count;
         // No happiness event: only a ship destroyed by damage logs `Ship Lost in
         // System` and `Any Ship Lost` (confirmed: binary).
+        noteVehicleLost(ctx, v, "maintenance");
         v.count = 0;  // destroyed whole
     }
     s.removeDeadVehicles();

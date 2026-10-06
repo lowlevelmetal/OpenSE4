@@ -75,6 +75,24 @@ std::vector<uint32_t> hullsOfType(const game::Rules& r, const game::Empire& e, r
     return out;
 }
 
+std::vector<std::string> hullRuleLines(const ruleset::VehicleSize& h) {
+    std::vector<std::string> out;
+    if (h.mustHaveBridge) out.emplace_back("Needs a bridge");
+    if (h.canHaveAuxControl) out.emplace_back("Auxiliary control: at most 1");
+    if (h.minLifeSupport > 0) out.push_back(std::format("Life support: at least {}", h.minLifeSupport));
+    if (h.minCrewQuarters > 0) out.push_back(std::format("Crew quarters: at least {}", h.minCrewQuarters));
+    if (!h.usesEngines) {
+        out.emplace_back("Cannot carry engines");
+    } else {
+        out.push_back(h.maxEngines > 0 ? std::format("Engines: at most {}", h.maxEngines) : std::string("Engines: no limit"));
+        if (h.enginesPerMove > 1) out.push_back(std::format("{} engines per movement point", h.enginesPerMove));
+    }
+    if (h.minPercentFighterBays > 0) out.push_back(std::format("Fighter bays: at least {}% of the hull", h.minPercentFighterBays));
+    if (h.minPercentColonyModules > 0) out.push_back(std::format("Colony modules: at least {}% of the hull", h.minPercentColonyModules));
+    if (h.minPercentCargo > 0) out.push_back(std::format("Cargo space: at least {}% of the hull", h.minPercentCargo));
+    return out;
+}
+
 std::string designWindowTitle(ruleset::VehicleType t) { return std::string(ruleset::displayName(t)) + " Design"; }
 
 std::vector<uint32_t> designerComponents(const game::Rules& r, const game::Empire& e, uint32_t hull, std::string_view group, bool onlyLatest) {

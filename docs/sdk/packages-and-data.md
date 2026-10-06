@@ -16,14 +16,15 @@ was.
 |---|---|---|
 | `assets/` | Pictures, sounds, music, fonts and pointers, in the game folder's own layout | No: other players may have other pictures |
 | `data/` | Data patches (`*.toml`), replacement data files (`*.txt`), data generators (`*.py`), and AI tables, race files and design-name lists in the game folder's layout | Yes |
-| `ai/` | Computer players in Python ([python-api.md](python-api.md)) | Yes |
-| `scripts/` | Rules hooks in Python (a later step: not run yet) | Yes |
-| `ui/` | Interface extensions (a later step) | No |
-| `text/` | Strings and translations (a later step) | No |
+| `ai/` | Computer players in Python ([python-api.md](python-api.md), [ai-protocol.md](ai-protocol.md)) | Yes |
+| `scripts/` | Rules scripts in Python ([rules.md](rules.md)); `scenarios/` holds a rules mod's scenarios | Yes |
+| `ui/` | Interface extensions: buttons and pictures for the mod's orders, report panels, list columns, Empires pages, key bindings, and Python for their values ([interface.md](interface.md)) | No |
+| `text/` | The mod's names in other languages: `text/<language>.toml` ([interface.md](interface.md), "Text") | No |
 | `tests/` | The mod's own tests, for `opense4-sdk test` ([bots-and-arena.md](bots-and-arena.md)) | No |
 
 A mod that changes the game must be the same for every player of a game (see
-"Multiplayer and saved games" below). A mod with only pictures and sounds need not.
+"Multiplayer and saved games" below). A mod with only pictures, sounds, interface and text
+need not.
 
 ## A package
 
@@ -75,8 +76,12 @@ after = ["example.common-lib", "example.ui-tweaks"]
 - **load.after**: mods this one should load after when they are enabled. It is a hint,
   not a requirement.
 - **ai.players**: the computer players the mod offers, one `[[ai.players]]` table each
-  with `name`, `module` (under the mod's `ai/` folder), `class` and `description`
-  (docs/sdk/ai-protocol.md §1). A game chooses one as `<mod id>:<name>`.
+  with `name`, `module` (under the mod's `ai/` folder), `class`, `description` and
+  `classic_state` (true by default: the classic AI's bookkeeping runs for the player's
+  empires; docs/sdk/ai-protocol.md §1, §9). A game chooses one as `<mod id>:<name>`.
+- **rules**: what the mod's rules scripts declare: its game options, orders, events,
+  intelligence project types and victory conditions, and whether computer players see
+  its data ([rules.md](rules.md)).
 
 Unknown tables and keys are errors, so a typo does not pass unnoticed.
 
@@ -117,10 +122,11 @@ These stop a mod set from loading, with a message that names the mods:
 
 ### Identity
 
-Each mod has an **identity**: a hash of its manifest and every file outside `assets/`
-and `ui/`, with text files' line ends read as LF (so a mod saved on Windows has the
-same identity as on Linux). Changing a picture does not change it; changing a patch, a
-data file or the manifest does. `opense4-sdk info` and `check` print it.
+Each mod has an **identity**: a hash of its manifest and every file outside `assets/`,
+`ui/` and `text/`, with text files' line ends read as LF (so a mod saved on Windows has the
+same identity as on Linux). Changing a picture, a panel or a translation does not change
+it; changing a patch, a data file or the manifest does. `opense4-sdk info` and `check`
+print it.
 
 A game's mod set has an identity too: the ids, versions and identities of its mods that
 change the game, in load order. It is part of the data set's identity
@@ -433,18 +439,19 @@ combine = "max"          # how values combine over a list: "sum" (the default), 
 ```
 
 Any mod may then put the ability on components, facilities, hulls and system types
-like any other. A declared ability has no effect of its own yet: rules scripts (a later
-step) will give them effects, and read them through the engine's `game::Rules` (the value
-on a design, component, facility, hull, colony or system, combined as declared: the sum,
-the largest or the smallest `Val 1`). Two mods may declare the same name if they agree on
-how it combines. The game's own names need no declaring.
+like any other. A declared ability has no effect of its own: a mod's rules scripts give
+it one ([rules.md](rules.md), "Abilities"), reading its value on a vehicle, design,
+colony or system (`game.ability`, the engine's `game::Rules`: combined as declared, the
+sum, the largest or the smallest `Val 1`). Computer players see it in the rules view.
+Two mods may declare the same name if they agree on how it combines. The game's own
+names need no declaring.
 
 ## Data generators
 
 A generator (`data/*.py`) is a Python script that builds records, such as twelve levels
-of a weapon line. It runs when the data loads and returns an ordinary patch: a table
-shaped like a patch file. Generators need the script runtime, which a later step of the
-SDK brings; until then a mod with one is refused with a message that says so.
+of a weapon line. It runs when the data loads, in the sandbox, and its `generate()`
+returns an ordinary patch: a dict shaped like a patch file, applied in its file's turn
+among the mod's patches. [rules.md](rules.md), "Data generators", has the details.
 
 ## Choosing mods in the game
 
@@ -455,8 +462,9 @@ The title screen's `Mods` button (at the top right) opens the Mods window:
   click switches it.
 - Beside it is what the selected mod is: its name, id, version and authors, its
   description, what it holds (pictures and sounds, data, computer players, rules,
-  interface), whether it changes the game, what it needs and loads after, what is wrong
-  with the choice for it, and its identity.
+  interface, text), whether it changes the game, what it needs and loads after, what is
+  wrong with the choice for it, what of its interface and text files does not read, and its
+  identity.
 - `Enable` or `Disable`, `Move Up` and `Move Down` change the choice. Below, the window
   shows the load order it gives, or what keeps it from loading: a required mod that is
   off, a version outside the range, mods that require each other in a circle, mods the
@@ -512,6 +520,7 @@ The Game Menu's `Save for SE IV` writes a game as a saved game of the original (
 
 ```sh
 opense4-sdk new data mymod --id=me.mymod     # a new mod from a template: assets, data, ai or rules
+opense4-sdk new --from-example small-ai mine  # a copy of an example mod (docs/sdk/README.md)
 opense4-sdk check mymod                       # everything below, against your installed game
 opense4-sdk info mymod                        # what it is, holds and its identity
 opense4-sdk dump mymod other.zip --out=dump   # the data set with these mods, as data files
@@ -527,10 +536,12 @@ pictures its hulls name (BMP or PNG), component and facility picture numbers aga
 their sheets, that every picture and sound reads (BMP, PNG, OGG Vorbis, WAV), pictures
 smaller than the classic one of their kind or larger but not a whole multiple of it,
 formats the game cannot read, pictures no hull names, and files where the game does not
-look. It exits with 1 when it finds errors.
+look. It checks the interface and text files too ([interface.md](interface.md),
+"Checking"). It exits with 1 when it finds errors.
 
 `dump` writes the data folder's files and the AI tables as the game would read them
-with the mods, never into the installed game. `pack` leaves out hidden files and adds
+with the mods, never into the installed game; with no mod named, the installed game's own,
+to compare with. `pack` leaves out hidden files and adds
 `mod.identity`, which records the identity; a package whose files no longer match it
 gets a warning.
 

@@ -1,0 +1,73 @@
+[mod]
+id = "test.rules-fixture"
+name = "Rules fixture"
+version = "1.0.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "Rules hooks for the engine's tests: every hook noted, orders, an event, a project, a victory and a scenario."
+
+[rules]
+players_see_mod_data = true
+
+[[rules.options]]
+name = "bounty"
+label = "Bounty per order (minerals)"
+type = "int"
+min = 0
+max = 1000
+default = 25
+
+[[rules.options]]
+name = "beacons"
+label = "Beacon victory"
+type = "bool"
+default = false
+
+[[rules.orders]]
+name = "bounty"
+label = "Claim a bounty"
+applies_to = "self"
+[[rules.orders.args]]
+name = "times"
+type = "int"
+min = 1
+max = 5
+default = 1
+
+[[rules.orders]]
+name = "tag"
+label = "Tag a ship"
+applies_to = "vehicle"
+[[rules.orders.args]]
+name = "note"
+type = "text"
+[[rules.orders.args]]
+name = "about"
+type = "empire"
+
+[[rules.orders]]
+name = "refused"
+label = "Always refused"
+applies_to = "colony"
+
+[[rules.events]]
+name = "windfall"
+label = "Windfall"
+chance = 100
+target = "colony"
+first_turn = 2
+
+[[rules.intel_projects]]
+type = "Mod - Test Theft"
+description = "Takes a little of the target's minerals."
+
+[[rules.victory]]
+name = "beacons"
+label = "The beacons were lit."
+option = "beacons"
+
+[[ai.players]]
+name = "Bounty Hunter"
+module = "fixture_rules_player"
+class = "BountyHunter"
+description = "The classic AI, and the mod's bounty order every turn."

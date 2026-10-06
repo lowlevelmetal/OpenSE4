@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 from . import enums
 from ._values import (LocationLike, Ref, ResourcesLike, TargetLike, _bool, _enum, _enums, _id, _ids, _index,
                       _indices, _int, _int_or_text, _list_of_int, _list_of_text, _orders, _piece, _ref,
-                      _stellar, _struct, _structs, _text)
+                      _map, _stellar, _struct, _structs, _text)
 
 
 def move_to(location: Optional[LocationLike] = None) -> Dict[str, Any]:

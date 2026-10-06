@@ -130,6 +130,11 @@ Section "${APP_NAME}" SecGame
 
     CreateShortcut "$SMPROGRAMS\${APP_NAME}.lnk" "$INSTDIR\opense4.exe" "" "$INSTDIR\opense4.exe" 0
 
+    ; The modding SDK's guide, reference and example mods, beside opense4-sdk.exe.
+    SetOutPath "$INSTDIR\sdk"
+    File /r "${STAGE}\sdk\*.*"
+    SetOutPath "$INSTDIR"
+
     WriteRegStr HKLM "${SETTINGS_KEY}" "InstallDir" "$INSTDIR"
     WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayName" "${APP_NAME}"
     WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
@@ -168,6 +173,7 @@ Section "Uninstall"
     Delete "$INSTDIR\README.md"
     Delete "$INSTDIR\LICENSE"
     Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"
+    RMDir /r "$INSTDIR\sdk"
     Delete "$INSTDIR\uninstall.exe"
     RMDir "$INSTDIR"
 

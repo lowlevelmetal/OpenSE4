@@ -159,6 +159,7 @@ struct LiveStep {
 };
 
 class Players;
+class RulesHooks;
 
 struct TurnContext {
     const Rules& rules;
@@ -195,6 +196,10 @@ struct TurnContext {
     // income*, *Revenue*, confirmed: binary), by empire index; the economy
     // step takes them.
     std::vector<std::optional<ai::StartOfTurnFigures>> aiStartFigures;
+    // An empire a script or external player plays: the claims its
+    // start-of-turn step began with, which the classic orders plan with after
+    // its politics call rewrote them (game::classicPlan), by empire index.
+    std::vector<std::optional<std::vector<SystemId>>> aiStartTerritory;
 
     // Simultaneous games: called after each of the 30 movement days with the
     // state as that day left it (TurnOptions::movementDay; the client's
@@ -208,6 +213,9 @@ struct TurnContext {
     // The script and external players of this engine call (players.hpp); null:
     // every empire is played by the built-in AI.
     Players* players = nullptr;
+    // The rules hooks of the game's mods for this engine call (hooks.hpp);
+    // null: the game has none, and the classic rules alone apply.
+    RulesHooks* hooks = nullptr;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});

@@ -71,6 +71,15 @@ the sector holds several (a planet and its moons, say), a small window lists the
 you mean, or `Cancel`. Nothing is checked yet: a colony ship sent to a planet it cannot settle
 finds out when it arrives, and its orders are then cleared.
 
+**Mods' orders.** Mods can add orders of their own (see [Mods](settings#mods)). The strip then
+uses its one empty place, the last column but two at the top: it lights up as `Mod Orders`
+whenever your selection, or your empire itself, has such orders (in the 800 by 600 layout it is
+on the strip's last page). It opens a menu of them, each with the mod's picture and a
+description under the pointer. An order may ask questions first, one after another: a number, a
+choice from a list, some text, or a sector to click on the map. The order then works at once,
+like a cargo transfer; a refused one says why at the bottom of the system panel. Mods can also
+give their orders a key ([Settings](settings#controls)).
+
 In a turn-based game your orders are carried out as you give them, and the system panel follows
 your ships: when one jumps through a warp point, the panel shows the system it arrived in, with
 the warp point it came out of marked, and its report stays open. At the start of your turn each
@@ -128,6 +137,12 @@ leader matters for the formation), or **right-click** it to read its own report 
 
 You see less about other empires' ships and planets: never their cargo, and their components
 only if your scanners reach them (see [The galaxy](galaxy#scanning-enemy-ships)).
+
+When a mod adds **panels** about what a report shows, a small `MOD` button appears at the
+report's top right. It switches the report to the mods' panels: labelled values, which the mods
+work out from what your empire knows, and buttons for their orders. Press it again, or a tab, for
+the report's own page. The choice stays while you select other things. A panel that fails shows a
+small red box with the reason in its place; the game goes on.
 
 In the list of a sector, your own ships and colonies carry small **status icons**: for example
 low or no supplies, damaged, cloaked, mothballed, on sentry, repeating orders, under minister

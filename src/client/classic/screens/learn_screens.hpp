@@ -30,13 +30,24 @@ struct LearnHost {
     std::function<void(const std::string&)> openManual;
     // Follows a `window:` or `help:` link (games only).
     std::function<void(const learn::Link&)> follow;
+    // The scenarios of the game's rules mods (docs/sdk/rules.md "Scenarios"),
+    // on the Scenarios tab while there are any, and how one starts.
+    struct Scenario {
+        std::string mod, name;     // its mod's id, its file's name
+        std::string title, summary, modName;
+        std::vector<std::string> objectives;
+        std::vector<std::string> empires;   // "Lamplighters (you)", "Drifters (computer)"
+        std::string problem;       // why it cannot start (it does not read, no human empire)
+    };
+    std::vector<Scenario> scenarios;
+    std::function<void(const Scenario&)> startScenario;
 };
 
 class LearnView {
 public:
-    enum class Tab : uint8_t { Tutorials, Training, Manual };
+    enum class Tab : uint8_t { Tutorials, Training, Manual, Scenarios };
     explicit LearnView(Tab tab = Tab::Tutorials) : tab_(tab) {}
-    // "tutorials", "training", "manual"; anything else: Tutorials.
+    // "tutorials", "training", "manual", "scenarios"; anything else: Tutorials.
     static Tab tabFromName(std::string_view name);
 
     // Draws the window's content and buttons into `d`; returns false once it closes.
@@ -45,9 +56,10 @@ public:
 private:
     void lessons(const Painter& p, LearnHost& host, learn::LessonKind kind);
     void contents(const Painter& p, LearnHost& host);
+    void scenarios(const Painter& p, LearnHost& host);
 
     Tab tab_;
-    std::string selected_[3];   // per tab: a lesson slug, or "slug#anchor"
+    std::string selected_[4];   // per tab: a lesson slug, "slug#anchor", or "<mod>:<scenario>"
 };
 
 class ManualView {

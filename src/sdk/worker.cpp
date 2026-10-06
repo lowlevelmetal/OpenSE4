@@ -18,6 +18,11 @@
 
 namespace opense4::sdk {
 
+std::timed_mutex& interpreterSlot() {
+    static std::timed_mutex m;
+    return m;
+}
+
 struct Worker::Impl {
     std::mutex mutex;
     std::condition_variable wake;

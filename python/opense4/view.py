@@ -260,6 +260,25 @@ class View(_records.ViewFields):
         """The message with that id, or None."""
         return self.resolve("message", id_of(id, "message"))
 
+    # ---- mods' data ----
+
+    def mod_data_of(self, kind: str, id: Optional[int]) -> Dict[str, Any]:
+        """The mods' data on one of our things ("empire", "colony", "vehicle"), for mods that
+        let computer players see it (docs/sdk/rules.md, "Mod data"): {mod id: value}."""
+        my = self._d["my"]
+        data = my.get("mod_data") if my is not None else None
+        if not data or id is None:
+            return {}
+        out: Dict[str, Any] = {}
+        for mod, entry in data.items():
+            if kind == "empire":
+                value = entry.get("empire") if id == self._d["empire"] else None
+            else:
+                value = (entry.get(kind + "s" if kind != "colony" else "colonies") or {}).get(str(id))
+            if value is not None:
+                out[mod] = value
+        return out
+
     # ---- what is ours, what is theirs ----
 
     def _cached(self, key: str, make: Callable[[], Any]) -> Any:
@@ -495,6 +514,12 @@ class Empire(_records.EmpireFields):
     """An empire of the game, ours included."""
 
     @property
+    def mod_data(self) -> Any:
+        """Mods' data on it: in a rules hook, the mod's own (a dict to change); in a
+        computer player's view, {mod id: value} for its own empire (docs/sdk/rules.md)."""
+        return self._v.mod_data_of("empire", self._d["id"])
+
+    @property
     def treaty(self) -> Optional[str]:
         """Our treaty with it, or None for ourselves and empires we have not met."""
         r = self._d["relation"]
@@ -573,6 +598,12 @@ class Colony(_records.ColonyFields):
     """A colony. Its `id` is its planet's: commands name colonies by their planet."""
 
     @property
+    def mod_data(self) -> Any:
+        """Mods' data on it: in a rules hook, the mod's own (a dict to change); in a
+        computer player's view, {mod id: value} for its own colonies (docs/sdk/rules.md)."""
+        return self._v.mod_data_of("colony", self._d["planet"])
+
+    @property
     def id(self) -> int:
         """Its planet's id (the object id that commands name the colony by)."""
         return self._d["planet"]
@@ -597,6 +628,12 @@ class Colony(_records.ColonyFields):
 
 class Vehicle(_records.VehicleFields):
     """A ship, base or unit group."""
+
+    @property
+    def mod_data(self) -> Any:
+        """Mods' data on it: in a rules hook, the mod's own (a dict to change); in a
+        computer player's view, {mod id: value} for its own vehicles (docs/sdk/rules.md)."""
+        return self._v.mod_data_of("vehicle", self._d["id"])
 
     @property
     def system(self) -> Optional["System"]:

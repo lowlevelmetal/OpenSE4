@@ -1,4 +1,5 @@
 #include "game/log_picture.hpp"
+#include "game/hooks.hpp"
 #include "game/score.hpp"
 
 #include "game/design.hpp"
@@ -124,7 +125,10 @@ void checkDestruction(TurnContext& ctx, EmpireId id, bool lastTurnPlayed) {
     for (auto& c : s.colonies)
         if (c && c->owner == id) c.reset();
     for (Vehicle& v : s.vehicles)
-        if (v.owner == id) v.count = 0;
+        if (v.owner == id) {
+            noteVehicleLost(ctx, v, "empire_destroyed");
+            v.count = 0;
+        }
     s.removeDeadVehicles();
     const std::string text = destroyedText(s, id);
     for (const Empire& x : s.empires)

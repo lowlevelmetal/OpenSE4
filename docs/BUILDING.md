@@ -238,9 +238,11 @@ natively instead. Either way they come from the `dist-windows` preset:
 - `dist/OpenSE4-<version>-windows-x86_64-setup.exe`, the same programs as an installer
 - `dist/OpenSE4-<version>-SHA256SUMS.txt`
 
-Each package holds `opense4`, `opense4-server`, `opense4-datacheck` and `opense4-convert`, stripped,
-with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
-Font License) are built into the game, so nothing else needs to sit next to it.
+Each package holds `opense4`, `opense4-server`, `opense4-datacheck`, `opense4-convert` and `opense4-sdk`,
+stripped, with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans,
+SIL Open Font License) are built into the game, so nothing else needs to sit next to it. The modding SDK's
+documentation (`docs/sdk`) and example mods (`mods/examples`) go into `sdk/docs` and `sdk/examples` beside the
+programs, where `opense4-sdk new --from-example` finds the examples.
 The Linux package also holds the desktop entry, icons and AppStream metadata under
 `share/`, and `install-desktop-entry.sh`, which adds the game to the user's
 application list (see "Installing on Linux"). The script refuses to package a tagged
@@ -675,6 +677,10 @@ recorder is tested.
 | `computer-player-errors.script` | Quick Start's Computer Players with the fixture's Faulty, which fails when asked for its orders: the main window's notice after End Turn, Details and the Computer Player Errors window with the traceback, the next turn's notice and Dismiss |
 | `computer-player-battle.script` | A battle that stops End Turn (seed 23, as `battle-strategic.script`) with the fixture's Captain on the computer's side, fought in Strategic Combat with Captain giving its side's orders each combat turn; the turn going on with those answers and nothing failing; Captain's battle notes in the AI notes view |
 | `computer-players-host.script`, `computer-players-lobby.script` | Network games with computer players of a mod: the host form's choice and "Computer players see everything", the lobby's slot players changed by the host, Add Computer; and the lobby as a joining player sees it, against a dedicated host the runner starts (`# server:`, below) |
+| `mod-orders.script` | The mods' orders (docs/sdk/interface.md) on a training game of our own in `tests/input/learn-mods` with the fixture `ui-fixture`: the order strip's Mod Orders menu (the mod's picture), an order's choice of colour and its effect in the ship's Markings panel, the panel's button, the mod's key for an empire order with a number asked, the Beacons page counting it, a colony's order with a system picked on the map |
+| `mod-panels.script` | The fixture's report panels behind the MOD button (and its key), a failing panel's error box, the Mods tab or Mod Columns of Ships\Units, Planets, Colonies and Designs, the Empires window's Beacons page (by its key), the mods' keys on the Controls page with the conflict said, the mods' text in French |
+| `mod-setup.script`, `mod-scenario.script` | Game Setup's and Quick Start's Mod Options (a quick game begun with them shows the option in the fixture's page); the Learn window's Scenarios tab, a scenario for computer players only, and Start Game of the fixture's Frontier |
+| `mod-lobby-host.script`, `mod-lobby.script` | The network lobby's mod options: the host changes them in Mod Options and sets Computer Player Limits; a joining player sees them against a dedicated host (`tests/input/servers/mod-options.toml`) and cannot change them |
 
 Scripts marked `# ci: fixture-data` need nothing but our own content and also run on a game
 folder made from `tests/fixtures` (CI). Scripts marked `# layouts: both` also play at 800x600

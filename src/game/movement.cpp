@@ -27,6 +27,7 @@
 #include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
+#include "game/hooks.hpp"
 #include "game/players.hpp"
 #include "game/query.hpp"
 #include "game/scrap.hpp"
@@ -254,6 +255,14 @@ public:
             resolveCombat();
             recloak();
             endPursuits();
+            // The day's events, then the mods' movement_day hooks (hooks.hpp).
+            if (ctx_.hooks) {
+                deliverHooks(ctx_);
+                HookArgs a;
+                a.day = day;
+                runHook(ctx_, Hook::MovementDay, a);
+                deliverHooks(ctx_);
+            }
             if (ctx_.movementDay) ctx_.movementDay(day, s_);
         }
         // The ministers' Seek orders last the movement phase (spec 05 §7.5).
@@ -971,6 +980,14 @@ private:
             if (next.system != v->location.system) s_.arrived(*v);  // last on the new system's list
             v->location = next;
             fleetMemberMoved(s_, *v);  // the fleet's location goes with it (spec 03 §9)
+            if (ctx_.hooks && ctx_.hooks->wants(Hook::VehicleEnteredSector)) {
+                // A mod's event (hooks.hpp), delivered after the day or the run.
+                HookArgs a;
+                a.empire = v->owner;
+                a.vehicle = id;
+                a.where = next;
+                ctx_.hooks->run(ctx_, Hook::VehicleEnteredSector, a);
+            }
             v->movement = std::max(0, v->movement - 1);
             if (live_) ++steps_[id];
             // The depot check runs before the step's cost is taken (§7).

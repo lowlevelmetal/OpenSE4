@@ -24,8 +24,13 @@ name = "Admiral"                 # unique within the mod; shown in the setup scr
 module = "admiral"               # a module or package under the mod's ai/ folder
 class = "Admiral"                # an opense4.ai.Player subclass in that module
 description = "Plays the classic economy and its own war."
+classic_state = true             # the classic AI's bookkeeping runs for its empires (section 9)
 ```
 
+- **`classic_state`** (true by default) keeps the classic AI's own bookkeeping running for
+  the empires the player plays, so that `ai.builtin` and every callback the player leaves
+  out see the state the classic AI would see (section 9). A player that makes every
+  decision itself and never asks `ai.builtin` may set it to false to save the time.
 - **The name** may not hold `:`; module and class are Python names (the module's parts
   separated by dots). `opense4-sdk check` finds the module under `ai/` (`admiral.py`, or
   `admiral/__init__.py`), the class in it, files under `ai/` whose names Python cannot
@@ -80,7 +85,8 @@ description = "Plays the classic economy and its own war."
   interpreter runs on that thread, so the C stack the runtime needs is there whichever
   thread plays the turn. Several script empires share the interpreter; each has its own
   player object and memory. The interpreter is one per process: another session waits for
-  it.
+  it. A game with mods' rules scripts runs them in the same session and interpreter
+  ([rules.md](rules.md), "Sessions").
 - **The `Player` object** is made by the package's dispatcher from the `player` field of
   the empire's first request in the session, and kept until the session ends. Attributes
   set on `self` survive between requests within the session, and are lost after it; keep
@@ -226,9 +232,9 @@ for this moment). For external bots they are messages on the same connection
 |---|---|---|---|
 | `query` | `{name, args}` | A query of docs/sdk/view.md ("Queries"), evaluated now on the view's own state | 20,000 + 20 per value of the result |
 | `rules` | `{}` | The rules view (built once per session) | 5 per value |
-| `builtin` | `{call: "politics", "orders" or "economy", ministers: [names] or null, skip: [names]}` | The commands the classic ministers would give for this empire now, from the ministers named (null: all) less those skipped; the names are those of the `minister` enumeration (docs/sdk/commands.md; the AI_Strategies join counts as `design`'s). With every minister, exactly what the built-in AI plans from this state. The commands are not applied. | 2,000,000 + 20 per value of the result |
+| `builtin` | `{call: "politics", "orders" or "economy", ministers: [names] or null, skip: [names]}` | The commands the classic ministers would give for this empire now, from the ministers named (null: all) less those skipped; the names are those of the `minister` enumeration (docs/sdk/commands.md; the AI_Strategies join counts as `design`'s). They plan as the engine's own classic answer does (section 9): `politics` begins with the commands that set the movement options, systems to avoid and claims the classic AI writes directly (with the `politics` minister); `orders` plans with the claims and figures the empire's turn began with; `economy` with the units reserve, the colonization lists and those figures, as the classic economy step reads them. With every minister, exactly what the built-in AI plans from this state. The commands are not applied. | 2,000,000 + 20 per value of the result |
 | `builtin_answer` | `{call, args}` | The classic answer to `colony_type` (`args.planet`: the planet's id), `enter_sector` (true), `decloak` (true) or `battle_round` (null) | 20,000 |
-| `apply` | `{command}` | Applies one command now, as the call's own commands are, and returns `{ok, reason, changed, removed}`: what changed in the view since the request's (or the last apply's): for each list of records with ids (`colonies` by planet) the records added or changed (`changed`) and the ids gone (`removed`), and any other part that differs, whole. Planning calls only. | 50,000 + 5 per value of the new view + 20 per value of the result |
+| `apply` | `{command}` | Applies one command now, as the call's own commands are (a mod's order excepted: it is refused here, as its rules cannot run while the player's script does; give it with the call's commands), and returns `{ok, reason, changed, removed}`: what changed in the view since the request's (or the last apply's): for each list of records with ids (`colonies` by planet) the records added or changed (`changed`) and the ids gone (`removed`), and any other part that differs, whole. Planning calls only. | 50,000 + 5 per value of the new view + 20 per value of the result |
 
 **Budget:** each service counts its cost against the request's budget, as if the script had
 run that many bytecodes (`script::Interpreter::charge`), so asking cannot be used to escape
@@ -315,31 +321,49 @@ written (it was saved between two players' turns) is saved again then if any of 
 empires has an external player, so that processing the orders does not ask that player
 again.
 
-## 9. What still runs for an empire a player plays
+## 9. The classic AI's own steps for an empire a player plays
 
 For an empire its script or external player plays (`game::playedByController`), the
-built-in AI's own steps do not run:
+player answers the calls of section 3 in the classic ministers' place. Around those calls
+the built-in AI also keeps state of its own: what it remembers and works out between its
+decisions. Each of its steps is either **bookkeeping**, which changes only that state (the
+classic ministers read it, nothing else in the game does), or an **action**, which touches
+the game: other empires see it or the rules read it.
 
-- the AI state update (`ai::updateAiState`): the state machine, the demand lists forgotten
-  every ten turns, the AI_Settings movement options copied into the empire's options;
-- the political step (`ai::politicalStep`) and its marks (`ai::recordPoliticalStep`, the
-  turn-based politics mark): anger;
-- the territory claims (`ai::claimTerritory`);
-- the start-of-turn figures for the classic ministers (`ai::startOfTurnFigures`);
-- `ai::recordAiDecisions`' counters (turns since war, treaty age, attacks and spies
-  remembered) and its war declarations' anger;
-- `ai::rememberAiEvents`: the battles, spies and mine fields the AI remembers;
-- the classic ministers, except where they answer a request the player did not answer.
-  A player's own answer leaves the AI lists the classic economy step reads
-  (`TurnContext::aiColonyTargets`) and the units reserve as an empire whose ministers do
-  not act leaves them; a classic answer in its place uses and updates them as for any
-  computer player.
+- **Bookkeeping runs** for the player's empire as for a computer empire (unless the player
+  asks for none, below), so `ai.builtin` and the classic answer to every call the player
+  leaves out plan from the state the built-in AI would have. A player that overrides
+  nothing plays exactly the built-in AI's game: the SDK's tests play such a player beside
+  the built-in AI, turn by turn in both turn styles, and compare the whole state
+  (`tests/sdk/test_sdk_players_classic.cpp`).
+- **Actions are the player's.** What the built-in AI writes into a computer empire directly
+  is, for a player's empire, commands of the classic answer of the call where the built-in
+  AI does it; the player gives them, filters them or leaves them out.
 
-What applies to every computer player still does: the difficulty is assigned, the
-Computer Player Bonus applies to its income and construction, its groups take along
-others of its own with the same order as they act, the Ship Cloaking minister's rules
-apply unless the player says otherwise (`decloak`), and so does every rule of the game. The classic ministers that
-`builtin` runs for such an empire read its AI state as it was (none of it changes).
+| Step of the built-in AI | When | Kind | For an empire a player plays |
+|---|---|---|---|
+| The start-of-turn figures (`ai::startOfTurnFigures`): net income and revenue | First thing in the empire's start of turn | Bookkeeping | Worked out; the classic `orders` and `economy` answers plan with them |
+| The state update (`ai::updateAiState`): the demand lists and the systems to avoid or attack forgotten every ten turns, the AI state machine (state, turns in it, targets, staging, defended systems, the after-attack timer) | Start of turn | Bookkeeping | Runs |
+| The four AI_Settings movement options and the systems it agreed to leave copied into the empire's options (part of the state update) | Start of turn | Action: they decide how its ships move | Commands at the start of the classic `politics` answer (`set_encounter_options`, `set_system_flags` with `avoid`), only where the empire's options differ |
+| The political step (`ai::politicalStep`): anger toward every empire in contact, and its mark of what it counted | Start of turn | Bookkeeping (other players see anger only as the leader's mood in their Empires window) | Runs |
+| The claims (`ai::claimTerritory`): its colony systems and their neighbours | First thing in the Politics minister's run | Action: other empires see them, and their classic AIs read them | Commands of the classic `politics` answer, after the options (`set_system_flags` with `claim`); the Politics minister then plans on the empire as they leave it |
+| Accepted demands carried out half of the time, war decided without a declaration, demand-list entries used | The Politics minister | Actions | Already commands of the classic `politics` answer (`carry_out_demand`, `decide_war`, `use_demand_entry`) |
+| The colonization lists the Orders ministers build (spec 05 §7.2) | Before the `orders` call, on the state the `politics` call left | Bookkeeping (the economy step reads their targets) | Built whatever the player answers; the classic `orders` answer plans with the claims and figures the turn began with |
+| `ai::recordAiDecisions`: turns since war, treaty age, the attacks and spies noted for its demands (forgotten every ten turns), anger 100 toward an empire it declared war on | After the empire's orders (simultaneous: every empire's) | Bookkeeping | Runs, for the declarations the player sent too |
+| The economy step's reads and the units reserve: the colonization lists, the start figures, the reserve its Ship Construction minister leaves (spec 05 §7.5) | The `economy` call | Bookkeeping | The classic `economy` answer plans with them; whoever answers, the lists and figures are used up after the call and the reserve is left as the classic step leaves it |
+| `ai::rememberAiEvents`: battles fought and those in its territory, spies traced, mine fields met, its designs that fought | End of the game turn | Bookkeeping | Runs |
+| The difficulty, the Computer Player Bonus on income and construction, its groups taking along others of its own with the same order, the Ship Cloaking minister (unless the player answers `decloak`), every rule of the game | | Rules | Apply, as to every computer player |
+
+**`classic_state = false`.** A player whose `[[ai.players]]` entry sets it (section 1) gets
+none of the bookkeeping: its empire's classic AI state stays as it was (the difficulty
+excepted), and the classic ministers that `builtin` runs, or that answer a call the player
+leaves out or fails, read it as it was. The classic `orders` answer then plans without
+start figures, a classic answer sets and uses the lists and the units reserve as for any
+computer player, and a player's own answer leaves them as an empire whose ministers do not
+act leaves them. The actions are commands of the classic answers either way. It saves the
+bookkeeping's time for a player that makes every decision itself: about 1.4 ms a turn per
+empire in a debug build on the test fixtures' 14-system quadrant (the `sdk players bench`
+test), more on larger maps. External bots keep the classic state.
 
 ## 10. The connection (external bots)
 

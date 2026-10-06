@@ -3,6 +3,7 @@
 // column tabs. Left-click a row to select it in the main window, right-click
 // for its report.
 
+#include "client/classic/mod_ui.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/list_widgets.hpp"
@@ -83,7 +84,11 @@ public:
 
         d.beginContent(576);  // the list spans to x 575, as every list of the original
         statistics(ui);
-        table(ui);
+        // The mods' columns (docs/sdk/interface.md "List columns") on a tab of their own.
+        const bool modColumns = !modColumnsFor(ui, sdk::UiList::Ships).empty();
+        if (!modColumns) modsTab_ = false;
+        if (modsTab_) modTable(ui);
+        else table(ui);
 
         d.beginButtons();
         static constexpr std::array<std::pair<ShipsTab, const char*>, 5> kTabs{{{ShipsTab::General, "General"},
@@ -93,11 +98,20 @@ public:
                                                                                {ShipsTab::Maintenance, "Maintenance"}}};
         static constexpr std::array<const char*, 5> kTabIds{{"general", "orders", "cargo", "fleet", "maintenance"}};
         for (size_t i = 0; i < kTabs.size(); ++i) {
-            if (d.tab(kTabs[i].second, tab_ == kTabs[i].first)) tab_ = kTabs[i].first;
-            ui.tagTab(kTabIds[i], tab_ == kTabs[i].first);
+            if (d.tab(kTabs[i].second, !modsTab_ && tab_ == kTabs[i].first)) {
+                tab_ = kTabs[i].first;
+                modsTab_ = false;
+            }
+            ui.tagTab(kTabIds[i], !modsTab_ && tab_ == kTabs[i].first);
         }
-        // The Show check boxes in slots 11-13, just above Close (observed, spec 07 session 3).
-        for (int gap = 0; gap < 5; ++gap) d.spacer();
+        // The Show check boxes in slots 11-13, just above Close (observed, spec 07
+        // session 3); the mods' tab, when they add columns, in the first free slot.
+        int gaps = 5;
+        if (modColumns) {
+            if (d.tab("Mods", modsTab_)) modsTab_ = true;
+            --gaps;
+        }
+        for (int gap = 0; gap < gaps; ++gap) d.spacer();
         if (d.check("Show Ships", ships_)) ships_ = !ships_;
         if (d.check("Show Units", units_)) units_ = !units_;
         if (d.check("Show Fleets", fleets_)) fleets_ = !fleets_;
@@ -403,6 +417,29 @@ private:
         ImGui::PopID();
     }
 
+    // The Mods tab: the rows with the mods' columns.
+    void modTable(UiContext& ui) {
+        ImGui::SetCursorPos(ui.size({0, 197}));
+        std::vector<ModListRow> rows;
+        for (const ListRow& row : rows_)
+            rows.push_back({row.name, row.picture,
+                            row.vehicle.valid() ? sdk::UiThing{"vehicle", static_cast<int64_t>(row.vehicle.value)}
+                                                : sdk::UiThing{"fleet", static_cast<int64_t>(row.fleet.value)}});
+        const ModListClick click = drawModList(ui, "##shipsmods", rows, sdk::UiList::Ships, ImVec2(0, listRowsHeight(ui) + ui.px(20)));
+        if (click.hovered) hovered_ = rows_[*click.hovered].system;
+        if (click.left && !viewOnly_) {
+            const ListRow& row = rows_[*click.left];
+            if (row.vehicle.valid()) selected_ = row.vehicle;
+            else if (const game::Fleet* f = ui.state().fleet(row.fleet); f && !f->members.empty())
+                selected_ = f->leader.valid() ? f->leader : f->members.front();
+        }
+        if (click.right) {
+            const ListRow& row = rows_[*click.right];
+            if (row.vehicle.valid()) report_.vehicle(row.vehicle);
+            else report_.fleet(row.fleet);
+        }
+    }
+
     struct Totals {
         int ships = 0, units = 0, fleets = 0;
         game::Resources maintenance;
@@ -411,6 +448,7 @@ private:
 
     bool viewOnly_ = false;
     ShipsTab tab_ = ShipsTab::General;
+    bool modsTab_ = false;   // the mods' columns shown (OpenSE4's own; not kept with the empire)
     bool ships_ = true, units_ = true, fleets_ = true;
     uint64_t cacheKey_ = 0;
     bool built_ = false;

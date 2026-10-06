@@ -131,7 +131,7 @@ read_doc(DOCS / "commands.md", SECTIONS, QUERIES)
 ENUMS = {n: s for n, s in SECTIONS.items() if s.is_enum}
 STRUCTS = {n: s for n, s in SECTIONS.items() if not s.is_enum}
 COMMAND_GROUPS = ("Vehicles and fleets", "Construction", "Colonies", "Designs", "Research and intelligence", "Diplomacy",
-                  "Empire settings and lists")
+                  "Empire settings and lists", "Mod orders")
 COMMANDS = {n: s for n, s in STRUCTS.items() if s.file == "commands.md" and s.group in COMMAND_GROUPS}
 COMMAND_TYPES = {n: s for n, s in STRUCTS.items()
                  if s.file == "commands.md" and (s.group == "Types the commands carry" or n == "square") and n not in COMMANDS}
@@ -209,6 +209,8 @@ def parse_type(t: str) -> Type:
         return Type(t, "", is_list, nullable, item_nullable)
     if t == "int or text":
         return Type("any", "", is_list, nullable, item_nullable)
+    if t == "map":
+        return Type("map", "", is_list, nullable, item_nullable)
     if t == "command":
         return Type("command", "", is_list, nullable, item_nullable)
     words = t.split(" ")
@@ -234,6 +236,8 @@ def py_hint(ty: Type, final: bool = True) -> str:
         h = "str"
     elif ty.base == "any":
         h = "Union[int, str]"
+    elif ty.base == "map":
+        h = "Dict[str, Any]"
     elif ty.base == "command":
         h = "Dict[str, Any]"
     elif ty.base == "id":
@@ -443,6 +447,8 @@ def default_of(section: str, row: Row) -> object:
         return {r.name: default_of(ty.name, r) for r in STRUCTS[ty.name].rows}
     if ty.base == "any":
         return 0
+    if ty.base == "map":
+        return {}
     raise SystemExit(f"no default for {section}.{row.name}")
 
 
@@ -476,6 +482,8 @@ def converter(section: str, row: Row, value: str) -> str:
         return f"_struct({value}, {ty.name!r}, {where!r}{', True' if ty.nullable else ''})"
     if ty.base == "any":
         return f"_int_or_text({value}, {where!r})"
+    if ty.base == "map":
+        return f"_map({value}, {where!r}{', True' if ty.nullable else ''})"
     raise SystemExit(f"no converter for {where}")
 
 
@@ -501,18 +509,20 @@ def param_hint(row: Row, section: str = "") -> str:
     elif ty.base == "struct":
         h = {"location": "LocationLike", "resources": "ResourcesLike", "queue_target": "TargetLike",
              "order": "Dict[str, Any]"}.get(ty.name, "Dict[str, Any]")
+    elif ty.base == "map":
+        h = "Dict[str, Any]"
     else:
         h = "Any"
     if ty.is_list:
         h = f"Sequence[{h}]"
-    if ty.base == "struct" or ty.is_list or ty.nullable or ty.base in ("id", "ref"):
+    if ty.base in ("struct", "map") or ty.is_list or ty.nullable or ty.base in ("id", "ref"):
         h = f"Optional[{h}]"
     return h
 
 
 def signature_default(section: str, row: Row) -> str:
     ty = parse_type(row.type)
-    if ty.base == "struct" or ty.is_list or ty.nullable or ty.base in ("id", "ref"):
+    if ty.base in ("struct", "map") or ty.is_list or ty.nullable or ty.base in ("id", "ref"):
         return "None"
     return repr(default_of(section, row))
 
@@ -573,7 +583,7 @@ CONSTRUCTOR_IMPORTS = ("from __future__ import annotations\n\n"
                        "from . import enums\n"
                        "from ._values import (LocationLike, Ref, ResourcesLike, TargetLike, _bool, _enum, _enums, _id, _ids, _index,\n"
                        "                      _indices, _int, _int_or_text, _list_of_int, _list_of_text, _orders, _piece, _ref,\n"
-                       "                      _stellar, _struct, _structs, _text)\n\n")
+                       "                      _map, _stellar, _struct, _structs, _text)\n\n")
 
 
 def gen_commands() -> str:

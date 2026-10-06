@@ -7,6 +7,7 @@
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/events.hpp"
+#include "game/hooks.hpp"
 #include "game/movement.hpp"
 #include "game/players.hpp"
 #include "game/score.hpp"
@@ -25,31 +26,30 @@ namespace opense4::game {
 using detail::Control;
 using detail::living;
 using detail::keepStartFigures;
+using detail::keepStartTerritory;
 using detail::ministersPlan;
 using detail::withBattles;
 
 namespace {
 
 // Pending mood events live in the state between calls (spec 02 §4).
-// The call's script and external players (players.hpp) live as long as it.
+// The call's script and external players (players.hpp) and the rules hooks
+// of the game's mods (hooks.hpp) live as long as it.
 class LiveContext {
 public:
-    LiveContext(const Rules& r, GameState& s, TurnContext::Battles* battles = nullptr) : ctx{r, s, {}, {}, {}} {
+    LiveContext(const Rules& r, GameState& s, TurnContext::Battles* battles = nullptr) : ctx{r, s, {}, {}, {}}, session_(ctx) {
         ctx.moodEvents = std::move(s.pendingMood);
         s.pendingMood.clear();
         ctx.battles = battles;
-        players_ = makePlayers(r, s);
-        ctx.players = players_.get();
     }
     ~LiveContext() { ctx.state.pendingMood = std::move(ctx.moodEvents); }
     LiveContext(const LiveContext&) = delete;
     LiveContext& operator=(const LiveContext&) = delete;
 
-    // The end of the call: the players' session ends (docs/sdk/ai-protocol.md §2).
+    // The end of the call: the events still waiting are delivered and the
+    // players' session ends (docs/sdk/ai-protocol.md §2).
     TurnResult result() {
-        if (players_) players_->endSession(ctx);
-        ctx.players = nullptr;
-        players_.reset();
+        session_.end();
         pruneJournal(ctx.state);
         return TurnResult{std::move(ctx.rejected), std::move(questions), {}, std::move(ctx.records), std::move(ctx.messages), std::move(ctx.liveSteps)};
     }
@@ -58,7 +58,7 @@ public:
     std::vector<EntryQuestion> questions;
 
 private:
-    std::unique_ptr<Players> players_;
+    CallSession session_;
 };
 
 EmpireId firstLivingFrom(const GameState& s, size_t index) {
@@ -120,6 +120,16 @@ void carryOut(LiveContext& lc, const movement::LiveMove& move) {
     GameState& s = ctx.state;
     addQuestions(lc, movement::runLive(ctx, move));
     s.removeDeadVehicles();
+    // The events of the run, then the mods' movement_day hooks: a live run
+    // stands for a turn-based game's movement day (day 0, the moving empire).
+    if (ctx.hooks) {
+        deliverHooks(ctx);
+        HookArgs a;
+        a.empire = move.empire;
+        runHook(ctx, Hook::MovementDay, a);
+        deliverHooks(ctx);
+        s.removeDeadVehicles();
+    }
     pruneQuestions(s);
     sight::updateKnowledge(ctx.rules, s);
 }
@@ -297,27 +307,35 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     // confirmed: binary). The Politics minister rewrites the claims first
     // thing in its run; the state update and the ministers after it use
     // those of the previous turn (spec 05 §7.2).
-    // An empire a script or external player plays (players.hpp): the
-    // built-in AI's own steps do not run, and its player's `politics` and
-    // `orders` calls give the orders in the ministers' place (the classic
-    // ministers only when it gives no answer).
+    // An empire a script or external player plays (players.hpp): its
+    // player's `politics` and `orders` calls give the orders in the
+    // ministers' place (the classic ministers only when it gives no answer).
+    // Unless it asked for none, the classic AI's own steps run around them as
+    // for a computer empire; its options and claims are commands of the
+    // classic politics answer instead (docs/sdk/ai-protocol.md §9).
     const bool player = playedByController(ctx, e);
+    const bool own = classicStateKept(ctx, e);
     std::optional<ai::StartOfTurnFigures> figures;
-    if (!player && ministersPlan(s, e, control)) figures = ai::startOfTurnFigures(r, s, e);
-    if (!player) ai::updateAiState(ctx, e);
+    if (own && ministersPlan(s, e, control)) figures = ai::startOfTurnFigures(r, s, e);
+    if (own) ai::updateAiState(ctx, e, !player);
     const std::vector<SystemId> territory = s.empire(e).claimedSystems;
-    if (control != Control::Absent && !player) {
+    if (control != Control::Absent && own) {
         ai::politicalStep(ctx, e, politicalWindow(s, e));
         markPoliticalStep(s, e);
-        ai::claimTerritory(ctx, e);
+        if (!player) ai::claimTerritory(ctx, e);
     }
     if (player) {
-        playerPlans(lc, e, PlanCall::Politics, false, [&] { giveOrders(lc, e, ai::planPoliticsOrders(r, s, e)); });
+        keepStartFigures(ctx, e, figures);
+        keepStartTerritory(ctx, e, territory);
+        playerPlans(lc, e, PlanCall::Politics, false, [&] { giveOrders(lc, e, classicPlan(ctx, e, PlanCall::Politics)); });
+        std::optional<std::vector<ObjectId>> lists;
+        if (own) lists = ai::colonyTargetsNow(r, s, e, &territory);
         playerPlans(lc, e, PlanCall::Orders, false, [&] {
             std::vector<ObjectId> targets;
-            giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets));
-            ctx.aiColonyTargets = std::move(targets);
+            giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets, figures ? &*figures : nullptr));
+            if (!own) ctx.aiColonyTargets = std::move(targets);
         });
+        if (own) ctx.aiColonyTargets = std::move(lists);   // the step's lists stay in place for its economy step
     } else if (ministersPlan(s, e, control)) {
         giveOrders(lc, e, ai::planPoliticsOrders(r, s, e));
         std::vector<ObjectId> targets;
@@ -350,13 +368,25 @@ void endGameTurn(TurnContext& ctx) {
     if (date % 10 == 0) movement::purgeObsoleteDesigns(ctx);
     diplomacy::checkContacts(ctx);
     score::checkVictory(ctx, date);
+    // The mods' check_victory hooks, victory conditions and scenario
+    // objectives; their events; then the mods' events after the classic ones.
+    if (!s.gameOver) runHook(ctx, Hook::CheckVictory);
+    deliverHooks(ctx);
     movement::runStellarHazards(ctx);
     {
         Rng rng = s.rng.fork();
         events::fireDueEvents(ctx, rng);
         events::rollNewEvent(ctx, date, rng);
+        if (ctx.hooks) ctx.hooks->eventStep(ctx, rng);
     }
+    deliverHooks(ctx);
     s.removeDeadVehicles();
+    // The mods' turn_end hooks.
+    if (ctx.hooks) {
+        runHook(ctx, Hook::TurnEnd);
+        deliverHooks(ctx);
+        s.removeDeadVehicles();
+    }
     // Per-turn flags clear once per game turn, not at each player's turn (inferred).
     for (Empire& e : s.empires)
         for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
@@ -386,6 +416,15 @@ void passTurn(TurnContext& ctx, EmpireId from) {
 void finishPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     TurnContext& ctx = lc.ctx;
     GameState& s = ctx.state;
+    // The mods' orders_applied hooks: the player's orders for its turn are
+    // all carried out (a turn-based game's counterpart of a simultaneous
+    // turn's orders, for one empire).
+    if (ctx.hooks) {
+        HookArgs a;
+        a.empire = e;
+        runHook(ctx, Hook::OrdersApplied, a);
+        deliverHooks(ctx);
+    }
     empireEndOfTurn(ctx, e, ministersPlan(s, e, control));
     s.removeDeadVehicles();
     // A human defeated at the end of its turn has played its last turn (spec
@@ -396,12 +435,21 @@ void finishPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     passTurn(ctx, e);
 }
 
-// Starts the next game turn when none is in progress. False when nobody is alive.
-bool ensureRound(GameState& s) {
+// Starts the next game turn when none is in progress, with the mods'
+// turn_start hooks. False when nobody is alive.
+bool ensureRound(TurnContext& ctx) {
+    GameState& s = ctx.state;
     if (s.playerTurn.empire.valid()) return true;
     const EmpireId first = firstLivingFrom(s, 0);
     if (!first.valid()) return false;
     s.playerTurn = PlayerTurn{first, false, {}, {}};
+    if (ctx.hooks) {
+        runHook(ctx, Hook::TurnStart);
+        deliverHooks(ctx);
+        // A hook may have ended the first empire.
+        if (!living(s, s.playerTurn.empire)) s.playerTurn.empire = firstLivingFrom(s, 0);
+        if (!s.playerTurn.empire.valid()) return false;
+    }
     return true;
 }
 
@@ -425,8 +473,8 @@ void computerTurn(LiveContext& lc, EmpireId e, Control control) {
         // rest of the turn now, politics first, and its orders are carried
         // out at once (docs/sdk/ai-protocol.md; the classic ministers when it
         // gives no answer).
-        playerPlans(lc, e, PlanCall::Politics, true, [&] { applyBatch(lc, e, ai::planPoliticsOrders(ctx.rules, s, e)); });
-        playerPlans(lc, e, PlanCall::Orders, true, [&] { applyBatch(lc, e, ai::planOrdersAfterPolitics(ctx.rules, s, e)); });
+        playerPlans(lc, e, PlanCall::Politics, true, [&] { applyBatch(lc, e, classicPlan(ctx, e, PlanCall::Politics)); });
+        playerPlans(lc, e, PlanCall::Orders, true, [&] { applyBatch(lc, e, classicPlan(ctx, e, PlanCall::Orders)); });
     } else if (control != Control::Computer && ministersPlan(s, e, control)) {
         // Taking over a human's turn in progress: the ministers plan the rest
         // of it now, the Politics minister first, as at a start of turn, and
@@ -449,7 +497,7 @@ void resume(LiveContext& lc, const LiveOptions& options) {
             // An all-computer game (or one whose humans the computer plays
             // for now) plays one game turn per call.
             if (turnEnded && !anyHumanToPlay(s, options)) return;
-            if (!ensureRound(s)) return;
+            if (!ensureRound(lc.ctx)) return;
         }
         const EmpireId e = s.playerTurn.empire;
         if (!living(s, e)) {
@@ -582,7 +630,7 @@ TurnResult playTurnBasedTurn(const Rules& r, GameState& s, std::span<const Empir
         }
         byEmpire[o.empire.index()] = &o;
     }
-    if (!ensureRound(s)) return lc.result();
+    if (!ensureRound(lc.ctx)) return lc.result();
     while (!s.gameOver && s.playerTurn.empire.valid()) {
         const EmpireId e = s.playerTurn.empire;
         if (!living(s, e)) {

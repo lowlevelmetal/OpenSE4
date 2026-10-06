@@ -1,5 +1,6 @@
 #include "game/players.hpp"
 
+#include "game/ai.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
@@ -50,6 +51,27 @@ bool hasPlayerController(const GameState& s, EmpireId e) {
 
 bool playedByController(const TurnContext& ctx, EmpireId e) { return ctx.players && hasPlayerController(ctx.state, e); }
 
+bool classicStateKept(const TurnContext& ctx, EmpireId e) { return !playedByController(ctx, e) || ctx.players->classicState(e); }
+
+std::vector<Command> classicPlan(const TurnContext& ctx, EmpireId e, PlanCall call, uint32_t ministers) {
+    const Rules& r = ctx.rules;
+    const GameState& s = ctx.state;
+    const ai::StartOfTurnFigures* figures = e.index() < ctx.aiStartFigures.size() && ctx.aiStartFigures[e.index()] ? &*ctx.aiStartFigures[e.index()] : nullptr;
+    switch (call) {
+        case PlanCall::Politics: return ai::planPlayerPolitics(r, s, e, ministers);
+        case PlanCall::Orders: {
+            const bool kept = e.index() < ctx.aiStartTerritory.size() && ctx.aiStartTerritory[e.index()];
+            const std::vector<SystemId> territory = kept ? *ctx.aiStartTerritory[e.index()] : s.empire(e).claimedSystems;
+            return ai::planOrdersAfterPolitics(r, s, e, &territory, nullptr, figures, ministers);
+        }
+        case PlanCall::Economy:
+            return ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0, ctx.aiColonyTargets ? &*ctx.aiColonyTargets : nullptr,
+                                       figures, ministers);
+        case PlanCall::Count: break;
+    }
+    return {};
+}
+
 std::string_view callName(PlanCall c) {
     switch (c) {
         case PlanCall::Politics: return "politics";
@@ -74,10 +96,27 @@ void setPlayersFactory(PlayersFactory f) { factory() = std::move(f); }
 std::unique_ptr<Players> makePlayers(const Rules& r, GameState& s) {
     const PlayersFactory& f = factory();
     if (!f) return nullptr;
-    bool any = false;
-    for (const Empire& e : s.empires) any = any || hasPlayerController(s, e.id);
-    if (!any) return nullptr;
     return f(r, s);
+}
+
+CallSession::CallSession(TurnContext& ctx) : ctx_(ctx), players_(makePlayers(ctx.rules, ctx.state)) {
+    ctx_.players = players_.get();
+    ctx_.hooks = players_ ? players_->hooks() : nullptr;
+    if (players_) players_->begin(ctx_);
+}
+
+CallSession::~CallSession() {
+    if (ctx_.players == players_.get()) ctx_.players = nullptr;
+    if (players_ && ctx_.hooks == players_->hooks()) ctx_.hooks = nullptr;
+}
+
+void CallSession::end() {
+    if (!players_) return;
+    deliverHooks(ctx_);
+    players_->endSession(ctx_);
+    ctx_.players = nullptr;
+    ctx_.hooks = nullptr;
+    players_.reset();
 }
 
 void replayJournal(GameState& again, const GameState& played) {

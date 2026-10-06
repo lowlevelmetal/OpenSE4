@@ -96,14 +96,20 @@ add_executable(opense4_tests
     sdk/test_sdk_client_players.cpp
     sdk/test_sdk_codec.cpp
     sdk/test_sdk_docs.cpp
+    sdk/test_sdk_guide.cpp
     sdk/test_sdk_player_setup.cpp
     sdk/test_sdk_players.cpp
     sdk/test_sdk_players_golden.cpp
+    sdk/test_sdk_players_classic.cpp
     sdk/test_sdk_players_replay.cpp
     sdk/test_sdk_python.cpp
     sdk/test_sdk_queries.cpp
+    sdk/test_sdk_rules.cpp
+    sdk/test_sdk_rules_golden.cpp
+    sdk/test_sdk_rules_orders.cpp
     sdk/test_sdk_rules_view.cpp
     sdk/test_sdk_tool.cpp
+    sdk/test_sdk_ui.cpp
     sdk/test_sdk_view.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
@@ -175,13 +181,6 @@ target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_SDK_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/sdk"
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
     OPENSE4_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")
-
-# GCC 15's optimizer reports false "may be used uninitialized" warnings inside
-# std::variant's copies of the SDK's values (script::Value, the patch operations);
-# only release builds with warnings as errors see them (also in src/CMakeLists.txt).
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(opense4_tests PRIVATE -Wno-maybe-uninitialized)
-endif()
 
 opense4_copy_runtime_dlls(opense4_tests)
 

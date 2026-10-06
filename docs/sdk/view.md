@@ -31,7 +31,8 @@ not make, fails the SDK's tests.
 - **Every element of a kind has every key.** What the empire does not know is
   `null`: a foreign ship's orders, the name of an unexplored system.
 - The **types** are written `int`, `bool`, `text`, `list of X`, `X, or null`,
-  and the names of the types below and in commands.md.
+  `map` (a map of any plain values, whose shape the field says), and the names
+  of the types below and in commands.md.
 
 ## The view
 
@@ -124,6 +125,15 @@ same view.
 | `max_units_per_player` | int | The unit limit. |
 | `ai_difficulty` | int | Random computer players' difficulty: 0 low, 1 medium, 2 high. |
 | `ai_bonus` | int | The computer players' bonus. |
+| `mod_options` | list of mod_option | The values of the options the game's rules mods declare (docs/sdk/rules.md, "Game options"); empty without them. |
+
+### `mod_option`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `mod` | text | The mod's id. |
+| `name` | text | The option's name in the mod. |
+| `value` | int | Its value in this game; a switch is 0 or 1. |
 
 ### `victory_conditions`
 
@@ -177,6 +187,7 @@ Each condition is a switch and its value.
 | `colony_type_choices` | list of object id | New colonies waiting for us to choose their type (turn-based games). |
 | `questions` | list of entry_question | Moves waiting for an `enter_sector` answer (turn-based games). |
 | `ai_difficulty` | int | Our difficulty as a computer player (-1 until first set). |
+| `mod_data` | map | What the game's rules mods keep on our own things, for the mods that let computer players see it (`players_see_mod_data`, docs/sdk/rules.md "Mod data"): `{mod id: {"empire": value or null, "colonies": {planet id as text: value}, "vehicles": {vehicle id as text: value}}}`; empty without them. |
 
 ### `economy_report`
 
@@ -907,7 +918,7 @@ record also carries its `id`, which equals its position.
 |---|---|---|
 | `kind` | weapon_kind | How it fires. |
 | `targets` | list of text | What it can hit. |
-| `damage_at_range` | list of int | Damage by range, from range 0. |
+| `damage_at_range` | list of int | Damage by range, unmounted: the first entry at range 1 (the next square), the next at range 2, and so on (the data file's numbers in order). |
 | `damage_type` | text | Its damage type. |
 | `reload_rate` | int | Turns between shots. |
 | `modifier` | int | Its to-hit modifier. |
@@ -957,14 +968,14 @@ record also carries its `id`, which equals its position.
 | `requirements` | list of requirement | The technology it needs. |
 | `abilities` | list of ability | Its abilities. |
 | `must_have_bridge` | bool | A design needs a bridge. |
-| `can_have_aux_control` | bool | An auxiliary control may stand in for the bridge. |
+| `can_have_aux_control` | bool | A design may have at most one auxiliary control; when false their number is not checked. |
 | `min_life_support` | int | Life support needed. |
 | `min_crew_quarters` | int | Crew quarters needed. |
 | `uses_engines` | bool | It takes engines. |
-| `max_engines` | int | The most engines. |
-| `max_percent_fighter_bays` | int | The most space for fighter bays, in percent. |
-| `max_percent_colony_modules` | int | ... for colony modules. |
-| `max_percent_cargo` | int | ... for cargo. |
+| `max_engines` | int | The most engines; 0 no limit. |
+| `min_percent_fighter_bays` | int | The least share of the hull's space a design gives fighter bays, in percent; 0 none. |
+| `min_percent_colony_modules` | int | The least share of the hull's space a design gives colony modules, in percent; 0 none. |
+| `min_percent_cargo` | int | The least share of the hull's space a design gives cargo space, in percent; 0 none. |
 
 ### `mount`
 

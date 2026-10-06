@@ -80,6 +80,11 @@ const DeclaredAbility* Ruleset::findDeclaredAbility(std::string_view name) const
         if (datafile::keysEqual(d.name, name)) return &d;
     return nullptr;
 }
+bool Ruleset::isModIntelType(std::string_view type) const {
+    for (const std::string& t : modIntelTypes)
+        if (datafile::keysEqual(t, type)) return true;
+    return false;
+}
 
 AbilityNameStatus abilityNameStatus(std::string_view type) {
     static const std::unordered_map<std::string, AbilityNameStatus> kNames = [] {

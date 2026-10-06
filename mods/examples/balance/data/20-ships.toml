@@ -1,0 +1,17 @@
+# Seeking weapons reload every other turn: every component whose Weapon Type is Seeking.
+[[components.change]]
+match = { "Weapon Type" = "Seeking" }
+all = true
+set = { "Weapon Reload Rate" = 2 }
+
+# The first ion engine also steadies a ship: harder to hit. A list entry is added with
+# the entry's own field names (no number): OpenSE4 numbers the list and sets its count.
+[[components.change]]
+name = "Ion Engine I"
+add = { abilities = [{ "Ability Type" = "Combat To Hit Defense Plus", "Ability Descr" = "Steadies the ship.", "Ability Val 1" = 5 }] }
+
+# Satellites cost no radioactives: every hull that builds satellites.
+[[vehicle_sizes.change]]
+match = { "Vehicle Type" = "Satellite" }
+all = true
+set = { "Cost Radioactives" = 0 }

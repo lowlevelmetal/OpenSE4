@@ -44,13 +44,27 @@ struct Ran {
     std::string out;
 };
 
+// Cross-compiled tests run under an emulator (OPENSE4_TEST_RUNNER): the
+// tests that start several programs of ours talking to each other skip there.
+inline bool underEmulator() {
+    const char* runner = std::getenv("OPENSE4_TEST_RUNNER");
+    return runner && *runner;
+}
+
 // Runs a program to its end (at most `timeout`), its output and errors in one text.
+// Under an emulator, opense4-sdk itself is started through it too.
 inline Ran runProgram(const std::vector<std::string>& args, const std::vector<std::pair<std::string, std::string>>& env = {},
                       std::chrono::seconds timeout = std::chrono::seconds(300)) {
     static test::TempDir outputs("sdk_bots_runs");
     static int n = 0;
     sdk::ProcessOptions po;
     po.args = args;
+    if (underEmulator() && !args.empty() && args.front() == OPENSE4_SDK_EXE) {
+        std::vector<std::string> prefix;
+        std::istringstream words{std::string(std::getenv("OPENSE4_TEST_RUNNER"))};
+        for (std::string w; words >> w;) prefix.push_back(w);
+        po.args.insert(po.args.begin(), prefix.begin(), prefix.end());
+    }
     po.environment = env;
     po.output = outputs.path() / std::format("run{}.txt", ++n);
     auto p = sdk::Process::start(po);
@@ -73,13 +87,6 @@ inline std::optional<std::string> cpythonExe() {
         return std::nullopt;
     }();
     return found;
-}
-
-// Cross-compiled tests run under an emulator (OPENSE4_TEST_RUNNER): the
-// tests that start several programs of ours talking to each other skip there.
-inline bool underEmulator() {
-    const char* runner = std::getenv("OPENSE4_TEST_RUNNER");
-    return runner && *runner;
 }
 
 // A bot that speaks the connection by hand.

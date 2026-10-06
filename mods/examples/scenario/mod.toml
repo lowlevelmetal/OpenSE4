@@ -1,0 +1,20 @@
+# An example mod of the OpenSE4 SDK (docs/sdk/guide/rules-scripts.md, "Scenarios"): a
+# scenario with objectives, an option of the mod's own that it sets, and the actions
+# its objectives run. Everything in it is invented for OpenSE4 and fits any data set.
+
+[mod]
+id = "example.scenario"
+name = "Frontier Charter"
+version = "1.0.0"
+api = 1
+authors = ["The OpenSE4 developers"]
+description = "A race for the frontier: the first empire to hold eight colonies wins, and an empire's second colony earns a charter grant."
+
+[[rules.options]]
+name = "grant"
+label = "Charter grant (minerals)"
+description = "What an empire receives when it founds its second colony."
+type = "int"
+min = 0
+max = 20000
+default = 2000

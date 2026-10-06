@@ -152,6 +152,7 @@ public:
             if (players_.draw(ctx, rules(), choice, {})) s_.computerPlayer = choice.value_or(game::Controller{});
         }
         if (limits_.isOpen()) limits_.draw(ctx, s_.options);
+        if (modOptions_.isOpen()) modOptions_.draw(ctx, rules(), s_.options);
         if (begin && !modal && beginGame(ctx)) return;  // this screen is gone once the game starts
         if (cancel) {
             keepSettings(s_);
@@ -165,6 +166,7 @@ private:
     void init(MenuContext& ctx) {
         rules_ = ctx.rules;
         offersPlayers_ = offersComputerPlayers(rules());
+        offersModOptions_ = offersModOptions(rules());
         const auto kept = lastSettings();
         s_ = kept ? *kept : defaultSettings(rules(), ctx.seed);
         std::string_view start = startPage_;
@@ -839,6 +841,10 @@ private:
             a.checkBox("##seeall", {234, 486}, "Computer players see everything", o.aiSeesEverything);
             if (a.button({544, 506}, {784, 531}, "Computer Player Limits")) limits_.open();
         }
+        // OpenSE4's own, when the game's rules mods declare options (docs/sdk/rules.md "Game options").
+        if (offersModOptions_) {
+            if (a.button({300, 506}, {530, 531}, "Mod Options")) modOptions_.open();
+        }
     }
 
     // ---- Mechanics -------------------------------------------------------------------------------------
@@ -935,6 +941,8 @@ private:
     bool offersPlayers_ = false;   // the game's mods offer computer players
     PlayerPicker players_;
     LimitsWindow limits_;
+    bool offersModOptions_ = false;   // the game's rules mods declare options
+    ModOptionsWindow modOptions_;
 };
 
 } // namespace

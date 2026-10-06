@@ -97,9 +97,9 @@ struct VehicleSize {
     int minCrewQuarters = 0;
     bool usesEngines = false;
     int maxEngines = 0;
-    int maxPercentFighterBays = 0;
-    int maxPercentColonyModules = 0;
-    int maxPercentCargo = 0;
+    int minPercentFighterBays = 0;
+    int minPercentColonyModules = 0;
+    int minPercentCargo = 0;
 };
 
 // ---- Components.txt -------------------------------------------------------------
@@ -108,7 +108,7 @@ enum class WeaponKind : uint8_t { None, DirectFire, Seeking, Warhead, PointDefen
 struct Weapon {
     WeaponKind kind = WeaponKind::None;
     std::vector<std::string> targets;  // "Ships", "Planets", "Ftr", "Sat", "Seekers", "Drone"
-    std::vector<int> damageAtRange;    // index = range in squares
+    std::vector<int> damageAtRange;    // the damage at range i + 1 squares, at index i
     std::string damageType;            // identifier, e.g. "Skips Armor"
     int reloadRate = 0;
     std::string displayType;
@@ -368,6 +368,10 @@ struct Ruleset {
     std::vector<ModRecord> mods;
     // Ability names mods declared: data may carry them besides the engine's own.
     std::vector<DeclaredAbility> declaredAbilities;
+    // IntelProjects.txt Types that mods' rules scripts carry out (mod.toml
+    // [[rules.intel_projects]], docs/sdk/rules.md): a project of such a type
+    // is an attack whose effect is the mod's.
+    std::vector<std::string> modIntelTypes;
 
     std::vector<TechArea> techAreas;
     std::vector<VehicleSize> vehicleSizes;
@@ -396,6 +400,7 @@ struct Ruleset {
     const Facility* findFacility(std::string_view name) const;
     const VehicleSize* findVehicleSize(std::string_view name) const;
     const DeclaredAbility* findDeclaredAbility(std::string_view name) const;
+    bool isModIntelType(std::string_view type) const;
 
     const TechArea& techArea(TechAreaId id) const { return techAreas[id.index()]; }
 

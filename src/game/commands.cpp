@@ -4,6 +4,7 @@
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
+#include "game/hooks.hpp"
 #include "game/movement.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
@@ -297,6 +298,10 @@ struct Applier {
         }
         return {};
     }
+
+    // A mod's order (docs/sdk/rules.md "Orders"): the SDK checks it against
+    // the mod's declaration and runs the mod's check and effect.
+    R operator()(const cmd::ModCommand& c) { return applyModCommand(r, s, e, c); }
 
     R operator()(const cmd::SetFleetLeader& c) {
         Fleet* f = ownFleet(s, e, c.fleet);
@@ -1279,6 +1284,7 @@ OPENSE4_CMD_NAME(FireOn)
 OPENSE4_CMD_NAME(SetEmail)
 OPENSE4_CMD_NAME(OrderTagged)
 OPENSE4_CMD_NAME(SetFleetLeader)
+OPENSE4_CMD_NAME(ModCommand)
 #undef OPENSE4_CMD_NAME
 
 } // namespace
@@ -1304,7 +1310,8 @@ std::vector<ObjectId> coloniesNamed(std::span<const Command> commands) {
                 using T = std::decay_t<decltype(x)>;
                 if constexpr (std::is_same_v<T, cmd::SetOrders> || std::is_same_v<T, cmd::Rename> || std::is_same_v<T, cmd::SetMinister> ||
                               std::is_same_v<T, cmd::SetColonyType> || std::is_same_v<T, cmd::AbandonPlanet> ||
-                              std::is_same_v<T, cmd::JettisonCargo> || std::is_same_v<T, cmd::CloakColony>)
+                              std::is_same_v<T, cmd::JettisonCargo> || std::is_same_v<T, cmd::CloakColony> ||
+                              std::is_same_v<T, cmd::ModCommand>)
                     add(x.planet);
                 else if constexpr (std::is_same_v<T, cmd::Scrap>)
                     add(x.facilityPlanet);

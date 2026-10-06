@@ -78,8 +78,8 @@ Value hulls(const game::Rules& r) {
                           "abilities", abilityEntries(h.abilities))("must_have_bridge", Value(h.mustHaveBridge))(
                           "can_have_aux_control", Value(h.canHaveAuxControl))("min_life_support", num(h.minLifeSupport))(
                           "min_crew_quarters", num(h.minCrewQuarters))("uses_engines", Value(h.usesEngines))("max_engines", num(h.maxEngines))(
-                          "max_percent_fighter_bays", num(h.maxPercentFighterBays))(
-                          "max_percent_colony_modules", num(h.maxPercentColonyModules))("max_percent_cargo", num(h.maxPercentCargo))
+                          "min_percent_fighter_bays", num(h.minPercentFighterBays))(
+                          "min_percent_colony_modules", num(h.minPercentColonyModules))("min_percent_cargo", num(h.minPercentCargo))
                           .done());
     }
     return Value(std::move(out));
@@ -226,11 +226,18 @@ Value sectorTypes(const game::Rules& r) {
     return Value(std::move(out));
 }
 
-Value abilities() {
+Value abilities(const game::Rules& r) {
     ValueList out;
     for (size_t k = 0; k < static_cast<size_t>(game::AbilityKind::Unknown); ++k) {
         const auto kind = static_cast<game::AbilityKind>(k);
         out.push_back(Map(2)("name", Value(game::identifier(kind)))("aggregation", enc(game::aggregationOf(kind))).done());
+    }
+    // The ability names mods declare (docs/sdk/packages-and-data.md), combined as declared.
+    for (const ruleset::DeclaredAbility& d : r.data().declaredAbilities) {
+        const game::Aggregation how = d.combine == ruleset::Combine::Max   ? game::Aggregation::Largest
+                                      : d.combine == ruleset::Combine::Min ? game::Aggregation::Smallest
+                                                                           : game::Aggregation::Sum;
+        out.push_back(Map(2)("name", Value(d.name))("aggregation", enc(how)).done());
     }
     return Value(std::move(out));
 }
@@ -285,7 +292,7 @@ script::Value buildRulesView(const game::Rules& r) {
     return Map(24)("api", num(kApiVersion))("components", components(r))("facilities", facilities(r))("hulls", hulls(r))(
                "mounts", mounts(r))("techs", techs(r))("racial_traits", racialTraits(r))("cultures", cultures(r))(
                "happiness_models", happinessModels(r))("races", races(r))("planet_sizes", planetSizes(r))("system_types", systemTypes(r))(
-               "sector_types", sectorTypes(r))("abilities", abilities())("formations", formations(r))("strategies", strategies(r))(
+               "sector_types", sectorTypes(r))("abilities", abilities(r))("formations", formations(r))("strategies", strategies(r))(
                "intel_projects", intelProjects(r))("design_types", enc(names.designTypes))("colony_types", enc(names.colonyTypes))(
                "repair_priorities", enc(names.repairPriorities))
         .done();

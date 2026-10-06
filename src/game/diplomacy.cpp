@@ -3,6 +3,7 @@
 
 #include "game/economy.hpp"
 #include "game/events.hpp"
+#include "game/hooks.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/sight.hpp"
@@ -314,6 +315,15 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     ra.dominant = aDom;
     rb.dominant = bDom;
     ra.treatyTurn = rb.treatyTurn = s.turn;
+    if (ctx.hooks && old != t) {
+        // A mod's event (hooks.hpp).
+        HookArgs h;
+        h.empire = a;
+        h.other = b;
+        h.treaty = t;
+        h.oldTreaty = old;
+        runHook(ctx, Hook::TreatyChanged, h);
+    }
     if (t == Treaty::War) ra.lastWarTurn = rb.lastWarTurn = static_cast<int32_t>(s.turn);
     // The trade counter restarts unless the old and the new treaty both
     // trade (spec 05 §3.3, confirmed: binary).
@@ -718,6 +728,14 @@ void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date) {
         }
         if (!answerable(m.type)) s.messages[i].answered = true;
         receive(ctx, s.messages[i]);
+        if (ctx.hooks) {
+            // A mod's event (hooks.hpp): the message reached its empire.
+            HookArgs a;
+            a.empire = s.messages[i].from;
+            a.other = s.messages[i].to;
+            a.message = s.messages[i].id;
+            runHook(ctx, Hook::MessageSent, a);
+        }
     }
     std::erase_if(s.messages, [&](const DiplomaticMessage& m) {
         if (std::find(lost.begin(), lost.end(), m.id) != lost.end()) return true;

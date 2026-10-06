@@ -131,6 +131,16 @@ std::string appSettingsToToml(const AppSettings& s) {
     controls.insert("right_click_moves", s.controls.rightClickMoves);
     controls.insert("double_click_seconds", double(s.controls.doubleClickSeconds));
     controls.insert("keys", std::move(keys));
+    if (!s.controls.modKeys.empty()) {
+        toml::table modKeys;
+        for (const auto& [id, chords] : s.controls.modKeys) {
+            toml::array pair;
+            pair.push_back(chords[0].empty() ? std::string() : chordName(chords[0]));
+            pair.push_back(chords[1].empty() ? std::string() : chordName(chords[1]));
+            modKeys.insert(id, std::move(pair));
+        }
+        controls.insert("mod_keys", std::move(modKeys));
+    }
 
     toml::table root;
     root.insert("graphics", std::move(graphics));
@@ -176,6 +186,15 @@ AppSettings appSettingsFromToml(std::string_view text, std::string* error) {
                 for (size_t slot = 0; slot < 2 && slot < pair->size(); ++slot)
                     if (auto name = (*pair)[slot].value<std::string>())
                         if (auto chord = parseChord(*name)) s.controls.bindings.set(info.action, int(slot), *chord);
+    if (const toml::table* modKeys = co["mod_keys"].as_table())
+        for (const auto& [id, node] : *modKeys)
+            if (const toml::array* pair = node.as_array()) {
+                std::array<KeyChord, 2> chords{};
+                for (size_t slot = 0; slot < 2 && slot < pair->size(); ++slot)
+                    if (auto name = (*pair)[slot].value<std::string>())
+                        if (auto chord = parseChord(*name)) chords[slot] = *chord;
+                s.controls.modKeys[std::string(id.str())] = chords;
+            }
     return s;
 }
 

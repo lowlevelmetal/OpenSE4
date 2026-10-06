@@ -223,7 +223,7 @@ std::string vehicleSummary(const UiContext& ui, const game::Vehicle& v) {
     return out;
 }
 
-ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo) {
+ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo, bool* clicked) {
     // The image tabs of TabBtns.bmp: 72×30 cells; columns Detail, Comps, Cargo, Ability, Facil, Descr, Race, Tech;
     // rows normal, hover, selected, (unused), disabled.
     struct TabCell {
@@ -240,7 +240,10 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo) 
         if (tabs[i].tab == ReportTab::Cargo && !cargo) continue;
         if (i > 0) ImGui::SameLine(0, 0);
         ImGui::PushID(int(i));
-        if (reportTab(ui, tabs[i].column, tabs[i].label, tabs[i].tab == current)) chosen = tabs[i].tab;
+        if (reportTab(ui, tabs[i].column, tabs[i].label, tabs[i].tab == current)) {
+            chosen = tabs[i].tab;
+            if (clicked) *clicked = true;
+        }
         ImGui::PopID();
     }
     return chosen;

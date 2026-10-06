@@ -1,0 +1,9 @@
+# English strings of the interface fixture (docs/sdk/interface.md, "Text").
+[mod]
+name = "Interface fixture"
+
+[order.mark]
+label = "Mark the ship"
+
+[panel.markings]
+title = "Markings"

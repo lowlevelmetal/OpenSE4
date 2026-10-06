@@ -77,14 +77,20 @@ int reclamationPercentAt(const Rules& r, const GameState& s, EmpireId empire, Lo
     return static_cast<int>(best);
 }
 
-const ruleset::PlanetSize* planetSize(const Rules& r, const SpaceObject& planet, bool) {
+const ruleset::PlanetSize* planetSize(const Rules& r, const SpaceObject& planet) {
+    // PlanetSize records are keyed by physical type and name (spec 01 §5.5):
+    // an asteroid field of a size reads the Asteroids record of that name,
+    // not the planet one, wherever the file lists it.
     const auto& sizes = r.data().planetSizes;
-    for (const auto& ps : sizes)
-        if (datafile::keysEqual(ps.name, planet.size)) return &ps;
     const std::string_view physical = planet.kind == ObjectKind::Asteroids ? "Asteroids" : "Planet";
+    for (const auto& ps : sizes)
+        if (datafile::keysEqual(ps.physicalType, physical) && datafile::keysEqual(ps.name, planet.size)) return &ps;
     for (const auto& ps : sizes)
         if (!ps.constructed && datafile::keysEqual(ps.physicalType, physical) && datafile::keysEqual(ps.stellarSize, planet.size))
             return &ps;
+    // A data set without a record of that physical type: the name alone (inferred).
+    for (const auto& ps : sizes)
+        if (datafile::keysEqual(ps.name, planet.size)) return &ps;
     return nullptr;
 }
 

@@ -1,4 +1,5 @@
 #include "mods/manifest.hpp"
+#include "mods/manifest_internal.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -30,14 +31,10 @@ const AiPlayer* Manifest::aiPlayer(std::string_view player) const {
     return nullptr;
 }
 
-namespace {
-
-std::string at(std::string_view source, const toml::node& n) {
+std::string manifestAt(std::string_view source, const toml::node& n) {
     const auto line = n.source().begin.line;
     return line > 0 ? std::format("{}:{}", source, line) : std::string(source);
 }
-
-} // namespace
 
 std::expected<Manifest, std::vector<std::string>> parseManifest(std::string_view text, std::string_view source) {
     std::vector<std::string> errors;
@@ -49,7 +46,7 @@ std::expected<Manifest, std::vector<std::string>> parseManifest(std::string_view
         return std::unexpected(errors);
     }
     Manifest m;
-    auto error = [&](const toml::node& n, std::string_view what) { errors.push_back(std::format("{}: {}", at(source, n), what)); };
+    auto error = [&](const toml::node& n, std::string_view what) { errors.push_back(std::format("{}: {}", manifestAt(source, n), what)); };
     auto text_of = [&](const toml::node& n, std::string_view key) -> std::string {
         if (const auto* s = n.as_string()) return std::string(s->get());
         error(n, std::format("'{}' should be text in quotes", key));
@@ -163,18 +160,16 @@ std::expected<Manifest, std::vector<std::string>> parseManifest(std::string_view
                         else if (pk == "module") p.module = text_of(pv, "module");
                         else if (pk == "class") p.className = text_of(pv, "class");
                         else if (pk == "description") p.description = text_of(pv, "description");
-                        else error(pv, std::format("unknown key '{}' in [[ai.players]] (name, module, class, description)", pk.str()));
+                        else if (pk == "classic_state") {
+                            if (const auto* b = pv.as_boolean()) p.classicState = b->get();
+                            else error(pv, "'classic_state' should be true or false");
+                        } else error(pv, std::format("unknown key '{}' in [[ai.players]] (name, module, class, description, classic_state)", pk.str()));
                     }
                     if (p.name.empty()) error(e, "[[ai.players]] needs a name, such as name = \"Admiral\"");
                     else if (std::any_of(m.aiPlayers.begin(), m.aiPlayers.end(), [&](const AiPlayer& o) { return o.name == p.name; }))
                         error(e, std::format("two computer players are named '{}'", p.name));
                     else if (p.name.find(':') != std::string::npos) error(e, std::format("the player name '{}' may not hold ':'", p.name));
-                    bool moduleOk = !p.module.empty();
-                    for (size_t from = 0; moduleOk && from <= p.module.size();) {
-                        const size_t dot = std::min(p.module.find('.', from), p.module.size());
-                        moduleOk = validPythonName(std::string_view(p.module).substr(from, dot - from));
-                        from = dot + 1;
-                    }
+                    const bool moduleOk = dottedPythonName(p.module);
                     if (p.module.empty()) error(e, "[[ai.players]] needs the module under ai/ that holds the player, such as module = \"admiral\"");
                     else if (!moduleOk) error(e, std::format("module '{}' should be Python names separated by dots, such as \"admiral\"", p.module));
                     if (p.className.empty()) error(e, "[[ai.players]] needs the player's class, such as class = \"Admiral\"");
@@ -182,8 +177,10 @@ std::expected<Manifest, std::vector<std::string>> parseManifest(std::string_view
                     m.aiPlayers.push_back(std::move(p));
                 }
             }
+        } else if (key == "rules") {
+            parseRulesTable(node, source, m.rules, errors);
         } else {
-            error(node, std::format("unknown table '{}' (mod.toml has [mod], [requires], [load] and [[ai.players]])", key.str()));
+            error(node, std::format("unknown table '{}' (mod.toml has [mod], [requires], [load], [[ai.players]] and [rules])", key.str()));
         }
     }
     if (!root.contains("mod")) errors.push_back(std::format("{}: no [mod] table", source));
@@ -234,6 +231,7 @@ std::string writeManifest(const Manifest& m) {
     for (const AiPlayer& p : m.aiPlayers) {
         out += std::format("\n[[ai.players]]\nname = {}\nmodule = {}\nclass = {}\n", tomlString(p.name), tomlString(p.module), tomlString(p.className));
         if (!p.description.empty()) out += std::format("description = {}\n", tomlString(p.description));
+        if (!p.classicState) out += "classic_state = false\n";
     }
     return out;
 }

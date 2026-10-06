@@ -14,6 +14,7 @@
 #include "net/auth.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <exception>
 #include <format>
 #include <fstream>
@@ -65,6 +66,11 @@ void writePlayerRecords(const std::vector<game::score::PlayerRecords>& records) 
 }
 
 } // namespace
+
+uint64_t ClassicSession::nextSessionSerial() {
+    static std::atomic<uint64_t> next{1};
+    return next++;
+}
 
 ClassicSession::ClassicSession(std::shared_ptr<const game::Rules> rules, game::GameState state, game::EmpireId player, SessionKind kind)
     : rules_(std::move(rules)), state_(std::move(state)), player_(player), kind_(kind) {

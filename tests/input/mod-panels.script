@@ -1,0 +1,105 @@
+# The mods' panels, columns and pages (docs/sdk/interface.md), on a training game of our own
+# (tests/input/learn-mods) played with the fixture mod tests/fixtures/mods/ui-fixture:
+# - a ship's report: the MOD button shows the mod's Markings panel in place of the page (a
+#   field of the view, the mod's data, a value its Python works out), and its key
+#   (Ctrl+Shift+P) shows and hides it; a classic tab brings the classic page back;
+# - a system's report: the mod's broken panel shows an error box in its place, with the
+#   value's error, and the game goes on;
+# - the list windows: the Ships window's Mods tab, the Planets window's Mod Columns, the
+#   Colonies window's Mods tab and the Designs window's Mod Columns, each with the mod's column;
+# - the Empires window's Beacons page, a table over the empires (its key too);
+# - Settings: the mod's keys on the Controls page, the one that conflicts (F5 is the game's
+#   Colonies key) said and left unbound; the mods' text in French.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ui-fixture --learn-dir=tests/input/learn-mods --training=outfitters --layout=1024x768 --size=1280x800
+
+wait-lesson outfitters
+wait 5
+click tag:lesson:hide
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait-for item:"Mod panels"
+assert-absent item:"mod-panel:Markings"
+click item:"Mod panels"
+wait-for item:"mod-panel:Markings"
+assert-present item:"mod-row:Mark:-"
+assert-present item:"mod-row:Supply:* units"
+assert-present item:"mod-row:Class:*"
+assert-absent item:"mod-row:Class:error"
+assert-fits main
+screenshot mod-panels-ship.png
+# A classic tab: its page again; the key shows the panel once more.
+click item:Comps
+wait-gone item:"mod-panel:Markings"
+key Ctrl+Shift+P
+wait-for item:"mod-panel:Markings"
+key Ctrl+Shift+P
+wait-gone item:"mod-panel:Markings"
+key Ctrl+Shift+P
+wait-for item:"mod-panel:Markings"
+# A system's report: the broken panel is an error box, the rest of the game is fine.
+click sector:empty
+wait-for item:"mod-error:Broken panel (Interface fixture) failed: ValueError: the fixture's value always fails"
+screenshot mod-panels-error.png
+# The list windows' mod columns.
+click tag:command:ships
+wait-window ships
+click item:Mods in=ships
+wait-for item:"mod-cell:*:Mark:-"
+assert-fits ships
+screenshot mod-panels-ships.png
+click tag:ships:close
+wait-closed ships
+click tag:command:planets
+wait-window planets
+click item:"Mod Columns" in=planets
+wait-for item:"mod-cell:Eurul I:Size:*"
+screenshot mod-panels-planets.png
+click tag:planets:close
+wait-closed planets
+click tag:command:colonies
+wait-window colonies
+click item:Mods in=colonies
+wait-for item:"mod-cell:*:People:*M"
+screenshot mod-panels-colonies.png
+click tag:colonies:close
+wait-closed colonies
+click tag:command:designs
+wait-window designs
+click item:"Mod Columns" in=designs
+wait-for item:"mod-cell:*:Kind:Attack Ship"
+screenshot mod-panels-designs.png
+click tag:designs:close
+wait-closed designs
+# The Empires page, by its key.
+key Ctrl+Shift+E
+wait-window empires
+wait-for item:"mod-page:Beacons"
+assert-present item:"mod-cell:Terran:Beacons lit:-"
+assert-present item:"mod-cell:Terran:Bonus each:50"
+screenshot mod-panels-empires.png
+click item:Treaty in=empires
+wait-gone item:"mod-page:Beacons"
+key Escape
+wait-closed empires
+# The mod's keys among the Controls page's: the conflict said, not taken.
+key Ctrl+Comma
+wait-window settings
+click item:Controls in=settings
+wait-for item:F1 in=settings
+wheel item:F1 -120
+wait-for item:"Suggests F5: not used, F5 is the key of Colonies."
+screenshot mod-panels-keys.png
+# The mods' text in French.
+click item:Modding in=settings
+click item:"Language of the mods' text"
+click item:fr
+key Escape
+wait-closed settings
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait-for item:"mod-panel:Marquages"
+assert-present item:"mod-row:Marque:-"
+screenshot mod-panels-french.png

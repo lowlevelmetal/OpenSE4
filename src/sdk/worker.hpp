@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <mutex>
 
 namespace opense4::sdk {
 
@@ -16,6 +17,10 @@ namespace opense4::sdk {
 // the engine's own frames (the services run the planners on it) with room
 // to spare.
 inline constexpr size_t kPlayerStackBytes = size_t{8} << 20;
+
+// The script runtime holds one interpreter per process (docs/sdk/runtime.md):
+// the sessions and the data generators take turns with it through this.
+std::timed_mutex& interpreterSlot();
 
 class Worker {
 public:

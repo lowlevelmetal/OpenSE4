@@ -205,6 +205,18 @@ saved), so a call made again after a battle stop or a turn played again
 (`game::replayJournal`, the movement replay) gives the same answers without asking. A game
 without such empires makes no session and plays exactly as before.
 
+**Mods' rules** (docs/sdk/rules.md). A game whose mod set holds mods with rules scripts
+gets a rules session with each engine call (`game::CallSession`, the same session as the
+players', `TurnContext::hooks`): the engine runs the mods' hooks at the moments of the turn
+order above (`game/hooks.hpp`: the setup in `createGame`, turn start, orders applied,
+each movement day or live run, around battles, around ten steps of `empireEndOfTurn` and on
+each colony after them, the victory check, after the event step, turn end), and notes
+the events where they happen (a vehicle entering a sector or lost, a colony founded, a
+vehicle built, a tech level, a treaty, a message, an event fired) to deliver them at the
+next safe point. Mods' events roll after the classic event step, their intelligence
+projects run in the intelligence step, and their orders (`cmd::ModCommand`) when given. A
+game without such mods has no rules session and plays exactly as before.
+
 Mood events raised after an empire's happiness update (construction, ground combat, the
 other empires' processing, events) wait in `GameState::pendingMood` for that empire's next
 update. As in the original, no game file keeps them (spec 02 §4): they are not saved, sent

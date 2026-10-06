@@ -39,8 +39,15 @@ When your mods offer computer players of their own (see [Computer players](compu
 the form also asks who plays the computer empires, the classic computer player or one of the
 mods' players, and whether the computer players see everything. In the lobby each computer
 player's row names who plays it: click it to choose another, until the game starts. The check box
-under the mods switches *Computer players see everything*. The players who join see both. These
-players run on your computer, so only you see their notes and the notice when one fails.
+under the mods switches *Computer players see everything*, and `Computer Player Limits` beside it
+sets how much they may compute. The players who join see who plays each empire and whether they
+see everything. These players run on your computer, so only you see their notes and the notice
+when one fails.
+
+When your mods have game options (see [Options of mods](getting-started#options-of-mods)), the
+lobby's line under the mods names each with its value. As the host you change them with `Mod
+Options` until the game starts; the players who join see the change at once, and `See Mod
+Options` shows them the window, which only the host can change.
 
 ### Joining
 

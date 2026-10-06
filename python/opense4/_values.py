@@ -133,6 +133,21 @@ def _int_or_text(value: Any, where: str) -> Union[int, str]:
     return value
 
 
+def _map(value: Any, where: str, nullable: bool = False) -> Optional[Dict[str, Any]]:
+    # A map of plain values (a mod order's arguments): a copy, its keys text, objects of
+    # the view standing for their ids.
+    if value is None:
+        return None if nullable else {}
+    if not isinstance(value, dict):
+        _fail(where, "a dict", value)
+    out: Dict[str, Any] = {}
+    for k, v in value.items():
+        if not isinstance(k, str):
+            _fail(where, "a dict with text keys", value)
+        out[k] = plain(v)
+    return out
+
+
 def _list_of_int(values: Any, where: str) -> List[int]:
     return [_int(v, where + "[" + str(i) + "]") for i, v in enumerate(values)]
 

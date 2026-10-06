@@ -73,7 +73,13 @@ class Rules;
 // spec 06 §7 Q92); the designer's To Hit Modifiers and Condensed View options
 // (InterfaceOptions::designToHit, designCondensed, spec 06 §7 Q94).
 // Version 9: the game's mods (GameState::mods, SaveInfo::mods; the modding
-// SDK, docs/sdk/packages-and-data.md). Format 8 still reads, without them.
+// SDK, docs/sdk/packages-and-data.md); script players (Empire::controller,
+// script); and mods' rules (docs/sdk/rules.md): their data on the game,
+// empires, colonies and vehicles (ModData), their options and budgets
+// (GameOptions::modOptions, rulesHookBudget, rulesTurnBudget, modDataLimit),
+// what the game keeps about each rules mod (GameState::modRules), the
+// scenario (GameState::scenario), the reason a game ended (endReason) and
+// the command cmd::ModCommand. Format 8 still reads, without them.
 // Version 8: what a log entry imported from the original's saved games held
 // besides OpenSE4's own fields (LogEntry::classic, docs/spec/08 §3.6.11), and
 // each colony's never-reset counts of destroyed facilities

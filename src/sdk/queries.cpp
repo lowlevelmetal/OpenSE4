@@ -396,7 +396,7 @@ Result abilitiesQuery(const Perspective& p, const Value& args) {
         const auto l = r.hullAbilities(*a->hull);
         list.assign(l.begin(), l.end());
     }
-    return Map(2)("entries", parsedEntries(list))("values", abilityTotals(list)).done();
+    return Map(2)("entries", parsedEntries(list))("values", abilityTotals(r, list)).done();
 }
 
 // One of our construction queues: a colony's or a vehicle's.

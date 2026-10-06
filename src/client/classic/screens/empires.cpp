@@ -3,6 +3,7 @@
 // §1.5; docs/spec/05 §3, §5, §6). Communicate lives in communicate.cpp.
 
 #include "client/audio.hpp"
+#include "client/classic/mod_ui.hpp"
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
@@ -102,26 +103,51 @@ int64_t niceStep(int64_t maxValue, int ticks) {
 
 class EmpiresScreen final : public Screen {
 public:
+    // "mod-page:<mod id>:<name>" opens on a mod's page (its key, docs/sdk/interface.md).
+    explicit EmpiresScreen(const ScreenArgs& args) {
+        if (args.text.starts_with("mod-page:")) openPage_ = args.text.substr(9);
+    }
+
     bool draw(UiContext& ui) override {
+        // The mods' pages (docs/sdk/interface.md "Empires pages"): a tab each.
+        const std::vector<sdk::UiEmpirePage>& pages = modUi(ui.rules()).ext.pages;
+        if (!openPage_.empty()) {
+            for (size_t i = 0; i < pages.size(); ++i)
+                if (pages[i].mod + ":" + pages[i].name == openPage_) modPage_ = i;
+            openPage_.clear();
+        }
+        if (modPage_ && *modPage_ >= pages.size()) modPage_.reset();
         Dialog d(ui, "Empires", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         d.beginContent();
-        ImGui::BeginGroup();
-        portraits(ui);
-        ImGui::EndGroup();
-        ui.tagItem("empires:list");
+        if (modPage_) {
+            std::vector<game::EmpireId> empires{ui.session.player()};
+            for (game::EmpireId e : knownEmpires(ui)) empires.push_back(e);
+            drawModEmpirePage(ui, pages[*modPage_], empires);
+        } else {
+            ImGui::BeginGroup();
+            portraits(ui);
+            ImGui::EndGroup();
+            ui.tagItem("empires:list");
+        }
 
         d.beginButtons();
-        if (d.tab("Treaty", tab_ == Tab::Treaty)) select(Tab::Treaty);
-        ui.tagTab("treaty", tab_ == Tab::Treaty);
-        if (d.tab("Trade", tab_ == Tab::Trade)) select(Tab::Trade);
-        ui.tagTab("trade", tab_ == Tab::Trade);
-        if (d.tab("Tariff", tab_ == Tab::Tariff)) select(Tab::Tariff);
-        ui.tagTab("tariff", tab_ == Tab::Tariff);
+        if (d.tab("Treaty", !modPage_ && tab_ == Tab::Treaty)) select(Tab::Treaty);
+        ui.tagTab("treaty", !modPage_ && tab_ == Tab::Treaty);
+        if (d.tab("Trade", !modPage_ && tab_ == Tab::Trade)) select(Tab::Trade);
+        ui.tagTab("trade", !modPage_ && tab_ == Tab::Trade);
+        if (d.tab("Tariff", !modPage_ && tab_ == Tab::Tariff)) select(Tab::Tariff);
+        ui.tagTab("tariff", !modPage_ && tab_ == Tab::Tariff);
+        // The mods' pages after the classic tabs, the first in the gap below them.
+        for (size_t i = 0; i < pages.size(); ++i) {
+            ImGui::PushID(int(i));
+            if (d.tab(modPageTitle(ui.rules(), pages[i]).c_str(), modPage_ == i)) modPage_ = i;
+            ImGui::PopID();
+        }
         // The original's order (observed, spec 07 session 3): the tabs, a gap,
         // History, Treaty Grid, Intelligence (dim before any contact), Borders,
         // Scores, Victory Conditions, Comparisons, a gap, Our Race in the 13th slot.
-        d.spacer();
+        if (pages.empty()) d.spacer();
         if (d.button("History")) ui.open(ScreenId::History);
         if (d.button("Treaty Grid")) ui.open(ScreenId::TreatyGrid);
         ui.tagItem("empires:treaty-grid");
@@ -150,7 +176,10 @@ private:
     enum class Tab { Treaty, Trade, Tariff };
     static constexpr int kPerPage = 4;
 
-    void select(Tab t) { tab_ = t; }
+    void select(Tab t) {
+        tab_ = t;
+        modPage_.reset();
+    }
 
     void header(UiContext& ui, size_t known) {
         const game::Empire& me = ui.me();
@@ -319,6 +348,8 @@ private:
 
     Tab tab_ = Tab::Treaty;
     int page_ = 0;
+    std::optional<size_t> modPage_;   // a mod's page shown in place of the portraits
+    std::string openPage_;
 };
 
 // ---- Borders ------------------------------------------------------------------------------------
@@ -1275,7 +1306,7 @@ private:
 
 } // namespace
 
-std::unique_ptr<Screen> makeEmpires(const ScreenArgs&) { return std::make_unique<EmpiresScreen>(); }
+std::unique_ptr<Screen> makeEmpires(const ScreenArgs& args) { return std::make_unique<EmpiresScreen>(args); }
 std::unique_ptr<Screen> makeBorders(const ScreenArgs&) { return std::make_unique<BordersScreen>(); }
 std::unique_ptr<Screen> makeTreatyGrid(const ScreenArgs&) { return std::make_unique<TreatyGridScreen>(); }
 std::unique_ptr<Screen> makeScores(const ScreenArgs&) { return std::make_unique<ScoresScreen>(); }

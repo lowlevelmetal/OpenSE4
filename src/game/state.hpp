@@ -161,6 +161,26 @@ struct ScriptPlayerState {
     bool operator==(const ScriptPlayerState&) const = default;
 };
 
+// ---- Mods' rules (docs/sdk/rules.md) ------------------------------------------------------------
+
+// What one mod's rules scripts keep on a thing (the game, an empire, a
+// colony or a vehicle; save format 9): a script value as JSON text, saved,
+// sent and checksummed, at most GameOptions::modDataLimit bytes. Lists of
+// these hold one entry per mod, in the order the mods first wrote.
+struct ModData {
+    std::string mod;     // the mod's id
+    std::string value;   // JSON
+    bool operator==(const ModData&) const = default;
+};
+
+// A mod's game option (mod.toml [[rules.options]]): its value in this game.
+struct ModOption {
+    std::string mod;
+    std::string name;
+    int64_t value = 0;   // a whole number; a switch is 0 or 1
+    bool operator==(const ModOption&) const = default;
+};
+
 // A note a computer player attaches to something for the client's AI view
 // (a response's `notes`). Kept in memory for the turn it was given and the
 // next, unless the player replaces it: never saved, sent or hashed.
@@ -469,6 +489,8 @@ struct Empire {
     ScriptPlayerState script;
     // Its computer player's notes of this turn and the one before (never saved, sent or hashed).
     std::vector<PlayerNote> aiNotes;
+    // What mods' rules scripts keep on it (save format 9).
+    std::vector<ModData> modData;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }
@@ -646,6 +668,8 @@ struct Colony {
     // Never reset (DestroyedFacilities); sorted by facility. Kinds the colony
     // no longer has go with their last facility (inferred).
     std::vector<DestroyedFacilities> destroyedFacilities;
+    // What mods' rules scripts keep on it (save format 9).
+    std::vector<ModData> modData;
 
     int64_t totalPopulation() const {
         int64_t n = 0;
@@ -760,6 +784,8 @@ struct Vehicle {
     // taken when the vehicle is placed (addVehicle) or enters another system
     // (a warp, an event); a smaller one came first.
     uint64_t arrival = 0;
+    // What mods' rules scripts keep on it (save format 9).
+    std::vector<ModData> modData;
 };
 
 // A fleet (spec 03 §9, confirmed: binary). It has no order list of its own:
@@ -1046,6 +1072,16 @@ struct GameOptions {
     int64_t aiCallBudget = 5'000'000;
     // The most a script player's memory may take, as JSON text.
     int64_t aiMemoryLimit = int64_t{1} << 20;
+    // Mods' rules (save format 9; docs/sdk/rules.md). The values of the
+    // options the game's mods declare, by mod and name (a declared option
+    // missing here has its default).
+    std::vector<ModOption> modOptions;
+    // Bytecodes one call of a mod's rules hook may run, and all of one mod's
+    // hooks in one game turn.
+    int64_t rulesHookBudget = 50'000'000;
+    int64_t rulesTurnBudget = 2'000'000'000;
+    // The most one mod's data on one thing may take, as JSON text.
+    int64_t modDataLimit = int64_t{1} << 20;
 };
 
 // ---- Turn-based games ----------------------------------------------------------------------
@@ -1135,6 +1171,31 @@ struct DecisionJournal {
     std::vector<JournalEntry> replay;
 };
 
+// ---- Mods' rules (docs/sdk/rules.md) --------------------------------------------------------------
+
+// What the game keeps about one rules mod (save format 9): whether computer
+// players see their own things' data of it, and its failures and budget in
+// the game turn `turn` (docs/sdk/rules.md "Budgets and failures").
+struct ModRulesState {
+    std::string mod;
+    bool playersSee = false;                  // mod.toml [rules] players_see_mod_data
+    uint32_t turn = 0;                        // the game turn the counters below count
+    int failures = 0;                         // its hook calls that failed in that turn
+    int64_t budgetUsed = 0;                   // bytecodes its hooks ran in that turn
+    std::vector<std::string> failedHooks;     // hooks skipped for the rest of that turn, by name
+    bool operator==(const ModRulesState&) const = default;
+};
+
+// A scenario the game was started from (docs/sdk/rules.md "Scenarios"; save
+// format 9): its mod and name, and the objectives met so far, as
+// "<objective>@<empire id>".
+struct ScenarioState {
+    std::string mod;
+    std::string name;
+    std::vector<std::string> met;
+    bool operator==(const ScenarioState&) const = default;
+};
+
 // ---- The game --------------------------------------------------------------------------------
 
 struct GameState {
@@ -1177,6 +1238,14 @@ struct GameState {
     std::vector<ruleset::ModRecord> mods;
     // What script and external players answered (not saved, sent or hashed).
     DecisionJournal journal;
+    // Mods' rules (save format 9): their data on the game, what the game
+    // keeps about each rules mod, the scenario it was started from, and why
+    // it ended when a mod's victory condition or scenario ended it (the
+    // classic conditions leave it empty).
+    std::vector<ModData> modData;
+    std::vector<ModRulesState> modRules;
+    ScenarioState scenario;
+    std::string endReason;
 
     // Accessors.
     Empire& empire(EmpireId id) { return empires[id.index()]; }

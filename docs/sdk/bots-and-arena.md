@@ -179,25 +179,28 @@ An example: eight games of a hundred turns on the installed game between the tes
 fixture's `Captain` (`tests/fixtures/mods/ai-fixture`: a player written with the `opense4`
 package that keeps the classic ministers but for the Patrol minister, chooses its colony
 types by a fixed rule and fires at the weakest enemy in range in battle) and the classic
-AI, four games at a time in a debug build:
+AI, three games at a time in a debug build:
 
 ```text
 $ opense4-sdk arena --mod=tests/fixtures/mods/ai-fixture --ai=test.ai-fixture:Captain --ai=builtin \
-      --games=8 --turns=100 --seed=1 --jobs=4
-game 1/8, seed 1: builtin (Sergetti) won by score after 100 turns (10.5 s)
+      --games=8 --turns=100 --seed=1 --jobs=3
+game 1/8, seed 1: builtin (Sergetti) won by score after 100 turns (10.3 s)
 ...
-game 8/8, seed 8: test.ai-fixture:Captain (Terran) won by score after 100 turns (13.5 s)
+game 7/8, seed 7: builtin (Amon'krie) won by score after 100 turns (20.7 s)
 
 player                  games  wins   win%     score    median colonies systems  techs  ships   battles  elim   fail/fb  ms/turn     elo
-test.ai-fixture:Captain     8     1  12.5%     73952     67522     15.1     4.9   32.5    7.1   15/63       0    0/0       49.67  1437.0
-builtin                     8     7  87.5%    134019    127541     27.2     7.2   40.0   14.0   64/23       0    0/0        0.00  1563.0
+test.ai-fixture:Captain     8     1  12.5%     97455     96476     17.2     5.8   33.0   10.8   21/51       0    0/0       47.33  1423.9
+builtin                     8     7  87.5%    125858    118019     23.0     5.9   38.6   13.2   52/47       0    0/0        0.00  1576.1
 
-8 games in 30.9 s
+8 games in 40.0 s
 ```
 
 Its colony types, chosen without regard to the planets, leave `Captain` behind from
-about turn 40 on (`over_time.csv`: a mean score of 47,494 against 71,003 at turn 50), and
-its battles go badly. Every game of the run played again (`--replay`) to the same checksum.
+about turn 40 on (`over_time.csv`: a mean score of 47,958 against 67,864 at turn 50, with
+11.8 colonies against 14.8). Everything else it does is the classic AI's, which plays
+exactly as the built-in AI does for a player that leaves it the decisions
+([ai-protocol.md](ai-protocol.md), section 9), so the gap is its own choices'. Every game
+of the run played again (`--replay`) to the same checksum.
 
 ## The training environment
 
@@ -258,14 +261,22 @@ opense4-sdk test mymod
 ```
 
 1. **The mod's Python tests.** Each `test_` function of each `tests/test_*.py` module of
-   the mod runs in the game's own Python ([runtime.md](runtime.md)), with the mod's `ai/`
-   folder and `tests/` at the root (so `import admiral` finds `ai/admiral.py`), the
-   `opense4` package, and a budget of its own (`--budget=N` bytecodes, default a billion).
-   A test fails by raising; `opense4.testing.Skip` (or pytest's skip) skips it.
+   the mod runs in the game's own Python ([runtime.md](runtime.md)), with the mod's `ai/`,
+   `scripts/` and `tests/` folders at the root (so `import admiral` finds `ai/admiral.py`,
+   and a rules script's functions can be called with stand-ins for the game and the
+   effects), the `opense4` package, and a budget of its own (`--budget=N` bytecodes,
+   default a billion). A test fails by raising; `opense4.testing.Skip` (or pytest's skip)
+   skips it.
 2. **A short game for each computer player** the mod declares, against the classic AI, on
    your installed game (`--data=DIR`), `--turns=N` turns (default 10) from `--seed=N`
    (default 1), simultaneous unless `--turn-based`. Any failed request fails it, with the
-   errors and tracebacks the game logged.
+   errors and tracebacks the game logged, and so does any failure of the mod's rules
+   functions ([rules.md](rules.md#budgets-and-failures)). A mod with rules scripts and no
+   computer player plays one such game between two classic AIs, with its rules on.
+3. **Each scenario** the mod holds (`scenarios/*.toml`) is started as `sdk::startScenario`
+   starts it and played by the computer, its human empires too, for `--turns` turns; a
+   scenario that cannot start, or a rules function that fails, fails it. The line says which
+   objectives were met and how the game ended.
 
 The tests have `opense4.testing`: `Harness` plays a player through requests as the game
 does, `FakeServices` answers the services from prepared values, and under `opense4-sdk

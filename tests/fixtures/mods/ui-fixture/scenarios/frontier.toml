@@ -1,0 +1,26 @@
+title = "Frontier"
+summary = "A small quadrant, one rival, and beacons worth more than usual. Found a second colony to win."
+
+[setup]
+seed = 5
+turn_style = "turn_based"
+systems = 8
+
+[[setup.empire]]
+name = "Lamplighters"
+kind = "human"
+
+[[setup.empire]]
+name = "Drifters"
+kind = "computer"
+
+[options]
+beacon_bonus = 120
+
+[[objective]]
+name = "second_colony"
+text = "Found a second colony"
+empire = 0
+when = { colonies = 2 }
+victory = true
+action = "lamplit"

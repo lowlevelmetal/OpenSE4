@@ -96,8 +96,8 @@ after = ["example.common-lib"]      # load order hints; the user can reorder
 
 - **Load order:** the install, then each enabled mod in order, then the game's own
   settings. A later mod wins.
-- **Identity:** the manifest, plus a hash of every file except `assets/` and `ui/`, gives
-  the mod's identity. A game's mod set (id, version, hash) is saved with the game, sent in
+- **Identity:** the manifest, plus a hash of every file except `assets/`, `ui/` and
+  `text/`, gives the mod's identity. A game's mod set (id, version, hash) is saved with the game, sent in
   the lobby and checked when a player joins, next to today's data-set identity
   (`game::dataSetIdentity`).
 - **Classic mods** (a folder of replacement data files and pictures) load as a package
@@ -213,11 +213,15 @@ A script AI controls an empire completely:
 | Its own memory and mood | `aiMemory`, `aiState`, anger (`updateAiState`, `politicalStep`) | `self.memory`, owned by the script |
 
 - **Its own memory:** a script AI keeps whatever it likes in `self.memory`. It is saved with
-  the game, counts in the checksums and has a size limit. The built-in AI's own steps
-  (state machine, anger, territory claims, recorded decisions) don't run for an empire a
-  script controls. Rules that apply to every computer player still do, such as difficulty
-  bonuses.
-- **Optional parts:** any callback left out falls back to the built-in AI for that decision.
+  the game, counts in the checksums and has a size limit. The built-in AI's own
+  bookkeeping (state machine, anger, counters, lists) keeps running for an empire a script
+  controls, so the built-in ministers it calls on see what they would see for a computer
+  empire; a script that makes every decision itself can turn it off (`classic_state =
+  false`). What the built-in AI writes into an empire directly (claims, movement options)
+  is the script's to give, as commands of the classic answers. Rules that apply to every
+  computer player still do, such as difficulty bonuses.
+- **Optional parts:** any callback left out falls back to the built-in AI for that decision;
+  a script that overrides nothing plays exactly the built-in AI's game.
 
 ### 6.2 The API, sketched
 
@@ -324,8 +328,9 @@ messages between it and the engine.
   computer, plus Python bindings for the existing protocol for remote ones.
 - **As built (S3, engine side):** [docs/sdk/ai-protocol.md](sdk/ai-protocol.md) describes
   the controllers, sessions, every call and when it comes, the services and their costs,
-  the budgets and failures, the journal (kept with the game in memory, not saved), and the
-  built-in AI's steps an empire a player plays skips.
+  the budgets and failures, the journal (kept with the game in memory, not saved), and
+  which of the built-in AI's own steps run for an empire a player plays (its bookkeeping,
+  unless `classic_state = false`) and which become commands of its classic answers.
 - **As built (S3, client side):** when the game's mods offer players, Game Setup (its
   Players and Game Settings pages), Empire Setup, Quick Start and the network lobby choose
   who plays each computer empire, whether they see everything, and their limits
@@ -403,6 +408,35 @@ computer, as the engine itself does. The sandbox enforces it:
 - **Golden tests:** `opense4-sdk test` plays a mod's games twice and on both the native
   and the 32-bit build, and compares checksums.
 
+### 7.4 As built (S4)
+
+[docs/sdk/rules.md](sdk/rules.md) describes the rules tier as built:
+
+- **Hooks**: the table of 7.1, each with its arguments and timing in both turn styles
+  (turn-based games: `turn_start` once per game turn, `orders_applied` at the end of each
+  player's turn, `movement_day` after each live run), and `empire_end_of_turn` around ten
+  steps, narrowed by step and side. Moments run where the engine reaches them; events are
+  delivered at the next safe point, so no script runs inside the engine's loops.
+- **Reading**: `game` is the whole view (view.md) read a part at a time, with the mod's
+  options, the game's random numbers, ability values and queries.
+- **Effects**: resources, research and intelligence points, tech levels, population,
+  happiness, colony type and plague; damage, repair and supply; vehicles created and
+  removed; facilities; treaties; Log entries; mod events; planets, names and warp links;
+  the galaxy replaced at generation; options at a new game; the end of the game.
+- **Mod data** on the game, empires, colonies and vehicles (save format 9), and what
+  players' computers and computer players may see of it.
+- **Abilities** declared by mods get their effects from hooks; computer players read
+  them in the rules view.
+- **Orders** (`cmd::ModCommand`), **events**, **intelligence project types**, **game
+  options** and **victory conditions**, declared in mod.toml's `[rules]`; **scenarios**
+  in `scenarios/*.toml` with objectives in the lessons' condition language; **data
+  generators** in `data/*.py`.
+- **Budgets and failures**: per call and per game turn (game options); a failing function
+  is skipped for the turn, and three failures turn a mod's rules off for the turn.
+- **Not yet**: hooks inside a combat round (question 4 stays open: battles have hooks
+  around them only). The buttons for mod orders, the mods' options in the setup screens
+  and the lobby, and starting scenarios came with the interface tier (section 8).
+
 ## 8. Interface (tier 4)
 
 Later and smaller:
@@ -415,6 +449,27 @@ The interface is drawn by Dear ImGui. A small declarative layout (a TOML or Pyth
 description of rows, labels, values and buttons) keeps mods working across interface
 changes better than raw drawing calls would. Interface code runs on each player's own
 computer and never changes the game except through commands.
+
+**As built (S5):** [docs/sdk/interface.md](sdk/interface.md) describes the interface tier:
+
+- `ui/*.toml` declares how the mod's orders show (a picture, questions and choices for
+  their arguments, a key), report panels (ship, fleet, planet, colony, system), list columns
+  (Ships\Units, Planets, Colonies, Designs), Empires pages and buttons that give orders;
+  values come from the player's own view (a field, the mod's data, an ability) or from
+  Python in `ui/*.py` (`opense4.ui`), worked out once per game state, in the sandbox, with
+  small budgets; a failing one shows an error box in place of its panel.
+- Mod orders are given from the order strip's free place (Mod Orders), from panels'
+  buttons and with keys, their arguments asked one after another (numbers, text, choices,
+  picks on the map), as commands.
+- `text/<language>.toml` gives the mod's names in other languages (Settings → Modding chooses
+  one; English and the mod's own words are the fallbacks).
+- Keys the mods suggest join the Settings' Controls page; a suggestion that another binding
+  has is left unbound and said, never taken.
+- The setup screens and the lobby set the mods' game options; the Learn window starts the
+  mods' scenarios, and a server's setup file names one; the lobby's host sets the computer
+  players' limits.
+- Without such mods every window is the original's; `ui/` and `text/` are outside a mod's
+  identity.
 
 ## 9. Multiplayer, saves and the original's saves
 
@@ -466,8 +521,22 @@ computer and never changes the game except through commands.
   - a complete small AI.
 - **A mod manager in the client:** enable, order, inspect, and per game.
 - **As built (2026-10-05):**
+  - the documentation: the modder's guide, its tutorials and the reference pages, indexed in
+    [docs/sdk/README.md](sdk/README.md); the guide to the data files has a chapter per table
+    group, written from `docs/spec/` and the loader; the API reference
+    ([docs/sdk/reference](sdk/reference/README.md)) is generated from `python/opense4` by
+    `tools/gen_sdk_reference.py`, and the SDK's tests fail when it is out of date;
+  - the example mods in [mods/examples](../mods/examples/README.md): `new-hull` (a hull with
+    its pictures and a component), `balance` (data patches with `cascade`),
+    `classic-ai-research` (the classic AI with its own research), `small-ai` (a complete
+    small AI), `weapon-line` (a generator), `new-ability` (a declared ability and its hook) and
+    `scenario`; each has tests, and CI runs `check` and `test` on each on the test fixtures
+    (`tests/sdk/test_sdk_guide.cpp`); `opense4-sdk new --from-example` copies one, and the
+    release packages carry the documentation and the examples in `sdk/` beside
+    `opense4-sdk`;
   - `new`, `check`, `info`, `dump` and `pack` ([packages-and-data.md](sdk/packages-and-data.md));
-  - `test` (the mod's `tests/` in the game's runtime, and a short game per computer player),
+  - `test` (the mod's `tests/` in the game's runtime, a short game per computer player, a game
+    with the mod's rules on, and each of its scenarios),
     `run`, `arena` (with its JSON and CSV reports, saved games, replays and Elo ratings),
     and `bot` and `python` for external bots ([bots-and-arena.md](sdk/bots-and-arena.md));
   - `publish` waits for the Steam release (section 14.7);
@@ -484,7 +553,7 @@ computer and never changes the game except through commands.
 | S2 | Runtime | A prototype of the Python runtime on every platform (question 1), measured against the built-in AI's workload; the sandbox and its limits. |
 | S3 | Computer players | Controllers per empire; the AI API and view; every decision callback; script memory; the built-in AI as a library; the decision journal; external bots; the arena. |
 | S4 | Rules | Hooks; the effects API; mod state; abilities with effects; mod orders, events, options, victory conditions; generators and scenarios. |
-| S5 | Interface | Panels, columns, buttons for mod orders, text, key bindings. |
+| S5 | Interface | Panels, columns, buttons for mod orders, text, key bindings. Built: docs/sdk/interface.md. |
 | S6 | Workshop | Publishing and subscribing with the Steam goal; mod sets offered on joining. |
 
 Each milestone ends with the golden checksums unchanged for unmodded games, and with

@@ -61,6 +61,11 @@ struct MatchSetup {
     // After each game turn, with the state (progress, the environment's own
     // checks); false ends the match there.
     std::function<bool(const game::GameState&)> afterTurn;
+    // A game made already (a scenario's, sdk::startScenario), played from where
+    // it is in place of one made from `game`: its empires keep their
+    // controllers, human ones played by the built-in AI; `seats` and
+    // `game.empires` are not used.
+    std::optional<game::GameState> start;
 };
 
 // One seat at the end of one game turn.

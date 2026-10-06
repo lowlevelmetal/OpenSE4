@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 from . import enums
 from ._values import (LocationLike, Ref, ResourcesLike, TargetLike, _bool, _enum, _enums, _id, _ids, _index,
                       _indices, _int, _int_or_text, _list_of_int, _list_of_text, _orders, _piece, _ref,
-                      _stellar, _struct, _structs, _text)
+                      _map, _stellar, _struct, _structs, _text)
 
 
 def set_orders(vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, planet: Optional[Ref] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False) -> Dict[str, Any]:
@@ -803,6 +803,35 @@ def set_interface_options(options: Optional[Dict[str, Any]] = None) -> Dict[str,
     }
 
 
+def mod_command(mod: str = '', name: str = '', vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, planet: Optional[Ref] = None, empire: Optional[Ref] = None, args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """An order a mod declares ([[rules.orders]] in its mod.toml, docs/sdk/rules.md "Orders"). The game
+    checks it against the declaration: its mod is one of the game's rules mods, it names exactly the
+    target the order applies to (a vehicle, fleet or colony of ours, another empire, or none for the
+    empire itself), and its arguments are the declared ones with the declared types and ranges
+    (those left out take their defaults). Then the mod's own check may refuse it with its reason,
+    and its effect runs at once, in both turn styles, as a cargo transfer does. It travels like any
+    other command: over the network, in e-mail games and in replays.
+
+    mod: The mod's id.
+    name: The order's name in the mod.
+    vehicle: The vehicle it is given to (orders that apply to a vehicle).
+    fleet: The fleet (orders that apply to a fleet).
+    planet: The colony, by its planet (orders that apply to a colony).
+    empire: The other empire (orders that apply to an empire).
+    args: Its arguments by name: whole numbers, true or false, text, or ids.
+    """
+    return {
+        'kind': 'mod_command',
+        'mod': _text(mod, 'mod_command.mod'),
+        'name': _text(name, 'mod_command.name'),
+        'vehicle': _id(vehicle, 'vehicle', 'mod_command.vehicle'),
+        'fleet': _id(fleet, 'fleet', 'mod_command.fleet'),
+        'planet': _id(planet, 'object', 'mod_command.planet'),
+        'empire': _id(empire, 'empire', 'mod_command.empire'),
+        'args': _map(args, 'mod_command.args'),
+    }
+
+
 # ---- Types the commands carry --------------------------------------------------------------
 
 def square(x: int = 0, y: int = 0) -> Dict[str, Any]:
@@ -1262,6 +1291,7 @@ COMMAND_KINDS = (
     'set_ministers',
     'set_encounter_options',
     'set_interface_options',
+    'mod_command',
 )
 
 # The types above, by name.

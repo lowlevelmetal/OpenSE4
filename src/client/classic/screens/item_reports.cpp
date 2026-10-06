@@ -1,5 +1,6 @@
 #include "client/classic/screens/item_reports.hpp"
 
+#include "client/classic/screens/design_tools.hpp"
 #include "client/script/items.hpp"
 #include "game/design.hpp"
 
@@ -231,21 +232,7 @@ void hullDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
     if (st != DetailStyle::Compact) row(ui, "Requires", requirementsText(r, h.requirements), st);
 
     section(ui, "Design Rules");
-    std::vector<std::string> rules;
-    if (h.mustHaveBridge) rules.emplace_back("Needs a bridge");
-    if (!h.canHaveAuxControl) rules.emplace_back("No auxiliary control");
-    if (h.minLifeSupport > 0) rules.push_back(std::format("Life support: at least {}", h.minLifeSupport));
-    if (h.minCrewQuarters > 0) rules.push_back(std::format("Crew quarters: at least {}", h.minCrewQuarters));
-    if (h.usesEngines && h.maxEngines > 0) {
-        rules.push_back(std::format("Engines: at most {}", h.maxEngines));
-        if (h.enginesPerMove > 1) rules.push_back(std::format("{} engines per movement point", h.enginesPerMove));
-    } else {
-        rules.emplace_back("Cannot carry engines");
-    }
-    if (h.maxPercentFighterBays > 0) rules.push_back(std::format("Fighter bays: at least {}% of the hull", h.maxPercentFighterBays));
-    if (h.maxPercentColonyModules > 0) rules.push_back(std::format("Colony modules: at least {}% of the hull", h.maxPercentColonyModules));
-    if (h.maxPercentCargo > 0) rules.push_back(std::format("Cargo space: at least {}% of the hull", h.maxPercentCargo));
-    for (const std::string& s : rules) ImGui::BulletText("%s", s.c_str());
+    for (const std::string& s : hullRuleLines(h)) ImGui::BulletText("%s", s.c_str());
     abilityList(ui, h.abilities, 100);
     if (st != DetailStyle::Compact && !h.description.empty()) {
         ImGui::Spacing();

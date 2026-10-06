@@ -6,6 +6,7 @@
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
+#include "game/hooks.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
@@ -182,6 +183,7 @@ void applySectorType(const Rules& r, SpaceObject& obj, uint32_t index) {
 // Removes a colony (the planet becomes uncolonized) with the owner's mood events.
 void destroyVehicle(TurnContext& ctx, Vehicle& v) {
     if (v.count <= 0) return;
+    noteVehicleLost(ctx, v, "event");
     for (const UnitStack& st : groupStacks(v)) ctx.state.design(st.design).lost += st.count;   // every unit of a group
     v.count = 0;
     v.mixed.clear();
@@ -1516,6 +1518,16 @@ void fire(TurnContext& ctx, uint32_t record, const Target& t, Rng& rng) {
     effects::Tokens tokens = baseTokens(ctx.state, t, out.tokens);
     tokens.actualAmount = out.actual < 0 ? -out.actual : out.actual;
     sendMessages(ctx, ev, ev.messages, t, tokens, where, rng);
+    if (ctx.hooks) {
+        // A mod's event (hooks.hpp): a classic event took effect.
+        HookArgs a;
+        a.empire = t.empire;
+        a.planet = t.object;
+        a.vehicle = t.vehicle;
+        a.where = where;
+        a.text = ev.type;
+        runHook(ctx, Hook::EventFired, a);
+    }
 }
 
 // The luck roll for an owned target (spec 05 §4, confirmed: binary): a roll

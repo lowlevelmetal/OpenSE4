@@ -144,6 +144,7 @@ public:
         if (type == "bool") return expect(v.isBool(), type);
         if (type == "text") return expect(v.isString(), type);
         if (type == "int or text") return expect(v.isInt() || v.isString(), type);
+        if (type == "map") return expect(v.isMap(), type);
         if (type.ends_with(" index") || type.ends_with(" ref")) return expect(v.isInt(), type);
         if (type.ends_with(" id")) {
             if (!v.isInt()) return fail(std::format("expected {}", type));

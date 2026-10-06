@@ -5,15 +5,21 @@
 
 #include "client/audio.hpp"
 #include "client/classic/frontend.hpp"
+#include "client/classic/mod_ui.hpp"
+#include "client/classic/session.hpp"
+#include "client/classic/settings.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/script/items.hpp"
+#include "sdk/players.hpp"
+#include "sdk/scenario.hpp"
 
 #include <SDL3/SDL.h>
 #include <imgui_internal.h>
 
 #include <algorithm>
 #include <format>
+#include <map>
 #include <optional>
 
 namespace opense4::client::classic {
@@ -51,12 +57,14 @@ std::optional<LessonPlace> resumable(const learn::Lesson& l) {
 LearnView::Tab LearnView::tabFromName(std::string_view name) {
     if (name == "training") return Tab::Training;
     if (name == "manual") return Tab::Manual;
+    if (name == "scenarios") return Tab::Scenarios;
     return Tab::Tutorials;
 }
 
 bool LearnView::draw(const Painter& p, Dialog& d, LearnHost& host) {
     if (!d.open()) return d.keepOpen();
     const learn::Library& lib = host.content->library;
+    if (tab_ == Tab::Scenarios && host.scenarios.empty()) tab_ = Tab::Training;
     d.beginContent();
     // OpenSE4's own window: its own text font (docs/spec/06 §5.4).
     ImGui::PushFont(p.fonts.readingFont(), p.textPx(kTextSize));
@@ -64,6 +72,7 @@ bool LearnView::draw(const Painter& p, Dialog& d, LearnHost& host) {
         case Tab::Tutorials: lessons(p, host, learn::LessonKind::Tutorial); break;
         case Tab::Training: lessons(p, host, learn::LessonKind::Training); break;
         case Tab::Manual: contents(p, host); break;
+        case Tab::Scenarios: scenarios(p, host); break;
     }
     ImGui::PopFont();
 
@@ -71,9 +80,21 @@ bool LearnView::draw(const Painter& p, Dialog& d, LearnHost& host) {
     if (d.tab("Tutorials", tab_ == Tab::Tutorials)) tab_ = Tab::Tutorials;
     if (d.tab("Training", tab_ == Tab::Training)) tab_ = Tab::Training;
     if (d.tab("Manual", tab_ == Tab::Manual)) tab_ = Tab::Manual;
-    d.spacer();
+    // The mods' scenarios (OpenSE4's own), in the free slot while there are any.
+    if (!host.scenarios.empty()) {
+        if (d.tab("Scenarios", tab_ == Tab::Scenarios)) tab_ = Tab::Scenarios;
+    } else {
+        d.spacer();
+    }
     const std::string& sel = selected_[static_cast<size_t>(tab_)];
-    if (tab_ == Tab::Manual) {
+    if (tab_ == Tab::Scenarios) {
+        const LearnHost::Scenario* chosen = nullptr;
+        for (const LearnHost::Scenario& sc : host.scenarios)
+            if (sc.mod + ":" + sc.name == sel) chosen = &sc;
+        if (d.button("Start Game", chosen && chosen->problem.empty() && host.startScenario != nullptr)) host.startScenario(*chosen);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", host.startScenario ? "Starts the scenario's game" : "Scenarios start from the title screen's Scenario");
+    } else if (tab_ == Tab::Manual) {
         if (d.button("Read", !lib.manual.empty())) host.openManual(sel);
     } else {
         const learn::LessonKind kind = tab_ == Tab::Tutorials ? learn::LessonKind::Tutorial : learn::LessonKind::Training;
@@ -198,6 +219,59 @@ void LearnView::lessons(const Painter& p, LearnHost& host, learn::LessonKind kin
                 ImGui::Bullet();
                 ImGui::TextUnformatted(o.byTurn ? std::format("{} (by {})", o.text, formatDate(*o.byTurn)).c_str() : o.text.c_str());
             }
+        }
+    }
+    ImGui::EndChild();
+}
+
+void LearnView::scenarios(const Painter& p, LearnHost& host) {
+    std::string& sel = selected_[3];
+    auto key = [](const LearnHost::Scenario& sc) { return sc.mod + ":" + sc.name; };
+    if (std::none_of(host.scenarios.begin(), host.scenarios.end(), [&](const LearnHost::Scenario& sc) { return key(sc) == sel; }))
+        sel = key(host.scenarios.front());
+    heading(p, "Scenarios of the mods");
+    dim("Games the mods in use set up, each with its own objectives.");
+    ImGui::Spacing();
+    const float rowH = std::max(p.px(34), ImGui::GetTextLineHeight() * 2.0f + p.px(2));
+    ImGui::BeginChild("##scenarios", ImVec2(p.px(250), 0), ImGuiChildFlags_Borders);
+    const LearnHost::Scenario* chosen = nullptr;
+    for (const LearnHost::Scenario& sc : host.scenarios) {
+        ImGui::PushID(key(sc).c_str());
+        if (ImGui::Selectable("##row", sel == key(sc), ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0, rowH))) {
+            sel = key(sc);
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && sc.problem.empty() && host.startScenario) host.startScenario(sc);
+        }
+        script::reportItem("scenario:" + sc.title);   // input scripts find a scenario by its title
+        const ImVec2 min = ImGui::GetItemRectMin();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddText(ImVec2(min.x + p.px(4), min.y + p.px(2)), IM_COL32_WHITE, sc.title.c_str());
+        dl->AddText(ImVec2(min.x + p.px(4), min.y + std::max(p.px(18), ImGui::GetTextLineHeight() + p.px(3))), imColor(palette::kSecondary),
+                    sc.modName.c_str());
+        if (sel == key(sc)) chosen = &sc;
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("##scenario", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    if (chosen) {
+        heading(p, chosen->title.c_str());
+        ImGui::TextColored(kLabelBlue, "From the mod %s", chosen->modName.c_str());
+        ImGui::Spacing();
+        wrapped(ImVec4(1, 1, 1, 1), chosen->summary);
+        if (!chosen->problem.empty()) {
+            ImGui::Spacing();
+            wrapped(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), chosen->problem);
+            script::reportItem("scenario-problem:" + chosen->problem, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+        }
+        if (!chosen->empires.empty()) {
+            ImGui::Spacing();
+            ImGui::TextColored(kLabelBlue, "Empires");
+            for (const std::string& e : chosen->empires) wrappedBullet(e);
+        }
+        if (!chosen->objectives.empty()) {
+            ImGui::Spacing();
+            ImGui::TextColored(kLabelBlue, "Objectives");
+            for (const std::string& o : chosen->objectives) wrappedBullet(o);
         }
     }
     ImGui::EndChild();
@@ -499,6 +573,45 @@ private:
 
 // ---- In the front end ----------------------------------------------------------------------------
 
+// The scenarios of the game's rules mods, as the Scenarios tab lists them.
+std::vector<LearnHost::Scenario> modScenarios(const game::Rules& r) {
+    std::vector<LearnHost::Scenario> out;
+    for (const mods::Package& p : sdk::gamePackages(r)) {
+        if (!(p.tiers & mods::kTierScripts)) continue;
+        for (const std::string& name : sdk::scenarioNames(p)) {
+            LearnHost::Scenario sc;
+            sc.mod = p.id();
+            sc.name = name;
+            sc.modName = modName(r, p.id());
+            auto loaded = sdk::loadScenario(p, name);
+            if (!loaded) {
+                sc.title = name;
+                sc.problem = loaded.error().front();
+                out.push_back(std::move(sc));
+                continue;
+            }
+            const std::string prefix = std::format("scenario.{}.", name);
+            sc.title = modText(r, p.id(), prefix + "title", loaded->title.empty() ? name : loaded->title);
+            sc.summary = modText(r, p.id(), prefix + "summary", loaded->summary);
+            bool human = false;
+            for (const game::EmpireSetup& e : loaded->setup.empires) {
+                const char* kind = e.kind == game::PlayerKind::Human ? "you" : e.kind == game::PlayerKind::Neutral ? "neutral" : "computer";
+                human = human || e.kind == game::PlayerKind::Human;
+                sc.empires.push_back(std::format("{} ({})", e.name.empty() ? std::string("An empire") : e.name, kind));
+            }
+            for (const sdk::ScenarioObjective& o : loaded->objectives) {
+                std::string text = modText(r, p.id(), prefix + o.name, o.text.empty() ? o.name : o.text);
+                if (o.byTurn) text += std::format(" (by {})", formatDate(*o.byTurn));
+                if (o.victory) text += ": wins the game";
+                sc.objectives.push_back(std::move(text));
+            }
+            if (!human) sc.problem = "This scenario has no human empire: it is for computer players (opense4-sdk arena, or a server's setup file).";
+            out.push_back(std::move(sc));
+        }
+    }
+    return out;
+}
+
 class LearnFrontScreen final : public FrontScreen {
 public:
     // `start`: a Learn tab name, or "manual:<slug#anchor>" to open the manual
@@ -528,6 +641,18 @@ public:
             if (manual_) manual_->go(target);
             else manual_.emplace(target);
         };
+        // The mods' scenarios (docs/sdk/rules.md "Scenarios"), read once per data set.
+        if (ctx.rules && scenariosFor_ != ctx.rules.get()) {
+            scenarios_ = modScenarios(*ctx.rules);
+            scenariosFor_ = ctx.rules.get();
+        }
+        host.scenarios = scenarios_;
+        for (LearnHost::Scenario& sc : host.scenarios)
+            if (auto it = scenarioErrors_.find(sc.mod + ":" + sc.name); it != scenarioErrors_.end()) sc.problem = it->second;
+        host.startScenario = [this, &ctx](const LearnHost::Scenario& sc) {
+            std::string why = startScenario(ctx, sc);
+            if (!why.empty()) scenarioErrors_[sc.mod + ":" + sc.name] = std::move(why);
+        };
         const Painter p = ctx.painter();
         if (manual_) {
             Dialog d(p, "Manual", DialogSize::Full);
@@ -542,9 +667,35 @@ public:
     }
 
 private:
+    // A new game from the scenario, played by its first human empire; the reason when it cannot start.
+    static std::string startScenario(MenuContext& ctx, const LearnHost::Scenario& sc) {
+        const mods::Package* mod = nullptr;
+        for (const mods::Package& p : sdk::gamePackages(*ctx.rules))
+            if (p.id() == sc.mod) mod = &p;
+        if (!mod) return std::format("The mod {} is not in use.", sc.mod);
+        auto state = sdk::startScenario(*ctx.rules, *mod, sc.name);
+        if (!state) return state.error();
+        game::EmpireId player;
+        int humans = 0;
+        for (const game::Empire& e : state->empires)
+            if (e.kind == game::PlayerKind::Human) {
+                if (!player.valid()) player = e.id;
+                ++humans;
+            }
+        if (!player.valid()) return "The scenario has no human empire to play.";
+        const bool simultaneous = state->options.simultaneous;
+        auto session = std::make_unique<ClassicSession>(ctx.rules, std::move(*state), player, humans > 1 ? SessionKind::Hotseat : SessionKind::Local);
+        newGameStarted(simultaneous);
+        ctx.startGame(std::move(session));
+        return {};
+    }
+
     LearnView learn_;
     std::optional<ManualView> manual_;
     bool manualOnly_ = false;
+    const game::Rules* scenariosFor_ = nullptr;
+    std::vector<LearnHost::Scenario> scenarios_;
+    std::map<std::string, std::string> scenarioErrors_;   // "<mod>:<name>" -> why it did not start
 };
 
 } // namespace

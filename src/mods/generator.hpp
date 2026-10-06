@@ -37,6 +37,10 @@ public:
     std::expected<script::Value, std::string> run(const GeneratorRequest& request) override;
 };
 
+// The runner data sets load with when LoadOptions names none: the one
+// setDefaultGeneratorRunner installed (the SDK's, sdk::installPlayers), else
+// NoScriptRuntime.
 std::shared_ptr<GeneratorRunner> defaultGeneratorRunner();
+void setDefaultGeneratorRunner(std::shared_ptr<GeneratorRunner> runner);
 
 } // namespace opense4::mods

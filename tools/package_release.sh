@@ -23,8 +23,10 @@
 #
 # Each holds the game, the dedicated server and the data checker, with our own
 # fonts built in, plus the README, the licence (GPL 3.0 or later) and the
-# third-party notices. Nothing from the original game is included: players point
-# the game at their own installed copy.
+# third-party notices, and the modding SDK's documentation and example mods in
+# sdk/ beside opense4-sdk (sdk/docs from docs/sdk, sdk/examples from mods/examples).
+# Nothing from the original game is included: players point the game at their own
+# installed copy.
 #
 # The Linux package also carries the desktop entry, icons and AppStream metadata
 # (packaging/linux) and install-desktop-entry.sh, which adds the game to the
@@ -297,6 +299,12 @@ for target in "${targets[@]}"; do
     done
     cp README.md "$stage/README.md"
     [ -f LICENSE ] && cp LICENSE "$stage/LICENSE"
+    # The modding SDK's guide, reference and example mods, beside opense4-sdk, which
+    # finds the examples there (opense4-sdk new --from-example).
+    mkdir -p "$stage/sdk"
+    cp -r docs/sdk "$stage/sdk/docs"
+    cp -r mods/examples "$stage/sdk/examples"
+    find "$stage/sdk" -name __pycache__ -type d -prune -exec rm -rf {} +
     notices "$build" "$platform" "$stage/THIRD_PARTY_NOTICES.txt"
     if [ "$platform" = linux ]; then
         mkdir -p "$stage/share/applications" "$stage/share/metainfo" "$stage/share/icons"

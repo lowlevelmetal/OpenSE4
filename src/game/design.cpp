@@ -304,10 +304,10 @@ DesignStats computeDesignStats(const Rules& r, const Empire* owner, uint32_t hul
     auto pct = [&](int64_t have, int required, const char* what) {
         if (required > 0 && have < pctTrunc(T, required)) problem(std::format("At least {}% of the hull must be {}", required, what));
     };
-    pct(size(AbilityKind::LaunchRecoverFighters), hull.maxPercentFighterBays, "fighter bays");
-    pct(size(AbilityKind::ColonizeRock) + size(AbilityKind::ColonizeIce) + size(AbilityKind::ColonizeGas), hull.maxPercentColonyModules,
+    pct(size(AbilityKind::LaunchRecoverFighters), hull.minPercentFighterBays, "fighter bays");
+    pct(size(AbilityKind::ColonizeRock) + size(AbilityKind::ColonizeIce) + size(AbilityKind::ColonizeGas), hull.minPercentColonyModules,
         "colony modules");
-    pct(size(AbilityKind::CargoStorage), hull.maxPercentCargo, "cargo space");
+    pct(size(AbilityKind::CargoStorage), hull.minPercentCargo, "cargo space");
     // Not a warning in the original, but the designer never offers such parts,
     // so a created design must respect it (§4.2).
     for (const Part& p : parts)

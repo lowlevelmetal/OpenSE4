@@ -10,10 +10,10 @@ options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --layout=1024x768 -
 wait-for item:"Host a Game"
 click item:"Host a Game"
 wait-for item:"Open Lobby"
-# A port of its own, and no router.
+# A free port of its own (the runner fills it in), and no router.
 click item:"Port (TCP)"
 key Ctrl+A
-type "46917"
+type "{free_port}"
 key Enter
 click item:"Forward the port on my router automatically (UPnP)"
 click item:"Computer empires are played by"

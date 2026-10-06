@@ -22,7 +22,7 @@ jobs:
   linux:
     name: Linux / ${{ matrix.name }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 60   # the sanitizer build runs the SDK's script and game tests slowly
     strategy:
       fail-fast: false
       matrix:
@@ -557,8 +557,8 @@ jobs:
         run: |
           $dir = $env:INSTALL_DIR
           Get-ChildItem $dir | Format-Table Name, Length -AutoSize
-          foreach ($f in 'opense4.exe', 'opense4-server.exe', 'opense4-datacheck.exe', 'opense4-convert.exe', 'README.md', 'LICENSE',
-                         'THIRD_PARTY_NOTICES.txt', 'uninstall.exe') {
+          foreach ($f in 'opense4.exe', 'opense4-server.exe', 'opense4-datacheck.exe', 'opense4-convert.exe', 'opense4-sdk.exe', 'README.md', 'LICENSE',
+                         'THIRD_PARTY_NOTICES.txt', 'uninstall.exe', 'sdk\docs\README.md', 'sdk\examples\small-ai\mod.toml') {
             if (-not (Test-Path -LiteralPath (Join-Path $dir $f))) { throw "Not installed: $f" }
           }
           $version = (Get-Item dist\*-setup.exe).Name -replace '^OpenSE4-(.+)-windows-x86_64-setup\.exe$', '$1'

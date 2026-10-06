@@ -85,9 +85,11 @@ PlayerCheck checkModPlayers(const mods::Package& p) {
         // The traceback's place in the file, when it gives one.
         std::string where;
         const std::string& tb = r.error().traceback;
-        if (const size_t at = tb.rfind(std::format("\"ai/{}\", line ", path)); at != std::string::npos) {
-            const size_t from = at + path.size() + 11;
-            where = std::format(" (line {})", tb.substr(from, tb.find_first_not_of("0123456789", from) - from));
+        const std::string mark = std::format("\"ai/{}\", line ", path);
+        if (const size_t at = tb.rfind(mark); at != std::string::npos) {
+            const size_t from = at + mark.size();
+            const std::string line = tb.substr(from, tb.find_first_not_of("0123456789", from) - from);
+            if (!line.empty()) where = std::format(" (line {})", line);
         }
         out.errors.push_back(std::format("ai/{}{}: {}", path, where, r.error().describe()));
     }

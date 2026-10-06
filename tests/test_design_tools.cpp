@@ -417,7 +417,7 @@ const Rules& designRules() {
         freighter.tonnage = 300;
         freighter.enginesPerMove = 1;
         freighter.usesEngines = true;
-        freighter.maxPercentCargo = 21;
+        freighter.minPercentCargo = 21;
         rs.vehicleSizes.push_back(freighter);
 
         ruleset::RacialTrait fast;
@@ -693,4 +693,29 @@ TEST_CASE("design rules: Edit changes an own prototype in place; built or queued
     REQUIRE(apply(r, s, me, cmd::CreateDesign{copy}).ok);
     CHECK(s.designs.size() == count + 1);
     CHECK(designIsPrototype(s.designs.back()));
+}
+
+TEST_CASE("design tools: a hull report states its design rules as the designer checks them (spec 03 §2.2, §4.2)") {
+    ruleset::VehicleSize h;
+    h.usesEngines = true;
+    h.enginesPerMove = 2;
+    // Max Engines 0 with engines in use: no limit, not "no engines".
+    CHECK(hullRuleLines(h) == std::vector<std::string>{"Engines: no limit", "2 engines per movement point"});
+    h.maxEngines = 6;
+    CHECK(hullRuleLines(h) == std::vector<std::string>{"Engines: at most 6", "2 engines per movement point"});
+    // Can Have Aux Con limits auxiliary controls to one; without it nothing is checked.
+    h.mustHaveBridge = true;
+    h.canHaveAuxControl = true;
+    h.minLifeSupport = 1;
+    h.minCrewQuarters = 2;
+    h.minPercentColonyModules = 50;
+    CHECK(hullRuleLines(h) == std::vector<std::string>{"Needs a bridge", "Auxiliary control: at most 1", "Life support: at least 1",
+                                                       "Crew quarters: at least 2", "Engines: at most 6", "2 engines per movement point",
+                                                       "Colony modules: at least 50% of the hull"});
+    ruleset::VehicleSize base;
+    base.usesEngines = false;
+    base.minPercentFighterBays = 20;
+    base.minPercentCargo = 10;
+    CHECK(hullRuleLines(base) ==
+          std::vector<std::string>{"Cannot carry engines", "Fighter bays: at least 20% of the hull", "Cargo space: at least 10% of the hull"});
 }
