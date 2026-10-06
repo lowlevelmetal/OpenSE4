@@ -21,6 +21,7 @@ from .util import loc
 
 STRIKE_MARGIN = 2.0
 DEFEND_MARGIN = 1.3
+STRIKE_SUPPLY_MOVES = 12   # moves of supply kept for the battle and the way about
 SHARE_MAX = 0.75   # at most this share of a resource's income for the fleet's upkeep
 MAINT_MAX = 0.85   # and all maintenance together at most this share
 
@@ -347,15 +348,23 @@ class Military:
                 if s == task.get("system") and s not in used_targets and force.beats(need, margin * 0.6):
                     pick = (s, cols, need)
                     break
+        short = False
         for score, cols, s, need in targets:
             if pick is not None:
                 break
             if s in used_targets:
                 continue
             if force.beats(need, margin):
+                if not self.fuel_for(fid, cols[0]):
+                    short = True
+                    continue
                 pick = (s, cols, need)
                 break
         if pick is None:
+            if short and task.get("task") != "resupply" and self.fleet_supply_share(fid) < 0.9:
+                # A target it beats, too far for the supply it has: fill up first.
+                self.give_fleet(fid, [{"kind": "resupply"}], {"task": "resupply", "since": self.w.turn})
+                return True
             return False
         s, cols, need = pick
         used_targets.add(s)
@@ -370,6 +379,44 @@ class Military:
                             {"task": "strike", "system": s, "planet": col["planet"], "since": w.turn,
                              "power": int(power if power else force.power()), "need": [int(need.attack), int(need.hp)]})
             self.notes.append((col["planet"], "Hegemon strike target"))
+        return True
+
+    def fleet_members(self, fid):
+        f = self.w.fleets.get(fid)
+        if f is None:
+            return []
+        return [self.w.vehicles[m] for m in f["members"] if m in self.w.vehicles]
+
+    def fleet_supply_share(self, fid):
+        """The lowest share of full supply among the fleet's ships."""
+        low = 1.0
+        for v in self.fleet_members(fid):
+            cap = v["supply_capacity"] or 0
+            if cap > 0 and not v["unlimited_supply"]:
+                low = min(low, (v["supply"] or 0) / float(cap))
+        return low
+
+    def fuel_for(self, fid, colony):
+        """Whether every ship of the fleet has the supply to reach a colony's sector,
+        fight there and come back to a depot."""
+        lg = self.logistics
+        o = self.w.objects.get(colony["planet"])
+        if lg is None or lg.galaxy is None or o is None:
+            return True
+        f = self.w.fleets.get(fid)
+        if f is None:
+            return True
+        dest = {"system": o["system"], "x": o["sector"]["x"], "y": o["sector"]["y"]}
+        there = lg.galaxy.route_length(f["location"], dest)
+        back = lg.route_to_depot(dest)
+        if there is None or back is None:
+            return True
+        for v in self.fleet_members(fid):
+            if v["unlimited_supply"] or not v["supply_capacity"]:
+                continue
+            per = lg.per_move(v)
+            if per > 0 and (v["supply"] or 0) < (there + back + STRIKE_SUPPLY_MOVES) * per:
+                return False
         return True
 
     def refit(self, fid, f, members, task, orders):

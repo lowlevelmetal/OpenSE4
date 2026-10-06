@@ -66,12 +66,18 @@ class Expansion:
         out = []
         my_sys = set(w.colony_systems)
         foreign_sys = set()
+        guarded = set()     # sectors holding a hostile colony: a colony ship will not go in
         for c in w.foreign_colonies:
-            s = w.system_of(c["planet"])
-            if s is not None:
-                foreign_sys.add(s)
+            o = w.objects.get(c["planet"])
+            if o is not None:
+                foreign_sys.add(o["system"])
+                if w.hostile(c["owner"]):
+                    guarded.add((o["system"], o["sector"]["x"], o["sector"]["y"]))
+        blocked = self.mem.get("colonize_blocked", {}) if isinstance(self.mem, dict) else {}
         for o in w.planets:
             if o["colony"] is not None or o["id"] in taken:
+                continue
+            if (o["system"], o["sector"]["x"], o["sector"]["y"]) in guarded or w.turn < blocked.get(str(o["id"]), -1):
                 continue
             if o["surface"] not in surfaces:
                 continue
@@ -101,10 +107,26 @@ class Expansion:
 
     # ---- colony ships ----
 
-    def assign(self, colony_ships):
-        """Orders for idle colony ships: the best target each can reach. [(vehicle, planet)]."""
+    def crosses_danger(self, here, s):
+        """Whether the fewest-jumps way from system `here` to `s` passes through a
+        system where colony ships had better not go (not counting `s` itself)."""
+        if not self.threat:
+            return False
+        p = self.w.path(here, s)
+        if p is None:
+            return False
+        for x in p[1:-1]:
+            if x in self.threat:
+                return True
+        return False
+
+    def assign(self, colony_ships, logistics=None):
+        """Orders for idle colony ships: the best target each can reach on the supply it
+        has, avoiding ways through dangerous systems. [(vehicle, planet)]; the ships that
+        reach none and should fill up first are in `self.refuel`."""
         w = self.w
         out = []
+        self.refuel = []
         claimed = set()
         for v in colony_ships:
             fig = w.figures(v["design"])
@@ -113,6 +135,12 @@ class Expansion:
             surfaces = fig["colonize"]
             here = v["location"]["system"]
             dist = w.bfs([here])
+            # Movement points its supply lasts (a ship out of supply hardly moves).
+            reach = None
+            if logistics is not None and not v["unlimited_supply"] and (v["supply_capacity"] or 0) > 0:
+                per = logistics.per_move(v)
+                if per > 0:
+                    reach = (v["supply"] or 0) // per
             best = None
             for score, o, s in self.targets(surfaces):
                 if o["id"] in claimed:
@@ -121,9 +149,19 @@ class Expansion:
                 if d is None:
                     continue
                 sc = score / (1.0 + 0.25 * d)
+                if best is not None and sc <= best[0]:
+                    continue
+                if reach is not None and logistics.galaxy is not None:
+                    n = logistics.galaxy.route_length(v["location"], {"system": s, "x": o["sector"]["x"], "y": o["sector"]["y"]})
+                    if n is not None and n > reach:
+                        continue
+                if self.crosses_danger(here, s):
+                    sc *= 0.1
                 if best is None or sc > best[0]:
                     best = (sc, o)
             if best is not None:
                 claimed.add(best[1]["id"])
                 out.append((v, best[1]))
+            elif reach is not None and (v["supply"] or 0) < 0.9 * (v["supply_capacity"] or 0):
+                self.refuel.append(v)
         return out

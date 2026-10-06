@@ -22,6 +22,8 @@ from .intel import Force, design_strength, planet_strength
 
 DEBUG = False
 UNSAFE_TURNS = 25   # a system where we lost an unarmed ship is avoided this long
+COLONIST_STUCK = 4  # turns a colony ship with orders may stand still before it chooses again
+COLONIZE_BLOCK = 20 # turns its target is then left alone
 
 
 
@@ -139,16 +141,63 @@ class Hegemon(ai.Player):
         mine = set()
         # Colony ships to the best targets.
         idle = []
+        dangers = self.dangers(w, Intel(w, self.memory))
+        unsafe = self.memory.get("unsafe", {})
+        pos = self.memory.setdefault("colonist_pos", {})
+        blocked = self.memory.setdefault("colonize_blocked", {})
+        for k in list(blocked.keys()):
+            if blocked[k] <= w.turn:
+                del blocked[k]
+        alive = set()
         for v in roles.get("colonist", []):
             mine.add(v["id"])
-            if not v["orders"] and v["fleet"] is None:
+            if v["fleet"] is not None:
+                continue
+            key = str(v["id"])
+            alive.add(key)
+            here = v["location"]
+            at = [here["system"], here["x"], here["y"]]
+            p = pos.get(key)
+            if p is None or p[:3] != at:
+                pos[key] = at + [w.turn]
+            elif v["orders"] and w.turn - p[3] >= COLONIST_STUCK:
+                # Stuck (a sector it will not enter, a blockade): another target for a while.
+                for o in v["orders"]:
+                    if o["kind"] == "colonize" and o["object"] is not None:
+                        blocked[str(o["object"])] = w.turn + COLONIZE_BLOCK
+                pos[key] = at + [w.turn]
                 idle.append(v)
-        ex = Expansion(w, self.kn, self.econ, self.dangers(w, Intel(w, self.memory)), self.memory)
-        for v, planet in ex.assign(idle):
+                continue
+            if not v["orders"]:
+                idle.append(v)
+                continue
+            # On its way through a system where one of our unarmed ships was just lost:
+            # choose again.
+            for o in v["orders"]:
+                if o["kind"] == "colonize" and o["object"] is not None:
+                    s = w.system_of(o["object"])
+                    p = w.path(v["location"]["system"], s) if s is not None else None
+                    if p is not None and any(str(x) in unsafe for x in p[1:]):
+                        idle.append(v)
+                    break
+        for k in list(pos.keys()):
+            if k not in alive:
+                del pos[k]
+        ex = Expansion(w, self.kn, self.econ, dangers, self.memory)
+        logi = Logistics(w, self.kn, self.memory, view)
+        assigned = ex.assign(idle, logi)
+        for v, planet in assigned:
             orders.add({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "colonize", "object": planet["id"]}]})
             self.note(planet["id"], "colonize target", kind="object")
+        for v in ex.refuel:
+            if (v["supply"] or 0) <= 0 or any(o["kind"] == "resupply" for o in v["orders"] or []):
+                continue
+            orders.add({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "resupply"}]})
+        if DEBUG and w.turn % 5 == 0:
+            self.log("T%d COLONISTS %s assigned %s dangers %s" % (
+                w.turn, [(v["id"], v["location"], v["movement"], v["max_movement"], v["supply"], v["status"], [(o["kind"], o["object"]) for o in v["orders"]]) for v in roles.get("colonist", [])],
+                [(v["id"], p["id"], p["system"]) for v, p in assigned], sorted(dangers.keys())))
         # Scouts explore.
-        logi = Logistics(w, self.kn, self.memory, view)
         orders.extend(Explorer(w, self.memory, logi).plan(roles.get("scout", [])))
         intel = Intel(w, self.memory)
         strategy = Strategy(w, intel, self.memory)
@@ -463,7 +512,8 @@ class Hegemon(ai.Player):
             in_flight = len(roles.get("colonist", [])) + queued_role("colonist")
             ex = Expansion(w, self.kn, econ, self.dangers(w, intel), self.memory)
             targets = ex.targets(list(colony.keys()))
-            good = [t for t in targets if t[0] > good_target()]
+            home = w.home_system()
+            good = [t for t in targets if t[0] > good_target() and (home is None or not ex.crosses_danger(home, t[2]))]
             cap = (4 + len(w.my_colonies) // 2) if config.on("more_colony_ships") else (3 + len(w.my_colonies) // 3)
             want = min(len(good), cap) - in_flight
             by_surface = {}

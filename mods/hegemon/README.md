@@ -109,9 +109,13 @@ runs short, a colony with a converter converts.
 breathe there), its resource values at today's prices, its population room and any ruins;
 less in a new system (a spaceport first), less where enemies are or another empire
 already lives, less where hostile armed ships are believed to be or where we lost an
-unarmed ship in the last 25 turns, and less the further it is. Colony ships are built for
-the good targets, a few at a time, and each idle one takes the best target it can reach.
-New planet surfaces to settle are researched for the planets they would open.
+unarmed ship in the last 25 turns, and less the further it is; a sector that holds a
+hostile colony is left alone. Colony ships are built for the good targets, a few at a
+time, and each idle one takes the best target it can reach on the supply it has (a ship
+out of supply hardly moves), a tenth as willingly when the way there passes through such
+a system; one with no target in reach refuels first. A colony ship on its way through a
+system where we just lost an unarmed ship, or that has not moved for four turns, chooses
+again. New planet surfaces to settle are researched for the planets they would open.
 
 **Exploration** (`explore.py`). Up to three scouts (two after turn 80) each take the
 nearest warp point of an explored system whose far side we have not seen. A scout sets
@@ -126,7 +130,8 @@ Each tech area is worth what its next levels unlock: better facilities for the f
 we use (the extra output on every one we have), new kinds of facility, new surfaces to
 settle (every known planet of that surface), and for the military better weapons
 (damage per ton over the ranges battles are fought at), armour, shields, engines,
-to-hit parts, bigger hulls and troops. Items one or two levels away, or needing two
+to-hit parts, bigger hulls and troops (the troop hull, then a weapon troops can carry).
+Items one or two levels away, or needing two
 areas, count for less, and an area we cannot research yet passes some of its worth to
 the areas it needs. Each level is also worth its score. Values are divided by what the
 level costs, discounted by the turns it takes at our income. The queue is funded in
@@ -172,9 +177,10 @@ merge into the strongest. Each turn each fleet gets one task:
 4. strike: the best sector of enemy colonies (a battle is fought in one sector) within
    three jumps of our space, of the target rival or of a rival at war with us, that it
    beats by a factor of two (five outside war), counting the planets' defences as
-   estimated from their population and the date and the hostile ships in the system; a
-   strike that costs more than half the fleet raises the estimate for that planet (it
-   learns) and the fleet withdraws;
+   estimated from their population and the date and the hostile ships in the system, and
+   that every ship has the supply to reach, fight at and come back from (a fleet short of
+   it refuels first); a strike that costs more than half the fleet raises the estimate for
+   that planet (it learns) and the fleet withdraws;
 5. otherwise join the main fleet (in war) or hold at the rally point.
 
 Our orders are kept when we meet others after a warp (empire option). Groups that
@@ -184,11 +190,12 @@ cannot win stay out of sectors with enemies (`enter_sector`).
 exposed ones more, and exposed colonies build satellites and (with the technology) mines
 and launch them into their sector.
 
-**Invasions.** In war, troop transports wait at a staging colony in the rally system,
-where troop units are built and loaded; when the main fleet is striking a colony and the
-transports carry enough troops for its militia (Lanchester again, with ground combat's
-militia per 20 million people), they go in, and the tactics land them once the planet's
-guns are silent. A taken colony keeps its facilities.
+**Invasions.** In the arm and war phases, troop transports wait at a staging colony in
+the rally system, where troop units are built and loaded. Strikes prefer a colony the
+loaded troops can take (its population then need not be killed). When the main fleet is
+striking a colony and the transports carry enough troops for its militia (Lanchester
+again, with ground combat's militia per 20 million people), they go in, and the tactics
+land them once the planet's guns are silent. A taken colony keeps its facilities.
 
 ### Battles (`tactics.py`)
 

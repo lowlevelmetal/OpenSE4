@@ -36,6 +36,11 @@ class Research:
         for h in kn.hulls:
             if h.type == "troop" and kn.meets(h.reqs):
                 self.has_troops = True
+        # A troop needs a weapon that troops can mount, as well as its hull.
+        self.has_troop_weapon = False
+        for c in kn.components:
+            if c.weapon is not None and "troop" in c.types and kn.meets(c.reqs):
+                self.has_troop_weapon = True
 
     # ---- what we have now ----
 
@@ -173,10 +178,14 @@ class Research:
                 credit(g, gain * wt["economy"], 0.0)
         # Components: what improves our ships, and new planet types to settle.
         targets_by_surface = self.tune.get("targets_by_surface", {})
+        troop_weapon = None     # the nearest troop weapon, while we have none
         for c in kn.components:
             g = gate(c.reqs)
             if g is None:
                 continue
+            if self.has_troops and not self.has_troop_weapon and c.weapon is not None and "troop" in c.types and \
+                    config.on("troop_research") and (troop_weapon is None or len(g) < len(troop_weapon)):
+                troop_weapon = g
             civ = 0.0
             mil = 0.0
             for s in c.colonize:
@@ -214,6 +223,8 @@ class Research:
                 mil += 80.0
             if civ > 0 or mil > 0:
                 credit(g, civ * wt["expansion"], mil * wt["military"])
+        if troop_weapon is not None:
+            credit(troop_weapon, 0.0, wt.get("troops", 0.0))
         for h in kn.hulls:
             g = gate(h.reqs)
             if g is None:
