@@ -172,7 +172,11 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     if (!data && !options.modsGiven && !choice.mods.empty()) {
         // The settings' mods: started without them, and the Mods window says why.
         log::warn("Starting without the mods of the settings: {}", data.error());
-        loaded.startProblems.push_back(data.error());
+        for (size_t at = 0; at < data.error().size();) {
+            const size_t end = std::min(data.error().find('\n', at), data.error().size());
+            if (end > at) loaded.startProblems.push_back(data.error().substr(at, end - at));
+            at = end + 1;
+        }
         mode->frontError_ = "Your mods could not be loaded: OpenSE4 started without them (see Mods).";
         choice.mods.clear();
         data = readDataSet(*dataDir, choice);

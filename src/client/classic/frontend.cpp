@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <format>
 #include <functional>
@@ -113,12 +114,11 @@ public:
                     tutorialMax = ImGui::GetItemRectMax();
                 }
             }
-            if (!ctx.error.empty()) dl->AddText(ctx.at({left + 12, 660 + dy}), IM_COL32(255, 128, 100, 255), ctx.error.c_str());
-            if (!error_.empty()) dl->AddText(ctx.at({left + 12, 644 + dy}), IM_COL32(255, 128, 100, 255), error_.c_str());
+            const float errorTop = errors(ctx, left, right, dy);
             // OpenSE4's own: until a first lesson is started, a hint points new
             // players at Tutorial (docs/LEARNING.md), which pulses.
             if (ctx.learn && !ctx.learn->library.tutorials.empty() && !lessonsStarted() && settings().learnDone.empty())
-                tutorialHint(ctx, tutorialMin, tutorialMax, !ctx.error.empty() || !error_.empty());
+                tutorialHint(ctx, tutorialMin, tutorialMax, errorTop);
         }
         ImGui::End();
         ImGui::PopStyleVar(2);
@@ -145,7 +145,34 @@ public:
     }
 
 private:
-    static void tutorialHint(MenuContext& ctx, ImVec2 buttonMin, ImVec2 buttonMax, bool errorShown) {
+    // What went wrong (ours): a lesson or game that did not start, mods that
+    // did not load. Over the picture, just above the band of buttons, on a
+    // dark box so that it reads on any picture (drawn in the band's window it
+    // was cut off by it).
+    // Returns the box's top (ImGui units), or FLT_MAX without one.
+    float errors(MenuContext& ctx, float left, float right, float dy) const {
+        std::string text = ctx.error;
+        if (!error_.empty()) text += (text.empty() ? "" : "\n") + error_;
+        if (text.empty()) return FLT_MAX;
+        const Painter p = ctx.painter();
+        ImFont* font = ctx.fonts.regular;
+        const float size = p.fontPx(kTextSize);
+        const float wrap = ctx.px(right - left - 40);
+        const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, wrap, text.c_str());
+        const ImVec2 pad(ctx.px(6), ctx.px(3));
+        const ImVec2 corner = ctx.at({left + 12, 668 + dy});
+        const ImVec2 a(corner.x - pad.x, corner.y - extent.y - 2 * pad.y), b(corner.x + extent.x + pad.x, corner.y);
+        ImDrawList* dl = ImGui::GetBackgroundDrawList();
+        dl->AddRectFilled(a, b, IM_COL32(0, 0, 0, 210));
+        dl->AddText(font, size, ImVec2(a.x + pad.x, a.y + pad.y), IM_COL32(255, 128, 100, 255), text.c_str(), nullptr, wrap);
+        ImGui::PushClipRect(a, b, false);
+        script::reportItem("intro-error", a, b);   // input scripts see that it shows
+        ImGui::PopClipRect();
+        return a.y;
+    }
+
+    // `limit`: the hint's box ends above it (an error's box).
+    static void tutorialHint(MenuContext& ctx, ImVec2 buttonMin, ImVec2 buttonMax, float limit) {
         const Painter p = ctx.painter();
         const float pulse = 0.6f + 0.4f * std::sin(float(ctx.time) * 4.0f);
         ImDrawList* fg = ImGui::GetForegroundDrawList();
@@ -157,7 +184,7 @@ private:
         ImGui::PushFont(ctx.fonts.regular, p.fontPx(kTextSize));
         const ImVec2 text = ImGui::CalcTextSize(kText);
         const ImVec2 inner(ctx.px(8), ctx.px(5));
-        const float bottom = buttonMin.y - ctx.px(errorShown ? 98.0f : 52.0f);   // clear of the version line and the error lines
+        const float bottom = std::min(buttonMin.y - ctx.px(52.0f), limit - ctx.px(6.0f));   // clear of the version line and the error lines
         const ImVec2 a(buttonMin.x, bottom - text.y - 2 * inner.y), b(buttonMin.x + text.x + 2 * inner.x, bottom);
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
         bg->AddRectFilled(a, b, imColor(0x101c40, 0.92f));

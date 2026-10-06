@@ -233,7 +233,10 @@ private:
         }
         for (const std::string& id : choice_->missing()) wrapped(kBad, std::format("{} is not in the mods folder: Done leaves it out.", id));
         for (const std::string& problem : choice_->library().problems) wrapped(kBad, problem);
-        for (const std::string& problem : loaded.startProblems) wrapped(kBad, "At the start: " + problem);
+        if (!loaded.startProblems.empty()) {
+            wrapped(kBad, "When OpenSE4 started, the mods of the settings could not be used, so it started without them:");
+            for (const std::string& problem : loaded.startProblems) wrapped(kBad, problem);
+        }
         wrapped(kDimText, choice_->changed() ? "Done reads the game's data again with these mods. They apply to the next game you start or load."
                                              : "These are the mods in use. Changes apply to the next game: Done reads the game's data again.");
         if (loaded.fromCommandLine)
