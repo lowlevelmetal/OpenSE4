@@ -25,6 +25,12 @@ class = "Admiral"                # an opense4.ai.Player subclass in that module
 description = "Plays the classic economy and its own war."
 ```
 
+- **The player's code:** the engine adds the files of the mod's `ai/` folder to the
+  interpreter at its root, so `ai/admiral.py` is the module `admiral` and
+  `ai/fleet/admiral.py` the module `fleet.admiral`. `module` names it that way, and a
+  mod's modules import one another by those names. The `opense4` package
+  (`python/opense4`, docs/sdk/python-api.md) is there too; its dispatcher answers the
+  requests.
 - **Choosing a player:** a game names one with the controller
   `{"kind": "script", "mod": "<mod id>", "player": "<name>"}` on an empire. That is
   `EmpireSetup::controller` and the empire's state. The setup screens and the server's
@@ -40,6 +46,8 @@ description = "Plays the classic economy and its own war."
 - **The `Player` object** is created at the session's first request and kept until its
   end. Attributes set on `self` survive between requests within the same session, and are
   lost after it.
+- **Sessions are per empire.** One interpreter may serve the sessions of several empires
+  at once (a simultaneous turn asks each of them in turn); each has its own `Player`.
 - **`self.memory`** is a `Value`. It is given to the player when the session starts and
   read back after every request. The engine stores it in the empire's state (saved, sent
   and checksummed), with a size limit (default 1 MiB serialized). Only `memory` survives
@@ -57,6 +65,7 @@ Every request is a map:
 | `turn` | int | The game turn |
 | `seed` | int | A random seed for this request, from the game's seed, turn, empire and call; the same every time the request is replayed |
 | `view` | map or null | The empire's view (docs/sdk/view.md): fair, or whole when the game allows it. Given for the planning calls; null for the others unless stated |
+| `player` | map | Only in a session's first request: the player to make. A mod's: `{mod, name, module, class}`, its `[[ai.players]]` entry (the dispatcher imports `module` and makes an instance of `class`); an external bot's: `{slot}` (the bot makes its own) |
 | `memory` | any | Only in a session's first request: the stored memory (null the first time) |
 | `args` | map | Per call, below |
 
@@ -84,9 +93,9 @@ or asks queries.
 | `commands` | list | Commands to apply now, in order (planning calls only) |
 | `answer` | any | The call's answer, as in the table above |
 | `memory` | any | The player's memory after the call |
-| `notes` | list | `{object: id, text}` notes for the client's AI view; replaces the earlier notes on that object for this turn |
+| `notes` | list | `{object: id, kind, text}` notes for the client's AI view. `kind` says what the id names: `vehicle`, `fleet`, `object` (a stellar object; a colony by its planet), `system`, `empire`, `design` or `message`. A note replaces the earlier notes on the same thing for this turn; an empty text only removes them |
 | `log` | list | Lines for the game's log file (not the empire's in-game Log) |
-| `error` | map or absent | `{type, message, traceback}`; the engine falls back to the classic AI for this request and logs it |
+| `error` | map or absent | `{type, message, traceback}`; the engine falls back to the classic AI for this request and logs it. An exception the player's code raises comes back this way, with the traceback as the runtime writes it (file and line of each call), and with no commands and a null answer |
 
 **Commands:**
 - Each command goes through `game::apply`, exactly as a human's.
@@ -108,14 +117,18 @@ for the empire's own pieces only.
 ## 6. Services (player → engine, during a request)
 
 While a request is being handled, the player may ask the engine. In the game these are
-native functions of the module `_opense4`; for external bots they are messages on the same
+native functions of the module `_opense4`, one per service, each taking one argument (the
+map of the service's arguments below) and returning its result:
+`_opense4.query({"name": "path", "args": {"vehicle": 31, "destination": 4}})`. A service
+that refuses raises an exception in the script (a `ValueError` for a bad argument, with the
+path to it, as commands are refused). For external bots they are messages on the same
 connection.
 
 | Service | Arguments | Result |
 |---|---|---|
 | `query` | `{name, args}` | A query of docs/sdk/view.md ("Queries"), evaluated now |
 | `rules` | `{}` | The rules view (built once per session) |
-| `builtin` | `{call: "politics", "orders" or "economy", ministers: [names] or null, skip: [names]}` | The commands the classic AI would give for this empire now. The commands are not applied. |
+| `builtin` | `{call: "politics", "orders" or "economy", ministers: [names] or null, skip: [names]}` | The commands the classic AI would give for this empire now, from the ministers named (null: all) less those skipped; the names are those of the `minister` enumeration (docs/sdk/commands.md). The commands are not applied. |
 | `builtin_answer` | `{call, args}` | The classic answer to `colony_type`, `enter_sector` or `decloak` |
 | `apply` | `{command}` | Applies one command now and returns `{ok, reason}` plus the changed parts of the view (planning calls only) |
 

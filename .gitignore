@@ -8,6 +8,7 @@ compile_commands.json
 !packaging/**/*.png
 !tests/fixtures/**/*.png
 imgui.ini
+__pycache__/
 .vscode/
 .idea/
 
