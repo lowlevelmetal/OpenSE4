@@ -187,7 +187,7 @@ double __lgamma_r(double x, int *sign)
 		/* n <= 0: lgamma(n)=inf with divbyzero */
 		/* n == 1,2: lgamma(n)=0 */
 		if (x <= 0)
-			return 1/0.0;
+			return 1/(x - x);  /* +inf for x == 0 and below; MSVC refuses a constant 1/0.0 */
 		return 0;
 	}
 

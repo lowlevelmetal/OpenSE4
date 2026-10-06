@@ -173,6 +173,15 @@ add_library(opense4_sdk STATIC
     sdk/view.cpp)
 target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_script PRIVATE opense4_warnings)
 
+# GCC 15's optimizer reports false "may be used uninitialized" warnings inside
+# std::variant's copies of the SDK's values; release builds with warnings as errors
+# stop on them (tests/CMakeLists.txt does the same for the tests).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    foreach(_sdk_target opense4_script opense4_mods opense4_sdk)
+        target_compile_options(${_sdk_target} PRIVATE -Wno-maybe-uninitialized)
+    endforeach()
+endif()
+
 # --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------
 # Headless: the content model, its loaders and the condition evaluator. The
 # client draws it; the tests check the built-in content with it.

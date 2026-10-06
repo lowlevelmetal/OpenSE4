@@ -151,11 +151,11 @@ target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
     OPENSE4_DOCS_DIR="${CMAKE_SOURCE_DIR}/docs")
 
-# GCC 15's optimizer warns that a std::string inside script::Value's variant "may be
-# used uninitialized" in this file; it is a known false alarm of -Wmaybe-uninitialized
-# with std::variant, and only release builds with warnings as errors see it.
+# GCC 15's optimizer reports false "may be used uninitialized" warnings inside
+# std::variant's copies of the SDK's values (script::Value, the patch operations);
+# only release builds with warnings as errors see them (also in src/CMakeLists.txt).
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set_source_files_properties(sdk/test_sdk_queries.cpp PROPERTIES COMPILE_OPTIONS -Wno-maybe-uninitialized)
+    target_compile_options(opense4_tests PRIVATE -Wno-maybe-uninitialized)
 endif()
 
 opense4_copy_runtime_dlls(opense4_tests)

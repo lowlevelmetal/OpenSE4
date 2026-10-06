@@ -87,7 +87,7 @@ double log(double x)
 		if (u.i<<1 == 0)
 			return -1/(x*x);  /* log(+-0)=-inf */
 		if (hx>>31)
-			return (x-x)/0.0; /* log(-#) = NaN */
+			return (x-x)/(x-x); /* log(-#) = NaN; MSVC refuses a constant zero divisor */
 		/* subnormal number, scale x up */
 		k -= 54;
 		x *= 0x1p54;

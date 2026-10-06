@@ -317,6 +317,13 @@ TEST_CASE("script runtime: running out of memory while values cross") {
     auto r = interp->call("m", "count", std::vector<Value>{Value(many)});
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().kind == ErrorKind::Memory);
+    // A fresh interpreter for the second part: what the failed conversion left
+    // behind is freed only when the collector no longer finds it on the C stack,
+    // and when that happens depends on the compiler (the runtime's documentation
+    // says where memory runs out varies by build).
+    interp.reset();
+    interp = makeInterpreter(limits);
+    REQUIRE(interp->addFile("m.py", "def count(items):\n    return len(items)\n").has_value());
     // an engine function's result doesn't fit: a MemoryError in the script, which may catch it
     REQUIRE(interp->addNativeFunction("engine", "everything", [&](std::span<const Value>) { return Value(many); }).has_value());
     execOk(*interp, "import engine\ntry:\n    engine.everything()\n    fits = True\nexcept MemoryError:\n    fits = False\n");
