@@ -104,7 +104,7 @@ TEST_CASE("sdk arena: a mod's player against the classic AI on fixture data, wit
     for (const char* field : {"\"arena\"", "\"ais\"", "\"games\"", "\"wins\"", "\"win_rate\"", "\"score_mean\"", "\"score_median\"", "\"colonies_mean\"",
                               "\"systems_mean\"", "\"tech_levels_mean\"", "\"research_mean\"", "\"ships_mean\"", "\"battles_won\"", "\"battles_lost\"",
                               "\"eliminations\"", "\"requests\"", "\"failures\"", "\"fallbacks\"", "\"player_ms_per_turn\"", "\"elo\"", "\"over_time\"",
-                              "\"checksum\"", "\"won_by\""})
+                              "\"checksum\"", "\"won_by\"", "\"player_ms_turn_max\"", "\"planning_budget_max\"", "\"call_budget_max\""})
         CHECK_MESSAGE(contains(report, field), field);
     const std::vector<std::string> perAi = lines(slurp(a / "report.csv"));
     REQUIRE(perAi.size() == 3);
@@ -128,6 +128,16 @@ TEST_CASE("sdk arena: a mod's player against the classic AI on fixture data, wit
         CHECK(seat.find("series")->find("score")->size() == 3);
     }
     CHECK(r0->find("seats")->asList()[0].find("requests")->asInt() > 0);
+    // What the script player used at most: some of its budget, within the limits; the
+    // classic AI asks nothing.
+    const script::Value& captain = r0->find("seats")->asList()[0];
+    const script::Value& classic = r0->find("seats")->asList()[1];
+    CHECK(captain.find("planning_budget_max")->asInt() > 0);
+    CHECK(captain.find("planning_budget_max")->asInt() <= 200'000'000);
+    CHECK(captain.find("call_budget_max")->asInt() <= 5'000'000);
+    CHECK(captain.find("turn_us_max")->asInt() > 0);
+    CHECK(captain.find("turn_us_max")->asInt() <= captain.find("player_us")->asInt());
+    CHECK(classic.find("planning_budget_max")->asInt() == 0);
     auto saved = game::loadGame(a / "games" / "game-0000.gam");
     REQUIRE_MESSAGE(saved.has_value(), (saved ? std::string{} : saved.error()));
     CHECK(saved->first.turn == 3);

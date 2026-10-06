@@ -214,6 +214,9 @@ Value resultValue(const Value& spec, const sdk::MatchResult& m) {
         seat.emplace_back("failures", num(s.failures));
         seat.emplace_back("fallbacks", num(s.fallbacks));
         seat.emplace_back("player_us", num(std::chrono::duration_cast<std::chrono::microseconds>(s.playerTime).count()));
+        seat.emplace_back("turn_us_max", num(std::chrono::duration_cast<std::chrono::microseconds>(s.turnTimeMax).count()));
+        seat.emplace_back("planning_budget_max", num(s.planningBudgetMax));
+        seat.emplace_back("call_budget_max", num(s.callBudgetMax));
         ValueList errors;
         for (const std::string& e : s.errors) errors.push_back(str(e));
         seat.emplace_back("errors", Value(std::move(errors)));
@@ -368,6 +371,7 @@ struct Totals {
     std::vector<double> score, colonies, systems, techLevels, research, ships;
     int64_t battlesWon = 0, battlesLost = 0, battlesDrawn = 0;
     int64_t requests = 0, failures = 0, fallbacks = 0, playerUs = 0, seatTurns = 0;
+    int64_t turnUsMax = 0, planningBudgetMax = 0, callBudgetMax = 0;   // the most in any game
     std::map<size_t, std::vector<double>> overScore, overColonies, overSystems, overShips, overTech, overResearch, overWon, overLost;
     double elo = 1500;
     int64_t ratedGames = 0;
@@ -429,6 +433,9 @@ void addGame(const Value& result, std::map<std::string, Totals>& totals) {
         t.failures += intAt(seat, "failures");
         t.fallbacks += intAt(seat, "fallbacks");
         t.playerUs += intAt(seat, "player_us");
+        t.turnUsMax = std::max(t.turnUsMax, intAt(seat, "turn_us_max"));
+        t.planningBudgetMax = std::max(t.planningBudgetMax, intAt(seat, "planning_budget_max"));
+        t.callBudgetMax = std::max(t.callBudgetMax, intAt(seat, "call_budget_max"));
         t.seatTurns += intAt(result, "turns_played");
         const Value& series = at(seat, "series");
         auto collect = [&](std::string_view key, std::map<size_t, std::vector<double>>& into) {
@@ -523,6 +530,9 @@ void writeReport(const fs::path& out, ArenaRun& run, double seconds) {
         j.key("failures").value(t.failures);
         j.key("fallbacks").value(t.fallbacks);
         j.key("player_ms_per_turn").value(perTurnMs(t));
+        j.key("player_ms_turn_max").value(static_cast<double>(t.turnUsMax) / 1000.0);
+        j.key("planning_budget_max").value(t.planningBudgetMax);
+        j.key("call_budget_max").value(t.callBudgetMax);
         j.key("elo").value(t.elo);
         j.key("over_time").open('[');
         for (const auto& [turn, scores] : t.overScore) {
@@ -564,13 +574,15 @@ void writeReport(const fs::path& out, ArenaRun& run, double seconds) {
     writeFile(out / "report.json", j.text + "\n");
 
     std::string csv = "ai,spec,games,seats,wins,win_rate,score_mean,score_median,colonies_mean,systems_mean,tech_levels_mean,research_mean,"
-                      "ships_mean,battles_won,battles_lost,battles_drawn,eliminations,requests,failures,fallbacks,player_ms_per_turn,elo\n";
+                      "ships_mean,battles_won,battles_lost,battles_drawn,eliminations,requests,failures,fallbacks,player_ms_per_turn,elo,"
+                      "player_ms_turn_max,planning_budget_max,call_budget_max\n";
     for (const std::string& name : run.order) {
         const Totals& t = run.totals.at(name);
-        csv += std::format("{},{},{},{},{},{:.3f},{:.1f},{:.1f},{:.2f},{:.2f},{:.2f},{:.1f},{:.2f},{},{},{},{},{},{},{},{:.3f},{:.1f}\n", csvField(t.name),
-                           csvField(t.spec), t.games, t.seats, t.wins, t.games ? static_cast<double>(t.wins) / t.games : 0.0, mean(t.score),
-                           median(t.score), mean(t.colonies), mean(t.systems), mean(t.techLevels), mean(t.research), mean(t.ships), t.battlesWon,
-                           t.battlesLost, t.battlesDrawn, t.eliminations, t.requests, t.failures, t.fallbacks, perTurnMs(t), t.elo);
+        csv += std::format("{},{},{},{},{},{:.3f},{:.1f},{:.1f},{:.2f},{:.2f},{:.2f},{:.1f},{:.2f},{},{},{},{},{},{},{},{:.3f},{:.1f},{:.3f},{},{}\n",
+                           csvField(t.name), csvField(t.spec), t.games, t.seats, t.wins, t.games ? static_cast<double>(t.wins) / t.games : 0.0,
+                           mean(t.score), median(t.score), mean(t.colonies), mean(t.systems), mean(t.techLevels), mean(t.research), mean(t.ships),
+                           t.battlesWon, t.battlesLost, t.battlesDrawn, t.eliminations, t.requests, t.failures, t.fallbacks, perTurnMs(t), t.elo,
+                           static_cast<double>(t.turnUsMax) / 1000.0, t.planningBudgetMax, t.callBudgetMax);
     }
     writeFile(out / "report.csv", csv);
 

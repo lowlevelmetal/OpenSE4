@@ -425,7 +425,7 @@ private:
 
     // What became of a request, for whoever measures the players (PlayerSetup::observe).
     void tell(RequestEvent::Kind kind, EmpireId e, uint32_t turn, std::string_view call, std::chrono::nanoseconds time = {},
-              std::string_view error = {}) const {
+              std::string_view error = {}, bool planning = false) const {
         if (!setup_->observe) return;
         RequestEvent ev;
         ev.kind = kind;
@@ -434,6 +434,10 @@ private:
         ev.call = call;
         ev.time = time;
         ev.error = error;
+        if (kind == RequestEvent::Kind::Asked) {
+            ev.planning = planning;
+            ev.budget = lastBudget_;
+        }
         setup_->observe(ev);
     }
 
@@ -587,9 +591,10 @@ private:
                 Handling& operator=(const Handling&) = delete;
             } handling(active_, active);
             const auto started = std::chrono::steady_clock::now();
+            lastBudget_ = 0;
             response = active.external ? callBot(emp, Value(std::move(request)), delivered) : callScript(Value(std::move(request)), budget, delivered);
             // Measured only: never part of the game.
-            tell(RequestEvent::Kind::Asked, e, s.turn, call, std::chrono::steady_clock::now() - started);
+            tell(RequestEvent::Kind::Asked, e, s.turn, call, std::chrono::steady_clock::now() - started, {}, planning);
         }
         // `player` and `memory` go with the first request the player gets in the session.
         if (delivered) slot.created = true;
@@ -642,6 +647,8 @@ private:
             inCall_ = true;
             r = interp_->call("opense4._engine", "dispatch", args, script::CallOptions{budget});
             inCall_ = false;
+            // What it used, for whoever measures the players (RequestEvent).
+            lastBudget_ = interp_->lastCallBudget();
         });
         logOutput("Computer player output");
         if (!r) return errorValue(r.error().type.empty() ? std::string(script::errorKindName(r.error().kind)) : r.error().type, r.error().message,
@@ -890,6 +897,7 @@ private:
     std::vector<Slot> slots_;
     std::deque<game::JournalEntry> replay_;
     bool replayed_ = false;   // the last request's response came from the journal
+    int64_t lastBudget_ = 0;  // the bytecodes the last script request used (RequestEvent)
     Active* active_ = nullptr;
     size_t applied_ = 0;             // commands `apply` carried out during the current planning call
     Value rulesView_;

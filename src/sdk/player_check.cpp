@@ -28,11 +28,66 @@ bool importable(std::string_view path) {
     return true;
 }
 
+using Files = std::vector<std::pair<std::string, std::string>>;   // under ai/: path, text
+
+const std::pair<std::string, std::string>* moduleFile(const Files& files, const std::string& path) {
+    auto file = std::find_if(files.begin(), files.end(), [&](const auto& f) { return f.first == path + ".py"; });
+    if (file == files.end()) file = std::find_if(files.begin(), files.end(), [&](const auto& f) { return f.first == path + "/__init__.py"; });
+    return file == files.end() ? nullptr : &*file;
+}
+
+std::string trimmedName(std::string_view s) {
+    const size_t a = s.find_first_not_of(" \t");
+    const size_t b = s.find_last_not_of(" \t");
+    return a == std::string_view::npos ? std::string() : std::string(s.substr(a, b - a + 1));
+}
+
+// Whether the module file `file` defines class `name`, or takes it from another
+// module with `from M import ...` (`from .player import Hegemon`, `import X as
+// name` forms included): one of the mod's modules that provides it, or a module
+// outside ai/, which cannot be checked here.
+bool providesClass(const Files& files, const std::pair<std::string, std::string>& file, const std::string& name, int depth = 0) {
+    const std::regex klass(std::format(R"((^|\n)class[ \t]+{}[ \t]*[(:])", name));
+    if (std::regex_search(file.second, klass)) return true;
+    if (depth > 4) return false;
+    static const std::regex from(R"((^|\n)from[ \t]+([.\w]+)[ \t]+import[ \t]+\(?([^\n)]*))");
+    for (auto it = std::sregex_iterator(file.second.begin(), file.second.end(), from); it != std::sregex_iterator(); ++it) {
+        const std::string module = (*it)[2].str();
+        std::string original;
+        std::stringstream names((*it)[3].str());
+        for (std::string item; std::getline(names, item, ',');) {
+            const std::string entry = trimmedName(item);
+            const size_t as = entry.find(" as ");
+            const std::string bound = as == std::string::npos ? entry : trimmedName(std::string_view(entry).substr(as + 4));
+            if (bound == name) original = as == std::string::npos ? entry : trimmedName(std::string_view(entry).substr(0, as));
+        }
+        if (original.empty()) continue;
+        // The module it names, as a path under ai/.
+        std::string path;
+        size_t dots = 0;
+        while (dots < module.size() && module[dots] == '.') ++dots;
+        std::string rest = module.substr(dots);
+        std::replace(rest.begin(), rest.end(), '.', '/');
+        if (dots > 0) {
+            // Relative: from the package the file is in, one level up for each dot after the first.
+            std::string base = file.first.substr(0, file.first.rfind('/') == std::string::npos ? 0 : file.first.rfind('/'));
+            for (size_t up = 1; up < dots; ++up) base = base.substr(0, base.rfind('/') == std::string::npos ? 0 : base.rfind('/'));
+            path = base.empty() ? rest : (rest.empty() ? base : base + "/" + rest);
+        } else {
+            path = rest;
+        }
+        const auto* source = moduleFile(files, path);
+        if (!source) return dots == 0;   // a module outside the mod: taken on trust
+        if (providesClass(files, *source, original, depth + 1)) return true;
+    }
+    return false;
+}
+
 } // namespace
 
 PlayerCheck checkModPlayers(const mods::Package& p) {
     PlayerCheck out;
-    std::vector<std::pair<std::string, std::string>> files;   // under ai/, as the interpreter gets them
+    Files files;   // under ai/, as the interpreter gets them
     for (const mods::PackageFile& f : p.files) {
         if (!f.path.starts_with("ai/")) continue;
         const std::string rel = f.path.substr(3);
@@ -50,15 +105,13 @@ PlayerCheck checkModPlayers(const mods::Package& p) {
     for (const mods::AiPlayer& a : p.manifest.aiPlayers) {
         std::string path = a.module;
         std::replace(path.begin(), path.end(), '.', '/');
-        auto file = std::find_if(files.begin(), files.end(), [&](const auto& f) { return f.first == path + ".py"; });
-        if (file == files.end()) file = std::find_if(files.begin(), files.end(), [&](const auto& f) { return f.first == path + "/__init__.py"; });
-        if (file == files.end()) {
+        const auto* file = moduleFile(files, path);
+        if (!file) {
             out.errors.push_back(std::format("mod.toml:{}: the computer player '{}' is in module {}, but ai/ has no {}.py nor {}/__init__.py", a.line,
                                              a.name, a.module, path, path));
             continue;
         }
-        const std::regex klass(std::format(R"((^|\n)class[ \t]+{}[ \t]*[(:])", a.className));
-        if (!std::regex_search(file->second, klass))
+        if (!providesClass(files, *file, a.className))
             out.errors.push_back(std::format("mod.toml:{}: the computer player '{}' is class {}, but ai/{} defines no class {}", a.line, a.name,
                                              a.className, file->first, a.className));
     }

@@ -33,8 +33,10 @@ classic_state = true             # the classic AI's bookkeeping runs for its emp
   decision itself and never asks `ai.builtin` may set it to false to save the time.
 - **The name** may not hold `:`; module and class are Python names (the module's parts
   separated by dots). `opense4-sdk check` finds the module under `ai/` (`admiral.py`, or
-  `admiral/__init__.py`), the class in it, files under `ai/` whose names Python cannot
-  import, and files that do not compile; `opense4-sdk info` lists the players.
+  `admiral/__init__.py`), the class in it (defined there, or taken there from another of
+  the mod's modules with `from .fleet import Admiral`), files under `ai/` whose names
+  Python cannot import, and files that do not compile; `opense4-sdk info` lists the
+  players.
 - **The player's code:** the engine adds the files of the mod's `ai/` folder to the
   interpreter at its root, so `ai/admiral.py` is the module `admiral` and
   `ai/fleet/admiral.py` the module `fleet.admiral`. `module` names it that way, and a
