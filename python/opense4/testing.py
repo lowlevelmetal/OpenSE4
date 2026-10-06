@@ -8,7 +8,9 @@ harness that plays a Player through the calls of a turn.
     r = h.call("orders", view=view_map)
     assert "error" not in r and r["commands"]
 
-Runs the same on CPython and in the game's runtime.
+Runs the same on CPython and in the game's runtime. Under `opense4-sdk test`, which runs a
+mod's tests/ in the game's runtime, `game_view()` and `game_rules()` also give a view and the
+rules view of a new game of the mod's data set.
 """
 
 from __future__ import annotations
@@ -105,3 +107,45 @@ class Harness:
         if call == "end_session":
             self._started = False
         return response
+
+
+class Skip(Exception):
+    """A test that cannot run here: opense4-sdk test counts it as skipped."""
+
+
+def _engine_fixtures() -> Any:
+    try:
+        import _opense4_testing   # opense4-sdk test's, in the game's runtime only
+    except ImportError:
+        _skip("game_view() and game_rules() need opense4-sdk test, which makes a game of the mod's data set")
+    return _opense4_testing
+
+
+def _skip(reason: str) -> None:
+    try:
+        import pytest   # under pytest, its own skip
+    except ImportError:
+        raise Skip(reason)
+    pytest.skip(reason)
+
+
+def game_view(empire: int = 0) -> Dict[str, Any]:
+    """The view of `empire` (0 or 1) of a new game of the mod's data set, two computer empires
+    from the seed of opense4-sdk test --seed: a view map, as the engine sends it. Skips the
+    test where there is no such game (CPython, or no data set)."""
+    native = _engine_fixtures()
+    try:
+        return native.view({"empire": empire})
+    except RuntimeError as e:
+        _skip(str(e))
+    return {}
+
+
+def game_rules() -> Dict[str, Any]:
+    """The rules view of the mod's data set, as the engine sends it (opense4.rules.Rules wraps it)."""
+    native = _engine_fixtures()
+    try:
+        return native.rules({})
+    except RuntimeError as e:
+        _skip(str(e))
+    return {}
