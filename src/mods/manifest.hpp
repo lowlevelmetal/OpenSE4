@@ -17,6 +17,12 @@
 //     [load]
 //     after = ["example.common-lib"]   # load-order hints; the player can reorder
 //
+//     [[ai.players]]                   # computer players (docs/sdk/ai-protocol.md §1)
+//     name = "Admiral"
+//     module = "admiral"               # a module or package under the mod's ai/ folder
+//     class = "Admiral"
+//     description = "..."
+//
 // Unknown tables and keys are errors, to catch typos.
 
 #include "mods/version.hpp"
@@ -37,6 +43,15 @@ struct Requirement {
     int line = 0;  // in mod.toml
 };
 
+// A computer player the mod offers ([[ai.players]], docs/sdk/ai-protocol.md §1).
+struct AiPlayer {
+    std::string name;         // unique within the mod; the setup screens show it
+    std::string module;       // a module or package under ai/: "admiral", "fleet.admiral"
+    std::string className;    // a class of that module (`class` in mod.toml)
+    std::string description;
+    int line = 0;             // in mod.toml
+};
+
 struct Manifest {
     std::string id;
     std::string name;
@@ -46,7 +61,14 @@ struct Manifest {
     std::string description;
     std::vector<Requirement> requirements;  // [requires]
     std::vector<std::string> loadAfter;
+    std::vector<AiPlayer> aiPlayers;        // [[ai.players]]
+
+    const AiPlayer* aiPlayer(std::string_view name) const;
 };
+
+// A Python identifier as the script runtime takes them: ASCII letters,
+// digits and '_', not starting with a digit.
+bool validPythonName(std::string_view name);
 
 // Lowercase letters, digits, '.', '-' and '_', 1 to 64 of them, starting with
 // a letter or digit: "example.better-carriers".
