@@ -28,7 +28,9 @@
 #include "script/runtime.hpp"
 #include "script/value.hpp"
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -66,6 +68,23 @@ public:
 
 // ---- Sessions ------------------------------------------------------------------------------
 
+// What became of one request, for tools that measure players (the arena,
+// opense4-sdk test). Never part of the game.
+struct RequestEvent {
+    enum class Kind : uint8_t {
+        Asked,      // the player answered (or failed: a Failed event follows)
+        Replayed,   // the journal's answer was given again
+        Skipped,    // the player is out for the turn: the classic AI decided
+        Failed,     // a failed request: the classic AI decided (§7)
+    };
+    Kind kind = Kind::Asked;
+    game::EmpireId empire;
+    uint32_t turn = 0;
+    std::string_view call;              // empty for Failed
+    std::chrono::nanoseconds time{};    // Asked: how long the player took
+    std::string_view error;             // Failed: why
+};
+
 struct PlayerSetup {
     // The `opense4` package's files, in place of the built-in one (tests).
     std::vector<std::pair<std::string, std::string>> package;
@@ -76,6 +95,8 @@ struct PlayerSetup {
     std::function<ExternalBot*(uint32_t slot)> externals;
     // The interpreter's heap, shared by the call's script players.
     size_t heapBytes = size_t{64} << 20;
+    // Told of every request (none: nobody is).
+    std::function<void(const RequestEvent&)> observe;
 };
 
 // Installs the SDK's sessions for every engine call in this process
