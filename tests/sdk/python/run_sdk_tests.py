@@ -18,6 +18,7 @@ MODULES = (
     "test_sdk_galaxy",
     "test_sdk_dispatch",
     "test_sdk_rules",
+    "test_sdk_ui",
 )
 
 

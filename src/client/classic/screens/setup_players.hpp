@@ -66,4 +66,32 @@ private:
     bool open_ = false, pending_ = false;
 };
 
+// ---- The mods' game options (docs/sdk/rules.md "Game options", docs/SETUP.md "Mods' options") --------
+
+// Whether the game's rules mods declare game options: only then do the setup
+// screens and the lobby show their Mod Options.
+bool offersModOptions(const game::Rules& r);
+// "Mod options: Beacon bonus 120, Solar flares off": the options' values in
+// `o` (their defaults until set), for a line under the setup or the lobby.
+std::string modOptionsSummary(const game::Rules& r, const game::GameOptions& o);
+
+// The Mod Options window: each option of the game's rules mods with its value,
+// a switch (a lamp) or a whole number in its range, in the mod's language. A
+// change is made in `o` at once (true that frame); `readOnly` only shows them.
+class ModOptionsWindow {
+public:
+    void open() { open_ = pending_ = true; }
+    bool isOpen() const { return open_; }
+    bool draw(MenuContext& ctx, const game::Rules& r, game::GameOptions& o, bool readOnly = false);
+
+private:
+    bool open_ = false, pending_ = false;
+};
+
+// A line of text in the setup area's left column with a button under it
+// (the Computer Players and Mod Options lines of Quick Start): true when the
+// button is pressed. Places in ImGui units.
+bool setupLine(MenuContext& ctx, std::string_view text, float textBottom, ImVec2 textLeft, ImVec2 buttonAt, ImVec2 buttonSize, float width,
+               const char* button);
+
 } // namespace opense4::client::classic::setup

@@ -1,0 +1,14 @@
+# French strings of the interface fixture: shown when the mods' language is "fr".
+[order.mark]
+label = "Marquer le vaisseau"
+description = "Peint une marque sur la coque."
+
+[order.beacon]
+label = "Allumer des balises"
+
+[panel.markings]
+title = "Marquages"
+mark = "Marque"
+
+[option.beacon_bonus]
+label = "Prime par balise (minerais)"

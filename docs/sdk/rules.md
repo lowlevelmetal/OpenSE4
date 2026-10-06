@@ -258,8 +258,9 @@ Computer players read declared abilities like the game's own: in the rules view'
 
 ## Orders
 
-A mod declares orders; a human gives them (a later step of the SDK gives them buttons),
-and so can computer players and external bots. Each is one command kind,
+A mod declares orders; a human gives them from the order strip's Mod Orders, a panel's
+button or a key ([interface.md](interface.md), "Mod orders"), and so can computer players
+and external bots. Each is one command kind,
 `cmd::ModCommand` (`mod_command` in [commands.md](commands.md)), so it travels with a
 turn's orders over the network, in e-mail games and in replays.
 
@@ -313,6 +314,11 @@ it with the call's commands.
 - **The client** lists the orders an object takes with `sdk::modOrders(rules, state,
   empire, {"vehicle", id})` (`self`, `vehicle`, `fleet`, `colony`, `empire`), and builds
   one with `sdk::modOrderCommand(choice, target, args)`, which it gives as any command.
+  Where they appear: the order strip's free place lights as **Mod Orders** while the
+  selection (or the empire itself) takes any, a menu of them; a mod's panels can have a
+  button for one; a mod can suggest a key for each. Their arguments are asked for one after
+  another (a number, yes or no, text, a choice, a pick on the map); a mod's `ui/` gives them
+  a picture, questions and lists of choices ([interface.md](interface.md)).
 - In a simultaneous game the player's own computer applies the order to its copy when it
   is given, and the host again when it processes the turn.
 
@@ -384,11 +390,14 @@ default = 90
 - The game keeps every declared option's value (`GameOptions::modOptions`, save format
   9): a new game fills in the defaults of those its setup does not set, in load order and
   declaration order, and keeps set values within their ranges.
-- **Setting them**: the headless setup model lists them with their values
-  (`setup::modOptionRows`) and sets one by `"<mod id>:<name>"` (`setup::setModOption`;
-  the setup screens draw them in a later step); `opense4-server`'s setup files set them
-  in `[options.mod."<mod id>"]` (docs/MULTIPLAYER.md, "Setup files"); a scenario in its
-  `[options]`; `fx.set_option` in `new_game`.
+- **Setting them**: Game Setup's Mod Options (its Game Settings page), Quick Start's Mod
+  Options and the network lobby's (the host changes them, the others see them) show each
+  with its value ([docs/SETUP.md](../SETUP.md) "Mods' options"); the headless setup model
+  lists them with their values (`setup::modOptionRows`) and sets one by `"<mod id>:<name>"`
+  (`setup::setModOption`); `opense4-server`'s setup files set them in
+  `[options.mod."<mod id>"]` (docs/MULTIPLAYER.md, "Setup files"); a scenario in its
+  `[options]`; `fx.set_option` in `new_game`. A mod's `text/` gives their labels in other
+  languages.
 - **Reading them**: `game.option(name)` (the mod's own), and `game.options.mod_options`
   in rules functions and computer players' views (`{mod, name, value}` each).
 
@@ -459,6 +468,14 @@ by_turn = 40                   # optional: it can no longer be met after this ga
   `enemy_ships_destroyed` and `planets_captured` count from 0 at each check.
 - `sdk::startScenario(rules, mod, name)` makes the game: the setup, the mod's options it
   sets, and the scenario recorded in the game (`GameState::scenario`, save format 9).
+- **Starting one**: the Learn window's Scenarios tab (the title screen's Scenario button)
+  lists the scenarios of the rules mods in use, with their summaries, empires and
+  objectives, and Start Game begins one, played by its first human empire (a scenario
+  without one is for computer players: the tab says so). A dedicated server's setup file
+  starts one with `scenario = "<mod id>:<name>"`: its seed, setup options, empires and the
+  mod's options it sets, before the file's own keys, which take their places (a network
+  host's players join the lobby in place of its human empires; MULTIPLAYER.md "Setup
+  files"). A mod's `text/` can give the title, summary and objectives in other languages.
 - At each victory check, after the mods' victory conditions, each objective not yet met is
   tested for each of its empires (living ones, in empire order). One that holds is logged
   in that empire's Log ("Objective met"), recorded (`GameState::scenario.met`, as

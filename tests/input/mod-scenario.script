@@ -1,0 +1,28 @@
+# The mods' scenarios from the front end (docs/sdk/rules.md "Scenarios"): the intro's Scenario
+# opens the Learn window, whose Scenarios tab lists the scenarios of the rules mods in use (here
+# the fixtures tests/fixtures/mods/ui-fixture and rules-fixture): each with its mod, summary,
+# empires and objectives; one for computer players only says why it cannot start; Start Game
+# begins the fixture's Frontier, its empire and its own option (a beacon bonus of 120, which
+# the fixture's Beacons page shows).
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ui-fixture --mod=test.rules-fixture --layout=1024x768 --size=1280x800
+
+wait-screen front
+click item:Scenario in=front
+wait-for item:Scenarios in=front
+click item:Scenarios in=front
+wait-for item:"scenario:Frontier"
+click item:"scenario:Outpost"
+wait-for item:"scenario-problem:This scenario has no human empire*"
+assert-disabled item:"Start Game"
+click item:"scenario:Frontier"
+wait-gone item:"scenario-problem:*"
+assert-enabled item:"Start Game"
+assert-fits front
+screenshot mod-scenario-list.png
+click item:"Start Game"
+wait-screen game
+key Ctrl+Shift+E
+wait-window empires
+wait-for item:"mod-cell:Lamplighters:Bonus each:120"
+screenshot mod-scenario-game.png

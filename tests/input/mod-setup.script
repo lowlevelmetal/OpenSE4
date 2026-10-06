@@ -1,0 +1,52 @@
+# The mods' game options in the setup screens (docs/SETUP.md "Mods' options", docs/sdk/rules.md
+# "Game options"), with the fixture mod tests/fixtures/mods/ui-fixture: Game Setup's Game
+# Settings page has Mod Options, a window of the options with their values (a switch, a number
+# in its range), kept across Cancel; Quick Start says the options' values above its Mods line,
+# changes them in the same window, and a quick game begun so has them: the mod's Beacons page
+# shows the bonus its value works out from the game's options.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ui-fixture --layout=1024x768 --size=1280x800 --seed=7
+
+wait-screen front
+click item:"New Game" in=front
+wait-for item:"Game Settings" in=front
+click item:"Game Settings" in=front
+wait-for item:"Mod Options" in=front
+assert-fits front
+click item:"Mod Options" in=front
+wait-for item:"mod-option-value:Beacon bonus (minerals):50"
+assert-present item:"mod-option-value:Solar flares:Off"
+click item:"mod-option:Solar flares"
+wait-for item:"mod-option-value:Solar flares:On"
+screenshot mod-setup-options.png
+click item:Done
+wait-gone item:"mod-option:Solar flares"
+# Kept while Game Setup is open.
+click item:"Mod Options" in=front
+wait-for item:"mod-option-value:Solar flares:On"
+click item:Done
+wait-gone item:"mod-option:Solar flares"
+screenshot mod-setup-game-settings.png
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front
+
+# Quick Start: the line with the values, and the same window.
+click item:"Quick Start" in=front
+wait-for item:"Mod options: Beacon bonus (minerals) 50, Solar flares off"
+click item:"Mod Options" in=front
+wait-for item:"mod-option:Beacon bonus (minerals)"
+click item:"mod-option:Beacon bonus (minerals)"
+key Ctrl+A
+type "75"
+key Enter
+wait-for item:"mod-option-value:Beacon bonus (minerals):75"
+click item:Done
+wait-for item:"Mod options: Beacon bonus (minerals) 75, Solar flares off"
+assert-fits front
+screenshot mod-setup-quick-start.png
+click item:##portrait in=front nth=1
+click item:"Begin Game" in=front
+wait-screen game
+key Ctrl+Shift+E
+wait-window empires
+wait-for item:"mod-cell:*:Bonus each:75"

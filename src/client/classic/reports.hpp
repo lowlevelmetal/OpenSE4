@@ -37,7 +37,8 @@ void systemReport(UiContext& ui, game::SystemId sys);
 // battle's copy or a combat simulation's sandbox).
 void objectReport(UiContext& ui, game::ObjectId object, const game::GameState* state = nullptr);
 // Tab strip for reports; returns the chosen tab. Without `cargo` the Cargo tab is left out.
-ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo = true);
+// `clicked`: set when a tab was clicked (even the one shown).
+ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo = true, bool* clicked = nullptr);
 // One report tab at the cursor: the 72x30 cell of TabBtns.bmp in `column`
 // (Detail, Comps, Cargo, Ability, Facil, Descr, Race, Tech), lit when selected;
 // `label` names it for input scripts (and is drawn without the picture). True when clicked.

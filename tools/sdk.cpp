@@ -23,6 +23,7 @@
 #include "sdk/players.hpp"
 #include "sdk/process.hpp"
 #include "sdk/rules.hpp"
+#include "sdk/ui.hpp"
 #include "sdk_tool.hpp"
 
 #include <algorithm>
@@ -690,6 +691,10 @@ int cmdCheck(const std::vector<std::string>& argv) {
     if (!set) {
         errors = set.error();
     } else {
+        // Its interface extensions and text (docs/sdk/interface.md), with the mods it loads with.
+        const sdk::PlayerCheck ui = sdk::checkModUi(*p, set->packages);
+        errors.insert(errors.end(), ui.errors.begin(), ui.errors.end());
+        warnings.insert(warnings.end(), ui.warnings.begin(), ui.warnings.end());
         std::printf("Load order: %s\n", ruleset::describeMods(set->records()).c_str());
         auto paths = installed(*a);
         if (!paths) return fail(paths.error());

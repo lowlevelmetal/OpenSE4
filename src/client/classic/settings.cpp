@@ -92,6 +92,7 @@ std::string settingsToToml(const ClassicSettings& s) {
     toml::table mods;
     mods.insert("enabled", std::move(enabled));
     mods.insert("show_ai_notes", s.showAiNotes);
+    mods.insert("language", s.modLanguage);
     toml::table root;
     root.insert("options", std::move(options));
     root.insert("sound", std::move(sound));
@@ -132,6 +133,7 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
         for (const toml::node& n : *enabled)
             if (auto v = n.value<std::string>(); v && !v->empty()) s.enabledMods.push_back(*v);
     if (auto v = root["mods"]["show_ai_notes"].value<bool>()) s.showAiNotes = *v;
+    if (auto v = root["mods"]["language"].value<std::string>(); v && !v->empty()) s.modLanguage = *v;
     if (auto v = root["learn"]["free_play"].value<bool>()) s.learnFreePlay = *v;
     if (auto v = root["learn"]["started"].value<bool>()) s.learnStarted = *v;
     if (const toml::array* resume = root["learn"]["resume"].as_array())

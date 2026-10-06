@@ -40,6 +40,9 @@ struct GraphicsSettings {
 
 struct ControlSettings {
     Bindings bindings;
+    // The keys the player chose for the mods' actions (input.hpp ModAction),
+    // by action id; the others take the mods' suggestions.
+    ModKeyChoices modKeys;
     bool rightClickMoves = true;      // right-click on a sector gives Move To (not in the classic game)
     float doubleClickSeconds = 0.30f;
 };

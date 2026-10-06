@@ -8,10 +8,12 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace opense4::client {
 
@@ -91,5 +93,39 @@ private:
 
 // The chord pressed this frame, if any (for "press a key" capture).
 std::optional<KeyChord> capturePressedChord();
+// The chord went down this frame with exactly its modifiers (never while ImGui types text).
+bool chordPressed(const KeyChord& c);
+
+// ---- The mods' actions (docs/sdk/interface.md "Key bindings") ----------------------------------
+//
+// A mod's interface may suggest keys for its orders, report panels and
+// Empires pages. They join the rebindable keys (the Settings' Controls page,
+// under the mod's name): the player's own choice wins; a suggestion is used
+// only while no other binding (the game's or an earlier mod's) has that key,
+// and is otherwise left unbound with the conflict said, never taking the
+// other binding's place.
+struct ModAction {
+    std::string id;          // "<mod id>:order:<name>", "<mod id>:panel:<name>", "<mod id>:page:<name>"
+    std::string group;       // the Controls page's heading: the mod's name
+    std::string label;       // "Overcharge shields"
+    std::string suggested;   // the chord the mod suggests ("Ctrl+Shift+O"); empty: none
+};
+// The player's choices, by action id (settings.toml [controls.mod_keys]).
+using ModKeyChoices = std::map<std::string, std::array<KeyChord, 2>>;
+struct ModKeys {
+    std::array<KeyChord, 2> chords;
+    bool chosen = false;     // the player's choice, not the suggestion
+    std::string conflict;    // why the suggestion is not used ("Ctrl+O is the key of Move to"); empty: none
+};
+// The keys of `actions`, in their order (see above).
+std::vector<ModKeys> resolveModKeys(const Bindings& b, const ModKeyChoices& chosen, std::span<const ModAction> actions);
+// What uses a chord besides the action `except` among the game's bindings and
+// the mods' keys: the game's action's label, or the mod action's; empty: nothing.
+std::string chordUser(const Bindings& b, const ModKeyChoices& chosen, std::span<const ModAction> actions, const KeyChord& c,
+                      std::string_view exceptModAction = {}, std::optional<Action> exceptAction = std::nullopt);
+
+// The mods' actions of the data set in use (set when the mods load; empty without them).
+void setModActions(std::vector<ModAction> actions);
+std::span<const ModAction> modActions();
 
 } // namespace opense4::client

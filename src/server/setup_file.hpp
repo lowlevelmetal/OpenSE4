@@ -17,6 +17,7 @@
 //     [[empire]]
 //     kind = "computer"
 //     ai = "builtin"                   # this one's own (docs/sdk/ai-protocol.md §1)
+//     scenario = "example.mod:frontier"  # a mod's scenario (docs/sdk/rules.md "Scenarios"), before the rest
 //
 // Unknown keys are errors, to catch typos.
 
@@ -64,6 +65,9 @@ struct SetupFile {
     // (EmpireSetup::controller; neutral empires only by their own); nullopt:
     // the built-in AI.
     std::optional<game::Controller> ai;
+    // `scenario = "<mod id>:<name>"`: the mod's scenario the game starts from
+    // (its setup filled the fields above first; docs/MULTIPLAYER.md "Setup files").
+    game::ScenarioState scenario;
 };
 
 // Only the `mods` of a setup file, with relative paths made relative to its

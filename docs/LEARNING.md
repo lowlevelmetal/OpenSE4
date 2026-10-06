@@ -1143,7 +1143,8 @@ Order strip ids (`order:<id>`): `move-to`, `warp`, `move-to-waypoint`, `colonize
 `stellar-manipulation`, `rename`, `scrap`, `strategy`, `view-orders`, `sweep-mines`,
 `scrap-facilities`, `jettison`, `cloak`, `decloak`, `use-component`, `use-facility`,
 `abandon-planet`, `convert-resources`, `minister`, `replay-play`, `replay-ship`,
-`replay-step`, `replay-rewind`.
+`replay-step`, `replay-rewind`, and `mod-orders` (the strip's free place, OpenSE4's Mod
+Orders, lit for the mods' orders: docs/sdk/interface.md).
 
 To add a tag: tag the item in the client (`ui.tagItem("<tag>")` after it, `ui.tagFrame`
 with a frame rectangle, or `ui.tagTab("<tab>", shown)` after a tab button) and list it in

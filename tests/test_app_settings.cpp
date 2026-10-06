@@ -77,3 +77,51 @@ TEST_CASE("input: AltGr counts as Alt, as SDL reports it on Windows") {
     CHECK(altGrAsAlt(SDL_KMOD_RALT) == SDL_KMOD_RALT);
     CHECK(altGrAsAlt(SDL_KMOD_NONE) == SDL_KMOD_NONE);
 }
+
+TEST_CASE("settings: the mods' keys take their suggestions only where nothing else has them") {
+    // docs/sdk/interface.md "Key bindings".
+    const Bindings b;
+    const std::vector<ModAction> actions{
+        {"a.mod:order:mark", "A mod", "Mark", "Ctrl+Shift+M"},
+        {"a.mod:order:move", "A mod", "Move on", "M"},              // the game's Move To has M
+        {"b.mod:page:beacons", "B mod", "Beacons", "Ctrl+Shift+M"}, // A mod's Mark came first
+        {"b.mod:panel:x", "B mod", "X", "Ctrl+NoSuchKey"},
+        {"b.mod:order:quiet", "B mod", "Quiet", ""},
+    };
+    ModKeyChoices chosen;
+    std::vector<ModKeys> keys = resolveModKeys(b, chosen, actions);
+    REQUIRE(keys.size() == 5);
+    CHECK(keys[0].chords[0] == KeyChord{ImGuiKey_M, true, true, false});
+    CHECK(keys[0].conflict.empty());
+    CHECK(keys[1].chords[0].empty());   // not taken from the game's binding
+    CHECK(keys[1].conflict == "M is the key of Move to");
+    CHECK(b.chords(Action::MoveTo)[0] == KeyChord{ImGuiKey_M});   // which keeps it
+    CHECK(keys[2].chords[0].empty());
+    CHECK(keys[2].conflict == "Ctrl+Shift+M is the key of Mark");
+    CHECK(keys[3].conflict.find("not a key") != std::string::npos);
+    CHECK(keys[4].chords[0].empty());
+    CHECK(keys[4].conflict.empty());
+    // The player's choice wins, and frees the suggestion for the next mod.
+    chosen["a.mod:order:mark"] = {KeyChord{ImGuiKey_F7, true, false, false}, KeyChord{}};
+    keys = resolveModKeys(b, chosen, actions);
+    CHECK(keys[0].chosen);
+    CHECK(keys[0].chords[0] == KeyChord{ImGuiKey_F7, true, false, false});
+    CHECK(keys[2].chords[0] == KeyChord{ImGuiKey_M, true, true, false});
+    CHECK(keys[2].conflict.empty());
+    // Who has a chord: the game's actions, then the mods'.
+    CHECK(chordUser(b, chosen, actions, KeyChord{ImGuiKey_M}) == "Move to");
+    CHECK(chordUser(b, chosen, actions, KeyChord{ImGuiKey_F7, true, false, false}) == "Mark");
+    CHECK(chordUser(b, chosen, actions, KeyChord{ImGuiKey_F7, true, false, false}, "a.mod:order:mark").empty());
+    CHECK(chordUser(b, chosen, actions, KeyChord{ImGuiKey_M}, {}, Action::MoveTo).empty());
+}
+
+TEST_CASE("settings: the mods' keys the player chose are kept in the file") {
+    AppSettings s;
+    s.controls.modKeys["a.mod:order:mark"] = {KeyChord{ImGuiKey_F7, true, false, false}, KeyChord{}};
+    s.controls.modKeys["b.mod:page:beacons"] = {KeyChord{}, KeyChord{}};   // unbound on purpose
+    const std::string text = appSettingsToToml(s);
+    CHECK(text.find("mod_keys") != std::string::npos);
+    const AppSettings back = appSettingsFromToml(text);
+    CHECK(back.controls.modKeys == s.controls.modKeys);
+    CHECK(appSettingsToToml(AppSettings{}).find("mod_keys") == std::string::npos);
+}

@@ -44,8 +44,8 @@ struct ModOrderChoice {
 // The mods' orders the empire may give that target: those of the game's
 // rules mods that apply to its kind, when the target is the empire's (or, for
 // "empire", another living empire). The mod's own check runs when the order
-// is given (game::apply). The interface lists them; a later step gives them
-// buttons.
+// is given (game::apply). The client offers them in the order strip's Mod
+// Orders, panels' buttons and keys (docs/sdk/interface.md).
 std::vector<ModOrderChoice> modOrders(const game::Rules& r, const game::GameState& s, game::EmpireId empire, const ModOrderTarget& target,
                                       std::span<const mods::Package> extra = {});
 // The command giving it, with these arguments (a map; those left out take

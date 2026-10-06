@@ -282,7 +282,7 @@ exactly the original's.
 | Empire Setup, General | For a computer-controlled empire, `Computer Player` and its ▽ button: the game's choice (the Players page's), the classic AI, or one of the mods' players, for this empire alone. |
 | Game Setup, Game Settings | `Computer players see everything`: their view is the whole game instead of what their empire knows (off by default, so that they play fair). `Computer Player Limits` sets how much they may do for one request of the game: bytecodes for a turn's planning, bytecodes for any other request, and the memory each keeps. A player that goes over fails that request, and the classic AI answers it. |
 | Quick Start | `Computer Players` in the left column: who plays the quick game's computer empires, and whether they see everything. |
-| Multiplayer | The host form chooses who plays the computer empires and whether they see everything; in the lobby the host changes each computer empire's player and the option, and joining players see both. The players run on the host's computer. |
+| Multiplayer | The host form chooses who plays the computer empires and whether they see everything; in the lobby the host changes each computer empire's player and the option, and sets their limits (`Computer Player Limits`, beside the option), and joining players see the players and the option. The players run on the host's computer. |
 | Command line | `--ai=MOD:PLAYER` plays every computer empire of a `--quick-start` game with that player. |
 
 In a game, when such a player fails (an error in its Python, or a request over its limits),
@@ -295,6 +295,39 @@ write about what they think on the system and galaxy views and in the reports;
 `Ctrl+Shift+N` switches it in a game. It shows the notes of every player your computer
 runs, whatever your empire knows, so it is a view for making computer players rather than
 for playing against them.
+
+### Mods' options
+
+A mod whose rules declare game options ([docs/sdk/rules.md](sdk/rules.md) "Game options")
+adds them to the setup screens; without such mods the screens are the original's.
+
+| Where | What |
+|---|---|
+| Game Setup, Game Settings | `Mod Options` opens a window of every option of the game's mods, under each mod's name: a switch (a lamp) or a whole number in its range (under the pointer), with the mod's description. `Restore Defaults` sets them back. The settings are kept while Game Setup stays open, as its others are. |
+| Quick Start | A line above the Mods line says the options' values; `Mod Options` under it opens the same window. |
+| Multiplayer | The lobby's line under the mods says the values; the host changes them with `Mod Options`, and players who join see them with `See Mod Options`. |
+| Setup files | `[options.mod."<mod id>"]` in a dedicated server's setup file ([MULTIPLAYER.md](MULTIPLAYER.md) "Setup files"). |
+
+The options are part of the game, saved with it: every player of a game has the same.
+
+### Scenarios of mods
+
+A rules mod may hold scenarios: a game's setup with objectives of its own
+([docs/sdk/rules.md](sdk/rules.md) "Scenarios"). The title screen's `Scenario` button opens
+the Learn window; while the mods in use hold scenarios it has a `Scenarios` tab listing them,
+each with its mod, its summary, its empires and its objectives. `Start Game` begins the one
+chosen, played by its first human empire. A scenario for computer players only says so and
+cannot start there (a dedicated server's setup file can start it:
+`scenario = "<mod id>:<name>"`).
+
+### What else mods add to the windows
+
+Mods can also add to the game's windows ([docs/sdk/interface.md](sdk/interface.md)): their
+orders in the order strip's Mod Orders, panels in the reports (the report's `MOD` button),
+columns in the list windows (a `Mods` tab, or `Mod Columns`), pages in the Empires window,
+keys on the Settings' Controls page, and their names in other languages (Settings → Modding,
+"Language of the mods' text"). These change nothing in a game, so players of a network game
+may have different ones.
 
 ## Where OpenSE4 keeps its own files
 

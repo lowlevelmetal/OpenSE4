@@ -122,6 +122,8 @@ public:
     // How many engine calls that play the game (an order carried out, End
     // Turn, the computer players' turns, a battle's answer) have run.
     uint64_t engineCalls() const { return engineCalls_; }
+    // A number no other session of this run has (caches about one game tell games apart).
+    uint64_t serial() const { return serial_; }
 
     // Validates and applies a command for the local player (turn-based games:
     // and carries it out).
@@ -343,6 +345,8 @@ private:
     std::string masterVerifier_;
     uint64_t revision_ = 1;
     uint64_t engineCalls_ = 0;
+    uint64_t serial_ = nextSessionSerial();
+    static uint64_t nextSessionSerial();
     std::vector<game::Command> orders_;
     // The Players window switched our own empire this turn (a player's copy):
     // the objects changed since carry their flags (carryFlags), once each.

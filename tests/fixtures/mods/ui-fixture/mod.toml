@@ -1,0 +1,56 @@
+[mod]
+id = "test.ui-fixture"
+name = "Interface fixture"
+version = "1.0.0"
+api = 1
+authors = ["OpenSE4 tests"]
+description = "The interface tier's tests: mod orders with their buttons and keys, report panels, list columns, an Empires page, text in two languages, game options and a scenario."
+
+[rules]
+players_see_mod_data = true
+
+[[rules.options]]
+name = "beacon_bonus"
+label = "Beacon bonus (minerals)"
+description = "What each beacon lit gives its empire."
+type = "int"
+min = 0
+max = 500
+default = 50
+
+[[rules.options]]
+name = "flares"
+label = "Solar flares"
+type = "bool"
+default = false
+
+[[rules.orders]]
+name = "mark"
+label = "Mark the ship"
+description = "Paints a mark on the ship's hull, kept in the mod's data."
+applies_to = "vehicle"
+[[rules.orders.args]]
+name = "colour"
+type = "text"
+default = "red"
+
+[[rules.orders]]
+name = "beacon"
+label = "Light beacons"
+description = "Each beacon gives the empire the bonus of the game's options."
+applies_to = "self"
+[[rules.orders.args]]
+name = "count"
+type = "int"
+min = 1
+max = 5
+default = 1
+
+[[rules.orders]]
+name = "survey"
+label = "Survey a system"
+description = "Notes a system the colony surveys."
+applies_to = "colony"
+[[rules.orders.args]]
+name = "system"
+type = "system"

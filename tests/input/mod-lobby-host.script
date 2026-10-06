@@ -1,0 +1,41 @@
+# Hosting a network game with mods that declare game options and offer computer players
+# (docs/MULTIPLAYER.md "The lobby"): in the lobby the host sees the options' values, changes them
+# in the Mod Options window (players who join see the change, mod-lobby.script), and sets the
+# computer players' limits with Computer Player Limits beside "Computer players see everything".
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ui-fixture --mod=test.ai-fixture --layout=1024x768 --size=1280x800 --seed=7 --open=multiplayer
+
+wait-for item:"Host a Game"
+click item:"Host a Game"
+wait-for item:"Open Lobby"
+# A port of its own, and no router.
+click item:"Port (TCP)"
+key Ctrl+A
+type "46918"
+key Enter
+click item:"Forward the port on my router automatically (UPnP)"
+click item:"Open Lobby"
+wait-for item:"Mod options: Beacon bonus (minerals) 50, Solar flares off"
+assert-present item:"Computer players see everything"
+click item:"Mod Options"
+wait-for item:"mod-option:Beacon bonus (minerals)"
+click item:"mod-option:Solar flares"
+wait-for item:"mod-option-value:Solar flares:On"
+click item:"mod-option:Beacon bonus (minerals)"
+key Ctrl+A
+type "90"
+key Enter
+wait-for item:"mod-option-value:Beacon bonus (minerals):90"
+screenshot mod-lobby-host-options.png
+click item:Done
+wait-for item:"Mod options: Beacon bonus (minerals) 90, Solar flares on"
+# The computer players' limits, the host's choice.
+click item:"Computer Player Limits"
+wait-for item:"Planning (politics, orders, economy), million bytecodes"
+screenshot mod-lobby-host-limits.png
+click item:Done
+wait-gone item:"Planning (politics, orders, economy), million bytecodes"
+screenshot mod-lobby-host.png
+click item:Leave
+wait-for item:"Host a Game"

@@ -96,8 +96,8 @@ after = ["example.common-lib"]      # load order hints; the user can reorder
 
 - **Load order:** the install, then each enabled mod in order, then the game's own
   settings. A later mod wins.
-- **Identity:** the manifest, plus a hash of every file except `assets/` and `ui/`, gives
-  the mod's identity. A game's mod set (id, version, hash) is saved with the game, sent in
+- **Identity:** the manifest, plus a hash of every file except `assets/`, `ui/` and
+  `text/`, gives the mod's identity. A game's mod set (id, version, hash) is saved with the game, sent in
   the lobby and checked when a player joins, next to today's data-set identity
   (`game::dataSetIdentity`).
 - **Classic mods** (a folder of replacement data files and pictures) load as a package
@@ -428,10 +428,9 @@ computer, as the engine itself does. The sandbox enforces it:
   generators** in `data/*.py`.
 - **Budgets and failures**: per call and per game turn (game options); a failing function
   is skipped for the turn, and three failures turn a mod's rules off for the turn.
-- **Not yet**: buttons for mod orders, the mods' options and scenarios in the setup
-  screens and the lobby (the headless setup model and the server's setup files have
-  them), hooks inside a combat round (question 4 stays open: battles have hooks around
-  them only).
+- **Not yet**: hooks inside a combat round (question 4 stays open: battles have hooks
+  around them only). The buttons for mod orders, the mods' options in the setup screens
+  and the lobby, and starting scenarios came with the interface tier (section 8).
 
 ## 8. Interface (tier 4)
 
@@ -445,6 +444,27 @@ The interface is drawn by Dear ImGui. A small declarative layout (a TOML or Pyth
 description of rows, labels, values and buttons) keeps mods working across interface
 changes better than raw drawing calls would. Interface code runs on each player's own
 computer and never changes the game except through commands.
+
+**As built (S5):** [docs/sdk/interface.md](sdk/interface.md) describes the interface tier:
+
+- `ui/*.toml` declares how the mod's orders show (a picture, questions and choices for
+  their arguments, a key), report panels (ship, fleet, planet, colony, system), list columns
+  (Ships\Units, Planets, Colonies, Designs), Empires pages and buttons that give orders;
+  values come from the player's own view (a field, the mod's data, an ability) or from
+  Python in `ui/*.py` (`opense4.ui`), worked out once per game state, in the sandbox, with
+  small budgets; a failing one shows an error box in place of its panel.
+- Mod orders are given from the order strip's free place (Mod Orders), from panels'
+  buttons and with keys, their arguments asked one after another (numbers, text, choices,
+  picks on the map), as commands.
+- `text/<language>.toml` gives the mod's names in other languages (Settings → Modding chooses
+  one; English and the mod's own words are the fallbacks).
+- Keys the mods suggest join the Settings' Controls page; a suggestion that another binding
+  has is left unbound and said, never taken.
+- The setup screens and the lobby set the mods' game options; the Learn window starts the
+  mods' scenarios, and a server's setup file names one; the lobby's host sets the computer
+  players' limits.
+- Without such mods every window is the original's; `ui/` and `text/` are outside a mod's
+  identity.
 
 ## 9. Multiplayer, saves and the original's saves
 
@@ -528,7 +548,7 @@ computer and never changes the game except through commands.
 | S2 | Runtime | A prototype of the Python runtime on every platform (question 1), measured against the built-in AI's workload; the sandbox and its limits. |
 | S3 | Computer players | Controllers per empire; the AI API and view; every decision callback; script memory; the built-in AI as a library; the decision journal; external bots; the arena. |
 | S4 | Rules | Hooks; the effects API; mod state; abilities with effects; mod orders, events, options, victory conditions; generators and scenarios. |
-| S5 | Interface | Panels, columns, buttons for mod orders, text, key bindings. |
+| S5 | Interface | Panels, columns, buttons for mod orders, text, key bindings. Built: docs/sdk/interface.md. |
 | S6 | Workshop | Publishing and subscribing with the Steam goal; mod sets offered on joining. |
 
 Each milestone ends with the golden checksums unchanged for unmodded games, and with

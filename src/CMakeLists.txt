@@ -202,6 +202,8 @@ add_library(opense4_sdk STATIC
     sdk/rules_engine.cpp
     sdk/rules_view.cpp
     sdk/scenario.cpp
+    sdk/ui.cpp
+    sdk/ui_values.cpp
     sdk/view.cpp
     sdk/worker.cpp
     "${sdk_package_cpp}")

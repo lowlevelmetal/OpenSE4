@@ -100,6 +100,9 @@ moves are being played, these keys are ignored.
 | `Alt+Enter` | Switch between window and fullscreen |
 | `Ctrl+Shift+N` | Show or hide the notes of the computer players of mods (see [Settings](settings#modding)) |
 
+Mods may add keys of their own for their orders, panels and pages; the Controls tab lists them
+under each mod's name, and a mod's key never takes one of these (see [Settings](settings#controls)).
+
 ## Mouse in the main window
 
 | Action | Result |

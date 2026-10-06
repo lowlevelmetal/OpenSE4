@@ -1,0 +1,72 @@
+# The mods' orders (docs/sdk/interface.md "Mod orders"), on a training game of our own
+# (tests/input/learn-mods: two colony ships at home) played with the fixture mod
+# tests/fixtures/mods/ui-fixture:
+# - with a ship selected, the order strip's free place is lit as Mod Orders; its menu lists the
+#   ship's orders (Mark the ship, with the mod's picture) and the empire's own (Light beacons);
+#   Mark asks which colour from the mod's list, and the order takes effect: the ship's Markings
+#   panel (the report's MOD button) shows the mark, kept in the mod's data;
+# - the panel's button gives the same order again;
+# - the key the mod suggests (Ctrl+Shift+B) gives Light beacons: a number asked for, the
+#   minerals of the game's option per beacon, the Empires page counting them;
+# - the colony's Survey order asks for a system picked on the map.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ui-fixture --learn-dir=tests/input/learn-mods --training=outfitters --layout=1024x768 --size=1280x800
+
+wait-lesson outfitters
+wait 5
+click tag:lesson:hide
+# No selection's orders yet, but the empire's own: the place is lit.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+click tag:order:mod-orders
+click tag:order:mod-orders optional
+click tag:order:mod-orders optional
+click tag:order:mod-orders optional
+wait-for item:"Mark the ship" in="Mod Orders##main-chooser"
+assert-present item:"Light beacons" in="Mod Orders##main-chooser"
+screenshot mod-orders-menu.png
+click item:"Mark the ship" in="Mod Orders##main-chooser"
+wait-for item:green in="Mark the ship##main-chooser"
+click item:green in="Mark the ship##main-chooser"
+wait-gone item:green
+# The order took effect: the ship's Markings panel shows the mod's data.
+click item:"Mod panels"
+wait-for item:"mod-row:Mark:green"
+assert-present item:"mod-panel:Markings"
+screenshot mod-orders-marked.png
+# The panel's button: the same order, another colour.
+click item:"Mark the ship" in=main
+wait-for item:blue in="Mark the ship##main-chooser"
+click item:blue in="Mark the ship##main-chooser"
+wait-for item:"mod-row:Mark:blue"
+# The mod's key for its empire order: how many beacons, then the bonus each (50).
+key Ctrl+Shift+B
+wait-for item:OK
+key Backspace
+type "3"
+click item:OK
+wait-gone item:OK
+key F9
+wait-window empires
+click item:Beacons in=empires
+wait-for item:"mod-cell:Terran:Beacons lit:3"
+assert-present item:"mod-cell:Terran:Bonus each:50"
+screenshot mod-orders-beacons.png
+key Escape
+wait-closed empires
+# The colony's survey: a system picked on the map.
+click sector:home
+wait-for item:report:colony
+click item:report:colony
+wait-for item:"mod-panel:Colony watch"
+click item:"Survey a system" in=main
+wait 2
+click sector:star
+wait-for item:"mod-row:Surveyed:*"
+assert-absent item:"mod-row:Surveyed:-"
+screenshot mod-orders-survey.png
+# Back to the report's own page.
+click item:Detail
+wait-gone item:"mod-panel:Colony watch"
