@@ -55,7 +55,10 @@ int facilitySlots(const Rules& r, const GameState& s, const Colony& c);
 int64_t maxPopulation(const Rules& r, const GameState& s, const Colony& c);
 int64_t colonyCargoCapacity(const Rules& r, const GameState& s, const Colony& c);
 bool breathable(const GameState& s, const Colony& c);
-const ruleset::PlanetSize* planetSize(const Rules& r, const SpaceObject& planet, bool domed = false);
+// The planet's PlanetSize record: by its physical type (Planet or Asteroids)
+// and size name (spec 01 §5.5), else by that type and stellar size, else by
+// the name alone; null when none fits.
+const ruleset::PlanetSize* planetSize(const Rules& r, const SpaceObject& planet);
 
 // Empires with which `a` is at war (or otherwise fights on contact).
 bool hostile(const GameState& s, EmpireId a, EmpireId b);

@@ -347,3 +347,30 @@ TEST_CASE("engine: processTurn advances and rejects stale orders") {
     CHECK(s.turn == 1);
     CHECK(res.rejected.size() == 2);  // stale list + invalid rename
 }
+
+TEST_CASE("engine: a planet's size record is the one of its physical type (spec 01 §5.5)") {
+    // The fixture data set has a Small planet record and a Small asteroids
+    // record, the planet one first.
+    const Rules& r = engineRules();
+    SpaceObject planet;
+    planet.kind = ObjectKind::Planet;
+    planet.size = "Small";
+    SpaceObject field = planet;
+    field.kind = ObjectKind::Asteroids;
+    const ruleset::PlanetSize* p = planetSize(r, planet);
+    const ruleset::PlanetSize* a = planetSize(r, field);
+    REQUIRE(p);
+    REQUIRE(a);
+    CHECK(p->physicalType == "Planet");
+    CHECK(a->physicalType == "Asteroids");
+    CHECK(a->maxPopulation != p->maxPopulation);
+    // The stellar size when no record has the name; constructed worlds by name.
+    planet.size = "Ringworld";
+    REQUIRE(planetSize(r, planet));
+    CHECK(planetSize(r, planet)->constructed);
+    field.size = "Medium";   // no asteroids record of that size: the planet's, by name
+    REQUIRE(planetSize(r, field));
+    CHECK(planetSize(r, field)->physicalType == "Planet");
+    field.size = "Enormous";
+    CHECK_FALSE(planetSize(r, field));
+}
