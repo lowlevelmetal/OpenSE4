@@ -3,6 +3,7 @@ resource values, whether our race breathes there, how far and how dangerous), wh
 colony ship goes where, how many more colony ships to build, and exploring with
 scouts."""
 
+from . import config
 from .util import RES, chebyshev
 
 
@@ -93,7 +94,7 @@ class Expansion:
                 worth *= 0.3
             if s in foreign_sys and s not in my_sys:
                 worth *= 0.5
-            score = worth / (1.0 + 0.35 * d)
+            score = worth / (1.0 + (0.25 if config.on("wide_expansion") else 0.35) * d)
             out.append((score, o, s))
         out.sort(key=lambda x: -x[0])
         return out

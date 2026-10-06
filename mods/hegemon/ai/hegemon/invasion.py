@@ -73,6 +73,20 @@ class Invasion:
                 best = (c, o)
         return best
 
+    def troops_ready(self):
+        """(troop units aboard our transports, the troop design's figures)."""
+        w = self.w
+        troop = self.book.design_id("troop")
+        tfig = w.figures(troop) if troop is not None else None
+        ids = set()
+        for d in w.d["designs"]:
+            if d["owner"] == w.me and d["figures"] is not None and d["figures"]["vehicle_type"] == "troop":
+                ids.add(d["id"])
+        n = 0
+        for v in self.roles.get("trooper", []):
+            n += self.troops_aboard(v, ids)
+        return n, tfig
+
     def plan(self, at_war):
         w = self.w
         troop = self.book.design_id("troop")
@@ -105,7 +119,7 @@ class Invasion:
         cap_each = (w.figures(trooper) or {}).get("cargo", 0)
         size = tfig["tonnage_max"] or tfig["tonnage_used"] or 1
         per_ship = cap_each // size if size > 0 else 0
-        if at_war and per_ship > 0:
+        if at_war and per_ship > 0:   # (arm or war)
             want_units = max(need or 0, self.mem.get("troop_goal", 12))
             want_ships = min(4, (want_units + per_ship - 1) // per_ship)
             if len(self.roles.get("trooper", [])) + self.mil.queued_role("trooper") < want_ships:

@@ -8,6 +8,7 @@ from a system with a spaceport (the home system gets a quarter without one). Eac
 colony builds one item at a time at its own rate, so a colony's queue is worth most
 when it holds the item that adds the most value per turn of building it."""
 
+from . import config
 from .util import RES, res_total, clamp
 
 MOOD_PCT = {"jubilant": 120, "happy": 110, "indifferent": 100, "unhappy": 90, "angry": 80, "rioting": 0}
@@ -15,6 +16,13 @@ MOOD_PCT = {"jubilant": 120, "happy": 110, "indifferent": 100, "unhappy": 90, "a
 # What one point of each kind is worth before the empire's needs adjust it:
 # minerals, organics, radioactives, research, intelligence.
 BASE_PRICES = [1.0, 0.7, 0.7, 1.3, 0.15]
+
+# The share of output each phase aims at: minerals, organics, radioactives, research.
+TARGET_SHARES = {
+    "expand": [0.45, 0.08, 0.10, 0.37],
+    "arm": [0.55, 0.08, 0.12, 0.25],
+    "war": [0.58, 0.08, 0.12, 0.22],
+}
 
 
 class Economy:
@@ -40,6 +48,8 @@ class Economy:
         self.sys_has = {}       # system -> set of tags ("spaceport", "supply", "happy", ...)
         self.colony_info = {}   # planet -> ColonyInfo
         self.yards = 0
+        self.converters = []
+        self.converter_queued = False
         self._prices = None
         for c in world.my_colonies:
             self._scan_colony(c)
@@ -86,6 +96,10 @@ class Economy:
                     self._tag(system, "smod%d" % r)
             if f.sres > 0:
                 self._tag(system, "sres")
+            if f.convert and fid in facs:
+                self.converters.append(c["planet"])
+            if f.convert:
+                self.converter_queued = True
         if c["space_yard"] or "yard" in tags:
             self.yards += 1
         self.colony_info[c["planet"]] = {"system": system, "planet": o, "queued_facilities": len(queued), "yard": bool(c["space_yard"]) or "yard" in tags}
@@ -112,8 +126,23 @@ class Economy:
         return p
 
     def _make_prices(self):
+        """Prices from the income mix the phase wants: a kind of output we make less of
+        than its target share is worth more, one we make more of is worth less; then the
+        store adjusts them (a store running dry raises a price, one filling up lowers it)."""
         rep = self.report
         base = list(self.tune.get("prices", BASE_PRICES))
+        phase = self.tune.get("phase", "expand")
+        target = TARGET_SHARES.get(phase, TARGET_SHARES["expand"])
+        made = [rep["colonies"][r] + rep["remote_mining"][r] for r in RES] + [rep["research"], rep["intelligence"]]
+        total = float(sum(made[:4])) or 1.0
+        for i in range(4 if config.on("target_shares") else 0):
+            share = made[i] / total
+            k = target[i] / max(0.02, share)
+            if k < 0.5:
+                k = 0.5
+            if k > 2.0:
+                k = 2.0
+            base[i] = base[i] * (0.4 + 0.6 * k)
         out = []
         for i in range(3):
             r = RES[i]
@@ -207,3 +236,40 @@ class Economy:
     def cost_value(self, cost):
         p = self.prices
         return cost["minerals"] * p[0] + cost["organics"] * p[1] + cost["radioactives"] * p[2]
+
+    def imbalance(self):
+        """(resource that overflows, resource that runs short) when the store is lopsided, or None."""
+        st = self.stored
+        cap = self.cap
+        hi = None
+        lo = None
+        for r in RES:
+            if cap[r] > 0 and st[r] > 0.7 * cap[r] and (hi is None or st[r] > st[hi]):
+                hi = r
+        for r in RES:
+            if cap[r] > 0 and st[r] < 0.15 * cap[r] and (lo is None or st[r] < st[lo]):
+                lo = r
+        if hi is None or lo is None or hi == lo:
+            return None
+        return (hi, lo)
+
+    def conversions(self):
+        """Convert Resources orders for a converting colony when one resource overflows
+        while another runs short (the classic AI never converts)."""
+        pair = self.imbalance()
+        if pair is None or not self.converters or not config.on("convert"):
+            return []
+        hi, lo = pair
+        amount = int(self.stored[hi] - 0.5 * self.cap[hi])
+        if amount <= 1000:
+            return []
+        amount = min(amount, 65000)
+        planet = self.converters[0]
+        c = None
+        for x in self.w.my_colonies:
+            if x["planet"] == planet:
+                c = x
+        if c is None or c["orders"]:
+            return []
+        return [{"kind": "set_orders", "planet": planet,
+                 "orders": [{"kind": "convert_resources", "amount": amount, "from_resource": hi, "to_resource": lo}]}]

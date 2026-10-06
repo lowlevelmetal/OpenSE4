@@ -2,6 +2,7 @@
 
 from opense4 import ai
 
+from . import config
 from .world import World
 from .knowledge import Knowledge, SURFACES
 from .economy import Economy
@@ -20,6 +21,13 @@ from .invasion import Invasion
 from .intel import Force, design_strength, planet_strength
 
 DEBUG = False
+UNSAFE_TURNS = 25   # a system where we lost an unarmed ship is avoided this long
+
+
+
+def good_target():
+    """A planet is worth settling above this score (expansion.Expansion.targets)."""
+    return 400.0 if config.on("wide_expansion") else 1500.0
 
 # Tunable weights (mods/hegemon/README.md, "Tuning").
 TUNE = {
@@ -51,8 +59,33 @@ class Hegemon(ai.Player):
         else:
             kn.levels = w.research_levels()
         self.kn = kn
-        self.econ = Economy(w, kn)
+        st = self.memory.get("strategy")
+        self.econ = Economy(w, kn, {"phase": st.get("phase", "expand") if isinstance(st, dict) else "expand"})
         return w
+
+    def dangers(self, w, intel):
+        """{system: weight} where colony ships had better not go: hostile armed ships are
+        believed there, or one of our unarmed ships was lost there lately."""
+        out = {}
+        for s, f in intel.threat_by_system().items():
+            if f.attack > 0:
+                out[s] = f.power()
+        unsafe = self.memory.get("unsafe")
+        if not isinstance(unsafe, dict):
+            unsafe = {}
+            self.memory["unsafe"] = unsafe
+        for b in w.d["battles"]:
+            for p in b["pieces"]:
+                if p["owner"] == w.me and p["kind"] == "vehicle" and p["survivor"] != w.me and p["design"] is not None:
+                    d = w.designs.get(p["design"])
+                    if d is not None and role_of_name(d["name"]) in ("colonist", "scout", "trooper"):
+                        unsafe[str(b["location"]["system"])] = w.turn
+        for k in list(unsafe.keys()):
+            if w.turn - unsafe[k] > UNSAFE_TURNS:
+                del unsafe[k]
+            else:
+                out[int(k)] = out.get(int(k), 0) + 1
+        return out
 
     def my_roles(self, w):
         """Our vehicles by role: {role: [vehicle maps]}."""
@@ -110,7 +143,7 @@ class Hegemon(ai.Player):
             mine.add(v["id"])
             if not v["orders"] and v["fleet"] is None:
                 idle.append(v)
-        ex = Expansion(w, self.kn, self.econ, {}, self.memory)
+        ex = Expansion(w, self.kn, self.econ, self.dangers(w, Intel(w, self.memory)), self.memory)
         for v, planet in ex.assign(idle):
             orders.add({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "colonize", "object": planet["id"]}]})
             self.note(planet["id"], "colonize target", kind="object")
@@ -126,15 +159,22 @@ class Hegemon(ai.Player):
         good = 0
         surfaces = self.colonizable_surfaces()
         if surfaces:
-            good = sum(1 for t in ex.targets(surfaces) if t[0] > 1500.0)
+            good = sum(1 for t in ex.targets(surfaces) if t[0] > good_target())
         strategy.update(my_force, good)
         mil = Military(w, self.kn, self.memory, intel, roles, strategy=strategy, logistics=logi)
-        orders.extend(mil.plan())
         book = DesignBook(w, self.kn, self.memory)
+        mil.troops_ready, mil.troop_fig = Invasion(w, self.memory, roles, book, mil).troops_ready()
+        orders.extend(mil.plan())
         orders.extend(mil.launches(book))
+        orders.extend(self.econ.conversions())
         mil.queued_role = lambda r: 0
         mil.queued_at = {}
-        orders.extend(Invasion(w, self.memory, roles, book, mil).plan(strategy.phase == "war"))
+        inv = Invasion(w, self.memory, roles, book, mil)
+        orders.extend(inv.plan(strategy.phase in ("arm", "war")))
+        if DEBUG and (roles.get("trooper") or inv.commands or book.design_id("troop") is not None):
+            self.log("T%d INVADE troop=%s ready=%s transports=%d cmds=%s mem=%s" % (
+                w.turn, book.design_id("troop"), mil.troops_ready, len(roles.get("trooper", [])),
+                [(c["kind"], c.get("vehicle"), [o["kind"] for o in c.get("orders", [])]) for c in inv.commands][:6], inv.inv))
         for oid, text in mil.notes:
             self.note(oid, text, kind="object")
         if DEBUG:
@@ -178,11 +218,27 @@ class Hegemon(ai.Player):
             for b in w.d["battles"]:
                 self.log("T%d BPIECES %s" % (w.turn, [(p["kind"], p["owner"], p["name"][:12], p["damage"], p["survivor"]) for p in b["pieces"] if p["owner"] != w.me][:8]))
             if w.turn % 10 == 0:
+                by = {}
+                for o in w.planets:
+                    if o["colony"] is None:
+                        sz = ex.capacity(o)
+                        by.setdefault(o["surface"], []).append((sz[0], o["atmosphere"] == ex.atmosphere))
+                self.log("T%d PLANETS free %s surfaces=%s race=%s/%s" % (w.turn, {k: (len(v), sum(1 for x in v if x[1]), sum(x[0] for x in v)) for k, v in by.items()},
+                         surfaces, ex.home_surface, ex.atmosphere))
                 sats = sum((v["count"] or 0) for v in w.my_vehicles if v["type"] == "satellite")
                 mines = sum((v["count"] or 0) for v in w.my_vehicles if v["type"] == "mine")
                 plats = sum(st["count"] for c in w.my_colonies if c["cargo"] for st in c["cargo"]["units"])
                 caps = [(c["cargo_capacity"], c["cargo_used"]) for c in w.my_colonies][:8]
                 self.log("T%d DEFENSE sats %d mines %d cargo_units %d caps %s" % (w.turn, sats, mines, plats, caps))
+                parts = []
+                for e in w.d["empires"]:
+                    st = e["stats"]
+                    if st is None or e["score"] is None:
+                        continue
+                    prod = sum(st["production"].values()) + st["research"] + st["intelligence"]
+                    tons = (e["score"] - prod - 200 * st["tech_levels"]) // 10
+                    parts.append((e["id"], e["score"], prod, st["research"], st["tech_levels"], tons, st["ships"], st["bases"], st["planets"]))
+                self.log("T%d SCORES (id, score, production, research, techs, tonnage, ships, bases, colonies) %s" % (w.turn, parts))
                 unexplored = sum(1 for x in w.systems.values() if not x["explored"])
                 frontier = sum(1 for o in w.warps if o["destination_system"] is None)
                 self.log("T%d INTEL foreign_colonies=%d rivals=%s unexplored=%d frontier=%d scouts=%d" % (
@@ -204,14 +260,15 @@ class Hegemon(ai.Player):
         kn = self.kn
         econ = self.econ
         surfaces = self.colonizable_surfaces()
-        book = DesignBook(w, kn, self.memory)
+        book = DesignBook(w, kn, self.memory, {"prices": econ.prices[:3]})
         orders.extend(book.update(surfaces))
         # Research.
         tbs = {}
         ex = Expansion(w, kn, econ, {}, self.memory)
         for sf in SURFACES:
             if sf not in surfaces:
-                tbs[sf] = sum(t[0] for t in ex.targets([sf])[:8])
+                tl = ex.targets([sf])
+                tbs[sf] = sum(t[0] for t in (tl if config.on("colonize_value") else tl[:8]))
         rt = TUNE["research"]
         strategy = Strategy(w, Intel(w, self.memory), self.memory)
         weights = strategy.research_weights()
@@ -225,11 +282,13 @@ class Hegemon(ai.Player):
         wants = self.ship_wants(w, econ, book, surfaces)
         cons = Construction(w, kn, econ, wants)
         orders.extend(cons.plan())
+        self.memory["unmet_ships"] = (self.memory.get("unmet_ships", 0) + cons.unmet) // 2
         if DEBUG:
             q = [(c["planet"], [(i["kind"], i["facility"], i["design"]) for i in c["queue"]["items"]]) for c in w.my_colonies if c["queue"]["items"]]
             self.log("T%d col=%d stored=%s wants=%s cmds=%s queues=%s prices=%s roles=%s" % (
                 w.turn, len(w.my_colonies), econ.stored, wants["ships"], [(c["target"], c["item"]) for c in cons.commands], q,
                 [round(x, 2) for x in econ.prices], book.book))
+            self.log("T%d CONS %s" % (w.turn, getattr(cons, "debug", None)))
             for line in book.made:
                 self.log("T%d DESIGN %s" % (w.turn, line))
             if book.problems:
@@ -300,6 +359,42 @@ class Hegemon(ai.Player):
             theirs = sum(1 for p in data["pieces"] if p["owner"] != me and p["owner"] is not None and p["alive"])
             self.log("ROUND %d mine %d theirs %d orders %d refused %s" % (data["round"], mine, theirs, len(orders), [(r["reason"]) for r in (self.refused or [])][:3]))
 
+    def yard_plan(self, w, econ, book, strategy, queued_role, ships):
+        # Yards: more building queues as the empire grows; space yard facilities on
+        # colonies (no upkeep), and early a yard base at home.
+        yard = book.design_id("yard")
+        queues = 0
+        for c in w.my_colonies:
+            if c["space_yard"] or econ.colony_info.get(c["planet"], {}).get("yard"):
+                queues += 1
+        bases = 0
+        for v in w.my_vehicles:
+            if v["queue"] is not None:
+                queues += 1
+                bases += 1
+        # More yards when ships we can pay for wait for a free yard (the last turns' count).
+        unmet = self.memory.get("unmet_ships", 0)
+        want_yards = 2
+        if strategy.phase != "expand":
+            want_yards = min(14, max(queues + (1 if unmet >= 2 else 0), 3))
+        if yard is not None and bases + queued_role("yard") < 1 and w.turn < 40:
+            ships.append({"design": yard, "count": 1, "priority": 65.0, "near": w.home_system()})
+        yard_sites = []
+        if queues < want_yards:
+            cands = []
+            for c in w.my_colonies:
+                info = econ.colony_info.get(c["planet"])
+                if info is None or info["yard"] or c["total_population"] < 5:
+                    continue
+                free = (c["facility_slots"] or 0) - len(c["facilities"] or []) - info["queued_facilities"]
+                if free <= 0:
+                    continue
+                cands.append((c["total_population"] + 50 * free, c["planet"]))
+            cands.sort(reverse=True)
+            yard_sites = [p for _, p in cands[:want_yards - queues]]
+
+        return yard_sites
+
     def queued_designs(self, w):
         out = {}
         for c in w.my_colonies:
@@ -318,6 +413,9 @@ class Hegemon(ai.Player):
         ships = []
         roles = self.my_roles(w)
         queued = self.queued_designs(w)
+        intel = Intel(w, self.memory)
+        strategy = Strategy(w, intel, self.memory)
+        strategy.assess()
 
         def queued_role(prefix):
             n = 0
@@ -334,24 +432,27 @@ class Hegemon(ai.Player):
                 frontier += 1
         scout = book.design_id("scout")
         if scout is not None:
-            want = min(2, (frontier + 2) // 3) if w.turn < 60 else min(1, frontier)
-            have = len(roles.get("scout", [])) + queued_role("scout")
+            want = min(3, (frontier + 2) // 3) if w.turn < 80 else min(2, (frontier + 3) // 4)
+            # A scout stranded without supply does not count.
+            have = sum(1 for v in roles.get("scout", []) if (v["supply"] or 0) > 0 or v["unlimited_supply"]) + queued_role("scout")
             if want > have:
                 ships.append({"design": scout, "count": want - have, "priority": 70.0, "near": None})
-        # Yards: more building queues as the empire grows.
-        yard = book.design_id("yard")
-        if yard is not None:
-            queues = 0
-            for c in w.my_colonies:
-                if c["space_yard"]:
-                    queues += 1
-            for v in w.my_vehicles:
-                if v["queue"] is not None:
-                    queues += 1
-            want = min(6, 2 + len(w.my_colonies) // 4)
-            have = queues + queued_role("yard")
-            if want > have:
-                ships.append({"design": yard, "count": 1, "priority": 65.0, "near": w.home_system()})
+        yard_sites = []
+        if config.on("yard_demand"):
+            yard_sites = self.yard_plan(w, econ, book, strategy, queued_role, ships)
+        else:
+            yard = book.design_id("yard")
+            if yard is not None:
+                queues = 0
+                for c in w.my_colonies:
+                    if c["space_yard"]:
+                        queues += 1
+                for v in w.my_vehicles:
+                    if v["queue"] is not None:
+                        queues += 1
+                want = min(6, 2 + len(w.my_colonies) // 4)
+                if want > queues + queued_role("yard"):
+                    ships.append({"design": yard, "count": 1, "priority": 65.0, "near": w.home_system()})
         # Colony ships: one per good target, a few at a time.
         colony = {}
         for s in surfaces:
@@ -360,10 +461,10 @@ class Hegemon(ai.Player):
                 colony[s] = did
         if colony:
             in_flight = len(roles.get("colonist", [])) + queued_role("colonist")
-            ex = Expansion(w, self.kn, econ, {}, self.memory)
+            ex = Expansion(w, self.kn, econ, self.dangers(w, intel), self.memory)
             targets = ex.targets(list(colony.keys()))
-            good = [t for t in targets if t[0] > 1500.0]
-            cap = 3 + len(w.my_colonies) // 3
+            good = [t for t in targets if t[0] > good_target()]
+            cap = (4 + len(w.my_colonies) // 2) if config.on("more_colony_ships") else (3 + len(w.my_colonies) // 3)
             want = min(len(good), cap) - in_flight
             by_surface = {}
             for t in good[:max(0, want)]:
@@ -371,10 +472,11 @@ class Hegemon(ai.Player):
                 by_surface[s] = by_surface.get(s, 0) + 1
             for s, n in by_surface.items():
                 ships.append({"design": colony[s], "count": n, "priority": 60.0, "near": None})
+            if DEBUG and w.turn % 5 == 0:
+                self.log("T%d EXPAND targets=%d good=%d in_flight=%d want=%d top=%s" % (
+                    w.turn, len(targets), len(good), in_flight, want,
+                    [(int(t[0]), t[1]["surface"], t[1]["size"], t[1]["atmosphere"] == ex.atmosphere, t[2]) for t in targets[:8]]))
         # Warships: as the military planner asks.
-        intel = Intel(w, self.memory)
-        strategy = Strategy(w, intel, self.memory)
-        strategy.assess()
         mil = Military(w, self.kn, self.memory, intel, roles, strategy=strategy)
         mil.rally = mil.choose_rally()
         queued_at = {}
@@ -390,10 +492,13 @@ class Hegemon(ai.Player):
         mil.queued_role = queued_role
         mil.queued_at = queued_at
         inv = Invasion(w, self.memory, roles, book, mil)
-        inv.plan(strategy.phase == "war")
+        inv.plan(strategy.phase in ("arm", "war"))
         ships.extend(inv.wants)
         if DEBUG:
-            self.log("T%d MILWANT %s" % (w.turn, getattr(mil, "debug", None)))
+            yq = [(c["planet"], [(i["design"], i["done_in"]) for i in c["queue"]["items"]], c["queue"]["rate"]["minerals"]) for c in w.my_colonies if c["space_yard"]]
+            vq = [(v["id"], [(i["design"], i["done_in"]) for i in v["queue"]["items"]], v["queue"]["rate"]["minerals"]) for v in w.my_vehicles if v["queue"] is not None]
+            self.log("T%d MILWANT %s phase=%s yards=%s %s stored=%s sites=%s conv=%s/%s avail=%s income=%s" % (w.turn, getattr(mil, "debug", None), strategy.phase, yq, vq, econ.stored, yard_sites,
+                     econ.converters, econ.converter_queued, [f.id for f in self.kn.facilities if f.convert and self.kn.meets(f.reqs)], econ.report["colonies"]))
         # Depots: the rally point, and every colony system more than a jump from one.
         depots = []
         if mil.rally is not None:
@@ -404,4 +509,4 @@ class Hegemon(ai.Player):
             d = near.get(s)
             if (d is None or d > 1) and s not in depots:
                 depots.append(s)
-        return {"ships": ships, "yard_sites": [], "depots": depots, "defense": {}}
+        return {"ships": ships, "yard_sites": yard_sites, "depots": depots, "defense": {}}

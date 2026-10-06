@@ -75,6 +75,7 @@ add_executable(opense4_tests
     # The modding SDK's own tests (docs/MODDING_SDK.md, section 14.6)
     sdk/sdk_test_util.cpp
     sdk/test_mod_client.cpp
+    sdk/test_mod_hegemon.cpp
     sdk/test_mod_identity.cpp
     sdk/test_mod_installed.cpp
     sdk/test_mod_layers.cpp

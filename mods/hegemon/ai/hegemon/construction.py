@@ -8,9 +8,14 @@ worth most to it, within what the treasury can pay this turn.
 - One spaceport per system comes first; yards and depots go where the strategy wants
   them."""
 
+from . import config
 from .util import RES, res_total
 
 UPGRADE_PERCENT = 50
+RESERVE_MAINT = 0.3     # of a turn's maintenance, kept in store
+RESERVE_INCOME = 0.05   # of a turn's income, kept in store
+FACILITY_SHARE = 0.4    # of each income, kept for the facilities of idle colonies before ships
+URGENT = 62             # ship requests of this priority or more come before that
 
 
 class Construction:
@@ -25,12 +30,18 @@ class Construction:
         self.tune = tune or {}
         self.commands = []
         self.notes = []
+        self.unmet = 0
+        self.blocked = {"minerals": 0, "organics": 0, "radioactives": 0}
         rep = econ.report
-        # What the treasury holds when construction runs: the store, plus income less maintenance.
+        # What the treasury holds when construction runs: the store, plus income less
+        # maintenance, less a reserve: income lost in this turn's battles must not leave
+        # maintenance unpaid (the game then abandons ships).
         self.budget = {}
+        self.reserve = {}
         for r in RES:
             income = rep["colonies"][r] + rep["remote_mining"][r] + rep["other_income"][r] + rep["trade"][r] + rep["tariffs_in"][r] - rep["tariffs_out"][r]
-            self.budget[r] = econ.stored[r] + income - rep["maintenance"][r]
+            self.reserve[r] = int(RESERVE_MAINT * rep["maintenance"][r] + RESERVE_INCOME * max(0, income))
+            self.budget[r] = econ.stored[r] + income - rep["maintenance"][r] - self.reserve[r]
         self._best = None
 
     # ---- the facilities we may build ----
@@ -97,10 +108,17 @@ class Construction:
                 v += 0.0
             elif system in self.wants.get("depots", ()):
                 v += 2500.0
+        if f.convert and config.on("convert"):
+            if not econ.converters and not econ.converter_queued and econ.imbalance() is not None:
+                v += 3000.0
         if f.storage[0] or f.storage[1] or f.storage[2]:
+            # Room to hoard is worth little: only a scarce resource that overflows anyway.
             for r in range(3):
                 name = RES[r]
-                if f.storage[r] > 0 and (econ.report["lost_to_storage"][name] > 0 or econ.stored[name] > 0.85 * econ.cap[name]):
+                if config.on("storage_low"):
+                    if f.storage[r] > 0 and p[r] >= 0.9 and econ.report["lost_to_storage"][name] > 0:
+                        v += p[r] * f.storage[r] / 60.0
+                elif f.storage[r] > 0 and (econ.report["lost_to_storage"][name] > 0 or econ.stored[name] > 0.85 * econ.cap[name]):
                     v += p[r] * f.storage[r] / 15.0
         sys_out = None
         if f.happy > 0 and "happy" not in has:
@@ -238,6 +256,23 @@ class Construction:
             self._commit_existing(q)
             if v["status"] == "normal":
                 yards.append(("vehicle", v, None))
+        # What the best facilities of idle colonies will take this turn, up to a share of
+        # income, is kept from ships of lower priority: new colonies without facilities
+        # are worth little, so expansion must not starve their development.
+        choices = []
+        for c, info in idle_colonies:
+            ch = self.colony_choice(c, info)
+            if ch is not None:
+                choices.append((ch[0], c, info, ch))
+        choices.sort(key=lambda x: -x[0])
+        held = {r: 0 for r in RES}
+        rep = econ.report
+        for score, c, info, ch in choices:
+            cost, rate = ch[2], c["queue"]["rate"]
+            if any(held[r] + min(rate[r], cost[r]) > FACILITY_SHARE * max(0, rep["colonies"][r]) for r in RES if cost[r] > 0):
+                continue
+            for r in RES:
+                held[r] += min(rate[r], cost[r])
         # Ships first, in the strategy's order, at idle yards.
         requests = sorted(self.wants.get("ships", []), key=lambda x: -x["priority"])
         busy = {}
@@ -247,7 +282,13 @@ class Construction:
         colonies = {}
         for c in w.my_colonies:
             colonies[c["planet"]] = c
+        holding = False
         for req in requests:
+            if req["priority"] < URGENT and not holding:
+                # Urgent ships (scouts, yards, guns where enemies are) come before the hold.
+                holding = True
+                for r in RES:
+                    self.budget[r] -= held[r]
             n = req["count"]
             fig = w.figures(req["design"])
             if fig is None:
@@ -271,10 +312,17 @@ class Construction:
             while n > 0:
                 spot = self.pick_yard(yards, busy, req)
                 if spot is None:
+                    # No yard free for it: the strategy may want more yards.
+                    if fig["vehicle_type"] in ("ship", "base"):
+                        self.unmet += n
                     break
                 kind, holder, info = spot
                 rate = holder["queue"]["rate"]
                 if not self._affordable(fig["cost"], rate, self.tune.get("reserve", 0.3) if req["priority"] < 50 else 0.0):
+                    # Facilities must not take what this ship waits for.
+                    if req.get("protect"):
+                        for r in RES:
+                            self.blocked[r] += min(rate[r], fig["cost"][r])
                     break
                 key = (kind, holder["planet"] if kind == "planet" else holder["id"])
                 busy[key] = True
@@ -283,20 +331,26 @@ class Construction:
                 self._spend(fig["cost"], rate)
                 n -= 1
         # Facilities on every other idle colony, the most valuable first.
-        choices = []
-        for c, info in idle_colonies:
-            key = ("planet", c["planet"])
-            if busy.get(key):
-                continue
-            ch = self.colony_choice(c, info)
-            if ch is not None:
-                choices.append((ch[0], c, info, ch))
-        choices.sort(key=lambda x: -x[0])
+        if holding:
+            for r in RES:
+                self.budget[r] += held[r]
+        choices = [x for x in choices if not busy.get(("planet", x[1]["planet"]))]
+        self.debug = {"budget": {r: int(v) for r, v in self.budget.items()}, "reserve": self.reserve, "idle": len(idle_colonies),
+                      "colonies": [(c["planet"], len(c["queue"]["items"]), c["queue"]["on_hold"], c["total_population"]) for c in w.my_colonies][:12],
+                      "choices": [(int(x[0]), x[1]["planet"], x[3][1]) for x in choices[:6]]}
         for score, c, info, ch in choices:
             rate = c["queue"]["rate"]
             item, cost, f = ch[1], ch[2], ch[3]
-            if not self._affordable(cost, rate, 0.0) and score < 1.0e5:
-                continue
+            if score < 1.0e5:
+                if not self._affordable(cost, rate, 0.0):
+                    continue
+                short = False
+                for r in RES:
+                    need = min(rate[r], cost[r])
+                    if need > 0 and self.blocked[r] > 0 and self.budget[r] - need < self.blocked[r]:
+                        short = True
+                if short:
+                    continue
             # A facility one per system: claim it so a second colony does not queue it too.
             if item["kind"] == "facility":
                 if f.spaceport:
@@ -312,6 +366,8 @@ class Construction:
                         econ._tag(info["system"], "smod%d" % r)
                 if f.yard[0] or f.yard[1] or f.yard[2]:
                     info["yard"] = True
+                if f.convert:
+                    econ.converter_queued = True
             self.commands.append({"kind": "queue_add", "target": {"planet": c["planet"]}, "item": item})
             self._spend(cost, rate)
         return self.commands

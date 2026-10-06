@@ -1,8 +1,10 @@
 """Hegemon's scouts: each idle scout goes through the nearest frontier warp point (a
 warp point of an explored system whose far side we have not seen) that no other scout
-is heading for. Scouts refuel at a depot before they run dry, and a scout that has not
-moved for a few turns gives up its warp point for a while (a hazard, a pull toward a
-system's centre, a blockade) and tries another."""
+is heading for. A scout sets out only with the supply for the trip there and back to a
+depot (else it refuels first); once on its way it turns back only when its supply no
+longer covers the way home, so it does not give up at the warp point. A scout that has
+not moved for a few turns gives up its warp point for a while (a hazard, a pull toward
+a system's centre, a blockade) and tries another."""
 
 STUCK_TURNS = 4
 BLOCK_TURNS = 15
@@ -31,6 +33,29 @@ class Explorer:
                 continue
             out.append(o)
         return out
+
+    def committed(self, v):
+        """Whether the scout is on its way through a warp point."""
+        for o in v["orders"] or []:
+            if o["kind"] == "warp" and o["object"] is not None:
+                return True
+        return False
+
+    def fuel_for(self, v, o):
+        """Whether the scout's supply takes it to warp point `o`, through it and back to a depot."""
+        lg = self.logistics
+        if lg is None or v["unlimited_supply"] or not v["supply_capacity"]:
+            return True
+        per = lg.per_move(v)
+        if per <= 0:
+            return True
+        loc = {"system": o["system"], "x": o["sector"]["x"], "y": o["sector"]["y"]}
+        g = lg.galaxy
+        there = g.route_length(v["location"], loc) if g is not None else None
+        back = lg.route_to_depot(loc)
+        if there is None or back is None:
+            return True
+        return (v["supply"] or 0) >= (there + back + 6) * per * 1.1
 
     def plan(self, scouts):
         w = self.w
@@ -76,7 +101,8 @@ class Explorer:
                 else:
                     continue
             elif cap > 0 and not v["unlimited_supply"] and w.turn - refuel.get(vid + "!", -99) > 10 and (
-                    self.logistics.must_refuel(v) if self.logistics is not None else supply < cap * 0.5):
+                    (self.logistics.must_refuel(v, margin=1.15, extra=5) if self.committed(v) else self.logistics.must_refuel(v))
+                    if self.logistics is not None else supply < cap * 0.5):
                 refuel[vid] = w.turn
                 self.commands.append({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "resupply"}]})
                 continue
@@ -94,6 +120,12 @@ class Explorer:
                 key2 = (d, step)
                 if best is None or key2 < best[0]:
                     best = (key2, o)
+            if best is not None and supply < cap * 0.9 and not self.fuel_for(v, best[1]) and \
+                    self.logistics is not None and self.logistics.route_to_depot(here) is not None:
+                # Not enough for the trip: fill up first.
+                refuel[vid] = w.turn
+                self.commands.append({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "resupply"}]})
+                continue
             if best is not None:
                 o = best[1]
                 taken.add(o["id"])

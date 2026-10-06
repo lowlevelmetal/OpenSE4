@@ -30,17 +30,18 @@ SUITES = {
         "duel-sim-30": (1, 30, False, 100, 1000, 8),
     },
     "full": {
-        "duel-sim-30": (1, 30, False, 150, 2000, 12),
-        "duel-tb-30": (1, 30, True, 150, 2100, 12),
-        "duel-sim-50": (1, 50, False, 150, 2200, 8),
-        "ffa4-sim-40": (3, 40, False, 150, 2300, 12),
-        "ffa4-tb-40": (3, 40, True, 150, 2400, 8),
-        "ffa6-sim-60": (5, 60, False, 150, 2500, 6),
-        "ffa6-tb-60": (5, 60, True, 150, 2600, 6),
+        "duel-sim-30": (1, 30, False, 150, 2000, 24),
+        "duel-tb-30": (1, 30, True, 150, 2100, 24),
+        "duel-sim-50": (1, 50, False, 150, 2200, 16),
+        "ffa4-sim-40": (3, 40, False, 150, 2300, 32),
+        "ffa4-tb-40": (3, 40, True, 150, 2400, 24),
+        "ffa6-sim-60": (5, 60, False, 150, 2500, 18),
+        "ffa6-tb-60": (5, 60, True, 150, 2600, 18),
     },
     "baseline": {
-        "base-duel-sim-30": (1, 30, False, 150, 2000, 12),
-        "base-ffa4-sim-40": (3, 40, False, 150, 2300, 12),
+        "base-duel-sim-30": (1, 30, False, 150, 2000, 24),
+        "base-ffa4-sim-40": (3, 40, False, 150, 2300, 32),
+        "base-ffa6-sim-60": (5, 60, False, 150, 2500, 18),
     },
 }
 
@@ -115,6 +116,14 @@ def games_of(folder):
     return games
 
 
+def subject_of(games):
+    """The player measured: Hegemon, or in a baseline run the first built-in AI."""
+    for rows in games.values():
+        if any(r["ai"] == HEGEMON for r in rows):
+            return HEGEMON
+    return "builtin"
+
+
 def summary(args):
     folders = []
     for d in args.dirs:
@@ -128,39 +137,57 @@ def summary(args):
     if not folders:
         sys.exit("no arena runs")
     keys = ("score", "colonies", "tech_levels", "ships", "research")
-    print("%-20s %5s %18s %18s %9s %9s %9s %9s %6s %6s" % ("config", "games", "Hegemon wins", "survives", "score x", "colon x",
-                                                          "techs x", "ships x", "fails", "elim"))
+    print("%-18s %5s %4s %18s %18s %10s %10s %10s %10s %10s %5s %5s %7s" % (
+        "config", "games", "fair", "wins", "survives", "score x", "colon x", "techs x", "research x", "ships x",
+        "fails", "elim", "ms/turn"))
     all_games = []
     for folder in folders:
         name = os.path.basename(folder.rstrip("/"))
         games = games_of(folder)
         all_games.append((name, games))
-        print_row(name, games, keys)
+        print_row(name, games, keys, ms_per_turn(folder))
     if len(folders) > 1:
         merged = {}
         for name, games in all_games:
             for g, rows in games.items():
                 merged[name + "/" + g] = rows
-        print_row("ALL", merged, keys)
+        print_row("ALL", merged, keys, None)
     if args.curves:
         for folder in folders:
             curves(folder)
 
 
-def print_row(name, games, keys):
+def ms_per_turn(folder):
+    try:
+        with open(os.path.join(folder, "report.csv")) as f:
+            for r in csv.DictReader(f):
+                if r["ai"] == HEGEMON:
+                    return float(r["player_ms_per_turn"])
+    except (OSError, KeyError, ValueError):
+        pass
+    return None
+
+
+def print_row(name, games, keys, ms):
+    """One line: the subject's wins and survival (Wilson 95 % intervals), its final
+    figures over the best other player's (mean ± 95 % interval), the failed or
+    replaced requests, the games in which some other empire was eliminated."""
     n = wins = alive = fails = elim = 0
+    seats = 0
     ratios = {k: [] for k in keys}
+    subject = subject_of(games)
     for g, rows in games.items():
-        heg = [r for r in rows if r["ai"] == HEGEMON]
-        others = [r for r in rows if r["ai"] != HEGEMON]
+        heg = [r for r in rows if r["ai"] == subject]
+        others = [r for r in rows if r["ai"] != subject]
         if not heg:
             continue
+        seats = len(rows)
         h = heg[0]
         n += 1
         wins += int(h["won"])
         alive += int(h["alive"])
         fails += int(h["failures"]) + int(h["fallbacks"])
-        elim += sum(1 for r in others if r["eliminated"])
+        elim += 1 if any(r["eliminated"] for r in others) else 0
         for k in keys:
             best = max([float(r[k]) for r in others] + [1.0])
             ratios[k].append(float(h[k]) / best)
@@ -169,33 +196,61 @@ def print_row(name, games, keys):
     p, lo, hi = wilson(wins, n)
     s, slo, shi = wilson(alive, n)
     cells = []
-    for k in ("score", "colonies", "tech_levels", "ships"):
+    for k in ("score", "colonies", "tech_levels", "research", "ships"):
         m, ci = mean_ci(ratios[k])
-        cells.append("%4.2f±%.2f" % (m, ci))
-    print("%-20s %5d %4.0f%% (%3.0f-%3.0f%%) %4.0f%% (%3.0f-%3.0f%%) %s %6d %6d" % (
-        name, n, 100 * p, 100 * lo, 100 * hi, 100 * s, 100 * slo, 100 * shi, " ".join(cells), fails, elim))
+        cells.append("%5.2f±%.2f" % (m, ci))
+    print("%-18s %5d %3.0f%% %4.0f%% (%3.0f-%3.0f%%) %4.0f%% (%3.0f-%3.0f%%) %s %5d %5d %7s" % (
+        name, n, 100.0 / max(1, seats), 100 * p, 100 * lo, 100 * hi, 100 * s, 100 * slo, 100 * shi, " ".join(cells),
+        fails, elim, "%.1f" % ms if ms is not None else "-"))
 
 
 def curves(folder):
-    rows = []
-    with open(os.path.join(folder, "over_time.csv")) as f:
-        for r in csv.DictReader(f):
-            rows.append(r)
-    print("\n%s: mean per seat (Hegemon / built-in)" % os.path.basename(folder.rstrip("/")))
-    cols = ("score", "colonies", "systems", "ships", "tech_levels", "research")
-    print("turn " + " ".join("%21s" % c for c in cols))
-    by_turn = {}
-    for r in rows:
-        by_turn.setdefault(int(r["turn"]), {})[r["ai"]] = r
-    for t in sorted(by_turn):
-        if t % 10 and t != max(by_turn):
+    """Means over the run's games, every 10 turns: the subject, the built-in AIs'
+    average and the best built-in AI of each game (by that turn's value)."""
+    import glob
+    import json
+    cols = ("score", "colonies", "ships", "tech_levels", "research")
+    sums = {}
+    count = {}
+    subject = None
+    for path in sorted(glob.glob(os.path.join(folder, "games", "game-*.result.json"))):
+        with open(path) as f:
+            r = json.load(f)
+        seats = r["seats"]
+        if subject is None:
+            subject = HEGEMON if any(x["ai"] == HEGEMON for x in seats) else "builtin"
+        me = [x for x in seats if x["ai"] == subject]
+        others = [x for x in seats if x["ai"] != subject]
+        if not me or not others:
             continue
-        d = by_turn[t]
-        h = d.get(HEGEMON)
-        b = d.get("builtin")
+        me = me[0]
+        n_turns = len(me["series"]["score"])
+        for t in range(10, 151, 10):
+            if t > n_turns:
+                break
+            for c in cols:
+                def at(x):
+                    v = x["series"].get(c) or []
+                    return float(v[min(t, len(v)) - 1]) if v else 0.0
+                vals = [at(x) for x in others]
+                k = (t, c)
+                a = sums.setdefault(k, [0.0, 0.0, 0.0])
+                a[0] += at(me)
+                a[1] += sum(vals) / len(vals)
+                a[2] += max(vals)
+                count[k] = count.get(k, 0) + 1
+    print("\n%s: means per game, %s / built-in average / best built-in" % (os.path.basename(folder.rstrip("/")),
+                                                                         "Hegemon" if subject == HEGEMON else "builtin"))
+    print("turn " + " ".join("%26s" % c for c in cols))
+    for t in range(10, 151, 10):
+        if (t, "score") not in count:
+            continue
         cells = []
         for c in cols:
-            cells.append("%10.0f / %-9.0f" % (float(h[c]) if h else 0.0, float(b[c]) if b else 0.0))
+            a = sums[(t, c)]
+            n = count[(t, c)]
+            fmt = "%8.0f /%8.0f /%8.0f" if c in ("score", "research") else "%8.1f /%8.1f /%8.1f"
+            cells.append(fmt % (a[0] / n, a[1] / n, a[2] / n))
         print("%4d %s" % (t, " ".join(cells)))
 
 

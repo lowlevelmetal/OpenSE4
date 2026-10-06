@@ -11,6 +11,8 @@ ranges and the shield-skipping damage types that beat them."""
 
 from opense4 import services
 
+from . import config
+
 from .util import RES, res_total
 
 
@@ -26,6 +28,16 @@ class Designer:
         self.tune = tune or {}
         self.types = world.my["design_types"]
         self.queries = 0
+        p = self.tune.get("prices") if config.on("price_designs") else None
+        if p is None:
+            p = [1.0, 1.0, 1.0]
+        m = (p[0] + p[1] + p[2]) / 3.0 or 1.0
+        self.prices = [p[0] / m, p[1] / m, p[2] / m]
+
+    def price(self, cost):
+        """A cost as one number, each resource weighed by how scarce it is for us now."""
+        p = self.prices
+        return cost["minerals"] * p[0] + cost["organics"] * p[1] + cost["radioactives"] * p[2]
 
     # ---- names and types ----
 
@@ -90,7 +102,7 @@ class Designer:
         best = None
         for c in parts:
             if c.engine > 0 and c.tonnage > 0:
-                key = (c.engine / c.tonnage, -res_total(c.cost))
+                key = (c.engine / c.tonnage, -self.price(c.cost))
                 if best is None or key > best[0]:
                     best = (key, c)
         return best[1] if best is not None else None
@@ -165,7 +177,7 @@ class Designer:
                     k = min(3, room // tank.tonnage)
                     if k > 0:
                         entries.append((tank, k))
-                cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k in entries)
+                cost = self.price(hull.cost) + sum(self.price(c.cost) * k for c, k in entries)
                 key = (-speed // 2, cost)
                 if best is None or key < best[0]:
                     best = (key, hull, entries)
@@ -196,7 +208,7 @@ class Designer:
                     entries = [(c, j) for c, j in ctl] + [(module, k)] + ([(engine, n)] if n > 0 else [])
                     if self.tonnage(entries) > hull.tonnage:
                         continue
-                    cost = res_total(hull.cost) + sum(res_total(c.cost) * j for c, j in entries)
+                    cost = self.price(hull.cost) + sum(self.price(c.cost) * j for c, j in entries)
                     key = (cost / (1.0 + 0.15 * speed),)
                     if best is None or key < best[0]:
                         best = (key, hull, entries)
@@ -267,14 +279,14 @@ class Designer:
         armor = None
         for c in parts:
             if c.armor and c.tonnage > 0:
-                key = c.structure / (c.tonnage + res_total(c.cost) / 40.0)
+                key = c.structure / (c.tonnage + self.price(c.cost) / 40.0)
                 if armor is None or key > armor[0]:
                     armor = (key, c)
         armor = armor[1] if armor is not None else None
         shield = None
         for c in parts:
             if (c.shield + c.phased) > 0 and c.tonnage > 0 and c.weapon is None:
-                key = (c.shield + c.phased) / (c.tonnage + res_total(c.cost) / 40.0)
+                key = (c.shield + c.phased) / (c.tonnage + self.price(c.cost) / 40.0)
                 if shield is None or key > shield[0]:
                     shield = (key, c)
         shield = shield[1] if shield is not None else None
@@ -301,14 +313,14 @@ class Designer:
             room = hull.tonnage - used
             if room <= 0:
                 continue
-            base_cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k, m in base)
+            base_cost = self.price(hull.cost) + sum(self.price(c.cost) * k for c, k, m in base)
             base_hp = sum(c.structure * k for c, k, m in base) * 0.6
             options = self.weapon_options(hull, parts, against_planets=True) if (planets if planets is not None else vehicle_type == "ship") else []
             if not options:
                 options = self.weapon_options(hull, parts)
             if not options:
                 continue
-            options.sort(key=lambda o: -(o[4] / (o[2] + res_total(o[3]) / 40.0)))
+            options.sort(key=lambda o: -(o[4] / (o[2] + self.price(o[3]) / 40.0)))
             for wopt in options[:4]:
                 wc, wm, wton, wcost, woff, wrng = wopt
                 max_w = room // wton
@@ -331,8 +343,8 @@ class Designer:
                             na = left3 // armor.tonnage if armor is not None and armor.tonnage > 0 else 0
                             if armor is not None and armor.max_per > 0 and na > armor.max_per:
                                 na = armor.max_per
-                            cost = base_cost + nw * res_total(wcost) + (ns * res_total(shield.cost) if ns else 0) + \
-                                (res_total(ecm.cost) if ne else 0) + (na * res_total(armor.cost) if na else 0)
+                            cost = base_cost + nw * self.price(wcost) + (ns * self.price(shield.cost) if ns else 0) + \
+                                (self.price(ecm.cost) if ne else 0) + (na * self.price(armor.cost) if na else 0)
                             off = nw * woff
                             hp = base_hp + nw * wc.structure * 0.6 + (na * armor.structure if na else 0) + \
                                 (ns * (shield.shield + shield.phased) * 1.5 + ns * shield.structure * 0.6 if ns else 0)
@@ -386,7 +398,7 @@ class Designer:
             entries = [(c, k) for c, k in ctl] + [(yard, 1)]
             if self.tonnage(entries) > hull.tonnage:
                 continue
-            cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k in entries)
+            cost = self.price(hull.cost) + sum(self.price(c.cost) * k for c, k in entries)
             if best is None or cost < best[0]:
                 best = (cost, hull, entries)
         if best is None:
@@ -420,7 +432,7 @@ class Designer:
                 if n <= 0:
                     continue
                 dmg = max(h.weapon.damage) * n
-                cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k in base) + res_total(h.cost) * n
+                cost = self.price(hull.cost) + sum(self.price(c.cost) * k for c, k in base) + self.price(h.cost) * n
                 v = dmg / float(max(1, cost))
                 if best is None or v > best[0]:
                     best = (v, hull, base + [(h, n)])
@@ -440,7 +452,7 @@ class Designer:
         armor = None
         for c in parts:
             if c.armor and c.tonnage > 0:
-                key = c.structure / (c.tonnage + res_total(c.cost) / 40.0)
+                key = c.structure / (c.tonnage + self.price(c.cost) / 40.0)
                 if armor is None or key > armor[0]:
                     armor = (key, c)
         armor = armor[1] if armor is not None else None
@@ -451,7 +463,7 @@ class Designer:
                 continue
             base = [(c, k) for c, k in ctl]
             room = hull.tonnage - self.tonnage(base)
-            base_cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k in base)
+            base_cost = self.price(hull.cost) + sum(self.price(c.cost) * k for c, k in base)
             base_hp = sum(c.structure * k for c, k in base)
             for wpn in weapons + [None]:
                 wmax = room // wpn.tonnage if wpn is not None else 0
@@ -464,7 +476,7 @@ class Designer:
                         na = min(na, armor.max_per)
                     att = nw * max(wpn.weapon.damage) if wpn is not None else 0
                     hp = base_hp + (nw * wpn.structure if wpn is not None else 0) + (na * armor.structure if na else 0)
-                    cost = base_cost + (nw * res_total(wpn.cost) if wpn is not None else 0) + (na * res_total(armor.cost) if na else 0)
+                    cost = base_cost + (nw * self.price(wpn.cost) if wpn is not None else 0) + (na * self.price(armor.cost) if na else 0)
                     if att <= 0:
                         continue
                     v = att * hp / float(cost * cost)
@@ -491,7 +503,7 @@ class Designer:
         if not holds:
             self.why = "no cargo component"
             return None
-        hold = max(holds, key=lambda c: c.cargo / (c.tonnage + res_total(c.cost) / 40.0))
+        hold = max(holds, key=lambda c: c.cargo / (c.tonnage + self.price(c.cost) / 40.0))
         engine = self.best_engine(parts)
         target = speed if speed is not None else self.tune.get("speed", 6)
         best = None
@@ -516,7 +528,7 @@ class Designer:
                     continue
                 entries.append((hold, k))
                 cargo = k * hold.cargo
-                cost = res_total(hull.cost) + sum(res_total(c.cost) * j for c, j in entries)
+                cost = self.price(hull.cost) + sum(self.price(c.cost) * j for c, j in entries)
                 v = cargo / float(cost) * (1.0 + 0.1 * sp)
                 if best is None or v > best[0]:
                     best = (v, hull, entries)

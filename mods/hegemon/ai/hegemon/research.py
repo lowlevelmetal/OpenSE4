@@ -14,6 +14,8 @@ strategy sets (more military in war); the side furthest behind its share gets th
 head of the queue, which is funded in order (never evenly), and an area with progress
 is never dropped."""
 
+from . import config
+
 QUEUE_LEN = 6
 
 
@@ -30,6 +32,10 @@ class Research:
         self.state = world.my["research"]
         self.researchable = set(self.state["researchable"])
         self.top = None
+        self.has_troops = False
+        for h in kn.hulls:
+            if h.type == "troop" and kn.meets(h.reqs):
+                self.has_troops = True
 
     # ---- what we have now ----
 
@@ -175,7 +181,9 @@ class Research:
             mil = 0.0
             for s in c.colonize:
                 if s not in now["colonize"]:
-                    civ += 300.0 + targets_by_surface.get(s, 1500.0) * 0.15
+                    # The planets of that surface we know, once settled and built up:
+                    # their output a turn, a share of it within the planning horizon.
+                    civ += 300.0 + targets_by_surface.get(s, 1500.0) * (0.3 if config.on("colonize_value") else 0.15)
             if c.weapon is not None and not c.pd and c.weapon.kind in ("direct_fire", "seeking"):
                 s = self.weapon_score(c)
                 if now["weapon"] <= 0:
@@ -216,6 +224,9 @@ class Research:
                 credit(g, 80.0 * r * wt["expansion"], mil * wt["military"])
             elif h.type == "weapon_platform" and h.tonnage > now["platform"]:
                 credit(g, 0.0, 250.0 * wt["military"])
+            elif h.type == "troop" and not self.has_troops and config.on("troop_research"):
+                # Troops take colonies with their facilities: worth much in war.
+                credit(g, 0.0, wt.get("troops", 0.0))
         # An area we cannot research yet passes some of its worth to those it needs.
         for t in kn.techs:
             a = t.id

@@ -15,7 +15,13 @@ kept in memory and refreshed whenever we see more. The target is the rival whose
 reachable colonies are worth most for the force it takes, nearer ones first, and the
 one already fighting us before one at peace."""
 
+from . import config
 from .intel import Force
+
+WAR_NEAR = 4       # jumps: a rival at war with us this near is the one to fight
+LATE_TURN = 80
+LATE_RATE = 0.004
+LATE_MAX = 0.25
 
 
 class Strategy:
@@ -119,11 +125,23 @@ class Strategy:
             score *= 1.2
         return score
 
-    def pick_target(self):
-        """The rival to fight: worth for the force it takes, near first."""
-        best = None
-        for key in self.rivals:
+    def warring(self):
+        """Rivals at war with us whose colonies are near ours (one war at a time: the
+        target is one of them while there are any)."""
+        w = self.w
+        out = []
+        for key, r in self.rivals.items():
             eid = int(key)
+            if w.treaty(eid) == "war" and r["dist"] <= WAR_NEAR and self.score_of(eid) > 0:
+                out.append(eid)
+        return out
+
+    def pick_target(self):
+        """The rival to fight: worth for the force it takes, near first; while a near
+        rival is at war with us, one of those."""
+        best = None
+        pool = self.warring() or [int(k) for k in self.rivals]
+        for eid in pool:
             score = self.score_of(eid)
             if score > 0 and (best is None or score > best[0]):
                 best = (score, eid)
@@ -152,7 +170,8 @@ class Strategy:
                 at_war_near = True
         target = self.pick_target()
         old = st.get("target")
-        if old is not None and target != old and str(old) in self.rivals:
+        warring = self.warring()
+        if old is not None and target != old and str(old) in self.rivals and (not warring or old in warring):
             # Stay on the rival we went for unless another is far better.
             r = self.rivals[str(old)]
             e = w.empires.get(old)
@@ -197,16 +216,23 @@ class Strategy:
 
     def upkeep_share(self):
         p = self.phase
-        base = {"expand": 0.10, "arm": 0.35, "war": 0.45}.get(p, 0.2)
+        base = {"expand": 0.15 if config.on("expand_military") else 0.10, "arm": 0.45, "war": 0.55}.get(p, 0.2)
         near = getattr(self, "near", None)
         if near is not None and near.power() > 0:
             base += 0.15
+        # Late in the game facilities and research pay back less: more of the income
+        # goes to the fleet.
+        late = self.w.turn - LATE_TURN
+        if late > 0 and config.on("late_surge"):
+            base += min(LATE_MAX, late * LATE_RATE)
         return base + self.tune.get("upkeep_bonus", 0.0)
 
     def research_weights(self):
         p = self.phase
         if p == "expand":
-            return {"economy": 1.0, "expansion": 1.0, "military": 0.8, "military_share": 0.1}
+            # A rival close by: troops early, to take its young colonies.
+            troops = 1000.0 if self.target is not None else 0.0
+            return {"economy": 1.0, "expansion": 1.0, "military": 0.8, "military_share": 0.1, "troops": troops}
         if p == "arm":
-            return {"economy": 1.0, "expansion": 0.8, "military": 1.3, "military_share": 0.4}
-        return {"economy": 0.9, "expansion": 0.6, "military": 1.5, "military_share": 0.5}
+            return {"economy": 1.0, "expansion": 0.8, "military": 1.3, "military_share": 0.4, "troops": 3000.0}
+        return {"economy": 0.9, "expansion": 0.6, "military": 1.5, "military_share": 0.5, "troops": 6000.0}

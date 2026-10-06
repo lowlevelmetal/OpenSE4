@@ -86,10 +86,11 @@ class Diplomacy:
         return bool(self.w.options["allow_gifts"])
 
     def gift(self, eid):
-        """A token gift of whatever we hold most of."""
+        """A token gift of whatever we hold most of: the classic AI's anger counts the
+        message, never its size, so it is kept small."""
         st = self.w.my["stored"]
         r = max(("minerals", "organics", "radioactives"), key=lambda k: st[k])
-        amount = min(500, st[r] // 20)
+        amount = min(25, st[r] // 100)
         res = {"minerals": 0, "organics": 0, "radioactives": 0}
         res[r] = max(1, amount)
         self.commands.append({"kind": "send_message", "message": {"to_empire": eid, "type": "gift", "text": "A token of friendship.",

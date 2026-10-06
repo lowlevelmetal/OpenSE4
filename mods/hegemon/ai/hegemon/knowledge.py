@@ -20,7 +20,7 @@ class Facility:
     __slots__ = ("id", "family", "numeral", "cost", "reqs", "gen", "research", "intel", "spaceport", "yard", "supply",
                  "storage", "pmod", "smod", "pres", "sres", "happy", "repro", "popgrowth", "shield", "repair", "solar",
                  "combat", "sensor", "maint", "training", "other", "useful", "atmos", "value_change", "conditions",
-                 "plague", "cargo")
+                 "plague", "cargo", "convert")
 
     def __init__(self, d):
         ab = d["abilities"]
@@ -63,6 +63,7 @@ class Facility:
         self.conditions = ability_sum(ab, "Planet - Change Conditions") + ability_sum(ab, "Planet Conditions Change - System")
         self.plague = ability_sum(ab, "Plague Prevention - System")
         self.cargo = ability_sum(ab, "Cargo Storage")
+        self.convert = has_ability(ab, "Resource Conversion")
         self.useful = True
 
 

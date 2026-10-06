@@ -14,11 +14,15 @@ Colonies defend themselves with weapon platforms (units pay no maintenance) wher
 threats are seen. A strike is only launched when Lanchester's square law says we win
 with a margin, counting the planet's defences as we estimate them."""
 
+from . import config
 from .intel import Force, design_strength, planet_strength
+from .invasion import troops_needed
 from .util import loc
 
 STRIKE_MARGIN = 2.0
 DEFEND_MARGIN = 1.3
+SHARE_MAX = 0.75   # at most this share of a resource's income for the fleet's upkeep
+MAINT_MAX = 0.85   # and all maintenance together at most this share
 
 
 class Military:
@@ -108,7 +112,9 @@ class Military:
     # ---- targets ----
 
     def strike_targets(self):
-        """Enemy colonies worth hitting: [(score, colony, system, needed force)]."""
+        """Enemy colonies worth hitting, a sector at a time (a battle is fought in one
+        sector): the target rival's and those of rivals at war with us, within three
+        jumps of our space. [(score, colonies, system, needed force)]."""
         w = self.w
         enemy = self.enemy_colony_systems()
         if not enemy:
@@ -116,22 +122,43 @@ class Military:
         dist = w.bfs([self.rally]) if self.rally is not None else {}
         near = w.territory_distance()
         known = self.mem.get("planet_seen", {})
-        out = []
+        target = self.strategy.target if self.strategy is not None else None
+        groups = []
         for s, cols in enemy.items():
             d = dist.get(s)
             if d is None or near.get(s, 99) > 3:
                 continue
+            by_sector = {}
+            for c in cols:
+                if c["owner"] != target and w.treaty(c["owner"]) != "war":
+                    continue
+                o = w.objects.get(c["planet"])
+                if o is not None:
+                    by_sector.setdefault((o["sector"]["x"], o["sector"]["y"]), []).append(c)
+            for sector_cols in by_sector.values():
+                groups.append((s, d, sector_cols))
+        out = []
+        for s, d, cols in groups:
             need = Force()
             value = 0.0
+            invade = False
+            troops = getattr(self, "troops_ready", 0)
+            tfig = getattr(self, "troop_fig", None)
             for c in cols:
                 a, h = planet_strength(c, w.turn, known.get(str(c["planet"])))
+                n = troops_needed(c, tfig) if tfig is not None else None
+                if n is not None and troops >= n and config.on("raids"):
+                    # Troops take it: only its guns need silencing, not its people.
+                    invade = True
+                    h = max(300.0, h - (c["total_population"] or 0) * 10.0)
                 need.add(a, h)
                 value += 1000.0 + (c["total_population"] or 0) * 2.0
             t = self.threats.get(s)
             if t is not None:
                 need.add(t.attack, t.hp, 0)
             score = value / (1.0 + need.power() / 1.0e6) / (1.0 + 0.4 * d)
-            target = self.strategy.target if self.strategy is not None else None
+            if invade:
+                score *= 4.0
             if target is not None and any(c["owner"] == target for c in cols):
                 score *= 3.0
             out.append((score, cols, s, need))
@@ -334,7 +361,10 @@ class Military:
         used_targets.add(s)
         w = self.w
         if task.get("task") != "strike" or task.get("system") != s or not self.w.fleets[fid]["orders"]:
-            col = max(cols, key=lambda c: c["total_population"] or 0)
+            troops = getattr(self, "troops_ready", 0)
+            tfig = getattr(self, "troop_fig", None)
+            takeable = [c for c in cols if tfig is not None and (troops_needed(c, tfig) or 10 ** 9) <= troops]
+            col = max(takeable or cols, key=lambda c: c["total_population"] or 0)
             power = task.get("power") if task.get("task") == "strike" and task.get("system") == s else None
             self.give_fleet(fid, [{"kind": "attack", "object": col["planet"]}],
                             {"task": "strike", "system": s, "planet": col["planet"], "since": w.turn,
@@ -430,10 +460,12 @@ class Military:
         w = self.w
         out = []
         rep = econ.report
-        income = sum(rep["colonies"][r] for r in ("minerals", "organics", "radioactives")) + 1
+        res3 = ("minerals", "organics", "radioactives")
+        income = sum(rep["colonies"][r] for r in res3) + 1
         warships = self.roles.get("warship", [])
         mine = Force()
         upkeep = 0.0
+        upkeep_r = {r: 0.0 for r in res3}
         pct = econ_maint_pct(w) / 100.0
         for v in warships:
             a, h = self.vehicle_force(v)
@@ -441,6 +473,8 @@ class Military:
             fig = w.figures(v["design"])
             if fig is not None:
                 upkeep += sum(fig["cost"].values()) * pct
+                for r in res3:
+                    upkeep_r[r] += fig["cost"][r] * pct
         threat = Force()
         for s, f in self.threats.items():
             threat.add(f.attack, f.hp, 0)
@@ -451,11 +485,40 @@ class Military:
         if war is not None:
             fig = w.figures(war)
             each = sum(fig["cost"].values()) * pct if fig is not None else 1.0
-            room = int((share * income - upkeep) / max(1.0, each)) - queued_role("warship")
+            # Maintenance is paid resource by resource: the fleet's share of each income,
+            # and never more than MAINT_MAX of it for all maintenance together.
+            share = min(SHARE_MAX, share)
+            room = None
+            hard = None
+            if fig is not None:
+                for r in res3:
+                    u = fig["cost"][r] * pct
+                    if u <= 0:
+                        continue
+                    inc = rep["colonies"][r]
+                    h = (MAINT_MAX * inc - rep["maintenance"][r]) / u
+                    k = min((share * inc - upkeep_r[r]) / u, h)
+                    room = k if room is None else min(room, k)
+                    hard = h if hard is None else min(hard, h)
+            room = int(room if room is not None else (share * income - upkeep) / max(1.0, each)) - queued_role("warship")
+            # Stores that overflow pay for more, whatever the share.
+            if fig is not None:
+                extra = None
+                for r in ("minerals", "organics", "radioactives"):
+                    u = fig["cost"][r]
+                    if u <= 0:
+                        continue
+                    spare = max(0, econ.stored[r] - 0.6 * econ.cap[r])
+                    k = int(spare / u)
+                    extra = k if extra is None else min(extra, k)
+                if extra and config.on("overflow_ships"):
+                    room = max(room, min(extra, int(hard) if hard is not None else extra) - queued_role("warship"))
             n = max(0, min(3, room))
             self.debug = (round(share, 2), income, int(upkeep), int(each), room, n)
             if n > 0:
-                out.append({"design": war, "count": n, "priority": 45.0 if threat.power() > mine.power() else 30.0, "near": self.rally})
+                protect = self.strategy is not None and self.strategy.phase in ("arm", "war") and config.on("protect")
+                out.append({"design": war, "count": n, "priority": 45.0 if threat.power() > mine.power() else 30.0, "near": self.rally,
+                            "protect": protect})
         # Satellites and mines around exposed colonies: no upkeep, launched from the planet.
         out.extend(self.fortify(book, queued_at))
         # Weapon platforms where colonies are exposed.
@@ -467,7 +530,10 @@ class Military:
             for c in w.my_colonies:
                 s = w.system_of(c["planet"])
                 e = exposure.get(s, 0)
-                if e <= 0 or c["total_population"] <= 0:
+                if c["total_population"] <= 0:
+                    continue
+                # Every colony gets a gun once it has started building, more where enemies are near.
+                if e <= 0 and (len(c["facilities"] or []) < 2 or not config.on("platform_all")):
                     continue
                 cap = c["cargo_capacity"] or 0
                 used = c["cargo_used"] or 0
@@ -475,8 +541,12 @@ class Military:
                 room = free // size
                 if room <= 0:
                     continue
-                have = used // size
-                limit = {1: 2, 2: 5, 3: 99}.get(e, 0)
+                have = queued_at.get(c["planet"], 0)
+                for st in (c["cargo"]["units"] if c["cargo"] is not None else []):
+                    d = w.designs.get(st["design"])
+                    if d is not None and d["figures"] is not None and d["figures"]["vehicle_type"] == "weapon_platform":
+                        have += st["count"]
+                limit = ({0: 2, 1: 3, 2: 5, 3: 99} if config.on("platform_two") else {0: 1, 1: 2, 2: 4, 3: 99}).get(e, 0)
                 n = min(room, max(0, limit - have), 3)
                 if n > 0:
                     out.append({"design": plat, "count": n, "priority": 50.0 + 5 * e, "at": c["planet"], "units": True})
