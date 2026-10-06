@@ -1,17 +1,26 @@
-"""Hegemon's research planner: each tech area is worth what its next levels unlock for
-the strategy (better facilities for the families we use, new planet types to settle,
-better weapons, armour, shields, engines and hulls, and the areas they open), divided
-by what those levels cost. The best areas are funded in order, never evenly, and areas
-with progress are never dropped."""
+"""Hegemon's research planner.
 
-from .util import RES
+Each tech area is worth what its next levels unlock for the strategy:
+- civil: better facilities for the families we use and new kinds (their extra output,
+  priced), new planet surfaces to settle (the planets we know of that surface), score;
+- military: better weapons, armour, shields, engines, to-hit parts and bigger hulls,
+  measured against the best we have now.
+An area whose requirements we lack passes part of its value to the areas it needs.
+What pays off sooner is worth more: values are discounted by the turns the levels
+take at our research income.
+
+Research points are shared between the civil and the military side by a share the
+strategy sets (more military in war); the side furthest behind its share gets the
+head of the queue, which is funded in order (never evenly), and an area with progress
+is never dropped."""
 
 QUEUE_LEN = 6
 
 
 class Research:
     def __init__(self, world, kn, econ, weights, tune=None):
-        """`weights`: the strategy's weights for economy, expansion and military research."""
+        """`weights`: {"economy", "expansion", "military"} multipliers, and
+        "military_share": the share of points the military side should get."""
         self.w = world
         self.kn = kn
         self.econ = econ
@@ -20,11 +29,12 @@ class Research:
         self.levels = world.research_levels()
         self.state = world.my["research"]
         self.researchable = set(self.state["researchable"])
+        self.top = None
 
     # ---- what we have now ----
 
     def facility_counts(self):
-        """{family: [count, best numeral now on colonies]} over our colonies."""
+        """{family: [count, a facility of it now on our colonies]}."""
         kn = self.kn
         out = {}
         for c in self.w.my_colonies:
@@ -40,15 +50,19 @@ class Research:
 
     def best_component_metrics(self):
         """The best of each role among the components we may use now."""
-        m = {"weapon": 0.0, "armor": 0.0, "shield": 0.0, "engine": 0.0, "hull": 0, "colonize": set(), "supply": 0.0,
-             "pd": 0.0, "ecm": 0, "sensor": 0}
+        m = {"weapon": 0.0, "armor": 0.0, "shield": 0.0, "engine": 0.0, "hull": 0, "colonize": set(), "pd": 0.0, "ecm": 0,
+             "platform": 0}
         for c in self.kn.components:
             if not self.kn.meets(c.reqs):
                 continue
             self._metrics(c, m)
         for h in self.kn.hulls:
-            if h.type == "ship" and self.kn.meets(h.reqs) and h.tonnage > m["hull"]:
+            if not self.kn.meets(h.reqs):
+                continue
+            if h.type == "ship" and h.pct_colony <= 0 and h.pct_cargo <= 0 and h.pct_bays <= 0 and h.tonnage > m["hull"]:
                 m["hull"] = h.tonnage
+            if h.type == "weapon_platform" and h.tonnage > m["platform"]:
+                m["platform"] = h.tonnage
         return m
 
     @staticmethod
@@ -57,14 +71,11 @@ class Research:
         if w is None or c.tonnage <= 0:
             return 0.0
         dmg = w.damage
-        n = 0
-        total = 0
-        for r in range(1, min(len(dmg), 9)):
-            total += dmg[r]
-            n += 1
-        if n == 0:
-            return 0.0
-        return total / n / w.reload / c.tonnage
+        total = 0.0
+        for r in range(1, 9):
+            d = dmg[r] if r < len(dmg) else 0
+            total += d * max(0.05, (100 + w.modifier - 10 * r) / 100.0)
+        return total / 8.0 / w.reload / c.tonnage
 
     def _metrics(self, c, m):
         ton = c.tonnage if c.tonnage > 0 else 1
@@ -79,7 +90,7 @@ class Research:
             s = c.structure / ton
             if s > m["armor"]:
                 m["armor"] = s
-        if c.shield + c.phased > 0:
+        if c.shield + c.phased > 0 and c.weapon is None:
             s = (c.shield + c.phased) / ton
             if s > m["shield"]:
                 m["shield"] = s
@@ -89,12 +100,13 @@ class Research:
                 m["engine"] = s
         for s in c.colonize:
             m["colonize"].add(s)
-        if c.defense > m["ecm"]:
+        if c.defense > m["ecm"] and c.weapon is None:
             m["ecm"] = c.defense
 
     # ---- what an area's next levels bring ----
 
     def area_values(self):
+        """{area: [civil value, military value]} a turn, before discounting."""
         kn = self.kn
         lv = self.levels
         econ = self.econ
@@ -102,29 +114,36 @@ class Research:
         counts = self.facility_counts()
         now = self.best_component_metrics()
         values = {}
-        unlocks = {}
 
-        def credit(area, gained, depth):
-            k = 1.0 if depth == 1 else 0.45
-            values[area] = values.get(area, 0.0) + gained * k
+        def credit(misses, civ, mil):
+            # Shared among the areas still missing; a level further away counts less.
+            n = len(misses)
+            for a, depth in misses:
+                k = (1.0 if depth == 1 else (0.5 if depth == 2 else 0.25)) / n
+                e = values.get(a)
+                if e is None:
+                    e = [0.0, 0.0]
+                    values[a] = e
+                e[0] += civ * k
+                e[1] += mil * k
 
         def gate(reqs):
-            """(area, depth) when exactly one area stands between us and the item, at most two levels short."""
-            miss = None
+            """The areas (and how many levels short) between us and an item, or None
+            when we have it or it is too far."""
+            out = []
+            total = 0
             for q in reqs:
                 a = q["area"]
                 if a is None:
                     continue
                 have = lv[a] if a < len(lv) else 0
                 if have < q["level"]:
-                    if miss is not None and miss[0] != a:
-                        return None
-                    depth = q["level"] - have
-                    if miss is None or depth > miss[1]:
-                        miss = (a, depth)
-            if miss is None or miss[1] > 2:
+                    d = q["level"] - have
+                    out.append((a, d))
+                    total += d
+            if not out or total > 3:
                 return None
-            return miss
+            return out
 
         p = econ.prices
         # Facilities: better levels of families we use, and new kinds.
@@ -134,76 +153,88 @@ class Research:
                 continue
             cur = counts.get(f.family)
             gain = 0.0
-            per_gen = f.gen[0] * p[0] + f.gen[1] * p[1] + f.gen[2] * p[2] + f.research * p[3] * 0.9 + f.intel * p[4]
+            per = f.gen[0] * p[0] + f.gen[1] * p[1] + f.gen[2] * p[2] + f.research * p[3] + f.intel * p[4]
             if cur is not None:
                 old = cur[1]
-                old_gen = old.gen[0] * p[0] + old.gen[1] * p[1] + old.gen[2] * p[2] + old.research * p[3] * 0.9 + old.intel * p[4]
-                if per_gen > old_gen:
-                    gain = (per_gen - old_gen) * cur[0] * 0.8
-            elif per_gen > 0:
-                gain = per_gen * 0.5
-            if f.storage[0] + f.storage[1] + f.storage[2] > 0:
-                gain += 30.0
+                old_per = old.gen[0] * p[0] + old.gen[1] * p[1] + old.gen[2] * p[2] + old.research * p[3] + old.intel * p[4]
+                if per > old_per:
+                    gain = (per - old_per) * cur[0] * 0.8
+            elif per > 0:
+                gain = per * 0.4
             if f.yard[0] + f.yard[1] + f.yard[2] > 0:
-                gain += 150.0
+                gain += 100.0
             if gain > 0:
-                credit(g[0], gain * wt["economy"], g[1])
+                credit(g, gain * wt["economy"], 0.0)
         # Components: what improves our ships, and new planet types to settle.
         targets_by_surface = self.tune.get("targets_by_surface", {})
         for c in kn.components:
             g = gate(c.reqs)
             if g is None:
                 continue
-            gain = 0.0
+            civ = 0.0
             mil = 0.0
             for s in c.colonize:
                 if s not in now["colonize"]:
-                    # What the best planets of that surface we know would bring, over a while.
-                    gain += 300.0 + targets_by_surface.get(s, 1500.0) * 0.15
+                    civ += 300.0 + targets_by_surface.get(s, 1500.0) * 0.15
             if c.weapon is not None and not c.pd and c.weapon.kind in ("direct_fire", "seeking"):
                 s = self.weapon_score(c)
-                if now["weapon"] > 0 and s > now["weapon"]:
-                    mil += 600.0 * (s / now["weapon"] - 1.0)
-                elif now["weapon"] <= 0 and s > 0:
-                    mil += 600.0
+                if now["weapon"] <= 0:
+                    mil += 500.0
+                elif s > now["weapon"]:
+                    mil += 500.0 * min(2.0, s / now["weapon"] - 1.0) + 60.0
             if c.armor and "ship" in c.types and c.tonnage > 0:
                 s = c.structure / c.tonnage
-                if s > now["armor"] > 0:
-                    mil += 400.0 * (s / now["armor"] - 1.0)
-                elif now["armor"] <= 0:
-                    mil += 300.0
-            if c.shield + c.phased > 0 and c.tonnage > 0:
+                if now["armor"] <= 0:
+                    mil += 500.0
+                elif s > now["armor"]:
+                    mil += 400.0 * min(2.0, s / now["armor"] - 1.0) + 40.0
+            if c.shield + c.phased > 0 and c.tonnage > 0 and c.weapon is None:
                 s = (c.shield + c.phased) / c.tonnage
-                if s > now["shield"]:
-                    mil += 350.0 * (1.0 if now["shield"] <= 0 else min(2.0, s / now["shield"] - 1.0))
+                if now["shield"] <= 0:
+                    mil += 400.0
+                elif s > now["shield"]:
+                    mil += 300.0 * min(2.0, s / now["shield"] - 1.0) + 30.0
             if c.engine > 0 and "ship" in c.types and c.tonnage > 0:
                 s = c.engine / c.tonnage
-                if s > now["engine"] > 0:
-                    gain += 200.0 * (s / now["engine"] - 1.0)
-                    mil += 200.0 * (s / now["engine"] - 1.0)
-            if c.defense > now["ecm"]:
-                mil += 3.0 * (c.defense - now["ecm"])
-            if gain > 0:
-                credit(g[0], gain * wt["expansion"], g[1])
-            if mil > 0:
-                credit(g[0], mil * wt["military"], g[1])
+                if now["engine"] > 0 and s > now["engine"]:
+                    r = min(2.0, s / now["engine"] - 1.0)
+                    civ += 100.0 * r
+                    mil += 200.0 * r
+            if c.defense > now["ecm"] and c.weapon is None:
+                mil += 4.0 * (c.defense - now["ecm"])
+            if c.pd and now["pd"] <= 0:
+                mil += 80.0
+            if civ > 0 or mil > 0:
+                credit(g, civ * wt["expansion"], mil * wt["military"])
         for h in kn.hulls:
-            if h.type != "ship":
-                continue
             g = gate(h.reqs)
-            if g is None or h.tonnage <= now["hull"]:
+            if g is None:
                 continue
-            credit(g[0], 500.0 * min(2.0, h.tonnage / max(1, now["hull"]) - 1.0) * wt["military"], g[1])
-        # Areas that open other areas.
+            if h.type == "ship" and h.pct_colony <= 0 and h.pct_cargo <= 0 and h.pct_bays <= 0 and h.tonnage > now["hull"]:
+                r = min(2.0, h.tonnage / float(max(1, now["hull"])) - 1.0)
+                mil = 600.0 * r + (300.0 if h.tonnage >= 400 > now["hull"] else 0.0)
+                credit(g, 80.0 * r * wt["expansion"], mil * wt["military"])
+            elif h.type == "weapon_platform" and h.tonnage > now["platform"]:
+                credit(g, 0.0, 250.0 * wt["military"])
+        # An area we cannot research yet passes some of its worth to those it needs.
         for t in kn.techs:
-            if t.id in self.researchable or lv[t.id] > 0:
+            a = t.id
+            if a in self.researchable or lv[a] >= t.max:
+                continue
+            e = values.get(a)
+            if e is None:
                 continue
             g = gate(t.reqs)
-            if g is not None:
-                credit(g[0], 150.0 * (wt["economy"] + wt["military"]) * 0.5, g[1])
+            if g is None:
+                continue
+            credit(g, e[0] * 0.6, e[1] * 0.6)
         return values
 
-    def plan(self):
+    @staticmethod
+    def category(v):
+        return "mil" if v[1] > v[0] else "civ"
+
+    def plan(self, mem):
         """The research queue we want, or None when the current one stays."""
         kn = self.kn
         lv = self.levels
@@ -213,8 +244,18 @@ class Research:
         for e in queue:
             if e["area"] is not None:
                 progress[e["area"]] = e["progress"]
-        score_bonus = self.tune.get("level_score", 300.0)
-        scored = []
+        # Book what was spent since the last call on the side of the queue's head.
+        spent = mem.get("rp_spent")
+        if not isinstance(spent, dict):
+            spent = {"civ": 0, "mil": 0}
+            mem["rp_spent"] = spent
+        head = mem.get("rp_head")
+        if head in ("civ", "mil"):
+            spent[head] = spent[head] + self.state["points"]
+        score_bonus = self.tune.get("level_score", 250.0)
+        income = max(1, self.state["income"])
+        horizon = self.tune.get("horizon", 20.0)
+        scored = {"civ": [], "mil": []}
         for a in self.researchable:
             if a >= len(kn.techs):
                 continue
@@ -223,25 +264,38 @@ class Research:
                 continue
             cost = kn.level_cost(a, lv[a] + 1)
             left = max(1, cost - progress.get(a, 0))
-            # Every level is also worth score and a little general strength.
-            v = values.get(a, 0.0) + score_bonus
-            scored.append((v * 1000.0 / left, a))
-        scored.sort(key=lambda x: -x[0])
+            v = values.get(a, [0.0, 0.0])
+            total = v[0] + v[1] + score_bonus
+            turns = left / float(income)
+            score = total * 1000.0 / left / (1.0 + turns / horizon)
+            scored[self.category(v)].append((score, a))
+        for k in scored:
+            scored[k].sort(key=lambda x: -x[0])
+        share = self.weights.get("military_share", 0.35)
+        total_spent = spent["civ"] + spent["mil"] + 1
+        mil_behind = spent["mil"] < share * total_spent
+        first, second = ("mil", "civ") if mil_behind else ("civ", "mil")
+        if not scored[first]:
+            first, second = second, first
+        # Interleave: the side behind first, then alternate, best areas of each side.
         want = []
+        lists = [list(scored[first]), list(scored[second])]
+        i = 0
         pool = self.state["points"] + self.state["income"]
         covered = 0
-        for s, a in scored:
-            if len(want) >= QUEUE_LEN and covered > pool:
-                break
-            if len(want) >= 12:
-                break
+        while len(want) < 12 and (lists[0] or lists[1]):
+            lst = lists[i % 2] if lists[i % 2] else lists[(i + 1) % 2]
+            s, a = lst.pop(0)
             want.append(a)
             covered += kn.level_cost(a, lv[a] + 1) - progress.get(a, 0)
-        # Never drop an area with progress.
+            i += 1
+            if len(want) >= QUEUE_LEN and covered > pool * 2:
+                break
         for a, pr in progress.items():
-            if pr > 0 and a not in want and a in self.researchable and lv[a] < kn.techs[a].max:
-                if len(want) < 12:
-                    want.append(a)
+            if pr > 0 and a not in want and a in self.researchable and lv[a] < kn.techs[a].max and len(want) < 12:
+                want.append(a)
+        mem["rp_head"] = self.category(values.get(want[0], [0.0, 0.0])) if want else None
+        self.top = [(kn.techs[a].name, self.category(values.get(a, [0.0, 0.0])), [int(x) for x in values.get(a, [0.0, 0.0])]) for a in want[:5]]
         current = [e["area"] for e in queue]
         if current == want and not self.state["evenly"]:
             return None

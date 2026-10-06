@@ -35,6 +35,7 @@ class DesignBook:
                     values.pop(role, None)
         self.commands = []
         self.problems = []
+        self.made = []
 
     def design(self, role):
         name = self.book.get(role)
@@ -92,6 +93,10 @@ class DesignBook:
             prev = self.design(role)
             if prev is not None and len(self.roles_of(prev["id"])) <= 1:
                 self.commands.append({"kind": "set_design_obsolete", "design": prev["id"], "obsolete": True})
+            f = p["figures"]
+            self.made.append("%s %s hull=%d ton=%d/%d cost=%d move=%d struct=%d wpn=%d dmg=%d rng=%d shields=%d value=%s" % (
+                role, p["name"], p["hull"], f["tonnage_used"], f["tonnage_max"], res_total(f["cost"]), f["movement"], f["structure"],
+                f["weapons"], f["weapon_damage"], f["max_weapon_range"], f["shields"], int(value)))
             self.book[role] = p["name"]
             self.values[role] = int(value)
             mem["pending_roles"][role] = True
@@ -105,12 +110,15 @@ class DesignBook:
 
     @staticmethod
     def role_value(role, p):
+        """A whole number: how good a design is for its role (higher is better)."""
         f = p["figures"]
         cost = res_total(f["cost"]) or 1
         if role == "scout":
-            return f["movement"] * 1000.0 / cost
-        if role == "yard":
-            return 1.0e6 / cost
-        if role.startswith("colony:"):
-            return (1.0 + 0.15 * f["movement"]) * 1.0e6 / cost
-        return p.get("value", 0.0) * 1.0e9
+            v = f["movement"] * 1.0e7 / cost
+        elif role == "yard":
+            v = 1.0e9 / cost
+        elif role.startswith("colony:"):
+            v = (1.0 + 0.15 * f["movement"]) * 1.0e9 / cost
+        else:
+            v = p.get("value", 0.0) * 1.0e12
+        return int(v)

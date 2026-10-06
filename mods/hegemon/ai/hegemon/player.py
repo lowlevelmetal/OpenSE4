@@ -103,6 +103,13 @@ class Hegemon(ai.Player):
         for oid, text in mil.notes:
             self.note(oid, text, kind="object")
         if DEBUG:
+            for b in w.d["battles"]:
+                mine_n = sum(1 for p in b["pieces"] if p["owner"] == w.me)
+                mine_lost = sum(1 for p in b["pieces"] if p["owner"] == w.me and p["survivor"] != w.me)
+                theirs = sum(1 for p in b["pieces"] if p["owner"] != w.me)
+                theirs_lost = sum(1 for p in b["pieces"] if p["owner"] != w.me and p["survivor"] is None)
+                planets = [(p["owner"], p["name"], p["survivor"]) for p in b["pieces"] if p["kind"] == "planet"]
+                self.log("T%d BATTLE sys=%s ours %d lost %d theirs %d lost %d planets %s" % (w.turn, b["location"]["system"], mine_n, mine_lost, theirs, theirs_lost, planets))
             th = [(s, int(f.attack), int(f.hp)) for s, f in mil.threats.items()]
             self.log("T%d MIL rally=%s warships=%d fleets=%s threats=%s cols=%s" % (
                 w.turn, mil.rally, len(roles.get("warship", [])), mil.fleet_mem, th, w.colony_systems))
@@ -120,10 +127,12 @@ class Hegemon(ai.Player):
         for sf in SURFACES:
             if sf not in surfaces:
                 tbs[sf] = sum(t[0] for t in ex.targets([sf])[:8])
-        r = Research(w, kn, econ, {"economy": 1.0, "expansion": 1.0, "military": 0.6}, {"targets_by_surface": tbs})
-        cmd = r.plan()
+        r = Research(w, kn, econ, {"economy": 1.0, "expansion": 1.0, "military": 1.0, "military_share": 0.3 if w.turn < 40 else 0.45}, {"targets_by_surface": tbs})
+        cmd = r.plan(self.memory)
         if cmd is not None:
             orders.add(cmd)
+        if DEBUG and w.turn % 10 == 0:
+            self.log("T%d RESEARCH income=%d %s" % (w.turn, w.my["research"]["income"], getattr(r, "top", None)))
         # What to build.
         wants = self.ship_wants(w, econ, book, surfaces)
         cons = Construction(w, kn, econ, wants)
@@ -133,6 +142,8 @@ class Hegemon(ai.Player):
             self.log("T%d col=%d stored=%s wants=%s cmds=%s queues=%s prices=%s roles=%s" % (
                 w.turn, len(w.my_colonies), econ.stored, wants["ships"], [(c["target"], c["item"]) for c in cons.commands], q,
                 [round(x, 2) for x in econ.prices], book.book))
+            for line in book.made:
+                self.log("T%d DESIGN %s" % (w.turn, line))
             if book.problems:
                 self.log("design problems %s" % book.problems)
 
