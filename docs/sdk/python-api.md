@@ -20,7 +20,8 @@ It lives in `python/opense4/`. Its parts:
 | `opense4.rng` | Random numbers that are the same on every runtime |
 | `opense4.enums` | Every enumeration's names |
 | `opense4.services` | What a player may ask the engine during a call |
-| `opense4.external` | External bots |
+| `opense4.external`, `opense4.bot` | External bots: the connection, and `python -m opense4.bot` |
+| `opense4.env` | The training environment: one empire played step by step |
 | `opense4.testing` | Playing a player without the game, for tests |
 
 The engine's side of the conversation is [ai-protocol.md](ai-protocol.md); a player
@@ -311,19 +312,46 @@ def overcrowding(game, colony, fx):
 section 7.1), and `rules.Effects` is the interface of `fx`. The engine does not call hooks
 yet: the rules tier comes with a later step of the SDK.
 
-## External bots (`opense4.external`)
+## External bots (`opense4.external`, `opense4.bot`)
 
 An external bot is a program that plays through a connection to the game, with the same
-`Player` class:
+`Player` class, on CPython 3.10 or newer ([bots-and-arena.md](bots-and-arena.md)):
 
 ```python
 from opense4 import external
-external.run(connection, Admiral)    # answers the game's requests until it ends
+external.run(Admiral, port=6722, token="3f2a...", slot=0)    # until the game ends
 ```
 
-`external.Connection` is what a connection provides (`receive`, `send`, `service`); the
-connections themselves come with a later step of the SDK. A bot has the host's turn timer
-instead of a budget, and need not be deterministic: the game records its answers.
+or `python -m opense4.bot admiral:Admiral --path mymod/ai --port 6722 --slot 0`, with the
+token in `OPENSE4_BOT_TOKEN`.
+
+- `run(player, host, port, token, slot, name, reconnect, wait)` connects (trying again for
+  `wait` seconds while the game does not listen yet), answers requests until the game
+  says goodbye, and returns how many it answered. Arguments left out come from
+  `OPENSE4_BOT_HOST`, `OPENSE4_BOT_PORT`, `OPENSE4_BOT_TOKEN` and `OPENSE4_BOT_SLOT`.
+  `reconnect=True` connects again after each game. A refusal raises `external.Refused`.
+- `serve(connection, player)` answers on any `external.Connection` (`receive`, `send`,
+  `service`), such as a test's; `run(connection, player)` does the same.
+  `SocketConnection` is the game's own (docs/sdk/ai-protocol.md, section 10), and
+  `connect(...)` makes one.
+- A response that holds what the game cannot take (a float, a whole number beyond 64 bits,
+  a key that is not text) is sent as the request's error instead, as the game's runtime
+  fails such a request; `value_problem(value)` says what is wrong with a value.
+- A service a player asks after the game stopped waiting for its request raises
+  `RequestAbandoned`, which ends the call.
+
+A bot has the host's time per request instead of a budget, and need not be
+deterministic: the game records its answers.
+
+## The training environment (`opense4.env`)
+
+`env.Game(seed=..., opponents=[...], turns=...)` plays empire 0 of a game step by step:
+`view = game.reset()`, then `view, reward, done, info = game.step(commands)` once per game
+turn, the reward being the change in the empire's score. It runs the engine as a child
+process (`opense4-sdk env-host`) and is deterministic for a seed and the commands given.
+`game.query(name, **args)`, `game.builtin_commands(call)` and `view.rules` ask the engine
+during a step. [bots-and-arena.md](bots-and-arena.md) describes the options and how to
+train with it.
 
 ## Testing a player (`opense4.testing`)
 
@@ -340,6 +368,11 @@ h.call("end_session")
 `FakeServices` answers the services from prepared values (`rules`, `queries`, `builtin`,
 `answers`, `apply`) and records what was asked; `Harness` plays a player through requests
 as the engine does, keeping its memory from one session to the next.
+
+`opense4-sdk test` runs a mod's `tests/test_*.py` in the game's runtime
+([bots-and-arena.md](bots-and-arena.md)). There `testing.game_view(empire=0)` and
+`testing.game_rules()` give the view and the rules view of a new game of the mod's data
+set; elsewhere they skip the test (`testing.Skip`, or pytest's skip).
 
 ## The same code in both places
 

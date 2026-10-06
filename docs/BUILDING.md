@@ -482,7 +482,11 @@ OPENSE4_CLASSIC_DATA=auto ./build/debug/tests/opense4_tests  # + checks against 
 ```
 
 By default the tests use only the original fixtures in `tests/fixtures/` and
-`tests/engine_fixture.cpp`. Setting `OPENSE4_CLASSIC_DATA` to `auto`, or to a data
+`tests/engine_fixture.cpp`. The modding SDK's tests also run `opense4-sdk` and
+`opense4-server` (built with the tests) and, where Python 3.10 or newer is installed as
+`python3` (or `python`), the `opense4` package under CPython: external bots against the
+server, the arena and the training environment (docs/sdk/bots-and-arena.md). Without
+Python they are skipped, with a message. Setting `OPENSE4_CLASSIC_DATA` to `auto`, or to a data
 directory, also runs checks against your installed game data. Those checks never
 copy anything into the repository. Each test run uses a scratch user data folder
 (`OPENSE4_USER_DIR`), so tests never touch your own settings, saves or history.
