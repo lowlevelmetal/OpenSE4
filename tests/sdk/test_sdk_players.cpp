@@ -186,10 +186,15 @@ TEST_CASE("sdk players: opense4-sdk check finds a player's missing module or cla
                       "[[ai.players]]\nname = \"Good\"\nmodule = \"good\"\nclass = \"Good\"\n"
                       "[[ai.players]]\nname = \"Packaged\"\nmodule = \"pack.inner\"\nclass = \"Inner\"\n"
                       "[[ai.players]]\nname = \"Lost\"\nmodule = \"nowhere\"\nclass = \"Lost\"\n"
-                      "[[ai.players]]\nname = \"Classless\"\nmodule = \"good\"\nclass = \"Other\"\n");
+                      "[[ai.players]]\nname = \"Classless\"\nmodule = \"good\"\nclass = \"Other\"\n"
+                      "[[ai.players]]\nname = \"Exported\"\nmodule = \"pack\"\nclass = \"Inner\"\n"
+                      "[[ai.players]]\nname = \"Renamed\"\nmodule = \"alias\"\nclass = \"Again\"\n"
+                      "[[ai.players]]\nname = \"Hollow\"\nmodule = \"hollow\"\nclass = \"Ghost\"\n");
     write("ai/good.py", "import helpers\n\nclass Good:\n    pass\n");
     write("ai/helpers.py", "X = 1\n");
-    write("ai/pack/__init__.py", "");
+    write("ai/pack/__init__.py", "from .inner import Inner\n");   // a package that re-exports its player
+    write("ai/alias.py", "from pack.inner import (Other, Inner as Again)\n");
+    write("ai/hollow.py", "from .pack import Ghost\n");          // pack has no Ghost
     write("ai/pack/inner.py", "class Inner(object):\n    pass\n");
     write("ai/broken.py", "x = 1\n\ndef f(:\n    pass\n");
     write("ai/bad-name.py", "x = 1\n");
@@ -200,9 +205,12 @@ TEST_CASE("sdk players: opense4-sdk check finds a player's missing module or cla
     for (const std::string& e : check.errors) errors += e + "\n";
     for (const std::string& w : check.warnings) warnings += w + "\n";
     INFO(errors << warnings);
-    CHECK(check.errors.size() == 3);
+    CHECK(check.errors.size() == 4);
     CHECK(errors.find("'Lost' is in module nowhere") != std::string::npos);
     CHECK(errors.find("'Classless' is class Other, but ai/good.py defines no class Other") != std::string::npos);
+    CHECK(errors.find("'Hollow' is class Ghost") != std::string::npos);
+    CHECK(errors.find("'Exported'") == std::string::npos);   // `from .inner import Inner` in pack/__init__.py
+    CHECK(errors.find("'Renamed'") == std::string::npos);    // `Inner as Again`
     CHECK(errors.find("ai/broken.py (line 3): ") != std::string::npos);
     CHECK(errors.find("SyntaxError") != std::string::npos);
     CHECK(warnings.find("ai/bad-name.py: not a Python module name") != std::string::npos);
