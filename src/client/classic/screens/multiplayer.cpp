@@ -429,8 +429,9 @@ private:
         }
     }
 
-    // Refused for mods: each difference on a line of its own, and the way to the Mods window.
-    void modsRefusal(MenuContext& ctx) {
+    // Refused for mods: each difference on a line of its own, and the way to
+    // the Mods window (true when it was chosen).
+    bool modsRefusal(MenuContext& ctx) {
         const ImVec4 warn(1, 0.6f, 0.4f, 1);
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(warn, "The host plays with other mods than yours:");
@@ -448,10 +449,7 @@ private:
         }
         ImGui::TextWrapped("Choose the same mods in the Mods window (pictures and sounds may differ), then join again.");
         ImGui::PopTextWrapPos();
-        if (ImGui::Button("Mods", ctx.size({150, 30}))) {
-            leave();
-            ctx.goTo(makeModsScreen([] { return makeMultiplayerScreen("browse"); }));
-        }
+        return ImGui::Button("Mods", ctx.size({150, 30}));
     }
 
     void leave() {
@@ -553,7 +551,12 @@ private:
             ImGui::PopTextWrapPos();
             script::reportText(mods, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
         }
-        if (client_ && client_->refusedForMods()) modsRefusal(ctx);
+        if (client_ && client_->refusedForMods() && modsRefusal(ctx)) {
+            // To the Mods window, and back to the join form (kept) afterwards; nothing of the lobby is drawn after this.
+            ctx.goTo(makeModsScreen([] { return makeMultiplayerScreen("browse"); }));
+            leave();
+            return;
+        }
         ImGui::Separator();
 
         // Slots.
