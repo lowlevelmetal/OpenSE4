@@ -117,21 +117,26 @@ struct Audio::Impl {
         std::shared_ptr<const audiomix::Clip> loaded;
         const std::vector<std::string> candidates = soundCandidates(name, options.remastered);
         bool found = false;
-        if (files)
-            for (const std::string& candidate : candidates) {
-                const auto path = files->find(candidate);
-                if (!path) continue;
-                found = true;
-                std::vector<uint8_t> bytes;
-                std::string why = audiomix::readFileBytes(*path, bytes);
-                if (why.empty()) {
-                    if (auto c = audiomix::decodeWav(bytes, mixer->rate(), why)) {
-                        loaded = std::make_shared<const audiomix::Clip>(std::move(*c));
-                        break;
-                    }
+        // The names as given (".wav") or OGG Vorbis files of the same base names,
+        // a mod's under either name first (docs/sdk/packages-and-data.md).
+        // One that cannot be decoded gives way to the next name's.
+        std::vector<std::filesystem::path> paths;
+        if (files) {
+            if (const auto first = files->findSoundAmong(candidates)) paths.push_back(*first);
+            for (const std::string& candidate : candidates)
+                if (const auto p = files->findSound(candidate); p && std::find(paths.begin(), paths.end(), *p) == paths.end()) paths.push_back(*p);
+        }
+        for (const std::filesystem::path& path : paths) {
+            found = true;
+            std::vector<uint8_t> bytes;
+            std::string why = audiomix::readFileBytes(path, bytes);
+            if (why.empty())
+                if (auto c = audiomix::decodeSound(bytes, mixer->rate(), why)) {
+                    loaded = std::make_shared<const audiomix::Clip>(std::move(*c));
+                    break;
                 }
-                log::warn("Sound: cannot play {}: {}", path->string(), why);
-            }
+            log::warn("Sound: cannot play {}: {}", path.string(), why);
+        }
         if (!found && files) files->noteMissing(candidates.empty() ? std::string(name) : candidates.front());
         clips.emplace(key, loaded);
         return loaded;
@@ -251,7 +256,7 @@ void Audio::playTrack(const std::string& file) {
     if (a.musicPlaying && a.trackFile == file) return;  // already playing it
     if (a.failedTracks.contains(file)) return;          // logged when it failed
     const std::string relative = "Music/" + file;
-    const auto path = a.files ? a.files->find(relative) : std::nullopt;
+    const auto path = a.files ? a.files->findSound(relative) : std::nullopt;   // or an OGG of the same base name
     if (!path) {
         a.failedTracks.insert(file);
         if (a.files) a.files->noteMissing(relative);
@@ -304,9 +309,10 @@ void Audio::update() {
                 break;
             case audiomix::MusicTrack::State::Playing:
                 if (!a.trackReported) {
-                    const audiomix::Mp3Info& i = a.track->info();
-                    log::info("Music: playing Music/{} ({} Hz, {} channel{}, {:.0f} s, looped)", a.trackFile, i.sampleRate, i.channels,
-                              i.channels == 1 ? "" : "s", i.seconds);
+                    const audiomix::TrackInfo& i = a.track->info();
+                    log::info("Music: playing Music/{} ({}, {} Hz, {} channel{}, {:.0f} s, looped)", a.trackFile,
+                              i.format == audiomix::AudioFormat::Ogg ? "OGG Vorbis" : "MP3", i.sampleRate, i.channels, i.channels == 1 ? "" : "s",
+                              i.seconds);
                     a.trackReported = true;
                 }
                 if (const uint64_t loops = a.track->loops(); loops != a.trackLoops) {

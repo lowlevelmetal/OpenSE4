@@ -15,6 +15,7 @@ import itertools
 import math
 import operator
 import string
+import traceback
 from abc import ABC, abstractmethod
 from dataclasses import FrozenInstanceError, asdict, astuple, dataclass, field, fields, is_dataclass, replace
 from typing import Any, Callable, ClassVar, Dict, Generic, List, NamedTuple, Optional, Tuple, TypeVar, cast
@@ -379,9 +380,32 @@ def test_language():
         assert n == 3
 
 
+def test_traceback():
+    def inner():
+        raise ValueError("bad target")
+
+    def outer():
+        inner()
+
+    try:
+        outer()
+    except ValueError as e:
+        lines = traceback.format_exception(e)
+        text = traceback.format_exc()
+        only = traceback.format_exception_only(e)
+    assert lines[0] == "Traceback (most recent call last):\n"
+    assert lines[-1] == "ValueError: bad target\n"
+    assert all(line.endswith("\n") for line in lines)
+    joined = "".join(lines)
+    assert "in inner" in joined and "in outer" in joined and joined.index("in outer") < joined.index("in inner")
+    assert text == joined
+    assert only == ["ValueError: bad target\n"]
+    assert traceback.format_exception_only(KeyError()) == ["KeyError\n"]
+
+
 TESTS = [
     test_typing, test_dataclasses, test_itertools, test_functools, test_bisect, test_collections,
-    test_heapq, test_math, test_operator_copy_string_abc, test_language,
+    test_heapq, test_math, test_operator_copy_string_abc, test_language, test_traceback,
 ]
 
 

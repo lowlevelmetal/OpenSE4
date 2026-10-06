@@ -722,6 +722,7 @@ something else in the view) shows only its hull.
 | `name` | text, or null | Its name. |
 | `design_type` | text, or null | Its type. |
 | `hull` | hull index | Its hull. |
+| `picture` | text | Its own picture's base name, empty for its hull's (how its ships look, so it shows for every design). |
 | `entries` | list of design_entry, or null | Its components. |
 | `strategy` | strategy index | Its vehicles' combat strategy. |
 | `obsolete` | bool | Obsolete. |

@@ -464,8 +464,8 @@ private:
             figures = designFigures(r_, s_, game::computeDesignStats(r_, nullptr, d), d.hull, d.entries, own ? &d : nullptr);
         auto ifOwn = [&](Value v) { return own ? std::move(v) : Value(); };
         auto ifKnown = [&](Value v) { return known ? std::move(v) : Value(); };
-        return Map(20)("id", id(d.id))("owner", id(d.owner))("known", Value(known))("name", ifKnown(Value(d.name)))(
-                   "design_type", ifKnown(Value(d.designType)))("hull", num(d.hull))("entries", ifKnown(enc(d.entries)))(
+        return Map(21)("id", id(d.id))("owner", id(d.owner))("known", Value(known))("name", ifKnown(Value(d.name)))(
+                   "design_type", ifKnown(Value(d.designType)))("hull", num(d.hull))("picture", Value(d.picture))("entries", ifKnown(enc(d.entries)))(
                    "strategy", num(d.strategy))("obsolete", Value(d.obsolete))("created_turn", num(d.createdTurn))(
                    "template_name", ifKnown(Value(d.templateName)))("prototype", ifOwn(Value(game::designIsPrototype(d))))(
                    "built", ifOwn(num(d.built)))("lost", ifOwn(num(d.lost)))("scrapped", ifOwn(num(d.scrapped)))(

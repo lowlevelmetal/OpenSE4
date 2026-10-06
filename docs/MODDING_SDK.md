@@ -222,7 +222,7 @@ A script AI controls an empire completely:
 ### 6.2 The API, sketched
 
 ```python
-from opense4 import ai, cmd
+from opense4 import ai, cmd, order
 
 class Admiral(ai.Player):
     """A computer player that keeps the classic economy and plays its own war."""
@@ -234,17 +234,22 @@ class Admiral(ai.Player):
         for fleet in view.my.fleets:
             target = self.pick_target(view, fleet)
             if target:
-                orders.add(cmd.SetOrders(fleet, [cmd.Attack(target)]))
+                orders.add(cmd.give(fleet, [order.attack(vehicle=target)]))
         # anything else: the built-in Defense, Exploration, Supply... ministers
-        orders.extend(ai.builtin.orders(view, skip={"Attack"}))
+        orders.extend(ai.builtin.orders(view, skip=["attack"]))
 
-    def colony_type(self, view, colony):
-        return "Research" if colony.planet.size >= 4 else "Mining"
+    def colony_type(self, view, question):
+        return "Research" if "Research" in question.choices else None
 
     def battle_round(self, battle, orders):
-        for ship in battle.my.ships:
-            orders.target(ship, battle.weakest_enemy_in_range(ship))
+        for piece in battle.my_pieces:
+            target = battle.weakest_enemy_in_range(piece)
+            if target is not None:
+                orders.fire(piece, target)
 ```
+
+As built: docs/sdk/python-api.md describes the package, docs/sdk/ai-protocol.md the
+messages between it and the engine.
 
 - **The view:**
   - `view` is the empire's own knowledge, made by `game::redactForEmpire`: what a human

@@ -697,6 +697,12 @@ struct Design {
     // "Number Scrapped": scrapped, analyzed or self-destructed (spec 04 §15,
     // spec 03 §15). In service is constructed - lost - scrapped.
     int scrapped = 0;
+    // Its own picture (save format 9, the modding SDK; docs/sdk/packages-and-data.md
+    // "A design's own picture"): a base name that the client looks up as it
+    // does a hull's bitmap names (Mini_<picture> and Portrait_<picture> in the
+    // race's folder, then the generic one), in place of its hull's. Empty: the
+    // hull's pictures, as in the original. It changes nothing in the rules.
+    std::string picture;
 };
 
 enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };

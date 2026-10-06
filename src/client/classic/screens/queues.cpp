@@ -1057,7 +1057,7 @@ private:
         Sprite portrait;
         if (item->kind == game::QueueItem::Kind::Vehicle) {
             const game::Design& d = s.design(item->design);
-            portrait = ui.art.shipPortrait(ui.me().race.style, r.hull(d.hull));
+            portrait = ui.art.designPortrait(ui.me().race.style, r.hull(d.hull), d.picture);
         } else if (item->facility < r.data().facilities.size()) {
             portrait = ui.art.facilityPortrait(r.facility(item->facility).picture);
         }

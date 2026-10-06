@@ -196,6 +196,15 @@ add_library(opense4_sdk STATIC
     "${sdk_package_cpp}")
 target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_mods opense4_script PRIVATE Threads::Threads opense4_warnings)
 
+# GCC 15's optimizer reports false "may be used uninitialized" warnings inside
+# std::variant's copies of the SDK's values; release builds with warnings as errors
+# stop on them (tests/CMakeLists.txt does the same for the tests).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    foreach(_sdk_target opense4_script opense4_mods opense4_sdk)
+        target_compile_options(${_sdk_target} PRIVATE -Wno-maybe-uninitialized)
+    endforeach()
+endif()
+
 # --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------
 # Headless: the content model, its loaders and the condition evaluator. The
 # client draws it; the tests check the built-in content with it.
@@ -248,10 +257,14 @@ opense4_windows_manifest(opense4-server)
 # --- assets: runtime access to the player's installed classic art ------------------
 add_library(opense4_assets STATIC
     assets/assets.cpp
+    assets/sound.cpp
     assets/tiny_font.cpp
+    assets/vorbis_impl.cpp
     assets/wincursor.cpp
     assets/winfont.cpp)
 target_link_libraries(opense4_assets PUBLIC opense4_core PRIVATE stb opense4_warnings)
+# Third-party implementation file (stb_vorbis): don't apply our strict warnings.
+set_source_files_properties(assets/vorbis_impl.cpp PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/gfx/device.hpp")
     include(Client.cmake)

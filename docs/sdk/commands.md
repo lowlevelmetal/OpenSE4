@@ -19,8 +19,10 @@ The view a script reads, and the types it shares with this page, are in
   `systems[].id`, ...). `null` means "none" wherever an id is optional.
 - **Rules records are indices** into the tables of the rules view (a
   component, facility, hull, tech area, ...).
-- **Missing fields keep their defaults**: an id is none, a number 0 (or the
-  default the table names), a list empty, a flag as the table says. So
+- **Missing fields keep their defaults**: an id is none, a number 0, a flag
+  false, a list empty and an enumeration its first value, unless the table
+  names another default ("-1 by default", "(the default)"); a field of a type
+  keeps the defaults of that type's table. So
   `{"kind": "leave_fleet", "vehicle": 12}` is a whole command.
 - **Unknown fields are refused**, so a misspelt field is noticed.
 - **No field is a Python keyword**, so a script can read every field as an
@@ -534,10 +536,15 @@ advance whether it is legal and why not).
 
 | Field | Type | Meaning |
 |---|---|---|
-| `design` | design | The design: name, type, hull and components matter. |
+| `design` | design | The design: name, type, hull, components, strategy and picture matter. |
+
+A design may name a picture of its own (`picture`), such as one a mod adds;
+the engine refuses a name with folders in it, and a computer without the
+picture shows the hull's.
 
 ```json
 {"kind": "create_design", "design": {"name": "Lancer", "design_type": "Attack Ship", "hull": 3, "entries": [{"component": 0, "mount": -1}, {"component": 14, "mount": 2}]}}
+{"kind": "create_design", "design": {"name": "Escort", "design_type": "Attack Ship", "hull": 3, "picture": "Corvette2", "entries": [{"component": 0, "mount": -1}]}}
 ```
 
 ### `edit_design`
@@ -961,18 +968,18 @@ battle's piece list and in a piece's weapon list.
 |---|---|---|
 | `kind` | tactical_order_kind | What to do. |
 | `empire` | empire id, or null | The side giving it: the empire whose phase it is. |
-| `piece` | int | The piece acting (-1 for none). |
-| `target` | int | The target piece (-1 for none). |
-| `weapon` | int | The piece's weapon; -1 for every enabled weapon. |
-| `instance` | int | Which unit of a stack fires; -1 for every ready one. |
-| `x` | int | Where to move: the square's column. |
-| `y` | int | ... and row. |
+| `piece` | int | The piece acting (-1 by default: none). |
+| `target` | int | The target piece (-1 by default: none). |
+| `weapon` | int | The piece's weapon; -1 (the default) for every enabled weapon. |
+| `instance` | int | Which unit of a stack fires; -1 (the default) for every ready one. |
+| `x` | int | Where to move: the square's column (-1 by default). |
+| `y` | int | ... and row (-1 by default). |
 | `path` | list of square | Or the squares to move along. |
 | `design` | design id, or null | The units to launch. |
 | `count` | int | How many units to launch. |
 | `group` | int | A combat group (0 to 9), a launch session, or a fighter group size. |
-| `formation` | int | The formation a group leader takes (a formation index; -1 for none). |
-| `on` | bool | Weapons on or off; Auto on or off. |
+| `formation` | int | The formation a group leader takes (a formation index; -1 by default: none). |
+| `on` | bool | Weapons on or off; Auto on or off (true by default). |
 | `alone` | bool | A group leader moves without its group. |
 
 ### `square`
@@ -1012,8 +1019,8 @@ A sector of a system.
 | Field | Type | Meaning |
 |---|---|---|
 | `system` | system id, or null | The system (null: no place). |
-| `x` | int | Column, 0 to 12 left to right. |
-| `y` | int | Row, 0 to 12 top to bottom; (6, 6) is the centre. |
+| `x` | int | Column, 0 to 12 left to right (6 by default). |
+| `y` | int | Row, 0 to 12 top to bottom; (6, 6) is the centre (6 by default). |
 
 ### `sector`
 
@@ -1021,8 +1028,8 @@ A sector within a system.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `x` | int | Column, 0 to 12. |
-| `y` | int | Row, 0 to 12. |
+| `x` | int | Column, 0 to 12 (6 by default). |
+| `y` | int | Row, 0 to 12 (6 by default). |
 
 ### `resources`
 
@@ -1063,8 +1070,8 @@ yard. Name one.
 ### `design`
 
 A design as `create_design` and `edit_design` take it. Only `name`,
-`design_type`, `hull`, `entries` and `strategy` matter there; the engine sets
-the rest.
+`design_type`, `hull`, `entries`, `strategy` and `picture` matter there; the
+engine sets the rest.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1084,13 +1091,14 @@ the rest.
 | `lost` | int | Vehicles lost. |
 | `enemy_tonnage_destroyed` | int | Tonnage of enemies its vehicles destroyed. |
 | `scrapped` | int | Vehicles scrapped. |
+| `picture` | text | Its own picture: a base name looked up as a hull's bitmap names are (`Mini_<picture>`, `Portrait_<picture>`), in place of its hull's; empty for the hull's. At most 64 characters, no folders ([packages-and-data.md](packages-and-data.md#a-designs-own-picture)). |
 
 ### `design_entry`
 
 | Field | Type | Meaning |
 |---|---|---|
 | `component` | component index | The component. |
-| `mount` | int | A weapon mount of the rules view, or -1 for none. |
+| `mount` | int | A weapon mount of the rules view, or -1 (the default) for none. |
 
 ### `research_project`
 
@@ -1125,7 +1133,7 @@ hold.
 | `type` | message_type | What kind of message. |
 | `tone` | int | 0 pleading, 1 neutral (the default), 2 demanding. |
 | `text` | text | What it says. |
-| `treaty` | treaty | The treaty proposed, accepted or broken. |
+| `treaty` | treaty | The treaty proposed, accepted or broken (none by default). |
 | `offer` | list of package_item | What the sender gives. |
 | `request` | list of package_item | What the sender asks for. |
 | `third_empire` | empire id, or null | The empire a request is about. |
@@ -1148,7 +1156,7 @@ One thing given or asked for in a trade, gift or tribute.
 | `planet` | object ref, or null | A planet. |
 | `vehicle` | vehicle ref, or null | A vehicle. |
 | `system` | system id, or null | A system. |
-| `treaty` | treaty | A treaty. |
+| `treaty` | treaty | A treaty (none by default). |
 | `empire` | empire id, or null | The empire of a communication channel. |
 
 ### `waypoint`
@@ -1197,46 +1205,46 @@ plus one, newest first, 0 for none.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `show_log_at_turn_start` | bool | Open the log when a turn starts. |
-| `confirm_end_turn` | bool | Ask before ending the turn. |
-| `confirm_scrap` | bool | Ask before scrapping. |
-| `confirm_stellar_manipulation` | bool | Ask before a stellar manipulation. |
-| `confirm_delete_research` | bool | Ask before removing research. |
-| `confirm_delete_intel` | bool | Ask before removing intelligence projects. |
-| `confirm_delete_first_queue_item` | bool | Ask before removing the item being built. |
-| `note_similar_abilities` | bool | Note similar abilities in reports. |
+| `show_log_at_turn_start` | bool | Open the log when a turn starts (true by default). |
+| `confirm_end_turn` | bool | Ask before ending the turn (true by default). |
+| `confirm_scrap` | bool | Ask before scrapping (true by default). |
+| `confirm_stellar_manipulation` | bool | Ask before a stellar manipulation (true by default). |
+| `confirm_delete_research` | bool | Ask before removing research (true by default). |
+| `confirm_delete_intel` | bool | Ask before removing intelligence projects (true by default). |
+| `confirm_delete_first_queue_item` | bool | Ask before removing the item being built (true by default). |
+| `note_similar_abilities` | bool | Note similar abilities in reports (true by default). |
 | `skip_under_construction` | bool | Next and Previous skip vehicles being built. |
 | `skip_damaged` | bool | ... skip damaged vehicles. |
 | `stop_once_per_location` | bool | ... stop once per place. |
 | `skip_in_fleets` | bool | ... skip fleet members. |
-| `warp_point_names` | bool | System map: warp point names. |
+| `warp_point_names` | bool | System map: warp point names (true by default). |
 | `planet_names` | bool | System map: planet names. |
-| `colonizable_markers` | bool | System map: colonizable markers. |
+| `colonizable_markers` | bool | System map: colonizable markers (true by default). |
 | `system_grid` | bool | System map: the grid. |
-| `coordinate_location` | bool | System map: coordinates. |
+| `coordinate_location` | bool | System map: coordinates (true by default). |
 | `facility_markers` | int | Facility marker groups shown (bit i: group i). |
-| `galaxy_grid_lines` | bool | Galaxy map: grid lines. |
-| `galaxy_warp_lines` | bool | Galaxy map: warp lines. |
+| `galaxy_grid_lines` | bool | Galaxy map: grid lines (true by default). |
+| `galaxy_warp_lines` | bool | Galaxy map: warp lines (true by default). |
 | `latest_construction_only` | bool | Construction lists: only the latest items. |
 | `latest_components_only` | bool | Designer: only the latest components. |
-| `auto_claim_colonized` | bool | A system we colonize is claimed. |
+| `auto_claim_colonized` | bool | A system we colonize is claimed (true by default). |
 | `log_filter` | int | The log's filter (0 all, else a category + 1). |
 | `log_position` | int | The selected log entry. |
 | `log_scroll` | int | The log's scroll position. |
 | `planets_tab` | int | The Planets window's tab. |
 | `planets_no_sys_to_avoid` | bool | The Planets window hides systems to avoid. |
 | `queues_tab` | int | The Construction Queues window's tab. |
-| `queues_shown` | int | Its toggles (bits). |
+| `queues_shown` | int | Its toggles (bits; 15 by default). |
 | `simulator_no_obsolete` | bool | The combat simulator hides obsolete designs. |
 | `ships_tab` | int | The Ships window's tab. |
-| `ships_shown` | int | Its Show Ships, Units and Fleets toggles (bits). |
-| `planets_sort` | list of int | The Planets window's sort keys (five). |
-| `colonies_sort` | list of int | The Colonies window's sort keys (five). |
-| `ships_sort` | list of int | The Ships window's sort keys (five). |
-| `queues_sort` | list of int | The Construction Queues window's sort keys (five). |
-| `replay_animate` | bool | Combat replays: animate. |
+| `ships_shown` | int | Its Show Ships, Units and Fleets toggles (bits; 7 by default). |
+| `planets_sort` | list of int | The Planets window's sort keys (five; [0, 0, 0, 0, 0] by default). |
+| `colonies_sort` | list of int | The Colonies window's sort keys (five; [0, 0, 0, 0, 0] by default). |
+| `ships_sort` | list of int | The Ships window's sort keys (five; [0, 0, 0, 0, 0] by default). |
+| `queues_sort` | list of int | The Construction Queues window's sort keys (five; [0, 0, 0, 0, 0] by default). |
+| `replay_animate` | bool | Combat replays: animate (true by default). |
 | `replay_fast` | bool | Combat replays: fast. |
-| `replay_view_rect` | bool | Combat replays: the view rectangle. |
+| `replay_view_rect` | bool | Combat replays: the view rectangle (true by default). |
 | `replay_grid` | bool | Combat replays: the grid. |
 | `design_to_hit` | bool | The designer shows to-hit modifiers. |
 | `design_condensed` | bool | The designer's condensed view. |

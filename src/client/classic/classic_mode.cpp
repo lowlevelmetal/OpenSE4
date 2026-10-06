@@ -14,6 +14,7 @@
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
+#include "client/classic/mods_model.hpp"
 #include "mods/data_set.hpp"
 #include "learn/access.hpp"
 #include "learn/ids.hpp"
@@ -66,54 +67,126 @@ std::string missingInstallMessage(const std::string& installDir) {
                        kIntro, installDir, kHelp);
 }
 
+std::expected<ClassicMode::DataSet, std::string> ClassicMode::readDataSet(const std::filesystem::path& dataDir, const mods::ModChoice& choice) {
+    const std::filesystem::path gameRoot = dataDir.parent_path();
+    auto modSet = mods::selectMods(choice);
+    if (!modSet) {
+        std::string error = "The mods could not be loaded:\n";
+        for (size_t i = 0; i < std::min<size_t>(modSet.error().size(), 15); ++i) error += "\n" + modSet.error()[i];
+        return std::unexpected(error);
+    }
+    auto loaded = mods::loadDataSet(gameRoot, dataDir, *modSet);
+    if (!loaded.ruleset || !loaded.diagnostics.errors.empty()) {
+        std::string error = modSet->empty() ? std::format("The data set at {} has errors:\n", dataDir.string())
+                                            : std::format("The data set at {} with the mods {} has errors:\n", dataDir.string(),
+                                                          ruleset::describeMods(modSet->records()));
+        for (size_t i = 0; i < std::min<size_t>(loaded.diagnostics.errors.size(), 15); ++i) error += "\n" + loaded.diagnostics.errors[i];
+        return std::unexpected(error);
+    }
+    DataSet d;
+    d.rules = std::make_shared<const game::Rules>(std::move(*loaded.ruleset), gameRoot);
+    d.files = assets::InstallFiles(gameRoot);
+    for (const mods::Package& p : modSet->packages) {
+        log::info("Mod {} ({}) from {}", p.label(), mods::ModManager::summary(p), p.source.string());
+        for (const std::string& w : p.warnings) log::warn("Mod {}: {}", p.id(), w);
+        if (const std::filesystem::path assets = p.assetRoot(); !assets.empty()) d.files.addLayer(assets, p.label());
+    }
+    d.mods = std::move(*modSet);
+    return d;
+}
+
+mods::ModChoice ClassicMode::modChoice(std::vector<std::string> ids) const {
+    const std::filesystem::path userDir = userDataDirectory();
+    mods::ModChoice choice;
+    choice.mods = std::move(ids);
+    choice.modsDir = options_.modsDir.empty() ? mods::modsFolderIn(userDir) : std::filesystem::path(options_.modsDir);
+    choice.open.cacheDir = mods::modCacheIn(userDir);
+    return choice;
+}
+
+void ClassicMode::useDataSet(DataSet d) {
+    // Whatever drew with the old art has been drawn: it goes now.
+    rules_ = std::move(d.rules);
+    Art::setColorSource(nullptr);
+    art_ = std::make_unique<Art>(*platform_.device, std::move(d.files));
+    Art::setColorSource(art_.get());  // empire colours come from the race art (docs/spec/06 §5.3)
+    log::info("Classic data set: {} ({} components, {} race presets)", rules_->data().dataDir.string(), rules_->data().components.size(),
+              rules_->racePresets().size());
+    audio().setInstall(&art_->files());
+    // The classic fonts, read again only when a mod changes which files they come from.
+    std::vector<std::string> fontFiles;
+    for (const char* f : {"Fonts/FutMed.fon", "Fonts/FutSml.fon", "Fonts/SE4TXBTN.FON"}) {
+        const auto path = art_->files().findModFirst(f);
+        fontFiles.push_back(path ? path->string() : std::string{});
+    }
+    if (fontFiles != fontFiles_ || !fonts_.regular) {
+        fonts_ = loadClassicFonts(*platform_.fonts, art_->files());
+        fontFiles_ = std::move(fontFiles);
+    }
+    // The pointers (docs/spec/06 §5.8): with the install's Normal pointer the
+    // classic pointers replace ImGui's (no text beam, no resize arrows).
+    pointers().load(art_->files());
+    if (pointers().loaded()) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    else ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+    playlists_ = readPlaylists(rules_->data().settings);
+    reportPlaylists(rules_->data().settings, playlists_, art_->files());
+    LoadedMods& loaded = loadedMods();
+    loaded.packages = std::move(d.mods.packages);
+    ++loaded.generation;
+}
+
+std::optional<std::string> ClassicMode::changeMods(const std::vector<std::string>& ids) {
+    // Only in the front end: nothing of a game holds the data set then.
+    if (session_) return std::string("The mods cannot change during a game.");
+    auto data = readDataSet(dataDir_, modChoice(ids));
+    if (!data) return data.error();
+    log::info("Mods changed to: {}", ids.empty() ? std::string("none") : ruleset::describeMods(data->mods.records()));
+    useDataSet(std::move(*data));
+    settings().enabledMods = ids;
+    saveSettings();
+    LoadedMods& loaded = loadedMods();
+    loaded.fromCommandLine = false;
+    loaded.startProblems.clear();
+    options_.modsGiven = false;   // from now on, the settings' choice
+    frontError_.clear();
+    return std::nullopt;
+}
+
 std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const ClassicOptions& options, std::string& error) {
     const auto dataDir = ruleset::findInstalledDataDir(options.installDir);
     if (!dataDir) {
         error = missingInstallMessage(options.installDir);
         return nullptr;
     }
-    const std::filesystem::path gameRoot = dataDir->parent_path();
-    // Mods (docs/sdk/packages-and-data.md): the command line's, else the ones
-    // the settings enable, layered over the install.
-    const std::filesystem::path userDir = userDataDirectory();
-    mods::ModChoice choice;
-    choice.mods = options.modsGiven ? options.mods : settings().enabledMods;
-    choice.modsDir = options.modsDir.empty() ? mods::modsFolderIn(userDir) : std::filesystem::path(options.modsDir);
-    choice.open.cacheDir = mods::modCacheIn(userDir);
-    auto modSet = mods::selectMods(choice);
-    if (!modSet) {
-        error = "The mods could not be loaded:\n";
-        for (size_t i = 0; i < std::min<size_t>(modSet.error().size(), 15); ++i) error += "\n" + modSet.error()[i];
-        return nullptr;
-    }
-    auto loaded = mods::loadDataSet(gameRoot, *dataDir, *modSet);
-    if (!loaded.ruleset || !loaded.diagnostics.errors.empty()) {
-        error = modSet->empty() ? std::format("The data set at {} has errors:\n", dataDir->string())
-                                : std::format("The data set at {} with the mods {} has errors:\n", dataDir->string(),
-                                              ruleset::describeMods(modSet->records()));
-        for (size_t i = 0; i < std::min<size_t>(loaded.diagnostics.errors.size(), 15); ++i) error += "\n" + loaded.diagnostics.errors[i];
-        return nullptr;
-    }
-
     std::unique_ptr<ClassicMode> mode(new ClassicMode(platform));
     mode->options_ = options;
-    mode->rules_ = std::make_shared<const game::Rules>(std::move(*loaded.ruleset), gameRoot);
-    assets::InstallFiles files(gameRoot);
-    for (const mods::Package& p : modSet->packages) {
-        log::info("Mod {} ({}) from {}", p.label(), mods::ModManager::summary(p), p.source.string());
-        for (const std::string& w : p.warnings) log::warn("Mod {}: {}", p.id(), w);
-        if (const std::filesystem::path assets = p.assetRoot(); !assets.empty()) files.addLayer(assets, p.label());
+    mode->dataDir_ = *dataDir;
+    // Mods (docs/sdk/packages-and-data.md): the command line's, else the ones
+    // the settings enable, layered over the install.
+    mods::ModChoice choice = mode->modChoice(options.modsGiven ? options.mods : settings().enabledMods);
+    LoadedMods& loaded = loadedMods();
+    loaded = LoadedMods{};
+    loaded.fromCommandLine = options.modsGiven;
+    loaded.modsDir = choice.modsDir;
+    loaded.open = choice.open;
+    auto data = readDataSet(*dataDir, choice);
+    if (!data && !options.modsGiven && !choice.mods.empty()) {
+        // The settings' mods: started without them, and the Mods window says why.
+        log::warn("Starting without the mods of the settings: {}", data.error());
+        for (size_t at = 0; at < data.error().size();) {
+            const size_t end = std::min(data.error().find('\n', at), data.error().size());
+            if (end > at) loaded.startProblems.push_back(data.error().substr(at, end - at));
+            at = end + 1;
+        }
+        mode->frontError_ = "Your mods could not be loaded: OpenSE4 started without them (see Mods).";
+        choice.mods.clear();
+        data = readDataSet(*dataDir, choice);
     }
-    mode->art_ = std::make_unique<Art>(*platform.device, std::move(files));
-    Art::setColorSource(mode->art_.get());  // empire colours come from the race art (docs/spec/06 §5.3)
-    log::info("Classic data set: {} ({} components, {} race presets)", dataDir->string(), mode->rules_->data().components.size(),
-              mode->rules_->racePresets().size());
-    audio().setInstall(&mode->art_->files());
-    mode->fonts_ = loadClassicFonts(*platform.fonts, mode->art_->files());
-    // The pointers (docs/spec/06 §5.8): with the install's Normal pointer the
-    // classic pointers replace ImGui's (no text beam, no resize arrows).
-    pointers().load(mode->art_->files());
-    if (pointers().loaded()) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    if (!data) {
+        error = data.error();
+        return nullptr;
+    }
+    mode->useDataSet(std::move(*data));
     // The layout the original would pick: from the desktop width alone (§2.1.1),
     // in logical units, as the original (which knows nothing of display
     // scaling) sees it on a scaled Windows desktop. SDL gives Wayland's desktop
@@ -129,8 +202,6 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     }
     mode->desktopLayout_ = layoutForDesktop(desktopWidth);
     mode->applyLayout();
-    mode->playlists_ = readPlaylists(mode->rules_->data().settings);
-    reportPlaylists(mode->rules_->data().settings, mode->playlists_, mode->art_->files());
     mode->restyle();
     mode->learn_ = loadLearnContent(platform.assetsDir, options.learnDir, mode->art_->files());
 
@@ -917,6 +988,7 @@ void ClassicMode::background() {
 
 bool ClassicMode::updateFrame(const FrameState& fs) {
     art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
+    art_->setDetail(mapping_.scale);   // mods' larger pictures, made down to the frame's resolution
 
     if (!session_) {
         MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, options_.seedGiven, platform_.app, {}, {}, {}, {}, frontError_};
@@ -935,11 +1007,39 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             pendingResume_ = true;
         };
         ctx.loadedFromIntro = [this] { loadedFromIntro_ = true; };
+        ctx.changeMods = [this](MenuContext::ModsChange change) { pendingMods_ = std::move(change); };
+        ctx.goTo = [this](std::unique_ptr<FrontScreen> screen) { nextFrontScreen_ = std::move(screen); };
         if (front_) {
             const script::ItemScope scope("front");
             front_->draw(ctx);
         }
         if (started) startGame(std::move(started));
+        if (nextFrontScreen_ && !session_) front_ = std::move(nextFrontScreen_);
+        nextFrontScreen_.reset();
+        if (pendingMods_ && !session_) {
+            // The data set read again with the mods chosen, now that nothing
+            // draws with the old one (docs/sdk/packages-and-data.md).
+            MenuContext::ModsChange change = std::move(*pendingMods_);
+            pendingMods_.reset();
+            const BusyPointer busy;
+            if (auto problem = changeMods(change.mods)) {
+                if (change.failed) change.failed(*problem);
+            } else if (!change.load.empty()) {
+                // A saved game that needed these mods.
+                auto session = ClassicSession::load(rules_, change.load);
+                if (session) {
+                    restoreHistoryFrom(change.load);
+                    startGame(std::move(*session));
+                    cueMusic(MusicCue::GameLoaded);
+                } else {
+                    frontError_ = session.error();
+                    front_ = change.next ? change.next() : makeFrontScreen(FrontId::Intro);
+                }
+            } else {
+                front_ = change.next ? change.next() : makeFrontScreen(FrontId::Intro);
+            }
+            return !quit_;
+        }
         if (pendingLesson_ && !session_) {
             // Started after the screen drew: starting replaces it.
             const auto [kind, slug] = *pendingLesson_;
@@ -1136,6 +1236,21 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (ui.requests.loadGame) {
         const std::filesystem::path file = *ui.requests.loadGame;
         ui.requests.loadGame.reset();
+        // A game played with other mods: the data set changes only outside a
+        // game, so this one ends and the front end says what the other needs
+        // (and loads it with its mods when the mods folder has them).
+        if (savedGameMods(file, *rules_, loadedMods())) {
+            keepLessonPlace();
+            screens_.clear();
+            parentOf_.clear();
+            lesson_.reset();
+            lock_.set({});
+            ui_.reset();
+            session_.reset();
+            front_ = makeSavedGameModsScreen(file, [] { return makeFrontScreen(FrontId::Intro); });
+            cueMusic(MusicCue::IntroOpened);
+            return true;
+        }
         const BusyPointer busy;
         auto loaded = ClassicSession::load(rules_, file);
         if (loaded) {

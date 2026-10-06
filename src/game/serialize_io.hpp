@@ -460,6 +460,7 @@ void io(Ar& ar, Design& d) {
     fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.retrofitted, d.built, d.lost,
            d.enemyTonnageDestroyed);
     fields(ar, d.templateName, d.everBuilt, d.scrapped);
+    if (formatVersion(ar) >= 9) fields(ar, d.picture);   // format 8 had no design pictures
 }
 
 template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount, o.from, o.to); }

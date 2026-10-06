@@ -80,7 +80,7 @@ Differences from CPython that remain:
 | Module | What it is |
 |---|---|
 | `builtins` | as listed above; `RecursionError` added |
-| `sys` | `version`, `version_info`, `implementation`, `platform` (`"opense4"`), `byteorder`, `maxsize` (2⁶³−1 on every build), `modules`, `exit`, `exc_info` |
+| `sys` | `version`, `version_info`, `implementation`, `platform` (`"opense4"`), `byteorder`, `maxsize` (2⁶³−1 on every build), `modules`, `exit`, `exc_info`, `print_exception` (to the script's output, or into a stream such as an `io.StringIO`) |
 | `math` | MicroPython's, plus (in Python) `gcd`, `lcm`, `isqrt`, `comb`, `perm`, `prod`, `dist`, `hypot` with any number of coordinates, `fsum`, `cbrt`, `exp2` |
 | `json` | `dumps`, `loads` (`separators=` only) |
 | `re` | MicroPython's, plus (in Python) `findall`, `finditer`, `fullmatch`, `escape`, `subn` and compiled patterns with them |
@@ -94,6 +94,7 @@ Differences from CPython that remain:
 | `functools` | `reduce`, `partial`, `wraps`, `update_wrapper`, `lru_cache`, `cache`, `cmp_to_key`, `total_ordering`, `cached_property`, `singledispatch` |
 | `bisect` | `bisect_left`, `bisect_right`, `insort_left`, `insort_right`, with `lo`, `hi` and `key` |
 | `operator`, `copy`, `abc`, `string` | the commonly used parts |
+| `traceback` | `format_exception`, `format_exception_only`, `format_exc`, `print_exception`, `print_exc` (in Python): MicroPython's tracebacks, file and line of each call, without source lines |
 | `__future__`, `micropython` | so that code written for CPython or MicroPython imports |
 
 The modules marked "in Python" live in `python/lib`, built into the program. They

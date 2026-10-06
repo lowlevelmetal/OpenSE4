@@ -98,14 +98,14 @@ Sprite CombatMapPainter::pieceSprite(const game::CombatPiece& p, game::EmpireId 
                                                                               : "FighterGroup";
             if (Sprite s = ui_.art.groupMini(style, group)) return s;
             directional = hull->type == ruleset::VehicleType::Fighter;
-            return ui_.art.shipMini(style, *hull);
+            return ui_.art.designMini(style, *hull, s_.design(p.design).picture);
         }
         case game::CombatPiece::Kind::Vehicle: {
             const ruleset::VehicleSize* hull = hullOf(p);
             if (!hull) return {};
             directional = hull->type == ruleset::VehicleType::Ship || hull->type == ruleset::VehicleType::Fighter ||
                           hull->type == ruleset::VehicleType::Drone;
-            return ui_.art.shipMini(style, *hull);
+            return ui_.art.designMini(style, *hull, s_.design(p.design).picture);
         }
     }
     return {};

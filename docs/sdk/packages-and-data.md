@@ -97,7 +97,7 @@ name, its version `0`.
 | | |
 |---|---|
 | Your mods folder | `Mods/` in OpenSE4's user folder (`~/.local/share/OpenSE4/Mods` on Linux, `%APPDATA%\OpenSE4\Mods` on Windows). Each subfolder and `.zip` there is a mod. |
-| The game | `classic_settings.toml` in the user folder lists the ids of the mods to play with, in order: `[mods] enabled = ["example.common-lib", "example.better-carriers"]`. |
+| The game | The title screen's `Mods` window chooses them and their order (see "Choosing mods in the game" below); `classic_settings.toml` in the user folder keeps the ids of the mods to play with, in order: `[mods] enabled = ["example.common-lib", "example.better-carriers"]`. |
 | One run | `opense4 --mod=PATH` (a folder or `.zip`, or the id of a mod in the mods folder), repeated for several, takes the place of the settings' list; `--no-mods` plays without mods; `--mods-dir=DIR` looks for ids in another folder. |
 | The dedicated server | `opense4-server --mod=...` (every command that reads the data set takes `--mod` and `--mods-dir`), or `mods = [...]` in a setup file (paths relative to the setup file, or ids). |
 | A saved game | A host loading a saved game, or processing a play-by-e-mail game, finds the game's own mods in the mods folder by id and identity when no `--mod` is given. |
@@ -142,12 +142,71 @@ Bitmap Name`. For a race style `Terran` and a bitmap `EscortCarrier`, the game l
 `Pictures/Races/Terran/Terran_Portrait_EscortCarrier.bmp` (also under
 `Pictures/RaceNeutral/`), then `Pictures/RaceGeneric/Generic_Mini_EscortCarrier.bmp` and
 `Generic_Portrait_EscortCarrier.bmp` for every race. Minis are 36×36 pixels, portraits
-128×128; black is transparent. When the primary bitmap has no picture, the alternate's
-is shown.
+128×128 (or larger, below). When the primary bitmap has no picture, the alternate's is
+shown.
 
-The game asks for pictures by names ending in `.bmp`; the file may hold BMP, PNG or JPG
-data. Sounds and music are WAV and MP3, fonts Windows raster fonts or TrueType. OGG is not
-supported yet.
+### Formats
+
+- **Pictures.** The game asks for each picture by its classic name, which ends in `.bmp`.
+  A mod may give it as a BMP or as a PNG with the same base name
+  (`Generic_Portrait_EscortCarrier.png`). In a folder that has both, the PNG is used; a
+  later mod's picture wins over an earlier mod's, whatever their formats. A PNG keeps its
+  own transparency, its alpha channel, so soft edges look right; in BMP and JPEG pictures
+  black is transparent, as in the original. The format is read from the file itself, so a
+  `.bmp` holding PNG data counts as a PNG.
+- **Sounds and music.** WAV files at any rate and in any of their formats, MP3 for music,
+  and OGG Vorbis under the same base name as the classic file: `Sounds/button.ogg` plays
+  for the interface's button sound, `Music/Track 01.ogg` for a playlist's `Track 01.mp3`.
+  In a folder that has both, the OGG is used. A sound has two classic names, the
+  remastered `Sounds/New/` set's and `Sounds/`; a mod's file under either is used before
+  the installed game's.
+- **Fonts and pointers:** Windows raster fonts or TrueType; Windows pointer files.
+
+### Larger pictures
+
+A picture larger than the classic one of its kind is drawn in the classic picture's place
+and at its size: a 256×256 portrait shows where a 128×128 one does, sharper on a large
+window. OpenSE4 makes it smaller to the window's resolution with a filter that averages
+the pixels it covers, so it does not shimmer; the Sharp pixels setting still decides how
+it is drawn on screen.
+
+| Pictures | Classic size |
+|---|---|
+| `Mini_<name>` of a race or `Generic_` (ships, units, fleets, groups) | 36×36 |
+| `Portrait_<name>`, `Race_Portrait` | 128×128 |
+| `Pop_Mini`, `Pop_Portrait` | 20×20, 36×36 |
+| `Main` (a race's emblem picture: its flags and the empire's colour) | 100×20 |
+| `Shields`, `BigExplosion` | 288×36, 576×72 |
+| `Components/Comp_NNN`, `Facilities/Facil_NNN`, `Planets/pNNNN`, `Events/*` | 128×128 |
+| `Systems/<name>` (a System Report's picture), `Systems/<name>TileN` (combat tiles) | 128×128, 72×72 |
+| `Systems/1024X768/*`, `Systems/800X600/*` (the system panel's backgrounds) | 660×660, 490×490 |
+| `Game/Screens/1024X768/Intro`, `Game/Screens/800X600/Intro` | 1024×768, 800×600 |
+| everything else: the sheets (`Components.bmp`, `Facility.bmp`, `Planets.bmp`, `General.bmp`, the buttons) and the window pieces | the installed game's own copy of the picture |
+
+Make a larger picture a whole multiple of the classic size (twice, three times) so that
+its pixels line up; `opense4-sdk check` warns about others, and about pictures smaller
+than the classic size, which are drawn stretched. A sheet at twice the install's size has
+every part at twice the size and twice the place: the components' 36×36 cells of
+`Components.bmp` are 72×72 in a sheet twice as large.
+
+## A design's own picture
+
+A design may show a picture of its own in place of its hull's, such as one a mod adds for
+that purpose. The picture is named by a base name, as a hull's `Primary Bitmap Name` is:
+for `Lancer` the game looks for `<Race>_Mini_Lancer` and `<Race>_Portrait_Lancer` in the
+race's folder, then `Generic_Mini_Lancer` and `Generic_Portrait_Lancer`.
+
+- In the ship designer, a small arrow in the corner of the design's picture opens the
+  choice: the hull's picture, the hull's alternate picture when it has another, and every
+  ship picture the mods in use add (a mini with a portrait of the same name). Without such
+  pictures there is nothing to choose and no arrow.
+- Copies, upgrades and edits of a design keep its picture. Computer players' designs show
+  their hulls' pictures.
+- The picture is part of the saved game (format 9) and of the design commands (`picture`
+  in [commands.md](commands.md#design)). It changes nothing in the rules. A computer that
+  lacks the picture (an asset mod another player does not have) shows the hull's.
+- `opense4-sdk check` says which of a mod's ship pictures no hull names: only designs that
+  choose them show them.
 
 ## Game files
 
@@ -387,17 +446,64 @@ of a weapon line. It runs when the data loads and returns an ordinary patch: a t
 shaped like a patch file. Generators need the script runtime, which a later step of the
 SDK brings; until then a mod with one is refused with a message that says so.
 
+## Choosing mods in the game
+
+The title screen's `Mods` button (at the top right) opens the Mods window:
+
+- The list shows every mod in your mods folder: those you chose first, in your order,
+  with their places, then the others. The lamp is green for a mod that is on; a double
+  click switches it.
+- Beside it is what the selected mod is: its name, id, version and authors, its
+  description, what it holds (pictures and sounds, data, computer players, rules,
+  interface), whether it changes the game, what it needs and loads after, what is wrong
+  with the choice for it, and its identity.
+- `Enable` or `Disable`, `Move Up` and `Move Down` change the choice. Below, the window
+  shows the load order it gives, or what keeps it from loading: a required mod that is
+  off, a version outside the range, mods that require each other in a circle, mods the
+  folder no longer has, archives that cannot be read. `Refresh` reads the folder again.
+- `Done` reads the game's data again with the mods chosen and keeps them in
+  `classic_settings.toml`; they are used for the next game you start or load. When their
+  data does not load with your game, the window stays and says why. `Cancel` leaves
+  everything as it was.
+
+Game Setup and Quick Start show the mods the new game will use in their bottom left
+corner, with a `Mods` button that opens the window. Game Setup keeps its settings while
+you look, and starts again from its defaults when the mods change, since the data has.
+
+When the settings name mods that no longer load (a mod removed from the folder, one whose
+patches no longer fit your game), OpenSE4 starts without them, says so on the title
+screen, and the Mods window shows why. Mods given with `--mod` must load.
+
 ## Multiplayer and saved games
 
 - A new game records its mods (ids, versions, identities, and whether each changes the
   game) in the saved game (format 9).
 - Loading a game whose game-affecting mods differ from yours is refused, and the message
   names what is missing or different. Mods with only pictures, sounds or interface may
-  differ.
-- In a network game the lobby carries the host's mods (protocol 7). A player whose
-  game-affecting mods differ is refused with the same kind of message; pictures and
+  differ. In the client, loading such a game (Resume Game, Load Game, or the Game Menu's
+  Load, which first ends the game being played) opens a window that names each
+  difference; when your mods folder has the game's mods, `Load with Its Mods` reads the
+  data again with them and loads the game.
+- In a network game the lobby carries the host's mods (protocol 7) and lists them. A
+  player whose game-affecting mods differ is refused with the same kind of message, each
+  difference on a line of its own, and a `Mods` button to choose the same; pictures and
   sounds may differ.
 - Saved games of format 8 and older (no mods) load as before.
+
+## Saving for the original
+
+The Game Menu's `Save for SE IV` writes a game as a saved game of the original (see
+[docs/SETUP.md](../SETUP.md)). With mods:
+
+- A game whose mods only change data within the original's format (patches and
+  replacement files) is written. The original plays it as here only with the same data,
+  so the export's notes say to write that data with `opense4-sdk dump` (the same mods, in
+  the same order) and put it in a copy of the original's game folder. Pictures and sounds
+  of mods are not part of a saved game: the original shows its own.
+- A game is refused, with the reason, when it uses what the original cannot hold:
+  ability names that mods declare, mods with computer players or rules scripts, or
+  designs whose own picture the installed game does not have. A design's own picture
+  that the installed game has is written as its hull's, which the original shows.
 
 ## opense4-sdk
 
@@ -413,10 +519,12 @@ opense4-sdk pack mymod                        # mymod's id-version.zip, with its
 with `--mod`), applies every patch to your installed game (`--data=DIR` for another) and
 reports every error above. It checks the computer players too: each one's module under
 `ai/` and its class, files there whose names Python cannot import or that do not
-compile, and Python files no player declares. It also checks the mod's files: the pictures its hulls name,
-component and facility picture numbers against their sheets, formats the game cannot
-read, pictures no hull uses, and files where the game does not look. It exits with 1
-when it finds errors.
+compile, and Python files no player declares. It also checks the mod's files: the
+pictures its hulls name (BMP or PNG), component and facility picture numbers against
+their sheets, that every picture and sound reads (BMP, PNG, OGG Vorbis, WAV), pictures
+smaller than the classic one of their kind or larger but not a whole multiple of it,
+formats the game cannot read, pictures no hull names, and files where the game does not
+look. It exits with 1 when it finds errors.
 
 `dump` writes the data folder's files and the AI tables as the game would read them
 with the mods, never into the installed game. `pack` leaves out hidden files and adds
@@ -432,3 +540,13 @@ patch that adds the Escort Carrier hull written out in full (so it needs no reco
 your data set), and its two pictures in `assets/Pictures/RaceGeneric/`. Start OpenSE4
 with `--mod=tests/fixtures/mods/escort-hull` and the hull is in the ship designer for
 every race.
+
+## Example: pictures and a sound beyond the original's formats
+
+The test fixture `tests/fixtures/mods/picture-pack` holds no data: a ship picture
+`Lancer` as PNGs with transparency at twice the classic size
+(`assets/Pictures/RaceGeneric/Generic_Mini_Lancer.png`, 72×72, and
+`Generic_Portrait_Lancer.png`, 256×256), and a short tone as an OGG Vorbis file in place
+of the interface's button sound (`assets/Sounds/button.ogg`). With it, the ship designer
+offers `Lancer` as a design's own picture. It changes nothing in the game, so players of
+a network game need not have it.

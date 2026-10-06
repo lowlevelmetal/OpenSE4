@@ -37,6 +37,7 @@ add_executable(opense4
     client/classic/lesson_panel.cpp
     client/classic/lesson_runner.cpp
     client/classic/main_window.cpp
+    client/classic/mods_model.cpp
     client/classic/map_style.cpp
     client/classic/movement_line.cpp
     client/classic/movement_replay.cpp
@@ -79,6 +80,7 @@ add_executable(opense4
     client/classic/screens/learn_screens.cpp
     client/classic/screens/log.cpp
     client/classic/screens/markdown_view.cpp
+    client/classic/screens/mods.cpp
     client/classic/screens/multiplayer.cpp
     client/classic/screens/pbem.cpp
     client/classic/screens/planets.cpp

@@ -632,7 +632,8 @@ private:
         for (size_t k = 0; k < start.size(); ++k) {
             const game::UnitStack& st = start[k];
             if (!st.design.valid() || st.design.index() >= s.designs.size() || !game::combat::isTroopDesign(r, s, st.design)) continue;
-            cells.push_back({ui.art.shipMini(style, r.hull(s.design(st.design).hull)), std::to_string(k < now.size() ? now[k] : st.count), s.design(st.design).name});
+            cells.push_back({ui.art.designMini(style, r.hull(s.design(st.design).hull), s.design(st.design).picture),
+                             std::to_string(k < now.size() ? now[k] : st.count), s.design(st.design).name});
         }
         if (militia >= 0) cells.push_back({ui.art.populationMini(style), std::to_string(militia), "Militia"});
         grid(ui, o + Vec2{40, y + 15}, {504, 72}, 14, 2, cells);

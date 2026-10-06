@@ -194,7 +194,7 @@ std::expected<Manifest, std::vector<std::string>> parseManifest(std::string_view
 namespace {
 
 // A TOML basic string.
-std::string quoted(std::string_view text) {
+std::string tomlString(std::string_view text) {
     std::string out = "\"";
     for (char c : text) {
         switch (c) {
@@ -214,26 +214,26 @@ std::string quoted(std::string_view text) {
 
 std::string writeManifest(const Manifest& m) {
     std::string out = "[mod]\n";
-    out += std::format("id = {}\n", quoted(m.id));
-    out += std::format("name = {}\n", quoted(m.name));
-    out += std::format("version = {}\n", quoted(m.version.text));
+    out += std::format("id = {}\n", tomlString(m.id));
+    out += std::format("name = {}\n", tomlString(m.name));
+    out += std::format("version = {}\n", tomlString(m.version.text));
     out += std::format("api = {}\n", m.api);
     std::string authors;
-    for (const std::string& a : m.authors) authors += std::format("{}{}", authors.empty() ? "" : ", ", quoted(a));
+    for (const std::string& a : m.authors) authors += std::format("{}{}", authors.empty() ? "" : ", ", tomlString(a));
     out += std::format("authors = [{}]\n", authors);
-    out += std::format("description = {}\n", quoted(m.description));
+    out += std::format("description = {}\n", tomlString(m.description));
     if (!m.requirements.empty()) {
         out += "\n[requires]\n";
-        for (const Requirement& r : m.requirements) out += std::format("{} = {}\n", quoted(r.id), quoted(r.range.text));
+        for (const Requirement& r : m.requirements) out += std::format("{} = {}\n", tomlString(r.id), tomlString(r.range.text));
     }
     if (!m.loadAfter.empty()) {
         std::string after;
-        for (const std::string& id : m.loadAfter) after += std::format("{}{}", after.empty() ? "" : ", ", quoted(id));
+        for (const std::string& id : m.loadAfter) after += std::format("{}{}", after.empty() ? "" : ", ", tomlString(id));
         out += std::format("\n[load]\nafter = [{}]\n", after);
     }
     for (const AiPlayer& p : m.aiPlayers) {
-        out += std::format("\n[[ai.players]]\nname = {}\nmodule = {}\nclass = {}\n", quoted(p.name), quoted(p.module), quoted(p.className));
-        if (!p.description.empty()) out += std::format("description = {}\n", quoted(p.description));
+        out += std::format("\n[[ai.players]]\nname = {}\nmodule = {}\nclass = {}\n", tomlString(p.name), tomlString(p.module), tomlString(p.className));
+        if (!p.description.empty()) out += std::format("description = {}\n", tomlString(p.description));
     }
     return out;
 }

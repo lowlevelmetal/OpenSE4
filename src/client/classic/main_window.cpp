@@ -2288,7 +2288,8 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     };
     auto miniOf = [&](const game::Vehicle& v, int heading) {
         const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
-        return ui.art.shipMini(style, rules.hull(s.design(v.design).hull), true, heading);
+        const game::Design& design = s.design(v.design);
+        return ui.art.designMini(style, rules.hull(design.hull), design.picture, true, heading);
     };
     auto placeholder = [&](Vec2 c, game::EmpireId owner) { r.triangle(c + Vec2{0, -9}, c + Vec2{-7, 7}, c + Vec2{7, 7}, empireCol(s, owner)); };
 

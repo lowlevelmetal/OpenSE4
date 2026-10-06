@@ -173,6 +173,9 @@ TEST_CASE("sdk identity: the lobby refuses a player whose game-affecting mods di
     CHECK_MESSAGE(why.find("Your mods differ from the host's: the host uses mod test.common-lib 1.2.0, which you do not have enabled") !=
                       std::string::npos,
                   why);
+    // The client knows it was the mods (the lobby window then offers the Mods window).
+    CHECK(without.refusedForMods());
+    CHECK_FALSE(with.refusedForMods());
     REQUIRE(loop.until([&] { return !with.lobby().slots.empty(); }));
     CHECK(with.lobby().mods == hostRules.data().mods);
 }

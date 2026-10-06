@@ -9,17 +9,21 @@
 #include "client/fonts.hpp"
 #include "game/setup.hpp"
 
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace opense4::client::classic {
 
 // Learn opens on the Tutorials tab, LearnTraining on Training; Manual is the manual alone.
-enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Pbem, Settings, Learn, LearnTraining, Manual, Credits };
+enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Pbem, Settings, Learn, LearnTraining, Manual, Credits, Mods };
 
 struct LearnContent;
+class FrontScreen;
 
 struct MenuContext {
     std::shared_ptr<const game::Rules> rules;
@@ -45,6 +49,20 @@ struct MenuContext {
     std::function<void(learn::LessonKind, const std::string&)> startLesson;
     // ... or resume a tutorial at the place the player left it.
     std::function<void(learn::LessonKind, const std::string&)> resumeLesson;
+    // Another front-end screen, once this one has drawn.
+    std::function<void(std::unique_ptr<FrontScreen>)> goTo;
+    // Mods (docs/sdk/packages-and-data.md "Choosing mods in the game"): the
+    // data set is read again with these mods, in this order, once this frame
+    // has drawn, and the settings keep them. Then `next` is shown (the intro
+    // when null), or the saved game `load` is loaded. When they cannot be
+    // read, the screen stays and `failed` gets why.
+    struct ModsChange {
+        std::vector<std::string> mods;
+        std::function<std::unique_ptr<FrontScreen>()> next;
+        std::filesystem::path load;
+        std::function<void(const std::string&)> failed;
+    };
+    std::function<void(ModsChange)> changeMods;
 
     float k() const { return map.scale / fbScale; }
     ImVec2 at(Vec2 framePos) const {
@@ -101,5 +119,20 @@ std::unique_ptr<FrontScreen> makePbemScreen(std::string_view file = {});
 // Learn (screens/learn_screens.cpp): `start` is the tab ("tutorials",
 // "training", "manual"), or "manual:<slug#anchor>" for the manual alone.
 std::unique_ptr<FrontScreen> makeLearnFrontScreen(std::string_view start = {});
+// Mods (screens/mods.cpp): the mods there are, which are on and in what
+// order, and what each holds; `back` makes the screen to return to (the
+// intro when null), afresh when the mods changed.
+using FrontFactory = std::function<std::unique_ptr<FrontScreen>()>;
+std::unique_ptr<FrontScreen> makeModsScreen(FrontFactory back = {});
+// A saved game that was played with other mods: what differs, and loading it
+// with its own mods when the mods folder has them.
+std::unique_ptr<FrontScreen> makeSavedGameModsScreen(std::filesystem::path file, FrontFactory back);
+// Loads a saved game from the front end: at once, or through the screen
+// above when its mods differ from the ones in use; on failure returns why.
+std::optional<std::string> loadFromFrontEnd(MenuContext& ctx, const std::filesystem::path& file, FrontFactory back);
+// The setup screens' line about the mods the new game will use, and the
+// button for the Mods window (true when pressed): OpenSE4's own, in the
+// area's bottom left corner, under the page buttons. Places in ImGui units.
+bool modsLine(MenuContext& ctx, ImVec2 textAt, ImVec2 buttonAt, ImVec2 buttonSize, float width);
 
 } // namespace opense4::client::classic

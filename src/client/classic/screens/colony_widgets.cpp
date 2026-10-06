@@ -225,7 +225,7 @@ Sprite designSprite(UiContext& ui, game::DesignId id) {
     if (!id.valid() || id.index() >= s.designs.size()) return {};
     const game::Design& d = s.design(id);
     const std::string& style = d.owner.valid() ? s.empire(d.owner).race.style : std::string{};
-    return ui.art.shipMini(style, ui.rules().hull(d.hull));
+    return ui.art.designMini(style, ui.rules().hull(d.hull), d.picture);
 }
 
 Sprite queueItemSprite(UiContext& ui, const game::QueueItem& item) {

@@ -12,9 +12,12 @@
 #include "client/classic/main_window.hpp"
 #include "client/mode.hpp"
 #include "client/script/player.hpp"
+#include "mods/mod_set.hpp"
 
 #include <chrono>
 #include <deque>
+#include <expected>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -93,6 +96,25 @@ public:
 
 private:
     explicit ClassicMode(const Platform& platform) : platform_(platform) {}
+
+    // The data set with its mods, and their pictures and sounds over the install's.
+    struct DataSet {
+        std::shared_ptr<const game::Rules> rules;
+        assets::InstallFiles files;
+        mods::ModSet mods;
+    };
+    static std::expected<DataSet, std::string> readDataSet(const std::filesystem::path& dataDir, const mods::ModChoice& choice);
+    mods::ModChoice modChoice(std::vector<std::string> ids) const;
+    // Plays with this data set from now on: the art, fonts, pointers and music follow it.
+    void useDataSet(DataSet d);
+    // The Mods window's choice (in the front end only): the data set read
+    // again with these mods, kept in the settings; why not, when it cannot be.
+    std::optional<std::string> changeMods(const std::vector<std::string>& ids);
+    std::filesystem::path dataDir_;
+    std::vector<std::string> fontFiles_;   // where the classic fonts in use came from
+    // Asked for by a front-end screen this frame (MenuContext::changeMods, goTo).
+    std::optional<classic::MenuContext::ModsChange> pendingMods_;
+    std::unique_ptr<classic::FrontScreen> nextFrontScreen_;
 
     void startGame(std::unique_ptr<classic::ClassicSession> session);
     // Starts a lesson's game from its [setup] through the quick start; on

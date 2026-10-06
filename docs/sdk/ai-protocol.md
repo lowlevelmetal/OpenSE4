@@ -30,10 +30,14 @@ description = "Plays the classic economy and its own war."
   separated by dots). `opense4-sdk check` finds the module under `ai/` (`admiral.py`, or
   `admiral/__init__.py`), the class in it, files under `ai/` whose names Python cannot
   import, and files that do not compile; `opense4-sdk info` lists the players.
-- **The mod's `ai/` folder** is the root of its modules: `ai/admiral.py` is the module
-  `admiral`, and it imports its neighbours by name (`import helpers`), as when the folder
-  runs as an external bot. Two mods of one game that both have a module of the same name
-  conflict: the later one's is left out (and logged).
+- **The player's code:** the engine adds the files of the mod's `ai/` folder to the
+  interpreter at its root, so `ai/admiral.py` is the module `admiral` and
+  `ai/fleet/admiral.py` the module `fleet.admiral`. `module` names it that way, and a
+  mod's modules import one another by those names (`import helpers`), as when the folder
+  runs as an external bot. The `opense4` package (`python/opense4`,
+  docs/sdk/python-api.md) is there too; its dispatcher answers the requests. Two mods of
+  one game that both have a module of the same name conflict: the later one's is left out
+  (and logged).
 - **Choosing a player:** a game names one with the controller
   `{"kind": "script", "mod": "<mod id>", "player": "<name>"}` on an empire. That is
   `EmpireSetup::controller` and `Empire::controller` (save format 9), written
@@ -66,6 +70,9 @@ description = "Plays the classic economy and its own war."
   (`processTurn`), a turn-based call (`resumeTurnBased`, `endPlayerTurn`, `applyLive`,
   `startHumanTurn`), or a battle a window shows (`TacticalBattle::Setup::scriptPlayers`).
   A call made again after it stopped for a battle answer is a new session (section 8).
+- **Sessions are per empire** on the player's side: the dispatcher keeps one per empire
+  asked in the engine call, each with its own `Player`, from the empire's first request
+  (which carries `player`) to its `end_session`.
 - **The interpreter:** a session starts nothing until a request must go to a player
   (one that has no answer waiting in the journal). Then it starts a thread with an 8 MiB
   stack and, on it, one interpreter (docs/sdk/runtime.md) holding the `opense4` package
@@ -96,7 +103,7 @@ Every request is a map, its fields in this order:
 | `turn` | int | The game turn (`GameState::turn`: in a simultaneous turn, the one the orders were given for) |
 | `seed` | int | A random seed for this request (0 to 2⁶³−1), from the game's seed, the turn, the empire, the call, its arguments and how many such requests came before in the session; the same every time the request is made again |
 | `view` | map or null | The empire's view (docs/sdk/view.md) for the planning calls: what it knows, or the whole game with the game option "computer players see everything" (`GameOptions::aiSeesEverything`); null for the other calls |
-| `player` | map | Only in the empire's first request of the session: the player to make, `{mod, name, module, class}` for a script player (`{slot}` for an external bot). If making it fails, the dispatcher fails that empire's later requests in the session too. |
+| `player` | map | Only in the empire's first request of the session: the player to make. A mod's: `{mod, name, module, class}`, its `[[ai.players]]` entry (the dispatcher imports `module` and makes an instance of `class`); an external bot's: `{slot}` (the bot makes its own). If making it fails, the dispatcher answers that empire's later requests in the session with the same error. |
 | `memory` | any | Only in the empire's first request of the session: the stored memory (null the first time) |
 | `args` | map | Per call, below. Every call's `args` may also hold `refused` (section 4). |
 
@@ -125,9 +132,9 @@ A response is a map; any other value, or an unknown field, fails the request.
 | `commands` | list | Commands to apply now, in order (planning calls only; a non-empty list in another call fails it) |
 | `answer` | any | The call's answer, as in the table above. An answer that is not one the call takes (a colony type not in `choices`, a non-boolean for `enter_sector`) fails the request. |
 | `memory` | any | The player's memory after the call; absent keeps it |
-| `notes` | list | `{object, text, kind}` notes for the client's AI view: `object` an id or null, `kind` what it names (`"object"` by default, or `"vehicle"`, `"fleet"`, `"system"`, `"empire"`). A note replaces the earlier note of this turn on the same object; an empty text removes it. Kept for the turn in the empire's state (`Empire::aiNotes`), never saved or sent. |
+| `notes` | list | `{object, kind, text}` notes for the client's AI view: `object` an id or null, `kind` what it names: `vehicle`, `fleet`, `object` (a stellar object; a colony by its planet; the default), `system`, `empire`, `design` or `message`. A note replaces the earlier note of this turn on the same thing; an empty text only removes it. Kept for the turn in the empire's state (`Empire::aiNotes`), never saved or sent. |
 | `log` | list | Lines of text for the game's log file (opense4.log, not the empire's in-game Log) |
-| `error` | map or absent | `{type, message, traceback}`: the request failed (section 7) |
+| `error` | map or absent | `{type, message, traceback}`: the request failed (section 7). An exception the player's code raises comes back this way, with the traceback as the runtime writes it (file and line of each call), and with no commands and a null answer. |
 
 **Commands:**
 - Each command is decoded (docs/sdk/commands.md) and goes through `game::apply`, exactly
@@ -207,16 +214,19 @@ showed. The combat simulator never asks.
 ## 6. Services (player → engine, during a request)
 
 While a request is being handled, the player may ask the engine. In the game these are
-native functions of the module `_opense4`, each taking one map (`rules` none); for
-external bots they are messages on the same connection (`sdk::ServiceCall`). Errors raise
-a Python exception (`ValueError` for a bad argument, `RuntimeError` when the service is
-not for this moment).
+native functions of the module `_opense4`, one per service, each taking one argument (the
+map of the service's arguments below; `rules` takes `{}` or nothing) and returning its
+result: `_opense4.query({"name": "path", "args": {"vehicle": 31, "destination": 4}})`. A
+service that refuses raises an exception in the script (a `ValueError` for a bad argument,
+with the path to it, as commands are refused; a `RuntimeError` when the service is not
+for this moment). For external bots they are messages on the same connection
+(`sdk::ServiceCall`).
 
-| Service | Argument | Result | Cost (bytecodes) |
+| Service | Arguments | Result | Cost (bytecodes) |
 |---|---|---|---|
 | `query` | `{name, args}` | A query of docs/sdk/view.md ("Queries"), evaluated now on the view's own state | 20,000 + 20 per value of the result |
-| `rules` | none | The rules view (built once per session) | 5 per value |
-| `builtin` | `{call: "politics", "orders" or "economy", ministers: [names] or null, skip: [names]}` | The commands the classic ministers would give for this empire now, only those of `ministers` (all when null) less those of `skip` (minister names: docs/sdk/commands.md `minister`; the AI_Strategies join counts as `design`'s). With every minister, exactly what the built-in AI plans from this state. The commands are not applied. | 2,000,000 + 20 per value of the result |
+| `rules` | `{}` | The rules view (built once per session) | 5 per value |
+| `builtin` | `{call: "politics", "orders" or "economy", ministers: [names] or null, skip: [names]}` | The commands the classic ministers would give for this empire now, from the ministers named (null: all) less those skipped; the names are those of the `minister` enumeration (docs/sdk/commands.md; the AI_Strategies join counts as `design`'s). With every minister, exactly what the built-in AI plans from this state. The commands are not applied. | 2,000,000 + 20 per value of the result |
 | `builtin_answer` | `{call, args}` | The classic answer to `colony_type` (`args.planet`: the planet's id or record), `enter_sector` (true), `decloak` (true) or `battle_round` (null) | 20,000 |
 | `apply` | `{command}` | Applies one command now, as the call's own commands are, and returns `{ok, reason, changed, removed}`: what changed in the view since the request's (or the last apply's): for each list of records with ids (`colonies` by planet) the records added or changed (`changed`) and the ids gone (`removed`), and any other part that differs, whole. Planning calls only. | 50,000 + 5 per value of the new view + 20 per value of the result |
 

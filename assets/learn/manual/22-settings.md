@@ -9,6 +9,8 @@ OpenSE4 has three sets of settings:
 - the **Options** window: animation, sound, music and autosave, also kept on this computer;
 - the **Empire Options** window: how the game behaves for your empire, saved with the game.
 
+The [Mods](#mods) window, on the title screen, chooses the mods you play with.
+
 ## The Settings window
 
 Open [Settings](window:settings) from the title screen, with `Ctrl+,` in the main window, or with
@@ -120,5 +122,30 @@ OpenSE4 also understands options on its command line, for example:
 | `--quick-start[=RACE]` | Skip the title screen and start a quick game, with `--seed`, `--systems`, `--empires` and `--turn-style` to set it up. |
 | `--tutorial=LESSON`, `--training=GAME`, `--manual` | Start a lesson or a training game, or open this manual. |
 | `--pbem=GAME.gam` | Play your turn of a play-by-e-mail game (see [Multiplayer](multiplayer#play-by-e-mail)). |
+| `--mod=MOD`, `--no-mods` | Play this run with these mods (a folder or `.zip`, or a mod's id), or none, instead of those of the Mods window (see [below](#mods)). |
 
 `opense4 --help` lists them all.
+
+## Mods
+
+Mods are packages of pictures, sounds and changes to the game's data that other players
+make. OpenSE4 lays them over your copy of the game without changing it. Put a mod (a folder
+or a `.zip`) in the `Mods` folder of OpenSE4's user folder, then open the **Mods** window
+with the `Mods` button at the top right of the title screen, or in the bottom left corner of
+Game Setup and Quick Start.
+
+- The list shows your mods: those you chose first, in the order they load, then the others.
+  A green lamp marks a mod that is on; double-click a mod to switch it on or off, or use
+  `Enable` and `Disable`. `Move Up` and `Move Down` change the order: a later mod wins.
+- Beside the list is what the chosen mod holds, whether it **changes the game** (its data,
+  computer players or rules) or only its pictures and sounds, and what it needs.
+- Below, the window shows the order the mods load in, or what is wrong: a mod that needs
+  another which is off, for example.
+- `Done` reads the game's data again with your choice; it is used for the next game you
+  start or load. `Cancel` leaves everything as it was.
+
+A saved game remembers the mods that change the game. Loading one played with other mods
+tells you which; when your mods folder has them, `Load with Its Mods` loads it with them.
+Every player of a network game needs the same mods that change the game; pictures and sounds
+may differ.
+
