@@ -100,6 +100,7 @@ int App::run(const AppOptions& options) {
     co.mods = options.mods;
     co.modsGiven = options.modsGiven;
     co.modsDir = options.modsDir;
+    co.noBundledMods = options.noBundledMods;
     co.seed = options.seed;
     co.seedGiven = options.seedGiven;
     co.systemCount = options.systemCount;

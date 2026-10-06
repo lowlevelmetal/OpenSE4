@@ -1,0 +1,51 @@
+# The mods that come with OpenSE4 (docs/SETUP.md "Mods", docs/sdk/packages-and-data.md "Where
+# mods are found"): a release finds them in mods/ beside its programs, a developer build in the
+# source tree's mods/ (the folders mods/bundled.txt names). With nothing in the player's own mods
+# folder, the Mods window lists Hegemon, off, as a mod that comes with OpenSE4, with its computer
+# player; Enable and Done read the data again with it, and the window shows it on when it opens
+# again. Quick Start's Computer Players then offers Hegemon for the computer empires
+# (docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --layout=1024x768 --size=1280x800 --seed=7
+
+wait-screen front
+click item:Mods in=front
+wait-for item:"mod:opense4.hegemon" in=front
+assert-fits front
+# Ready to use, but off: the game as installed until the player switches it on.
+assert-present item:"off:opense4.hegemon" in=front
+assert-present item:"bundled:opense4.hegemon" in=front
+assert-present item:"load-order:none" in=front
+click item:"mod:opense4.hegemon" in=front
+assert-present item:"details:opense4.hegemon" in=front
+assert-present item:"comes-with-opense4:opense4.hegemon" in=front
+assert-present item:changes-game in=front
+assert-present item:"computer-players:Hegemon" in=front
+screenshot mods-bundled.png
+# Switched on like any other mod.
+click item:Enable in=front
+assert-present item:"on:opense4.hegemon" in=front
+assert-present item:"load-order:opense4.hegemon" in=front
+click item:Done in=front
+wait-for item:"Quick Start" in=front
+click item:Mods in=front
+wait-for item:"on:opense4.hegemon" in=front
+assert-present item:"bundled:opense4.hegemon" in=front
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front
+
+# Quick Start: Hegemon plays the computer empires.
+click item:"Quick Start" in=front
+wait-for item:"Computer players: Classic AI" in=front
+assert-present item:"Mods: Hegemon (changes the game)" in=front
+click item:"Computer Players" in=front
+wait-for item:"player:opense4.hegemon:Hegemon"
+assert-present item:"player:builtin"
+click item:"player:opense4.hegemon:Hegemon"
+click item:Done
+wait-for item:"Computer players: Hegemon (Hegemon)" in=front
+assert-fits front
+screenshot quick-start-hegemon.png
+click item:Cancel in=front
+wait-for item:"Quick Start" in=front

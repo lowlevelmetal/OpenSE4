@@ -164,6 +164,11 @@ add_library(opense4_mods STATIC
     mods/version.cpp
     mods/zip.cpp)
 target_link_libraries(opense4_mods PUBLIC opense4_game opense4_script PRIVATE tomlplusplus miniz monocypher opense4_warnings)
+if(OPENSE4_DEV_PATHS)
+    # Developer builds find the mods that come with OpenSE4 in the source tree's
+    # mods/ (those its bundled.txt names) when no mods/ is beside the programs.
+    target_compile_definitions(opense4_mods PRIVATE OPENSE4_BUNDLED_MODS_SOURCE_DIR="${CMAKE_SOURCE_DIR}/mods")
+endif()
 
 # --- sdk: the engine's side of the modding SDK (docs/MODDING_SDK.md) ---------------
 find_package(Threads REQUIRED)

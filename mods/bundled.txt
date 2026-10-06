@@ -1,0 +1,5 @@
+# The mods that come with OpenSE4: the folders of mods/ that the release packages
+# copy into mods/ beside the programs (tools/package_release.sh), and that a
+# developer build finds here when no mods/ is beside it. One folder name a line.
+# mods/examples is not one: the SDK's example mods ship in sdk/examples.
+hegemon

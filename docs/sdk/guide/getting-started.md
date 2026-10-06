@@ -130,8 +130,9 @@ keys are errors, so a typo does not pass unnoticed.
 | | |
 |---|---|
 | Your mods folder | `Mods/` in OpenSE4's user folder: `~/.local/share/OpenSE4/Mods` on Linux, `%APPDATA%\OpenSE4\Mods` on Windows. Each folder and `.zip` there is a mod. |
+| Mods that come with OpenSE4 | `mods/` beside the programs (Hegemon). Looked for after your mods folder: a mod of yours with the same id replaces one of these ([packages-and-data.md](../packages-and-data.md) "Where mods are found"). |
 | In the game | The title screen's **Mods** button: switch mods on and off, order them, see what each holds and why a choice does not load. **Done** reads the data again with them and keeps the choice for the next game you start or load. Game Setup and Quick Start show the mods a new game will use, with a Mods button of their own. |
-| For one run | `opense4 --mod=PATH` (a folder, a `.zip`, or the id of a mod in your mods folder; repeat it for several) takes the place of your choice; `--no-mods` plays without; `--mods-dir=DIR` looks for ids elsewhere. |
+| For one run | `opense4 --mod=PATH` (a folder, a `.zip`, or the id of a mod in your mods folder or of one that comes with OpenSE4; repeat it for several) takes the place of your choice; `--no-mods` plays without; `--mods-dir=DIR` looks for ids elsewhere. |
 | The dedicated server | `opense4-server --mod=...`, or `mods = [...]` in a setup file ([docs/MULTIPLAYER.md](../../MULTIPLAYER.md)). |
 | `opense4-sdk run` | Starts the game with the mod, the mods it requires and its first computer player for the computer empires; what follows `--` goes to the game. |
 

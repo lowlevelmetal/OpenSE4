@@ -120,7 +120,7 @@ TEST_CASE("sdk client: a saved game played with other mods, and whether the mods
     REQUIRE(game::saveGame(file, s, game::SaveInfo{}).has_value());
 
     client::classic::LoadedMods loaded;
-    loaded.modsDir = fixtureDir() / "mods";
+    loaded.folders.user = fixtureDir() / "mods";
     // Played here without mods: the library is missing, and the mods folder has it.
     const game::Rules& plain = engineRules();
     auto needs = client::classic::savedGameMods(file, plain, loaded);
@@ -130,8 +130,8 @@ TEST_CASE("sdk client: a saved game played with other mods, and whether the mods
     CHECK(needs->unavailable.empty());
     CHECK(needs->ids == std::vector<std::string>{"test.common-lib", "test.picture-pack"});   // the pictures too, when they are there
     // A mods folder without them.
-    loaded.modsDir = dir.path() / "empty";
-    fs::create_directories(loaded.modsDir);
+    loaded.folders.user = dir.path() / "empty";
+    fs::create_directories(loaded.folders.user);
     needs = client::classic::savedGameMods(file, plain, loaded);
     REQUIRE(needs);
     CHECK(needs->ids.empty());
@@ -144,4 +144,44 @@ TEST_CASE("sdk client: a saved game played with other mods, and whether the mods
     // A file that is no OpenSE4 save: its loading says what is wrong.
     writeText(dir.path() / "other.gam", "not a saved game");
     CHECK_FALSE(client::classic::savedGameMods(dir.path() / "other.gam", plain, loaded));
+}
+
+TEST_CASE("sdk client: a mod that comes with OpenSE4 in the Mods window and in a saved game") {
+    // The player's folder is empty; the bundled folder (mods/ beside the programs) has the library.
+    TempDir dir("client_bundled");
+    const fs::path user = dir / "Mods";
+    const fs::path bundled = dir / "OpenSE4" / "mods";
+    fs::create_directories(user);
+    fs::create_directories(bundled);
+    fs::copy(fixtureMod("common-lib"), bundled / "common-lib", fs::copy_options::recursive);
+    client::classic::LoadedMods loaded;
+    loaded.folders = mods::ModFolders{user, bundled};
+
+    // Listed, off until the player switches it on; the settings keep its id like any other.
+    ModsChoice choice(mods::scanMods(loaded.folders), {});
+    const auto rows = choice.rows();
+    REQUIRE(rows.size() == 1);
+    REQUIRE(rows[0].package);
+    CHECK(rows[0].package->bundled);
+    CHECK_FALSE(rows[0].enabled);
+    choice.toggle("test.common-lib");
+    CHECK(choice.enabled() == std::vector<std::string>{"test.common-lib"});
+    CHECK(choice.resolve().has_value());
+
+    // A game played with it finds it again, by id and identity.
+    const mods::Package lib = openFixtureMod("common-lib");
+    game::GameState s = newEngineGame(5, 2, 6);
+    s.mods = {lib.record()};
+    const fs::path file = dir.path() / "bundled.gam";
+    REQUIRE(game::saveGame(file, s, game::SaveInfo{}).has_value());
+    auto needs = client::classic::savedGameMods(file, engineRules(), loaded);
+    REQUIRE(needs);
+    CHECK(needs->unavailable.empty());
+    CHECK(needs->ids == std::vector<std::string>{"test.common-lib"});
+    // Without the bundled mods it is not there.
+    loaded.folders.bundled.clear();
+    needs = client::classic::savedGameMods(file, engineRules(), loaded);
+    REQUIRE(needs);
+    CHECK(needs->ids.empty());
+    CHECK(any(needs->unavailable, "test.common-lib"));
 }

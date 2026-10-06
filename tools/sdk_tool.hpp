@@ -23,8 +23,13 @@ namespace opense4::sdktool {
 
 // ---- From sdk.cpp ------------------------------------------------------------------------------
 
-// A mod named on the command line: a folder or .zip, or the id of a mod in `modsDir`
-// (empty: the mods folder of OpenSE4's user folder).
+// Where mods are found by id: `modsDir` (--mods-dir; empty: the mods folder of
+// OpenSE4's user folder), then the mods that come with OpenSE4 unless the
+// command line has --no-bundled-mods (which main() takes out and passes to setBundledMods).
+mods::ModFolders modFolders(const std::string& modsDir);
+void setBundledMods(bool on);
+
+// A mod named on the command line: a folder or .zip, or the id of a mod in modFolders(modsDir).
 std::expected<mods::Package, std::string> openMod(const std::string& what, const std::string& modsDir);
 // `targets` with the mods they require (`others`, else found in the mods folder), in load order.
 std::expected<mods::ModSet, std::vector<std::string>> modsWithDependencies(std::vector<mods::Package> targets, const std::vector<std::string>& others,
@@ -58,6 +63,7 @@ struct LoadedRules {
 };
 std::expected<LoadedRules, std::string> loadRules(const std::string& dataArg, mods::ModSet mods);
 // --mod (paths or ids, in load order) and --mods-dir, as the game and the server read them.
+// (Defined in sdk_common.cpp, as modFolders and setBundledMods are.)
 std::expected<mods::ModSet, std::string> chooseMods(const std::vector<std::string>& mods, const std::string& modsDir);
 // --data, or --classic-dir as the client calls it.
 std::string dataOption(const Options& o);

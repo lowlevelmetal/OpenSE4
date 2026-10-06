@@ -236,11 +236,19 @@ OpenSE4 layers mods over your installed game and never changes the game's own fi
 Put a mod (a folder or a `.zip`) in the `Mods` folder of OpenSE4's user folder (see
 below), then choose it in the **Mods** window: the title screen's `Mods` button (top
 right), or the `Mods` button in the corner of Game Setup and Quick Start. The window lists
-every mod of the folder with what it holds and whether it changes the game; switch mods
-on and off and put them in order, and `Done` reads the game's data again with them. They
-apply to the next game you start or load, and the settings keep them. A choice that
-cannot load (a required mod that is off, a patch that does not fit your game) is refused
-with the reason.
+every mod of the folder, and the mods that come with OpenSE4, with what each holds and
+whether it changes the game; switch mods on and off and put them in order, and `Done`
+reads the game's data again with them. They apply to the next game you start or load, and
+the settings keep them. A choice that cannot load (a required mod that is off, a patch
+that does not fit your game) is refused with the reason.
+
+**Hegemon comes with OpenSE4.** It is a computer player of its own, stronger than the
+classic AI, in the `mods` folder beside the programs (in the Windows install,
+`C:\Program Files\OpenSE4\mods`). The classic game stays the default: Hegemon is listed in
+the Mods window as coming with OpenSE4, and off. Switch it on there (`Enable`, then
+`Done`), and Game Setup and Quick Start offer it under `Computer Players` (see "Computer
+players" below). Players of the same OpenSE4 release have the same Hegemon, so a network
+or e-mail game with it needs nothing but every player switching it on.
 
 The settings file keeps the choice as ids in `classic_settings.toml`:
 
@@ -250,8 +258,12 @@ enabled = ["example.common-lib", "example.better-carriers"]
 ```
 
 For one run, name mods with `--mod=PATH` (a folder or `.zip`, or the id of a mod in the
-mods folder; repeat for several, in load order). `--no-mods` plays without the mods the
-settings list, `--mods-dir=DIR` looks for ids in another folder. The log names every mod
+mods folder or of one that comes with OpenSE4, such as `--mod=opense4.hegemon`; repeat for
+several, in load order). `--no-mods` plays without the mods the settings list,
+`--mods-dir=DIR` looks for ids in another folder in place of your mods folder, and
+`--no-bundled-mods` leaves out the mods that come with OpenSE4. Ids are looked for in
+your mods folder first: a mod there with the id of one that comes with OpenSE4 replaces
+it (docs/sdk/packages-and-data.md "Where mods are found"). The log names every mod
 loaded. A mod given with `--mod` that has an error stops the start with a message that
 names the mod, its file, the line and the record; the settings' mods that no longer load
 are left out, and the title screen and the Mods window say why.
@@ -264,7 +276,8 @@ the game directory and passing that copy with `--classic-dir` works too, as befo
 Everyone in a network or e-mail game needs the same mods, apart from mods with only
 pictures and sounds; the lobby lists the host's mods, and refuses a player whose mods
 differ, naming each difference. A saved game remembers its mods: loading one played with
-other mods says which, and loads it with its own when your mods folder has them. Mods may
+other mods says which, and loads it with its own when your mods folder (or OpenSE4's own
+mods) has them. Mods may
 bring pictures as PNG (also larger than the original's, for sharper screens) and sounds
 and music as OGG Vorbis. Making mods: [docs/sdk/packages-and-data.md](sdk/packages-and-data.md)
 and the `opense4-sdk` tool.

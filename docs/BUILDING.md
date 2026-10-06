@@ -243,6 +243,21 @@ stripped, with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES
 SIL Open Font License) are built into the game, so nothing else needs to sit next to it. The modding SDK's
 documentation (`docs/sdk`) and example mods (`mods/examples`) go into `sdk/docs` and `sdk/examples` beside the
 programs, where `opense4-sdk new --from-example` finds the examples.
+The mods that come with OpenSE4 (Hegemon) go into `mods/` beside the programs: the folders of `mods/` that
+`mods/bundled.txt` names, one a line, each with the files git tracks in it (so that every package of a version
+has the same files, and so the same mod identity, wherever it is built; uncommitted changes are packaged, untracked
+files are not). The game, the server and `opense4-sdk` find them there by id, after the user's own mods folder
+(docs/sdk/packages-and-data.md "Where mods are found"); a developer build (`OPENSE4_DEV_PATHS`) without a `mods/`
+beside it reads them from the source tree's `mods/` instead. To ship another mod, add its folder to `mods/bundled.txt`.
+
+```text
+OpenSE4-<version>-linux-x86_64/          (the same in the ARM packages and, with .exe, the Windows zip)
+  opense4  opense4-server  opense4-datacheck  opense4-convert  opense4-sdk
+  README.md  LICENSE  THIRD_PARTY_NOTICES.txt
+  mods/hegemon/            the mods that come with OpenSE4
+  sdk/docs/  sdk/examples/ the modding SDK's guide and example mods
+  share/  install-desktop-entry.sh   (Linux only)
+```
 The Linux package also holds the desktop entry, icons and AppStream metadata under
 `share/`, and `install-desktop-entry.sh`, which adds the game to the user's
 application list (see "Installing on Linux"). The script refuses to package a tagged
@@ -316,6 +331,13 @@ Program Files and adds:
 
 - a Start menu entry and, if chosen, a desktop shortcut;
 - an Apps & features entry with the icon, version and an uninstaller.
+
+It installs `sdk\` and the mods that come with OpenSE4 (`mods\`) beside the programs.
+`mods\` is replaced as a whole on every install, so that no file of an older version stays
+behind and changes a mod's identity (the player's own mods live in `%APPDATA%\OpenSE4\Mods`).
+The uninstaller removes both; CI's installer job checks that `mods\hegemon` is installed,
+that `opense4-sdk info opense4.hegemon` finds it by id, and that nothing is left after
+uninstalling.
 
 An update goes into the folder of the previous install. The uninstaller leaves
 saved games and settings in `%APPDATA%\OpenSE4` alone. Silent use works as with any
@@ -669,7 +691,8 @@ recorder is tested.
 | `colonize-pick.script`, `follow-warp.script` | On a training game of our own in `tests/input/learn-orders` (two colony ships at home): Colonize's Pick Object window and Cancel, a wrong pick failing on arrival with the "Colonize" message box, the moons settled, population moved between them with Cargo Transfer; a warp the view follows to the arrival system |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
 | `game-setup.script` | The setup screens: Load Game with Change Directory, Quick Start's picker, Game Setup's pages, Add New with a name from the list picker and an e-mail address, Begin Game, and Change Email in Empire Status |
-| `mods-window.script` | The Mods window on the fixture mods of `tests/fixtures/mods` (`--mods-dir`): each mod's details, enabling by button and double click, a requirement missing then met, the order and Move Up, Done refused with the reason when a patch does not fit the installed data, then Done reading the data again; Cancel keeping the choice (docs/sdk/packages-and-data.md "Choosing mods in the game") |
+| `mods-window.script` | The Mods window on the fixture mods of `tests/fixtures/mods` alone (`--mods-dir`, `--no-bundled-mods`): each mod's details, enabling by button and double click, a requirement missing then met, the order and Move Up, Done refused with the reason when a patch does not fit the installed data, then Done reading the data again; Cancel keeping the choice (docs/sdk/packages-and-data.md "Choosing mods in the game") |
+| `mods-bundled.script` | The mods that come with OpenSE4 (`mods/bundled.txt`; a developer build reads the source tree's `mods/`, a release the `mods/` beside it): with an empty mods folder of its own, the Mods window lists Hegemon, off, marked as coming with OpenSE4, with its computer player; Enable and Done, the window again with it on; Quick Start's Computer Players offering Hegemon. Play it with `--exe` on a staged package to check the package's layout |
 | `mods-setup.script` | Game Setup's and Quick Start's line about the mods and their Mods button, the setup kept across Cancel, a quick game with the mods whose hull the designer offers |
 | `mods-saved-game.script` | Saved games played with other mods: the Game Menu's Load of one ending the game and the front end's Other Mods window loading it without the mod; Load Game of a modded game from the title screen, Load with Its Mods reading the data again with the game's mod |
 | `designer-picture.script`, `mod-hull-designer.script` | A design's own picture from the fixture `picture-pack` (the designer's choice, Designs, an edit, Save for SE IV refusing the game); a mod's new hull with its pictures in the designer |

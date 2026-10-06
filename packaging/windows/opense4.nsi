@@ -133,6 +133,13 @@ Section "${APP_NAME}" SecGame
     ; The modding SDK's guide, reference and example mods, beside opense4-sdk.exe.
     SetOutPath "$INSTDIR\sdk"
     File /r "${STAGE}\sdk\*.*"
+
+    ; The mods that come with OpenSE4 (Hegemon), beside the programs, which find
+    ; them there. Replaced as a whole: a file an older version left behind would
+    ; change a mod's identity, and network players need the same.
+    RMDir /r "$INSTDIR\mods"
+    SetOutPath "$INSTDIR\mods"
+    File /r "${STAGE}\mods\*.*"
     SetOutPath "$INSTDIR"
 
     WriteRegStr HKLM "${SETTINGS_KEY}" "InstallDir" "$INSTDIR"
@@ -174,6 +181,7 @@ Section "Uninstall"
     Delete "$INSTDIR\LICENSE"
     Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"
     RMDir /r "$INSTDIR\sdk"
+    RMDir /r "$INSTDIR\mods"
     Delete "$INSTDIR\uninstall.exe"
     RMDir "$INSTDIR"
 

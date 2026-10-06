@@ -81,7 +81,8 @@ Usage:
         Waits for the Steam release; `pack` makes the package to upload.
 
 <mod> is a mod folder or .zip, or the id of a mod in the mods folder (default:
-Mods in OpenSE4's user folder; --mods-dir=DIR). --data=DIR is the game folder
+Mods in OpenSE4's user folder; --mods-dir=DIR) or of one that comes with OpenSE4
+(mods/ beside opense4-sdk; --no-bundled-mods leaves those out). --data=DIR is the game folder
 or its Data folder (default: the installed game, found as the game finds it).
 Exit status: 0 when all is well, 1 when problems were found, 2 for usage errors.
 )";
@@ -134,7 +135,7 @@ mods::OpenOptions openOptions() {
     return o;
 }
 
-fs::path modsDir(const Args& a) { return a.has("mods-dir") ? fs::path(a.get("mods-dir")) : mods::modsFolderIn(userDir()); }
+mods::ModFolders modFoldersOf(const Args& a) { return sdktool::modFolders(a.get("mods-dir")); }
 
 std::string lower(std::string s) {
     for (char& c : s)
@@ -142,14 +143,16 @@ std::string lower(std::string s) {
     return s;
 }
 
-// A mod named on the command line: a path, or an id in the mods folder.
+// A mod named on the command line: a path, or an id in the mods folder or
+// among the mods that come with OpenSE4.
 std::expected<mods::Package, std::string> findMod(const std::string& what, const Args& a) {
     std::error_code ec;
     if (fs::exists(what, ec)) return mods::openPackage(what, openOptions());
     if (mods::validModId(what)) {
-        const mods::ModLibrary lib = mods::scanModsFolder(modsDir(a), openOptions());
+        const mods::ModFolders where = modFoldersOf(a);
+        const mods::ModLibrary lib = mods::scanMods(where, openOptions());
         if (const mods::Package* p = lib.find(what)) return *p;
-        return std::unexpected(std::format("no mod '{}' in {}", what, modsDir(a).string()));
+        return std::unexpected(std::format("no mod '{}' in {}", what, where.describe()));
     }
     return std::unexpected(std::format("{}: no such mod folder or .zip", what));
 }
@@ -188,7 +191,7 @@ std::expected<mods::ModSet, std::vector<std::string>> withDependencies(std::vect
         queue.pop_back();
         for (const mods::Requirement& r : p->manifest.requirements) {
             if (have(r.id) || std::any_of(found.begin(), found.end(), [&](const mods::Package& f) { return f.id() == r.id; })) continue;
-            if (!lib) lib = mods::scanModsFolder(modsDir(a), openOptions());
+            if (!lib) lib = mods::scanMods(modFoldersOf(a), openOptions());
             if (const mods::Package* dep = lib->find(r.id)) {
                 found.push_back(*dep);
                 queue.push_back(&found.back());
@@ -815,7 +818,16 @@ std::expected<mods::ModSet, std::vector<std::string>> modsWithDependencies(std::
 } // namespace opense4::sdktool
 
 int main(int argc, char** argv) {
-    const std::vector<std::string> args = core::utf8Arguments(argc, argv);  // UTF-8 on Windows too
+    std::vector<std::string> args = core::utf8Arguments(argc, argv);  // UTF-8 on Windows too
+    // --no-bundled-mods, for every command (before "--", where the client's options start).
+    for (size_t i = 2; i < args.size() && args[i] != "--";) {
+        if (args[i] == "--no-bundled-mods") {
+            sdktool::setBundledMods(false);
+            args.erase(args.begin() + static_cast<std::ptrdiff_t>(i));
+        } else {
+            ++i;
+        }
+    }
     if (args.size() < 2 || args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
         std::printf("%.*s", static_cast<int>(kUsage.size()), kUsage.data());
         return args.size() < 2 ? 2 : 0;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <fstream>
 #include <optional>
 #include <system_error>
 
@@ -117,6 +118,82 @@ ModLibrary scanModsFolder(const fs::path& dir, const OpenOptions& options) {
     return lib;
 }
 
+std::string ModFolders::describe() const {
+    std::string out = std::format("the mods folder {}", user.string());
+    if (!bundled.empty()) out += std::format(" or the mods that come with OpenSE4 ({})", bundled.string());
+    return out;
+}
+
+std::vector<std::string> readBundledList(const fs::path& file) {
+    std::vector<std::string> names;
+    std::ifstream in(file, std::ios::binary);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (const size_t hash = line.find('#'); hash != std::string::npos) line.erase(hash);
+        const size_t first = line.find_first_not_of(" \t\r");
+        if (first == std::string::npos) continue;
+        const size_t last = line.find_last_not_of(" \t\r");
+        names.push_back(line.substr(first, last - first + 1));
+    }
+    return names;
+}
+
+ModLibrary scanBundledMods(const fs::path& dir, const OpenOptions& options) {
+    std::error_code ec;
+    if (dir.empty() || !fs::is_directory(dir, ec)) return {};
+    ModLibrary lib;
+    const fs::path list = dir / kBundledListFile;
+    if (fs::is_regular_file(list, ec)) {
+        for (const std::string& name : readBundledList(list)) {
+            if (name.find_first_of("/\\") != std::string::npos || name == "." || name == "..") {
+                lib.problems.push_back(std::format("{}: '{}' is not the name of a folder beside it", list.string(), name));
+                continue;
+            }
+            auto package = openPackage(dir / name, options);
+            if (!package) {
+                lib.problems.push_back(package.error());
+                continue;
+            }
+            if (const Package* other = lib.find(package->id())) {
+                lib.problems.push_back(
+                    std::format("{} and {} are both mod {}: the first is used", other->source.string(), (dir / name).string(), package->id()));
+                continue;
+            }
+            lib.packages.push_back(std::move(*package));
+        }
+    } else {
+        lib = scanModsFolder(dir, options);
+    }
+    for (Package& p : lib.packages) p.bundled = true;
+    return lib;
+}
+
+ModLibrary scanMods(const ModFolders& folders, const OpenOptions& options) {
+    ModLibrary lib = scanModsFolder(folders.user, options);
+    ModLibrary bundled = scanBundledMods(folders.bundled, options);
+    for (Package& p : bundled.packages) {
+        if (lib.find(p.id())) lib.replaced.push_back(std::move(p));
+        else lib.packages.push_back(std::move(p));
+    }
+    for (std::string& problem : bundled.problems) lib.problems.push_back(std::move(problem));
+    return lib;
+}
+
+fs::path bundledModsFolderFor(const fs::path& programDir, const fs::path& sourceMods) {
+    std::error_code ec;
+    if (!programDir.empty() && fs::is_directory(programDir / "mods", ec)) return programDir / "mods";
+    if (!sourceMods.empty() && fs::is_regular_file(sourceMods / kBundledListFile, ec)) return sourceMods;
+    return {};
+}
+
+fs::path bundledModsFolder(const fs::path& programDir) {
+#ifdef OPENSE4_BUNDLED_MODS_SOURCE_DIR
+    return bundledModsFolderFor(programDir, fs::path(OPENSE4_BUNDLED_MODS_SOURCE_DIR));
+#else
+    return bundledModsFolderFor(programDir, {});
+#endif
+}
+
 std::expected<ModSet, std::vector<std::string>> selectMods(const ModChoice& choice) {
     std::vector<std::string> errors;
     std::vector<Package> enabled;
@@ -135,11 +212,11 @@ std::expected<ModSet, std::vector<std::string>> selectMods(const ModChoice& choi
             errors.push_back(std::format("{}: no such mod (a folder or .zip, or the id of a mod in the mods folder)", entry));
             continue;
         }
-        if (!library) library = scanModsFolder(choice.modsDir, choice.open);
+        if (!library) library = scanMods(choice.folders, choice.open);
         if (const Package* p = library->find(entry)) {
             enabled.push_back(*p);
         } else {
-            errors.push_back(std::format("no mod '{}' in the mods folder {}", entry, choice.modsDir.string()));
+            errors.push_back(std::format("no mod '{}' in {}", entry, choice.folders.describe()));
             for (const std::string& problem : library->problems) errors.push_back("  " + problem);
         }
     }
@@ -147,11 +224,11 @@ std::expected<ModSet, std::vector<std::string>> selectMods(const ModChoice& choi
     return resolveModSet(std::move(enabled));
 }
 
-std::expected<ModSet, std::vector<std::string>> modsForGame(std::span<const ruleset::ModRecord> recorded, const fs::path& modsDir,
+std::expected<ModSet, std::vector<std::string>> modsForGame(std::span<const ruleset::ModRecord> recorded, const ModFolders& folders,
                                                             const OpenOptions& options) {
     ModSet set;
     if (recorded.empty()) return set;
-    const ModLibrary library = scanModsFolder(modsDir, options);
+    const ModLibrary library = scanMods(folders, options);
     std::vector<std::string> errors;
     for (const ruleset::ModRecord& r : recorded) {
         const Package* p = library.find(r.id);
@@ -159,11 +236,14 @@ std::expected<ModSet, std::vector<std::string>> modsForGame(std::span<const rule
             if (p) set.packages.push_back(*p);  // pictures and sounds: welcome, not needed
             continue;
         }
-        if (!p) errors.push_back(std::format("the game uses mod {} {}, which is not in {}", r.id, r.version, modsDir.string()));
+        std::string where = !p ? folders.describe() : p->bundled ? std::string("the copy that comes with OpenSE4") : "the copy in " + folders.user.string();
+        if (p && !p->bundled && std::any_of(library.replaced.begin(), library.replaced.end(), [&](const Package& b) { return b.id() == r.id; }))
+            where += " (it replaces the one that comes with OpenSE4)";
+        if (!p) errors.push_back(std::format("the game uses mod {} {}, which is not in {}", r.id, r.version, where));
         else if (p->manifest.version.text != r.version)
-            errors.push_back(std::format("the game uses mod {} {}; {} has version {}", r.id, r.version, modsDir.string(), p->manifest.version.text));
+            errors.push_back(std::format("the game uses mod {} {}; {} has version {}", r.id, r.version, where, p->manifest.version.text));
         else if (p->hash != r.hash)
-            errors.push_back(std::format("the game uses mod {} {}, but the copy in {} has other files", r.id, r.version, modsDir.string()));
+            errors.push_back(std::format("the game uses mod {} {}, but {} has other files", r.id, r.version, where));
         else set.packages.push_back(*p);
     }
     if (!errors.empty()) return std::unexpected(errors);
