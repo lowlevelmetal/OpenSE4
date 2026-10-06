@@ -1,0 +1,24 @@
+# Save Game keeps the name typed into its field when the player clicks Save instead
+# of pressing Enter (the field gives its text back when it loses focus).
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --empires=3 --seed=7 --turns=1 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 5
+click item:Close in=finale optional
+click item:Yes in=finale optional
+click item:"*(suggested)" in="Colony Type" optional
+key F2
+wait-window game-menu
+click item:"Save Game" in=game-menu
+wait-window save-game
+click item:##name in=save-game
+key End
+type " clicked"
+# No Enter: the Save button takes the typed name, and the window lists the save.
+click item:Save in=save-game
+wait-for item:"* clicked" in=save-game
+screenshot saved.png
+click item:Close in=save-game
+wait-closed save-game

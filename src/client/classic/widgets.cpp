@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -17,10 +18,14 @@ Sprite lampSprite(UiContext& ui, bool on) { return ui.art.region("Pictures/Game/
 bool inputImpl(const char* label, std::string& value, size_t maxLength, ImGuiInputTextFlags flags, bool multiline, ImVec2 size) {
     std::vector<char> buffer(std::max(value.size(), maxLength) + 1, '\0');
     std::copy(value.begin(), value.end(), buffer.begin());
-    const bool changed = multiline ? ImGui::InputTextMultiline(label, buffer.data(), buffer.size(), size, flags)
-                                   : ImGui::InputText(label, buffer.data(), buffer.size(), flags);
-    if (changed) value = buffer.data();
-    return changed;
+    const bool result = multiline ? ImGui::InputTextMultiline(label, buffer.data(), buffer.size(), size, flags)
+                                  : ImGui::InputText(label, buffer.data(), buffer.size(), flags);
+    // Keep whatever Dear ImGui wrote back, not only when it returns true: with
+    // EnterReturnsTrue it returns true only for Enter, but the text typed is also
+    // written back when the field loses focus, e.g. to a click on the window's
+    // Save button, and was lost.
+    if (std::string_view(buffer.data()) != value) value = buffer.data();
+    return result;
 }
 
 } // namespace
