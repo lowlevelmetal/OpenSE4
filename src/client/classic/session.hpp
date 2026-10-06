@@ -46,6 +46,7 @@
 
 #include "client/classic/pbem_play.hpp"
 #include "game/commands.hpp"
+#include "game/players.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
 #include "game/tactical.hpp"
@@ -87,6 +88,12 @@ enum class SessionKind { Local, Hotseat, NetworkClient, Pbem };
 struct TacticalFight {
     enum class Kind { Game, Simulation };
     Kind kind = Kind::Game;
+    // A game battle's script and external players (game::makePlayers on the
+    // battle's copy of the game, TacticalBattle::Setup::scriptPlayers): they
+    // fight their sides as in the engine's battles, and their answers go with
+    // the battle's (BattleAnswer::decisions). Null: none in the game. Declared
+    // before the battle, which uses it, so that it outlives the battle.
+    std::unique_ptr<game::Players> scriptPlayers;
     std::unique_ptr<game::combat::TacticalBattle> battle;
     std::vector<game::EmpireId> players;   // the sides the player drives
     std::string title;                     // "Tactical Combat", "Combat Simulator"

@@ -6,6 +6,7 @@
 
 #include "client/classic/frontend.hpp"
 #include "client/classic/screens/setup_model.hpp"
+#include "client/classic/screens/setup_players.hpp"
 #include "client/classic/screens/setup_widgets.hpp"
 
 #include <memory>
@@ -31,6 +32,9 @@ public:
     // The finished empire after Result::Created.
     const game::EmpireSetup& result() const { return result_; }
     void setPage(EmpirePage p) { page_ = p; }
+    // The name of the player the game gives computer empires without one of
+    // their own (Game Setup's Computer Players), for the Computer Player row.
+    void setGameChoice(std::string name) { gameChoice_ = std::move(name); }
 
 private:
     // What the open list picker chooses.
@@ -67,6 +71,10 @@ private:
     ListPicker picker_;
     Pick picking_ = Pick::None;
     std::vector<std::string> pickRows_;
+    // OpenSE4's own: a computer empire's own player, when the game's mods offer some.
+    bool offersPlayers_ = false;
+    std::string gameChoice_ = "Classic AI";
+    PlayerPicker players_;
 };
 
 } // namespace opense4::client::classic::setup

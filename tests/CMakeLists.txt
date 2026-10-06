@@ -89,6 +89,7 @@ add_executable(opense4_tests
     sdk/test_script_library.cpp
     sdk/test_script_runtime.cpp
     sdk/test_script_sandbox.cpp
+    sdk/test_sdk_client_players.cpp
     sdk/test_sdk_codec.cpp
     sdk/test_sdk_docs.cpp
     sdk/test_sdk_player_setup.cpp
@@ -117,6 +118,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/art.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/computer_players.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp

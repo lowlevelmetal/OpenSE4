@@ -30,6 +30,8 @@ enum class ScreenId {
     SaveGame, LoadGame,
     // Game Menu → Options (per computer), and OpenSE4's graphics, controls and sound.
     Options, Settings,
+    // OpenSE4's own: what went wrong with computer players of mods (the main window's notice).
+    PlayerErrors,
     // Learning to play (docs/LEARNING.md): tutorials, training games and the manual.
     Learn, Manual,
     Count

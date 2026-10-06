@@ -1,0 +1,36 @@
+# Hosting a network game with computer players of a mod (docs/MULTIPLAYER.md "The lobby"): the
+# host form chooses who plays the computer empires (the fixture mod's Captain) and that they see
+# everything; in the lobby each computer slot names its player and the host changes one (to
+# Faulty), Add Computer brings another Captain, and the host switches "Computer players see
+# everything" off again. Players who join see the same (computer-players-lobby.script).
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --layout=1024x768 --size=1280x800 --seed=7 --open=multiplayer
+
+wait-for item:"Host a Game"
+click item:"Host a Game"
+wait-for item:"Open Lobby"
+# A port of its own, and no router.
+click item:"Port (TCP)"
+key Ctrl+A
+type "46917"
+key Enter
+click item:"Forward the port on my router automatically (UPnP)"
+click item:"Computer empires are played by"
+click item:"Captain (AI fixture)"
+click item:"Computer players see everything"
+screenshot host-form.png
+click item:"Open Lobby"
+wait-for item:"Computer: Captain (AI fixture)"
+assert-present item:"Computer players see everything"
+screenshot host-lobby.png
+# The second computer slot's player.
+click item:"##slotplayer" nth=2
+click item:"Faulty (AI fixture)"
+wait-for item:"Computer: Faulty (AI fixture)"
+click item:"Add Computer"
+wait 3
+click item:"Computer players see everything"
+wait 3
+screenshot host-lobby-changed.png
+click item:Leave
+wait-for item:"Host a Game"

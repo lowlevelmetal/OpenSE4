@@ -7,6 +7,7 @@
 #include "client/classic/frontend.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/net_transport.hpp"
+#include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "client/script/items.hpp"
 #include "game/redact.hpp"
@@ -49,6 +50,10 @@ struct Form {
     int timeout = 0;
     int turnStyle = 0;      // 0 simultaneous, 1 turn-based
     bool upnp = true;
+    // Who plays the computer empires, and whether they see everything (when
+    // the game's mods offer computer players, docs/sdk/ai-protocol.md §1).
+    game::Controller aiPlayer;
+    bool aiSeesEverything = false;
 };
 Form& lastForm() {
     static Form form;
@@ -62,6 +67,41 @@ std::string modsLineText(std::span<const ruleset::ModRecord> mods) {
     for (size_t i = 0; i < mods.size(); ++i)
         out += std::format("{}{} {} ({})", i ? ", " : "", mods[i].id, mods[i].version, mods[i].affectsGame ? "changes the game" : "pictures and sounds");
     return out;
+}
+
+// A computer player's choice: the classic AI or a player of the game's mods,
+// with its description under the pointer. True when it changed.
+bool playerCombo(const game::Rules& r, const char* label, std::string_view preview, game::Controller& player, float width) {
+    bool changed = false;
+    // Input scripts find the box by its label (Dear ImGui's hooks leave combo boxes out).
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const float w = width < 0 ? ImGui::GetContentRegionAvail().x : width;
+    script::reportItem(label, at, ImVec2(at.x + w, at.y + ImGui::GetFrameHeight()));
+    ImGui::SetNextItemWidth(width);
+    const std::string shown(preview);
+    if (ImGui::BeginCombo(label, shown.c_str())) {
+        if (ImGui::Selectable("Classic AI", player.builtin()) && !player.builtin()) {
+            player = game::Controller{};
+            changed = true;
+        }
+        for (const setup::ComputerPlayerChoice& c : setup::computerPlayerChoices(r)) {
+            const std::string name = std::format("{} ({})", c.name, c.modName);
+            if (ImGui::Selectable(name.c_str(), player == c.controller) && player != c.controller) {
+                player = c.controller;
+                changed = true;
+            }
+            if (ImGui::IsItemHovered() && !c.description.empty()) ImGui::SetTooltip("%s", c.description.c_str());
+        }
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+
+// A line of text input scripts can find (wait-for item:"...").
+void scriptLine(const std::string& text, const ImVec4* color = nullptr) {
+    if (color) ImGui::TextColored(*color, "%s", text.c_str());
+    else ImGui::TextDisabled("%s", text.c_str());
+    script::reportItem(text, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 }
 
 void textField(const char* label, std::string& value, float width, ImGuiInputTextFlags flags = 0) {
@@ -86,8 +126,13 @@ public:
         timeout_ = f.timeout;
         turnStyle_ = f.turnStyle;
         upnp_ = f.upnp;
+        aiPlayer_ = f.aiPlayer;
+        aiSeesEverything_ = f.aiSeesEverything;
     }
-    ~MultiplayerScreen() override { lastForm() = Form{race_, name_, gameName_, address_, port_, humans_, computers_, quadrantSize_, timeout_, turnStyle_, upnp_}; }
+    ~MultiplayerScreen() override {
+        lastForm() = Form{race_,     name_,      gameName_, address_, port_, humans_, computers_, quadrantSize_, timeout_, turnStyle_, upnp_,
+                          aiPlayer_, aiSeesEverything_};
+    }
 
     void draw(MenuContext& ctx) override {
         if (!automation_.empty()) {
@@ -197,6 +242,12 @@ private:
         ImGui::SliderInt("Human players", &humans_, 2, 20);
         ImGui::SetNextItemWidth(w);
         ImGui::SliderInt("Computer players", &computers_, 0, 19);
+        // OpenSE4's own, when the game's mods offer computer players: who plays
+        // the computer empires (each can be changed in the lobby), and their view.
+        if (offersPlayers(ctx)) {
+            playerCombo(*ctx.rules, "Computer empires are played by", setup::computerPlayerName(*ctx.rules, aiPlayer_), aiPlayer_, w);
+            ImGui::Checkbox("Computer players see everything", &aiSeesEverything_);
+        }
         ImGui::SetNextItemWidth(w);
         // The number of systems is rolled from the quadrant size, as in the original (spec 01 §2.2).
         static constexpr std::array<const char*, 3> kSizes{"Small", "Medium", "Large"};
@@ -305,6 +356,7 @@ private:
         cfg.setup.options.systemCount = 0;  // rolled from the quadrant size
         cfg.setup.options.quadrantSize = quadrantSize_;
         cfg.setup.options.simultaneous = turnStyle_ == 0;
+        cfg.setup.options.aiSeesEverything = aiSeesEverything_ && offersPlayers(ctx);
         cfg.joinPassword = joinPassword_;
         cfg.turnTimeoutSeconds = timeout_;
         cfg.upnp.enabled = upnp_ && net::PortMapper::supported();
@@ -325,6 +377,7 @@ private:
         for (int i = 0; i < computers_; ++i) {
             game::EmpireSetup ai;
             ai.kind = game::PlayerKind::Computer;
+            if (offersPlayers(ctx)) ai.controller = aiPlayer_;
             if (!presets_.empty()) ai.preset = ctx.rules->racePresets()[presets_[size_t((race_ + 1 + i) % int(presets_.size()))]].folder;
             if (auto r = host_->addComputerEmpire(ai); !r) log_.add("Could not add a computer player: " + r.error());
         }
@@ -550,6 +603,22 @@ private:
             ImGui::TextDisabled("%s", mods.c_str());
             ImGui::PopTextWrapPos();
             script::reportText(mods, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+            // The computer players' view of the game (the host chooses), when
+            // any of them can be a script player.
+            if (showsPlayers(ctx, info)) {
+                if (host_) {
+                    bool all = info.options.aiSeesEverything;
+                    if (ImGui::Checkbox("Computer players see everything", &all)) {
+                        game::GameOptions o = info.options;
+                        o.aiSeesEverything = all;
+                        if (auto r = host_->setOptions(o); !r) error_ = r.error();
+                        else aiSeesEverything_ = all;
+                    }
+                } else {
+                    scriptLine(info.options.aiSeesEverything ? "Computer players see everything: the whole game, not only what their empires know."
+                                                             : "Computer players see what their empires know.");
+                }
+            }
         }
         if (client_ && client_->refusedForMods() && modsRefusal(ctx)) {
             // To the Mods window, and back to the join form (kept) afterwards; nothing of the lobby is drawn after this.
@@ -573,9 +642,28 @@ private:
                 ImGui::PushID(int(slot.id));
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
-                const std::string who = slot.kind == net::SlotKind::Computer ? "Computer" : slot.open() ? "(open)" : slot.player;
-                if (slot.id == mine) ImGui::TextColored(ImVec4(1, 1, 0.6f, 1), "%s (you)", who.c_str());
-                else ImGui::TextUnformatted(who.c_str());
+                const bool computer = slot.kind == net::SlotKind::Computer;
+                const std::string who = computer ? "Computer" : slot.open() ? "(open)" : slot.player;
+                if (computer && showsPlayers(ctx, info)) {
+                    // Who plays it: the host chooses, the others see it.
+                    const std::string played = "Computer: " + setup::computerPlayerName(*ctx.rules, slot.setup.controller);
+                    if (host_) {
+                        game::Controller player = slot.setup.controller;
+                        if (playerCombo(*ctx.rules, "##slotplayer", played, player, -FLT_MIN)) {
+                            game::EmpireSetup changed = slot.setup;
+                            changed.controller = player;
+                            if (auto r = host_->setSlotSetup(slot.id, changed); !r) error_ = r.error();
+                        }
+                        script::reportItem(played);
+                    } else {
+                        ImGui::TextUnformatted(played.c_str());
+                        script::reportItem(played, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+                    }
+                } else if (slot.id == mine) {
+                    ImGui::TextColored(ImVec4(1, 1, 0.6f, 1), "%s (you)", who.c_str());
+                } else {
+                    ImGui::TextUnformatted(who.c_str());
+                }
                 ImGui::TableNextColumn();
                 const auto* preset = game::findPreset(*ctx.rules, slot.setup.preset);
                 ImGui::TextUnformatted(preset ? preset->name.c_str() : slot.setup.customRace ? slot.setup.customRace->name.c_str() : "-");
@@ -614,6 +702,7 @@ private:
             if (ImGui::Button("Add Computer", ctx.size({150, 30}))) {
                 game::EmpireSetup ai;
                 ai.kind = game::PlayerKind::Computer;
+                if (offersPlayers(ctx)) ai.controller = aiPlayer_;
                 if (!presets_.empty())
                     ai.preset = ctx.rules->racePresets()[presets_[size_t(info.slots.size() % presets_.size())]].folder;
                 if (auto r = host_->addComputerEmpire(ai); !r) error_ = r.error();
@@ -660,6 +749,20 @@ private:
         }
     }
 
+    // Whether the game's mods offer computer players (worked out once).
+    bool offersPlayers(MenuContext& ctx) {
+        if (!offersKnown_) {
+            offers_ = ctx.rules && !setup::computerPlayerChoices(*ctx.rules).empty();
+            offersKnown_ = true;
+        }
+        return offers_;
+    }
+    // The lobby shows who plays each computer empire when they may be script
+    // players: the mods offer some, or a slot names one.
+    bool showsPlayers(MenuContext& ctx, const net::LobbyInfo& info) {
+        return offersPlayers(ctx) || std::any_of(info.slots.begin(), info.slots.end(), [](const net::LobbySlot& s) { return !s.setup.controller.builtin(); });
+    }
+
     std::string automation_;
     Mode mode_ = Mode::Choose;
     std::vector<size_t> presets_;
@@ -676,6 +779,9 @@ private:
     int timeout_ = 0;
     int turnStyle_ = 0;     // 0 simultaneous, 1 turn-based
     bool upnp_ = true;
+    game::Controller aiPlayer_;
+    bool aiSeesEverything_ = false;
+    bool offers_ = false, offersKnown_ = false;
     std::string chat_;
     std::string error_;
     bool setupSent_ = false;

@@ -96,6 +96,51 @@ TEST_CASE("sdk player setup: the setup model gives the computer empires the game
     CHECK(created->empire(EmpireId{1u}).controller == scriptPlayer("Steady"));
 }
 
+TEST_CASE("sdk player setup: Empire Setup gives a listed empire a player of its own, the classic AI included; the screens name them") {
+    ModdedRules m;
+    const Rules& r = *m.rules;
+    setupm::NewGameSettings s = setupm::defaultSettings(r, 3);
+    s.computers.enabled = false;
+    s.neutrals.enabled = false;
+    s.players = {empire("Human", PlayerKind::Human), empire("Default", PlayerKind::Computer), empire("Classic", PlayerKind::Computer),
+                 empire("Own", PlayerKind::Computer)};
+    CHECK_FALSE(setupm::ownComputerPlayer(s.players[1]).has_value());   // a new empire takes the game's choice
+    setupm::setOwnComputerPlayer(s.players[2], Controller{});            // the classic AI, whatever the game's choice
+    setupm::setOwnComputerPlayer(s.players[3], scriptPlayer("Captain"));
+    CHECK(setupm::ownComputerPlayer(s.players[2]) == Controller{});
+    CHECK(setupm::ownComputerPlayer(s.players[3]) == scriptPlayer("Captain"));
+    s.computerPlayer = scriptPlayer("Faulty");
+    auto g = setupm::buildGameSetup(r, s);
+    REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+    CHECK(g->empires[1].controller == scriptPlayer("Faulty"));
+    CHECK(g->empires[2].controller == Controller{});   // the mark stays in the setup: the game gets the plain built-in AI
+    CHECK(g->empires[3].controller == scriptPlayer("Captain"));
+    // Back to the game's choice.
+    setupm::setOwnComputerPlayer(s.players[2], std::nullopt);
+    CHECK_FALSE(setupm::ownComputerPlayer(s.players[2]).has_value());
+    g = setupm::buildGameSetup(r, s);
+    REQUIRE(g.has_value());
+    CHECK(g->empires[2].controller == scriptPlayer("Faulty"));
+    // A computer empire made human keeps no player of its own.
+    s.players[2].kind = PlayerKind::Human;
+    setupm::setOwnComputerPlayer(s.players[2], Controller{});
+    s.players[3].kind = PlayerKind::Human;
+    g = setupm::buildGameSetup(r, s);
+    REQUIRE(g.has_value());
+    CHECK(g->empires[2].controller == Controller{});
+    CHECK(g->empires[3].controller == Controller{});
+
+    // The names the setup screens and the lobby show.
+    CHECK(setupm::computerPlayerName(r, Controller{}) == "Classic AI");
+    CHECK(setupm::computerPlayerName(r, scriptPlayer("Captain")) == "Captain (AI fixture)");
+    CHECK(setupm::computerPlayerName(r, scriptPlayer("Nobody")) == "test.ai-fixture:Nobody");
+    CHECK(setupm::computerPlayerName(r, externalPlayer(2)) == "external:2");
+    const auto choices = setupm::computerPlayerChoices(r);
+    REQUIRE_FALSE(choices.empty());
+    CHECK(choices[0].name == "Steady");
+    CHECK(choices[0].modName == "AI fixture");
+}
+
 TEST_CASE("sdk player setup: server setup files name the computer empires' players and the script options") {
     ModdedRules m;
     const std::string text = R"(

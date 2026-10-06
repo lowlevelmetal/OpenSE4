@@ -6,6 +6,7 @@
 
 #include "players_fixture.hpp"
 
+#include "client/classic/session.hpp"
 #include "movement_fixture.hpp"
 #include "net_fixture.hpp"
 #include "temp_dir.hpp"
@@ -244,6 +245,85 @@ TEST_CASE("sdk players: a battle a window showed with its script sides is fought
     REQUIRE(fought);
     CHECK(fought->events.size() == battle.record().events.size());
     CHECK(serial::hash(fought->events) == serial::hash(battle.record().events));
+}
+
+TEST_CASE("sdk players: the client's battle window fights the script sides by their players, and the turn goes on with their answers") {
+    using namespace mvtest;
+    namespace classic = opense4::client::classic;
+    // An external bot, and a script player in the game's runtime (one per
+    // program: the window's players must let go of it before the turn goes on).
+    for (const bool scripted : {false, true}) {
+        INFO("script player " << scripted);
+        Bot bot;
+        Skirmish k;
+        k.play(bot);
+        // Its warship holds its fire: the battle differs from the one its strategies would fight.
+        bot.answer = [base = bot.answer](const Value& request, const sdk::ServiceCall& services) {
+            if (request.find("call")->asString() == "battle_round")
+                return map({{"answer", map({{"orders", Value(ValueList{map({{"kind", Value("end_phase")}})})}})}});
+            return base(request, services);
+        };
+        if (scripted) {
+            // The Probe does what the bot does, from its memory's script.
+            k.w.s.empire(kB).controller = scriptPlayer("Probe");
+            cmd::SetOrders move;
+            move.vehicle = k.warship;
+            Order o;
+            o.kind = OrderKind::MoveTo;
+            o.location = at(k.sys, 4, 6);
+            move.orders = {o};
+            const Value holdFire = map({{"answer", map({{"orders", Value(ValueList{map({{"kind", Value("end_phase")}})})}})}});
+            const Value script = map({{"orders", map({{"commands", sdk::encodeCommands(std::vector<Command>{move})}})},
+                                      {"enter_sector", map({{"answer", Value(true)}})},
+                                      {"battle_round", holdFire}});
+            setMemory(k.w.s, kB, *script::toJson(map({{"script", script}})));
+        }
+        InstalledPlayers installed(botSetup(bot));
+        const std::shared_ptr<const Rules> rules(&k.w.rules(), [](const Rules*) {});
+        classic::ClassicSession session(rules, k.w.s, kA, classic::SessionKind::Local);
+        REQUIRE(session.myTurn());
+        session.endTurn();   // B's turn: its warship attacks, and the battle waits to be shown
+        REQUIRE(session.battleQuestion());
+        const BattleQuestion q = *session.battleQuestion();
+        REQUIRE(q.state);
+
+        // As the Strategic Combat window sets it up (screens/strategic_combat.cpp):
+        // the script players get a session of their own on the battle's game.
+        GameState shown = *q.state;
+        std::unique_ptr<Players> players = makePlayers(*rules, shown);
+        REQUIRE(players);
+        combat::TacticalBattle::Setup bs{q.where, q.entering, {}, std::nullopt, std::nullopt, std::nullopt, q.check};
+        bs.stepped = true;
+        bs.scriptPlayers = players.get();
+        classic::TacticalFight f;
+        f.kind = classic::TacticalFight::Kind::Game;
+        f.scriptPlayers = std::move(players);
+        f.battle = std::make_unique<combat::TacticalBattle>(*rules, std::move(shown), std::move(bs));
+        REQUIRE(f.battle->started());
+        session.startTactical(std::move(f));
+        classic::TacticalFight* fight = session.tactical();
+        REQUIRE(fight);
+        while (fight->battle->step()) {
+        }
+        fight->battle->finish();
+        const auto roundsAsked = [&] {
+            return scripted ? journalOf(fight->battle->state(), kB, "battle_round").size() : bot.count("battle_round");
+        };
+        const size_t rounds = roundsAsked();
+        CHECK(rounds > 0);   // the player fought its side in the window
+        const CombatRecord shownRecord = fight->battle->record();
+        session.endTactical();
+        REQUIRE_FALSE(session.battleQuestion());
+        // The turn went on with the window's answers: nobody was asked again
+        // or failed, and the battle came out as the window showed it.
+        if (!scripted) CHECK(bot.count("battle_round") == rounds);
+        CHECK(session.state().empire(kB).script.failures == 0);
+        const CombatRecord* fought = nullptr;
+        for (const CombatRecord& c : session.state().combats)
+            if (c.location == q.where) fought = &c;
+        REQUIRE(fought);
+        CHECK(serial::hash(fought->events) == serial::hash(shownRecord.events));
+    }
 }
 
 TEST_CASE("sdk players: an external bot gets the requests and may ask the services; it fails like a script player") {

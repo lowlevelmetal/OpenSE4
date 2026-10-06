@@ -1,4 +1,5 @@
 #include "client/app.hpp"
+#include "client/classic/computer_players.hpp"
 #include "client/crash_report.hpp"
 #include "client/script/script.hpp"
 #include "core/environment.hpp"
@@ -15,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 // SDL's entry point: on Windows it provides WinMain for the windowed build and
@@ -360,7 +362,10 @@ int main(int argc, char** argv) {
         log::info("OPENSE4_CRASH_TEST={}: crashing on purpose", *test);
         crashOnPurpose(*test);
     }
-    // Script computer players play in the games this program plays (docs/sdk/ai-protocol.md).
-    sdk::installPlayers();
+    // Script computer players play in the games this program plays
+    // (docs/sdk/ai-protocol.md); their failures make the main window's notice.
+    sdk::PlayerSetup players;
+    players.failures = [](const sdk::PlayerFailure& f) { client::classic::notePlayerFailure(f); };
+    sdk::installPlayers(std::move(players));
     return client::App().run(options);
 }

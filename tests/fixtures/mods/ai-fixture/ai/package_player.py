@@ -6,7 +6,8 @@ from opense4 import ai, tactical
 
 class Captain(ai.Player):
     """The classic ministers, but its own colony types, its own fire in each
-    battle round, and a note on its first ship. Counts what it did in its memory."""
+    battle round, and notes on its first ship, its first colony and its first
+    ship in a battle. Counts what it did in its memory."""
 
     def _count(self, key):
         self.memory[key] = self.memory.get(key, 0) + 1
@@ -17,6 +18,9 @@ class Captain(ai.Player):
         ships = view.my.ships
         if ships:
             self.note(ships[0], "turn " + str(self.turn))
+        colonies = view.my.colonies
+        if colonies:
+            self.note(colonies[0], "colony, turn " + str(self.turn))
 
     def colony_type(self, view, question):
         self._count("colonies")
@@ -28,6 +32,11 @@ class Captain(ai.Player):
 
     def battle_round(self, battle, orders):
         self._count("rounds")
+        # A note on its first ship in the battle, for the client's AI notes view.
+        for piece in battle.my_pieces:
+            if piece.vehicle is not None:
+                self.note(piece.vehicle, "fighting, combat turn " + str(battle.round), kind="vehicle")
+                break
         for piece in battle.my_pieces:
             target = battle.weakest_enemy_in_range(piece)
             if target is not None:

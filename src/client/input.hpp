@@ -33,6 +33,8 @@ enum class Action : uint8_t {
     NextIdleShip, NextShip, PreviousShip, NextFleet, PreviousFleet, NextColony, PreviousColony, TagAll, ClearTags,
     // Display and interface.
     MovementLines, ToggleSound, Cancel, ToggleFullscreen,
+    // OpenSE4's AI notes view (computer players of mods).
+    AiNotes,
     Count
 };
 inline constexpr size_t kActionCount = static_cast<size_t>(Action::Count);

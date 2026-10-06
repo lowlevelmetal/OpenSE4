@@ -83,6 +83,7 @@ constexpr std::array<ActionInfo, kActionCount> kActions{{
     {Action::ToggleSound, "Display", "Sound effects on or off", "toggle_sound"},
     {Action::Cancel, "Display", "Cancel targeting / clear selection", "cancel"},
     {Action::ToggleFullscreen, "Display", "Toggle fullscreen", "toggle_fullscreen"},
+    {Action::AiNotes, "Display", "Show or hide the computer players' notes", "ai_notes"},
 }};
 
 // actionInfo() indexes the table by the action.
@@ -235,6 +236,7 @@ void Bindings::resetAll() {
     def(Action::ToggleSound, k(ImGuiKey_S, true));
     def(Action::Cancel, k(ImGuiKey_Escape));
     def(Action::ToggleFullscreen, k(ImGuiKey_Enter, false, false, true));
+    def(Action::AiNotes, k(ImGuiKey_N, true, true));
 }
 
 void Bindings::set(Action a, int slot, KeyChord c) {

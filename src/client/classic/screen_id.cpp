@@ -14,7 +14,7 @@ std::string_view windowId(ScreenId id) {
         "communicate", "intelligence", "treaty-grid", "scores",
         "comparisons", "history", "race-report", "victory-conditions", "borders", "combat-replay", "tactical-combat", "tactical-orders", "tactical-options",
         "tactical-launch", "combat-piece-report", "combat-replay-options", "combat-simulator", "strategic-combat", "ground-combat", "finale",
-        "save-game", "load-game", "options", "settings", "learn", "manual"};
+        "save-game", "load-game", "options", "settings", "player-errors", "learn", "manual"};
     static_assert(std::size(kIds) == static_cast<size_t>(ScreenId::Count));
     const auto i = static_cast<size_t>(id);
     return i < std::size(kIds) ? kIds[i] : std::string_view{};

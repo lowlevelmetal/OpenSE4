@@ -11,6 +11,7 @@
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/setup_empire.hpp"
 #include "client/classic/screens/setup_model.hpp"
+#include "client/classic/screens/setup_players.hpp"
 #include "client/classic/screens/setup_widgets.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
@@ -145,6 +146,12 @@ public:
         const bool cancel = a.cancelButton() && !modal;
         ImGui::EndDisabled();
         if (loadEmpire_) drawLoadEmpire(a);
+        // OpenSE4's own windows over the pages: who plays the computer empires, and their limits.
+        if (players_.isOpen()) {
+            std::optional<game::Controller> choice = s_.computerPlayer;
+            if (players_.draw(ctx, rules(), choice, {})) s_.computerPlayer = choice.value_or(game::Controller{});
+        }
+        if (limits_.isOpen()) limits_.draw(ctx, s_.options);
         if (begin && !modal && beginGame(ctx)) return;  // this screen is gone once the game starts
         if (cancel) {
             keepSettings(s_);
@@ -157,6 +164,7 @@ private:
 
     void init(MenuContext& ctx) {
         rules_ = ctx.rules;
+        offersPlayers_ = offersComputerPlayers(rules());
         const auto kept = lastSettings();
         s_ = kept ? *kept : defaultSettings(rules(), ctx.seed);
         std::string_view start = startPage_;
@@ -229,6 +237,7 @@ private:
         }
         editIndex_ = index;
         editor_.emplace(rules_, std::move(d), s_.options.racialPoints, index < 0);
+        editor_->setGameChoice(computerPlayerName(rules(), s_.computerPlayer));
     }
 
     void drawEditor(MenuContext& ctx) {
@@ -688,6 +697,16 @@ private:
             std::swap(players[static_cast<size_t>(selected_)], players[static_cast<size_t>(selected_ + 1)]);
             ++selected_;
         }
+        // OpenSE4's own, when the game's mods offer computer players: who plays
+        // the computer empires without a player of their own (Empire Setup
+        // gives one its own), the random ones included.
+        if (offersPlayers_) {
+            if (a.button({603, 267}, {783, 292}, "Computer Players")) players_.open();
+            const std::string name = computerPlayerName(rules(), s_.computerPlayer);
+            a.text({604, 300}, "Computer empires:", kHeadingRgb);
+            a.textWrapped({604, 316}, name, 180, kWhite);
+            script::reportItem("Computer empires: " + name, a.at({604, 300}), a.at({784, 332}));   // input scripts read it
+        }
 
         a.heading({231, 346}, "Random Computer Players");
         std::array<SetupArea::Check, 2> random{{
@@ -814,6 +833,12 @@ private:
             a.checkBox("##setting", {234, 126 + 30.0f * float(i)}, rows[i].label, *rows[i].value, rows[i].enabled);
             ImGui::PopID();
         }
+        // OpenSE4's own, when the game's mods offer computer players: their
+        // view of the game, and their limits (advanced).
+        if (offersPlayers_) {
+            a.checkBox("##seeall", {234, 486}, "Computer players see everything", o.aiSeesEverything);
+            if (a.button({544, 506}, {784, 531}, "Computer Player Limits")) limits_.open();
+        }
     }
 
     // ---- Mechanics -------------------------------------------------------------------------------------
@@ -907,6 +932,9 @@ private:
     bool statusError_ = false;
     std::optional<FileDialog> loadEmpire_;
     std::string masterPassword_, multiplayerFile_;
+    bool offersPlayers_ = false;   // the game's mods offer computer players
+    PlayerPicker players_;
+    LimitsWindow limits_;
 };
 
 } // namespace

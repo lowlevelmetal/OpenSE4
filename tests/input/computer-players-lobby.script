@@ -1,0 +1,16 @@
+# The lobby of a game with computer players of a mod (docs/MULTIPLAYER.md "The lobby"), as a
+# player who joins sees it: a dedicated host (tests/input/servers/computer-players.toml, started
+# by tools/run_input_tests.py) whose computer empires are played by the fixture mod's Captain
+# and Faulty, and whose computer players see everything. Each computer slot names its player,
+# and the line under the mods says what the computer players see.
+# server: --players=2 --setup=tests/input/servers/computer-players.toml
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --layout=1024x768 --size=1280x800 --seed=7
+
+wait-for item:"Computer: Captain (AI fixture)"
+wait-for item:"Computer: Faulty (AI fixture)"
+wait-for item:"Computer players see everything: the whole game, not only what their empires know."
+assert-absent item:"##slotplayer"
+screenshot lobby-joined.png
+click item:Leave
+wait-for item:"Host a Game"

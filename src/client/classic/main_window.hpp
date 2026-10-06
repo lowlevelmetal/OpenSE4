@@ -4,6 +4,7 @@
 // command buttons, the order strip and selection cycles, the system panel,
 // the report/list panel and the galaxy panel, all in the 1024×768 frame.
 
+#include "client/classic/computer_players.hpp"
 #include "client/classic/finale.hpp"
 #include "client/classic/movement_replay.hpp"
 #include "client/classic/order_rules.hpp"
@@ -150,6 +151,16 @@ private:
     void commandPanel(UiContext& ui);
     void reportPanel(UiContext& ui);
     void overlayText(UiContext& ui);
+    // OpenSE4's AI notes view (computer_players.hpp): the notes of script
+    // computer players on the system panel (each noted thing's sector, and a
+    // list), the galaxy panel (drawGalaxy) and in the reports.
+    void aiNotesOverlay(UiContext& ui);
+    void aiNotesInReport(UiContext& ui, std::string_view kind, int64_t id, const std::vector<game::VehicleId>* members = nullptr);
+    std::vector<ShownNote> notes_;   // this frame's, while the view is on
+    // The notice of computer players that failed: the newest failure, with
+    // Details (Computer Player Errors) and Dismiss; `failuresSeen_` were dismissed.
+    void playerFailureNotice(UiContext& ui);
+    size_t failuresSeen_ = 0;
     void mouse(UiContext& ui);
     void drawSystem(gfx::Renderer2D& r, UiContext& ui);
     void drawFrame(gfx::Renderer2D& r, UiContext& ui);
