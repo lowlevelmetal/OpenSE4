@@ -68,6 +68,10 @@
 
 // --- Memory -------------------------------------------------------------------
 #define MICROPY_ENABLE_GC (1)
+// First fit without rescanning the heap in use (our patch to py/gc.c): searches start
+// at a hint per object size and go on through an index of the free runs, which port.c
+// keeps beside the heap. Objects are placed exactly where MicroPython would put them.
+#define MICROPY_GC_ALLOC_HINTS (1)
 #define MICROPY_ENABLE_FINALISER (0)        // no __del__: when garbage is collected must not matter
 #define MICROPY_GC_CONSERVATIVE_CLEAR (1)
 #define MICROPY_ENABLE_PYSTACK (0)

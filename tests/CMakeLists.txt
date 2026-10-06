@@ -87,6 +87,7 @@ add_executable(opense4_tests
     sdk/test_script_determinism.cpp
     sdk/test_script_json.cpp
     sdk/test_script_library.cpp
+    sdk/test_script_memory.cpp
     sdk/test_script_runtime.cpp
     sdk/test_script_sandbox.cpp
     sdk/test_sdk_codec.cpp
@@ -141,6 +142,18 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
+# The script runtime's heap driven directly (tests/sdk/test_script_memory.cpp): C
+# that includes MicroPython's headers, which the C++ tests never do. Our warnings,
+# in their C form on MSVC, as for src/script/port.
+add_library(opense4_tests_gc_probe OBJECT sdk/gc_probe.c)
+target_link_libraries(opense4_tests_gc_probe PRIVATE opense4_micropython)
+set_target_properties(opense4_tests_gc_probe PROPERTIES C_STANDARD 11)
+if(MSVC)
+    target_compile_options(opense4_tests_gc_probe PRIVATE /W4 /utf-8 $<$<BOOL:${OPENSE4_WARNINGS_AS_ERRORS}>:/WX>)
+else()
+    target_link_libraries(opense4_tests_gc_probe PRIVATE opense4_warnings)
+endif()
+target_sources(opense4_tests PRIVATE $<TARGET_OBJECTS:opense4_tests_gc_probe>)
 target_link_libraries(opense4_tests PRIVATE opense4_sdk opense4_script opense4_mods opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
 target_include_directories(opense4_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 # The SDK tool's tests run it (tests/sdk/test_sdk_tool.cpp).

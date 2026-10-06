@@ -98,6 +98,11 @@ typedef struct _mp_sched_item_t {
 #define GC_LOCK_DEPTH_SHIFT 0
 #endif
 
+#if MICROPY_GC_ALLOC_HINTS
+// The number of allocation size classes that keep a search hint (py/gc.c).
+#define MP_GC_ALLOC_HINT_CLASSES (16)
+#endif
+
 // This structure holds information about a single contiguous area of
 // memory reserved for the memory manager.
 typedef struct _mp_state_mem_area_t {
@@ -116,7 +121,15 @@ typedef struct _mp_state_mem_area_t {
     byte *gc_pool_start;
     byte *gc_pool_end;
 
+    #if MICROPY_GC_ALLOC_HINTS
+    // For each size class (see gc.c): no run of that many free blocks starts before this block.
+    size_t gc_alloc_hint[MP_GC_ALLOC_HINT_CLASSES];
+    // The index of free runs (gc.c), outside the heap, or NULL; its number of leaves.
+    struct _gc_runs_t *gc_run_index;
+    size_t gc_run_index_leaves;
+    #else
     size_t gc_last_free_atb_index;
+    #endif
     size_t gc_last_used_block; // The block ID of the highest block allocated in the area
 } mp_state_mem_area_t;
 

@@ -876,6 +876,13 @@ typedef uint64_t mp_uint_t;
 #define MICROPY_GC_SPLIT_HEAP_AUTO (0)
 #endif
 
+// Whether the allocator keeps a search hint per allocation size (py/gc.c), so that
+// allocations of several blocks don't rescan the used part of the heap. Objects are
+// placed exactly where they are without it. Needs a heap of one area.
+#ifndef MICROPY_GC_ALLOC_HINTS
+#define MICROPY_GC_ALLOC_HINTS (0)
+#endif
+
 // Hook to run code during time consuming garbage collector operations
 // *i* is the loop index variable (e.g. can be used to run every x loops)
 #ifndef MICROPY_GC_HOOK_LOOP
