@@ -9,9 +9,12 @@ target_link_libraries(opense4-convert PRIVATE opense4_game opense4_warnings)
 set_target_properties(opense4-convert PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 opense4_windows_manifest(opense4-convert)
 
-# The modding SDK's tool: new, check, dump, pack and info (docs/sdk/packages-and-data.md).
-add_executable(opense4-sdk sdk.cpp)
-target_link_libraries(opense4-sdk PRIVATE opense4_sdk opense4_mods opense4_net opense4_assets opense4_warnings)
+# The modding SDK's tool: new, check, dump, pack and info (docs/sdk/packages-and-data.md);
+# test, run, arena, env-host, bot and python (docs/sdk/bots-and-arena.md). The arena and
+# the training environment read the server's setup files.
+add_executable(opense4-sdk sdk.cpp sdk_arena.cpp sdk_common.cpp sdk_env.cpp sdk_test.cpp
+    ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp)
+target_link_libraries(opense4-sdk PRIVATE opense4_sdk opense4_mods opense4_net opense4_assets tomlplusplus opense4_warnings)
 set_target_properties(opense4-sdk PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 opense4_windows_manifest(opense4-sdk)
 
