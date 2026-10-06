@@ -130,6 +130,406 @@
 #define GC_EXIT()
 #endif
 
+#if MICROPY_GC_ALLOC_HINTS
+#if MICROPY_GC_SPLIT_HEAP
+#error "MICROPY_GC_ALLOC_HINTS needs a heap of one area"
+#endif
+
+// Allocation is first fit: n blocks go to the start of the lowest run of at least n
+// free blocks. Searching from the bottom of the heap each time would read every
+// block in use below that run, again and again, so the search starts at a hint.
+// Requests fall into size classes: class c serves gc_hint_size[c] blocks or more
+// (up to the next class's size), and no run of gc_hint_size[c] free blocks starts
+// below block gc_alloc_hint[c]. Nor does a longer one, and no free block at all is
+// below the hint of class 0, so a search for class c starts at the higher of those
+// two hints and finds the run a search from the bottom would. An allocation moves
+// up the hint of the class it searched (and that of class 0 when it took the blocks
+// there), freeing moves hints down, and a collection puts them all at the bottom.
+// (Without hints only allocations of one block move the start of the search up, and
+// a heap whose objects take two blocks or more is searched from its first gap every
+// time.)
+//
+// Most searches end within a few steps of their hint. The others, when the port has
+// given the heap an index of its free runs (gc_run_index_init), continue through the
+// index, which leads them past the parts of the heap that hold no run long enough:
+// runs a little shorter than the request that hold its class's hint back, and the
+// part between a freed gap that a request just filled and the next free run.
+static const uint16_t gc_hint_size[MP_GC_ALLOC_HINT_CLASSES] = {
+    1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 20, 24, 32, 48, 64,
+};
+
+#define GC_HINT_NONE ((size_t)-1)
+
+// Steps (an ATB byte, or a word of ATB bytes in use) a search takes from its hint
+// before it continues through the index.
+#define GC_HINT_STEPS (16)
+
+// The index of free runs: a binary tree over leaves of GC_RUN_LEAF blocks. For the
+// blocks under it, each node knows how long the free run at their start (pre), the
+// one at their end (suf) and the longest (max) may be. Node 1 is the root, the
+// children of node i are 2i and 2i+1, and the leaves are nodes P to 2P-1, P being a
+// power of two; blocks past the end of the heap count as in use. The lengths are
+// upper bounds, stored as how many blocks short of the node's length they are, so
+// that zeroed memory promises every block free: allocating leaves them as they are,
+// freeing raises them, a search lowers those it finds too high to what is there,
+// and a collection zeroes them.
+#define GC_RUN_LEAF (128)
+
+typedef struct _gc_runs_t {
+    uint32_t pre, suf, max;
+} gc_runs_t;
+
+static size_t gc_blocks(const mp_state_mem_area_t *area) {
+    return area->gc_alloc_table_byte_len * BLOCKS_PER_ATB;
+}
+
+// Whether all four blocks of an ATB byte are in use.
+#define ATB_ALL_USED(a) ((((a) | ((a) >> 1)) & 0x55) == 0x55)
+
+// Searches a leaf for the end of a run of n_blocks free blocks, *carry free blocks
+// being just below it: returns the run's start, or GC_HINT_NONE and then sets *carry
+// to the free blocks at the leaf's end and *runs to the leaf's runs, exactly.
+static size_t gc_leaf_search(const mp_state_mem_area_t *area, size_t leaf, size_t n_blocks, size_t *carry, gc_runs_t *runs) {
+    const size_t first = leaf * GC_RUN_LEAF;
+    const size_t end = MIN(first + GC_RUN_LEAF, gc_blocks(area));
+    size_t c = *carry;
+    size_t run = 0, pre = 0, longest = 0;
+    bool at_start = true;
+    for (size_t b = first; b < end; b += BLOCKS_PER_ATB) {
+        byte a = area->gc_alloc_table_start[b / BLOCKS_PER_ATB];
+        if (a == 0) {
+            if (c + BLOCKS_PER_ATB >= n_blocks) {
+                return b - c;
+            }
+            run += BLOCKS_PER_ATB;
+            c += BLOCKS_PER_ATB;
+            continue;
+        }
+        for (size_t k = 0; k < BLOCKS_PER_ATB; k++, a >>= 2) {
+            if ((a & 3) == AT_FREE) {
+                if (++c >= n_blocks) {
+                    return b + k + 1 - n_blocks;
+                }
+                run++;
+            } else {
+                if (at_start) {
+                    pre = run;
+                    at_start = false;
+                }
+                longest = MAX(longest, run);
+                run = 0;
+                c = 0;
+            }
+        }
+    }
+    if (end < first + GC_RUN_LEAF) {
+        // past the end of the heap
+        if (at_start) {
+            pre = run;
+            at_start = false;
+        }
+        longest = MAX(longest, run);
+        run = 0;
+        c = 0;
+    }
+    if (at_start) {
+        pre = run;
+    }
+    longest = MAX(longest, run);
+    *carry = c;
+    runs->pre = (uint32_t)(GC_RUN_LEAF - pre);
+    runs->suf = (uint32_t)(GC_RUN_LEAF - run);
+    runs->max = (uint32_t)(GC_RUN_LEAF - longest);
+    return GC_HINT_NONE;
+}
+
+// The runs of a node from those of its children, each of `half` blocks.
+static gc_runs_t gc_runs_join(gc_runs_t l, gc_runs_t r, uint32_t half) {
+    // in lengths: pre = l.pre, or all of l and r.pre; suf likewise; max = the
+    // longest of l.max, r.max and l.suf + r.pre
+    gc_runs_t j;
+    j.pre = l.pre != 0 ? l.pre + half : r.pre;
+    j.suf = r.suf != 0 ? r.suf + half : l.suf;
+    j.max = MIN(MIN(l.max, r.max) + half, l.suf + r.pre);
+    return j;
+}
+
+static size_t gc_run_index_leaves(const mp_state_mem_area_t *area) {
+    size_t p = 1;
+    while (p * GC_RUN_LEAF < gc_blocks(area)) {
+        p *= 2;
+    }
+    return p;
+}
+
+size_t gc_run_index_size(void) {
+    const mp_state_mem_area_t *area = &MP_STATE_MEM(area);
+    if (gc_blocks(area) >= ((size_t)1 << 30)) {
+        // too many blocks for the index's numbers
+        return 0;
+    }
+    return 2 * gc_run_index_leaves(area) * sizeof(gc_runs_t);
+}
+
+void gc_run_index_init(void *mem) {
+    // zeroed: every block may be free
+    mp_state_mem_area_t *area = &MP_STATE_MEM(area);
+    area->gc_run_index = mem != NULL && gc_run_index_size() != 0 ? mem : NULL;
+    area->gc_run_index_leaves = gc_run_index_leaves(area);
+}
+
+// After the blocks [block, block + n_blocks) became free, part of the free run
+// [start, end): raises what the leaves under those blocks promise, and the nodes
+// above them as long as they promise more.
+static void gc_run_index_freed(mp_state_mem_area_t *area, size_t block, size_t n_blocks, size_t start, size_t end) {
+    gc_runs_t *t = area->gc_run_index;
+    const size_t p = area->gc_run_index_leaves;
+    for (size_t leaf = block / GC_RUN_LEAF; leaf <= (block + n_blocks - 1) / GC_RUN_LEAF; leaf++) {
+        const size_t lo = MAX(start, leaf * GC_RUN_LEAF);
+        const size_t hi = MIN(end, leaf * GC_RUN_LEAF + GC_RUN_LEAF);
+        const uint32_t short_by = (uint32_t)(GC_RUN_LEAF - (hi - lo));
+        size_t i = p + leaf;
+        gc_runs_t r = t[i];
+        r.max = MIN(r.max, short_by);
+        if (lo == leaf * GC_RUN_LEAF) {
+            r.pre = MIN(r.pre, short_by);
+        }
+        if (hi == leaf * GC_RUN_LEAF + GC_RUN_LEAF) {
+            r.suf = MIN(r.suf, short_by);
+        }
+        uint32_t half = GC_RUN_LEAF;
+        while (r.pre != t[i].pre || r.suf != t[i].suf || r.max != t[i].max) {
+            t[i] = r;
+            if (i == 1) {
+                break;
+            }
+            i /= 2;
+            r = gc_runs_join(t[2 * i], t[2 * i + 1], half);
+            half *= 2;
+        }
+    }
+}
+
+// The number of free blocks just below `block`, up to `limit`.
+static size_t gc_free_below(const mp_state_mem_area_t *area, size_t block, size_t limit) {
+    size_t n = 0;
+    while (n < limit && block > n) {
+        const size_t b = block - n;
+        if (b % BLOCKS_PER_ATB == 0 && area->gc_alloc_table_start[b / BLOCKS_PER_ATB - 1] == 0) {
+            n += BLOCKS_PER_ATB;
+        } else if (ATB_GET_KIND(area, b - 1) == AT_FREE) {
+            n++;
+        } else {
+            break;
+        }
+    }
+    return MIN(n, limit);
+}
+
+// The start of the first run of n_blocks free blocks that ends in leaf `leaf` or
+// above it (none ends below it), or GC_HINT_NONE. It walks the tree from that leaf
+// to the right, going down only into nodes that may hold the end of such a run.
+static size_t gc_run_index_find(mp_state_mem_area_t *area, size_t n_blocks, size_t leaf) {
+    gc_runs_t *t = area->gc_run_index;
+    const size_t p = area->gc_run_index_leaves;
+    size_t i = p + leaf;
+    size_t len = GC_RUN_LEAF;
+    size_t first = leaf * GC_RUN_LEAF;
+    // the free blocks just below node i, exactly or (after skipping a node) at most
+    size_t carry = gc_free_below(area, first, n_blocks);
+    bool exact = true;
+    for (;;) {
+        // in lengths: carry + pre >= n_blocks or max >= n_blocks
+        if (carry + len >= n_blocks + t[i].pre || len >= n_blocks + t[i].max) {
+            if (i < p) {
+                i *= 2;
+                len /= 2;
+                continue;
+            }
+            if (!exact) {
+                carry = gc_free_below(area, first, n_blocks);
+                exact = true;
+            }
+            const size_t found = gc_leaf_search(area, i - p, n_blocks, &carry, &t[i]);
+            if (found != GC_HINT_NONE) {
+                return found;
+            }
+        } else {
+            carry = t[i].pre == 0 ? carry + len : len - t[i].suf;
+            exact = false;
+        }
+        // the next node to the right: up while this one is a right child, making the
+        // nodes passed promise no more than their children
+        while (i & 1) {
+            if (i == 1) {
+                return GC_HINT_NONE;
+            }
+            i /= 2;
+            len *= 2;
+            first -= len / 2;
+            t[i] = gc_runs_join(t[2 * i], t[2 * i + 1], (uint32_t)(len / 2));
+        }
+        i += 1;
+        first += len;
+    }
+}
+
+// Puts the hints at the bottom of the heap, and makes the index promise every block.
+static void gc_hints_reset(mp_state_mem_area_t *area) {
+    for (size_t c = 0; c < MP_GC_ALLOC_HINT_CLASSES; c++) {
+        area->gc_alloc_hint[c] = 0;
+    }
+    if (area->gc_run_index != NULL) {
+        memset(area->gc_run_index, 0, 2 * area->gc_run_index_leaves * sizeof(gc_runs_t));
+    }
+}
+
+static size_t gc_hint_class(size_t n_blocks) {
+    if (n_blocks <= 8) {
+        return n_blocks - 1;
+    }
+    size_t c = 7;
+    while (c + 1 < MP_GC_ALLOC_HINT_CLASSES && gc_hint_size[c + 1] <= n_blocks) {
+        c++;
+    }
+    return c;
+}
+
+// The start of the lowest run of n_blocks free blocks, for a request of class c, or
+// GC_HINT_NONE. *passed: where the first run of at least gc_hint_size[c] (but fewer
+// than n_blocks) free blocks that the search went past starts, or where the search
+// handed over to the index; else GC_HINT_NONE.
+static size_t gc_hint_search(mp_state_mem_area_t *area, size_t n_blocks, size_t c, size_t *passed) {
+    const size_t from = MAX(area->gc_alloc_hint[0], area->gc_alloc_hint[c]);
+    const byte *atb = area->gc_alloc_table_start;
+    const size_t len = area->gc_alloc_table_byte_len;
+    // Most often the blocks at the hint are free (no run of the class's size starts
+    // below it, so the run they are in starts there).
+    if (from % BLOCKS_PER_ATB + n_blocks <= BLOCKS_PER_ATB && from / BLOCKS_PER_ATB < len
+        && (atb[from / BLOCKS_PER_ATB] >> (2 * (from % BLOCKS_PER_ATB)) & ((1u << (2 * n_blocks)) - 1)) == 0) {
+        *passed = GC_HINT_NONE;
+        return from;
+    }
+    const size_t min_run = gc_hint_size[c];
+    const size_t max_steps = area->gc_run_index != NULL ? GC_HINT_STEPS : (size_t)-1;
+    size_t steps = 0;
+    size_t n_free = 0;
+    size_t first_passed = GC_HINT_NONE;
+    size_t found = GC_HINT_NONE;
+    for (size_t i = from / BLOCKS_PER_ATB; i < len; i++) {
+        MICROPY_GC_HOOK_LOOP(i);
+        if (++steps > max_steps) {
+            if (first_passed == GC_HINT_NONE) {
+                first_passed = i * BLOCKS_PER_ATB - n_free;
+            }
+            found = gc_run_index_find(area, n_blocks, i * BLOCKS_PER_ATB / GC_RUN_LEAF);
+            break;
+        }
+        byte a = atb[i];
+        if (a == 0) {
+            // four free blocks
+            if (n_free + BLOCKS_PER_ATB >= n_blocks) {
+                found = i * BLOCKS_PER_ATB - n_free;
+                break;
+            }
+            n_free += BLOCKS_PER_ATB;
+            continue;
+        }
+        if (ATB_ALL_USED(a)) {
+            // four blocks in use: a run ends below them, and whole words of the table
+            // whose blocks are all in use are skipped
+            if (n_free >= min_run && first_passed == GC_HINT_NONE) {
+                first_passed = i * BLOCKS_PER_ATB - n_free;
+            }
+            n_free = 0;
+            while (i + 1 + sizeof(uint32_t) <= len && steps < max_steps) {
+                uint32_t w;
+                memcpy(&w, atb + i + 1, sizeof(w));
+                if (((w | (w >> 1)) & 0x55555555u) != 0x55555555u) {
+                    break;
+                }
+                i += sizeof(uint32_t);
+                steps++;
+            }
+            continue;
+        }
+        for (size_t k = 0; k < BLOCKS_PER_ATB; k++, a >>= 2) {
+            if ((a & 3) == AT_FREE) {
+                if (++n_free >= n_blocks) {
+                    found = i * BLOCKS_PER_ATB + k + 1 - n_blocks;
+                    break;
+                }
+            } else {
+                if (n_free >= min_run && first_passed == GC_HINT_NONE) {
+                    first_passed = i * BLOCKS_PER_ATB + k - n_free;
+                }
+                n_free = 0;
+            }
+        }
+        if (found != GC_HINT_NONE) {
+            break;
+        }
+    }
+    *passed = first_passed;
+    return found;
+}
+
+// After a search for class c took n_blocks at block `start`.
+static void gc_hints_allocated(mp_state_mem_area_t *area, size_t c, size_t start, size_t n_blocks, size_t passed) {
+    // No run of n_blocks free blocks starts below the end of the new allocation: the
+    // search found none below `start`, and the rest of the run it took (if any)
+    // starts at that end. For a class that serves larger sizes too, no run of its own
+    // size starts below where the search passed one or handed over to the index.
+    const size_t after = start + n_blocks;
+    const size_t h = gc_hint_size[c] == n_blocks || passed == GC_HINT_NONE ? after : passed;
+    if (area->gc_alloc_hint[c] < h) {
+        area->gc_alloc_hint[c] = h;
+    }
+    // The next class is longer than n_blocks (else c would be it).
+    if (gc_hint_size[c] < n_blocks && c + 1 < MP_GC_ALLOC_HINT_CLASSES && area->gc_alloc_hint[c + 1] < after) {
+        area->gc_alloc_hint[c + 1] = after;
+    }
+    // No free block is below the hint of single blocks: if it was among those just
+    // taken, none is below their end now. (It keeps up with allocations of every size
+    // made where the heap's free space begins, and every search starts at it or above.)
+    if (area->gc_alloc_hint[0] >= start && area->gc_alloc_hint[0] < after) {
+        area->gc_alloc_hint[0] = after;
+    }
+}
+
+// After the n_blocks blocks at `block` became free.
+static void gc_hints_freed(mp_state_mem_area_t *area, size_t block, size_t n_blocks) {
+    // The free run they joined, [start, end): measured as far as the longest class
+    // size, and (for the index) to the ends of the leaves they are in.
+    const size_t longest = gc_hint_size[MP_GC_ALLOC_HINT_CLASSES - 1];
+    const size_t below = gc_free_below(area, block, MAX(longest, GC_RUN_LEAF));
+    const size_t start = block - below;
+    const size_t leaf_end = ((block + n_blocks - 1) / GC_RUN_LEAF + 1) * GC_RUN_LEAF;
+    const size_t limit = MAX(start + longest, leaf_end);
+    const size_t n_total = gc_blocks(area);
+    size_t end = block + n_blocks;
+    while (end < limit && end < n_total) {
+        if (end % BLOCKS_PER_ATB == 0 && area->gc_alloc_table_start[end / BLOCKS_PER_ATB] == 0) {
+            end += BLOCKS_PER_ATB;
+        } else if (ATB_GET_KIND(area, end) == AT_FREE) {
+            end++;
+        } else {
+            break;
+        }
+    }
+    if (area->gc_run_index != NULL) {
+        gc_run_index_freed(area, block, n_blocks, start, end);
+    }
+    // Classes no longer than the part below the freed blocks knew of the run already
+    // (their hints are at or below its start); those longer than it can't use it.
+    for (size_t c = 0; c < MP_GC_ALLOC_HINT_CLASSES && gc_hint_size[c] <= end - start; c++) {
+        if (gc_hint_size[c] > below && area->gc_alloc_hint[c] > start) {
+            area->gc_alloc_hint[c] = start;
+        }
+    }
+}
+#endif // MICROPY_GC_ALLOC_HINTS
+
 // Static functions for individual steps of the GC mark/sweep sequence
 static void gc_collect_start_common(void);
 static void *gc_get_ptr(void **ptrs, int i);
@@ -201,7 +601,12 @@ static void gc_setup_area(mp_state_mem_area_t *area, void *start, void *end) {
         #endif
         );
 
+    #if MICROPY_GC_ALLOC_HINTS
+    area->gc_run_index = NULL;
+    gc_hints_reset(area);
+    #else
     area->gc_last_free_atb_index = 0;
+    #endif
     area->gc_last_used_block = 0;
 
     #if MICROPY_GC_SPLIT_HEAP
@@ -609,7 +1014,11 @@ void gc_collect_end(void) {
     MP_STATE_MEM(gc_last_free_area) = &MP_STATE_MEM(area);
     #endif
     for (mp_state_mem_area_t *area = &MP_STATE_MEM(area); area != NULL; area = NEXT_AREA(area)) {
+        #if MICROPY_GC_ALLOC_HINTS
+        gc_hints_reset(area);
+        #else
         area->gc_last_free_atb_index = 0;
+        #endif
     }
     MP_STATE_THREAD(gc_lock_depth) &= ~GC_COLLECT_FLAG;
     GC_EXIT();
@@ -910,6 +1319,10 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
     size_t end_block;
     size_t start_block;
     size_t n_free;
+    #if MICROPY_GC_ALLOC_HINTS
+    size_t hint_class = gc_hint_class(n_blocks);
+    size_t hint_passed;
+    #endif
     int collected = !MP_STATE_MEM(gc_auto_collect_enabled);
     #if MICROPY_GC_SPLIT_HEAP_AUTO
     bool added = false;
@@ -932,6 +1345,14 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
         area = &MP_STATE_MEM(area);
         #endif
 
+        #if MICROPY_GC_ALLOC_HINTS
+        start_block = gc_hint_search(area, n_blocks, hint_class, &hint_passed);
+        if (start_block != GC_HINT_NONE) {
+            i = start_block + n_blocks - 1;
+            n_free = n_blocks;
+            goto found;
+        }
+        #else
         // look for a run of n_blocks available blocks
         for (; area != NULL; area = NEXT_AREA(area), i = 0) {
             n_free = 0;
@@ -955,6 +1376,7 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
             }
             #endif
         }
+        #endif
 
         GC_EXIT();
         // nothing found!
@@ -979,6 +1401,9 @@ found:
     end_block = i;
     start_block = i - n_free + 1;
 
+    #if MICROPY_GC_ALLOC_HINTS
+    gc_hints_allocated(area, hint_class, start_block, n_blocks, hint_passed);
+    #else
     // Set last free ATB index to block after last block we found, for start of
     // next scan.  To reduce fragmentation, we only do this if we were looking
     // for a single free block, which guarantees that there are no free blocks
@@ -990,6 +1415,7 @@ found:
         #endif
         area->gc_last_free_atb_index = (i + 1) / BLOCKS_PER_ATB;
     }
+    #endif
 
     area->gc_last_used_block = MAX(area->gc_last_used_block, end_block);
 
@@ -1106,6 +1532,15 @@ void gc_free(void *ptr) {
     }
     #endif
 
+    #if MICROPY_GC_ALLOC_HINTS
+    // free head and all of its tail blocks, then lower the hints that can use them
+    size_t first_block = block;
+    do {
+        ATB_ANY_TO_FREE(area, block);
+        block += 1;
+    } while (ATB_GET_KIND(area, block) == AT_TAIL);
+    gc_hints_freed(area, first_block, block - first_block);
+    #else
     // set the last_free pointer to this block if it's earlier in the heap
     if (block / BLOCKS_PER_ATB < area->gc_last_free_atb_index) {
         area->gc_last_free_atb_index = block / BLOCKS_PER_ATB;
@@ -1116,6 +1551,7 @@ void gc_free(void *ptr) {
         ATB_ANY_TO_FREE(area, block);
         block += 1;
     } while (ATB_GET_KIND(area, block) == AT_TAIL);
+    #endif
 
     GC_EXIT();
 
@@ -1237,10 +1673,14 @@ void *gc_realloc(void *ptr_in, size_t n_bytes, bool allow_move) {
         }
         #endif
 
+        #if MICROPY_GC_ALLOC_HINTS
+        gc_hints_freed(area, block + new_blocks, n_blocks - new_blocks);
+        #else
         // set the last_free pointer to end of this block if it's earlier in the heap
         if ((block + new_blocks) / BLOCKS_PER_ATB < area->gc_last_free_atb_index) {
             area->gc_last_free_atb_index = (block + new_blocks) / BLOCKS_PER_ATB;
         }
+        #endif
 
         GC_EXIT();
 

@@ -32,6 +32,16 @@
 
 void gc_init(void *start, void *end);
 
+#if MICROPY_GC_ALLOC_HINTS
+// An index of the heap's free runs, in memory outside the heap, makes the searches
+// for room that the allocation hints don't settle at once take time in proportion
+// to the logarithm of the heap's size. It is optional: after gc_init, give it
+// gc_run_index_size() bytes of zeroed memory, aligned for a uint32_t, that stay
+// valid while the heap is in use.
+size_t gc_run_index_size(void);
+void gc_run_index_init(void *mem);
+#endif
+
 #if MICROPY_GC_SPLIT_HEAP
 // Used to add additional memory areas to the heap.
 void gc_add(void *start, void *end);

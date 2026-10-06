@@ -359,21 +359,22 @@ view copied ten times, with 2040 vehicles):
 
 | Each step after the one before | Bytecodes | Game's runtime | CPython 3.14 |
 |---|---|---|---|
-| Wrapping the view | 104 | 0.6 ms | under 0.01 ms |
-| 1000 lookups by id (the first builds the index; no other vehicle is wrapped) | 398,000 | 2.6 ms (1.9 ms) | 1.0 ms |
-| `view.my.vehicles` (only ours are wrapped) | 335,000 | 13.5 ms (0.7 ms) | 0.8 ms |
+| Wrapping the view | 82 | 0.01 ms | under 0.01 ms |
+| 1000 lookups by id (the first builds the index; no other vehicle is wrapped) | 398,000 | 1.8 ms (1.5 ms) | 1.0 ms |
+| `view.my.vehicles` (only ours are wrapped) | 335,000 | 1.7 ms (0.3 ms) | 0.8 ms |
 | `view.my.idle_vehicles`, `.ships`, `.units` | 271,000 | 1.5 ms (0.4 ms) | 0.7 ms |
-| `view.vehicles`, every vehicle wrapped | 247,000 | 10.7 ms (0.5 ms) | 0.5 ms |
-| Five fields of every vehicle, through the objects | 1,432,000 | 59 ms (5.5 ms) | 3.0 ms |
-| The same five fields, through the maps (`record.raw`) | 588,000 | 2.9 ms (0.5 ms) | 1.2 ms |
-| Jumps from home to every system | 257,000 | 1.5 ms (0.3 ms) | 0.8 ms |
+| `view.vehicles`, every vehicle wrapped | 247,000 | 1.4 ms (0.2 ms) | 0.5 ms |
+| Five fields of every vehicle, through the objects | 1,432,000 | 10.9 ms (2.7 ms) | 3.0 ms |
+| The same five fields, through the maps (`record.raw`) | 588,000 | 3.2 ms (0.8 ms) | 1.2 ms |
+| Jumps from home to every system | 257,000 | 1.6 ms (0.3 ms) | 0.8 ms |
 | Importing the package's main modules (compiled once per process) | 27,000 | 2.2 ms | |
 
-Each object the package makes is an allocation, and in the game's runtime making many
-objects takes more time than its bytecodes suggest, the more so the more the heap holds:
-the view four times larger costs ten to twenty times as much above. Lists and lookups wrap only
-what they give back, and each thing once. In a loop over thousands of vehicles that only
-reads a few fields, read the maps: `for v in view.raw["vehicles"]: ...`.
+Each object the package makes is an allocation, which in the game's runtime costs about
+the same however much the heap already holds ([runtime.md](runtime.md), "Allocation"): the
+view four times larger costs four to six times as much above. Lists and lookups wrap only
+what they give back, and each thing once. A field read through an object is a property
+call; in a loop over thousands of vehicles that reads a few fields of each, reading the
+maps (`for v in view.raw["vehicles"]: ...`) takes fewer than half the bytecodes.
 
 ## For SDK developers
 

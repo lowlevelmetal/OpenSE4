@@ -55,6 +55,9 @@ static struct {
     // Objects the port holds on to (garbage collection roots).
     mp_obj_t *pins;
     size_t pins_len, pins_cap;
+    // The allocator's index of free runs (py/gc.c), outside the heap: the heap the
+    // scripts may fill is as large as the engine asked.
+    void *run_index;
     // Identities of objects without a value hash: open addressing on the object's
     // address (or, for interned strings, its word); the values are given in order.
     uintptr_t *id_keys;
@@ -553,6 +556,9 @@ int ose_init(const ose_host *host, void *heap, size_t heap_size, size_t depth_li
     mp_opense4_depth = 0;
     mp_opense4_depth_limit = depth_limit;
     gc_init(heap, (char *)heap + heap_size);
+    // Without the index (no memory for it) allocation is slower, never different.
+    ose.run_index = calloc(1, gc_run_index_size());
+    gc_run_index_init(ose.run_index);
     mp_init();
     return 0;
 }
@@ -561,7 +567,10 @@ void ose_deinit(void) {
     if (!ose.active) {
         return;
     }
+    // The final sweep needs no index (and would clear all of it).
+    gc_run_index_init(NULL);
     mp_deinit();
+    free(ose.run_index);
     free(ose.pins);
     free(ose.id_keys);
     free(ose.id_values);
