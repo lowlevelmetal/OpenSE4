@@ -114,11 +114,12 @@ class Military:
         if not enemy:
             return []
         dist = w.bfs([self.rally]) if self.rally is not None else {}
+        near = w.territory_distance()
         known = self.mem.get("planet_seen", {})
         out = []
         for s, cols in enemy.items():
             d = dist.get(s)
-            if d is None:
+            if d is None or near.get(s, 99) > 3:
                 continue
             need = Force()
             value = 0.0
@@ -260,7 +261,8 @@ class Military:
                     known[key] = [int(max(need[0], 1) * 2.5), int(max(need[1], 1) * 2.5)]
                     self.give_fleet(fid, [{"kind": "repair"}], {"task": "repair", "since": w.turn})
                     continue
-            if is_main and at_war and self.try_strike(fid, task, orders, force, targets, used_targets, STRIKE_MARGIN):
+            if is_main and at_war and not self.home_in_danger(force) and \
+                    self.try_strike(fid, task, orders, force, targets, used_targets, STRIKE_MARGIN):
                 continue
             # Defend a colony system under attack, nearest first.
             job = None
@@ -299,6 +301,13 @@ class Military:
                 elif not orders:
                     self.give_fleet(fid, [{"kind": "sentry"}], {"task": "hold", "since": w.turn})
         return self.commands
+
+    def home_in_danger(self, force):
+        """Whether hostile ships in our colony systems are strong enough that the main fleet must stay."""
+        total = Force()
+        for s, f in self.defense_needs():
+            total.add(f.attack, f.hp, 0)
+        return total.power() > 0.25 * force.power()
 
     def try_strike(self, fid, task, orders, force, targets, used_targets, margin):
         """Sends a fleet against the best enemy colony system it beats by `margin`."""

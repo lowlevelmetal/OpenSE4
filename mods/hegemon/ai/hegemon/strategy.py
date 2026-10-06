@@ -98,28 +98,34 @@ class Strategy:
             if e is None or not e["alive"]:
                 del self.rivals[key]
 
+    def score_of(self, eid):
+        """How much we would like to fight a rival (0: not at all)."""
+        w = self.w
+        r = self.rivals.get(str(eid))
+        e = w.empires.get(eid)
+        if r is None or e is None or e["neutral"] or not e["alive"]:
+            return 0.0
+        if r["colonies"] <= 0 or r["dist"] > 6:
+            return 0.0
+        treaty = w.treaty(eid)
+        worth = r["colonies"] * 1000.0 + r["pop"] * 1.5
+        cost = 1.0 + (r["force"][0] * r["force"][1]) / 2.0e5
+        score = worth / cost / (1.0 + 0.5 * r["dist"])
+        if treaty == "war":
+            score *= 1.5
+        elif not w.hostile(eid):
+            score *= 0.3
+        if r["battles"] > 0:
+            score *= 1.2
+        return score
+
     def pick_target(self):
         """The rival to fight: worth for the force it takes, near first."""
-        w = self.w
         best = None
-        for key, r in self.rivals.items():
+        for key in self.rivals:
             eid = int(key)
-            e = w.empires.get(eid)
-            if e is None or e["neutral"] or not e["alive"]:
-                continue
-            if r["colonies"] <= 0 or r["dist"] > 6:
-                continue
-            treaty = w.treaty(eid)
-            worth = r["colonies"] * 1000.0 + r["pop"] * 1.5
-            cost = 1.0 + (r["force"][0] * r["force"][1]) / 2.0e5
-            score = worth / cost / (1.0 + 0.5 * r["dist"])
-            if treaty == "war":
-                score *= 1.5
-            elif not w.hostile(eid):
-                score *= 0.3
-            if r["battles"] > 0:
-                score *= 1.2
-            if best is None or score > best[0]:
+            score = self.score_of(eid)
+            if score > 0 and (best is None or score > best[0]):
                 best = (score, eid)
         return best[1] if best is not None else None
 
@@ -145,6 +151,14 @@ class Strategy:
             if w.treaty(int(key)) == "war" and r["dist"] <= 2:
                 at_war_near = True
         target = self.pick_target()
+        old = st.get("target")
+        if old is not None and target != old and str(old) in self.rivals:
+            # Stay on the rival we went for unless another is far better.
+            r = self.rivals[str(old)]
+            e = w.empires.get(old)
+            if e is not None and e["alive"] and r["colonies"] > 0 and r["dist"] <= 6 and \
+                    self.score_of(old) * 2.0 > self.score_of(target):
+                target = old
         st["target"] = target
         phase = st["phase"]
         tf = Force()
@@ -156,7 +170,8 @@ class Strategy:
                     (turn > 10 and (near.power() > 0.5 * my_force.power() or at_war_near)):
                 phase = "arm"
         elif phase == "arm":
-            if target is not None and my_force.count >= self.tune.get("war_ships", 8) and my_force.beats(tf, 1.5):
+            if target is not None and turn >= self.tune.get("war_turn", 50) and my_force.count >= self.tune.get("war_ships", 12) and \
+                    my_force.beats(tf, 3.0) and my_force.beats(near, 2.0):
                 phase = "war"
         elif phase == "war":
             if target is None:
