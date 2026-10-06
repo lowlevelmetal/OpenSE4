@@ -36,3 +36,12 @@ class Captain(ai.Player):
 
     def end_session(self):
         self._count("sessions")
+
+
+class Faulty(ai.Player):
+    """The classic AI's player, except that it raises an error whenever it is
+    asked for its orders, so that the classic AI gives them in its place. For
+    the client's notice of a player that failed."""
+
+    def orders(self, view, orders):
+        raise ValueError("no orders today, as this test player always says")

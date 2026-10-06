@@ -42,13 +42,13 @@ EmpireSetup empire(std::string name, PlayerKind kind) {
 TEST_CASE("sdk player setup: the players a game's mods offer") {
     ModdedRules m;
     const std::vector<sdk::PlayerChoice> offered = sdk::availablePlayers(*m.rules);
-    REQUIRE(offered.size() == 4);
+    REQUIRE(offered.size() == 5);
     CHECK(offered[0].mod == kFixtureMod);
     CHECK(offered[0].name == "Steady");
     CHECK(offered[0].controller() == scriptPlayer("Steady"));
     CHECK(sdk::availablePlayers(test::engineRules()).empty());
     const auto choices = setupm::computerPlayerChoices(*m.rules);
-    REQUIRE(choices.size() == 4);
+    REQUIRE(choices.size() == 5);
     CHECK(choices[1].label == "test.ai-fixture:Probe");
     CHECK_FALSE(choices[1].description.empty());
     // A setup naming a player is checked against the game's mods.

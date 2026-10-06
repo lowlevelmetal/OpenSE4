@@ -310,6 +310,42 @@ TEST_CASE("sdk players: in a network game the host runs the script players; play
     CHECK(test::viewMatches(bob, host));
 }
 
+TEST_CASE("sdk players: the lobby shows joining players each computer slot's player and the options; the host changes them before the start") {
+    InstalledPlayers installed;
+    net::HostSession host(test::engineRules(), test::hostConfig(1, false));
+    REQUIRE(host.start().has_value());
+    net::ClientSession alice{net::ClientConfig{}};
+    alice.config() = test::clientConfig(host, "alice", "a-secret");
+    test::Loop loop(host, {&alice});
+    REQUIRE(alice.connect().has_value());
+    REQUIRE(loop.until([&] { return alice.phase() == net::ClientPhase::Lobby; }));
+    EmpireSetup computer;
+    computer.controller = scriptPlayer("Steady");
+    const auto slot = host.addComputerEmpire(computer);
+    REQUIRE(slot.has_value());
+    REQUIRE(loop.until([&] { return alice.lobby().slots.size() == 2; }));
+    CHECK(alice.lobby().slots[1].setup.controller == scriptPlayer("Steady"));
+    CHECK_FALSE(alice.lobby().options.aiSeesEverything);
+
+    // The host plays it with another player and lets the computer players see everything.
+    EmpireSetup changed = host.lobby().slots[1].setup;
+    changed.controller = scriptPlayer("Captain");
+    REQUIRE(host.setSlotSetup(*slot, changed).has_value());
+    GameOptions options = host.lobby().options;
+    options.aiSeesEverything = true;
+    REQUIRE(host.setOptions(options).has_value());
+    REQUIRE(loop.until([&] { return alice.lobby().options.aiSeesEverything && alice.lobby().slots[1].setup.controller == scriptPlayer("Captain"); }));
+
+    alice.setReady(true);
+    REQUIRE(loop.until([&] { return host.lobby().slots[0].ready; }));
+    REQUIRE(host.startGame().has_value());
+    REQUIRE(loop.until([&] { return alice.state() != nullptr; }));
+    CHECK(host.state()->options.aiSeesEverything);
+    CHECK(host.state()->empire(EmpireId{1u}).controller == scriptPlayer("Captain"));
+    // Once the game started, the options stay.
+    CHECK_FALSE(host.setOptions(GameOptions{}).has_value());
+}
+
 TEST_CASE("sdk players: in a play-by-e-mail game the host runs the script players, and their memory stays in its game file") {
     namespace fs = std::filesystem;
     InstalledPlayers installed;

@@ -29,3 +29,9 @@ name = "Captain"
 module = "package_player"
 class = "Captain"
 description = "Plays through the opense4 package: the classic ministers with its own colony types and fire."
+
+[[ai.players]]
+name = "Faulty"
+module = "package_player"
+class = "Faulty"
+description = "Plays through the opense4 package and fails when asked for its orders: the classic AI gives them in its place."

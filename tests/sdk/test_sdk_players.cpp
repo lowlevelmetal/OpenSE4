@@ -144,7 +144,7 @@ TEST_CASE("sdk players: controllers are written and read as setup files and the 
 
 TEST_CASE("sdk players: a mod declares its players in [[ai.players]], and mistakes are named") {
     const mods::Package fixture = aiFixtureMod();
-    REQUIRE(fixture.manifest.aiPlayers.size() == 4);
+    REQUIRE(fixture.manifest.aiPlayers.size() == 5);
     CHECK(fixture.manifest.aiPlayers[0].name == "Steady");
     CHECK(fixture.manifest.aiPlayers[0].module == "fixture_player");
     CHECK(fixture.manifest.aiPlayers[0].className == "Steady");
@@ -154,7 +154,7 @@ TEST_CASE("sdk players: a mod declares its players in [[ai.players]], and mistak
     // Written back, read again.
     auto again = mods::parseManifest(mods::writeManifest(fixture.manifest), "mod.toml");
     REQUIRE(again.has_value());
-    REQUIRE(again->aiPlayers.size() == 4);
+    REQUIRE(again->aiPlayers.size() == 5);
     CHECK(again->aiPlayers[2].description == fixture.manifest.aiPlayers[2].description);
 
     const std::string head = "[mod]\nid = \"a.b\"\nname = \"x\"\nversion = \"1\"\napi = 1\n";
@@ -444,6 +444,57 @@ TEST_CASE("sdk players: an error falls back to the classic AI for that request; 
     CHECK(t.empire(p).script.failures == 3);
     CHECK(journalOf(t, p).size() == 3);   // the journal keeps the last turn's
     CHECK(journalOf(t, p).front().turn == 1);
+}
+
+TEST_CASE("sdk players: each failure is told as it happens, with its call, error and traceback; not again when the journal gives it") {
+    std::vector<sdk::PlayerFailure> told;
+    const auto tell = [&](const sdk::PlayerFailure& f) { told.push_back(f); };
+    const Rules& r = test::engineRules();
+    const EmpireId p{1u};
+    {
+        // A player written with the opense4 package, whose dispatcher sends the traceback.
+        sdk::PlayerSetup setup;
+        setup.failures = tell;
+        InstalledPlayers installed(std::move(setup), true);
+        GameState s = playersGame(5, true, {Controller{}, scriptPlayer("Faulty")});
+        const GameState before = s;
+        processTurn(r, s, {});
+        REQUIRE(told.size() == 1);
+        CHECK(told[0].empire == p);
+        CHECK(told[0].empireName == s.empire(p).name);
+        CHECK(told[0].player == "test.ai-fixture:Faulty");
+        CHECK(told[0].turn == 0);
+        CHECK(told[0].call == "orders");
+        CHECK(told[0].error == "ValueError: no orders today, as this test player always says");
+        INFO(told[0].traceback);
+        CHECK(told[0].traceback.find("package_player.py") != std::string::npos);
+        CHECK_FALSE(told[0].outForTurn);
+
+        // The same turn played again with its answers from the journal:
+        // nobody is asked, nothing is told again, and it comes out the same.
+        GameState again = before;
+        replayJournal(again, s);
+        processTurn(r, again, {});
+        CHECK(told.size() == 1);
+        CHECK(stateChecksum(again) == stateChecksum(s));
+    }
+    // The third failure of a turn says the classic AI plays the rest of it; a
+    // response of the wrong shape is a failure too, with no traceback.
+    told.clear();
+    sdk::PlayerSetup setup;
+    setup.failures = tell;
+    InstalledPlayers installed(std::move(setup));
+    GameState t = playersGame(5, true, {Controller{}, Controller{}});
+    probe(t, p, R"({"politics": {"respond": {"bogus": 1}}, "orders": {"do": "raise"}, "economy": {"do": "raise"}})");
+    processTurn(r, t, {});
+    REQUIRE(told.size() == 3);
+    CHECK(told[0].call == "politics");
+    CHECK(told[0].error.starts_with("ValueError: bogus: unknown field"));
+    CHECK(told[0].traceback.empty());
+    CHECK(told[1].call == "orders");
+    CHECK(told[1].error == "ValueError: as the test asked");
+    CHECK_FALSE(told[1].outForTurn);
+    CHECK(told[2].outForTurn);
 }
 
 TEST_CASE("sdk players: a player that runs out of its budget, its heap or its memory limit fails, the same way every time") {
