@@ -11,3 +11,6 @@ name = "Hegemon"
 module = "hegemon"
 class = "Hegemon"
 description = "Plans its own expansion, research, designs, wars and battles, and remembers what it has seen."
+# Hegemon makes every decision itself and never asks ai.builtin: the classic AI's
+# bookkeeping for its empire is not needed (docs/sdk/ai-protocol.md, section 9).
+classic_state = false

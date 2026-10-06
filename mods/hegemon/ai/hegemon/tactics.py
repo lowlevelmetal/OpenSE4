@@ -80,7 +80,7 @@ class Tactics:
         if self.rules is not None and comp is not None and 0 <= comp < len(self.rules["components"]):
             cw = self.rules["components"][comp]["weapon"]
             if cw is not None:
-                base = cw["damage_at_range"]
+                base = [0] + list(cw["damage_at_range"])   # by range: the list starts at range 1
         if base is None:
             r = w["range"] or 1
             base = [0] + [20] * r

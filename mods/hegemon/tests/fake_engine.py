@@ -55,7 +55,7 @@ def design_figures(rules, levels):
             if w is not None and w["kind"] != "none":
                 weapons += 1
                 d = w["damage_at_range"]
-                damage += d[1] if len(d) > 1 else 0
+                damage += d[0] if d else 0   # at range 1
                 rng = max(rng, w["max_range"])
             for a in c["abilities"]:
                 if a["name"].startswith("Colonize Planet - "):

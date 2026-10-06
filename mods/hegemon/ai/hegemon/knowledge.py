@@ -73,7 +73,8 @@ class Weapon:
     def __init__(self, w, family):
         self.kind = w["kind"]
         self.targets = w["targets"]
-        self.damage = w["damage_at_range"]
+        # By range in squares: the view's list starts at range 1, nothing hits at 0.
+        self.damage = [0] + list(w["damage_at_range"])
         self.dtype = w["damage_type"]
         self.reload = w["reload_rate"] if w["reload_rate"] > 0 else 1
         self.modifier = w["modifier"]
@@ -181,9 +182,10 @@ class Hull:
         self.uses_engines = d["uses_engines"]
         self.max_engines = d["max_engines"]
         # The data's percentages are minimums (docs/spec/03 §4.2 rule 9).
-        self.pct_bays = d["max_percent_fighter_bays"]
-        self.pct_colony = d["max_percent_colony_modules"]
-        self.pct_cargo = d["max_percent_cargo"]
+        # The least shares of the hull's space these parts must take, in percent.
+        self.pct_bays = d["min_percent_fighter_bays"]
+        self.pct_colony = d["min_percent_colony_modules"]
+        self.pct_cargo = d["min_percent_cargo"]
         self.defense = ability_sum(ab, "Combat To Hit Defense Plus") - ability_sum(ab, "Combat To Hit Defense Minus")
         self.offense = ability_sum(ab, "Combat To Hit Offense Plus") - ability_sum(ab, "Combat To Hit Offense Minus")
         self.maint = ability_sum(ab, "Modified Maintenance Cost")
