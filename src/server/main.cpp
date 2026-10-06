@@ -14,6 +14,8 @@
 #include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
 #include "mods/data_set.hpp"
+#include "game/players.hpp"
+#include "sdk/players.hpp"
 #include "server/setup_file.hpp"
 
 #include <algorithm>
@@ -65,6 +67,9 @@ Network game options:
   --no-lan-discovery     Do not answer LAN game searches (UDP port 6716)
   --players=N            Human player slots (default 2)
   --ai=N                 Computer empires (default 0)
+  --ai=MOD:PLAYER        Every computer empire is played by this script player of
+                         a mod the game uses ([[ai.players]], docs/sdk/ai-protocol.md);
+                         "builtin" for the built-in AI. Give --ai twice for both
   --seed=N               Galaxy seed (default: random)
   --systems=N            Exactly N star systems (default 0: rolled from the quadrant size)
   --quadrant-size=N      Quadrant size 0 small, 1 medium (default), 2 large
@@ -322,6 +327,14 @@ std::string turnSummary(const net::TurnStatus& t) {
     return s;
 }
 
+// The script players the empires name must be players the game's mods declare
+// (docs/sdk/ai-protocol.md §1); what is wrong, one problem a line.
+std::string checkPlayers(const game::Rules& rules, std::span<const game::EmpireSetup> empires) {
+    std::string out;
+    for (const std::string& p : sdk::checkControllers(empires, sdk::gamePackages(rules))) out += (out.empty() ? "" : "\n") + p;
+    return out;
+}
+
 // ---- The network server ----------------------------------------------------------------------------
 
 int runServer(std::span<char*> args) {
@@ -341,7 +354,17 @@ int runServer(std::span<char*> args) {
 
     auto port = o.integer("port", net::kDefaultPort, 0, 65535);
     auto players = o.integer("players", 2, 1, 32);
-    auto ai = o.integer("ai", 0, 0, 31);
+    // --ai: how many computer empires, and who plays them.
+    std::expected<int64_t, std::string> ai = int64_t{0};
+    std::optional<game::Controller> aiPlayer;
+    for (const std::string& v : o.getAll("ai")) {
+        int64_t n = 0;
+        const auto [end, ec] = std::from_chars(v.data(), v.data() + v.size(), n);
+        if (ec == std::errc{} && end == v.data() + v.size()) ai = n >= 0 && n <= 31 ? std::expected<int64_t, std::string>(n)
+                                                                                     : std::unexpected(std::string("--ai must be a number from 0 to 31"));
+        else if (auto c = game::parseController(v)) aiPlayer = *c;
+        else ai = std::unexpected(std::format("--ai must be a number of computer empires or a player \"<mod id>:<player>\", not '{}'", v));
+    }
     auto systems = o.integer("systems", 0, 0, 500);
     auto quadrantSize = o.integer("quadrant-size", 1, 0, 2);
     auto timeout = o.integer("turn-timeout", 0, 0, 7 * 24 * 3600);
@@ -413,6 +436,11 @@ int runServer(std::span<char*> args) {
     }
 
     if (o.has("turn-based")) cfg.setup.options.simultaneous = false;
+    // --ai=MOD:PLAYER plays every computer empire (the setup file's included; not neutral ones).
+    if (aiPlayer)
+        for (auto& c : computers)
+            if (c.kind != game::PlayerKind::Neutral) c.controller = *aiPlayer;
+    if (auto problems = checkPlayers(**rules, computers); !problems.empty()) return fail(problems, 2);
 
     if (const std::string& q = cfg.setup.options.quadrantType; !q.empty()) {
         const auto& types = (*rules)->data().quadrantTypes;
@@ -548,6 +576,7 @@ int pbemNew(std::span<char*> args) {
         gs.empires.push_back(std::move(es));
         info.players.push_back(e.player);
     }
+    if (auto problems = checkPlayers(**rules, gs.empires); !problems.empty()) return fail(problems, 2);
     auto hostKey = loadHostKey(*o, KeyUse::Pbem);
     if (!hostKey) return fail(hostKey.error(), 2);
     auto state = game::createGame(**rules, gs);
@@ -880,6 +909,8 @@ int main(int argc, char** argv) {
     std::vector<char*> pointers;
     for (std::string& a : utf8) pointers.push_back(a.data());
     const std::span<char*> args = std::span<char*>(pointers).subspan(std::min<size_t>(1, pointers.size()));
+    // Script computer players play wherever the host plays turns (docs/sdk/ai-protocol.md).
+    sdk::installPlayers();
     // A password key that cannot be made (Argon2id's memory not to be had)
     // ends the command with that said, wherever no step reported it itself.
     try {

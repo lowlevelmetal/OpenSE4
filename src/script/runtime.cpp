@@ -351,6 +351,9 @@ struct Interpreter::Impl {
     int64_t budgetLeft = 0;
     int64_t lastCall = 0;
     std::atomic<bool> busy{false};
+    // Engine work a native function charges to the call (Interpreter::charge).
+    bool inNative = false;
+    int64_t nativeCharge = 0;
 
     const char* source(const char* path, size_t* len) {
         if (auto it = files.find(path); it != files.end()) {
@@ -508,6 +511,8 @@ struct Interpreter::Impl {
             values.push_back(std::move(v));
         }
         Value out;
+        self->inNative = true;
+        self->nativeCharge = 0;
         if (errorType.empty()) {
             try {
                 out = native.fn(values);
@@ -528,8 +533,12 @@ struct Interpreter::Impl {
                 errorMessage = std::format("{}.{} failed", native.module, native.name);
             }
         }
-        // Engine work: not charged to the script's budget.
+        self->inNative = false;
+        // Engine work: not charged to the script's budget, beyond what the
+        // function charged itself (Interpreter::charge).
         int64_t budget = ose_budget_get();
+        if (budget < OSE_BUDGET_UNLIMITED) budget -= std::min(self->nativeCharge, OSE_BUDGET_UNLIMITED);
+        self->nativeCharge = 0;
         ose_budget_set(OSE_BUDGET_UNLIMITED);
         struct Make {
             const Value* value;
@@ -915,6 +924,11 @@ Result<Value> Interpreter::eval(std::string_view expression, const CallOptions& 
 
 const Limits& Interpreter::limits() const {
     return impl_->limits;
+}
+
+void Interpreter::charge(int64_t units) {
+    if (!impl_->inNative || units <= 0) return;
+    impl_->nativeCharge = std::min(impl_->nativeCharge + std::min(units, OSE_BUDGET_UNLIMITED), OSE_BUDGET_UNLIMITED);
 }
 
 int64_t Interpreter::budgetUsed() const {

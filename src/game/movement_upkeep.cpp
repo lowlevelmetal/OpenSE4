@@ -10,6 +10,7 @@
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/movement_internal.hpp"
+#include "game/players.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/sight.hpp"
@@ -17,6 +18,7 @@
 #include <algorithm>
 #include <format>
 #include <limits>
+#include <optional>
 #include <set>
 
 namespace opense4::game::movement {
@@ -117,6 +119,11 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
         UnitStack& u = col.cargo.units.back();
         if (--u.count <= 0) col.cargo.units.pop_back();
     }
+    // An empire a script or external player plays: its player's choice, if
+    // it gives one, for the colony as it now stands with the classic choice
+    // as its type (docs/sdk/ai-protocol.md, colony_type).
+    if (playedByController(ctx, owner))
+        if (std::optional<std::string> chosen = ctx.players->colonyType(ctx, owner, planet, id)) col.colonyType = std::move(*chosen);
 
     const SystemId sys = s.galaxy.object(planet).system;
     ctx.log(owner, LogCategory::Misc, std::format("{} colonized", s.galaxy.object(planet).name), std::format("{} founded the colony.", v.name),

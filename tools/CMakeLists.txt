@@ -11,7 +11,7 @@ opense4_windows_manifest(opense4-convert)
 
 # The modding SDK's tool: new, check, dump, pack and info (docs/sdk/packages-and-data.md).
 add_executable(opense4-sdk sdk.cpp)
-target_link_libraries(opense4-sdk PRIVATE opense4_mods opense4_net opense4_assets opense4_warnings)
+target_link_libraries(opense4-sdk PRIVATE opense4_sdk opense4_mods opense4_net opense4_assets opense4_warnings)
 set_target_properties(opense4-sdk PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 opense4_windows_manifest(opense4-sdk)
 

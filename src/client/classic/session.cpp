@@ -9,6 +9,7 @@
 #include "game/diplomacy.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
+#include "game/players.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 
@@ -623,6 +624,8 @@ bool ClassicSession::replayLastTurn(const std::function<void(int day, const game
                                     const std::function<void(const game::MovementStep&)>& step) const {
     if (!turnStart_) return false;
     game::GameState again = *turnStart_;
+    // The computer players give the answers they gave (docs/sdk/ai-protocol.md §8).
+    game::replayJournal(again, state_);
     game::TurnOptions options;
     options.movementDay = day;
     options.movementStep = step;

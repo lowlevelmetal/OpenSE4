@@ -52,6 +52,9 @@ struct EmpireSetup {
     // The empire's combat strategies saved with it (spec 06 §7 Q72): they
     // replace the data set's list; empty: the data set's.
     std::vector<ruleset::CombatStrategy> strategies;
+    // Who plays the empire while it is computer-controlled (save format 9;
+    // docs/sdk/ai-protocol.md): becomes Empire::controller.
+    Controller controller;
 };
 
 struct GameSetup {

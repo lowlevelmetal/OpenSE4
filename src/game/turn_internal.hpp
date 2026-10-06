@@ -3,9 +3,13 @@
 // Helpers shared by the simultaneous turn (turn.cpp) and the turn-based
 // game (turn_based.cpp). Not part of the engine's public interface.
 
+#include "game/players.hpp"
 #include "game/turn.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <span>
 #include <vector>
@@ -34,6 +38,14 @@ void resetCameFrom(const Rules& r, GameState& s, EmpireId e);
 
 // Applies the commands as the empire's orders, collecting rejections.
 void applyCommands(TurnContext& ctx, EmpireId e, std::vector<Command> commands);
+// Applies one command as the empire's order, collecting its rejection.
+CommandResult applyCommand(TurnContext& ctx, EmpireId e, const Command& c);
+
+// One planning call of an empire (players.hpp): its player's answer when
+// its controller plays it, through `sink`; else, or when the player gives
+// none, `classic`, which plans with the built-in AI and carries the orders
+// out as the moment does.
+void planCall(TurnContext& ctx, EmpireId e, PlanCall call, const CommandSink& sink, const std::function<void()>& classic);
 
 // Keeps the figures an empire's start-of-turn step worked out for its
 // economy step (TurnContext::aiStartFigures).
@@ -61,7 +73,12 @@ TurnResult withBattles(GameState& s, const std::vector<BattleAnswer>* answers, B
     try {
         return body(&battles);
     } catch (BattleQuestionRaised& raised) {
+        // The players' answers so far wait for the call made again with the
+        // answer, which gives them again without asking (players.hpp).
+        const size_t kept = std::min(before.journal.entries.size(), s.journal.entries.size());
+        std::vector<JournalEntry> made(s.journal.entries.begin() + static_cast<std::ptrdiff_t>(kept), s.journal.entries.end());
         s = std::move(before);
+        s.journal.replay = std::move(made);
         TurnResult out;
         out.battle = std::move(raised.question);
         return out;

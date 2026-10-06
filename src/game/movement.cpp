@@ -27,6 +27,7 @@
 #include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
+#include "game/players.hpp"
 #include "game/query.hpp"
 #include "game/scrap.hpp"
 #include "game/sight.hpp"
@@ -1050,7 +1051,12 @@ private:
             // of its orders and cloaks again afterwards if it can, whether or
             // not it was cloaked before (spec 01 §6.9, confirmed: binary).
             Colony* c = s_.colony(g.planet);
-            const bool minister = c && colonyUnderCloakingMinister(*c);
+            bool minister = c && colonyUnderCloakingMinister(*c);
+            // A script or external player may keep its cloaked colony cloaked.
+            if (minister && c->cloaked && !ministerDecloaks(c->owner, {}, g.planet, DecloakReason::Order)) {
+                minister = false;
+                c = s_.colony(g.planet);
+            }
             if (minister && c->cloaked) {
                 c->cloaked = false;
                 decloaked(where(g).system);
@@ -1341,7 +1347,8 @@ private:
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
-            if (v->status == VehicleStatus::Cloaked && underCloakingMinister(*v)) {
+            if (v->status == VehicleStatus::Cloaked && underCloakingMinister(*v) && ministerDecloaks(v->owner, id, {}, DecloakReason::Attack)) {
+                v = s_.vehicle(id);
                 v->status = VehicleStatus::Normal;
                 recloak_.push_back(id);
                 lowered = true;
@@ -2019,7 +2026,8 @@ private:
     // §6.2, confirmed: binary). Groups of drones only, and groups whose members
     // are all cloaked, always enter; the approach steps of an Attack ask too.
     bool asks(const Group& g, Location next) {
-        if (!live_ || !live_->ask || g.planet.valid() || onlyDrones(g)) return false;
+        if (!live_ || !live_->ask) return playerDeclines(g, next);
+        if (g.planet.valid() || onlyDrones(g)) return false;
         if (all(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; })) return false;
         // A tagged group is asked once, for all its vehicles (spec 03 §8).
         const EntryQuestion q = g.tagged ? EntryQuestion{{}, {}, next, live_->tagged} : EntryQuestion{g.fleet.valid() ? VehicleId{} : g.lead, g.fleet, next, {}};
@@ -2029,10 +2037,47 @@ private:
         return true;
     }
 
+    // An empire a script or external player plays (game/players.hpp) is asked
+    // before a step into a sector with enemies it sees, in either turn style,
+    // with the exceptions a human's question has (drones only, all cloaked).
+    // A group that declines stops before the sector, its order waiting, and
+    // is not asked again about that sector during this movement run.
+    bool playerDeclines(const Group& g, Location next) {
+        if (!playedByController(ctx_, g.owner) || g.planet.valid() || onlyDrones(g)) return false;
+        if (all(g, [](const Vehicle& v) { return v.status == VehicleStatus::Cloaked; })) return false;
+        const EntryQuestion q{g.fleet.valid() ? VehicleId{} : g.lead, g.fleet, next, {}};
+        if (std::find(declined_.begin(), declined_.end(), q) != declined_.end()) return true;
+        std::vector<EmpireId> enemies;
+        for (const Vehicle& v : s_.vehicles)
+            if (alive(v) && v.location == next && hostile(s_, g.owner, v.owner) && sight::canSeeVehicle(r_, s_, g.owner, v) &&
+                std::find(enemies.begin(), enemies.end(), v.owner) == enemies.end())
+                enemies.push_back(v.owner);
+        for (ObjectId o : planetsAt(s_, next))
+            if (const Colony* c = s_.colony(o); c && hostile(s_, g.owner, c->owner) && sight::canSeeColony(r_, s_, g.owner, o) &&
+                                                std::find(enemies.begin(), enemies.end(), c->owner) == enemies.end())
+                enemies.push_back(c->owner);
+        if (enemies.empty()) return false;
+        std::sort(enemies.begin(), enemies.end());
+        const std::optional<bool> enter = ctx_.players->enterSector(ctx_, g.owner, g.members, next, enemies);
+        if (enter.value_or(true)) return false;
+        declined_.push_back(q);
+        return true;
+    }
+
+    // Whether the Ship Cloaking minister lowers a cloak for an order or an
+    // attack: always for a computer player's object (underCloakingMinister),
+    // unless a script or external player that plays it says otherwise
+    // (docs/sdk/ai-protocol.md, decloak).
+    bool ministerDecloaks(EmpireId owner, VehicleId vehicle, ObjectId planet, DecloakReason reason) {
+        if (!playedByController(ctx_, owner)) return true;
+        return ctx_.players->decloak(ctx_, owner, vehicle, planet, reason).value_or(true);
+    }
+
     TurnContext& ctx_;
     const Rules& r_;
     GameState& s_;
     const CombatHooks& hooks_;
+    std::vector<EntryQuestion> declined_;               // a player's groups that declined to enter a sector (playerDeclines)
     const LiveMove* live_ = nullptr;                    // turn-based: the move being carried out
     std::map<VehicleId, int> steps_;                    // turn-based: steps made this player turn
     std::map<VehicleId, int> bonus_;                    // turn-based: emergency energy gained this turn

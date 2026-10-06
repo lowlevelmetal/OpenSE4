@@ -320,6 +320,10 @@ messages between it and the engine.
 - **The decision journal,** stored with the turn's orders.
 - **A local connection for external bots** that skips the network encryption on the same
   computer, plus Python bindings for the existing protocol for remote ones.
+- **As built (S3, engine side):** [docs/sdk/ai-protocol.md](sdk/ai-protocol.md) describes
+  the controllers, sessions, every call and when it comes, the services and their costs,
+  the budgets and failures, the journal (kept with the game in memory, not saved), and the
+  built-in AI's steps an empire a player plays skips.
 
 ## 7. Rules (tier 3)
 

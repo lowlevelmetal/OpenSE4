@@ -8,11 +8,15 @@
 //     master_password = "secret"
 //     [options]
 //     systems = 30
+//     ai = "example.admiral:Admiral"   # the computer empires' player (default: the built-in AI)
 //     [[empire]]
 //     race = "Terran"
 //     kind = "human"
 //     player = "alice"
 //     password = "pw"
+//     [[empire]]
+//     kind = "computer"
+//     ai = "builtin"                   # this one's own (docs/sdk/ai-protocol.md §1)
 //
 // Unknown keys are errors, to catch typos.
 
@@ -56,6 +60,10 @@ struct SetupFile {
         return o;
     }();
     std::vector<SetupEmpire> empires;
+    // `ai`: who plays the computer empires that do not name their own
+    // (EmpireSetup::controller; neutral empires only by their own); nullopt:
+    // the built-in AI.
+    std::optional<game::Controller> ai;
 };
 
 // Only the `mods` of a setup file, with relative paths made relative to its

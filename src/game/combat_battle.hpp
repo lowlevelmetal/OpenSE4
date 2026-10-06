@@ -217,6 +217,13 @@ public:
     void play(std::span<const TacticalOrder> script);
     // Tests: the strategies' orders for player sides go here as explicit orders.
     void recordStrategies(std::vector<TacticalOrder>* out) { strategyLog_ = out; }
+    // Whether the sides that script or external players play (game/players.hpp)
+    // are asked for their phases (battle_round); otherwise their strategies
+    // play them. On by default.
+    void askPlayers(bool on) { askPlayers_ = on; }
+    // Every piece as the tactical window shows it; `views` holds the previous
+    // picture, which a former leader's formation is kept from.
+    void describe(std::vector<TacticalPiece>& views) const;
 
     // ---- Queries (tactical views) --------------------------------------------------------------
     Stage stage() const { return stage_; }
@@ -352,6 +359,10 @@ private:
 
     // ---- The phases (spec 04 §4).
     void phase(EmpireId e);          // a computer phase: drones, seekers, then the other pieces
+    // A computer phase whose side a script or external player plays: drones
+    // and seekers, then the player's orders (battle_round), or the strategies
+    // when it gives none. False when the side is not asked.
+    bool scriptedPhase(EmpireId e);
     void phaseDrones(EmpireId e);
     void phasePieces(EmpireId e);
     void endPhase();                 // the next phase; the battle ends when no two hostile sides are left
@@ -505,6 +516,10 @@ private:
     bool autoAll_ = false;           // Auto: every empire by its strategies from the next phase on (spec 04 §4)
     bool strategic_ = true;          // no player sides: the end is checked after whole combat turns
     std::vector<TacticalOrder>* strategyLog_ = nullptr;
+    // Script and external players' sides (scriptedPhase).
+    bool askPlayers_ = true;
+    std::vector<EmpireId> playersResolved_;   // sides whose player handed them to their strategies for the battle
+    std::vector<TacticalPiece> playerViews_;  // the last picture a player was given (scriptedPhase)
 };
 
 } // namespace opense4::game::combat::detail

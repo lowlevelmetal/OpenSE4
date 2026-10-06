@@ -406,6 +406,9 @@ void io(Ar& ar, InterfaceOptions& o) {
     if (ar.version() >= 8) fields(ar, o.designsHideObsolete, o.designsStatsView);   // format 7 files keep the defaults
 }
 
+template <class Ar> void io(Ar& ar, Controller& c) { fields(ar, c.kind, c.mod, c.player, c.slot); }
+template <class Ar> void io(Ar& ar, ScriptPlayerState& p) { fields(ar, p.memory, p.failureTurn, p.failures); }
+
 template <class Ar>
 void io(Ar& ar, Empire& e) {
     fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.neutral, e.alive, e.passwordHash, e.email,
@@ -421,6 +424,9 @@ void io(Ar& ar, Empire& e) {
            e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter, e.avoidTaggedMinefields, e.avoidRestrictedSystems);
     fields(ar, e.chooseColonyType, e.colonyTypeChoices, e.interfaceOptions);
     fields(ar, e.politicsMark);
+    if (formatVersion(ar) >= 9) fields(ar, e.controller, e.script);   // format 8 had no script players
+    // The computer player's notes of the turn are not saved.
+    unsaved(ar, e.aiNotes);
 }
 
 // ---- Cargo, queues, colonies ------------------------------------------------------------------
@@ -545,6 +551,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.playersCanSaveMap, o.autosaveTurns);
     fields(ar, o.completeTechTree);
     fields(ar, o.allowSurrender);
+    if (formatVersion(ar) >= 9) fields(ar, o.aiSeesEverything, o.aiPlanningBudget, o.aiCallBudget, o.aiMemoryLimit);   // format 8 had no script players
 }
 
 // ---- Turn-based games ---------------------------------------------------------------------------------
@@ -569,8 +576,9 @@ void io(Ar& ar, GameState& s) {
            s.startingPoints, s.leftFacilities, s.arrivals);
     if (formatVersion(ar) >= 9) fields(ar, s.mods);   // format 8 had no mods
     // The happiness events waiting for an empire's next update are not saved:
-    // a loaded game starts with none (spec 02 §4, confirmed: binary).
-    unsaved(ar, s.pendingMood);
+    // a loaded game starts with none (spec 02 §4, confirmed: binary). Nor is
+    // the journal of the players' answers (docs/sdk/ai-protocol.md §8).
+    unsaved(ar, s.pendingMood, s.journal);
 }
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------
@@ -654,6 +662,7 @@ template <class Ar>
 void io(Ar& ar, EmpireSetup& e) {
     fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash,
            e.email, e.ministerStyle, e.useRaceMinisterStyle, e.experience, e.designs, e.strategies);
+    if (formatVersion(ar) >= 9) fields(ar, e.controller);   // format 8 had no script players
 }
 
 template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }

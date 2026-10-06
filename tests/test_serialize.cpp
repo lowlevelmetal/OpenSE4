@@ -122,6 +122,8 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(EconomyReport);
     CHECK_ALL_FIELDS(Knowledge);
     CHECK_ALL_FIELDS(InterfaceOptions);
+    CHECK_ALL_FIELDS(Controller);
+    CHECK_ALL_FIELDS(ScriptPlayerState);
     CHECK_ALL_FIELDS(Empire);
     CHECK_ALL_FIELDS(PopulationGroup);
     CHECK_ALL_FIELDS(UnitStack);
@@ -516,8 +518,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x1a4fd0755297bda5ull;
-    constexpr size_t kGoldenSize = 1834;
+    constexpr uint64_t kGoldenChecksum = 0xf8b6fd32683ce5eull;
+    constexpr size_t kGoldenSize = 1884;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -601,13 +603,15 @@ TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture
     for (const Design& d : before->designs) CHECK(d.picture.empty());
     CHECK(stateChecksum(*before) == stateChecksum(plain));
     // A design without a picture adds one empty text to format 9: four bytes
-    // (and the game's empty list of mods four more).
+    // (and the game's empty list of mods four more; each empire's built-in
+    // controller and empty script player state 25, the script players'
+    // options 25: docs/sdk/ai-protocol.md).
     REQUIRE(plain.mods.empty());
     std::vector<uint8_t> nine;
     serial::write(nine, plain, 9);
     std::vector<uint8_t> eight;
     serial::write(eight, plain, 8);
-    CHECK(nine.size() == eight.size() + 4 * plain.designs.size() + 4);
+    CHECK(nine.size() == eight.size() + 4 * plain.designs.size() + 4 + 25 * plain.empires.size() + 25);
 }
 
 // ---- Save files --------------------------------------------------------------------------------------------

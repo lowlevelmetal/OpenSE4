@@ -13,6 +13,7 @@
 #include "game/design.hpp"
 #include "game/intel.hpp"
 #include "game/movement.hpp"
+#include "game/players.hpp"
 #include "game/query.hpp"
 #include "game/score.hpp"
 #include "game/sight.hpp"
@@ -545,9 +546,11 @@ void recordAiDecisions(TurnContext& ctx) {
         const bool randomPlayer = e.id.index() < random.size() && random[e.id.index()] != 0;
         e.aiDifficulty = randomPlayer || s.turn == 0 ? difficultyOf(s, e.id) : rebels;
     }
-    // The counters (the queues are forgotten every 10 turns), then this turn's decisions.
+    // The counters (the queues are forgotten every 10 turns), then this turn's
+    // decisions; not for an empire a script or external player plays, whose
+    // memory is its own (game/players.hpp).
     for (Empire& e : s.empires) {
-        if (!e.alive) continue;
+        if (!e.alive || playedByController(ctx, e.id)) continue;
         keepCounters(s, s.empire(e.id));
         Rng rng = stepRng(s, e.id);
         recordDecisions(ctx, e.id, rng);
@@ -564,7 +567,7 @@ void recordAiDecisions(TurnContext& ctx, EmpireId id) {
         const bool randomPlayer = id.index() < random.size() && random[id.index()] != 0;
         e.aiDifficulty = randomPlayer || s.turn == 0 ? difficultyOf(s, id) : rebelDifficulty(s);
     }
-    if (!e.alive) return;
+    if (!e.alive || playedByController(ctx, id)) return;
     keepCounters(s, e);
     Rng rng = stepRng(s, id);
     recordDecisions(ctx, id, rng);
@@ -705,7 +708,7 @@ void politicalStep(TurnContext& ctx, EmpireId id, const PoliticalWindow& window)
 void rememberAiEvents(TurnContext& ctx) {
     GameState& s = ctx.state;
     for (Empire& e : s.empires)
-        if (e.alive) rememberEvents(s, e, territoryOf(s, e.id));
+        if (e.alive && !playedByController(ctx, e.id)) rememberEvents(s, e, territoryOf(s, e.id));
 }
 
 void updateAnger(TurnContext& ctx) {

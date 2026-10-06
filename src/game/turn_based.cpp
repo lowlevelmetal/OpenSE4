@@ -8,6 +8,7 @@
 #include "game/economy.hpp"
 #include "game/events.hpp"
 #include "game/movement.hpp"
+#include "game/players.hpp"
 #include "game/score.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
@@ -15,6 +16,8 @@
 
 #include <algorithm>
 #include <format>
+#include <functional>
+#include <memory>
 #include <optional>
 
 namespace opense4::game {
@@ -28,23 +31,34 @@ using detail::withBattles;
 namespace {
 
 // Pending mood events live in the state between calls (spec 02 §4).
+// The call's script and external players (players.hpp) live as long as it.
 class LiveContext {
 public:
     LiveContext(const Rules& r, GameState& s, TurnContext::Battles* battles = nullptr) : ctx{r, s, {}, {}, {}} {
         ctx.moodEvents = std::move(s.pendingMood);
         s.pendingMood.clear();
         ctx.battles = battles;
+        players_ = makePlayers(r, s);
+        ctx.players = players_.get();
     }
     ~LiveContext() { ctx.state.pendingMood = std::move(ctx.moodEvents); }
     LiveContext(const LiveContext&) = delete;
     LiveContext& operator=(const LiveContext&) = delete;
 
+    // The end of the call: the players' session ends (docs/sdk/ai-protocol.md §2).
     TurnResult result() {
+        if (players_) players_->endSession(ctx);
+        ctx.players = nullptr;
+        players_.reset();
+        pruneJournal(ctx.state);
         return TurnResult{std::move(ctx.rejected), std::move(questions), {}, std::move(ctx.records), std::move(ctx.messages), std::move(ctx.liveSteps)};
     }
 
     TurnContext ctx;
     std::vector<EntryQuestion> questions;
+
+private:
+    std::unique_ptr<Players> players_;
 };
 
 EmpireId firstLivingFrom(const GameState& s, size_t index) {
@@ -192,13 +206,31 @@ void applyBatch(LiveContext& lc, EmpireId e, std::vector<Command> commands) {
 // Orders given at the start of a turn: they take effect (messages at once),
 // and the vehicles carry them out afterwards with the rest (spec 05 §8
 // "Turn-based game" step 3).
+bool sendsMessage(const Command& c) { return std::holds_alternative<cmd::SendMessage>(c) || std::holds_alternative<cmd::AnswerMessage>(c); }
+
 void giveOrders(LiveContext& lc, EmpireId e, std::vector<Command> commands) {
     if (commands.empty()) return;
-    const bool messages = std::any_of(commands.begin(), commands.end(), [](const Command& c) {
-        return std::holds_alternative<cmd::SendMessage>(c) || std::holds_alternative<cmd::AnswerMessage>(c);
-    });
+    const bool messages = std::any_of(commands.begin(), commands.end(), sendsMessage);
     detail::applyCommands(lc.ctx, e, std::move(commands));
     if (messages) diplomacy::deliverMessages(lc.ctx);
+}
+
+// A script or external player's planning call (players.hpp), its commands
+// carried out as giveOrders does (`batch` false) or as applyBatch does
+// (`batch` true); `classic` is the built-in AI's answer when it gives none.
+void playerPlans(LiveContext& lc, EmpireId e, PlanCall call, bool batch, const std::function<void()>& classic) {
+    Effects fx;
+    fx.move.empire = e;
+    const CommandSink sink{[&](const Command& c) {
+                               if (batch) noteEffects(fx, lc.ctx.state, e, c);
+                               else fx.messages = fx.messages || sendsMessage(c);
+                               return detail::applyCommand(lc.ctx, e, c);
+                           },
+                           [&] {
+                               if (batch) settle(lc, fx);
+                               else if (fx.messages) diplomacy::deliverMessages(lc.ctx);
+                           }};
+    detail::planCall(lc.ctx, e, call, sink, classic);
 }
 
 // ---- The political step (spec 05 §7.3 "What it counts") ----------------------------------------
@@ -265,16 +297,28 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     // confirmed: binary). The Politics minister rewrites the claims first
     // thing in its run; the state update and the ministers after it use
     // those of the previous turn (spec 05 §7.2).
+    // An empire a script or external player plays (players.hpp): the
+    // built-in AI's own steps do not run, and its player's `politics` and
+    // `orders` calls give the orders in the ministers' place (the classic
+    // ministers only when it gives no answer).
+    const bool player = playedByController(ctx, e);
     std::optional<ai::StartOfTurnFigures> figures;
-    if (ministersPlan(s, e, control)) figures = ai::startOfTurnFigures(r, s, e);
-    ai::updateAiState(ctx, e);
+    if (!player && ministersPlan(s, e, control)) figures = ai::startOfTurnFigures(r, s, e);
+    if (!player) ai::updateAiState(ctx, e);
     const std::vector<SystemId> territory = s.empire(e).claimedSystems;
-    if (control != Control::Absent) {
+    if (control != Control::Absent && !player) {
         ai::politicalStep(ctx, e, politicalWindow(s, e));
         markPoliticalStep(s, e);
         ai::claimTerritory(ctx, e);
     }
-    if (ministersPlan(s, e, control)) {
+    if (player) {
+        playerPlans(lc, e, PlanCall::Politics, false, [&] { giveOrders(lc, e, ai::planPoliticsOrders(r, s, e)); });
+        playerPlans(lc, e, PlanCall::Orders, false, [&] {
+            std::vector<ObjectId> targets;
+            giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets));
+            ctx.aiColonyTargets = std::move(targets);
+        });
+    } else if (ministersPlan(s, e, control)) {
         giveOrders(lc, e, ai::planPoliticsOrders(r, s, e));
         std::vector<ObjectId> targets;
         giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets, figures ? &*figures : nullptr));
@@ -375,6 +419,14 @@ void computerTurn(LiveContext& lc, EmpireId e, Control control) {
             passTurn(ctx, e);
             return;
         }
+    } else if (playedByController(ctx, e)) {
+        // An empire handed to the computer during its own turn whose
+        // controller is a script or external player: the player plans the
+        // rest of the turn now, politics first, and its orders are carried
+        // out at once (docs/sdk/ai-protocol.md; the classic ministers when it
+        // gives no answer).
+        playerPlans(lc, e, PlanCall::Politics, true, [&] { applyBatch(lc, e, ai::planPoliticsOrders(ctx.rules, s, e)); });
+        playerPlans(lc, e, PlanCall::Orders, true, [&] { applyBatch(lc, e, ai::planOrdersAfterPolitics(ctx.rules, s, e)); });
     } else if (control != Control::Computer && ministersPlan(s, e, control)) {
         // Taking over a human's turn in progress: the ministers plan the rest
         // of it now, the Politics minister first, as at a start of turn, and

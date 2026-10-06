@@ -774,24 +774,24 @@ bool Planner::setFleetOrders(FleetId fid, std::vector<Order> orders) {
 void Planner::runOrders(bool politics, bool others) {
     if (!emp().alive) return;
     capUpkeep = capMaintenance(r, st, id);   // the vehicles as the start-of-turn ministers find them
-    if (politics && on(Minister::Politics)) planPolitics(*this);
+    if (politics && on(Minister::Politics) && runs(Minister::Politics)) planPolitics(*this);
     if (!others) return;
-    planTroops(*this);
-    planTransports(*this);
-    planColonization(*this);
-    planSpaceYardShips(*this);
-    planCarriers(*this);
-    planMinesSatellitesDrones(*this);
-    planFleets(*this);
-    planDefense(*this);
-    planAttack(*this);
-    planExploration(*this);
-    planPatrol(*this);
-    if (on(Minister::Resupply)) planRepairAndResupply(*this, false);
-    if (on(Minister::Repair)) planRepairAndResupply(*this, true);
-    if (on(Minister::Scrap)) planScrap(*this);
-    if (on(Minister::Retrofit)) planRetrofit(*this);
-    planStellarManipulation(*this);
+    if (runs(Minister::Troops)) planTroops(*this);
+    if (runs(Minister::Transports)) planTransports(*this);
+    if (runs(Minister::Colonization)) planColonization(*this);
+    if (runs(Minister::SpaceYardShips)) planSpaceYardShips(*this);
+    if (runs(Minister::Carriers)) planCarriers(*this);
+    if (runs(Minister::MinesSatellitesDrones)) planMinesSatellitesDrones(*this);
+    if (runs(Minister::Fleets)) planFleets(*this);
+    if (runs(Minister::Defense)) planDefense(*this);
+    if (runs(Minister::Attack)) planAttack(*this);
+    if (runs(Minister::Exploration)) planExploration(*this);
+    if (runs(Minister::Patrol)) planPatrol(*this);
+    if (on(Minister::Resupply) && runs(Minister::Resupply)) planRepairAndResupply(*this, false);
+    if (on(Minister::Repair) && runs(Minister::Repair)) planRepairAndResupply(*this, true);
+    if (on(Minister::Scrap) && runs(Minister::Scrap)) planScrap(*this);
+    if (on(Minister::Retrofit) && runs(Minister::Retrofit)) planRetrofit(*this);
+    if (runs(Minister::StellarManipulation)) planStellarManipulation(*this);
 }
 
 void Planner::runEconomy() {
@@ -800,13 +800,14 @@ void Planner::runEconomy() {
     if (!startOfTurnNet) startOfTurnNet = netIncome();
     // New colonies already have their type: colonization calls
     // colonyTypeAtColonization for every empire (spec 05 §7.5).
-    if (mode == Mode::Computer) planStrategies(*this);
-    if (on(Minister::Design)) planDesigns(*this);
-    if (on(Minister::Research)) planResearch(*this);
-    if (on(Minister::Intelligence)) planIntel(*this);
-    if (date % 5 != 0) planFacilities(*this, true);  // skipped on every fifth turn (spec 05 §7.1)
-    if (on(Minister::ShipConstruction)) planShips(*this);
-    planFacilities(*this, false);
+    if (mode == Mode::Computer && runs(Minister::Design)) planStrategies(*this);
+    if (on(Minister::Design) && runs(Minister::Design)) planDesigns(*this);
+    if (on(Minister::Research) && runs(Minister::Research)) planResearch(*this);
+    if (on(Minister::Intelligence) && runs(Minister::Intelligence)) planIntel(*this);
+    const bool facilities = runs(Minister::FacilityConstruction);
+    if (facilities && date % 5 != 0) planFacilities(*this, true);  // skipped on every fifth turn (spec 05 §7.1)
+    if (on(Minister::ShipConstruction) && runs(Minister::ShipConstruction)) planShips(*this);
+    if (facilities) planFacilities(*this, false);
 }
 
 // ---- Strategies ------------------------------------------------------------------------------
@@ -1047,10 +1048,11 @@ std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e) 
     return p.report().commands;
 }
 
-std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e) {
+std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e, uint32_t ministers) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltPolitics);
+    p.ministersRun = ministers;
     p.runOrders(true, false);
     return p.report().commands;
 }
@@ -1061,10 +1063,11 @@ StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, Empire
 }
 
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory,
-                                             std::vector<ObjectId>* colonyTargets, const StartOfTurnFigures* figures) {
+                                             std::vector<ObjectId>* colonyTargets, const StartOfTurnFigures* figures, uint32_t ministers) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltOrders, territory);
+    p.ministersRun = ministers;
     if (figures) {
         p.startOfTurnNet = figures->net;
         p.capRevenue = figures->revenue;
@@ -1078,10 +1081,11 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
 }
 
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve,
-                                     const std::vector<ObjectId>* colonyTargets, const StartOfTurnFigures* figures) {
+                                     const std::vector<ObjectId>* colonyTargets, const StartOfTurnFigures* figures, uint32_t ministers) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltEconomy);
+    p.ministersRun = ministers;
     p.unitReserve = unitReserve;
     if (figures) {
         p.startOfTurnNet = figures->net;

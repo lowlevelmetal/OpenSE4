@@ -4,7 +4,9 @@
 #include "game/ai.hpp"
 #include "game/ai_data.hpp"
 #include "game/economy.hpp"
+#include "game/players.hpp"
 #include "ruleset/ruleset.hpp"
+#include "sdk/players.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -274,7 +276,31 @@ std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r,
     if (static_cast<int>(g.empires.size()) > kMaxEmpires)
         return std::unexpected(std::format("A game holds at most {} empires.", kMaxEmpires));
     addRandomPlayers(r, g, s.computers, s.neutrals);
+    // The computer empires without a player of their own get the game's (docs/sdk/ai-protocol.md).
+    for (game::EmpireSetup& e : g.empires)
+        if (e.kind == game::PlayerKind::Computer && e.controller.builtin()) e.controller = s.computerPlayer;
+    if (const std::vector<std::string> problems = sdk::checkControllers(g.empires, sdk::gamePackages(r)); !problems.empty())
+        return std::unexpected(problems.front());
     return g;
+}
+
+std::vector<ComputerPlayerChoice> computerPlayerChoices(const game::Rules& r) {
+    std::vector<ComputerPlayerChoice> out;
+    for (const sdk::PlayerChoice& p : sdk::availablePlayers(r)) {
+        const game::Controller c = p.controller();
+        out.push_back({c, game::controllerText(c), p.description});
+    }
+    return out;
+}
+
+std::optional<std::string> useComputerPlayer(const game::Rules& r, game::GameSetup& g, std::string_view controller) {
+    const std::optional<game::Controller> c = game::parseController(controller);
+    if (!c || c->kind == game::Controller::Kind::External)
+        return std::format("'{}' is not a computer player: give \"builtin\" or \"<mod id>:<player>\"", controller);
+    for (game::EmpireSetup& e : g.empires)
+        if (e.kind == game::PlayerKind::Computer) e.controller = *c;
+    if (const std::vector<std::string> problems = sdk::checkControllers(g.empires, sdk::gamePackages(r)); !problems.empty()) return problems.front();
+    return std::nullopt;
 }
 
 void addRandomPlayers(const game::Rules& r, game::GameSetup& g, const RandomPlayers& computers, const RandomPlayers& neutrals) {

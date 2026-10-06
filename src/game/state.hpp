@@ -134,6 +134,44 @@ struct PoliticsMark {
     uint32_t nextMessage = 0;
 };
 
+// ---- Script and external computer players (docs/sdk/ai-protocol.md) ------------------------
+
+// Who plays a computer empire (save format 9): the built-in AI (the classic
+// ministers, the default), a script player a mod declares in its
+// `[[ai.players]]`, or an external bot connected to the host. A controller
+// plays its empire while the empire is computer-controlled (PlayerKind
+// Computer or Neutral); a human empire's controller is not used.
+struct Controller {
+    enum class Kind : uint8_t { Builtin, Script, External, Count };
+    Kind kind = Kind::Builtin;
+    std::string mod;      // Script: the mod's id
+    std::string player;   // Script: the player's name in the mod's [[ai.players]]
+    uint32_t slot = 0;    // External: the host's slot for the bot
+
+    bool builtin() const { return kind == Kind::Builtin; }
+    bool operator==(const Controller&) const = default;
+};
+
+// What an empire's script or external player keeps in the game (save format
+// 9): its memory, and how often it failed this turn (docs/sdk/ai-protocol.md §7).
+struct ScriptPlayerState {
+    std::string memory;        // the player's `memory` as JSON text; empty: none yet (null)
+    uint32_t failureTurn = 0;  // the game turn `failures` counts
+    int failures = 0;          // its requests that failed in that turn
+    bool operator==(const ScriptPlayerState&) const = default;
+};
+
+// A note a computer player attaches to something for the client's AI view
+// (a response's `notes`). Kept in memory for the turn it was given and the
+// next, unless the player replaces it: never saved, sent or hashed.
+struct PlayerNote {
+    uint32_t turn = 0;
+    std::string kind;      // what `object` is: "object", "vehicle", "fleet", "system", "empire" (docs/sdk/ai-protocol.md §4)
+    int64_t object = -1;   // its id; -1: a note about nothing in particular
+    std::string text;
+    bool operator==(const PlayerNote&) const = default;
+};
+
 // Where the Log's Goto takes an entry (spec 06 §4.1, §7 Q41, confirmed:
 // binary): fixed per kind of entry when it is made. Location closes the Log
 // and shows the entry's system with the sector selected (nothing happens when
@@ -425,6 +463,12 @@ struct Empire {
     std::vector<ObjectId> colonyTypeChoices;
     // Empire Options and window memories (spec 06 §1.9).
     InterfaceOptions interfaceOptions;
+    // Who plays the empire while it is computer-controlled, and its script
+    // player's memory (save format 9; docs/sdk/ai-protocol.md).
+    Controller controller;
+    ScriptPlayerState script;
+    // Its computer player's notes of this turn and the one before (never saved, sent or hashed).
+    std::vector<PlayerNote> aiNotes;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }
@@ -992,6 +1036,16 @@ struct GameOptions {
     // Per EmpireId: 1 for players added by "Random Computer/Neutral Players".
     // Only they get the chosen aiDifficulty (spec 05 §7.1).
     std::vector<uint8_t> randomAiPlayers;
+    // Script computer players (save format 9; docs/sdk/ai-protocol.md §3, §7).
+    // "Computer players see everything": their view is the whole game, not
+    // what their empire knows. Off by default.
+    bool aiSeesEverything = false;
+    // Bytecodes a script player may run for one request: a planning call
+    // (politics, orders, economy) and any other call.
+    int64_t aiPlanningBudget = 200'000'000;
+    int64_t aiCallBudget = 5'000'000;
+    // The most a script player's memory may take, as JSON text.
+    int64_t aiMemoryLimit = int64_t{1} << 20;
 };
 
 // ---- Turn-based games ----------------------------------------------------------------------
@@ -1052,6 +1106,35 @@ struct LeftFacilities {
     std::vector<uint32_t> facilities;   // Facilities.txt indices
 };
 
+// ---- The decision journal (docs/sdk/ai-protocol.md §8) ---------------------------------------
+
+// One answer a script or external player gave: the request it answered (its
+// call, and a digest of its call, empire, turn and arguments) and the
+// response as the engine took it, as JSON text: the player's own fields, its
+// memory only when it changed, and `applied`, the commands its `apply`
+// service carried out during the request.
+struct JournalEntry {
+    uint32_t turn = 0;
+    EmpireId empire;
+    std::string call;
+    uint64_t digest = 0;
+    std::string response;
+    bool operator==(const JournalEntry&) const = default;
+};
+
+// The answers of the turns being played, so that playing a turn or a call
+// again gives the same answers without asking the players again. Kept in
+// memory only (never saved, sent or hashed): only the host plays turns.
+struct DecisionJournal {
+    // Every answer, in order, of the game turn in progress and the one before.
+    std::vector<JournalEntry> entries;
+    // Answers to give again, in order, instead of asking: those of a call
+    // that stopped for a battle answer and is made again, or of a turn played
+    // again (game::replayJournal). A request that differs from the next one
+    // drops them all.
+    std::vector<JournalEntry> replay;
+};
+
 // ---- The game --------------------------------------------------------------------------------
 
 struct GameState {
@@ -1092,6 +1175,8 @@ struct GameState {
     // whose game-affecting mods a computer lacks does not load there
     // (docs/sdk/packages-and-data.md). Empty for a game without mods.
     std::vector<ruleset::ModRecord> mods;
+    // What script and external players answered (not saved, sent or hashed).
+    DecisionJournal journal;
 
     // Accessors.
     Empire& empire(EmpireId id) { return empires[id.index()]; }

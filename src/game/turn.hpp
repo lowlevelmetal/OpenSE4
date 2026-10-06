@@ -83,6 +83,11 @@ namespace opense4::game {
 struct BattleAnswer {
     std::vector<EmpireId> tactical;               // human sides that fight it tactically (none: strategic)
     std::vector<combat::TacticalOrder> orders;    // their orders (combat::TacticalBattle::script())
+    // The battle_round answers of the script and external players in it, as
+    // the window that showed it asked them (combat::TacticalBattle::decisions).
+    // Without them (nullopt) those players' sides follow their strategies in
+    // this battle, as the window showed them (docs/sdk/ai-protocol.md §8).
+    std::optional<std::vector<JournalEntry>> decisions;
 };
 
 // A stop: a battle about to start with human participants (in a simultaneous
@@ -153,6 +158,8 @@ struct LiveStep {
     bool operator==(const LiveStep&) const = default;
 };
 
+class Players;
+
 struct TurnContext {
     const Rules& rules;
     GameState& state;
@@ -198,6 +205,9 @@ struct TurnContext {
     // group's order (TurnOptions::movementStep; the replay's one entry per
     // vehicle and step, docs/spec/06 §7 Q62). Observes only.
     std::function<void(const MovementStep&)> movementStep;
+    // The script and external players of this engine call (players.hpp); null:
+    // every empire is played by the built-in AI.
+    Players* players = nullptr;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});

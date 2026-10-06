@@ -44,6 +44,7 @@ struct ClassicOptions {
     std::string select;      // then select a vehicle: "moving", "fleet" or a vehicle id (automation)
     std::string openWindow;  // open this window at start (automation, screenshots)
     bool turnBased = true;   // quick game in the turn-based style (the default, spec 01 §14 Q39)
+    std::string aiPlayer;    // --ai: who plays a quick game's computer empires ("<mod id>:<player>"; empty: the built-in AI)
     // Play by e-mail (--pbem): open this game file for `pbemEmpire` (1-based;
     // 0: the only empire that can play now) and play its turn.
     // --load: open this saved game (OpenSE4's or the original's) at once.

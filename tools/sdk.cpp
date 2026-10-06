@@ -17,6 +17,7 @@
 #include "mods/zip.hpp"
 #include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
+#include "sdk/players.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -322,6 +323,9 @@ int cmdInfo(const std::vector<std::string>& argv) {
     std::printf("  SDK api:     %d\n", m.api);
     for (const mods::Requirement& r : m.requirements) std::printf("  requires:    %s %s\n", r.id.c_str(), r.range.text.c_str());
     for (const std::string& id : m.loadAfter) std::printf("  loads after: %s\n", id.c_str());
+    for (const mods::AiPlayer& player : m.aiPlayers)
+        std::printf("  player:      %s:%s (%s.%s)%s%s\n", m.id.c_str(), player.name.c_str(), player.module.c_str(), player.className.c_str(),
+                    player.description.empty() ? "" : ": ", player.description.c_str());
     std::printf("  holds:       %s%s\n", mods::tierNames(p->tiers).c_str(), p->affectsGame() ? "; it changes the game, so every player needs it" : "");
     std::printf("  identity:    %s\n", p->hash.c_str());
     std::printf("  source:      %s (%zu files)\n", p->source.string().c_str(), p->files.size());
@@ -519,6 +523,12 @@ int cmdCheck(const std::vector<std::string>& argv) {
     std::printf("Mod %s (%s): %s\n", p->label().c_str(), p->manifest.name.c_str(), mods::ModManager::summary(*p).c_str());
     std::printf("Identity %s\n", p->hash.c_str());
     warnings = p->warnings;
+    // Its computer players (docs/sdk/ai-protocol.md §1).
+    for (const mods::AiPlayer& player : p->manifest.aiPlayers)
+        std::printf("Computer player %s:%s (%s.%s)\n", p->id().c_str(), player.name.c_str(), player.module.c_str(), player.className.c_str());
+    const sdk::PlayerCheck players = sdk::checkModPlayers(*p);
+    errors.insert(errors.end(), players.errors.begin(), players.errors.end());
+    warnings.insert(warnings.end(), players.warnings.begin(), players.warnings.end());
     const std::string id = p->id();
     auto set = withDependencies({*p}, *a);
     if (!set) {

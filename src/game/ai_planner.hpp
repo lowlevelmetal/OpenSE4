@@ -174,6 +174,11 @@ public:
     // minister, then the ministers after it.
     void runOrders(bool politics = true, bool others = true);
     void runEconomy();   // group 2
+    // The ministers runOrders and runEconomy run (Minister bits): all of them
+    // unless a caller restricts them (the SDK's `builtin` service,
+    // docs/sdk/ai-protocol.md §6). The AI_Strategies join counts as Design's.
+    uint32_t ministersRun = kAllMinisters;
+    bool runs(Minister m) const { return (ministersRun & ministerBit(m)) != 0; }
     PlanReport report() { return {std::move(out), std::move(dropped)}; }
 
     const Rules& r;
