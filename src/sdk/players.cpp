@@ -195,12 +195,11 @@ public:
 
     std::optional<std::string> colonyType(game::TurnContext& ctx, EmpireId e, game::ObjectId planet, game::VehicleId ship) override {
         const game::GameState& s = ctx.state;
-        const Perspective p(rules_, s, e, ViewOptions{true});
         ValueList choices;
         for (const std::string& t : s.empire(e).colonyTypes) choices.push_back(Value(t));
         ValueMap args;
-        args.emplace_back("colony", colonyRecord(p, planet));
-        args.emplace_back("planet", objectRecord(p, planet));
+        args.emplace_back("colony", Value(static_cast<int64_t>(planet.value)));   // a colony is named by its planet
+        args.emplace_back("planet", Value(static_cast<int64_t>(planet.value)));
         args.emplace_back("vehicle", ship.valid() ? Value(static_cast<int64_t>(ship.value)) : Value());
         args.emplace_back("choices", Value(std::move(choices)));
         const std::optional<Value> response = ask(ctx, e, "colony_type", Value(std::move(args)), nullptr);
@@ -228,6 +227,7 @@ public:
 
     std::optional<bool> decloak(game::TurnContext& ctx, EmpireId e, game::VehicleId vehicle, game::ObjectId planet, game::DecloakReason reason) override {
         ValueMap args;
+        args.emplace_back("object", Value(static_cast<int64_t>(vehicle.valid() ? vehicle.value : planet.value)));
         args.emplace_back("vehicle", vehicle.valid() ? Value(static_cast<int64_t>(vehicle.value)) : Value());
         args.emplace_back("planet", planet.valid() ? Value(static_cast<int64_t>(planet.value)) : Value());
         args.emplace_back("reason", Value(reason == game::DecloakReason::Order ? "order" : "attack"));
@@ -421,9 +421,10 @@ private:
         return response;
     }
 
-    // Notes replace the earlier notes of this turn on the same object (§4).
+    // A note replaces the earlier note on the same thing; notes last for the
+    // turn they were given and the next (§4).
     static void keepNotes(const game::GameState& s, game::Empire& emp, const Value& notes) {
-        std::erase_if(emp.aiNotes, [&](const game::PlayerNote& n) { return n.turn != s.turn; });
+        std::erase_if(emp.aiNotes, [&](const game::PlayerNote& n) { return n.turn + 1 < s.turn; });
         for (const Value& n : notes.asList()) {
             game::PlayerNote note;
             note.turn = s.turn;

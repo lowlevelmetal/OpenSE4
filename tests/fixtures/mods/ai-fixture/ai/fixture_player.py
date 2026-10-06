@@ -54,7 +54,7 @@ class Steady:
         choices = args['choices']
         planet = args['planet']
         if choices and planet is not None:
-            r['answer'] = choices[planet['id'] % len(choices)]
+            r['answer'] = choices[planet % len(choices)]
         return r
 
     def enter_sector(self, request, args):

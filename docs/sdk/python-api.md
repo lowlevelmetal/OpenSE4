@@ -79,7 +79,7 @@ names (`import tactics` for `ai/tactics.py`).
 | `economy(view, orders)` | End of the turn, before income, research and construction | the same | commands | the classic economy |
 | `colony_type(view, question)` | A colony is founded | `question.planet`, `question.vehicle`, `question.choices` | one of the choices, or None | None: the classic choice |
 | `enter_sector(view, question)` | A move would enter a sector with enemies | `question.vehicles`, `question.sector`, `question.enemies` | True, False, or None (enter) | None |
-| `decloak(view, question)` | A cloaked vehicle or colony must decloak to act | `question.object_id`, `question.vehicle`, `question.reason` | True, False, or None (the classic minister) | None |
+| `decloak(view, question)` | A cloaked vehicle or colony must decloak to act | `question.object_id`, `question.vehicle` (a ship), `question.planet` (a colony), `question.reason` | True, False, or None (the classic minister) | None |
 | `battle_round(battle, orders)` | Each round of a space battle | the battle (`BattleState`); `orders` for tactical orders | tactical orders | none: the strategies decide |
 | `end_session()` | Before the session ends | | | nothing |
 

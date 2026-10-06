@@ -23,3 +23,9 @@ name = "Idle"
 module = "fixture_player"
 class = "Idle"
 description = "Answers nothing: its empire does nothing."
+
+[[ai.players]]
+name = "Captain"
+module = "package_player"
+class = "Captain"
+description = "Plays through the opense4 package: the classic ministers with its own colony types and fire."

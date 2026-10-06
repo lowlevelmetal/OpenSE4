@@ -19,6 +19,7 @@
 #include "mods/manifest.hpp"
 #include "sdk/codec.hpp"
 #include "sdk/view.hpp"
+#include "sdk/players.hpp"
 #include "sdk/worker.hpp"
 #include "temp_dir.hpp"
 
@@ -143,7 +144,7 @@ TEST_CASE("sdk players: controllers are written and read as setup files and the 
 
 TEST_CASE("sdk players: a mod declares its players in [[ai.players]], and mistakes are named") {
     const mods::Package fixture = aiFixtureMod();
-    REQUIRE(fixture.manifest.aiPlayers.size() == 3);
+    REQUIRE(fixture.manifest.aiPlayers.size() == 4);
     CHECK(fixture.manifest.aiPlayers[0].name == "Steady");
     CHECK(fixture.manifest.aiPlayers[0].module == "fixture_player");
     CHECK(fixture.manifest.aiPlayers[0].className == "Steady");
@@ -153,7 +154,7 @@ TEST_CASE("sdk players: a mod declares its players in [[ai.players]], and mistak
     // Written back, read again.
     auto again = mods::parseManifest(mods::writeManifest(fixture.manifest), "mod.toml");
     REQUIRE(again.has_value());
-    REQUIRE(again->aiPlayers.size() == 3);
+    REQUIRE(again->aiPlayers.size() == 4);
     CHECK(again->aiPlayers[2].description == fixture.manifest.aiPlayers[2].description);
 
     const std::string head = "[mod]\nid = \"a.b\"\nname = \"x\"\nversion = \"1\"\napi = 1\n";
@@ -230,6 +231,33 @@ TEST_CASE("sdk players: only a game with a script or external computer player ge
     CHECK_FALSE(makePlayers(test::engineRules(), s));
 }
 
+TEST_CASE("sdk players: players written with the opense4 package play in the engine, the same way every time") {
+    REQUIRE_FALSE(sdk::packageFiles().empty());
+    InstalledPlayers installed({}, true);
+    const Rules& r = test::engineRules();
+    for (const bool simultaneous : {true, false}) {
+        INFO("simultaneous " << simultaneous);
+        uint64_t first = 0;
+        for (int run = 0; run < 2; ++run) {
+            GameState s = playersGame(51, simultaneous, {scriptPlayer("Captain"), Controller{}, scriptPlayer("Captain"), Controller{}});
+            for (int t = 0; t < 20; ++t) processTurn(r, s, {});
+            int colonies = 0;
+            for (EmpireId e : {EmpireId{0u}, EmpireId{2u}}) {
+                INFO(s.empire(e).script.memory);
+                CHECK(s.empire(e).script.failures == 0);
+                const Value m = memoryOf(s, e);
+                CHECK(intIn(m, "plans") == 20);
+                CHECK(intIn(m, "sessions") == 20);
+                if (const Value* c = m.find("colonies")) colonies += static_cast<int>(c->asInt());
+                CHECK_FALSE(s.empire(e).aiNotes.empty());
+            }
+            CHECK(colonies > 0);
+            if (run == 0) first = stateChecksum(s);
+            else CHECK(stateChecksum(s) == first);
+        }
+    }
+}
+
 TEST_CASE("sdk players: two script empires play simultaneous turns, and their memory counts them") {
     InstalledPlayers installed;
     GameState s = playersGame(11, true, {scriptPlayer("Steady"), Controller{}, scriptPlayer("Steady"), Controller{}});
@@ -240,11 +268,14 @@ TEST_CASE("sdk players: two script empires play simultaneous turns, and their me
         CHECK(intIn(m, "sessions") == 5);
         CHECK(intIn(m, "plans") == 5);
         CHECK(s.empire(e).script.failures == 0);
-        // Its notes of the last turn, kept in memory only.
-        REQUIRE_FALSE(s.empire(e).aiNotes.empty());
-        CHECK(s.empire(e).aiNotes.front().kind == "vehicle");
-        CHECK(s.empire(e).aiNotes.front().text == "turn 4");
-        CHECK(s.empire(e).aiNotes.front().turn == 4);
+        // Its notes of the last two turns, kept in memory only; a later note on
+        // the same vehicle replaced the earlier one.
+        const auto& notes = s.empire(e).aiNotes;
+        REQUIRE_FALSE(notes.empty());
+        CHECK(std::any_of(notes.begin(), notes.end(), [](const PlayerNote& n) { return n.turn == 4 && n.text == "turn 4" && n.kind == "vehicle"; }));
+        CHECK(std::all_of(notes.begin(), notes.end(), [](const PlayerNote& n) { return n.turn >= 3 && n.text == std::format("turn {}", n.turn); }));
+        for (const PlayerNote& n : notes)
+            CHECK(std::count_if(notes.begin(), notes.end(), [&](const PlayerNote& o) { return o.kind == n.kind && o.object == n.object; }) == 1);
     }
     CHECK(s.empire(EmpireId{1u}).script.memory.empty());
     // Notes are never saved; memory is.
@@ -507,8 +538,8 @@ TEST_CASE("sdk players: colony_type names the new colony's type from the empire'
         REQUIRE(asked.size() == 1);
         CHECK(keysOf(*asked[0].find("args")) == std::vector<std::string>{"choices", "colony", "planet", "vehicle"});
         const Value& given = *asked[0].find("given");
-        CHECK(given.find("planet")->find("id")->asInt() == static_cast<int64_t>(target.value));
-        CHECK(given.find("colony")->find("planet")->asInt() == static_cast<int64_t>(target.value));
+        CHECK(given.find("planet")->asInt() == static_cast<int64_t>(target.value));
+        CHECK(given.find("colony")->asInt() == static_cast<int64_t>(target.value));
         CHECK(given.find("vehicle")->asInt() == static_cast<int64_t>(ship.value));
         CHECK(given.find("choices")->size() == types.size());
         if (std::string_view(mode) == "answer") {
@@ -575,6 +606,7 @@ TEST_CASE("sdk players: decloak asks before a cloaked colony carries out an orde
         const std::vector<Value> asked = callsOf(w.s, kA, "decloak");
         REQUIRE(asked.size() == 1);
         const Value& given = *asked[0].find("given");
+        CHECK(given.find("object")->asInt() == static_cast<int64_t>(home.value));
         CHECK(given.find("planet")->asInt() == static_cast<int64_t>(home.value));
         CHECK(given.find("vehicle")->isNull());
         CHECK(given.find("reason")->asString() == "order");
@@ -608,7 +640,9 @@ TEST_CASE("sdk players: decloak asks before a cloaked ship's attack in a turn-ba
         const std::vector<Value> asked = callsOf(w.s, kA, "decloak");
         REQUIRE(asked.size() == 1);
         const Value& given = *asked[0].find("given");
+        CHECK(given.find("object")->asInt() == static_cast<int64_t>(raider.value));
         CHECK(given.find("vehicle")->asInt() == static_cast<int64_t>(raider.value));
+        CHECK(given.find("planet")->isNull());
         CHECK(given.find("reason")->asString() == "attack");
     }
 }

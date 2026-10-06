@@ -186,8 +186,13 @@ class DecloakQuestion(_Args):
 
     @property
     def vehicle(self) -> Any:
-        """The vehicle, when the session's view lists one with that id."""
-        return self._v.resolve("vehicle", self._d.get("object"))
+        """The vehicle (a ship about to attack), when the session's view lists it; None for a colony."""
+        return self._v.resolve("vehicle", self._d.get("vehicle", self._d.get("object")))
+
+    @property
+    def planet(self) -> Any:
+        """The colony's planet (a colony about to carry out an order), from the session's view; None for a ship."""
+        return self._v.resolve("object", self._d.get("planet"))
 
     @property
     def reason(self) -> str:

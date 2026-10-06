@@ -162,8 +162,8 @@ struct ScriptPlayerState {
 };
 
 // A note a computer player attaches to something for the client's AI view
-// (a response's `notes`). Kept in memory for the turn it was given: never
-// saved, sent or hashed.
+// (a response's `notes`). Kept in memory for the turn it was given and the
+// next, unless the player replaces it: never saved, sent or hashed.
 struct PlayerNote {
     uint32_t turn = 0;
     std::string kind;      // what `object` is: "object", "vehicle", "fleet", "system", "empire" (docs/sdk/ai-protocol.md §4)
@@ -467,7 +467,7 @@ struct Empire {
     // player's memory (save format 9; docs/sdk/ai-protocol.md).
     Controller controller;
     ScriptPlayerState script;
-    // Its computer player's notes of this turn (never saved, sent or hashed).
+    // Its computer player's notes of this turn and the one before (never saved, sent or hashed).
     std::vector<PlayerNote> aiNotes;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }

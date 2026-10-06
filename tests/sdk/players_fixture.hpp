@@ -63,10 +63,12 @@ inline game::Controller externalPlayer(uint32_t slot) {
     return c;
 }
 
-// The SDK's sessions with the stand-in package and the fixture mod, for one test.
+// The SDK's sessions with the fixture mod, for one test: with the stand-in
+// package unless the setup names another, or with OpenSE4's own package
+// (`realPackage`).
 struct InstalledPlayers {
-    explicit InstalledPlayers(sdk::PlayerSetup setup = {}) {
-        if (setup.package.empty()) setup.package = standInPackage();
+    explicit InstalledPlayers(sdk::PlayerSetup setup = {}, bool realPackage = false) {
+        if (setup.package.empty() && !realPackage) setup.package = standInPackage();
         setup.mods.push_back(aiFixtureMod());
         sdk::installPlayers(std::move(setup));
     }
