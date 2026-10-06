@@ -65,7 +65,8 @@ TEST_CASE("sdk tool: new, check, info") {
         CHECK_MESSAGE(checked.out.find("No problems found.") != std::string::npos, checked.out);
     }
     CHECK(fs::exists(dir / "ai" / "ai" / "player.py"));
-    CHECK(readText(dir / "rules" / "scripts" / "rules.py").find("later step") != std::string::npos);
+    // The rules template's module is named after the mod, so that two mods' do not conflict.
+    CHECK(readText(dir / "rules" / "scripts" / "test_new_rules.py").find("@rules.on(\"after_galaxy\")") != std::string::npos);
     CHECK(sdk(std::format("new data {}", q(dir / "data"))).code == 2);  // not into a folder in use
     CHECK(sdk(std::format("new campaign {}", q(dir / "x"))).code == 2);
 

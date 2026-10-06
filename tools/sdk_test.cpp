@@ -3,6 +3,7 @@
 #include "sdk_tool.hpp"
 
 #include "core/environment.hpp"
+#include "core/log.hpp"
 #include "game/players.hpp"
 #include "game/setup.hpp"
 #include "script/runtime.hpp"
@@ -10,6 +11,7 @@
 #include "sdk/players.hpp"
 #include "sdk/process.hpp"
 #include "sdk/rules_view.hpp"
+#include "sdk/scenario.hpp"
 #include "sdk/view.hpp"
 #include "sdk/worker.hpp"
 
@@ -19,6 +21,7 @@
 #include <format>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <optional>
 #include <sstream>
 
@@ -126,6 +129,7 @@ void runPythonTests(const mods::Package& mod, const game::Rules* rules, uint64_t
     for (const mods::PackageFile& f : mod.files) {
         if (!f.path.ends_with(".py")) continue;
         if (f.path.starts_with("ai/")) files.emplace_back(f.path.substr(3), readText(f.real));
+        if (f.path.starts_with("scripts/")) files.emplace_back(f.path.substr(8), readText(f.real));
         if (f.path.starts_with("tests/")) {
             const std::string rel = f.path.substr(6);
             files.emplace_back(rel, readText(f.real));
@@ -224,11 +228,74 @@ void runPythonTests(const mods::Package& mod, const game::Rules* rules, uint64_t
     worker.run([&] { interp.reset(); });
 }
 
-// A short game for each of the mod's players against the classic AI.
+// The failures of a mod's rules functions in a match (docs/sdk/rules.md "Budgets and
+// failures"): GameState::modRules counts them per game turn, and the log has each one.
+struct RulesFailures {
+    std::string mod;
+    std::map<uint32_t, int> byTurn;   // game turn: failures
+
+    // MatchSetup::afterTurn: the turn just played is in the mod's counters.
+    bool operator()(const game::GameState& s) {
+        for (const game::ModRulesState& m : s.modRules)
+            if (m.mod == mod && m.failures > 0) byTurn[m.turn] = std::max(byTurn[m.turn], m.failures);
+        return true;
+    }
+    int total() const {
+        int n = 0;
+        for (const auto& [turn, count] : byTurn) n += count;
+        return n;
+    }
+    // What the log says of them (its last lines), to show with a failure.
+    void print() const {
+        const std::string marker = std::format("Rules mod {}:", mod);
+        bool after = false;   // the traceback the log writes after a failure
+        for (const std::string& line : log::recentLines()) {
+            const bool mine = line.find(marker) != std::string::npos;
+            if (mine || (after && (line.find("Traceback") != std::string::npos || line.find("File \"") != std::string::npos))) printIndented(line);
+            after = mine || (after && line.find("File \"") != std::string::npos);
+        }
+    }
+};
+
+bool hasRules(const mods::Package& mod) { return (mod.tiers & mods::kTierScripts) != 0; }
+
+// A short game for each of the mod's players against the classic AI, and, for a mod
+// with rules scripts but no player, one between two classic AIs with its rules on.
 void runGames(const mods::Package& mod, const game::Rules& rules, uint64_t seed, uint32_t turns, bool turnBased, Tally& tally) {
     std::printf("Games (seed %llu, %u turns, %s):\n", static_cast<unsigned long long>(seed), turns, turnBased ? "turn-based" : "simultaneous");
+    if (mod.manifest.aiPlayers.empty() && hasRules(mod)) {
+        const std::string label = std::format("{}'s rules in a game of the classic AI", mod.id());
+        GameChoice choice;
+        choice.turnBased = turnBased;
+        auto setup = makeGameSetup(rules, choice, seed, 2);
+        if (!setup) {
+            std::printf("  FAIL  %s: %s\n", label.c_str(), setup.error().c_str());
+            ++tally.failed;
+            return;
+        }
+        sdk::MatchSetup match;
+        match.game = std::move(*setup);
+        match.turns = turns;
+        match.seats.resize(2);
+        RulesFailures failures{mod.id(), {}};
+        match.afterTurn = std::ref(failures);
+        auto played = sdk::playMatch(rules, std::move(match));
+        if (!played) {
+            std::printf("  FAIL  %s: %s\n", label.c_str(), played.error().c_str());
+            ++tally.failed;
+        } else if (failures.total() > 0) {
+            std::printf("  FAIL  %s: %d failed calls of its rules functions in %u turns\n", label.c_str(), failures.total(), played->turnsPlayed);
+            failures.print();
+            ++tally.failed;
+        } else {
+            std::printf("  ok    %s: %u turns, no failures (%.1f s)\n", label.c_str(), played->turnsPlayed,
+                        std::chrono::duration<double>(played->time).count());
+            ++tally.passed;
+        }
+        return;
+    }
     if (mod.manifest.aiPlayers.empty()) {
-        std::printf("  none: the mod declares no computer player\n");
+        std::printf("  none: the mod declares no computer player and has no rules scripts\n");
         return;
     }
     for (const mods::AiPlayer& p : mod.manifest.aiPlayers) {
@@ -248,6 +315,8 @@ void runGames(const mods::Package& mod, const game::Rules& rules, uint64_t seed,
         match.seats[0].controller.kind = game::Controller::Kind::Script;
         match.seats[0].controller.mod = mod.id();
         match.seats[0].controller.player = p.name;
+        RulesFailures failures{mod.id(), {}};
+        match.afterTurn = std::ref(failures);
         auto played = sdk::playMatch(rules, std::move(match));
         if (!played) {
             std::printf("  FAIL  %s: %s\n", label.c_str(), played.error().c_str());
@@ -256,7 +325,12 @@ void runGames(const mods::Package& mod, const game::Rules& rules, uint64_t seed,
         }
         const sdk::SeatResult& seat = played->seats[0];
         const double secs = std::chrono::duration<double>(played->time).count();
-        if (seat.failures > 0 || seat.requests == 0) {
+        if (failures.total() > 0) {
+            std::printf("  FAIL  %s: %d failed calls of the mod's rules functions in %u turns\n", label.c_str(), failures.total(),
+                        played->turnsPlayed);
+            failures.print();
+            ++tally.failed;
+        } else if (seat.failures > 0 || seat.requests == 0) {
             std::printf("  FAIL  %s: %lld failed requests of %lld in %u turns%s\n", label.c_str(), static_cast<long long>(seat.failures),
                         static_cast<long long>(seat.requests), played->turnsPlayed, seat.requests == 0 ? " (the player was never asked)" : "");
             for (const std::string& e : seat.errors) printIndented(e);
@@ -270,20 +344,69 @@ void runGames(const mods::Package& mod, const game::Rules& rules, uint64_t seed,
     }
 }
 
+// Each of the mod's scenarios (scenarios/*.toml), started as sdk::startScenario starts
+// it and played by the computer (its human empires by the built-in AI) for some turns:
+// it fails when the scenario cannot start or a rules function fails.
+void runScenarios(const mods::Package& mod, const game::Rules& rules, uint32_t turns, Tally& tally) {
+    const std::vector<std::string> names = sdk::scenarioNames(mod);
+    if (names.empty()) return;
+    std::printf("Scenarios (%u turns each):\n", turns);
+    for (const std::string& name : names) {
+        const std::string label = std::format("scenario {}", name);
+        auto start = sdk::startScenario(rules, mod, name);
+        if (!start) {
+            std::printf("  FAIL  %s: %s\n", label.c_str(), start.error().c_str());
+            ++tally.failed;
+            continue;
+        }
+        sdk::MatchSetup match;
+        match.start = std::move(*start);
+        match.turns = turns;
+        RulesFailures failures{mod.id(), {}};
+        match.afterTurn = std::ref(failures);
+        auto played = sdk::playMatch(rules, std::move(match));
+        if (!played) {
+            std::printf("  FAIL  %s: %s\n", label.c_str(), played.error().c_str());
+            ++tally.failed;
+            continue;
+        }
+        if (failures.total() > 0) {
+            std::printf("  FAIL  %s: %d failed calls of its rules functions in %u turns\n", label.c_str(), failures.total(), played->turnsPlayed);
+            failures.print();
+            ++tally.failed;
+            continue;
+        }
+        const game::GameState& s = played->state;
+        std::string met;
+        for (const std::string& m : s.scenario.met) met += (met.empty() ? "" : ", ") + m;
+        std::string ended = "it goes on";
+        if (s.gameOver) {
+            ended = std::format("it ended: {}", s.endReason.empty() ? std::string("game over") : s.endReason);
+            if (s.winner.valid()) ended += std::format(" ({} won)", s.empire(s.winner).name);
+        }
+        std::printf("  ok    %s: %u turns, objectives met: %s; %s (%.1f s)\n", label.c_str(), played->turnsPlayed, met.empty() ? "none" : met.c_str(),
+                    ended.c_str(), std::chrono::duration<double>(played->time).count());
+        ++tally.passed;
+    }
+}
+
 constexpr std::string_view kTestUsage = R"(opense4-sdk test: a mod's tests (docs/sdk/bots-and-arena.md).
 
 Usage:
   opense4-sdk test <mod> [options]
 
 Runs each test_ function of the mod's tests/test_*.py modules in the game's own Python
-(with the mod's ai/ folder and tests/ at the root, and opense4.testing), then a short
-game against the classic AI for each computer player the mod declares, which fails on
-any failed request (an exception, a wrong answer, a budget run out).
+(with the mod's ai/, scripts/ and tests/ folders at the root, and opense4.testing), then
+a short game against the classic AI for each computer player the mod declares, which
+fails on any failed request (an exception, a wrong answer, a budget run out) or any
+failure of the mod's rules functions; a mod with rules scripts and no player plays one
+game between two classic AIs with its rules on. Each scenario the mod holds is then
+started and played for as many turns.
 
 Options:
   --data=DIR       The game folder (or --classic-dir; default: the installed game)
   --mod=OTHER      A mod it requires, when not in the mods folder (repeatable); --mods-dir=DIR
-  --turns=N        Turns of each game (default 10)
+  --turns=N        Turns of each game and scenario (default 10)
   --seed=N         The games' seed, and that of opense4.testing.game_view() (default 1)
   --turn-based     Turn-based games (default: simultaneous)
   --budget=N       Bytecodes each test may run (default 1000000000)
@@ -335,6 +458,8 @@ int cmdTest(const std::vector<std::string>& argv) {
             ++tally.failed;
         } else {
             runGames(mod, *data->rules, static_cast<uint64_t>(*seed), static_cast<uint32_t>(*turns), o.has("turn-based"), tally);
+            std::fflush(stdout);
+            runScenarios(mod, *data->rules, static_cast<uint32_t>(*turns), tally);
         }
     }
     std::printf("\n%d passed, %d failed, %d skipped\n", tally.passed, tally.failed, tally.skipped);

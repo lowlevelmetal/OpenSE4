@@ -105,6 +105,20 @@ struct Installed {
 
 std::expected<MatchResult, std::string> playMatch(const game::Rules& r, MatchSetup setup) {
     const auto started = std::chrono::steady_clock::now();
+    if (setup.start) {
+        // A game made already: its empires are the seats, as they are.
+        setup.seats.clear();
+        setup.game.empires.clear();
+        setup.game.seed = setup.start->seed;
+        for (game::Empire& e : setup.start->empires) {
+            if (e.kind == game::PlayerKind::Human) e.kind = game::PlayerKind::Computer;
+            game::EmpireSetup es;
+            es.kind = e.kind;
+            es.controller = e.controller;
+            setup.game.empires.push_back(std::move(es));
+            setup.seats.push_back(Seat{e.controller, {}});
+        }
+    }
     if (setup.seats.size() != setup.game.empires.size())
         return std::unexpected(std::format("{} seats for {} empires", setup.seats.size(), setup.game.empires.size()));
     for (size_t i = 0; i < setup.seats.size(); ++i) {
@@ -120,7 +134,7 @@ std::expected<MatchResult, std::string> playMatch(const game::Rules& r, MatchSet
         for (const std::string& p : problems) why += (why.empty() ? "" : "\n") + p;
         return std::unexpected(why);
     }
-    auto created = game::createGame(r, setup.game);
+    auto created = setup.start ? std::expected<game::GameState, std::string>(std::move(*setup.start)) : game::createGame(r, setup.game);
     if (!created) return std::unexpected("the game could not be made: " + created.error());
 
     MatchResult result;

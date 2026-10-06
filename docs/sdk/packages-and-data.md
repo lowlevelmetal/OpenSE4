@@ -516,6 +516,7 @@ The Game Menu's `Save for SE IV` writes a game as a saved game of the original (
 
 ```sh
 opense4-sdk new data mymod --id=me.mymod     # a new mod from a template: assets, data, ai or rules
+opense4-sdk new --from-example small-ai mine  # a copy of an example mod (docs/sdk/README.md)
 opense4-sdk check mymod                       # everything below, against your installed game
 opense4-sdk info mymod                        # what it is, holds and its identity
 opense4-sdk dump mymod other.zip --out=dump   # the data set with these mods, as data files
@@ -534,7 +535,8 @@ formats the game cannot read, pictures no hull names, and files where the game d
 look. It exits with 1 when it finds errors.
 
 `dump` writes the data folder's files and the AI tables as the game would read them
-with the mods, never into the installed game. `pack` leaves out hidden files and adds
+with the mods, never into the installed game; with no mod named, the installed game's own,
+to compare with. `pack` leaves out hidden files and adds
 `mod.identity`, which records the identity; a package whose files no longer match it
 gets a warning.
 
