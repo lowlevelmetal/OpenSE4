@@ -21,6 +21,7 @@ bool treatySharesMaps(const GameState& s, EmpireId viewer, EmpireId other) {
 
 GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
     GameState v = s;
+    v.journal = {};   // the players' answers stay with the host (docs/sdk/ai-protocol.md §8)
     const bool spectator = !viewer.valid() || viewer.index() >= s.empires.size();
     const Empire* me = spectator ? nullptr : &s.empire(viewer);
 
@@ -55,6 +56,8 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
         e.repairPriorities.clear();
         e.aiState = 0;
         e.aiTurnsInState = 0;
+        e.script = {};     // a script player's memory is its own (docs/sdk/ai-protocol.md §2)
+        e.aiNotes.clear();
         if (!partner) {
             e.knowledge = {};
             e.knowledge.explored.assign(s.galaxy.systems.size(), 0);
