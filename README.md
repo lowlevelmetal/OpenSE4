@@ -263,25 +263,37 @@ SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --layout=8
 
 ## Modding
 
-A mod is a folder or a `.zip` with a `mod.toml`. It can bring pictures, sounds, music and
-fonts, and change the data: **data patches** add, change and remove single records of
-any data file or computer players' table, by the data files' own field names, so several
-mods combine. Mods may declare new ability names. Everything is layered over your
-installed game in memory; nothing is written into it. Classic mods (replacement data
-files and pictures) load as packages too.
+OpenSE4 can be modded at every level, always layered over your installed game in memory
+and never written into it:
+
+- **Pictures, sounds and music**: replacements and additions, PNG with transparency,
+  larger pictures for sharp screens, OGG; a design can wear a picture of its own.
+- **Data**: data patches add, change and remove single records of any data file or computer
+  players' table by the data files' own field names, so several mods combine; Python data
+  generators build records from a rule; mods may declare new abilities.
+- **Computer players** in Python, with full control of an empire or only the decisions they
+  choose, the classic AI as a library for the rest; also as external bots on ordinary
+  CPython, with an arena and a training environment.
+- **Rules scripts**: hooks into turn processing, effects, abilities with effects, new orders,
+  events, intelligence projects, game options, victory conditions and scenarios.
+
+Classic mods (replacement data files and pictures) load as packages too.
 
 ```sh
-opense4 --mod=path/to/mymod                    # play with a mod (or choose it in the Mods window)
-opense4-sdk new data mymod --id=me.mymod       # start one from a template
-opense4-sdk check mymod                        # apply it to your game and report every problem
-opense4-sdk pack mymod                         # a .zip to share
+opense4 --mod=path/to/mymod                       # play with a mod (or choose it in the Mods window)
+opense4-sdk new data mymod --id=me.mymod          # start one from a template
+opense4-sdk new --from-example small-ai my-ai     # or from one of the example mods
+opense4-sdk check mymod                           # apply it to your game and report every problem
+opense4-sdk test mymod                            # its tests, then its players and rules in short games
+opense4-sdk pack mymod                            # a .zip to share
 ```
 
 Every error names the mod, file, line and record; typos are errors. Network and e-mail
-games check that every player has the same game-changing mods. See
-[docs/sdk/packages-and-data.md](docs/sdk/packages-and-data.md) and
-[docs/SETUP.md](docs/SETUP.md#mods). Python scripts (computer players, rules hooks) come
-with later steps of the SDK ([docs/MODDING_SDK.md](docs/MODDING_SDK.md)).
+games check that every player has the same game-changing mods. Start with the modder's
+guide, [docs/sdk/README.md](docs/sdk/README.md): getting started, the data files table by
+table, assets, computer players, rules scripts, tutorials and the API reference. The
+example mods are in [mods/examples](mods/examples/README.md); a release has both in its
+`sdk` folder. The plan behind it all is [docs/MODDING_SDK.md](docs/MODDING_SDK.md).
 
 ## Layout
 
@@ -296,7 +308,8 @@ src/server    opense4-server: dedicated host and PBEM turn processor
 src/assets    runtime access to the installed classic art
 src/gfx       RHI with Vulkan and OpenGL backends, 2D batch renderer, ImGui bridge
 src/client    the app shell and the classic client (windows, front end, multiplayer)
-tools/        opense4-datacheck, opense4-convert (saved games), opense4-observe (drive the original), cleanroom_check.py
+tools/        opense4-datacheck, opense4-convert (saved games), opense4-sdk (mods), opense4-observe (drive the original), cleanroom_check.py
+mods/examples the modding SDK's example mods (docs/sdk/README.md)
 docs/spec/    rules specs, written in our own words
 shaders/      GLSL shared by both backends
 assets/       fonts (Noto Sans, SIL OFL)

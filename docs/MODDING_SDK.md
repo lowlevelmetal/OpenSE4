@@ -496,8 +496,22 @@ computer and never changes the game except through commands.
   - a complete small AI.
 - **A mod manager in the client:** enable, order, inspect, and per game.
 - **As built (2026-10-05):**
+  - the documentation: the modder's guide, its tutorials and the reference pages, indexed in
+    [docs/sdk/README.md](sdk/README.md); the guide to the data files has a chapter per table
+    group, written from `docs/spec/` and the loader; the API reference
+    ([docs/sdk/reference](sdk/reference/README.md)) is generated from `python/opense4` by
+    `tools/gen_sdk_reference.py`, and the SDK's tests fail when it is out of date;
+  - the example mods in [mods/examples](../mods/examples/README.md): `new-hull` (a hull with
+    its pictures and a component), `balance` (data patches with `cascade`),
+    `classic-ai-research` (the classic AI with its own research), `small-ai` (a complete
+    small AI), `weapon-line` (a generator), `new-ability` (a declared ability and its hook) and
+    `scenario`; each has tests, and CI runs `check` and `test` on each on the test fixtures
+    (`tests/sdk/test_sdk_guide.cpp`); `opense4-sdk new --from-example` copies one, and the
+    release packages carry the documentation and the examples in `sdk/` beside
+    `opense4-sdk`;
   - `new`, `check`, `info`, `dump` and `pack` ([packages-and-data.md](sdk/packages-and-data.md));
-  - `test` (the mod's `tests/` in the game's runtime, and a short game per computer player),
+  - `test` (the mod's `tests/` in the game's runtime, a short game per computer player, a game
+    with the mod's rules on, and each of its scenarios),
     `run`, `arena` (with its JSON and CSV reports, saved games, replays and Elo ratings),
     and `bot` and `python` for external bots ([bots-and-arena.md](sdk/bots-and-arena.md));
   - `publish` waits for the Steam release (section 14.7);
