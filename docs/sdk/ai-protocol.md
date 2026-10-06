@@ -259,6 +259,12 @@ budget.
   Failures are counted per empire and game turn (`Empire::script`, saved): after three in
   one game turn the classic AI answers for that empire for the rest of the turn, and it
   gets no end_session. The next game turn starts afresh.
+- **Measuring players:** a tool that installs the sessions may give `PlayerSetup::observe`
+  (`sdk::RequestCost`): it is called after every live request (never for an answer the
+  journal gives again) with the empire, the turn, the call, the bytecodes the request
+  used (services included), its wall time from building the request to the checked
+  response, and whether it failed. It observes only; the game is the same with or without
+  it.
 - **External bots** have the host's turn timer instead of a budget: a bot that doesn't
   answer in time, or a slot with no bot connected, is a failure. The transport comes
   later; the engine's side is `sdk::ExternalBot` (a request, with the services while the

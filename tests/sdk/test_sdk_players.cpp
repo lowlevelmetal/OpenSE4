@@ -446,6 +446,32 @@ TEST_CASE("sdk players: an error falls back to the classic AI for that request; 
     CHECK(journalOf(t, p).front().turn == 1);
 }
 
+TEST_CASE("sdk players: the setup's observer hears what each live request cost") {
+    std::vector<sdk::RequestCost> heard;
+    std::vector<std::string> calls;
+    sdk::PlayerSetup setup;
+    setup.observe = [&](const sdk::RequestCost& c) {
+        heard.push_back(c);
+        calls.emplace_back(c.call);
+    };
+    InstalledPlayers installed(std::move(setup));
+    const Rules& r = test::engineRules();
+    GameState s = playersGame(5, true, {Controller{}, Controller{}});
+    const EmpireId p{1u};
+    probe(s, p, R"({"economy": {"do": "raise"}})");
+    processTurn(r, s, {});
+    // Only the script empire's requests, each once, with what they cost; the failed one says so.
+    CHECK(calls == std::vector<std::string>{"politics", "orders", "economy", "end_session"});
+    for (const sdk::RequestCost& c : heard) {
+        INFO(c.call);
+        CHECK(c.empire == p);
+        CHECK(c.turn == 0);
+        CHECK(c.bytecodes > 0);
+        CHECK(c.time.count() > 0);
+        CHECK(c.failed == (c.call == "economy"));
+    }
+}
+
 TEST_CASE("sdk players: a player that runs out of its budget, its heap or its memory limit fails, the same way every time") {
     InstalledPlayers installed;
     const Rules& r = test::engineRules();

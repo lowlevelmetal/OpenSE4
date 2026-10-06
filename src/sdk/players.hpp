@@ -28,6 +28,7 @@
 #include "script/runtime.hpp"
 #include "script/value.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <expected>
 #include <functional>
@@ -66,6 +67,16 @@ public:
 
 // ---- Sessions ------------------------------------------------------------------------------
 
+// What one live request to a script or external player cost (PlayerSetup::observe).
+struct RequestCost {
+    game::EmpireId empire;
+    uint32_t turn = 0;              // GameState::turn when it was asked
+    std::string call;               // "orders", "economy", "battle_round"...
+    int64_t bytecodes = 0;          // the script's count for the request, services included; 0 for an external bot
+    std::chrono::nanoseconds time{};  // wall time from building the request (its view included) to the checked response
+    bool failed = false;            // the request failed (docs/sdk/ai-protocol.md §7)
+};
+
 struct PlayerSetup {
     // The `opense4` package's files, in place of the built-in one (tests).
     std::vector<std::pair<std::string, std::string>> package;
@@ -76,6 +87,10 @@ struct PlayerSetup {
     std::function<ExternalBot*(uint32_t slot)> externals;
     // The interpreter's heap, shared by the call's script players.
     size_t heapBytes = size_t{64} << 20;
+    // Called after every live request (never for an answer the journal gives
+    // again), on the thread that plays the turn: for tools that measure
+    // players (benchmarks, AI-against-AI games). Observes only.
+    std::function<void(const RequestCost&)> observe;
 };
 
 // Installs the SDK's sessions for every engine call in this process

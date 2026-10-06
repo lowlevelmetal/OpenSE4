@@ -441,6 +441,24 @@ private:
     // ---- Live requests ----------------------------------------------------------------------------
 
     Value live(game::TurnContext& ctx, EmpireId e, std::string_view call, const Value& args, int64_t seed, const game::CommandSink* sink) {
+        const auto started = std::chrono::steady_clock::now();
+        int64_t bytecodes = 0;
+        Value response = liveResponse(ctx, e, call, args, seed, sink, bytecodes);
+        if (setup_->observe) {
+            RequestCost cost;
+            cost.empire = e;
+            cost.turn = ctx.state.turn;
+            cost.call = std::string(call);
+            cost.bytecodes = bytecodes;
+            cost.time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started);
+            cost.failed = response.find("error") != nullptr;
+            setup_->observe(cost);
+        }
+        return response;
+    }
+
+    Value liveResponse(game::TurnContext& ctx, EmpireId e, std::string_view call, const Value& args, int64_t seed, const game::CommandSink* sink,
+                       int64_t& bytecodes) {
         game::GameState& s = ctx.state;
         const game::Empire& emp = s.empire(e);
         const bool planning = sink != nullptr;
@@ -488,6 +506,7 @@ private:
                 Handling& operator=(const Handling&) = delete;
             } handling(active_, active);
             response = active.external ? callBot(emp, Value(std::move(request)), delivered) : callScript(Value(std::move(request)), budget, delivered);
+            if (!active.external && delivered && interp_) bytecodes = interp_->lastCallBudget();
         }
         // `player` and `memory` go with the first request the player gets in the session.
         if (delivered) slot.created = true;
