@@ -1,0 +1,14 @@
+# Shorter space battles (Settings.txt has one record: no name needed).
+[[settings.change]]
+set = { "Number Of Space Combat Turns" = 20 }
+
+# Computer players calm down faster: their anger falls more each turn. `files` says
+# which AI files: "default" is Ai/Default_AI_Anger.txt, which every race without a file
+# of its own uses.
+[[ai.anger.change]]
+files = "default"
+set = { "Regular Decrease" = -4 }
+
+# More names for star systems (a name list: add and remove names).
+[system_names]
+add = ["Quillon", "Marrowgate", "Sable Reach", "Tessaly", "Upper Wend", "Corvane"]

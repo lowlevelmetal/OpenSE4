@@ -7,6 +7,8 @@ compile_commands.json
 !assets/**/*.png
 !packaging/**/*.png
 !tests/fixtures/**/*.png
+# The example mods' pictures, drawn by tools/make_example_assets.py.
+!mods/examples/**/*.png
 imgui.ini
 __pycache__/
 .vscode/

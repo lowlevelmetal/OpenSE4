@@ -1,0 +1,12 @@
+# An example mod of the OpenSE4 SDK (docs/sdk/guide/rules-scripts.md, "Data
+# generators"): a weapon line of six levels and the technology that brings it, built by
+# a Python generator rather than written out by hand. Everything in it is invented for
+# OpenSE4, written out in full, and fits any data set.
+
+[mod]
+id = "example.weapon-line"
+name = "Ember Lances"
+version = "1.0.0"
+api = 1
+authors = ["The OpenSE4 developers"]
+description = "Adds Ember Optics, a technology of six levels, and the Ember Lance I to VI, a beam that grows stronger and reaches further with each level."

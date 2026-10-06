@@ -1,0 +1,19 @@
+# Patches apply in the order of their file names (10-, 20-, 30-), and the operations of
+# a file in the order written. docs/sdk/packages-and-data.md "Data patches" is the format;
+# docs/sdk/guide/data/ says what each field does.
+
+# Cheaper propulsion research: faster ships early on.
+[[tech_areas.change]]
+name = "Propulsion"
+set = { "Level Cost" = 4000 }
+
+# No temporal technology. A tech area for a racial trait is marked by its Racial Area
+# number (the trait's Value 1 names it); matching that number, not a name, takes every
+# area of that race group. cascade = true removes what needs those areas too: other
+# areas that require them, the components, facilities, hulls and mounts that need them,
+# and the computer players' research rows that name them. Without cascade, `opense4-sdk
+# check` lists every such reference as an error, with its file and line.
+[[tech_areas.remove]]
+match = { "Racial Area" = 3 }
+all = true
+cascade = true

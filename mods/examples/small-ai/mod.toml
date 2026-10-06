@@ -1,0 +1,18 @@
+# An example mod of the OpenSE4 SDK (docs/sdk/guide/computer-players.md): a small computer
+# player written from scratch, for reading. It makes its own designs, research,
+# construction, exploration, colonization and defence; it leaves diplomacy to its own
+# few rules, and colony types and battles to the classic AI.
+
+[mod]
+id = "example.small-ai"
+name = "Pioneer, a small computer player"
+version = "1.0.0"
+api = 1
+authors = ["The OpenSE4 developers"]
+description = "Pioneer: a complete small computer player of its own, written to be read. It explores, colonizes, builds its economy and defends its systems."
+
+[[ai.players]]
+name = "Pioneer"
+module = "pioneer"
+class = "Pioneer"
+description = "Explores, colonizes, builds facilities and defends what it has, by a few plain rules. A teaching example."

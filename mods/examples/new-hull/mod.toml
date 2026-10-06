@@ -1,0 +1,11 @@
+# An example mod of the OpenSE4 SDK (docs/sdk/guide/tutorials/new-unit.md): a new hull
+# with pictures of its own, and a new component. Everything in it is invented for
+# OpenSE4. The records are written out in full, so the mod fits any data set.
+
+[mod]
+id = "example.new-hull"
+name = "Wren Courier"
+version = "1.0.0"
+api = 1
+authors = ["The OpenSE4 developers"]
+description = "Adds the Wren Courier, a small cargo hull with pictures of its own, and the Wren Cargo Rack that it is built around."

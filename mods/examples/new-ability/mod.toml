@@ -1,0 +1,15 @@
+# An example mod of the OpenSE4 SDK (docs/sdk/guide/rules-scripts.md): a new ability,
+# declared in a data patch, carried by a new component, and given its effect by a rules
+# hook. Everything in it is invented for OpenSE4 and fits any data set.
+
+[mod]
+id = "example.new-ability"
+name = "Field Repair"
+version = "1.0.0"
+api = 1
+authors = ["The OpenSE4 developers"]
+description = "Adds the Field Repair ability and the Mender Bay that carries it: each turn a ship mends that many damaged components wherever it is."
+
+[rules]
+# Computer players see on their own empire how much their crews mended (mod data).
+players_see_mod_data = true
