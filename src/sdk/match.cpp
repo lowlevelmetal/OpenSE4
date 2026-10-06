@@ -71,15 +71,27 @@ SeatTurn seatTurn(const game::Rules& r, const game::GameState& s, EmpireId e, ui
 struct Counts {
     std::vector<SeatResult>* seats = nullptr;
     std::function<void(const RequestEvent&)> chained;
+    // Per seat: the game turn being counted and its players' time so far.
+    std::shared_ptr<std::vector<std::pair<uint32_t, std::chrono::nanoseconds>>> turnTime =
+        std::make_shared<std::vector<std::pair<uint32_t, std::chrono::nanoseconds>>>();
 
     void operator()(const RequestEvent& ev) const {
         if (ev.empire.valid() && ev.empire.index() < seats->size()) {
             SeatResult& seat = (*seats)[ev.empire.index()];
             switch (ev.kind) {
-                case RequestEvent::Kind::Asked:
+                case RequestEvent::Kind::Asked: {
                     ++seat.requests;
                     seat.playerTime += ev.time;
+                    if (turnTime->size() < seats->size()) turnTime->resize(seats->size());
+                    auto& [turn, time] = (*turnTime)[ev.empire.index()];
+                    if (turn != ev.turn) time = {};
+                    turn = ev.turn;
+                    time += ev.time;
+                    seat.turnTimeMax = std::max(seat.turnTimeMax, time);
+                    int64_t& peak = ev.planning ? seat.planningBudgetMax : seat.callBudgetMax;
+                    peak = std::max(peak, ev.budget);
                     break;
+                }
                 case RequestEvent::Kind::Replayed: ++seat.replayed; break;
                 case RequestEvent::Kind::Skipped: ++seat.fallbacks; break;
                 case RequestEvent::Kind::Failed:

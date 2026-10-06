@@ -82,6 +82,8 @@ struct RequestEvent {
     uint32_t turn = 0;
     std::string_view call;              // empty for Failed
     std::chrono::nanoseconds time{};    // Asked: how long the player took
+    bool planning = false;              // Asked: a planning call (politics, orders, economy), with its larger budget
+    int64_t budget = 0;                 // Asked, a script player: the bytecodes the request used of its budget
     std::string_view error;             // Failed: why
 };
 

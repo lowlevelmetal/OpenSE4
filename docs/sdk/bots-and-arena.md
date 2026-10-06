@@ -150,7 +150,7 @@ best score at the end.
 | File | What |
 |---|---|
 | `report.json` | Everything below, and each game's summary |
-| `report.csv` | One line per player: games, wins, win rate, mean and median final score, mean colonies, systems, tech levels, research and ships, battles won, lost and drawn, eliminations, requests, failures, fallbacks, the player's time per turn in milliseconds, Elo |
+| `report.csv` | One line per player: games, wins, win rate, mean and median final score, mean colonies, systems, tech levels, research and ships, battles won, lost and drawn, eliminations, requests, failures, fallbacks, the player's time per turn in milliseconds, Elo, and the most its player used in any game: time in one turn (milliseconds), bytecodes in one planning request and in one other request |
 | `games.csv` | One line per game and seat: the seed, the player, the empire and race, won or not, the final figures, the checksum and the saved game |
 | `over_time.csv` | Each player's mean score, colonies, systems, ships, tech levels, research, and battles won and lost, turn by turn |
 | `games/game-NNNN.gam` | The game's final state: the game opens it (with the mods it was played with) |
@@ -161,7 +161,10 @@ its own, lost for one that lost all of its pieces while another kept some, and d
 otherwise. Failures are requests that failed (an exception, a budget run out, a wrong
 answer, no answer in time); fallbacks are the decisions the classic AI made instead,
 failures and the requests skipped after three failures in a turn. The player's time is
-measured, not counted: it is never part of a game.
+measured, not counted: it is never part of a game. The bytecodes a request used are what
+it counted against its budget (a planning call's 200 million and any other call's 5
+million by default, [ai-protocol.md](ai-protocol.md) §7), so the peaks say how close a
+player came to its limits; external bots have no budget, and their peaks stay 0.
 
 **Ratings.** Each player has an Elo rating in the report, from 1500 and the games of the
 run in order: every two seats of different players are a match, the winner ahead, then

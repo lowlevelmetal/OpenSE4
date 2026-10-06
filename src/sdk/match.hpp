@@ -99,6 +99,12 @@ struct SeatResult {
     int64_t failures = 0;
     int64_t fallbacks = 0;
     std::chrono::nanoseconds playerTime{};
+    // The most its player took: time in one game turn (all its requests of the
+    // turn together), bytecodes in one planning request and in one other
+    // request (script players).
+    std::chrono::nanoseconds turnTimeMax{};
+    int64_t planningBudgetMax = 0;
+    int64_t callBudgetMax = 0;
     std::vector<std::string> errors;   // the first failures, as logged
 };
 
