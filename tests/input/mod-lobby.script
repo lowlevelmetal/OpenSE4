@@ -1,0 +1,23 @@
+# The mods' game options in the lobby of a network game (docs/MULTIPLAYER.md "The lobby"), as a
+# player who joins sees them: a dedicated host (tests/input/servers/mod-options.toml, started by
+# tools/run_input_tests.py) with the interface fixture's options set in its setup file. The line
+# under the mods names each option with its value; See Mod Options shows them in the Mod Options
+# window, which a joining player cannot change; the computer players' limits are the host's
+# alone (mod-lobby-host.script).
+# server: --players=2 --setup=tests/input/servers/mod-options.toml
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --mods-dir=tests/fixtures/mods --mod=test.ui-fixture --mod=test.ai-fixture --layout=1024x768 --size=1280x800 --seed=7
+
+wait-for item:"Mod options: Beacon bonus (minerals) 77, Solar flares on"
+assert-absent item:"Computer Player Limits"
+assert-absent item:"Mod Options"
+click item:"See Mod Options"
+wait-for item:"mod-option:Beacon bonus (minerals):77"
+assert-present item:"mod-option:Solar flares:On"
+assert-absent item:"Restore Defaults"
+screenshot mod-lobby-joined.png
+click item:Done
+wait-gone item:"mod-option:Solar flares:On"
+click item:Leave
+wait-for item:"Host a Game"

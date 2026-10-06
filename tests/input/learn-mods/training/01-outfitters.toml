@@ -1,0 +1,19 @@
+# A training game for the interface tier's input scripts (docs/sdk/interface.md): the
+# player's homeworld with two colony ships at the start, played with the fixture mod
+# tests/fixtures/mods/ui-fixture (its orders, panels, columns and Empires page). Free play:
+# nothing to win in the scripts.
+title = "Outfitters"
+summary = "Two colony ships at home, for the mods' orders and panels."
+minutes = 1
+learned = ["Giving a mod's orders"]
+
+[setup]
+seed = 7
+race = "Terran"
+computer_players = 2
+events = "none"
+starting_ships = ["Colony", "Colony"]
+
+[[objective]]
+text = "Hold 40 colonies"
+when = { colonies = 40 }

@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_keycode.h>
 
+#include <algorithm>
 #include <cctype>
 #include <format>
 
@@ -267,6 +268,63 @@ std::optional<KeyChord> capturePressedChord() {
     }
     return std::nullopt;
 }
+
+bool chordPressed(const KeyChord& c) {
+    if (c.empty() || ImGui::GetIO().WantTextInput) return false;
+    return ImGui::IsKeyPressed(c.key, false) && modifiersDown(c);
+}
+
+// ---- The mods' actions ---------------------------------------------------------------------------
+
+std::vector<ModKeys> resolveModKeys(const Bindings& b, const ModKeyChoices& chosen, std::span<const ModAction> actions) {
+    std::vector<ModKeys> out(actions.size());
+    // The player's choices first: they are kept whatever a mod suggests.
+    for (size_t i = 0; i < actions.size(); ++i)
+        if (auto it = chosen.find(actions[i].id); it != chosen.end()) {
+            out[i].chords = it->second;
+            out[i].chosen = true;
+        }
+    auto taken = [&](const KeyChord& c, size_t self) -> std::string {
+        if (auto a = b.boundTo(c, Action::Count)) return actionInfo(*a).label;
+        for (size_t j = 0; j < actions.size(); ++j)
+            if (j != self && (out[j].chords[0] == c || out[j].chords[1] == c)) return actions[j].label;
+        return {};
+    };
+    for (size_t i = 0; i < actions.size(); ++i) {
+        if (out[i].chosen || actions[i].suggested.empty()) continue;
+        const std::optional<KeyChord> c = parseChord(actions[i].suggested);
+        if (!c || c->empty()) {
+            out[i].conflict = std::format("{} is not a key this game knows", actions[i].suggested);
+            continue;
+        }
+        if (std::string user = taken(*c, i); !user.empty()) {
+            out[i].conflict = std::format("{} is the key of {}", chordName(*c), user);
+            continue;
+        }
+        out[i].chords[0] = *c;
+    }
+    return out;
+}
+
+std::string chordUser(const Bindings& b, const ModKeyChoices& chosen, std::span<const ModAction> actions, const KeyChord& c,
+                      std::string_view exceptModAction, std::optional<Action> exceptAction) {
+    if (c.empty()) return {};
+    if (auto a = b.boundTo(c, exceptAction.value_or(Action::Count))) return actionInfo(*a).label;
+    const std::vector<ModKeys> keys = resolveModKeys(b, chosen, actions);
+    for (size_t i = 0; i < actions.size(); ++i)
+        if (actions[i].id != exceptModAction && (keys[i].chords[0] == c || keys[i].chords[1] == c)) return actions[i].label;
+    return {};
+}
+
+namespace {
+std::vector<ModAction>& modActionList() {
+    static std::vector<ModAction> list;
+    return list;
+}
+} // namespace
+
+void setModActions(std::vector<ModAction> actions) { modActionList() = std::move(actions); }
+std::span<const ModAction> modActions() { return modActionList(); }
 
 uint16_t altGrAsAlt(uint16_t sdlKeymod) {
     return (sdlKeymod & SDL_KMOD_MODE) != 0 ? static_cast<uint16_t>(sdlKeymod | SDL_KMOD_RALT) : sdlKeymod;

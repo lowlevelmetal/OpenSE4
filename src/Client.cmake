@@ -38,6 +38,8 @@ add_executable(opense4
     client/classic/lesson_panel.cpp
     client/classic/lesson_runner.cpp
     client/classic/main_window.cpp
+    client/classic/main_window_mods.cpp
+    client/classic/mod_ui.cpp
     client/classic/mods_model.cpp
     client/classic/map_style.cpp
     client/classic/movement_line.cpp

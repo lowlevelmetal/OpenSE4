@@ -114,6 +114,8 @@ constexpr std::pair<std::string_view, std::string_view> kOrderStrip[] = {
     {"ReplayShip", "replay-ship"},
     {"ReplayStep", "replay-step"},
     {"ReplayRewind", "replay-rewind"},
+    // The strip's free place: OpenSE4's Mod Orders (docs/sdk/interface.md).
+    {"Mods", "mod-orders"},
 };
 
 // Tags besides the order strip's and the windows'.

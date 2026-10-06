@@ -1,5 +1,6 @@
 // Planets (F4) and Colonies (F5) windows (docs/spec/06 §1.2, §1.8.1, spec 02 §11).
 
+#include "client/classic/mod_ui.hpp"
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -85,7 +86,10 @@ public:
             quadrantMap(ui, "##map", {262, 190}, marked, highlight);
             hovered_.reset();
             ImGui::SetCursorPos(ui.size({0, 197}));
-            leave = list(ui, rows);
+            // The mods' columns (docs/sdk/interface.md "List columns"), switched on below.
+            const bool modColumns = !modColumnsFor(ui, sdk::UiList::Planets).empty();
+            if (!modColumns) modColumns_ = false;
+            leave = modColumns_ ? modList(ui, rows) : list(ui, rows);
             // Our command results, under the statistics (the list fills the window below).
             status_.drawAt(ui, {3, 183}, 280);
 
@@ -98,7 +102,12 @@ public:
                 filtersMax = ImGui::GetItemRectMax();
             }
             ui.tag("planets:filters", filtersMin, filtersMax);
-            d.spacer();
+            if (modColumns) {
+                // OpenSE4's own, in the free slot: the mods' columns in place of the classic ones.
+                if (d.check("Mod Columns", modColumns_)) modColumns_ = !modColumns_;
+            } else {
+                d.spacer();
+            }
             // An on/off setting: a check box (observed, spec 07 session 3), stored
             // with the empire when clicked (spec 06 §1.8.1).
             if (d.check("No Sys To Avoid", noAvoid)) {
@@ -257,6 +266,22 @@ private:
         return leave;
     }
 
+    // The mods' columns for the tab's planets; true when a row was left-clicked.
+    bool modList(UiContext& ui, const std::vector<const PlanetInfo*>& rows) {
+        const game::GameState& s = ui.state();
+        std::vector<ModListRow> list;
+        for (const PlanetInfo* p : rows)
+            list.push_back({s.galaxy.object(p->id).name, objectSprite(ui, s.galaxy.object(p->id)), {"object", static_cast<int64_t>(p->id.value)}});
+        const ModListClick click = drawModList(ui, "##planetsmods", list, sdk::UiList::Planets, ImVec2(0, listRowsHeight(ui) + ui.px(20)), 150);
+        if (click.hovered) hovered_ = rows[*click.hovered]->id;
+        if (click.right) report_.openPlanet(rows[*click.right]->id);
+        if (click.left) {
+            ui.requests.selectPlanet = rows[*click.left]->id;
+            return true;
+        }
+        return false;
+    }
+
     // "Select Planet to Colonize" over the current tab's planets; returns true
     // when the window should close (turn-based: it shows the ship that goes).
     bool pickerPopup(UiContext& ui) {
@@ -315,6 +340,7 @@ private:
     uint64_t revision_ = 0;
     bool restored_ = false;
     PlanetFilter filter_ = PlanetFilter::All;
+    bool modColumns_ = false;   // the mods' columns shown (OpenSE4's own)
     std::optional<game::ObjectId> hovered_;
     bool picking_ = false;
     std::vector<game::ObjectId> pickRows_;
@@ -419,17 +445,29 @@ public:
             hovered_.reset();
             status_.drawAt(ui, {3, 183}, 280);
             ImGui::SetCursorPos(ui.size({0, 197}));
-            table(ui);
+            // The mods' columns (docs/sdk/interface.md "List columns") on a tab of their own.
+            const bool modColumns = !modColumnsFor(ui, sdk::UiList::Colonies).empty();
+            if (!modColumns) modsTab_ = false;
+            if (modsTab_) modTable(ui);
+            else table(ui);
 
             d.beginButtons();
             for (const auto& [tab, label] : kColonyTabs) {
-                if (lampButton(d, ui, label, tab_ == tab)) setTab(tab);
-                ui.tagTab(kColonyTabIds[static_cast<size_t>(tab)], tab_ == tab);
+                if (lampButton(d, ui, label, !modsTab_ && tab_ == tab)) {
+                    setTab(tab);
+                    modsTab_ = false;
+                }
+                ui.tagTab(kColonyTabIds[static_cast<size_t>(tab)], !modsTab_ && tab_ == tab);
             }
             // The original's column (spec 06 §7 Q90, confirmed: binary): the nine
             // tabs, two empty slots, Scrap Facil Types (slot 12) and Set Colony
-            // Type (slot 13), Close; no Constr. Queue or Goto.
-            d.spacer();
+            // Type (slot 13), Close; no Constr. Queue or Goto. The mods' tab, when
+            // they add columns, takes the first empty slot.
+            if (modColumns) {
+                if (lampButton(d, ui, "Mods", modsTab_)) modsTab_ = true;
+            } else {
+                d.spacer();
+            }
             d.spacer();
             // Every checked facility type on every colony of the empire.
             if (d.button("Scrap Facil Types")) scrapTypes_.open({});
@@ -613,6 +651,24 @@ private:
         if (rows_.empty()) ImGui::TextColored(kTextDim, "No colonies.");
         endList(ui);
         ui.tagItem("colonies:list");
+    }
+
+    // The Mods tab: the colonies in the list's order with the mods' columns.
+    void modTable(UiContext& ui) {
+        const game::GameState& s = ui.state();
+        std::vector<ColonySortValues> keys;
+        for (const ColonyRow& r : rows_) keys.push_back(r.keys);
+        const std::vector<size_t> order = colonyRowOrder(keys, ui.options().coloniesSort);
+        listed_ = order;
+        std::vector<ModListRow> list;
+        for (size_t i : order) {
+            const game::SpaceObject& o = s.galaxy.object(rows_[i].planet);
+            list.push_back({o.name, objectSprite(ui, o), {"colony", static_cast<int64_t>(rows_[i].planet.value)}});
+        }
+        const ModListClick click = drawModList(ui, "##coloniesmods", list, sdk::UiList::Colonies, ImVec2(0, listRowsHeight(ui) + ui.px(20)), 150);
+        if (click.hovered) hovered_ = rows_[order[*click.hovered]].planet;
+        if (click.left && !ImGui::GetIO().KeyShift) goto_ = rows_[order[*click.left]].planet;
+        if (click.right) report_.openPlanet(rows_[order[*click.right]].planet);
     }
 
     // One cell of a row whose top left is `a`, the column from `cx` (`cw` wide).
@@ -825,6 +881,7 @@ private:
     std::vector<ColonyRow> rows_;
     uint64_t revision_ = 0;
     ColonyTab tab_ = ColonyTab::General;
+    bool modsTab_ = false;   // the mods' columns shown (OpenSE4's own)
     std::string tableId_ = "##colonies0";
     std::optional<game::ObjectId> shown_;     // the colony the window was opened for (the map rings its system)
     std::vector<size_t> listed_;              // rows_ in the order the list shows them

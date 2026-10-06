@@ -8,6 +8,7 @@
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/screens/setup_model.hpp"
+#include "client/classic/screens/setup_players.hpp"
 #include "client/classic/settings.hpp"
 #include "client/script/items.hpp"
 #include "game/redact.hpp"
@@ -614,10 +615,33 @@ private:
                         if (auto r = host_->setOptions(o); !r) error_ = r.error();
                         else aiSeesEverything_ = all;
                     }
+                    // Their budgets and memory (the host's choice alone).
+                    ImGui::SameLine();
+                    if (ImGui::Button("Computer Player Limits")) limits_.open();
                 } else {
                     scriptLine(info.options.aiSeesEverything ? "Computer players see everything: the whole game, not only what their empires know."
                                                              : "Computer players see what their empires know.");
                 }
+            }
+            // The game's mod options (docs/sdk/rules.md "Game options"): the host sets them, the others see them.
+            if (setup::offersModOptions(*ctx.rules)) {
+                const std::string summary = setup::modOptionsSummary(*ctx.rules, info.options);
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextDisabled("%s", summary.c_str());
+                ImGui::PopTextWrapPos();
+                script::reportText(summary, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+                script::reportItem(summary, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+                if (ImGui::Button(host_ ? "Mod Options" : "See Mod Options")) modOptions_.open();
+            }
+            if (host_ && limits_.isOpen()) {
+                game::GameOptions o = info.options;
+                if (limits_.draw(ctx, o))
+                    if (auto r = host_->setOptions(o); !r) error_ = r.error();
+            }
+            if (modOptions_.isOpen()) {
+                game::GameOptions o = info.options;
+                if (modOptions_.draw(ctx, *ctx.rules, o, !host_) && host_)
+                    if (auto r = host_->setOptions(o); !r) error_ = r.error();
             }
         }
         if (client_ && client_->refusedForMods() && modsRefusal(ctx)) {
@@ -781,6 +805,8 @@ private:
     bool upnp_ = true;
     game::Controller aiPlayer_;
     bool aiSeesEverything_ = false;
+    setup::LimitsWindow limits_;           // the computer players' limits (the host's)
+    setup::ModOptionsWindow modOptions_;   // the mods' game options (the host edits, the others see)
     bool offers_ = false, offersKnown_ = false;
     std::string chat_;
     std::string error_;

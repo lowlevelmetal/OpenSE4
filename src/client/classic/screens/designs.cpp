@@ -12,11 +12,13 @@
 // design in place (cmd::EditDesign); Copy and Upgrade save a new design
 // (spec 03 §4.1).
 
+#include "client/classic/mod_ui.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/ships_common.hpp"
 #include "client/script/items.hpp"
 #include "client/classic/widgets.hpp"
 
@@ -167,7 +169,25 @@ private:
         d.beginContent(576);
         const ImU32 blue = imColor(palette::kLabel);
         textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {16, 39}, blue, "Designs");
-        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {269, 39}, blue, "Design Detail");
+        if (!modColumns_) textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {269, 39}, blue, "Design Detail");
+        // The mods' columns (docs/sdk/interface.md "List columns"), while Mod Columns is on:
+        // the tab's designs in a list across the window; a click shows one's detail again.
+        const bool modColumns = !modColumnsFor(ui, sdk::UiList::Designs).empty();
+        if (!modColumns) modColumns_ = false;
+        if (modColumns_) {
+            ImGui::SetCursorScreenPos(d.at({16, 58}));
+            std::vector<ModListRow> rows;
+            for (game::DesignId id : list) {
+                const game::Design& dd = ui.state().design(id);
+                rows.push_back({dd.name, shipui::designMini(ui, id), {"design", static_cast<int64_t>(id.value)}});
+            }
+            const ModListClick click = drawModList(ui, "##designsmods", rows, sdk::UiList::Designs, ImVec2(ui.px(558), ui.px(392)), 170);
+            if (click.left) {
+                selected_ = list[*click.left];
+                modColumns_ = false;
+                scrollToSelected_ = true;
+            }
+        } else {
         ImGui::SetCursorScreenPos(d.at({16, 58}));
         designList(ui, list);
         textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {16, 450}, blue, "(obsolete designs are deleted automatically)");
@@ -178,6 +198,7 @@ private:
         else
             textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {276, 66}, imColor(palette::kSecondary),
                    enemyTab(tab_) ? "No enemy designs of this kind seen yet." : "No designs of this kind yet.");
+        }
         // For lessons: the selected design's figures, down to what is drawn of them.
         ui.tag("designs:details", d.at({269, 58}), d.at({574, std::min(462.0f, detailBottom_ + 6.0f)}));
         ImGui::SetCursorScreenPos(d.at({16, 40}));
@@ -441,7 +462,12 @@ private:
             }
             ui.tagTab(kTabIds[i], tab_ == static_cast<DesignTab>(i));
         }
-        d.spacer();
+        if (!modColumnsFor(ui, sdk::UiList::Designs).empty()) {
+            // OpenSE4's own, in the free slot: the mods' columns over the tab's designs.
+            if (d.check("Mod Columns", modColumns_)) modColumns_ = !modColumns_;
+        } else {
+            d.spacer();
+        }
         const game::Design* own = selectedOwn(ui);
         auto openDesigner = [&](const char* mode) {
             ScreenArgs a;
@@ -528,6 +554,7 @@ private:
     game::DesignId selected_;
     game::DesignId newest_;  // the newest own design seen, to notice designs just created
     bool hideObsolete_ = false;
+    bool modColumns_ = false;   // the mods' columns shown (OpenSE4's own)
     bool statsView_ = false;
     int gridTop_ = 0;   // the component grid's first row shown
     float detailBottom_ = 462;   // where the detail's content ends (window frame pixels), for lessons

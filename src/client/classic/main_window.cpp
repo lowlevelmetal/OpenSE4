@@ -781,10 +781,13 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
             giveOrder(ui, o);
             return;
         }
-        case Pick::Callback:
-            if (pickCallback_) pickCallback_(where);
+        case Pick::Callback: {
+            // Taken first: the callback may ask for another pick (a mod order's next argument).
+            std::function<void(game::Location)> callback = std::move(pickCallback_);
             pickCallback_ = nullptr;
+            if (callback) callback(where);
             return;
+        }
     }
 }
 
@@ -1150,7 +1153,9 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     // or the main window's own picker, the command buttons, order strip,
     // selectors and report panel take no input (no click, no hover hint), and
     // neither do the map panels and the keys (below).
-    inputBlocked_ = blocked || chooser_.has_value() || pickObject_.has_value();
+    inputBlocked_ = blocked || chooser_.has_value() || pickObject_.has_value() || modPrompt_.has_value();
+    // The mods' keys (docs/sdk/interface.md "Key bindings"), when the data set has any.
+    useModActions(ui.rules());
     // The AI notes view, in the whole game this computer holds (the players run here).
     notes_.clear();
     if (settings().showAiNotes)
@@ -1178,9 +1183,10 @@ void MainWindow::update(UiContext& ui, bool blocked) {
             if (const game::Location at = game::locationOf(ui.state().galaxy, c->planet); at.system == shown_)
                 ui.tagFrame("sector:home", Rect::fromPosSize(cellOrigin(at.sector), {geo.cell, geo.cell}));
     // The picker takes the keys while it is open (Esc closes it and nothing else).
-    const bool choosing = chooser_.has_value() || pickObject_.has_value();
+    const bool choosing = chooser_.has_value() || pickObject_.has_value() || modPrompt_.has_value();
     if (chooser_) drawChooser(ui);
     else if (pickObject_) drawPickObject(ui);
+    else if (modPrompt_) drawModPrompt(ui);
     if (!blocked && !choosing) {
         mouse(ui);
         hotkeys(ui);
@@ -1207,10 +1213,24 @@ void MainWindow::drawChooser(UiContext& ui) {
             ImGui::PushID(int(i));
             if (!c.action) {
                 heading(ui, c.label.c_str());
+            } else if (c.icon) {
+                // A mod order's picture before its label (24x24).
+                const ImVec2 at = ImGui::GetCursorScreenPos();
+                const std::string label = "##icon" + c.label;
+                if (ImGui::Selectable(label.c_str(), c.chosen, ImGuiSelectableFlags_None, ImVec2(0, ui.px(26)))) {
+                    chosen = c.action;
+                    close = true;
+                }
+                script::reportItem(c.label);
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(c.icon.tex.value)), {at.x + ui.px(1), at.y + ui.px(1)}, {at.x + ui.px(25), at.y + ui.px(25)},
+                             {c.icon.uv.min.x, c.icon.uv.min.y}, {c.icon.uv.max.x, c.icon.uv.max.y});
+                dl->AddText({at.x + ui.px(30), at.y + (ui.px(26) - ImGui::GetTextLineHeight()) * 0.5f}, IM_COL32_WHITE, c.label.c_str());
             } else if (ImGui::Selectable(c.label.c_str(), c.chosen, ImGuiSelectableFlags_None, ImVec2(0, ui.px(22)))) {
                 chosen = c.action;
                 close = true;
             }
+            if (c.action && !c.tooltip.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", c.tooltip.c_str());
             ImGui::PopID();
         }
         ImGui::EndChild();
@@ -1345,6 +1365,10 @@ void MainWindow::commandPanel(UiContext& ui) {
     // can carry it out (§2.8). At 1024x768 all 40 places fit on one page; at
     // 800x600 five columns show at a time, on four pages the arrows turn (§2.3).
     const LitOrders lit = litNow(ui);
+    // The strip's free place holds the mods' orders (OpenSE4's own): lit while
+    // the selection or the empire takes some, dim (as the original's) otherwise.
+    const bool ordersLocked = ui.session.waitingForOthers() || (ui.session.turnBased() && !ui.session.myTurn());
+    const bool modOrdersLit = !ordersLocked && !replay_.active() && !modOrderOffers(ui).empty();
     const game::GameState& s = ui.state();
     const game::Vehicle* v = selectedVehicle(ui);
     const game::Colony* c = selectedColony(ui);
@@ -1359,7 +1383,7 @@ void MainWindow::commandPanel(UiContext& ui) {
         for (size_t row = 0; row < 2; ++row) {
             const OrderSlot& slot = kOrderStrip[col][row];
             const OrderPlace place = orderPlace(l, int(col * 2 + row));
-            const std::string_view tagId = slot.order ? learn::orderStripId(orderSlotKey(*slot.order)) : std::string_view{};
+            const std::string_view tagId = slot.order ? learn::orderStripId(orderSlotKey(*slot.order)) : learn::orderStripId("Mods");
             if (place.page != orderPage_) {
                 if (!tagId.empty()) {
                     const int forward = (place.page - orderPage_ + l.orderPages) % l.orderPages;
@@ -1368,10 +1392,12 @@ void MainWindow::commandPanel(UiContext& ui) {
                 continue;
             }
             const Vec2 at{stripX + float(place.column) * 34, 36 + float(place.row) * 34};
-            const bool enabled = slot.order && lit[static_cast<size_t>(*slot.order)];
+            const bool modSlot = !slot.order.has_value();
+            const bool enabled = modSlot ? modOrdersLit : lit[static_cast<size_t>(*slot.order)];
             ImGui::PushID(int(col * 2 + row) + 100);
             const auto [clicked, hovered] = hit("order", at, {34, 34});
             ImGui::PopID();
+            if (modSlot && modOrdersLit) script::reportItem("Mod Orders", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
             if (!tagId.empty()) ui.tagItem("order:" + std::string(tagId));
             // Repeat Orders and Minister Control show their pressed state when on.
             bool on = false;
@@ -1383,9 +1409,11 @@ void MainWindow::commandPanel(UiContext& ui) {
                 hintName_ = orderName(*slot.order);
                 if (const auto a = orderAction(*slot.order)) hintKey_ = hintKey(*a);
             }
+            if (hovered && modSlot && modOrdersLit) hintName_ = "Mod Orders";
             if (clicked && enabled) {
                 audio().play("ordbtn");
-                runOrder(ui, *slot.order);
+                if (modSlot) openModOrders(ui);
+                else runOrder(ui, *slot.order);
             }
         }
     ui.tagFrame("panel:commands", Rect{{x0 + 13, 36}, {x0 + 13 + 6 * 34, 36 + 2 * 34}});
@@ -1466,7 +1494,13 @@ void MainWindow::reportPanel(UiContext& ui) {
     ImGui::PopStyleVar();
     ImGui::PushClipRect(ui.at(geo.reportPanel.min - Vec2{8, 12}), ui.at(geo.reportPanel.min + Vec2{geo.reportPanel.size().x, fleetOnly ? bodyH : tabsY}),
                         false);
-    if (vehicle_ && tagged_.empty()) {
+    // The mods' panels in place of the report's page, while its MOD button is on.
+    const bool modPanels = modReport(ui, false);
+    if (modPage_ && modPanels) {
+        (void)modReport(ui, true);
+        if (vehicle_ && tagged_.empty() && !fleetOnly) tabsFor = true;
+        if (object_ && tagged_.empty() && !vehicle_) tabsFor = planetTabs = true;
+    } else if (vehicle_ && tagged_.empty()) {
         if (const game::Vehicle* v = s.vehicle(*vehicle_)) {
             if (const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr) {
                 // One of the player's fleets: the Fleet Report fills the panel
@@ -1610,13 +1644,20 @@ void MainWindow::reportPanel(UiContext& ui) {
             }
         }
     }
+    // OpenSE4's MOD button, while mods' panels apply: beside the up-arrow's place.
+    if (modPanels) {
+        const bool arrow = reportFromList_ && single && tagged_.empty();
+        if (modPageButton(ui, geo.reportPanel.min + Vec2{arrow ? 222.0f : 255.0f, 0})) modPage_ = !modPage_;
+    }
     if (tabsFor) {
         ImGui::SetCursorPos(ImVec2(ui.px(-4), ui.px(tabsY)));
         // The strip reaches 4 px left of the panel, over the rail: not cut off there.
         ImGui::PushClipRect(ui.at(geo.reportPanel.min - Vec2{4, 0}), ui.at(geo.reportPanel.max), false);
         const ReportTab current = planetTabs ? (tab_ == ReportTab::Components ? ReportTab::Facilities : tab_)
                                              : (tab_ == ReportTab::Facilities ? ReportTab::Components : tab_);
-        tab_ = reportTabs(ui, current, planetTabs);
+        bool tabClicked = false;
+        tab_ = reportTabs(ui, current, planetTabs, true, &tabClicked);
+        if (tabClicked) modPage_ = false;   // a classic tab: its page again
         ImGui::PopClipRect();
         ui.tagFrame("panel:report-tabs", Rect{{geo.reportPanel.min.x - 4, geo.reportPanel.min.y + tabsY}, {geo.reportPanel.min.x + 284, geo.reportPanel.min.y + tabsY + 30}});
     }
@@ -2041,6 +2082,8 @@ void MainWindow::hotkeys(UiContext& ui) {
             return;
         }
     if (replay_.active()) return;
+    // The mods' keys: their orders, report panels and Empires pages.
+    modHotkeys(ui);
 
     // Windows (F1..F11 by default).
     for (const CommandButton& b : kCommands)

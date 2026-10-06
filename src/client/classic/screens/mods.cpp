@@ -13,6 +13,7 @@
 #include "client/script/items.hpp"
 #include "datafile/datafile.hpp"
 #include "game/serialize.hpp"
+#include "sdk/ui.hpp"
 
 #include <algorithm>
 #include <cfloat>
@@ -204,6 +205,26 @@ private:
                     script::reportItem("problem:" + row->id, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
                 }
         for (const std::string& w : pk.warnings) wrapped(kWarn, w);
+        // Its interface and text files (docs/sdk/interface.md): what of them does not read.
+        if (pk.tiers & (mods::kTierInterface | mods::kTierText)) {
+            // Read again when the package's ui/ and text/ files change (they are not part of its identity).
+            std::string key = pk.id() + "@" + pk.root.string();
+            for (const mods::PackageFile& f : pk.files)
+                if (f.path.starts_with("ui/") || f.path.starts_with("text/")) key += std::format("|{}:{}", f.path, f.size);
+            if (uiProblemsFor_ != key) {
+                uiProblemsFor_ = std::move(key);
+                uiProblems_.clear();
+                const sdk::UiExtensions ext = sdk::loadUiExtensions(std::span<const mods::Package>(&pk, 1));
+                for (const auto& [mod, problem] : ext.problems) uiProblems_.push_back(problem);
+                sdk::UiTexts texts;
+                texts.add(pk);
+                for (const std::string& problem : texts.problems()) uiProblems_.push_back(problem);
+            }
+            for (const std::string& problem : uiProblems_) {
+                wrapped(kWarn, "Interface: " + problem);
+                script::reportItem("ui-problem:" + problem, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+            }
+        }
         ImGui::Spacing();
         label("Identity");
         ImGui::SameLine();
@@ -299,6 +320,8 @@ private:
     std::vector<ModsChoice::Row> rows_;
     std::expected<mods::ModSet, std::vector<std::string>> resolved_;
     std::string selected_;
+    std::string uiProblemsFor_;   // the package uiProblems_ were read for (id, identity, folder)
+    std::vector<std::string> uiProblems_;
     std::string error_;   // the last Done's: the data set could not be read with these mods
 };
 

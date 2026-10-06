@@ -157,8 +157,9 @@ std::optional<std::string> useComputerPlayer(const game::Rules& r, game::GameSet
 
 // The options the game's rules mods declare ([[rules.options]]), as the setup
 // screens offer them, with their values in the settings (their defaults
-// until set). A later step of the SDK draws them; the setup files of
-// opense4-server set them already.
+// until set). Game Setup, Quick Start and the lobby show them in the Mod
+// Options window (setup_players.hpp ModOptionsWindow); the setup files of
+// opense4-server set them too.
 struct ModOptionRow {
     std::string key;          // "<mod id>:<name>"
     std::string label;

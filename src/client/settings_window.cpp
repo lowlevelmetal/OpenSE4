@@ -1,6 +1,7 @@
 #include "client/settings_window.hpp"
 
 #include "client/app_settings.hpp"
+#include "client/script/items.hpp"
 
 #include <imgui.h>
 
@@ -148,6 +149,25 @@ void controlsSettingsPage(SettingsPanelState& state, float px) {
 
     section("Keys");
     ImGui::TextDisabled("Click a key to change it, then press the new key (Escape cancels, Backspace clears).");
+    const std::span<const ModAction> mods = modActions();
+    // A chord taken from another binding: the game's, or a mod's (whose
+    // suggestion, once taken, becomes the player's choice of no key).
+    auto takeFrom = [&](const KeyChord& chord, std::string_view exceptMod, std::optional<Action> exceptAction) {
+        const std::string user = chordUser(c.bindings, c.modKeys, mods, chord, exceptMod, exceptAction);
+        state.message = user.empty() ? std::string() : std::format("{} was also used by \"{}\"; that binding was removed.", chordName(chord), user);
+        if (auto other = c.bindings.boundTo(chord, exceptAction.value_or(Action::Count)))
+            for (int s = 0; s < 2; ++s)
+                if (c.bindings.chords(*other)[static_cast<size_t>(s)] == chord) c.bindings.set(*other, s, {});
+        const std::vector<ModKeys> keys = resolveModKeys(c.bindings, c.modKeys, mods);
+        for (size_t i = 0; i < mods.size(); ++i) {
+            if (mods[i].id == exceptMod) continue;
+            if (keys[i].chords[0] != chord && keys[i].chords[1] != chord) continue;
+            std::array<KeyChord, 2> kept = keys[i].chords;
+            for (KeyChord& k : kept)
+                if (k == chord) k = {};
+            c.modKeys[mods[i].id] = kept;
+        }
+    };
     if (state.capturing) {
         const auto [action, slot] = *state.capturing;
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
@@ -157,21 +177,36 @@ void controlsSettingsPage(SettingsPanelState& state, float px) {
             state.capturing.reset();
             save = true;
         } else if (auto chord = capturePressedChord()) {
-            if (auto other = c.bindings.boundTo(*chord, action))
-                state.message = std::format("{} was also used by \"{}\"; that binding was removed.", chordName(*chord), actionInfo(*other).label);
-            else
-                state.message.clear();
-            if (auto other = c.bindings.boundTo(*chord, action))
-                for (int s = 0; s < 2; ++s)
-                    if (c.bindings.chords(*other)[static_cast<size_t>(s)] == *chord) c.bindings.set(*other, s, {});
+            takeFrom(*chord, {}, action);
             c.bindings.set(action, slot, *chord);
             state.capturing.reset();
+            save = true;
+        }
+    } else if (state.capturingMod) {
+        const auto [id, slot] = *state.capturingMod;
+        const std::vector<ModKeys> keys = resolveModKeys(c.bindings, c.modKeys, mods);
+        std::array<KeyChord, 2> now{};
+        for (size_t i = 0; i < mods.size(); ++i)
+            if (mods[i].id == id) now = keys[i].chords;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            state.capturingMod.reset();
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) && !ImGui::GetIO().KeyCtrl) {
+            now[static_cast<size_t>(slot)] = {};
+            c.modKeys[id] = now;
+            state.capturingMod.reset();
+            save = true;
+        } else if (auto chord = capturePressedChord()) {
+            takeFrom(*chord, id, std::nullopt);
+            now[static_cast<size_t>(slot)] = *chord;
+            c.modKeys[id] = now;
+            state.capturingMod.reset();
             save = true;
         }
     }
     if (!state.message.empty()) ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s", state.message.c_str());
     if (ImGui::Button("Restore default keys")) {
         c.bindings.resetAll();
+        c.modKeys.clear();
         state.message.clear();
         save = true;
     }
@@ -198,7 +233,46 @@ void controlsSettingsPage(SettingsPanelState& state, float px) {
                 ImGui::PushID(static_cast<int>(info.action) * 2 + slot);
                 const bool waiting = state.capturing && state.capturing->first == info.action && state.capturing->second == slot;
                 const std::string label = waiting ? std::string("Press a key...") : chordName(c.bindings.chords(info.action)[static_cast<size_t>(slot)]);
-                if (ImGui::Button(label.c_str(), ImVec2(-FLT_MIN, 0))) state.capturing = std::pair{info.action, slot};
+                if (ImGui::Button(label.c_str(), ImVec2(-FLT_MIN, 0))) {
+                    state.capturing = std::pair{info.action, slot};
+                    state.capturingMod.reset();
+                }
+                ImGui::PopID();
+            }
+        }
+        // The mods' keys (docs/sdk/interface.md "Key bindings"), under each mod's name.
+        const std::vector<ModKeys> keys = resolveModKeys(c.bindings, c.modKeys, mods);
+        group = nullptr;
+        for (size_t i = 0; i < mods.size(); ++i) {
+            const ModAction& m = mods[i];
+            if (!group || m.group != group) {
+                group = m.group.c_str();
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextColored(kLabel, "%s", std::format("Mod: {}", m.group).c_str());
+            }
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(m.label.c_str());
+            if (!keys[i].conflict.empty()) {
+                // The suggestion is not used: said, never taking the other binding's place.
+                const std::string text = std::format("Suggests {}: not used, {}.", m.suggested, keys[i].conflict);
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextColored(ImVec4(1, 0.7f, 0.4f, 1), "%s", text.c_str());
+                ImGui::PopTextWrapPos();
+                script::reportItem(text, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());   // input scripts read it
+            }
+            for (int slot = 0; slot < 2; ++slot) {
+                ImGui::TableNextColumn();
+                ImGui::PushID(m.id.c_str());
+                ImGui::PushID(slot);
+                const bool waiting = state.capturingMod && state.capturingMod->first == m.id && state.capturingMod->second == slot;
+                const std::string label = waiting ? std::string("Press a key...") : chordName(keys[i].chords[static_cast<size_t>(slot)]);
+                if (ImGui::Button(label.c_str(), ImVec2(-FLT_MIN, 0))) {
+                    state.capturingMod = std::pair{m.id, slot};
+                    state.capturing.reset();
+                }
+                ImGui::PopID();
                 ImGui::PopID();
             }
         }

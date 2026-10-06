@@ -1,10 +1,13 @@
 #include "client/classic/screens/setup_players.hpp"
 
 #include "client/classic/layout.hpp"
+#include "client/classic/mod_ui.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/setup_widgets.hpp"
 #include "client/script/items.hpp"
 #include "game/players.hpp"
+#include "sdk/players.hpp"
+#include "sdk/rules.hpp"
 
 #include <algorithm>
 #include <cfloat>
@@ -67,6 +70,11 @@ struct PickerRow {
 bool offersComputerPlayers(const game::Rules& r) { return !computerPlayerChoices(r).empty(); }
 
 bool playersLine(MenuContext& ctx, std::string_view text, float textBottom, ImVec2 textLeft, ImVec2 buttonAt, ImVec2 buttonSize, float width) {
+    return setupLine(ctx, text, textBottom, textLeft, buttonAt, buttonSize, width, "Computer Players");
+}
+
+bool setupLine(MenuContext& ctx, std::string_view text, float textBottom, ImVec2 textLeft, ImVec2 buttonAt, ImVec2 buttonSize, float width,
+               const char* button) {
     const Painter p = ctx.painter();
     // In the small face, as the line about the mods, its last line ending at textBottom.
     ImFont* font = p.fonts.small ? p.fonts.small : p.fonts.regular;
@@ -77,7 +85,7 @@ bool playersLine(MenuContext& ctx, std::string_view text, float textBottom, ImVe
     script::reportItem(text, at, ImVec2(at.x + width, at.y + extent.y));   // input scripts read it
     ImGui::SetCursorScreenPos(buttonAt);
     ImGui::PushFont(p.fonts.bold, p.fontPx(kTitleSize));
-    const bool open = classicButton(p, "Computer Players", Vec2{buttonSize.x / p.k(), buttonSize.y / p.k()});
+    const bool open = classicButton(p, button, Vec2{buttonSize.x / p.k(), buttonSize.y / p.k()});
     ImGui::PopFont();
     return open;
 }
@@ -222,6 +230,120 @@ bool LimitsWindow::draw(MenuContext& ctx, game::GameOptions& o) {
         changed = true;
     }
     ImGui::SetCursorScreenPos(P(308, 204));
+    const bool done = classicButton(p, "Done", {200, 26}) || (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive());
+    if (done) {
+        ImGui::CloseCurrentPopup();
+        open_ = false;
+    }
+    ImGui::EndPopup();
+    return changed;
+}
+
+// ---- The mods' game options -------------------------------------------------------------------------
+
+bool offersModOptions(const game::Rules& r) { return !sdk::modOptions(r).empty(); }
+
+std::string modOptionsSummary(const game::Rules& r, const game::GameOptions& o) {
+    std::string out;
+    for (const sdk::ModOptionChoice& c : sdk::modOptions(r)) {
+        const int64_t v = sdk::modOptionValue(o, c);
+        const std::string value = c.option.isSwitch ? std::string(v ? "on" : "off") : std::to_string(v);
+        out += std::format("{}{} {}", out.empty() ? "Mod options: " : ", ", modOptionLabel(r, c.mod, c.option), value);
+    }
+    return out;
+}
+
+bool ModOptionsWindow::draw(MenuContext& ctx, const game::Rules& r, game::GameOptions& o, bool readOnly) {
+    if (!open_) return false;
+    constexpr const char* kId = "Mod Options##modoptions";
+    if (pending_) {
+        ImGui::OpenPopup(kId);
+        pending_ = false;
+    }
+    const std::vector<sdk::ModOptionChoice> choices = sdk::modOptions(r);
+    Vec2 min;
+    const Vec2 size{540, 420};
+    if (!beginWindow(ctx, kId, size, "Mod Options", min)) {
+        open_ = false;
+        return false;
+    }
+    const Painter p = ctx.painter();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 origin = ImGui::GetWindowPos();
+    auto P = [&](float x, float y) { return ImVec2(origin.x + p.px(x), origin.y + p.px(y)); };
+    const float textH = wrappedText(ctx, dl, P(10, 36),
+                                    readOnly ? "The game's options that its mods declare, as the host set them."
+                                             : "The game's options that its mods declare. They are part of the game: every player of it has the same.",
+                                    520, imColor(kExplainRgb));
+    const float listTop = std::max(64.0f, 36 + textH + 8);
+    const float listBottom = 370;
+    const float lw = std::max(1.0f, std::floor(p.map.scale)) / p.fbScale;
+    dl->AddRect(P(10, listTop), P(530, listBottom), imColor(palette::kFrameLight), 0.0f, lw);
+    ImGui::SetCursorScreenPos(P(11, listTop + 1));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    beginList(p, "##modoptionrows", p.size({518, listBottom - listTop - 2}), 17.0f, ImGuiChildFlags_None, false);
+    bool changed = false;
+    ImFont* font = ctx.fonts.regular;
+    std::string mod;
+    for (size_t i = 0; i < choices.size(); ++i) {
+        const sdk::ModOptionChoice& c = choices[i];
+        ImGui::PushID(int(i));
+        if (c.mod != mod) {
+            // The mod's name over its options.
+            mod = c.mod;
+            ImGui::PushFont(ctx.fonts.bold, p.fontPx(kTitleSize));
+            ImGui::TextColored(imColorV(kHeadingRgb), "%s", modName(r, c.mod).c_str());
+            ImGui::PopFont();
+        }
+        const std::string label = modOptionLabel(r, c.mod, c.option);
+        const std::string description = modOptionDescription(r, c.mod, c.option);
+        const int64_t value = sdk::modOptionValue(o, c);
+        const ImVec2 row = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddText(font, p.fontPx(kTextSize), ImVec2(row.x + p.px(4), row.y + p.px(3)), IM_COL32_WHITE, label.c_str());
+        ImGui::SetCursorScreenPos(ImVec2(row.x + p.px(330), row.y));
+        if (readOnly) {
+            const std::string shown = c.option.isSwitch ? std::string(value ? "On" : "Off") : std::to_string(value);
+            ImGui::TextUnformatted(shown.c_str());
+            script::reportItem(std::format("mod-option:{}:{}", label, shown), row, ImVec2(row.x + p.px(500), row.y + p.px(20)));
+        } else if (c.option.isSwitch) {
+            if (ImGui::InvisibleButton("##switch", p.size({160, 18}))) {
+                changed = sdk::setModOption(o, choices, c.key(), value ? 0 : 1).empty() || changed;
+            }
+            const ImVec2 at = ImGui::GetItemRectMin();
+            drawLamp(ctx, ImGui::GetWindowDrawList(), ImVec2(at.x + p.px(9), at.y + p.px(9)), value != 0);
+            ImGui::GetWindowDrawList()->AddText(font, p.fontPx(kTextSize), ImVec2(at.x + p.px(21), at.y + p.px(2)), IM_COL32_WHITE, value ? "On" : "Off");
+            script::reportItem(std::format("mod-option:{}", label), at, ImGui::GetItemRectMax());
+            script::reportItem(std::format("mod-option-value:{}:{}", label, value ? "On" : "Off"), at, ImGui::GetItemRectMax());
+        } else {
+            ImGui::SetNextItemWidth(p.px(160));
+            int64_t shown = value;
+            if (ImGui::InputScalar("##value", ImGuiDataType_S64, &shown)) {
+                shown = std::clamp(shown, c.option.min, c.option.max);
+                changed = sdk::setModOption(o, choices, c.key(), shown).empty() || changed;
+            }
+            script::reportItem(std::format("mod-option:{}", label));
+            script::reportItem(std::format("mod-option-value:{}:{}", label, sdk::modOptionValue(o, c)), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", std::format("{} to {}", c.option.min, c.option.max).c_str());
+        }
+        ImGui::SetCursorScreenPos(ImVec2(row.x, row.y + p.px(22)));
+        if (!description.empty()) {
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + p.px(490));
+            ImGui::TextColored(imColorV(kExplainRgb), "%s", description.c_str());
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::Dummy(ImVec2(0, p.px(4)));
+        ImGui::PopID();
+    }
+    endList(p);
+    ImGui::PopStyleVar();
+    if (!readOnly) {
+        ImGui::SetCursorScreenPos(P(12, 384));
+        if (classicButton(p, "Restore Defaults", {200, 26})) {
+            for (const sdk::ModOptionChoice& c : choices) (void)sdk::setModOption(o, choices, c.key(), c.option.defaultValue);
+            changed = true;
+        }
+    }
+    ImGui::SetCursorScreenPos(P(328, 384));
     const bool done = classicButton(p, "Done", {200, 26}) || (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive());
     if (done) {
         ImGui::CloseCurrentPopup();

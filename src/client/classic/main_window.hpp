@@ -5,6 +5,7 @@
 // the report/list panel and the galaxy panel, all in the 1024×768 frame.
 
 #include "client/classic/computer_players.hpp"
+#include "client/classic/mod_ui.hpp"
 #include "client/classic/finale.hpp"
 #include "client/classic/movement_replay.hpp"
 #include "client/classic/order_rules.hpp"
@@ -76,6 +77,8 @@ private:
         std::string label;
         std::function<void()> action;   // none: a heading row
         bool chosen = false;            // drawn with the green lamp
+        std::string tooltip;            // under the pointer (a mod order's description)
+        Sprite icon;                    // before the label (a mod order's picture)
     };
     struct Chooser {
         std::string title;
@@ -143,6 +146,47 @@ private:
     void note(UiContext& ui, std::string text);
     void hotkeys(UiContext& ui);
     void drawChooser(UiContext& ui);
+
+    // Mod orders (main_window_mods.cpp; docs/sdk/interface.md "Mod orders"):
+    // the order strip's free place, lit when the selection (or the empire
+    // itself) takes orders of the game's rules mods, opens a menu of them;
+    // each order's arguments are asked for one after another (a number, text,
+    // a choice from a list, a pick on the map), then it is given as a command.
+    struct ModOrderOffer {
+        sdk::ModOrderChoice choice;
+        sdk::ModOrderTarget target;
+        std::string label;
+    };
+    std::vector<ModOrderOffer> modOrderOffers(UiContext& ui) const;
+    void openModOrders(UiContext& ui);
+    void startModOrder(UiContext& ui, ModOrderOffer offer);
+    void nextModStep(UiContext& ui);
+    void answerModStep(UiContext& ui, opense4::script::Value answer);
+    void pickModArgument(UiContext& ui, game::Location where);
+    void drawModPrompt(UiContext& ui);
+    void modHotkeys(UiContext& ui);
+    struct ModOrderDraft {
+        ModOrderOffer offer;
+        std::vector<sdk::UiArgStep> steps;
+        size_t at = 0;
+        opense4::script::Value answers = opense4::script::Value::emptyMap();
+    };
+    std::optional<ModOrderDraft> modOrder_;
+    // A number or text asked for now (the draft's step).
+    struct ModPrompt {
+        std::string title, question;
+        bool number = true;
+        int64_t value = 0;
+        std::string text;
+        bool appearing = true;
+    };
+    std::optional<ModPrompt> modPrompt_;
+    // The report shows the mods' panels in place of its page (the report's MOD button).
+    bool modPage_ = false;
+    // The MOD button at the report's top right (only while panels apply); true when clicked.
+    bool modPageButton(UiContext& ui, Vec2 at);
+    // The mods' panels about what the report shows: true when there are any.
+    bool modReport(UiContext& ui, bool draw);
 
     // Drawing.
     void statusBar(UiContext& ui);

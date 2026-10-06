@@ -4,6 +4,7 @@
 // graphics, controls and sound pages, in the classic dialog layout.
 
 #include "client/app_settings.hpp"
+#include "client/classic/mod_ui.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -11,6 +12,7 @@
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/settings_window.hpp"
+#include "client/script/items.hpp"
 
 #include <algorithm>
 #include <format>
@@ -36,7 +38,7 @@ public:
                 break;
             case Page::Controls: controlsSettingsPage(state_, ui.k()); break;
             case Page::Sound: soundSettingsPage(ui.k()); break;
-            case Page::Modding: moddingSettingsPage(ui.k()); break;
+            case Page::Modding: moddingSettingsPage(ui.k(), &ui.rules()); break;
         }
         ImGui::EndChild();
         d.beginButtons();
@@ -45,7 +47,7 @@ public:
         if (d.tab("Sound", page_ == Page::Sound)) page_ = Page::Sound;
         if (d.tab("Modding", page_ == Page::Modding)) page_ = Page::Modding;
         // While a key is being captured, Escape cancels the capture instead of closing.
-        if (!state_.capturing) d.close();
+        if (!state_.capturingKey()) d.close();
         return d.keepOpen();
     }
 
@@ -240,9 +242,38 @@ void soundSettingsPage(float px) {
     if (changed) saveSettings();
 }
 
-void moddingSettingsPage(float px) {
+void moddingSettingsPage(float px, const game::Rules* rules) {
     ClassicSettings& s = settings();
     bool changed = false;
+    // The language of the mods' text (docs/sdk/interface.md "Text"): English and
+    // every language the mods in use have strings in; only while they have some.
+    std::vector<std::string> languages{"en"};
+    if (rules)
+        for (const std::string& l : modUi(*rules).texts.languages())
+            if (std::find(languages.begin(), languages.end(), l) == languages.end()) languages.push_back(l);
+    if (std::find(languages.begin(), languages.end(), s.modLanguage) == languages.end()) languages.push_back(s.modLanguage);
+    if (languages.size() > 1) {
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.44f, 0.61f, 1.0f, 1.0f), "The mods' text");
+        ImGui::Separator();
+        ImGui::SetNextItemWidth(160 * px);
+        const ImVec2 comboAt = ImGui::GetCursorScreenPos();
+        const bool comboOpen = ImGui::BeginCombo("Language of the mods' text", s.modLanguage.c_str());
+        // Input scripts open it by its label.
+        script::reportItem("Language of the mods' text", comboAt, ImVec2(comboAt.x + 160 * px, comboAt.y + ImGui::GetFrameHeight()));
+        if (comboOpen) {
+            for (const std::string& l : languages)
+                if (ImGui::Selectable(l.c_str(), l == s.modLanguage)) {
+                    s.modLanguage = l;
+                    changed = true;
+                }
+            ImGui::EndCombo();
+        }
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 520 * px);
+        ImGui::TextDisabled("The names mods give their orders, options, panels and pages, from their text/<language>.toml files; "
+                            "English, then the mods' own words, where a mod has no text in this language. The game's own windows stay in English.");
+        ImGui::PopTextWrapPos();
+    }
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(0.44f, 0.61f, 1.0f, 1.0f), "Computer players of mods");
     ImGui::Separator();

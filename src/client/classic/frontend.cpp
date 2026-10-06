@@ -5,6 +5,7 @@
 #include "client/app_settings.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/file_dialog.hpp"
+#include "client/classic/mod_ui.hpp"
 #include "client/classic/mods_model.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/screens/setup_players.hpp"
@@ -260,6 +261,18 @@ QuickPlayers& quickPlayers() {
     return chosen;
 }
 
+// Quick Start's mod options (OpenSE4's own, when the game's rules mods declare
+// some): kept while the mods stay the same.
+struct QuickModOptions {
+    game::GameOptions options;   // only its modOptions are used
+    uint64_t generation = 0;
+};
+QuickModOptions& quickModOptions() {
+    static QuickModOptions chosen;
+    if (chosen.generation != loadedMods().generation) chosen = QuickModOptions{{}, loadedMods().generation};
+    return chosen;
+}
+
 // Quick Start's picker in the setup frame (spec 07 session 5): "Select Empire"
 // and a two-line hint, the races of Settings.txt's Quick Start Style list in
 // pages of eight, two columns of four filled column by column, each a 128×128
@@ -329,6 +342,19 @@ public:
                 if (players_.draw(ctx, *ctx.rules, choice, o)) q.player = choice.value_or(game::Controller{});
             }
         }
+        // OpenSE4's own, when the game's rules mods declare options: their values, above.
+        if (!modOptionsKnown_) {
+            offersModOptions_ = setup::offersModOptions(*ctx.rules);
+            modOptionsKnown_ = true;
+        }
+        if (offersModOptions_) {
+            QuickModOptions& q = quickModOptions();
+            const float bottom = a.at({4, offers_ ? 400.0f : 468.0f}).y;
+            if (setup::setupLine(ctx, setup::modOptionsSummary(*ctx.rules, q.options), bottom, a.at({4, 400}), a.at({2, offers_ ? 406.0f : 474.0f}),
+                                 a.size({203, 26}), a.px(203), "Mod Options"))
+                modOptions_.open();
+            if (modOptions_.isOpen()) modOptions_.draw(ctx, *ctx.rules, q.options);
+        }
         // Begin Game is lit before a portrait is chosen (observed); without one it
         // only asks for a choice (ours).
         if (a.beginButton("Begin Game")) {
@@ -360,6 +386,7 @@ private:
                 }
             setup.options.aiSeesEverything = q.seesEverything;
         }
+        if (offersModOptions_) setup.options.modOptions = quickModOptions().options.modOptions;   // the mods' options chosen
         auto session = startLocalGame(ctx.rules, setup, quickStartExtras());
         if (!session) {
             error_ = session.error();
@@ -375,6 +402,8 @@ private:
     std::string error_;
     bool offers_ = false, offersKnown_ = false;   // the game's mods offer computer players
     setup::PlayerPicker players_;
+    bool offersModOptions_ = false, modOptionsKnown_ = false;   // the game's rules mods declare options
+    setup::ModOptionsWindow modOptions_;
 };
 
 class SettingsFrontScreen final : public FrontScreen {
@@ -394,13 +423,15 @@ public:
             drawWindowFrame(p, ImGui::GetWindowDrawList(), r, "Settings", 180);
             ImGui::SetCursorPos(ctx.size({15, 35}));
             ImGui::BeginChild("##page", ctx.size({556, 431}));
+            // The mods' keys join the Controls page (docs/sdk/interface.md "Key bindings").
+            if (ctx.rules) useModActions(*ctx.rules);
             switch (page_) {
                 case 0:
                     if (ctx.app) graphicsSettingsPage(state_, *ctx.app, ctx.k());
                     break;
                 case 1: controlsSettingsPage(state_, ctx.k()); break;
                 case 2: soundSettingsPage(ctx.k()); break;
-                default: moddingSettingsPage(ctx.k()); break;
+                default: moddingSettingsPage(ctx.k(), ctx.rules.get()); break;
             }
             ImGui::EndChild();
             static constexpr std::array<const char*, 4> kPages{"Graphics", "Controls", "Sound", "Modding"};
@@ -413,7 +444,7 @@ public:
                 emptySlot(p, {180, 28});
             }
             ImGui::SetCursorPos(ctx.size({585, 438}));
-            if (classicButton(p, "Back", {180, 28}) || (!state_.capturing && ImGui::IsKeyPressed(ImGuiKey_Escape, false))) ctx.go(FrontId::Intro);
+            if (classicButton(p, "Back", {180, 28}) || (!state_.capturingKey() && ImGui::IsKeyPressed(ImGuiKey_Escape, false))) ctx.go(FrontId::Intro);
         }
         ImGui::End();
         ImGui::PopStyleVar(2);
