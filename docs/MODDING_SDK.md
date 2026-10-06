@@ -304,6 +304,8 @@ messages between it and the engine.
 - **Replays and logs:** a game played in the arena opens in the client, with the AI's notes
   and its decision journal.
 - **Tests:** `opense4-sdk test` runs the mod's own tests against fixed seeds.
+- **As built:** [docs/sdk/bots-and-arena.md](sdk/bots-and-arena.md) describes external
+  bots, the arena, the training environment, `opense4-sdk test` and `run`.
 
 ### 6.5 Engine work
 
@@ -453,6 +455,15 @@ computer and never changes the game except through commands.
   - "the classic AI with my own research";
   - a complete small AI.
 - **A mod manager in the client:** enable, order, inspect, and per game.
+- **As built (2026-10-05):**
+  - `new`, `check`, `info`, `dump` and `pack` ([packages-and-data.md](sdk/packages-and-data.md));
+  - `test` (the mod's `tests/` in the game's runtime, and a short game per computer player),
+    `run`, `arena` (with its JSON and CSV reports, saved games, replays and Elo ratings),
+    and `bot` and `python` for external bots ([bots-and-arena.md](sdk/bots-and-arena.md));
+  - `publish` waits for the Steam release (section 14.7);
+  - external bots connect to the dedicated server, the client and play-by-e-mail hosts over
+    TCP with a token (docs/sdk/ai-protocol.md §10), and `opense4.env` is the step-by-step
+    training environment (section 6.4).
 
 ## 12. Milestones
 

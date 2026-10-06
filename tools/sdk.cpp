@@ -6,6 +6,8 @@
 //   opense4-sdk dump <mod...> [--out=DIR] [--data=DIR] [--mods-dir=DIR]
 //   opense4-sdk pack <mod> [--out=FILE.zip]
 //   opense4-sdk info <mod>
+//   opense4-sdk test | run | arena | env-host | bot | python  (computer players:
+//       sdk_test.cpp, sdk_arena.cpp, sdk_env.cpp; docs/sdk/bots-and-arena.md)
 //
 // It reads the player's installed game (or --data=DIR) and never writes into it.
 
@@ -18,6 +20,7 @@
 #include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
 #include "sdk/players.hpp"
+#include "sdk_tool.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -52,8 +55,22 @@ Usage:
         identity recorded in it.
   opense4-sdk info <mod>
         What a mod is and holds, and its identity.
-  opense4-sdk run | test | arena | publish
-        Not yet: they come with later steps of the SDK.
+  opense4-sdk test <mod> [--data=DIR] [--turns=N] [--seed=N] [--no-games]
+        Runs the mod's tests/ in the game's Python, then a short game for each
+        of its computer players, failing on any script error.
+  opense4-sdk run <mod> [--player=NAME] [--data=DIR] [-- CLIENT OPTIONS...]
+        Starts the game with the mod (and --ai for its computer player).
+  opense4-sdk arena --ai=SPEC --ai=SPEC... [--games=N] [--turns=N] [--seed=N]
+        [--jobs=N] [--out=DIR] (see opense4-sdk arena --help)
+        Plays headless games between computer players and reports who wins.
+  opense4-sdk env-host --seed=N ...
+        The engine behind opense4.env, the training environment.
+  opense4-sdk bot <module:Class> [--path=DIR] [--port=N] [--slot=N] ...
+        Plays a Player class as an external bot, with CPython.
+  opense4-sdk python [--out=DIR]
+        Writes OpenSE4's opense4 Python package for external bots.
+  opense4-sdk publish
+        Waits for the Steam release; `pack` makes the package to upload.
 
 <mod> is a mod folder or .zip, or the id of a mod in the mods folder (default:
 Mods in OpenSE4's user folder; --mods-dir=DIR). --data=DIR is the game folder
@@ -630,6 +647,25 @@ int cmdPack(const std::vector<std::string>& argv) {
 
 } // namespace
 
+// For the commands of sdk_test.cpp, sdk_arena.cpp and sdk_env.cpp.
+namespace opense4::sdktool {
+
+std::expected<mods::Package, std::string> openMod(const std::string& what, const std::string& modsDir) {
+    Args a;
+    if (!modsDir.empty()) a.options["mods-dir"].push_back(modsDir);
+    return findMod(what, a);
+}
+
+std::expected<mods::ModSet, std::vector<std::string>> modsWithDependencies(std::vector<mods::Package> targets, const std::vector<std::string>& others,
+                                                                         const std::string& modsDir) {
+    Args a;
+    if (!modsDir.empty()) a.options["mods-dir"].push_back(modsDir);
+    if (!others.empty()) a.options["mod"] = others;
+    return withDependencies(std::move(targets), a);
+}
+
+} // namespace opense4::sdktool
+
 int main(int argc, char** argv) {
     const std::vector<std::string> args = core::utf8Arguments(argc, argv);  // UTF-8 on Windows too
     if (args.size() < 2 || args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
@@ -642,7 +678,14 @@ int main(int argc, char** argv) {
     if (command == "dump") return cmdDump(args);
     if (command == "pack") return cmdPack(args);
     if (command == "info") return cmdInfo(args);
-    if (command == "run" || command == "test" || command == "arena" || command == "publish")
-        return fail(std::format("'{}' is not there yet: it comes with a later step of the SDK (docs/MODDING_SDK.md §12)", command), 2);
+    if (command == "test") return sdktool::cmdTest(args);
+    if (command == "run") return sdktool::cmdRun(args);
+    if (command == "arena") return sdktool::cmdArena(args);
+    if (command == "arena-game") return sdktool::cmdArenaGame(args);   // one game of an arena, in a process of its own
+    if (command == "env-host") return sdktool::cmdEnvHost(args);
+    if (command == "bot") return sdktool::cmdBot(args);
+    if (command == "python") return sdktool::cmdPython(args);
+    if (command == "publish")
+        return fail("'publish' waits for the Steam release (docs/MODDING_SDK.md §14.7); `opense4-sdk pack` already makes the package an upload would use", 2);
     return fail(std::format("unknown command '{}' (see --help)", command));
 }

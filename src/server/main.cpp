@@ -15,6 +15,7 @@
 #include "ruleset/ruleset.hpp"
 #include "mods/data_set.hpp"
 #include "game/players.hpp"
+#include "sdk/bots.hpp"
 #include "sdk/players.hpp"
 #include "server/setup_file.hpp"
 
@@ -42,8 +43,8 @@ constexpr std::string_view kUsage = R"(opense4-server: host OpenSE4 network and 
 
 Usage:
   opense4-server [options]                      host a network game (lobby, turns, autosave)
-  opense4-server pbem new --setup=FILE.toml --out=GAME.gam [--turn-files=DIR]
-  opense4-server pbem process --game=GAME.gam --orders=DIR [--password=PW] [--keep-orders]
+  opense4-server pbem new --setup=FILE.toml --out=GAME.gam [--turn-files=DIR] [--bot-...]
+  opense4-server pbem process --game=GAME.gam --orders=DIR [--password=PW] [--keep-orders] [--bot-...]
                               [--reset-passwords=N,M]  (new passwords, shown here only)
                               [--turn-files=DIR] [--no-password-migration]
   opense4-server pbem turn-files --game=GAME.gam [--out=DIR]
@@ -69,7 +70,19 @@ Network game options:
   --ai=N                 Computer empires (default 0)
   --ai=MOD:PLAYER        Every computer empire is played by this script player of
                          a mod the game uses ([[ai.players]], docs/sdk/ai-protocol.md);
-                         "builtin" for the built-in AI. Give --ai twice for both
+                         "builtin" for the built-in AI; "external:N" for the external
+                         bot of slot N; "external" for a bot of its own each (slots
+                         0, 1, ... in order). Give --ai twice for a number and a player
+  --bot-port=N           Where external bots connect (default 6722 when an empire has
+                         an external player; 0 = any free port). Bots present a token
+                         (--bot-token, else OPENSE4_BOT_TOKEN, else a random one, shown
+                         here); the game starts once each external slot has its bot
+                         (docs/sdk/bots-and-arena.md)
+  --bot-bind=ADDRESS     Where bots may connect from (default 127.0.0.1: this computer
+                         only; others connect without encryption, with the token)
+  --bot-token=TOKEN      The token bots present
+  --bot-timeout=SEC      A bot's time for one request (default: --turn-timeout, else 60);
+                         a bot that takes longer fails it and the classic AI decides
   --seed=N               Galaxy seed (default: random)
   --systems=N            Exactly N star systems (default 0: rolled from the quadrant size)
   --quadrant-size=N      Quadrant size 0 small, 1 medium (default), 2 large
@@ -103,6 +116,10 @@ Players whose orders are missing when the turn is processed are played by the
 computer for that turn. In a turn-based game the server waits for the player
 whose turn it is; when the time limit runs out the computer plays the rest of
 that turn. Stop the server with Ctrl+C; it saves first.
+
+pbem new and process take --bot-port, --bot-bind, --bot-token, --bot-timeout and
+--bot-wait=SEC (default 30): the game's external bots connect (python -m opense4.bot
+... --reconnect stays for the next run) before the turn is played.
 
 pbem: the host keeps GAME.gam, the whole game, and never sends it. "new" and
 "process" write a turn file per player who plays next (<game>_<NN>.turn, next
@@ -335,12 +352,73 @@ std::string checkPlayers(const game::Rules& rules, std::span<const game::EmpireS
     return out;
 }
 
+// ---- External bots (docs/sdk/bots-and-arena.md) ----------------------------------------------------
+
+// The external slots the empires' controllers name.
+std::vector<uint32_t> externalSlotsOf(const game::GameState& s) {
+    std::vector<game::EmpireSetup> setups(s.empires.size());
+    for (size_t i = 0; i < s.empires.size(); ++i) setups[i].controller = s.empires[i].controller;
+    return sdk::externalSlots(setups);
+}
+
+std::string slotList(std::span<const uint32_t> slots) {
+    std::string out;
+    for (uint32_t slot : slots) out += (out.empty() ? "" : ", ") + std::to_string(slot);
+    return out;
+}
+
+// The bots' host, when the game has external empires or --bot-port asks for
+// one, with the sessions asking it; null without.
+std::expected<std::unique_ptr<sdk::BotHost>, std::string> openBots(const Options& o, std::vector<uint32_t> slots, int64_t turnTimeout,
+                                                                  const std::string& gameName) {
+    if (slots.empty() && !o.has("bot-port")) return std::unique_ptr<sdk::BotHost>();
+    auto port = o.integer("bot-port", sdk::kDefaultBotPort, 0, 65535);
+    auto timeout = o.integer("bot-timeout", turnTimeout > 0 ? turnTimeout : 60, 1, 7 * 24 * 3600);
+    for (const auto* v : {&port, &timeout})
+        if (!*v) return std::unexpected(v->error());
+    sdk::BotHostOptions bo;
+    bo.bind = o.get("bot-bind", "127.0.0.1");
+    bo.port = static_cast<uint16_t>(*port);
+    bo.token = o.has("bot-token") ? o.get("bot-token") : core::environment("OPENSE4_BOT_TOKEN").value_or("");
+    bo.gameName = gameName;
+    bo.slots = slots;
+    bo.requestTimeout = std::chrono::seconds(*timeout);
+    bo.report = [](const std::string& line) { say(line); };
+    auto host = sdk::BotHost::open(std::move(bo));
+    if (!host) return std::unexpected(host.error());
+    say(std::format("Bots: external slots {} connect to {} with the token {} (python -m opense4.bot MODULE:CLASS --port {} --slot N, "
+                    "the token in OPENSE4_BOT_TOKEN); {} s per request",
+                    slots.empty() ? std::string("(none yet)") : slotList(slots), (*host)->address(), (*host)->token(), (*host)->port(), *timeout));
+    const std::string where = o.get("bot-bind", "127.0.0.1");
+    if (where != "127.0.0.1" && where != "localhost" && where != "::1")
+        say("Bots: they may connect from other computers; the connection is not encrypted, so only the token keeps others out");
+    sdk::installPlayers((*host)->playerSetup());
+    return std::move(*host);
+}
+
+// Waits for the bots of `slots` (play by e-mail), saying who is missing.
+void waitForBots(sdk::BotHost& bots, std::span<const uint32_t> slots, int64_t seconds) {
+    if (slots.empty()) return;
+    say(std::format("Bots: waiting up to {} s for external slots {}", seconds, slotList(slots)));
+    if (bots.waitFor(slots, std::chrono::seconds(seconds))) return;
+    std::vector<uint32_t> missing;
+    for (uint32_t slot : slots)
+        if (!bots.connected(slot)) missing.push_back(slot);
+    say(std::format("Bots: no bot for external slots {}; the classic AI plays their empires this time", slotList(missing)));
+}
+
+// Back to the sessions without bots before the host goes (they point into it).
+struct BotsGone {
+    ~BotsGone() { sdk::installPlayers(); }
+};
+
 // ---- The network server ----------------------------------------------------------------------------
 
 int runServer(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
-                             "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key", "mod", "mods-dir"},
+                             "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key", "mod", "mods-dir", "bot-port",
+                             "bot-bind", "bot-token", "bot-timeout"},
                             {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "no-password-migration", "verbose", "help", "version"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
@@ -357,11 +435,13 @@ int runServer(std::span<char*> args) {
     // --ai: how many computer empires, and who plays them.
     std::expected<int64_t, std::string> ai = int64_t{0};
     std::optional<game::Controller> aiPlayer;
+    bool botEach = false;   // --ai=external: a bot of its own for each computer empire
     for (const std::string& v : o.getAll("ai")) {
         int64_t n = 0;
         const auto [end, ec] = std::from_chars(v.data(), v.data() + v.size(), n);
         if (ec == std::errc{} && end == v.data() + v.size()) ai = n >= 0 && n <= 31 ? std::expected<int64_t, std::string>(n)
                                                                                      : std::unexpected(std::string("--ai must be a number from 0 to 31"));
+        else if (v == "external") botEach = true;
         else if (auto c = game::parseController(v)) aiPlayer = *c;
         else ai = std::unexpected(std::format("--ai must be a number of computer empires or a player \"<mod id>:<player>\", not '{}'", v));
     }
@@ -440,7 +520,18 @@ int runServer(std::span<char*> args) {
     if (aiPlayer)
         for (auto& c : computers)
             if (c.kind != game::PlayerKind::Neutral) c.controller = *aiPlayer;
+    if (botEach) {
+        uint32_t slot = 0;
+        for (auto& c : computers)
+            if (c.kind != game::PlayerKind::Neutral) {
+                c.controller.kind = game::Controller::Kind::External;
+                c.controller.slot = slot++;
+            }
+    }
     if (auto problems = checkPlayers(**rules, computers); !problems.empty()) return fail(problems, 2);
+    // A new game with external empires waits for their bots before it starts.
+    const std::vector<uint32_t> newGameSlots = o.has("load") ? std::vector<uint32_t>{} : sdk::externalSlots(computers);
+    if (!newGameSlots.empty()) cfg.autoStart = false;
 
     if (const std::string& q = cfg.setup.options.quadrantType; !q.empty()) {
         const auto& types = (*rules)->data().quadrantTypes;
@@ -456,10 +547,15 @@ int runServer(std::span<char*> args) {
     }
 
     std::filesystem::path saveFile = std::filesystem::path(o.get("save-dir", ".")) / (fileSafe(cfg.gameName) + ".gam");
+    std::unique_ptr<sdk::BotHost> bots;
+    const BotsGone botsGone;
     net::HostSession host(**rules, cfg);
     if (o.has("load")) {
         auto game = game::loadGame(o.get("load"));
         if (!game) return fail(game.error(), 2);
+        auto opened = openBots(o, externalSlotsOf(game->first), *timeout, cfg.gameName);
+        if (!opened) return fail(opened.error(), 2);
+        bots = std::move(*opened);
         // Reading a game file recalculates every colony's cloak and sensor
         // levels, a colony that can no longer cloak decloaking as by Decloak
         // (spec 01 §6.9, §14 Q44).
@@ -468,10 +564,14 @@ int runServer(std::span<char*> args) {
         else if (!game->second.gameName.empty()) saveFile = std::filesystem::path(o.get("save-dir")) / (fileSafe(game->second.gameName) + ".gam");
         if (auto r = host.resume(std::move(game->first), game->second); !r) return fail(r.error(), 2);
     } else {
+        auto opened = openBots(o, newGameSlots, *timeout, cfg.gameName);
+        if (!opened) return fail(opened.error(), 2);
+        bots = std::move(*opened);
         if (auto r = host.start(); !r) return fail(r.error(), 2);
         for (auto& c : computers)
             if (auto r = host.addComputerEmpire(c); !r) return fail(r.error(), 2);
     }
+    bool toldWaiting = false;
 
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
@@ -521,6 +621,20 @@ int runServer(std::span<char*> args) {
             if (e.type == net::EventType::PlayerTurn && autosaveTurn && lastSaved != std::pair{host.state()->turn, host.activeEmpire().value})
                 saveNow("autosave");
         }
+        // The start held for the bots: as the host starts by itself, once each external slot has its bot.
+        if (!newGameSlots.empty() && host.phase() == net::HostPhase::Lobby) {
+            const auto& slots = host.lobby().slots;
+            const bool full = std::none_of(slots.begin(), slots.end(), [](const net::LobbySlot& sl) { return sl.open(); });
+            if (full && host.startProblem(false).empty()) {
+                const bool botsIn = bots && std::all_of(newGameSlots.begin(), newGameSlots.end(), [&](uint32_t sl) { return bots->connected(sl); });
+                if (botsIn) {
+                    if (auto r = host.startGame(false); !r) return fail("the game could not start: " + r.error(), 1);
+                } else if (!toldWaiting) {
+                    say(std::format("Every player is ready; waiting for the bots of external slots {}", slotList(newGameSlots)));
+                    toldWaiting = true;
+                }
+            }
+        }
         if (*maxTurns > 0 && host.state() && host.state()->turn >= static_cast<uint32_t>(*maxTurns)) {
             say(std::format("Reached turn {}; stopping.", host.state()->turn));
             break;
@@ -532,6 +646,11 @@ int runServer(std::span<char*> args) {
     }
     if (gStop) say("Stopping (signal).");
     saveNow("shutdown");
+    if (bots) {
+        script::ValueMap bye;
+        bye.emplace_back("reason", script::Value("the server is shutting down"));
+        bots->sayGoodbye(script::Value(std::move(bye)));
+    }
     host.stop("The server is shutting down.");
     for (const net::Event& e : host.poll(0)) say(net::describe(e));
     return exitCode;
@@ -548,7 +667,8 @@ void listTurnFiles(const std::vector<std::pair<game::EmpireId, std::filesystem::
 }
 
 int pbemNew(std::span<char*> args) {
-    auto o = parseArgs(args, {"setup", "out", "data", "turn-files", "host-key", "mod", "mods-dir"}, {"help"});
+    auto o = parseArgs(args, {"setup", "out", "data", "turn-files", "host-key", "mod", "mods-dir", "bot-port", "bot-bind", "bot-token", "bot-timeout", "bot-wait"},
+                       {"help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("setup") || !o->has("out")) return fail("pbem new needs --setup=FILE.toml and --out=GAME.gam", 2);
@@ -582,7 +702,16 @@ int pbemNew(std::span<char*> args) {
     auto state = game::createGame(**rules, gs);
     if (!state) return fail("could not create the game: " + state.error(), 1);
     // Turn-based: computer players before the first human play now, and that human's turn starts.
-    if (game::turnBased(*state)) game::resumeTurnBased(**rules, *state);
+    if (game::turnBased(*state)) {
+        auto bots = openBots(*o, externalSlotsOf(*state), 0, info.gameName);
+        if (!bots) return fail(bots.error(), 2);
+        const BotsGone botsGone;
+        auto wait = o->integer("bot-wait", 30, 0, 24 * 3600);
+        if (!wait) return fail(wait.error(), 2);
+        if (*bots) waitForBots(**bots, externalSlotsOf(*state), *wait);
+        game::resumeTurnBased(**rules, *state);
+        if (*bots) (*bots)->sayGoodbye(script::Value(script::ValueMap{{"reason", script::Value("the game file is written")}}));
+    }
     const std::filesystem::path out = o->get("out");
     if (auto r = game::saveGame(out, *state, info); !r) return fail(r.error(), 1);
     std::printf("Created '%s' (turn %u) in %s:\n", info.gameName.c_str(), state->turn, out.string().c_str());
@@ -624,7 +753,9 @@ int pbemTurnFiles(std::span<char*> args) {
 }
 
 int pbemProcess(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords", "turn-files", "host-key", "mod", "mods-dir"},
+    auto o = parseArgs(args,
+                       {"game", "orders", "password", "data", "reset-passwords", "turn-files", "host-key", "mod", "mods-dir", "bot-port", "bot-bind",
+                        "bot-token", "bot-timeout", "bot-wait"},
                        {"keep-orders", "allow-data-mismatch", "no-password-migration", "help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
@@ -653,7 +784,20 @@ int pbemProcess(std::span<char*> args) {
         if (ec != std::errc{} || end != item.data() + item.size() || n == 0) return fail(std::format("--reset-passwords: '{}' is not an empire number", item), 2);
         options.resetPasswords.push_back(game::EmpireId{n - 1});
     }
+    // The game's external bots, connected before the turn is played.
+    std::unique_ptr<sdk::BotHost> bots;
+    const BotsGone botsGone;
+    if (auto game = game::loadGame(o->get("game"))) {
+        const std::vector<uint32_t> slots = externalSlotsOf(game->first);
+        auto opened = openBots(*o, slots, 0, game->second.gameName);
+        if (!opened) return fail(opened.error(), 2);
+        bots = std::move(*opened);
+        auto wait = o->integer("bot-wait", 30, 0, 24 * 3600);
+        if (!wait) return fail(wait.error(), 2);
+        if (bots) waitForBots(*bots, slots, *wait);
+    }
     auto rep = net::pbem::processGameFile(**rules, o->get("game"), o->get("orders"), options);
+    if (bots) bots->sayGoodbye(script::Value(script::ValueMap{{"reason", script::Value("the turn is processed")}}));
     if (!rep) return fail(rep.error(), 1);
     const std::string played = !rep->submitted.empty() ? rep->submitted.front() : !rep->playedByComputer.empty() ? rep->playedByComputer.front() : "";
     if (rep->turnBased && !played.empty())

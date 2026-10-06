@@ -342,6 +342,21 @@ private:
         log::warn("Computer player {}: {}; the built-in AI answers{}", who(s, e), what,
                   st.failures >= game::kPlayerFailuresPerTurn ? " for the rest of the turn" : " this request");
         if (!traceback.empty()) log::warn("{}", traceback);
+        tell(RequestEvent::Kind::Failed, e, s.turn, {}, {}, what);
+    }
+
+    // What became of a request, for whoever measures the players (PlayerSetup::observe).
+    void tell(RequestEvent::Kind kind, EmpireId e, uint32_t turn, std::string_view call, std::chrono::nanoseconds time = {},
+              std::string_view error = {}) const {
+        if (!setup_->observe) return;
+        RequestEvent ev;
+        ev.kind = kind;
+        ev.empire = e;
+        ev.turn = turn;
+        ev.call = call;
+        ev.time = time;
+        ev.error = error;
+        setup_->observe(ev);
     }
 
     // One request (docs/sdk/ai-protocol.md §3, §4): from the journal when an
@@ -349,7 +364,10 @@ private:
     // falls back to the classic answer) or the player is out for the turn.
     std::optional<Value> ask(game::TurnContext& ctx, EmpireId e, std::string_view call, Value args, const game::CommandSink* sink) {
         game::GameState& s = ctx.state;
-        if (outForTurn(s, e)) return std::nullopt;
+        if (outForTurn(s, e)) {
+            tell(RequestEvent::Kind::Skipped, e, s.turn, call);
+            return std::nullopt;
+        }
         Slot& slot = slotOf(e);
         slot.asked = true;
         // The digest: the call, empire, turn and arguments, without what was
@@ -373,6 +391,7 @@ private:
                 response = parsed ? std::move(*parsed) : errorValue("ValueError", "the journal's answer could not be read");
                 replay_.pop_front();
                 replayed = true;
+                tell(RequestEvent::Kind::Replayed, e, s.turn, call);
                 // What its `apply` carried out during the request is carried out again.
                 if (const Value* applied = response.find("applied"); applied && applied->isList() && sink)
                     for (const Value& c : applied->asList())
@@ -487,7 +506,10 @@ private:
                 Handling(const Handling&) = delete;
                 Handling& operator=(const Handling&) = delete;
             } handling(active_, active);
+            const auto started = std::chrono::steady_clock::now();
             response = active.external ? callBot(emp, Value(std::move(request)), delivered) : callScript(Value(std::move(request)), budget, delivered);
+            // Measured only: never part of the game.
+            tell(RequestEvent::Kind::Asked, e, s.turn, call, std::chrono::steady_clock::now() - started);
         }
         // `player` and `memory` go with the first request the player gets in the session.
         if (delivered) slot.created = true;

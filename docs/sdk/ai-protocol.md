@@ -4,7 +4,7 @@ How the engine and a script computer player talk (docs/MODDING_SDK.md, section 6
 messages are used in two places:
 
 - **in the game**: as `script::Value` maps passed to and from the MicroPython runtime;
-- **by external bots**: as JSON over a local connection.
+- **by external bots**: as JSON over a TCP connection, one message a line (section 10).
 
 The engine side is in `src/sdk/` (`sdk/players.hpp`, with the engine's hooks in
 `game/players.hpp`) and the Python side in `python/opense4/`. Neither side may depend on
@@ -56,8 +56,8 @@ description = "Plays the classic economy and its own war."
   (`sdk::checkControllers`).
 - **Other controllers:**
   - `{"kind": "builtin"}` (`builtin`): the classic AI, the default;
-  - `{"kind": "external", "slot": <n>}` (`external:<n>`): an external bot connected to the
-    host.
+  - `{"kind": "external", "slot": <n>}` (`external:<n>`): the external bot connected to the
+    host's slot n (section 10). Empires may share a slot: its bot plays each of them.
 - **Which empires:** a controller plays its empire while the empire is computer-controlled
   (PlayerKind Computer or Neutral). A human empire's controller is not used; the computer
   plays a human who is away with the built-in AI, as before. The defaults above (the setup
@@ -259,10 +259,11 @@ budget.
   Failures are counted per empire and game turn (`Empire::script`, saved): after three in
   one game turn the classic AI answers for that empire for the rest of the turn, and it
   gets no end_session. The next game turn starts afresh.
-- **External bots** have the host's turn timer instead of a budget: a bot that doesn't
-  answer in time, or a slot with no bot connected, is a failure. The transport comes
-  later; the engine's side is `sdk::ExternalBot` (a request, with the services while the
-  bot works on it).
+- **External bots** have the host's time per request instead of a budget (section 10): a
+  bot that doesn't answer in time, a slot with no bot connected, and a connection that
+  breaks during the request are failures, as is a message that is not the protocol's JSON.
+  The engine's side is `sdk::ExternalBot` (a request, with the services while the bot
+  works on it), `sdk::BotHost` its connection.
 
 ## 8. The journal
 
@@ -301,7 +302,10 @@ views. A host that plays a turn-based game file's computer turns once for the tu
 and again when it processes the orders asks the players again; in-game players are
 deterministic, so the answers are the same. External bots need the journal; in-game players
 are deterministic anyway (the tests check that a replay that asks again gets identical
-answers).
+answers). A turn-based game file whose computer players play when its turn files are
+written (it was saved between two players' turns) is saved again then if any of its
+empires has an external player, so that processing the orders does not ask that player
+again.
 
 ## 9. What still runs for an empire a player plays
 
@@ -328,3 +332,45 @@ Computer Player Bonus applies to its income and construction, its groups take al
 others of its own with the same order as they act, the Ship Cloaking minister's rules
 apply unless the player says otherwise (`decloak`), and so does every rule of the game. The classic ministers that
 `builtin` runs for such an empire read its AI state as it was (none of it changes).
+
+## 10. The connection (external bots)
+
+External bots (docs/sdk/bots-and-arena.md) reach the host over TCP: by default on the
+host's computer only (127.0.0.1), on the port the host names (6722 unless told otherwise).
+Each message is one line: a JSON object (script/json.hpp: UTF-8, whole numbers within 64
+bits, no fractions, no repeated keys, at most 100 levels) and a line feed (a carriage
+return before it is allowed; blank lines are skipped). Each message is a map whose first
+key names its kind; requests, services and their answers also carry `id`.
+
+| Direction | Message | When |
+|---|---|---|
+| bot → host | `{"hello": {"api": 1, "token": T, "slot": N or null, "name": text}}` | First, at once (within 10 seconds) |
+| host → bot | `{"welcome": {"api": 1, "slot": N, "game": text, "timeout_ms": M}}` | The bot plays slot N; M is its time per request |
+| host → bot | `{"refused": {"message": text}}` | Instead, then the host closes the connection: a wrong token, another api, a slot the game does not have, every slot taken, a slot whose bot is in the middle of a request |
+| host → bot | `{"request": <request, section 3>, "id": I}` | A decision of one of the slot's empires |
+| bot → host | `{"service": {"name": S, "args": <map>}, "id": I}` | During request I, any number of times (section 6) |
+| host → bot | `{"result": <value>, "id": I}`, or `{"service_error": {"type": E, "message": text}, "id": I}` | The service's answer; E is the error the game would raise in its own runtime (`ValueError`, `TypeError`, `RuntimeError`) |
+| bot → host | `{"response": <response, section 4>, "id": I}` | The end of request I |
+| either | `{"bye": {"reason": text, ...}}` | Then the connection closes. The host's says how the game ended when it did: `turn`, `game_over`, `winner`, `won_by` and every empire's `scores` (`{empire, alive, score}`) |
+
+- **The token** is the host's secret for this game (`--bot-token`, else the variable
+  `OPENSE4_BOT_TOKEN` of the host's environment, else 32 random hexadecimal digits the
+  host writes in its log), compared without telling how much of a wrong one matched.
+- **Slots.** A `hello` with `slot` null takes the lowest slot of the game that has no
+  bot. A bot that connects to a slot that has one replaces it, unless the old one is
+  answering a request; the old one gets `bye` and its connection closes.
+- **Ids.** Requests are numbered per connection. A request the bot does not answer within
+  its time fails (section 7); the host goes on to its next request and drops any later
+  message with the old id. A bot that receives a request while it waits for a service's
+  result knows that the host gave up on the request it is working on.
+- **Failures** of the connection: the bot closing it, a message longer than 64 MiB, or a
+  write that cannot be completed in time end the connection and fail the request; a line
+  that is not JSON, or not a map naming its kind, fails the request and keeps the
+  connection. A bot may connect again at any time. The host's first request to a slot in
+  each engine call carries `player` and `memory` (section 3); a bot that connects in the
+  middle of an engine call it was already asked in gets its requests without them and
+  fails them, until the next call.
+- **Sessions** are those of section 2: a request with `player` starts the empire's
+  session (an external bot's `player` is `{slot}`: the bot makes its own player), and
+  `end_session` ends it.
+

@@ -201,7 +201,16 @@ std::expected<std::vector<std::pair<game::EmpireId, fs::path>>, std::string> wri
     game::SaveInfo info = loaded->second;
     readForTurn(rules, s);
     // A turn-based game between player turns plays on to the next human, as processTurn does first.
-    if (game::turnBased(s) && !s.gameOver && !s.playerTurn.started) game::resumeTurnBased(rules, s);
+    if (game::turnBased(s) && !s.gameOver && !s.playerTurn.started) {
+        game::resumeTurnBased(rules, s);
+        // External bots need not answer the same way twice: the game file keeps
+        // what they decided, so processing the orders plays on from there and
+        // asks nobody again (docs/sdk/ai-protocol.md §8).
+        const bool bots = std::any_of(s.empires.begin(), s.empires.end(),
+                                      [](const game::Empire& e) { return e.controller.kind == game::Controller::Kind::External; });
+        if (bots)
+            if (auto saved = game::saveGame(gameFile, s, info); !saved) return std::unexpected(saved.error());
+    }
     info.turn = s.turn;
     info.empires.clear();
     for (const game::Empire& e : s.empires) info.empires.push_back(e.name);
