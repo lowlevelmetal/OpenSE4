@@ -89,6 +89,7 @@ add_executable(opense4_tests
     sdk/test_script_sandbox.cpp
     sdk/test_sdk_codec.cpp
     sdk/test_sdk_docs.cpp
+    sdk/test_sdk_python.cpp
     sdk/test_sdk_queries.cpp
     sdk/test_sdk_rules_view.cpp
     sdk/test_sdk_tool.cpp
