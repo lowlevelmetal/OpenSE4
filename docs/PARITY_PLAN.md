@@ -173,8 +173,9 @@ questions are what the observation sessions still have to settle.
 
 ## Future goals
 
-Beyond parity, three larger goals are planned. None of them has started. Each keeps the
-rule above: OpenSE4 always plays on the player's own copy of the original.
+Beyond parity, three larger goals were set. The modding SDK came with 0.11.0; the Steam
+release and the Workshop are still to come. Each keeps the rule above: OpenSE4 always
+plays on the player's own copy of the original.
 
 ### A Steam release, with multiplayer through Steam
 
@@ -206,27 +207,9 @@ Players publish mods from inside the game and subscribe to them.
   same mods. The data-set checksums already make sure of this for data files; scripts
   will join them.
 
-### A modding SDK with Python scripts
+### A modding SDK with Python scripts (done in 0.11.0)
 
-The outline is in [MODDING_SDK.md](MODDING_SDK.md).
-
-- **Tools:**
-  - a mod template;
-  - the data-format reference (the specs in `docs/spec/`, rewritten as a modder's guide);
-  - `opense4-datacheck`;
-  - a tool that packages a mod for the Workshop.
-- **Python scripts:** hooks for the rules, events, the computer players' ministers,
-  victory conditions, scenarios and training games.
-- **What the engine requires of scripts:**
-  - **Same result everywhere:** a turn must resolve the same way on every computer
-    (network games compare checksums). Scripts therefore run only inside turn processing,
-    take every random number from the game's generator, use whole numbers where the engine
-    does, and change the game only through the engine's commands and hooks.
-  - **One set of scripts per game:** each script's version and checksum become part of the
-    data set's identity, so every player in a game runs the same scripts.
-- **To settle first:**
-  - Embedding CPython on every platform OpenSE4 supports, Windows 7 and 32-bit ARM
-    included.
-  - A sandbox: Workshop scripts come from strangers, so they must not reach the player's
-    files or the network. Python is hard to sandbox, so this choice comes before any
-    scripting API.
+Built as [MODDING_SDK.md](MODDING_SDK.md) describes; the modder's guide is
+[sdk/README.md](sdk/README.md). In-game scripts run on a sandboxed MicroPython (section 14
+there says why), external bots on any CPython. Hegemon, a computer player built with it,
+ships with OpenSE4. Publishing to the Workshop waits for the Steam release.

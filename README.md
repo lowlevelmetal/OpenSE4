@@ -108,9 +108,8 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
   between the two (docs/SETUP.md, "Games of the original"). `opense4-convert` does the same
   on the command line.
 
-**Planned:** a Steam release with multiplayer through Steam, Steam Workshop support, and
-the rest of the modding SDK, with Python scripts (docs/MODDING_SDK.md). See "Future goals" in
-[docs/PARITY_PLAN.md](docs/PARITY_PLAN.md#future-goals).
+**Planned:** a Steam release with multiplayer through Steam, and Steam Workshop support for
+sharing mods. See "Future goals" in [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md#future-goals).
 
 ## System requirements
 
