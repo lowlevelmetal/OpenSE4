@@ -3,6 +3,7 @@
 # everything; in the lobby each computer slot names its player and the host changes one (to
 # Faulty), Add Computer brings another Captain, and the host switches "Computer players see
 # everything" off again. Players who join see the same (computer-players-lobby.script).
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --layout=1024x768 --size=1280x800 --seed=7 --open=multiplayer
 

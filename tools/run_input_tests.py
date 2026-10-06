@@ -118,10 +118,14 @@ def free_port():
         return s.getsockname()[1]
 
 
+def server_exe(exe):
+    return exe.with_name("opense4-server.exe" if os.name == "nt" else "opense4-server")
+
+
 @contextlib.contextmanager
 def dedicated_host(exe, args, classic_dir, user):
     """opense4-server with `args` on a free port, listening; yields the port."""
-    server = exe.with_name("opense4-server.exe" if os.name == "nt" else "opense4-server")
+    server = server_exe(exe)
     port = free_port()
     env = dict(os.environ)
     env["OPENSE4_USER_DIR"] = user
@@ -162,6 +166,8 @@ def run(exe, script, output, classic_dir, renderer, timeout, extra, layout=None)
     host = server_args(script)
     if host is None:
         return play(exe, script, output, classic_dir, renderer, timeout, extra, layout)
+    if not server_exe(exe).exists():
+        return script, False, "", f"{server_exe(exe)} not found: build it (the opense4-server target)", 0.0
     with tempfile.TemporaryDirectory(prefix="opense4-script-server-") as user:
         with dedicated_host(exe, host, classic_dir, user) as port:
             return play(exe, script, output, classic_dir, renderer, timeout, extra + [f"--open=multiplayer:join=127.0.0.1:{port}"], layout)

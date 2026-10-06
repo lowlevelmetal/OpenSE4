@@ -4,6 +4,7 @@
 # and Faulty, and whose computer players see everything. Each computer slot names its player,
 # and the line under the mods says what the computer players see.
 # server: --players=2 --setup=tests/input/servers/computer-players.toml
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --mods-dir=tests/fixtures/mods --mod=test.ai-fixture --layout=1024x768 --size=1280x800 --seed=7
 
