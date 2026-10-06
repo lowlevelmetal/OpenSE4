@@ -560,6 +560,45 @@ TEST_CASE("sdk python: computer players in the game, with the engine's services"
     CHECK(at(res, "error") == why);
 }
 
+TEST_CASE("sdk python: the ai template of opense4-sdk new plays a turn") {
+    test::TempDir dir("sdk_python_template");
+    const fs::path mod = dir.path() / "prospector";
+    const Shell made = shell(std::format("\"{}\" new ai {} --id=test.prospector", OPENSE4_SDK_EXE, quoted(mod)));
+    REQUIRE_MESSAGE(made.code == 0, made.out);
+    const std::string manifest = slurp(mod / "mod.toml");
+    CHECK(manifest.find("[[ai.players]]") != std::string::npos);
+    CHECK(manifest.find("module = \"player\"") != std::string::npos);
+
+    const Rules& r = test::engineRules();
+    const SdkGame& g = fixtureGame();
+    const EmpireId me{0u};
+    const Value view = sdk::buildView(r, g.state, me);
+    auto interp = interpreterWithPackage();
+    NativeServices natives;
+    natives.queries = std::make_shared<sdk::Queries>(r, g.state, me);
+    natives.builtinCommands = sdk::encodeCommands(test::busyOrders(r, g.state, me, 1).commands);
+    natives.install(*interp);
+    REQUIRE(interp->addFile("player.py", slurp(mod / "ai" / "player.py")).has_value());   // the engine adds ai/ at the root
+    const auto cls = manifest.find("class = \"");
+    REQUIRE(cls != std::string::npos);
+    const std::string className = manifest.substr(cls + 9, manifest.find('"', cls + 9) - cls - 9);
+    const Value player = map({{"mod", Value("test.prospector")}, {"name", Value("Prospector")}, {"module", Value("player")},
+                              {"class", Value(className)}});
+    size_t commands = 0;
+    for (std::string_view call : {"politics", "orders", "economy"}) {
+        INFO(call);
+        const Value res = dispatch(*interp, call == "politics" ? firstRequest(call, 0, view, player, Value()) : request(call, 0, view));
+        checkNoError(res);
+        const auto decoded = sdk::decodeCommands(at(res, "commands"));
+        CHECK_MESSAGE(decoded.has_value(), (decoded ? std::string() : decoded.error().text()));
+        commands += at(res, "commands").size();
+    }
+    CHECK(commands > natives.builtinCommands.size());   // the classic economy and orders, and its own
+    const Value end = dispatch(*interp, request("end_session", 0, Value()));
+    checkNoError(end);
+    CHECK(at(end, "memory").isMap());
+}
+
 TEST_CASE("sdk python: wrapping a large view stays cheap") {
     auto interp = interpreterWithTests();
     const Value& view = at(pythonFixtures(), "whole_view");   // every system's contents

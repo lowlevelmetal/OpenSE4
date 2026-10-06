@@ -2,6 +2,7 @@
 
 #include <toml++/toml.hpp>
 
+#include <algorithm>
 #include <format>
 #include <limits>
 
@@ -14,6 +15,19 @@ bool validModId(std::string_view id) {
     for (char c : id)
         if (!alnum(c) && c != '.' && c != '-' && c != '_') return false;
     return true;
+}
+
+bool validPythonName(std::string_view name) {
+    if (name.empty() || (name.front() >= '0' && name.front() <= '9')) return false;
+    for (char c : name)
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) return false;
+    return true;
+}
+
+const AiPlayer* Manifest::aiPlayer(std::string_view player) const {
+    for (const AiPlayer& p : aiPlayers)
+        if (p.name == player) return &p;
+    return nullptr;
 }
 
 namespace {
@@ -120,8 +134,56 @@ std::expected<Manifest, std::vector<std::string>> parseManifest(std::string_view
                     error(v, std::format("unknown key '{}' in [load] (after)", k.str()));
                 }
             }
+        } else if (key == "ai") {
+            const toml::table* t = node.as_table();
+            if (!t) {
+                error(node, "[ai] should be a table, such as [[ai.players]]");
+                continue;
+            }
+            for (const auto& [k, v] : *t) {
+                if (k != "players") {
+                    error(v, std::format("unknown key '{}' in [ai] (players)", k.str()));
+                    continue;
+                }
+                const toml::array* a = v.as_array();
+                if (!a) {
+                    error(v, "computer players are written as [[ai.players]] tables");
+                    continue;
+                }
+                for (const toml::node& e : *a) {
+                    const toml::table* pt = e.as_table();
+                    if (!pt) {
+                        error(e, "computer players are written as [[ai.players]] tables");
+                        continue;
+                    }
+                    AiPlayer p;
+                    p.line = static_cast<int>(e.source().begin.line);
+                    for (const auto& [pk, pv] : *pt) {
+                        if (pk == "name") p.name = text_of(pv, "name");
+                        else if (pk == "module") p.module = text_of(pv, "module");
+                        else if (pk == "class") p.className = text_of(pv, "class");
+                        else if (pk == "description") p.description = text_of(pv, "description");
+                        else error(pv, std::format("unknown key '{}' in [[ai.players]] (name, module, class, description)", pk.str()));
+                    }
+                    if (p.name.empty()) error(e, "[[ai.players]] needs a name, such as name = \"Admiral\"");
+                    else if (std::any_of(m.aiPlayers.begin(), m.aiPlayers.end(), [&](const AiPlayer& o) { return o.name == p.name; }))
+                        error(e, std::format("two computer players are named '{}'", p.name));
+                    else if (p.name.find(':') != std::string::npos) error(e, std::format("the player name '{}' may not hold ':'", p.name));
+                    bool moduleOk = !p.module.empty();
+                    for (size_t from = 0; moduleOk && from <= p.module.size();) {
+                        const size_t dot = std::min(p.module.find('.', from), p.module.size());
+                        moduleOk = validPythonName(std::string_view(p.module).substr(from, dot - from));
+                        from = dot + 1;
+                    }
+                    if (p.module.empty()) error(e, "[[ai.players]] needs the module under ai/ that holds the player, such as module = \"admiral\"");
+                    else if (!moduleOk) error(e, std::format("module '{}' should be Python names separated by dots, such as \"admiral\"", p.module));
+                    if (p.className.empty()) error(e, "[[ai.players]] needs the player's class, such as class = \"Admiral\"");
+                    else if (!validPythonName(p.className)) error(e, std::format("class '{}' is not a Python name", p.className));
+                    m.aiPlayers.push_back(std::move(p));
+                }
+            }
         } else {
-            error(node, std::format("unknown table '{}' (mod.toml has [mod], [requires] and [load])", key.str()));
+            error(node, std::format("unknown table '{}' (mod.toml has [mod], [requires], [load] and [[ai.players]])", key.str()));
         }
     }
     if (!root.contains("mod")) errors.push_back(std::format("{}: no [mod] table", source));
@@ -168,6 +230,10 @@ std::string writeManifest(const Manifest& m) {
         std::string after;
         for (const std::string& id : m.loadAfter) after += std::format("{}{}", after.empty() ? "" : ", ", quoted(id));
         out += std::format("\n[load]\nafter = [{}]\n", after);
+    }
+    for (const AiPlayer& p : m.aiPlayers) {
+        out += std::format("\n[[ai.players]]\nname = {}\nmodule = {}\nclass = {}\n", quoted(p.name), quoted(p.module), quoted(p.className));
+        if (!p.description.empty()) out += std::format("description = {}\n", quoted(p.description));
     }
     return out;
 }

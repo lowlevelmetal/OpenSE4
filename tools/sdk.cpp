@@ -180,6 +180,59 @@ void printList(std::string_view label, const std::vector<std::string>& items) {
 
 // ---- new ---------------------------------------------------------------------------------------
 
+// The computer player of the ai template: mod.toml names it ([[ai.players]], module
+// "player", class "Prospector"); docs/sdk/python-api.md is its guide.
+constexpr std::string_view kAiTemplate = R"py("""A computer player for OpenSE4.
+
+mod.toml names it ([[ai.players]]: module "player", class "Prospector"). It keeps
+the classic AI for everything but one thing: its idle scouts (unarmed ships that
+cannot colonize) explore. The classic ministers do the rest, and its memory counts
+the turns it has played. The SDK's guide is docs/sdk/python-api.md in OpenSE4.
+"""
+
+from opense4 import ai, cmd, order
+
+
+class Prospector(ai.Player):
+    """Explores with every idle scout; the classic AI does the rest."""
+
+    def orders(self, view, orders):
+        self.memory["turns"] = self.memory.get("turns", 0) + 1
+        sent = []
+        for ship in view.my.idle_vehicles:
+            design = ship.design
+            figures = design.figures if design is not None else None
+            if ship.type != "ship" or figures is None or figures.weapons or figures.colonize:
+                continue
+            orders.add(cmd.give(ship, [order.explore()]))
+            self.note(ship, "exploring")
+            sent.append(ship.id)
+        # The classic ministers' orders, less any for the scouts just sent.
+        for command in ai.builtin.orders(view):
+            if command.get("vehicle") not in sent:
+                orders.add(command)
+        if sent:
+            self.log("turn {}: {} scouts exploring".format(view.game.turn, len(sent)))
+
+    # politics, economy, colony_type, enter_sector, decloak and battle_round are the
+    # classic AI's: override any of them to decide it yourself.
+)py";
+
+// The rules template: hooks registered for the rules tier, which a later step brings.
+constexpr std::string_view kRulesTemplate = R"py(# Rules hooks, in Python.
+#
+# Rules scripts arrive in a later step of the OpenSE4 SDK: OpenSE4 registers these
+# hooks but does not call them yet. docs/MODDING_SDK.md section 7 outlines the hooks
+# and the effects API (fx) they will have.
+
+from opense4 import rules
+
+
+@rules.on("colony_end_of_turn")
+def colony_end_of_turn(game, colony, fx):
+    pass
+)py";
+
 void writeFile(const fs::path& file, std::string_view text) {
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);
@@ -209,11 +262,14 @@ int cmdNew(const std::vector<std::string>& argv) {
     m.api = mods::kApiVersion;
     m.authors = {"You"};
     m.description = std::format("A new {} mod.", kind);
+    if (kind == "ai")
+        m.aiPlayers.push_back({"Prospector", "player", "Prospector", "Keeps the classic economy and sends its idle scouts exploring.", 0});
     writeFile(dir / "mod.toml", mods::writeManifest(m));
     writeFile(dir / "README.md", std::format("# {}\n\nAn OpenSE4 mod made from the `{}` template of `opense4-sdk new`.\n\n"
-                                             "See docs/sdk/packages-and-data.md in OpenSE4 for the layout, data patches and the checks.\n"
+                                             "See docs/sdk/packages-and-data.md in OpenSE4 for the layout, data patches and the checks{}.\n"
                                              "Run `opense4-sdk check {}` after each change.\n",
-                                             m.name, kind, dir.string()));
+                                             m.name, kind, kind == "ai" ? ", and docs/sdk/python-api.md for computer players" : "",
+                                             dir.string()));
     if (kind == "assets") {
         writeFile(dir / "assets" / "README.md",
                   "Pictures, sounds, music, fonts and pointers go here in the game folder's own layout,\n"
@@ -236,24 +292,10 @@ int cmdNew(const std::vector<std::string>& argv) {
                   "# [[abilities.declare]]\n"
                   "# name = \"My Ability\"\n"
                   "# combine = \"sum\"\n");
+    } else if (kind == "ai") {
+        writeFile(dir / "ai" / "player.py", kAiTemplate);
     } else {
-        const std::string file = kind == "ai" ? "ai/player.py" : "scripts/rules.py";
-        writeFile(dir / file,
-                  kind == "ai" ? "# A computer player, in Python.\n"
-                                 "#\n"
-                                 "# Scripting arrives in a later step of the OpenSE4 SDK: OpenSE4 does not run this file yet.\n"
-                                 "# docs/MODDING_SDK.md section 6 outlines the interface it will have.\n"
-                                 "\n"
-                                 "class Player:\n"
-                                 "    def economy(self, view, orders):\n"
-                                 "        pass\n"
-                               : "# Rules hooks, in Python.\n"
-                                 "#\n"
-                                 "# Scripting arrives in a later step of the OpenSE4 SDK: OpenSE4 does not run this file yet.\n"
-                                 "# docs/MODDING_SDK.md section 7 outlines the hooks it will have.\n"
-                                 "\n"
-                                 "def colony_end_of_turn(game, colony, fx):\n"
-                                 "    pass\n");
+        writeFile(dir / "scripts" / "rules.py", kRulesTemplate);
     }
     std::printf("Made the %s mod %s in %s. Next: opense4-sdk check %s\n", kind.c_str(), id.c_str(), dir.string().c_str(), dir.string().c_str());
     return 0;
