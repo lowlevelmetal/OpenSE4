@@ -1,0 +1,13 @@
+# An example mod of the OpenSE4 SDK (docs/sdk/guide/tutorials/balance-mod.md): a balance
+# mod made only of data patches, over several tables of the installed game's data set,
+# with a removal that takes what depends on it along (cascade). Its numbers are
+# invented for the example; it names a few records of the classic data set, which it
+# changes, and so it is meant for that data set.
+
+[mod]
+id = "example.balance"
+name = "Measured Pace"
+version = "1.0.0"
+api = 1
+authors = ["The OpenSE4 developers"]
+description = "A slower, steadier game: cheaper early propulsion, seeking weapons that reload every other turn, free-of-radioactives satellites, shorter battles, calmer computer players, and no temporal racial technology."

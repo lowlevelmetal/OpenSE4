@@ -1,0 +1,40 @@
+# Frontier Charter: a small quadrant, three empires, and a race to eight colonies.
+# docs/sdk/rules.md "Scenarios" lists every key.
+
+title = "Frontier Charter"
+summary = "The Charter grants the frontier to the first empire that holds eight colonies. Each empire's second colony earns a grant toward the race."
+
+[setup]
+seed = 2026
+turn_style = "simultaneous"
+systems = 12
+start_tech_level = 0
+
+[[setup.empire]]
+name = "Charter Settlers"
+kind = "human"
+
+[[setup.empire]]
+name = "Lantern Combine"
+kind = "computer"
+
+[[setup.empire]]
+name = "Drift Clans"
+kind = "computer"
+
+# The mod's own option (mod.toml [[rules.options]]), as this scenario wants it.
+[options]
+grant = 3000
+
+[[objective]]
+name = "second_colony"
+text = "Found a second colony and claim the Charter's grant"
+when = { colonies = 2 }
+action = "charter_grant"
+
+[[objective]]
+name = "frontier"
+text = "Hold eight colonies"
+when = { colonies = 8 }
+victory = true
+by_turn = 120

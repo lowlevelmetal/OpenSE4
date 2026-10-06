@@ -2,8 +2,9 @@
 // docs/sdk/packages-and-data.md).
 //
 //   opense4-sdk new <assets|data|ai|rules> <dir> [--id=ID] [--name=NAME]
+//   opense4-sdk new --from-example <example> <dir> [--id=ID] [--name=NAME] [--examples-dir=DIR]
 //   opense4-sdk check <mod> [--data=DIR] [--mods-dir=DIR] [--mod=OTHER...]
-//   opense4-sdk dump <mod...> [--out=DIR] [--data=DIR] [--mods-dir=DIR]
+//   opense4-sdk dump [mod...] [--out=DIR] [--data=DIR] [--mods-dir=DIR]
 //   opense4-sdk pack <mod> [--out=FILE.zip]
 //   opense4-sdk info <mod>
 //   opense4-sdk test | run | arena | env-host | bot | python  (computer players:
@@ -20,6 +21,7 @@
 #include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
 #include "sdk/players.hpp"
+#include "sdk/process.hpp"
 #include "sdk/rules.hpp"
 #include "sdk_tool.hpp"
 
@@ -44,13 +46,17 @@ constexpr std::string_view kUsage = R"(opense4-sdk: make, check and pack OpenSE4
 Usage:
   opense4-sdk new <kind> <dir> [--id=ID] [--name=NAME]
         A new mod from a template: kind is assets, data, ai or rules.
+  opense4-sdk new --from-example <example> <dir> [--id=ID] [--name=NAME] [--examples-dir=DIR]
+        A new mod copied from one of the SDK's example mods (new-hull, balance,
+        small-ai...; an unknown name lists them), under a mod id of yours.
   opense4-sdk check <mod> [--data=DIR] [--mods-dir=DIR] [--mod=OTHER...]
         Checks the mod's manifest, its dependencies (found by id in the mods
         folder, or given with --mod), its patches applied to the installed data
         set, the references they leave, and its pictures and files.
-  opense4-sdk dump <mod...> [--out=DIR] [--data=DIR] [--mods-dir=DIR]
+  opense4-sdk dump [mod...] [--out=DIR] [--data=DIR] [--mods-dir=DIR]
         Writes the data set with these mods applied (in load order) as data
-        files into DIR (default ./dump): Data/*.txt and the AI tables.
+        files into DIR (default ./dump): Data/*.txt and the AI tables. With
+        no mod, the installed game's own, as the game reads it.
   opense4-sdk pack <mod> [--out=FILE.zip]
         Packs a mod folder into a .zip (default <id>-<version>.zip) with its
         identity recorded in it.
@@ -207,7 +213,8 @@ constexpr std::string_view kAiTemplate = R"py("""A computer player for OpenSE4.
 mod.toml names it ([[ai.players]]: module "player", class "Prospector"). It keeps
 the classic AI for everything but one thing: its idle scouts (unarmed ships that
 cannot colonize) explore. The classic ministers do the rest, and its memory counts
-the turns it has played. The SDK's guide is docs/sdk/python-api.md in OpenSE4.
+the turns it has played. The modder's guide to computer players is
+docs/sdk/guide/computer-players.md in OpenSE4; docs/sdk/python-api.md is the package.
 """
 
 from opense4 import ai, cmd, order
@@ -238,20 +245,42 @@ class Prospector(ai.Player):
     # classic AI's: override any of them to decide it yourself.
 )py";
 
-// The rules template: hooks registered for the rules tier, which a later step brings.
-constexpr std::string_view kRulesTemplate = R"py(# Rules hooks, in Python.
-#
-# Rules scripts arrive in a later step of the OpenSE4 SDK: OpenSE4 registers these
-# hooks but does not call them yet. docs/MODDING_SDK.md section 7 outlines the hooks
-# and the effects API (fx) they will have.
+// The rules template: a hook that tells every empire the mod's rules are on, and an
+// example to start from (docs/sdk/rules.md, docs/sdk/guide/rules-scripts.md).
+constexpr std::string_view kRulesTemplate = R"py("""Rules scripts: Python functions the game calls at fixed moments of a turn and on events.
+
+docs/sdk/rules.md in OpenSE4 is the reference: every hook, the game a function reads, and
+the effects (fx) that change it. docs/sdk/guide/rules-scripts.md shows how to build a rules
+mod, with example mods (opense4-sdk new --from-example new-ability ...). Name this file
+after your mod: two mods with a module of the same name conflict.
+"""
 
 from opense4 import rules
 
 
-@rules.on("colony_end_of_turn")
-def colony_end_of_turn(game, colony, fx):
-    pass
+@rules.on("after_galaxy")
+def announce(game, fx):
+    """The game has been made: every empire's Log says that this mod's rules are on."""
+    for empire in game.empires:
+        fx.log(empire, "The rules of this mod are on.", title="Mod rules")
+
+
+# An example to start from: a crowded colony grows unhappy.
+#
+# @rules.on("colony_end_of_turn")
+# def overcrowding(game, colony, fx):
+#     room = colony.max_population
+#     if room and colony.total_population * 100 > room * 95:
+#         fx.change_happiness(colony, -1)
 )py";
+
+// A Python module name for a mod's rules, from its id: me.my-mod -> me_my_mod.
+std::string moduleNameOf(const std::string& id) {
+    std::string out;
+    for (char c : id) out += (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ? c : '_';
+    if (out.empty() || (out[0] >= '0' && out[0] <= '9')) out = "mod_" + out;
+    return out;
+}
 
 void writeFile(const fs::path& file, std::string_view text) {
     std::error_code ec;
@@ -260,10 +289,115 @@ void writeFile(const fs::path& file, std::string_view text) {
     out << text;
 }
 
+// ---- new --from-example ------------------------------------------------------------------------
+
+// Where the example mods are (docs/sdk/guide): --examples-dir, else OPENSE4_SDK_EXAMPLES, else
+// sdk/examples beside this program (a release's), else the source tree's mods/examples.
+fs::path examplesDir(const Args& a) {
+    if (a.has("examples-dir")) return a.get("examples-dir");
+    if (auto env = core::environment("OPENSE4_SDK_EXAMPLES"); env && !env->empty()) return *env;
+    std::error_code ec;
+    const fs::path released = sdk::executableDir() / "sdk" / "examples";
+    if (fs::is_directory(released, ec)) return released;
+#ifdef OPENSE4_EXAMPLES_SOURCE_DIR
+    return fs::path(OPENSE4_EXAMPLES_SOURCE_DIR);
+#else
+    return released;
+#endif
+}
+
+// The examples: each folder with a mod.toml, by name, with its description.
+std::vector<std::pair<std::string, std::string>> listExamples(const fs::path& dir) {
+    std::vector<std::pair<std::string, std::string>> found;
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator(dir, ec)) {
+        if (!e.is_directory() || !fs::exists(e.path() / "mod.toml")) continue;
+        auto p = mods::openPackage(e.path());
+        found.emplace_back(e.path().filename().string(), p ? p->manifest.description : std::string{});
+    }
+    std::sort(found.begin(), found.end());
+    return found;
+}
+
+// Copies an example mod into `dir` under a mod id of the user's, so that it can be changed
+// and shared as a mod of its own.
+int newFromExample(const Args& a, const std::string& example, const fs::path& dir) {
+    const fs::path examples = examplesDir(a);
+    const auto known = listExamples(examples);
+    const fs::path source = examples / example;
+    if (example.empty() || !fs::exists(source / "mod.toml")) {
+        std::string list;
+        for (const auto& [name, description] : known) list += std::format("\n  {:<20} {}", name, description);
+        if (known.empty()) return fail(std::format("no example mods in {} (give their folder with --examples-dir)", examples.string()));
+        return fail(std::format("no example '{}' in {}; the examples are:{}", example, examples.string(), list));
+    }
+    std::error_code ec;
+    if (fs::exists(dir, ec) && !fs::is_empty(dir, ec)) return fail(std::format("{} exists and is not empty", dir.string()));
+    std::string id = a.get("id");
+    if (id.empty()) {
+        id = "my.";
+        for (char c : lower(dir.filename().string())) id += (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ? c : '-';
+    }
+    if (!mods::validModId(id)) return fail(std::format("'{}' is not a mod id: lowercase letters, digits, '.', '-' and '_'", id));
+    // Every file but hidden ones and Python's caches, as a package leaves them out.
+    size_t copied = 0;
+    for (auto it = fs::recursive_directory_iterator(source, ec); it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (ec) break;
+        const std::string name = it->path().filename().string();
+        if (name.starts_with(".") || name == "__pycache__") {
+            if (it->is_directory()) it.disable_recursion_pending();
+            continue;
+        }
+        const fs::path target = dir / fs::relative(it->path(), source);
+        if (it->is_directory()) {
+            fs::create_directories(target, ec);
+        } else if (it->is_regular_file()) {
+            fs::create_directories(target.parent_path(), ec);
+            fs::copy_file(it->path(), target, fs::copy_options::overwrite_existing, ec);
+            ++copied;
+        }
+        if (ec) return fail(std::format("{}: {}", target.string(), ec.message()), 1);
+    }
+    // The manifest's id (and name, with --name) become the new mod's.
+    std::string manifest;
+    {
+        std::ifstream in(dir / "mod.toml", std::ios::binary);
+        manifest.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    std::string out;
+    bool idDone = false, nameDone = !a.has("name");
+    size_t at = 0;
+    while (at < manifest.size()) {
+        size_t end = manifest.find('\n', at);
+        if (end == std::string::npos) end = manifest.size();
+        std::string line = manifest.substr(at, end - at);
+        if (!idDone && line.starts_with("id = ")) {
+            line = std::format("id = \"{}\"", id);
+            idDone = true;
+        } else if (!nameDone && line.starts_with("name = ")) {
+            line = std::format("name = \"{}\"", a.get("name"));
+            nameDone = true;
+        }
+        out += line;
+        if (end < manifest.size()) out += '\n';
+        at = end + 1;
+    }
+    writeFile(dir / "mod.toml", out);
+    auto made = mods::openPackage(dir);
+    if (!made) return fail(std::format("the copy does not open as a mod: {}", made.error()), 1);
+    std::printf("Copied the example %s into %s (%zu files) as the mod %s. Next: opense4-sdk check %s, then opense4-sdk test %s\n",
+                example.c_str(), dir.string().c_str(), copied, id.c_str(), dir.string().c_str(), dir.string().c_str());
+    return 0;
+}
+
 int cmdNew(const std::vector<std::string>& argv) {
-    auto a = parse(argv, 2, {"id", "name"});
+    auto a = parse(argv, 2, {"id", "name", "from-example", "examples-dir"});
     if (!a) return fail(a.error());
-    if (a->positional.size() != 2) return fail("new needs a kind (assets, data, ai or rules) and a folder");
+    if (a->has("from-example")) {
+        if (a->positional.size() != 1) return fail("new --from-example needs an example's name and a folder: new --from-example small-ai my-ai");
+        return newFromExample(*a, a->get("from-example"), a->positional[0]);
+    }
+    if (a->positional.size() != 2) return fail("new needs a kind (assets, data, ai or rules) and a folder, or --from-example NAME and a folder");
     const std::string kind = a->positional[0];
     const fs::path dir = a->positional[1];
     if (kind != "assets" && kind != "data" && kind != "ai" && kind != "rules") return fail(std::format("unknown kind '{}': assets, data, ai or rules", kind));
@@ -286,10 +420,10 @@ int cmdNew(const std::vector<std::string>& argv) {
         m.aiPlayers.push_back({"Prospector", "player", "Prospector", "Keeps the classic economy and sends its idle scouts exploring.", 0});
     writeFile(dir / "mod.toml", mods::writeManifest(m));
     writeFile(dir / "README.md", std::format("# {}\n\nAn OpenSE4 mod made from the `{}` template of `opense4-sdk new`.\n\n"
-                                             "See docs/sdk/packages-and-data.md in OpenSE4 for the layout, data patches and the checks{}.\n"
-                                             "Run `opense4-sdk check {}` after each change.\n",
-                                             m.name, kind, kind == "ai" ? ", and docs/sdk/python-api.md for computer players" : "",
-                                             dir.string()));
+                                             "The modder's guide is docs/sdk/README.md in OpenSE4 (in a release, sdk/docs/README.md):\n"
+                                             "getting started, the data files, assets, computer players, rules scripts and tutorials.\n"
+                                             "Run `opense4-sdk check {}` after each change, and `opense4-sdk test {}` to try it.\n",
+                                             m.name, kind, dir.string(), dir.string()));
     if (kind == "assets") {
         writeFile(dir / "assets" / "README.md",
                   "Pictures, sounds, music, fonts and pointers go here in the game folder's own layout,\n"
@@ -315,7 +449,7 @@ int cmdNew(const std::vector<std::string>& argv) {
     } else if (kind == "ai") {
         writeFile(dir / "ai" / "player.py", kAiTemplate);
     } else {
-        writeFile(dir / "scripts" / "rules.py", kRulesTemplate);
+        writeFile(dir / "scripts" / (moduleNameOf(id) + ".py"), kRulesTemplate);
     }
     std::printf("Made the %s mod %s in %s. Next: opense4-sdk check %s\n", kind.c_str(), id.c_str(), dir.string().c_str(), dir.string().c_str());
     return 0;
@@ -588,7 +722,7 @@ int cmdCheck(const std::vector<std::string>& argv) {
 int cmdDump(const std::vector<std::string>& argv) {
     auto a = parse(argv, 2, {"data", "mods-dir", "mod", "out"});
     if (!a) return fail(a.error());
-    if (a->positional.empty()) return fail("dump needs one or more mods");
+    // Without mods: the data set as the installed game has it, to compare with.
     std::vector<mods::Package> targets;
     for (const std::string& m : a->positional) {
         auto p = findMod(m, *a);

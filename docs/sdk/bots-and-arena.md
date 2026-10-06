@@ -255,14 +255,22 @@ opense4-sdk test mymod
 ```
 
 1. **The mod's Python tests.** Each `test_` function of each `tests/test_*.py` module of
-   the mod runs in the game's own Python ([runtime.md](runtime.md)), with the mod's `ai/`
-   folder and `tests/` at the root (so `import admiral` finds `ai/admiral.py`), the
-   `opense4` package, and a budget of its own (`--budget=N` bytecodes, default a billion).
-   A test fails by raising; `opense4.testing.Skip` (or pytest's skip) skips it.
+   the mod runs in the game's own Python ([runtime.md](runtime.md)), with the mod's `ai/`,
+   `scripts/` and `tests/` folders at the root (so `import admiral` finds `ai/admiral.py`,
+   and a rules script's functions can be called with stand-ins for the game and the
+   effects), the `opense4` package, and a budget of its own (`--budget=N` bytecodes,
+   default a billion). A test fails by raising; `opense4.testing.Skip` (or pytest's skip)
+   skips it.
 2. **A short game for each computer player** the mod declares, against the classic AI, on
    your installed game (`--data=DIR`), `--turns=N` turns (default 10) from `--seed=N`
    (default 1), simultaneous unless `--turn-based`. Any failed request fails it, with the
-   errors and tracebacks the game logged.
+   errors and tracebacks the game logged, and so does any failure of the mod's rules
+   functions ([rules.md](rules.md#budgets-and-failures)). A mod with rules scripts and no
+   computer player plays one such game between two classic AIs, with its rules on.
+3. **Each scenario** the mod holds (`scenarios/*.toml`) is started as `sdk::startScenario`
+   starts it and played by the computer, its human empires too, for `--turns` turns; a
+   scenario that cannot start, or a rules function that fails, fails it. The line says which
+   objectives were met and how the game ended.
 
 The tests have `opense4.testing`: `Harness` plays a player through requests as the game
 does, `FakeServices` answers the services from prepared values, and under `opense4-sdk

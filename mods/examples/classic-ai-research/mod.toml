@@ -1,0 +1,17 @@
+# An example mod of the OpenSE4 SDK (docs/sdk/guide/computer-players.md): the classic
+# computer player with a research planner of its own. Everything else it does is the
+# classic AI's, through ai.builtin.
+
+[mod]
+id = "example.classic-ai-research"
+name = "Classic AI, own research"
+version = "1.0.0"
+api = 1
+authors = ["The OpenSE4 developers"]
+description = "The classic computer player, but it chooses its research by what each next level unlocks for its cost."
+
+[[ai.players]]
+name = "Scholar"
+module = "scholar"
+class = "Scholar"
+description = "The classic AI with its own research planner: next levels that unlock the most for their cost first."

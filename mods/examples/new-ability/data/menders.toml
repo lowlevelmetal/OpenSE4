@@ -1,0 +1,35 @@
+# The Field Repair ability and the Mender Bay. The ability is declared (a name the game
+# does not know) with how several entries combine: a ship with two bays mends two
+# components a turn. scripts/menders.py gives it its effect.
+
+[[abilities.declare]]
+name = "Field Repair"
+combine = "sum"
+
+[[components.add]]
+name = "Mender Bay"
+
+[components.add.set]
+"Description" = "A workshop and a crew that patch damaged parts between battles."
+"Pic Num" = 1
+# Its size and strength, and its price.
+"Tonnage Structure" = 20
+"Tonnage Space Taken" = 30
+"Cost Radioactives" = 10
+"Cost Organics" = 20
+"Cost Minerals" = 80
+# Where it may go, and how the designer groups it.
+"Vehicle Type" = "Ship\\Base"
+"General Group" = "Repair"
+"Custom Group" = 0
+"Restrictions" = "None"
+# A family of its own.
+"Family" = 7201
+"Roman Numeral" = 1
+# It uses no supply, needs no technology, and is no weapon.
+"Supply Amount Used" = 0
+"Number of Tech Req" = 0
+"Weapon Type" = "None"
+
+[components.add.add]
+abilities = [{ "Ability Type" = "Field Repair", "Ability Descr" = "Mends one damaged component a turn.", "Ability Val 1" = 1 }]

@@ -238,9 +238,11 @@ natively instead. Either way they come from the `dist-windows` preset:
 - `dist/OpenSE4-<version>-windows-x86_64-setup.exe`, the same programs as an installer
 - `dist/OpenSE4-<version>-SHA256SUMS.txt`
 
-Each package holds `opense4`, `opense4-server`, `opense4-datacheck` and `opense4-convert`, stripped,
-with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
-Font License) are built into the game, so nothing else needs to sit next to it.
+Each package holds `opense4`, `opense4-server`, `opense4-datacheck`, `opense4-convert` and `opense4-sdk`,
+stripped, with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans,
+SIL Open Font License) are built into the game, so nothing else needs to sit next to it. The modding SDK's
+documentation (`docs/sdk`) and example mods (`mods/examples`) go into `sdk/docs` and `sdk/examples` beside the
+programs, where `opense4-sdk new --from-example` finds the examples.
 The Linux package also holds the desktop entry, icons and AppStream metadata under
 `share/`, and `install-desktop-entry.sh`, which adds the game to the user's
 application list (see "Installing on Linux"). The script refuses to package a tagged
