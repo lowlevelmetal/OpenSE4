@@ -16,8 +16,8 @@ was.
 |---|---|---|
 | `assets/` | Pictures, sounds, music, fonts and pointers, in the game folder's own layout | No: other players may have other pictures |
 | `data/` | Data patches (`*.toml`), replacement data files (`*.txt`), data generators (`*.py`), and AI tables, race files and design-name lists in the game folder's layout | Yes |
-| `ai/` | Computer players in Python (a later step: not run yet) | Yes |
-| `scripts/` | Rules hooks in Python (a later step: not run yet) | Yes |
+| `ai/` | Computer players in Python ([ai-protocol.md](ai-protocol.md)) | Yes |
+| `scripts/` | Rules scripts in Python ([rules.md](rules.md)); `scenarios/` holds a rules mod's scenarios | Yes |
 | `ui/` | Interface extensions (a later step) | No |
 | `text/` | Strings and translations (a later step) | No |
 | `tests/` | The mod's own tests, for `opense4-sdk test` (a later step) | No |
@@ -77,6 +77,9 @@ after = ["example.common-lib", "example.ui-tweaks"]
 - **ai.players**: the computer players the mod offers, one `[[ai.players]]` table each
   with `name`, `module` (under the mod's `ai/` folder), `class` and `description`
   (docs/sdk/ai-protocol.md §1). A game chooses one as `<mod id>:<name>`.
+- **rules**: what the mod's rules scripts declare: its game options, orders, events,
+  intelligence project types and victory conditions, and whether computer players see
+  its data ([rules.md](rules.md)).
 
 Unknown tables and keys are errors, so a typo does not pass unnoticed.
 
@@ -433,18 +436,19 @@ combine = "max"          # how values combine over a list: "sum" (the default), 
 ```
 
 Any mod may then put the ability on components, facilities, hulls and system types
-like any other. A declared ability has no effect of its own yet: rules scripts (a later
-step) will give them effects, and read them through the engine's `game::Rules` (the value
-on a design, component, facility, hull, colony or system, combined as declared: the sum,
-the largest or the smallest `Val 1`). Two mods may declare the same name if they agree on
-how it combines. The game's own names need no declaring.
+like any other. A declared ability has no effect of its own: a mod's rules scripts give
+it one ([rules.md](rules.md), "Abilities"), reading its value on a vehicle, design,
+colony or system (`game.ability`, the engine's `game::Rules`: combined as declared, the
+sum, the largest or the smallest `Val 1`). Computer players see it in the rules view.
+Two mods may declare the same name if they agree on how it combines. The game's own
+names need no declaring.
 
 ## Data generators
 
 A generator (`data/*.py`) is a Python script that builds records, such as twelve levels
-of a weapon line. It runs when the data loads and returns an ordinary patch: a table
-shaped like a patch file. Generators need the script runtime, which a later step of the
-SDK brings; until then a mod with one is refused with a message that says so.
+of a weapon line. It runs when the data loads, in the sandbox, and its `generate()`
+returns an ordinary patch: a dict shaped like a patch file, applied in its file's turn
+among the mod's patches. [rules.md](rules.md), "Data generators", has the details.
 
 ## Choosing mods in the game
 

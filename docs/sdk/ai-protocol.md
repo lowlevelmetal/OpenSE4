@@ -80,7 +80,8 @@ description = "Plays the classic economy and its own war."
   interpreter runs on that thread, so the C stack the runtime needs is there whichever
   thread plays the turn. Several script empires share the interpreter; each has its own
   player object and memory. The interpreter is one per process: another session waits for
-  it.
+  it. A game with mods' rules scripts runs them in the same session and interpreter
+  ([rules.md](rules.md), "Sessions").
 - **The `Player` object** is made by the package's dispatcher from the `player` field of
   the empire's first request in the session, and kept until the session ends. Attributes
   set on `self` survive between requests within the session, and are lost after it; keep
@@ -228,7 +229,7 @@ for this moment). For external bots they are messages on the same connection
 | `rules` | `{}` | The rules view (built once per session) | 5 per value |
 | `builtin` | `{call: "politics", "orders" or "economy", ministers: [names] or null, skip: [names]}` | The commands the classic ministers would give for this empire now, from the ministers named (null: all) less those skipped; the names are those of the `minister` enumeration (docs/sdk/commands.md; the AI_Strategies join counts as `design`'s). With every minister, exactly what the built-in AI plans from this state. The commands are not applied. | 2,000,000 + 20 per value of the result |
 | `builtin_answer` | `{call, args}` | The classic answer to `colony_type` (`args.planet`: the planet's id), `enter_sector` (true), `decloak` (true) or `battle_round` (null) | 20,000 |
-| `apply` | `{command}` | Applies one command now, as the call's own commands are, and returns `{ok, reason, changed, removed}`: what changed in the view since the request's (or the last apply's): for each list of records with ids (`colonies` by planet) the records added or changed (`changed`) and the ids gone (`removed`), and any other part that differs, whole. Planning calls only. | 50,000 + 5 per value of the new view + 20 per value of the result |
+| `apply` | `{command}` | Applies one command now, as the call's own commands are (a mod's order excepted: it is refused here, as its rules cannot run while the player's script does; give it with the call's commands), and returns `{ok, reason, changed, removed}`: what changed in the view since the request's (or the last apply's): for each list of records with ids (`colonies` by planet) the records added or changed (`changed`) and the ids gone (`removed`), and any other part that differs, whole. Planning calls only. | 50,000 + 5 per value of the new view + 20 per value of the result |
 
 **Budget:** each service counts its cost against the request's budget, as if the script had
 run that many bytecodes (`script::Interpreter::charge`), so asking cannot be used to escape

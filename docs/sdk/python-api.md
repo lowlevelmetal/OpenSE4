@@ -15,7 +15,7 @@ It lives in `python/opense4/`. Its parts:
 | `opense4.builtin` (`ai.builtin`) | The classic computer player as a library |
 | `opense4.view` | The view of the game as typed objects ([view.md](view.md) is its schema) |
 | `opense4.galaxy` | The warp map of a view: jumps, routes, distances |
-| `opense4.rules` | The rules view as typed objects; the hooks of the rules tier (a later step) |
+| `opense4.rules` | The rules view as typed objects; the rules tier: hooks, the game as rules functions read it, the effects ([rules.md](rules.md)) |
 | `opense4.cmd`, `opense4.order`, `opense4.tactical` | Commands, orders and tactical orders ([commands.md](commands.md)) |
 | `opense4.rng` | Random numbers that are the same on every runtime |
 | `opense4.enums` | Every enumeration's names |
@@ -297,7 +297,7 @@ Every enumeration of [view.md](view.md) and [commands.md](commands.md) as a tupl
 names: `enums.MINISTER`, `enums.TREATY`, `enums.ORDER_KIND`, `enums.VEHICLE_TYPE`... and
 `enums.ALL` by name.
 
-## Rules hooks (a later step)
+## Rules scripts (`opense4.rules`)
 
 ```python
 from opense4 import rules
@@ -307,9 +307,27 @@ def overcrowding(game, colony, fx):
     ...
 ```
 
-`rules.on(hook)` registers a function for one of `rules.HOOKS` (docs/MODDING_SDK.md,
-section 7.1), and `rules.Effects` is the interface of `fx`. The engine does not call hooks
-yet: the rules tier comes with a later step of the SDK.
+A mod's rules scripts (its `scripts/` folder) register functions for the game's moments
+and events, and for what their mod declares; [rules.md](rules.md) is their guide.
+
+| | |
+|---|---|
+| `rules.on(hook, step=None, when=None)` | A function for one of `rules.HOOKS` (`step`, `when`: empire_end_of_turn only, one of `rules.STEPS`, `"before"` or `"after"`) |
+| `rules.order(name)`, `rules.order_check(name)` | A mod order's effect `(game, order, fx)` and check `(game, order)` |
+| `rules.event(name)`, `rules.intel_project(type)`, `rules.victory(name)`, `rules.objective(name)` | A mod event's effect, an intelligence project type's effect, a victory condition's test, a scenario objective's action |
+| `rules.Game` | `game`: the view of the whole game, read from the engine a part at a time; `game.option(name)`, `game.mod_data`, `game.rng`, `game.ability(...)`, `game.query(...)` |
+| `rules.Effects` | `fx`: the effects; `rules.NativeEffects` is the engine's |
+| `rules.log(text)` | A line in the game's log file |
+| `rules.registrations(mod=None)`, `rules.handlers(hook)`, `rules.clear()` | What is registered (tests) |
+
+**Mods' data in a computer player's view.** A rules mod that says
+`players_see_mod_data = true` lets computer players see its data on their own things:
+`view.my.mod_data`, and `empire.mod_data`, `colony.mod_data`, `vehicle.mod_data` of our
+own things as `{mod id: value}` (empty otherwise). In a rules function the same properties
+give the mod's own data, a dict to change.
+
+**Mod orders** are commands like any other: `cmd.mod_command(mod=..., name=...,
+vehicle=..., args={...})` ([commands.md](commands.md), `mod_command`).
 
 ## External bots (`opense4.external`)
 

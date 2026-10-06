@@ -555,11 +555,17 @@ ai_sees_everything = false     # script computer players see the whole game, not
 ai_planning_budget = 200000000 # bytecodes a script player may run for a politics, orders or economy call
 ai_call_budget = 5000000       # ... for any other call
 ai_memory_limit = 1048576      # the most a script player's memory may take, as JSON text
+rules_hook_budget = 50000000   # bytecodes one call of a mod's rules function may run (docs/sdk/rules.md)
+rules_turn_budget = 2000000000 # ... all of one mod's rules functions in one game turn
+mod_data_limit = 1048576       # the most one mod's data on one thing may take, as JSON text
 # true/false: all_warp_points_connected, all_planets_same_size, no_warp_points, warp_points_anywhere,
 # all_systems_seen, omnipresent, finite_resources, same_system_allowed,
 # evenly_distributed, no_tactical_combat, complete_tech_tree, allow_gifts, allow_tech_trades,
 # allow_intel, allow_surrender (on by default), no_ruins, only_breathable, only_home_type, team_mode,
 # simultaneous (the default; false plays a turn-based game)
+
+[options.mod."example.crowding"]   # the options a game's mod declares ([[rules.options]], docs/sdk/rules.md)
+crowding_limit = 85            # a whole number in the option's range, or true/false for a switch
 
 [options.victory]              # each key switches that condition on
 score = 50000
