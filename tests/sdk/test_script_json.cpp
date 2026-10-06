@@ -5,6 +5,7 @@
 #include <doctest/doctest.h>
 
 #include <limits>
+#include <ostream>   // doctest streams the std::string_view (MSVC needs the stream declared)
 
 using namespace opense4::script;
 
