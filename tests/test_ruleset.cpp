@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <format>
 #include <fstream>
 
 using namespace opense4;
@@ -258,4 +259,44 @@ TEST_CASE("ruleset: file and folder names are found in any case, as on Windows")
     CHECK(fs::equivalent(*found, data));
     CHECK(ruleset::childIgnoringCase(tmp.path(), "se4") == tmp.path() / "SE4");
     CHECK(ruleset::childIgnoringCase(data, "nothing.txt") == data / "nothing.txt");
+}
+
+TEST_CASE("ruleset: event records are checked as spec 01 §10 and spec 05 §4 describe them") {
+    namespace fs = std::filesystem;
+    const test::TempDir tmp("event_rules_data");
+    const fs::path dir = tmp / "data";
+    fs::copy(kFixture, dir);
+    auto record = [](std::string_view type, std::string_view severity, int amount, std::string_view to, int turns, int messages = 0) {
+        return std::format("Type := {}\nSeverity := {}\nEffect Amount := {}\nMessage To := {}\nNum Messages := {}\nPicture := Flare\n"
+                           "Time Till Completion := {}\nNum Start Messages := 0\n\n",
+                           type, severity, amount, to, messages, turns);
+    };
+    {
+        std::ofstream out(dir / "Events.txt", std::ios::trunc);
+        out << "*BEGIN*\n"
+            << record("Ship - Damage", "Low", 50, "Owner", 0)                    // fine
+            << record("Planet - Population Change", "High", -50, "System", 5)   // fine: a loss, timed
+            << record("Star - Wobble", "Medium", 1, "All", 0)                   // never fires
+            << record("Ship - Lose Supply", "Grave", 10, "Everyone", -2)        // three errors
+            << record("Planet - Facility Damage", "Low", 0, "None", 0, -1)      // no effect; a negative count
+            << "*END*\n";
+    }
+    const auto result = ruleset::loadRuleset(dir);
+    fs::remove_all(dir);
+    REQUIRE(result.ruleset);
+    const auto& errors = result.diagnostics.errors;
+    const auto& warnings = result.diagnostics.warnings;
+    std::string all;
+    for (const auto& e : errors) all += "error: " + e + "\n";
+    for (const auto& w : warnings) all += "warning: " + w + "\n";
+    INFO(all);
+    CHECK(result.ruleset->eventTypes.size() == 5);
+    CHECK(mentions(warnings, "unknown event type 'Star - Wobble': the event never fires"));
+    CHECK(mentions(errors, "'Severity' must be Low, Medium, High or Catastrophic, not 'Grave'"));
+    CHECK(mentions(errors, "'Message To' must be None, Owner, Sector, System or All, not 'Everyone'"));
+    CHECK(mentions(errors, "'Time Till Completion' must be 0 (at once) or a number of turns, not -2"));
+    CHECK(mentions(warnings, "an event of type 'Planet - Facility Damage' with 'Effect Amount' 0 has no effect"));
+    CHECK(mentions(errors, "'Num Messages' must not be negative, not -1"));
+    CHECK(errors.size() == 4);
+    CHECK(std::count_if(warnings.begin(), warnings.end(), [](const std::string& w) { return w.starts_with("Events.txt"); }) == 2);
 }
