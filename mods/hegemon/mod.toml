@@ -1,0 +1,13 @@
+[mod]
+id = "opense4.hegemon"
+name = "Hegemon"
+version = "0.1.0"
+api = 1
+authors = ["OpenSE4 contributors"]
+description = "A computer player with its own strategy, economy planner, ship designer, operations and tactics."
+
+[[ai.players]]
+name = "Hegemon"
+module = "hegemon"
+class = "Hegemon"
+description = "Plans its own expansion, research, designs, wars and battles, and remembers what it has seen."
