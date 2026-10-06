@@ -14,6 +14,8 @@
 
 #include <doctest/doctest.h>
 
+#include <map>
+
 using namespace opense4;
 using namespace opense4::game;
 using opense4::script::Value;
@@ -233,6 +235,34 @@ TEST_CASE("sdk queries: ability values read in each ability's own mode") {
     CHECK(askError(q, "abilities", map({{"vehicle", Value(g.hiddenForeign.value)}})) == "vehicle: no such vehicle in view");
     CHECK(askError(q, "abilities", map({{"system", Value(g.unexplored.value)}})) == "system: no such system explored");
     CHECK(askError(q, "abilities", Value()).starts_with("name exactly one of"));
+}
+
+TEST_CASE("sdk queries: an ability a mod declares combines as the mod declares it") {
+    // Three declared abilities, each twice on one component: summed, the
+    // largest and the smallest value (docs/sdk/packages-and-data.md).
+    ruleset::Ruleset rs = test::engineRules().data();
+    rs.declaredAbilities.push_back({"Test Total", ruleset::Combine::Sum, "test.declared"});
+    rs.declaredAbilities.push_back({"Test Largest", ruleset::Combine::Max, "test.declared"});
+    rs.declaredAbilities.push_back({"Test Smallest", ruleset::Combine::Min, "test.declared"});
+    ruleset::Component pod = rs.components.front();
+    pod.name = "Test Declared Pod";
+    pod.abilities.clear();
+    for (const char* name : {"Test Total", "Test Largest", "Test Smallest"})
+        for (const char* value : {"4", "9"}) pod.abilities.push_back({name, "", value, "0"});
+    rs.components.push_back(pod);
+    rs.reindex();
+    const Rules r(std::move(rs));
+    const SdkGame g = sdkGame();
+    const sdk::Queries q(r, g.state, EmpireId{0u});
+    const Value v = ask(q, "abilities", map({{"component", Value(static_cast<int64_t>(r.data().components.size() - 1))}}), "ability_report");
+    CHECK(at(v, "entries").size() == 6);
+    std::map<std::string, std::pair<std::string, int64_t>> totals;
+    for (const Value& x : at(v, "values").asList()) totals[at(x, "name").asString()] = {at(x, "aggregation").asString(), intAt(x, "value")};
+    CHECK(totals["Test Total"] == std::pair<std::string, int64_t>{"sum", 13});
+    CHECK(totals["Test Largest"] == std::pair<std::string, int64_t>{"largest", 9});
+    CHECK(totals["Test Smallest"] == std::pair<std::string, int64_t>{"smallest", 4});
+    // As the rules read them.
+    CHECK(r.declaredAbilityOfComponent(static_cast<uint32_t>(r.data().components.size() - 1), "Test Smallest") == 4);
 }
 
 TEST_CASE("sdk queries: construction and research forecasts") {
