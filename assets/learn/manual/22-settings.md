@@ -5,7 +5,7 @@ windows: settings, options, empire-options
 
 OpenSE4 has three sets of settings:
 
-- the **Settings** window: graphics, controls and sound, for every game on this computer;
+- the **Settings** window: graphics, controls, sound and modding, for every game on this computer;
 - the **Options** window: animation, sound, music and autosave, also kept on this computer;
 - the **Empire Options** window: how the game behaves for your empire, saved with the game.
 
@@ -14,7 +14,7 @@ The [Mods](#mods) window, on the title screen, chooses the mods you play with.
 ## The Settings window
 
 Open [Settings](window:settings) from the title screen, with `Ctrl+,` in the main window, or with
-the `Settings` button of the [Options](window:options) window. It has three tabs. Your choices are
+the `Settings` button of the [Options](window:options) window. It has four tabs. Your choices are
 saved for every game.
 
 ### Graphics
@@ -43,6 +43,14 @@ saved for every game.
 **Sound effects** and **Music** switch each on or off, with a volume for each (music in steps of
 20 %). **Classic sound effects** plays the original sound set instead of the remastered one, if
 your copy has both. These are the same choices as in the Options window.
+
+### Modding
+
+**Show the computer players' notes** (off at first) is a view for people who make computer
+players for mods: the notes those players write about what they think, in a list in the system
+view, framed sectors, rings around systems in the galaxy view, and boxes in the reports (see
+[Computer players](computer-players-and-ministers#computer-players-of-mods)). `Ctrl+Shift+N`
+switches it in a game. It shows every note, whatever your empire knows.
 
 ## The Options window
 
@@ -123,6 +131,7 @@ OpenSE4 also understands options on its command line, for example:
 | `--tutorial=LESSON`, `--training=GAME`, `--manual` | Start a lesson or a training game, or open this manual. |
 | `--pbem=GAME.gam` | Play your turn of a play-by-e-mail game (see [Multiplayer](multiplayer#play-by-e-mail)). |
 | `--mod=MOD`, `--no-mods` | Play this run with these mods (a folder or `.zip`, or a mod's id), or none, instead of those of the Mods window (see [below](#mods)). |
+| `--ai=MOD:PLAYER` | With `--quick-start`, a computer player of one of the mods plays every computer empire (see [Computer players](computer-players-and-ministers#computer-players-of-mods)). |
 
 `opense4 --help` lists them all.
 

@@ -469,6 +469,9 @@ The title screen's `Mods` button (at the top right) opens the Mods window:
 Game Setup and Quick Start show the mods the new game will use in their bottom left
 corner, with a `Mods` button that opens the window. Game Setup keeps its settings while
 you look, and starts again from its defaults when the mods change, since the data has.
+When the mods offer computer players (`[[ai.players]]`), Game Setup, Empire Setup, Quick
+Start and the network lobby also choose who plays the computer empires
+([docs/SETUP.md](../SETUP.md) "Computer players").
 
 When the settings name mods that no longer load (a mod removed from the folder, one whose
 patches no longer fit your game), OpenSE4 starts without them, says so on the title

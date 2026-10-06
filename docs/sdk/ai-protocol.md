@@ -132,7 +132,7 @@ A response is a map; any other value, or an unknown field, fails the request.
 | `commands` | list | Commands to apply now, in order (planning calls only; a non-empty list in another call fails it) |
 | `answer` | any | The call's answer, as in the table above. An answer that is not one the call takes (a colony type not in `choices`, a non-boolean for `enter_sector`) fails the request. |
 | `memory` | any | The player's memory after the call; absent keeps it |
-| `notes` | list | `{object, kind, text}` notes for the client's AI view: `object` an id or null, `kind` what it names: `vehicle`, `fleet`, `object` (a stellar object; a colony by its planet; the default), `system`, `empire`, `design` or `message`. A note replaces the earlier note on the same thing; an empty text only removes it. Kept in the empire's state (`Empire::aiNotes`) for the turn it was given and the next, never saved or sent. |
+| `notes` | list | `{object, kind, text}` notes for the client's AI view (docs/sdk/python-api.md, "Watching a player think"): `object` an id or null, `kind` what it names: `vehicle`, `fleet`, `object` (a stellar object; a colony by its planet; the default), `system`, `empire`, `design` or `message`. A note replaces the earlier note on the same thing; an empty text only removes it. Kept in the empire's state (`Empire::aiNotes`) for the turn it was given and the next, never saved or sent. |
 | `log` | list | Lines of text for the game's log file (opense4.log, not the empire's in-game Log) |
 | `error` | map or absent | `{type, message, traceback}`: the request failed (section 7). An exception the player's code raises comes back this way, with the traceback as the runtime writes it (file and line of each call), and with no commands and a null answer. |
 
@@ -259,6 +259,11 @@ budget.
   Failures are counted per empire and game turn (`Empire::script`, saved): after three in
   one game turn the classic AI answers for that empire for the rest of the turn, and it
   gets no end_session. The next game turn starts afresh.
+- **Who hears of it:** `sdk::PlayerSetup::failures` is told of each failure as it happens
+  (`sdk::PlayerFailure`: the empire, its player, the game turn, the call, the error in one
+  line, the traceback, and whether the classic AI now plays the rest of the turn), on the
+  engine call's thread. A failure the journal gives again (section 8) is not told twice.
+  The client shows them in a notice in the main window, with a window of their tracebacks.
 - **External bots** have the host's turn timer instead of a budget: a bot that doesn't
   answer in time, or a slot with no bot connected, is a failure. The transport comes
   later; the engine's side is `sdk::ExternalBot` (a request, with the services while the
@@ -288,8 +293,11 @@ that wait, and the players are asked from there on. They wait there:
 - **A battle a window shows.** The window's `combat::TacticalBattle` asks the script sides
   through the session it is given (`Setup::scriptPlayers`), and `TacticalBattle::decisions`
   holds their answers; `BattleAnswer::decisions` carries them into the call made again,
-  where the battle gives them again. (The client does not pass a session yet: its windows
-  show the script sides by their strategies, and the battle is fought so.)
+  where the battle gives them again. The client's Strategic Combat and Tactical Combat
+  windows make that session (`game::makePlayers` on the battle's copy of the game) whenever
+  the game has script or external players, so a battle fights their sides the same way
+  shown or not; the window lets the session go (and with it the script runtime, one per
+  program) before the call is made again.
 - **A turn played again.** `game::replayJournal(again, played)` puts a played turn's
   answers before the same turn played again from its start: the client's movement replay
   asks nobody.

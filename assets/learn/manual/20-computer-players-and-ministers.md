@@ -1,5 +1,5 @@
 ---
-windows: ministers
+windows: ministers, player-errors
 ---
 # Computer players and ministers
 
@@ -28,6 +28,28 @@ The same page sets two handicaps:
 
 With **Team mode** (Game Settings page), every computer player is allied with the others in a
 Partnership against the human players.
+
+## Computer players of mods
+
+A mod can bring computer players of its own, written in Python, which play an empire as fully as
+the classic computer player does. When the mods you play with offer some, the setup screens let
+you choose who plays each computer empire (see [Getting started](getting-started#computer-players-of-mods)),
+and so does the host of a network game in its lobby (see [Multiplayer](multiplayer)). Everything
+else stays as above: difficulty, bonus and team mode apply to them too.
+
+- **Seeing everything.** The game option *Computer players see everything* gives them the whole
+  game instead of what their empire knows. It is off by default.
+- **When one fails**, because of a mistake in its program or because it asks for more than the
+  game's limits allow, the classic computer player decides that one thing in its place and the
+  game goes on. A notice over the bottom of the system view says who failed, in what and how;
+  `Details` opens a list of every failure of the game with what its program reported, and
+  `Dismiss` hides the notice until the next one. Only the computer that runs the players (the
+  host of a network game) shows it.
+- **Their notes.** These players can write notes about what they think. Switch on *Show the
+  computer players' notes* in [Settings](settings#modding) (or press `Ctrl+Shift+N` in a game) to
+  see them: a list in the system view, the noted sectors framed in yellow, rings around the noted
+  systems in the galaxy view, and the notes about a ship, fleet or planet in its report. It shows
+  every note, whatever your empire knows, so it is a tool for people who make computer players.
 
 ## How computer players behave
 
