@@ -4,7 +4,7 @@
 # Start's line; a game begun with the mods, whose hull the designer offers
 # (docs/BUILDING.md "Input scripts").
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
-options --mods-dir=tests/fixtures/mods --layout=1024x768 --size=1280x800 --seed=7
+options --mods-dir=tests/fixtures/mods --no-bundled-mods --layout=1024x768 --size=1280x800 --seed=7
 
 wait-screen front
 click item:"New Game" in=front

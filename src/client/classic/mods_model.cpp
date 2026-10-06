@@ -108,7 +108,7 @@ std::optional<SavedGameMods> savedGameMods(const std::filesystem::path& file, co
     out.differences = game::modDifferences(info->mods, rules, "the game");
     if (out.differences.empty()) return std::nullopt;
     out.recorded = info->mods;
-    if (auto set = mods::modsForGame(info->mods, loaded.modsDir, loaded.open)) {
+    if (auto set = mods::modsForGame(info->mods, loaded.folders, loaded.open)) {
         for (const mods::Package& p : set->packages) out.ids.push_back(p.id());
     } else {
         out.unavailable = set.error();

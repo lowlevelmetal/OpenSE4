@@ -60,6 +60,7 @@ struct Package {
     std::filesystem::path root;    // the folder read (a .zip's unpacked copy)
     bool classic = false;          // no manifest: a classic mod
     bool zipped = false;
+    bool bundled = false;          // comes with OpenSE4 (found in the bundled mods folder)
     Manifest manifest;             // a classic mod's is made up: id "classic.<folder>", version 0
     std::vector<PackageFile> files;  // sorted by path
     unsigned tiers = 0;

@@ -17,6 +17,7 @@
 #include "game/tactical.hpp"
 #include "client/classic/mods_model.hpp"
 #include "mods/data_set.hpp"
+#include "sdk/process.hpp"
 #include "learn/access.hpp"
 #include "learn/ids.hpp"
 #include "learn/markdown.hpp"
@@ -100,7 +101,8 @@ mods::ModChoice ClassicMode::modChoice(std::vector<std::string> ids) const {
     const std::filesystem::path userDir = userDataDirectory();
     mods::ModChoice choice;
     choice.mods = std::move(ids);
-    choice.modsDir = options_.modsDir.empty() ? mods::modsFolderIn(userDir) : std::filesystem::path(options_.modsDir);
+    choice.folders.user = options_.modsDir.empty() ? mods::modsFolderIn(userDir) : std::filesystem::path(options_.modsDir);
+    if (!options_.noBundledMods) choice.folders.bundled = mods::bundledModsFolder(sdk::executableDir());
     choice.open.cacheDir = mods::modCacheIn(userDir);
     return choice;
 }
@@ -168,7 +170,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     LoadedMods& loaded = loadedMods();
     loaded = LoadedMods{};
     loaded.fromCommandLine = options.modsGiven;
-    loaded.modsDir = choice.modsDir;
+    loaded.folders = choice.folders;
     loaded.open = choice.open;
     auto data = readDataSet(*dataDir, choice);
     if (!data && !options.modsGiven && !choice.mods.empty()) {

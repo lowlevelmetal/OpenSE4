@@ -33,6 +33,7 @@ struct ClassicOptions {
     std::vector<std::string> mods;
     bool modsGiven = false;
     std::string modsDir;     // empty: <user data>/Mods
+    bool noBundledMods = false;  // without the mods that come with OpenSE4 (mods/ beside the program)
     uint64_t seed = 1;
     bool seedGiven = false;  // the player gave the seed (--seed, or a script run)
     int systemCount = 0;     // 0 = default

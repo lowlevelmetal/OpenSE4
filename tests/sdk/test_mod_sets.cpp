@@ -6,6 +6,8 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+
 using namespace opense4;
 using namespace opense4::mods;
 using namespace opense4::test;
@@ -91,7 +93,7 @@ TEST_CASE("sdk mod sets: the player's choice, by path or by id in the mods folde
     CHECK(lib.problems[0].find("broken") != std::string::npos);
 
     ModChoice choice;
-    choice.modsDir = modsFolder;
+    choice.folders.user = modsFolder;
     choice.mods = {fixtureMod("needs-lib").string(), "test.common-lib"};
     auto set = selectMods(choice);
     REQUIRE_MESSAGE(set, (set ? std::string{} : joined(set.error())));
@@ -112,19 +114,148 @@ TEST_CASE("sdk mod sets: the player's choice, by path or by id in the mods folde
 
     // The mods a game recorded, found again by id and identity.
     const std::vector<ruleset::ModRecord> recorded{openFixtureMod("common-lib").record(), openFixtureMod("escort-hull").record()};
-    auto again = modsForGame(recorded, modsFolder);
+    auto again = modsForGame(recorded, ModFolders{modsFolder, {}});
     REQUIRE(again);
     CHECK(ids(*again) == std::vector<std::string>{"test.common-lib", "test.escort-hull"});
     std::vector<ruleset::ModRecord> other = recorded;
     other[0].hash = std::string(32, '0');
-    auto differs = modsForGame(other, modsFolder);
+    auto differs = modsForGame(other, ModFolders{modsFolder, {}});
     REQUIRE_FALSE(differs);
     CHECK(joined(differs.error()).find("the copy in") != std::string::npos);
     // An asset-only mod a game recorded may be missing.
     ruleset::ModRecord pictures{"test.pictures-only", "1.0.0", std::string(32, 'a'), false};
-    auto withoutPictures = modsForGame(std::vector<ruleset::ModRecord>{pictures}, modsFolder);
+    auto withoutPictures = modsForGame(std::vector<ruleset::ModRecord>{pictures}, ModFolders{modsFolder, {}});
     REQUIRE(withoutPictures);
     CHECK(withoutPictures->empty());
+}
+
+TEST_CASE("sdk mod sets: the mods that come with OpenSE4, after the player's own") {
+    // A release's layout: mods/ beside the programs holds the bundled mods.
+    TempDir dir("sdk_bundled");
+    const fs::path program = dir / "OpenSE4";
+    const fs::path bundled = program / "mods";
+    fs::create_directories(bundled);
+    fs::copy(fixtureMod("escort-hull"), bundled / "escort-hull", fs::copy_options::recursive);
+    fs::copy(fixtureMod("common-lib"), bundled / "common-lib", fs::copy_options::recursive);
+    // The player's own copy of the library: another version, which replaces the bundled one.
+    const fs::path user = dir / "Mods";
+    fs::create_directories(user);
+    fs::copy(fixtureMod("common-lib"), user / "common-lib", fs::copy_options::recursive);
+    std::string manifest = readText(user / "common-lib" / "mod.toml");
+    manifest.replace(manifest.find("1.2.0"), 5, "1.4.0");
+    writeText(user / "common-lib" / "mod.toml", manifest);
+    CHECK(bundledModsFolderFor(program, {}) == bundled);
+    const ModFolders folders{user, bundledModsFolderFor(program, {})};
+
+    const ModLibrary lib = scanMods(folders);
+    CHECK(lib.problems.empty());
+    REQUIRE(lib.find("test.common-lib"));
+    CHECK_FALSE(lib.find("test.common-lib")->bundled);
+    CHECK(lib.find("test.common-lib")->manifest.version.text == "1.4.0");   // the player's copy wins
+    REQUIRE(lib.find("test.escort-hull"));
+    CHECK(lib.find("test.escort-hull")->bundled);                             // found by id among the bundled mods
+    REQUIRE(lib.replaced.size() == 1);
+    CHECK(lib.replaced[0].id() == "test.common-lib");
+    CHECK(lib.replaced[0].bundled);
+    CHECK(lib.packages.size() == 2);
+
+    // Chosen by id: the bundled mod is found, the player's library used.
+    ModChoice choice;
+    choice.folders = folders;
+    choice.mods = {"test.escort-hull", "test.common-lib"};
+    auto set = selectMods(choice);
+    REQUIRE_MESSAGE(set, (set ? std::string{} : joined(set.error())));
+    REQUIRE(set->packages.size() == 2);
+    CHECK(set->packages[0].bundled);
+    CHECK(set->packages[1].manifest.version.text == "1.4.0");
+    // In neither folder: the message names both.
+    choice.mods = {"test.nowhere"};
+    auto none = selectMods(choice);
+    REQUIRE_FALSE(none);
+    CHECK(joined(none.error()).find("no mod 'test.nowhere' in the mods folder") != std::string::npos);
+    CHECK(joined(none.error()).find("or the mods that come with OpenSE4") != std::string::npos);
+    // Without the bundled mods (--no-bundled-mods), the escort hull is nowhere.
+    choice.folders.bundled.clear();
+    choice.mods = {"test.escort-hull"};
+    auto without = selectMods(choice);
+    REQUIRE_FALSE(without);
+    CHECK(joined(without.error()).find("come with OpenSE4") == std::string::npos);
+
+    // A game's mods: the bundled hull by id and identity; the library the game played
+    // with was the bundled one, but the player's copy replaces it, and says so.
+    const std::vector<ruleset::ModRecord> hull{openFixtureMod("escort-hull").record()};
+    auto again = modsForGame(hull, folders);
+    REQUIRE_MESSAGE(again, (again ? std::string{} : joined(again.error())));
+    REQUIRE(again->packages.size() == 1);
+    CHECK(again->packages[0].bundled);
+    const std::vector<ruleset::ModRecord> library{openFixtureMod("common-lib").record()};
+    auto replaced = modsForGame(library, folders);
+    REQUIRE_FALSE(replaced);
+    CHECK(joined(replaced.error()).find("it replaces the one that comes with OpenSE4") != std::string::npos);
+    auto missing = modsForGame(hull, ModFolders{user, {}});
+    REQUIRE_FALSE(missing);
+    CHECK(joined(missing.error()).find("the game uses mod test.escort-hull 1.0.0, which is not in the mods folder") != std::string::npos);
+}
+
+TEST_CASE("sdk mod sets: a developer build's bundled mods from the source tree") {
+    // The source tree's layout: mods/ with bundled.txt naming the mods that ship,
+    // beside the SDK's examples and mods that do not.
+    TempDir dir("sdk_bundled_tree");
+    const fs::path tree = dir / "mods";
+    fs::create_directories(tree / "examples");
+    fs::copy(fixtureMod("escort-hull"), tree / "escort-hull", fs::copy_options::recursive);
+    fs::copy(fixtureMod("picture-pack"), tree / "picture-pack", fs::copy_options::recursive);
+    fs::copy(fixtureMod("common-lib"), tree / "examples" / "common-lib", fs::copy_options::recursive);
+    writeText(tree / "bundled.txt", "# The mods that ship.\n\nescort-hull   # the hull\n");
+    CHECK(readBundledList(tree / "bundled.txt") == std::vector<std::string>{"escort-hull"});
+
+    // No mods/ beside the program: the source tree's, when it has the list.
+    const fs::path program = dir / "build";
+    fs::create_directories(program);
+    CHECK(bundledModsFolderFor(program, tree) == tree);
+    CHECK(bundledModsFolderFor(program, dir / "elsewhere").empty());
+    CHECK(bundledModsFolderFor(program, {}).empty());
+    fs::create_directories(program / "mods");
+    CHECK(bundledModsFolderFor(program, tree) == program / "mods");   // a mods/ beside the program wins
+
+    // Only the listed folders: not the examples, nor a mod the list leaves out.
+    ModLibrary lib = scanBundledMods(tree);
+    CHECK(lib.problems.empty());
+    REQUIRE(lib.packages.size() == 1);
+    CHECK(lib.packages[0].id() == "test.escort-hull");
+    CHECK(lib.packages[0].bundled);
+    // A listed folder that is not there is a problem; a name with a slash is no folder of it.
+    writeText(tree / "bundled.txt", "escort-hull\ngone\nexamples/common-lib\n");
+    lib = scanBundledMods(tree);
+    CHECK(lib.packages.size() == 1);
+    CHECK(lib.problems.size() == 2);
+    // Without the list (a release's mods/), every mod there.
+    fs::remove(tree / "bundled.txt");
+    fs::remove_all(tree / "examples");
+    lib = scanBundledMods(tree);
+    CHECK(lib.packages.size() == 2);
+    CHECK(std::all_of(lib.packages.begin(), lib.packages.end(), [](const Package& p) { return p.bundled; }));
+}
+
+TEST_CASE("sdk mod sets: the mods that ship with OpenSE4 (mods/bundled.txt)") {
+    // Our own mods/ folder: each folder its list names is a mod that opens, Hegemon among them.
+    const fs::path tree(OPENSE4_MODS_DIR);
+    REQUIRE(fs::is_regular_file(tree / std::string(kBundledListFile)));
+    const ModLibrary lib = scanBundledMods(tree);
+    CHECK_MESSAGE(lib.problems.empty(), joined(lib.problems));
+    CHECK(lib.packages.size() == readBundledList(tree / std::string(kBundledListFile)).size());
+    const Package* hegemon = lib.find("opense4.hegemon");
+    REQUIRE(hegemon);
+    CHECK(hegemon->bundled);
+    CHECK(hegemon->affectsGame());
+    REQUIRE(hegemon->manifest.aiPlayers.size() == 1);
+    CHECK(hegemon->manifest.aiPlayers[0].name == "Hegemon");
+    for (const Package& p : lib.packages) CHECK_MESSAGE(p.source.parent_path() == tree, p.source.string());   // never mods/examples
+#ifdef OPENSE4_TEST_DEV_PATHS
+    // A developer build without mods/ beside its programs finds them there.
+    TempDir program("sdk_bundled_program");
+    CHECK(bundledModsFolder(program.path()) == tree);
+#endif
 }
 
 TEST_CASE("sdk mod sets: the mod manager's model") {

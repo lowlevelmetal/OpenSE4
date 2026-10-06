@@ -30,7 +30,7 @@ struct LoadedMods {
     // The settings' mods could not be loaded when OpenSE4 started: it started
     // without them, and the Mods window says why.
     std::vector<std::string> startProblems;
-    std::filesystem::path modsDir;         // where ids are looked up: <user data>/Mods or --mods-dir
+    mods::ModFolders folders;              // where ids are looked up: <user data>/Mods (or --mods-dir), then the bundled mods
     mods::OpenOptions open;                // where .zip mods are unpacked
     uint64_t generation = 0;               // counts the data sets read: what was set up for an earlier one is stale
 };
@@ -91,8 +91,8 @@ private:
 };
 
 // What a saved game needs of the mods when the ones in use differ: each
-// difference, and the game's mods as the mods folder has them (or why it
-// does not have them all).
+// difference, and the game's mods as the mods folders have them (or why they
+// do not have them all).
 struct SavedGameMods {
     std::vector<std::string> differences;
     std::vector<ruleset::ModRecord> recorded;          // the game's mods, in its load order

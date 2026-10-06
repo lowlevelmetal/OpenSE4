@@ -17,6 +17,7 @@
 #include "game/players.hpp"
 #include "sdk/bots.hpp"
 #include "sdk/players.hpp"
+#include "sdk/process.hpp"
 #include "server/setup_file.hpp"
 
 #include <algorithm>
@@ -59,9 +60,12 @@ Network game options:
   --mod=MOD              Play with this mod: a folder or .zip, or the id of one in the
                          mods folder; repeat for several, in load order (default: the
                          setup file's mods; a loaded game's own, from the mods folder).
-                         Every command that reads the data set takes --mod and --mods-dir
+                         Every command that reads the data set takes --mod, --mods-dir
+                         and --no-bundled-mods
   --mods-dir=DIR         Where mods are looked up by id (default: Mods in OpenSE4's
-                         user folder)
+                         user folder); then among the mods that come with OpenSE4
+                         (mods/ beside the program)
+  --no-bundled-mods      Leave out the mods that come with OpenSE4
   --port=N               TCP port (default 6720; 0 = any free port)
   --bind=ADDRESS         Listen on one address only (default: all IPv4 interfaces)
   --upnp / --no-upnp     Forward the port on the router with UPnP (default: on)
@@ -250,8 +254,9 @@ std::expected<Options, std::string> parseArgs(std::span<char*> args, std::initia
 // ---- Shared helpers -----------------------------------------------------------------------------
 
 // The data set with its mods (docs/sdk/packages-and-data.md): --mod (paths,
-// or ids in --mods-dir), else `fallbackMods` (a setup file's), else the
-// game-affecting mods a saved game recorded, found in the mods folder.
+// or ids in --mods-dir and then among the mods that come with OpenSE4), else
+// `fallbackMods` (a setup file's), else the game-affecting mods a saved game
+// recorded, found the same way.
 std::expected<std::unique_ptr<game::Rules>, std::string> loadRules(const Options& o, std::vector<std::string> fallbackMods = {},
                                                                    std::span<const ruleset::ModRecord> recorded = {}) {
     const std::string dataArg = o.get("data");
@@ -262,9 +267,10 @@ std::expected<std::unique_ptr<game::Rules>, std::string> loadRules(const Options
     const std::filesystem::path userDir = net::secure::userDataDir();
     mods::ModChoice choice;
     choice.mods = o.has("mod") ? o.getAll("mod") : std::move(fallbackMods);
-    choice.modsDir = o.has("mods-dir") ? std::filesystem::path(o.get("mods-dir")) : mods::modsFolderIn(userDir);
+    choice.folders.user = o.has("mods-dir") ? std::filesystem::path(o.get("mods-dir")) : mods::modsFolderIn(userDir);
+    if (!o.has("no-bundled-mods")) choice.folders.bundled = mods::bundledModsFolder(sdk::executableDir());
     choice.open.cacheDir = mods::modCacheIn(userDir);
-    auto modSet = choice.mods.empty() && !recorded.empty() ? mods::modsForGame(recorded, choice.modsDir, choice.open) : mods::selectMods(choice);
+    auto modSet = choice.mods.empty() && !recorded.empty() ? mods::modsForGame(recorded, choice.folders, choice.open) : mods::selectMods(choice);
     if (!modSet) {
         std::string why = "The mods could not be loaded:";
         for (const auto& e : modSet.error()) why += "\n  " + e;
@@ -419,7 +425,7 @@ int runServer(std::span<char*> args) {
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
                              "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns", "host-key", "mod", "mods-dir", "bot-port",
                              "bot-bind", "bot-token", "bot-timeout"},
-                            {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "no-password-migration", "verbose", "help", "version"});
+                            {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "no-password-migration", "verbose", "help", "version", "no-bundled-mods"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
     if (o.has("help")) return usage();
@@ -669,7 +675,7 @@ void listTurnFiles(const std::vector<std::pair<game::EmpireId, std::filesystem::
 
 int pbemNew(std::span<char*> args) {
     auto o = parseArgs(args, {"setup", "out", "data", "turn-files", "host-key", "mod", "mods-dir", "bot-port", "bot-bind", "bot-token", "bot-timeout", "bot-wait"},
-                       {"help"});
+                       {"help", "no-bundled-mods"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("setup") || !o->has("out")) return fail("pbem new needs --setup=FILE.toml and --out=GAME.gam", 2);
@@ -731,7 +737,7 @@ int pbemNew(std::span<char*> args) {
 }
 
 int pbemTurnFiles(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "out", "data", "host-key", "mod", "mods-dir"}, {"help"});
+    auto o = parseArgs(args, {"game", "out", "data", "host-key", "mod", "mods-dir"}, {"help", "no-bundled-mods"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game")) return fail("pbem turn-files needs --game=GAME.gam", 2);
@@ -758,7 +764,7 @@ int pbemProcess(std::span<char*> args) {
     auto o = parseArgs(args,
                        {"game", "orders", "password", "data", "reset-passwords", "turn-files", "host-key", "mod", "mods-dir", "bot-port", "bot-bind",
                         "bot-token", "bot-timeout", "bot-wait"},
-                       {"keep-orders", "allow-data-mismatch", "no-password-migration", "help"});
+                       {"keep-orders", "allow-data-mismatch", "no-password-migration", "help", "no-bundled-mods"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game") || !o->has("orders")) return fail("pbem process needs --game=GAME.gam and --orders=DIR", 2);
@@ -915,7 +921,7 @@ int runBot(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"connect", "port", "name", "password", "join-password", "master-password", "data", "race", "turns", "timeout", "host-key",
                              "mod", "mods-dir"},
-                            {"start", "old-password", "help"});
+                            {"start", "old-password", "help", "no-bundled-mods"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
     if (o.has("help")) return usage();

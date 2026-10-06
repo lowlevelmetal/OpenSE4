@@ -1,9 +1,10 @@
 // Mods in the front end (docs/sdk/packages-and-data.md "Choosing mods in the
 // game"): the Mods window, OpenSE4's own in the classic look, with the mods of
-// the mods folder, which are on and in what order, what each holds and what
-// is wrong; the line about them in the setup screens; and a saved game played
-// with other mods. Changes apply to the next game: the data set is read again
-// with the mods chosen when the window closes with Done.
+// the mods folder and the ones that come with OpenSE4, which are on and in what
+// order, what each holds and what is wrong; the line about them in the setup
+// screens; and a saved game played with other mods. Changes apply to the next
+// game: the data set is read again with the mods chosen when the window closes
+// with Done.
 
 #include "client/classic/frontend.hpp"
 #include "client/classic/mods_model.hpp"
@@ -71,7 +72,7 @@ public:
 private:
     void scan() {
         const LoadedMods& loaded = loadedMods();
-        mods::ModLibrary library = mods::scanModsFolder(loaded.modsDir, loaded.open);
+        mods::ModLibrary library = mods::scanMods(loaded.folders, loaded.open);
         choice_.emplace(std::move(library), settings().enabledMods);
         error_.clear();
         const std::vector<ModsChoice::Row>& rows = rowsCache();
@@ -82,6 +83,13 @@ private:
     const std::vector<ModsChoice::Row>& rowsCache() {
         rows_ = choice_->rows();
         return rows_;
+    }
+
+    // The bundled mod a mod of the player's folder replaces (the same id), if any.
+    const mods::Package* replacedBundled(std::string_view id) const {
+        for (const mods::Package& p : choice_->library().replaced)
+            if (p.id() == id) return &p;
+        return nullptr;
     }
 
     const ModsChoice::Row* selectedRow() const {
@@ -108,7 +116,7 @@ private:
         ImGui::BeginChild("##mods", ImVec2(width, height), ImGuiChildFlags_Borders);
         const LoadedMods& loaded = loadedMods();
         if (rows_.empty()) {
-            wrapped(kDimText, std::format("No mods yet. A mod is a folder or a .zip with its mod.toml; put it in {}.", loaded.modsDir.string()));
+            wrapped(kDimText, std::format("No mods yet. A mod is a folder or a .zip with its mod.toml; put it in {}.", loaded.folders.user.string()));
         }
         const float rowH = std::max(p.px(34), ImGui::GetTextLineHeight() * 2.0f + p.px(2));
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -142,7 +150,9 @@ private:
             const float second = min.y + std::max(p.px(17), ImGui::GetTextLineHeight() + p.px(2));
             std::string sub;
             if (!row.package) sub = "not in the mods folder";
-            else sub = std::format("{}, {}", row.package->manifest.version.text, mods::tierNames(row.package->tiers));
+            else sub = std::format("{}, {}{}", row.package->manifest.version.text, mods::tierNames(row.package->tiers),
+                                   row.package->bundled ? "; comes with OpenSE4" : "");
+            if (row.package && row.package->bundled) script::reportItem("bundled:" + row.id, min, max);   // input scripts see where it is from
             bool trouble = row.enabled && !row.package;
             if (row.enabled && !resolved_)
                 for (const std::string& e : resolved_.error()) trouble = trouble || mentionsMod(e, row.id);
@@ -175,6 +185,26 @@ private:
         if (!m.description.empty()) {
             ImGui::Spacing();
             wrapped(ImVec4(1, 1, 1, 1), m.description);
+        }
+        if (pk.bundled) {
+            wrapped(kGood, "It comes with OpenSE4, ready to use: switch it on to play with it. Every player of this version of OpenSE4 has "
+                           "the same copy.");
+            script::reportItem("comes-with-opense4:" + pk.id(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+        } else if (const mods::Package* own = replacedBundled(pk.id())) {
+            wrapped(kWarn, std::format("Your copy replaces the one that comes with OpenSE4 (version {}). Take it out of the mods folder to "
+                                       "play with that one.",
+                                       own->manifest.version.text));
+            script::reportItem("replaces-bundled:" + pk.id(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+        }
+        if (!m.aiPlayers.empty()) {
+            std::string names;
+            for (const mods::AiPlayer& a : m.aiPlayers) names += (names.empty() ? "" : ", ") + a.name;
+            label("Computer players");
+            ImGui::SameLine();
+            wrapped(ImVec4(1, 1, 1, 1), names);
+            script::reportItem("computer-players:" + names, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+            wrapped(kDimText, row->enabled ? "Computer Players in Game Setup and Quick Start chooses who plays the computer empires."
+                                           : "Once it is on, Computer Players in Game Setup and Quick Start offers them for the computer empires.");
         }
         ImGui::Spacing();
         label("Holds");
@@ -263,7 +293,8 @@ private:
                                              : "These are the mods in use. Changes apply to the next game: Done reads the game's data again.");
         if (loaded.fromCommandLine)
             wrapped(kWarn, "This run started with --mod or --no-mods: Done replaces those with the choice here, which the settings keep.");
-        wrapped(kDimText, std::format("Mods folder: {}", loaded.modsDir.string()));
+        wrapped(kDimText, std::format("Mods folder: {}", loaded.folders.user.string()));
+        if (!loaded.folders.bundled.empty()) wrapped(kDimText, std::format("Mods that come with OpenSE4: {}", loaded.folders.bundled.string()));
     }
 
     void toggle(const std::string& id) {
@@ -293,7 +324,7 @@ private:
             std::vector<std::string> ids = choice_->enabled();
             ids.insert(ids.end(), choice_->missing().begin(), choice_->missing().end());
             const LoadedMods& loaded = loadedMods();
-            choice_.emplace(mods::scanModsFolder(loaded.modsDir, loaded.open), std::move(ids), settings().enabledMods);
+            choice_.emplace(mods::scanMods(loaded.folders, loaded.open), std::move(ids), settings().enabledMods);
             rowsCache();
             resolved_ = choice_->resolve();
         }
@@ -359,11 +390,11 @@ public:
             ImGui::Spacing();
             if (needs_ && needs_->unavailable.empty()) {
                 wrapped(kGood, needs_->ids.empty() ? std::string("Load Without Mods reads the game's data again without mods, then loads the game.")
-                                                   : std::format("The mods folder has them: Load with Its Mods reads the game's data again "
+                                                   : std::format("Your mods have them: Load with Its Mods reads the game's data again "
                                                                  "with {}, then loads the game.",
                                                                  ruleset::describeMods(needs_->recorded)));
             } else if (needs_) {
-                wrapped(kDimText, "The mods folder does not have them all:");
+                wrapped(kDimText, "Your mods do not include them all:");
                 for (const std::string& line : needs_->unavailable) {
                     ImGui::Bullet();
                     wrapped(kDimText, line);

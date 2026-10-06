@@ -8,6 +8,7 @@
 #include "net/types.hpp"
 #include "ruleset/ruleset.hpp"
 #include "sdk/players.hpp"
+#include "sdk/process.hpp"
 #include "server/setup_file.hpp"
 
 #include <algorithm>
@@ -79,11 +80,24 @@ std::expected<Options, std::string> parseOptions(const std::vector<std::string>&
 
 std::string dataOption(const Options& o) { return o.has("data") ? o.get("data") : o.get("classic-dir"); }
 
+namespace {
+bool gBundledMods = true;   // false with --no-bundled-mods
+}
+
+void setBundledMods(bool on) { gBundledMods = on; }
+
+mods::ModFolders modFolders(const std::string& modsDir) {
+    mods::ModFolders folders;
+    folders.user = modsDir.empty() ? mods::modsFolderIn(net::secure::userDataDir()) : fs::path(modsDir);
+    if (gBundledMods) folders.bundled = mods::bundledModsFolder(sdk::executableDir());
+    return folders;
+}
+
 std::expected<mods::ModSet, std::string> chooseMods(const std::vector<std::string>& list, const std::string& modsDir) {
     const fs::path user = net::secure::userDataDir();
     mods::ModChoice choice;
     choice.mods = list;
-    choice.modsDir = modsDir.empty() ? mods::modsFolderIn(user) : fs::path(modsDir);
+    choice.folders = modFolders(modsDir);
     choice.open.cacheDir = mods::modCacheIn(user);
     auto set = mods::selectMods(choice);
     if (!set) {
