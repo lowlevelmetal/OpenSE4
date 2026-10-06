@@ -1,15 +1,20 @@
 # Hegemon
 
 A computer player for OpenSE4, written in Python with the `opense4` package
-(docs/sdk/python-api.md). It plays every decision itself: diplomacy, orders, the
-economy, colony types are left to the game, battles round by round and the
-questions the game asks during a turn. It never calls the classic AI (`ai.builtin`).
+(docs/sdk/python-api.md). It makes its own decisions: diplomacy, the orders of every
+ship and fleet, the economy (research, designs, every construction queue), battles round
+by round and whether its groups enter sectors with enemies. It never calls the classic
+AI (`ai.builtin`), and its empire opts out of the classic AI's bookkeeping
+(`classic_state = false`). Two questions get the game's classic answer: the label of a
+new colony (`colony_type`: the label only steers the classic ministers, which Hegemon
+does not run) and lowering a cloak (`decloak`: Hegemon designs no cloaked ships).
 
 ```toml
 [[ai.players]]
 name = "Hegemon"
 module = "hegemon"        # ai/hegemon/
 class = "Hegemon"
+classic_state = false
 ```
 
 Play against it: `opense4-sdk run mods/hegemon -- --quick-start=Terran`, or
