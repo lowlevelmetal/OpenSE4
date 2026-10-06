@@ -225,11 +225,16 @@ the war starts.
 
 ## Tuning
 
-`ai/hegemon/config.py` switches features on and off (the evaluation measures each);
-the phases' upkeep shares and research weights are in `strategy.py`, the output mix the
-prices aim at in `economy.py` (`TARGET_SHARES`), the margins of strikes and defence in
-`military.py`, the late-game surge in `strategy.py` (`LATE_*`). `player.py` has `DEBUG`,
-which writes the planners' reasoning to the game's log.
+`ai/hegemon/config.py` switches features on and off (the evaluation measured each, see
+below); the phases' upkeep shares and research weights are in `strategy.py`
+(`upkeep_share`, `research_weights`, the late-game surge `LATE_*`, `WAR_NEAR`), the output
+mix the prices aim at in `economy.py` (`TARGET_SHARES`), the store reserve and the share
+kept for facilities in `construction.py` (`RESERVE_*`, `FACILITY_SHARE`, `URGENT`), the
+margins of strikes and defence and the upkeep limits in `military.py` (`STRIKE_MARGIN`,
+`DEFEND_MARGIN`, `SHARE_MAX`, `MAINT_MAX`, `STRIKE_SUPPLY_MOVES`), how long colony ships
+avoid a system or a target in `player.py` (`UNSAFE_TURNS`, `COLONIST_STUCK`,
+`COLONIZE_BLOCK`). `player.py` has `DEBUG`, which writes the planners' reasoning to the
+game's log (the arena keeps it in `games/game-NNNN.log`).
 
 ## Tests
 
@@ -239,9 +244,118 @@ which writes the planners' reasoning to the game's log.
   troop and strength sums) and a short game.
 - The engine's tests: `tests/sdk/test_mod_hegemon.cpp` plays Hegemon beside the built-in
   AI on OpenSE4's own fixture data in both turn styles (no failed request, the same game
-  every time), and, with `OPENSE4_CLASSIC_DATA`, a free-for-all on the installed data
-  set with its costs a turn (`OPENSE4_HEGEMON_TURNS=150` for long games).
+  every time, under half of each call's bytecode budget, a small memory), and, with
+  `OPENSE4_CLASSIC_DATA`, a free-for-all on the installed data set with the same checks
+  and its costs: time a turn on average and at most, the most bytecodes a call used, and
+  each call's mean and worst time (`OPENSE4_HEGEMON_TURNS=150` for long games):
+  `OPENSE4_CLASSIC_DATA=auto OPENSE4_HEGEMON_TURNS=150 ./build/release/tests/opense4_tests -tc="hegemon*"`.
+- `python3 tools/cleanroom_check.py` finds nothing of the original in the mod.
 
 ## Evaluation
 
-(See the results below.)
+**Method.** Games with the SDK's arena (`opense4-sdk arena`, docs/sdk/bots-and-arena.md)
+on the installed data set, 150 turns each, against the built-in AI. Every empire is a
+computer player at the same default difficulty and bonuses, and no player sees more than
+its own empire's view (the arena never sets `aiSeesEverything`). Game *i* of a run has
+the seed S + *i*, which draws the galaxy and the races, and moves every player *i* seats
+on, so over a run each player plays every seat and race. The winner is the empire with the
+best score after 150 turns (or the one a victory condition names). Configurations: duels
+on 30 and 50 systems, four empires on 40 systems and six on 60, in simultaneous and
+turn-based play: 156 games. The baseline puts the built-in AI in Hegemon's seat on the
+same seeds: what an equal player wins there.
+
+**Reproduce** (from the repository root, after `cmake --preset release && cmake --build
+--preset release -j 4`):
+
+```sh
+python3 mods/hegemon/tools/evaluate.py run --suite=full --out=eval --jobs=4      # 156 games
+python3 mods/hegemon/tools/evaluate.py run --suite=baseline --out=base --jobs=4  # 74 games
+python3 mods/hegemon/tools/evaluate.py summary eval --curves
+python3 mods/hegemon/tools/evaluate.py summary base
+```
+
+`run` prints each arena command it plays; the suite is these seven:
+
+```sh
+SDK=build/release/opense4-sdk; H="--mod=mods/hegemon --ai=opense4.hegemon:Hegemon"
+$SDK arena $H --ai=builtin --games=24 --turns=150 --seed=2000 --systems=30 --jobs=4 --out=eval/duel-sim-30
+$SDK arena $H --ai=builtin --games=24 --turns=150 --seed=2100 --systems=30 --jobs=4 --out=eval/duel-tb-30 --turn-based
+$SDK arena $H --ai=builtin --games=16 --turns=150 --seed=2200 --systems=50 --jobs=4 --out=eval/duel-sim-50
+$SDK arena $H --ai=builtin --ai=builtin --ai=builtin --games=32 --turns=150 --seed=2300 --systems=40 --jobs=4 --out=eval/ffa4-sim-40
+$SDK arena $H --ai=builtin --ai=builtin --ai=builtin --games=24 --turns=150 --seed=2400 --systems=40 --jobs=4 --out=eval/ffa4-tb-40 --turn-based
+$SDK arena $H --ai=builtin --ai=builtin --ai=builtin --ai=builtin --ai=builtin --games=18 --turns=150 --seed=2500 --systems=60 --jobs=4 --out=eval/ffa6-sim-60
+$SDK arena $H --ai=builtin --ai=builtin --ai=builtin --ai=builtin --ai=builtin --games=18 --turns=150 --seed=2600 --systems=60 --jobs=4 --out=eval/ffa6-tb-60 --turn-based
+```
+
+The games are deterministic: the same build and data set play them to the same checksums
+(`games.csv`), and `opense4-sdk arena --replay=eval/<run>/games/game-NNNN.json` plays one
+again.
+
+**Results** (version 0.1.0). Wins with Wilson 95 % intervals; "fair" is the share an equal
+player wins; the ratios are Hegemon's final figure over the best built-in AI of the same
+game (mean ± 95 % interval); research is points a turn.
+
+| Configuration | Games | Fair | Hegemon wins | Survives | Score × | Colonies × | Tech levels × | Research × | Ships × |
+|---|---|---|---|---|---|---|---|---|---|
+| Duel, 30 systems, simultaneous | 24 | 50 % | 96 % (80–99) | 100 % | 3.77 ± 1.12 | 2.30 ± 0.50 | 3.03 ± 0.45 | 5.63 ± 1.51 | 3.92 ± 1.59 |
+| Duel, 30 systems, turn-based | 24 | 50 % | 92 % (74–98) | 100 % | 3.31 ± 0.84 | 2.26 ± 0.41 | 3.57 ± 0.51 | 6.21 ± 1.59 | 3.23 ± 1.06 |
+| Duel, 50 systems, simultaneous | 16 | 50 % | 100 % (81–100) | 100 % | 4.89 ± 2.56 | 3.52 ± 2.12 | 3.62 ± 0.61 | 6.47 ± 2.61 | 6.39 ± 4.36 |
+| 4 empires, 40 systems, simultaneous | 32 | 25 % | 75 % (58–87) | 100 % | 1.81 ± 0.39 | 1.58 ± 0.35 | 2.43 ± 0.29 | 3.27 ± 0.59 | 1.67 ± 0.48 |
+| 4 empires, 40 systems, turn-based | 24 | 25 % | 75 % (55–88) | 100 % | 2.17 ± 0.59 | 1.51 ± 0.31 | 2.69 ± 0.39 | 3.21 ± 0.71 | 2.37 ± 0.67 |
+| 6 empires, 60 systems, simultaneous | 18 | 17 % | 94 % (74–99) | 100 % | 1.88 ± 0.28 | 2.27 ± 0.52 | 2.89 ± 0.22 | 3.25 ± 0.59 | 1.52 ± 0.40 |
+| 6 empires, 60 systems, turn-based | 18 | 17 % | 94 % (74–99) | 100 % | 1.89 ± 0.41 | 1.58 ± 0.43 | 2.78 ± 0.41 | 3.58 ± 0.73 | 1.54 ± 0.32 |
+| **All** | **156** | | **88 % (82–92)** | **100 %** | | | | | |
+
+The baseline (the built-in AI in Hegemon's seat, same seeds) wins 71 % (51–85) of the
+30-system duels, 25 % (13–42) of the four-empire games and 28 % (12–51) of the
+six-empire games, with score ratios of 1.51, 0.63 and 0.77. The seats are rotated, so an
+equal player's 71 % in the duels shows how far the maps alone swing a sample of 24 games.
+No game had a failed request or a decision the classic AI made in Hegemon's place (0
+failures and 0 fallbacks in about 350,000 requests).
+
+**Curves** (means over the games; Hegemon / built-in average / best built-in of each
+game), four empires on 40 systems, simultaneous:
+
+| Turn | Score | Colonies | Ships | Tech levels | Research a turn |
+|---|---|---|---|---|---|
+| 30 | 66,796 / 37,186 / 44,469 | 7.9 / 8.1 / 9.4 | 6.9 / 3.9 / 4.8 | 20.8 / 20.6 / 21.8 | 10,917 / 7,426 / 9,344 |
+| 60 | 160,706 / 84,367 / 113,852 | 21.4 / 17.1 / 22.5 | 20.3 / 9.8 / 14.6 | 28.7 / 26.3 / 28.8 | 31,089 / 15,022 / 20,927 |
+| 90 | 289,497 / 135,420 / 208,184 | 39.9 / 23.1 / 34.2 | 32.4 / 16.0 / 26.4 | 50.2 / 34.6 / 39.5 | 65,910 / 19,010 / 28,183 |
+| 120 | 403,343 / 168,757 / 284,737 | 53.3 / 25.0 / 39.2 | 42.8 / 20.5 / 36.7 | 84.2 / 40.7 / 47.1 | 92,157 / 20,220 / 31,978 |
+| 150 | 466,553 / 187,267 / 317,960 | 56.6 / 26.4 / 42.2 | 49.6 / 22.4 / 40.9 | 129.6 / 46.2 / 54.4 | 96,775 / 21,456 / 33,833 |
+
+Duels on 30 systems: 66,604 / 40,303 at turn 30, 168,704 / 89,175 at 60, 308,813 /
+139,671 at 90, 503,291 / 187,072 at 150 (Hegemon / built-in score); 65 colonies to 33
+and 143 tech levels to 49 at the end. Hegemon pulls ahead from turn 20 to 30 on research
+and the fleet, and from turn 60 to 90 on colonies; from turn 90 its research runs at three
+to four times the built-in AIs' average.
+
+**Where it loses.** The four-empire games it loses are mostly maps where it starts boxed
+in (few planets of its surface within reach) while a built-in neighbour with room expands
+to two or three times its colonies by turn 90 and builds a large fleet of big hulls,
+whose tonnage the score counts ten times. Hegemon has not eliminated an empire in these
+games: its invasions (troops that take colonies with their facilities) need troop
+technology, a loaded transport at the rally point and a strike the fleet survives, and
+rarely all come together before turn 150.
+
+**Costs** (the arena's measures in a release build on a desktop computer, 2026): 68 to
+79 ms of player time a game turn on average over a configuration (`player_ms_per_turn`),
+at most 310 ms in any one turn (`player_ms_turn_max`); at most 43 million bytecodes in a
+planning call (a fifth of its 200 million) and 774,000 in any other call (a sixth of its
+5 million); its memory between sessions is 1 to 3 KB. The opt-in engine test's game of
+150 turns (four empires, 40 systems) breaks it down by call: `politics` (the first
+planning call of a turn, which reads the rules) 35 ms on average, `economy` 18 ms,
+`orders` 14 ms, a `battle_round` under 1 ms.
+
+**What the measurements chose.** Each switch in `config.py` was measured on 32 or 64
+four-empire games (seeds 6000 to 6063, apart from the evaluation's seeds), the variant
+against the same seeds without it. The weapon platform on every colony (+16 points of
+win rate), the wider expansion, the output mix per phase and overflowing stores paying
+for warships were kept; scarcity-priced designs, yards on demand, colonization research
+valued by every planet, protecting warship funds from facilities, cheap storage and two
+platforms per colony measured worse or no better and are off. The fixes after them were
+measured the same way, on 64 games each: wins went from 67 % to 78 % with facilities held
+back from colony ships, the store reserve, upkeep per resource and one war at a time; to
+80 % with weapon damage read from range 1; to 84 % with colony ships kept within their
+supply's reach and away from danger; to 89 % with troop weapons and strikes the fleet has
+the supply for; to 92 % with transports in the fleet and tagged minefields.
