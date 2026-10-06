@@ -173,8 +173,19 @@ def run(exe, script, output, classic_dir, renderer, timeout, extra, layout=None)
             return play(exe, script, output, classic_dir, renderer, timeout, extra + [f"--open=multiplayer:join=127.0.0.1:{port}"], layout)
 
 
+FREE_PORT = "{free_port}"
+
+
 def play(exe, script, output, classic_dir, renderer, timeout, extra, layout=None):
     with tempfile.TemporaryDirectory(prefix="opense4-script-user-") as user:
+        # A script that hosts a game types "{free_port}" where it needs a port: each
+        # run gets its own, so runs played at the same time (both layouts) never meet.
+        text = script.read_text(encoding="utf-8")
+        if FREE_PORT in text:
+            copy = pathlib.Path(user) / "script" / script.name
+            copy.parent.mkdir()
+            copy.write_text(text.replace(FREE_PORT, str(free_port())), encoding="utf-8")
+            script = copy
         env = dict(os.environ)
         env.setdefault("SDL_VIDEO_DRIVER", "offscreen")
         env["OPENSE4_USER_DIR"] = user
