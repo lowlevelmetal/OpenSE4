@@ -37,6 +37,7 @@ saved for every game.
 - **Right-click a sector to move the selected ship there**: on by default. Switch it off if you prefer right-click to only select.
 - **Double-click time**: how fast two clicks must be to count as a double-click (0.30 seconds at first).
 - **Keys**: every key you can change, grouped into windows, orders, the movement log, selection and display. Each action can have a key and an alternative. Click a key, then press the new one; `Esc` cancels and `Backspace` clears it. A key already used by another action is taken from it, and you are told. `Restore default keys` brings back the keys listed in [Hotkeys](hotkeys).
+- **Mods' keys**: at the end of the list, under each mod's name, the orders of the mods you play with and the panels and pages they add. A mod may suggest a key for each; it is used only when no other action has that key. Otherwise the row stays without a key and says which action has it, so a mod never takes one of your keys. You change them like any other.
 
 ### Sound
 
@@ -45,6 +46,10 @@ saved for every game.
 your copy has both. These are the same choices as in the Options window.
 
 ### Modding
+
+**Language of the mods' text** (shown when the mods you play with have text in other
+languages): the language of the names they give their orders, options, panels and pages. English
+is used where a mod has no text in that language. The game's own windows stay in English.
 
 **Show the computer players' notes** (off at first) is a view for people who make computer
 players for mods: the notes those players write about what they think, in a list in the system
@@ -152,6 +157,13 @@ Game Setup and Quick Start.
   another which is off, for example.
 - `Done` reads the game's data again with your choice; it is used for the next game you
   start or load. `Cancel` leaves everything as it was.
+
+Besides pictures, sounds and changes to the rules, a mod can add to the game's windows: orders of
+its own in the order strip's `Mod Orders` (see [Order buttons](main-window#order-buttons)), panels
+in the reports behind their `MOD` button, columns in the Ships, Planets, Colonies and Designs
+windows (a `Mods` tab, or `Mod Columns`), pages in the Empires window, keys, and its names in other
+languages. What a mod adds to the windows only shows what your empire knows, and changes nothing
+in the game except through orders you give.
 
 A saved game remembers the mods that change the game. Loading one played with other mods
 tells you which; when your mods folder has them, `Load with Its Mods` loads it with them.

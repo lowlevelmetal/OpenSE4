@@ -18,12 +18,13 @@ was.
 | `data/` | Data patches (`*.toml`), replacement data files (`*.txt`), data generators (`*.py`), and AI tables, race files and design-name lists in the game folder's layout | Yes |
 | `ai/` | Computer players in Python ([python-api.md](python-api.md), [ai-protocol.md](ai-protocol.md)) | Yes |
 | `scripts/` | Rules scripts in Python ([rules.md](rules.md)); `scenarios/` holds a rules mod's scenarios | Yes |
-| `ui/` | Interface extensions (a later step) | No |
-| `text/` | Strings and translations (a later step) | No |
+| `ui/` | Interface extensions: buttons and pictures for the mod's orders, report panels, list columns, Empires pages, key bindings, and Python for their values ([interface.md](interface.md)) | No |
+| `text/` | The mod's names in other languages: `text/<language>.toml` ([interface.md](interface.md), "Text") | No |
 | `tests/` | The mod's own tests, for `opense4-sdk test` ([bots-and-arena.md](bots-and-arena.md)) | No |
 
 A mod that changes the game must be the same for every player of a game (see
-"Multiplayer and saved games" below). A mod with only pictures and sounds need not.
+"Multiplayer and saved games" below). A mod with only pictures, sounds, interface and text
+need not.
 
 ## A package
 
@@ -120,10 +121,11 @@ These stop a mod set from loading, with a message that names the mods:
 
 ### Identity
 
-Each mod has an **identity**: a hash of its manifest and every file outside `assets/`
-and `ui/`, with text files' line ends read as LF (so a mod saved on Windows has the
-same identity as on Linux). Changing a picture does not change it; changing a patch, a
-data file or the manifest does. `opense4-sdk info` and `check` print it.
+Each mod has an **identity**: a hash of its manifest and every file outside `assets/`,
+`ui/` and `text/`, with text files' line ends read as LF (so a mod saved on Windows has the
+same identity as on Linux). Changing a picture, a panel or a translation does not change
+it; changing a patch, a data file or the manifest does. `opense4-sdk info` and `check`
+print it.
 
 A game's mod set has an identity too: the ids, versions and identities of its mods that
 change the game, in load order. It is part of the data set's identity
@@ -459,8 +461,9 @@ The title screen's `Mods` button (at the top right) opens the Mods window:
   click switches it.
 - Beside it is what the selected mod is: its name, id, version and authors, its
   description, what it holds (pictures and sounds, data, computer players, rules,
-  interface), whether it changes the game, what it needs and loads after, what is wrong
-  with the choice for it, and its identity.
+  interface, text), whether it changes the game, what it needs and loads after, what is
+  wrong with the choice for it, what of its interface and text files does not read, and its
+  identity.
 - `Enable` or `Disable`, `Move Up` and `Move Down` change the choice. Below, the window
   shows the load order it gives, or what keeps it from loading: a required mod that is
   off, a version outside the range, mods that require each other in a circle, mods the
@@ -531,7 +534,8 @@ pictures its hulls name (BMP or PNG), component and facility picture numbers aga
 their sheets, that every picture and sound reads (BMP, PNG, OGG Vorbis, WAV), pictures
 smaller than the classic one of their kind or larger but not a whole multiple of it,
 formats the game cannot read, pictures no hull names, and files where the game does not
-look. It exits with 1 when it finds errors.
+look. It checks the interface and text files too ([interface.md](interface.md),
+"Checking"). It exits with 1 when it finds errors.
 
 `dump` writes the data folder's files and the AI tables as the game would read them
 with the mods, never into the installed game. `pack` leaves out hidden files and adds

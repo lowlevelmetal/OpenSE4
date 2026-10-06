@@ -120,6 +120,15 @@ When one of these players fails, the classic AI decides in its place and the gam
 notice over the bottom of the system view says so, and `Details` shows what went wrong (see
 [Computer players](computer-players-and-ministers#computer-players-of-mods)).
 
+### Options of mods
+
+Mods that change the rules may bring game options of their own, such as how strong a new event
+is. When the mods you play with have some, the Game Settings page has a `Mod Options` button,
+and Quick Start a line with their values above the mods' line and a `Mod Options` button under
+it. The window lists each option under its mod's name: a switch, or a number within its range
+(point at it to see the range). `Restore Defaults` sets them back. The options are saved with
+the game.
+
 ## Saving and loading
 
 Press `F2` (or the first command button) to open the [Game Menu](window:game-menu):
@@ -177,6 +186,10 @@ this manual; during a game, the Game Menu's `Learn` button opens it.
 - **Training games** are practice games with objectives and deadlines. The panel shows the
   objectives, which light up as you meet them, the briefing pages and the hints.
 - The **manual** has a contents tree, a search box and links that open the game's windows.
+- **Scenarios** of mods: when the mods you play with hold scenarios (prepared games with
+  objectives of their own), the Learn window opened from the title screen has a `Scenarios` tab.
+  It lists them with their mod, their story, their empires and their objectives; `Start Game`
+  begins the one you choose. A scenario made only for computer players says so.
 
 `Hide` puts the lesson panel away, and `Ctrl+H` or the **T** button at the top right of the status
 bar brings it back. In any window, `Shift+F1` opens the manual page about it. The Learn window

@@ -16,6 +16,7 @@ It lives in `python/opense4/`. Its parts:
 | `opense4.view` | The view of the game as typed objects ([view.md](view.md) is its schema) |
 | `opense4.galaxy` | The warp map of a view: jumps, routes, distances |
 | `opense4.rules` | The rules view as typed objects; the rules tier: hooks, the game as rules functions read it, the effects ([rules.md](rules.md)) |
+| `opense4.ui` | The interface tier's computed values: the registry, and the player's view as they read it ([interface.md](interface.md)) |
 | `opense4.cmd`, `opense4.order`, `opense4.tactical` | Commands, orders and tactical orders ([commands.md](commands.md)) |
 | `opense4.rng` | Random numbers that are the same on every runtime |
 | `opense4.enums` | Every enumeration's names |
@@ -374,6 +375,31 @@ give the mod's own data, a dict to change.
 
 **Mod orders** are commands like any other: `cmd.mod_command(mod=..., name=...,
 vehicle=..., args={...})` ([commands.md](commands.md), `mod_command`).
+
+## Interface values (`opense4.ui`)
+
+```python
+from opense4 import ui
+
+@ui.value("charge")
+def charge(view, ship):
+    return str(ship.supply) + " units"
+```
+
+A mod's `ui/*.py` files register the values its `ui/*.toml` panels, columns and Empires
+pages name with `value = "<name>"`; [interface.md](interface.md) is their guide.
+
+| | |
+|---|---|
+| `ui.value(name)` | Registers `f(view, thing)` as the value `name` of the mod being loaded. |
+| `view` | A `ui.PlayerView`: the player's own view (`opense4.view.View`), read from the engine a part at a time; `view.ability(thing, name, kind=None)` reads an ability's value on one of the player's vehicles, designs or colonies, or on a system. |
+| `thing` | The `Vehicle`, `Fleet`, `SpaceObject`, `Colony`, `System`, `Empire` or `Design` the value is shown for. |
+| The answer | A whole number, text, True or False, None (no value), or a list of these; an object of the view stands for its name. A float is an error: round it. |
+| `ui.registrations(mod=None)`, `ui.find(mod, name)`, `ui.clear()` | What is registered (tests). |
+| `ui.dispatch(request)` | The engine's entry point: `load` imports the mods' modules, `value` works out one value. |
+
+Values run in the game's runtime only, with a small budget each (2 million bytecodes), once
+per state of the game, never every frame; they cannot change the game.
 
 ## External bots (`opense4.external`, `opense4.bot`)
 

@@ -64,8 +64,19 @@ names its player, and the host changes it, and the option, until the start. Join
 players see both: the slot's player, and the line under the mods ("Computer players see
 everything: ..." or "Computer players see what their empires know."). The players run on
 the host's computer, which alone sees when one fails (a notice in its main window) and
-their notes (Settings → Modding). A dedicated server sets the same with its setup file
-(`ai`, `ai_sees_everything`, an `[[empire]]`'s `ai`) or `--ai=MOD:PLAYER`.
+their notes (Settings → Modding). The host also sets their limits in the lobby, with
+`Computer Player Limits` beside "Computer players see everything" (bytecodes for a turn's
+planning and for any other request, and the memory each keeps). A dedicated server sets the
+same with its setup file (`ai`, `ai_sees_everything`, `ai_planning_budget`,
+`ai_call_budget`, `ai_memory_limit`, an `[[empire]]`'s `ai`) or `--ai=MOD:PLAYER`.
+
+#### Mods' options
+
+When the game's rules mods declare game options (docs/sdk/rules.md "Game options"), the
+lobby's line under the mods names each with its value. The host changes them with `Mod
+Options` (a switch, or a whole number in its range) until the start; players who join see
+the change at once, and `See Mod Options` shows them the same window, which they cannot
+change. A dedicated server sets them in its setup file (`[options.mod."<mod id>"]`, below).
 
 A game hosted from the client gets its galaxy's seed from the system's cryptographic
 random source, since the players must not be able to guess it; `--seed=N` on the
@@ -585,6 +596,7 @@ seed = 1234                    # galaxy seed; random when missing
 game_id = 4711                 # the game's id, which salts its passwords; random when missing
 master_password = "boss"       # or master_password_verifier = "<password-verifier output>" (needs game_id)
 ai = "example.admiral:Admiral" # who plays the computer empires: a player of one of the game's mods, or "builtin" (the default)
+scenario = "example.relics:frontier"   # start from a scenario of one of the game's mods (below)
 
 [options]
 quadrant_size = 1              # 0 small, 1 medium (the default), 2 large: the number of systems is rolled
@@ -653,6 +665,14 @@ players' copies never hold it. `--mod` on the command line takes the place of th
 turn-files`) finds the game's own mods by id and identity in the mods folder (`Mods/` in
 the user folder, or `--mods-dir`). Human players join through the lobby, so it ignores human
 `[[empire]]` entries.
+
+`scenario = "<mod id>:<name>"` starts the game from a scenario of one of the game's mods
+(`scenarios/<name>.toml`, docs/sdk/rules.md "Scenarios"): its seed, its setup's options,
+its empires, the mod's options it sets, and its objectives, which the game keeps and checks
+every turn. The file's own `seed`, `[options]` and `[[empire]]` entries, when it has them,
+take the scenario's places (its empires all of them). The network server takes the
+scenario's computer and neutral empires; human players join through the lobby, and an
+objective of an empire's number means the empire in the lobby's order.
 
 Setup files hold passwords in plain text. To avoid that, the host fixes the game's id
 (`game_id`) and tells the players; each runs
