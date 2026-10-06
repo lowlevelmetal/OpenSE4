@@ -16,6 +16,7 @@
 // testing for it; decoding leaves a missing field at its default and refuses
 // a field it does not know.
 
+#include "script/json.hpp"
 #include "sdk/codec.hpp"
 #include "sdk/names.hpp"
 
@@ -377,6 +378,35 @@ struct Codec<MinisterAreas> {
         return true;
     }
 };
+// cmd::ModCommand::args: a map of a mod order's arguments, kept in the
+// command as JSON text (empty: none).
+struct JsonArgs {
+    std::string* v;
+};
+template <>
+struct Codec<JsonArgs> {
+    static Value enc(const JsonArgs& p) {
+        if (p.v->empty()) return Value::emptyMap();
+        auto parsed = script::parseJson(*p.v);
+        return parsed && parsed->isMap() ? std::move(*parsed) : Value::emptyMap();
+    }
+    static bool dec(const Value& v, Ctx& c, JsonArgs& p) {
+        if (v.isNull()) {
+            p.v->clear();
+            return true;
+        }
+        if (!v.isMap()) return c.fail("expected a map of the order's arguments");
+        if (v.size() == 0) {
+            p.v->clear();
+            return true;
+        }
+        auto j = script::toJson(v);
+        if (!j) return c.fail("expected plain values: whole numbers, text, true, false, None, lists and maps");
+        *p.v = std::move(*j);
+        return true;
+    }
+};
+
 struct OptionalMinisterAreas {
     std::optional<uint32_t>* v;
 };
@@ -943,6 +973,16 @@ void fields(A& a, cmd::SetInterfaceOptions& x) {
 template <class A>
 void fields(A& a, cmd::OpenVehicleReport& x) {
     a("vehicle", x.vehicle);
+}
+template <class A>
+void fields(A& a, cmd::ModCommand& x) {
+    a("mod", x.mod);
+    a("name", x.name);
+    a("vehicle", x.vehicle);
+    a("fleet", x.fleet);
+    a("planet", x.planet);
+    a("empire", x.empire);
+    a("args", JsonArgs{&x.args});
 }
 
 // The number of fields fields() lists for T (tests compare it with the struct's members).

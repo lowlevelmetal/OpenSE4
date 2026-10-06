@@ -1,6 +1,7 @@
 #include "mods/generator.hpp"
 
 #include <format>
+#include <mutex>
 
 namespace opense4::mods {
 
@@ -10,6 +11,28 @@ std::expected<script::Value, std::string> NoScriptRuntime::run(const GeneratorRe
                                        request.file));
 }
 
-std::shared_ptr<GeneratorRunner> defaultGeneratorRunner() { return std::make_shared<NoScriptRuntime>(); }
+namespace {
+
+std::mutex& runnerMutex() {
+    static std::mutex m;
+    return m;
+}
+std::shared_ptr<GeneratorRunner>& installedRunner() {
+    static std::shared_ptr<GeneratorRunner> r;
+    return r;
+}
+
+} // namespace
+
+std::shared_ptr<GeneratorRunner> defaultGeneratorRunner() {
+    std::lock_guard lock(runnerMutex());
+    if (installedRunner()) return installedRunner();
+    return std::make_shared<NoScriptRuntime>();
+}
+
+void setDefaultGeneratorRunner(std::shared_ptr<GeneratorRunner> runner) {
+    std::lock_guard lock(runnerMutex());
+    installedRunner() = std::move(runner);
+}
 
 } // namespace opense4::mods

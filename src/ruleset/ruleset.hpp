@@ -368,6 +368,10 @@ struct Ruleset {
     std::vector<ModRecord> mods;
     // Ability names mods declared: data may carry them besides the engine's own.
     std::vector<DeclaredAbility> declaredAbilities;
+    // IntelProjects.txt Types that mods' rules scripts carry out (mod.toml
+    // [[rules.intel_projects]], docs/sdk/rules.md): a project of such a type
+    // is an attack whose effect is the mod's.
+    std::vector<std::string> modIntelTypes;
 
     std::vector<TechArea> techAreas;
     std::vector<VehicleSize> vehicleSizes;
@@ -396,6 +400,7 @@ struct Ruleset {
     const Facility* findFacility(std::string_view name) const;
     const VehicleSize* findVehicleSize(std::string_view name) const;
     const DeclaredAbility* findDeclaredAbility(std::string_view name) const;
+    bool isModIntelType(std::string_view type) const;
 
     const TechArea& techArea(TechAreaId id) const { return techAreas[id.index()]; }
 

@@ -169,6 +169,8 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     c.push_back(cmd::EnterSector{{}, {}, {SystemId{32u}, Sector{5, 6}}, true, {VehicleId{42u}, VehicleId{43u}}});
     c.push_back(cmd::OrderTagged{{VehicleId{44u}, VehicleId{45u}}, {Order{OrderKind::MoveTo, {SystemId{1u}, Sector{2, 3}}}}, true});
     c.push_back(cmd::SetFleetLeader{FleetId{46u}, VehicleId{47u}});
+    // A mod's order (docs/sdk/rules.md "Orders"), its arguments as the SDK writes them.
+    c.push_back(cmd::ModCommand{"test.mod", "boost", VehicleId{48u}, {}, {}, {}, R"({"power":2,"note":"x"})"});
 
     return orders;
 }

@@ -1,6 +1,8 @@
 #include "game/log_picture.hpp"
 #include "game/intel.hpp"
 
+#include "game/hooks.hpp"
+
 #include "game/diplomacy.hpp"
 #include "game/events.hpp"
 #include "game/research.hpp"
@@ -22,6 +24,12 @@ bool living(const GameState& s, EmpireId e) { return validEmpire(s, e) && s.empi
 std::optional<Effect> effectOf(const Rules& r, uint32_t project) {
     if (project >= r.data().intelProjects.size()) return std::nullopt;
     return effects::parseEffect(r.data().intelProjects[project].type);
+}
+
+// A project whose Type a mod's rules scripts carry out (docs/sdk/rules.md
+// "Intelligence projects"): an attack on an empire, like the classic ones.
+bool modProject(const Rules& r, uint32_t project) {
+    return project < r.data().intelProjects.size() && !effectOf(r, project) && r.data().isModIntelType(r.data().intelProjects[project].type);
 }
 
 std::string withPrefix(std::string_view text) { return std::format("{}{}", kMinisterPrefix, text); }
@@ -104,7 +112,8 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
     GameState& s = ctx.state;
     const ruleset::IntelProject& p = r.data().intelProjects[order.project];
     const auto effect = effects::parseEffect(p.type);
-    if (!effect) return failed(ctx, source, p, "our agents do not know how to carry it out");
+    const bool byMod = !effect && modProject(r, order.project);
+    if (!effect && !byMod) return failed(ctx, source, p, "our agents do not know how to carry it out");
     if (const std::string problem = orderProblem(r, s, source, order); !problem.empty()) return failed(ctx, source, p, problem);
 
     // Counter-intelligence: no success roll, only the target's defenses.
@@ -123,6 +132,19 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
         return;
     }
 
+    // A mod's project: its rules script carries it out (hooks.hpp); the
+    // messages are the project's own, as for a classic one.
+    if (byMod) {
+        const std::optional<bool> done = ctx.hooks ? ctx.hooks->intelProject(ctx, source, order) : std::nullopt;
+        if (!done || !*done) return failed(ctx, source, p, done ? "the target was not valid" : "our agents do not know how to carry it out");
+        effects::Tokens full;
+        effects::setEmpireTokens(full, s, source, target);
+        std::string suspicion;
+        if (rng.range(1, kSuspectRoll) == 1) suspicion = suspectLine(full.sourceEmpireName);
+        projectMessages(ctx, p, source, target, full, "The operation succeeded.", "A hostile intelligence operation struck us.", suspicion,
+                        std::nullopt, rng);
+        return;
+    }
     effects::Target request;
     request.empire = target;
     request.source = source;
@@ -205,8 +227,8 @@ int counterIntelligence(const Rules& r, GameState& s, EmpireId target, int64_t a
 std::string orderProblem(const Rules& r, const GameState& s, EmpireId source, const IntelProjectOrder& order) {
     if (!s.options.allowIntel) return "Intelligence is disabled in this game";
     const auto effect = effectOf(r, order.project);
-    if (!effect) return "Unknown project type";
-    if (*effect == Effect::IntelligenceDefense) return {};
+    if (!effect && !modProject(r, order.project)) return "Unknown project type";
+    if (effect && *effect == Effect::IntelligenceDefense) return {};
     if (!validEmpire(s, order.target) || order.target == source || !s.empire(order.target).alive) return "No target empire";
     if (!diplomacy::inContact(s, source, order.target)) return "No contact with the target empire";
     return {};

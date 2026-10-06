@@ -2,6 +2,7 @@
 // unit launch and recovery, one-shot components (spec 03 §7, §11-13).
 
 #include "datafile/datafile.hpp"
+#include "game/hooks.hpp"
 #include "game/log_picture.hpp"
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
@@ -138,6 +139,7 @@ void announceLoss(TurnContext& ctx, const Vehicle& v, std::string_view cause) {
 
 void vehicleLost(TurnContext& ctx, Vehicle& v, std::string_view cause) {
     if (!alive(v)) return;
+    noteVehicleLost(ctx, v, "hazard");
     GameState& s = ctx.state;
     for (const UnitStack& st : groupStacks(v)) s.design(st.design).lost += st.count;  // every unit of a group
     announceLoss(ctx, v, cause);
@@ -153,6 +155,7 @@ bool hurt(TurnContext& ctx, VehicleId id, int amount, std::string_view cause) {
         const Vehicle before = *v;
         damageUnitGroup(ctx.rules, ctx.state, *v, amount, ctx.state.rng);
         if (alive(*v)) return false;
+        noteVehicleLost(ctx, before, "hazard");
         announceLoss(ctx, before, cause);
         return true;
     }

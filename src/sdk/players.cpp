@@ -11,6 +11,8 @@
 #include "sdk/names.hpp"
 #include "sdk/player_values.hpp"
 #include "sdk/queries.hpp"
+#include "sdk/rules.hpp"
+#include "sdk/rules_engine.hpp"
 #include "sdk/rules_view.hpp"
 #include "sdk/value_io.hpp"
 #include "sdk/view.hpp"
@@ -109,11 +111,6 @@ constexpr int64_t kViewNodeCost = 5;    // per value of a view the engine builds
 
 int64_t nodeCost(const Value& v, int64_t each) { return static_cast<int64_t>(detail::valueNodes(v)) * each; }
 
-// The interpreter is one per process: sessions take turns with it.
-std::timed_mutex& interpreterSlot() {
-    static std::timed_mutex m;
-    return m;
-}
 
 Value errorValue(std::string type, std::string message, std::string traceback = {}) {
     ValueMap e;
@@ -144,7 +141,20 @@ std::string who(const game::GameState& s, EmpireId e) {
 
 // ---- The session --------------------------------------------------------------------------------------
 
-class Session final : public game::Players {
+class Session;
+
+// The sessions with rules hooks, by the state they play (a mod's order given
+// during the call finds its session; docs/sdk/rules.md "Orders").
+std::mutex& liveMutex() {
+    static std::mutex m;
+    return m;
+}
+std::vector<std::pair<const game::GameState*, Session*>>& liveSessions() {
+    static std::vector<std::pair<const game::GameState*, Session*>> v;
+    return v;
+}
+
+class Session final : public game::Players, public detail::ScriptHost {
 public:
     Session(const game::Rules& r, game::GameState& s, std::shared_ptr<const PlayerSetup> setup) : rules_(r), setup_(std::move(setup)) {
         // Answers waiting to be given again (a call made again, a turn played again).
@@ -154,9 +164,21 @@ public:
             if (e.controller.kind == game::Controller::Kind::Script &&
                 std::find(modsUsed_.begin(), modsUsed_.end(), e.controller.mod) == modsUsed_.end())
                 modsUsed_.push_back(e.controller.mod);
+        // The rules hooks of the game's mods (docs/sdk/rules.md), if it has any.
+        if (std::vector<const mods::Package*> rules = detail::rulesModsOf(r, s, setup_->mods); !rules.empty()) {
+            rulesEngine_ = std::make_unique<detail::RulesEngine>(r, s, std::move(rules), setup_->package.empty(), *this);
+            std::lock_guard lock(liveMutex());
+            liveSessions().emplace_back(&s, this);
+        }
     }
 
     ~Session() override {
+        if (rulesEngine_) {
+            std::lock_guard lock(liveMutex());
+            auto& live = liveSessions();
+            const auto it = std::find_if(live.rbegin(), live.rend(), [&](const auto& x) { return x.second == this; });
+            if (it != live.rend()) live.erase(std::next(it).base());
+        }
         if (worker_ && interp_) {
             try {
                 worker_->run([&] { interp_.reset(); });
@@ -165,6 +187,41 @@ public:
         }
         interp_.reset();
         worker_.reset();
+    }
+
+    // ---- The rules (docs/sdk/rules.md) ----
+
+    game::RulesHooks* hooks() override { return rulesEngine_.get(); }
+    void begin(game::TurnContext& ctx) override { callCtx_ = &ctx; }
+    detail::RulesEngine* rulesEngine() { return rulesEngine_.get(); }
+    game::TurnContext* callContext() { return callCtx_; }
+
+    bool startScripts() override { return startInterpreter(); }
+    const std::string& scriptsError() const override { return startError_; }
+    script::Result<Value> runScript(std::string_view module, std::string_view function, Value arg, int64_t budget) override {
+        if (!startInterpreter()) return std::unexpected(script::Error{script::ErrorKind::Usage, "", startError_, ""});
+        script::Result<Value> r = std::unexpected(script::Error{});
+        const std::vector<Value> args{std::move(arg)};
+        worker_->run([&] {
+            inCall_ = true;
+            r = interp_->call(module, function, args, script::CallOptions{budget});
+            inCall_ = false;
+        });
+        logOutput("Rules script output");
+        return r;
+    }
+    int64_t lastCallBudget() const override { return interp_ ? interp_->lastCallBudget() : 0; }
+    void chargeScript(int64_t units) override {
+        if (interp_) interp_->charge(units);
+    }
+    bool inScriptCall() const override { return inCall_; }
+
+    // The sessions with rules for a state: the latest one made.
+    static Session* liveFor(const game::GameState* s) {
+        std::lock_guard lock(liveMutex());
+        for (auto it = liveSessions().rbegin(); it != liveSessions().rend(); ++it)
+            if (it->first == s) return it->second;
+        return nullptr;
     }
 
     bool plan(game::TurnContext& ctx, EmpireId e, game::PlanCall call, const game::CommandSink& sink) override {
@@ -277,6 +334,7 @@ public:
     void replay(std::span<const game::JournalEntry> entries) override { replay_.insert(replay_.end(), entries.begin(), entries.end()); }
 
     void endSession(game::TurnContext& ctx) override {
+        if (rulesEngine_) rulesEngine_->deliver(ctx);
         for (size_t i = 0; i < slots_.size(); ++i) {
             const EmpireId e{i};
             if (!slots_[i].asked || !game::playedByController(ctx, e) || outForTurn(ctx.state, e)) continue;
@@ -536,15 +594,12 @@ private:
         delivered = true;
         script::Result<Value> r = std::unexpected(script::Error{});
         const std::vector<Value> args{std::move(request)};
-        worker_->run([&] { r = interp_->call("opense4._engine", "dispatch", args, script::CallOptions{budget}); });
-        if (const std::string& out = interp_->output(); out.size() > outputSeen_) {
-            for (std::string_view rest = std::string_view(out).substr(outputSeen_); !rest.empty();) {
-                const size_t nl = rest.find('\n');
-                log::info("Computer player output: {}", rest.substr(0, nl));
-                rest = nl == std::string_view::npos ? std::string_view{} : rest.substr(nl + 1);
-            }
-            outputSeen_ = out.size();
-        }
+        worker_->run([&] {
+            inCall_ = true;
+            r = interp_->call("opense4._engine", "dispatch", args, script::CallOptions{budget});
+            inCall_ = false;
+        });
+        logOutput("Computer player output");
         if (!r) return errorValue(r.error().type.empty() ? std::string(script::errorKindName(r.error().kind)) : r.error().type, r.error().message,
                                   r.error().traceback);
         return std::move(*r);
@@ -566,6 +621,19 @@ private:
         auto r = bot->request(request, services);
         if (!r) return errorValue("ConnectionError", r.error());
         return std::move(*r);
+    }
+
+    // What scripts printed since the last call, to the log.
+    void logOutput(std::string_view what) {
+        if (!interp_) return;
+        if (const std::string& out = interp_->output(); out.size() > outputSeen_) {
+            for (std::string_view rest = std::string_view(out).substr(outputSeen_); !rest.empty();) {
+                const size_t nl = rest.find('\n');
+                log::info("{}: {}", what, rest.substr(0, nl));
+                rest = nl == std::string_view::npos ? std::string_view{} : rest.substr(nl + 1);
+            }
+            outputSeen_ = out.size();
+        }
     }
 
     // ---- The interpreter (on the players' thread) ----------------------------------------------------------
@@ -635,6 +703,15 @@ private:
                 if (!f.path.starts_with("ai/") || !f.path.ends_with(".py")) continue;
                 add(f.path.substr(3), readText(f.real), std::format("the mod {}", id));
             }
+        }
+        // The rules mods' scripts/ files, at the root too (docs/sdk/rules.md), and the rules' native functions.
+        if (rulesEngine_) {
+            for (const mods::Package* mod : rulesEngine_->mods())
+                for (const mods::PackageFile& f : mod->files) {
+                    if (!f.path.starts_with("scripts/") || !f.path.ends_with(".py")) continue;
+                    add(f.path.substr(8), readText(f.real), std::format("the mod {}", mod->id()));
+                }
+            if (std::string problem = rulesEngine_->addNatives(*interp_); !problem.empty()) return problem;
         }
         // The engine's services (§6), each with one argument: a map.
         for (const char* name : {"query", "rules", "builtin", "builtin_answer", "apply"}) {
@@ -766,6 +843,9 @@ private:
 
     const game::Rules& rules_;
     std::shared_ptr<const PlayerSetup> setup_;
+    std::unique_ptr<detail::RulesEngine> rulesEngine_;
+    game::TurnContext* callCtx_ = nullptr;
+    bool inCall_ = false;   // a script call is running on the session's thread
     std::vector<std::string> modsUsed_;
     std::vector<Slot> slots_;
     std::deque<game::JournalEntry> replay_;
@@ -791,15 +871,54 @@ std::unique_ptr<game::Players> makeSession(const game::Rules& r, game::GameState
     return std::make_unique<Session>(r, s, std::move(setup));
 }
 
+bool needsSession(const game::Rules& r, const game::GameState& s, const PlayerSetup& setup) {
+    for (const game::Empire& e : s.empires)
+        if (game::hasPlayerController(s, e.id)) return true;
+    return !detail::rulesModsOf(r, s, setup.mods).empty();
+}
+
+namespace {
+
+// A mod's order (game::applyModCommand): the rules session of the call that
+// plays the state, or one made for this order alone.
+game::CommandResult applyModOrder(const std::shared_ptr<const PlayerSetup>& setup, const game::Rules& r, game::GameState& s, game::EmpireId e,
+                                  const game::cmd::ModCommand& c) {
+    if (Session* live = Session::liveFor(&s); live && live->rulesEngine() && live->callContext())
+        return live->rulesEngine()->modCommand(*live->callContext(), e, c);
+    if (detail::rulesModsOf(r, s, setup->mods).empty()) return game::CommandResult::fail(std::format("The game has no rules of the mod {}.", c.mod));
+    game::TurnContext ctx{r, s, {}, {}, {}};
+    ctx.moodEvents = std::move(s.pendingMood);
+    s.pendingMood.clear();
+    auto session = std::make_unique<Session>(r, s, setup);
+    ctx.players = session.get();
+    ctx.hooks = session->hooks();
+    session->begin(ctx);
+    game::CommandResult res = session->rulesEngine()->modCommand(ctx, e, c);
+    session->endSession(ctx);
+    s.pendingMood = std::move(ctx.moodEvents);
+    return res;
+}
+
+} // namespace
+
 void installPlayers(PlayerSetup setup) {
     auto shared = std::make_shared<const PlayerSetup>(std::move(setup));
     installed() = shared;
-    game::setPlayersFactory([shared](const game::Rules& r, game::GameState& s) { return makeSession(r, s, shared); });
+    game::setPlayersFactory([shared](const game::Rules& r, game::GameState& s) -> std::unique_ptr<game::Players> {
+        if (!needsSession(r, s, *shared)) return nullptr;
+        return makeSession(r, s, shared);
+    });
+    game::setModCommandHandler([shared](const game::Rules& r, game::GameState& s, game::EmpireId e, const game::cmd::ModCommand& c) {
+        return applyModOrder(shared, r, s, e, c);
+    });
+    mods::setDefaultGeneratorRunner(scriptGenerators());
 }
 
 void uninstallPlayers() {
     installed().reset();
     game::setPlayersFactory({});
+    game::setModCommandHandler({});
+    mods::setDefaultGeneratorRunner(nullptr);
 }
 
 } // namespace opense4::sdk

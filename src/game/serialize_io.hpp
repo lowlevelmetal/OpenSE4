@@ -407,6 +407,8 @@ void io(Ar& ar, InterfaceOptions& o) {
 }
 
 template <class Ar> void io(Ar& ar, Controller& c) { fields(ar, c.kind, c.mod, c.player, c.slot); }
+template <class Ar> void io(Ar& ar, ModData& d) { fields(ar, d.mod, d.value); }
+template <class Ar> void io(Ar& ar, ModOption& o) { fields(ar, o.mod, o.name, o.value); }
 template <class Ar> void io(Ar& ar, ScriptPlayerState& p) { fields(ar, p.memory, p.failureTurn, p.failures); }
 
 template <class Ar>
@@ -424,7 +426,7 @@ void io(Ar& ar, Empire& e) {
            e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter, e.avoidTaggedMinefields, e.avoidRestrictedSystems);
     fields(ar, e.chooseColonyType, e.colonyTypeChoices, e.interfaceOptions);
     fields(ar, e.politicsMark);
-    if (formatVersion(ar) >= 9) fields(ar, e.controller, e.script);   // format 8 had no script players
+    if (formatVersion(ar) >= 9) fields(ar, e.controller, e.script, e.modData);   // format 8 had no script players or mods' data
     // The computer player's notes of the turn are not saved.
     unsaved(ar, e.aiNotes);
 }
@@ -449,6 +451,7 @@ void io(Ar& ar, Colony& c) {
            c.minister, c.homeworld, c.foundedTurn, c.militia, c.invader, c.landedTroops, c.orders, c.repeatOrders);
     fields(ar, c.cloaked, c.cloakLevels, c.sensorLevels);
     if (formatVersion(ar) >= 8) fields(ar, c.destroyedFacilities);   // format 7 had none
+    if (formatVersion(ar) >= 9) fields(ar, c.modData);   // format 8 had no mods' data
 }
 
 // ---- Designs and vehicles -----------------------------------------------------------------------
@@ -470,6 +473,7 @@ void io(Ar& ar, Vehicle& v) {
     fields(ar, v.id, v.slot, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
            v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.builtTurn,
            v.immobileUntil, v.cameFrom, v.cameFromTurn, v.heading, v.arrival);
+    if (formatVersion(ar) >= 9) fields(ar, v.modData);   // format 8 had no mods' data
 }
 
 template <class Ar>
@@ -552,6 +556,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.completeTechTree);
     fields(ar, o.allowSurrender);
     if (formatVersion(ar) >= 9) fields(ar, o.aiSeesEverything, o.aiPlanningBudget, o.aiCallBudget, o.aiMemoryLimit);   // format 8 had no script players
+    if (formatVersion(ar) >= 9) fields(ar, o.modOptions, o.rulesHookBudget, o.rulesTurnBudget, o.modDataLimit);   // nor mods' rules
 }
 
 // ---- Turn-based games ---------------------------------------------------------------------------------
@@ -568,6 +573,12 @@ template <class Ar> void io(Ar& ar, PlayerTurn& t) { fields(ar, t.empire, t.star
 // ---- The game -----------------------------------------------------------------------------------------
 
 template <class Ar> void io(Ar& ar, LeftFacilities& l) { fields(ar, l.planet, l.facilities); }
+template <class Ar>
+void io(Ar& ar, ModRulesState& m) {
+    fields(ar, m.mod, m.playersSee, m.turn, m.failures, m.failedHooks);
+    unsaved(ar, m.budgetUsed);
+}
+template <class Ar> void io(Ar& ar, ScenarioState& m) { fields(ar, m.mod, m.name, m.met); }
 
 template <class Ar>
 void io(Ar& ar, GameState& s) {
@@ -575,6 +586,7 @@ void io(Ar& ar, GameState& s) {
            s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng, s.playerTurn,
            s.startingPoints, s.leftFacilities, s.arrivals);
     if (formatVersion(ar) >= 9) fields(ar, s.mods);   // format 8 had no mods
+    if (formatVersion(ar) >= 9) fields(ar, s.modData, s.modRules, s.scenario, s.endReason);   // nor mods' rules
     // The happiness events waiting for an empire's next update are not saved:
     // a loaded game starts with none (spec 02 §4, confirmed: binary). Nor is
     // the journal of the players' answers (docs/sdk/ai-protocol.md §8).
@@ -653,6 +665,7 @@ template <class Ar> void io(Ar& ar, cmd::SelfDestruct& c) { fields(ar, c.vehicle
 template <class Ar> void io(Ar& ar, cmd::FireOn& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::OrderTagged& c) { fields(ar, c.vehicles, c.orders, c.repeat); }
 template <class Ar> void io(Ar& ar, cmd::SetFleetLeader& c) { fields(ar, c.fleet, c.vehicle); }
+template <class Ar> void io(Ar& ar, cmd::ModCommand& c) { fields(ar, c.mod, c.name, c.vehicle, c.fleet, c.planet, c.empire, c.args); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 
@@ -666,7 +679,11 @@ void io(Ar& ar, EmpireSetup& e) {
 }
 
 template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }
-template <class Ar> void io(Ar& ar, GameSetup& g) { fields(ar, g.seed, g.options, g.empires, g.map); }
+template <class Ar>
+void io(Ar& ar, GameSetup& g) {
+    fields(ar, g.seed, g.options, g.empires, g.map);
+    if (formatVersion(ar) >= 9) fields(ar, g.scenario);   // format 8 had no scenarios
+}
 
 // ---- Save file header (serialize.hpp) ------------------------------------------------------------------
 

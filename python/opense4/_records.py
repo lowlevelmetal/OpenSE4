@@ -2589,6 +2589,12 @@ class GameOptions(Record):
         """The computer players' bonus."""
         return self._d['ai_bonus']
 
+    @property
+    def mod_options(self) -> List[ModOption]:
+        """The values of the options the game's rules mods declare (docs/sdk/rules.md, "Game options");
+        empty without them."""
+        return wrap_list('mod_option', self._v, self._d['mod_options'])
+
 
 
 class HappinessModel(Entity):
@@ -2972,6 +2978,29 @@ class Ministers(Record):
 
 
 
+class ModOption(Record):
+    """The values of the options the game's rules mods declare (docs/sdk/rules.md, "Game options");
+    empty without them."""
+
+    _kind = 'mod_option'
+
+    @property
+    def mod(self) -> str:
+        """The mod's id."""
+        return self._d['mod']
+
+    @property
+    def name(self) -> str:
+        """The option's name in the mod."""
+        return self._d['name']
+
+    @property
+    def value(self) -> int:
+        """Its value in this game; a switch is 0 or 1."""
+        return self._d['value']
+
+
+
 class Mount(Entity):
     """Weapon mounts."""
 
@@ -3233,6 +3262,14 @@ class MyEmpireFields(Entity):
     def ai_difficulty(self) -> int:
         """Our difficulty as a computer player (-1 until first set)."""
         return self._d['ai_difficulty']
+
+    @property
+    def mod_data(self) -> Dict[str, Any]:
+        """What the game's rules mods keep on our own things, for the mods that let computer players
+        see it (players_see_mod_data, docs/sdk/rules.md "Mod data"): {mod id: {"empire": value or
+        null, "colonies": {planet id as text: value}, "vehicles": {vehicle id as text: value}}};
+        empty without them."""
+        return self._d['mod_data']
 
 
 
@@ -5195,6 +5232,7 @@ CLASSES['intel_state'] = IntelState
 CLASSES['interface_options'] = InterfaceOptions
 CLASSES['log_entry'] = LogEntry
 CLASSES['ministers'] = Ministers
+CLASSES['mod_option'] = ModOption
 CLASSES['mount'] = Mount
 CLASSES['order'] = Order
 CLASSES['own_strategy'] = OwnStrategy
@@ -5268,7 +5306,7 @@ FIELDS: Dict[str, Tuple[str, ...]] = {
     'formation_slot': ('x', 'y', 'design_type'),
     'galaxy_position': ('x', 'y'),
     'game': ('turn', 'date', 'year', 'turn_style', 'player_turn', 'player_turn_started', 'game_over', 'winner', 'peaceful_turns', 'options', 'victory'),
-    'game_options': ('quadrant_type', 'all_systems_seen', 'omnipresent', 'finite_resources', 'event_frequency', 'max_event_severity', 'tech_cost', 'start_tech_level', 'tech_areas_allowed', 'starting_resources', 'racial_points', 'no_tactical_combat', 'complete_tech_tree', 'allow_gifts', 'allow_tech_trades', 'allow_intel', 'no_ruins', 'only_breathable', 'only_home_type', 'team_mode', 'allow_surrender', 'score_display', 'max_ships_per_player', 'max_units_per_player', 'ai_difficulty', 'ai_bonus'),
+    'game_options': ('quadrant_type', 'all_systems_seen', 'omnipresent', 'finite_resources', 'event_frequency', 'max_event_severity', 'tech_cost', 'start_tech_level', 'tech_areas_allowed', 'starting_resources', 'racial_points', 'no_tactical_combat', 'complete_tech_tree', 'allow_gifts', 'allow_tech_trades', 'allow_intel', 'no_ruins', 'only_breathable', 'only_home_type', 'team_mode', 'allow_surrender', 'score_display', 'max_ships_per_player', 'max_units_per_player', 'ai_difficulty', 'ai_bonus', 'mod_options'),
     'happiness_model': ('id', 'name', 'description', 'max_positive_change', 'max_negative_change', 'triggers'),
     'happiness_trigger': ('trigger', 'change'),
     'hull': ('id', 'name', 'short_name', 'description', 'code', 'type', 'tonnage', 'cost', 'engines_per_move', 'requirements', 'abilities', 'must_have_bridge', 'can_have_aux_control', 'min_life_support', 'min_crew_quarters', 'uses_engines', 'max_engines', 'max_percent_fighter_bays', 'max_percent_colony_modules', 'max_percent_cargo'),
@@ -5281,8 +5319,9 @@ FIELDS: Dict[str, Tuple[str, ...]] = {
     'log_entry': ('turn', 'category', 'title', 'text', 'location', 'goto', 'message'),
     'message': ('id', 'from_empire', 'to_empire', 'sent_turn', 'type', 'tone', 'text', 'treaty', 'offer', 'request', 'third_empire', 'system', 'planet', 'in_reply_to', 'delivered', 'answered', 'dated'),
     'ministers': ('areas', 'style', 'use_race_style', 'new_vehicles', 'all'),
+    'mod_option': ('mod', 'name', 'value'),
     'mount': ('id', 'name', 'short_name', 'description', 'code', 'cost_percent', 'tonnage_percent', 'structure_percent', 'damage_percent', 'supply_percent', 'shield_percent', 'range_modifier', 'to_hit_modifier', 'minimum_hull_size', 'maximum_hull_size', 'families', 'weapon_type_requirement', 'vehicle_type', 'requirements'),
-    'my_empire': ('id', 'stored', 'score', 'economy', 'maintenance_percent', 'research', 'intel', 'ministers', 'settings', 'ship_count', 'unit_count', 'experience', 'race_age', 'home_system', 'home_sector', 'claimed_systems', 'systems_to_avoid', 'tagged_minefields', 'waypoints', 'notes', 'strategies', 'design_types', 'colony_types', 'repair_priorities', 'colony_type_choices', 'questions', 'ai_difficulty'),
+    'my_empire': ('id', 'stored', 'score', 'economy', 'maintenance_percent', 'research', 'intel', 'ministers', 'settings', 'ship_count', 'unit_count', 'experience', 'race_age', 'home_system', 'home_sector', 'claimed_systems', 'systems_to_avoid', 'tagged_minefields', 'waypoints', 'notes', 'strategies', 'design_types', 'colony_types', 'repair_priorities', 'colony_type_choices', 'questions', 'ai_difficulty', 'mod_data'),
     'order': ('kind', 'location', 'object', 'vehicle', 'design', 'amount', 'from_resource', 'to_resource'),
     'own_strategy': ('index', 'name', 'settings'),
     'package_item': ('kind', 'resources', 'tech', 'planet', 'vehicle', 'system', 'treaty', 'empire'),

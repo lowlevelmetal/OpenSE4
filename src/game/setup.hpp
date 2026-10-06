@@ -64,6 +64,9 @@ struct GameSetup {
     // A loaded map (spec 01 §12): the quadrant is taken from it instead of
     // being generated, and its starting points place the empires first.
     std::optional<QuadrantMap> map;
+    // The scenario of a mod the game is started from (save format 9;
+    // docs/sdk/rules.md "Scenarios"; sdk::startScenario): its mod and name.
+    ScenarioState scenario;
 };
 
 // What a new game gets beyond its setup, from the client's own entry points.

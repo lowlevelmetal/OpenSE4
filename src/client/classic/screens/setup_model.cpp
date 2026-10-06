@@ -7,6 +7,7 @@
 #include "game/players.hpp"
 #include "ruleset/ruleset.hpp"
 #include "sdk/players.hpp"
+#include "sdk/rules.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -300,6 +301,19 @@ std::optional<std::string> useComputerPlayer(const game::Rules& r, game::GameSet
     for (game::EmpireSetup& e : g.empires)
         if (e.kind == game::PlayerKind::Computer) e.controller = *c;
     if (const std::vector<std::string> problems = sdk::checkControllers(g.empires, sdk::gamePackages(r)); !problems.empty()) return problems.front();
+    return std::nullopt;
+}
+
+std::vector<ModOptionRow> modOptionRows(const game::Rules& r, const NewGameSettings& s) {
+    std::vector<ModOptionRow> out;
+    for (const sdk::ModOptionChoice& c : sdk::modOptions(r))
+        out.push_back({c.key(), c.option.label, c.option.description, c.option.isSwitch, c.option.min, c.option.max, sdk::modOptionValue(s.options, c)});
+    return out;
+}
+
+std::optional<std::string> setModOption(const game::Rules& r, NewGameSettings& s, std::string_view key, int64_t value) {
+    const std::vector<sdk::ModOptionChoice> choices = sdk::modOptions(r);
+    if (std::string why = sdk::setModOption(s.options, choices, key, value); !why.empty()) return why;
     return std::nullopt;
 }
 

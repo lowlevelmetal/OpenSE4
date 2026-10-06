@@ -8,6 +8,7 @@
 // "(inferred)" marks our own choices where the spec is silent. Percentages the
 // original applies in floating point go through game/xmath.hpp.
 
+#include "game/hooks.hpp"
 #include "game/log_picture.hpp"
 #include "game/combat.hpp"
 
@@ -1237,6 +1238,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                     const int64_t left = destroyComponents(r, s, victim, hit, type, rng);
                     if (hull) pool = left;
                     if (vehicleDestroyed(r, s, victim)) {
+                        noteVehicleLost(ctx, victim, "mines");
                         ++kills;
                         ++lost[victim.id.value];
                         ++s.design(victim.design).lost;
