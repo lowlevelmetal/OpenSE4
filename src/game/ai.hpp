@@ -79,7 +79,10 @@ std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e);
 // `territory`: the claims the state update used, before the Politics
 // minister rewrote them (claimTerritory); the ministers after Politics read
 // the territory only through the lists built then (spec 05 §7.2, question 60).
-std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e);
+// `ministers` (here and below): the Minister bits whose ministers plan; all
+// of them by default (the SDK's `builtin` service restricts them,
+// docs/sdk/ai-protocol.md §6).
+std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e, uint32_t ministers = kAllMinisters);
 // The figures an empire's start-of-turn step works out first thing, before
 // the AI state update and the Politics minister (spec 05 §7.5 *Net income*,
 // *Revenue*, confirmed: binary): the net income, which its economy step
@@ -99,7 +102,8 @@ StartOfTurnFigures startOfTurnFigures(const Rules& r, const GameState& s, Empire
 // first thing (startOfTurnFigures; without them the ministers work them out
 // as they start).
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory = nullptr,
-                                             std::vector<ObjectId>* colonyTargets = nullptr, const StartOfTurnFigures* figures = nullptr);
+                                             std::vector<ObjectId>* colonyTargets = nullptr, const StartOfTurnFigures* figures = nullptr,
+                                             uint32_t ministers = kAllMinisters);
 // Group 2 above: Design, Research, Intelligence and the construction ministers.
 // `unitReserve`: the percentage the vehicle list holds back for units, which
 // the turn passes on (the reserve quirk of spec 05 §7.5 "Units file"; see
@@ -112,7 +116,8 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
 // (startOfTurnFigures): the net income for the facility upgrades and the
 // caps' revenue. Without them the step works them out when it starts.
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve = 0,
-                                     const std::vector<ObjectId>* colonyTargets = nullptr, const StartOfTurnFigures* figures = nullptr);
+                                     const std::vector<ObjectId>* colonyTargets = nullptr, const StartOfTurnFigures* figures = nullptr,
+                                     uint32_t ministers = kAllMinisters);
 // The reserve quirk (spec 05 §7.5 "Units file", confirmed: binary): the
 // reserve is one value shared by all empires. Each empire's start-of-turn AI
 // step resets it to 0; the units step of every empire whose Ship

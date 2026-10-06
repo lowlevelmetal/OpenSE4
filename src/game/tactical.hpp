@@ -47,6 +47,10 @@
 #include <utility>
 #include <vector>
 
+namespace opense4::game {
+class Players;
+}
+
 namespace opense4::game::combat {
 
 namespace detail {
@@ -134,6 +138,7 @@ struct TacticalPiece {
     bool alive = true;
     bool mothballed = false;
     bool captured = false;
+    bool cloaked = false;         // it was cloaked when the battle began (it cloaks again afterwards if it can)
     int shields = 0, shieldsMax = 0;
     int64_t hitPoints = 0;        // what is left (ships: intact structure)
     int damagePercent = 0;
@@ -199,6 +204,11 @@ public:
         // set-up, before combat turn 1, and step() plays it one empire phase at
         // a time. Otherwise such a battle is fought to its end at once.
         bool stepped = false;
+        // The script and external players of the sides they play
+        // (game/players.hpp): asked for each of their phases (battle_round), as
+        // in the engine's own battles; their answers are decisions(). Null:
+        // their sides follow their strategies. Must outlive the battle.
+        Players* scriptPlayers = nullptr;
     };
 
     TacticalBattle(const Rules& r, GameState state, Setup setup);
@@ -250,6 +260,10 @@ public:
     std::string submit(const TacticalOrder& o);
     // The accepted orders so far, in order: the battle's script.
     const std::vector<TacticalOrder>& script() const { return script_; }
+    // The answers the script and external players gave in this battle
+    // (Setup::scriptPlayers), in order: BattleAnswer::decisions, so that the battle
+    // fought again with the answer asks them nothing.
+    std::vector<JournalEntry> decisions() const;
     // Tests: the orders the strategies give for player sides (Auto, Resolve
     // Combat) are appended here as explicit orders.
     void recordStrategies(std::vector<TacticalOrder>* out);
@@ -279,6 +293,7 @@ private:
     std::unique_ptr<detail::Battle> battle_;
     std::vector<TacticalPiece> views_;
     std::vector<TacticalOrder> script_;
+    size_t decisionsFrom_ = 0;           // the battle's journal entries before its players were asked
     bool started_ = false;
     bool applied_ = false;
 };

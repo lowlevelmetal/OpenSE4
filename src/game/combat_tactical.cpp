@@ -5,6 +5,7 @@
 #include "game/tactical.hpp"
 
 #include "game/combat_battle.hpp"
+#include "game/players.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
@@ -444,6 +445,177 @@ void Battle::setGroup(int i, int group, bool asLeader, int formation) {
     p.member = highest + 1;
 }
 
+// ---- Script and external players' sides (game/players.hpp) ------------------------------------------
+
+bool Battle::scriptedPhase(EmpireId e) {
+    if (!askPlayers_ || !playedByController(ctx_, e) || simulated()) return false;
+    if (std::find(playersResolved_.begin(), playersResolved_.end(), e) != playersResolved_.end()) return false;
+    // The side's drones and seekers act first, as before a player's orders (spec 04 §4).
+    beginPhase(e);
+    phaseDrones(e);
+    moveSeekers(e);
+    describe(playerViews_);
+    const BattleRound round{where_, round_, lastRound(), order_, playerViews_};
+    std::optional<std::vector<TacticalOrder>> orders = ctx_.players->battleRound(ctx_, e, round);
+    if (!orders) {
+        phasePieces(e);   // its strategies play the phase
+        return true;
+    }
+    // Its orders are carried out as a player's are, checked one at a time: a
+    // refused one changes nothing. Pieces it gives no order to do nothing; it
+    // ends the phase (End Turn), lets the strategies play the rest of it
+    // (Auto Phase), or hands its side to them for the rest of the battle
+    // (Resolve Combat). The battle's Auto switch is the players' own.
+    stage_ = Stage::Orders;
+    phaseEmpire_ = e;
+    std::vector<std::pair<size_t, std::string>> refusals;
+    for (size_t k = 0; k < orders->size(); ++k) {
+        TacticalOrder o = (*orders)[k];
+        o.empire = e;
+        if (o.kind == OK::EndPhase) break;
+        if (o.kind == OK::AutoPhase || o.kind == OK::ResolveCombat) {
+            phasePieces(e);
+            if (o.kind == OK::ResolveCombat) playersResolved_.push_back(e);
+            break;
+        }
+        if (o.kind == OK::Auto && o.piece < 0) {
+            refusals.emplace_back(k, "The battle's Auto switch is for the players at the window.");
+            continue;
+        }
+        if (std::string why = check(o); !why.empty()) {
+            refusals.emplace_back(k, std::move(why));
+            continue;
+        }
+        execute(o);
+    }
+    // Unused movement is lost, and every piece of the side has had its turn.
+    for (size_t k = 0; k < pieces_.size(); ++k)
+        if (pieces_[k].alive && pieces_[k].owner == e) {
+            pieces_[k].mp = 0;
+            acted_[k] = 1;
+        }
+    stage_ = Stage::Between;
+    if (!refusals.empty()) ctx_.players->refused(e, std::move(refusals));
+    return true;
+}
+
+// What the tactical window shows of every piece (tactical.hpp TacticalPiece),
+// and the battle as a script side sees it (game/players.hpp BattleRound).
+void Battle::describe(std::vector<TacticalPiece>& views) const {
+    // A former leader still shows the formation it led (spec 06 §1.10.1).
+    std::vector<int> led;
+    led.reserve(views.size());
+    for (const TacticalPiece& v : views) led.push_back(v.formation);
+    views.clear();
+    const std::vector<Piece>& pieces = pieces_;
+    views.reserve(pieces.size());
+    for (size_t k = 0; k < pieces.size(); ++k) {
+        const int i = static_cast<int>(k);
+        const Piece& p = pieces[k];
+        TacticalPiece v;
+        v.kind = p.kind;
+        v.owner = p.owner;
+        v.startOwner = p.startOwner;
+        v.vehicle = p.source;
+        v.planet = p.object;
+        v.design = p.kind == CombatPiece::Kind::Planet || p.kind == CombatPiece::Kind::Obstacle ? DesignId{} : p.unit.design;
+        v.name = p.name;
+        v.type = p.vtype;
+        v.x = p.x;
+        v.y = p.y;
+        v.size = p.size;
+        v.facing = p.facing;
+        v.alive = p.alive;
+        v.mothballed = p.mothballed;
+        v.captured = p.captured;
+        v.shields = p.sh.current;
+        v.shieldsMax = p.sh.max;
+        v.acted = acted(i);
+        v.cloaked = p.wasCloaked;
+        v.leader = p.alive && p.kind != CombatPiece::Kind::Seeker && p.kind != CombatPiece::Kind::Obstacle ? leaderOf(i) : -1;
+        v.isLeader = p.isLeader;
+        v.group = p.group;
+        v.seekTarget = p.seekTarget;
+        v.launcher = p.launcher;
+        v.carrier = p.carrier;
+        v.formation = p.isLeader && p.formation >= 0 ? p.formation : k < led.size() ? led[k] : -1;
+        if (p.kind == CombatPiece::Kind::Seeker) {
+            v.count = p.members;
+            v.hitPoints = hitPoints(i);
+            v.fullHitPoints = p.hp;
+            v.movement = v.movementMax = p.speed;
+            if (p.seekWeapon.comp) v.seekComponent = static_cast<int>(p.seekWeapon.de.component);
+            views.push_back(std::move(v));
+            continue;
+        }
+        if (p.kind == CombatPiece::Kind::Obstacle) {
+            views.push_back(std::move(v));
+            continue;
+        }
+        v.hitPoints = hitPoints(i);
+        v.damagePercent = damagePercent(i);
+        v.movement = p.mp;
+        v.movementMax = p.alive ? maxMovement(i) : 0;
+        v.supply = p.unit.supply;
+        v.hasSupply = hasSupply(i);
+        v.count = p.kind == CombatPiece::Kind::UnitGroup ? p.unit.count : 1;
+        if (p.kind == CombatPiece::Kind::UnitGroup)
+            for (const UnitStack& st : p.stacks)
+                if (st.count > 0) v.units.push_back(st);
+        v.budget = p.budget;
+        v.engaged = static_cast<int>(p.engaged.size());
+        for (const Weapon& w : p.weapons) {
+            TacticalWeapon tw;
+            tw.component = w.de.component;
+            tw.entry = w.entry;
+            tw.kind = w.kind();
+            tw.reload = w.reload;
+            tw.reloadRate = w.reloadRate;
+            tw.instances = p.alive ? instances(i, w) : 0;
+            tw.together = firedTogether(i, w);
+            tw.reach = w.reach;
+            tw.targets = w.targets;
+            tw.enabled = w.enabled;
+            v.weapons.push_back(std::move(tw));
+        }
+        for (const UnitStack& st : p.unit.cargo.units)
+            if (st.count > 0) v.cargo.push_back(st);
+        for (const UnitStack& st : p.landed)
+            if (st.count > 0) v.landed.push_back(st);
+        if (!v.landed.empty()) v.invader = p.invader;
+        if (p.alive) v.launchLeft = launchLeft(i);
+        if (p.kind == CombatPiece::Kind::Vehicle) {
+            v.boardingAttack = componentSum(r_, s_, p.unit, AbilityKind::BoardingAttack);
+            v.troops = hasTroops(i);
+        }
+        switch (p.kind) {
+            case CombatPiece::Kind::Vehicle: {
+                const Design& d = s_.design(p.unit.design);
+                v.fullHitPoints = designStructure(r_, d);
+                v.intact.resize(d.entries.size(), 0);
+                for (size_t e = 0; e < d.entries.size(); ++e) v.intact[e] = entryIntact(r_, s_, p.unit, e) ? 1 : 0;
+                break;
+            }
+            case CombatPiece::Kind::UnitGroup: v.fullHitPoints = v.hitPoints + p.pool; break;
+            case CombatPiece::Kind::Planet: {
+                v.fullHitPoints = p.hpStart;
+                for (const PopulationGroup& g : p.population) v.population += g.millions;
+                v.plague = p.plague;
+                break;
+            }
+            default: break;
+        }
+        if (p.kind == CombatPiece::Kind::Vehicle || (p.kind == CombatPiece::Kind::UnitGroup && p.vtype != ruleset::VehicleType::Satellite)) {
+            v.supplyCapacity = vehicleSupplyCapacity(r_, s_, p.unit);
+            v.unlimitedSupply = unlimitedSupply(r_, s_, p.unit);
+        }
+        if (p.kind == CombatPiece::Kind::UnitGroup && p.vtype == ruleset::VehicleType::Drone && p.droneTarget >= 0 &&
+            static_cast<size_t>(p.droneTarget) < pieces.size())
+            v.droneTarget = p.droneTarget;
+        views.push_back(std::move(v));
+    }
+}
+
 } // namespace detail
 
 // ---- TacticalBattle ------------------------------------------------------------------------------------------
@@ -456,6 +628,8 @@ struct TacticalBattle::Context {
 TacticalBattle::TacticalBattle(const Rules& r, GameState state, Setup setup)
     : rules_(r), state_(std::make_unique<GameState>(std::move(state))), setup_(std::move(setup)) {
     ctx_ = std::make_unique<Context>(Context{TurnContext{rules_, *state_, {}, {}, {}}, Rng{}});
+    ctx_->turn.players = setup_.scriptPlayers;   // the script and external players' sides (game/players.hpp)
+    decisionsFrom_ = state_->journal.entries.size();
     // As resolveSpaceCombat: the battle's random numbers fork from the game's; mines strike first.
     ctx_->rng = state_->rng.fork();
     if (!setup_.entering) detail::resolveMines(ctx_->turn, setup_.where, {}, ctx_->rng);
@@ -559,6 +733,12 @@ std::string TacticalBattle::submit(const TacticalOrder& o) {
 
 void TacticalBattle::recordStrategies(std::vector<TacticalOrder>* out) { battle_->recordStrategies(out); }
 
+std::vector<JournalEntry> TacticalBattle::decisions() const {
+    std::vector<JournalEntry> out;
+    for (size_t k = decisionsFrom_; k < state_->journal.entries.size(); ++k) out.push_back(state_->journal.entries[k]);
+    return out;
+}
+
 void TacticalBattle::finish() {
     if (!started_ || applied_) return;
     // Phases left over are played by the strategies (a script that runs out does the same).
@@ -569,118 +749,11 @@ void TacticalBattle::finish() {
 }
 
 void TacticalBattle::refresh() {
-    // A former leader still shows the formation it led (spec 06 §1.10.1).
-    std::vector<int> led;
-    led.reserve(views_.size());
-    for (const TacticalPiece& v : views_) led.push_back(v.formation);
-    views_.clear();
-    if (!started_) return;
-    const std::vector<detail::Piece>& pieces = battle_->pieces();
-    views_.reserve(pieces.size());
-    for (size_t k = 0; k < pieces.size(); ++k) {
-        const int i = static_cast<int>(k);
-        const detail::Piece& p = pieces[k];
-        TacticalPiece v;
-        v.kind = p.kind;
-        v.owner = p.owner;
-        v.startOwner = p.startOwner;
-        v.vehicle = p.source;
-        v.planet = p.object;
-        v.design = p.kind == CombatPiece::Kind::Planet || p.kind == CombatPiece::Kind::Obstacle ? DesignId{} : p.unit.design;
-        v.name = p.name;
-        v.type = p.vtype;
-        v.x = p.x;
-        v.y = p.y;
-        v.size = p.size;
-        v.facing = p.facing;
-        v.alive = p.alive;
-        v.mothballed = p.mothballed;
-        v.captured = p.captured;
-        v.shields = p.sh.current;
-        v.shieldsMax = p.sh.max;
-        v.acted = battle_->acted(i);
-        v.leader = p.alive && p.kind != CombatPiece::Kind::Seeker && p.kind != CombatPiece::Kind::Obstacle ? battle_->leaderOf(i) : -1;
-        v.isLeader = p.isLeader;
-        v.group = p.group;
-        v.seekTarget = p.seekTarget;
-        v.launcher = p.launcher;
-        v.carrier = p.carrier;
-        v.formation = p.isLeader && p.formation >= 0 ? p.formation : k < led.size() ? led[k] : -1;
-        if (p.kind == CombatPiece::Kind::Seeker) {
-            v.count = p.members;
-            v.hitPoints = battle_->hitPoints(i);
-            v.fullHitPoints = p.hp;
-            v.movement = v.movementMax = p.speed;
-            if (p.seekWeapon.comp) v.seekComponent = static_cast<int>(p.seekWeapon.de.component);
-            views_.push_back(std::move(v));
-            continue;
-        }
-        if (p.kind == CombatPiece::Kind::Obstacle) {
-            views_.push_back(std::move(v));
-            continue;
-        }
-        v.hitPoints = battle_->hitPoints(i);
-        v.damagePercent = battle_->damagePercent(i);
-        v.movement = p.mp;
-        v.movementMax = p.alive ? battle_->maxMovement(i) : 0;
-        v.supply = p.unit.supply;
-        v.hasSupply = battle_->hasSupply(i);
-        v.count = p.kind == CombatPiece::Kind::UnitGroup ? p.unit.count : 1;
-        if (p.kind == CombatPiece::Kind::UnitGroup)
-            for (const UnitStack& st : p.stacks)
-                if (st.count > 0) v.units.push_back(st);
-        v.budget = p.budget;
-        v.engaged = static_cast<int>(p.engaged.size());
-        for (const detail::Weapon& w : p.weapons) {
-            TacticalWeapon tw;
-            tw.component = w.de.component;
-            tw.entry = w.entry;
-            tw.kind = w.kind();
-            tw.reload = w.reload;
-            tw.reloadRate = w.reloadRate;
-            tw.instances = p.alive ? battle_->instances(i, w) : 0;
-            tw.together = battle_->firedTogether(i, w);
-            tw.reach = w.reach;
-            tw.targets = w.targets;
-            tw.enabled = w.enabled;
-            v.weapons.push_back(std::move(tw));
-        }
-        for (const UnitStack& st : p.unit.cargo.units)
-            if (st.count > 0) v.cargo.push_back(st);
-        for (const UnitStack& st : p.landed)
-            if (st.count > 0) v.landed.push_back(st);
-        if (!v.landed.empty()) v.invader = p.invader;
-        if (p.alive) v.launchLeft = battle_->launchLeft(i);
-        if (p.kind == CombatPiece::Kind::Vehicle) {
-            v.boardingAttack = detail::componentSum(rules_, *state_, p.unit, AbilityKind::BoardingAttack);
-            v.troops = battle_->hasTroops(i);
-        }
-        switch (p.kind) {
-            case CombatPiece::Kind::Vehicle: {
-                const Design& d = state_->design(p.unit.design);
-                v.fullHitPoints = detail::designStructure(rules_, d);
-                v.intact.resize(d.entries.size(), 0);
-                for (size_t e = 0; e < d.entries.size(); ++e) v.intact[e] = entryIntact(rules_, *state_, p.unit, e) ? 1 : 0;
-                break;
-            }
-            case CombatPiece::Kind::UnitGroup: v.fullHitPoints = v.hitPoints + p.pool; break;
-            case CombatPiece::Kind::Planet: {
-                v.fullHitPoints = p.hpStart;
-                for (const PopulationGroup& g : p.population) v.population += g.millions;
-                v.plague = p.plague;
-                break;
-            }
-            default: break;
-        }
-        if (p.kind == CombatPiece::Kind::Vehicle || (p.kind == CombatPiece::Kind::UnitGroup && p.vtype != ruleset::VehicleType::Satellite)) {
-            v.supplyCapacity = vehicleSupplyCapacity(rules_, *state_, p.unit);
-            v.unlimitedSupply = detail::unlimitedSupply(rules_, *state_, p.unit);
-        }
-        if (p.kind == CombatPiece::Kind::UnitGroup && p.vtype == ruleset::VehicleType::Drone && p.droneTarget >= 0 &&
-            static_cast<size_t>(p.droneTarget) < pieces.size())
-            v.droneTarget = p.droneTarget;
-        views_.push_back(std::move(v));
+    if (!started_) {
+        views_.clear();
+        return;
     }
+    battle_->describe(views_);
 }
 
 } // namespace opense4::game::combat

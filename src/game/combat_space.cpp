@@ -17,6 +17,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/combat_battle.hpp"
+#include "game/players.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
@@ -3604,7 +3605,9 @@ void Battle::advance(bool onePhase) {
             startPlayerPhase();   // the side's drones and seekers move, then the player takes over
             return;
         }
-        phase(e);
+        // A side a script or external player plays gets its orders from it
+        // (game/players.hpp); otherwise, and when it gives none, the strategies.
+        if (!scriptedPhase(e)) phase(e);
         endPhase();
         if (onePhase) return;
         if (stage_ != Stage::Between || !autoAll_ || !isPlayer(e)) continue;
@@ -4019,6 +4022,11 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
             std::vector<EmpireId> players;
             for (EmpireId e : answer.tactical)
                 if (choose && std::find(humans.begin(), humans.end(), e) != humans.end()) players.push_back(e);
+            // The script and external players' sides as the window showed them:
+            // with the answers they gave there, or by their strategies when the
+            // window did not ask them (BattleAnswer::decisions).
+            if (answer.decisions && ctx.players) ctx.players->replay(*answer.decisions);
+            battle.askPlayers(answer.decisions.has_value());
             battle.setPlayers(std::move(players));
             battle.play(answer.orders);
             battle.finish();

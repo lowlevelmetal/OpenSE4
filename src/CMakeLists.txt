@@ -131,6 +131,7 @@ add_library(opense4_game STATIC
     game/movement_upkeep.cpp
     game/movement_util.cpp
     game/orders.cpp
+    game/players.cpp
     game/query.cpp
     game/redact.cpp
     game/research.cpp

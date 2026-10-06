@@ -8,6 +8,7 @@
 #include "game/events.hpp"
 #include "game/intel.hpp"
 #include "game/movement.hpp"
+#include "game/players.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
 #include "game/sight.hpp"
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <format>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -37,6 +39,17 @@ void applyCommands(TurnContext& ctx, EmpireId e, std::vector<Command> commands) 
     applyOrders(ctx.rules, ctx.state, EmpireOrders{e, ctx.state.turn, std::move(commands)}, ctx.rejected);
 }
 
+CommandResult applyCommand(TurnContext& ctx, EmpireId e, const Command& c) {
+    CommandResult res = apply(ctx.rules, ctx.state, e, c);
+    if (!res.ok) ctx.rejected.emplace_back(e, std::format("{}: {}", commandName(c), res.error));
+    return res;
+}
+
+void planCall(TurnContext& ctx, EmpireId e, PlanCall call, const CommandSink& sink, const std::function<void()>& classic) {
+    if (playedByController(ctx, e) && ctx.players->plan(ctx, e, call, sink)) return;
+    classic();
+}
+
 bool living(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size() && s.empire(e).alive; }
 
 void resetCameFrom(const Rules& r, GameState& s, EmpireId e) {
@@ -56,8 +69,10 @@ void keepStartFigures(TurnContext& ctx, EmpireId e, const std::optional<ai::Star
 
 } // namespace detail
 
+using detail::applyCommand;
 using detail::applyCommands;
 using detail::keepStartFigures;
+using detail::planCall;
 using detail::Control;
 using detail::living;
 using detail::ministersPlan;
@@ -85,7 +100,11 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // targets are those the last start-of-turn step left, if any are left
     // (the first economy step of a simultaneous turn: the last empire's), and
     // the step removes them (spec 05 §7.2 "Whose lists the economy step reads").
-    if (ministers) {
+    // An empire a script or external player plays gets its `economy` call
+    // instead (docs/sdk/ai-protocol.md); without an answer the ministers act
+    // as for any computer player. A player's answer leaves the shared lists
+    // and the units reserve as an empire whose ministers do not act does.
+    auto ministersAct = [&] {
         const std::optional<std::vector<ObjectId>> lists = std::move(ctx.aiColonyTargets);
         ctx.aiColonyTargets.reset();
         std::optional<ai::StartOfTurnFigures> figures;
@@ -93,6 +112,12 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
         applyCommands(ctx, e, ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0, lists ? &*lists : nullptr,
                                                   figures ? &*figures : nullptr));
         if (living(s, e) && ai::ministerOn(s.empire(e), Minister::ShipConstruction)) ctx.unitReserve = ai::unitReserveLeft(r, s.empire(e));
+    };
+    if (ministers && playedByController(ctx, e)) {
+        const CommandSink sink{[&](const Command& c) { return applyCommand(ctx, e, c); }, [] {}};
+        planCall(ctx, e, PlanCall::Economy, sink, ministersAct);
+    } else if (ministers) {
+        ministersAct();
     }
     // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5;
     // OpenSE4 keeps every empire's in the save), and for a human player the
@@ -166,6 +191,9 @@ namespace {
 TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options,
                             TurnContext::Battles* battles) {
     TurnContext ctx{r, s, {}, {}, {}};
+    // The script and external players of this turn (players.hpp), if any.
+    const std::unique_ptr<Players> players = makePlayers(r, s);
+    ctx.players = players.get();
     ctx.battles = battles;
     ctx.movementDay = options.movementDay;
     ctx.movementStep = options.movementStep;
@@ -241,6 +269,23 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
         if (!s.empire(id).alive) continue;
+        // An empire a script or external player plays (players.hpp): the
+        // built-in AI's own steps do not run; its player gets the `politics`
+        // and `orders` calls in the ministers' place, the classic ministers
+        // answering only when it gives no answer (docs/sdk/ai-protocol.md).
+        if (playedByController(ctx, id)) {
+            const std::vector<SystemId> territory = s.empire(id).claimedSystems;
+            const CommandSink sink{[&](const Command& c) { return applyCommand(ctx, id, c); }, [] {}};
+            planCall(ctx, id, PlanCall::Politics, sink, [&] { applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id)); });
+            diplomacy::deliverMessages(ctx, date);
+            planCall(ctx, id, PlanCall::Orders, sink, [&] {
+                std::vector<ObjectId> targets;
+                applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets));
+                ctx.aiColonyTargets = std::move(targets);
+            });
+            diplomacy::deliverMessages(ctx, date);
+            continue;
+        }
         // First thing, before the AI state update and the Politics minister,
         // the step works out the figures its ministers and the economy step
         // use (spec 05 §7.5 *Net income*, confirmed: binary).
@@ -319,7 +364,10 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     for (const auto& [id, saved] : standIns) ai::restoreMinisters(s.empire(id), saved);
     std::erase_if(ctx.moodEvents, [&](const MoodEvent& m) { return !living(s, m.empire); });
     s.pendingMood = std::move(ctx.moodEvents);
+    // The players' session ends with the turn (docs/sdk/ai-protocol.md §2).
+    if (players) players->endSession(ctx);
     ++s.turn;
+    pruneJournal(s);
     economy::updateReports(r, s);
 
     return TurnResult{std::move(ctx.rejected), {}, {}, std::move(ctx.records)};
