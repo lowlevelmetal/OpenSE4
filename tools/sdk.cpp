@@ -16,6 +16,7 @@
 #include "mods/zip.hpp"
 #include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
+#include "sdk/players.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -209,6 +210,7 @@ int cmdNew(const std::vector<std::string>& argv) {
     m.api = mods::kApiVersion;
     m.authors = {"You"};
     m.description = std::format("A new {} mod.", kind);
+    if (kind == "ai") m.aiPlayers.push_back({"Player", "player", "Player", "A computer player made from the template.", 0});
     writeFile(dir / "mod.toml", mods::writeManifest(m));
     writeFile(dir / "README.md", std::format("# {}\n\nAn OpenSE4 mod made from the `{}` template of `opense4-sdk new`.\n\n"
                                              "See docs/sdk/packages-and-data.md in OpenSE4 for the layout, data patches and the checks.\n"
@@ -239,14 +241,15 @@ int cmdNew(const std::vector<std::string>& argv) {
     } else {
         const std::string file = kind == "ai" ? "ai/player.py" : "scripts/rules.py";
         writeFile(dir / file,
-                  kind == "ai" ? "# A computer player, in Python.\n"
-                                 "#\n"
-                                 "# Scripting arrives in a later step of the OpenSE4 SDK: OpenSE4 does not run this file yet.\n"
-                                 "# docs/MODDING_SDK.md section 6 outlines the interface it will have.\n"
+                  kind == "ai" ? "# A computer player, in Python (docs/sdk/ai-protocol.md; mod.toml's [[ai.players]] names it).\n"
+                                 "# Choose it for a computer empire with --ai=<mod id>:Player. Every decision it leaves\n"
+                                 "# out is the built-in AI's.\n"
                                  "\n"
-                                 "class Player:\n"
-                                 "    def economy(self, view, orders):\n"
-                                 "        pass\n"
+                                 "from opense4 import ai\n"
+                                 "\n"
+                                 "\n"
+                                 "class Player(ai.Player):\n"
+                                 "    pass\n"
                                : "# Rules hooks, in Python.\n"
                                  "#\n"
                                  "# Scripting arrives in a later step of the OpenSE4 SDK: OpenSE4 does not run this file yet.\n"
@@ -279,6 +282,9 @@ int cmdInfo(const std::vector<std::string>& argv) {
     std::printf("  SDK api:     %d\n", m.api);
     for (const mods::Requirement& r : m.requirements) std::printf("  requires:    %s %s\n", r.id.c_str(), r.range.text.c_str());
     for (const std::string& id : m.loadAfter) std::printf("  loads after: %s\n", id.c_str());
+    for (const mods::AiPlayer& player : m.aiPlayers)
+        std::printf("  player:      %s:%s (%s.%s)%s%s\n", m.id.c_str(), player.name.c_str(), player.module.c_str(), player.className.c_str(),
+                    player.description.empty() ? "" : ": ", player.description.c_str());
     std::printf("  holds:       %s%s\n", mods::tierNames(p->tiers).c_str(), p->affectsGame() ? "; it changes the game, so every player needs it" : "");
     std::printf("  identity:    %s\n", p->hash.c_str());
     std::printf("  source:      %s (%zu files)\n", p->source.string().c_str(), p->files.size());
@@ -421,6 +427,12 @@ int cmdCheck(const std::vector<std::string>& argv) {
     std::printf("Mod %s (%s): %s\n", p->label().c_str(), p->manifest.name.c_str(), mods::ModManager::summary(*p).c_str());
     std::printf("Identity %s\n", p->hash.c_str());
     warnings = p->warnings;
+    // Its computer players (docs/sdk/ai-protocol.md §1).
+    for (const mods::AiPlayer& player : p->manifest.aiPlayers)
+        std::printf("Computer player %s:%s (%s.%s)\n", p->id().c_str(), player.name.c_str(), player.module.c_str(), player.className.c_str());
+    const sdk::PlayerCheck players = sdk::checkModPlayers(*p);
+    errors.insert(errors.end(), players.errors.begin(), players.errors.end());
+    warnings.insert(warnings.end(), players.warnings.begin(), players.warnings.end());
     const std::string id = p->id();
     auto set = withDependencies({*p}, *a);
     if (!set) {
