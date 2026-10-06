@@ -54,6 +54,18 @@ public:
             for (const game::SeenDesign& d : my_->knowledge.seenDesigns) mark(seen_, d.design);
     }
 
+    // One colony (by its planet) or stellar object as the view holds it;
+    // null when the view would not.
+    Value colonyRecord(ObjectId planet) {
+        const Colony* c = s_.colony(planet);
+        return c ? colony(*c) : Value();
+    }
+    Value objectRecord(ObjectId o) const {
+        if (!o.valid() || o.index() >= s_.galaxy.objects.size()) return Value();
+        const SpaceObject& obj = s_.galaxy.object(o);
+        return shown(obj.system) ? object(obj) : Value();
+    }
+
     Value build() {
         // Entities first: they name the designs the view must hold.
         Value colonyList = colonies();
@@ -503,6 +515,10 @@ private:
 } // namespace detail
 
 script::Value buildView(const Perspective& p) { return detail::ViewBuilder(p).build(); }
+
+script::Value colonyRecord(const Perspective& p, game::ObjectId planet) { return detail::ViewBuilder(p).colonyRecord(planet); }
+
+script::Value objectRecord(const Perspective& p, game::ObjectId object) { return detail::ViewBuilder(p).objectRecord(object); }
 
 script::Value buildView(const game::Rules& r, const game::GameState& s, game::EmpireId empire, ViewOptions options) {
     return buildView(Perspective(r, s, empire, options));

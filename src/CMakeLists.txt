@@ -164,15 +164,37 @@ add_library(opense4_mods STATIC
 target_link_libraries(opense4_mods PUBLIC opense4_game opense4_script PRIVATE tomlplusplus miniz monocypher opense4_warnings)
 
 # --- sdk: the engine's side of the modding SDK (docs/MODDING_SDK.md) ---------------
-# The view scripts read, their queries and the command codec, on script::Value.
+find_package(Threads REQUIRED)
+# The view scripts read, their queries and the command codec, on script::Value;
+# the computer players' sessions, with the `opense4` package (python/opense4)
+# built in.
+file(GLOB_RECURSE sdk_package RELATIVE "${CMAKE_SOURCE_DIR}/python" CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/python/opense4/*.py")
+list(SORT sdk_package)
+list(TRANSFORM sdk_package PREPEND "${CMAKE_SOURCE_DIR}/python/" OUTPUT_VARIABLE sdk_package_paths)
+list(JOIN sdk_package "|" sdk_package_arg)
+set(sdk_package_cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/sdk_package.cpp")
+add_custom_command(
+    OUTPUT "${sdk_package_cpp}"
+    COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${sdk_package_cpp}" "-DROOT=${CMAKE_SOURCE_DIR}/python"
+            "-DFILES=${sdk_package_arg}" "-DHEADER=sdk/players.hpp" "-DNAMESPACE=opense4::sdk"
+            "-DFUNCTION=packageFiles" "-DORIGIN=python/opense4" -P "${CMAKE_SOURCE_DIR}/cmake/EmbedPython.cmake"
+    DEPENDS ${sdk_package_paths} "${CMAKE_SOURCE_DIR}/cmake/EmbedPython.cmake"
+    COMMENT "Embedding the opense4 Python package"
+    VERBATIM)
 add_library(opense4_sdk STATIC
     sdk/codec.cpp
     sdk/names.cpp
     sdk/parts.cpp
+    sdk/player_check.cpp
+    sdk/player_values.cpp
+    sdk/players.cpp
     sdk/queries.cpp
     sdk/rules_view.cpp
-    sdk/view.cpp)
-target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_script PRIVATE opense4_warnings)
+    sdk/view.cpp
+    sdk/worker.cpp
+    "${sdk_package_cpp}")
+target_link_libraries(opense4_sdk PUBLIC opense4_game opense4_mods opense4_script PRIVATE Threads::Threads opense4_warnings)
 
 # --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------
 # Headless: the content model, its loaders and the condition evaluator. The

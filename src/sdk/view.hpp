@@ -61,4 +61,10 @@ private:
 script::Value buildView(const Perspective& p);
 script::Value buildView(const game::Rules& r, const game::GameState& s, game::EmpireId empire, ViewOptions options = {});
 
+// One record as the view would hold it, without building the rest: a colony
+// (by its planet: `colony`) or a stellar object (`space_object`); null when
+// the view would not hold it.
+script::Value colonyRecord(const Perspective& p, game::ObjectId planet);
+script::Value objectRecord(const Perspective& p, game::ObjectId object);
+
 } // namespace opense4::sdk
