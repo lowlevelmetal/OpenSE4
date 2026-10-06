@@ -11,8 +11,18 @@ from .research import Research
 from .designs import DesignBook
 from .intel import Intel
 from .military import Military
+from .strategy import Strategy
+from .diplomacy import Diplomacy
+from .explore import Explorer
+from .logistics import Logistics
+from .intel import Force, design_strength
 
 DEBUG = False
+
+# Tunable weights (mods/hegemon/README.md, "Tuning").
+TUNE = {
+    "research": {"military": 1.0, "share_early": 0.1, "share_late": 0.25, "horizon": 200.0, "level_score": 300.0},
+}
 
 
 def role_of_name(name):
@@ -76,7 +86,13 @@ class Hegemon(ai.Player):
     # ---- callbacks ----
 
     def politics(self, view, orders):
-        orders.extend(ai.builtin.politics(view))
+        w = self._setup(view)
+        strategy = Strategy(w, Intel(w, self.memory), self.memory)
+        dip = Diplomacy(w, self.memory, strategy)
+        orders.extend(dip.plan())
+        if DEBUG and dip.commands:
+            self.log("T%d DIPLO %s treaties=%s" % (w.turn, [(c["kind"], c.get("message")) for c in dip.commands],
+                                                    [(e, w.treaty(e)) for e in w.relations]))
 
     def orders(self, view, orders):
         w = self._setup(view)
@@ -93,12 +109,20 @@ class Hegemon(ai.Player):
             orders.add({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "colonize", "object": planet["id"]}]})
             self.note(planet["id"], "colonize target", kind="object")
         # Scouts explore.
-        for v in roles.get("scout", []):
-            mine.add(v["id"])
-            if not v["orders"] and v["fleet"] is None:
-                orders.add({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "explore"}]})
+        logi = Logistics(w, self.kn, self.memory, view)
+        orders.extend(Explorer(w, self.memory, logi).plan(roles.get("scout", [])))
         intel = Intel(w, self.memory)
-        mil = Military(w, self.kn, self.memory, intel, roles)
+        strategy = Strategy(w, intel, self.memory)
+        my_force = Force()
+        for v in roles.get("warship", []):
+            a, h = design_strength(w.figures(v["design"]))
+            my_force.add(a, h)
+        good = 0
+        surfaces = self.colonizable_surfaces()
+        if surfaces:
+            good = sum(1 for t in ex.targets(surfaces) if t[0] > 1500.0)
+        strategy.update(my_force, good)
+        mil = Military(w, self.kn, self.memory, intel, roles, strategy=strategy, logistics=logi)
         orders.extend(mil.plan())
         for oid, text in mil.notes:
             self.note(oid, text, kind="object")
@@ -111,8 +135,18 @@ class Hegemon(ai.Player):
                 planets = [(p["owner"], p["name"], p["survivor"]) for p in b["pieces"] if p["kind"] == "planet"]
                 self.log("T%d BATTLE sys=%s ours %d lost %d theirs %d lost %d planets %s" % (w.turn, b["location"]["system"], mine_n, mine_lost, theirs, theirs_lost, planets))
             th = [(s, int(f.attack), int(f.hp)) for s, f in mil.threats.items()]
-            self.log("T%d MIL rally=%s warships=%d fleets=%s threats=%s cols=%s" % (
-                w.turn, mil.rally, len(roles.get("warship", [])), mil.fleet_mem, th, w.colony_systems))
+            if w.turn % 10 == 0:
+                unexplored = sum(1 for x in w.systems.values() if not x["explored"])
+                frontier = sum(1 for o in w.warps if o["destination_system"] is None)
+                self.log("T%d INTEL foreign_colonies=%d rivals=%s unexplored=%d frontier=%d scouts=%d" % (
+                    w.turn, len(w.foreign_colonies), strategy.rivals, unexplored, frontier, len(roles.get("scout", []))))
+                for v in roles.get("scout", []):
+                    self.log("T%d SCOUT %d at %s supply %s/%s move %s orders %s" % (w.turn, v["id"], v["location"], v["supply"], v["supply_capacity"], v["max_movement"], v["orders"]))
+                for o in w.warps:
+                    if o["destination_system"] is None:
+                        self.log("T%d FRONTIER wp %d in sys %d at %s known=%s" % (w.turn, o["id"], o["system"], o["sector"], o["link_known"]))
+            self.log("T%d MIL phase=%s target=%s rally=%s warships=%d fleets=%s threats=%s cols=%s" % (
+                w.turn, strategy.phase, strategy.target, mil.rally, len(roles.get("warship", [])), mil.fleet_mem, th, w.colony_systems))
 
     def economy(self, view, orders):
         w = self._setup(view)
@@ -127,7 +161,10 @@ class Hegemon(ai.Player):
         for sf in SURFACES:
             if sf not in surfaces:
                 tbs[sf] = sum(t[0] for t in ex.targets([sf])[:8])
-        r = Research(w, kn, econ, {"economy": 1.0, "expansion": 1.0, "military": 1.0, "military_share": 0.3 if w.turn < 40 else 0.45}, {"targets_by_surface": tbs})
+        rt = TUNE["research"]
+        strategy = Strategy(w, Intel(w, self.memory), self.memory)
+        weights = strategy.research_weights()
+        r = Research(w, kn, econ, weights, {"targets_by_surface": tbs, "horizon": rt["horizon"], "level_score": rt["level_score"]})
         cmd = r.plan(self.memory)
         if cmd is not None:
             orders.add(cmd)
@@ -220,7 +257,7 @@ class Hegemon(ai.Player):
                 ships.append({"design": colony[s], "count": n, "priority": 60.0, "near": None})
         # Warships: as the military planner asks.
         intel = Intel(w, self.memory)
-        mil = Military(w, self.kn, self.memory, intel, roles)
+        mil = Military(w, self.kn, self.memory, intel, roles, strategy=Strategy(w, intel, self.memory))
         mil.rally = mil.choose_rally()
         queued_at = {}
         plat = book.design_id("platform")
@@ -231,7 +268,14 @@ class Hegemon(ai.Player):
         ships.extend(mil.wants(econ, book, queued_role, queued_at))
         if DEBUG:
             self.log("T%d MILWANT %s" % (w.turn, getattr(mil, "debug", None)))
-        depots = [w.home_system()]
-        if mil.rally is not None and mil.rally not in depots:
+        # Depots: the rally point, and every colony system more than a jump from one.
+        depots = []
+        if mil.rally is not None:
             depots.append(mil.rally)
+        have = [s for s, tags in econ.sys_has.items() if "supply" in tags]
+        near = w.bfs(have, 2) if have else {}
+        for s in w.colony_systems:
+            d = near.get(s)
+            if (d is None or d > 1) and s not in depots:
+                depots.append(s)
         return {"ships": ships, "yard_sites": [], "depots": depots, "defense": {}}

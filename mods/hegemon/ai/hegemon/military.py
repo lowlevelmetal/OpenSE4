@@ -22,7 +22,9 @@ DEFEND_MARGIN = 1.3
 
 
 class Military:
-    def __init__(self, world, kn, mem, intel, roles, tune=None):
+    def __init__(self, world, kn, mem, intel, roles, tune=None, strategy=None, logistics=None):
+        self.strategy = strategy
+        self.logistics = logistics
         self.w = world
         self.kn = kn
         self.mem = mem
@@ -128,11 +130,18 @@ class Military:
             if t is not None:
                 need.add(t.attack, t.hp, 0)
             score = value / (1.0 + need.power() / 1.0e6) / (1.0 + 0.4 * d)
+            target = self.strategy.target if self.strategy is not None else None
+            if target is not None and any(c["owner"] == target for c in cols):
+                score *= 3.0
             out.append((score, cols, s, need))
         out.sort(key=lambda x: -x[0])
         return out
 
     # ---- the plan ----
+
+    @staticmethod
+    def same_place(a, b):
+        return a is not None and b is not None and a["system"] == b["system"] and a["x"] == b["x"] and a["y"] == b["y"]
 
     def plan(self):
         w = self.w
@@ -146,39 +155,14 @@ class Military:
                 by_fleet.setdefault(v["fleet"], []).append(v)
             else:
                 loose.append(v)
-        # Forget fleets that are gone.
         for k in list(self.fleet_mem.keys()):
             if int(k) not in w.fleets:
                 del self.fleet_mem[k]
-        # Loose warships gather at the rally point and form fleets there.
-        at_rally = []
-        for v in loose:
-            here = v["location"]
-            if rally_loc is not None and here["system"] == rally_loc["system"] and here["x"] == rally_loc["x"] and here["y"] == rally_loc["y"]:
-                at_rally.append(v)
-            elif not v["orders"] and rally_loc is not None:
-                self.commands.append({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "move_to", "location": rally_loc}]})
-        if at_rally:
-            host = None
-            for fid, members in by_fleet.items():
-                f = w.fleets.get(fid)
-                if f is not None and f["location"] == rally_loc:
-                    host = fid
-                    break
-            if host is not None:
-                for v in at_rally:
-                    self.commands.append({"kind": "join_fleet", "fleet": host, "vehicle": v["id"]})
-            elif len(at_rally) >= 2:
-                n = self.mem.get("fleet_seq", 0) + 1
-                self.mem["fleet_seq"] = n
-                self.commands.append({"kind": "create_fleet", "name": "Hegemon Host %d" % n, "members": [v["id"] for v in at_rally]})
-        # Fleets: defend, strike, refit or hold.
         fleets = []
         for fid, members in by_fleet.items():
             f = w.fleets.get(fid)
-            if f is None:
-                continue
-            fleets.append((fid, f, members, self.fleet_force(members)))
+            if f is not None:
+                fleets.append([fid, f, members, self.fleet_force(members)])
         fleets.sort(key=lambda x: -x[3].power())
         # Fleets that meet merge into the strongest one there.
         merged = set()
@@ -188,7 +172,7 @@ class Military:
                 continue
             for j in range(i + 1, len(fleets)):
                 gid, g, gm, gforce = fleets[j]
-                if gid in merged or g["location"] != f["location"]:
+                if gid in merged or not self.same_place(g["location"], f["location"]):
                     continue
                 for v in gm:
                     self.commands.append({"kind": "leave_fleet", "vehicle": v["id"]})
@@ -197,46 +181,54 @@ class Military:
                 force.add(gforce.attack, gforce.hp, gforce.count)
                 members.extend(gm)
         fleets = [x for x in fleets if x[0] not in merged]
+        main = fleets[0] if fleets else None
+        main_loc = main[1]["location"] if main is not None else None
+        # Loose warships gather: at the rally they join a fleet there or form one.
+        at_rally = []
+        for v in loose:
+            here = v["location"]
+            if self.same_place(here, rally_loc):
+                at_rally.append(v)
+            elif not v["orders"] and rally_loc is not None:
+                self.commands.append({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "move_to", "location": rally_loc}]})
+        if at_rally:
+            host = None
+            for fid, f, members, force in fleets:
+                if self.same_place(f["location"], rally_loc):
+                    host = fid
+                    break
+            if host is not None:
+                for v in at_rally:
+                    self.commands.append({"kind": "join_fleet", "fleet": host, "vehicle": v["id"]})
+            elif len(at_rally) >= 2:
+                n = self.mem.get("fleet_seq", 0) + 1
+                self.mem["fleet_seq"] = n
+                self.commands.append({"kind": "create_fleet", "name": "Hegemon Host %d" % n, "members": [v["id"] for v in at_rally]})
         defend = self.defense_needs()
         targets = self.strike_targets()
+        at_war = self.strategy is None or self.strategy.phase == "war"
         used_targets = set()
-        for fid, f, members, force in fleets:
+        defended = set()
+        for idx in range(len(fleets)):
+            fid, f, members, force = fleets[idx]
+            is_main = idx == 0
             task = self.fleet_mem.get(str(fid), {})
-            # Refit first.
-            low_supply = False
-            damaged = 0
-            for v in members:
-                cap = v["supply_capacity"] or 0
-                if cap > 0 and not v["unlimited_supply"] and (v["supply"] or 0) < cap * 0.3:
-                    low_supply = True
-                full = v["structure"] or 1
-                if (v["damage"] or 0) > full * 0.35:
-                    damaged += 1
             orders = f["orders"]
-            if damaged * 2 > len(members):
-                if task.get("task") != "repair":
-                    self.give_fleet(fid, [{"kind": "repair"}], {"task": "repair", "since": w.turn})
-                continue
-            if task.get("task") == "repair" and damaged > 0 and orders:
-                continue
-            if low_supply and not (task.get("task") == "resupply" and not orders and w.turn - task.get("since", 0) > 1):
-                if task.get("task") != "resupply":
-                    self.give_fleet(fid, [{"kind": "resupply"}], {"task": "resupply", "since": w.turn})
-                    continue
-                if orders:
-                    continue
-            if task.get("task") == "resupply" and orders:
+            if self.refit(fid, f, members, task, orders):
                 continue
             # Defend a colony system under attack, nearest first.
             job = None
             dist = w.bfs([f["location"]["system"]])
             for s, threat in defend:
+                if s in defended:
+                    continue
                 if force.beats(threat, DEFEND_MARGIN):
                     d = dist.get(s)
-                    if d is not None and d <= 4 and (job is None or d < job[0]):
+                    if d is not None and d <= (3 if is_main and at_war else 5) and (job is None or d < job[0]):
                         job = (d, s, threat)
             if job is not None:
                 s = job[1]
+                defended.add(s)
                 if task.get("task") != "defend" or task.get("system") != s or not orders:
                     target = self.biggest_enemy_in(s)
                     if target is not None:
@@ -245,14 +237,16 @@ class Military:
                         o = [{"kind": "move_to", "location": self.colony_sector(s)}, {"kind": "sentry"}]
                     self.give_fleet(fid, o, {"task": "defend", "system": s, "since": w.turn})
                 continue
-            # Strike the best target we beat by a wide margin.
+            # Strike: the main fleet in war, any fleet when the odds are overwhelming.
             pick = None
-            for score, cols, s, need in targets:
-                if s in used_targets:
-                    continue
-                if force.beats(need, STRIKE_MARGIN) and force.count >= 2:
-                    pick = (s, cols)
-                    break
+            margin = STRIKE_MARGIN if (at_war and is_main) else STRIKE_MARGIN * 2.5
+            if force.count >= 2:
+                for score, cols, s, need in targets:
+                    if s in used_targets:
+                        continue
+                    if force.beats(need, margin):
+                        pick = (s, cols)
+                        break
             if pick is not None:
                 s, cols = pick
                 used_targets.add(s)
@@ -261,15 +255,54 @@ class Military:
                     self.give_fleet(fid, [{"kind": "attack", "object": col["planet"]}], {"task": "strike", "system": s, "planet": col["planet"], "since": w.turn})
                     self.notes.append((col["planet"], "Hegemon strike target"))
                 continue
-            # Hold at the rally point.
-            if rally_loc is not None:
+            # Otherwise: in war, join the main fleet; else hold at the rally.
+            dest = rally_loc
+            if at_war and not is_main and main_loc is not None:
+                dest = main_loc
+            if dest is not None:
                 here = f["location"]
-                if (here["system"], here["x"], here["y"]) != (rally_loc["system"], rally_loc["x"], rally_loc["y"]):
-                    if task.get("task") != "hold" or not orders:
-                        self.give_fleet(fid, [{"kind": "move_to", "location": rally_loc}, {"kind": "sentry"}], {"task": "hold", "since": w.turn})
+                if not self.same_place(here, dest):
+                    if task.get("task") != "hold" or not orders or task.get("to") != [dest["system"], dest["x"], dest["y"]]:
+                        self.give_fleet(fid, [{"kind": "move_to", "location": dest}], {"task": "hold", "since": w.turn,
+                                                                                      "to": [dest["system"], dest["x"], dest["y"]]})
                 elif not orders:
                     self.give_fleet(fid, [{"kind": "sentry"}], {"task": "hold", "since": w.turn})
         return self.commands
+
+    def refit(self, fid, f, members, task, orders):
+        """Sends a fleet to repair or resupply when it needs it; True when it is busy so."""
+        w = self.w
+        low_supply = False
+        damaged = 0
+        for v in members:
+            cap = v["supply_capacity"] or 0
+            if self.logistics is not None:
+                if self.logistics.must_refuel(v, margin=1.5, extra=15):
+                    low_supply = True
+            elif cap > 0 and not v["unlimited_supply"] and (v["supply"] or 0) < cap * 0.3:
+                low_supply = True
+            full = v["structure"] or 1
+            if (v["damage"] or 0) > full * 0.35:
+                damaged += 1
+        if damaged * 2 > len(members):
+            if task.get("task") != "repair":
+                self.give_fleet(fid, [{"kind": "repair"}], {"task": "repair", "since": w.turn})
+                return True
+            if orders:
+                return True
+            return False
+        if task.get("task") == "repair" and damaged > 0 and orders:
+            return True
+        if low_supply:
+            if task.get("task") != "resupply":
+                self.give_fleet(fid, [{"kind": "resupply"}], {"task": "resupply", "since": w.turn})
+                return True
+            if orders:
+                return True
+            return False
+        if task.get("task") == "resupply" and orders:
+            return True
+        return False
 
     def give_fleet(self, fid, orders, task):
         self.commands.append({"kind": "set_orders", "fleet": fid, "orders": orders})
@@ -338,13 +371,9 @@ class Military:
         threat = Force()
         for s, f in self.threats.items():
             threat.add(f.attack, f.hp, 0)
-        share = self.tune.get("upkeep_share", 0.12)
+        share = self.strategy.upkeep_share() if self.strategy is not None else 0.2
         if threat.power() > 0.5 * mine.power():
-            share += 0.15
-        if w.turn > 30:
-            share += 0.08
-        if w.turn > 60:
-            share += 0.08
+            share += 0.12
         war = book.design_id("warship")
         if war is not None:
             fig = w.figures(war)

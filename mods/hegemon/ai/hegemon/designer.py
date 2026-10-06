@@ -153,11 +153,18 @@ class Designer:
             if ctl is None:
                 self.why = "no control for hull %d" % hull.id
                 continue
+            tank = self.smallest(parts, lambda c: c.supply > 0 and c.engine <= 0 and c.weapon is None)
             for speed in (7, 6, 5, 4, 3):
                 n = self.engines_for(hull, engine, speed)
                 entries = [(c, k) for c, k in ctl] + ([(engine, n)] if n > 0 else [])
                 if self.tonnage(entries) > hull.tonnage:
                     continue
+                # Fuel for a long trip: supply parts in the room left.
+                if tank is not None and tank.tonnage > 0:
+                    room = hull.tonnage - self.tonnage(entries)
+                    k = min(3, room // tank.tonnage)
+                    if k > 0:
+                        entries.append((tank, k))
                 cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k in entries)
                 key = (-speed // 2, cost)
                 if best is None or key < best[0]:
