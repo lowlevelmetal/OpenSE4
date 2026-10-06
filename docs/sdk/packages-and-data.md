@@ -74,6 +74,9 @@ after = ["example.common-lib", "example.ui-tweaks"]
   (from 1.2, below 1.3), `*` (any version).
 - **load.after**: mods this one should load after when they are enabled. It is a hint,
   not a requirement.
+- **ai.players**: the computer players the mod offers, one `[[ai.players]]` table each
+  with `name`, `module` (under the mod's `ai/` folder), `class` and `description`
+  (docs/sdk/ai-protocol.md §1). A game chooses one as `<mod id>:<name>`.
 
 Unknown tables and keys are errors, so a typo does not pass unnoticed.
 
@@ -408,7 +411,9 @@ opense4-sdk pack mymod                        # mymod's id-version.zip, with its
 
 `check` reads the manifest, finds the mods it requires (in the mods folder, or given
 with `--mod`), applies every patch to your installed game (`--data=DIR` for another) and
-reports every error above. It also checks the mod's files: the pictures its hulls name,
+reports every error above. It checks the computer players too: each one's module under
+`ai/` and its class, files there whose names Python cannot import or that do not
+compile, and Python files no player declares. It also checks the mod's files: the pictures its hulls name,
 component and facility picture numbers against their sheets, formats the game cannot
 read, pictures no hull uses, and files where the game does not look. It exits with 1
 when it finds errors.

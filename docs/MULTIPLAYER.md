@@ -532,6 +532,7 @@ mods = ["example.better-carriers", "mods/my-tweaks"]   # mods: ids in the mods f
 seed = 1234                    # galaxy seed; random when missing
 game_id = 4711                 # the game's id, which salts its passwords; random when missing
 master_password = "boss"       # or master_password_verifier = "<password-verifier output>" (needs game_id)
+ai = "example.admiral:Admiral" # who plays the computer empires: a player of one of the game's mods, or "builtin" (the default)
 
 [options]
 quadrant_size = 1              # 0 small, 1 medium (the default), 2 large: the number of systems is rolled
@@ -550,6 +551,10 @@ max_units = 1000
 ai_difficulty = 1              # 0 low, 1 medium, 2 high: the level random computer players get
 ai_bonus = 0                   # 0 none, 1 low, 2 medium, 3 high
 score_display = 1              # 0 own, 1 own and Non-Aggression or better, 2 all
+ai_sees_everything = false     # script computer players see the whole game, not only what their empire knows
+ai_planning_budget = 200000000 # bytecodes a script player may run for a politics, orders or economy call
+ai_call_budget = 5000000       # ... for any other call
+ai_memory_limit = 1048576      # the most a script player's memory may take, as JSON text
 # true/false: all_warp_points_connected, all_planets_same_size, no_warp_points, warp_points_anywhere,
 # all_systems_seen, omnipresent, finite_resources, same_system_allowed,
 # evenly_distributed, no_tactical_combat, complete_tech_tree, allow_gifts, allow_tech_trades,
@@ -577,10 +582,15 @@ leader = ""
 leader_title = ""
 minister_style = "Aggressive"  # a folder under Ai/ of the install; default: none (the race's own AI files)
 use_race_minister_style = false
+ai = "builtin"                 # computer and neutral empires: who plays this one (default: the file's `ai` for a computer empire)
 ```
 
 The network server takes the name, seed, game id, options, master password, mods and
-computer empires from the file. `--mod` on the command line takes the place of the file's
+computer empires from the file. A computer empire's `ai` names a script computer player
+of one of the game's mods (docs/sdk/ai-protocol.md); `--ai=<mod id>:<player>` on the
+command line gives one to every computer empire, the file's included, and `--ai=N` adds N
+computer empires. The host runs the script players: their memory stays in its game, and
+players' copies never hold it. `--mod` on the command line takes the place of the file's
 `mods`. Without either, a host continuing a saved game (`--load`, `pbem process`, `pbem
 turn-files`) finds the game's own mods by id and identity in the mods folder (`Mods/` in
 the user folder, or `--mods-dir`). Human players join through the lobby, so it ignores human

@@ -112,7 +112,10 @@ empires are skipped.
    claims the state update used, as the original's lists do (spec 05 §7.2). Their
    colonization targets stay in `TurnContext::aiColonyTargets` for the next economy step
    whose ministers run (the first empire's in a simultaneous turn reads the last empire's).
-   Afterwards `ai::recordAiDecisions` notes what was decided.
+   Afterwards `ai::recordAiDecisions` notes what was decided. An empire a script or
+   external player plays (below) skips the state update, the political step and the
+   claims, and gets the `politics` call where the Politics minister acts and the `orders`
+   call where the other ministers do, each followed by the delivery of its messages.
 5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
    vehicle, fleet and planet with orders acts, in object order, whenever its day counter
    reaches 1: the acting vehicle gets exactly 1 movement point and its list runs, orders
@@ -123,6 +126,10 @@ empires are skipped.
    second battle in a turn only when newcomers arrive or a survivor was damaged (spec 03
    §6.3, spec 04 §2). A Colonize order founds its colony like any order, on an
    acting day with movement left, so a colony can appear in any phase.
+   A script or external player is asked during the phases: `enter_sector` before one of
+   its groups steps into a sector with enemies it sees, `decloak` before its cloaked
+   colony carries out an order, `colony_type` when its colony ship founds a colony, and
+   `battle_round` at its phase of each combat turn.
    `TurnOptions::movementDay` lets a caller watch the state after each day without
    changing it, and `TurnOptions::movementStep` each vehicle's every step as it is made
    (the client's movement log replay plays a turn again from its start with them,
@@ -140,7 +147,7 @@ empires are skipped.
 6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
    that empire's destruction check (`score::checkDestruction`):
    1. the ministers' end-of-turn actions (`ai::planEconomyStep`: Design, Research,
-      Intelligence and construction);
+      Intelligence and construction), or a script or external player's `economy` call;
    2. the statistics row (`score::recordStatistics`), and for a human player the lines of
       its statistics, history and log text files in the original's layouts, handed out
       in `TurnResult::records` (the classic client writes them under `history/<game>/` in
@@ -178,8 +185,25 @@ empires are skipped.
    (`events::fireDueEvents`), then one roll for a new event for the whole galaxy
    (`events::rollNewEvent`).
 10. **End.** Per-turn flags are cleared, sight follows the events, the AI
-    remembers the turn's battles and spies (`ai::rememberAiEvents`), the turn number
-    advances and `economy::updateReports` projects next turn's income.
+    remembers the turn's battles and spies (`ai::rememberAiEvents`; not for an empire a
+    player plays), each script or external player asked during the turn gets
+    `end_session`, the turn number advances and `economy::updateReports` projects next
+    turn's income.
+
+**Script and external computer players** (docs/sdk/ai-protocol.md). An empire whose
+controller (`Empire::controller`) is a script player of a mod or an external bot is
+played by it while it is computer-controlled. Each engine call that plays such an empire
+gets a session (`game::Players`, made by the factory the SDK installs:
+`sdk::installPlayers`), on `TurnContext::players`; without one the built-in AI plays
+every empire. At each decision point above the engine asks the player through the
+session; no answer, or a failed request, gives the classic answer for that decision, and
+after three failures in a game turn the classic AI answers for the rest of it
+(`Empire::script`). The built-in AI's own bookkeeping steps do not run for such an empire
+(docs/sdk/ai-protocol.md §9). The players run in the script runtime on a thread of the
+session's own, and every answer goes into the game's journal (`GameState::journal`, not
+saved), so a call made again after a battle stop or a turn played again
+(`game::replayJournal`, the movement replay) gives the same answers without asking. A game
+without such empires makes no session and plays exactly as before.
 
 Mood events raised after an empire's happiness update (construction, ground combat, the
 other empires' processing, events) wait in `GameState::pendingMood` for that empire's next
@@ -200,7 +224,9 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    the start-of-turn step as in step 4 above (`ai::updateAiState`, `ai::politicalStep`
    counting everything since the empire's previous step, `Empire::politicsMark`;
    `ai::claimTerritory`; the Politics minister, then the other ministers, whose orders are
-   given but not yet carried out; `ai::recordAiDecisions`); then its vehicles regain their movement
+   given but not yet carried out; `ai::recordAiDecisions`; for an empire a script or
+   external player plays, its `politics` and `orders` calls instead of the AI steps);
+   then its vehicles regain their movement
    (`movement::startTurn(ctx, empire)`) and every group carries out its order list, the
    ministers' new orders included, at most 21 orders each; a computer player's
    destruction check comes last.
@@ -223,9 +249,12 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    tagged, asked once and fighting together (spec 03 §8 "Tagged vehicles"). Colony ships that reach their planet with movement left found the
    colony at once. Messages take effect when
    sent (`diplomacy::deliverMessages`), and sight follows every move (first contact only at the moments of step 5).
-3. **End of the player's turn** (`endPlayerTurn`): `empireEndOfTurn`, then the next living
-   empire's turn starts. Computer players take their turns the same way, one after
-   another (`resumeTurnBased`).
+3. **End of the player's turn** (`endPlayerTurn`): `empireEndOfTurn` (a script or
+   external player's `economy` call at its start), then the next living empire's turn
+   starts. Computer players take their turns the same way, one after another
+   (`resumeTurnBased`); an empire handed to the computer during its own turn whose
+   controller is such a player gets `politics` and `orders` for the rest of it. Each
+   call's players get `end_session` when the call ends.
 4. **After the last player** the date advances, then the design cleanup (a new year), the
    contact check, the victory check and the event step run, the per-turn flags are cleared and the AI
    remembers the turn, as in steps 7 to 10. `GameState::combats` keeps the battles of the
