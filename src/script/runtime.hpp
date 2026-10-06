@@ -137,6 +137,13 @@ public:
     // Evaluates an expression in __main__ and converts its value.
     Result<Value> eval(std::string_view expression, const CallOptions& options = {});
 
+    // From inside one of the engine's native functions: counts `units` of engine
+    // work against the running call's budget, as if the script had run that many
+    // bytecodes (the engine's services charge by their cost). Once this uses up
+    // the budget, the script stops with BudgetExceeded at its next bytecode.
+    // Outside a native function it does nothing.
+    void charge(int64_t units);
+
     const Limits& limits() const;
     // Budget used and left over the interpreter's life.
     int64_t budgetUsed() const;
