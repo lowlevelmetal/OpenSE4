@@ -68,7 +68,7 @@ unless another becomes twice as attractive. **One war at a time:** while a rival
 colonies are within four jumps of ours is at war with us, the target is one of those, so
 no treaty is broken with anyone else.
 
-**Upkeep share.** Maintenance is a quarter of a ship's cost every turn, so the fleet is
+**Upkeep share.** Maintenance takes a share of a ship's cost every turn, so the fleet is
 paid for by a share of income the phase sets, raised when enemies are near our colonies
 and in the last third of a game, when new facilities and research pay back less.
 Maintenance is paid resource by resource, so the share is applied to each resource's
@@ -107,9 +107,9 @@ runs short, a colony with a converter converts.
 
 **Expansion.** A planet is worth its facility slots (under a dome if our race does not
 breathe there), its resource values at today's prices, its population room and any ruins;
-less in a new system (a spaceport first), less where enemies are or another empire
-already lives, less where hostile armed ships are believed to be or where we lost an
-unarmed ship in the last 25 turns, and less the further it is; a sector that holds a
+less in a new system (a spaceport first), less where another empire already lives, less
+where hostile armed ships are believed to be or where we lost an unarmed ship in the last
+25 turns, and less the further it is; a sector that holds a
 hostile colony is left alone. Colony ships are built for the good targets, a few at a
 time, and each idle one takes the best target it can reach on the supply it has (a ship
 out of supply hardly moves), a tenth as willingly when the way there passes through such
@@ -188,8 +188,8 @@ cannot win stay out of sectors with enemies (`enter_sector`); unarmed ones go in
 where nothing armed is, or behind our own warships already there and winning. A sector
 where mines struck our ships is tagged as a minefield, so routes go around it.
 
-**Zero-upkeep defence.** Units pay no maintenance: every colony gets a weapon platform,
-exposed ones more, and exposed colonies build satellites and (with the technology) mines
+**Zero-upkeep defence.** Units pay no maintenance: every colony with two facilities gets
+a weapon platform, exposed ones more, and exposed colonies build satellites and (with the technology) mines
 and launch them into their sector.
 
 **Invasions.** In the arm and war phases, troop transports wait at a staging colony in
