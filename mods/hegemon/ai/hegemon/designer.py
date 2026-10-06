@@ -220,6 +220,8 @@ class Designer:
                 continue
             if not w.hits("ship"):
                 continue
+            if against_planets and not w.hits("planet"):
+                continue
             opts = [(None, c.tonnage, c.cost, w.damage, w.modifier)]
             for m in mounts:
                 if not m.applies(c):
@@ -301,7 +303,9 @@ class Designer:
                 continue
             base_cost = res_total(hull.cost) + sum(res_total(c.cost) * k for c, k, m in base)
             base_hp = sum(c.structure * k for c, k, m in base) * 0.6
-            options = self.weapon_options(hull, parts)
+            options = self.weapon_options(hull, parts, against_planets=True)
+            if not options:
+                options = self.weapon_options(hull, parts)
             if not options:
                 continue
             options.sort(key=lambda o: -(o[4] / (o[2] + res_total(o[3]) / 40.0)))

@@ -158,6 +158,40 @@ class Military:
         for k in list(self.fleet_mem.keys()):
             if int(k) not in w.fleets:
                 del self.fleet_mem[k]
+        # Cripples slow a whole fleet down: they leave it and go for repairs alone.
+        repair = self.mem.setdefault("repairing", {})
+        for fid in list(by_fleet.keys()):
+            members = by_fleet[fid]
+            speeds = [v["max_movement"] or 0 for v in members]
+            top = max(speeds) if speeds else 0
+            keep = []
+            for v in members:
+                mv = v["max_movement"] or 0
+                if len(members) > 1 and mv < top - 1 and mv <= 2:
+                    self.commands.append({"kind": "leave_fleet", "vehicle": v["id"]})
+                    self.commands.append({"kind": "set_orders", "vehicle": v["id"], "orders": [{"kind": "repair"}]})
+                    repair[str(v["id"])] = w.turn
+                else:
+                    keep.append(v)
+            by_fleet[fid] = keep
+        still = []
+        for v in loose:
+            key = str(v["id"])
+            if key in repair:
+                full = v["structure"] or 1
+                if (v["damage"] or 0) <= 0 and (v["max_movement"] or 0) > 2 or w.turn - repair[key] > 25:
+                    del repair[key]
+                    still.append(v)
+                elif not v["orders"] and w.turn - repair[key] > 3:
+                    # Nowhere to repair it: it rejoins as it is.
+                    del repair[key]
+                    still.append(v)
+                continue
+            still.append(v)
+        loose = still
+        for key in list(repair.keys()):
+            if int(key) not in w.vehicles:
+                del repair[key]
         fleets = []
         for fid, members in by_fleet.items():
             f = w.fleets.get(fid)
@@ -216,6 +250,18 @@ class Military:
             orders = f["orders"]
             if self.refit(fid, f, members, task, orders):
                 continue
+            # A strike under way that went badly: the planet is stronger than we thought.
+            if task.get("task") == "strike":
+                start = task.get("power", 0)
+                if start > 0 and force.power() < 0.45 * start:
+                    known = self.mem.setdefault("planet_seen", {})
+                    key = str(task.get("planet"))
+                    need = task.get("need", [0, 0])
+                    known[key] = [int(max(need[0], 1) * 2.5), int(max(need[1], 1) * 2.5)]
+                    self.give_fleet(fid, [{"kind": "repair"}], {"task": "repair", "since": w.turn})
+                    continue
+            if is_main and at_war and self.try_strike(fid, task, orders, force, targets, used_targets, STRIKE_MARGIN):
+                continue
             # Defend a colony system under attack, nearest first.
             job = None
             dist = w.bfs([f["location"]["system"]])
@@ -237,23 +283,8 @@ class Military:
                         o = [{"kind": "move_to", "location": self.colony_sector(s)}, {"kind": "sentry"}]
                     self.give_fleet(fid, o, {"task": "defend", "system": s, "since": w.turn})
                 continue
-            # Strike: the main fleet in war, any fleet when the odds are overwhelming.
-            pick = None
-            margin = STRIKE_MARGIN if (at_war and is_main) else STRIKE_MARGIN * 2.5
-            if force.count >= 2:
-                for score, cols, s, need in targets:
-                    if s in used_targets:
-                        continue
-                    if force.beats(need, margin):
-                        pick = (s, cols)
-                        break
-            if pick is not None:
-                s, cols = pick
-                used_targets.add(s)
-                if task.get("task") != "strike" or task.get("system") != s or not orders:
-                    col = max(cols, key=lambda c: c["total_population"] or 0)
-                    self.give_fleet(fid, [{"kind": "attack", "object": col["planet"]}], {"task": "strike", "system": s, "planet": col["planet"], "since": w.turn})
-                    self.notes.append((col["planet"], "Hegemon strike target"))
+            # Strike when the odds are overwhelming, whatever the phase.
+            if self.try_strike(fid, task, orders, force, targets, used_targets, STRIKE_MARGIN * 2.5):
                 continue
             # Otherwise: in war, join the main fleet; else hold at the rally.
             dest = rally_loc
@@ -268,6 +299,39 @@ class Military:
                 elif not orders:
                     self.give_fleet(fid, [{"kind": "sentry"}], {"task": "hold", "since": w.turn})
         return self.commands
+
+    def try_strike(self, fid, task, orders, force, targets, used_targets, margin):
+        """Sends a fleet against the best enemy colony system it beats by `margin`."""
+        if force.count < 2:
+            return False
+        pick = None
+        # Keep at the target we went for while it stands and we still beat it.
+        if task.get("task") == "strike":
+            for score, cols, s, need in targets:
+                if s == task.get("system") and s not in used_targets and force.beats(need, margin * 0.6):
+                    pick = (s, cols, need)
+                    break
+        for score, cols, s, need in targets:
+            if pick is not None:
+                break
+            if s in used_targets:
+                continue
+            if force.beats(need, margin):
+                pick = (s, cols, need)
+                break
+        if pick is None:
+            return False
+        s, cols, need = pick
+        used_targets.add(s)
+        w = self.w
+        if task.get("task") != "strike" or task.get("system") != s or not self.w.fleets[fid]["orders"]:
+            col = max(cols, key=lambda c: c["total_population"] or 0)
+            power = task.get("power") if task.get("task") == "strike" and task.get("system") == s else None
+            self.give_fleet(fid, [{"kind": "attack", "object": col["planet"]}],
+                            {"task": "strike", "system": s, "planet": col["planet"], "since": w.turn,
+                             "power": int(power if power else force.power()), "need": [int(need.attack), int(need.hp)]})
+            self.notes.append((col["planet"], "Hegemon strike target"))
+        return True
 
     def refit(self, fid, f, members, task, orders):
         """Sends a fleet to repair or resupply when it needs it; True when it is busy so."""

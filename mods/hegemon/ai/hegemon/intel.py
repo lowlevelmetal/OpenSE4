@@ -46,8 +46,8 @@ def planet_strength(colony, turn, known=None):
     """A guess at a foreign colony's defences: its population fights as hit points, and
     planets of an older empire carry more guns. `known`: what a battle showed."""
     pop = colony["total_population"] or 0
-    h = pop * 10.0 + 400.0 + turn * 25.0
-    a = 60.0 + turn * 6.0
+    h = pop * 10.0 + 300.0 + turn * 15.0
+    a = 30.0 + turn * 4.0
     if known is not None:
         a = max(a, known[0])
         h = max(h, known[1])

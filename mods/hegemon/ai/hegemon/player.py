@@ -96,6 +96,10 @@ class Hegemon(ai.Player):
 
     def orders(self, view, orders):
         w = self._setup(view)
+        # Meeting others after a warp must not clear our orders: our plans decide.
+        st = w.my["settings"]
+        if st["clear_orders_on_encounter"] != "never":
+            orders.add({"kind": "set_encounter_options", "clear_orders_on_encounter": "never"})
         roles = self.my_roles(w)
         mine = set()
         # Colony ships to the best targets.
@@ -135,11 +139,29 @@ class Hegemon(ai.Player):
                 planets = [(p["owner"], p["name"], p["survivor"]) for p in b["pieces"] if p["kind"] == "planet"]
                 self.log("T%d BATTLE sys=%s ours %d lost %d theirs %d lost %d planets %s" % (w.turn, b["location"]["system"], mine_n, mine_lost, theirs, theirs_lost, planets))
             th = [(s, int(f.attack), int(f.hp)) for s, f in mil.threats.items()]
+            for fid, t in mil.fleet_mem.items():
+                if t.get("task") == "strike":
+                    c = w.colonies.get(t["planet"])
+                    o = w.objects.get(t["planet"])
+                    f = w.fleets.get(int(fid))
+                    self.log("T%d STRIKE fleet %s at %s target %s at %s/%s pop %s owner %s orders %s" % (
+                        w.turn, fid, f["location"] if f else None, t["planet"], o["system"] if o else None, o["sector"] if o else None,
+                        c["total_population"] if c else None, c["owner"] if c else None, [(x["kind"], x["object"]) for x in f["orders"]] if f else None))
+            for fid, t in mil.fleet_mem.items():
+                f = w.fleets.get(int(fid))
+                if f is not None:
+                    self.log("T%d FTASK %s %s at %s orders %s" % (w.turn, fid, t, f["location"], [(x["kind"], x["object"], x["location"]["system"]) for x in f["orders"]]))
+            for b in w.d["battles"]:
+                self.log("T%d BPIECES %s" % (w.turn, [(p["kind"], p["owner"], p["name"][:12], p["damage"], p["survivor"]) for p in b["pieces"] if p["owner"] != w.me][:8]))
             if w.turn % 10 == 0:
                 unexplored = sum(1 for x in w.systems.values() if not x["explored"])
                 frontier = sum(1 for o in w.warps if o["destination_system"] is None)
                 self.log("T%d INTEL foreign_colonies=%d rivals=%s unexplored=%d frontier=%d scouts=%d" % (
                     w.turn, len(w.foreign_colonies), strategy.rivals, unexplored, frontier, len(roles.get("scout", []))))
+                for fid, f in w.fleets.items():
+                    ms = [w.vehicles[m] for m in f["members"] if m in w.vehicles]
+                    self.log("T%d FLEET %d at %s orders %s members %s depots %s" % (w.turn, fid, f["location"], [(o["kind"], o["location"]) for o in f["orders"]],
+                             [(v["supply"], v["supply_capacity"], v["location"]["system"], v["max_movement"]) for v in ms][:6], logi.depots()))
                 for v in roles.get("scout", []):
                     self.log("T%d SCOUT %d at %s supply %s/%s move %s orders %s" % (w.turn, v["id"], v["location"], v["supply"], v["supply_capacity"], v["max_movement"], v["orders"]))
                 for o in w.warps:
