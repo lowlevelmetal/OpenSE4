@@ -11,9 +11,10 @@
 //       assets/           pictures, sounds, music, fonts and pointers in the game folder's layout
 //       ai/  scripts/  ui/  text/  tests/
 //
-// A package's identity hashes its manifest and every file outside assets/ and
-// ui/ (text files with their line ends as LF), so the same files give the
-// same identity on every computer; changing a picture does not change it.
+// A package's identity hashes its manifest and every file outside assets/,
+// ui/ and text/ (text files with their line ends as LF), so the same files
+// give the same identity on every computer; changing a picture, a panel or a
+// translation does not change it.
 
 #include "mods/manifest.hpp"
 #include "ruleset/mods.hpp"

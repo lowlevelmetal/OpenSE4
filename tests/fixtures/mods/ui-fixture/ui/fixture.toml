@@ -1,0 +1,106 @@
+# The interface fixture's additions (docs/sdk/interface.md).
+
+[[order]]
+name = "mark"
+icon = "Pictures/UiFixture/Mark.png"
+key = "Ctrl+Shift+M"
+[order.args.colour]
+label = "Which colour"
+choices = ["red", "green", "blue"]
+
+[[order]]
+name = "beacon"
+key = "Ctrl+Shift+B"
+[order.args.count]
+label = "How many beacons"
+
+[[order]]
+name = "survey"
+key = "F5"
+[order.args.system]
+label = "the system to survey"
+
+[[panel]]
+name = "markings"
+title = "Markings"
+report = "ship"
+whose = "mine"
+key = "Ctrl+Shift+P"
+[[panel.row]]
+name = "mark"
+label = "Mark"
+mod_data = "mark"
+[[panel.row]]
+name = "supply"
+label = "Supply"
+field = "supply"
+format = "{} units"
+[[panel.row]]
+name = "class"
+label = "Class"
+value = "design_name"
+[[panel.button]]
+order = "mark"
+
+[[panel]]
+name = "colony_watch"
+title = "Colony watch"
+report = "colony"
+whose = "mine"
+[[panel.row]]
+name = "people"
+label = "People"
+value = "population_text"
+[[panel.row]]
+name = "surveyed"
+label = "Surveyed"
+mod_data = "surveyed"
+[[panel.button]]
+order = "survey"
+
+[[panel]]
+name = "broken"
+title = "Broken panel"
+report = "system"
+[[panel.row]]
+label = "Fails"
+value = "always_fails"
+
+[[column]]
+name = "mark"
+list = "ships"
+label = "Mark"
+width = 70
+mod_data = "mark"
+
+[[column]]
+name = "planet_size"
+list = "planets"
+label = "Size"
+field = "size"
+
+[[column]]
+name = "colony_people"
+list = "colonies"
+label = "People"
+value = "population_text"
+
+[[column]]
+name = "design_kind"
+list = "designs"
+label = "Kind"
+width = 120
+field = "design_type"
+
+[[empire_page]]
+name = "beacons"
+title = "Beacons"
+key = "Ctrl+Shift+E"
+[[empire_page.column]]
+name = "lit"
+label = "Beacons lit"
+mod_data = "beacons"
+[[empire_page.column]]
+name = "bonus"
+label = "Bonus each"
+value = "beacon_bonus"

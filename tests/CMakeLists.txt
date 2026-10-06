@@ -106,6 +106,7 @@ add_executable(opense4_tests
     sdk/test_sdk_rules_orders.cpp
     sdk/test_sdk_rules_view.cpp
     sdk/test_sdk_tool.cpp
+    sdk/test_sdk_ui.cpp
     sdk/test_sdk_view.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.

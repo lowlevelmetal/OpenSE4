@@ -2,6 +2,7 @@
 
 #include "datafile/datafile.hpp"
 #include "sdk/rules.hpp"
+#include "sdk/scenario.hpp"
 #include "game/ai_data.hpp"
 #include "game/players.hpp"
 #include "mods/data_set.hpp"
@@ -91,8 +92,10 @@ public:
 
     std::expected<SetupFile, std::string> run(const toml::table& root) {
         allowOnly(root, "", {"name", "seed", "game_id", "master_password", "master_password_verifier", "master_password_hash", "options", "empire", "mods",
-                             "ai"});
+                             "ai", "scenario"});
         if (root.get("ai")) out_.ai = controller(root);
+        // A mod's scenario first: the file's own seed, options and empires then take the places they give.
+        if (const toml::node* n = root.get("scenario")) scenario(*n);
         if (const toml::node* n = root.get("mods")) {
             const auto* arr = n->as_array();
             if (!arr) error(*n, "'mods' must be a list of mods (paths, or ids of mods in the mods folder)");
@@ -121,11 +124,15 @@ public:
         if (const toml::node* n = root.get("empire")) {
             const auto* arr = n->as_array();
             if (!arr) error(*n, "empires are written as [[empire]] tables");
-            else
+            else {
+                // The file's empires take the place of a scenario's.
+                out_.empires.clear();
+                ownAi_.clear();
                 for (const toml::node& e : *arr) {
                     if (const auto* t = e.as_table()) empire(*t);
                     else error(e, "empires are written as [[empire]] tables");
                 }
+            }
         }
         // The file's `ai` plays the computer empires that name no player of their own.
         if (out_.ai)
@@ -282,6 +289,49 @@ private:
             condition("peace_years", 1, 10000, vc.peace, vc.peaceYears);
             condition("delay_years", 0, 10000, vc.delay, vc.delayYears);
         }
+    }
+
+    // `scenario = "<mod id>:<name>"` (docs/sdk/rules.md "Scenarios"): the game
+    // starts from a scenario of one of the game's mods: its seed, setup
+    // options, empires and the mod's options it sets; the objectives come
+    // with it (GameState::scenario).
+    void scenario(const toml::node& n) {
+        const auto* text = n.as_string();
+        const std::string ref = text ? std::string(text->get()) : std::string();
+        const size_t colon = ref.find(':');
+        if (colon == std::string::npos || colon == 0 || colon + 1 == ref.size()) {
+            error(n, "'scenario' must be \"<mod id>:<name>\", the name of a file in the mod's scenarios/ folder");
+            return;
+        }
+        const std::string modId = ref.substr(0, colon), name = ref.substr(colon + 1);
+        const auto* data = dynamic_cast<const mods::GameData*>(rules_.files());
+        const mods::Package* mod = nullptr;
+        if (data)
+            for (const mods::Package& p : data->mods().packages)
+                if (p.id() == modId) mod = &p;
+        if (!mod) {
+            error(n, std::format("the scenario {} needs the mod {}, which the game does not use (add it to 'mods')", ref, modId));
+            return;
+        }
+        auto loaded = sdk::loadScenario(*mod, name);
+        if (!loaded) {
+            for (const std::string& e : loaded.error()) error(n, e);
+            return;
+        }
+        out_.seed = loaded->setup.seed;
+        out_.options = loaded->setup.options;
+        const std::vector<sdk::ModOptionChoice> choices = sdk::modOptions(std::span<const mods::Package>(mod, 1));
+        for (const auto& [option, value] : loaded->options)
+            if (std::string why = sdk::setModOption(out_.options, choices, std::format("{}:{}", modId, option), value); !why.empty())
+                error(n, std::format("the scenario {}: {}", ref, why));
+        for (const game::EmpireSetup& e : loaded->setup.empires) {
+            SetupEmpire se;
+            se.setup = e;
+            out_.empires.push_back(std::move(se));
+            ownAi_.push_back(!e.controller.builtin());
+        }
+        out_.scenario.mod = modId;
+        out_.scenario.name = name;
     }
 
     void empire(const toml::table& t) {

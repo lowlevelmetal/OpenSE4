@@ -509,6 +509,7 @@ int runServer(std::span<char*> args) {
             cfg.masterPasswordVerifier = setup->masterPasswordVerifier;
         }
         if (setup->gameId) cfg.gameId = *setup->gameId;
+        cfg.setup.scenario = setup->scenario;   // a mod's scenario (docs/sdk/rules.md "Scenarios")
         for (const auto& e : setup->empires) {
             if (e.setup.kind == game::PlayerKind::Human) say("Note: human empires in the setup file are ignored; players join the lobby.");
             else computers.push_back(e.setup);
@@ -683,6 +684,7 @@ int pbemNew(std::span<char*> args) {
     game::GameSetup gs;
     gs.seed = setup->seed.value_or(net::randomId());
     gs.options = setup->options;
+    gs.scenario = setup->scenario;
     game::SaveInfo info;
     info.gameName = setup->gameName;
     info.dataSet = game::dataSetIdentity(**rules);

@@ -41,8 +41,8 @@ TEST_CASE("sdk client: the Mods window's choice, its order and its problems") {
     // The chosen first (in the player's order, one that is gone among them), then the others by name.
     const auto rows = choice.rows();
     CHECK(ids(rows) == std::vector<std::string>{"test.needs-lib", "test.gone", "test.ai-fixture", "test.ai-tweaks", "classic.classic-names",
-                                                "test.common-lib", "test.escort-hull", "test.picture-pack", "test.rules-fixture",
-                                                "test.rules-golden"});
+                                                "test.common-lib", "test.escort-hull", "test.ui-fixture", "test.picture-pack",
+                                                "test.rules-fixture", "test.rules-golden"});
     CHECK(rows[0].enabled);
     CHECK(rows[0].order == 1);
     CHECK(rows[1].package == nullptr);

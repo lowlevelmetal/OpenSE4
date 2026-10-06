@@ -165,7 +165,8 @@ std::string packageHash(const std::vector<PackageFile>& files, bool classic) {
     std::vector<const PackageFile*> hashed;
     for (const PackageFile& f : files) {
         const std::string top = topFolder(f.path);
-        if (classic ? classicGamePath(f, dataFolder).empty() : (top == "assets" || top == "ui")) continue;
+        // Pictures and sounds, interface and text change nothing in a game.
+        if (classic ? classicGamePath(f, dataFolder).empty() : (top == "assets" || top == "ui" || top == "text")) continue;
         if (lower(f.path) == kIdentityFile) continue;  // what pack wrote about the rest
         hashed.push_back(&f);
     }
