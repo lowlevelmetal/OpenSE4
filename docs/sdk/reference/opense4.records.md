@@ -1080,7 +1080,7 @@ What it does as a weapon.
 |---|---|---|
 | `kind` | `str` | How it fires. |
 | `targets` | `List[str]` | What it can hit. |
-| `damage_at_range` | `List[int]` | Damage by range, from range 0. |
+| `damage_at_range` | `List[int]` | Damage by range, unmounted: the first entry at range 1 (the next square), the next at range 2, and so on (the data file's numbers in order). |
 | `damage_type` | `str` | Its damage type. |
 | `reload_rate` | `int` | Turns between shots. |
 | `modifier` | `int` | Its to-hit modifier. |

@@ -2718,7 +2718,7 @@ class HullFields(Entity):
 
     @property
     def can_have_aux_control(self) -> bool:
-        """An auxiliary control may stand in for the bridge."""
+        """A design may have at most one auxiliary control; when false their number is not checked."""
         return self._d['can_have_aux_control']
 
     @property
@@ -2738,23 +2738,23 @@ class HullFields(Entity):
 
     @property
     def max_engines(self) -> int:
-        """The most engines."""
+        """The most engines; 0 no limit."""
         return self._d['max_engines']
 
     @property
-    def max_percent_fighter_bays(self) -> int:
-        """The most space for fighter bays, in percent."""
-        return self._d['max_percent_fighter_bays']
+    def min_percent_fighter_bays(self) -> int:
+        """The least share of the hull's space a design gives fighter bays, in percent; 0 none."""
+        return self._d['min_percent_fighter_bays']
 
     @property
-    def max_percent_colony_modules(self) -> int:
-        """... for colony modules."""
-        return self._d['max_percent_colony_modules']
+    def min_percent_colony_modules(self) -> int:
+        """The least share of the hull's space a design gives colony modules, in percent; 0 none."""
+        return self._d['min_percent_colony_modules']
 
     @property
-    def max_percent_cargo(self) -> int:
-        """... for cargo."""
-        return self._d['max_percent_cargo']
+    def min_percent_cargo(self) -> int:
+        """The least share of the hull's space a design gives cargo space, in percent; 0 none."""
+        return self._d['min_percent_cargo']
 
 
 
@@ -5160,7 +5160,8 @@ class Weapon(Record):
 
     @property
     def damage_at_range(self) -> List[int]:
-        """Damage by range, from range 0."""
+        """Damage by range, unmounted: the first entry at range 1 (the next square), the next at range
+        2, and so on (the data file's numbers in order)."""
         return self._d['damage_at_range']
 
     @property
@@ -5309,7 +5310,7 @@ FIELDS: Dict[str, Tuple[str, ...]] = {
     'game_options': ('quadrant_type', 'all_systems_seen', 'omnipresent', 'finite_resources', 'event_frequency', 'max_event_severity', 'tech_cost', 'start_tech_level', 'tech_areas_allowed', 'starting_resources', 'racial_points', 'no_tactical_combat', 'complete_tech_tree', 'allow_gifts', 'allow_tech_trades', 'allow_intel', 'no_ruins', 'only_breathable', 'only_home_type', 'team_mode', 'allow_surrender', 'score_display', 'max_ships_per_player', 'max_units_per_player', 'ai_difficulty', 'ai_bonus', 'mod_options'),
     'happiness_model': ('id', 'name', 'description', 'max_positive_change', 'max_negative_change', 'triggers'),
     'happiness_trigger': ('trigger', 'change'),
-    'hull': ('id', 'name', 'short_name', 'description', 'code', 'type', 'tonnage', 'cost', 'engines_per_move', 'requirements', 'abilities', 'must_have_bridge', 'can_have_aux_control', 'min_life_support', 'min_crew_quarters', 'uses_engines', 'max_engines', 'max_percent_fighter_bays', 'max_percent_colony_modules', 'max_percent_cargo'),
+    'hull': ('id', 'name', 'short_name', 'description', 'code', 'type', 'tonnage', 'cost', 'engines_per_move', 'requirements', 'abilities', 'must_have_bridge', 'can_have_aux_control', 'min_life_support', 'min_crew_quarters', 'uses_engines', 'max_engines', 'min_percent_fighter_bays', 'min_percent_colony_modules', 'min_percent_cargo'),
     'intel_entry': ('project', 'target', 'target_planet', 'target_vehicle', 'third_empire', 'target_tech', 'progress', 'cost', 'problem'),
     'intel_project': ('id', 'name', 'description', 'group', 'cost', 'type', 'effect_amount', 'requirements'),
     'intel_project_order': ('project', 'target', 'target_planet', 'target_vehicle', 'third_empire', 'target_tech', 'progress'),

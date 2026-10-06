@@ -748,7 +748,7 @@ Resources capMaintenance(const Rules& r, const GameState& s, EmpireId e) {
     for (const Vehicle& v : s.vehicles) {
         if (v.owner != e || v.count <= 0 || !v.design.valid() || v.design.index() >= s.designs.size()) continue;
         const Design& d = s.design(v.design);
-        if (d.hull < r.data().vehicleSizes.size() && r.hull(d.hull).maxPercentColonyModules > 0) continue;
+        if (d.hull < r.data().vehicleSizes.size() && r.hull(d.hull).minPercentColonyModules > 0) continue;
         sum += economy::vehicleMaintenance(r, s, v);
     }
     return sum;

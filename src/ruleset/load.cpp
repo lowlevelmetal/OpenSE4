@@ -307,9 +307,9 @@ private:
         v.minCrewQuarters = r.int32("Requirement Min Crew Quarters", Need::Optional);
         v.usesEngines = r.boolean("Requirement Uses Engines", Need::Optional);
         v.maxEngines = r.int32("Requirement Max Engines", Need::Optional);
-        v.maxPercentFighterBays = r.int32("Requirement Pct Fighter Bays", Need::Optional);
-        v.maxPercentColonyModules = r.int32("Requirement Pct Colony Mods", Need::Optional);
-        v.maxPercentCargo = r.int32("Requirement Pct Cargo", Need::Optional);
+        v.minPercentFighterBays = r.int32("Requirement Pct Fighter Bays", Need::Optional);
+        v.minPercentColonyModules = r.int32("Requirement Pct Colony Mods", Need::Optional);
+        v.minPercentCargo = r.int32("Requirement Pct Cargo", Need::Optional);
         // Documented unit-only flags that the original never reads (spec 03 §2.2).
         r.str("Launched from Ship", Need::Optional);
         r.str("Launched from Planet", Need::Optional);

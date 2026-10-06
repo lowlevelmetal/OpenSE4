@@ -242,9 +242,9 @@ void hullDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
     } else {
         rules.emplace_back("Cannot carry engines");
     }
-    if (h.maxPercentFighterBays > 0) rules.push_back(std::format("Fighter bays: at least {}% of the hull", h.maxPercentFighterBays));
-    if (h.maxPercentColonyModules > 0) rules.push_back(std::format("Colony modules: at least {}% of the hull", h.maxPercentColonyModules));
-    if (h.maxPercentCargo > 0) rules.push_back(std::format("Cargo space: at least {}% of the hull", h.maxPercentCargo));
+    if (h.minPercentFighterBays > 0) rules.push_back(std::format("Fighter bays: at least {}% of the hull", h.minPercentFighterBays));
+    if (h.minPercentColonyModules > 0) rules.push_back(std::format("Colony modules: at least {}% of the hull", h.minPercentColonyModules));
+    if (h.minPercentCargo > 0) rules.push_back(std::format("Cargo space: at least {}% of the hull", h.minPercentCargo));
     for (const std::string& s : rules) ImGui::BulletText("%s", s.c_str());
     abilityList(ui, h.abilities, 100);
     if (st != DetailStyle::Compact && !h.description.empty()) {

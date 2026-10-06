@@ -78,8 +78,8 @@ Value hulls(const game::Rules& r) {
                           "abilities", abilityEntries(h.abilities))("must_have_bridge", Value(h.mustHaveBridge))(
                           "can_have_aux_control", Value(h.canHaveAuxControl))("min_life_support", num(h.minLifeSupport))(
                           "min_crew_quarters", num(h.minCrewQuarters))("uses_engines", Value(h.usesEngines))("max_engines", num(h.maxEngines))(
-                          "max_percent_fighter_bays", num(h.maxPercentFighterBays))(
-                          "max_percent_colony_modules", num(h.maxPercentColonyModules))("max_percent_cargo", num(h.maxPercentCargo))
+                          "min_percent_fighter_bays", num(h.minPercentFighterBays))(
+                          "min_percent_colony_modules", num(h.minPercentColonyModules))("min_percent_cargo", num(h.minPercentCargo))
                           .done());
     }
     return Value(std::move(out));

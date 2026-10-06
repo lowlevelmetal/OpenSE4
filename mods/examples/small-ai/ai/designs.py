@@ -51,12 +51,12 @@ def compose(role, parts, surface=None):
             return None
         # A hull made for colony modules if we have one (it asks for a share of its
         # space to be modules), else the smallest ship hull it fits in.
-        hulls = sorted(parts.hulls(), key=lambda h: (h.max_percent_colony_modules == 0, h.tonnage))
+        hulls = sorted(parts.hulls(), key=lambda h: (h.min_percent_colony_modules == 0, h.tonnage))
         for hull in hulls:
             base = crew(hull, parts)
             if None in base:
                 continue
-            if module.tonnage * 100 < hull.tonnage * hull.max_percent_colony_modules:
+            if module.tonnage * 100 < hull.tonnage * hull.min_percent_colony_modules:
                 continue      # not enough module for this hull's rule
             chosen = base + [module]
             for _ in range(min(max_engines(hull), 4)):
@@ -66,8 +66,8 @@ def compose(role, parts, surface=None):
                 return hull, chosen
         return None
     # Scouts and warships: hulls without a rule for colony modules, fighter bays or cargo.
-    plain = [h for h in parts.hulls() if h.max_percent_colony_modules == 0 and h.max_percent_fighter_bays == 0
-             and h.max_percent_cargo == 0]
+    plain = [h for h in parts.hulls() if h.min_percent_colony_modules == 0 and h.min_percent_fighter_bays == 0
+             and h.min_percent_cargo == 0]
     if not plain:
         return None
     if role == "scout":

@@ -417,7 +417,7 @@ const Rules& designRules() {
         freighter.tonnage = 300;
         freighter.enginesPerMove = 1;
         freighter.usesEngines = true;
-        freighter.maxPercentCargo = 21;
+        freighter.minPercentCargo = 21;
         rs.vehicleSizes.push_back(freighter);
 
         ruleset::RacialTrait fast;

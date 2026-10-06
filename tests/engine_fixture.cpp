@@ -300,10 +300,10 @@ ruleset::Ruleset buildEngineRuleset() {
     };
     auto& colonyHull = b.hull("Test Colony Hull", VehicleType::Ship, 150, {80, 0, 10}, {con});
     shipHull(colonyHull);
-    colonyHull.maxPercentColonyModules = 20;
+    colonyHull.minPercentColonyModules = 20;
     auto& transport = b.hull("Test Transport Hull", VehicleType::Ship, 200, {100, 0, 10}, {con});
     shipHull(transport);
-    transport.maxPercentCargo = 25;
+    transport.minPercentCargo = 25;
 
     // ---- A roomier start system so homeworlds have neighbours.
     for (auto& st : rs.systemTypes)
