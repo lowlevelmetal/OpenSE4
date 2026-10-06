@@ -479,7 +479,14 @@ def converter(section: str, row: Row, value: str) -> str:
     raise SystemExit(f"no converter for {where}")
 
 
-def param_hint(row: Row) -> str:
+# Parameters that take more than their field's type says (see SPECIAL and _stellar).
+SPECIAL_HINTS = {("tactical_order", "piece"): "Ref", ("tactical_order", "target"): "Ref",
+                 ("stellar_manipulation", "amount"): "Union[int, str]"}
+
+
+def param_hint(row: Row, section: str = "") -> str:
+    if (section, row.name) in SPECIAL_HINTS:
+        return SPECIAL_HINTS[(section, row.name)]
     ty = parse_type(row.type)
     if ty.base == "id":
         h = "Ref"
@@ -536,7 +543,8 @@ def gen_constructor(name: str, section: str, rows: list, params: list, doc: str,
     for i, r in enumerate(params):
         if i == keyword_only_after:
             sig.append("*")
-        sig.append(f"{r.name}: {param_hint(r)} = {signature_default(section, r)}")
+        hint = param_hint(r, section) if (section, r.name) in SPECIAL_HINTS else param_hint(r, kind_value or "")
+        sig.append(f"{r.name}: {hint} = {signature_default(section, r)}")
     out.append(f"\ndef {name}({', '.join(sig)}) -> Dict[str, Any]:\n")
     out.append(f'    """{wrapped(doc, "    ")}')
     pnames = {r.name for r in params}
@@ -561,7 +569,7 @@ def gen_constructor(name: str, section: str, rows: list, params: list, doc: str,
 
 
 CONSTRUCTOR_IMPORTS = ("from __future__ import annotations\n\n"
-                       "from typing import Any, Dict, List, Optional, Sequence\n\n"
+                       "from typing import Any, Dict, List, Optional, Sequence, Union\n\n"
                        "from . import enums\n"
                        "from ._values import (LocationLike, Ref, ResourcesLike, TargetLike, _bool, _enum, _enums, _id, _ids, _index,\n"
                        "                      _indices, _int, _int_or_text, _list_of_int, _list_of_text, _orders, _piece, _ref,\n"

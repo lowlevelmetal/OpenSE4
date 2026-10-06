@@ -438,9 +438,9 @@ class System(_records.SystemFields):
     """A star system. An unexplored one shows only where it is."""
 
     @property
-    def centre(self) -> Dict[str, Any]:
+    def centre(self) -> "Location":
         """The location of its centre sector."""
-        return {"system": self._d["id"], "x": CENTRE, "y": CENTRE}
+        return Location(self._v, {"system": self._d["id"], "x": CENTRE, "y": CENTRE})
 
     @property
     def planets(self) -> List["SpaceObject"]:
@@ -472,9 +472,9 @@ class SpaceObject(_records.SpaceObjectFields):
         return self._v.colony(self._d["id"])
 
     @property
-    def location(self) -> Dict[str, Any]:
+    def location(self) -> "Location":
         """Its sector, as a location."""
-        return {"system": self._d["system"], "x": self._d["sector"]["x"], "y": self._d["sector"]["y"]}
+        return Location(self._v, {"system": self._d["system"], "x": self._d["sector"]["x"], "y": self._d["sector"]["y"]})
 
     @property
     def is_planet(self) -> bool:
@@ -500,7 +500,7 @@ class Colony(_records.ColonyFields):
         return None if p is None else p.system
 
     @property
-    def location(self) -> Optional[Dict[str, Any]]:
+    def location(self) -> Optional["Location"]:
         """Its planet's sector, as a location."""
         p = self.planet
         return None if p is None else p.location

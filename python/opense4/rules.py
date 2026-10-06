@@ -76,6 +76,8 @@ class Rules(_records.RulesFields):
 
     @staticmethod
     def _at(table: List[Any], index: Any) -> Any:
+        if index is None:
+            return None
         if not isinstance(index, int) or isinstance(index, bool):
             index = index.id
         return table[index] if 0 <= index < len(table) else None
