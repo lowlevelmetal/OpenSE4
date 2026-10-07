@@ -72,6 +72,11 @@
   </content_rating>
 
   <releases>
+    <release version="1.12.0" date="2026-10-06" type="stable">
+      <description>
+        <p>The turn's Log opens after the ships finish moving, ships move at the original's pace with a speed slider, movement lines follow moving ships, the window can hide its title bar, saves and settings can live in OpenSE4's folder, and the modding SDK's documentation is complete; plays with 0.11.0 and reads its saves.</p>
+      </description>
+    </release>
     <release version="0.11.0" date="2026-10-06" type="development">
       <description>
         <p>A modding SDK: mod packages and data patches, new units with their own pictures and sounds, computer players and rules written in Python, interface additions, external bots and an arena, with a modder's guide and examples. Ships Hegemon, a much stronger computer opponent made with it; does not play with 0.10.0 over the network but reads its saves.</p>
