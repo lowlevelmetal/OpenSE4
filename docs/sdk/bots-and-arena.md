@@ -313,8 +313,9 @@ opense4-sdk run mymod -- --quick-start=Terran
 starts the game (`opense4` beside `opense4-sdk`, or `--client=EXE`) with the mod and the
 mods it requires (from the mods folder, the mods that come with OpenSE4, or `--mod=OTHER`
 and `--mods-dir=DIR`), and with `--ai=` for the mod's first computer player (or
-`--player=NAME`) so that the computer empires of new games are its. What follows `--` goes to the game as
-it is; `--data=DIR` becomes its `--classic-dir`.
+`--player=NAME`), so that a quick start's computer empires are its (`-- --quick-start`); a
+game set up in the client chooses its players under Computer Players in Game Setup. What
+follows `--` goes to the game as it is; `--data=DIR` becomes its `--classic-dir`.
 
 ## For SDK developers
 
