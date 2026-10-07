@@ -116,9 +116,9 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
   Scripts run in a sandbox inside the game, the same on every computer, so they work in
   network and e-mail games. External bots on ordinary Python can play too, with an arena
   and a training environment for machine learning. `opense4-sdk` makes, checks, tests and
-  packs mods, `opense4-datacheck` names the file, line and record of anything in a modded
-  data set it doesn't understand, and the modder's guide is
-  [docs/sdk/README.md](docs/sdk/README.md).
+  packs mods, and the modder's guide is [docs/sdk/README.md](docs/sdk/README.md).
+  `opense4-datacheck` names the file, line and record of anything in a data set it doesn't
+  understand, a classic mod's included.
 - **Hegemon, a stronger computer player** written with the SDK, comes with OpenSE4 as a
   mod: switch it on in the Mods window, then choose it under Computer Players in Game
   Setup or Quick Start.
@@ -198,7 +198,8 @@ OpenSE4 reads your installed copy of Space Empires IV Deluxe in place.
 
 - how to get the files, including on Linux and macOS;
 - how OpenSE4 finds them;
-- how to check a data set or a mod with `opense4-datacheck`.
+- how to check a data set or a classic mod with `opense4-datacheck` (mods made with the SDK
+  are checked with `opense4-sdk check`).
 
 ## Multiplayer
 
@@ -234,7 +235,7 @@ addition).
 ./build/debug/opense4                                # auto-detects a Steam install
 ./build/debug/opense4 --classic-dir=/path/to/se4     # or point at it
 ./build/debug/opense4 --quick-start=Terran           # skip the intro
-./build/debug/opense4-datacheck                      # validate an installed or modded data set
+./build/debug/opense4-datacheck                      # validate an installed data set (or a classic mod's)
 ./build/debug/opense4 --mod=path/to/a/mod            # play with a mod (docs/sdk/packages-and-data.md)
 ./build/debug/opense4 --load=/path/to/se4/SaveGame/GAME.gam   # play on a saved game of the original
 ./build/debug/opense4-convert --info GAME.gam        # describe a saved game of the original

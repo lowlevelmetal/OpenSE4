@@ -585,9 +585,14 @@ gets a warning.
 a rules mod without players, one game with its rules on) and plays each of its scenarios;
 `run` starts the game with the mod; `arena` plays computer players against each other;
 `bot` and `python` serve external bots ([bots-and-arena.md](bots-and-arena.md)).
-`publish` waits for the Steam release. Every command takes `--no-bundled-mods`, and
-`opense4-sdk --help` lists them all with their options (`arena`, `test`, `run`, `env-host`,
-`bot` and `python` also take `--help` of their own).
+`publish` waits for the Steam release. Every command takes `--no-bundled-mods`.
+`opense4-sdk --help` lists the commands, and `opense4-sdk <command> --help` (or
+`opense4-sdk help <command>`) one command's options.
+
+`new` names the mod with `--id=ID` and `--name=NAME`. `new --from-example` finds the
+example mods in `sdk/examples` beside `opense4-sdk` (in a build of the source tree,
+`mods/examples`); `--examples-dir=DIR` or the environment variable `OPENSE4_SDK_EXAMPLES`
+names another folder.
 
 ## Example: a new hull with pictures
 

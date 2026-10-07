@@ -130,7 +130,7 @@ OpenSE4 also understands options on its command line, for example:
 |---|---|
 | `--classic-dir=FOLDER` | Use the game copy in that folder. |
 | `--renderer=opengl` | Use the OpenGL renderer instead of Vulkan (`vulkan` and `auto` work too). |
-| `--fullscreen`, `--size=1920x1080` | Start in borderless fullscreen, or with a window of that size. |
+| `--fullscreen`, `--size=1920x1080`, `--no-vsync` | Start in borderless fullscreen, or with a window of that size; draw without waiting for the screen's refresh. |
 | `--no-audio` | Start without sound or music. |
 | `--quick-start[=RACE]` | Skip the title screen and start a quick game, with `--seed`, `--systems`, `--empires` and `--turn-style` to set it up. |
 | `--tutorial=LESSON`, `--training=GAME`, `--manual` | Start a lesson or a training game, or open this manual. |

@@ -42,6 +42,7 @@ python -m opense4.bot admiral:Admiral --path mymod/ai --port 6722 --slot 0
 - `--reconnect` connects again whenever the game ends a connection, for hosts that run
   once per turn (play by e-mail below). Stop the bot with Ctrl+C.
 - `--wait=SEC` keeps trying to connect while the game is not listening yet (default 30).
+- `--name=NAME` is the bot's name in the game's log (default: its class's name).
 
 The bot needs OpenSE4's `opense4` package on its path. In a copy of the source code that
 is the `python` folder (`PYTHONPATH=python`). A release builds the package into its
@@ -246,7 +247,8 @@ game.close()
   reached over the external bots' connection on this computer, with a token of its own. It
   is found as `Game(sdk=...)`, else `OPENSE4_SDK`, else `opense4-sdk` on `PATH`; the game
   folder and mods are `data=`, `mods=` and `mods_dir=` (default: the installed game).
-  `log=FILE` keeps its log.
+  `log=FILE` keeps its log. `opense4-sdk env-host --help` lists the options `Game` gives it
+  (the opponents as `--opponent=SPEC`, one per other empire).
 
 **Training a machine-learning player.** The environment has the shape most reinforcement
 learning libraries expect: wrap it in their environment class (an observation made from
