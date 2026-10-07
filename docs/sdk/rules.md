@@ -242,6 +242,9 @@ A mod declares an ability name in a data patch ([packages-and-data.md](packages-
 other, and gives it an effect in a hook. The rules golden mod's field batteries:
 
 ```python
+from opense4 import rules
+
+
 @rules.on("empire_end_of_turn", step="supply", when="after")
 def field_batteries(game, empire, step, when, fx):
     for raw in game.raw["vehicles"]:
@@ -280,6 +283,9 @@ default = 1                    # without a default an int, bool or text argument
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.order_check("overcharge")
 def can_overcharge(game, order):
     if order.target.supply < 10 * order.args["power"]:
@@ -332,9 +338,18 @@ chance = 25                    # percent per game turn, 0 to 100
 target = "vehicle"             # "empire", "colony", "vehicle", "system" or "none"
 first_turn = 3                 # not rolled before this game turn
 option = "storms"              # optional: a switch of the mod's options that turns it on
+
+[[rules.options]]              # that switch (see "Game options")
+name = "storms"
+label = "Dust storms"
+type = "bool"
+default = true
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.event("dust_storm")
 def dust_storm(game, event, fx):
     fx.damage(event.target_object, 3 + game.rng.below(5), "Caught in a dust storm.")
@@ -359,6 +374,9 @@ type = "Mod - Data Theft"
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.intel_project("Mod - Data Theft")
 def data_theft(game, project, fx):
     taken = fx.add_resources(project.target, minerals=-project.amount)
@@ -408,9 +426,18 @@ default = 90
 name = "relics"
 label = "The relics were gathered."    # the reason the game ends with
 option = "relic_victory"               # optional: a switch of the mod's options that turns it on
+
+[[rules.options]]                      # that switch (see "Game options")
+name = "relic_victory"
+label = "Win by gathering relics"
+type = "bool"
+default = true
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.victory("relics")
 def relics(game):
     for e in game.empires:

@@ -206,7 +206,7 @@ of the run played again (`--replay`) to the same checksum.
 
 `opense4.env` plays one empire of a game step by step, for programs that learn to play:
 
-```python
+```python no-run
 from opense4 import env
 
 game = env.Game(seed=7, opponents=["builtin"], turns=200, builtin=("economy",))
@@ -284,7 +284,7 @@ test` `game_view(empire=0)` and `game_rules()` give the view and the rules view 
 game of the mod's data set (two computer empires from the seed), so a test can call its
 player on real data:
 
-```python
+```python no-run
 from opense4 import testing
 from admiral import Admiral
 

@@ -223,10 +223,11 @@ A script AI controls an empire completely:
 - **Optional parts:** any callback left out falls back to the built-in AI for that decision;
   a script that overrides nothing plays exactly the built-in AI's game.
 
-### 6.2 The API, sketched
+### 6.2 The API
 
 ```python
 from opense4 import ai, cmd, order
+
 
 class Admiral(ai.Player):
     """A computer player that keeps the classic economy and plays its own war."""
@@ -237,10 +238,13 @@ class Admiral(ai.Player):
     def orders(self, view, orders):
         for fleet in view.my.fleets:
             target = self.pick_target(view, fleet)
-            if target:
+            if target is not None:
                 orders.add(cmd.give(fleet, [order.attack(vehicle=target)]))
         # anything else: the built-in Defense, Exploration, Supply... ministers
         orders.extend(ai.builtin.orders(view, skip=["attack"]))
+
+    def pick_target(self, view, fleet):
+        return view.galaxy.nearest(fleet, view.enemy_vehicles)   # the fewest jumps away
 
     def colony_type(self, view, question):
         return "Research" if "Research" in question.choices else None
@@ -252,8 +256,11 @@ class Admiral(ai.Player):
                 orders.fire(piece, target)
 ```
 
-As built: docs/sdk/python-api.md describes the package, docs/sdk/ai-protocol.md the
-messages between it and the engine.
+The outline's sketch, completed with its `pick_target`, is a working player of the package
+as built: the SDK's tests play it, as they play every complete example of the docs
+(`tests/sdk/python/check_doc_snippets.py`). [docs/sdk/python-api.md](sdk/python-api.md)
+describes the package and [docs/sdk/ai-protocol.md](sdk/ai-protocol.md) the messages
+between it and the engine.
 
 - **The view:**
   - `view` is the empire's own knowledge, made by `game::redactForEmpire`: what a human

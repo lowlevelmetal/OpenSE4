@@ -87,7 +87,7 @@ component or hull, combined as the ability combines.
 Reading costs budget: 5 bytecodes for each value the engine builds. In a loop over many
 things, read the maps:
 
-```python
+```python fragment
 for raw in game.raw["vehicles"]:              # every vehicle, as maps
     if raw["owner"] != empire.id or not raw["damage"]:
         continue
@@ -116,7 +116,7 @@ only that mod sees. Change it in place; what it holds when the function returns 
 (unless the function failed), saved with the game, sent to the players' computers and
 checksummed ([rules.md](../rules.md#mod-data)).
 
-```python
+```python fragment
 # scripts/menders.py: how many components an empire's crews mended in the game.
 empire.mod_data["mended"] = empire.mod_data.get("mended", 0) + mended
 ```
@@ -194,6 +194,9 @@ label = "The great archive was completed."
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.order_check("survey")
 def can_survey(game, order):
     if order.target.supply < 50:

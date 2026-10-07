@@ -2,16 +2,23 @@
 // checks and passes its own tests with opense4-sdk on our fixture data (those made for a
 // classic data set only show that their patches read), and on the installed game when
 // OPENSE4_CLASSIC_DATA is set; new --from-example copies one; the API reference and the
-// examples' pictures and sounds are those their tools make; and the guide's links lead
-// somewhere.
+// examples' pictures and sounds are those their tools make; the guide's links lead
+// somewhere; and the docs' TOML and JSON examples read as the files they show
+// (the Python examples are checked in test_sdk_python.cpp).
 
 #include "bots_fixture.hpp"
 #include "mod_fixture.hpp"
 
+#include "mods/manifest.hpp"
 #include "mods/package.hpp"
+#include "mods/patch.hpp"
 #include "ruleset/ruleset.hpp"
+#include "script/json.hpp"
+#include "sdk/scenario.hpp"
+#include "sdk/ui.hpp"
 
 #include <doctest/doctest.h>
+#include <toml++/toml.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -281,4 +288,141 @@ TEST_CASE("sdk guide: the links of docs/sdk lead to files and headings that are 
         }
     }
     CHECK(checked > 100);
+}
+
+namespace {
+
+// A fenced block of a Markdown file: its first line, language, the words after the
+// language (`fragment`: an excerpt, not checked) and its text.
+struct CodeBlock {
+    fs::path file;
+    int line = 0;
+    std::string language;
+    std::vector<std::string> words;
+    std::string text;
+};
+
+std::vector<CodeBlock> codeBlocks(const fs::path& file) {
+    std::vector<CodeBlock> out;
+    const std::vector<std::string> all = lines(slurp(file));
+    for (size_t i = 0; i < all.size(); ++i) {
+        const size_t indent = all[i].find_first_not_of(' ');
+        if (indent == std::string::npos || all[i].compare(indent, 3, "```") != 0) continue;
+        CodeBlock b{file, static_cast<int>(i + 1), {}, {}, {}};
+        std::istringstream info(all[i].substr(indent + 3));
+        info >> b.language;
+        for (std::string w; info >> w;) b.words.push_back(w);
+        for (++i; i < all.size(); ++i) {
+            const std::string& l = all[i];
+            const size_t at = l.find_first_not_of(' ');
+            if (at != std::string::npos && l.compare(at, 3, "```") == 0) break;
+            b.text += (l.size() >= indent && l.find_first_not_of(' ') >= indent ? l.substr(indent) : l) + "\n";
+        }
+        out.push_back(std::move(b));
+    }
+    return out;
+}
+
+// The SDK's documentation: docs/sdk, docs/MODDING_SDK.md and the mods' READMEs.
+std::vector<fs::path> sdkMarkdown() {
+    std::vector<fs::path> files{sourceRoot() / "docs" / "MODDING_SDK.md"};
+    for (const fs::path& top : {sourceRoot() / "docs" / "sdk", sourceRoot() / "mods"})
+        for (const auto& e : fs::recursive_directory_iterator(top))
+            if (e.path().extension() == ".md") files.push_back(e.path());
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+// What a TOML example is, from its top-level keys: an interface file (ui/*.toml: arrays
+// of [[order]], [[panel]]...), a text file (text/<language>.toml: dotted keys), a manifest
+// (mod.toml), a scenario or a data patch.
+enum class TomlKind { Ui, Text, Manifest, Scenario, Patch };
+
+TomlKind tomlKind(const toml::table& t) {
+    for (const char* key : {"order", "panel", "column", "empire_page"})
+        if (t.get_as<toml::array>(key)) return TomlKind::Ui;
+    for (const auto& [key, value] : t) {
+        if (value.is_string() && key.str().find('.') != std::string_view::npos) return TomlKind::Text;
+        if (value.is_table() && (key == "order" || key == "option" || key == "panel" || key == "column" || key == "page" || key == "scenario"))
+            return TomlKind::Text;
+    }
+    const auto* ai = t.get_as<toml::table>("ai");
+    if (t.contains("mod") || t.contains("requires") || t.contains("load") || t.contains("rules") || (ai && ai->contains("players")))
+        return TomlKind::Manifest;
+    if (t.contains("title") || t.contains("setup") || t.contains("objective")) return TomlKind::Scenario;
+    if (t.contains("order") || t.contains("panel") || t.contains("column") || t.contains("empire_page")) return TomlKind::Ui;
+    return TomlKind::Patch;
+}
+
+// The problems of a TOML example, read as the file it shows by the parser of that file.
+std::vector<std::string> tomlProblems(const std::string& text, const std::string& where) {
+    toml::table t;
+    try {
+        t = toml::parse(text, std::string_view(where));
+    } catch (const toml::parse_error& e) {
+        return {std::format("{}: not TOML: {}", where, e.description())};
+    }
+    switch (tomlKind(t)) {
+    case TomlKind::Manifest: {
+        // Parts of a manifest get a [mod] table of their own.
+        const std::string whole = t.contains("mod") ? text : "[mod]\nid = \"doc.example\"\nname = \"Example\"\nversion = \"1.0.0\"\napi = 1\n\n" + text;
+        auto m = mods::parseManifest(whole, where);
+        return m ? std::vector<std::string>{} : m.error();
+    }
+    case TomlKind::Scenario: {
+        const std::string whole = t.contains("title") ? text : "title = \"Example\"\n\n" + text;
+        auto s = sdk::parseScenario(whole, where, "doc.example", "example");
+        return s ? std::vector<std::string>{} : s.error();
+    }
+    case TomlKind::Ui: {
+        auto u = sdk::parseUiFile(text, where, "doc.example");
+        return u ? std::vector<std::string>{} : u.error();
+    }
+    case TomlKind::Text: {
+        auto u = sdk::parseUiTexts(text, where);
+        return u ? std::vector<std::string>{} : u.error();
+    }
+    case TomlKind::Patch: {
+        std::vector<std::string> errors;
+        const mods::Origin origin{"doc.example", where, false};
+        if (auto root = mods::parsePatchToml(text, origin, errors)) {
+            mods::PatchSet set;
+            mods::parsePatch(*root, origin, set, errors);
+        }
+        return errors;
+    }
+    }
+    return {};
+}
+
+} // namespace
+
+TEST_CASE("sdk guide: the TOML and JSON examples of the docs read as the files they show") {
+    int toml = 0, json = 0;
+    for (const fs::path& file : sdkMarkdown()) {
+        for (const CodeBlock& b : codeBlocks(file)) {
+            const std::string where = std::format("{}:{}", fs::relative(file, sourceRoot()).generic_string(), b.line);
+            if (b.language != "toml" && b.language != "json") continue;
+            const bool fragment = b.words.size() == 1 && b.words[0] == "fragment";
+            CHECK_MESSAGE((b.words.empty() || fragment), where << ": unknown words after the language (none, or fragment)");
+            if (fragment) continue;
+            if (b.language == "toml") {
+                ++toml;
+                for (const std::string& p : tomlProblems(b.text, where)) CHECK_MESSAGE(false, where << ": " << p);
+                continue;
+            }
+            // JSON: one value, or one per line (a conversation, a list of commands).
+            ++json;
+            if (script::parseJson(b.text)) continue;
+            int n = 0;
+            for (const std::string& l : lines(b.text)) {
+                ++n;
+                if (l.find_first_not_of(" \t") == std::string::npos) continue;
+                auto v = script::parseJson(l);
+                CHECK_MESSAGE(v.has_value(), where << ": line " << n << " of the block is not JSON: " << (v ? std::string{} : v.error().describe()));
+            }
+        }
+    }
+    CHECK(toml > 80);
+    CHECK(json > 40);
 }

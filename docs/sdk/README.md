@@ -72,3 +72,12 @@ pages in the Empires window, text and key bindings) are described in
 
 The API reference is made by `python3 tools/gen_sdk_reference.py` from `python/opense4`;
 the SDK's tests fail when it is out of date.
+
+The examples in these pages, in [MODDING_SDK.md](../MODDING_SDK.md) and in the mods'
+READMEs are checked by the SDK's tests too. A `toml` block must read as the file it shows (a
+manifest, a data patch, a `ui/` or `text/` file, a scenario) and a `json` block as JSON. A
+`python` block is a complete module: it must run with the `opense4` package on the path, and
+the computer players it defines play a turn's planning calls on a test game's view
+(`tests/sdk/python/check_doc_snippets.py`). A block marked `python no-run` needs the game or
+a mod's other modules and must only compile; one marked `fragment` (after its language) is
+an excerpt and is not checked.

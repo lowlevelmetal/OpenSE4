@@ -109,7 +109,7 @@ Line by line:
 
 `tests/test_settler.py`, run in the game's own Python on a new game of your data set:
 
-```python
+```python no-run
 from opense4 import testing
 
 from settler import Settler

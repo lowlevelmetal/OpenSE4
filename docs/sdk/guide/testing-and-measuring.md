@@ -86,7 +86,7 @@ game at all ([test_planner.py](../../../mods/examples/classic-ai-research/tests/
 `fx` that have what it uses, and check what it asked for
 ([test_menders.py](../../../mods/examples/new-ability/tests/test_menders.py)):
 
-```python
+```python fragment
 class Effects:
     def __init__(self):
         self.repairs = []
@@ -189,7 +189,7 @@ waits (up to its time limit per request, `--bot-timeout`).
 
 `opense4.env` plays one empire of a game step by step, for players that learn:
 
-```python
+```python no-run
 from opense4 import env
 
 game = env.Game(seed=7, opponents=["builtin"], turns=200, builtin=("economy",))
