@@ -1,8 +1,14 @@
-# Modding SDK: outline
+# Modding SDK
 
-Status: being built (from 2026-10-05). Section 14 records the decisions the
-implementation follows; where it differs from the outline, section 14 wins. This fills in
-the third goal under "Future goals" in [PARITY_PLAN.md](PARITY_PLAN.md).
+Status: built, and released with OpenSE4 0.11.0 (2026-10-06): tiers 0 to 4 (milestones S0
+to S5, section 12). Publishing to the Steam Workshop (S6) waits for the Steam release.
+This is the SDK's design document. Sections 1 to 13 are the outline it was built from
+(2026-10-05), with "As built" notes that say where each part ended up and how it differs,
+and with what the outline said of the engine of its day, or of commands and names that
+changed, brought up to date. Section 14 records the decisions the implementation made;
+where it differs from the outline, section 14 wins. The modder's documentation, written for the SDK
+as it is, starts at [docs/sdk/README.md](sdk/README.md). The SDK fills in the third goal
+under "Future goals" in [PARITY_PLAN.md](PARITY_PLAN.md).
 
 The SDK aims to let players:
 - **write their own computer players**, with full control: everything a human player can
@@ -58,7 +64,7 @@ Each tier works without the ones after it, and each can ship on its own.
 | 3 Rules | Python hooks in turn processing; new abilities, events, orders, options, victory conditions, galaxy generators | Yes | Yes |
 | 4 Interface | New panels and reports, extra columns, key bindings | Yes | No |
 
-AI comes before rules because the engine already has the right shape for it. A computer
+All five tiers are built (section 12). AI comes before rules because the engine already has the right shape for it. A computer
 player's planner is a function from the game to a list of commands, and every command
 goes through `game::apply`. Rules hooks need more engine work (sections 6 and 7).
 
@@ -75,6 +81,7 @@ better-carriers/
   scripts/          rules hooks (Python)
   ui/               interface extensions
   text/             strings and translations
+  scenarios/        scenarios (added while building the rules tier, section 7.4)
   tests/            the mod's own tests, run by `opense4-sdk test`
 ```
 
@@ -98,15 +105,19 @@ after = ["example.common-lib"]      # load order hints; the user can reorder
   settings. A later mod wins.
 - **Identity:** the manifest, plus a hash of every file except `assets/`, `ui/` and
   `text/`, gives the mod's identity. A game's mod set (id, version, hash) is saved with the game, sent in
-  the lobby and checked when a player joins, next to today's data-set identity
+  the lobby and checked when a player joins, next to the data-set identity
   (`game::dataSetIdentity`).
 - **Classic mods** (a folder of replacement data files and pictures) load as a package
   without a manifest, so existing SE4 mods keep working.
+- **As built:** [docs/sdk/packages-and-data.md](sdk/packages-and-data.md) describes the
+  package, the manifest, where mods are found (the player's mods folder, then the mods that
+  come with OpenSE4 in `mods/` beside the programs), load order and identity. The game's own
+  settings take no part in the load order: a mod set is the install and the enabled mods.
 
 ## 4. Assets (tier 0)
 
-**Engine work: a layered file system.** `assets::InstallFiles` indexes one folder, and
-only fonts and pointers honour `Path.txt`'s mod folder. It becomes a stack of layers: the
+**Engine work: a layered file system.** `assets::InstallFiles` indexed one folder, and
+only fonts and pointers honoured `Path.txt`'s mod folder. It became a stack of layers: the
 install first, then each mod's `assets/`. Every lookup goes through the stack: pictures,
 sounds, music, fonts and pointers. Nothing is ever written into the install.
 
@@ -119,8 +130,8 @@ sounds, music, fonts and pointers. Nothing is ever written into the install.
   of its own), event pictures, flags, race portraits.
 - **Sounds:** weapon sounds are named by the weapon; the interface sounds get names a
   mod can replace.
-- **Music:** playlists in a mod's settings. Today music comes only from the base
-  `Music/` folder.
+- **Music:** a mod adds tracks under `Music/`; the playlists are those `Settings.txt` names,
+  which a settings patch changes.
 
 **Beyond the original's formats:**
 - PNG with real transparency, next to BMP with black as transparent. stb already decodes
@@ -132,6 +143,9 @@ sounds, music, fonts and pointers. Nothing is ever written into the install.
 
 **Checks:** `opense4-sdk check` reports missing pictures, wrong sizes, unsupported
 formats and files no record uses.
+
+**As built:** [packages-and-data.md](sdk/packages-and-data.md) "Pictures, sounds, music and
+fonts" and [the guide's assets chapter](sdk/guide/assets.md).
 
 ## 5. Data (tier 1)
 
@@ -183,20 +197,25 @@ built into the rules everywhere (question 6).
 **Engine work:**
 - **Patches:** the ruleset loader applies patches after reading the classic files, and
   records where each value came from.
-- **New ability names:** abilities are a closed list today (`OPENSE4_ABILITIES`), and an
-  unknown name is a load error. A mod may declare new ability names with how values
+- **New ability names:** abilities were a closed list (`OPENSE4_ABILITIES`), and an
+  unknown name a load error. A mod may declare new ability names with how values
   combine (sum, highest, lowest), so data can carry them and scripts can read them
   (tier 3 gives them effects). Unknown names that no mod declares stay an error.
-- **Identity:** `dataSetIdentity` also covers the AI's data tables. Today it misses the
+- **Identity:** `dataSetIdentity` also covers the AI's data tables. It used to miss the
   `Ai/` folder and the race AI files, which already decide how computer players behave.
-  That gap is worth closing even before the SDK.
+- **As built:** all three (the identity with save format 9, section 14.5): the patch
+  format, its tables and operations in [packages-and-data.md](sdk/packages-and-data.md)
+  "Data patches", and a chapter per table group in
+  [the guide to the data files](sdk/guide/data/README.md). Generators are `data/*.py`
+  ([rules.md](sdk/rules.md) "Data generators").
 
 ## 6. Computer players (tier 2)
 
 ### 6.1 What "full control" means
 
 A script AI controls an empire completely:
-- **Every command a human has:** all 54 kinds of `cmd::Command`, among them orders, fleets,
+- **Every command a human has:** all 54 kinds of `cmd::Command` (55 as built, with the mods'
+  own orders, `mod_command`; [commands.md](sdk/commands.md)), among them orders, fleets,
   construction queues, designs, research, intelligence, diplomacy, empire settings and
   the Scrap window. Also the AI-only orders such as Seek.
 - **Every decision the built-in AI makes**, each as a callback:
@@ -287,9 +306,9 @@ between it and the engine.
 |---|---|---|
 | How | Inside OpenSE4, in the sandbox | A separate Python program that connects to the game |
 | For | Mods and the Workshop; playing against it | Research, machine learning, heavy computation |
-| Libraries | The standard library (and what the runtime can offer, question 1) | Any (numpy, torch, …) |
+| Libraries | What the game's MicroPython offers (question 1, answered in section 14.1; [runtime.md](sdk/runtime.md)) | Any (numpy, torch, …) |
 | Limits | Time and memory budget per turn; on overrun or error the built-in AI takes over for that turn and the log says why | None; the host's turn timer applies |
-| Network games | Runs on the host only | Joins as a player, like `opense4-server bot` today |
+| Network games | Runs on the host only | Connects to the host with a token ([ai-protocol.md](sdk/ai-protocol.md) §10) |
 
 - **Same API in both places:** the same `opense4.ai` package runs inside the game and as
   an external bot, so an AI can be developed outside and shipped inside.
@@ -303,7 +322,7 @@ between it and the engine.
 - **The arena:**
 
   ```sh
-  opense4-sdk arena --ai mine.py --ai builtin --games 200 --turns 150
+  opense4-sdk arena --mod=mymod --ai=me.mymod:Admiral --ai=builtin --games=200 --turns=150
   ```
 
   It plays headless games in parallel (the engine has no window and already plays turns
@@ -313,7 +332,9 @@ between it and the engine.
   - reset with a seed;
   - each step takes a turn's commands and returns the next view and the score.
 - **Replays and logs:** a game played in the arena opens in the client, with the AI's notes
-  and its decision journal.
+  and its decision journal. (As built: each game's final state is a saved game the client
+  opens, `--replay` plays a game again and compares its final checksum with the recorded
+  one, and each game has its log.)
 - **Tests:** `opense4-sdk test` runs the mod's own tests against fixed seeds.
 - **As built:** [docs/sdk/bots-and-arena.md](sdk/bots-and-arena.md) describes external
   bots, the arena, the training environment, `opense4-sdk test` and `run`.
@@ -413,7 +434,12 @@ computer, as the engine itself does. The sandbox enforces it:
 - **No clock, files, threads or network.** Hash randomisation is fixed, so set order is
   the same everywhere.
 - **Golden tests:** `opense4-sdk test` plays a mod's games twice and on both the native
-  and the 32-bit build, and compares checksums.
+  and the 32-bit build, and compares checksums. (As built: the SDK's own golden tests play
+  games with script players and with a rules mod on every platform CI builds, 32-bit ARM
+  and Windows included (`tests/sdk/test_sdk_players_golden.cpp`,
+  `test_sdk_rules_golden.cpp`, `test_script_determinism.cpp`); `opense4-sdk test` plays a
+  mod's players, rules and scenarios once and fails on any script error, and the arena's
+  `--replay` plays a game again to the same checksum.)
 
 ### 7.4 As built (S4)
 
@@ -440,13 +466,13 @@ computer, as the engine itself does. The sandbox enforces it:
   generators** in `data/*.py`.
 - **Budgets and failures**: per call and per game turn (game options); a failing function
   is skipped for the turn, and three failures turn a mod's rules off for the turn.
-- **Not yet**: hooks inside a combat round (question 4 stays open: battles have hooks
+- **Left out**: hooks inside a combat round (question 4 stays open: battles have hooks
   around them only). The buttons for mod orders, the mods' options in the setup screens
   and the lobby, and starting scenarios came with the interface tier (section 8).
 
 ## 8. Interface (tier 4)
 
-Later and smaller:
+The last tier, and the smallest:
 - **Panels and reports:** a mod adds a panel to a report, a column to a list, a page to the
   Empires window, or a button for its own order.
 - **Text:** strings and translations.
@@ -485,11 +511,18 @@ computer and never changes the game except through commands.
   game then shows the original's pictures.
 - **Network and e-mail games:**
   - The host's mod set must match every player's, except asset and interface mods.
-  - With the Workshop, a joining player is offered the missing mods.
+  - With the Workshop, a joining player is offered the missing mods (waits for the
+    Workshop, section 14.7).
   - Script AIs run on the host.
 - **Export to the original** stays possible while every change is something the original
   understands (data within its format). It is refused, with the reason, when a game uses
   new abilities, scripts or mod state.
+- **As built:** save format 9 and protocol 7 (section 14.5);
+  [the guide's multiplayer chapter](sdk/guide/multiplayer-and-saves.md),
+  [packages-and-data.md](sdk/packages-and-data.md) "Multiplayer and saved games" and
+  "Saving for the original" (a game is refused for the original when its mods declare
+  abilities, carry computer players or rules scripts, or give a design a picture the
+  install lacks), and [MULTIPLAYER.md](MULTIPLAYER.md).
 
 ## 10. Security
 
@@ -501,6 +534,8 @@ computer and never changes the game except through commands.
   the sandbox and are never installed or started by a mod.
 - **Package checks:** the client shows what a mod contains (assets, data, AI, rules,
   interface) before enabling it.
+- **As built:** [runtime.md](sdk/runtime.md) describes the sandbox and its limits; the Mods
+  window lists what each mod holds and whether it changes the game.
 
 ## 11. The SDK itself
 
@@ -527,12 +562,13 @@ computer and never changes the game except through commands.
   - "the classic AI with my own research";
   - a complete small AI.
 - **A mod manager in the client:** enable, order, inspect, and per game.
-- **As built (2026-10-05):**
+- **As built (0.11.0):**
   - the documentation: the modder's guide, its tutorials and the reference pages, indexed in
     [docs/sdk/README.md](sdk/README.md); the guide to the data files has a chapter per table
     group, written from `docs/spec/` and the loader; the API reference
     ([docs/sdk/reference](sdk/reference/README.md)) is generated from `python/opense4` by
-    `tools/gen_sdk_reference.py`, and the SDK's tests fail when it is out of date;
+    `tools/gen_sdk_reference.py`, and the SDK's tests fail when it is out of date, or when
+    an example in the docs no longer reads, compiles or runs;
   - the example mods in [mods/examples](../mods/examples/README.md): `new-hull` (a hull with
     its pictures and a component), `balance` (data patches with `cascade`),
     `classic-ai-research` (the classic AI with its own research), `small-ai` (a complete
@@ -549,24 +585,34 @@ computer and never changes the game except through commands.
   - `publish` waits for the Steam release (section 14.7);
   - external bots connect to the dedicated server, the client and play-by-e-mail hosts over
     TCP with a token (docs/sdk/ai-protocol.md §10), and `opense4.env` is the step-by-step
-    training environment (section 6.4).
+    training environment (section 6.4), with `opense4-sdk env-host` as its engine;
+  - the mod manager is the title screen's **Mods** window: it lists the mods found, what
+    each holds and whether it changes the game, switches them on and off, orders them, and
+    applies the choice to the next game; a saved game remembers its mods, and loading one
+    offers to read the data again with them;
+  - a mod that comes with OpenSE4: **Hegemon** ([mods/hegemon](../mods/hegemon/README.md)), a
+    complete computer player written with the SDK, in `mods/` beside the programs (the
+    folders `mods/bundled.txt` names), off until the player switches it on in the Mods
+    window.
 
 ## 12. Milestones
 
-| | Milestone | Contents |
-|---|---|---|
-| S0 | Foundations | Layered file system; manifests and mod identity in saves, the lobby and `dataSetIdentity` (with the AI tables); `opense4-sdk check`; the mod manager. No scripting. |
-| S1 | Units and assets | Data patches (add, change, remove) for every table; new ability names; PNG, larger pictures, OGG; reference checks; classic mods as packages. |
-| S2 | Runtime | A prototype of the Python runtime on every platform (question 1), measured against the built-in AI's workload; the sandbox and its limits. |
-| S3 | Computer players | Controllers per empire; the AI API and view; every decision callback; script memory; the built-in AI as a library; the decision journal; external bots; the arena. |
-| S4 | Rules | Hooks; the effects API; mod state; abilities with effects; mod orders, events, options, victory conditions; generators and scenarios. |
-| S5 | Interface | Panels, columns, buttons for mod orders, text, key bindings. Built: docs/sdk/interface.md. |
-| S6 | Workshop | Publishing and subscribing with the Steam goal; mod sets offered on joining. |
+| | Milestone | Contents | Status |
+|---|---|---|---|
+| S0 | Foundations | Layered file system; manifests and mod identity in saves, the lobby and `dataSetIdentity` (with the AI tables); `opense4-sdk check`; the mod manager. No scripting. | Done (0.11.0): [packages-and-data.md](sdk/packages-and-data.md) |
+| S1 | Units and assets | Data patches (add, change, remove) for every table; new ability names; PNG, larger pictures, OGG; reference checks; classic mods as packages. | Done (0.11.0): [packages-and-data.md](sdk/packages-and-data.md), [the data files](sdk/guide/data/README.md) |
+| S2 | Runtime | A prototype of the Python runtime on every platform (question 1), measured against the built-in AI's workload; the sandbox and its limits. | Done (0.11.0), on MicroPython (section 14.1): [runtime.md](sdk/runtime.md) |
+| S3 | Computer players | Controllers per empire; the AI API and view; every decision callback; script memory; the built-in AI as a library; the decision journal; external bots; the arena. | Done (0.11.0): [python-api.md](sdk/python-api.md), [ai-protocol.md](sdk/ai-protocol.md), [bots-and-arena.md](sdk/bots-and-arena.md) |
+| S4 | Rules | Hooks; the effects API; mod state; abilities with effects; mod orders, events, options, victory conditions; generators and scenarios. | Done (0.11.0), without hooks inside a combat round (question 4): [rules.md](sdk/rules.md) |
+| S5 | Interface | Panels, columns, buttons for mod orders, text, key bindings. | Done (0.11.0): [interface.md](sdk/interface.md) |
+| S6 | Workshop | Publishing and subscribing with the Steam goal; mod sets offered on joining. | Waits for the Steam release (section 14.7); `opense4-sdk pack` makes the package |
 
 Each milestone ends with the golden checksums unchanged for unmodded games, and with
 example mods and their tests in CI.
 
 ## 13. Open questions
+
+The questions as the outline asked them, each with its answer or where it stands (0.11.0).
 
 1. **The Python runtime.** The main decision:
    - **Native CPython embedded in the game** is fast and complete. But:
@@ -580,24 +626,54 @@ example mods and their tests in CI.
      - It can be limited by memory and instruction count.
 
      It is slower, though, and native modules such as numpy are only available if they
-     are built for it. Which runtime covers Windows 7 and 32-bit ARM is to be checked.
-   - **Recommendation, to be confirmed by the S2 prototype:**
+     are built for it. Which runtime covers Windows 7 and 32-bit ARM was to be checked.
+   - **The outline's recommendation:**
      - WebAssembly for everything that runs inside the game;
      - ordinary Python for external bots.
+
+   **Answered** in section 14.1: MicroPython, built into the game on every platform, for
+   everything that runs inside it, and any CPython 3.10 or newer for external bots.
 2. **Full or fair view by default** for script AIs, and whether the lobby can require fair
    AIs.
+
+   **Answered:** fair by default. "Computer players see everything" is a game option, off
+   by default, set in Game Setup, Quick Start and by the host in the network lobby, where
+   every player sees it; it applies to every computer player of the game
+   ([SETUP.md](SETUP.md) "Computer players", [python-api.md](sdk/python-api.md)).
 3. **Budgets:** how much time per turn an in-game AI gets, and who sets it (the host, per
    game).
+
+   **Answered:** budgets are counted in bytecodes, so they are the same on every computer:
+   by default 200 million for a turn's planning calls, 5 million for any other request, and
+   1 MiB of memory a player keeps. They are game options: Game Setup's Computer Player
+   Limits, or the host in the lobby, per game ([ai-protocol.md](sdk/ai-protocol.md),
+   [the guide's budgets chapter](sdk/guide/performance.md)).
 4. **Rules scripts and the classic combat:**
    - Should battles allow hooks inside a round (damage, to-hit) or only around a battle?
    - Inside-round hooks give the most freedom but run thousands of times a turn.
+
+   **Still open.** Rules scripts have hooks around a battle only (`before_battle`,
+   `after_battle`, `vehicle_destroyed`); computer players choose their own tactical orders
+   each round (`battle_round`). See section 7.4.
 5. **API stability:** how long an `api` version is supported, and how mods are told about
    a change.
+
+   **Partly answered:** the interface is `api = 1`; a mod names the version it was written
+   for, and an OpenSE4 that offers an older one refuses it with a message that says so
+   ([troubleshooting](sdk/guide/troubleshooting.md)). A change to the protocol changes
+   `api` ([ai-protocol.md](sdk/ai-protocol.md)). How long OpenSE4 keeps playing mods of an
+   older `api` is to be settled with the first change to it.
 6. **New vehicle types** beyond the eight the rules know (ships, bases, fighters, troops,
    mines, satellites, drones and weapon platforms). It is possible, but it touches combat,
    movement, cargo and every window, so it is left for after S4.
+
+   **Still open** (section 14.7).
 7. **Licensing of mods** on the Workshop, and whether example mods ship with OpenSE4 or
    separately.
+
+   **Partly answered:** the example mods ship with OpenSE4, in the release packages'
+   `sdk/examples` beside the documentation, and Hegemon in `mods/` ready to switch on.
+   Licensing of Workshop mods waits for the Workshop.
 
 ## 14. Implementation decisions (2026-10-05)
 
@@ -668,27 +744,38 @@ numbers, as the engine uses.
 - **AI decisions are also journaled** with the turn (section 6.3), so replays never run an
   AI again.
 - **Unmodded games don't change:** a game without mods hashes, at save format 8, to the
-  same golden checksums as before the SDK. Each part of the work checks this.
+  same golden checksums as before the SDK. Each part of the work checked this, and every
+  later change to the state must: with `stateChecksum` hashing at format 8 for the check
+  (`serial::hash(s, 8)`, temporarily), the engine reproduces the determinism goldens
+  recorded before the SDK (`tests/test_determinism.cpp` as of commit fc5a7f2^: both
+  100-turn games and the ten battles) and the serialize test's checksum
+  0x933770c7b7260925. The format-9 goldens the tests hold now differ from those only by the
+  new, empty fields.
 
 ### 14.5 Versions
 
 - **Save format 9 and network protocol 7** cover all SDK state (mod sets, mod data, AI
   memory, journals, new commands). The first change that needs a field bumps them; later
   SDK changes add their fields under 9 and 7 without bumping again until the next release.
+  OpenSE4 0.11.0 shipped them, so the next change to saved or sent state bumps them again
+  (save format 8 and protocol 6 were 0.10.0's).
 - **The SDK's own interface** is `api = 1`.
 
 ### 14.6 Where things live
 
 | Path | What |
 |---|---|
-| `src/script/` | `script::Value`, JSON, the MicroPython runtime and its sandbox (library `opense4_script`) |
+| `src/script/` | `script::Value`, JSON, the MicroPython runtime and its sandbox (library `opense4_script`); `src/script/port/` is MicroPython's configuration and port for OpenSE4 |
+| `third_party/micropython/` | MicroPython's sources as built, with our patches (`patches/`) and generated headers; regenerated by `tools/update_micropython.sh` |
 | `src/mods/` | Mod packages, manifests, mod sets and identity, the layered file system, data patches (library `opense4_mods`) |
-| `src/sdk/` | The engine's side of the SDK: the view, the command codec, controllers, hooks, the effects API, the journal (library `opense4_sdk`) |
-| `python/opense4/` | The Python package used by scripts in the game and by external bots |
-| `tools/sdk.cpp` | `opense4-sdk` |
+| `src/sdk/` | The engine's side of the SDK: the view, the command codec, controllers, hooks, the effects API, the journal, the interface tier's files, scenarios (library `opense4_sdk`) |
+| `python/opense4/` | The Python package used by scripts in the game and by external bots; its schema-driven modules are generated from `docs/sdk/view.md` and `commands.md` by `tools/gen_sdk_python.py` |
+| `python/lib/` | The small pure-Python modules the game's runtime adds (`typing`, `dataclasses`, ...) |
+| `tools/sdk.cpp`, `tools/sdk_*.cpp` | `opense4-sdk` (`sdk_test.cpp`: `test`; `sdk_arena.cpp`: `arena`; `sdk_env.cpp`: `env-host`) |
 | `mods/examples/` | Example mods, each with tests |
-| `docs/sdk/` | The modder's guide, the API reference and the schemas |
-| `tests/sdk/` | The SDK's own tests: C++ unit tests, Python tests run under both runtimes, and example-mod tests |
+| `mods/hegemon/`, `mods/bundled.txt` | The mods that come with OpenSE4, and the list of them |
+| `docs/sdk/` | The modder's guide, the API reference (generated by `tools/gen_sdk_reference.py`) and the schemas |
+| `tests/sdk/` | The SDK's own tests: C++ unit tests, Python tests run under both runtimes (`tests/sdk/python/`), the docs' examples, and example-mod tests; fixture mods in `tests/fixtures/mods/` |
 
 ### 14.7 Not in this round
 
