@@ -193,3 +193,12 @@ opense4_copy_runtime_dlls(opense4_tests)
 opense4_windows_manifest(opense4_tests)
 
 add_test(NAME opense4_tests COMMAND opense4_tests)
+# A cross build's tests run through CMake's emulator, QEMU's user mode for the ARM
+# builds (cmake/toolchains/linux-cross.cmake), and the tests that start opense4-sdk
+# start it through the same command, which OPENSE4_TEST_RUNNER names
+# (tests/sdk/bots_fixture.hpp, runProgram). Under Wine, the Windows builds' emulator,
+# a Windows program starts another one itself, so they leave it unset.
+if(CMAKE_CROSSCOMPILING AND CMAKE_CROSSCOMPILING_EMULATOR AND NOT WIN32)
+    list(JOIN CMAKE_CROSSCOMPILING_EMULATOR " " opense4_test_runner)
+    set_tests_properties(opense4_tests PROPERTIES ENVIRONMENT "OPENSE4_TEST_RUNNER=${opense4_test_runner}")
+endif()

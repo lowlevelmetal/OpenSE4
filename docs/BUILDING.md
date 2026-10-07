@@ -178,7 +178,9 @@ cmake --preset release -B build/armhf --toolchain cmake/toolchains/arm-linux-gnu
 
 **Tests** of a cross build run through QEMU's user mode (`qemu-aarch64`, `qemu-arm`, or
 their `-static` builds; Debian and Ubuntu: `qemu-user`). The toolchain file makes it
-CMake's emulator, so `ctest` uses it; by hand, `-L` names the target's C library:
+CMake's emulator, so `ctest --preset dist-linux-armhf` (or `-aarch64`) runs the tests
+through it, with `OPENSE4_TEST_RUNNER` (below) set to the same command. By hand, `-L`
+names the target's C library:
 
 ```sh
 OPENSE4_TEST_RUNNER="qemu-arm -L /usr/arm-linux-gnueabihf" \
@@ -189,8 +191,8 @@ Some of the modding SDK's tests start `opense4-sdk`. `OPENSE4_TEST_RUNNER` names
 emulator command to start it with (the same as the tests' own) and tells the tests that they
 run under an emulator: those that start several of our programs talking to each other
 (external bots, the arena, the example mods' games) are then skipped.
-`tools/package_release.sh` and CI's armhf job set it; `ctest` does not, so run a cross
-build's tests by hand as above.
+`ctest`, `tools/package_release.sh` and CI's armhf job set it. The Windows builds' emulator,
+Wine, needs no such thing: a Windows program starts another one itself.
 
 Under QEMU an optimized build runs the suite much faster than a debug build: about a
 minute and a half in four processes (`.github/scripts/run_tests_parallel.sh`) on a
