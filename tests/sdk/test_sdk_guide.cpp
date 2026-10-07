@@ -253,41 +253,82 @@ std::set<std::string> anchorsOf(const fs::path& file) {
     return found;
 }
 
-} // namespace
-
-TEST_CASE("sdk guide: the links of docs/sdk lead to files and headings that are there") {
-    const fs::path docs = sourceRoot() / "docs" / "sdk";
-    int checked = 0;
-    for (const auto& e : fs::recursive_directory_iterator(docs)) {
-        if (e.path().extension() != ".md") continue;
-        bool code = false;
-        int n = 0;
-        for (const std::string& line : lines(slurp(e.path()))) {
-            ++n;
-            if (line.starts_with("```")) code = !code;
-            if (code) continue;
-            for (size_t at = line.find("]("); at != std::string::npos; at = line.find("](", at + 2)) {
-                const size_t end = line.find(')', at + 2);
-                if (end == std::string::npos) break;
-                std::string target = line.substr(at + 2, end - at - 2);
-                if (target.empty() || target.starts_with("http") || target.starts_with("mailto:") || target.find(' ') != std::string::npos) continue;
-                std::string anchor;
-                if (const size_t hash = target.find('#'); hash != std::string::npos) {
-                    anchor = target.substr(hash + 1);
-                    target = target.substr(0, hash);
-                }
-                const fs::path file = target.empty() ? e.path() : (e.path().parent_path() / target).lexically_normal();
-                const std::string where = std::format("{}:{}: {}", fs::relative(e.path(), sourceRoot()).string(), n, line.substr(at, end - at + 1));
-                ++checked;
-                if (!fs::exists(file)) {
-                    CHECK_MESSAGE(false, where << ": no such file");
-                    continue;
-                }
-                if (!anchor.empty() && file.extension() == ".md") CHECK_MESSAGE(anchorsOf(file).contains(anchor), where << ": no such heading");
-            }
+// The Markdown links of a file outside code (fenced blocks and `inline code`), with
+// their lines: (line, target as written).
+std::vector<std::pair<int, std::string>> linksOf(const fs::path& file) {
+    std::vector<std::pair<int, std::string>> out;
+    bool code = false;
+    int n = 0;
+    for (const std::string& raw : lines(slurp(file))) {
+        ++n;
+        const size_t first = raw.find_first_not_of(' ');
+        if (first != std::string::npos && raw.compare(first, 3, "```") == 0) code = !code;
+        if (code) continue;
+        std::string line;
+        bool inline_code = false;
+        for (char c : raw) {
+            if (c == '`') inline_code = !inline_code;
+            else if (!inline_code) line += c;
+        }
+        for (size_t at = line.find("]("); at != std::string::npos; at = line.find("](", at + 2)) {
+            const size_t end = line.find(')', at + 2);
+            if (end == std::string::npos) break;
+            const std::string target = line.substr(at + 2, end - at - 2);
+            if (target.empty() || target.starts_with("http") || target.starts_with("mailto:") || target.find(' ') != std::string::npos) continue;
+            out.emplace_back(n, target);
         }
     }
-    CHECK(checked > 100);
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("sdk guide: the docs' links lead to files and headings that are there, and the index reaches every page") {
+    // docs/sdk, and the pages that point into it: the README, docs/*.md and the mods' READMEs.
+    std::vector<fs::path> files;
+    for (const auto& e : fs::recursive_directory_iterator(sourceRoot() / "docs" / "sdk"))
+        if (e.path().extension() == ".md") files.push_back(e.path());
+    for (const auto& e : fs::directory_iterator(sourceRoot() / "docs"))
+        if (e.path().extension() == ".md") files.push_back(e.path());
+    for (const auto& e : fs::recursive_directory_iterator(sourceRoot() / "mods"))
+        if (e.path().extension() == ".md") files.push_back(e.path());
+    files.push_back(sourceRoot() / "README.md");
+    int checked = 0;
+    for (const fs::path& f : files) {
+        for (const auto& [n, link] : linksOf(f)) {
+            std::string target = link, anchor;
+            if (const size_t hash = target.find('#'); hash != std::string::npos) {
+                anchor = target.substr(hash + 1);
+                target = target.substr(0, hash);
+            }
+            const fs::path file = target.empty() ? f : (f.parent_path() / target).lexically_normal();
+            const std::string where = std::format("{}:{}: ({})", fs::relative(f, sourceRoot()).generic_string(), n, link);
+            ++checked;
+            if (!fs::exists(file)) {
+                CHECK_MESSAGE(false, where << ": no such file");
+                continue;
+            }
+            if (!anchor.empty() && file.extension() == ".md") CHECK_MESSAGE(anchorsOf(file).contains(anchor), where << ": no such heading");
+        }
+    }
+    CHECK(checked > 300);
+
+    // Every page of docs/sdk can be reached from its index, docs/sdk/README.md.
+    const fs::path docs = (sourceRoot() / "docs" / "sdk").lexically_normal();
+    std::set<fs::path> reached;
+    std::vector<fs::path> todo{docs / "README.md"};
+    while (!todo.empty()) {
+        const fs::path page = todo.back();
+        todo.pop_back();
+        if (!reached.insert(page).second) continue;
+        for (const auto& [n, link] : linksOf(page)) {
+            const fs::path target = (page.parent_path() / link.substr(0, link.find('#'))).lexically_normal();
+            if (target.extension() == ".md" && target.string().starts_with(docs.string()) && fs::exists(target)) todo.push_back(target);
+        }
+    }
+    for (const auto& e : fs::recursive_directory_iterator(docs))
+        if (e.path().extension() == ".md")
+            CHECK_MESSAGE(reached.contains(e.path().lexically_normal()), fs::relative(e.path(), sourceRoot()).generic_string() << " is not linked from docs/sdk/README.md or a page it leads to");
 }
 
 namespace {
@@ -339,7 +380,7 @@ std::vector<fs::path> sdkMarkdown() {
 enum class TomlKind { Ui, Text, Manifest, Scenario, Patch };
 
 TomlKind tomlKind(const toml::table& t) {
-    for (const char* key : {"order", "panel", "column", "empire_page"})
+    for (const char* key : {"order", "panel", "column", "empire_page", "button"})
         if (t.get_as<toml::array>(key)) return TomlKind::Ui;
     for (const auto& [key, value] : t) {
         if (value.is_string() && key.str().find('.') != std::string_view::npos) return TomlKind::Text;
