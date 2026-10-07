@@ -1,5 +1,7 @@
 #include "client/script/script.hpp"
 
+#include "client/window_hit.hpp"
+
 #include "learn/lesson.hpp"
 
 #include <charconv>
@@ -204,6 +206,7 @@ constexpr OpInfo kOps[] = {
     {"assert-inside", Op::AssertInside},
     {"assert-fits", Op::AssertFits},
     {"assert-whole", Op::AssertWhole},
+    {"assert-window-hit", Op::AssertWindowHit},
     {"screenshot", Op::Screenshot},
     {"echo", Op::Echo},
     {"print", Op::Print},
@@ -234,7 +237,8 @@ bool takesTarget(Op op) {
         case Op::AssertAbsent:
         case Op::AssertEnabled:
         case Op::AssertDisabled:
-        case Op::AssertInside: return true;
+        case Op::AssertInside:
+        case Op::AssertWindowHit: return true;
         default: return false;
     }
 }
@@ -516,6 +520,17 @@ std::optional<Script> parseScript(std::string_view text, std::string_view file, 
             case Op::AssertEnabled:
             case Op::AssertDisabled: ok = needArgs(1, "a target (tag:, item:, window:, sector:, system: or at:)"); break;
             case Op::AssertInside: ok = needArgs(2, "two targets: the point of the first must lie in the second"); break;
+            case Op::AssertWindowHit: {
+                constexpr std::string_view what =
+                    "a target and what a press there does in a window without its title bar: normal, drag, resize-top, resize-top-left, ...";
+                ok = needArgs(2, what);
+                if (ok) {
+                    st.text = args[1]->text;
+                    ok = parseWindowHit(st.text).has_value();
+                    if (!ok) fail(std::format("'{}' takes {}", verb, what));
+                }
+                break;
+            }
             case Op::Drag:
                 ok = needArgs(2, "a target, 'to' and a second target") && sawTo;
                 if (args.size() == 2 && !sawTo) fail("'drag' takes a target, 'to' and a second target");

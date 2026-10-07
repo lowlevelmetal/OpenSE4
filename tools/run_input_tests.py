@@ -28,6 +28,17 @@ A script whose header has "# server: ARGS" plays against a dedicated host: the
 runner starts opense4-server (beside the client) with ARGS on a free port of
 this computer, and the client joins its lobby (--open=multiplayer:join=...).
 
+A script whose header has "# portable-copy" plays a copy of the client in a
+program folder of its own (a hard link beside the client where it can be),
+without OPENSE4_USER_DIR, with a system user folder of its own that holds a
+saved game; afterwards the runner checks that the copy became portable, that
+the saved game was copied into its userdata folder and that it is still in
+the system folder (docs/SETUP.md "A portable copy"). With "# portable-copy
+read-only" the program folder cannot be written, and the runner checks that
+nothing was made in it. Linux and the BSDs only: elsewhere the system's folder
+cannot be moved for a run, and the script is skipped (also when run as root,
+who writes anywhere, for a read-only one).
+
     python3 tools/run_input_tests.py [--exe build/debug/opense4] [--jobs N]
         [--renderer opengl] [--output DIR] [--small | --only-small] [script ...]
 """
@@ -112,6 +123,73 @@ def server_args(path):
     return None
 
 
+PORTABLE_MARK = "# portable-copy"
+PORTABLE_SEED = b"OpenSE4 portable-copy check\n"
+
+
+def portable_supported(read_only):
+    if os.name == "nt" or sys.platform == "darwin":
+        return False
+    return not (read_only and os.geteuid() == 0)
+
+
+def portable_read_only(path):
+    """Whether the script's "# portable-copy" line asks for a program folder that cannot be written."""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("#"):
+            break
+        if line.startswith(PORTABLE_MARK):
+            return "read-only" in line[len(PORTABLE_MARK):].split()
+    return False
+
+
+@contextlib.contextmanager
+def portable_copy(exe, read_only=False):
+    """The client in a program folder of its own, and a home with a saved game in its user folder.
+
+    Yields (the copied program, its environment changes, a check to run afterwards)."""
+    with tempfile.TemporaryDirectory(prefix=".opense4-portable-run-", dir=exe.parent) as program, \
+            tempfile.TemporaryDirectory(prefix="opense4-portable-home-") as home:
+        program = pathlib.Path(program)
+        copy = program / exe.name
+        try:
+            os.link(exe, copy)      # the same file: no copy of a large debug build
+        except OSError:
+            shutil.copy2(exe, copy)
+        data = pathlib.Path(home) / "data"
+        system = data / "OpenSE4"   # SDL's preference folder under XDG_DATA_HOME
+        (system / "saves").mkdir(parents=True)
+        (system / "saves" / "Seeded.gam").write_bytes(PORTABLE_SEED)
+        # SDL's preference folder follows XDG_DATA_HOME; HOME stays, as the game
+        # finds the Steam libraries through it.
+        env = {"XDG_DATA_HOME": str(data)}
+        if read_only:
+            program.chmod(0o555)
+
+        def check():
+            problems = []
+            if not (system / "saves" / "Seeded.gam").is_file():
+                problems.append("the saved game is gone from the system folder")
+            if read_only:
+                made = sorted(p.name for p in program.iterdir() if p.name != exe.name)
+                if made:
+                    problems.append(f"files were made in the read-only program folder: {', '.join(made)}")
+                return problems
+            if not (program / "portable.txt").is_file():
+                problems.append("no portable.txt beside the program")
+            copied = program / "userdata" / "saves" / "Seeded.gam"
+            if not copied.is_file() or copied.read_bytes() != PORTABLE_SEED:
+                problems.append(f"the saved game was not copied to {copied}")
+            if not (program / "userdata" / "settings.toml").is_file():
+                problems.append("no settings.toml in the portable folder")
+            return problems
+
+        try:
+            yield copy, env, check
+        finally:
+            program.chmod(0o755)   # so that the folder can be removed
+
+
 def free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
@@ -177,6 +255,20 @@ FREE_PORT = "{free_port}"
 
 
 def play(exe, script, output, classic_dir, renderer, timeout, extra, layout=None):
+    if marked(script, PORTABLE_MARK):
+        read_only = portable_read_only(script)
+        if not portable_supported(read_only):
+            return script, True, "(skipped: a portable copy is checked on Linux, as a user other than root)", "", 0.0
+        with portable_copy(exe, read_only) as (copy, env, check):
+            result = play_one(copy, script, output, classic_dir, renderer, timeout, extra, layout, env)
+            problems = check() if result[1] else []
+            if problems:
+                return script, False, "", "\n".join(problems), result[4]
+            return result
+    return play_one(exe, script, output, classic_dir, renderer, timeout, extra, layout)
+
+
+def play_one(exe, script, output, classic_dir, renderer, timeout, extra, layout=None, portable_env=None):
     with tempfile.TemporaryDirectory(prefix="opense4-script-user-") as user:
         # A script that hosts a game types "{free_port}" where it needs a port: each
         # run gets its own, so runs played at the same time (both layouts) never meet.
@@ -189,6 +281,9 @@ def play(exe, script, output, classic_dir, renderer, timeout, extra, layout=None
         env = dict(os.environ)
         env.setdefault("SDL_VIDEO_DRIVER", "offscreen")
         env["OPENSE4_USER_DIR"] = user
+        if portable_env is not None:   # a portable copy: the rules without OPENSE4_USER_DIR
+            del env["OPENSE4_USER_DIR"]
+            env.update(portable_env)
         shots = output / (script.stem + (f"@{layout[0]}" if layout else ""))
         shots.mkdir(parents=True, exist_ok=True)
         args = [str(exe), f"--input-script={script}", f"--script-output={shots}", "--no-audio"]

@@ -5,7 +5,7 @@ windows: settings, options, empire-options
 
 OpenSE4 has three sets of settings:
 
-- the **Settings** window: graphics, controls, sound and modding, for every game on this computer;
+- the **Settings** window: graphics, controls, sound, modding and where your files go, for every game on this computer;
 - the **Options** window: animation, sound, music and autosave, also kept on this computer;
 - the **Empire Options** window: how the game behaves for your empire, saved with the game.
 
@@ -14,7 +14,7 @@ The [Mods](#mods) window, on the title screen, chooses the mods you play with.
 ## The Settings window
 
 Open [Settings](window:settings) from the title screen, with `Ctrl+,` in the main window, or with
-the `Settings` button of the [Options](window:options) window. It has four tabs. Your choices are
+the `Settings` button of the [Options](window:options) window. It has five tabs. Your choices are
 saved for every game.
 
 ### Graphics
@@ -23,6 +23,7 @@ saved for every game.
 |---|---|
 | Window mode | Windowed (the default, 1600 by 900), borderless fullscreen or exclusive fullscreen. `Alt+Enter` switches between window and fullscreen at any time. |
 | Window size, Resolution | The size of the window, or the screen mode for exclusive fullscreen. Press `Apply display` to use them. |
+| Hide the window's title bar | Plays in a window without the system's title bar and frame (off at first; it takes effect at once). Drag the game's top row (the main window's status bar, the top of the title screens) to move the window and its edges to resize it; the minimize button at the status bar's right end still works, and `Alt+Enter` still switches to fullscreen and back. A few desktops keep their own title bar whatever the game asks; the line under the setting says so when the game can tell. |
 | Vertical sync, Frame rate limit | Smooth drawing (on by default). The frame rate limit can be set only while vertical sync is off. |
 | Show frame rate | A frame counter in the corner. |
 | Widescreen layout | **Extended** uses the whole width of a wide screen; **Classic 4:3** keeps the original proportions with bars at the sides. |
@@ -56,6 +57,33 @@ players for mods: the notes those players write about what they think, in a list
 view, framed sectors, rings around systems in the galaxy view, and boxes in the reports (see
 [Computer players](computer-players-and-ministers#computer-players-of-mods)). `Ctrl+Shift+N`
 switches it in a game. It shows every note, whatever your empire knows.
+
+### Files
+
+The **Files** page says where OpenSE4 keeps your saved games, settings, logs, mods and history,
+and why there, and `Open Folder` opens that folder. It is your user folder unless this copy is
+portable:
+
+| System | Your user folder |
+|---|---|
+| Linux | `~/.local/share/OpenSE4/` |
+| Windows | `%APPDATA%\OpenSE4\` |
+| macOS | `~/Library/Application Support/OpenSE4/` |
+
+**Keep saves and settings in OpenSE4's folder** makes this copy portable: it keeps all of these
+files in the folder `userdata` beside the program, so they go wherever the program's folder goes,
+on a USB stick for example. When you tick or untick it, OpenSE4 asks whether to copy your files
+into the new folder (`Copy and Switch`) or not (`Switch Only`); it never deletes any, and a file
+the new folder already has is kept. The setting is the file `portable.txt` beside the program,
+which you may also create or delete yourself. A copy installed into Program Files cannot be made
+portable, since only administrators may write there: OpenSE4 says so, and the zip file of OpenSE4
+gives you a copy that can.
+
+**Saves folder** puts your saved games elsewhere: Save Game, the autosaves, Load Game and Resume
+Game use it. Type a folder and press `Use`; a folder written without its drive or root lies in the
+folder above. `Default` brings back the `saves` folder. OpenSE4 never writes in the game's own
+folder: its saved games are not the original's, and `Save for SE IV` in
+[Save Game](getting-started#saving-and-loading) writes a game for the original wherever you choose.
 
 ## The Options window
 

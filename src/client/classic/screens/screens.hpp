@@ -152,6 +152,10 @@ void soundSettingsPage(float px);
 // The Modding page: OpenSE4's views for modders (the AI notes view), shared with the front end.
 // `rules`: the data set in use (its mods' languages and keys), or null.
 void moddingSettingsPage(float px, const game::Rules* rules = nullptr);
+// files_settings.cpp: the Files page, where the player's files are kept (a
+// portable copy, the saves folder), shared with the front end. `rules`: the
+// data set in use (its game folder, where saves may not go), or null.
+void filesSettingsPage(float px, const game::Rules* rules = nullptr);
 // player_errors.cpp: Computer Player Errors, the failures of the game's computer players of mods.
 std::unique_ptr<Screen> makePlayerErrors(const ScreenArgs& args);
 

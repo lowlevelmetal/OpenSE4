@@ -10,6 +10,7 @@
 #include "client/classic/settings.hpp"
 #include "client/classic/status_icons.hpp"
 #include "client/script/items.hpp"
+#include "client/window_hit.hpp"
 
 #include "game/abilities.hpp"
 #include "game/design.hpp"
@@ -1260,9 +1261,16 @@ void MainWindow::statusBar(UiContext& ui) {
     const float dateX = x0 + l.gameDateX;
     // A long empire or leader name is cut short before the next item (whole under the pointer).
     const Painter p = ui.painter();
-    drawFitted(p, dl, font, kTextSize, ui.at({x0 + 47, textY}), ui.px(231 - 4 - 47), IM_COL32_WHITE, std::format("{} {}", e.name, e.empireType));
-    drawFitted(p, dl, font, kTextSize, ui.at({x0 + 231, textY}), ui.px(dateX - 4 - (x0 + 231)), IM_COL32_WHITE,
-               std::format("{} {}", e.leaderTitle, e.leaderName));
+    // A window without the system's title bar moves by this row (client/window_hit.hpp):
+    // from the window's top to just below the status bar, across the window. A
+    // name cut short keeps the pointer there, for its whole text under it.
+    addWindowDragArea(ImVec2(0, 0), ImVec2(ImGui::GetIO().DisplaySize.x, ui.at({0, l.statusBar.max.y + 2}).y));
+    auto fitted = [&](ImVec2 at, float maxWidth, const std::string& t) {
+        const TextFit fit = drawFitted(p, dl, font, kTextSize, at, maxWidth, IM_COL32_WHITE, t);
+        if (fit.cut) addWindowDragHole(at, ImVec2(at.x + maxWidth, at.y + fit.extent.y));
+    };
+    fitted(ui.at({x0 + 47, textY}), ui.px(231 - 4 - 47), std::format("{} {}", e.name, e.empireType));
+    fitted(ui.at({x0 + 231, textY}), ui.px(dateX - 4 - (x0 + 231)), std::format("{} {}", e.leaderTitle, e.leaderName));
     text(dateX, imColor(palette::kLabel), "Game Date");
     text(dateX + width("Game Date "), IM_COL32_WHITE, formatDate(ui.state().turn));
     // Each stockpile ends 2 px left of its 16 px icon.

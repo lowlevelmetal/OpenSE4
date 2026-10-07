@@ -113,9 +113,11 @@ private:
 };
 
 // Where OpenSE4 keeps a user's files when no SDL is around (the dedicated
-// server): OPENSE4_USER_DIR, else the same folder the game uses (on Linux
-// $XDG_DATA_HOME/OpenSE4 or ~/.local/share/OpenSE4, on Windows
-// %APPDATA%\OpenSE4, on macOS ~/Library/Application Support/OpenSE4).
+// server, opense4-sdk): the game's own rules (core/user_folder.hpp):
+// OPENSE4_USER_DIR, else the userdata folder beside a portable copy (one with
+// portable.txt beside the program), else on Linux $XDG_DATA_HOME/OpenSE4 or
+// ~/.local/share/OpenSE4, on Windows %APPDATA%\OpenSE4, on macOS
+// ~/Library/Application Support/OpenSE4.
 std::filesystem::path userDataDir();
 inline constexpr std::string_view kHostKeyFileName = "host_key.txt";
 inline constexpr std::string_view kKnownHostsFileName = "known_hosts.txt";

@@ -387,7 +387,9 @@ private:
     std::vector<game::EmpireOrders> turnStartOrders_;
 };
 
-// Where OpenSE4 keeps saves and settings (created on demand).
+// Where OpenSE4 keeps saves and settings (created on demand): the user
+// folder (client/app_settings.hpp userDataDirectory), and the saves folder,
+// "saves" in it unless Settings → Files chose another (FileSettings).
 std::filesystem::path userDataDir();
 std::filesystem::path savesDir();
 // The players' statistics, history and log files (docs/spec/06 §6.1):

@@ -1,0 +1,46 @@
+# The window without the system's title bar in a game (Settings, Graphics, "Hide the window's
+# title bar"; client/window_hit.hpp): the main window's top row moves the window, between the
+# window's edges, which resize it; the minimize button keeps its click, and so does the map
+# below. SDL's offscreen driver cannot move a window, so what a press would do is checked with
+# assert-window-hit (docs/BUILDING.md "Input scripts"). Unticked, every press is the game's again.
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --empires=4 --seed=7 --open=none --layout=1024x768 --size=1024x768
+
+wait-for tag:command:empire-status
+# A game whose other empires are all gone (on the fixtures, the player's alone) shows the
+# conquest ending at once, then asks whether to play on (spec 05 §6, spec 06 §7 Q83).
+click item:Close in=finale optional
+click item:Yes in=finale optional
+assert-window-hit tag:status:date normal
+key Ctrl+Comma
+wait-window settings
+click item:"Hide the window's title bar" in=settings
+wait-for item:"*keeps its title bar*" in=settings
+click item:Close in=settings
+wait-closed settings
+assert-window-hit tag:status:date drag
+assert-window-hit tag:status:empire drag
+assert-window-hit tag:status:resources drag
+assert-window-hit item:##minimize normal
+assert-window-hit tag:command:empire-status normal
+assert-window-hit tag:panel:system normal
+assert-window-hit at:0,400 resize-left
+assert-window-hit at:300,1 resize-top
+assert-window-hit at:1,1 resize-top-left
+# A window over the top row keeps its clicks there: the Game Menu's windows are lower, so
+# this checks that a window opened leaves the row as it was.
+key F11
+wait-window empire-status
+assert-window-hit tag:status:date drag
+key Escape
+wait-closed empire-status
+# Back to the title bar: every press is the game's.
+key Ctrl+Comma
+wait-window settings
+click item:"Hide the window's title bar" in=settings
+wait-gone item:"*keeps its title bar*" in=settings
+click item:Close in=settings
+wait-closed settings
+assert-window-hit tag:status:date normal
+assert-window-hit at:0,400 normal

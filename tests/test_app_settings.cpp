@@ -44,6 +44,8 @@ TEST_CASE("settings: the file round trip keeps every value") {
     s.graphics.sharpPixels = true;
     s.graphics.integerScaling = true;
     s.graphics.textScale = 1.25f;
+    s.graphics.hideTitleBar = true;
+    s.files.savesFolder = "../Saved Games/OpenSE4";
     s.controls.rightClickMoves = false;
     s.controls.bindings.set(Action::MoveTo, 0, KeyChord{ImGuiKey_J, false, true, false});
     s.controls.bindings.set(Action::EndTurn, 1, {});
@@ -60,6 +62,8 @@ TEST_CASE("settings: the file round trip keeps every value") {
     CHECK(back.graphics.sharpPixels);
     CHECK(back.graphics.integerScaling);
     CHECK(back.graphics.textScale == doctest::Approx(1.25));
+    CHECK(back.graphics.hideTitleBar);
+    CHECK(back.files.savesFolder == "../Saved Games/OpenSE4");
     CHECK_FALSE(back.controls.rightClickMoves);
     CHECK(back.controls.bindings.chords(Action::MoveTo)[0] == KeyChord{ImGuiKey_J, false, true, false});
     CHECK(back.controls.bindings.chords(Action::EndTurn)[1].empty());
@@ -67,6 +71,19 @@ TEST_CASE("settings: the file round trip keeps every value") {
     const AppSettings bad = appSettingsFromToml("this is [not toml", &error);
     CHECK_FALSE(error.empty());
     CHECK(bad.graphics.vsync);
+    // A file from before these settings: the title bar shown, saves in "saves".
+    const AppSettings old = appSettingsFromToml("[graphics]\nvsync = false\n", &error);
+    CHECK_FALSE(old.graphics.hideTitleBar);
+    CHECK(old.files.savesFolder.empty());
+}
+
+TEST_CASE("settings: the saves folder is \"saves\" in the user folder, another folder in it, or one of its own") {
+    const std::filesystem::path user = std::filesystem::path("data") / "OpenSE4";
+    CHECK(savesFolderPath(user, "") == user / "saves");
+    CHECK(savesFolderPath(user, "My Saves") == user / "My Saves");
+    CHECK(savesFolderPath(user, "../Saves") == std::filesystem::path("data") / "Saves");
+    const std::filesystem::path elsewhere = std::filesystem::temp_directory_path() / "OpenSE4 saves";
+    CHECK(savesFolderPath(user, elsewhere.string()) == elsewhere.lexically_normal());
 }
 
 TEST_CASE("input: AltGr counts as Alt, as SDL reports it on Windows") {

@@ -92,6 +92,25 @@ void graphicsSettingsPage(SettingsPanelState& state, AppControl& app, float px) 
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::TextDisabled("Alt+Enter switches between the window and fullscreen.");
+    // In a window: without the system's title bar (client/window_hit.hpp), at once.
+    if (ImGui::Checkbox("Hide the window's title bar", &g.hideTitleBar)) {
+        app.applyTitleBar();
+        save = true;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("When the game plays in a window, the window has no title bar or frame of the system's.\n"
+                          "Drag the top row of the game (the main window's status bar, the top of the title\n"
+                          "screens) to move the window, and its edges to resize it. The minimize button at the\n"
+                          "status bar's right end still works, Alt+Enter still switches to fullscreen and back,\n"
+                          "and unticking this brings the title bar back.\n"
+                          "A few desktops decide about title bars themselves (some Wayland desktops among\n"
+                          "them): there the window may keep one, and the line below says so when the game can tell.");
+    if (const std::string note = app.titleBarNote(); g.hideTitleBar && !note.empty()) {
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 520 * px);
+        ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s", note.c_str());
+        ImGui::PopTextWrapPos();
+        script::reportItem(note);   // input scripts read it
+    }
 
     if (ImGui::Checkbox("Vertical sync", &g.vsync)) {
         app.applyGraphics();

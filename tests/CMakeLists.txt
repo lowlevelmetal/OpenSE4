@@ -53,6 +53,7 @@ add_executable(opense4_tests
     test_pbem_client.cpp
     test_pictures.cpp
     test_platform.cpp
+    test_user_folder.cpp
     test_redact.cpp
     test_research.cpp
     test_ruleset.cpp
@@ -69,6 +70,7 @@ add_executable(opense4_tests
     test_battle_flow.cpp
     test_turn_order.cpp
     test_unit_groups.cpp
+    test_window_hit.cpp
     test_wincursor.cpp
     test_winfont.cpp
     test_xmath.cpp
@@ -125,6 +127,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/script/script.cpp
     ${CMAKE_SOURCE_DIR}/src/client/script/sdl_input.cpp
     ${CMAKE_SOURCE_DIR}/src/client/ui/imgui_errors.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/window_hit.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/art.cpp
@@ -171,10 +174,16 @@ endif()
 target_sources(opense4_tests PRIVATE $<TARGET_OBJECTS:opense4_tests_gc_probe>)
 target_link_libraries(opense4_tests PRIVATE opense4_sdk opense4_script opense4_mods opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 drlibs Threads::Threads opense4_warnings)
 target_include_directories(opense4_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+# A program that prints its user folder: tests/test_user_folder.cpp copies it into a
+# scratch program folder to check the portable copy's rules (core/user_folder.hpp).
+add_executable(opense4_user_folder_probe user_folder_probe.cpp)
+target_link_libraries(opense4_user_folder_probe PRIVATE opense4_core opense4_warnings)
+opense4_windows_manifest(opense4_user_folder_probe)
 # The SDK tool's tests run it (tests/sdk/test_sdk_tool.cpp, test_sdk_arena.cpp), and the
 # external bots' tests the dedicated server.
-add_dependencies(opense4_tests opense4-sdk opense4-server)
+add_dependencies(opense4_tests opense4-sdk opense4-server opense4_user_folder_probe)
 target_compile_definitions(opense4_tests PRIVATE
+    OPENSE4_USER_FOLDER_PROBE_EXE="$<TARGET_FILE:opense4_user_folder_probe>"
     OPENSE4_SDK_EXE="$<TARGET_FILE:opense4-sdk>"
     OPENSE4_SERVER_EXE="$<TARGET_FILE:opense4-server>"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"

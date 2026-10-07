@@ -809,7 +809,8 @@ void restoreHistoryFrom(const std::filesystem::path& saveFile, const std::filesy
 }
 
 std::filesystem::path savesDir() {
-    const std::filesystem::path dir = userDataDir() / "saves";
+    // "saves" in the user folder, or the folder Settings → Files chose.
+    const std::filesystem::path dir = savesFolderPath(userDataDir(), appSettings().files.savesFolder);
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return dir;

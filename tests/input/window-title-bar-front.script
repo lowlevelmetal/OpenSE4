@@ -1,0 +1,40 @@
+# The window without the system's title bar on the title screens (Settings, Graphics, "Hide the
+# window's title bar"; client/window_hit.hpp): with the title bar every press goes to the game;
+# with it hidden the band along the top moves the window where no window lies (OpenSE4's own
+# buttons at the top right keep their clicks), the edges resize it, and the rest is the game's.
+# SDL's offscreen driver cannot move a window, so the Graphics page says the window keeps its
+# title bar; what a press would do is checked with assert-window-hit (docs/BUILDING.md
+# "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --layout=1024x768 --size=1024x768
+
+wait-screen front
+wait-for item:Settings in=front
+assert-window-hit at:300,15 normal
+assert-window-hit at:0,300 normal
+click item:Settings in=front
+wait-for item:"Hide the window's title bar"
+click item:"Hide the window's title bar"
+wait-for item:"*keeps its title bar*"
+# The Settings window lies below the band.
+assert-window-hit at:300,15 drag
+assert-window-hit at:300,2 resize-top
+assert-window-hit at:2,2 resize-top-left
+assert-window-hit at:0,300 resize-left
+assert-window-hit item:Graphics in=front normal
+click item:Back in=front
+wait-for item:Multiplayer in=front
+# The intro: the band moves the window, OpenSE4's buttons in it take their clicks.
+assert-window-hit at:20,20 drag
+assert-window-hit item:Multiplayer in=front normal
+assert-window-hit item:Manual in=front normal
+assert-window-hit item:"Quick Start" in=front normal
+# Unticked again: the title bar back, every press the game's.
+click item:Settings in=front
+click item:"Hide the window's title bar"
+wait-gone item:"*keeps its title bar*"
+assert-window-hit at:300,15 normal
+assert-window-hit at:0,300 normal
+click item:Back in=front
+wait-for item:Multiplayer in=front

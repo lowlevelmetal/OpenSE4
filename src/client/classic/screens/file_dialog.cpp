@@ -76,8 +76,13 @@ std::string fileDate(std::filesystem::file_time_type t) {
 }
 
 std::filesystem::path& loadGameDirectory() {
-    static std::filesystem::path dir;
-    if (dir.empty()) dir = savesDir();
+    // The saves folder, and another one once Change Directory chose it. While
+    // it is still the saves folder it follows that folder when Settings →
+    // Files moves it (another saves folder, a portable copy).
+    static std::filesystem::path dir, saves;
+    const std::filesystem::path now = savesDir();
+    if (dir.empty() || (dir == saves && now != saves)) dir = now;
+    saves = now;
     return dir;
 }
 

@@ -437,8 +437,11 @@ private:
     // the saves folder (the player's user data, never the installation) until
     // another is typed, kept for the session.
     static std::filesystem::path& classicSavesDirectory() {
-        static std::filesystem::path dir;
-        if (dir.empty()) dir = savesDir() / "Space Empires IV";
+        // Following the saves folder while it was not changed (as loadGameDirectory).
+        static std::filesystem::path dir, from;
+        const std::filesystem::path now = savesDir() / "Space Empires IV";
+        if (dir.empty() || (dir == from && now != from)) dir = now;
+        from = now;
         return dir;
     }
 

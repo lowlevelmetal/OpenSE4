@@ -7,6 +7,7 @@
 #include "client/script/sdl_input.hpp"
 #include "client/ui/imgui_errors.hpp"
 #include "client/ui/theme.hpp"
+#include "client/window_hit.hpp"
 #include "core/log.hpp"
 #include "ruleset/ruleset.hpp"
 
@@ -60,6 +61,30 @@ std::string noRendererMessage(const std::string& vulkanError, const std::string&
     if (!vulkanError.empty()) text += "\nVulkan: " + vulkanError;
     text += "\nOpenGL: " + openglError;
     return text;
+}
+
+// The system's question for a press in the window without its title bar
+// (client/window_hit.hpp): the answer from the areas the frame drawn last
+// published.
+SDL_HitTestResult SDLCALL windowHitTest(SDL_Window*, const SDL_Point* point, void*) {
+    switch (windowHitNow(static_cast<float>(point->x), static_cast<float>(point->y))) {
+        case WindowHit::Normal: return SDL_HITTEST_NORMAL;
+        case WindowHit::Drag: return SDL_HITTEST_DRAGGABLE;
+        case WindowHit::ResizeTopLeft: return SDL_HITTEST_RESIZE_TOPLEFT;
+        case WindowHit::ResizeTop: return SDL_HITTEST_RESIZE_TOP;
+        case WindowHit::ResizeTopRight: return SDL_HITTEST_RESIZE_TOPRIGHT;
+        case WindowHit::ResizeRight: return SDL_HITTEST_RESIZE_RIGHT;
+        case WindowHit::ResizeBottomRight: return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+        case WindowHit::ResizeBottom: return SDL_HITTEST_RESIZE_BOTTOM;
+        case WindowHit::ResizeBottomLeft: return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+        case WindowHit::ResizeLeft: return SDL_HITTEST_RESIZE_LEFT;
+    }
+    return SDL_HITTEST_NORMAL;
+}
+
+std::string videoDriver() {
+    const char* name = SDL_GetCurrentVideoDriver();
+    return name ? name : "?";
 }
 
 } // namespace
@@ -237,6 +262,58 @@ bool App::createWindowAndDevice() {
 
 void App::minimize() { SDL_MinimizeWindow(window_); }
 
+void App::applyTitleBar() {
+    if (!window_) return;
+    // A fullscreen window has no title bar anyway: the setting waits until the
+    // game is in a window again (SDL_EVENT_WINDOW_LEAVE_FULLSCREEN, handleEvent).
+    if (SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN) return;
+    titleBarNote_.clear();
+    if (!appSettings().graphics.hideTitleBar) {
+        if (hitTestInstalled_) SDL_SetWindowHitTest(window_, nullptr, nullptr);
+        hitTestInstalled_ = false;
+        if (SDL_GetWindowFlags(window_) & SDL_WINDOW_BORDERLESS) {
+            SDL_SetWindowBordered(window_, true);
+            log::info("The window has its title bar again");
+        }
+        return;
+    }
+    // A window without a title bar that the game's top row cannot move would
+    // be stuck where it is: then it keeps its title bar.
+    if (!hitTestInstalled_ && !SDL_SetWindowHitTest(window_, windowHitTest, nullptr)) {
+        titleBarNote_ = "This system cannot move a window by the game's own top row, so the window keeps its title bar.";
+        log::warn("Hiding the title bar: the video driver {} cannot let the game move the window ({}); the title bar stays", videoDriver(),
+                  SDL_GetError());
+        return;
+    }
+    hitTestInstalled_ = true;
+    SDL_SetWindowBordered(window_, false);
+    if (!(SDL_GetWindowFlags(window_) & SDL_WINDOW_BORDERLESS)) {
+        SDL_SetWindowHitTest(window_, nullptr, nullptr);
+        hitTestInstalled_ = false;
+        titleBarNote_ = "This system cannot take the title bar off the window.";
+        log::warn("Hiding the title bar: the video driver {} cannot take it off the window", videoDriver());
+        return;
+    }
+    SDL_SyncWindow(window_);
+    // Windows and X11 say what frame the window has now; Wayland's and macOS's
+    // windows cannot tell (a Wayland desktop may keep a title bar it draws itself).
+    int top = 0;
+    if (SDL_GetWindowBordersSize(window_, &top, nullptr, nullptr, nullptr) && top > 0) {
+        titleBarNote_ = "The desktop kept a title bar on the window. The game's top row moves the window as well.";
+        log::info("Hiding the title bar: the window manager kept a frame of {} pixels at the top (video driver {})", top, videoDriver());
+        return;
+    }
+    log::info("The window has no title bar: the game's top row moves it, its edges resize it (video driver {})", videoDriver());
+}
+
+void App::publishHitAreas(int windowWidth, int windowHeight) {
+    const SDL_WindowFlags flags = SDL_GetWindowFlags(window_);
+    const bool active = appSettings().graphics.hideTitleBar && !(flags & SDL_WINDOW_FULLSCREEN);
+    const bool resizable = (flags & SDL_WINDOW_RESIZABLE) && !(flags & SDL_WINDOW_MAXIMIZED);
+    publishWindowHitAreas(takeWindowHitAreas(static_cast<float>(windowWidth), static_cast<float>(windowHeight),
+                                             resizable ? windowResizeBorder(uiScale_) : 0.0f, windowResizeCorner(uiScale_), active));
+}
+
 void App::applyGraphics() {
     const GraphicsSettings& g = appSettings().graphics;
     device_->setVSync(g.vsync);
@@ -264,6 +341,7 @@ void App::applyGraphics() {
         }
     }
     SDL_SyncWindow(window_);
+    applyTitleBar();
 }
 
 std::vector<DisplayModeInfo> App::displayModes() const {
@@ -318,6 +396,8 @@ EventVerdict App::handleEvent(SDL_Event& event, bool& running) {
     if (event.type == SDL_EVENT_QUIT) running = false;
     if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window_)) running = false;
     if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) updateUiScale();
+    // Back in a window from fullscreen (Alt+Enter): with or without its title bar, as set.
+    if (event.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN && event.window.windowID == SDL_GetWindowID(window_)) applyTitleBar();
     return verdict;
 }
 
@@ -433,6 +513,7 @@ bool App::frame() {
     if (!mode_->update(fs)) running = false;
     script::endItemFrame();
     ImGui::Render();
+    publishHitAreas(ww, wh);
     // An input script fails on any error Dear ImGui reported in the frame: a
     // window that misuses a widget shows players nothing, but must not pass.
     if (player_ && probe && imguiErrorCount() != imguiErrorsSeen_) {

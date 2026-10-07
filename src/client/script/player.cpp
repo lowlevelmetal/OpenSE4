@@ -1,5 +1,7 @@
 #include "client/script/player.hpp"
 
+#include "client/window_hit.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -629,6 +631,15 @@ Player::Status Player::check(const Step& st, const Probe& probe) {
             if (!resolveBox(st.to, probe, box, why)) return fail(why);
             if (a->point.x >= box.min.x && a->point.x < box.max.x && a->point.y >= box.min.y && a->point.y < box.max.y) return Status::Done;
             return fail(std::format("{} is not inside {}", st.target.text, st.to.text));
+        }
+        case Op::AssertWindowHit: {
+            // What the system would do with a press there, from the areas the
+            // frame drawn last published (client/window_hit.hpp).
+            const auto a = resolve(st.target, probe, why);
+            if (!a) return fail(why);
+            const std::string_view now = windowHitName(windowHitNow(a->point.x, a->point.y));
+            if (now == st.text) return Status::Done;
+            return fail(std::format("a press at {} ({:.0f}, {:.0f}) does {}, not {}", st.target.text, a->point.x, a->point.y, now, st.text));
         }
         case Op::AssertTurn: {
             const auto t = probe.turn();
