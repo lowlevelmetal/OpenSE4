@@ -55,8 +55,9 @@ std::span<const script::LibraryFile> packageFiles();
 // ("query", "rules", "builtin", "builtin_answer", "apply") and argument.
 using ServiceCall = std::function<std::expected<script::Value, std::string>(std::string_view service, const script::Value& args)>;
 
-// The host's side of one external bot's connection. The transport (a local
-// connection, or the network) comes later; tests use a double.
+// The host's side of one external bot's connection. The transport is a TCP
+// connection with the host's token (sdk/bots.hpp, docs/sdk/ai-protocol.md §10);
+// tests use a double.
 class ExternalBot {
 public:
     virtual ~ExternalBot();
