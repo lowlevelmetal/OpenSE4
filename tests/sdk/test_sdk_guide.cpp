@@ -164,6 +164,7 @@ TEST_CASE("sdk guide: new --from-example copies an example as a mod of one's own
     const Ran dumped = runProgram({kSdk, "dump", "--data=" + g.root.string(), "--out=" + (dir.path() / "dump").string()}, env);
     CHECK_MESSAGE(dumped.code == 0, dumped.out);
     CHECK(fs::exists(dir.path() / "dump" / "Data" / "Components.txt"));
+    CHECK_MESSAGE(slurp(dir.path() / "dump" / "Data" / "Components.txt").find("the data set with no mods.") != std::string::npos, dumped.out);
     // A release finds them beside the program; this build, in the source tree.
     const Ran found = runProgram({kSdk, "new", "--from-example", "new-hull", (dir.path() / "hull").string()}, env);
     CHECK_MESSAGE(found.code == 0, found.out);

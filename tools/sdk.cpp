@@ -4,9 +4,10 @@
 //   opense4-sdk new <assets|data|ai|rules> <dir> [--id=ID] [--name=NAME]
 //   opense4-sdk new --from-example <example> <dir> [--id=ID] [--name=NAME] [--examples-dir=DIR]
 //   opense4-sdk check <mod> [--data=DIR] [--mods-dir=DIR] [--mod=OTHER...]
-//   opense4-sdk dump [mod...] [--out=DIR] [--data=DIR] [--mods-dir=DIR]
-//   opense4-sdk pack <mod> [--out=FILE.zip]
-//   opense4-sdk info <mod>
+//   opense4-sdk dump [mod...] [--out=DIR] [--data=DIR] [--mods-dir=DIR] [--mod=OTHER...]
+//   opense4-sdk pack <dir> [--out=FILE.zip]
+//   opense4-sdk info <mod> [--mods-dir=DIR]
+//   opense4-sdk publish                    (waits for the Steam release)
 //   opense4-sdk test | run | arena | env-host | bot | python  (computer players:
 //       sdk_test.cpp, sdk_arena.cpp, sdk_env.cpp; docs/sdk/bots-and-arena.md)
 //
@@ -42,50 +43,79 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr std::string_view kUsage = R"(opense4-sdk: make, check and pack OpenSE4 mods (docs/sdk/packages-and-data.md).
+constexpr std::string_view kUsage = R"(opense4-sdk: make, check, test and pack OpenSE4 mods (docs/sdk/README.md).
 
 Usage:
   opense4-sdk new <kind> <dir> [--id=ID] [--name=NAME]
         A new mod from a template: kind is assets, data, ai or rules.
   opense4-sdk new --from-example <example> <dir> [--id=ID] [--name=NAME] [--examples-dir=DIR]
         A new mod copied from one of the SDK's example mods (new-hull, balance,
-        small-ai...; an unknown name lists them), under a mod id of yours.
+        small-ai...; an unknown name lists them), under a mod id of yours. The
+        examples are in sdk/examples beside opense4-sdk (or OPENSE4_SDK_EXAMPLES).
   opense4-sdk check <mod> [--data=DIR] [--mods-dir=DIR] [--mod=OTHER...]
-        Checks the mod's manifest, its dependencies (found by id in the mods
-        folder, or given with --mod), its patches applied to the installed data
-        set, the references they leave, and its pictures and files.
-  opense4-sdk dump [mod...] [--out=DIR] [--data=DIR] [--mods-dir=DIR]
-        Writes the data set with these mods applied (in load order) as data
-        files into DIR (default ./dump): Data/*.txt and the AI tables. With
-        no mod, the installed game's own, as the game reads it.
-  opense4-sdk pack <mod> [--out=FILE.zip]
+        Checks the mod's manifest, computer players, rules scripts, scenarios,
+        ui/ and text/ files, its dependencies (found by id in the mods folder,
+        or given with --mod), its patches applied to the installed data set,
+        the references they leave, and its pictures and files.
+  opense4-sdk dump [mod...] [--out=DIR] [--data=DIR] [--mods-dir=DIR] [--mod=OTHER...]
+        Writes the data set with these mods (and those they require) applied, in
+        load order, as data files into DIR (default ./dump): Data/*.txt and the
+        AI tables. With no mod, the installed game's own, as the game reads it.
+  opense4-sdk pack <dir> [--out=FILE.zip]
         Packs a mod folder into a .zip (default <id>-<version>.zip) with its
         identity recorded in it.
-  opense4-sdk info <mod>
+  opense4-sdk info <mod> [--mods-dir=DIR]
         What a mod is and holds, and its identity.
-  opense4-sdk test <mod> [--data=DIR] [--turns=N] [--seed=N] [--no-games]
+  opense4-sdk test <mod> [--data=DIR] [--turns=N] [--seed=N] [--no-games] [--no-tests] ...
         Runs the mod's tests/ in the game's Python, then a short game for each
-        of its computer players, failing on any script error.
-  opense4-sdk run <mod> [--player=NAME] [--data=DIR] [-- CLIENT OPTIONS...]
-        Starts the game with the mod (and --ai for its computer player).
-  opense4-sdk arena --ai=SPEC --ai=SPEC... [--games=N] [--turns=N] [--seed=N]
-        [--jobs=N] [--out=DIR] (see opense4-sdk arena --help)
-        Plays headless games between computer players and reports who wins.
+        of its computer players (with its rules on; a mod with rules and no
+        player: one game between classic AIs) and each of its scenarios,
+        failing on any script error.
+  opense4-sdk run <mod> [--player=NAME] [--data=DIR] [--client=EXE] [-- CLIENT OPTIONS...]
+        Starts the game with the mod and the mods it requires, and --ai for its
+        computer player: a quick start (-- --quick-start=RACE) has it play every
+        computer empire; Game Setup offers it under Computer Players.
+  opense4-sdk arena --ai=SPEC --ai=SPEC... [--games=N] [--turns=N] [--seed=N] [--jobs=N] [--out=DIR] ...
+  opense4-sdk arena --replay=DIR/games/game-NNNN.json
+        Plays headless games between computer players and reports who wins; plays
+        one of its games again.
   opense4-sdk env-host --seed=N ...
-        The engine behind opense4.env, the training environment.
+        The engine behind opense4.env, the training environment, which starts it.
   opense4-sdk bot <module:Class> [--path=DIR] [--port=N] [--slot=N] ...
         Plays a Player class as an external bot, with CPython.
   opense4-sdk python [--out=DIR]
         Writes OpenSE4's opense4 Python package for external bots.
   opense4-sdk publish
         Waits for the Steam release; `pack` makes the package to upload.
+  opense4-sdk help <command>   (or opense4-sdk <command> --help)
+        A command's options; test, run, arena, env-host and bot list them all.
 
 <mod> is a mod folder or .zip, or the id of a mod in the mods folder (default:
 Mods in OpenSE4's user folder; --mods-dir=DIR) or of one that comes with OpenSE4
-(mods/ beside opense4-sdk; --no-bundled-mods leaves those out). --data=DIR is the game folder
-or its Data folder (default: the installed game, found as the game finds it).
+(mods/ beside opense4-sdk; --no-bundled-mods, which every command takes, leaves
+those out). --data=DIR is the game folder or its Data folder (default: the
+installed game, found as the game finds it).
 Exit status: 0 when all is well, 1 when problems were found, 2 for usage errors.
 )";
+
+// One command's part of kUsage, and the paragraph about <mod> and --data, for
+// `opense4-sdk <command> --help` of the commands without a usage of their own.
+std::string usageOf(std::string_view command) {
+    std::string out = "Usage:\n";
+    const std::string prefix = std::format("  opense4-sdk {} ", command), whole = std::format("  opense4-sdk {}", command);
+    bool in = false;
+    for (size_t at = 0; at < kUsage.size();) {
+        size_t end = kUsage.find('\n', at);
+        if (end == std::string_view::npos) end = kUsage.size();
+        const std::string_view line = kUsage.substr(at, end - at);
+        if (line.starts_with(prefix) || line == whole) in = true;
+        else if (!line.starts_with("        ")) in = false;
+        if (in) out += std::format("{}\n", line);
+        at = end + 1;
+    }
+    out += std::format("\n{}", kUsage.substr(kUsage.find("<mod> is")));
+    return out;
+}
 
 int fail(std::string_view message, int code = 2) {
     std::fprintf(stderr, "opense4-sdk: %.*s\n", static_cast<int>(message.size()), message.data());
@@ -756,7 +786,8 @@ int cmdDump(const std::vector<std::string>& argv) {
     const mods::LoadedDataSet loaded = mods::loadDataSet(paths->root, paths->data, *set);
     for (const std::string& e : loaded.diagnostics.errors) std::fprintf(stderr, "error: %s\n", e.c_str());
     if (!loaded.data) return 1;
-    const std::string header = std::format("Written by opense4-sdk dump: the data set with the mods {}.", ruleset::describeMods(set->records()));
+    const std::string withMods = set->packages.empty() ? std::string("no mods") : "the mods " + ruleset::describeMods(set->records());
+    const std::string header = std::format("Written by opense4-sdk dump: the data set with {}.", withMods);
     size_t written = 0;
     for (const datafile::DataFile* f : loaded.data->dataFiles()) {
         writeFile(out / "Data" / f->name, datafile::write(*f, header));
@@ -766,14 +797,14 @@ int cmdDump(const std::vector<std::string>& argv) {
         writeFile(out / fs::path(path), datafile::write(*f, header));
         ++written;
     }
-    std::printf("Wrote %zu files of the data set with %s to %s.\n", written, ruleset::describeMods(set->records()).c_str(), out.string().c_str());
+    std::printf("Wrote %zu files of the data set with %s to %s.\n", written, withMods.c_str(), out.string().c_str());
     return loaded.diagnostics.errors.empty() ? 0 : 1;
 }
 
 // ---- pack --------------------------------------------------------------------------------------
 
 int cmdPack(const std::vector<std::string>& argv) {
-    auto a = parse(argv, 2, {"out", "mods-dir"});
+    auto a = parse(argv, 2, {"out"});
     if (!a) return fail(a.error());
     if (a->positional.size() != 1) return fail("pack needs one mod folder");
     std::error_code ec;
@@ -828,11 +859,24 @@ int main(int argc, char** argv) {
             ++i;
         }
     }
-    if (args.size() < 2 || args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
+    if (args.size() < 2 || args[1] == "--help" || args[1] == "-h" || (args[1] == "help" && args.size() < 3)) {
         std::printf("%.*s", static_cast<int>(kUsage.size()), kUsage.data());
         return args.size() < 2 ? 2 : 0;
     }
+    // "help <command>" is "<command> --help"; -h is --help (before "--").
+    if (args[1] == "help") args = {args[0], args[2], "--help"};
+    bool help = false;
+    for (size_t i = 2; i < args.size() && args[i] != "--"; ++i) {
+        if (args[i] == "-h") args[i] = "--help";
+        help = help || args[i] == "--help";
+    }
     const std::string& command = args[1];
+    // The commands of this file have their part of the usage as their help.
+    if (help && (command == "new" || command == "check" || command == "dump" || command == "pack" || command == "info" || command == "publish")) {
+        const std::string text = usageOf(command);
+        std::printf("%s", text.c_str());
+        return 0;
+    }
     // Data generators (data/*.py) run in the script runtime (docs/sdk/rules.md).
     mods::setDefaultGeneratorRunner(sdk::scriptGenerators());
     if (command == "new") return cmdNew(args);

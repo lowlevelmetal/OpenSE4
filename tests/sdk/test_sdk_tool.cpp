@@ -8,7 +8,13 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <map>
+#include <regex>
+#include <set>
+#include <sstream>
 
 #if !defined(_WIN32)
 #include <sys/wait.h>
@@ -25,14 +31,14 @@ struct Run {
     std::string out;
 };
 
-Run sdk(const std::string& args) {
+Run program(const char* exe, const std::string& args) {
     static TempDir outputs("sdk_tool_output");
     static int n = 0;
     const fs::path file = outputs / std::format("run{}.txt", ++n);
     // Cross-compiled tests run the tool through the same emulator as themselves
     // (OPENSE4_TEST_RUNNER, e.g. "qemu-arm -L /usr/arm-linux-gnueabihf").
     const char* runner = std::getenv("OPENSE4_TEST_RUNNER");
-    std::string command = std::format("{}{}\"{}\" {} > \"{}\" 2>&1", runner ? runner : "", runner ? " " : "", OPENSE4_SDK_EXE, args,
+    std::string command = std::format("{}{}\"{}\" {} > \"{}\" 2>&1", runner ? runner : "", runner ? " " : "", exe, args,
                                       file.string());
 #if defined(_WIN32)
     command = "\"" + command + "\"";  // cmd.exe drops the outer quotes
@@ -43,6 +49,8 @@ Run sdk(const std::string& args) {
 #endif
     return Run{code, readText(file)};
 }
+
+Run sdk(const std::string& args) { return program(OPENSE4_SDK_EXE, args); }
 
 std::string q(const fs::path& p) { return "\"" + p.string() + "\""; }
 
@@ -194,4 +202,107 @@ TEST_CASE("sdk tool: a command without what it needs says so; publish waits for 
     CHECK(sdk("arena --help").code == 0);
     CHECK(sdk("frobnicate").code == 2);
     CHECK(sdk("--help").code == 0);
+}
+
+namespace {
+
+const std::vector<std::string> kCommands{"new", "check", "dump", "pack", "info", "test", "run", "arena", "env-host", "bot", "python", "publish"};
+
+// The options a help text names: every --word in it.
+std::set<std::string> optionsIn(const std::string& text) {
+    std::set<std::string> out;
+    static const std::regex option(R"((^|[^\w-])(--[a-z][a-z0-9-]*))");
+    for (auto it = std::sregex_iterator(text.begin(), text.end(), option); it != std::sregex_iterator(); ++it) out.insert((*it)[2].str());
+    return out;
+}
+
+// The documentation that shows opense4-sdk's command lines: README.md, CLAUDE.md, docs/
+// (but its specs), the mods' READMEs and the in-game manual.
+std::vector<fs::path> commandLineDocs() {
+    const fs::path root = fs::path(OPENSE4_DOCS_DIR).parent_path();
+    std::vector<fs::path> files{root / "README.md", root / "CLAUDE.md"};
+    for (const fs::path& top : {root / "docs", root / "mods", root / "assets" / "learn" / "manual"})
+        for (const auto& e : fs::recursive_directory_iterator(top))
+            if (e.path().extension() == ".md" && e.path().string().find("spec") == std::string::npos) files.push_back(e.path());
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+} // namespace
+
+TEST_CASE("sdk tool: every command answers --help, -h and help <command>; the usage lists them all") {
+    const Run usage = sdk("--help");
+    REQUIRE(usage.code == 0);
+    CHECK(sdk("help").out == usage.out);
+    CHECK(sdk("-h").out == usage.out);
+    for (const std::string& command : kCommands) {
+        INFO(command);
+        const size_t listed = usage.out.find("  opense4-sdk " + command);
+        CHECK_MESSAGE((listed != std::string::npos && std::isspace(static_cast<unsigned char>(usage.out[listed + 14 + command.size()]))),
+                      "the usage lists " << command);
+        const Run help = sdk(command + " --help");
+        CHECK_MESSAGE(help.code == 0, help.out);
+        CHECK_MESSAGE(help.out.find("opense4-sdk " + command) != std::string::npos, help.out);
+        CHECK(sdk(command + " -h").out == help.out);
+        CHECK(sdk("help " + command).out == help.out);
+    }
+    // The commands' own options, as the usage names them, are those their help names.
+    const Run new_ = sdk("new --help");
+    for (const char* option : {"--id", "--name", "--from-example", "--examples-dir"}) CHECK(optionsIn(new_.out).contains(option));
+    CHECK(optionsIn(sdk("dump --help").out).contains("--mod"));
+    CHECK(optionsIn(sdk("info --help").out).contains("--mods-dir"));
+    CHECK(sdk("pack . --mods-dir=x").code == 2);   // pack takes a folder, never an id
+}
+
+TEST_CASE("sdk tool: the command lines of the docs use opense4-sdk's commands and options") {
+    // In code (a fenced block, or `...`), "opense4-sdk <command>" names a command, and the
+    // options after it (up to "--", the end of the code, a "|", "#", ";" or "&&") are that
+    // command's, or --no-bundled-mods, which every command takes.
+    std::map<std::string, std::set<std::string>> options;
+    for (const std::string& command : kCommands) {
+        options[command] = optionsIn(sdk(command + " --help").out);
+        options[command].insert({"--no-bundled-mods", "--help"});
+    }
+    options["help"] = {};   // opense4-sdk help <command>
+    static const std::regex call(R"(opense4-sdk(\.exe)?\s+([a-z][a-z-]*)(?=[\s`]|$)([^`]*))");
+    int checked = 0;
+    for (const fs::path& file : commandLineDocs()) {
+        std::istringstream in(readText(file));
+        bool code = false;
+        int n = 0;
+        for (std::string line; std::getline(in, line);) {
+            ++n;
+            const size_t first = line.find_first_not_of(' ');
+            if (first != std::string::npos && line.compare(first, 3, "```") == 0) {
+                code = !code;
+                continue;
+            }
+            std::vector<std::string> parts;
+            if (code) parts.push_back(line);
+            else
+                for (size_t a = line.find('`'); a != std::string::npos;) {
+                    const size_t b = line.find('`', a + 1);
+                    if (b == std::string::npos) break;
+                    parts.push_back(line.substr(a + 1, b - a - 1));
+                    a = line.find('`', b + 1);
+                }
+            for (const std::string& part : parts) {
+                for (auto it = std::sregex_iterator(part.begin(), part.end(), call); it != std::sregex_iterator(); ++it) {
+                    const std::string command = (*it)[2].str();
+                    std::string rest = (*it)[3].str();
+                    for (const char* end : {" -- ", "|", " #", ";", "&&", "opense4"})
+                        if (const size_t at = rest.find(end); at != std::string::npos) rest.resize(at);
+                    const std::string where = std::format("{}:{}: {}", fs::relative(file, fs::path(OPENSE4_DOCS_DIR).parent_path()).generic_string(), n, part);
+                    ++checked;
+                    if (!options.contains(command)) {
+                        CHECK_MESSAGE(false, where << ": opense4-sdk has no command " << command);
+                        continue;
+                    }
+                    for (const std::string& option : optionsIn(rest))
+                        CHECK_MESSAGE(options[command].contains(option), where << ": opense4-sdk " << command << " has no option " << option);
+                }
+            }
+        }
+    }
+    CHECK(checked > 100);
 }
