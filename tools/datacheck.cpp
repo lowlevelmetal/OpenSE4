@@ -2,7 +2,8 @@
 // every problem, and any fields the loader does not read yet.
 //
 //   opense4-datacheck                 auto-detect an installed copy of the classic game
-//   opense4-datacheck path/to/Data    check a specific data set (e.g. a mod)
+//   opense4-datacheck path/to/Data    check a specific data set (e.g. a classic mod's)
+//   opense4-datacheck -v              also list every ability and damage type in use
 
 #include "core/environment.hpp"
 #include "ruleset/ruleset.hpp"
@@ -13,14 +14,49 @@
 
 using namespace opense4;
 
+namespace {
+
+constexpr const char* kUsage = R"(opense4-datacheck: load a data set of the classic game and report every problem.
+
+Usage:
+  opense4-datacheck [DIR] [-v]
+
+DIR is the game folder or its Data folder: an installed game, or a classic mod's
+complete data set (default: the installed game, found as the game finds it). It
+prints what the data set holds, then every error and warning with its file, line
+and record, and the fields OpenSE4 does not read. Mods made with the SDK are
+checked over the installed game with opense4-sdk check (docs/sdk/README.md).
+
+  -v, --verbose   Also list every ability type and weapon damage type in use
+  -h, --help      Show this help
+
+Exit status: 0 when the data set has no errors, 1 when it has some, 2 when there is
+no data set at DIR (or none installed) or for usage errors.
+)";
+
+} // namespace
+
 int main(int argc, char** argv) {
     std::filesystem::path dir;
     bool verbose = false;
     const std::vector<std::string> args = core::utf8Arguments(argc, argv);  // UTF-8 on Windows too
     for (size_t i = 1; i < args.size(); ++i) {
         const std::string_view arg = args[i];
-        if (arg == "-v" || arg == "--verbose") verbose = true;
-        else dir = arg;
+        if (arg == "-h" || arg == "--help") {
+            std::printf("%s", kUsage);
+            return 0;
+        }
+        if (arg == "-v" || arg == "--verbose") {
+            verbose = true;
+        } else if (arg.starts_with("-")) {
+            std::fprintf(stderr, "opense4-datacheck: unknown option %s\n\n%s", args[i].c_str(), kUsage);
+            return 2;
+        } else if (!dir.empty()) {
+            std::fprintf(stderr, "opense4-datacheck: one data set at a time (%s and %s)\n", dir.string().c_str(), args[i].c_str());
+            return 2;
+        } else {
+            dir = arg;
+        }
     }
     const auto found = ruleset::findInstalledDataDir(dir);
     if (!found) {

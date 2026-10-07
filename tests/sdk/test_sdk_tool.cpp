@@ -306,3 +306,22 @@ TEST_CASE("sdk tool: the command lines of the docs use opense4-sdk's commands an
     }
     CHECK(checked > 100);
 }
+
+TEST_CASE("sdk tool: opense4-server's commands answer --help and -h") {
+    const Run usage = program(OPENSE4_SERVER_EXE, "--help");
+    REQUIRE(usage.code == 0);
+    CHECK(usage.out.find("opense4-server pbem process") != std::string::npos);
+    for (const char* args : {"-h", "pbem --help", "pbem -h", "pbem new --help", "pbem process --help", "pbem turn-files --help", "pbem orders --help",
+                             "pbem info --help", "bot --help", "password-verifier --help"}) {
+        const Run r = program(OPENSE4_SERVER_EXE, args);
+        CHECK_MESSAGE(r.code == 0, args << "\n" << r.out);
+        CHECK_MESSAGE(r.out == usage.out, args);
+    }
+    // Every option the help names is one of the server's, and the other way round for these.
+    const std::set<std::string> named = optionsIn(usage.out);
+    for (const char* option : {"--version", "--allow-data-mismatch", "--no-bundled-mods", "--bot-token", "--trust-new-host-key", "--port"})
+        CHECK_MESSAGE(named.contains(option), option);
+    const Run version = program(OPENSE4_SERVER_EXE, "--version");
+    CHECK(version.code == 0);
+    CHECK(version.out.find("network protocol") != std::string::npos);
+}

@@ -47,12 +47,12 @@ Usage:
   opense4-server pbem new --setup=FILE.toml --out=GAME.gam [--turn-files=DIR] [--bot-...]
   opense4-server pbem process --game=GAME.gam --orders=DIR [--password=PW] [--keep-orders] [--bot-...]
                               [--reset-passwords=N,M]  (new passwords, shown here only)
-                              [--turn-files=DIR] [--no-password-migration]
+                              [--turn-files=DIR] [--no-password-migration] [--allow-data-mismatch]
   opense4-server pbem turn-files --game=GAME.gam [--out=DIR]
   opense4-server pbem orders --turn=FILE.turn [--password=PW] [--out=DIR] [--trust-new-host-key]
                              [--new-password=PW --confirm-old-password]  (a game of OpenSE4 0.6)
   opense4-server pbem info --game=GAME.gam|FILE.turn
-  opense4-server bot --name=NAME [--connect=HOST[:PORT]] [--turns=N]
+  opense4-server bot --name=NAME [--connect=HOST[:PORT]] [--port=N] [--turns=N]
   opense4-server password-verifier --game-id=N PASSWORD
 
 Network game options:
@@ -114,6 +114,8 @@ Network game options:
   --autosave=N           Save every N turns (default 1; 0 = only when stopping)
   --max-turns=N          Stop once the game reaches turn N (for testing)
   --verbose              Also log lobby changes after the game started
+  --version              Print the version, network protocol and save format, and exit
+  -h, --help             Show this help
 
 The game starts when every player slot is taken and every player is ready.
 Players whose orders are missing when the turn is processed are played by the
@@ -137,7 +139,9 @@ play-by-e-mail fingerprint for players to compare). Players send back one
 key (lose the key, and the .plr files can no longer be read). "process" reads every .plr in DIR, checks game, turn,
 empire, the turn file it was made from and the password, processes the turn,
 rewrites GAME.gam (the previous turn is kept as GAME.gam.bak), writes the new
-turn files and deletes the .plr files it used (--keep-orders keeps them). In a
+turn files and deletes the .plr files it used (--keep-orders keeps them). It
+refuses a game made with another data set or other game-changing mods unless
+given --allow-data-mismatch (the game must still fit this data set). In a
 turn-based game (setup file: simultaneous = false) "process" plays one
 player's turn from that player's .plr and names the player whose turn file to
 send next. A game of OpenSE4 0.6 moves each empire's password to the current
@@ -157,7 +161,8 @@ password's verifier in the game N. It holds nothing anyone can log in with.
 bot: a scripted player for tests. It joins, readies up, submits orders for
 --turns turns (default 2) and exits 0 once the turn has advanced that often.
 In a turn-based game it plays one command in each of its turns and ends them.
-Options: --password, --join-password, --master-password (then also --start to
+Options: --port=N (the host's, when --connect names none; default 6720),
+--password, --join-password, --master-password (then also --start to
 start the game), --race=PRESET, --data=DIR, --timeout=SEC (default 120),
 --host-key=HEX (the host's public key: refuse any other host), --old-password
 (a game of OpenSE4 0.6: show the host the old form of the password once, to
@@ -876,6 +881,7 @@ int pbemOrders(std::span<char*> args) {
 int pbemInfo(std::span<char*> args) {
     auto o = parseArgs(args, {"game"}, {"help"});
     if (!o) return fail(o.error(), 2);
+    if (o->has("help")) return usage();
     if (!o->has("game")) return fail("pbem info needs --game=GAME.gam (or a player's FILE.turn)", 2);
     auto game = game::loadGame(o->get("game"));
     if (!game) {
@@ -1076,6 +1082,7 @@ namespace {
 
 int run(std::span<char*> args) {
     const std::string_view mode = args.empty() ? std::string_view{} : std::string_view(args[0]);
+    if (mode == "-h") return usage();
     if (mode == "pbem") {
         const std::string_view sub = args.size() > 1 ? std::string_view(args[1]) : std::string_view{};
         const auto rest = args.size() > 2 ? args.subspan(2) : std::span<char*>{};
@@ -1084,11 +1091,13 @@ int run(std::span<char*> args) {
         if (sub == "orders") return pbemOrders(rest);
         if (sub == "info") return pbemInfo(rest);
         if (sub == "turn-files") return pbemTurnFiles(rest);
+        if (sub == "--help" || sub == "-h") return usage();
         return fail("pbem needs a command: new, process, turn-files, orders or info (see --help)", 2);
     }
     if (mode == "bot") return runBot(args.subspan(1));
     if (mode == "password-verifier") {
         auto o = parseArgs(args.subspan(1), {"game-id"}, {"help"});
+        if (o && o->has("help")) return usage();
         if (!o || o->positional.size() != 1 || !o->has("game-id")) return fail("usage: opense4-server password-verifier --game-id=N PASSWORD", 2);
         auto id = o->integer("game-id", 0, 1, std::numeric_limits<int64_t>::max());
         if (!id) return fail(id.error(), 2);
