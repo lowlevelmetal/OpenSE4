@@ -178,7 +178,9 @@ cmake --preset release -B build/armhf --toolchain cmake/toolchains/arm-linux-gnu
 
 **Tests** of a cross build run through QEMU's user mode (`qemu-aarch64`, `qemu-arm`, or
 their `-static` builds; Debian and Ubuntu: `qemu-user`). The toolchain file makes it
-CMake's emulator, so `ctest` uses it; by hand, `-L` names the target's C library:
+CMake's emulator, so `ctest --preset dist-linux-armhf` (or `-aarch64`) runs the tests
+through it, with `OPENSE4_TEST_RUNNER` (below) set to the same command. By hand, `-L`
+names the target's C library:
 
 ```sh
 OPENSE4_TEST_RUNNER="qemu-arm -L /usr/arm-linux-gnueabihf" \
@@ -189,8 +191,8 @@ Some of the modding SDK's tests start `opense4-sdk`. `OPENSE4_TEST_RUNNER` names
 emulator command to start it with (the same as the tests' own) and tells the tests that they
 run under an emulator: those that start several of our programs talking to each other
 (external bots, the arena, the example mods' games) are then skipped.
-`tools/package_release.sh` and CI's armhf job set it; `ctest` does not, so run a cross
-build's tests by hand as above.
+`ctest`, `tools/package_release.sh` and CI's armhf job set it. The Windows builds' emulator,
+Wine, needs no such thing: a Windows program starts another one itself.
 
 Under QEMU an optimized build runs the suite much faster than a debug build: about a
 minute and a half in four processes (`.github/scripts/run_tests_parallel.sh`) on a
@@ -231,7 +233,7 @@ hundreds of fused instructions in it).
 | `OPENSE4_ENABLE_UPNP` | ON | Build with miniupnpc. OFF compiles a no-op port mapper |
 | `OPENSE4_STATIC` | OFF | Link statically for redistribution (the `dist-*` presets) |
 | `OPENSE4_EMBED_RESOURCES` | ON | Build our fonts into the executable; files on disk still win (`opense4 --assets=DIR` names the folder of OpenSE4's own assets for one run) |
-| `OPENSE4_DEV_PATHS` | ON | Let the programs fall back to the source tree: the client's `assets/` and learning content, and the mods that come with OpenSE4 (`mods/`, when no `mods/` is beside the programs). The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
+| `OPENSE4_DEV_PATHS` | ON | Let the programs fall back to the source tree: the client's `assets/` and learning content, the mods that come with OpenSE4 (`mods/`, when no `mods/` is beside the programs), and `opense4-sdk new --from-example`'s example mods (`mods/examples`, when no `sdk/examples` is beside it). The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
 
 The code must compile without warnings under
 `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (`/W4` on MSVC).
@@ -255,8 +257,15 @@ tarballs also hold `PORTABLE-README.txt` (from `packaging/`), which says how to 
 (docs/SETUP.md "A portable copy"); the installer leaves it out, since a copy in Program Files cannot be. No
 package is portable as it comes. Our own fonts (Noto Sans,
 SIL Open Font License) are built into the game, so nothing else needs to sit next to it. The modding SDK's
-documentation (`docs/sdk`) and example mods (`mods/examples`) go into `sdk/docs` and `sdk/examples` beside the
-programs, where `opense4-sdk new --from-example` finds the examples.
+documentation (`docs/sdk`, with the SDK's design, `docs/MODDING_SDK.md`, which its pages cite) and example mods
+(`mods/examples`) go into `sdk/docs` and `sdk/examples` beside the programs, where `opense4-sdk new --from-example`
+finds the examples. `tools/stage_sdk_docs.py` copies them and rewrites the links of their pages, the README's
+and the bundled mods' (below) that would not work there: a link to a file the package has leads to its copy (from
+`sdk/docs/README.md`, `../../mods/examples/new-hull/` becomes `../examples/new-hull/`), and one to any other file
+of the source tree (the specs, other docs, source files, the README's screenshots) leads to it on GitHub at the
+version's tag (`https://github.com/lowlevelmetal/OpenSE4/blob/v<version>/docs/spec/04-combat.md`, the version
+from `CMakeLists.txt`), with its heading anchor. The repository's files stay as they are, and a test
+(`tests/sdk/test_sdk_guide.cpp`) stages them and follows every link.
 The mods that come with OpenSE4 (Hegemon) go into `mods/` beside the programs: the folders of `mods/` that
 `mods/bundled.txt` names, one a line, each with the files git tracks in it (so that every package of a version
 has the same files, and so the same mod identity, wherever it is built; uncommitted changes are packaged, untracked
@@ -269,7 +278,7 @@ OpenSE4-<version>-linux-x86_64/          (the same in the ARM packages and, with
   opense4  opense4-server  opense4-datacheck  opense4-convert  opense4-sdk
   README.md  LICENSE  THIRD_PARTY_NOTICES.txt  PORTABLE-README.txt
   mods/hegemon/            the mods that come with OpenSE4
-  sdk/docs/  sdk/examples/ the modding SDK's guide and example mods
+  sdk/docs/  sdk/examples/ the modding SDK's guide (with MODDING_SDK.md) and example mods
   share/  install-desktop-entry.sh   (Linux only)
 ```
 The Linux package also holds the desktop entry, icons and AppStream metadata under
@@ -301,7 +310,8 @@ Requirements beyond a normal build:
 
 - network access the first time (SDL3 is fetched and built as a static library, and
   the Windows toolchain is fetched into `build/_tools`);
-- `python3` for the Windows import check;
+- `python3` to stage the SDK's documentation (`tools/stage_sdk_docs.py`, every package) and for the
+  Windows import check;
 - `bsdtar` for the zip file;
 - NSIS or Wine for the installer (see "The Windows installer"), and Wine to run the
   Windows tests on Linux.

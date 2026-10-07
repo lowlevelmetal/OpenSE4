@@ -25,9 +25,12 @@
 # fonts built in, plus the README, PORTABLE-README.txt (how to make the unpacked
 # copy portable), the licence (GPL 3.0 or later) and the third-party notices, the
 # modding SDK's documentation and example mods in sdk/ beside opense4-sdk (sdk/docs
-# from docs/sdk, sdk/examples from mods/examples),
-# and the mods that come with OpenSE4 in mods/ beside the programs (the folders
+# from docs/sdk and docs/MODDING_SDK.md, sdk/examples from mods/examples), and the
+# mods that come with OpenSE4 in mods/ beside the programs (the folders
 # mods/bundled.txt names, such as mods/hegemon; their files as git tracks them).
+# tools/stage_sdk_docs.py stages the SDK's files and points the links of their
+# pages, the README's and the mods' at the package's copies, or at GitHub at the
+# version's tag for files the package does not have.
 # Nothing from the original game is included: players point the game at their own
 # installed copy.
 #
@@ -333,14 +336,12 @@ for target in "${targets[@]}"; do
     # How to make an unpacked copy portable (docs/SETUP.md "A portable copy"); the
     # installer leaves it out, as an installed copy cannot be portable.
     cp packaging/PORTABLE-README.txt "$stage/PORTABLE-README.txt"
-    # The modding SDK's guide, reference and example mods, beside opense4-sdk, which
-    # finds the examples there (opense4-sdk new --from-example).
-    mkdir -p "$stage/sdk"
-    cp -r docs/sdk "$stage/sdk/docs"
-    cp -r mods/examples "$stage/sdk/examples"
-    find "$stage/sdk" -name __pycache__ -type d -prune -exec rm -rf {} +
     # The mods that come with OpenSE4, which the programs find in mods/ beside them.
     stage_mods "$stage"
+    # The modding SDK's guide, reference and example mods, beside opense4-sdk, which
+    # finds the examples there (opense4-sdk new --from-example). Their links, the
+    # README's and the bundled mods' lead to the package's copies, or to GitHub.
+    python3 tools/stage_sdk_docs.py "$stage"
     notices "$build" "$platform" "$stage/THIRD_PARTY_NOTICES.txt"
     if [ "$platform" = linux ]; then
         mkdir -p "$stage/share/applications" "$stage/share/metainfo" "$stage/share/icons"

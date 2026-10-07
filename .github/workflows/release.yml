@@ -84,7 +84,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends ca-certificates git cmake ninja-build binutils file \
+          apt-get install -y --no-install-recommends ca-certificates git cmake ninja-build binutils file python3 \
             g++-arm-linux-gnueabihf qemu-user glslc pkg-config desktop-file-utils appstream \
             libasound2-dev:armhf libpulse-dev:armhf libaudio-dev:armhf libfribidi-dev:armhf libjack-dev:armhf \
             libsndio-dev:armhf libx11-dev:armhf libxext-dev:armhf libxrandr-dev:armhf libxcursor-dev:armhf \
