@@ -36,6 +36,17 @@ public:
     // Applies navigation requests from other windows.
     void applyRequests(UiContext& ui);
 
+    // Moves in the shown system are still being shown (ship_glides.hpp): the
+    // glides of the moves made since the last call start first, so a call
+    // right after an engine call sees its moves (turn_start.hpp).
+    bool movesShowing(UiContext& ui);
+    // The player skipped them: every ship is drawn on its square at once.
+    void showMovesAtOnce() { glides_.finish(); }
+    // The ending windows due at this start of a turn, in the order they are
+    // shown (finale.hpp); nothing until the next start of a turn. The caller
+    // opens them when the turn's start lets it (turn_start.hpp).
+    std::vector<FinaleKind> endingsDue(UiContext& ui);
+
     game::SystemId shownSystem() const { return shown_; }
     // What is selected, as lessons name it (learn::ClientFacts::selected),
     // and how many selections the player has made (the one a game starts
@@ -51,7 +62,8 @@ public:
     // Input scripts (docs/BUILDING.md "Input scripts"): the sectors of the
     // shown system that a query names, as frame rectangles in row order
     // ("3,4", or words joined by + and negated by !: empty, home, colony,
-    // planet, colonizable, star, warp-point, ship, enemy, selected, any),
+    // planet, colonizable, star, warp-point, ship, enemy, selected, gliding,
+    // line, line-start, any),
     // and the sector at a frame point; the galaxy panel's systems a query
     // names ("12", home, shown, explored, any, joined and negated the same
     // way), as frame points, in the order of their ids.
@@ -212,8 +224,16 @@ private:
     std::optional<game::SystemId> galaxySystemAt(const UiContext& ui, Vec2 p, bool exploredOnly) const;
 
     // Ship movement animation (ship_glides.hpp) and the movement log replay
-    // (movement_replay.hpp), updated once per frame.
+    // (movement_replay.hpp), updated once per frame; the glides also when the
+    // game changed since (trackGlides). A new turn is noted first.
     void trackMovement(UiContext& ui);
+    void noteNewTurn(UiContext& ui);
+    void trackGlides(UiContext& ui);
+    void trackReplay(UiContext& ui);
+    double glidesAt_ = -1.0;
+    uint64_t glidesRevision_ = 0;
+    // The object whose movement line the panel shows is gliding (a fleet: one of its members).
+    bool lineSubjectGliding(const UiContext& ui) const;
     // Turn-based games: the view follows the player's own objects whose
     // orders ran during its turn (spec 06 §2.7), from the session's steps.
     void followOwnMoves(UiContext& ui);
@@ -274,14 +294,21 @@ private:
     ImGuiWindowFlags blockedFlags() const { return inputBlocked_ ? int(ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoNavInputs) : 0; }
     int orderPage_ = 0;   // the order strip's page at 800x600 (§2.3)
 
-    // The movement line's route, worked out again when the game or the report changes.
+    // The movement line's route, worked out again when the game or the report
+    // changes. While the object's move is shown, the route as it stood before
+    // the move (`beforeMoves`, ClassicSession::movesBefore).
     struct MovementLineCache {
         LineSubject subject;
         uint64_t revision = 0;
         uint32_t turn = 0;
+        bool beforeMoves = false;
         game::movement::PlannedRoute route;
     };
     std::optional<MovementLineCache> line_;
+    // The sectors of the shown system the movement line was drawn through
+    // this frame, and its start (input scripts' "line" and "line-start").
+    std::vector<game::Sector> lineDrawn_;
+    std::optional<game::Sector> lineStartDrawn_;
 
     ShipGlides glides_;
     MovementReplay replay_;

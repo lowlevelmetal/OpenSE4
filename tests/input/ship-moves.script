@@ -1,0 +1,142 @@
+# Moves as they are made, and what a turn's start shows after them (spec 06 §2.4 "Moves as they
+# are made" and "Movement lines", §2.7; a player's report on v0.11.0), on a training game of our
+# own (tests/input/learn-moves): turn-based, two attack ships at home.
+# - On a computer that never started a simultaneous game the movement lines are off (spec 06
+#   §1.9); Ctrl+L switches them on.
+# - A Move To runs at once: the ship glides as far as its movement goes while the player plays
+#   on; its movement line is the route as it stood before the move, from the square it left.
+# - At End Turn the turn's start moves the ship first, the main window waiting meanwhile; the
+#   Log (a research project completed) opens only once the glide is over. Afterwards the line
+#   is worked out again (the ship arrived: no line).
+# - At the next End Turn a key shows the moves at once and does nothing else; the Log (the other
+#   ship scrapped) opens.
+# - OpenSE4's "Ship movement speed" in Options: at 1/8x a short glide still runs 10 frames on;
+#   at 8x a longer one is over within 6 frames (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 --size=1280x800
+
+wait-lesson moves
+wait 5
+click tag:lesson:hide
+# A fresh computer shows no movement lines; Ctrl+L.
+assert { not = { movement_lines = true } }
+key Ctrl+L
+wait-until { movement_lines = true }
+# A research project the points pay for at once: its entry opens the Log at the next turn's start.
+key F8
+wait-window research
+click item:Repair in=research
+wait 2
+key Escape
+wait-closed research
+
+# A ship at home: Move To the far corner, eight squares; six now, two at the next turn's start.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+key M
+wait-until { picking = "move-to" }
+click sector:12,12
+# Given during the turn, it runs at once: the ship glides, the line from the square it left.
+assert-present sector:gliding
+assert-present sector:line-start+home
+assert-no-window log
+wait-gone sector:gliding
+# Arrived for this turn: the line is worked out again, from where the ship is.
+assert-present sector:line-start+ship
+assert-absent sector:line-start+home
+
+# The slowest speed.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+assert-present item:"Ship movement speed" in=options
+drag item:"Ship movement speed"@50%,50% in=options to item:"Ship movement speed"@1,50% in=options
+assert-present item:"Ship movement speed" in=options
+screenshot options-speed.png
+key Escape
+wait-closed options
+
+# End Turn: the turn's start moves the ship its last two squares. The Log waits for the glide,
+# and so does the main window; the line is still the route from the square the ship left.
+key F12
+click item:Yes optional
+wait 10
+assert-present sector:gliding
+assert-no-window log
+assert-present sector:line-start+!ship
+screenshot gliding.png
+wait-gone sector:gliding
+wait-window log
+# Arrived: no orders left, no line.
+assert-absent sector:line
+screenshot log-after-glide.png
+click tag:log:close
+wait-closed log
+
+# The original's pace again; the other ship scrapped at the home yard, for the next Log; the
+# first ship sent back west: four squares now.
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+drag item:"Ship movement speed"@1,50% in=options to item:"Ship movement speed"@31%,50% in=options
+key Escape
+wait-closed options
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+key G
+wait-window scrap
+click item:Scrap in=scrap
+click item:Yes in="Confirm Action" optional
+wait 5
+key Escape
+wait-closed scrap
+assert-log "scrapped"
+# Alone in its sector: a click opens its report.
+click sector:ship+!home
+wait 2
+key M
+wait-until { picking = "move-to" }
+click sector:0,12
+wait-gone sector:gliding
+
+# End Turn: six squares at the turn's start; a key shows them at once and does nothing else
+# (F8 opens no Research window), and the Log opens.
+key F12
+click item:Yes optional
+wait 2
+assert-present sector:gliding
+assert-no-window log
+key F8
+assert-absent sector:gliding
+assert-no-window research
+wait-window log
+click tag:log:close
+wait-closed log
+
+# The fastest speed: the ship sent north-east, six squares and a turn at the next turn's start,
+# over within six frames (at 1/8x the same would take over three seconds).
+key F2
+wait-window game-menu
+click item:Options in=game-menu
+wait-window options
+drag item:"Ship movement speed"@31%,50% in=options to item:"Ship movement speed"@-3,50% in=options
+key Escape
+wait-closed options
+# Alone in its sector: a click opens its report.
+click sector:ship
+wait 2
+key M
+wait-until { picking = "move-to" }
+click sector:12,0
+key F12
+click item:Yes optional
+assert-present sector:gliding
+wait 6
+assert-absent sector:gliding
+click tag:log:close optional

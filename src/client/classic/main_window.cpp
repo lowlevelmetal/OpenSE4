@@ -1130,13 +1130,6 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
 void MainWindow::update(UiContext& ui, bool blocked) {
     layOut(ui.map.left, ui.map.right);
     trackMovement(ui);
-    // The ending windows, each as it comes at a turn's start, one after
-    // another (finale.hpp, spec 06 §7 Q83).
-    if (const auto endings = finale_.update(ui.state(), ui.session.player(), ui.session.kind()); !endings.empty()) {
-        ScreenArgs args;
-        for (FinaleKind k : endings) args.text += (args.text.empty() ? "" : ",") + std::string(finaleArgName(k));
-        ui.open(ScreenId::Finale, std::move(args));
-    }
     if (!shown_.valid() && !ui.state().galaxy.systems.empty()) reset(ui);
     followOwnMoves(ui);
     prepareSectors(ui);
@@ -1678,6 +1671,8 @@ void MainWindow::overlayText(UiContext& ui) {
     // §5.4, transparent backgrounds, places given as the text cell's top (or
     // its bottom), so each is drawn below that by the face's internal leading.
     const game::GameState& s = ui.state();
+    lineDrawn_.clear();
+    lineStartDrawn_.reset();
     if (!shown_.valid()) return;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const float k = ui.k();
@@ -1804,16 +1799,34 @@ void MainWindow::overlayText(UiContext& ui) {
     // over the vehicles moving underneath (§7 Q86, confirmed: binary).
     const game::movement::PlannedRoute* route = nullptr;
     if (explored && settings().showMovementLines) {
+        const std::optional<game::VehicleId> reportVehicle = tagged_.empty() ? vehicle_ : std::nullopt;
+        const std::optional<game::FleetId> reportFleet = tagged_.empty() ? fleet_ : std::nullopt;
+        // While the object's move is shown, the route stored before it was
+        // made, drawn over the mini sliding along it; worked out again once it
+        // has arrived (§2.4: the line is drawn again after each sector redrawn
+        // during the animation, and the report refreshed after the object
+        // carried its orders out). The game the move began from has the order
+        // given and not yet carried out; at a turn's start the movement came
+        // back first.
+        const ClassicSession::MovesBefore& before = ui.session.movesBefore();
+        const bool beforeMoves = before.state && before.revision == ui.session.revision() && lineSubjectGliding(ui);
+        const game::GameState& from = beforeMoves ? *before.state : s;
         if (replay_.active()) {
             if (replayLine_) route = &*replayLine_;
-        } else if (const auto subject = movementLineSubject(ui.rules(), s, ui.session.player(), tagged_.empty() ? vehicle_ : std::nullopt,
-                                                            tagged_.empty() ? fleet_ : std::nullopt)) {
-            if (!line_ || line_->subject != *subject || line_->revision != ui.session.revision() || line_->turn != s.turn)
-                line_ = MovementLineCache{*subject, ui.session.revision(), s.turn, movementLineRoute(ui.rules(), s, *subject)};
+        } else if (const auto subject = movementLineSubject(ui.rules(), from, ui.session.player(), reportVehicle, reportFleet)) {
+            if (!line_ || line_->subject != *subject || line_->revision != ui.session.revision() || line_->turn != s.turn || line_->beforeMoves != beforeMoves) {
+                game::movement::PlannedRoute planned = movementLineRoute(ui.rules(), from, *subject);
+                if (beforeMoves && before.turnStart) planned.movementLeft = planned.movementPerTurn;
+                line_ = MovementLineCache{*subject, ui.session.revision(), s.turn, beforeMoves, std::move(planned)};
+            }
             route = &line_->route;
         }
     }
     if (route) {
+        // Where it is drawn, for input scripts (findSectors: "line", "line-start").
+        for (const game::Location& p : route->points)
+            if (p.system == shown_) lineDrawn_.push_back(p.sector);
+        if (!route->points.empty() && route->points.front().system == shown_) lineStartDrawn_ = route->points.front().sector;
         auto centre = [](game::Sector sec) {
             const Vec2 c = sectorCenter(sec);
             return PixelPoint{int(std::lround(c.x)), int(std::lround(c.y))};
@@ -2267,31 +2280,73 @@ void MainWindow::drawFrame(gfx::Renderer2D& r, UiContext& ui) {
 
 // ---- Ship movement animation and the movement log replay -----------------------------------
 
-void MainWindow::trackMovement(UiContext& ui) {
-    // Once per frame: update() and render() both call this.
-    if (ui.time == trackedAt_) return;
-    trackedAt_ = ui.time;
+void MainWindow::noteNewTurn(UiContext& ui) {
     const game::GameState& s = ui.state();
+    if (s.turn == seenTurn_) return;
     // A new turn: where the vehicles were seen before it (a network game's replay is rebuilt from it).
-    if (s.turn != seenTurn_) {
-        if (seenTurn_ != UINT32_MAX && !ui.session.turnBased()) {
-            beforeTurn_ = glides_.lastSeen();
-            beforeTurnHeadings_ = glides_.lastHeadings();
-            beforeTurnFor_ = s.turn;
-        }
-        replay_.stop();
-        replayLine_.reset();
-        // The game selects the current sector again at a turn's start: the
-        // report is filled afresh, on Detail (spec 06 §2.5, §7 Q107).
-        if (seenTurn_ != UINT32_MAX) tab_ = ReportTab::Detail;
-        seenTurn_ = s.turn;
+    if (seenTurn_ != UINT32_MAX && !ui.session.turnBased()) {
+        beforeTurn_ = glides_.lastSeen();
+        beforeTurnHeadings_ = glides_.lastHeadings();
+        beforeTurnFor_ = s.turn;
     }
+    replay_.stop();
+    replayLine_.reset();
+    // The game selects the current sector again at a turn's start: the
+    // report is filled afresh, on Detail (spec 06 §2.5, §7 Q107).
+    if (seenTurn_ != UINT32_MAX) tab_ = ReportTab::Detail;
+    seenTurn_ = s.turn;
+}
+
+void MainWindow::trackMovement(UiContext& ui) {
+    noteNewTurn(ui);
+    // The replay once per frame (update() and render() both call this); the glides also when the game changed since.
+    if (ui.time != trackedAt_) {
+        trackedAt_ = ui.time;
+        trackReplay(ui);
+    }
+    trackGlides(ui);
+}
+
+bool MainWindow::movesShowing(UiContext& ui) {
+    trackGlides(ui);
+    return glides_.active();
+}
+
+std::vector<FinaleKind> MainWindow::endingsDue(UiContext& ui) {
+    // Each as it comes at a turn's start, one after another (finale.hpp, spec 06 §7 Q83).
+    return finale_.update(ui.state(), ui.session.player(), ui.session.kind());
+}
+
+void MainWindow::trackGlides(UiContext& ui) {
+    // Once per frame, and again when the game changed since: the moves an
+    // engine call made in this frame begin to glide at once, before anything
+    // the start of a turn opens waits for them (turn_start.hpp).
+    if (ui.time == glidesAt_ && ui.session.revision() == glidesRevision_) return;
+    noteNewTurn(ui);
+    glidesAt_ = ui.time;
+    glidesRevision_ = ui.session.revision();
+    const game::GameState& s = ui.state();
+    std::vector<ShipGlides::Seen> visible;
+    for (const game::Vehicle& v : s.vehicles)
+        if (knownVehicle(ui, v)) visible.push_back({v.id, v.location, v.heading, turnsToHeading(ui.rules(), s, v)});
+    // The pause after each step: Settings.txt `System Ship Movement Delay
+    // Milliseconds`, read as seconds as the original does (spec 06 §1.9,
+    // §2.4); the movement log replay never pauses (spec 06 §7 Q62). The
+    // frames at the player's speed (Options, OpenSE4).
+    const double pause = ShipGlides::stepPause(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
+    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible, geo.cell, pause,
+                  MovementPace{settings().systemMovementSpeed});
+}
+
+void MainWindow::trackReplay(UiContext& ui) {
+    const game::GameState& s = ui.state();
     const bool wasReplaying = replay_.active();
     MovementReplay::Frame f;
     f.now = ui.time;
     f.shown = shown_;
     f.animate = settings().animateSystemMovement;
     f.cellPixels = geo.cell;
+    f.pace = MovementPace{settings().systemMovementSpeed};
     f.seen = [this](game::VehicleId id) { return replaySeen_.contains(id); };
     f.turns = [&](game::VehicleId id) {
         const MovementLog* log = replay_.log();
@@ -2320,14 +2375,15 @@ void MainWindow::trackMovement(UiContext& ui) {
         selectSector(ui, game::Sector{0, 0}, false);
         selections_ = made;
     }
-    std::vector<ShipGlides::Seen> visible;
-    for (const game::Vehicle& v : s.vehicles)
-        if (knownVehicle(ui, v)) visible.push_back({v.id, v.location, v.heading, turnsToHeading(ui.rules(), s, v)});
-    // The pause after each step: Settings.txt `System Ship Movement Delay
-    // Milliseconds`, read as seconds as the original does (spec 06 §1.9,
-    // §2.4); the movement log replay never pauses (spec 06 §7 Q62).
-    const double pause = ShipGlides::stepPause(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
-    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible, geo.cell, pause);
+}
+
+bool MainWindow::lineSubjectGliding(const UiContext& ui) const {
+    if (!tagged_.empty()) return false;
+    if (fleet_) {
+        const game::Fleet* f = ui.state().fleet(*fleet_);
+        return f && std::any_of(f->members.begin(), f->members.end(), [&](game::VehicleId m) { return glides_.find(m) != nullptr; });
+    }
+    return vehicle_ && glides_.find(*vehicle_) != nullptr;
 }
 
 void MainWindow::followOwnMoves(UiContext& ui) {
@@ -2815,11 +2871,18 @@ std::vector<Rect> MainWindow::findSectors(const UiContext& ui, std::string_view 
                 else if (word == "ship") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner == me; });
                 else if (word == "enemy") holds = std::any_of(vehicles.begin(), vehicles.end(), [&](const game::Vehicle* v) { return v->owner != me; });
                 else if (word == "selected") holds = sector_ && *sector_ == sec;
+                else if (word == "gliding")   // a mini gliding to its new square is drawn in it now
+                    holds = std::any_of(glides_.all().begin(), glides_.all().end(), [&](const auto& g) {
+                        const Vec2 at = ShipGlides::position(g.second);
+                        return int(std::floor(at.x)) == x && int(std::floor(at.y)) == y;
+                    });
+                else if (word == "line") holds = std::find(lineDrawn_.begin(), lineDrawn_.end(), sec) != lineDrawn_.end();   // the movement line marks it
+                else if (word == "line-start") holds = lineStartDrawn_ && *lineStartDrawn_ == sec;   // the drawn route starts in it
                 else if (word == "noted")   // the AI notes view: something in it has a computer player's note
                     holds = std::any_of(notes_.begin(), notes_.end(), [&](const ShownNote& n) { return n.system == shown_ && n.sector == sec; });
                 else {
                     error = std::format("unknown sector word '{}' (empty, home, colony, planet, colonizable, star, warp-point, ship, enemy, "
-                                        "selected, noted, any; joined with +, negated with !)",
+                                        "selected, noted, gliding, line, line-start, any; joined with +, negated with !)",
                                         word);
                     return {};
                 }

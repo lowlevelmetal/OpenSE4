@@ -218,6 +218,23 @@ public:
     // Called after a new turn begins (for the Log window auto-open etc.).
     std::function<void()> onNewTurn;
 
+    // The game as the last engine call that carried orders out found it, for
+    // the movement line drawn while its moves are shown (docs/spec/06 §2.4
+    // "Movement lines": the line stored before a move is drawn during its
+    // animation). A turn-based order's game has the order given but not yet
+    // carried out; End Turn's, and a network game's turn passing to us, are
+    // marked `turnStart`: their own vehicles got their movement back before
+    // their orders ran. `revision` is revision() right after the call: a later
+    // change makes it stale. Kept only while asked for (keepMovesBefore, the
+    // client's movement lines on); `state` is null when there is none.
+    struct MovesBefore {
+        std::shared_ptr<const game::GameState> state;
+        bool turnStart = false;
+        uint64_t revision = 0;
+    };
+    const MovesBefore& movesBefore() const { return movesBefore_; }
+    void keepMovesBefore(bool keep);
+
     // Saves and loads (the .gam equivalent).
     std::expected<void, std::string> save(const std::filesystem::path& file, const std::string& gameName) const;
     // The game's Autosave choice (spec 01 §2.2), applied after a game turn has
@@ -385,6 +402,11 @@ private:
     // The last simultaneous turn processed here: its starting state and orders.
     std::shared_ptr<const game::GameState> turnStart_;
     std::vector<game::EmpireOrders> turnStartOrders_;
+    // movesBefore(): kept while keepMoves_; set when a call begins (the
+    // revision when it is over).
+    bool keepMoves_ = false;
+    MovesBefore movesBefore_;
+    void noteMovesBefore(Call call);
 };
 
 // Where OpenSE4 keeps saves and settings (created on demand): the user

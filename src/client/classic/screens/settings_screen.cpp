@@ -5,6 +5,7 @@
 
 #include "client/app_settings.hpp"
 #include "client/classic/mod_ui.hpp"
+#include "client/classic/movement_pace.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -77,6 +78,30 @@ bool musicRows(UiContext& ui, ClassicSettings& s) {
     return changed;
 }
 
+// OpenSE4's ship movement speed (movement_pace.hpp): a slider over the steps
+// of kMovementSpeeds, each twice the one before, the original's waits marked.
+std::string movementSpeedName(size_t step) {
+    const double v = kMovementSpeeds[std::min(step, kMovementSpeeds.size() - 1)];
+    std::string name = v >= 1.0 ? std::format("{}x", std::lround(v)) : std::format("1/{}x", std::lround(1.0 / v));
+    if (step == kOriginalMovementSpeed) name += " (the original's)";
+    return name;
+}
+
+bool movementSpeedRow(UiContext& ui, ClassicSettings& s) {
+    int step = int(movementSpeedStep(s.systemMovementSpeed));
+    // The slider's text is its value's name (no printf directive in it).
+    const std::string shown = movementSpeedName(size_t(step));
+    ImGui::SetNextItemWidth(ui.px(220));
+    const bool moved = ImGui::SliderInt("Ship movement speed", &step, 0, int(kMovementSpeeds.size()) - 1, shown.c_str(), ImGuiSliderFlags_AlwaysClamp);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How fast ships turn and slide in the system window when they move,\n"
+                          "and in the movement log replay. 1x is the original's own pace; each\n"
+                          "step halves or doubles it. A click or a key shows a new turn's moves at once.");
+    if (!moved) return false;
+    s.systemMovementSpeed = kMovementSpeeds[size_t(std::clamp(step, 0, int(kMovementSpeeds.size()) - 1))];
+    return true;
+}
+
 class OptionsScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
@@ -110,6 +135,10 @@ public:
         ImGui::Spacing();
         heading(ui, "System Display");
         changed |= lampToggle(ui, "Display Ship Movement Lines", &s.showMovementLines);
+        // OpenSE4's own, beside the original's rows: how fast ships move in the system window.
+        ImGui::Spacing();
+        heading(ui, "OpenSE4");
+        changed |= movementSpeedRow(ui, s);
         // The game's autosave choice (spec 01 §2.2) belongs to the game; network
         // and e-mail games are saved by their host.
         if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {

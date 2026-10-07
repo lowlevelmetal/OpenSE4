@@ -154,6 +154,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/session.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ship_glides.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/status_icons.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/turn_start.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/combat_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp

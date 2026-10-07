@@ -210,27 +210,28 @@ std::optional<game::VehicleId> MovementReplay::following() const {
 
 void MovementReplay::update(const Frame& f) {
     if (mode_ == Mode::Off) return;
-    // The day's entries, each animated in full before the next: at most one
-    // frame per call (each frame stays at least one display refresh), the
-    // next once its wait is over.
+    // The day's entries, each animated in full before the next, by the time
+    // elapsed: an entry is over when the wait after its last frame is, and
+    // the next begins then (several in one call when they come faster than
+    // the display's frames).
     if (animating()) {
         if (!started_) {
             started_ = true;
-            frame_ = 0;
-            lastFrameAt_ = f.now;
-            return;
+            animStart_ = f.now;
         }
-        const Animation& a = anims_[animIndex_];
-        const double wait = frame_ < a.turnFrames ? kSecondsAfterTurnFrame : kSecondsAfterSlideFrame;
-        if (f.now - lastFrameAt_ < wait) return;
-        lastFrameAt_ = f.now;
-        if (++frame_ < a.turnFrames + a.slideFrames) return;
-        // The entry is done; the next starts with this frame.
-        ++animIndex_;
-        frame_ = 0;
-        if (animating()) return;
+        while (animating()) {
+            const Animation& a = anims_[animIndex_];
+            const double end = animStart_ + animPace_.duration(a.turnFrames, a.slideFrames);
+            if (f.now < end) {
+                frame_ = animPace_.framesDrawn(a.turnFrames, a.slideFrames, f.now - animStart_);
+                return;
+            }
+            ++animIndex_;
+            animStart_ = end;
+        }
         anims_.clear();
         animIndex_ = 0;
+        frame_ = 0;
         started_ = false;
     }
     if (mode_ == Mode::Stepping) {
@@ -295,6 +296,7 @@ void MovementReplay::applyDay(const Frame& f) {
     animIndex_ = 0;
     frame_ = 0;
     started_ = false;
+    animPace_ = f.pace;
     rebuildView();
 }
 
@@ -315,12 +317,12 @@ std::optional<MovementReplay::Motion> MovementReplay::motion(game::VehicleId v) 
         const Animation& a = anims_[i];
         if (a.id != v) continue;
         // Still to come this day: where the entry starts.
-        if (i > animIndex_ || !started_) return Motion{cellCenter(a.from.sector), a.angle0};
-        if (frame_ < a.turnFrames) {
+        if (i > animIndex_ || !started_ || frame_ < 1) return Motion{cellCenter(a.from.sector), a.angle0};
+        if (frame_ <= a.turnFrames) {
             const double step = a.angle1 >= a.angle0 ? kDegreesPerTurnFrame : -kDegreesPerTurnFrame;
-            return Motion{cellCenter(a.from.sector), a.angle0 + step * (frame_ + 1)};
+            return Motion{cellCenter(a.from.sector), frame_ == a.turnFrames ? a.angle1 : a.angle0 + step * frame_};
         }
-        const int slid = frame_ - a.turnFrames + 1;
+        const int slid = frame_ - a.turnFrames;
         const float t = std::clamp(float(slid) / float(a.slideFrames), 0.0f, 1.0f);
         return Motion{lerp(cellCenter(a.from.sector), cellCenter(a.to.sector), t), a.angle1};
     }

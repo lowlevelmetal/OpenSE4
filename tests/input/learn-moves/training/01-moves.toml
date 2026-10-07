@@ -1,0 +1,21 @@
+# A training game for the input scripts (docs/BUILDING.md "Input scripts"): the
+# player's homeworld with two attack ships at the start, for the moves shown in
+# the system window as they are made and what a turn's start shows after them
+# (one ship moves, the other is scrapped for a log entry). Free play: nothing to
+# win in the scripts.
+title = "Moves"
+summary = "Two attack ships at home, to watch them move."
+minutes = 1
+learned = ["Watching ships move in the system window"]
+
+[setup]
+seed = 7
+race = "Terran"
+computer_players = 1
+events = "none"
+tech_cost = "low"
+starting_ships = ["Attack Ship", "Attack Ship"]
+
+[[objective]]
+text = "Hold 40 colonies"
+when = { colonies = 40 }

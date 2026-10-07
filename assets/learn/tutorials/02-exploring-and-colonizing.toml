@@ -150,8 +150,8 @@ title = "Your new colony"
 text = """
 **Close the Log (`Esc`), then open Colonies** with `F5` or its command button.
 
-The Log opened by itself at the new turn. If the game asks for the new colony's type when the Log
-closes, pick the suggested type: it only guides your ministers.
+If the game asks for the new colony's type as the colony is founded, before the Log opens by
+itself at the new turn, pick the suggested type: it only guides your ministers.
 """
 highlight = ["command:colonies"]
 allow = ["log:close", "colony-type:suggested"]

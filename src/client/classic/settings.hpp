@@ -44,6 +44,11 @@ struct ClassicSettings {
 
     // OpenSE4's own.
     float soundVolume = 0.8f;            // effects volume (the original has none)
+    // How fast ships turn and slide in the system window, as they move and in
+    // the movement log replay (Options, under OpenSE4): the original's waits
+    // divided by this, one of kMovementSpeeds (movement_pace.hpp). 1, the
+    // original's waits, by default.
+    double systemMovementSpeed = 1.0;
     // Sound effects and music fade out while the game's window is in the
     // background (another window has the focus, or it is minimized), the
     // music pausing where it is. On by default.

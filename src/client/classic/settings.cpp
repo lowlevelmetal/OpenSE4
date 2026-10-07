@@ -2,6 +2,7 @@
 
 #include "game/setup.hpp"
 
+#include "client/classic/movement_pace.hpp"
 #include "client/classic/session.hpp"
 #include "core/hash.hpp"
 #include "core/log.hpp"
@@ -64,6 +65,7 @@ bool musicLampLit(const ClassicSettings& s, bool allowed) { return s.musicOn && 
 std::string settingsToToml(const ClassicSettings& s) {
     toml::table options;
     for (const BoolOption& o : kBoolOptions) options.insert(o.key, s.*o.member);
+    options.insert("system_movement_speed", s.systemMovementSpeed);
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
     sound.insert("music_percent", s.musicVolume);
@@ -116,6 +118,8 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
     if (const toml::table* options = root["options"].as_table())
         for (const BoolOption& o : kBoolOptions)
             if (auto v = (*options)[o.key].value<bool>()) s.*o.member = *v;
+    // One of the speeds the Options window offers (a whole number reads too).
+    if (auto v = root["options"]["system_movement_speed"].value<double>()) s.systemMovementSpeed = kMovementSpeeds[movementSpeedStep(*v)];
     if (auto v = root["sound"]["effects_volume"].value<double>()) s.soundVolume = std::clamp(float(*v), 0.0f, 1.0f);
     if (auto v = root["sound"]["music_percent"].value<int64_t>()) {
         // The nearest of the five steps.

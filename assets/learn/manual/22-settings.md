@@ -98,7 +98,8 @@ Use*. Its choices are kept on this computer, except the autosave choice, which b
 | Sound | Classic Sound Effects | off |
 | Music | Music Off, or a volume from 20 % to 100 %. With music off, or not allowed by your copy's settings (below), the window opens on Music Off and keeps music off until you pick a volume. | 100 % |
 | Tactical Combat | Fast Tactical Combat | off |
-| System Display | Display Ship Movement Lines: the route of the selected ship, as a dashed line. `Ctrl+L` switches it too. | off |
+| System Display | Display Ship Movement Lines: the route of the ship, base or fleet whose report is open, a blue line marked with the turn each square is reached. `Ctrl+L` switches it too. Starting a new simultaneous game switches it on. | off |
+| OpenSE4 | Ship movement speed: how fast ships turn and slide in the system window when they move, and in the movement log replay, from 1/8x to 8x. | 1x, the original's pace |
 | Autosave For This Game | None, or every 1, 2, 3, 5 or 10 turns (local and hotseat games only) | None, unless chosen at setup |
 
 `Settings` opens the Settings window, and `Close` closes this one.

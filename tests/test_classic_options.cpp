@@ -206,6 +206,17 @@ TEST_CASE("classic options: the per-computer settings keep the Options window's 
     // A volume between the steps comes back as the nearest step.
     const ClassicSettings odd = settingsFromToml("[sound]\nmusic_percent = 57\n");
     CHECK(odd.musicVolume == 60);
+    // OpenSE4's ship movement speed: the original's waits by default, kept,
+    // and a value between the steps (or a whole number) read as the nearest.
+    CHECK(s.systemMovementSpeed == 1.0);
+    CHECK(odd.systemMovementSpeed == 1.0);
+    s.systemMovementSpeed = 4.0;
+    CHECK(settingsFromToml(settingsToToml(s)).systemMovementSpeed == 4.0);
+    s.systemMovementSpeed = 0.125;
+    CHECK(settingsFromToml(settingsToToml(s)).systemMovementSpeed == 0.125);
+    CHECK(settingsFromToml("[options]\nsystem_movement_speed = 2\n").systemMovementSpeed == 2.0);
+    CHECK(settingsFromToml("[options]\nsystem_movement_speed = 0.3\n").systemMovementSpeed == 0.25);
+    CHECK(settingsFromToml("[options]\nsystem_movement_speed = -1.0\n").systemMovementSpeed == 1.0);
     // New empires start with the Empire Options defaults of spec 06 §1.9.
     const InterfaceOptions o;
     CHECK(o.confirmEndTurn);

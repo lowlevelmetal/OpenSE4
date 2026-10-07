@@ -6,6 +6,7 @@
 
 #include "assets/assets.hpp"
 #include "client/classic/map_style.hpp"
+#include "client/classic/movement_line.hpp"
 #include "client/classic/movement_replay.hpp"
 #include "client/classic/order_rules.hpp"
 #include "client/classic/sector_view.hpp"
@@ -612,6 +613,64 @@ TEST_CASE("main window: a local simultaneous turn is played again for its moveme
     CHECK(first.movers(kMe) == std::vector<VehicleId>{ship});
 }
 
+TEST_CASE("main window: the game as each call found it, for the movement line drawn while its moves are shown (spec 06 §2.4)") {
+    // The original draws the route stored before a move while the move is
+    // animated; the client shows the moves only after the engine call, so the
+    // session keeps the game the call began from (ClassicSession::movesBefore).
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3, 12, false);   // the others computer players: End Turn ends the game turn
+    start.options.simultaneous = false;                 // orders carried out as they are given
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId runner = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod"});
+    Vehicle& v = addTestVehicle(start, *rules, runner, home);
+    v.supply = 1000;
+    const VehicleId ship = v.id;
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    REQUIRE(session.myTurn());
+    // Kept only while asked for (the movement lines and the animation on).
+    CHECK_FALSE(session.movesBefore().state);
+    session.keepMovesBefore(true);
+    Location far = home;
+    far.sector.x = static_cast<decltype(far.sector.x)>(home.sector.x > 6 ? 0 : 12);
+    REQUIRE(session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, far}}, false}).ok);
+    const Location moved = session.state().vehicle(ship)->location;
+    CHECK(moved != home);   // carried out at once
+    {
+        const ClassicSession::MovesBefore& before = session.movesBefore();
+        REQUIRE(before.state);
+        CHECK(before.revision == session.revision());
+        CHECK_FALSE(before.turnStart);
+        // The order given, not yet carried out: the ship where it stood, the new Move To in its list.
+        const Vehicle* then = before.state->vehicle(ship);
+        REQUIRE(then);
+        CHECK(then->location == home);
+        REQUIRE(then->orders.size() == 1);
+        CHECK(then->orders.front().location == far);
+        const auto subject = movementLineSubject(*rules, *before.state, kMe, ship, std::nullopt);
+        REQUIRE(subject);
+        const game::movement::PlannedRoute route = movementLineRoute(*rules, *before.state, *subject);
+        REQUIRE(route.points.size() > 1);
+        CHECK(route.points.front() == home);
+        CHECK(route.turnOf(1) == 0);   // reached with the movement left now
+    }
+    // A command that moves nothing keeps no game.
+    REQUIRE(session.issue(cmd::Rename{ship, {}, {}, {}, "Renamed"}).ok);
+    CHECK_FALSE(session.movesBefore().state);
+
+    // End Turn: the next start of our turn, the vehicles' movement back first.
+    session.endTurn();
+    REQUIRE(session.myTurn());
+    {
+        const ClassicSession::MovesBefore& before = session.movesBefore();
+        REQUIRE(before.state);
+        CHECK(before.turnStart);
+        CHECK(before.revision == session.revision());
+        CHECK(before.state->turn + 1 == session.state().turn);
+    }
+    session.keepMovesBefore(false);
+    CHECK_FALSE(session.movesBefore().state);
+}
+
 TEST_CASE("main window: the movement log replay's keys") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
@@ -718,31 +777,41 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     REQUIRE(replay.motion(ship));
     REQUIRE(replay.motion(mate));
     CHECK(replay.animating());
-    // Already facing east: no turn frames, 50 slide frames, one a display frame.
+    // Already facing east: no turn frames, 50 slide frames, by the time
+    // elapsed at the original's waits (1 ms a frame, spec 06 §7 Q62).
     replay.update(f);   // the first entry's first frame
     CHECK(replay.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
     CHECK(replay.motion(mate)->at.x == doctest::Approx(float(where.sector.x) + 0.5f));   // waits its turn
     // A step key during the day's animations is ignored.
     replay.step();
-    int frames = 1;
-    while (replay.motion(ship) && frames < 200) {
-        f.now += 0.0167;
-        replay.update(f);
-        ++frames;
-    }
-    // 50 frames for the first entry; the 51st display frame shows the second's first.
-    CHECK(frames == 51);
-    REQUIRE(replay.motion(mate));   // now the second entry, on its own
+    f.now = 10.0205;
+    replay.update(f);
+    CHECK(replay.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 21.0f / 50.0f));
+    // 50 ms for the first entry; then the second, on its own, from where the first ended.
+    f.now = 10.0505;
+    replay.update(f);
+    CHECK_FALSE(replay.motion(ship));
+    REQUIRE(replay.motion(mate));
+    CHECK(replay.motion(mate)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
     CHECK(replay.day() == 1);
-    while (replay.day() == 1 && frames < 400) {
-        f.now += 0.0167;
-        replay.update(f);
-        ++frames;
-    }
-    // 50 more; the frame after them applies day 2 at once (no pause between days).
-    CHECK(frames == 101);
+    // 50 ms more; the same call applies day 2 at once (no pause between days).
+    f.now = 10.1005;
+    replay.update(f);
     CHECK(replay.day() == 2);
     CHECK(replay.heading(ship) == 2);
+
+    // At twice the speed the day's two entries take 50 ms in all.
+    MovementReplay fast;
+    fast.setLog(std::make_shared<MovementLog>(log));
+    MovementReplay::Frame quick = f;
+    quick.pace = MovementPace{2.0};
+    quick.now = 30.0;
+    fast.play();
+    fast.update(quick);   // day 1 applied, at the pace of the day
+    fast.update(quick);
+    quick.now = 30.0505;
+    fast.update(quick);
+    CHECK(fast.day() == 2);
 
     // A quarter turn first: 9 frames per 45°, the shorter way.
     GameState s2 = s;
@@ -757,12 +826,16 @@ TEST_CASE("main window: the replay animates each entry on its own, frame by fram
     turning.update(g);
     turning.update(g);
     CHECK(turning.motion(ship)->angle == doctest::Approx(5.0));
-    for (int i = 0; i < 17; ++i) {
-        g.now += 0.0167;
-        turning.update(g);
-    }
+    g.now = 20.0805;   // 10 ms after each 5° frame: the ninth, 45°
+    turning.update(g);
+    CHECK(turning.motion(ship)->angle == doctest::Approx(45.0));
+    g.now = 20.1795;
+    turning.update(g);
     CHECK(turning.motion(ship)->angle == doctest::Approx(90.0));
     CHECK(turning.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f));
+    g.now = 20.1805;   // the turn over, the slide's first frame
+    turning.update(g);
+    CHECK(turning.motion(ship)->at.x == doctest::Approx(float(where.sector.x) + 0.5f + 1.0f / 50.0f));
     CHECK(turning.heading(ship) == 2);
 }
 
