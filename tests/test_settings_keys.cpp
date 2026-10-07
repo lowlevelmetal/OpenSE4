@@ -190,11 +190,9 @@ TEST_CASE("settings keys: the movement delay waits after each animated step") {
     CHECK(glide->turnFrames == 0);
     CHECK(glide->slideFrames == 100);
     CHECK(glide->pause == doctest::Approx(2 * pause));   // after each of the two steps
-    for (int i = 0; i < 100; ++i) {
-        now += 0.0167;
-        frame({sys, Sector{4, 2}});
-    }
-    // The slide is over; the ship waits on its new square.
+    // The slide is over after 0.1 s (1 ms a frame); the ship waits on its new square.
+    now += 0.1 + 0.0005;
+    frame({sys, Sector{4, 2}});
     REQUIRE(g.find(ship));
     CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(4.5f));
     now += 2 * pause - 0.1;
@@ -203,9 +201,21 @@ TEST_CASE("settings keys: the movement delay waits after each animated step") {
     now += 0.2;
     frame({sys, Sector{4, 2}});
     CHECK_FALSE(g.find(ship));
+    // The player's speed does not shorten the pause, which is the data set's (spec 06 §1.9).
+    {
+        ShipGlides fast;
+        const ShipGlides::Seen at[] = {{ship, {sys, Sector{2, 2}}, 2, true}};
+        const ShipGlides::Seen moved[] = {{ship, {sys, Sector{3, 2}}, 2, true}};
+        fast.track(0.0, sys, true, at, 50.0f, pause, MovementPace{8.0});
+        fast.track(1.0, sys, true, moved, 50.0f, pause, MovementPace{8.0});
+        fast.track(1.0 + pause - 0.01, sys, true, moved, 50.0f, pause, MovementPace{8.0});
+        CHECK(fast.find(ship));   // still pausing: the slide took 6 ms, the pause stays 2 s
+        fast.track(1.0 + pause + 0.01, sys, true, moved, 50.0f, pause, MovementPace{8.0});
+        CHECK_FALSE(fast.find(ship));
+    }
 
     // The movement log replay animates a move without any pause: the next day
-    // comes with the frame that ends the slide.
+    // comes as soon as the slide's last frame is over (50 frames of 1 ms).
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
@@ -227,14 +237,12 @@ TEST_CASE("settings keys: the movement delay waits after each animated step") {
     f.now = 10.0;
     replay.update(f);  // day 1 applied
     replay.update(f);  // its entry's first frame
-    for (int i = 0; i < 49; ++i) {
-        f.now += 0.0167;
-        replay.update(f);
-    }
+    f.now = 10.0495;
+    replay.update(f);  // the slide's last frame
     REQUIRE(replay.motion(scout));
     CHECK(replay.day() == 1);
-    f.now += 0.0167;
-    replay.update(f);  // the slide's last frame
+    f.now = 10.0505;
+    replay.update(f);  // its wait over: the next day at once
     CHECK_FALSE(replay.motion(scout));
     CHECK(replay.day() == 2);
 }

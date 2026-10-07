@@ -54,6 +54,7 @@ add_executable(opense4
     client/classic/screen_id.cpp
     client/classic/sector_view.cpp
     client/classic/ship_glides.cpp
+    client/classic/turn_start.cpp
     client/classic/status_icons.cpp
     client/classic/ability_lines.cpp
     client/classic/reports.cpp

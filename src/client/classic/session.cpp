@@ -340,7 +340,42 @@ void ClassicSession::beginCall(Call call, std::optional<game::Command> command) 
     answers_.clear();
     fought_.clear();
     battle_.reset();
+    noteMovesBefore(call);
     runCall();
+}
+
+void ClassicSession::keepMovesBefore(bool keep) {
+    keepMoves_ = keep;
+    if (!keep) movesBefore_ = {};
+}
+
+void ClassicSession::noteMovesBefore(Call call) {
+    movesBefore_ = {};
+    if (!keepMoves_) return;
+    switch (call) {
+        case Call::Issue: {
+            // Only orders a group carries out at once (spec 03 §6.3, §8): the
+            // game with them given, not yet carried out.
+            if (!turnBased() || !callCommand_) return;
+            const game::Command& c = *callCommand_;
+            const auto* orders = std::get_if<game::cmd::SetOrders>(&c);
+            const bool moves = (orders && (orders->vehicle.valid() || orders->fleet.valid())) || std::holds_alternative<game::cmd::OrderTagged>(c) ||
+                               std::holds_alternative<game::cmd::EnterSector>(c);
+            if (!moves) return;
+            auto given = std::make_shared<game::GameState>(state_);
+            (void)game::apply(*rules_, *given, player_, c);
+            movesBefore_.state = std::move(given);
+            break;
+        }
+        case Call::EndTurn:
+        case Call::Resume:
+            // The next human's turn starts in it: its vehicles get their movement back, then carry their orders out.
+            movesBefore_.state = std::make_shared<const game::GameState>(state_);
+            movesBefore_.turnStart = true;
+            break;
+        case Call::Process: movesBefore_.state = turnStart_; break;
+        case Call::None: break;
+    }
 }
 
 void ClassicSession::runCall() {
@@ -455,6 +490,7 @@ void ClassicSession::runCall() {
         case Call::None: break;
     }
     callCommand_.reset();
+    movesBefore_.revision = revision_;
 }
 
 void ClassicSession::dropCall(std::string_view why) {
@@ -463,6 +499,7 @@ void ClassicSession::dropCall(std::string_view why) {
     // processTurn keeps no copy of its own when no battle can stop it.
     if (call_ == Call::Process && turnStart_) state_ = *turnStart_;
     call_ = Call::None;
+    movesBefore_ = {};
     callCommand_.reset();
     callOrders_.clear();
     answers_.clear();
@@ -595,10 +632,13 @@ void ClassicSession::poll() {
             ++revision_;
             return;
         }
+        // Our copy as it was is what the turn's moves began from (movesBefore).
+        auto before = keepMoves_ ? std::make_shared<const game::GameState>(std::move(state_)) : nullptr;
         state_ = std::move(*s);
         strategic_.clear();
         queueTurnBattles();
         beginTurn();
+        movesBefore_ = before ? MovesBefore{std::move(before), false, revision_} : MovesBefore{};
         return;
     }
     // Turn-based: the host's state after our commands, a battle we fought in
@@ -606,6 +646,7 @@ void ClassicSession::poll() {
     const bool wasMine = myTurn();
     const uint32_t oldTurn = state_.turn;
     const size_t oldBattles = state_.combats.size();
+    auto before = keepMoves_ ? std::make_shared<const game::GameState>(std::move(state_)) : nullptr;
     state_ = std::move(*s);
     ++revision_;
     if (state_.turn == oldTurn)
@@ -614,8 +655,12 @@ void ClassicSession::poll() {
             if (std::find(who.begin(), who.end(), player_) != who.end()) strategic_.emplace_back(player_, i);
         }
     const bool mine = myTurn();
-    if (mine && (!wasMine || state_.turn != oldTurn)) beginTurn();  // our turn starts
+    const bool starts = mine && (!wasMine || state_.turn != oldTurn);
+    if (starts) beginTurn();  // our turn starts
     waiting_ = !mine;
+    // Our copy had our commands given, not carried out; at the start of our
+    // turn our vehicles got their movement back first.
+    movesBefore_ = before ? MovesBefore{std::move(before), starts, revision_} : MovesBefore{};
 }
 
 void ClassicSession::beginTurn() {
@@ -660,6 +705,7 @@ void ClassicSession::setPlayer(game::EmpireId e) {
 void ClassicSession::replaceState(game::GameState s) {
     state_ = std::move(s);
     turnStart_.reset();
+    movesBefore_ = {};
     strategic_.clear();
     call_ = Call::None;
     battle_.reset();

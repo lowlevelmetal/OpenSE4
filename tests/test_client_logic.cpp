@@ -5,7 +5,9 @@
 #include "politics_fixture.hpp"
 
 #include "client/classic/screens/empire_logic.hpp"
+#include "client/classic/movement_pace.hpp"
 #include "client/classic/ship_glides.hpp"
+#include "client/classic/turn_start.hpp"
 #include "game/commands.hpp"
 #include "game/diplomacy.hpp"
 #include "game/turn.hpp"
@@ -356,23 +358,67 @@ TEST_CASE("client logic: reordering a list") {
     CHECK_FALSE(moveEntry(v, 7, 0));
 }
 
-// ---- Ship movement animation (client/classic/ship_glides.hpp) ----
+// ---- Ship movement animation (client/classic/ship_glides.hpp, movement_pace.hpp) ----
 
-TEST_CASE("client logic: a ship that moves in the shown system turns, then glides there frame by frame (spec 06 §2.4)") {
+TEST_CASE("client logic: the movement animation's frames come by the time elapsed (spec 06 §2.4)") {
+    // The original waits 10 ms after each 5° frame of a turn and 1 ms after
+    // each 1 px frame of a slide (confirmed: binary): the default pace.
+    const MovementPace original;
+    CHECK(original.turnFrameSeconds() == doctest::Approx(0.010));
+    CHECK(original.slideFrameSeconds() == doctest::Approx(0.001));
+    CHECK(kMovementSpeeds[kOriginalMovementSpeed] == 1.0);
+    // A quarter turn (18 frames) and one square at 1024x768 (50 frames): 0.18 s + 0.05 s.
+    CHECK(original.duration(18, 50) == doctest::Approx(0.230));
+    // The first frame at once, each next one when the wait after the one before is over.
+    CHECK(original.framesDrawn(18, 50, 0.0) == 1);
+    CHECK(original.framesDrawn(18, 50, 0.0099) == 1);
+    CHECK(original.framesDrawn(18, 50, 0.010) == 2);
+    CHECK(original.framesDrawn(18, 50, 0.1795) == 18);     // the turn's last frame
+    CHECK(original.framesDrawn(18, 50, 0.180) == 19);      // the slide's first
+    CHECK(original.framesDrawn(18, 50, 0.1905) == 29);
+    CHECK(original.framesDrawn(18, 50, 5.0) == 68);        // all of them, however late
+    CHECK(original.framesDrawn(0, 36, 0.0175) == 18);      // a slide alone at 800x600
+    CHECK(original.framesDrawn(0, 0, 1.0) == 0);
+    // Whatever the display's refresh rate: the same frame at the same time,
+    // whether it is looked at 60 or 240 times a second.
+    for (const double hz : {30.0, 60.0, 144.0, 240.0}) {
+        int drawn = 0;
+        for (double t = 0.0; t < 0.1; t += 1.0 / hz) drawn = original.framesDrawn(0, 50, t);
+        CHECK(drawn == 50);
+    }
+    // The player's speed divides the waits.
+    const MovementPace twice{2.0}, quarter{0.25};
+    CHECK(twice.duration(18, 50) == doctest::Approx(0.115));
+    CHECK(quarter.duration(18, 50) == doctest::Approx(0.920));
+    CHECK(twice.framesDrawn(0, 50, 0.010) == 21);
+    CHECK(quarter.framesDrawn(0, 50, 0.010) == 3);
+    // Speeds read from the settings file come to the nearest step offered.
+    CHECK(movementSpeedStep(1.0) == kOriginalMovementSpeed);
+    CHECK(kMovementSpeeds[movementSpeedStep(3.0)] == 4.0);   // nearer 4 than 2 by ratio
+    CHECK(kMovementSpeeds[movementSpeedStep(100.0)] == 8.0);
+    CHECK(kMovementSpeeds[movementSpeedStep(0.01)] == 0.125);
+    CHECK(movementSpeedStep(0.0) == kOriginalMovementSpeed);
+    CHECK(movementSpeedStep(-2.0) == kOriginalMovementSpeed);
+}
+
+TEST_CASE("client logic: a ship that moves in the shown system turns, then glides there (spec 06 §2.4)") {
     const SystemId sys{0u}, other{1u};
     const VehicleId ship{3u};
     ShipGlides g;
     // One call per displayed frame; `heading` is the engine's.
-    auto frame = [&](double now, Location at, int heading = 0, SystemId shown = SystemId{0u}, bool enabled = true, double pause = 0.0) {
+    auto frame = [&](double now, Location at, int heading = 0, SystemId shown = SystemId{0u}, bool enabled = true, double pause = 0.0,
+                     MovementPace pace = {}) {
         const ShipGlides::Seen seen[] = {{ship, at, heading, true}};
-        g.track(now, shown, enabled, seen, 50.0f, pause);
+        g.track(now, shown, enabled, seen, 50.0f, pause, pace);
     };
     frame(0.0, {sys, Sector{2, 2}});
     CHECK(g.find(ship) == nullptr);   // first sight: nothing to animate
+    CHECK_FALSE(g.active());
 
     frame(1.0, {sys, Sector{6, 2}}, 2);   // four squares east, now facing east
     const ShipGlides::Glide* glide = g.find(ship);
     REQUIRE(glide != nullptr);
+    CHECK(g.active());
     CHECK(glide->from == Vec2{2.5f, 2.5f});
     CHECK(glide->to == Vec2{6.5f, 2.5f});
     // A quarter turn: 18 frames of 5°; then 1 px a frame, 50 a square at 1024x768.
@@ -380,35 +426,74 @@ TEST_CASE("client logic: a ship that moves in the shown system turns, then glide
     CHECK(glide->slideFrames == 200);
     CHECK(ShipGlides::angle(*glide) == doctest::Approx(5.0));
     CHECK(ShipGlides::position(*glide) == Vec2{2.5f, 2.5f});
-    // One frame a display frame once its wait is over (10 ms after a turn frame).
-    double t = 1.0;
-    for (int i = 0; i < 17; ++i) frame(t += 0.0167, {sys, Sector{6, 2}}, 2);
+    // At the original's pace: 10 ms a turn frame, so the turn is over after
+    // 0.18 s; then 1 ms a slide frame, so the four squares take 0.2 s.
+    frame(1.1755, {sys, Sector{6, 2}}, 2);
     REQUIRE(g.find(ship));
     CHECK(ShipGlides::angle(*g.find(ship)) == doctest::Approx(90.0));
     CHECK(ShipGlides::position(*g.find(ship)) == Vec2{2.5f, 2.5f});
-    frame(t += 0.0167, {sys, Sector{6, 2}}, 2);
+    frame(1.1805, {sys, Sector{6, 2}}, 2);
     CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(2.5f + 1.0f / 50.0f));
-    for (int i = 0; i < 99; ++i) frame(t += 0.0167, {sys, Sector{6, 2}}, 2);
+    frame(1.2795, {sys, Sector{6, 2}}, 2);
     CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(4.5f));   // halfway after 100 slide frames
-    for (int i = 0; i < 101; ++i) frame(t += 0.0167, {sys, Sector{6, 2}}, 2);
+    frame(1.3795, {sys, Sector{6, 2}}, 2);
+    REQUIRE(g.find(ship));   // the last frame drawn, its wait not over yet
+    CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(6.5f));
+    frame(1.3805, {sys, Sector{6, 2}}, 2);
     CHECK(g.find(ship) == nullptr);   // done, no pause
+    CHECK_FALSE(g.active());
+    double t = 1.3805;
 
+    SUBCASE("the player's speed: twice as fast, half the time") {
+        frame(t += 0.01, {sys, Sector{8, 2}}, 2, sys, true, 0.0, MovementPace{2.0});   // two squares on, no turn
+        REQUIRE(g.find(ship));
+        CHECK(g.find(ship)->slideFrames == 100);
+        frame(t + 0.0495, {sys, Sector{8, 2}}, 2);
+        CHECK(g.find(ship));
+        CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(8.5f));
+        frame(t + 0.0505, {sys, Sector{8, 2}}, 2);   // the pace it began with, whatever is passed later
+        CHECK(g.find(ship) == nullptr);
+    }
+    SUBCASE("skipped: every ship is on its square at once") {
+        frame(t += 0.01, {sys, Sector{8, 2}}, 2);
+        REQUIRE(g.active());
+        g.finish();
+        CHECK_FALSE(g.active());
+        CHECK(g.find(ship) == nullptr);
+        frame(t += 0.01, {sys, Sector{8, 2}}, 2);   // and it does not start again
+        CHECK_FALSE(g.active());
+    }
     SUBCASE("a half-turn goes clockwise; the pause after each step is held on the new square") {
         frame(t += 0.0167, {sys, Sector{4, 2}}, 6, sys, true, 0.5);   // two squares west: a half-turn
         REQUIRE(g.find(ship));
         CHECK(g.find(ship)->angle1 == doctest::Approx(270.0));
         CHECK(g.find(ship)->turnFrames == 36);
         CHECK(g.find(ship)->pause == doctest::Approx(1.0));   // 0.5 s for each of the two steps
+        frame(t + 0.36 + 0.1 + 0.5, {sys, Sector{4, 2}}, 6);
+        REQUIRE(g.find(ship));   // arrived, pausing
+        CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(4.5f));
+        frame(t + 0.36 + 0.1 + 1.001, {sys, Sector{4, 2}}, 6);
+        CHECK(g.find(ship) == nullptr);
     }
     SUBCASE("a second move mid-glide carries on from where the ship is drawn") {
         frame(t += 0.0167, {sys, Sector{4, 2}}, 6);
-        for (int i = 0; i < 40; ++i) frame(t += 0.0167, {sys, Sector{4, 2}}, 6);
+        frame(t += 0.4, {sys, Sector{4, 2}}, 6);
         const Vec2 drawn = ShipGlides::position(*g.find(ship));
         frame(t += 0.0167, {sys, Sector{4, 8}}, 4);
         const ShipGlides::Glide* next = g.find(ship);
         REQUIRE(next != nullptr);
         CHECK(next->from.x == doctest::Approx(drawn.x));
         CHECK(next->to == Vec2{4.5f, 8.5f});
+    }
+    SUBCASE("a second look in the same frame starts the glides of a change made since, and changes nothing else") {
+        frame(t += 0.0167, {sys, Sector{7, 2}}, 2);
+        REQUIRE(g.find(ship));
+        const int drawn = g.find(ship)->frame;
+        frame(t, {sys, Sector{7, 2}}, 2);
+        CHECK(g.find(ship)->frame == drawn);
+        frame(t, {sys, Sector{7, 3}}, 4);   // moved again at once: a new glide from where it is drawn
+        REQUIRE(g.find(ship));
+        CHECK(g.find(ship)->to == Vec2{7.5f, 3.5f});
     }
     SUBCASE("warps, view changes and the setting do not glide") {
         frame(2.0e3, {other, Sector{6, 2}});                   // warped out
@@ -421,4 +506,75 @@ TEST_CASE("client logic: a ship that moves in the shown system turns, then glide
         frame(2.4e3, {sys, Sector{5, 0}}, 2, sys, false);      // animation switched off
         CHECK(g.find(ship) == nullptr);
     }
+    SUBCASE("another system shown: the glides under way end") {
+        frame(t += 0.0167, {sys, Sector{9, 2}}, 2);
+        REQUIRE(g.active());
+        frame(t += 0.0167, {sys, Sector{9, 2}}, 2, other);
+        CHECK_FALSE(g.active());
+    }
+}
+
+// ---- What a turn's start shows, and in which order (client/classic/turn_start.hpp) ----
+
+TEST_CASE("client logic: a turn's start shows its moves first, then battles, endings, questions and the Log (spec 06 §2.7)") {
+    TurnStartFacts f;
+    // Nothing under way: everything may show; the main window does not wait.
+    TurnStartGate g = turnStartGate(f);
+    CHECK_FALSE(g.hold);
+    CHECK(g.battles);
+    CHECK(g.endings);
+    CHECK(g.questions);
+    CHECK(g.log);
+
+    // A new turn's moves are being shown: nothing opens, the main window waits (a click skips).
+    f.movesShowing = true;
+    f.turnStarting = true;
+    g = turnStartGate(f);
+    CHECK(g.hold);
+    CHECK_FALSE(g.battles);
+    CHECK_FALSE(g.endings);
+    CHECK_FALSE(g.questions);
+    CHECK_FALSE(g.log);
+
+    // Moves of an order given during the turn, with nothing waiting for them: the player plays on.
+    f.turnStarting = false;
+    g = turnStartGate(f);
+    CHECK_FALSE(g.hold);
+    CHECK_FALSE(g.log);
+    // ... but a question or a message box they raised waits for them, and so does the main window.
+    f.questionWaiting = true;
+    CHECK(turnStartGate(f).hold);
+    CHECK_FALSE(turnStartGate(f).questions);
+
+    // The moves shown: the battles to watch come first ...
+    f = {};
+    f.battlesQueued = true;
+    f.questionWaiting = true;
+    g = turnStartGate(f);
+    CHECK(g.battles);
+    CHECK_FALSE(g.endings);
+    CHECK_FALSE(g.questions);
+    CHECK_FALSE(g.log);
+    // ... a battle that stops the engine call holds the rest too ...
+    f.battlesQueued = false;
+    f.battleWaiting = true;
+    g = turnStartGate(f);
+    CHECK(g.battles);
+    CHECK_FALSE(g.endings);
+    CHECK_FALSE(g.log);
+    // ... then the endings (the destruction check comes before the orders run) ...
+    f.battleWaiting = false;
+    f.endingOpen = true;
+    g = turnStartGate(f);
+    CHECK(g.endings);
+    CHECK_FALSE(g.questions);
+    CHECK_FALSE(g.log);
+    // ... then the questions the player's own orders raise ...
+    f.endingOpen = false;
+    g = turnStartGate(f);
+    CHECK(g.questions);
+    CHECK_FALSE(g.log);
+    // ... and the Log last, when the player gets the turn.
+    f.questionWaiting = false;
+    CHECK(turnStartGate(f).log);
 }

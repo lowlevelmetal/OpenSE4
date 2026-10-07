@@ -65,11 +65,13 @@ click item:"Eurul IV B"
 assert { order = "colonize" }
 key F12
 click item:Yes optional
-# The Log opens at the turn's start; the colony type is asked once it is closed.
+# At the turn's start the colony is founded and its type asked; the Log opens once it is
+# chosen, last (spec 06 §2.7).
+wait-for item:"*(suggested)"
+assert-no-window log
+click item:"*(suggested)"
 wait-window log
 click tag:log:close
-wait-for item:"*(suggested)"
-click item:"*(suggested)"
 wait-until { colonies = 3 }
 # Cargo Transfer from the first moon's colony: the other colony of the sector is on the right,
 # and population goes from one colony to the other.

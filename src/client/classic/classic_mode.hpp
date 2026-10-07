@@ -10,6 +10,7 @@
 #include "client/classic/lesson_audit.hpp"
 #include "client/classic/lesson_runner.hpp"
 #include "client/classic/main_window.hpp"
+#include "client/classic/turn_start.hpp"
 #include "client/mode.hpp"
 #include "client/script/player.hpp"
 #include "mods/mod_set.hpp"
@@ -191,6 +192,15 @@ private:
     void closeChildren(std::vector<classic::ScreenId> closed);
     std::vector<std::pair<classic::ScreenId, classic::ScreenArgs>> pendingOpen_;
     bool openLogOnTurn_ = false;
+    // A new turn began and its moves in the shown system are still being
+    // shown: the main window waits, and a click or a key shows them at once
+    // (classic::turnStartGate).
+    bool turnStarting_ = false;
+    // What the start of a turn lets show now (turn_start.hpp), from the game
+    // and the windows as they are; and the windows it lets open: the next
+    // battle to watch, the endings due and, last, the Log.
+    classic::TurnStartGate turnStartGate(classic::UiContext& ui);
+    void openTurnStartWindows(classic::UiContext& ui, const classic::TurnStartGate& gate);
     bool confirmEndTurn_ = false;
     bool modalOpen_ = false;   // a window or a question is open this frame: the main window takes no input
     // The tutorial or training game being played, if any.

@@ -10,6 +10,7 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
+#include "client/input.hpp"
 #include "client/script/items.hpp"
 #include "client/ui/theme.hpp"
 #include "game/serialize.hpp"
@@ -682,6 +683,7 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     session_->onNewTurn = [this] {
         cueMusic(MusicCue::TurnProcessed);  // a new background track every 5 turns
         openLogOnTurn_ = true;
+        turnStarting_ = true;      // its moves are shown first (turn_start.hpp)
         strategicQueue_.clear();   // battles of the turn before: GameState::combats holds the new ones
     };
     main_ = MainWindow{};
@@ -1090,6 +1092,9 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ui.lessonRows.clear();
         ui.lessonRowsFor = 0;
     }
+    // The game as each engine call found it, for the movement line drawn
+    // while the call's moves are shown (only while lines and the animation are on).
+    session_->keepMovesBefore(settings().showMovementLines && settings().animateSystemMovement);
     session_->poll();
     if (options_.scripted) trackForScripts();
     const script::ItemScope mainScope("main");
@@ -1119,23 +1124,31 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     // strategies fight (spec 06 §1.6).
     if (session_->tactical() && !isOpen(ScreenId::TacticalCombat) && !isOpen(ScreenId::StrategicCombat))
         openScreen(session_->tactical()->players.empty() ? ScreenId::StrategicCombat : ScreenId::TacticalCombat, {});
-    const bool battleAsking = !session_->tactical() && session_->battleQuestion().has_value();
     // Battles to watch in the Strategic Combat window, one after another.
     for (size_t i : session_->takeStrategicBattles()) strategicQueue_.push_back(i);
-    if (!session_->tactical() && !battleAsking && !isOpen(ScreenId::StrategicCombat) && !isOpen(ScreenId::GroundCombat) &&
-        !strategicQueue_.empty()) {
-        const size_t i = strategicQueue_.front();
-        strategicQueue_.pop_front();
-        if (i < ui.state().combats.size()) {
-            ScreenArgs args;
-            args.index = int(i);
-            openScreen(ScreenId::StrategicCombat, std::move(args));
-        }
-    }
     // A failed Colonize and the like: a message box over the view (spec 03 §8).
     for (game::PlayerMessage& m : session_->takeMessages()) messageBoxes_.push_back(std::move(m));
-    const bool asking = screens_.empty() && !session_->questions().empty() && !battleAsking;
-    const std::optional<game::ObjectId> choosing = screens_.empty() && !asking && !battleAsking ? colonyTypeChoice(ui) : std::nullopt;
+    // What a turn's start shows comes after its moves, in the original's
+    // order (turn_start.hpp): the battles to watch, the endings, the
+    // questions, the Log last. Meanwhile the main window waits, and a click or
+    // a key shows the moves at once.
+    TurnStartGate gate = turnStartGate(ui);
+    // The press shows the moves and does nothing else: no main-window input in
+    // this frame, and what waited for the moves opens in the next (a key must
+    // not also close the Log it let open).
+    bool skipped = false;
+    if (gate.hold && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
+                      ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || capturePressedChord())) {
+        main_.showMovesAtOnce();
+        turnStarting_ = false;
+        skipped = true;
+        log::info("The moves of the turn were shown at once");
+    }
+    if (!skipped) openTurnStartWindows(ui, gate);
+    const bool battleAsking = gate.battles && !session_->tactical() && session_->battleQuestion().has_value();
+    const bool asking = screens_.empty() && gate.questions && !session_->questions().empty() && !battleAsking;
+    const std::optional<game::ObjectId> choosing =
+        screens_.empty() && gate.questions && !asking && !battleAsking ? colonyTypeChoice(ui) : std::nullopt;
 
     // Classic windows are modal (spec 06 §1, §3.4): while one is open the main
     // window takes no input, not its command buttons, order strip, selectors,
@@ -1144,8 +1157,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     // result, a host's question) or a message box (a failed Colonize). The key
     // that answers one (N, Enter) is not also a main-window key (Change Name,
     // End Turn).
-    const bool prompted = asking || battleAsking || choosing.has_value() || confirmEndTurn_ || !lessonError_.empty() || !importNotes_.empty() ||
-                          !messageBoxes_.empty() ||
+    const bool prompted = asking || battleAsking || choosing.has_value() || gate.hold || skipped || confirmEndTurn_ || !lessonError_.empty() ||
+                          !importNotes_.empty() || !messageBoxes_.empty() ||
                           ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     const bool modalOpen = !screens_.empty() || prompted || session_->tactical() != nullptr;
     modalOpen_ = modalOpen;
@@ -1154,7 +1167,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
     if (choosing) drawColonyTypeChoice(ui, *choosing);
-    if (!messageBoxes_.empty() && !battleAsking) drawMessageBox(ui);
+    if (!messageBoxes_.empty() && gate.questions && !battleAsking) drawMessageBox(ui);
 
     // Windows, oldest first; the newest draws on top. Every window is modal:
     // only the one in front takes input, the ones behind it wait (ui.behind).
@@ -1234,11 +1247,9 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             confirmEndTurn_ = false;
         }
     }
-    if (openLogOnTurn_ && !keepLogClosed_ && !battleAsking && !session_->tactical() && strategicQueue_.empty() && !isOpen(ScreenId::StrategicCombat)) {
-        openLogOnTurn_ = false;
-        if (ui.options().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
-            openScreen(ScreenId::Log, {});
-    }
+    // The turn may have ended in this frame: its moves start to glide now, and
+    // what its start opens waits for them.
+    if (!skipped) openTurnStartWindows(ui, turnStartGate(ui));
     if (ui.requests.loadGame) {
         const std::filesystem::path file = *ui.requests.loadGame;
         ui.requests.loadGame.reset();
@@ -1572,6 +1583,48 @@ void ClassicMode::drawMessageBox(UiContext& ui) {
     }
     ImGui::PopFont();
     if (ok) messageBoxes_.pop_front();
+}
+
+TurnStartGate ClassicMode::turnStartGate(UiContext& ui) {
+    auto isOpen = [&](ScreenId id) { return std::any_of(screens_.begin(), screens_.end(), [&](const auto& s) { return s.first == id; }); };
+    TurnStartFacts f;
+    // The glides of moves made since the last look start first (MainWindow::movesShowing).
+    f.movesShowing = main_.movesShowing(ui);
+    if (!f.movesShowing) turnStarting_ = false;
+    f.turnStarting = turnStarting_;
+    f.battleWaiting = session_->tactical() != nullptr || session_->battleQuestion().has_value();
+    f.battlesQueued = !strategicQueue_.empty() || isOpen(ScreenId::StrategicCombat) || isOpen(ScreenId::GroundCombat);
+    f.endingOpen = isOpen(ScreenId::Finale);
+    f.questionWaiting = !session_->questions().empty() || !messageBoxes_.empty() || colonyTypeChoice(ui).has_value();
+    return classic::turnStartGate(f);
+}
+
+void ClassicMode::openTurnStartWindows(UiContext& ui, const TurnStartGate& gate) {
+    auto isOpen = [&](ScreenId id) { return std::any_of(screens_.begin(), screens_.end(), [&](const auto& s) { return s.first == id; }); };
+    // Battles to watch in the Strategic Combat window, one after another.
+    if (gate.battles && !session_->tactical() && !session_->battleQuestion() && !isOpen(ScreenId::StrategicCombat) && !isOpen(ScreenId::GroundCombat) &&
+        !strategicQueue_.empty()) {
+        const size_t i = strategicQueue_.front();
+        strategicQueue_.pop_front();
+        if (i < ui.state().combats.size()) {
+            ScreenArgs args;
+            args.index = int(i);
+            openScreen(ScreenId::StrategicCombat, std::move(args));
+        }
+    }
+    // The ending windows, each as it comes at a turn's start, one after another (spec 06 §7 Q83).
+    if (gate.endings && !isOpen(ScreenId::StrategicCombat) && !isOpen(ScreenId::GroundCombat))
+        if (const auto endings = main_.endingsDue(ui); !endings.empty()) {
+            ScreenArgs args;
+            for (FinaleKind k : endings) args.text += (args.text.empty() ? "" : ",") + std::string(finaleArgName(k));
+            openScreen(ScreenId::Finale, std::move(args));
+        }
+    // The Log last, when the player gets the turn (spec 06 §2.7, §4.1).
+    if (openLogOnTurn_ && !keepLogClosed_ && gate.log && !isOpen(ScreenId::Finale) && !isOpen(ScreenId::StrategicCombat)) {
+        openLogOnTurn_ = false;
+        if (ui.options().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
+            openScreen(ScreenId::Log, {});
+    }
 }
 
 std::optional<game::ObjectId> ClassicMode::colonyTypeChoice(const UiContext& ui) const {

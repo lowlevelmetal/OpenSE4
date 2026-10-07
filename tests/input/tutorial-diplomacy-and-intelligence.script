@@ -30,7 +30,9 @@ repeat 20 until { empires_met = 1 }
   click tag:order:explore
   click tag:button:end-turn
   click item:Yes in="End Turn"
-  wait 5
+  # The Log, if the turn has news, opens once the turn's moves in view are shown.
+  wait 2
+  wait-gone sector:gliding
   click tag:log:close optional
 end
 wait-step 5

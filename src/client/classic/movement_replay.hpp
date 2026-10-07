@@ -16,6 +16,7 @@
 // every vehicle before and after the turn (approximateLog; inferred).
 // Headless, tested in tests/test_main_window.cpp.
 
+#include "client/classic/movement_pace.hpp"
 #include "core/math.hpp"
 #include "game/state.hpp"
 #include "game/turn.hpp"
@@ -91,12 +92,10 @@ public:
     // binary), counted in frames: the mini first turns the shorter way
     // (clockwise for a half-turn) 5° a frame, 9 frames per 45°, with 10 ms
     // after each, then slides 1 px a frame along the longer axis, 36 frames a
-    // sector at 800x600 and 50 at 1024x768, with 1 ms after each. Every frame
-    // stays at least one display refresh (an OpenSE4 choice, close to the
-    // original's pace on current Windows).
-    static constexpr int kDegreesPerTurnFrame = 5;
-    static constexpr double kSecondsAfterTurnFrame = 0.010;
-    static constexpr double kSecondsAfterSlideFrame = 0.001;
+    // sector at 800x600 and 50 at 1024x768, with 1 ms after each. The frames
+    // come by the time elapsed, at those waits divided by the player's speed
+    // (MovementPace, as the glides of moves as they are made).
+    static constexpr int kDegreesPerTurnFrame = MovementPace::kDegreesPerTurnFrame;
 
     void setLog(std::shared_ptr<const MovementLog> log);
     const MovementLog* log() const { return log_.get(); }
@@ -120,6 +119,7 @@ public:
         game::SystemId shown;
         bool animate = false;            // "animate ship movement in the system window"
         float cellPixels = 50.0f;        // the system panel's sector size, frame pixels
+        MovementPace pace;               // the speed of the animation
         std::function<bool(game::VehicleId)> seen;   // the viewer sees it (else never animated)
         std::function<bool(game::VehicleId)> turns;  // its mini turns to its heading
     };
@@ -172,9 +172,10 @@ private:
     std::map<game::ObjectId, game::EmpireId> colonies_;
     std::vector<Animation> anims_;
     size_t animIndex_ = 0;
-    int frame_ = 0;               // frames of the current entry shown so far
-    double lastFrameAt_ = 0.0;    // when its last frame was shown
-    bool started_ = false;        // the current entry's first frame is shown
+    int frame_ = 0;               // frames of the current entry drawn so far (from 1 once it started)
+    double animStart_ = 0.0;      // when its first frame was drawn
+    MovementPace animPace_;       // the speed of the day's entries, kept to the day's end
+    bool started_ = false;        // the current entry's first frame is drawn
     int pending_ = 0;        // step presses not yet carried out
     std::vector<game::Vehicle> view_;
 };

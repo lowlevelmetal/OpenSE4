@@ -49,13 +49,15 @@ click item:Yes in="End Turn"
 wait-turn 1
 wait-step 11
 assert { colonies = 2 }
-# 11 Your new colony: the Log the new turn opened is closed, and the new colony's type chosen
-# (the suggested one, as the step says); then the Colonies window.
-click tag:log:close
+# 11 Your new colony: its type chosen (the suggested one, as the step says) as it is founded
+# at the turn's start, then the Log the new turn opened after it closed; then the Colonies
+# window.
 wait-for tag:colony-type:suggested
+assert-no-window log
 click tag:colony-type:other refused optional
 click item:"*(suggested)" in="Colony Type"
 wait-gone item:"*(suggested)"
+click tag:log:close
 # With the Log closed, Enter (End Turn in the main window) and Esc do nothing.
 key Enter refused
 key Escape refused
