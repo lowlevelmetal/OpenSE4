@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(OpenSE4
-    VERSION 1.12.0
+    VERSION 0.12.0
     DESCRIPTION "Open-source engine reimplementation for Space Empires IV Deluxe"
     LANGUAGES C CXX)
 
