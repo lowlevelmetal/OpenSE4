@@ -698,7 +698,7 @@ Other Settings.txt keys the client must honour (confirmed: binary):
   The movement log replay never pauses (§7 Q62). Ours does the same since 2026-10-01: a ship
   that turned and slid to its new square waits there, the value read as seconds, once for each
   step its move stands for (`ShipGlides::stepPause`, `ship_glides.cpp`); the replay has no
-  pause (`movement_replay.cpp`).
+  pause (`movement_replay.cpp`). OpenSE4's movement speed (below) does not shorten the pause.
 - `Num Finale Lose Pictures`, `Num Finale Human Dead Pictures`, `Num Finale Victory Pictures`
   and `Finale <Kind> Picture N`: the ending window's pictures, from `Pictures/Game/Finale/`.
   All humans eliminated uses Human Dead; "your empire was destroyed" uses Lose; galaxy
@@ -724,7 +724,19 @@ missing or any value in it cannot be read. Starting a new simultaneous game (the
 not loading or joining a game) switches Display Ship Movement Lines on and stores it at once,
 so after a player's first simultaneous game it stays on until they turn it off (confirmed:
 binary). Our client does the same (`showMovementLines` in `src/client/classic/settings.hpp`,
-`newGameStarted`).
+`newGameStarted`). So a player who only loads games, an imported game of the original included,
+sees no movement lines on a fresh install until switching them on (Ctrl+L, or this window),
+while the original on the same player's computer may have had them on for years.
+
+**OpenSE4's movement speed** (an OpenSE4 addition; the original has no such row). Since
+2026-10-06 our Options window has, under an "OpenSE4" heading after System Display, a "Ship
+movement speed" slider: the waits of the system window's movement animation (§2.4 "Moves as
+they are made") divided by 1/8, 1/4, 1/2, 1, 2, 4 or 8, kept with this computer's settings
+(`systemMovementSpeed`, `system_movement_speed` in `classic_settings.toml`; a value between the
+steps is read as the nearest). The default, 1x and marked "(the original's)", plays the
+original's waits as written. The movement log replay (§7 Q51) takes the same speed; the Settings
+pause after each step does not change with it (`OptionsScreen`, `movementSpeedRow` in
+`screens/settings_screen.cpp`; `movement_pace.hpp`).
 
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
@@ -1404,12 +1416,37 @@ cells sit inside it after a margin:
   frame, then slides the whole group as one sprite 1 px a frame with 1 ms after each
   (the waits of §1.10.3). After each animated step the game pauses for `System Ship
   Movement Delay Milliseconds`, but reads the value as seconds (a defect of the original;
-  the stock value 0 hides it). Since 2026-10-01 our client does the same (`ShipGlides`,
-  `client/classic/ship_glides.cpp`): the turn, 5° a frame, then the slide, 1 px a frame
-  (36 or 50 frames a square), each frame at least one display refresh, then the pause,
-  read as seconds; headings come from the engine and survive loading. It sees the
-  engine's steps only as they are made, so several steps made at once glide as one
-  straight move, pausing for each (inferred).
+  the stock value 0 hides it). Its waits are busy-waits inside the turn's processing
+  (§1.10.3), so nothing else happens, and nothing opens, until the animation is over: at a
+  turn's start the player sees the moves first and the Log after them (§2.7; inferred from
+  the waits and the turn's sequence). Since 2026-10-01 our client does the same
+  (`ShipGlides`, `client/classic/ship_glides.cpp`): the turn, 5° a frame, then the slide,
+  1 px a frame (36 or 50 frames a square), then the pause, read as seconds; headings come
+  from the engine and survive loading. Since 2026-10-06:
+  - **Pace.** The frames come by the time elapsed, whatever the display's refresh rate
+    (`MovementPace`, `client/classic/movement_pace.hpp`): by default at the original's
+    waits as written, 10 ms after a turn frame and 1 ms after a slide frame, so a square
+    takes 50 ms at 1024x768 and a 45° turn 90 ms. OpenSE4's movement speed (§1.9) divides
+    the waits. Before, each frame stayed at least one display refresh: about 0.8 s a square
+    at 1024x768 on a 60 Hz display, which a player found much too slow (§7 Q112). How long
+    the original's frames last depends on the system's millisecond counter its waits read
+    (§1.10.3): each frame about one step of it, 16 ms under Wine (observed), so a square
+    there takes about 0.8 s; whether players' Windows machines show the faster waits as
+    written is open (§7 Q112).
+  - **Order.** Ours sees the engine's moves only once an engine call has made them all,
+    and shows them afterwards: several steps made at once glide as one straight move,
+    pausing for each, and all the moves of one call glide together, where the original
+    animates each group's steps one after another (inferred). Whatever the call opens waits
+    for these glides: the battles to watch, the endings, the questions and the Log of a
+    turn's start (§2.7), and a message box or question an order given during the turn
+    raised. Meanwhile the main window takes no input, as under a window, but only while
+    such a turn's start or prompt waits; the moves of an order given during the turn,
+    with nothing waiting, glide while the player plays on.
+  - **Skip** (an OpenSE4 convenience; the original's animation cannot be skipped). While
+    the main window waits for the moves, a click or a key shows them at once: every ship
+    is drawn on its square, pauses included, and what waited for them opens in the next
+    frame; the press does nothing else. The movement log replay keeps the original's rule
+    (§7 Q62: presses during a day's animations are ignored).
 
 Contents [T][S]:
 
@@ -1655,6 +1692,19 @@ differences:
    since it works the route out from the live state.
 7. A new simultaneous game started from Game Setup or Quick Start, or hosted on the network,
    switches the option on and stores it (§1.9); loading or joining a game does not.
+8. During the movement animation (§2.4 "Moves as they are made"), since 2026-10-06: while the
+   object whose report is open (a fleet: any of its members) glides, the line is the route as
+   it stood before the move, worked out on the game as the engine call found it (an order
+   given during the turn already in its list, not yet carried out; at a turn-based turn's
+   start with the vehicles' movement back first, so the squares of the coming move read 0),
+   drawn over the mini sliding along it; when its glide is over the route is worked out again
+   from where it arrived, as the original refreshes the report after the object carried its
+   orders out (`ClassicSession::movesBefore`, `MainWindow::lineSubjectGliding`). Before, the
+   line came from the square the move ended on, or vanished at once when the move used up the
+   object's orders. The moves of one call glide together (above), so at a turn-based turn's
+   start, where the original selects each object in turn and draws its line while it moves,
+   ours draws only the line of the last one selected, the one the turn opens on, during all
+   the glides (inferred).
 
 Left-clicks: one object → its report in the right panel; several objects → a list; empty
 space → a report about the whole system. Only visible objects count: with exactly one, its
@@ -1806,6 +1856,24 @@ Claimed scheme over the empires picked with Select All, Allies, Enemies or Us.
 3. End Turn (F12, with an optional confirmation) locks the panels while the AIs play.
 4. In simultaneous games, orders are only recorded; after the host processes the turn
    the player can replay the movement log in the system panel (Ctrl+P/O/I/U).
+
+**What a turn's start shows, in order.** The original processes the turn with the moves in
+the shown system animated as they are made (§2.4), and a battle shown in a window interrupts
+whatever started it (§1.10.5); the Log opens only when the player gets the turn. So a
+turn-based End Turn shows, in this order: the computer players' moves and their battles; at
+the start of the human's turn the endings (the destruction check comes first, spec 05 §8,
+§7 Q83); then the human's own orders carried over, animated as they run, with the Attack
+Sector questions, the colony-type picker (shown when a colonize order completes, §1.3) and a
+failed Colonize's message box they raise; the Log last (confirmed: binary for each part;
+their order as a whole inferred from the turn's sequence). Since 2026-10-06 our client keeps
+this order (`turnStartGate`, `client/classic/turn_start.hpp`; `ClassicMode`): first the moves
+of the shown system glide (§2.4 "Moves as they are made"), then the battles to watch (a
+network or e-mail game's, after the turn, §1.10.5), the endings, the questions, the picker
+and the message boxes, and the Log last, each waiting for the ones before it. Before, the Log
+opened at once, the ships gliding under it, and a question or the picker waited for the Log to
+be closed. A battle that stops the engine call is still shown before the moves that led to it,
+since the game waits at the state before the call (ClassicSession, "Battles shown as they
+happen"); the original animates those moves first.
 
 **The view follows the player's own moves** (confirmed: binary; observed, spec 07
 session 6). The main window moves its system view by itself only while a human player's
@@ -3977,8 +4045,10 @@ the executable and Q63 has no counterpart; Q60 was observed under Wine:
     the engine reports each step of each vehicle as movement makes it
     (`TurnOptions::movementStep`) and the log keeps one entry per vehicle and step in that
     order (`MovementRecorder::step`); each entry is animated on its own, frame by frame (5° a
-    turn frame, 1 px a slide frame, 36 or 50 frames a sector, each frame at least one display
-    refresh); the engine keeps each vehicle's heading, saved with the game
+    turn frame, 1 px a slide frame, 36 or 50 frames a sector; since 2026-10-06 by the time
+    elapsed, at the original's waits divided by OpenSE4's movement speed, §1.9, §2.4, where
+    each frame used to stay at least one display refresh); the engine keeps each vehicle's
+    heading, saved with the game
     (`Vehicle::heading`), and the replay starts from the headings of the start of the turn,
     engineless minis facing up; a key pressed during a day's animations is ignored. One day
     per displayed frame without the animation stays an OpenSE4 choice (the original plays
@@ -5110,3 +5180,42 @@ ships attacking together are spec 03 §19 Q81 and Q82; the fleet in the sector l
      then show the Fleet Report, as for the fleet's row of the list, or the member's own Ship
      Report? OpenSE4 shows the Fleet Report alone, whatever selected the member, so the
      panel never shows a member's own report (inferred, §2.5).
+
+**A player's report on v0.11.0 (2026-10-06).** Three points about ship movement at End Turn, in
+an imported turn-based game of the original.
+
+112. **Ship movement at End Turn.** "When you hit end turn the end turn log shows up and then
+     the ships move under that screen"; "Can the animated ship movement speed be sped up,
+     preferably by a slider control ... Right now it is too slow"; "There are no ship movement
+     lines when the ships move but they exist in standard SE4."
+     **Answer:**
+     - *Order.* The original animates the visible moves as they are made, inside the turn's
+       processing, and opens the Log only when the player gets the turn, so the moves come
+       first (§2.4 "Moves as they are made", §2.7; confirmed: binary for each part, the order
+       of a turn's start as a whole inferred from the turn's sequence).
+     - *Pace.* The original waits 10 ms after each 5° frame of a turn and 1 ms after each 1 px
+       frame of a slide (confirmed: binary). Ours drew each frame for at least one display
+       refresh, about 0.8 s a square at 1024x768 on a 60 Hz display.
+     - *Lines.* The original draws the open report's route again over every sector redrawn
+       during the animation, the route stored before the move (§2.4 "Movement lines",
+       confirmed: binary). Ours drew the route from the square the move ended on, and none at
+       all when the move used up the object's orders. Besides, Display Ship Movement Lines is
+       off on a fresh install until a new simultaneous game is started (§1.9, confirmed:
+       binary), so a player who loads an imported game on a fresh install of OpenSE4 has no
+       lines at all until switching them on, while the original on the same computer may have
+       had them on for years.
+
+     Since 2026-10-06 our client shows the moves first and opens what a turn's start brings
+     after them, a click or a key showing the moves at once (§2.7, §2.4); plays the frames by
+     the time elapsed at the original's waits as written, with OpenSE4's "Ship movement speed"
+     (§1.9); and draws the route as it stood before the move while the object glides (§2.4
+     "Movement lines", item 8). The per-computer default of the movement lines stays the
+     original's.
+
+     Open: how long the original's frames last on players' Windows machines. Its waits read
+     the system's millisecond counter and last at least one step of it (§1.10.3): 16 ms under
+     Wine (observed, spec 07 session 3), so that a square at 1024x768 takes about 0.8 s, as ours
+     did before; §1.10.3's 15.6 ms on current Windows is that counter's usual step, not a
+     measurement. The player found ours too slow next to the original on their own computer,
+     which suggests a finer counter there and the waits as written, the pace OpenSE4 now takes
+     by default (inferred). Measuring the original on Windows would settle it.

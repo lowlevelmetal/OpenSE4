@@ -661,8 +661,9 @@ Writing steps:
   allowed (a pane of figures, the Warnings box, the report, a list to read) goes in `show`,
   so that it is not dimmed and the panel keeps off it. A window the text only says to
   close needs nothing.
-- **Say what happens by itself.** The Log opens at the start of a turn and the Colony Type
-  question comes when it closes: a step after End Turn says so. A step whose outlined button
+- **Say what happens by itself.** At the start of a turn the ships in view move first, the
+  Colony Type question comes as a colony is founded, and the Log opens last: a step after End
+  Turn says so. A step whose outlined button
   lies under an open window says "Close the window (`Esc`), then press **End Turn**".
 - **Count what takes time.** A step that waits for turns, systems or combat turns has a
   numeric `done` or a `progress` list, so the panel shows how far it has come.

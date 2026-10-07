@@ -22,7 +22,9 @@ A game uses one of two turn styles, chosen on the Mechanics page of Game Setup.
 ## Turn-based play
 
 In a turn-based game, your turn begins with your ships' movement points refilled. Ships that
-still have orders from earlier turns carry them on at once, before you get control. Then you play:
+still have orders from earlier turns carry them on at once, before you get control: you watch
+them move in the system window, then answer any question their moves raise, and then the Log
+opens. A click or a key shows the moves at once. Then you play:
 
 - A **Move To** order moves the ship right away, step by step, until it arrives or runs out of movement points. The rest of the move continues at the start of your next turn.
 - When a move would take your ships into a sector where they can see enemy forces, you are asked whether they should enter the sector and attack: `Yes` enters it and starts a battle, `No` stops the move and cancels the ship's orders.
@@ -88,8 +90,9 @@ the end of the last turn, and they are spent at the end of this one.
 The [Log](window:log) (`F10`) holds the news of this turn: things built, technologies
 discovered, battles, messages from other empires, events and orders that could not be carried
 out. Older news is not kept: read the Log every turn. It opens by itself at the start of a turn
-when there is news (switch **Show the log at the start of each turn** off in
-[Empire Options](settings#empire-options) if you prefer).
+when there is news, once the turn's moves in the system window have been shown (switch **Show
+the log at the start of each turn** off in [Empire Options](settings#empire-options) if you
+prefer).
 
 - The **Log Messages** list at the top left shows the entries in the order they happened: messages from other empires first, then the turn's events, then the orders that could not be carried out. The selected entry has a green lamp, the others a blue one.
 - The map below it marks the system of the selected entry.
