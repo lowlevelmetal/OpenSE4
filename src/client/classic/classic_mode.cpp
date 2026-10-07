@@ -12,6 +12,7 @@
 #include "client/classic/settings.hpp"
 #include "client/script/items.hpp"
 #include "client/ui/theme.hpp"
+#include "client/window_hit.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
@@ -49,6 +50,15 @@ ImGuiKey ImGui_ImplSDL3_KeyEventToImGuiKey(SDL_Keycode keycode, SDL_Scancode sca
 namespace opense4::client {
 
 using namespace classic;
+
+namespace {
+
+// The band along the top of the title screens (and of a hotseat game's Next
+// Player screen) that moves a window without its title bar (frame pixels, from
+// the frame's top): down to the foot of the row of OpenSE4's own buttons there.
+constexpr float kFrontTitleBand = 36.0f;
+
+} // namespace
 
 std::string missingInstallMessage(const std::string& installDir) {
     constexpr const char* kIntro =
@@ -1017,6 +1027,9 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ctx.goTo = [this](std::unique_ptr<FrontScreen> screen) { nextFrontScreen_ = std::move(screen); };
         if (front_) {
             const script::ItemScope scope("front");
+            // A window without the system's title bar moves by the band along the
+            // top of the title screens (client/window_hit.hpp), where no window lies.
+            addWindowDragArea(ImVec2(0, 0), ImVec2(ImGui::GetIO().DisplaySize.x, ctx.at({0, kFrontTitleBand}).y));
             front_->draw(ctx);
         }
         if (started) startGame(std::move(started));
@@ -1109,6 +1122,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     }
     if (handoff_) {
         lock_.set({});
+        addWindowDragArea(ImVec2(0, 0), ImVec2(ImGui::GetIO().DisplaySize.x, ui.at({0, kFrontTitleBand}).y));
         drawHandoff(ui);
         return !ui.requests.quitGame;
     }

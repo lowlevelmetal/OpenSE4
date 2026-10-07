@@ -6,6 +6,7 @@
 #include "client/script/recorder.hpp"
 #include "client/script/script.hpp"
 #include "client/script/sdl_input.hpp"
+#include "client/window_hit.hpp"
 
 #include "temp_dir.hpp"
 
@@ -382,6 +383,39 @@ TEST_CASE("input script: where things are, and drags with other buttons") {
     CHECK(events[1].button == 2);
     CHECK(events[4].kind == InputEvent::Kind::ButtonUp);
     CHECK(events[4].pos.x == 50);
+}
+
+TEST_CASE("input script: assert-window-hit checks what a press would do in a window without its title bar") {
+    FakeProbe probe;
+    probe.tags["status"] = {Box{ImVec2(200, 5), ImVec2(400, 25)}};
+    probe.tags["minimize"] = {Box{ImVec2(970, 7), ImVec2(990, 27)}};
+    client::WindowHitAreas areas;
+    areas.width = 1024;
+    areas.height = 768;
+    areas.border = 5;
+    areas.corner = 16;
+    areas.drag.push_back({0, 0, 1024, 31});
+    areas.holes.push_back({970, 7, 990, 27});
+    client::publishWindowHitAreas(areas);
+    Player p(parse("assert-window-hit tag:status drag\nassert-window-hit tag:minimize normal\nassert-window-hit at:0,300 resize-left\n"
+                   "assert-window-hit at:1,1 resize-top-left\nassert-window-hit at:500,400 normal\n"),
+             "/tmp");
+    play(p, probe);
+    CHECK(p.finished());
+    Player q(parse("assert-window-hit tag:status normal\n"), "/tmp");
+    play(q, probe);
+    REQUIRE(q.failed());
+    CHECK(q.failure().find("a press at tag:status (300, 15) does drag, not normal") != std::string::npos);
+    // With the title bar shown, every press is the game's.
+    client::publishWindowHitAreas({});
+    Player r(parse("assert-window-hit tag:status normal\nassert-window-hit at:0,300 normal\n"), "/tmp");
+    play(r, probe);
+    CHECK(r.finished());
+    // What it takes.
+    auto e = problems("assert-window-hit tag:status move\n");
+    CHECK(e[0].find("'assert-window-hit' takes a target and what a press there does") != std::string::npos);
+    e = problems("assert-window-hit tag:status\n");
+    CHECK(e[0].find("'assert-window-hit' takes") != std::string::npos);
 }
 
 TEST_CASE("input script: assert-fits") {

@@ -70,7 +70,7 @@ enum class Op : uint8_t {
     Wait, WaitFor, WaitGone, WaitWindow, WaitClosed, WaitStep, WaitUntil, WaitTurn, WaitResult, WaitScreen, WaitLesson,
     // Checks.
     AssertPresent, AssertAbsent, AssertEnabled, AssertDisabled, AssertWindow, AssertNoWindow, AssertStep, Assert, AssertLog,
-    AssertNoLog, AssertResult, AssertScreen, AssertLesson, AssertTurn, AssertInside, AssertFits, AssertWhole,
+    AssertNoLog, AssertResult, AssertScreen, AssertLesson, AssertTurn, AssertInside, AssertFits, AssertWhole, AssertWindowHit,
     // Other.
     Screenshot, Echo, Print, Dump, Audit,
     // Loops: repeat N [until {condition}] ... end.
@@ -84,7 +84,8 @@ struct Step {
     Target target;
     Target to;              // drag: where to
     int64_t number = 0;     // wait: frames; wait-step/assert-step: the step; wait-turn/assert-turn: the turn; wheel: notches
-    std::string text;       // type: the text; key: the chord as written; windows, results, screens, lessons, log text, files
+    std::string text;       // type: the text; key: the chord as written; windows, results, screens, lessons, log text, files;
+                            // assert-window-hit: what a press there does (client/window_hit.hpp)
     std::vector<std::string> facts;   // print: condition keys
     KeyChord chord;         // key
     WindowChange window = WindowChange::FocusLost;   // window-event

@@ -431,10 +431,11 @@ public:
                     break;
                 case 1: controlsSettingsPage(state_, ctx.k()); break;
                 case 2: soundSettingsPage(ctx.k()); break;
-                default: moddingSettingsPage(ctx.k(), ctx.rules.get()); break;
+                case 3: moddingSettingsPage(ctx.k(), ctx.rules.get()); break;
+                default: filesSettingsPage(ctx.k(), ctx.rules.get()); break;
             }
             ImGui::EndChild();
-            static constexpr std::array<const char*, 4> kPages{"Graphics", "Controls", "Sound", "Modding"};
+            static constexpr std::array<const char*, 5> kPages{"Graphics", "Controls", "Sound", "Modding", "Files"};
             for (int i = 0; i < int(kPages.size()); ++i) {
                 ImGui::SetCursorPos(ctx.size({585, 35 + 31 * float(i)}));
                 if (classicButton(p, kPages[size_t(i)], {180, 28}, 1, page_ == i)) page_ = i;

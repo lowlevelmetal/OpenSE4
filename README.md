@@ -55,8 +55,11 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
 - **Widescreen:** the 1024x768 layout stretches to use the whole width, up to 21:9, with
   a larger system view and galaxy map. Classic 4:3 with bars is a setting away.
 - **Any resolution:** the classic layouts are scaled to any window or screen, windowed,
-  borderless or fullscreen. There are options for sharp pixels, whole-number scaling and a
+  borderless or fullscreen, and a window can do without the system's title bar (the game's
+  own top row moves it). There are options for sharp pixels, whole-number scaling and a
   larger text size.
+- **Portable if you like:** an unpacked copy can keep its saved games and settings in its
+  own folder, on a USB stick for example; saved games can also have a folder of their own.
 - **Native on Linux and Windows**, built for macOS too, with Vulkan rendering and an OpenGL
   fallback. A Windows installer and a Linux desktop entry come with the release.
 
@@ -245,7 +248,10 @@ addition).
 On Windows, the release's `-setup.exe` installs OpenSE4 for all users. It goes into
 Program Files with a Start menu entry and, if you choose, a desktop shortcut, and you
 remove it from Apps & features. The zip holds the same programs to run from any folder.
-Saved games and settings live in `%APPDATA%\OpenSE4` either way.
+Saved games and settings live in `%APPDATA%\OpenSE4` either way, unless you make an unpacked
+copy portable (Settings → Files, or a file named `portable.txt` beside `opense4.exe`; see
+`PORTABLE-README.txt`): it then keeps them in `userdata` beside its programs. See
+[docs/SETUP.md](docs/SETUP.md), "Where OpenSE4 keeps its own files".
 
 On Linux, the game can appear in the desktop's application list (GNOME, KDE Plasma
 and other freedesktop.org desktops):

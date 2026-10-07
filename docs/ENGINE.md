@@ -524,6 +524,25 @@ hashed sizes at their own width.
   otherwise, so a system that never reports the focus never mutes the game. This was
   checked on Wayland in a headless mutter, minimizing with Super+H and coming back
   with Alt+Tab through its virtual keyboard.
+- **The window without its title bar.** With Settings → Graphics' "Hide the window's
+  title bar" the game answers SDL's window hit test from what the frame drawn last showed
+  (`client/window_hit.hpp`): the same title areas, holes and resize band on every platform,
+  in window units (pixels on Windows and X11, points on Wayland and macOS, scaled by the
+  desktop's scale). The system then moves and resizes the window itself: Windows through
+  its caption and border hit codes (Aero Snap included), X11 through the window manager's
+  move and resize requests, Wayland through the compositor's interactive move and resize
+  (the press never reaches the game), macOS by dragging the window by its background
+  where the game says so and resizing it at the edges macOS gives every resizable window
+  (it does not ask for the resize band). Whether the title bar really goes is the
+  desktop's decision on Wayland (a compositor may keep the decorations it draws) and on
+  some X11 window managers; Windows and X11 report the frame that is left, which the
+  Graphics page then names, while Wayland and macOS cannot tell. A video driver without
+  hit testing (SDL's offscreen one) keeps the title bar.
+- **The user folder.** Every program follows the same rules (`core/user_folder.hpp`):
+  `OPENSE4_USER_DIR`, then `userdata` beside a portable copy (`portable.txt` beside the
+  executable, or beside a macOS application bundle), then the system's folder for
+  application data. The executable is found through `GetModuleFileNameW` on Windows,
+  `/proc/self/exe` on Linux and `_NSGetExecutablePath` on macOS.
 - **Not the same.** These differences remain:
   - the default window size (1600×900) is in pixels on Windows and in points on
     Wayland and macOS; the frame fills the window either way;

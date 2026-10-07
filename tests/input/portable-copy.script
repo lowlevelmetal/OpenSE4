@@ -1,0 +1,37 @@
+# A portable copy (Settings, Files, "Keep saves and settings in OpenSE4's folder"; docs/SETUP.md
+# "A portable copy"): played by tools/run_input_tests.py on a copy of the client in a program
+# folder of its own, without OPENSE4_USER_DIR, whose system user folder holds a saved game.
+# Ticked, the question offers to copy the files; Copy and Switch makes the copy portable, with
+# its files in userdata beside it. Unticked with Switch Only it uses the system folder again, and
+# ticked once more the files the portable folder has are kept. The runner then checks the
+# folders: portable.txt beside the program, the saved game in userdata and still in the system
+# folder, the settings written there (docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# portable-copy
+options --layout=1024x768 --size=1024x768
+
+wait-screen front
+click item:Settings in=front
+click item:Files in=front
+wait-for item:user-folder:system
+assert-enabled item:"Keep saves and settings in OpenSE4's folder"
+click item:"Keep saves and settings in OpenSE4's folder"
+wait-for item:"Copy and Switch"
+click item:"Copy and Switch"
+wait-for item:user-folder:portable
+wait-for item:"OpenSE4 now keeps its files in its own folder*Files copied: *"
+# Back to the system's folder, nothing copied.
+click item:"Keep saves and settings in OpenSE4's folder"
+wait-for item:"Switch Only"
+click item:"Switch Only"
+wait-for item:user-folder:system
+wait-for item:"OpenSE4 now keeps its files in your user folder*"
+# Portable again: what userdata has is kept.
+click item:"Keep saves and settings in OpenSE4's folder"
+click item:"Copy and Switch"
+wait-for item:user-folder:portable
+wait-for item:"*Files it had already, kept as they were: *"
+# A saved game in the new folder: Load Game lists the one copied (in capitals, as the original lists them).
+click item:Back in=front
+click item:"Load Game" in=front
+wait-for item:SEEDED

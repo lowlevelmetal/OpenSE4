@@ -1,7 +1,8 @@
-# --- core: math, rng, ids, logging (no dependencies) -----------------------------
+# --- core: math, rng, ids, logging, the user folder (no dependencies) -------------------
 add_library(opense4_core STATIC
     core/environment.cpp
-    core/log.cpp)
+    core/log.cpp
+    core/user_folder.cpp)
 target_include_directories(opense4_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(opense4_core PRIVATE opense4_warnings)
 

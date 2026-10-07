@@ -1,0 +1,19 @@
+# A copy of OpenSE4 whose folder cannot be written cannot become portable (Settings, Files;
+# docs/SETUP.md "A portable copy"), as a copy installed into Program Files: played by
+# tools/run_input_tests.py on a copy of the client in a read-only program folder of its own,
+# without OPENSE4_USER_DIR. The switch opens a message that says why and what to do instead,
+# and nothing changes: the files stay in the user folder, and the runner checks that nothing
+# was made beside the program (docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# portable-copy read-only
+options --layout=1024x768 --size=1024x768
+
+wait-screen front
+click item:Settings in=front
+click item:Files in=front
+wait-for item:user-folder:system
+click item:"Keep saves and settings in OpenSE4's folder"
+wait-for item:window:"OpenSE4's Folder Cannot Be Used"
+click item:OK
+wait-gone item:window:"OpenSE4's Folder Cannot Be Used"
+assert-present item:user-folder:system

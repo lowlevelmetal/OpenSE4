@@ -92,6 +92,7 @@ add_executable(opense4
     client/classic/screens/registry.cpp
     client/classic/screens/research.cpp
     client/classic/screens/scrap.cpp
+    client/classic/screens/files_settings.cpp
     client/classic/screens/settings_screen.cpp
     client/classic/screens/setup.cpp
     client/classic/screens/simulator.cpp
@@ -113,6 +114,7 @@ add_executable(opense4
     client/classic/widgets.cpp
     client/input.cpp
     client/settings_window.cpp
+    client/window_hit.cpp
     client/main.cpp
     client/script/items.cpp
     client/script/player.cpp

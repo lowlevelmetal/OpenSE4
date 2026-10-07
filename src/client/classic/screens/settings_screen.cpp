@@ -23,7 +23,7 @@ namespace opense4::client::classic {
 
 namespace {
 
-enum class Page { Graphics, Controls, Sound, Modding };
+enum class Page { Graphics, Controls, Sound, Modding, Files };
 
 class SettingsScreen final : public Screen {
 public:
@@ -39,6 +39,7 @@ public:
             case Page::Controls: controlsSettingsPage(state_, ui.k()); break;
             case Page::Sound: soundSettingsPage(ui.k()); break;
             case Page::Modding: moddingSettingsPage(ui.k(), &ui.rules()); break;
+            case Page::Files: filesSettingsPage(ui.k(), &ui.rules()); break;
         }
         ImGui::EndChild();
         d.beginButtons();
@@ -46,6 +47,7 @@ public:
         if (d.tab("Controls", page_ == Page::Controls)) page_ = Page::Controls;
         if (d.tab("Sound", page_ == Page::Sound)) page_ = Page::Sound;
         if (d.tab("Modding", page_ == Page::Modding)) page_ = Page::Modding;
+        if (d.tab("Files", page_ == Page::Files)) page_ = Page::Files;
         // While a key is being captured, Escape cancels the capture instead of closing.
         if (!state_.capturingKey()) d.close();
         return d.keepOpen();

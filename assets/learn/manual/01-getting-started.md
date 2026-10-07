@@ -172,6 +172,9 @@ folder:
 | Windows | `%APPDATA%\OpenSE4\` |
 | macOS | `~/Library/Application Support/OpenSE4/` |
 
+A portable copy keeps them in the folder `userdata` beside the program instead, and the saved
+games can have a folder of their own: see [Settings, Files](settings#files).
+
 ## Learning the game
 
 The **Learn** window gathers OpenSE4's three ways to learn the game. The title screen's

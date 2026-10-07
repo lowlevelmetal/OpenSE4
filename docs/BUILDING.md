@@ -250,7 +250,10 @@ natively instead. Either way they come from the `dist-windows` preset:
 - `dist/OpenSE4-<version>-SHA256SUMS.txt`
 
 Each package holds `opense4`, `opense4-server`, `opense4-datacheck`, `opense4-convert` and `opense4-sdk`,
-stripped, with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans,
+stripped, with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. The zip file and the
+tarballs also hold `PORTABLE-README.txt` (from `packaging/`), which says how to make the unpacked copy portable
+(docs/SETUP.md "A portable copy"); the installer leaves it out, since a copy in Program Files cannot be. No
+package is portable as it comes. Our own fonts (Noto Sans,
 SIL Open Font License) are built into the game, so nothing else needs to sit next to it. The modding SDK's
 documentation (`docs/sdk`) and example mods (`mods/examples`) go into `sdk/docs` and `sdk/examples` beside the
 programs, where `opense4-sdk new --from-example` finds the examples.
@@ -264,7 +267,7 @@ beside it reads them from the source tree's `mods/` instead. To ship another mod
 ```text
 OpenSE4-<version>-linux-x86_64/          (the same in the ARM packages and, with .exe, the Windows zip)
   opense4  opense4-server  opense4-datacheck  opense4-convert  opense4-sdk
-  README.md  LICENSE  THIRD_PARTY_NOTICES.txt
+  README.md  LICENSE  THIRD_PARTY_NOTICES.txt  PORTABLE-README.txt
   mods/hegemon/            the mods that come with OpenSE4
   sdk/docs/  sdk/examples/ the modding SDK's guide and example mods
   share/  install-desktop-entry.sh   (Linux only)
@@ -351,7 +354,10 @@ that `opense4-sdk info opense4.hegemon` finds it by id, and that nothing is left
 uninstalling.
 
 An update goes into the folder of the previous install. The uninstaller leaves
-saved games and settings in `%APPDATA%\OpenSE4` alone. Silent use works as with any
+saved games and settings in `%APPDATA%\OpenSE4` alone. An installed copy is not portable
+(docs/SETUP.md "A portable copy"): the game refuses, since it cannot write in Program
+Files. Installed elsewhere with `/D=` into a folder the player may write in, it can be made
+portable; the uninstaller then leaves `portable.txt` and `userdata\` behind with the folder. Silent use works as with any
 NSIS installer: `setup.exe /S`, and `/D=C:\path` (last, unquoted) for another folder.
 On 32-bit Windows, on Windows older than 7, and on Windows 7 without Service Pack 1
 the installer says what is missing and stops (exit status 2 when silent).
@@ -728,6 +734,10 @@ recorder is tested.
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
 | `classic-save.script` | Games of the original: Save Game's *Save for SE IV* writing the game into the saves folder's "Space Empires IV" folder, Load Game's Change Directory finding it there, and loading it, with the note of what came across only approximately (docs/SETUP.md "Games of the original") |
 | `save-typed-name.script` | Save Game keeping the name typed into its field when Save is clicked instead of pressing Enter |
+| `window-title-bar-front.script`, `window-title-bar.script` | Settings → Graphics, "Hide the window's title bar" (`client/window_hit.hpp`), on the title screens and in a game: with the title bar every press is the game's; without it the band along the top of the title screens and the main window's top row move the window (`assert-window-hit`), OpenSE4's buttons in the band, the minimize button and the map keep their clicks, the window's edges and corners resize it; the Graphics page's note that SDL's offscreen driver keeps the title bar; unticked, every press is the game's again |
+| `settings-files.script` | Settings → Files: the folder in use and its rule (`OPENSE4_USER_DIR` in a script run, which makes the portable switch dim), a saves folder of the player's, one that cannot be made refused, `Default` |
+| `portable-copy.script` | A portable copy, on a copy of the client (`# portable-copy`): the switch with its question, `Copy and Switch`, back with `Switch Only`, portable again with the files already there kept, and Load Game listing the saved game copied (docs/SETUP.md "A portable copy") |
+| `portable-refused.script` | A copy in a folder that cannot be written (`# portable-copy read-only`): the switch opens the message that says why and what to do instead, and the files stay where they were |
 | `game-setup.script` | The setup screens: Load Game with Change Directory, Quick Start's picker, Game Setup's pages, Add New with a name from the list picker and an e-mail address, Begin Game, and Change Email in Empire Status |
 | `mods-window.script` | The Mods window on the fixture mods of `tests/fixtures/mods` alone (`--mods-dir`, `--no-bundled-mods`): each mod's details, enabling by button and double click, a requirement missing then met, the order and Move Up, Done refused with the reason when a patch does not fit the installed data, then Done reading the data again; Cancel keeping the choice (docs/sdk/packages-and-data.md "Choosing mods in the game") |
 | `mods-bundled.script` | The mods that come with OpenSE4 (`mods/bundled.txt`; a developer build reads the source tree's `mods/`, a release the `mods/` beside it): with an empty mods folder of its own, the Mods window lists Hegemon, off, marked as coming with OpenSE4, with its computer player; Enable and Done, the window again with it on; Quick Start's Computer Players offering Hegemon. Play it with `--exe` on a staged package to check the package's layout |
@@ -744,7 +754,16 @@ recorder is tested.
 | `mod-lobby-host.script`, `mod-lobby.script` | The network lobby's mod options: the host changes them in Mod Options and sets Computer Player Limits; a joining player sees them against a dedicated host (`tests/input/servers/mod-options.toml`) and cannot change them |
 
 Scripts marked `# ci: fixture-data` need nothing but our own content and also run on a game
-folder made from `tests/fixtures` (CI). Scripts marked `# layouts: both` also play at 800x600
+folder made from `tests/fixtures` (CI). A script marked `# portable-copy` plays a copy of the
+client in a program folder of its own (a hard link beside the client where the file system
+allows, else a copy), without `OPENSE4_USER_DIR` and with a system user folder of its own
+(`XDG_DATA_HOME`) that holds a saved game; when it passes, the runner checks that the copy
+became portable (`portable.txt` beside it), that the saved game and the settings are in its
+`userdata` and that the saved game is still in the system folder. With `# portable-copy
+read-only` the program folder cannot be written (as Program Files for a player), and the
+runner checks that nothing was made in it. They play on Linux and the BSDs only: on Windows
+and macOS the system's folder cannot be moved for one run, and the runner skips them (the
+read-only one also for the superuser, who writes anywhere). Scripts marked `# layouts: both` also play at 800x600
 (`--small`, see "Tests"). A script with a `# server: ARGS` line among its first comments plays
 against a dedicated host: `tools/run_input_tests.py` starts `opense4-server` from the client's
 folder with ARGS (paths from the repository's root) on a free port of 127.0.0.1, and the
@@ -795,6 +814,7 @@ from a double click.
 | `assert-present T`, `assert-absent T`, `assert-enabled T`, `assert-disabled T`, `assert-inside T T2` | T is on screen, or not; enabled or dim; T's point lies in T2's rectangle |
 | `assert-fits SCOPE` | in that scope (a window id, `main`, `lesson`, `front`, or a Dear ImGui window's name): every text drawn into a box of its own (a button's caption, a text kept to its place) fits the box, and no labelled widget is cut off by its window by more than 4 frame pixels (a window that scrolls and a table's cells excepted) |
 | `assert-whole SCOPE` | in that scope, every text drawn into a box of its own is drawn whole: none cut short with "…" to fit, none running out of its box |
+| `assert-window-hit T HIT` | what a press at T would do in a window without the system's title bar (Settings → Graphics, "Hide the window's title bar"; `client/window_hit.hpp`), from the areas the frame drawn last published: `drag` (moves the window), `normal` (the game gets it), or `resize-top`, `resize-top-left`, `resize-left` ... `resize-bottom-right`. With the title bar shown every point is `normal`. SDL's offscreen driver cannot move or resize a window, so scripts check the game's answers rather than the system's moves |
 | `assert-window ID`, `assert-no-window ID`, `assert-step N`, `assert-result R`, `assert-lesson SLUG`, `assert-screen S`, `assert-turn N` | as the waits, at once |
 | `assert { condition }`, `assert-log "TEXT"`, `assert-no-log "TEXT"` | a lesson condition ("since" counters from the start of the game); some entry of the player's log has that text (letter case ignored), or none |
 | `repeat N [until { condition }] ... end` | the steps between up to N times; with `until`, leaves as soon as the condition holds (checked before each pass, counters from the first) and fails if it never did |

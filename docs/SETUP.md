@@ -347,27 +347,107 @@ may have different ones.
 
 ## Where OpenSE4 keeps its own files
 
-Saves (`saves/`, including the autosaves `AutoSav0` to `AutoSav9`, named after the
-last digit of the turn count, the players' history files copied beside each save, and the
-games saved for the original in `saves/Space Empires IV/`),
-the players' statistics, history and log files of the game being played (`History/`),
-maps (`maps/`,
-see [MAPS.md](MAPS.md)), empire files (`empires/`), your mods (`Mods/`, see "Mods"),
-settings and logs go in your user data directory. `opense4-sdk python` writes the
-`opense4` package for external bots under `python/` there. OpenSE4 never writes to the
-game directory.
+OpenSE4 keeps everything of yours in one folder, its **user folder**: settings, saved games,
+logs, your mods and the history of the game you play. It never writes in the game's own
+folder. OpenSE4's saved games are not in the original's format, so they never go into the
+original's `SaveGame` folder either: Load Game only reads that folder (with *Change
+Directory*), and Save Game's *Save for SE IV* writes a game for the original wherever you
+choose (see "Games of the original").
 
-| Platform | Location |
+### Which folder
+
+The first of these rules that applies decides, for the game, the dedicated server
+(`opense4-server`) and `opense4-sdk` alike:
+
+1. The environment variable `OPENSE4_USER_DIR`, when it is set and not empty: the folder it
+   names. The tests use it for a scratch folder of their own; it also gives one run another
+   folder.
+2. A **portable copy**: when a file named `portable.txt` lies beside the program, the folder
+   `userdata` beside it (see "A portable copy" below).
+3. Otherwise the folder the system keeps for a user's application data:
+
+| Platform | User folder |
 |---|---|
-| Linux | `~/.local/share/OpenSE4/` |
-| Windows | `%APPDATA%\OpenSE4\` |
+| Linux (and other Unix systems) | `$XDG_DATA_HOME/OpenSE4/`, which is `~/.local/share/OpenSE4/` unless you set `XDG_DATA_HOME` |
+| Windows | `%APPDATA%\OpenSE4\`, which is `C:\Users\<your name>\AppData\Roaming\OpenSE4\` |
 | macOS | `~/Library/Application Support/OpenSE4/` |
 
-The environment variable `OPENSE4_USER_DIR` names another folder for all of this (the
-tests use it, and it serves a portable install). Every run of the game writes its log to
-`opense4.log` there: on Windows, where the game has no console, that file is where its
-messages are, including any file of your install it could not find ("Not in the installed
-game: ..."). The run before keeps its log as `opense4.previous.log`.
+"Beside the program" means the folder that holds `opense4` (`opense4.exe` on Windows), or for
+a macOS application bundle (`OpenSE4.app`) the folder that holds the bundle. Settings → Files
+shows the folder in use and which rule chose it, and opens it (`Open Folder`); `opense4 --help`
+prints it too. A system that names no folder at all (no `HOME`, no `APPDATA`) gets `userdata`
+in the working folder.
+
+### What it holds
+
+| File or folder | What it is |
+|---|---|
+| `settings.toml` | The Settings window's Graphics (with the title bar), Controls and Files pages: this computer's display, keys and saves folder. |
+| `classic_settings.toml` | The Options window and the Settings window's Sound and Modding pages, the mods you play with, the last game you saved (for Resume Game) and your progress in the lessons. |
+| `saves/` | Your saved games (`.gam`), the autosaves `AutoSav0` to `AutoSav9` (named after the last digit of the turn count), and the players' history files copied beside each save. `saves/Space Empires IV/` is where *Save for SE IV* suggests writing games for the original. Settings → Files can put saved games in another folder (below). |
+| `History/` | The players' statistics, history and log files of the game being played. |
+| `maps/`, `empires/` | Maps ([MAPS.md](MAPS.md)) and empire files you saved. |
+| `Mods/` | Your mods (see "Mods"). |
+| `ModCache/` | The `.zip` mods, unpacked once; made again when it is missing. |
+| `pbem/` | Play-by-e-mail game and turn files ([MULTIPLAYER.md](MULTIPLAYER.md)). |
+| `lessons/` | Where you left a tutorial or training game, to go on from there. |
+| `host_key.txt`, `known_hosts.txt` | This computer's key as a network host, and the hosts it trusts ([MULTIPLAYER.md](MULTIPLAYER.md)). |
+| `queue_types.txt`, `tech_levels.txt`, `tech_areas.txt` | Construction queue templates, and the Research window's exports. |
+| `python/` | The Python package `opense4-sdk` writes for external computer players ([docs/sdk](sdk/)). |
+| `opense4.log`, `opense4.previous.log` | The log of this run and of the run before. |
+
+### The saves folder
+
+Settings → Files → *Saves folder* puts your saved games somewhere else: Save Game, the
+autosaves, Load Game and Resume Game then use that folder. A folder written without a drive
+or root (`My Saves`, `../Saved Games`) lies in the user folder and goes with it; one written
+in full (`D:\Saved Games\OpenSE4`, `/home/ann/Games/se4-saves`) stays where it is. `Use`
+refuses a folder in the game's own folder and one OpenSE4 cannot write in; `Default` brings
+back `saves/`. The setting is kept in `settings.toml`.
+
+### A portable copy
+
+A portable copy keeps its user folder beside the program, so that saved games and settings
+go wherever its folder goes: a copy on a USB stick, or several copies side by side. Settings →
+Files → *Keep saves and settings in OpenSE4's folder* makes the copy you play portable, and
+unticking it makes it use your user folder again. Each time, OpenSE4 first asks whether to
+copy your files across:
+
+- **Copy and Switch** copies every file of the folder used until now into the new one, except
+  that folder's logs and its `ModCache`, then switches. A file the new folder already has is
+  kept as it is.
+- **Switch Only** switches without copying.
+
+Nothing is ever deleted: the old folder keeps its files, and switching back finds them there.
+The switch takes effect at once, and the settings in use are written to the new folder. The
+log of the run stays in the old folder until OpenSE4 starts again, and mods are read from the
+new `Mods` folder the next time the data is read (the Mods window's `Done`, or the next
+start).
+
+What the tick does is make or remove the file `portable.txt` beside the program (its text says
+what it is for), so you can also do it by hand: create an empty text file named `portable.txt`
+there, or delete it. In Windows Explorer with file name extensions hidden, name the new text
+document `portable`.
+
+OpenSE4 refuses to become portable when it cannot write in its folder, and says why. That is
+the case for a copy installed with the Windows installer, which goes into Program Files,
+where only administrators may write, and for a copy installed by a package manager into a
+system folder. For a portable copy, download the zip file (Windows) or the tarball (Linux) of
+the release instead and unpack it into a folder of your own; or keep only your saved games
+elsewhere with the saves folder. The release packages carry `PORTABLE-README.txt`, which says
+the same. A copy is never portable unless you make it so.
+
+| Mode | Where the files go |
+|---|---|
+| Installed (Windows installer) | `%APPDATA%\OpenSE4\`; the uninstaller leaves it alone |
+| Zip or tarball, as unpacked | The user folder of the table above |
+| Zip or tarball made portable | `userdata\` beside `opense4.exe` / `userdata/` beside `opense4` |
+| `OPENSE4_USER_DIR` set | The folder it names, portable or not |
+
+Every run of the game writes its log to `opense4.log` in the user folder: on Windows, where
+the game has no console, that file is where its messages are, including any file of your
+install it could not find ("Not in the installed game: ..."). The run before keeps its log as
+`opense4.previous.log`.
 
 If OpenSE4 crashes, it adds a short crash report to the end of `opense4.log` (the version,
 what went wrong, where in the program, and the last lines of the log) and a message box
@@ -387,4 +467,8 @@ game again first, the report is in `opense4.previous.log`.
 | No movement line after Move To | The line is the per-computer option "Display Ship Movement Lines" (Game Menu → Options, or Ctrl+L), off on a fresh install as in the original. Starting a new simultaneous game switches it on; joining one does not. It shows for the ship, base, unit group or fleet whose report is open. |
 | No music, or no sound | See "No sound, no music, or clicks: what the log says" above: `opense4.log` names the device, the settings, each track and every file that cannot be played. Music Off in Game Menu → Options and `Allow CD Music` in the game's `Settings.txt` both silence the music, and the game is silent while it is in the background (see "Sound and music"). |
 | Clicks, pops or crackling | The same section: the log shows whether the music ran dry; another device format (`SDL_AUDIO_FREQUENCY`, `SDL_AUDIO_FORMAT`) or sound interface (`SDL_AUDIO_DRIVER`) can be tried. |
+| The window has no title bar | Settings → Graphics → "Hide the window's title bar" is on. Drag the game's top row (the main window's status bar, the top of the title screens) to move the window and its edges to resize it; the status bar's minimize button minimizes it, `Alt+Enter` switches to fullscreen and back, and unticking the setting brings the title bar back. |
+| The title bar stays although "Hide the window's title bar" is on | The desktop decides about title bars itself: some Wayland desktops and window managers keep theirs. The Graphics page says so under the setting when the game can tell, and `opense4.log` has a line about it. The game's top row moves the window all the same. |
+| "OpenSE4 cannot keep its files in its own folder" | OpenSE4's folder cannot be written, as for a copy installed into Program Files. Use the zip file or tarball for a portable copy, or choose a saves folder (see "A portable copy"). |
+| Saved games or settings seem gone after moving OpenSE4 | A portable copy keeps them in `userdata` beside the program: move that folder with it. A copy that is not portable keeps them in your user folder, wherever the program is. Settings → Files shows the folder in use. |
 | Something looks or behaves differently on another computer | Compare the per-computer settings first (`classic_settings.toml` and `settings.toml` in the folder above), then `opense4.log`. The game itself plays the same on every platform. |

@@ -83,19 +83,27 @@ const char* displayName(LayoutChoice l) {
     return "?";
 }
 
-std::filesystem::path userDataDirectory() {
+std::filesystem::path systemUserDirectory() {
     std::filesystem::path dir;
-    if (const auto own = core::environment("OPENSE4_USER_DIR"); own && !own->empty()) {
-        dir = *own;  // UTF-8, as narrow strings become paths everywhere
-    } else if (char* pref = SDL_GetPrefPath("", "OpenSE4")) {
-        dir = pref;
+    if (char* pref = SDL_GetPrefPath("", "OpenSE4")) {
+        dir = pref;  // UTF-8, as narrow strings become paths everywhere
         SDL_free(pref);
-    } else {
-        dir = std::filesystem::current_path() / "userdata";
     }
+    return dir;   // empty: core::resolveUserFolder falls back to the working folder
+}
+
+core::UserFolder userFolderInUse() {
+    core::UserFolder folder = core::userFolder(systemUserDirectory);
     std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    return dir;
+    std::filesystem::create_directories(folder.path, ec);
+    return folder;
+}
+
+std::filesystem::path userDataDirectory() { return userFolderInUse().path; }
+
+std::filesystem::path savesFolderPath(const std::filesystem::path& userDir, std::string_view setting) {
+    if (setting.empty()) return userDir / "saves";
+    return (userDir / std::filesystem::path(setting)).lexically_normal();   // an absolute value replaces userDir
 }
 
 std::filesystem::path appSettingsFile() { return userDataDirectory() / "settings.toml"; }
@@ -118,6 +126,7 @@ std::string appSettingsToToml(const AppSettings& s) {
     graphics.insert("integer_scaling", g.integerScaling);
     graphics.insert("text_scale", double(g.textScale));
     graphics.insert("show_fps", g.showFps);
+    graphics.insert("hide_title_bar", g.hideTitleBar);
 
     toml::table keys;
     for (const ActionInfo& info : actionInfos()) {
@@ -142,11 +151,15 @@ std::string appSettingsToToml(const AppSettings& s) {
         controls.insert("mod_keys", std::move(modKeys));
     }
 
+    toml::table files;
+    files.insert("saves_folder", s.files.savesFolder);
+
     toml::table root;
     root.insert("graphics", std::move(graphics));
     root.insert("controls", std::move(controls));
+    root.insert("files", std::move(files));
     std::ostringstream out;
-    out << "# OpenSE4 settings (graphics, display, controls)\n" << root << "\n";
+    out << "# OpenSE4 settings (graphics, display, controls, files)\n" << root << "\n";
     return out.str();
 }
 
@@ -176,6 +189,7 @@ AppSettings appSettingsFromToml(std::string_view text, std::string* error) {
     g.integerScaling = gr["integer_scaling"].value_or(g.integerScaling);
     g.textScale = std::clamp(float(gr["text_scale"].value_or(1.0)), 0.75f, 2.0f);
     g.showFps = gr["show_fps"].value_or(g.showFps);
+    g.hideTitleBar = gr["hide_title_bar"].value_or(g.hideTitleBar);
 
     const toml::node_view co = root["controls"];
     s.controls.rightClickMoves = co["right_click_moves"].value_or(s.controls.rightClickMoves);
@@ -195,6 +209,7 @@ AppSettings appSettingsFromToml(std::string_view text, std::string* error) {
                         if (auto chord = parseChord(*name)) chords[slot] = *chord;
                 s.controls.modKeys[std::string(id.str())] = chords;
             }
+    s.files.savesFolder = root["files"]["saves_folder"].value_or(std::string{});
     return s;
 }
 

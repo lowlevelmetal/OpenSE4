@@ -42,6 +42,14 @@ public:
     virtual float fps() const = 0;
     // The status bar's minimize button (docs/spec/06 §2.2).
     virtual void minimize() {}
+    // Shows or hides the system's title bar as GraphicsSettings::hideTitleBar
+    // says, at once (client/window_hit.hpp); in fullscreen, once the game is
+    // in a window again.
+    virtual void applyTitleBar() {}
+    // What the system made of hiding the title bar, when it did not do it
+    // all (it kept the title bar, it cannot move such a window); empty
+    // otherwise.
+    virtual std::string titleBarNote() const { return {}; }
 };
 
 // Shell services available to a mode.

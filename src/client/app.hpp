@@ -106,11 +106,15 @@ public:
     gfx::Backend backend() const override { return device_->backend(); }
     float fps() const override { return fps_; }
     void minimize() override;
+    void applyTitleBar() override;
+    std::string titleBarNote() const override { return titleBarNote_; }
 
 private:
     bool createWindowAndDevice();
     void initImGui();
     void updateUiScale();
+    // The frame's title areas for the system's window hit test (window_hit.hpp).
+    void publishHitAreas(int windowWidth, int windowHeight);
     bool frame();
     // One input event: the mode's filter (a tutorial's input lock), then Dear ImGui.
     EventVerdict handleEvent(SDL_Event& event, bool& running);
@@ -131,6 +135,8 @@ private:
     int fpsFrames_ = 0;
     uint64_t nextFrameNs_ = 0;  // frame limiter
     std::string rendererInfo_;
+    bool hitTestInstalled_ = false;   // the system asks window_hit.hpp where presses go
+    std::string titleBarNote_;
 
     std::unique_ptr<Mode> mode_;
     std::unique_ptr<script::Player> player_;

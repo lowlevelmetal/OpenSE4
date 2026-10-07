@@ -230,6 +230,12 @@ int main(int argc, char** argv) {
 
         if (key == "--help" || key == "-h") {
             std::fputs(kUsage, stdout);
+            // Where the player's files are, and why there (core/user_folder.hpp).
+            const core::UserFolder folder = client::userFolderInUse();
+            const char* why = folder.source == core::UserFolderSource::Portable      ? "a portable copy: portable.txt lies beside the program"
+                              : folder.source == core::UserFolderSource::Environment ? "named by OPENSE4_USER_DIR"
+                                                                                     : "your user folder";
+            std::printf("\nSaved games, settings and logs: %s\n  (%s; see Settings, Files)\n", folder.path.string().c_str(), why);
             return 0;
         } else if (key == "--renderer") {
             if (value == "auto") options.renderer = client::AppOptions::Renderer::Auto;
