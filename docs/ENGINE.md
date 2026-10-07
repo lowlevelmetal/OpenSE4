@@ -36,8 +36,11 @@ the data set before the engine sees it: their data patches apply to the parsed d
 files, their game files are layered over the install's (`mods::GameData`, a
 `ruleset::GameFiles`), and `mods::loadDataSet` gives the `Ruleset` the engine is built
 from. The engine itself does not know about packages: it reads its files through
-`GameFiles`, and a game records its mods (`GameState::mods`) only to refuse loading them
-elsewhere without them.
+`GameFiles`. A game records its mods (`GameState::mods`: id, version, identity, whether
+each changes the game) so that it is not loaded or joined without them; the mods' rules
+scripts and computer players reach the engine only through the sessions described under
+"Turn order" below, and their state is plain data of the game (`ModData`,
+`GameState::modRules`, `Empire::controller`, `Empire::script`).
 
 - **One object list.** Stars, planets, asteroid fields, storms, warp points, ships, bases
   and unit groups each hold a slot of one object list (`SpaceObject::slot`,
@@ -113,9 +116,13 @@ empires are skipped.
    colonization targets stay in `TurnContext::aiColonyTargets` for the next economy step
    whose ministers run (the first empire's in a simultaneous turn reads the last empire's).
    Afterwards `ai::recordAiDecisions` notes what was decided. An empire a script or
-   external player plays (below) skips the state update, the political step and the
-   claims, and gets the `politics` call where the Politics minister acts and the `orders`
-   call where the other ministers do, each followed by the delivery of its messages.
+   external player plays (below) gets the `politics` call where the Politics minister acts
+   and the `orders` call where the other ministers do, each followed by the delivery of its
+   messages. The built-in AI's bookkeeping (the state update, the political step, the
+   colonization lists, `recordAiDecisions`) still runs for it, unless its player says
+   `classic_state = false`; what the built-in AI would write into the empire directly (its
+   claims, movement options and systems to leave) comes as commands at the start of the
+   classic `politics` answer, the player's to give (docs/sdk/ai-protocol.md §9).
 5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
    vehicle, fleet and planet with orders acts, in object order, whenever its day counter
    reaches 1: the acting vehicle gets exactly 1 movement point and its list runs, orders
@@ -185,8 +192,8 @@ empires are skipped.
    (`events::fireDueEvents`), then one roll for a new event for the whole galaxy
    (`events::rollNewEvent`).
 10. **End.** Per-turn flags are cleared, sight follows the events, the AI
-    remembers the turn's battles and spies (`ai::rememberAiEvents`; not for an empire a
-    player plays), each script or external player asked during the turn gets
+    remembers the turn's battles and spies (`ai::rememberAiEvents`; for an empire a
+    player plays only with its classic state), each script or external player asked during the turn gets
     `end_session`, the turn number advances and `economy::updateReports` projects next
     turn's income.
 
@@ -198,8 +205,12 @@ gets a session (`game::Players`, made by the factory the SDK installs:
 every empire. At each decision point above the engine asks the player through the
 session; no answer, or a failed request, gives the classic answer for that decision, and
 after three failures in a game turn the classic AI answers for the rest of it
-(`Empire::script`). The built-in AI's own bookkeeping steps do not run for such an empire
-(docs/sdk/ai-protocol.md §9). The players run in the script runtime on a thread of the
+(`Empire::script`). The classic answer of each planning call (`game::classicPlan`) plans
+with what the turn kept for the classic AI (`TurnContext::aiStartTerritory`,
+`aiStartFigures`), and the SDK's `builtin` service gives the same; the built-in AI's
+bookkeeping runs for such an empire as for a computer empire unless its player sets
+`classic_state = false`, so a player that overrides nothing plays exactly the built-in AI's
+game (docs/sdk/ai-protocol.md §9). The players run in the script runtime on a thread of the
 session's own, and every answer goes into the game's journal (`GameState::journal`, not
 saved), so a call made again after a battle stop or a turn played again
 (`game::replayJournal`, the movement replay) gives the same answers without asking. A game
@@ -237,7 +248,8 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    counting everything since the empire's previous step, `Empire::politicsMark`;
    `ai::claimTerritory`; the Politics minister, then the other ministers, whose orders are
    given but not yet carried out; `ai::recordAiDecisions`; for an empire a script or
-   external player plays, its `politics` and `orders` calls instead of the AI steps);
+   external player plays, its `politics` and `orders` calls instead of the ministers, the
+   bookkeeping running as in step 4);
    then its vehicles regain their movement
    (`movement::startTurn(ctx, empire)`) and every group carries out its order list, the
    ministers' new orders included, at most 21 orders each; a computer player's
@@ -397,6 +409,15 @@ the real game is never changed.
   Network games still send the host's state rather than the seed. The integration test
   plays full all-AI games twice and compares checksums every turn, and the golden test
   below pins the results across compilers.
+- **Mods' scripts follow the same rules** (docs/MODDING_SDK.md §7.3, §14.4). Rules scripts
+  and in-game computer players run on the host, in turn processing, in the sandboxed
+  MicroPython of `src/script` (docs/sdk/runtime.md): random numbers only from the game's
+  generator, whole numbers in everything they give the game, budgets counted in bytecodes
+  rather than time, and dictionary and set order that never depends on memory addresses.
+  Every answer a computer player gives is kept in the turn's journal, so a turn played
+  again never asks it twice, and an external bot need not be deterministic. A game without
+  mods makes no script session at all: hashed at save format 8, it gives the checksums
+  recorded before the SDK.
 
 ## Same on every platform
 
@@ -465,6 +486,13 @@ hashed sizes at their own width.
   Environment variables that hold paths are read with `core::environment`, and the
   server's and the data checker's arguments with `core::utf8Arguments`
   (`core/environment.hpp`); SDL already hands the client UTF-8 arguments.
+- **Scripts.** The script runtime makes hashes, object identities, dictionary and set
+  order, floating point (musl's maths functions, no fused multiply-add), big integers and
+  word sizes the same on every build (docs/sdk/runtime.md "The same on every computer");
+  `tests/sdk/test_script_determinism.cpp` compares a workload's checksum and budget with
+  one golden value on Linux x86_64, Windows under Wine and 32-bit ARM under QEMU, and the
+  SDK's golden games (`tests/sdk/test_sdk_*_golden.cpp`) pin games played by script
+  players and rules mods.
 - **Picture.** Vulkan and OpenGL share the shader, blending, samplers and UNORM
   framebuffer; Vulkan never picks an sRGB-encoding swapchain when another format is
   offered. `tools/render_scenes.sh` renders ten scenes: the main window at both layouts,
@@ -524,6 +552,32 @@ hashed sizes at their own width.
   `opense4-server` hosts headless or processes PBEM turns.
 
 See [MULTIPLAYER.md](MULTIPLAYER.md).
+
+## The modding SDK
+
+Mods ([MODDING_SDK.md](MODDING_SDK.md), the guide in [sdk/README.md](sdk/README.md)) change
+the game only through published interfaces (MODDING_SDK.md §1): the data set they patch,
+the commands their computer players give, the hooks the engine calls during a turn, and the
+effects those hooks may use. Pictures, sounds and interface extensions stay in the client.
+The game itself holds no scripts: `src/game` asks through interfaces that the SDK fills in,
+and does nothing when no mod needs them.
+
+| Where | What it is |
+|---|---|
+| `src/mods` (`opense4_mods`) | Packages and manifests (`package.*`, `manifest*`), mod sets, the mods folder and the mods that come with OpenSE4 (`mod_set.*`), the layered game files and the patched data set (`data_set.*`), data patches and the tables they name (`patch.*`, `tables.*`, `apply.*`), Python data generators (`generator.*`), `.zip` packages (`zip.*`) |
+| `src/script` (`opense4_script`) | `script::Value` and its JSON (`value.*`, `json.*`); the MicroPython runtime and its sandbox (`runtime.*`, the port in `script/port`), built from `third_party/micropython`, which `tools/update_micropython.sh` makes from a pinned release and our patches (docs/BUILDING.md "MicroPython", docs/sdk/runtime.md) |
+| `src/game/players.*`, `src/game/hooks.*` | The engine's side: `game::Players`, the session that asks an empire's controller at each decision (`classicPlan` for the classic answers, the journal), and `game::RulesHooks`, the moments of the turn the mods' rules functions run at and the effects they may use |
+| `src/sdk` (`opense4_sdk`) | What fills them in: the view and the rules view scripts read (`view.*`, `rules_view.*`), the queries (`queries.*`), the command codec and the names (`codec.*`, `names.*`), the script and external players' sessions on a thread of their own (`players.*`, `worker.*`, `bots.*`), the rules hooks and effects (`rules.hpp`, `rules_*`), scenarios (`scenario.*`), the interface tier's files and values (`ui*`), headless games for the arena and the tests (`match.*`), child processes (`process.*`) |
+| `python/opense4` | The Python package scripts and external bots use; `tools/gen_sdk_python.py` generates its schema-driven modules from docs/sdk/view.md and commands.md. `python/lib` holds pure-Python modules for the game's runtime: what MicroPython lacks (`typing`, `dataclasses`...) and the parts of CPython's `math`, `re` and others it lacks (docs/sdk/runtime.md "Modules") |
+| `tools/sdk*.cpp` | `opense4-sdk`: `new`, `check`, `info`, `dump` and `pack` (`sdk.cpp`), `test`, `run`, `arena`, `env-host`, `bot` and `python` (`sdk_test.cpp`, `sdk_arena.cpp`, `sdk_env.cpp`, `sdk_common.cpp`) |
+| `mods/` | The mods that come with OpenSE4 (`bundled.txt` names them; Hegemon) and the SDK's example mods (`mods/examples`) |
+| `tests/sdk` | The SDK's tests: C++ cases, the package's Python tests (run in the game's runtime and under CPython), the docs' examples (`python/check_doc_snippets.py`); their fixture mods are in `tests/fixtures/mods` |
+
+In the client, `mods_model.*` and `screens/mods.cpp` are the Mods window and the setup
+screens' line, `screens/setup_players.*` the choice of computer players and their limits,
+`computer_players.*` the AI notes view and the players' failures (`screens/player_errors.cpp`
+lists them), and `mod_ui.*` with `main_window_mods.cpp` the interface tier: the mods' orders,
+report panels, list columns, Empires pages, keys and text (docs/sdk/interface.md).
 
 ## Rendering
 
@@ -658,6 +712,10 @@ subsystem has its own test file. `test_integration.cpp` runs whole games.
 
 `test_learn.cpp` covers the learning system's parser, loaders, conditions and progress,
 and checks every built-in lesson and manual page.
+
+The modding SDK's tests are in `tests/sdk` (docs/BUILDING.md "Tests"). Games without mods
+must stay as they were before the SDK: the determinism goldens hold, and hashed at save
+format 8 such a game gives the checksums recorded before it.
 
 Tests against your installed data are opt-in:
 
