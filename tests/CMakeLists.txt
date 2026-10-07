@@ -183,6 +183,10 @@ opense4_windows_manifest(opense4_user_folder_probe)
 # The SDK tool's tests run it (tests/sdk/test_sdk_tool.cpp, test_sdk_arena.cpp), and the
 # external bots' tests the dedicated server.
 add_dependencies(opense4_tests opense4-sdk opense4-server opense4_user_folder_probe)
+# doctest includes the standard stream headers itself: MSVC refuses to print a
+# std::string_view in a check unless <ostream> is declared, which other compilers
+# get from their other headers.
+target_compile_definitions(opense4_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_USER_FOLDER_PROBE_EXE="$<TARGET_FILE:opense4_user_folder_probe>"
     OPENSE4_SDK_EXE="$<TARGET_FILE:opense4-sdk>"
