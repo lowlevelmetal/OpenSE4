@@ -161,7 +161,10 @@ empires, the mod's options, and objectives written in the lessons' condition lan
 with an optional action and victory ([rules.md](../rules.md#scenarios)). The
 [scenario](../../../mods/examples/scenario/) example is a race to settle the frontier, with a
 grant for each empire's second colony ([A scenario](tutorials/scenario.md)).
-`opense4-sdk test` starts each scenario of a mod and plays it for a few turns.
+`opense4-sdk test` starts each scenario of a mod and plays it for a few turns. Players start
+one from the Learn window (the title screen's Scenario button), whose **Scenarios** tab
+lists the scenarios of the mods in use; a dedicated server's setup file names one with
+`scenario = "<mod id>:<name>"`.
 
 ## Orders, events, projects, options and victory conditions
 

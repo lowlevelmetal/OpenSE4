@@ -25,7 +25,14 @@ opense4-sdk new --from-example small-ai my-ai       # a copy to change, under a 
 ```
 
 In a release the examples are in `sdk/examples` beside `opense4-sdk`, and `new
---from-example` finds them there.
+--from-example` finds them there. Unlike the mods that come with OpenSE4 (in `mods/`
+beside the programs), the examples are not in the game's Mods window until you copy one
+into your mods folder (`Mods` in OpenSE4's user folder); `opense4 --mod=mods/examples/new-hull`
+plays with one for a single run.
+
+For a full-strength computer player written with the SDK, read
+[Hegemon](../hegemon/README.md), which comes with OpenSE4: its design, its tuning and how
+it was measured.
 
 ## Their tests
 

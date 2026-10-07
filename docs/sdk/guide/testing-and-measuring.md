@@ -57,6 +57,9 @@ Games (seed 1, 10 turns, simultaneous):
 
 ```python
 # mods/examples/new-hull/tests/test_wren.py
+from opense4 import rules, testing
+
+
 def test_the_hull_is_in_the_data_set():
     hull = rules.Rules(testing.game_rules()).hull_named("Wren Courier")
     assert hull is not None and hull.type == "ship" and hull.tonnage == 120
@@ -64,8 +67,8 @@ def test_the_hull_is_in_the_data_set():
 
 **A computer player** is played through requests with prepared services:
 
-```python
-# mods/examples/classic-ai-research/tests/test_scholar.py
+```python fragment
+# condensed from mods/examples/classic-ai-research/tests/test_scholar.py (classic_economy is a helper there)
 def test_it_keeps_the_classic_economy_but_its_research():
     h = testing.Harness(Scholar, testing.FakeServices(rules=testing.game_rules(), builtin={"economy": classic_economy}))
     r = h.call("economy", view=testing.game_view())
@@ -111,9 +114,10 @@ folders; `game_view()` and `game_rules()` skip there.
 opense4-sdk run mymod -- --quick-start=Terran
 ```
 
-starts the game with the mod and the mods it requires, with the mod's first computer player
-(or `--player=NAME`) for the computer empires of new games. What follows `--` goes to the
-game. To watch players play: switch on the AI notes view (Settings → Modding, or
+starts the game with the mod and the mods it requires. What follows `--` goes to the game;
+with `--quick-start=RACE` there, the mod's first computer player (or `--player=NAME`) plays
+the quick game's computer empires (`run` gives the game `--ai`, which only a quick start
+reads: in Game Setup, choose the player under Computer Players). To watch players play: switch on the AI notes view (Settings → Modding, or
 `Ctrl+Shift+N`), choose the Quadrant page's "Omnipresent view of all systems" in Game Setup,
 and end turns; `--turns=N` lets the computer play every empire, yours too, for N turns
 first.

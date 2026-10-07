@@ -15,11 +15,12 @@ what it changes:
 | Data patches and data files (`data/`) | Components, hulls, facilities, techs, races, the galaxy, events, settings, the computer players' tables... | No (a data generator is Python) | Yes |
 | Computer players (`ai/`) | How computer empires play | Python | Yes, when they play inside the game |
 | Rules scripts (`scripts/`, `scenarios/`) | The rules themselves: new abilities, orders, events, options, victory conditions, scenarios | Python | Yes |
+| Interface extensions (`ui/`, `text/`) | Buttons for a mod's orders, panels in reports, list columns, Empires pages, key suggestions, translations ([interface.md](../interface.md)) | TOML (computed values in Python) | No |
 
-The last three change how a game plays, so they are **game-affecting**: a saved game and a
-network game record them, and every player must have the same ones
-([Multiplayer, saved games and identity](multiplayer-and-saves.md)). A mod of pictures and
-sounds is not: each player may use their own.
+Data, computer players and rules change how a game plays, so they are **game-affecting**:
+a saved game and a network game record them, and every player must have the same ones
+([Multiplayer, saved games and identity](multiplayer-and-saves.md)). A mod of pictures,
+sounds and interface is not: each player may use their own.
 
 A mod never touches your installed copy of the original. OpenSE4 reads the install, then
 each mod over it, and keeps the result in memory: switch a mod off and the game is as it
@@ -99,6 +100,8 @@ better-carriers/
   ai/               computer players (Python)
   scripts/          rules scripts (Python)
   scenarios/        scenarios (*.toml)
+  ui/               interface extensions (*.toml, computed values in *.py)
+  text/             the mod's names in other languages (<language>.toml)
   tests/            the mod's own tests, run by opense4-sdk test
   README.md         for people (any file at the top is fine)
 ```
@@ -132,9 +135,9 @@ keys are errors, so a typo does not pass unnoticed.
 | Your mods folder | `Mods/` in OpenSE4's user folder: `~/.local/share/OpenSE4/Mods` on Linux, `%APPDATA%\OpenSE4\Mods` on Windows. Each folder and `.zip` there is a mod. |
 | Mods that come with OpenSE4 | `mods/` beside the programs (Hegemon). Looked for after your mods folder: a mod of yours with the same id replaces one of these ([packages-and-data.md](../packages-and-data.md) "Where mods are found"). |
 | In the game | The title screen's **Mods** button: switch mods on and off, order them, see what each holds and why a choice does not load. **Done** reads the data again with them and keeps the choice for the next game you start or load. Game Setup and Quick Start show the mods a new game will use, with a Mods button of their own. |
-| For one run | `opense4 --mod=PATH` (a folder, a `.zip`, or the id of a mod in your mods folder or of one that comes with OpenSE4; repeat it for several) takes the place of your choice; `--no-mods` plays without; `--mods-dir=DIR` looks for ids elsewhere. |
+| For one run | `opense4 --mod=PATH` (a folder, a `.zip`, or the id of a mod in your mods folder or of one that comes with OpenSE4; repeat it for several) takes the place of your choice; `--no-mods` plays without; `--mods-dir=DIR` looks for ids elsewhere; `--no-bundled-mods` leaves out the mods that come with OpenSE4 (`opense4-sdk` and `opense4-server` take it too). |
 | The dedicated server | `opense4-server --mod=...`, or `mods = [...]` in a setup file ([docs/MULTIPLAYER.md](../../MULTIPLAYER.md)). |
-| `opense4-sdk run` | Starts the game with the mod, the mods it requires and its first computer player for the computer empires; what follows `--` goes to the game. |
+| `opense4-sdk run` | Starts the game with the mod and the mods it requires; what follows `--` goes to the game. With `-- --quick-start=RACE`, the mod's first computer player plays the quick game's computer empires (in Game Setup, choose under Computer Players). |
 
 **Load order.** The mods load in the order you chose, moved so that every mod comes after
 the mods it requires and after the enabled mods its `[load] after` names. A later mod wins:

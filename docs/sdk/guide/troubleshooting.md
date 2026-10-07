@@ -71,7 +71,7 @@ with `opense4-sdk dump mymod --out=b`: what differs is exactly what your mod doe
 | `MemoryError: the memory takes 1300000 bytes as JSON; the game allows 1048576` | `self.memory` must stay under its limit (1 MiB as JSON by default): keep ids and counts, not copies of the view. |
 | An answer the call does not take (a colony type not in `question.choices`) | Answer one of the choices, or None for the classic answer. |
 | A player in the setup that names `<mod>:<player>` "which the game does not use" | The mod must be enabled in the game (or given to the arena with `--mod`). |
-| The player seems to do nothing | Is it chosen for the computer empires (Game Setup's Computer Players, `--ai=`)? Does it override the call you think (`orders`, not `order`)? Switch on the AI notes view (`Ctrl+Shift+N`) and write notes; read `opense4.log`. |
+| The player seems to do nothing | Is it chosen for the computer empires (Game Setup's Computer Players, or `--ai=` with `--quick-start`)? Does it override the call you think (`orders`, not `order`)? Switch on the AI notes view (`Ctrl+Shift+N`) and write notes; read `opense4.log`. |
 | `Computer players: <mod> has <file>, which another mod's computer player already has: left out` (in the log) | Two mods with a module of the same name: the later one's is left out. Name modules after your mod. |
 
 After three failures in one turn the classic AI plays the empire for the rest of that turn;

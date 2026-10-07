@@ -147,6 +147,9 @@ rack, and that the smallest bridge, life support, crew quarters and engine a new
 fit in a courier with racks:
 
 ```python
+from opense4 import rules, testing
+
+
 def test_the_hull_is_in_the_data_set():
     hull = rules.Rules(testing.game_rules()).hull_named("Wren Courier")
     assert hull is not None and hull.type == "ship" and hull.tonnage == 120

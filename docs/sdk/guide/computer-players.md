@@ -35,8 +35,9 @@ A game names who plays each computer empire: the classic AI (`builtin`), a mod's
 (`<mod id>:<name>`), or an external bot (`external:<slot>`). Game Setup, Empire Setup,
 Quick Start and the network lobby offer the players of the enabled mods
 ([docs/SETUP.md](../../SETUP.md#computer-players)); `opense4 --quick-start --ai=example.small-ai:Pioneer`
-gives every computer empire of a quick game to Pioneer; `opense4-sdk run mymod` does that
-for the mod's first player.
+gives every computer empire of a quick game to Pioneer, and
+`opense4-sdk run mymod -- --quick-start=RACE` does that for the mod's first player. `--ai`
+applies to the quick game only: in Game Setup, choose under Computer Players.
 
 The engine asks the player at these moments of a turn
 ([ai-protocol.md](../ai-protocol.md), section 3):
@@ -123,7 +124,7 @@ The conventions ([python-api.md](../python-api.md#the-view-opense4view)):
 `component.ability_value(name)`, `component.weapon`, `hull.tonnage`. A player that chooses
 parts by what they do, as Pioneer does, plays on any data set:
 
-```python
+```python fragment
 # ai/parts.py in the small-ai example: the best component for a job, by its ability.
 def best_with(self, ability, vehicle_type="ship"):
     best = None
@@ -324,19 +325,23 @@ The questions come many times a turn, with no fresh view: `view` is the session'
 one (from its last planning call) or None. Answer quickly from what you kept on `self`.
 
 ```python
-def colony_type(self, view, question):
-    # question.planet, question.vehicle, question.choices (the data set's colony types)
-    return next((c for c in question.choices if "Research" in c), None)
+from opense4 import ai
 
-def enter_sector(self, view, question):
-    # question.vehicles, question.sector, question.enemies
-    return len(question.vehicles) >= 3          # only in strength; None or True: enter
 
-def battle_round(self, battle, orders):
-    for piece in battle.my_pieces:
-        target = battle.weakest_enemy_in_range(piece)
-        if target is not None:
-            orders.fire(piece, target)          # pieces given no order do nothing this phase
+class Careful(ai.Player):
+    def colony_type(self, view, question):
+        # question.planet, question.vehicle, question.choices (the data set's colony types)
+        return next((c for c in question.choices if "Research" in c), None)
+
+    def enter_sector(self, view, question):
+        # question.vehicles, question.sector, question.enemies
+        return len(question.vehicles) >= 3          # only in strength; None or True: enter
+
+    def battle_round(self, battle, orders):
+        for piece in battle.my_pieces:
+            target = battle.weakest_enemy_in_range(piece)
+            if target is not None:
+                orders.fire(piece, target)          # pieces given no order do nothing this phase
 ```
 
 `battle_round` is asked each round of every space battle the empire fights, which can be

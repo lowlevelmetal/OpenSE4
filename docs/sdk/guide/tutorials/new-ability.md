@@ -14,7 +14,7 @@ opense4-sdk new --from-example new-ability menders --id=me.menders
 ```
 
 ```text
-new-ability/
+menders/
   mod.toml              [rules] players_see_mod_data = true
   data/menders.toml     the ability's declaration and the Mender Bay
   scripts/menders.py    the effect
@@ -109,7 +109,8 @@ needs nothing else.
 A hook is a plain function: call it with stand-ins that have just what it uses, and check
 what it asked for. [tests/test_menders.py](../../../../mods/examples/new-ability/tests/test_menders.py):
 
-```python
+```python fragment
+# from tests/test_menders.py, which also has small vehicle() and Empire stand-ins
 class Game:
     def __init__(self, vehicles, crews):
         self.raw = {"vehicles": vehicles}
@@ -154,7 +155,7 @@ fails if `field_repairs` ever raises; the line it prints says so:
 
 ```text
 Games (seed 1, 10 turns, simultaneous):
-  ok    example.new-ability's rules in a game of the classic AI: 10 turns, no failures (0.4 s)
+  ok    me.menders's rules in a game of the classic AI: 10 turns, no failures (0.4 s)
 ```
 
 ## 5. Going further

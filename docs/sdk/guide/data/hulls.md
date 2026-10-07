@@ -259,9 +259,9 @@ all = true
 set = { "Requirement Min Crew Quarters" = 0, "Requirement Min Life Support" = 0 }
 
 [[vehicle_sizes.change]]
-name = "<a large ship hull of your data set>"
+name = "<a large ship hull of your data set that has this ability>"
 set = { "Requirement Max Engines" = 8 }
-remove = { abilities = ["Combat To Hit Defense Minus"] }
+remove = { abilities = ["Combat To Hit Defense Minus"] }   # an entry the record lacks is an error
 
 [[vehicle_sizes.remove]]
 name = "<a hull of your data set>"
