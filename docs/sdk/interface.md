@@ -86,7 +86,7 @@ def charge(view, ship):
     return None if capacity == 0 else str(ship.supply * 100 // capacity) + "%"
 ```
 
-The order needs `players_see_mod_data = true` in `[rules]` for the panel's first row: the
+The mod needs `players_see_mod_data = true` in `[rules]` for the panel's first row: the
 player's view has a mod's data on the player's own things only then.
 
 ## The files
@@ -310,8 +310,8 @@ windows stay in English.
 
 ## Key bindings
 
-A mod suggests keys with `key = "..."` on an `[[order]]`, a `[[panel]]` or an
-`[[empire_page]]`, written as the Controls page writes them: `"Ctrl+Shift+O"`, `"F5"`,
+A mod suggests keys with `key = "..."` on an `[[order]]`, a `[[panel]]` (or a `[[button]]`,
+which is a panel) or an `[[empire_page]]`, written as the Controls page writes them: `"Ctrl+Shift+O"`, `"F5"`,
 `"Alt+Delete"`. Each order of the game's rules mods, and each panel and page with a key,
 is a row of the Settings window's Controls page, under "Mod: <mod name>", and can be
 changed there like any key:
@@ -344,9 +344,9 @@ set up ([docs/SETUP.md](../SETUP.md) "Mods' options"):
   under the mods says the values; the host changes them with **Mod Options**, the players who
   join see them with **See Mod Options**. The host also sets the computer players' limits
   with **Computer Player Limits**, beside "Computer players see everything".
-- **Scenarios** of the mods in use are on the Learn window's **Scenarios** tab (the title
-  screen's Scenario button): each with its mod, summary, empires and objectives; Start Game
-  begins it, played by its first human empire. A dedicated server starts one from a setup
+- **Scenarios** of the mods in use are on the Learn window's **Scenarios** tab, beside
+  Training (the title screen's Scenario button opens the window): each with its mod,
+  summary, empires and objectives; Start Game begins it, played by its first human empire. A dedicated server starts one from a setup
   file's `scenario = "<mod id>:<name>"` (MULTIPLAYER.md "Setup files").
 
 ## Checking

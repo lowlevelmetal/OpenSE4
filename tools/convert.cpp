@@ -31,7 +31,7 @@ using namespace opense4;
 
 namespace {
 
-void usage() {
+void usage(std::FILE* to = stderr) {
     std::fputs("Usage:\n"
                "  opense4-convert --info GAME.gam [--classic-dir=DIR]\n"
                "  opense4-convert IN.gam OUT.gam --to=opense4|original [--classic-dir=DIR] [--seed=N]\n"
@@ -43,8 +43,12 @@ void usage() {
                "  --compare     list the fields in which two original saves differ\n"
                "  --classic-dir the installed game (or its Data folder); default: found automatically\n"
                "  --seed=N      the keys of the written file (default: random)\n"
-               "  -v            every detail of what was approximated\n",
-               stderr);
+               "  -v, --verbose every detail of what was approximated\n"
+               "  -h, --help    show this help\n"
+               "\n"
+               "Exit status: 0 when done, 1 when a file could not be read or written, 2 for usage\n"
+               "errors or no data set; --compare: 3 when the saves differ.\n",
+               to);
 }
 
 struct Options {
@@ -190,7 +194,7 @@ int main(int argc, char** argv) {
         else if (a.starts_with("--classic-dir=")) o.classicDir = a.substr(14);
         else if (a.starts_with("--seed=")) o.seed = std::strtoull(a.c_str() + 7, nullptr, 10);
         else if (a == "-h" || a == "--help") {
-            usage();
+            usage(stdout);
             return 0;
         } else if (a.starts_with("-")) {
             std::fprintf(stderr, "Unknown option %s\n", a.c_str());

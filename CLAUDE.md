@@ -5,8 +5,10 @@ is a faithful rewrite in C++23, with Vulkan 1.3 rendering and an
 OpenGL 3.3 fallback, and runs on the player's own installed copy of the game's data
 and art. It is not affiliated with the game's publishers. `opense4` plays the
 classic game from the install it finds (or `--classic-dir`); without one it shows
-an error and exits. See README.md, docs/ENGINE.md, docs/PARITY_PLAN.md and
-docs/spec/.
+an error and exits. Its modding SDK (Python computer players and rules scripts on a
+built-in MicroPython, data patches, asset and interface mods, `opense4-sdk`) layers
+mods over that install. See README.md, docs/ENGINE.md, docs/PARITY_PLAN.md,
+docs/spec/, docs/MODDING_SDK.md and docs/sdk/README.md.
 
 ## Clean-room and reverse-engineering rules (read docs/CLEANROOM.md first)
 
@@ -37,6 +39,12 @@ SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --seed=7 -
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turn-style=simultaneous --renderer=opengl --seed=42 --turns=40 --screenshot=/tmp/s.png
 ./build/debug/opense4-server --port=46721 --no-upnp --players=2 --ai=1  # dedicated host (see docs/MULTIPLAYER.md)
 steam steam://rungameid/1610 ; DISPLAY=:0 ./build/debug/opense4-observe list   # observe the original
+./build/debug/opense4-sdk check mods/examples/small-ai             # a mod on the installed game (docs/sdk/README.md)
+./build/debug/opense4-sdk test mods/hegemon --turns=5              # its tests/, then short games of its players, rules, scenarios
+./build/debug/opense4-sdk new ai /tmp/my-ai --id=me.my-ai          # a mod from a template (or: new --from-example small-ai DIR)
+./build/debug/opense4-sdk arena --mod=opense4.hegemon --ai=opense4.hegemon:Hegemon --ai=builtin --games=4 --turns=50 --out=/tmp/arena
+python3 tools/gen_sdk_python.py --check && python3 tools/gen_sdk_reference.py --check   # without --check: regenerate
+OPENSE4_SDK_FIXTURES_OUT=/tmp/fx.json ./build/debug/tests/opense4_tests -tc="sdk python*" && python3 tests/sdk/python/run_sdk_tests.py --fixtures /tmp/fx.json  # the package's tests under CPython by hand
 ```
 
 ## Layout and rules for changes
@@ -55,6 +63,41 @@ steam steam://rungameid/1610 ; DISPLAY=:0 ./build/debug/opense4-observe list   #
   `opense4-server`.
 - `src/client`: the app shell (`app.cpp`) and `ClassicMode` (`client/classic/`:
   session, main window, one file per group of windows in `screens/`).
+- The modding SDK (docs/MODDING_SDK.md is its design, docs/sdk/ the modder's docs):
+  - `src/script`: `script::Value`, JSON and the MicroPython runtime with its sandbox.
+    MicroPython is vendored in `third_party/micropython`, made by
+    `tools/update_micropython.sh` from the pinned release, our `patches/` and
+    `src/script/port/mpconfigport.h`; never edit it by hand: change a patch or the port
+    and rerun the script.
+  - `src/mods`: packages, manifests, mod sets and identity, the layered game files, data
+    patches. `src/sdk`: the engine's side (view, command codec, players and controllers,
+    rules hooks and effects, `ui/` files, scenarios). `tools/sdk*.cpp`: `opense4-sdk`.
+  - `python/opense4`: the package mods and external bots use. It runs on the game's
+    MicroPython and on CPython 3.10+, so use only what both have (docs/sdk/runtime.md;
+    stand-ins in `python/lib`). The docs are its schema: `tools/gen_sdk_python.py`
+    generates its enums, records and constructors from docs/sdk/view.md and commands.md,
+    `tools/gen_sdk_reference.py` docs/sdk/reference from its docstrings. Rerun both after
+    changing those; the tests run their `--check`, and fail when the docs miss a command,
+    field or enum value the code has (tests/sdk/test_sdk_docs.cpp).
+  - `mods/`: `hegemon`, the mod that comes with OpenSE4 (listed in `mods/bundled.txt`,
+    copied into the packages' `mods/`), and `examples/` (shipped in `sdk/examples`), each
+    with tests the SDK's tests run. `tests/sdk`: the SDK's tests (C++, the Python tests in
+    `tests/sdk/python` under both runtimes, fixture mods in `tests/fixtures/mods`).
+  - The docs' examples are tested: a `python` block in docs/sdk, MODDING_SDK.md or a mod's
+    README runs (`tests/sdk/python/check_doc_snippets.py`) unless marked `python no-run`
+    (compiles only) or `fragment`; `toml` blocks must read as the file they show.
+- Scripts are part of the rules (docs/MODDING_SDK.md §7.3, §14): rules scripts and in-game
+  computer players run on the host inside turn processing and must resolve the same on
+  every computer. They get the engine's random numbers only, give whole numbers back,
+  run on bytecode budgets (never clocks), and get a fresh interpreter per engine call
+  (what lasts goes in AI memory or mod data, which are saved and checksummed); every AI
+  answer is journaled with the turn. The engine never runs a script inside its own
+  loops: events wait for the next safe point. Mods carry no native code.
+- SDK work leaves unmodded games unchanged: with `stateChecksum` hashing at format 8
+  (`serial::hash(s, 8)`, temporarily), the engine must reproduce the determinism goldens
+  recorded before the SDK (tests/test_determinism.cpp at fc5a7f2^) and the serialize
+  test's 0x933770c7b7260925. New state is read and written only from the format that
+  added it; 0.11.0 shipped save format 9 and protocol 7, so the next new field bumps them.
 - Both render backends must look the same. Shaders live once in `shaders/`.
 - Stay warning-free under `-Wall -Wextra -Wpedantic -Wshadow -Wconversion`.
 - Tests use only our own fixtures (`tests/fixtures/`). Anything that touches the

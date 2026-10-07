@@ -81,13 +81,15 @@ Game:
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --load=GAME.gam                 Open a saved game at once: OpenSE4's, or the original's (imported,
                                   see docs/SETUP.md "Games of the original")
-  --ai=MOD:PLAYER                 Every computer empire of a new game is played by this script player
-                                  of a mod (its [[ai.players]], docs/sdk/ai-protocol.md); "builtin"
-                                  for the built-in AI (the default); "external:N" for the external bot
-                                  of slot N (docs/sdk/bots-and-arena.md)
+  --ai=MOD:PLAYER                 Every computer empire of the quick game (--quick-start) is played by
+                                  this script player of a mod (its [[ai.players]], docs/sdk/ai-protocol.md);
+                                  "builtin" for the built-in AI (the default); "external:N" for the
+                                  external bot of slot N (docs/sdk/bots-and-arena.md). Other games
+                                  choose their players in Game Setup's Computer Players
   --bot-port=N                    Let external bots connect to the games played or hosted here (default
                                   6722 with --ai=external:N; 0 = any free port). The token they present
                                   is --bot-token, else OPENSE4_BOT_TOKEN, else a random one in the log
+  --bot-token=TOKEN               The token external bots present (instead of OPENSE4_BOT_TOKEN)
   --bot-bind=ADDRESS              Where bots may connect from (default 127.0.0.1: this computer only)
   --bot-timeout=SEC               A bot's time for one request (default 60)
   --seed=N                        Seed for new games (default: random)
@@ -101,7 +103,9 @@ Game:
   --open=WINDOW[:ARG]             With a quick start, open a window at once (e.g. --open=designs,
                                   --open=help:hotkeys for a Help tab; none: no window, not even the Log)
                                   or start on a front-end screen: intro, quickstart, setup[:PAGE],
-                                  empiresetup[:PAGE], multiplayer, pbem[:GAME.gam] (e.g. --open=setup:players).
+                                  empiresetup[:PAGE], multiplayer, pbem[:GAME.gam], settings, mods,
+                                  learn[:tutorials|training|manual|scenarios], credits
+                                  (e.g. --open=setup:players).
                                   tactical: a sample tactical battle (your warships against copies);
                                   simulator: the Combat Simulator with that battle set up;
                                   ground-combat: your troop transports land on your homeworld in a
@@ -145,7 +149,7 @@ Automation:
                                   move order, your first fleet with orders, or the vehicle with that id
 
   --verbose                       Debug logging
-  --help                          Show this help
+  -h, --help                      Show this help
 )";
 
 bool parseInt(std::string_view s, auto& out) {

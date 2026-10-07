@@ -11,9 +11,9 @@ of the package are in [python-api.md](../python-api.md#costs).
 
 | Limit | Default | Set by |
 |---|---|---|
-| A planning call (`politics`, `orders`, `economy`) | 200 million bytecodes | the game's Computer Player Limits (Game Setup); `ai_planning_budget` in a server setup file |
-| Any other call (`colony_type`, `enter_sector`, `decloak`, `battle_round`, `end_session`) | 5 million bytecodes | `ai_call_budget` |
-| A player's memory | 1 MiB, as JSON | `ai_memory_limit` |
+| A planning call (`politics`, `orders`, `economy`) | 200 million bytecodes | the game's Computer Player Limits (Game Setup's Game Settings page, or the network lobby's host); `ai_planning_budget` in a server setup file |
+| Any other call (`colony_type`, `enter_sector`, `decloak`, `battle_round`, `end_session`) | 5 million bytecodes | the same window; `ai_call_budget` |
+| A player's memory | 1 MiB, as JSON | the same window; `ai_memory_limit` |
 | The heap, shared by the call's script players | 64 MiB | the session |
 | Nested Python calls | 200 | the runtime |
 

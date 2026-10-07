@@ -497,10 +497,11 @@ The title screen's `Mods` button (at the top right) opens the Mods window:
   and sounds, data, computer players, rules, interface, text), whether it changes the
   game, what it needs and loads after, what is wrong with the choice for it, what of its
   interface and text files does not read, and its identity.
-- `Enable` or `Disable`, `Move Up` and `Move Down` change the choice. Below, the window
-  shows the load order it gives, or what keeps it from loading: a required mod that is
-  off, a version outside the range, mods that require each other in a circle, mods the
-  folder no longer has, archives that cannot be read. `Refresh` reads the folder again.
+- `Enable` or `Disable`, `Move Up` and `Move Down` change the choice; `Remove` takes a
+  chosen mod the folder no longer has out of it. Below, the window shows the load order it
+  gives, or what keeps it from loading: a required mod that is off, a version outside the
+  range, mods that require each other in a circle, mods the folder no longer has, archives
+  that cannot be read. `Refresh` reads the folder again.
 - `Done` reads the game's data again with the mods chosen and keeps them in
   `classic_settings.toml`; they are used for the next game you start or load. When their
   data does not load with your game, the window stays and says why. `Cancel` leaves
@@ -524,9 +525,11 @@ screen, and the Mods window shows why. Mods given with `--mod` must load.
 - Loading a game whose game-affecting mods differ from yours is refused, and the message
   names what is missing or different. Mods with only pictures, sounds or interface may
   differ. In the client, loading such a game (Resume Game, Load Game, or the Game Menu's
-  Load, which first ends the game being played) opens a window that names each
-  difference; when your mods folder (or OpenSE4's own mods) has the game's mods, `Load
-  with Its Mods` reads the data again with them and loads the game.
+  Load, which first ends the game being played) opens the Other Mods window, which names
+  each difference. When your mods folder (or OpenSE4's own mods) has the game's mods,
+  `Load with Its Mods` reads the data again with them and loads the game (`Load Without
+  Mods` for a game played without mods); `Mods` opens the Mods window to choose them
+  yourself.
 - In a network game the lobby carries the host's mods (protocol 7) and lists them. A
   player whose game-affecting mods differ is refused with the same kind of message, each
   difference on a line of its own, and a `Mods` button to choose the same; pictures and
@@ -559,8 +562,8 @@ opense4-sdk dump mymod other.zip --out=dump   # the data set with these mods, as
 opense4-sdk pack mymod                        # mymod's id-version.zip, with its identity recorded
 ```
 
-`check` reads the manifest, finds the mods it requires (in the mods folder, or given
-with `--mod`), applies every patch to your installed game (`--data=DIR` for another) and
+`check` reads the manifest, finds the mods it requires (in the mods folder, among the mods
+that come with OpenSE4, or given with `--mod`), applies every patch to your installed game (`--data=DIR` for another) and
 reports every error above. It checks the computer players too: each one's module under
 `ai/` and its class, files there whose names Python cannot import or that do not
 compile, and Python files no player declares. It also checks the mod's files: the
@@ -568,8 +571,9 @@ pictures its hulls name (BMP or PNG), component and facility picture numbers aga
 their sheets, that every picture and sound reads (BMP, PNG, OGG Vorbis, WAV), pictures
 smaller than the classic one of their kind or larger but not a whole multiple of it,
 formats the game cannot read, pictures no hull names, and files where the game does not
-look. It checks the interface and text files too ([interface.md](interface.md),
-"Checking"). It exits with 1 when it finds errors.
+look. It checks the rules scripts and scenarios ([rules.md](rules.md), "Checking a rules
+mod") and the interface and text files ([interface.md](interface.md), "Checking") too. It
+exits with 1 when it finds errors.
 
 `dump` writes the data folder's files and the AI tables as the game would read them
 with the mods, never into the installed game; with no mod named, the installed game's own,
@@ -577,10 +581,18 @@ to compare with. `pack` leaves out hidden files and adds
 `mod.identity`, which records the identity; a package whose files no longer match it
 gets a warning.
 
-`test` runs a mod's tests and plays a short game with each of its computer players;
+`test` runs a mod's tests, plays a short game with each of its computer players (or, for
+a rules mod without players, one game with its rules on) and plays each of its scenarios;
 `run` starts the game with the mod; `arena` plays computer players against each other;
 `bot` and `python` serve external bots ([bots-and-arena.md](bots-and-arena.md)).
-`publish` waits for the Steam release.
+`publish` waits for the Steam release. Every command takes `--no-bundled-mods`.
+`opense4-sdk --help` lists the commands, and `opense4-sdk <command> --help` (or
+`opense4-sdk help <command>`) one command's options.
+
+`new` names the mod with `--id=ID` and `--name=NAME`. `new --from-example` finds the
+example mods in `sdk/examples` beside `opense4-sdk` (in a build of the source tree,
+`mods/examples`); `--examples-dir=DIR` or the environment variable `OPENSE4_SDK_EXAMPLES`
+names another folder.
 
 ## Example: a new hull with pictures
 

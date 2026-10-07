@@ -35,8 +35,9 @@ A game names who plays each computer empire: the classic AI (`builtin`), a mod's
 (`<mod id>:<name>`), or an external bot (`external:<slot>`). Game Setup, Empire Setup,
 Quick Start and the network lobby offer the players of the enabled mods
 ([docs/SETUP.md](../../SETUP.md#computer-players)); `opense4 --quick-start --ai=example.small-ai:Pioneer`
-gives every computer empire of a quick game to Pioneer; `opense4-sdk run mymod` does that
-for the mod's first player.
+gives every computer empire of a quick game to Pioneer, and
+`opense4-sdk run mymod -- --quick-start=RACE` does that for the mod's first player. `--ai`
+applies to the quick game only: in Game Setup, choose under Computer Players.
 
 The engine asks the player at these moments of a turn
 ([ai-protocol.md](../ai-protocol.md), section 3):
@@ -91,7 +92,7 @@ order, each checked as a human player's would be.
 ([view.md](../view.md)): its own affairs in full, other empires' as far as it has seen
 them. With the game option "computer players see everything" it is the whole game.
 
-```python
+```python fragment
 view.game.turn, view.game.date            # the game
 view.me                                   # our Empire
 view.my.colonies, view.my.ships, view.my.designs, view.my.fleets
@@ -123,7 +124,7 @@ The conventions ([python-api.md](../python-api.md#the-view-opense4view)):
 `component.ability_value(name)`, `component.weapon`, `hull.tonnage`. A player that chooses
 parts by what they do, as Pioneer does, plays on any data set:
 
-```python
+```python fragment
 # ai/parts.py in the small-ai example: the best component for a job, by its ability.
 def best_with(self, ability, vehicle_type="ship"):
     best = None
@@ -141,7 +142,7 @@ def best_with(self, ability, vehicle_type="ship"):
 ([commands.md](../commands.md)). Fields are keyword arguments with the engine's defaults,
 and ids may be given as the view's objects:
 
-```python
+```python fragment
 from opense4 import cmd, order
 
 orders.add(cmd.give(ship, [order.colonize(planet)]))                  # set_orders for a ship, fleet or colony
@@ -159,7 +160,7 @@ orders.add(cmd.answer_message(message=m, accept=True))
   call, with the engine's reason (`[{index, command, reason}]`); the commands after it still
   apply. Log them while you develop a player:
 
-```python
+```python fragment
 for refused in self.refused:
     self.log("refused {}: {}".format(refused["command"]["kind"], refused["reason"]))
 ```
@@ -183,7 +184,7 @@ per value of its answer), so ask for a few candidates, not for everything:
 
 Pioneer asks before it acts, so that the engine's rules decide and the player stays short:
 
-```python
+```python fragment
 # ai/designs.py: the designer's own checks, before the design is made.
 figures = self.player.query("design_figures", hull=hull.id, entries=entries)
 if not figures.valid:
@@ -207,7 +208,7 @@ game, sent to the players' computers and checksummed, up to a limit (1 MiB as JS
 default). Keep plain values in it: None, True, False, whole numbers, text, lists and dicts
 with text keys. Keep ids, never the view's objects. Pioneer keeps three things:
 
-```python
+```python fragment
 self.memory["designs"]   # {"scout": design id, "warship": ..., "colony:Ice": ...}: each role's design
 self.memory["marks"]     # {"scout": 3, ...}: how many designs of each role it has made (for names)
 self.memory["claimed"]   # {"<planet id>": ship id}: which colony ship is on its way where
@@ -234,7 +235,7 @@ draws the same numbers ([python-api.md](../python-api.md#random-numbers-opense4r
 `ai.builtin` gives what the classic ministers would do for the empire now, as commands you
 may keep, filter or change:
 
-```python
+```python fragment
 orders.extend(ai.builtin.economy(view))                         # the whole classic economy
 orders.extend(ai.builtin.orders(view, skip=["attack"]))         # every minister but Attack
 research = ai.builtin.economy(view, ministers=["research"])     # one minister's commands
@@ -249,7 +250,7 @@ a call, so ask once per call and filter the list.
 The [classic-ai-research](../../../mods/examples/classic-ai-research/) example takes one
 decision over and keeps the rest:
 
-```python
+```python fragment
 class Scholar(ai.Player):
     def economy(self, view, orders):
         classic = ai.builtin.economy(view)                        # designs, research, intel, construction
@@ -276,7 +277,7 @@ leave and its movement options, comes as commands at the start of `ai.builtin.po
 (`set_system_flags`, `set_encounter_options`). A player that writes its own politics decides
 them; to keep the classic ones:
 
-```python
+```python fragment
     def politics(self, view, orders):
         orders.extend(cmd.only(ai.builtin.politics(view), "set_system_flags", "set_encounter_options"))
         ...                                                     # your own diplomacy
@@ -324,19 +325,23 @@ The questions come many times a turn, with no fresh view: `view` is the session'
 one (from its last planning call) or None. Answer quickly from what you kept on `self`.
 
 ```python
-def colony_type(self, view, question):
-    # question.planet, question.vehicle, question.choices (the data set's colony types)
-    return next((c for c in question.choices if "Research" in c), None)
+from opense4 import ai
 
-def enter_sector(self, view, question):
-    # question.vehicles, question.sector, question.enemies
-    return len(question.vehicles) >= 3          # only in strength; None or True: enter
 
-def battle_round(self, battle, orders):
-    for piece in battle.my_pieces:
-        target = battle.weakest_enemy_in_range(piece)
-        if target is not None:
-            orders.fire(piece, target)          # pieces given no order do nothing this phase
+class Careful(ai.Player):
+    def colony_type(self, view, question):
+        # question.planet, question.vehicle, question.choices (the data set's colony types)
+        return next((c for c in question.choices if "Research" in c), None)
+
+    def enter_sector(self, view, question):
+        # question.vehicles, question.sector, question.enemies
+        return len(question.vehicles) >= 3          # only in strength; None or True: enter
+
+    def battle_round(self, battle, orders):
+        for piece in battle.my_pieces:
+            target = battle.weakest_enemy_in_range(piece)
+            if target is not None:
+                orders.fire(piece, target)          # pieces given no order do nothing this phase
 ```
 
 `battle_round` is asked each round of every space battle the empire fights, which can be

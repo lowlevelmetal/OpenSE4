@@ -1,8 +1,9 @@
 # Modding OpenSE4
 
 OpenSE4 can be modded at several levels: pictures and sounds, the data files, computer
-players in Python, and rules scripts that change how the game plays. Mods are layered over
-your installed copy of the original and never change it. This is the index of the modding
+players in Python, rules scripts that change how the game plays, and interface extensions
+that show a mod's own panels, columns and orders. Mods are layered over your installed copy
+of the original and never change it. This is the index of the modding
 SDK's documentation: a guide to read in order, tutorials to follow, and reference pages to
 look things up in. The plan behind the SDK is [docs/MODDING_SDK.md](../MODDING_SDK.md).
 
@@ -50,7 +51,9 @@ look things up in. The plan behind the SDK is [docs/MODDING_SDK.md](../MODDING_S
 | [A scenario](guide/tutorials/scenario.md) | A setup with objectives and actions | [mods/examples/scenario](../../mods/examples/scenario/) |
 
 The example mods are listed in [mods/examples/README.md](../../mods/examples/README.md);
-`opense4-sdk new --from-example <name> <folder>` copies one to start from.
+`opense4-sdk new --from-example <name> <folder>` copies one to start from. For a complete,
+strong computer player, read [Hegemon](../../mods/hegemon/README.md), the mod that comes
+with OpenSE4.
 
 **Interface extensions** (buttons for mod orders, panels in reports, columns in lists,
 pages in the Empires window, text and key bindings) are described in
@@ -69,6 +72,16 @@ pages in the Empires window, text and key bindings) are described in
 | [The computer-player protocol](ai-protocol.md) | Sessions, requests, responses, services, budgets, the journal, external connections |
 | [Bots, the arena and the mod tools](bots-and-arena.md) | External bots, `opense4-sdk arena`, the training environment, `test` and `run` |
 | [Rules scripts](rules.md) | Hooks, effects, mod data, orders, events, intelligence projects, options, victory conditions, scenarios, generators |
+| [The interface tier](interface.md) | `ui/*.toml` and `ui/*.py`: mod orders' buttons and questions, report panels, list columns, Empires pages, text in other languages, key bindings |
 
 The API reference is made by `python3 tools/gen_sdk_reference.py` from `python/opense4`;
 the SDK's tests fail when it is out of date.
+
+The examples in these pages, in [MODDING_SDK.md](../MODDING_SDK.md) and in the mods'
+READMEs are checked by the SDK's tests too. A `toml` block must read as the file it shows (a
+manifest, a data patch, a `ui/` or `text/` file, a scenario) and a `json` block as JSON. A
+`python` block is a complete module: it must run with the `opense4` package on the path, and
+the computer players it defines play a turn's planning calls on a test game's view
+(`tests/sdk/python/check_doc_snippets.py`). A block marked `python no-run` needs the game or
+a mod's other modules and must only compile; one marked `fragment` (after its language) is
+an excerpt and is not checked.

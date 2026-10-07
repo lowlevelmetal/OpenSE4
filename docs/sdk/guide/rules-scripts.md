@@ -87,7 +87,7 @@ component or hull, combined as the ability combines.
 Reading costs budget: 5 bytecodes for each value the engine builds. In a loop over many
 things, read the maps:
 
-```python
+```python fragment
 for raw in game.raw["vehicles"]:              # every vehicle, as maps
     if raw["owner"] != empire.id or not raw["damage"]:
         continue
@@ -116,7 +116,7 @@ only that mod sees. Change it in place; what it holds when the function returns 
 (unless the function failed), saved with the game, sent to the players' computers and
 checksummed ([rules.md](../rules.md#mod-data)).
 
-```python
+```python fragment
 # scripts/menders.py: how many components an empire's crews mended in the game.
 empire.mod_data["mended"] = empire.mod_data.get("mended", 0) + mended
 ```
@@ -161,7 +161,10 @@ empires, the mod's options, and objectives written in the lessons' condition lan
 with an optional action and victory ([rules.md](../rules.md#scenarios)). The
 [scenario](../../../mods/examples/scenario/) example is a race to settle the frontier, with a
 grant for each empire's second colony ([A scenario](tutorials/scenario.md)).
-`opense4-sdk test` starts each scenario of a mod and plays it for a few turns.
+`opense4-sdk test` starts each scenario of a mod and plays it for a few turns. Players start
+one from the Learn window (the title screen's Scenario button), whose **Scenarios** tab
+lists the scenarios of the mods in use; a dedicated server's setup file names one with
+`scenario = "<mod id>:<name>"`.
 
 ## Orders, events, projects, options and victory conditions
 
@@ -194,6 +197,9 @@ label = "The great archive was completed."
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.order_check("survey")
 def can_survey(game, order):
     if order.target.supply < 50:

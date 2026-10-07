@@ -130,33 +130,46 @@ OpenSE4 also understands options on its command line, for example:
 |---|---|
 | `--classic-dir=FOLDER` | Use the game copy in that folder. |
 | `--renderer=opengl` | Use the OpenGL renderer instead of Vulkan (`vulkan` and `auto` work too). |
-| `--fullscreen`, `--size=1920x1080` | Start in borderless fullscreen, or with a window of that size. |
+| `--fullscreen`, `--size=1920x1080`, `--no-vsync` | Start in borderless fullscreen, or with a window of that size; draw without waiting for the screen's refresh. |
 | `--no-audio` | Start without sound or music. |
 | `--quick-start[=RACE]` | Skip the title screen and start a quick game, with `--seed`, `--systems`, `--empires` and `--turn-style` to set it up. |
 | `--tutorial=LESSON`, `--training=GAME`, `--manual` | Start a lesson or a training game, or open this manual. |
 | `--pbem=GAME.gam` | Play your turn of a play-by-e-mail game (see [Multiplayer](multiplayer#play-by-e-mail)). |
-| `--mod=MOD`, `--no-mods` | Play this run with these mods (a folder or `.zip`, or a mod's id), or none, instead of those of the Mods window (see [below](#mods)). |
-| `--ai=MOD:PLAYER` | With `--quick-start`, a computer player of one of the mods plays every computer empire (see [Computer players](computer-players-and-ministers#computer-players-of-mods)). |
+| `--mod=MOD`, `--no-mods` | Play this run with these mods (a folder or `.zip`, or a mod's id), or none, instead of those of the Mods window (see [below](#mods)). `--no-bundled-mods` leaves out the mods that come with OpenSE4. |
+| `--ai=MOD:PLAYER` | With `--quick-start`, a computer player of one of the mods plays every computer empire, for example `--mod=opense4.hegemon --ai=opense4.hegemon:Hegemon` (see [Computer players](computer-players-and-ministers#computer-players-of-mods)). |
 
 `opense4 --help` lists them all.
 
 ## Mods
 
-Mods are packages of pictures, sounds and changes to the game's data that other players
-make. OpenSE4 lays them over your copy of the game without changing it. Put a mod (a folder
-or a `.zip`) in the `Mods` folder of OpenSE4's user folder, then open the **Mods** window
-with the `Mods` button at the top right of the title screen, or in the bottom left corner of
-Game Setup and Quick Start.
+Mods are packages that other players make: pictures, sounds and music, changes to the game's
+data, computer players of their own, and new rules. OpenSE4 lays them over your copy of the
+game without changing it. Put a mod (a folder or a `.zip`) in the `Mods` folder of OpenSE4's
+user folder; mods made for the original game, a folder of data files and pictures, work too.
+Then open the **Mods** window with the `Mods` button at the top right of the title screen, or
+in the bottom left corner of Game Setup and Quick Start.
 
-- The list shows your mods: those you chose first, in the order they load, then the others.
-  A green lamp marks a mod that is on; double-click a mod to switch it on or off, or use
-  `Enable` and `Disable`. `Move Up` and `Move Down` change the order: a later mod wins.
-- Beside the list is what the chosen mod holds, whether it **changes the game** (its data,
-  computer players or rules) or only its pictures and sounds, and what it needs.
+- The list shows your mods and the mods that come with OpenSE4: those you chose first, in the
+  order they load, then the others. A green lamp marks a mod that is on; double-click a mod to
+  switch it on or off, or use `Enable` and `Disable`. `Move Up` and `Move Down` change the
+  order: a later mod wins.
+- Beside the list is what the chosen mod holds, the computer players it offers, whether it
+  **changes the game** (its data, computer players or rules) or only its pictures, sounds and
+  windows, and what it needs.
 - Below, the window shows the order the mods load in, or what is wrong: a mod that needs
-  another which is off, for example.
+  another which is off, for example. It also shows where your mods folder is.
+- `Refresh` looks in the folders again, after you copied a mod in. A mod you chose that is
+  no longer there is marked in red; `Remove` takes it out of your choice.
 - `Done` reads the game's data again with your choice; it is used for the next game you
   start or load. `Cancel` leaves everything as it was.
+
+**Mods that come with OpenSE4.** OpenSE4 comes with **Hegemon**, a stronger computer player
+written as a mod. It is in the list, marked "comes with OpenSE4", and stays off until you
+switch it on: `Enable` it, press `Done`, then choose it with `Computer Players` in Game Setup
+or Quick Start (see [Computer players](computer-players-and-ministers#computer-players-of-mods)).
+Every player of the same OpenSE4 version has the same copy, so a network game only needs
+each player to switch it on. A mod in your own mods folder with the same id replaces the one
+that comes with OpenSE4, and the window says so.
 
 Besides pictures, sounds and changes to the rules, a mod can add to the game's windows: orders of
 its own in the order strip's `Mod Orders` (see [Order buttons](main-window#order-buttons)), panels
@@ -166,7 +179,8 @@ languages. What a mod adds to the windows only shows what your empire knows, and
 in the game except through orders you give.
 
 A saved game remembers the mods that change the game. Loading one played with other mods
-tells you which; when your mods folder has them, `Load with Its Mods` loads it with them.
-Every player of a network game needs the same mods that change the game; pictures and sounds
-may differ.
+tells you which; when your mods folder has them, `Load with Its Mods` loads it with them
+(`Load Without Mods` for a game played without any). Every player of a network game needs
+the same mods that change the game; pictures, sounds and what mods add to the windows may
+differ.
 

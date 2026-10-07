@@ -72,8 +72,10 @@ opense4-datacheck /path/to/se4/Data     # or an explicit data directory
 The checker loads every data file and reports anything it does not understand, with
 the file, line and record. A stock install reports no errors.
 
-Run this first when you use a mod: it catches typos and fields that OpenSE4 does not
-support yet.
+Run it on a classic mod's complete data set too (a copy of the game folder with the mod's
+files in it): it catches typos and fields that OpenSE4 does not read. A mod made for
+OpenSE4 (a folder with a `mod.toml`) is checked over your installed game with
+`opense4-sdk check <mod>` instead ([docs/sdk/README.md](sdk/README.md)).
 
 ## 4. Play
 
@@ -279,8 +281,9 @@ differ, naming each difference. A saved game remembers its mods: loading one pla
 other mods says which, and loads it with its own when your mods folder (or OpenSE4's own
 mods) has them. Mods may
 bring pictures as PNG (also larger than the original's, for sharper screens) and sounds
-and music as OGG Vorbis. Making mods: [docs/sdk/packages-and-data.md](sdk/packages-and-data.md)
-and the `opense4-sdk` tool.
+and music as OGG Vorbis. Making mods: the modder's guide, [docs/sdk/README.md](sdk/README.md),
+and the `opense4-sdk` tool (beside the programs; a release also has the guide and the
+example mods in its `sdk` folder).
 
 ### Computer players
 
@@ -349,8 +352,10 @@ last digit of the turn count, the players' history files copied beside each save
 games saved for the original in `saves/Space Empires IV/`),
 the players' statistics, history and log files of the game being played (`History/`),
 maps (`maps/`,
-see [MAPS.md](MAPS.md)), empire files (`empires/`), settings and logs go in your user
-data directory. OpenSE4 never writes to the game directory.
+see [MAPS.md](MAPS.md)), empire files (`empires/`), your mods (`Mods/`, see "Mods"),
+settings and logs go in your user data directory. `opense4-sdk python` writes the
+`opense4` package for external bots under `python/` there. OpenSE4 never writes to the
+game directory.
 
 | Platform | Location |
 |---|---|
@@ -377,7 +382,7 @@ game again first, the report is in `opense4.previous.log`.
 | Black window or crash at startup | Try `--renderer=opengl`. With the Vulkan SDK installed, `--validation` shows driver errors. |
 | The game crashed | Send `opense4.log` (or `opense4.previous.log` after a restart) from the folder above with your report: its end holds the crash report. |
 | Text looks wrong in names | The data files are Latin-1 and are converted to UTF-8 on load. Report any file that still looks wrong. |
-| A mod fails to load | Run `opense4-datacheck` on its data directory. The errors show the file and line. |
+| A mod fails to load | The title screen and the Mods window say why. For a mod made for OpenSE4, `opense4-sdk check <mod>` reports every problem with the mod, file, line and record; for a classic mod, run `opense4-datacheck` on the game copy that holds it. |
 | "the game was saved with a data set of N racial traits" or "another data set" when loading a game of the original | The game was played with a mod or another version of the data files: start OpenSE4 with `--classic-dir` on a copy of the game with that mod (see "Mods"). |
 | No movement line after Move To | The line is the per-computer option "Display Ship Movement Lines" (Game Menu → Options, or Ctrl+L), off on a fresh install as in the original. Starting a new simultaneous game switches it on; joining one does not. It shows for the ship, base, unit group or fleet whose report is open. |
 | No music, or no sound | See "No sound, no music, or clicks: what the log says" above: `opense4.log` names the device, the settings, each track and every file that cannot be played. Music Off in Game Menu → Options and `Allow CD Music` in the game's `Settings.txt` both silence the music, and the game is silent while it is in the background (see "Sound and music"). |

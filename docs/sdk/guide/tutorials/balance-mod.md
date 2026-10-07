@@ -148,7 +148,8 @@ diff -r before after                        # exactly what the mod changes
 Write tests that read the patched data through the rules view, as computer players do. The
 example's [tests/test_balance.py](../../../../mods/examples/balance/tests/test_balance.py):
 
-```python
+```python fragment
+# from tests/test_balance.py, whose the_rules() wraps testing.game_rules()
 def test_seeking_weapons_reload_every_other_turn():
     seekers = [c for c in the_rules().components if c.weapon is not None and c.weapon.kind == "seeking"]
     assert seekers and all(c.weapon.reload_rate == 2 for c in seekers)

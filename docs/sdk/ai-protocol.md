@@ -54,9 +54,10 @@ classic_state = true             # the classic AI's bookkeeping runs for its emp
     `computerPlayerChoices` lists what the game's mods offer;
   - the server's setup files: `ai = "<mod id>:<name>"` at the top for every computer
     empire, and in an `[[empire]]` for that one (docs/MULTIPLAYER.md, "Setup files");
-  - `--ai=<mod id>:<name>` gives it to every computer empire of a quick game (`opense4`)
-    or of a hosted game (`opense4-server`, which also takes `--ai=N` for the number of
-    computer empires).
+  - `--ai=<mod id>:<name>` gives it to every computer empire of the quick game that
+    `opense4 --quick-start` starts (games set up in the client choose in Game Setup), or of
+    a hosted game (`opense4-server`, which also takes `--ai=N` for the number of computer
+    empires).
 
   The mod must be one the game uses: a setup that names a player of another mod, or one
   its mod does not declare, is refused with a message that says so
@@ -365,7 +366,7 @@ computer player, and a player's own answer leaves them as an empire whose minist
 act leaves them. The actions are commands of the classic answers either way. It saves the
 bookkeeping's time for a player that makes every decision itself: about 1.4 ms a turn per
 empire in a debug build on the test fixtures' 14-system quadrant (the `sdk players bench`
-test), more on larger maps. External bots keep the classic state.
+test, run with `OPENSE4_SDK_BENCH=1`), more on larger maps. External bots keep the classic state.
 
 ## 10. The connection (external bots)
 

@@ -12,7 +12,7 @@ opense4-sdk new --from-example scenario frontier --id=me.frontier
 ```
 
 ```text
-scenario/
+frontier/
   mod.toml                the mod, and its option [[rules.options]] grant
   scenarios/frontier.toml the scenario: setup, options, objectives
   scripts/frontier.py     what its objectives do, and a hook at the start
@@ -147,6 +147,11 @@ set; each objective met is written `<objective>@<empire>`):
 Scenarios (60 turns each):
   ok    scenario frontier: 31 turns, objectives met: second_colony@1, second_colony@2, second_colony@0, frontier@1; it ended: Hold eight colonies (Lantern Combine won) (1.3 s)
 ```
+
+To play it yourself, switch the mod on in the Mods window and press the title screen's
+**Scenario** button: the Learn window's **Scenarios** tab lists Frontier Charter with its
+summary, empires and objectives, and **Start Game** begins it, with you as its first human
+empire. `opense4-sdk run frontier` starts the game with the mod, so the tab lists it there too.
 
 ## 6. Going further
 

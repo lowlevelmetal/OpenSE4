@@ -70,7 +70,8 @@ def tech_area():
 
 Then one component per level. Everything that grows with the level is a formula:
 
-```python
+```python fragment
+# continued: ROMAN (the numerals) and FAMILY are set at the top of the file
 def lance(level):
     return {
         "name": "Ember Lance " + ROMAN[level - 1],
@@ -146,7 +147,8 @@ mod me.ember: data/ember_line.py: generate() failed: Exception: ZeroDivisionErro
 [tests/test_ember.py](../../../../mods/examples/weapon-line/tests/test_ember.py) reads the
 generated records through the rules view:
 
-```python
+```python fragment
+# condensed from tests/test_ember.py (NAMES and the_rules() are set at its top)
 def test_each_level_brings_a_stronger_lance():
     r = the_rules()
     area = r.tech_named("Ember Optics")

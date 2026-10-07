@@ -95,18 +95,33 @@ game to today's machines and adds what a newcomer or a multiplayer group needs.
   - the Galaxy Map can show jump distances;
   - Help can search;
   - combat replays can list each turn's events.
-- **Mods:** packages of pictures, sounds and data patches layer over your installed game
-  without changing it; patches change single records, so mods combine. Choose them in the
-  Mods window. Pictures may be PNG and larger than the original's, sounds and music OGG
-  Vorbis, and a design may show a picture of its own. Classic mods load as packages too.
-  `opense4-sdk` makes, checks and packs mods, and `opense4-datacheck` checks a modded data
-  set and names the file, line and record of anything it doesn't understand.
-- **Hegemon, a stronger computer player,** comes with OpenSE4 as a mod: switch it on in
-  the Mods window, then choose it under Computer Players in Game Setup or Quick Start.
 - **Your games from the original:** Load Game opens the original's saved games and
   converts them, and Save Game can write a game back for the original, so a game moves
   between the two (docs/SETUP.md, "Games of the original"). `opense4-convert` does the same
   on the command line.
+
+**Modding**
+- **Mods** layer over your installed game without changing it, and you choose them in the
+  Mods window. Pictures may be PNG and larger than the original's, sounds and music OGG
+  Vorbis, and a design may show a picture of its own. Data patches change single records,
+  so mods combine, and classic mods load as packages too.
+- **A modding SDK** with Python:
+  - computer players with full control of an empire, or of only the decisions they choose,
+    with the classic AI as a library for the rest;
+  - rules scripts that hook into the turn, with new abilities, orders, events, game
+    options, victory conditions and scenarios;
+  - interface extensions: report panels, list columns, buttons and keys for a mod's
+    orders, translations.
+
+  Scripts run in a sandbox inside the game, the same on every computer, so they work in
+  network and e-mail games. External bots on ordinary Python can play too, with an arena
+  and a training environment for machine learning. `opense4-sdk` makes, checks, tests and
+  packs mods, and the modder's guide is [docs/sdk/README.md](docs/sdk/README.md).
+  `opense4-datacheck` names the file, line and record of anything in a data set it doesn't
+  understand, a classic mod's included.
+- **Hegemon, a stronger computer player** written with the SDK, comes with OpenSE4 as a
+  mod: switch it on in the Mods window, then choose it under Computer Players in Game
+  Setup or Quick Start.
 
 **Planned:** a Steam release with multiplayer through Steam, and Steam Workshop support for
 sharing mods. See "Future goals" in [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md#future-goals).
@@ -134,6 +149,8 @@ sharing mods. See "Future goals" in [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md#fu
   so they play together over the network and by e-mail.
 - **macOS:** builds from source (see [docs/BUILDING.md](docs/BUILDING.md)); there is no
   package.
+- **Python** is not needed to play or to mod: the game has its own. Only external bots and
+  the training environment of the modding SDK need Python 3.10 or newer.
 
 ### Graphics on ARM
 
@@ -181,7 +198,8 @@ OpenSE4 reads your installed copy of Space Empires IV Deluxe in place.
 
 - how to get the files, including on Linux and macOS;
 - how OpenSE4 finds them;
-- how to check a data set or a mod with `opense4-datacheck`.
+- how to check a data set or a classic mod with `opense4-datacheck` (mods made with the SDK
+  are checked with `opense4-sdk check`).
 
 ## Multiplayer
 
@@ -217,7 +235,7 @@ addition).
 ./build/debug/opense4                                # auto-detects a Steam install
 ./build/debug/opense4 --classic-dir=/path/to/se4     # or point at it
 ./build/debug/opense4 --quick-start=Terran           # skip the intro
-./build/debug/opense4-datacheck                      # validate an installed or modded data set
+./build/debug/opense4-datacheck                      # validate an installed data set (or a classic mod's)
 ./build/debug/opense4 --mod=path/to/a/mod            # play with a mod (docs/sdk/packages-and-data.md)
 ./build/debug/opense4 --load=/path/to/se4/SaveGame/GAME.gam   # play on a saved game of the original
 ./build/debug/opense4-convert --info GAME.gam        # describe a saved game of the original
@@ -277,6 +295,8 @@ and never written into it:
   CPython, with an arena and a training environment.
 - **Rules scripts**: hooks into turn processing, effects, abilities with effects, new orders,
   events, intelligence projects, game options, victory conditions and scenarios.
+- **Interface**: panels in the reports, columns in the lists, pages in the Empires window,
+  buttons and keys for a mod's orders, and translations of a mod's text.
 
 Classic mods (replacement data files and pictures) load as packages too. Hegemon, a
 computer player written this way ([mods/hegemon](mods/hegemon/README.md)), ships with
@@ -285,9 +305,10 @@ OpenSE4 in the `mods` folder beside the programs, ready to switch on in the Mods
 ```sh
 opense4 --mod=path/to/mymod                       # play with a mod (or choose it in the Mods window)
 opense4-sdk new data mymod --id=me.mymod          # start one from a template
-opense4-sdk new --from-example small-ai my-ai     # or from one of the example mods
+opense4-sdk new --from-example small-ai my-ai --id=me.my-ai   # or from one of the example mods
 opense4-sdk check mymod                           # apply it to your game and report every problem
-opense4-sdk test mymod                            # its tests, then its players and rules in short games
+opense4-sdk test mymod                            # its tests, then its players, rules and scenarios in short games
+opense4-sdk arena --mod=my-ai --ai=me.my-ai:Pioneer --ai=builtin   # a computer player against the classic AI
 opense4-sdk pack mymod                            # a .zip to share
 ```
 
@@ -306,18 +327,25 @@ src/datafile  reader for the classic "Key := Value" data format
 src/ruleset   typed model of a complete classic data set
 src/mods      mod packages, mod sets, the layered game files, data patches
 src/game      classic-rules engine (implemented from docs/spec/)
+src/script    the modding SDK's script runtime: MicroPython in a sandbox, script values, JSON
+src/sdk       the engine's side of the SDK: views, commands, computer players, rules hooks, interface files
+src/learn     tutorials, training games and the manual
 src/net       multiplayer: sessions, protocol, UPnP port mapping
 src/server    opense4-server: dedicated host and PBEM turn processor
 src/assets    runtime access to the installed classic art
 src/gfx       RHI with Vulkan and OpenGL backends, 2D batch renderer, ImGui bridge
 src/client    the app shell and the classic client (windows, front end, multiplayer)
-tools/        opense4-datacheck, opense4-convert (saved games), opense4-sdk (mods), opense4-observe (drive the original), cleanroom_check.py
+python/       the opense4 Python package for mods and external bots
+tools/        opense4-datacheck, opense4-convert (saved games), opense4-sdk (mods), opense4-observe (drive the original), cleanroom_check.py, generators
+mods/hegemon  Hegemon, the mod that comes with OpenSE4 (mods/bundled.txt lists those)
 mods/examples the modding SDK's example mods (docs/sdk/README.md)
 docs/spec/    rules specs, written in our own words
+docs/sdk/     the modder's guide and the SDK's reference
 shaders/      GLSL shared by both backends
-assets/       fonts (Noto Sans, SIL OFL)
+assets/       fonts (Noto Sans, SIL OFL), the lessons and the manual
 packaging/    Linux desktop entry, application icon and AppStream metadata
-tests/        doctest unit tests (our own fixtures only)
+third_party/  MicroPython (with our patches) and the Khronos headers
+tests/        doctest unit tests (our own fixtures only), the SDK's Python tests, input scripts
 ```
 
 ## License

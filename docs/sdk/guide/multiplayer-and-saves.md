@@ -10,7 +10,7 @@ when you make, update and share a mod. The reference is
 | A mod with | Is | Because |
 |---|---|---|
 | Only pictures, sounds, music, fonts (`assets/`) | **not** game-affecting | Each computer may show the game its own way; the rules are the same |
-| Interface extensions (`ui/`, a later tier) | not game-affecting | They change nothing but through commands |
+| Interface extensions and translations (`ui/`, `text/`) | not game-affecting | They change nothing but through commands ([interface.md](../interface.md)) |
 | Data patches, data files, generators (`data/`) | **game-affecting** | They change the rules' numbers |
 | Computer players (`ai/`) | game-affecting | Their decisions are part of the turn |
 | Rules scripts, scenarios (`scripts/`, `scenarios/`) | game-affecting | They change the rules |
@@ -21,10 +21,10 @@ may differ.
 
 ## Identity
 
-Each mod has an **identity**: a hash of its manifest and every file outside `assets/` and
-`ui/`. Text files are read with LF line ends, so a mod saved on Windows has the same
-identity as on Linux. Change a patch, a script, a test or the manifest, and the identity
-changes; change a picture, and it does not. `opense4-sdk info` and `check` print it, and
+Each mod has an **identity**: a hash of its manifest and every file outside `assets/`,
+`ui/` and `text/`. Text files are read with LF line ends, so a mod saved on Windows has the
+same identity as on Linux. Change a patch, a script, a test or the manifest, and the
+identity changes; change a picture, a panel or a translation, and it does not. `opense4-sdk info` and `check` print it, and
 `pack` records it in the archive (`mod.identity`).
 
 A game's **mod set** has an identity too: the ids, versions and identities of its
@@ -43,7 +43,7 @@ anything: players can then tell versions apart in the Mods window and in error m
   names what is missing or different. In the client, the load window lists each difference;
   when your mods folder has the game's mods, **Load with Its Mods** reads the data again with
   them and loads the game.
-- Mods of pictures and sounds may differ: the game shows what this computer has.
+- Mods of pictures, sounds and interface may differ: the game shows what this computer has.
 - **Mod state is saved**: a computer player's memory, a rules mod's data, its options, a
   scenario's objectives met, a design's own picture. All of it counts in the game's
   checksums.
@@ -52,7 +52,7 @@ anything: players can then tell versions apart in the Mods window and in error m
 **Updating a mod during a long game.** A new version is a new identity, so a game started
 with the old one will not load with the new one. Keep the old version (its `.zip`) for the
 games that use it; Load with Its Mods finds it by id and identity in your mods folder.
-Changing only pictures and sounds does not have this problem.
+Changing only pictures, sounds, `ui/` or `text/` does not have this problem.
 
 ## Network and e-mail games
 

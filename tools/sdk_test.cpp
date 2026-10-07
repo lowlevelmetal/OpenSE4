@@ -473,8 +473,10 @@ int cmdRun(const std::vector<std::string>& argv) {
     if (o.has("help") || o.positional.size() != 1) {
         std::printf("opense4-sdk run <mod> [--player=NAME] [--data=DIR] [--mod=OTHER...] [--mods-dir=DIR] [--client=EXE] [-- OPTIONS...]\n\n"
                     "Starts the game with the mod, and the mods it requires, and with --ai for its computer player\n"
-                    "(the first it declares, or --player) for the computer empires of new games. What follows --\n"
-                    "goes to the game as it is, e.g. -- --quick-start=Terran.\n");
+                    "(the first it declares, or --player): a quick start (-- --quick-start=RACE) has it play every\n"
+                    "computer empire; in Game Setup choose it under Computer Players. What follows -- goes to the\n"
+                    "game as it is. --data=DIR (or --classic-dir) is the game folder (default: the installed game);\n"
+                    "--client=EXE the game to start (default: opense4 beside opense4-sdk).\n");
         return o.has("help") ? 0 : 2;
     }
     auto target = openMod(o.positional[0], o.get("mods-dir"));

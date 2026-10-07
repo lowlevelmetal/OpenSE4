@@ -42,6 +42,7 @@ python -m opense4.bot admiral:Admiral --path mymod/ai --port 6722 --slot 0
 - `--reconnect` connects again whenever the game ends a connection, for hosts that run
   once per turn (play by e-mail below). Stop the bot with Ctrl+C.
 - `--wait=SEC` keeps trying to connect while the game is not listening yet (default 30).
+- `--name=NAME` is the bot's name in the game's log (default: its class's name).
 
 The bot needs OpenSE4's `opense4` package on its path. In a copy of the source code that
 is the `python` folder (`PYTHONPATH=python`). A release builds the package into its
@@ -123,7 +124,8 @@ The arena plays games between computer players without a window, several at a ti
 each game in a process of its own (`--jobs=N`, by default the computer's cores, at most
 four), with the same turn processing as the game and the server. It needs your installed
 game (or `--data=DIR`, `--classic-dir=DIR`) and the mods the players come from (`--mod`,
-`--mods-dir`).
+`--mods-dir`; the mods that come with OpenSE4, such as Hegemon, are found by id too).
+`opense4-sdk arena --help` lists every option.
 
 Each `--ai` is one player:
 
@@ -131,11 +133,12 @@ Each `--ai` is one player:
 |---|---|
 | `builtin` | the classic AI |
 | `mod.id:Player` | a player a mod declares |
-| `external:COMMAND` | an external bot: the arena runs COMMAND with the system's shell for each game the bot plays in, with `OPENSE4_BOT_HOST`, `_PORT`, `_TOKEN` and `_SLOT` in its environment and `PYTHONPATH` reaching OpenSE4's `opense4` package: `--ai="external:python3 -m opense4.bot mine:Mine --path bots"` |
+| `external:COMMAND` | an external bot: the arena runs COMMAND with the system's shell for each game the bot plays in, with `OPENSE4_BOT_HOST`, `_PORT`, `_TOKEN` and `_SLOT` in its environment and `PYTHONPATH` reaching OpenSE4's `opense4` package: `--ai="external:python3 -m opense4.bot mine:Mine --path bots"`; `--timeout=SEC` is its time per request (default 60) |
 | `NAME=...` | any of these, named NAME in the report |
 
-**The games.** Game i (from 0) has the seed `--seed` + i, so a run of `--games=N
---seed=S` is the same as two runs that split it. A game has one empire per `--ai`
+**The games.** A run plays `--games=N` games (default 10) of at most `--turns=N` turns
+(default 100). Game i (from 0) has the seed `--seed` + i (default 1), so a run of
+`--games=N --seed=S` is the same as two runs that split it. A game has one empire per `--ai`
 (`--empires=N` for more: the players take the seats in turn), and by default game i
 moves every player i seats on, so that over a run each player plays each seat and each
 race (`--no-swap` keeps them in place). The races are drawn from each game's seed unless
@@ -206,7 +209,7 @@ of the run played again (`--replay`) to the same checksum.
 
 `opense4.env` plays one empire of a game step by step, for programs that learn to play:
 
-```python
+```python no-run
 from opense4 import env
 
 game = env.Game(seed=7, opponents=["builtin"], turns=200, builtin=("economy",))
@@ -244,7 +247,8 @@ game.close()
   reached over the external bots' connection on this computer, with a token of its own. It
   is found as `Game(sdk=...)`, else `OPENSE4_SDK`, else `opense4-sdk` on `PATH`; the game
   folder and mods are `data=`, `mods=` and `mods_dir=` (default: the installed game).
-  `log=FILE` keeps its log.
+  `log=FILE` keeps its log. `opense4-sdk env-host --help` lists the options `Game` gives it
+  (the opponents as `--opponent=SPEC`, one per other empire).
 
 **Training a machine-learning player.** The environment has the shape most reinforcement
 learning libraries expect: wrap it in their environment class (an observation made from
@@ -284,7 +288,7 @@ test` `game_view(empire=0)` and `game_rules()` give the view and the rules view 
 game of the mod's data set (two computer empires from the seed), so a test can call its
 player on real data:
 
-```python
+```python no-run
 from opense4 import testing
 from admiral import Admiral
 
@@ -296,7 +300,9 @@ def test_it_orders_something():
 
 The same tests run under pytest with CPython (`PYTHONPATH` with the `opense4` package and
 the mod's `ai/` folder), where `game_view()` and `game_rules()` skip. `--no-games` runs
-only the Python tests, which then need no data set; `--no-tests` only the games. The
+only the Python tests, which then need no data set; `--no-tests` only the games. The mods
+it requires come from the mods folder, the mods that come with OpenSE4, or `--mod=OTHER`
+and `--mods-dir=DIR`; `opense4-sdk test --help` lists every option. The
 command prints a line per test and game and a summary, and exits with 0 when everything
 passed and 1 otherwise, for a mod's own continuous integration.
 
@@ -307,9 +313,11 @@ opense4-sdk run mymod -- --quick-start=Terran
 ```
 
 starts the game (`opense4` beside `opense4-sdk`, or `--client=EXE`) with the mod and the
-mods it requires, and with `--ai=` for the mod's first computer player (or `--player=NAME`)
-so that the computer empires of new games are its. What follows `--` goes to the game as
-it is; `--data=DIR` becomes its `--classic-dir`.
+mods it requires (from the mods folder, the mods that come with OpenSE4, or `--mod=OTHER`
+and `--mods-dir=DIR`), and with `--ai=` for the mod's first computer player (or
+`--player=NAME`), so that a quick start's computer empires are its (`-- --quick-start`); a
+game set up in the client chooses its players under Computer Players in Game Setup. What
+follows `--` goes to the game as it is; `--data=DIR` becomes its `--classic-dir`.
 
 ## For SDK developers
 

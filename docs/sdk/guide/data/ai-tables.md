@@ -423,13 +423,14 @@ ministers read the empire's own tables, found by the rules above (its minister s
 its race), so a mod that patches the tables also changes what `builtin` suggests. The
 `AI_Strategies` join counts as the `design` minister.
 
-For an empire a script plays, the classic AI's own steps do not run
-([ai-protocol.md](../../ai-protocol.md) section 9): its AI state never changes from the
-one it had (a new empire's is Exploration), and its political step does not run, so
-AI_Anger does not move its anger. The state-filtered rows that `builtin` uses are
-therefore those of that state. The tables are not part of the rules view; a script player
-cannot read them directly. Every other computer player of the game still uses them in
-full.
+For an empire a script plays, the classic AI's own bookkeeping still runs
+([ai-protocol.md](../../ai-protocol.md) section 9): its AI state moves as a computer
+empire's would, and its political step moves its anger by AI_Anger, so the state-filtered
+rows that `builtin` uses are those of the state the built-in AI would be in. A player whose
+`[[ai.players]]` entry sets `classic_state = false` opts out: its AI state stays the one it
+had (a new empire's is Exploration) and its anger does not move, so `builtin` then reads
+the rows of that state. The tables are not part of the rules view; a script player cannot
+read them directly. Every other computer player of the game uses them in full.
 
 ## Changing them with patches
 

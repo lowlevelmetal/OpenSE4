@@ -17,6 +17,13 @@ All three are OpenSE4 extensions. The original's own tutorial needs its binary s
 game (`Scenarios/*.gam`, spec 06 §6), which OpenSE4 cannot read, so OpenSE4 ships its own
 lessons instead.
 
+Mods add a fourth kind: **scenarios**, a setup with objectives in a mod's
+`scenarios/*.toml` ([sdk/rules.md](sdk/rules.md) "Scenarios"). When the mods in use hold
+some, the Learn window opened from the intro has a **Scenarios** tab that lists and starts
+them (see "The Learn window and the manual"). Their objectives are written in the lessons'
+condition language ("Conditions" below), but they are the mods' content: nothing in this
+document's library, progress or checks covers them.
+
 ## Clean-room rules for the content
 
 The lessons, training scenarios and manual are **our own writing** (CLEANROOM.md):
@@ -139,6 +146,11 @@ fixed in code (`learn/condition.hpp`); an unknown key, or a value outside its ke
 vocabulary (window id, kind of selection, command name, order kind, window tab, option,
 treaty kind), is a load error that names the file and line. A few keys take `true` or
 `false`.
+
+Mods' scenarios write their objectives' `when` in this language too
+([sdk/rules.md](sdk/rules.md) "Scenarios"): there the keys that read the game state work,
+the keys about the client (open windows, selections, commands given) never hold, and
+`enemy_ships_destroyed` and `planets_captured` count from 0 at each check.
 
 Counters marked "since" count from where the step began (the first time it was shown)
 in a tutorial, and from the start of the game in a training game. `selected` is one of
@@ -686,9 +698,16 @@ Writing steps for the lock:
 
 The **Learn** window has three tabs. Tutorials and Training list the lessons in file
 order with their length, under a count ("3 of 7 done", for training games "won"), and show
-the chosen one's summary and its steps or objectives; **Start** (or a double click) starts
-its game. During a game this first asks, since the lesson's game replaces the one being
-played. Manual lists the chapters and their sections.
+the chosen one's summary and its steps or objectives; **Start Lesson** or **Start Game**
+(or a double click) starts its game. During a game this first asks, since the lesson's game
+replaces the one being played. Manual lists the chapters and their sections.
+
+When the rules mods in use hold scenarios, the Learn window opened from the intro has a
+fourth tab, **Scenarios** (`--open=learn:scenarios`): each scenario with its mod, its
+summary, its empires and its objectives, and **Start Game**, which starts it for its first
+human empire (`sdk::startScenario`). A scenario without a human empire (one for computer
+players: the arena, a server's setup file), or one that failed to start, says why and
+cannot be started here. The Learn window opened during a game has no Scenarios tab.
 
 - The first lesson not done yet is marked **Next** (the others done are marked Done).
 - The window chooses the tutorial the player left last, while it can be resumed;

@@ -157,6 +157,9 @@ turns first.
 A minimal player that explains itself:
 
 ```python
+from opense4 import ai, cmd, order
+
+
 class Scout(ai.Player):
     def orders(self, view, orders):
         for ship in view.my.idle_vehicles:
@@ -195,7 +198,7 @@ what it asks counts against its budget.
 
 ### The classic AI as a library (`ai.builtin`)
 
-```python
+```python fragment
 orders.extend(ai.builtin.economy(view))                        # the classic economy
 orders.extend(ai.builtin.orders(view, skip=["attack"]))        # every minister but Attack
 research = ai.builtin.economy(view, ministers=["research"])    # one minister's commands
@@ -304,7 +307,7 @@ Components, facilities and hulls answer `has_ability(name)`, `ability_value(name
 There is a constructor for every command kind, every order kind, every tactical order kind
 and every type they carry, named as [commands.md](commands.md) names them:
 
-```python
+```python fragment
 from opense4 import cmd, order
 
 cmd.set_orders(fleet=fleet, orders=[order.move_to(target), order.attack(vehicle=enemy)])
@@ -410,8 +413,11 @@ per state of the game, never every frame; they cannot change the game.
 An external bot is a program that plays through a connection to the game, with the same
 `Player` class, on CPython 3.10 or newer ([bots-and-arena.md](bots-and-arena.md)):
 
-```python
+```python no-run
 from opense4 import external
+
+from admiral import Admiral                                   # the mod's ai/admiral.py
+
 external.run(Admiral, port=6722, token="3f2a...", slot=0)    # until the game ends
 ```
 
@@ -448,7 +454,7 @@ train with it.
 
 ## Testing a player (`opense4.testing`)
 
-```python
+```python no-run
 from opense4 import testing
 from player import Prospector
 

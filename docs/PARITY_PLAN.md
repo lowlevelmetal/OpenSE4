@@ -162,9 +162,10 @@ questions are what the observation sessions still have to settle.
    - the OpenSE4 choices the setup screens listed in [PARITY_GAPS.md](PARITY_GAPS.md): spin
      steps, characteristic words, Compare Culture Modifiers, Login To Game.
 3. **Keep the interface covered by input scripts.**
-   - `tools/run_input_tests.py` plays 23 scripts through the client's own input, covering
-     every tutorial and training game and the mouse-only features. Six of them run in CI on
-     fixture data ([BUILDING.md](BUILDING.md) "Input scripts").
+   - `tools/run_input_tests.py` plays 77 scripts through the client's own input, covering
+     every tutorial and training game, the mouse-only features and what mods add to the
+     windows. Thirteen of them run in CI on fixture data ([BUILDING.md](BUILDING.md) "Input
+     scripts").
    - A new window or lesson gets a script.
 4. **Multiplayer.** Protocol 5's security design was reviewed twice ([MULTIPLAYER.md](MULTIPLAYER.md)
    "Security"). Two improvements are left:
@@ -200,12 +201,16 @@ through Steam and plays on it.
 ### Steam Workshop
 
 Players publish mods from inside the game and subscribe to them.
-- **Data-set mods:** the original's mod format, checked with `opense4-datacheck` before
-  publishing. A mod is layered over the installed game and never changes it.
-- **Script mods:** from the SDK below.
+- **What is published:** the SDK's packages (data patches, pictures and sounds, computer
+  players, rules scripts, interface extensions) and the original's mods, which load as
+  packages too, checked with `opense4-sdk check` and packed with `opense4-sdk pack`
+  (`opense4-sdk publish` waits for this goal). A mod is layered over the installed game
+  and never changes it.
 - **Matching mods in multiplayer:** every player in a network or e-mail game must have the
-  same mods. The data-set checksums already make sure of this for data files; scripts
-  will join them.
+  same game-changing mods. The mod set already makes sure of this: each mod's identity
+  covers its data, scripts and players, and the lobby and saved games check it
+  ([MODDING_SDK.md](MODDING_SDK.md) §9). The Workshop would offer a joining player the
+  mods they lack.
 
 ### A modding SDK with Python scripts (done in 0.11.0)
 

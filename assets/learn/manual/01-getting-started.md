@@ -30,7 +30,7 @@ The title screen offers:
 | `Resume Game` | Continue the game you saved last. |
 | `Load Game` | Continue a saved game. |
 | `Tutorial` | Guided lessons that walk you through the game step by step (see [below](#learning-the-game)). |
-| `Scenario` | Training games: practice games with objectives. |
+| `Scenario` | Training games: practice games with objectives, and the scenarios of your mods (see [below](#learning-the-game)). |
 | `Credits` | Who made OpenSE4, and what it is built with. |
 | `Quit Game` | Leave OpenSE4. |
 
@@ -114,7 +114,11 @@ above.
 - **Game Settings** page: `Computer players see everything` lets them see the whole game instead
   of what their empire knows (off by default, so that they play fair), and `Computer Player
   Limits` sets how much they may compute for each of their decisions.
-- **Quick Start**: `Computer Players` in the left column chooses who plays its computer empires.
+- **Quick Start**: `Computer Players` in the left column chooses who plays its computer empires,
+  and whether they see everything.
+
+OpenSE4 comes with one such mod, Hegemon; switch it on in the [Mods](settings#mods) window to
+choose it here.
 
 When one of these players fails, the classic AI decides in its place and the game goes on; a
 notice over the bottom of the system view says so, and `Details` shows what went wrong (see

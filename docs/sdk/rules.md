@@ -242,6 +242,9 @@ A mod declares an ability name in a data patch ([packages-and-data.md](packages-
 other, and gives it an effect in a hook. The rules golden mod's field batteries:
 
 ```python
+from opense4 import rules
+
+
 @rules.on("empire_end_of_turn", step="supply", when="after")
 def field_batteries(game, empire, step, when, fx):
     for raw in game.raw["vehicles"]:
@@ -280,6 +283,9 @@ default = 1                    # without a default an int, bool or text argument
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.order_check("overcharge")
 def can_overcharge(game, order):
     if order.target.supply < 10 * order.args["power"]:
@@ -332,9 +338,18 @@ chance = 25                    # percent per game turn, 0 to 100
 target = "vehicle"             # "empire", "colony", "vehicle", "system" or "none"
 first_turn = 3                 # not rolled before this game turn
 option = "storms"              # optional: a switch of the mod's options that turns it on
+
+[[rules.options]]              # that switch (see "Game options")
+name = "storms"
+label = "Dust storms"
+type = "bool"
+default = true
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.event("dust_storm")
 def dust_storm(game, event, fx):
     fx.damage(event.target_object, 3 + game.rng.below(5), "Caught in a dust storm.")
@@ -359,6 +374,9 @@ type = "Mod - Data Theft"
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.intel_project("Mod - Data Theft")
 def data_theft(game, project, fx):
     taken = fx.add_resources(project.target, minerals=-project.amount)
@@ -408,9 +426,18 @@ default = 90
 name = "relics"
 label = "The relics were gathered."    # the reason the game ends with
 option = "relic_victory"               # optional: a switch of the mod's options that turns it on
+
+[[rules.options]]                      # that switch (see "Game options")
+name = "relic_victory"
+label = "Win by gathering relics"
+type = "bool"
+default = true
 ```
 
 ```python
+from opense4 import rules
+
+
 @rules.victory("relics")
 def relics(game):
     for e in game.empires:
@@ -468,10 +495,12 @@ by_turn = 40                   # optional: it can no longer be met after this ga
   `enemy_ships_destroyed` and `planets_captured` count from 0 at each check.
 - `sdk::startScenario(rules, mod, name)` makes the game: the setup, the mod's options it
   sets, and the scenario recorded in the game (`GameState::scenario`, save format 9).
-- **Starting one**: the Learn window's Scenarios tab (the title screen's Scenario button)
-  lists the scenarios of the rules mods in use, with their summaries, empires and
-  objectives, and Start Game begins one, played by its first human empire (a scenario
-  without one is for computer players: the tab says so). A dedicated server's setup file
+- **Starting one**: the Learn window has a Scenarios tab, beside Training, while the rules
+  mods in use have scenarios (the title screen's Scenario button opens the window at
+  Training). It lists them with their summaries, empires and objectives, and Start Game
+  begins one, played by its first human empire (a scenario without one is for computer
+  players: the tab says so). Scenarios start from the title screen: the Learn window
+  opened during a game (the Game Menu's Learn) has no Scenarios tab. A dedicated server's setup file
   starts one with `scenario = "<mod id>:<name>"`: its seed, setup options, empires and the
   mod's options it sets, before the file's own keys, which take their places (a network
   host's players join the lobby in place of its human empires; MULTIPLAYER.md "Setup

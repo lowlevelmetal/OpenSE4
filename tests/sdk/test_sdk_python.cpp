@@ -467,6 +467,25 @@ TEST_CASE("sdk python: the package's tests pass under CPython, with the same res
     CHECK_MESSAGE(gen.code == 0, gen.out);
 }
 
+TEST_CASE("sdk python: the docs' Python examples compile, and the complete ones run and play a turn") {
+    // tests/sdk/python/check_doc_snippets.py: a ```python block is a complete module that
+    // must run, and the players it defines answer the planning calls on the fixtures' view;
+    // ```python no-run only compiles; ```python fragment is an excerpt.
+    const auto python = cpython();
+    if (!python) {
+        MESSAGE("python3 (3.10 or newer) is not installed: the docs' Python examples are not checked");
+        return;
+    }
+    test::TempDir dir("sdk_python_doc_snippets");
+    const fs::path fixtures = dir.path() / "fixtures.json";
+    const auto json = script::toJson(pythonFixtures());
+    REQUIRE(json.has_value());
+    test::writeText(fixtures, *json);
+    const Shell run = shell(std::format("{} -B {} --fixtures {}", *python, quoted(pythonTestDir() / "check_doc_snippets.py"), quoted(fixtures)));
+    CHECK_MESSAGE(run.code == 0, run.out);
+    CHECK_MESSAGE(run.out.find(" 0 problems") != std::string::npos, run.out);
+}
+
 TEST_CASE("sdk python: computer players in the game, with the engine's services") {
     const Rules& r = test::engineRules();
     const SdkGame& g = fixtureGame();

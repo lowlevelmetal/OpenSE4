@@ -26,7 +26,8 @@ turn-based calls without battle answers, so nobody is asked Tactical or Strategi
 `no_tactical_combat` in a setup file changes nothing there (docs/PARITY_GAPS.md).
 
 Everything here is implemented by `src/net` (the `opense4_net` library),
-`src/game/serialize.*` (the save format) and `src/server` (`opense4-server`).
+`src/game/serialize.*` (the save format) and `src/server` (`opense4-server`); the external
+bots' connection is the modding SDK's (`src/sdk/bots.*`, docs/sdk/ai-protocol.md §10).
 
 ## Hosting
 
@@ -70,6 +71,17 @@ planning and for any other request, and the memory each keeps). A dedicated serv
 same with its setup file (`ai`, `ai_sees_everything`, `ai_planning_budget`,
 `ai_call_budget`, `ai_memory_limit`, an `[[empire]]`'s `ai`) or `--ai=MOD:PLAYER`.
 
+#### The game's mods
+
+A game hosted from the client uses the mods chosen in the Mods window (docs/SETUP.md
+"Mods"). The lobby lists them (`Mods: ...`), each marked as changing the game or not, and
+joining players see the same list. Everyone needs the same game-changing mods:
+data patches, rules scripts and computer players. Mods with only pictures, sounds or
+interface extensions may differ. A player whose mods differ is refused with each
+difference named (a mod missing, in another version or with other files, or one the host
+does not use) and a `Mods` button: choose the same mods there and join again. The mods
+that come with OpenSE4, such as Hegemon, are the same for every player of a release.
+
 #### Mods' options
 
 When the game's rules mods declare game options (docs/sdk/rules.md "Game options"), the
@@ -102,6 +114,8 @@ port forwarding.
 | Option | Meaning |
 |---|---|
 | `--data=DIR` | the classic game's `Data` directory (default: auto-detect) |
+| `--mod=MOD` | play with this mod: a folder or `.zip`, or the id of a mod in the mods folder or of one that comes with OpenSE4; repeat for several, in load order (default: the setup file's `mods`; a loaded game's own). The `pbem` commands that read the data set take it too, and the next two |
+| `--mods-dir=DIR`, `--no-bundled-mods` | where mods are looked up by id (default: `Mods` in OpenSE4's user folder), and leaving out the mods that come with OpenSE4 (`mods/` beside the programs) |
 | `--port=N` | TCP port (default 6720; `0` picks a free one) |
 | `--bind=ADDR` | listen on one address only (default: every IPv4 interface) |
 | `--upnp` / `--no-upnp` | UPnP port forwarding (default: on) |
@@ -121,6 +135,9 @@ port forwarding.
 | `--load=GAME.gam` | continue a saved game |
 | `--save-dir=DIR`, `--autosave=N` | where and how often to save |
 | `--max-turns=N` | stop once the game reaches turn N (for tests) |
+| `--no-lan-discovery` | do not answer the LAN list's searches (see [Joining](#joining)) |
+| `--verbose` | also log lobby changes after the game started |
+| `--version` | print the version, the network protocol and the save format, and exit |
 
 **Master password.** A player who connects with the master password becomes an
 administrator: from their client they can start the game (also forced), add and
@@ -136,7 +153,10 @@ the same name and password. If the game has a master password, pass it again wit
 
 `tools/server_smoke.sh` runs complete games: a server with one human slot and one
 computer empire, and the server's scripted `bot` client, which plays two turns; a
-turn-based game with two bots and a computer empire; and a turn-based PBEM game.
+turn-based game with two bots and a computer empire; and a turn-based PBEM game. The
+`bot` client (`opense4-server bot --name=NAME --connect=HOST[:PORT]`, for tests; its options
+are in `--help`) joins, readies up and plays `--turns` turns; with `--master-password` and
+`--start` it starts the game. It is not an external bot of a mod (below).
 
 ### Bots on a host
 
@@ -211,11 +231,15 @@ Both routes then check:
   `--host-key`.
 - **Same version and data.** The client and the host must speak the same network
   protocol (the same OpenSE4 release) and use the same data set. The data set is
-  compared by fingerprint, a hash of every data file plus the loaded tables, so two
-  installations of the same game and mods match wherever they live. The host
+  compared by fingerprint, a hash of every data file plus the loaded tables, the
+  computer players' tables, race files and design-name lists, and the game-changing mods,
+  so two installations of the same game and mods match wherever they live. The host
   refuses mismatches with a message that names both sides. Older and newer releases
   refuse each other the same way, in both directions, and the LAN list marks a host
   of another version.
+- **Same mods.** The game-changing mods must be the host's, in the same versions and
+  with the same files ([The game's mods](#the-games-mods)); the refusal names each
+  difference.
 - **The player password** protects the player's slot and empire. Nobody else can
   take over the empire or send orders for it, in network and in PBEM games.
 - **The join password**, if the host set one, is needed by everyone. It is part of the
@@ -485,7 +509,9 @@ One round goes like this:
    read the orders, or send orders for that empire or for another turn.
 
    A player who wants to end the turn without changes can make an empty orders file:
-   `opense4-server pbem orders --turn=campaign_02.turn --password=... --out=DIR`.
+   `opense4-server pbem orders --turn=campaign_02.turn --password=... --out=DIR`. Like
+   the game, it trusts a game's host key from its first turn file on;
+   `--trust-new-host-key` accepts a changed one.
 
 3. **Collect the `.plr` files** in one directory, then process the turn:
 
@@ -508,6 +534,10 @@ One round goes like this:
    replaced (the previous turn is kept as `campaign.gam.bak`), the new turn files are
    written, and the `.plr` files that were used are deleted (`--keep-orders` keeps
    them). Files that were skipped stay where they are.
+
+   The game's mods are found by id and identity as for `--load` ([Setup files](#setup-files));
+   a game made with another data set or other game-changing mods is refused, unless
+   `--allow-data-mismatch` says to go on (the game must still fit this data set).
 
 4. **Send out the new turn files** and repeat.
 
@@ -571,9 +601,11 @@ From the command line:
 opense4 --pbem=campaign_02.turn --pbem-password=PW [--pbem-orders=DIR]
 ```
 
-`--pbem-end-turn` ends the turn at once, writes the `.plr`, prints where and quits (for
-scripts). It trusts a game's host key on first use like the window, but never a changed
-one, and does not move an OpenSE4 0.6 password. `--open=pbem:campaign_02.turn` opens the Play by E-mail window with that file.
+`--pbem-empire=N` names your empire by its number when more than one empire of the file
+could play now (by default, the only one that can). `--pbem-end-turn` ends the turn at
+once, writes the `.plr`, prints where and quits (for scripts). It trusts a game's host key
+on first use like the window, but never a changed one, and does not move an OpenSE4 0.6
+password. `--open=pbem:campaign_02.turn` opens the Play by E-mail window with that file.
 The choices the rules leave open are listed in spec 05 open question 36.
 
 Battles in a PBEM game are always fought strategically; the Tactical or Strategic
@@ -1013,8 +1045,11 @@ fleet leader command and the Designs window's check boxes kept with the empire) 
 0.10.0, so it does not play with 0.9.0; it still loads 0.9.0's saves. Protocol 7 and save
 format 9 came with the modding SDK in 0.11.0 (docs/MODDING_SDK.md §14.5): the game's
 mods in the state and the save header, the player's mods in `Login`, the host's in
-`Lobby`, and the `Mods` refusal. The data set's identity of format 9 also covers the game folder's AI tables,
-race files and design-name lists and the game-changing mods; a save of format 8 or older
+`Lobby`, and the `Mods` refusal; who plays each computer empire and a script player's
+memory; the mods' data, options and budgets, their scenario and the reason a game ended;
+the mods' orders (`cmd::ModCommand`); and a design's own picture. The data set's identity
+of format 9 also covers the game folder's AI tables, race files and design-name lists and
+the game-changing mods; a save of format 8 or older
 is compared with the identity as its format computed it, so it is not taken for another
 data set. Protocol 7 does not play with 0.10.0; format 8 and 7 saves still load.
 
