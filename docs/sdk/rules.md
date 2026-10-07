@@ -495,10 +495,12 @@ by_turn = 40                   # optional: it can no longer be met after this ga
   `enemy_ships_destroyed` and `planets_captured` count from 0 at each check.
 - `sdk::startScenario(rules, mod, name)` makes the game: the setup, the mod's options it
   sets, and the scenario recorded in the game (`GameState::scenario`, save format 9).
-- **Starting one**: the Learn window's Scenarios tab (the title screen's Scenario button)
-  lists the scenarios of the rules mods in use, with their summaries, empires and
-  objectives, and Start Game begins one, played by its first human empire (a scenario
-  without one is for computer players: the tab says so). A dedicated server's setup file
+- **Starting one**: the Learn window has a Scenarios tab, beside Training, while the rules
+  mods in use have scenarios (the title screen's Scenario button opens the window at
+  Training). It lists them with their summaries, empires and objectives, and Start Game
+  begins one, played by its first human empire (a scenario without one is for computer
+  players: the tab says so). Scenarios start from the title screen: the Game Menu's Learn
+  window lists them without starting them. A dedicated server's setup file
   starts one with `scenario = "<mod id>:<name>"`: its seed, setup options, empires and the
   mod's options it sets, before the file's own keys, which take their places (a network
   host's players join the lobby in place of its human empires; MULTIPLAYER.md "Setup
