@@ -231,7 +231,7 @@ hundreds of fused instructions in it).
 | `OPENSE4_ENABLE_UPNP` | ON | Build with miniupnpc. OFF compiles a no-op port mapper |
 | `OPENSE4_STATIC` | OFF | Link statically for redistribution (the `dist-*` presets) |
 | `OPENSE4_EMBED_RESOURCES` | ON | Build our fonts into the executable; files on disk still win (`opense4 --assets=DIR` names the folder of OpenSE4's own assets for one run) |
-| `OPENSE4_DEV_PATHS` | ON | Let the programs fall back to the source tree: the client's `assets/` and learning content, and the mods that come with OpenSE4 (`mods/`, when no `mods/` is beside the programs). The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
+| `OPENSE4_DEV_PATHS` | ON | Let the programs fall back to the source tree: the client's `assets/` and learning content, the mods that come with OpenSE4 (`mods/`, when no `mods/` is beside the programs), and `opense4-sdk new --from-example`'s example mods (`mods/examples`, when no `sdk/examples` is beside it). The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
 
 The code must compile without warnings under
 `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (`/W4` on MSVC).

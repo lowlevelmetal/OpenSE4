@@ -168,10 +168,16 @@ TEST_CASE("sdk guide: new --from-example copies an example as a mod of one's own
     CHECK_MESSAGE(dumped.code == 0, dumped.out);
     CHECK(fs::exists(dir.path() / "dump" / "Data" / "Components.txt"));
     CHECK_MESSAGE(slurp(dir.path() / "dump" / "Data" / "Components.txt").find("the data set with no mods.") != std::string::npos, dumped.out);
-    // A release finds them beside the program; this build, in the source tree.
+    // A release finds them in sdk/examples beside the program; a developer build also in
+    // the source tree, while a release build (dist-*) knows nothing of the source tree.
     const Ran found = runProgram({kSdk, "new", "--from-example", "new-hull", (dir.path() / "hull").string()}, env);
+#ifdef OPENSE4_TEST_DEV_PATHS
     CHECK_MESSAGE(found.code == 0, found.out);
     CHECK(fs::exists(dir.path() / "hull" / "assets" / "Pictures" / "RaceGeneric" / "Generic_Mini_WrenCourier.png"));
+#else
+    CHECK(found.code == 2);
+    CHECK_MESSAGE(contains(found.out, (fs::path("sdk") / "examples").string()), found.out);
+#endif
 }
 
 TEST_CASE("sdk test: a mod's rules and scenarios are played, and a rules function that fails fails the test") {

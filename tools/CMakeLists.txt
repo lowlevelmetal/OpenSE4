@@ -16,9 +16,13 @@ add_executable(opense4-sdk sdk.cpp sdk_arena.cpp sdk_common.cpp sdk_env.cpp sdk_
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp)
 target_link_libraries(opense4-sdk PRIVATE opense4_sdk opense4_mods opense4_net opense4_assets tomlplusplus opense4_warnings)
 set_target_properties(opense4-sdk PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-# `opense4-sdk new --from-example` finds the example mods here in a build of the source
-# tree; a release has them in sdk/examples beside the program (tools/package_release.sh).
-target_compile_definitions(opense4-sdk PRIVATE OPENSE4_EXAMPLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}/mods/examples")
+# `opense4-sdk new --from-example` finds the example mods in sdk/examples beside the
+# program, where a release has them (tools/package_release.sh), and a developer build
+# also in the source tree. Release builds leave the source tree out, so that the build
+# machine's paths stay out of the binary.
+if(OPENSE4_DEV_PATHS)
+    target_compile_definitions(opense4-sdk PRIVATE OPENSE4_EXAMPLES_SOURCE_DIR="${CMAKE_SOURCE_DIR}/mods/examples")
+endif()
 opense4_windows_manifest(opense4-sdk)
 
 # Black-box observation of the original game under X11/XWayland (Linux dev tool).
