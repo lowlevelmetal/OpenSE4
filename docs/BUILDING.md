@@ -252,8 +252,15 @@ natively instead. Either way they come from the `dist-windows` preset:
 Each package holds `opense4`, `opense4-server`, `opense4-datacheck`, `opense4-convert` and `opense4-sdk`,
 stripped, with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans,
 SIL Open Font License) are built into the game, so nothing else needs to sit next to it. The modding SDK's
-documentation (`docs/sdk`) and example mods (`mods/examples`) go into `sdk/docs` and `sdk/examples` beside the
-programs, where `opense4-sdk new --from-example` finds the examples.
+documentation (`docs/sdk`, with the SDK's design, `docs/MODDING_SDK.md`, which its pages cite) and example mods
+(`mods/examples`) go into `sdk/docs` and `sdk/examples` beside the programs, where `opense4-sdk new --from-example`
+finds the examples. `tools/stage_sdk_docs.py` copies them and rewrites the links of their pages, the README's
+and the bundled mods' (below) that would not work there: a link to a file the package has leads to its copy (from
+`sdk/docs/README.md`, `../../mods/examples/new-hull/` becomes `../examples/new-hull/`), and one to any other file
+of the source tree (the specs, other docs, source files, the README's screenshots) leads to it on GitHub at the
+version's tag (`https://github.com/lowlevelmetal/OpenSE4/blob/v<version>/docs/spec/04-combat.md`, the version
+from `CMakeLists.txt`), with its heading anchor. The repository's files stay as they are, and a test
+(`tests/sdk/test_sdk_guide.cpp`) stages them and follows every link.
 The mods that come with OpenSE4 (Hegemon) go into `mods/` beside the programs: the folders of `mods/` that
 `mods/bundled.txt` names, one a line, each with the files git tracks in it (so that every package of a version
 has the same files, and so the same mod identity, wherever it is built; uncommitted changes are packaged, untracked
@@ -266,7 +273,7 @@ OpenSE4-<version>-linux-x86_64/          (the same in the ARM packages and, with
   opense4  opense4-server  opense4-datacheck  opense4-convert  opense4-sdk
   README.md  LICENSE  THIRD_PARTY_NOTICES.txt
   mods/hegemon/            the mods that come with OpenSE4
-  sdk/docs/  sdk/examples/ the modding SDK's guide and example mods
+  sdk/docs/  sdk/examples/ the modding SDK's guide (with MODDING_SDK.md) and example mods
   share/  install-desktop-entry.sh   (Linux only)
 ```
 The Linux package also holds the desktop entry, icons and AppStream metadata under
@@ -298,7 +305,8 @@ Requirements beyond a normal build:
 
 - network access the first time (SDL3 is fetched and built as a static library, and
   the Windows toolchain is fetched into `build/_tools`);
-- `python3` for the Windows import check;
+- `python3` to stage the SDK's documentation (`tools/stage_sdk_docs.py`, every package) and for the
+  Windows import check;
 - `bsdtar` for the zip file;
 - NSIS or Wine for the installer (see "The Windows installer"), and Wine to run the
   Windows tests on Linux.

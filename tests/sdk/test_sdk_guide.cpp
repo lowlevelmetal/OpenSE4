@@ -3,15 +3,18 @@
 // classic data set only show that their patches read), and on the installed game when
 // OPENSE4_CLASSIC_DATA is set; new --from-example copies one; the API reference and the
 // examples' pictures and sounds are those their tools make; the guide's links lead
-// somewhere; and the docs' TOML and JSON examples read as the files they show
-// (the Python examples are checked in test_sdk_python.cpp).
+// somewhere, and so do those of the release packages' copy (tools/stage_sdk_docs.py);
+// and the docs' TOML and JSON examples read as the files they show (the Python examples
+// are checked in test_sdk_python.cpp).
 
 #include "bots_fixture.hpp"
 #include "mod_fixture.hpp"
 
 #include "mods/manifest.hpp"
+#include "mods/mod_set.hpp"
 #include "mods/package.hpp"
 #include "mods/patch.hpp"
+#include "net/types.hpp"
 #include "ruleset/ruleset.hpp"
 #include "script/json.hpp"
 #include "sdk/scenario.hpp"
@@ -254,9 +257,12 @@ std::set<std::string> anchorsOf(const fs::path& file) {
     return found;
 }
 
+// Which links linksOf finds: those to paths (relative), or web addresses.
+enum class Links { Relative, Web };
+
 // The Markdown links of a file outside code (fenced blocks and `inline code`), with
-// their lines: (line, target as written).
-std::vector<std::pair<int, std::string>> linksOf(const fs::path& file) {
+// their lines: (line, target as written). tools/stage_sdk_docs.py finds them the same way.
+std::vector<std::pair<int, std::string>> linksOf(const fs::path& file, Links kind = Links::Relative) {
     std::vector<std::pair<int, std::string>> out;
     bool code = false;
     int n = 0;
@@ -275,7 +281,8 @@ std::vector<std::pair<int, std::string>> linksOf(const fs::path& file) {
             const size_t end = line.find(')', at + 2);
             if (end == std::string::npos) break;
             const std::string target = line.substr(at + 2, end - at - 2);
-            if (target.empty() || target.starts_with("http") || target.starts_with("mailto:") || target.find(' ') != std::string::npos) continue;
+            if (target.empty() || target.starts_with("mailto:") || target.find(' ') != std::string::npos) continue;
+            if (target.starts_with("http") != (kind == Links::Web)) continue;
             out.emplace_back(n, target);
         }
     }
@@ -330,6 +337,103 @@ TEST_CASE("sdk guide: the docs' links lead to files and headings that are there,
     for (const auto& e : fs::recursive_directory_iterator(docs))
         if (e.path().extension() == ".md")
             CHECK_MESSAGE(reached.contains(e.path().lexically_normal()), fs::relative(e.path(), sourceRoot()).generic_string() << " is not linked from docs/sdk/README.md or a page it leads to");
+}
+
+TEST_CASE("sdk guide: a package's copy of the docs links to its own files and headings, and the rest to GitHub at the version's tag") {
+    const auto python = cpythonExe();
+    if (!python) {
+        MESSAGE("python3 (3.10 or newer) is not installed: skipped");
+        return;
+    }
+    // A package's folder with the README, the licence and the mods that come with
+    // OpenSE4 in it, as tools/package_release.sh stages them before the SDK's files.
+    TempDir dir("sdk_guide_package");
+    const fs::path stage = dir.path() / "OpenSE4";
+    fs::create_directories(stage / "mods");
+    for (const char* file : {"README.md", "LICENSE"}) fs::copy_file(sourceRoot() / file, stage / file);
+    const std::vector<std::string> bundled = mods::readBundledList(sourceRoot() / "mods" / std::string(mods::kBundledListFile));
+    REQUIRE_FALSE(bundled.empty());
+    for (const std::string& name : bundled) fs::copy(sourceRoot() / "mods" / name, stage / "mods" / name, fs::copy_options::recursive);
+    const Ran staged = runProgram({*python, "-B", (sourceRoot() / "tools" / "stage_sdk_docs.py").string(), stage.string()});
+    REQUIRE_MESSAGE(staged.code == 0, staged.out);
+
+    // Every page of docs/sdk is there, with the SDK's design they cite, and every example.
+    const fs::path docs = sourceRoot() / "docs" / "sdk";
+    for (const auto& e : fs::recursive_directory_iterator(docs))
+        if (e.is_regular_file()) CHECK_MESSAGE(fs::exists(stage / "sdk" / "docs" / fs::relative(e.path(), docs)), e.path().string());
+    CHECK(fs::exists(stage / "sdk" / "docs" / "MODDING_SDK.md"));
+    CHECK(fs::exists(stage / "sdk" / "examples" / "small-ai" / "mod.toml"));
+
+    // The links of the staged pages: those to paths lead to files and headings of the
+    // package, those to the repository to files (raw/ for pictures), folders and headings
+    // of this source tree at its version's tag. None is lost: the sources have as many.
+    const std::string repository = "https://github.com/lowlevelmetal/OpenSE4/";
+    const std::string tag = "v" + std::string(net::appVersion().substr(std::string_view("OpenSE4 ").size())) + "/";
+    size_t inPackage = 0, onGitHub = 0, links = 0;
+    for (const auto& e : fs::recursive_directory_iterator(stage)) {
+        if (e.path().extension() != ".md") continue;
+        const fs::path& f = e.path();
+        for (const auto& [n, link] : linksOf(f)) {
+            std::string target = link, anchor;
+            if (const size_t hash = target.find('#'); hash != std::string::npos) {
+                anchor = target.substr(hash + 1);
+                target = target.substr(0, hash);
+            }
+            const fs::path file = target.empty() ? f : (f.parent_path() / target).lexically_normal();
+            const std::string where = std::format("{}:{}: ({})", fs::relative(f, stage).generic_string(), n, link);
+            ++inPackage;
+            const fs::path inside = file.lexically_relative(stage.lexically_normal());
+            if (inside.empty() || *inside.begin() == ".." || !fs::exists(file)) {
+                CHECK_MESSAGE(false, where << ": not in the package");
+                continue;
+            }
+            if (!anchor.empty() && file.extension() == ".md") CHECK_MESSAGE(anchorsOf(file).contains(anchor), where << ": no such heading");
+        }
+        for (const auto& [n, link] : linksOf(f, Links::Web)) {
+            ++links;
+            if (!link.starts_with(repository)) continue;
+            std::string rest = link.substr(repository.size()), anchor;
+            if (const size_t hash = rest.find('#'); hash != std::string::npos) {
+                anchor = rest.substr(hash + 1);
+                rest = rest.substr(0, hash);
+            }
+            // A file (blob/, raw/ for pictures) or a folder (tree/); not another page of
+            // the repository's, such as its releases or the README's CI badge.
+            const size_t slash = rest.find('/');
+            const std::string kind = rest.substr(0, slash);
+            if (slash == std::string::npos || (kind != "blob" && kind != "tree" && kind != "raw")) continue;
+            ++onGitHub;
+            const std::string where = std::format("{}:{}: ({})", fs::relative(f, stage).generic_string(), n, link);
+            rest = rest.substr(slash + 1);
+            if (!rest.starts_with(tag)) {
+                CHECK_MESSAGE(false, where << ": not at " << tag);
+                continue;
+            }
+            const fs::path file = sourceRoot() / rest.substr(tag.size());
+            if (!fs::exists(file)) {
+                CHECK_MESSAGE(false, where << ": no such file in the source tree");
+                continue;
+            }
+            const bool folder = kind == "tree";
+            CHECK_MESSAGE(fs::is_directory(file) == folder, where << std::string(folder ? ": a file, not a folder" : ": a folder, not a file"));
+            const bool picture = std::set<std::string>{".png", ".webp", ".jpg", ".jpeg", ".gif", ".svg"}.contains(file.extension().string());
+            CHECK_MESSAGE(picture == (kind == "raw"), where << std::string(picture ? ": a picture shows from raw/" : ": raw/ is for pictures"));
+            if (!anchor.empty() && file.extension() == ".md") CHECK_MESSAGE(anchorsOf(file).contains(anchor), where << ": no such heading");
+        }
+    }
+    links += inPackage;
+    CHECK(inPackage > 300);
+    CHECK(onGitHub > 50);
+
+    std::vector<fs::path> sources{sourceRoot() / "README.md", sourceRoot() / "docs" / "MODDING_SDK.md"};
+    std::vector<fs::path> folders{docs, sourceRoot() / "mods" / "examples"};
+    for (const std::string& name : bundled) folders.push_back(sourceRoot() / "mods" / name);
+    for (const fs::path& folder : folders)
+        for (const auto& e : fs::recursive_directory_iterator(folder))
+            if (e.path().extension() == ".md") sources.push_back(e.path());
+    size_t sourceLinks = 0;
+    for (const fs::path& f : sources) sourceLinks += linksOf(f).size() + linksOf(f, Links::Web).size();
+    CHECK(links == sourceLinks);
 }
 
 namespace {
