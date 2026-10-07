@@ -14,6 +14,7 @@ What gets built:
 | `opense4-server` | Dedicated multiplayer host, and the PBEM turn processor |
 | `opense4-datacheck` | Loads and validates an installed or modded classic data set |
 | `opense4-convert` | Converts saved games between the original's format and OpenSE4's, and describes the original's (see "Saved games of the original") |
+| `opense4-sdk` | The modding SDK's tool: makes, checks, tests, dumps and packs mods, plays the arena and external bots ([docs/sdk/README.md](sdk/README.md)) |
 | `opense4-observe` | Linux-only harness for observing the original game (see docs/CLEANROOM.md) |
 | `opense4_tests` | Unit tests. They use only our own fixtures |
 
@@ -29,8 +30,10 @@ What gets built:
 
 CMake fetches the remaining dependencies at pinned versions with verified hashes:
 
-- Dear ImGui, volk, VMA, toml++, stb, dr_mp3 (music) and doctest;
+- Dear ImGui, volk, VMA, toml++, stb (pictures, and OGG Vorbis for mods), dr_mp3 (music)
+  and doctest;
 - Monocypher, the cryptography of encrypted network games and signed e-mail orders;
+- miniz, which reads and writes mod packages as `.zip` files;
 - miniupnpc, for automatic router port forwarding.
 
 The first configure therefore needs network access. Later builds do not.
@@ -178,8 +181,16 @@ their `-static` builds; Debian and Ubuntu: `qemu-user`). The toolchain file make
 CMake's emulator, so `ctest` uses it; by hand, `-L` names the target's C library:
 
 ```sh
-qemu-arm -L /usr/arm-linux-gnueabihf build/dist-linux-armhf/tests/opense4_tests
+OPENSE4_TEST_RUNNER="qemu-arm -L /usr/arm-linux-gnueabihf" \
+    qemu-arm -L /usr/arm-linux-gnueabihf build/dist-linux-armhf/tests/opense4_tests
 ```
+
+Some of the modding SDK's tests start `opense4-sdk`. `OPENSE4_TEST_RUNNER` names the
+emulator command to start it with (the same as the tests' own) and tells the tests that they
+run under an emulator: those that start several of our programs talking to each other
+(external bots, the arena, the example mods' games) are then skipped.
+`tools/package_release.sh` and CI's armhf job set it; `ctest` does not, so run a cross
+build's tests by hand as above.
 
 Under QEMU an optimized build runs the suite much faster than a debug build: about a
 minute and a half in four processes (`.github/scripts/run_tests_parallel.sh`) on a
@@ -220,7 +231,7 @@ hundreds of fused instructions in it).
 | `OPENSE4_ENABLE_UPNP` | ON | Build with miniupnpc. OFF compiles a no-op port mapper |
 | `OPENSE4_STATIC` | OFF | Link statically for redistribution (the `dist-*` presets) |
 | `OPENSE4_EMBED_RESOURCES` | ON | Build our fonts into the executable; files on disk still win |
-| `OPENSE4_DEV_PATHS` | ON | Let the client find `assets/` in the source tree. The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
+| `OPENSE4_DEV_PATHS` | ON | Let the programs fall back to the source tree: the client's `assets/` and learning content, and the mods that come with OpenSE4 (`mods/`, when no `mods/` is beside the programs). The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
 
 The code must compile without warnings under
 `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (`/W4` on MSVC).
@@ -492,7 +503,7 @@ cmake --preset debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
 ```
 
 The dependency names are `IMGUI`, `VOLK`, `VMA`, `VULKANHEADERS`, `TOMLPLUSPLUS`,
-`STB`, `DRLIBS`, `MONOCYPHER`, `DOCTEST` and `MINIUPNPC`. MicroPython needs nothing:
+`STB`, `DRLIBS`, `MONOCYPHER`, `MINIZ`, `DOCTEST` and `MINIUPNPC`. MicroPython needs nothing:
 it is in the source tree. The sources for each dependency are also under
 `build/<preset>/_deps/<name>-src` after any online configure. You can reuse them for other build directories or worktrees
 with `FETCHCONTENT_SOURCE_DIR_<NAME>`.
@@ -505,7 +516,7 @@ with `FETCHCONTENT_SOURCE_DIR_<NAME>`.
 OPENSE4_CLASSIC_DATA=auto ./build/debug/tests/opense4_tests  # + checks against your install
 ```
 
-By default the tests use only the original fixtures in `tests/fixtures/` and
+By default the tests use only our own fixtures in `tests/fixtures/` and
 `tests/engine_fixture.cpp`. The modding SDK's tests also run `opense4-sdk` and
 `opense4-server` (built with the tests) and, where Python 3.10 or newer is installed as
 `python3` (or `python`), the `opense4` package under CPython: external bots against the
@@ -514,6 +525,31 @@ Python they are skipped, with a message. Setting `OPENSE4_CLASSIC_DATA` to `auto
 directory, also runs checks against your installed game data. Those checks never
 copy anything into the repository. Each test run uses a scratch user data folder
 (`OPENSE4_USER_DIR`), so tests never touch your own settings, saves or history.
+
+**The modding SDK's tests** are part of `opense4_tests` (`tests/sdk`, most of them named
+`sdk ...` or `script ...`: `-tc="sdk*,script*"`). Besides the engine's side, they run the
+`opense4` package's own tests in the game's MicroPython and, where CPython is installed,
+again under CPython with the same results; check the generated parts of the package and the
+API reference against their sources; check the examples of the SDK's documentation
+(`tests/sdk/python/check_doc_snippets.py`, docs/sdk/README.md); run `check` and `test` on
+every example mod; and play the bundled Hegemon. With `OPENSE4_CLASSIC_DATA` they also check
+the example mods and Hegemon on your install. By hand:
+
+```sh
+python3 tools/gen_sdk_python.py --check        # the package's generated modules match docs/sdk/view.md and commands.md
+python3 tools/gen_sdk_reference.py --check     # docs/sdk/reference matches python/opense4 (without --check: rewrite it)
+python3 tools/make_example_assets.py --check   # the example mods' pictures and sounds
+OPENSE4_SDK_FIXTURES_OUT=/tmp/fx.json ./build/debug/tests/opense4_tests -tc="sdk python: the package's tests pass in the game's runtime"
+python3 tests/sdk/python/run_sdk_tests.py --fixtures /tmp/fx.json      # the package's tests under CPython (or pytest, with OPENSE4_SDK_FIXTURES=/tmp/fx.json)
+python3 tests/sdk/python/check_doc_snippets.py --fixtures /tmp/fx.json # the docs' examples
+./build/debug/opense4-sdk test mods/hegemon                             # a mod's own tests and games, on your install
+```
+
+A change to the SDK must leave games without mods as they were: hashed at save format 8
+(`serial::hash(state, 8)` in place of `stateChecksum`'s format, for the check), they give the
+determinism goldens recorded before the SDK, which `test_determinism.cpp` now holds at format 9
+(docs/MODDING_SDK.md §14.4). `tools/update_micropython.sh` regenerates the interpreter's
+sources (see "MicroPython").
 
 `test_xmath.cpp` checks the emulated x87 arithmetic of the rules against exact
 arithmetic in multi-word integers on every compiler, and against the x87 itself on x86
@@ -690,6 +726,8 @@ recorder is tested.
 | `only-latest.script` | The Only Latest boxes of Set Construction Queue and Create Design write the Empire Options rows |
 | `colonize-pick.script`, `follow-warp.script` | On a training game of our own in `tests/input/learn-orders` (two colony ships at home): Colonize's Pick Object window and Cancel, a wrong pick failing on arrival with the "Colonize" message box, the moons settled, population moved between them with Cargo Transfer; a warp the view follows to the arrival system |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
+| `classic-save.script` | Games of the original: Save Game's *Save for SE IV* writing the game into the saves folder's "Space Empires IV" folder, Load Game's Change Directory finding it there, and loading it, with the note of what came across only approximately (docs/SETUP.md "Games of the original") |
+| `save-typed-name.script` | Save Game keeping the name typed into its field when Save is clicked instead of pressing Enter |
 | `game-setup.script` | The setup screens: Load Game with Change Directory, Quick Start's picker, Game Setup's pages, Add New with a name from the list picker and an e-mail address, Begin Game, and Change Email in Empire Status |
 | `mods-window.script` | The Mods window on the fixture mods of `tests/fixtures/mods` alone (`--mods-dir`, `--no-bundled-mods`): each mod's details, enabling by button and double click, a requirement missing then met, the order and Move Up, Done refused with the reason when a patch does not fit the installed data, then Done reading the data again; Cancel keeping the choice (docs/sdk/packages-and-data.md "Choosing mods in the game") |
 | `mods-bundled.script` | The mods that come with OpenSE4 (`mods/bundled.txt`; a developer build reads the source tree's `mods/`, a release the `mods/` beside it): with an empty mods folder of its own, the Mods window lists Hegemon, off, marked as coming with OpenSE4, with its computer player; Enable and Done, the window again with it on; Quick Start's Computer Players offering Hegemon. Play it with `--exe` on a staged package to check the package's layout |
@@ -711,6 +749,9 @@ folder made from `tests/fixtures` (CI). Scripts marked `# layouts: both` also pl
 against a dedicated host: `tools/run_input_tests.py` starts `opense4-server` from the client's
 folder with ARGS (paths from the repository's root) on a free port of 127.0.0.1, and the
 client joins its lobby (`--open=multiplayer:join=...`); the server stops when the script ends.
+A script that hosts a game itself types `{free_port}` where it needs a port: the runner puts
+a free port of this computer there for each run, so runs played at the same time (both
+layouts, `--jobs`) never meet.
 
 ### The format
 
@@ -821,8 +862,14 @@ input scripts CI plays run on a game folder made from our own test fixtures.
 | macOS / Apple Clang debug | The `debug` preset on Apple silicon (`macos-latest`) with Apple Clang, libc++ and Homebrew's SDL3, warnings as errors; the unit tests |
 | Windows / MSVC release (VS 2022), (VS 2026) | The `release` preset with Visual Studio 2022 (on `windows-2022`) and Visual Studio 2026 (on `windows-2025`) and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
 | Windows / llvm-mingw package (Windows 7 to 11) | `tools/package_release.sh windows` on Ubuntu, as for a release (`dist-windows`, warnings as errors): the cross build with llvm-mingw, the Windows 7 import check of every program, the unit tests under Wine (Ubuntu's Wine, set to Windows 7 SP1), the zip file and the installer (Ubuntu's NSIS), kept as the run's `opense4-windows` artifact |
-| Windows / installer | Installs that installer silently (`/S`) on Windows Server 2025, checks the files, shortcuts and Apps & features entry, starts the installed programs, has the data checker read our fixture data set, and uninstalls silently, checking that nothing is left |
-| Linux / input scripts (fixture data) | Builds the client and the dedicated server (`debug`, GCC) and plays the input scripts marked `# ci: fixture-data` (the manual, the Learn window, a training game's results, sliders, the setup screens, network lobbies with computer players of a mod) with `tools/run_input_tests.py --fixture-data --small` (those marked for both layouts also at 800x600): headless (SDL's offscreen driver) on Mesa's software OpenGL (llvmpipe), on the minimal data set and pictures of `tests/fixtures` with our built-in learning content. A failed run keeps its pictures as the `input-scripts-failure` artifact |
+| Windows / installer | Installs that installer silently (`/S`) on Windows Server 2025, checks the files (`opense4-sdk.exe`, `sdk\`, `mods\hegemon` among them), shortcuts and Apps & features entry, starts the installed programs, has `opense4-sdk info opense4.hegemon` find the bundled mod by id and the data checker read our fixture data set, and uninstalls silently, checking that nothing is left |
+| Linux / input scripts (fixture data) | Builds the client and the dedicated server (`debug`, GCC) and plays the input scripts marked `# ci: fixture-data` (the manual, the Learn window, a training game's results, sliders, the setup screens, saving for the original and a typed save name, the mods that come with OpenSE4 in the Mods window, network lobbies with a mod's computer players and options) with `tools/run_input_tests.py --fixture-data --small` (those marked for both layouts also at 800x600): headless (SDL's offscreen driver) on Mesa's software OpenGL (llvmpipe), on the minimal data set and pictures of `tests/fixtures` with our built-in learning content. A failed run keeps its pictures as the `input-scripts-failure` artifact |
+
+Each job has a time limit: an hour for the Linux debug and sanitizer builds, the armhf
+build under QEMU and the Visual Studio builds, whose test runs the SDK's script and game tests
+made long; 45 minutes for the Windows package; 30 for the arm64, macOS and input-script jobs;
+15 for the installer. The release workflow allows 45 minutes for each Linux and the Windows
+package, an hour for armhf and 10 for the checksums.
 
 The Linux and macOS jobs run the tests in one process per core
 (`.github/scripts/run_tests_parallel.sh`). The jobs keep the compiler's output
@@ -892,7 +939,8 @@ SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --load=/path/to/GAME.gam --turn
 Without an installed copy the client logs why and exits with status 1.
 
 Screenshot runs use a fixed frame time and keep the pointer off the window, so the same
-command gives the same picture on every machine. `--select=moving` (or `fleet`, or a
+command gives the same picture on every machine; `--frames=N` picks the frame captured
+(default 10). `--select=moving` (or `fleet`, or a
 vehicle id) selects one of your vehicles after `--turns`, for example to show its
 movement line. The Windows build renders headless under Wine too, with Vulkan:
 
