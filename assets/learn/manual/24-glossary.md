@@ -35,6 +35,7 @@ Short explanations of the game's terms, with the chapter that tells you more.
 | Maintenance | The upkeep your ships and bases cost every turn. See [Economy](economy#maintenance). |
 | Militia | Defenders raised from a planet's people when it is invaded. |
 | Minister | A part of the computer that runs part of your empire for you. See [Computer players and ministers](computer-players-and-ministers). |
+| Mod | A package laid over your copy of the game: pictures and sounds, changes to the data, computer players or new rules. OpenSE4 comes with one, Hegemon, a computer player. See [Settings](settings#mods). |
 | Mothball | Store a ship out of service, with no upkeep. |
 | Mount | A variant of a weapon component with more damage, range or accuracy, for larger hulls. |
 | Movement points | How many sectors a ship can move in a turn: its speed. |
