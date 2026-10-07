@@ -83,6 +83,7 @@ may not.
 | Rules specs, in our own words | `docs/spec/` | yes |
 | Classic-format data reader (interop) | `src/datafile/`, `src/ruleset/` | yes |
 | Our own test fixtures (invented content) | `tests/fixtures/` | yes |
+| The mods that come with OpenSE4 and the SDK's example mods: our own code and content (example pictures and sounds drawn by `tools/make_example_assets.py`; data patches name the original's records and fields only by their identifiers, never copy their values) | `mods/` | yes |
 | Screenshots and notes from the player's copy | `reference/` | **no**, gitignored |
 | The README's screenshots of OpenSE4 running on the player's copy (an exception the owner made on 2026-10-03; they show the original's art) | `docs/screenshots/` | yes |
 | Analysis projects, listings, raw reverse-engineering notes | `reference/re/` | **no**, gitignored |

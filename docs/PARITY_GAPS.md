@@ -45,7 +45,21 @@ colony's never-reset counts of destroyed facilities (`Colony::destroyedFacilitie
 removal pass after sabotage or an event takes them off again (spec 08 §11.2), and the
 original's saved games carry them both ways. Battles still remove what they destroyed
 once, the choice of spec 04 §19.1, and OpenSE4 has no hazard damage to colonies.
-The save format is 8 and the network protocol 6 since then.
+The save format became 8 and the network protocol 6 then; the modding SDK made them 9 and 7
+in 0.11.0 (docs/MULTIPLAYER.md "Protocol").
+
+**Mods** are an OpenSE4 addition ([MODDING_SDK.md](MODDING_SDK.md)) and change only the
+games played with them. A game without mods plays as it did before the SDK: no script
+runs, and hashed at save format 8 it gives the checksums recorded before the SDK. The
+original's own mods (replacement data files and pictures) load as packages, so they no
+longer need a copied game folder. A game played with mods is written for the original
+(Save for SE IV, `opense4-convert`) while everything it uses fits the original's format,
+with a note that the original plays it the same only on the same data
+(`opense4-sdk dump`); one that uses what the original cannot hold (ability names mods
+declare, their computer players or rules scripts, a design's own picture the install does
+not have) is refused with the reason (docs/sdk/guide/multiplayer-and-saves.md "Saving for
+the original"). Hegemon, the computer player that comes with OpenSE4, is such a mod and
+off by default; the classic AI stays the one this page compares.
 
 ## Economy and population (spec 02)
 
