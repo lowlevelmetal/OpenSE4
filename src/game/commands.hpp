@@ -58,6 +58,12 @@ struct SetFleetOptions { FleetId fleet; uint32_t formation = 0; uint32_t strateg
 // formation.
 struct SetFleetLeader { FleetId fleet; VehicleId vehicle; };
 struct SetVehicleStrategy { DesignId design; uint32_t strategy = 0; };
+// A vehicle, fleet or colony takes a name no space object of the game has
+// (ships, bases, unit groups, planets, stars, warp points and the rest, of
+// every empire; spec 03 §8 Change Name, confirmed: binary): exactly, case
+// counting. Fleets' names are not compared. Its own name again changes
+// nothing (OpenSE4's choice: the original refuses it as in use). A design
+// keeps the rule of spec 03 §4.1 instead.
 struct Rename {              // vehicle, fleet, design or planet
     VehicleId vehicle;
     FleetId fleet;
@@ -88,7 +94,10 @@ struct Mothball { VehicleId vehicle; bool mothball = true; };   // Mothball, or 
 struct Analyze { VehicleId vehicle; };
 struct SelfDestruct { VehicleId vehicle; };
 struct FireOn { VehicleId vehicle; };
-struct SetMinister { VehicleId vehicle; ObjectId planet; bool empireWide = false; bool on = true; };
+// Toggle Minister Control (spec 03 §8): a vehicle's or colony's flag, or the
+// empire-wide one. For a fleet (`fleet`) the fleet's own flag, given to every
+// member at the fleet's location (confirmed: binary).
+struct SetMinister { VehicleId vehicle; ObjectId planet; bool empireWide = false; bool on = true; FleetId fleet; };
 // Turn-based games: the answer to the Attack Sector question (spec 03 §6.2).
 // A move of the vehicle (or fleet) stopped before a sector with enemies;
 // `enter` carries it on into that sector and its battle, otherwise the move
@@ -207,6 +216,9 @@ enum class DemandList : uint8_t { War, Break, Peace };
 struct UseDemandEntry { DemandList list = DemandList::War; EmpireId about; };
 
 // ---- Empire-wide lists ------------------------------------------------------------------------
+// Slot 0..9 holds waypoint 1..10 (keys 1..9 and 0, spec 03 §8.1). Clearing a
+// slot (no `waypoint`) also clears every own construction queue's automatic
+// Move To that names it (confirmed: binary).
 struct SetWaypoint { int slot = 0; std::optional<Waypoint> waypoint; };
 struct SetSystemFlags { SystemId system; std::optional<bool> avoid; std::optional<bool> claim; };
 struct SetSystemNote { SystemId system; std::string note; };
@@ -310,6 +322,13 @@ std::string_view commandName(const Command& c);
 // (spec 05 §9.2: the objects that got a command or a queue change; which
 // commands count is inferred).
 std::vector<ObjectId> coloniesNamed(std::span<const Command> commands);
+
+// Change Name's test (cmd::Rename, spec 03 §8): some space object of the
+// game, of any empire, has exactly this name (case counting): a ship, base or
+// unit group, or a planet, star, warp point or other stellar object. Fleets'
+// names are not space objects' names. `kNameInUse` is the refusal's reason.
+bool spaceObjectNameInUse(const GameState& s, std::string_view name);
+inline constexpr std::string_view kNameInUse = "That name is already in use.";
 
 // Scrap-window values shared with the UI (spec 03 §15): round(design cost × P %)
 // per resource; a fighter or satellite group returns that per unit.

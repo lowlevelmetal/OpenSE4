@@ -388,15 +388,23 @@ struct Applier {
         return {};
     }
 
+    // Change Name (spec 03 §8, confirmed: binary): the new name of a vehicle,
+    // a fleet or a colony may be no space object's name in the game, of any
+    // empire, the object's own included; fleets' names are not compared. The
+    // object's own name again is no change and is accepted (OpenSE4's
+    // choice: the original refuses it too, as in use).
     R operator()(const cmd::Rename& c) {
         if (c.name.empty() || c.name.size() > 64) return R::fail("Invalid name");
+        auto inUse = [&](const std::string& current) { return c.name != current && spaceObjectNameInUse(s, c.name); };
         if (c.vehicle.valid()) {
             Vehicle* v = ownVehicle(s, e, c.vehicle);
             if (!v) return R::fail("Not your vehicle");
+            if (inUse(v->name)) return R::fail(std::string(kNameInUse));
             v->name = c.name;
         } else if (c.fleet.valid()) {
             Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
+            if (inUse(f->name)) return R::fail(std::string(kNameInUse));
             f->name = c.name;
         } else if (c.design.valid()) {
             if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
@@ -405,6 +413,7 @@ struct Applier {
             s.design(c.design).name = c.name;
         } else if (c.planet.valid()) {
             if (!ownColony(s, e, c.planet)) return R::fail("Not your planet");
+            if (inUse(s.galaxy.object(c.planet).name)) return R::fail(std::string(kNameInUse));
             s.galaxy.object(c.planet).name = c.name;
         } else {
             return R::fail("Nothing to rename");
@@ -486,9 +495,16 @@ struct Applier {
         return {};
     }
 
+    // Toggle Minister Control (spec 03 §8, confirmed: binary). For a fleet
+    // the fleet's own flag, and every member at the fleet's location gets it.
     R operator()(const cmd::SetMinister& c) {
         if (c.empireWide) {
             emp().ministerAll = c.on;
+        } else if (c.fleet.valid()) {
+            Fleet* f = ownFleet(s, e, c.fleet);
+            if (!f) return R::fail("Not your fleet");
+            f->minister = c.on;
+            for (VehicleId id : fleetGroup(s, *f)) s.vehicle(id)->minister = c.on;
         } else if (c.vehicle.valid()) {
             Vehicle* v = ownVehicle(s, e, c.vehicle);
             if (!v) return R::fail("Not your vehicle");
@@ -1019,6 +1035,15 @@ struct Applier {
         if (c.waypoint && !knownSystem(s, c.waypoint->location.system)) return R::fail("Invalid location");
         emp().waypoints[static_cast<size_t>(c.slot)] = c.waypoint ? *c.waypoint : Waypoint{};
         if (c.waypoint) emp().waypoints[static_cast<size_t>(c.slot)].set = true;
+        // Deleting a waypoint clears every own queue's automatic Move To that
+        // names it, colonies' and space yard vehicles' alike (spec 03 §8.1,
+        // confirmed: binary).
+        if (!c.waypoint) {
+            for (auto& col : s.colonies)
+                if (col && col->owner == e && col->queue.autoWaypoint == c.slot) col->queue.autoWaypoint = -1;
+            for (Vehicle& v : s.vehicles)
+                if (v.owner == e && v.queue.autoWaypoint == c.slot) v.queue.autoWaypoint = -1;
+        }
         return {};
     }
 
@@ -1323,6 +1348,16 @@ std::vector<ObjectId> coloniesNamed(std::span<const Command> commands) {
             },
             c);
     return out;
+}
+
+bool spaceObjectNameInUse(const GameState& s, std::string_view name) {
+    for (const Vehicle& v : s.vehicles)
+        if (v.count > 0 && v.name == name) return true;
+    // The stellar objects still in a system (a destroyed one has left its system's list).
+    for (const StarSystem& sys : s.galaxy.systems)
+        for (ObjectId id : sys.objects)
+            if (s.galaxy.object(id).name == name) return true;
+    return false;
 }
 
 Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {

@@ -208,7 +208,10 @@ Sets the combat strategy every vehicle of one of our designs uses.
 
 ### `rename`
 
-Renames one of our vehicles, fleets, designs or colonies (name one).
+Renames one of our vehicles, fleets, designs or colonies (name one). A
+vehicle, fleet or colony cannot take a name some ship, unit group, planet,
+star or other space object of the game already has (exactly, case counting);
+its own name again changes nothing.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -312,7 +315,8 @@ Scrap window action like `scrap`.
 ### `set_minister`
 
 Puts a vehicle or colony under its minister (the computer controls it), or
-takes it back; `empire_wide` does the same for everything of ours.
+takes it back; `empire_wide` does the same for everything of ours. For a
+fleet, the fleet's own flag, and every member at the fleet's location gets it.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -320,6 +324,7 @@ takes it back; `empire_wide` does the same for everything of ours.
 | `planet` | object id, or null | Or a colony, by its planet. |
 | `empire_wide` | bool | Every vehicle and colony at once. |
 | `on` | bool | Minister control on (the default) or off. |
+| `fleet` | fleet id, or null | Or a fleet. |
 
 ```json
 {"kind": "set_minister", "vehicle": 31, "on": true}
@@ -696,7 +701,7 @@ Sets or clears one of the ten waypoints.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `slot` | int | 0 to 9. |
+| `slot` | int | 0 to 9: waypoint 1 to 10 (slot 9 is waypoint 10). Clearing a slot also clears every queue's automatic Move To naming it. |
 | `waypoint` | waypoint, or null | The waypoint; null clears the slot. |
 
 ```json

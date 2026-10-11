@@ -251,14 +251,16 @@ def retrofit(vehicle: Optional[Ref] = None, design: Optional[Ref] = None) -> Dic
     }
 
 
-def set_minister(vehicle: Optional[Ref] = None, planet: Optional[Ref] = None, empire_wide: bool = False, on: bool = True) -> Dict[str, Any]:
+def set_minister(vehicle: Optional[Ref] = None, planet: Optional[Ref] = None, empire_wide: bool = False, on: bool = True, fleet: Optional[Ref] = None) -> Dict[str, Any]:
     """Puts a vehicle or colony under its minister (the computer controls it), or takes it back;
-    empire_wide does the same for everything of ours.
+    empire_wide does the same for everything of ours. For a fleet, the fleet's own flag, and every
+    member at the fleet's location gets it.
 
     vehicle: A vehicle.
     planet: Or a colony, by its planet.
     empire_wide: Every vehicle and colony at once.
     on: Minister control on (the default) or off.
+    fleet: Or a fleet.
     """
     return {
         'kind': 'set_minister',
@@ -266,6 +268,7 @@ def set_minister(vehicle: Optional[Ref] = None, planet: Optional[Ref] = None, em
         'planet': _id(planet, 'object', 'set_minister.planet'),
         'empire_wide': _bool(empire_wide, 'set_minister.empire_wide'),
         'on': _bool(on, 'set_minister.on'),
+        'fleet': _id(fleet, 'fleet', 'set_minister.fleet'),
     }
 
 
@@ -628,7 +631,8 @@ def use_demand_entry(list: str = 'war', about: Optional[Ref] = None) -> Dict[str
 def set_waypoint(slot: int = 0, waypoint: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Sets or clears one of the ten waypoints.
 
-    slot: 0 to 9.
+    slot: 0 to 9: waypoint 1 to 10 (slot 9 is waypoint 10). Clearing a slot also clears every
+        queue's automatic Move To naming it.
     waypoint: The waypoint; null clears the slot.
     """
     return {

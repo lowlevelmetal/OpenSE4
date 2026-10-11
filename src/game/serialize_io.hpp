@@ -605,7 +605,11 @@ template <class Ar> void io(Ar& ar, cmd::SetVehicleStrategy& c) { fields(ar, c.d
 template <class Ar> void io(Ar& ar, cmd::Rename& c) { fields(ar, c.vehicle, c.fleet, c.design, c.planet, c.name); }
 template <class Ar> void io(Ar& ar, cmd::Scrap& c) { fields(ar, c.vehicle, c.facilityPlanet, c.facilitySlot, c.moveFirst); }
 template <class Ar> void io(Ar& ar, cmd::Mothball& c) { fields(ar, c.vehicle, c.mothball); }
-template <class Ar> void io(Ar& ar, cmd::SetMinister& c) { fields(ar, c.vehicle, c.planet, c.empireWide, c.on); }
+template <class Ar>
+void io(Ar& ar, cmd::SetMinister& c) {
+    fields(ar, c.vehicle, c.planet, c.empireWide, c.on);
+    if (formatVersion(ar) >= 10) fields(ar, c.fleet);   // format 9 had no fleet's Toggle Minister Control
+}
 template <class Ar> void io(Ar& ar, cmd::QueueTarget& c) { fields(ar, c.planet, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::QueueAdd& c) { fields(ar, c.target, c.item, c.position); }
 template <class Ar> void io(Ar& ar, cmd::QueueRemove& c) { fields(ar, c.target, c.index); }
