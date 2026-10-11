@@ -218,12 +218,13 @@ std::vector<std::string> wrapWords(ImFont* font, float size, std::string_view te
 
 } // namespace
 
-int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<ProjectBox>& boxes, int* hovered) {
+int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<ProjectBox>& boxes, int* hovered, int* rightClicked) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImU32 edge = imColor(palette::kButton), white = IM_COL32_WHITE, label = imColor(palette::kLabel);
     const float px = ui.px(1);
     int clicked = -1;
     if (hovered) *hovered = -1;
+    if (rightClicked) *rightClicked = -1;
     for (size_t i = 0; i < boxes.size(); ++i) {
         const ProjectBox& b = boxes[i];
         const Vec2 o{at.x + 140.0f * float(i), at.y};
@@ -236,6 +237,7 @@ int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<Proj
             if (ImGui::InvisibleButton("##box", ImVec2(z.x - a.x, z.y - a.y))) clicked = int(i);
             over = ImGui::IsItemHovered();
             if (over && hovered) *hovered = int(i);
+            if (over && rightClicked && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) *rightClicked = int(i);
         } else {
             ImGui::Dummy(ImVec2(z.x - a.x, z.y - a.y));
         }
@@ -264,6 +266,23 @@ int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<Proj
         dl->AddRectFilled({sz.x - px, sa.y}, sz, edge);
         if (!filled) continue;
         if (!b.level.empty()) textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{3, 54}, white, b.level);
+        // An intelligence project's target at y 40, centred like the name
+        // (inferred), and "Against " with the target empire's flag, centred on x 65.
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        if (!b.target.empty()) {
+            const float w = ImGui::CalcTextSize(b.target.c_str()).x / ui.k();
+            textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{3 + std::max(0.0f, std::floor((135 - w) * 0.5f)), 40}, white, b.target);
+        }
+        if (!b.againstStyle.empty()) {
+            constexpr float kFlagW = 18, kFlagH = 13;
+            const float w = ImGui::CalcTextSize("Against ").x / ui.k();
+            const float x = std::floor(65 - (w + kFlagW) * 0.5f);
+            textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{x, 54}, label, "Against ");
+            if (const Sprite flag = ui.art.flag(b.againstStyle, false))
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(flag.tex.value)), d.at(o + Vec2{x + w, 54}), d.at(o + Vec2{x + w + kFlagW, 54 + kFlagH}),
+                             {flag.uv.min.x, flag.uv.min.y}, {flag.uv.max.x, flag.uv.max.y});
+        }
+        ImGui::PopFont();
         textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{3, 75}, label, "Completion:");
         textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{82, 75}, white, completionText(b.remaining, b.perTurn));
         textAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, o + Vec2{3, 87}, label, "Cost Per Turn:");

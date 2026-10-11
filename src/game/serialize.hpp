@@ -91,6 +91,7 @@ class Rules;
 // §3.6.7). Format 7 still reads, without them.
 // Version 10: the REA parity audit's state (listed as each change lands).
 // Format 9 still reads, without it.
+// - The Designs window's tab (InterfaceOptions::designsTab, spec 08 §3.6.7).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

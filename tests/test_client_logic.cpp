@@ -263,21 +263,28 @@ TEST_CASE("client logic: tech progress, ETA text and exports") {
 }
 
 TEST_CASE("client logic: intel project targets") {
+    // The second list window a project asks for (spec 05 §2.1, confirmed: binary).
     ruleset::IntelProject p;
-    p.type = "Intelligence Defense";
-    CHECK(intelTargetKind(p) == IntelTarget::None);
-    p.type = "Planet - Population Change";
-    CHECK(intelTargetKind(p) == IntelTarget::Planet);
-    p.type = "Planet - Locations";
-    CHECK(intelTargetKind(p) == IntelTarget::Empire);
-    p.type = "Ship - Rebel";
-    CHECK(intelTargetKind(p) == IntelTarget::Vehicle);
-    p.type = "Ship - Concentrations";
-    CHECK(intelTargetKind(p) == IntelTarget::Empire);
-    p.type = "Politics - Fake Messages";
-    CHECK(intelTargetKind(p) == IntelTarget::ThirdEmpire);
-    p.type = "Points - Steal";
-    CHECK(intelTargetKind(p) == IntelTarget::Empire);
+    auto kind = [&](const char* type) {
+        p.type = type;
+        return intelTargetKind(p);
+    };
+    CHECK(kind("Intelligence Defense") == IntelTarget::None);
+    for (const char* t : {"Ship - Damage", "Ship - Lose Movement", "Ship - Lose Supply", "Ship - Rebel", "Ship - Experience Change",
+                          "Ship - Cargo Damage", "Ship - Orders Change"})
+        CHECK(kind(t) == IntelTarget::Vehicle);
+    for (const char* t : {"Planet - Conditions Change", "Planet - Value Change", "Planet - Population Change", "Planet - Population Anger Change",
+                          "Planet - Population Rebel", "Planet - Cargo Damage", "Planet - Facility Damage", "Planet - Info"})
+        CHECK(kind(t) == IntelTarget::Planet);
+    CHECK(kind("Research - Steal") == IntelTarget::Tech);
+    for (const char* t : {"Politics - Disrupt Trade", "Politics - Intercept Messages", "Politics - Fake Messages", "Politics - Treaty Info",
+                          "Politics - Prevent Messages"})
+        CHECK(kind(t) == IntelTarget::ThirdEmpire);
+    // Only the empire: reports, points, deleting projects, design and log theft, and a mod's types.
+    for (const char* t : {"Ship - Concentrations", "Ship - Construction Info", "Planet - Locations", "Points - Change", "Points - Steal",
+                          "Research - Delete Project", "Intel - Delete Project", "System - Info", "Empire - Info", "Tech Level - Info",
+                          "Ship Designs - Steal", "Unit Designs - Steal", "Log Reports - Steal", "A Mod's Own Type"})
+        CHECK(kind(t) == IntelTarget::Empire);
 }
 
 TEST_CASE("client logic: statistics series and timeline") {

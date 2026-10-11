@@ -100,19 +100,22 @@ public:
         if (!initialized_) init(ui);
         const bool keep = drawDialog(ui);
         popup_.draw(ui);
+        notice_.draw(ui);
         return keep;
     }
 
 private:
     void init(UiContext& ui) {
         initialized_ = true;
-        // Hide Obsolete and Stats\Strategy are the empire's options, saved with
-        // the game: they come back on every opening (spec 08 §3.6.7).
+        // The tab, Hide Obsolete and Stats\Strategy are the empire's options,
+        // saved with the game: they come back on every opening (spec 08 §3.6.7).
         hideObsolete_ = ui.options().designsHideObsolete;
         statsView_ = ui.options().designsStatsView;
+        tab_ = static_cast<DesignTab>(std::min<int>(ui.options().designsTab, static_cast<int>(kDesignTabs.size()) - 1));
         if (!ui.me().designs.empty()) newest_ = ui.me().designs.back();
+        // Opened for a design (ours): on that design's tab.
         if (selected_.valid() && selected_.index() < ui.state().designs.size()) tab_ = tabOf(ui, ui.state().design(selected_));
-        if (enemyTab(tab_)) statsView_ = false;   // opened on an enemy design: no service record to show
+        if (enemyTab(tab_)) statsView_ = false;   // on an enemy tab: no service record to show
     }
 
     DesignTab tabOf(const UiContext& ui, const game::Design& d) const {
@@ -121,6 +124,10 @@ private:
         return unit ? DesignTab::EnemyUnits : DesignTab::EnemyShips;
     }
 
+    // The tab's designs (spec 06 §7 Q93, confirmed: binary): the own tabs
+    // list the empire's designs, without the obsolete ones while Hide Obsolete
+    // is on; the enemy tabs list every design of another empire seen at least
+    // once, Hide Obsolete or not, leaving out those of eliminated empires.
     std::vector<game::DesignId> listFor(const UiContext& ui, DesignTab tab) const {
         const game::GameState& s = ui.state();
         std::vector<game::DesignId> out;
@@ -128,9 +135,13 @@ private:
         for (game::DesignId id : source) {
             if (id.index() >= s.designs.size()) continue;
             const game::Design& d = s.design(id);
-            if (enemyTab(tab) && d.owner == ui.session.player()) continue;
             if (isUnitHull(ui.rules().hull(d.hull).type) != unitTab(tab)) continue;
-            if (hideObsolete_ && d.obsolete) continue;
+            if (enemyTab(tab)) {
+                if (d.owner == ui.session.player()) continue;
+                if (d.owner.valid() && d.owner.index() < s.empires.size() && !s.empire(d.owner).alive) continue;
+            } else if (hideObsolete_ && d.obsolete) {
+                continue;
+            }
             out.push_back(id);
         }
         return out;
@@ -459,6 +470,7 @@ private:
                 note_.clear();
                 // The enemy tabs switch Stats\Strategy off (spec 06 §7 Q93).
                 if (enemyTab(tab_)) setStatsView(ui, false);
+                setTab(ui, tab_);
             }
             ui.tagTab(kTabIds[i], tab_ == static_cast<DesignTab>(i));
         }
@@ -477,7 +489,11 @@ private:
             note_.clear();
         };
         // Create asks for the vehicle type first (observed, spec 07 session 3).
-        const bool create = d.button("Create");
+        // Create and Stats\Strategy are dim on the enemy tabs; Copy, Edit,
+        // Upgrade and Make Obsolete there and with nothing selected (spec 06
+        // §7 Q93, confirmed: binary).
+        const bool enemy = enemyTab(tab_);
+        const bool create = d.button("Create", !enemy);
         ui.tagItem("designs:create");
         if (create) {
             ImGui::OpenPopup(kTypePicker);
@@ -486,8 +502,13 @@ private:
         typePicker(ui);
         if (d.button("Copy", own != nullptr)) openDesigner("copy");
         ui.tagItem("designs:copy");
-        const bool editable = own && game::designIsPrototype(*own) && !game::designInQueue(ui.state(), ui.me().id, own->id);
-        if (d.button("Edit", editable)) openDesigner("edit");
+        // Edit is lit for a design never built; one in a construction queue
+        // is refused with a message (confirmed: binary).
+        const bool editable = own && game::designIsPrototype(*own);
+        if (d.button("Edit", editable)) {
+            if (game::designInQueue(ui.state(), ui.me().id, own->id)) notice_.open("A design cannot be edited once it is in a construction queue.", "Cannot Edit Design");
+            else openDesigner("edit");
+        }
         ui.tagItem("designs:edit");
         const bool upgrade = d.button("Upgrade", own != nullptr);
         ui.tagItem("designs:upgrade");
@@ -501,7 +522,7 @@ private:
         }
         // On/off settings: check boxes (observed, spec 07 session 3).
         if (d.check("Hide Obsolete", hideObsolete_)) setHideObsolete(ui, !hideObsolete_);
-        if (d.check("Stats\\Strategy", statsView_)) setStatsView(ui, !statsView_);
+        if (d.check("Stats\\Strategy", statsView_, !enemy)) setStatsView(ui, !statsView_);
         if (d.button("Simulator")) ui.open(ScreenId::CombatSimulator);
         ui.tagItem("designs:simulator");
     }
@@ -517,6 +538,12 @@ private:
         statsView_ = on;
         game::InterfaceOptions o = ui.options();
         o.designsStatsView = on;
+        ui.setOptions(o);
+    }
+
+    static void setTab(UiContext& ui, DesignTab tab) {
+        game::InterfaceOptions o = ui.options();
+        o.designsTab = static_cast<uint8_t>(tab);
         ui.setOptions(o);
     }
 
@@ -562,6 +589,7 @@ private:
     std::string note_;
     bool noteIsError_ = false;
     ItemReportPopup popup_;
+    NoticePopup notice_;
 };
 
 // ---- Create Design -------------------------------------------------------------------------------

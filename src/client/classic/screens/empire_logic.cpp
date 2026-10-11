@@ -2,6 +2,7 @@
 
 #include "game/ai.hpp"
 #include "game/design.hpp"
+#include "game/events.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
@@ -27,15 +28,6 @@ std::string grouped(int64_t v) {
     }
     return neg ? "-" + out : out;
 }
-
-bool startsWith(std::string_view s, std::string_view prefix) {
-    if (s.size() < prefix.size()) return false;
-    for (size_t i = 0; i < prefix.size(); ++i)
-        if (std::tolower(static_cast<unsigned char>(s[i])) != std::tolower(static_cast<unsigned char>(prefix[i]))) return false;
-    return true;
-}
-
-bool sameText(std::string_view a, std::string_view b) { return a.size() == b.size() && startsWith(a, b); }
 
 bool areaAllowed(const game::GameState& s, ruleset::TechAreaId a) {
     const auto& allowed = s.options.techAreasAllowed;
@@ -426,15 +418,37 @@ std::string techLevelsExport(const game::Rules& r, const game::GameState& s, con
 // ---- Intelligence ---------------------------------------------------------------------------
 
 IntelTarget intelTargetKind(const ruleset::IntelProject& p) {
-    const std::string_view t = p.type;
-    if (sameText(t, "Intelligence Defense")) return IntelTarget::None;
-    if (sameText(t, "Politics - Fake Messages") || sameText(t, "Politics - Prevent Messages")) return IntelTarget::ThirdEmpire;
-    if (sameText(t, "Planet - Locations")) return IntelTarget::Empire;
-    if (startsWith(t, "Planet -")) return IntelTarget::Planet;
-    if (sameText(t, "Ship - Locations") || sameText(t, "Ship - Concentrations") || sameText(t, "Ship - Construction Info"))
-        return IntelTarget::Empire;
-    if (startsWith(t, "Ship -")) return IntelTarget::Vehicle;
-    return IntelTarget::Empire;
+    // The second list window a project asks for after "Select Empire" (spec
+    // 05 §2.1, confirmed: binary), by its Type.
+    using game::effects::Effect;
+    const std::optional<Effect> effect = game::effects::parseEffect(p.type);
+    if (!effect) return IntelTarget::Empire;   // a mod's project: the empire only
+    switch (*effect) {
+        case Effect::IntelligenceDefense: return IntelTarget::None;
+        case Effect::ShipDamage:
+        case Effect::ShipLoseMovement:
+        case Effect::ShipLoseSupply:
+        case Effect::ShipRebel:
+        case Effect::ShipExperienceChange:
+        case Effect::ShipCargoDamage:
+        case Effect::ShipOrdersChange: return IntelTarget::Vehicle;
+        case Effect::PlanetConditionsChange:
+        case Effect::PlanetValueChange:
+        case Effect::PlanetPopulationChange:
+        case Effect::PlanetPopulationAngerChange:
+        case Effect::PlanetPopulationRiot:
+        case Effect::PlanetPopulationRebel:
+        case Effect::PlanetCargoDamage:
+        case Effect::PlanetFacilityDamage:
+        case Effect::PlanetInfo: return IntelTarget::Planet;
+        case Effect::ResearchSteal: return IntelTarget::Tech;
+        case Effect::PoliticsDisruptTrade:
+        case Effect::PoliticsInterceptMessages:
+        case Effect::PoliticsFakeMessages:
+        case Effect::PoliticsPreventMessages:
+        case Effect::PoliticsTreatyInfo: return IntelTarget::ThirdEmpire;
+        default: return IntelTarget::Empire;
+    }
 }
 
 std::vector<uint32_t> availableIntelProjects(const game::Rules& r, const game::Empire& e) {

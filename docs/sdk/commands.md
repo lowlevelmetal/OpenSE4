@@ -1278,6 +1278,7 @@ plus one, newest first, 0 for none.
 | `design_condensed` | bool | The designer's condensed view. |
 | `designs_hide_obsolete` | bool | The Designs window hides obsolete designs. |
 | `designs_stats_view` | bool | The Designs window shows statistics. |
+| `designs_tab` | int | The Designs window's tab: 0 Ship Designs, 1 Unit Designs, 2 enemy ship designs, 3 enemy unit designs. |
 
 ## Enumerations the commands use
 

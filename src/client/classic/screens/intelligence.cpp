@@ -1,6 +1,8 @@
 // Intelligence window (docs/spec/06 §1.5, docs/spec/05 §2).
 
+#include "client/classic/screens/empire_logic.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/screens/item_ref.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -13,6 +15,7 @@
 #include "game/sight.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <functional>
 
@@ -28,6 +31,13 @@ namespace {
 class IntelligenceScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
+        const bool keep = drawDialog(ui);
+        popup_.draw(ui);
+        return keep;
+    }
+
+private:
+    bool drawDialog(UiContext& ui) {
         Dialog d(ui, "Intelligence", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         const game::Empire& e = ui.me();
@@ -89,7 +99,6 @@ public:
         return d.keepOpen();
     }
 
-private:
     void set(UiContext& ui, std::vector<game::IntelProjectOrder> queue, bool evenly, bool repeat) {
         game::cmd::SetIntel c;
         c.queue = std::move(queue);
@@ -106,22 +115,19 @@ private:
         return out;
     }
 
-    // A click on a project adds it; one with a target first asks for the
-    // empire, then for the specific target or "Any" (spec 05 §2.1).
+    // A click on a project adds it (spec 05 §2.1, confirmed: binary): with
+    // twelve queued nothing happens; Intelligence Defense is added at once;
+    // every other project first asks for the target empire in "Select
+    // Empire", then, by its Type, for a ship, a planet, a technology area or
+    // a third empire in a second list window starting with an "Any ..." row.
+    // Cancel at either step adds nothing.
     void add(UiContext& ui, uint32_t index) {
         const game::Empire& e = ui.me();
-        if (static_cast<int>(e.intel.size()) >= kMaxProjects) {
-            status_.set(std::format("At most {} projects can run at once.", kMaxProjects), true);
-            return;
-        }
+        if (static_cast<int>(e.intel.size()) >= kMaxProjects) return;
         game::IntelProjectOrder o;
         o.project = index;
         if (intelTargetKind(project(ui, index)) == IntelTarget::None) {
             commit(ui, o);
-            return;
-        }
-        if (knownEmpires(ui).empty()) {
-            status_.set("This project needs a target empire, and we have not met anyone yet.", true);
             return;
         }
         picking_ = Picking{o, 0};
@@ -167,6 +173,8 @@ private:
                 ui.tagOption("intelligence:projects", intelTargetKind(p) == IntelTarget::None ? "defense" : "other");   // for lessons
                 if (clicked) add(ui, i);
                 if (ImGui::IsItemHovered()) hovered_ = i;
+                // A right-click opens the project's report (spec 05 §2.1, confirmed: binary).
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({ItemRef::Kind::IntelProject, i});
                 // The name at x 11 of the list, the cost right-aligned at x 525.
                 dl->AddText(ImVec2(row.x + ui.px(9), row.y + ui.px(1 + kSmallLead)), IM_COL32_WHITE, p.name.c_str());
                 const std::string cost = formatNumber(p.cost);
@@ -200,17 +208,29 @@ private:
         return out;
     }
 
-    // The pickers after a click on a project that needs a target (spec 05
-    // §2.1): the empire, among those we are in contact with; then, by the
-    // project's kind, a planet or a ship of it, a third empire, or the area a
-    // Research - Steal takes, each with "Any" where the rules allow it. A list
-    // window of our own (the original's pickers are not described; inferred, spec 06 §7 Q99).
+    // Rows of a list window sorted by their names, letter case ignored (ours).
+    template <class T>
+    static void sortByName(std::vector<std::pair<std::string, T>>& rows) {
+        std::stable_sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
+            return std::lexicographical_compare(a.first.begin(), a.first.end(), b.first.begin(), b.first.end(), [](char p, char q) {
+                return std::tolower(static_cast<unsigned char>(p)) < std::tolower(static_cast<unsigned char>(q));
+            });
+        });
+    }
+
+    // The list windows after a click on a project that needs a target (spec
+    // 05 §2.1, confirmed: binary), each with one "Name" column and Cancel:
+    // "Select Empire", the living empires we are in contact with (no "Any");
+    // then by the project's Type "Select Ship" ("Any Ship", then the target
+    // empire's vehicles we see now, by name), "Select Planet" ("Any Planet",
+    // then its colonies we see, by name), "Select Technology" ("Any
+    // Technology", then the areas we can research, alphabetical) or "Select
+    // Empire" ("Any Empire", then our other contacts).
     void targetPicker(UiContext& ui) {
         if (!picking_) return;
         const game::GameState& s = ui.state();
         game::IntelProjectOrder& o = picking_->order;
         const IntelTarget kind = intelTargetKind(project(ui, o.project));
-        const bool steal = game::effects::parseEffect(project(ui, o.project).type) == game::effects::Effect::ResearchSteal;
         struct Choice {
             std::string label;
             std::function<void()> pick;
@@ -221,30 +241,35 @@ private:
         if (picking_->stage == 0) {
             for (game::EmpireId k : knownEmpires(ui))
                 choices.push_back({s.empire(k).name, [&o, k] { o.target = k; }});
-            last = kind == IntelTarget::Empire && !steal;
+            last = kind == IntelTarget::Empire;
         } else if (kind == IntelTarget::Planet) {
             title = "Select Planet";
-            choices.push_back({"Any", [&o] { o.targetPlanet = {}; }});
-            for (game::ObjectId p : knownPlanets(ui, o.target)) choices.push_back({s.galaxy.object(p).name, [&o, p] { o.targetPlanet = p; }});
+            choices.push_back({"Any Planet", [&o] { o.targetPlanet = {}; }});
+            std::vector<std::pair<std::string, game::ObjectId>> rows;
+            for (game::ObjectId p : knownPlanets(ui, o.target)) rows.push_back({s.galaxy.object(p).name, p});
+            sortByName(rows);
+            for (const auto& [name, p] : rows) choices.push_back({name, [&o, p] { o.targetPlanet = p; }});
         } else if (kind == IntelTarget::Vehicle) {
             title = "Select Ship";
-            choices.push_back({"Any", [&o] { o.targetVehicle = {}; }});
-            for (game::VehicleId id : knownVehicles(ui, o.target)) {
-                const game::Vehicle* v = s.vehicle(id);
-                choices.push_back({std::format("{} ({})", v->name, s.design(v->design).name), [&o, id] { o.targetVehicle = id; }});
-            }
+            choices.push_back({"Any Ship", [&o] { o.targetVehicle = {}; }});
+            std::vector<std::pair<std::string, game::VehicleId>> rows;
+            for (game::VehicleId id : knownVehicles(ui, o.target)) rows.push_back({s.vehicle(id)->name, id});
+            sortByName(rows);
+            for (const auto& [name, id] : rows) choices.push_back({name, [&o, id] { o.targetVehicle = id; }});
         } else if (kind == IntelTarget::ThirdEmpire) {
-            title = "Select Third Empire";
+            title = "Select Empire";
+            choices.push_back({"Any Empire", [&o] { o.thirdEmpire = {}; }});
             for (game::EmpireId k : knownEmpires(ui))
                 if (k != o.target) choices.push_back({s.empire(k).name, [&o, k] { o.thirdEmpire = k; }});
-        } else if (steal) {
-            // "Any" keeps the original's pick, which only finds areas where we already lead.
+        } else if (kind == IntelTarget::Tech) {
+            // The areas the spying empire can research now. "Any" keeps the
+            // original's pick, which only finds areas where we already lead.
             title = "Select Technology";
-            choices.push_back({"Any", [&o] { o.targetTech = {}; }});
-            const auto& areas = ui.rules().data().techAreas;
-            for (uint32_t i = 0; i < areas.size(); ++i)
-                if (areas[i].racialArea == 0 && areas[i].uniqueArea == 0)  // never stolen
-                    choices.push_back({areas[i].name, [&o, i] { o.targetTech = ruleset::TechAreaId{i}; }});
+            choices.push_back({"Any Technology", [&o] { o.targetTech = {}; }});
+            std::vector<std::pair<std::string, ruleset::TechAreaId>> rows;
+            for (ruleset::TechAreaId a : researchableAreas(ui.rules(), s, ui.me())) rows.push_back({ui.rules().tech(a).name, a});
+            sortByName(rows);
+            for (const auto& [name, a] : rows) choices.push_back({name, [&o, a] { o.targetTech = a; }});
         }
         const std::string id = std::string(title) + "###intelTarget";
         if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
@@ -252,7 +277,10 @@ private:
         ImGui::SetNextWindowSize(ui.size({340, 370}), ImGuiCond_Always);
         if (!ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) return;
         bool done = false, cancel = false;
-        beginList(ui, "##targets", ImVec2(0, -ui.px(36)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
+        const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
+        static constexpr ListColumn kName[] = {{"Name", 0, 0, false}};
+        listHeader(ui, "##targethead", kName, listRowsWidth(ui, ImGui::GetContentRegionAvail().x));
+        beginList(ui, "##targets", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         for (size_t i = 0; i < choices.size(); ++i) {
             ImGui::PushID(int(i));
             if (ImGui::Selectable(choices[i].label.c_str())) {
@@ -261,9 +289,8 @@ private:
             }
             ImGui::PopID();
         }
-        if (choices.empty()) ImGui::TextColored(kTextDim, "Nothing to choose.");
         endList(ui);
-        if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape)) cancel = true;
+        if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) cancel = true;
         if (done || cancel) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
         if (cancel) {
@@ -277,6 +304,31 @@ private:
                 commit(ui, order);
             }
         }
+    }
+
+    // The target line of a project's box (spec 05 §2.1, confirmed: binary):
+    // for a project with a second list, the target picked or "Any ...".
+    std::string targetLine(const UiContext& ui, const game::IntelProjectOrder& o) const {
+        const game::GameState& s = ui.state();
+        switch (intelTargetKind(project(ui, o.project))) {
+            case IntelTarget::Vehicle: {
+                if (!o.targetVehicle.valid()) return "Any Ship";
+                const game::Vehicle* v = s.vehicle(o.targetVehicle);
+                return v ? v->name : std::string("Unknown Ship");
+            }
+            case IntelTarget::Planet:
+                if (!o.targetPlanet.valid()) return "Any Planet";
+                return o.targetPlanet.index() < s.galaxy.objects.size() ? s.galaxy.object(o.targetPlanet).name : std::string("Unknown Planet");
+            case IntelTarget::Tech:
+                if (!o.targetTech.valid()) return "Any Technology";
+                return o.targetTech.index() < ui.rules().data().techAreas.size() ? ui.rules().tech(o.targetTech).name : std::string("Unknown Technology");
+            case IntelTarget::ThirdEmpire:
+                if (!o.thirdEmpire.valid()) return "Any Empire";
+                return o.thirdEmpire.index() < s.empires.size() ? s.empire(o.thirdEmpire).name : std::string("Unknown Empire");
+            case IntelTarget::None:
+            case IntelTarget::Empire: break;
+        }
+        return {};
     }
 
     // The boxes of the shown page; a click on one cancels its project.
@@ -294,16 +346,19 @@ private:
             const ruleset::IntelProject& p = project(ui, o.project);
             ProjectBox& b = boxes[size_t(slot)];
             b.name = p.name;
-            // Under the name, the target (the original's line here is not
-            // described; inferred).
-            if (o.target.valid()) b.level = std::format("vs {}", s.empire(o.target).name);
+            // Under the name the target picked, then "Against" and the
+            // target empire's flag (spec 05 §2.1, confirmed: binary).
+            b.target = targetLine(ui, o);
+            if (o.target.valid() && o.target.index() < s.empires.size()) b.againstStyle = s.empire(o.target).race.style;
             b.remaining = need[i];
             b.perTurn = i < shares.size() ? shares[i] : 0;
             b.percent = p.cost > 0 ? int(std::clamp<int64_t>(o.progress * 100 / p.cost, 0, 100)) : 0;
         }
-        int over = -1;
-        const int clicked = projectBoxes(ui, d, kProjectBoxesAt, boxes, &over);
+        int over = -1, right = -1;
+        const int clicked = projectBoxes(ui, d, kProjectBoxesAt, boxes, &over, &right);
         if (over >= 0) hovered_ = e.intel[size_t(page_ * kProjectsPerPage + over)].project;
+        // A right-click opens the project's report (confirmed: binary).
+        if (right >= 0) popup_.open({ItemRef::Kind::IntelProject, e.intel[size_t(page_ * kProjectsPerPage + right)].project});
         if (clicked >= 0) {
             // Asks first while the Empire Options' "confirm deleting an
             // intelligence project" is on (spec 06 §1.9).
@@ -354,6 +409,7 @@ private:
             case IntelTarget::Empire: ImGui::TextUnformatted("An empire"); break;
             case IntelTarget::Planet: ImGui::TextUnformatted("A planet of an empire"); break;
             case IntelTarget::Vehicle: ImGui::TextUnformatted("A ship of an empire"); break;
+            case IntelTarget::Tech: ImGui::TextUnformatted("A technology area"); break;
             case IntelTarget::ThirdEmpire: ImGui::TextUnformatted("An empire and a third empire"); break;
         }
         if (!p.description.empty()) wrappedText(p.description, kTextDim);
@@ -376,6 +432,7 @@ private:
     YesNoPrompt confirm_;
     ReorderPopup reorder_;
     StatusLine status_;
+    ItemReportPopup popup_;
 };
 
 } // namespace

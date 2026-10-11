@@ -109,8 +109,14 @@ std::string techLevelsExport(const game::Rules& r, const game::GameState& s, con
 
 // ---- Intelligence ---------------------------------------------------------------------------
 
-enum class IntelTarget : uint8_t { None, Empire, Planet, Vehicle, ThirdEmpire };
-// What an intel project targets, from its `Type` (inferred from the effect list, spec 05 §2.3).
+// What a project asks for when it is added (spec 05 §2.1, confirmed: binary):
+// nothing (Intelligence Defense), the target empire only, or the empire and
+// then a ship, a planet, a technology area or a third empire of a second list.
+enum class IntelTarget : uint8_t { None, Empire, Planet, Vehicle, Tech, ThirdEmpire };
+// From the project's `Type`: the seven ship sabotage types a ship; Conditions
+// Change to Facility Damage and Planet - Info a planet; Research - Steal an
+// area; the five Politics types a third empire; every other type (a mod's
+// too) the empire only.
 IntelTarget intelTargetKind(const ruleset::IntelProject& p);
 // Projects whose requirements the empire meets, in data order.
 std::vector<uint32_t> availableIntelProjects(const game::Rules& r, const game::Empire& e);

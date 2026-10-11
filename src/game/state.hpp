@@ -372,6 +372,10 @@ struct InterfaceOptions {
     // §3.6.7), so they come back on every opening (save format 8).
     bool designsHideObsolete = false;
     bool designsStatsView = false;
+    // The Designs window's tab (0 Ship Designs, 1 Unit Designs, 2 Enemy Ship
+    // Dsgn, 3 Enemy Unit Dsgn), kept with the empire's options like the two
+    // check boxes: the window opens on it (spec 08 §3.6.7; save format 10).
+    uint8_t designsTab = 0;
 
     bool operator==(const InterfaceOptions&) const = default;
 };
