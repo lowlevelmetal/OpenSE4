@@ -110,8 +110,13 @@ void declareWar(TurnContext& ctx, EmpireId from, EmpireId to);
 void forgetEmpire(GameState& s, EmpireId gone);
 // The empire that `e` pays tariffs to (Subjugation/Protectorate), if any.
 EmpireId masterOf(const GameState& s, EmpireId e);
-// Whether `viewer` may see the treaty between `a` and `b` in the treaty grid:
-// its own treaties, and those of empires it is allied with (spec 05 §3.2).
+// Whether `e` is a subjugated race: it holds a Subjugation as the subordinate
+// side (a Protectorate does not count). Its player can neither propose nor
+// accept a treaty, not even with its master (spec 05 §3.2, confirmed: binary).
+bool isSubjugated(const GameState& s, EmpireId e);
+// Whether `viewer` may see the treaty between `a` and `b` in the treaty grid
+// (spec 05 §3.2, spec 06 §1.5, confirmed: binary): its own treaties, and
+// those of empires it holds Non-Aggression or better with.
 bool treatyVisible(const GameState& s, EmpireId viewer, EmpireId a, EmpireId b);
 
 // ---- Colony cloaking (spec 01 §6.9, §14 Q44, confirmed: binary) ----------------------------------
@@ -174,6 +179,11 @@ int64_t tradeFactor(const Rules& r, const Empire& receiver);
 // trunc(round(base × tradePercent / 100) × F / 100), never below 0.
 int64_t tradeShare(int64_t partnerBase, int tradePercent, int64_t factor);
 
+// What `e` receives this turn from trade with `partner` alone: the resources
+// from Trade Alliance up, research from Trade and Research Alliance up,
+// intelligence in a Partnership (the Empires window's Trade Amount, spec 06
+// §1.5).
+Generated tradeFrom(const Rules& r, const GameState& s, EmpireId e, EmpireId partner);
 // Resources `e` receives this turn from resource trade plus the tariffs of
 // its subjects and protectorates.
 Resources tradeIncome(const Rules& r, const GameState& s, EmpireId e);

@@ -9,6 +9,7 @@
 #include "client/classic/screens/screens.hpp"
 
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/query.hpp"
 
 #include <algorithm>
@@ -153,8 +154,7 @@ private:
 
     Treaty firstProposable(const UiContext& ui) const {
         const Treaty current = relation(ui).treaty;
-        // Peace first when at war, otherwise the next better treaty.
-        if (current == Treaty::War) return Treaty::None;
+        // The next better treaty (peace from war is Non-Intercourse or better).
         for (Treaty t : proposableTreaties(current))
             if (t > current && t != Treaty::Subjugation && t != Treaty::Protectorate) return t;
         return proposableTreaties(current).front();
@@ -213,7 +213,8 @@ private:
         ImGui::TextColored(kTextBlue, "Message Type");
         ImGui::SameLine(labelW);
         ImGui::SetNextItemWidth(fieldW);
-        std::vector<MessageType> types = sendableMessageTypes(relation(ui).treaty, s.options);
+        std::vector<MessageType> types =
+            sendableMessageTypes(relation(ui).treaty, s.options, game::diplomacy::isSubjugated(s, ui.session.player()));
         if (replyTo_.valid() && counterType(originalType(ui)) != MessageType::General) types.insert(types.begin(), counterType(originalType(ui)));
         if (std::find(types.begin(), types.end(), draft_.type) == types.end()) setType(types.front());
         if (ImGui::BeginCombo("##type", std::string(game::displayName(draft_.type)).c_str(), ImGuiComboFlags_HeightLarge)) {
@@ -399,7 +400,14 @@ private:
         if (n.system && !draft_.system.valid() && draft_.type != MessageType::RequestAttackEmpire) return "Choose a system.";
         if ((n.planet || n.ownPlanet) && !draft_.planet.valid()) return "Choose a planet.";
         if ((draft_.type == MessageType::Gift || draft_.type == MessageType::Tribute) && draft_.offer.empty()) return "The package is empty.";
-        if (n.offer && n.request && draft_.offer.empty() && draft_.request.empty()) return "The package is empty.";
+        if ((draft_.type == MessageType::DemandGift || draft_.type == MessageType::DemandTribute) && draft_.request.empty())
+            return "The package is empty.";
+        // A trade needs items on both sides (spec 06 §4.2, confirmed: binary).
+        if (tradePackage(draft_.type) && (draft_.offer.empty() || draft_.request.empty())) return "A trade needs items on both sides.";
+        if (tradePackage(draft_.type) && packageHasAny(draft_.offer)) return "We cannot offer a trade that includes unspecified Any items.";
+        if ((draft_.type == MessageType::ProposeTreaty || draft_.type == MessageType::CounterTreaty) &&
+            game::diplomacy::isSubjugated(ui.state(), ui.session.player()))
+            return "Subjugated races cannot propose treaties.";
         return {};
     }
 
@@ -529,7 +537,7 @@ private:
                 }
                 break;
             case PackageTab::Treaty:
-                for (Treaty t : proposableTreaties(relation(ui).treaty)) {
+                for (Treaty t : packageTreaties(relation(ui).treaty)) {
                     PackageItem i;
                     i.kind = PackageItem::Kind::Treaty;
                     i.treaty = t;
@@ -712,8 +720,7 @@ private:
             draft_.type = counter;
             draft_.treaty = m->treaty;
             draft_.offer = m->request;  // what they asked of us
-            draft_.request = m->offer;
-            std::erase_if(draft_.offer, [](const PackageItem& i) { return isAnyItem(i); });
+            draft_.request = m->offer;   // "Any" items they asked for stay: Send asks for real ones
             draft_.text = defaultMessageText(counter, draft_.treaty);
             mode_ = Mode::Compose;
         }

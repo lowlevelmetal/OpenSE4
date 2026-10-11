@@ -623,7 +623,9 @@ Replaces the intelligence queue.
 
 Sends a diplomatic message. The engine gives it its id, sender and date.
 `minister` marks a message the computer player or a Politics minister writes,
-whose requests about a third empire are not checked as a player's are.
+which is not checked as a player's is: a player's request about a third empire
+must name an empire it has met, and a player whose race is subjugated cannot
+propose a treaty.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -637,12 +639,16 @@ whose requests about a third empire are not checked as a player's are.
 ### `answer_message`
 
 Answers a message delivered to us: accept or refuse, with a text.
+`minister` marks an answer the computer player or a Politics minister gives,
+which is not checked as a player's is: a player whose race is subjugated
+cannot accept a treaty.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `message` | message id, or null | The message answered. |
 | `accept` | bool | Accept (false by default: refuse). |
 | `text` | text | The reply's text. |
+| `minister` | bool | Given by a minister. |
 
 ```json
 {"kind": "answer_message", "message": 40, "accept": true, "text": "Agreed."}

@@ -278,6 +278,12 @@ struct TurnStats {
     int bases = 0;
 };
 
+// One row of a player's statistics record (Empire::statistics).
+struct StatisticsRow {
+    EmpireId empire;
+    TurnStats stats;
+};
+
 // Income/expense breakdown of the last processed turn (Empire Status window).
 struct EconomyReport {
     Resources colonies, trade, tariffsIn, remoteMining, otherIncome;
@@ -372,6 +378,9 @@ struct InterfaceOptions {
     // §3.6.7), so they come back on every opening (save format 8).
     bool designsHideObsolete = false;
     bool designsStatsView = false;
+    // The Empires window's tab, 0 Treaty, 1 Trade, 2 Tariff: the original keeps
+    // it with the empire's options (spec 06 §1.5, spec 08 §3.6.7; save format 10).
+    uint8_t empiresTab = 0;
 
     bool operator==(const InterfaceOptions&) const = default;
 };
@@ -446,6 +455,12 @@ struct Empire {
     std::vector<LogEntry> log;              // this turn's messages (pruned at the end of each turn, spec 05 §3.4)
     std::vector<HistoryEntry> historyEvents;  // the History window's long record, oldest first
     std::vector<TurnStats> history;         // statistics per turn (Scores, Comparisons)
+    // A human player's statistics record (spec 05 §5, confirmed: binary): at
+    // the start of each of its end-of-turn processings, one row for every
+    // living empire whose score the player may see then, its own included.
+    // The Comparisons window plots these rows only, so an empire has a gap
+    // for the turns it was not visible (save format 10).
+    std::vector<StatisticsRow> statistics;
     int experience = 0;
 
     // Computer player state (spec 05 §7).

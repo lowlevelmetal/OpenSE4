@@ -719,6 +719,7 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     e.log.clear();
     e.historyEvents.clear();
     e.history.clear();
+    e.statistics.clear();
     e.claimedSystems = {system};
     e.homeSystem = system;  // the capital's system and sector, never moved (spec 02 §2, spec 05 §4)
     e.homeSector = obj.sector;

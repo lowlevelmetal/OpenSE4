@@ -180,7 +180,10 @@ struct SendMessage {
     DiplomaticMessage message;
     bool minister = false;
 };
-struct AnswerMessage { MessageId message; bool accept = false; std::string text; };
+// `minister`: an answer the computer player or a Politics minister gives, which
+// is not checked as a player's is (a subjugated race accepting a treaty, spec
+// 05 §3.2).
+struct AnswerMessage { MessageId message; bool accept = false; std::string text; bool minister = false; };
 // Declaring war on an empire sets the declaring empire's anger toward it to
 // 100 (spec 05 §7.3, §7.4). A computer player (or a Politics minister) whose
 // war declaration has an empty speech pool declares nothing, yet its anger

@@ -48,6 +48,7 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
         e.intel.clear();
         e.log.clear();
         e.historyEvents.clear();
+        e.statistics.clear();   // another player's statistics record is its own (spec 05 §5)
         e.waypoints = {};
         e.homeSystem = {};  // where another empire started is not ours to know
         e.homeSector = {};

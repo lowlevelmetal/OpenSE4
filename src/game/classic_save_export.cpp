@@ -613,6 +613,7 @@ private:
         o.autoClaim = u.autoClaimColonized;
         o.planetsTab = clampByte(u.planetsTab + 1);
         o.shipsTab = clampByte(u.shipsTab + 1);
+        o.politicsTab = clampByte(u.empiresTab + 1);
         o.queuesTab = clampByte(u.queuesTab + 1);
         o.logFilter = clampByte(u.logFilter + 1);
         for (size_t k = 0; k < o.shipsShown.size(); ++k) o.shipsShown[k] = ((u.shipsShown >> k) & 1u) != 0;

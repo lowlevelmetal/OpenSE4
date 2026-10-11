@@ -19,15 +19,34 @@ namespace opense4::client::classic {
 
 // Empires `me` has met (Relation::contact), alive, in id order, without `me`.
 std::vector<game::EmpireId> contactedEmpires(const game::GameState& s, game::EmpireId me);
-// Two-letter code for the Treaty Grid ("TA" = Trade Alliance).
+// The Treaty Grid's code for a treaty (spec 06 §1.5, confirmed: binary):
+// War, NI, NA, Sub, Pro, TA, TR, MA, P; None has none (empty).
 std::string_view treatyCode(game::Treaty t);
 // A computer leader's anger toward us (Relation::anger, 0..100) as one of the
 // nine labels of spec 05 §7.3. Not a colony's mood: that is its own scale and
 // bands (spec 02 §4, game::economy::moodName).
 std::string_view moodWord(int anger);
-// Whether `viewer` may see the treaty between two other empires (spec 05 §3.2:
-// only between empires the viewer is allied with).
+// Whether `viewer` may see the treaty between two empires (spec 05 §3.2,
+// confirmed: binary): its own, and those of the empires it holds
+// Non-Aggression or better with (game::diplomacy::treatyVisible).
 bool treatyVisibleTo(const game::GameState& s, game::EmpireId viewer, game::EmpireId a, game::EmpireId b);
+// The Treaty Grid's cell for row `a` and column `b` as `viewer` sees it (spec
+// 06 §1.5, confirmed: binary): blank unless the viewer may see their treaty
+// and the two hold a real one (in contact, not None); otherwise its code,
+// and for a Subjugation or Protectorate the roles in (row, column) order,
+// "S" the subordinate and "D" the dominant side: "Sub (S, D)".
+std::string treatyGridCell(const game::GameState& s, game::EmpireId viewer, game::EmpireId a, game::EmpireId b);
+// The bracketed roles after a Subjugation or Protectorate in the Empires
+// window (spec 06 §1.5, confirmed: binary), from our side of the relation:
+// "(We Dominate Them)", "(They Dominate Us)", "(We Protect Them)", "(They
+// Protect Us)"; empty for any other treaty.
+std::string treatyRoles(const game::Relation& ours);
+// The Empires window's status line about `them` (spec 06 §1.5, confirmed:
+// binary), the first that applies: "Message Sent" when we wrote to them this
+// turn; "Offered Trade", "Offered Gift" or "Offered Tribute" when their
+// newest message (replyableMessage) is one; "Proposed Treaty: <treaty>" when
+// it proposes a treaty other than the current one; else empty.
+std::string empireStatusLine(const game::GameState& s, game::EmpireId me, game::EmpireId them);
 
 // ---- Messages ---------------------------------------------------------------------------------
 
@@ -42,9 +61,14 @@ struct MessageNeeds {
     bool thirdEmpire = false;  // another empire
 };
 MessageNeeds messageNeeds(game::MessageType t);
-// Message types worth composing to an empire under treaty `t` (replies such as
-// Accept/Refuse/Counter are not included: they answer a received message).
-std::vector<game::MessageType> sendableMessageTypes(game::Treaty t, const game::GameOptions& o);
+// Whether the type's package is a trade (Edit Trade) rather than one side's
+// (Edit Package: Gift, Tribute, Want a gift, Want a tribute; spec 06 §4.2).
+bool tradePackage(game::MessageType t);
+// Message types worth composing to an empire under treaty `t` (spec 06 §4.2,
+// confirmed: binary). Replies such as Accept/Refuse/Counter are not included:
+// they answer a received message (replyTypes). `subjugated`: our race is
+// subjugated, so no Propose Treaty (game::diplomacy::isSubjugated).
+std::vector<game::MessageType> sendableMessageTypes(game::Treaty t, const game::GameOptions& o, bool subjugated = false);
 // Whether a received message can be accepted or refused (cmd::AnswerMessage).
 bool answerable(game::MessageType t);
 // How many messages from `from` wait for `me` to answer them: delivered, not
@@ -55,11 +79,46 @@ bool answerable(game::MessageType t);
 int messagesAwaitingReply(const game::GameState& s, game::EmpireId me, game::EmpireId from);
 // The counter-proposal type for a received proposal (General when there is none).
 game::MessageType counterType(game::MessageType received);
-// Treaties that may be proposed while the current treaty is `current`.
+// The newest political message from `from` that Communicate, opened from
+// `from`'s portrait, can answer (spec 06 §4.2, confirmed: binary): delivered
+// to `me` and dated (DiplomaticMessage::dated) after the date − 2, or in a
+// simultaneous game after the date − 1 when `from`'s player number is lower
+// than ours. Only the newest counts; nullptr when there is none.
+const game::DiplomaticMessage* replyableMessage(const game::GameState& s, game::EmpireId me, game::EmpireId from);
+// The reply types Communicate adds for a received message (spec 06 §4.2,
+// confirmed: binary): Accept, Refuse and Counter Treaty after a treaty
+// proposal or counter-proposal; Accept, Refuse and Counter Trade after a
+// trade; Accept and Refuse Gift after a gift, Accept and Refuse Tribute after
+// a tribute (both AcceptGift/RefuseGift); Accept and Refuse Demand after any
+// demand or request. None for the rest.
+std::vector<game::MessageType> replyTypes(game::MessageType received);
+// A reply type's name as the list shows it: "Accept Tribute" for AcceptGift
+// answering a tribute, otherwise game::displayName.
+std::string replyTypeName(game::MessageType reply, game::MessageType received);
+// Treaties a Propose or Counter Treaty may name while the current treaty is
+// `current` (spec 06 §4.2, confirmed: binary): Non-Intercourse to
+// Partnership, never War or None; the current treaty stays listed.
 std::vector<game::Treaty> proposableTreaties(game::Treaty current);
+// The package's Treaty tab: every treaty but None and the current one, War included.
+std::vector<game::Treaty> packageTreaties(game::Treaty current);
 std::string_view toneName(int tone);  // 0 pleading, 1 neutral, 2 demanding
-// Text we put in a new message of this type (the player can edit it).
+// OpenSE4's text for a new message of this type, when the race has no line
+// for it (the player can edit it).
 std::string defaultMessageText(game::MessageType t, game::Treaty treaty);
+// The AI_Speech pool whose line fills a new message's text (spec 06 §4.2,
+// confirmed: binary): "Send <type>" by the AI's name of the type (an
+// answer to a tribute "Send Accept Tribute"); an Accept or Refuse Demand
+// "Response Friend|Enemy YES|NO <demand>", Friend when we hold Non-Aggression
+// or better with the recipient. `received` is the message answered (General
+// when none).
+std::string messageSpeechPool(const game::GameState& s, game::EmpireId me, game::EmpireId to, game::MessageType t,
+                              game::MessageType received = game::MessageType::General);
+// The text a new message starts with: a line of our race's own AI_Speech
+// pool (messageSpeechPool), the `pick`-th modulo its size, its tokens filled
+// in (game::ai::fillSpeech); else defaultMessageText. `pick` comes from a
+// random source of the window's own, never the game's.
+std::string messageText(const game::Rules& r, const game::GameState& s, game::EmpireId me, const game::DiplomaticMessage& draft,
+                        game::MessageType received, uint64_t pick);
 
 // Package items. A take-side item whose id is left invalid stands for "Any":
 // the other side chooses what to give (inferred; spec 05 §3.4).
@@ -122,6 +181,29 @@ std::string_view metricName(Metric m);
 int64_t metricValue(const game::TurnStats& t, Metric m);
 // Statistics of an empire over time: its recorded history plus the current turn.
 std::vector<game::TurnStats> statsSeries(const game::Rules& r, const game::GameState& s, game::EmpireId e);
+// The Comparisons window's rows for `empire` (spec 05 §5, confirmed: binary):
+// only those of the viewer's statistics record (Empire::statistics), by
+// turn, so a turn when the empire was not visible is a gap. A game saved
+// before the record existed (it is empty while the viewer's history is not)
+// falls back to the empire's history while its score is visible.
+std::vector<game::TurnStats> comparisonRows(const game::GameState& s, game::EmpireId viewer, game::EmpireId empire);
+// The empires the Comparisons window lists: every one with a row
+// (comparisonRows), destroyed ones and those no longer visible included, in
+// empire order.
+std::vector<game::EmpireId> comparisonEmpires(const game::GameState& s, game::EmpireId viewer);
+
+// ---- Scores (spec 06 §1.5, confirmed: binary) --------------------------------------------------
+
+// A figure of the Score window: thousands with one decimal and "K" ("12.3K"),
+// millions from 1000K ("4.5M"). Population, kept in millions: billions with
+// one decimal and "B", trillions from 1000B ("T").
+std::string scoreFigure(int64_t v);
+std::string populationFigure(int64_t millions);
+// A rank as "1st", "2nd", "3rd", else the number and "th" ("4th", "21th").
+std::string rankText(int rank);
+// Dense ranks of the scores, best first: equal scores share a rank and the
+// next score gets the next number.
+std::vector<int> denseRanks(const std::vector<int64_t>& scores);
 
 // Timeline lines derived from consecutive TurnStats ("Colonized 2 planets").
 struct HistoryEvent {
@@ -134,7 +216,7 @@ std::vector<HistoryEvent> statsEvents(const std::vector<game::TurnStats>& series
 
 // The empire lists the History window offers `viewer`: itself, the empires
 // it knows, and the empires its record mentions (destroyed ones included), in
-// empire order. The General list comes on top of these.
+// empire order. The Other Events list comes after these.
 std::vector<game::EmpireId> historyEmpires(const game::GameState& s, game::EmpireId viewer);
 
 struct HistoryLine {
@@ -142,12 +224,16 @@ struct HistoryLine {
     std::string text;
     std::optional<game::Location> where;
 };
-// One list of the viewer's History window, newest first: the record's
-// entries about `empire` (invalid: the General list). An empire's list also
+// One list of the viewer's History window, oldest first, as the original
+// reads its file (spec 06 §4.3, confirmed: binary): the record's entries
+// about `empire` (invalid: the Other Events list). An empire's list also
 // starts with its founding and, with `stats`, the changes its statistics show
-// (statsEvents).
+// (statsEvents), both OpenSE4's.
 std::vector<HistoryLine> historyLines(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::EmpireId empire,
                                       bool stats);
+// The decade heading the History window puts over a turn's lines: "2400 -
+// 2410" (spec 06 §4.3, confirmed: binary).
+std::string decadeHeading(uint32_t turn);
 
 // ---- Log (spec 06 §4.1) ------------------------------------------------------------------------
 

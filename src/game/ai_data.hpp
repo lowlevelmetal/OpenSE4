@@ -317,6 +317,13 @@ std::span<const std::string_view> tableNames();
 // have. The patch layer reports them (docs/sdk/packages-and-data.md).
 std::vector<const datafile::Field*> unreadPatchedFields(std::string_view table, const datafile::DataFile& file);
 
+// A line of AI_Speech with its [%...] tokens filled in (spec 05 §7.5
+// AI_Speech): `us` writes to `target`, about `other`, `proposed`, `system`
+// and `planet` where the line names them. Players' Communicate fills its
+// default text the same way (spec 06 §4.2).
+std::string fillSpeech(const GameState& s, std::string text, EmpireId us, EmpireId target, EmpireId other = {}, Treaty proposed = Treaty::None,
+                       SystemId system = {}, ObjectId planet = {});
+
 // Name helpers shared by the tables.
 bool parseTreatyName(std::string_view text, Treaty& out);   // accepts "Trade and Research Alliance"
 std::string_view angerKeyName(MessageType t);               // "Give Gift", "Want a gift", ...

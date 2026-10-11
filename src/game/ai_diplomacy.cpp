@@ -22,11 +22,6 @@ using datafile::keysEqual;
 // Position in the treaty order of spec 05 §7.4 (1 War .. 11 Partnership; 3 is "no contact").
 int treatyNumber(Treaty t) { return t <= Treaty::NonIntercourse ? static_cast<int>(t) + 1 : static_cast<int>(t) + 2; }
 
-void replaceAll(std::string& text, std::string_view token, std::string_view value) {
-    for (size_t pos = text.find(token); pos != std::string::npos; pos = text.find(token, pos + value.size()))
-        text.replace(pos, token.size(), value);
-}
-
 } // namespace
 
 // A planet's worth (spec 05 §7.4, confirmed: binary): its three resource
@@ -490,7 +485,7 @@ private:
     bool reply(const DiplomaticMessage& msg, bool accept, std::string_view pool) {
         auto text = speechLine(p_, pool, msg.from, msg.thirdEmpire, msg.treaty, msg.system, msg.planet);
         if (!text) return false;  // an empty pool: the reply is not sent
-        return p_.emit(cmd::AnswerMessage{msg.id, accept, std::move(*text)});
+        return p_.emit(cmd::AnswerMessage{msg.id, accept, std::move(*text), true});
     }
 
     bool answerTreaty(const DiplomaticMessage& msg) {
@@ -761,28 +756,7 @@ std::optional<std::string> speechLine(Planner& p, std::string_view pool, EmpireI
     const std::vector<std::string>* lines = p.prof.speech.pool(pool);
     if (!lines) return std::nullopt;
     std::string text = (*lines)[static_cast<size_t>(p.rng.below(lines->size()))];
-    const Empire& us = p.emp();
-    auto who = [&](EmpireId e) -> const Empire* {
-        return e.valid() && e.index() < p.st.empires.size() ? &p.st.empire(e) : nullptr;
-    };
-    const Empire* them = who(target);
-    const Empire* third = who(other);
-    replaceAll(text, "[%OurEmperorTitle]", us.leaderTitle);
-    replaceAll(text, "[%OurEmperorName]", us.leaderName);
-    replaceAll(text, "[%OurEmpireName]", us.name);
-    replaceAll(text, "[%TargetEmperorTitle]", them ? them->leaderTitle : std::string{});
-    replaceAll(text, "[%TargetEmperorName]", them ? them->leaderName : std::string{});
-    replaceAll(text, "[%TargetEmpireName]", them ? them->name : std::string{});
-    replaceAll(text, "[%OtherEmperorTitle]", third ? third->leaderTitle : std::string{});
-    replaceAll(text, "[%OtherEmperorName]", third ? third->leaderName : std::string{});
-    replaceAll(text, "[%OtherEmpireName]", third ? third->name : std::string{});
-    replaceAll(text, "[%TreatyName]", them ? displayName(us.relation(them->id).treaty) : std::string_view{});
-    replaceAll(text, "[%ProposedTreatyName]", displayName(proposed));
-    replaceAll(text, "[%SystemName]",
-               system.valid() && system.index() < p.st.galaxy.systems.size() ? p.st.galaxy.system(system).name : std::string{});
-    replaceAll(text, "[%PlanetName]",
-               planet.valid() && planet.index() < p.st.galaxy.objects.size() ? p.st.galaxy.object(planet).name : std::string{});
-    return text;
+    return fillSpeech(p.st, std::move(text), p.id, target, other, proposed, system, planet);
 }
 
 void planPolitics(Planner& p) { Politician(p).run(); }

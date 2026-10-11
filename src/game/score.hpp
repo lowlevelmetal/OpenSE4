@@ -65,7 +65,8 @@ bool defeated(const Rules& r, const GameState& s, EmpireId e);
 void checkDestruction(TurnContext& ctx, EmpireId e, bool lastTurnPlayed = true);
 // Step 2 of an empire's end-of-turn processing (spec 05 §5, §8): appends this
 // turn's statistics to a living empire's history, and for a human player
-// adds the lines of its files to TurnContext::records.
+// adds the lines of its files to TurnContext::records and the rows of its
+// statistics file to Empire::statistics.
 void recordStatistics(TurnContext& ctx, EmpireId e);
 
 // ---- Human players' files (spec 05 §3.4, §5, §8 step 2, confirmed: binary) --------------------

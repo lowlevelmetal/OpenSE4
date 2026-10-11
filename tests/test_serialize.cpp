@@ -120,6 +120,7 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(HistoryEntry);
     CHECK_ALL_FIELDS(SeenDesign);
     CHECK_ALL_FIELDS(TurnStats);
+    CHECK_ALL_FIELDS(StatisticsRow);
     CHECK_ALL_FIELDS(EconomyReport);
     CHECK_ALL_FIELDS(Knowledge);
     CHECK_ALL_FIELDS(InterfaceOptions);

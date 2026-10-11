@@ -887,6 +887,7 @@ void fields(A& a, cmd::AnswerMessage& x) {
     a("message", x.message);
     a("accept", x.accept);
     a("text", x.text);
+    a("minister", x.minister);
 }
 template <class A>
 void fields(A& a, cmd::DecideWar& x) {

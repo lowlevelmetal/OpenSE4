@@ -157,7 +157,15 @@ void recordStatistics(TurnContext& ctx, EmpireId e) {
     if (!validEmpire(s, e) || !s.empire(e).alive) return;
     TurnStats t = currentStats(ctx.rules, s, e);
     s.empire(e).history.push_back(std::move(t));
-    if (s.empire(e).kind == PlayerKind::Human) ctx.records.push_back(playerRecords(ctx.rules, s, e));
+    if (s.empire(e).kind != PlayerKind::Human) return;
+    ctx.records.push_back(playerRecords(ctx.rules, s, e));
+    // The player's statistics record keeps the rows its file gets (spec 05 §5):
+    // every living empire whose score the player may see now.
+    std::vector<StatisticsRow> rows;
+    for (const Empire& x : s.empires)
+        if (x.alive && scoreVisible(s, e, x.id)) rows.push_back({x.id, x.id == e ? s.empire(e).history.back() : currentStats(ctx.rules, s, x.id)});
+    auto& record = s.empire(e).statistics;
+    record.insert(record.end(), rows.begin(), rows.end());
 }
 
 std::string destroyedText(const GameState& s, EmpireId gone) {

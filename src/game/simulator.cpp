@@ -306,6 +306,7 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
         e.log.clear();
         e.historyEvents.clear();
         e.history.clear();
+        e.statistics.clear();
         e.claimedSystems.clear();
         sim.sides.push_back(e.id);
         if (!setup.sides[k].computer) sim.players.push_back(e.id);

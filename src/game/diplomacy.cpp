@@ -295,18 +295,10 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     const bool dominance = t == Treaty::Subjugation || t == Treaty::Protectorate;
     const bool aDom = dominance && aDominant;
     const bool bDom = dominance && !aDominant;
-    // A subject may hold no treaty but the one with its master (spec 05 §3.2).
-    if (t > Treaty::None)
-        for (auto [party, other] : {std::pair{a, b}, std::pair{b, a}}) {
-            const EmpireId master = masterOf(s, party);
-            if (master.valid() && master != other && s.empire(party).relation(master).treaty == Treaty::Subjugation) {
-                logGoto(ctx.log(party, LogCategory::Politics, "Treaty Not Possible",
-                                std::format("As a subject of the {} we cannot sign a treaty with the {}.", nameOf(s, master), nameOf(s, other)),
-                                std::nullopt, logpicture::race(other)),
-                        LogGoto::Empires);
-                return;
-            }
-        }
+    // A subjugated race's player can neither propose nor accept a treaty;
+    // that is checked where the player writes (cmd::SendMessage,
+    // cmd::AnswerMessage). Nothing here stops a treaty (spec 05 §3.2,
+    // confirmed: binary).
     Relation& ra = s.empire(a).relation(b);
     Relation& rb = s.empire(b).relation(a);
     if (ra.treaty == t && ra.dominant == aDom && rb.dominant == bDom) return;
@@ -478,10 +470,15 @@ EmpireId masterOf(const GameState& s, EmpireId e) {
     return {};
 }
 
+bool isSubjugated(const GameState& s, EmpireId e) {
+    const EmpireId master = masterOf(s, e);
+    return master.valid() && s.empire(e).relation(master).treaty == Treaty::Subjugation;
+}
+
 bool treatyVisible(const GameState& s, EmpireId viewer, EmpireId a, EmpireId b) {
     if (!validEmpire(s, viewer) || !validEmpire(s, a) || !validEmpire(s, b)) return false;
     if (viewer == a || viewer == b) return true;
-    return treatyAllowsResupply(s.empire(viewer).relation(a).treaty) || treatyAllowsResupply(s.empire(viewer).relation(b).treaty);
+    return s.empire(viewer).relation(a).treaty >= Treaty::NonAggression || s.empire(viewer).relation(b).treaty >= Treaty::NonAggression;
 }
 
 // ---- Ownership transfers ----------------------------------------------------------------------------
@@ -950,6 +947,20 @@ bool tradesResources(Treaty t) { return treatyTradesResources(t); }
 bool tradesResearch(Treaty t) { return treatyTradesResearch(t); }
 
 } // namespace
+
+Generated tradeFrom(const Rules& r, const GameState& s, EmpireId e, EmpireId partner) {
+    Generated out;
+    if (!living(s, e) || !living(s, partner) || e == partner) return out;
+    const Treaty t = s.empire(e).relation(partner).treaty;
+    const int pct = tradePercent(r, s, e, partner);
+    if (pct <= 0) return out;
+    const int64_t f = tradeFactor(r, s.empire(e));
+    const Generated g = generated(r, s, partner);
+    for (Resource res : kResources) out.resources[res] = tradeShare(g.resources[res], pct, f);
+    if (treatyTradesResearch(t)) out.research = tradeShare(g.research, pct, f);
+    if (t == Treaty::Partnership) out.intelligence = tradeShare(g.intelligence, pct, f);
+    return out;
+}
 
 Resources tradeIncome(const Rules& r, const GameState& s, EmpireId e) {
     Resources total = tariffsReceived(r, s, e);
