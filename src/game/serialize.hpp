@@ -89,7 +89,9 @@ class Rules;
 // spec 06 §2.5); the Designs window's Hide Obsolete and Stats\Strategy check
 // boxes (InterfaceOptions::designsHideObsolete, designsStatsView, spec 08
 // §3.6.7). Format 7 still reads, without them.
-inline constexpr uint32_t kSaveVersion = 9;
+// Version 10: the REA parity audit's state (listed as each change lands).
+// Format 9 still reads, without it.
+inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 
 inline constexpr size_t kEnvelopeSize = 32;
