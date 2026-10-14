@@ -462,12 +462,14 @@ TEST_CASE("turn-based: a game saved in the middle of a game turn goes on the sam
     CHECK(copy.turn == 2);
     CHECK(stateChecksum(copy) == stateChecksum(d.s()));
 
-    // Mid-turn records survive too: the steps a ship made in the turn in progress.
+    // Mid-turn movement survives too. Nothing counts the steps made in the
+    // turn in progress (spec 03 §19 Q85): the movement left is all there is.
     applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 12, 12)}));
     auto again = deserializeState(serializeState(d.s()));
     REQUIRE(again.has_value());
-    CHECK(again->playerTurn.moves == d.s().playerTurn.moves);
-    CHECK_FALSE(again->playerTurn.moves.empty());
+    CHECK(again->vehicle(d.runner)->movement == d.w.v(d.runner).movement);
+    CHECK(again->playerTurn.moves.empty());
+    CHECK(stateChecksum(*again) == stateChecksum(d.s()));
 }
 
 TEST_CASE("turn-based: the same seed and the same inputs give the same game") {
@@ -742,7 +744,9 @@ TEST_CASE("turn-based: the Attack order where the target is fights at once and i
     CHECK(d.s().combats[0].location == at(d.a, 6, 0));
     REQUIRE(d.s().vehicle(gunboat));
     CHECK(d.w.v(gunboat).orders.empty());
-    CHECK(d.w.v(gunboat).movement == 2);  // the attack cost 1 movement point
+    // The attack cost 1 movement point; the parts the battle took (its bridge
+    // and two engines here) cap what is left at the new maximum (spec 03 §6.1).
+    CHECK(d.w.v(gunboat).movement == std::min(2, vehicleMaxMovement(d.r(), d.s(), d.w.v(gunboat))));
 }
 
 TEST_CASE("turn-based: open Attack Sector questions stay in the game until answered or overtaken") {
@@ -765,10 +769,6 @@ TEST_CASE("turn-based: open Attack Sector questions stay in the game until answe
     applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 0, 5)}));
     CHECK(d.s().playerTurn.questions.empty());
     CHECK(d.w.v(d.runner).location == at(d.a, 0, 5));
-    // A step records the move; only A's view shows it.
-    REQUIRE_FALSE(d.s().playerTurn.moves.empty());
-    CHECK_FALSE(redactForEmpire(d.r(), d.s(), kA).playerTurn.moves.empty());
-    CHECK(redactForEmpire(d.r(), d.s(), kB).playerTurn.moves.empty());
 
     // Asked again, then answered: the question goes.
     const TurnResult again = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 1, 6)}));
@@ -1114,4 +1114,141 @@ TEST_CASE("fleets: a fleet's leader is set by its owner, to one of its members a
     // The chosen leader leaving: the first member leads again (spec 03 §9).
     REQUIRE(apply(d.r(), d.s(), kA, cmd::LeaveFleet{mate}).ok);
     CHECK(fleetLeader(d.s(), *d.s().fleet(fleet))->id == lead);
+}
+
+// ---- Movement after a battle (GitHub issue 13) -------------------------------------------------
+
+namespace {
+
+// The movement fixture plus an engine cutter: a weapon that hits engines only,
+// always hits, takes 4 engines a shot and reloads too slowly to fire twice in
+// a battle. So a battle between two ships that carry one each takes 4 engines
+// from each and nothing else.
+const Rules& cutterRules() {
+    static const Rules r{[] {
+        ruleset::Ruleset rs = buildRuleset();
+        ruleset::Component c;
+        c.name = "Mv Engine Cutter";
+        c.tonnage = 10;
+        c.structure = 10;
+        c.cost = {10, 0, 0};
+        c.vehicles = ruleset::maskOf(VehicleType::Ship);
+        c.abilities = {ab(AbilityKind::WeaponsAlwaysHit)};
+        c.generalGroup = "Weapons";
+        c.weapon.kind = ruleset::WeaponKind::DirectFire;
+        c.weapon.damageAtRange.assign(20, 40);
+        c.weapon.damageType = "Only Engines";
+        c.weapon.reloadRate = 100;
+        c.weapon.targets = {"Ships"};
+        rs.components.push_back(std::move(c));
+        rs.reindex();
+        return rs;
+    }()};
+    return r;
+}
+
+// Two human empires in one system, turn-based: A's Raider and B's Picket, six
+// engines and a cutter each, two squares apart; B keeps a ship far away.
+struct Cutters {
+    World w{cutterRules()};
+    SystemId a;
+    VehicleId raider, picket;
+
+    Cutters() {
+        a = w.system("A");
+        w.s.options.simultaneous = false;
+        raider = w.spawn(w.ship(kA, "Raider", 6, {"Mv Engine Cutter"}), at(a, 0, 6));
+        picket = w.spawn(w.ship(kB, "Picket", 6, {"Mv Engine Cutter"}), at(a, 2, 6));
+        fuel(w, raider);
+        fuel(w, picket);
+        w.spawn(w.ship(kB, "Keeper", 1), at(a, 12, 12));
+        w.exploreAll(kA);
+        w.exploreAll(kB);
+    }
+    const Rules& r() const { return w.rules(); }
+    GameState& s() { return w.s; }
+    int max(VehicleId id) { return vehicleMaxMovement(r(), s(), w.v(id)); }
+    int enginesLost(VehicleId id) {
+        int n = 0;
+        const Design& d = s().design(w.v(id).design);
+        for (size_t i = 0; i < d.entries.size(); ++i)
+            if (r().component(d.entries[i].component).name == "Mv Engine" && !entryIntact(r(), s(), w.v(id), i)) ++n;
+        return n;
+    }
+};
+
+} // namespace
+
+TEST_CASE("turn-based: engines lost in a battle cap the movement left at once; the steps made do not count (issue 13)") {
+    // Spec 03 §6.1, §6.4, §19 Q85 (confirmed: binary): the movement left
+    // becomes min(left, new maximum) as the engines go, for the ship that
+    // moved in, the one that was there and a ship hit in another empire's
+    // turn alike; the owner's next turn refills it to the damaged maximum.
+    Cutters c;
+    resumeTurnBased(c.r(), c.s());
+    REQUIRE(c.s().playerTurn.empire == kA);
+    REQUIRE(c.w.v(c.raider).movement == 6);
+    c.w.v(c.picket).movement = 6;   // as B's turn left it: it never moved
+
+    // Two steps, the second into the Picket's sector, asked first; the battle on
+    // entry takes four engines from each ship.
+    const TurnResult res = applyLive(c.r(), c.s(), kA, ordersFor(c.raider, {moveTo(c.a, 2, 6)}));
+    REQUIRE(res.questions.size() == 1);
+    applyLive(c.r(), c.s(), kA, cmd::EnterSector{c.raider, {}, at(c.a, 2, 6), true});
+    REQUIRE(c.s().combats.size() == 1);
+    REQUIRE(c.enginesLost(c.raider) == 4);
+    REQUIRE(c.enginesLost(c.picket) == 4);
+    CHECK(c.w.v(c.raider).location == at(c.a, 2, 6));
+    CHECK(c.w.v(c.raider).orders.empty());   // the battle on entry fails the order (§6.4)
+    CHECK(c.max(c.raider) == 2);
+    CHECK(c.max(c.picket) == 2);
+    // "4 / 2" and "6 / 2" before 2026-10-14; now the smaller of the two.
+    CHECK(c.w.v(c.raider).movement == 2);
+    CHECK(c.w.v(c.picket).movement == 2);
+
+    // Ordered on at once, the Raider uses its 2 points now (it used to get 0
+    // and wait: 2 steps already made against the new maximum of 2); the rest
+    // of the way waits for its next turn.
+    applyLive(c.r(), c.s(), kA, ordersFor(c.raider, {moveTo(c.a, 8, 6)}));
+    CHECK(c.w.v(c.raider).location == at(c.a, 4, 6));
+    CHECK(c.w.v(c.raider).movement == 0);
+    CHECK(c.w.v(c.raider).orders.size() == 1);
+
+    // B's turn: the Picket, hit in A's turn, starts it with its damaged maximum.
+    endPlayerTurn(c.r(), c.s(), kA);
+    REQUIRE(activePlayer(c.s()) == kB);
+    CHECK(c.w.v(c.picket).movement == 2);
+    applyLive(c.r(), c.s(), kB, ordersFor(c.picket, {moveTo(c.a, 2, 0)}));
+    CHECK(c.w.v(c.picket).location == at(c.a, 2, 4));
+    // A's next turn: the Raider gets 2 and goes on with its order.
+    endPlayerTurn(c.r(), c.s(), kB);
+    REQUIRE(activePlayer(c.s()) == kA);
+    CHECK(c.w.v(c.raider).location == at(c.a, 6, 6));
+    CHECK(c.w.v(c.raider).movement == 0);
+}
+
+TEST_CASE("turn-based: Emergency Energy above the maximum lasts until the maximum is recomputed (spec 03 §6.1)") {
+    for (bool depot : {false, true}) {
+        CAPTURE(depot);
+        Duel d;
+        resumeTurnBased(d.r(), d.s());
+        const VehicleId dasher = d.w.spawn(d.w.ship(kA, "Dasher", 3, {"Mv Energy Cell"}), at(d.a, 0, 0));
+        fuel(d.w, dasher);
+        if (depot) d.w.colony(d.w.object(d.a, ObjectKind::Planet, Sector{1, 0}, "Depot World"), kA, 1000, {"Mv Depot"});
+        {
+            TurnContext ctx{d.r(), d.s(), {}, {}, {}};
+            movement::startTurn(ctx, kA);  // the new ship gets its movement
+        }
+        Order use;
+        use.kind = OrderKind::UseComponent;
+        use.amount = 7;
+        applyLive(d.r(), d.s(), kA, ordersFor(dasher, {use}));
+        REQUIRE(d.w.v(dasher).movement == 7);   // 3 + 4, without a ceiling
+        applyLive(d.r(), d.s(), kA, ordersFor(dasher, {moveTo(d.a, 12, 0)}));
+        // Plain steps recompute nothing: all 7 are used. A step that resupplies
+        // at a depot recomputes the maximum, and what was left above it (6 after
+        // the first step) goes: 3 more steps.
+        CHECK(d.w.v(dasher).location == at(d.a, depot ? 4 : 7, 0));
+        CHECK(d.w.v(dasher).movement == 0);
+    }
 }

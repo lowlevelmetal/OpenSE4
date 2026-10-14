@@ -556,7 +556,7 @@ private:
     }
     // A member with no movement at all freezes the group.
     bool immobile(const Group& g) const {
-        return g.planet.valid() || any(g, [&](const Vehicle& v) { return turnMovement(r_, s_, v) + (live_ ? bonus(v.id) : 0) <= 0; });
+        return g.planet.valid() || any(g, [&](const Vehicle& v) { return turnMovement(r_, s_, v) <= 0; });
     }
     // A ship whose space yard has items queued cannot move or warp (§6.2).
     bool yardBusy(const Group& g) const {
@@ -570,10 +570,6 @@ private:
     bool sweeperLed(const Group& g) const {
         if (g.planet.valid() || g.members.empty()) return false;
         return leadsSweeperGroup(s_, sweeperOf(s_, *s_.vehicle(g.lead)));
-    }
-    int bonus(VehicleId id) const {
-        const auto it = bonus_.find(id);
-        return it == bonus_.end() ? 0 : it->second;
     }
 
     // The list the group executes: the planet's, or the acting vehicle's (for
@@ -909,9 +905,6 @@ private:
 
     // Can the group take a step now? (Arrival and routes are checked by the callers.)
     std::optional<Travel> readyToStep(Group& g) {
-        // Turn-based: a maximum that dropped (engines lost in a battle) caps the movement left at once (§6.1).
-        if (live_)
-            for (VehicleId id : g.members) capLive(id);
         // A fleet with a member of maximum movement 0 (a mothballed ship, a
         // base) is frozen: its movement orders wait (spec 03 §9, §19 Q74).
         if (immobile(g)) return held(g) || g.fleet.valid() || g.tagged ? Travel::Wait : Travel::Immobile;
@@ -1075,7 +1068,6 @@ private:
                 ctx_.hooks->run(ctx_, Hook::VehicleEnteredSector, a);
             }
             v->movement = std::max(0, v->movement - 1);
-            if (live_) ++steps_[id];
             // The depot check runs before the step's cost is taken (§7).
             if (resupplyDepotAt(r_, s_, v->owner, next)) refillSupply(r_, s_, *v);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
@@ -1130,19 +1122,7 @@ private:
             Vehicle* v = s_.vehicle(id);
             if (v && alive(*v) && resupplyDepotAt(r_, s_, v->owner, here)) refillSupply(r_, s_, *v);  // passing a depot refuels
         }
-        if (live_)
-            for (VehicleId id : g.members) capLive(id);
         touched_.push_back(here);
-    }
-
-    // Turn-based games: engines lost or supply exhausted mid-turn cap the
-    // remaining movement at the new maximum (with the turn's emergency
-    // movement), less the steps made (spec 03 §6.1, §6.4).
-    void capLive(VehicleId id) {
-        Vehicle* v = s_.vehicle(id);
-        if (!v || !alive(*v)) return;
-        const int max = turnMovement(r_, s_, *v) + (heldInPlace(s_, *v) ? 0 : bonus(id));
-        v->movement = std::min(v->movement, std::max(0, max - stepsOf(id)));
     }
 
     // ---- Orders ---------------------------------------------------------------------------------------
@@ -1356,6 +1336,7 @@ private:
             // (spec 03 §19 Q68, spec 04 §10.7).
             if (vehicleType(r_, s_, *v) == VehicleType::Drone && v->status == VehicleStatus::Cloaked) {
                 v->status = VehicleStatus::Normal;
+                capMovement(r_, s_, *v);  // the maximum is recomputed (§6.1)
                 lowered = true;
             }
             v->movement = std::max(0, v->movement - 1);
@@ -1492,6 +1473,7 @@ private:
             if (v->status == VehicleStatus::Cloaked && underCloakingMinister(*v) && ministerDecloaks(v->owner, id, {}, DecloakReason::Attack)) {
                 v = s_.vehicle(id);
                 v->status = VehicleStatus::Normal;
+                capMovement(r_, s_, *v);  // the maximum is recomputed (§6.1)
                 recloak_.push_back(id);
                 lowered = true;
             }
@@ -1521,8 +1503,10 @@ private:
     void recloak() {
         for (VehicleId id : recloak_)
             if (Vehicle* v = s_.vehicle(id); v && alive(*v) && v->status == VehicleStatus::Normal && canCloak(r_, s_, *v) &&
-                                             (v->supply > 0 || vehicleHasUnlimitedSupply(r_, s_, *v)))
+                                             (v->supply > 0 || vehicleHasUnlimitedSupply(r_, s_, *v))) {
                 v->status = VehicleStatus::Cloaked;
+                capMovement(r_, s_, *v);  // the maximum is recomputed (§6.1)
+            }
         recloak_.clear();
     }
 
@@ -1697,6 +1681,7 @@ private:
             if (o.kind == OrderKind::Decloak) {
                 if (v->status == VehicleStatus::Cloaked) {
                     v->status = VehicleStatus::Normal;
+                    capMovement(r_, s_, *v);  // the maximum is recomputed (§6.1)
                     lowered = true;
                 }
                 changed = true;
@@ -1705,6 +1690,7 @@ private:
             if (v->status != VehicleStatus::Normal || !canCloak(r_, s_, *v)) continue;
             if (v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) continue;
             v->status = VehicleStatus::Cloaked;
+            capMovement(r_, s_, *v);  // the maximum is recomputed (§6.1)
             economy::clearQueue(v->queue);  // cloaked ships cannot build (spec 01 §6.4, spec 02 §6.4)
             changed = true;
         }
@@ -1726,7 +1712,6 @@ private:
             if (Vehicle* v = s_.vehicle(id); v && alive(*v)) {
                 v->movement = std::max(0, v->movement - 1);
                 spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
-                if (live_) capLive(id);
             }
         return g.stopped ? Exec::Gone : Exec::Acted;
     }
@@ -1751,7 +1736,6 @@ private:
         if (n > 0 && !heldInPlace(s_, *s_.vehicle(user))) {
             if (live_) {
                 s_.vehicle(user)->movement += n;
-                bonus_[user] += n;
             } else {
                 counters_[user].add(n);
             }
@@ -2090,34 +2074,16 @@ private:
     static constexpr int kLiveActionLimit = 1000;
 
     void loadPlayerTurn() {
-        for (const TurnMoves& m : s_.playerTurn.moves) {
-            if (m.steps != 0) steps_[m.vehicle] = m.steps;
-            if (m.bonus != 0) bonus_[m.vehicle] = m.bonus;
-        }
         for (const TurnLaunches& l : s_.playerTurn.launched)
             budget_.launched[{l.vehicle, l.planet, static_cast<AbilityKind>(l.kind)}] = l.count;
     }
 
     void savePlayerTurn() {
-        std::map<VehicleId, TurnMoves> moves;
-        for (const auto& [id, n] : steps_) moves[id].steps = n;
-        for (const auto& [id, n] : bonus_) moves[id].bonus = n;
-        s_.playerTurn.moves.clear();
-        for (auto& [id, m] : moves)
-            if (s_.vehicle(id)) {
-                m.vehicle = id;
-                s_.playerTurn.moves.push_back(m);
-            }
         s_.playerTurn.launched.clear();
         for (const auto& [key, n] : budget_.launched) {
             const auto& [vehicle, planet, kind] = key;
             s_.playerTurn.launched.push_back({vehicle, planet, static_cast<uint16_t>(kind), n});
         }
-    }
-
-    int stepsOf(VehicleId id) const {
-        const auto it = steps_.find(id);
-        return it == steps_.end() ? 0 : it->second;
     }
 
     // A group completes at most this many orders in one run (spec 05 §8
@@ -2298,8 +2264,6 @@ private:
     const CombatHooks& hooks_;
     std::vector<EntryQuestion> declined_;               // a player's groups that declined to enter a sector (playerDeclines)
     const LiveMove* live_ = nullptr;                    // turn-based: the move being carried out
-    std::map<VehicleId, int> steps_;                    // turn-based: steps made this player turn
-    std::map<VehicleId, int> bonus_;                    // turn-based: emergency energy gained this turn
     std::vector<EntryQuestion> questions_;
     std::map<VehicleId, DayCounter> counters_;          // simultaneous: the day counters
     std::set<VehicleId> acted_;                         // simultaneous: acted (or were carried along) today

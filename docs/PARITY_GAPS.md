@@ -262,6 +262,14 @@ keeps the carriers on the left (spec 06 §7 Q119); a recovery in a battle leaves
 launches of the combat turn counted (spec 04 §19 Q97); Races On Planet opens from our
 page's Population line and only for own colonies.
 
+GitHub issue #13 (spec 03 §19 Q85, 2026-10-14): a ship that lost engines in a battle kept the
+movement it had, so its report read "4 / 3", and in a turn-based game a later move counted
+the steps already made against the new maximum, leaving it nothing. Now every recompute of the
+maximum (parts destroyed or repaired, supply, cloaking) caps the movement left at the new
+maximum alone, for every vehicle and in either turn style (`movement::capMovement`), and the
+Ship Report shows it as "3/6". What stays different: the report draws no gauge beside the
+figures.
+
 ## Combat (spec 04)
 
 The combat engine follows the rules of spec 04 settled on 2026-09-30 (§2-§19.1): start

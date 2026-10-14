@@ -254,6 +254,7 @@ void repairEmpire(TurnContext& ctx, EmpireId e) {
                 v.damage[i] = 0;  // the engine keeps partial damage; a damaged part costs one point like a destroyed one
                 --points;
             }
+            capMovement(r, s, v);  // the maximum is recomputed (spec 03 §6.1)
         }
     }
 }
@@ -274,6 +275,7 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     const int64_t droneUse = r.setting("Drone Supply Usage Per Turn", 200);
     auto decloak = [&](Vehicle& v) {
         v.status = VehicleStatus::Normal;
+        capMovement(r, s, v);  // the maximum is recomputed (spec 03 §6.1)
         ctx.log(e, LogCategory::Misc, std::format("{} decloaked", v.name), "Its cloak could no longer be kept up.", v.location,
                 logpicture::vehicle(r, s, v));
         // Any decloak runs the first-contact check in its system (spec 05 §3.1).
@@ -298,6 +300,7 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
             cost = int64_t{std::max(1, v.count)} * (droneUse + cloak);
         }
         spendSupply(r, s, v, cost);
+        capMovement(r, s, v);  // supply lowered: the maximum is recomputed (spec 03 §6.1)
         // A cloak drops at 0 supply, before any depot, or when it can no longer work (§8).
         if (v.status == VehicleStatus::Cloaked && ((v.supply <= 0 && !vehicleHasUnlimitedSupply(r, s, v)) || !canCloak(r, s, v))) decloak(v);
     }

@@ -321,7 +321,8 @@ std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, Repo
             if (own) statusRow(ui, vehicleStatusCells(r, s, v));
             const int structure = game::vehicleStructure(r, s, v);
             const int damage = std::min(structure, game::vehicleDamageTaken(s, v));
-            labelValue(ui, "Movement", std::format("{} / {}", v.movement, game::vehicleMaxMovement(r, s, v)));
+            // "<left>/<maximum>", the two figures as they stand (spec 06 §1.4, spec 03 §19 Q85).
+            labelValue(ui, "Movement", std::format("{}/{}", v.movement, game::vehicleMaxMovement(r, s, v)));
             labelValue(ui, "Damage", std::format("{} / {} ({}%)", damage, structure, structure > 0 ? damage * 100 / structure : 0));
             if (own) {
                 labelValue(ui, "Supplies", game::vehicleHasUnlimitedSupply(r, s, v)

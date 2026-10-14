@@ -84,14 +84,19 @@ void holdSupply(const Rules& r, const GameState& s, Vehicle& v) {
 
 void spendSupply(const Rules& r, const GameState& s, Vehicle& v, int64_t amount) {
     holdSupply(r, s, v);
-    if (amount <= 0 || vehicleHasUnlimitedSupply(r, s, v)) return;
+    if (amount <= 0 || vehicleHasUnlimitedSupply(r, s, v) || v.supply <= 0) return;
     v.supply = std::max<int64_t>(0, v.supply - amount);
+    // Supply running out drops the maximum to 1 (§6.1): the movement left is capped at once.
+    if (v.supply == 0) capMovement(r, s, v);
 }
 
 void refillSupply(const Rules& r, const GameState& s, Vehicle& v) {
     if (vehicleType(r, s, v) == VehicleType::Drone) return;  // drones are never resupplied (§12)
     if (!vehicleUsesSupply(r, s, v)) return;
     v.supply = std::max(v.supply, initialSupply(r, s, v));
+    // A resupply recomputes the maximum, which caps the movement left: a
+    // turn-based game's unspent Emergency Energy above it is lost (§6.1).
+    capMovement(r, s, v);
 }
 
 void poolSupply(const Rules& r, GameState& s, std::span<const VehicleId> members) {
@@ -194,6 +199,7 @@ bool decloakSweepers(const Rules& r, GameState& s, Location where, std::span<con
     for (VehicleId id : group)
         if (Vehicle* v = s.vehicle(id); v && v->status == VehicleStatus::Cloaked) {
             v->status = VehicleStatus::Normal;
+            capMovement(r, s, *v);  // the maximum is recomputed (spec 03 §6.1)
             any = true;
         }
     return any;
@@ -834,8 +840,10 @@ int useComponent(TurnContext& ctx, VehicleId id, int entry) {
     const int64_t resupply = abilitySum(abilities, AbilityKind::EmergencyResupply);
     // Emergency Resupply: V1 more supply, capped at the maximum; nothing for
     // unlimited supply or a mothballed vehicle.
-    if (resupply > 0 && v->status != VehicleStatus::Mothballed && !vehicleHasUnlimitedSupply(r, s, *v))
+    if (resupply > 0 && v->status != VehicleStatus::Mothballed && !vehicleHasUnlimitedSupply(r, s, *v)) {
         v->supply = std::max(v->supply, std::min(v->supply + resupply, vehicleSupplyCapacity(r, s, *v)));
+        capMovement(r, s, *v);  // supply set: the maximum is recomputed (§6.1)
+    }
     // Emergency Energy only for a vehicle whose maximum movement is above 0.
     return energy > 0 && vehicleMaxMovement(r, s, *v) > 0 ? static_cast<int>(std::min<int64_t>(energy, 1000)) : 0;
 }
@@ -1030,6 +1038,11 @@ void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v) {
     if (v.supply != kUnlimitedSupply && vehicleUsesSupply(r, s, v) && !vehicleHasUnlimitedSupply(r, s, v))
         v.supply = std::clamp<int64_t>(v.supply, 0, vehicleSupplyCapacity(r, s, v));
     detail::trimCargo(r, s, v);
+    capMovement(r, s, v);
+}
+
+void capMovement(const Rules& r, const GameState& s, Vehicle& v) {
+    if (alive(v)) v.movement = std::min(v.movement, std::max(0, detail::turnMovement(r, s, v)));
 }
 
 Vehicle& spawnVehicle(const Rules& r, GameState& s, EmpireId owner, DesignId design, Location where, int autoWaypoint) {

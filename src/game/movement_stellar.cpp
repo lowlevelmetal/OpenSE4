@@ -471,6 +471,7 @@ public:
         // Pay for the device; one-shot devices are used up (the ship may be gone already).
         if (Vehicle* after = s_.vehicle(actor_.vehicle); after && alive(*after) && !vehicleDestroyed(r_, s_, *after)) {
             spendSupply(r_, s_, *after, actor_.supply);
+            capMovement(r_, s_, *after);  // supply lowered: the maximum is recomputed (spec 03 §6.1)
             if (hasAbility(abilities_, AbilityKind::ComponentDestroyedOnUse)) {
                 const Design& d = s_.design(after->design);
                 if (after->damage.size() < d.entries.size()) after->damage.resize(d.entries.size(), 0);
