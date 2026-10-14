@@ -248,6 +248,111 @@ TEST_CASE("main window: order facts from the game") {
     CHECK_FALSE(lit(l, OrderId::LaunchRecover));  // simultaneous
 }
 
+TEST_CASE("main window: Decloak is lit for anything cloaked; a fleet's speed, Colonize and Cloak count the members at its location (spec 06 §2.8)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const DesignId runner = design(s, r, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    const DesignId hulk = design(s, r, "Hulk", "Test Frigate", kShipBasics);  // speed 0
+    const VehicleId ghost = addTestVehicle(s, r, runner, where).id;
+    // Cloaked without a part that cloaks it (an event, a lost part): Decloak still lit, Cloak not.
+    s.vehicle(ghost)->status = VehicleStatus::Cloaked;
+    OrderSelection sel;
+    sel.vehicle = ghost;
+    LitOrders l = litOrders(orderFacts(r, s, kMe, sel, true, false));
+    CHECK(lit(l, OrderId::Decloak));
+    CHECK_FALSE(lit(l, OrderId::Cloak));
+    s.vehicle(ghost)->status = VehicleStatus::Normal;
+
+    // A fleet whose slow member is away: the fleet's speed is the members' at its location.
+    const VehicleId fast = addTestVehicle(s, r, runner, where).id;
+    const VehicleId slow = addTestVehicle(s, r, hulk, where).id;
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Alpha", {fast, slow}}).ok);
+    sel.vehicle = fast;
+    sel.fleet = s.vehicle(fast)->fleet;
+    CHECK_FALSE(orderFacts(r, s, kMe, sel, true, false).mobile);
+    Location away = where;
+    away.sector = Sector{where.sector.x == 0 ? 1 : 0, where.sector.y};
+    s.vehicle(slow)->location = away;
+    // An away member's cloak does not light Decloak; its orders still light Clear Orders.
+    s.vehicle(slow)->status = VehicleStatus::Cloaked;
+    s.vehicle(slow)->orders.push_back(Order{OrderKind::Sentry});
+    const OrderFacts f = orderFacts(r, s, kMe, sel, true, false);
+    CHECK(f.mobile);
+    CHECK_FALSE(f.decloak);
+    CHECK(f.hasOrders);
+}
+
+TEST_CASE("main window: one ship cycle for Space, Ctrl+N, Ctrl+B and the selector (spec 06 §2.3)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location home = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    Location elsewhere = home;
+    elsewhere.sector = Sector{home.sector.x == 0 ? 1 : 0, home.sector.y};
+    const DesignId runner = design(s, r, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    const DesignId hulk = design(s, r, "Hulk", "Test Frigate", kShipBasics);  // speed 0
+    auto add = [&](DesignId d, Location at, int movement) {
+        Vehicle& v = addTestVehicle(s, r, d, at);
+        v.movement = movement;
+        return v.id;
+    };
+    const VehicleId a = add(runner, home, 1);
+    add(hulk, home, 0);                                   // never: it cannot move
+    const VehicleId b = add(runner, home, 1);
+    const VehicleId tired = add(runner, home, 0);         // no movement left
+    const VehicleId c = add(runner, elsewhere, 1);
+    const VehicleId sentry = add(runner, elsewhere, 1);   // never while its first order is Sentry
+    s.vehicle(sentry)->orders.push_back(Order{OrderKind::Sentry});
+    const VehicleId mothballed = add(runner, elsewhere, 1);
+    s.vehicle(mothballed)->status = VehicleStatus::Mothballed;
+
+    // Turn-based: the ships with movement left, forward and back, round the list's end.
+    ShipCycleOptions o;
+    o.turnBased = true;
+    ShipCycleMemory m;
+    CHECK(cycleShip(r, s, kMe, std::nullopt, 1, o, m) == a);
+    CHECK(cycleShip(r, s, kMe, a, 1, o, m) == b);
+    CHECK(cycleShip(r, s, kMe, b, 1, o, m) == c);
+    CHECK(cycleShip(r, s, kMe, c, 1, o, m) == a);
+    CHECK(cycleShip(r, s, kMe, a, -1, o, m) == c);
+    CHECK(cycleShip(r, s, kMe, std::nullopt, -1, o, m) == c);
+
+    // Simultaneous: the ships whose own list is empty, movement or not.
+    o.turnBased = false;
+    s.vehicle(b)->orders.push_back(Order{OrderKind::MoveTo, elsewhere});
+    CHECK(cycleShip(r, s, kMe, a, 1, o, m) == tired);
+    o.turnBased = true;
+    s.vehicle(b)->orders.clear();
+
+    // Stop once per location: one ship a place until the cycle comes round the list's end.
+    o.stopOncePerLocation = true;
+    m = {};
+    CHECK(cycleShip(r, s, kMe, std::nullopt, 1, o, m) == a);
+    CHECK(cycleShip(r, s, kMe, a, 1, o, m) == c);   // b stands where a does
+    CHECK(cycleShip(r, s, kMe, c, 1, o, m) == a);   // round the end: the places are forgotten
+    CHECK(cycleShip(r, s, kMe, a, 1, o, m) == c);
+    // The other way round starts afresh.
+    CHECK(cycleShip(r, s, kMe, c, -1, o, m) == b);
+    o.stopOncePerLocation = false;
+
+    // Skip ships in fleets, skip damaged ships.
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Pair", {a, b}}).ok);
+    o.skipInFleets = true;
+    CHECK(cycleShip(r, s, kMe, c, 1, o, m) == c);
+    o.skipInFleets = false;
+    o.skipDamaged = true;
+    s.vehicle(c)->damage.assign(s.vehicle(c)->damage.size(), 0);
+    if (!s.vehicle(c)->damage.empty()) {
+        s.vehicle(c)->damage.front() = 1;
+        CHECK(cycleShip(r, s, kMe, a, 1, o, m) == b);
+        CHECK(cycleShip(r, s, kMe, b, 1, o, m) == a);
+    }
+
+    // Nothing that qualifies: no ship.
+    for (Vehicle& v : s.vehicles) v.movement = 0;
+    CHECK_FALSE(cycleShip(r, s, kMe, a, 1, o, m).has_value());
+}
+
 TEST_CASE("main window: order names and the lessons' slot keys") {
     CHECK(orderName(OrderId::MoveTo) == "Move To");
     CHECK(orderSlotKey(OrderId::MoveTo) == "Move");

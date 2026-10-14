@@ -95,4 +95,34 @@ OrderFacts orderFacts(const game::Rules& r, const game::GameState& s, game::Empi
 // in some sight type, and supplies above 0 (spec 03 §8 Cloak).
 bool vehicleCanCloak(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
 
+// ---- The ship selection cycle (docs/spec/06 §2.3, confirmed: binary) ---------------------------
+// Space, Ctrl+N, Ctrl+B and the top selector's arrows all run one cycle over
+// the same ships: the viewer's own ships and bases (never unit groups) that
+// can move (maximum movement above 0, so no base) and are not mothballed;
+// in a turn-based game those with movement left, in a simultaneous game
+// those whose own list is empty; never one whose first order is Sentry. The
+// Empire Options' Next/Previous switches then filter (spec 06 §1.9): skip
+// damaged ships, skip ships in fleets, stop once per location.
+struct ShipCycleOptions {
+    bool turnBased = true;
+    bool skipDamaged = false;
+    bool skipInFleets = false;
+    bool stopOncePerLocation = false;
+};
+// What the cycle remembers from one press to the next: the places "Stop once
+// per location" has visited. They are forgotten when the cycle wraps round
+// the list's end, and when the player or the direction changes.
+struct ShipCycleMemory {
+    game::EmpireId player;
+    int direction = 0;
+    std::vector<game::Location> visited;
+};
+bool shipCycleCandidate(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, const game::Vehicle& v, bool turnBased);
+// The ship the cycle selects next from `current` (none: from the list's
+// start, or end going back), going forward (`direction` 1) or back (-1)
+// through the vehicles in object order; nothing when no ship qualifies.
+std::optional<game::VehicleId> cycleShip(const game::Rules& r, const game::GameState& s, game::EmpireId viewer,
+                                         std::optional<game::VehicleId> current, int direction, const ShipCycleOptions& options,
+                                         ShipCycleMemory& memory);
+
 } // namespace opense4::client::classic

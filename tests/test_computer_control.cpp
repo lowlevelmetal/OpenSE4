@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <format>
+#include <map>
 #include <memory>
 #include <variant>
 
@@ -247,6 +248,47 @@ TEST_CASE("computer control: on a player's copy only the copy changes, and the o
     CHECK(host.vehicle(early)->minister);
     CHECK(host.vehicle(late)->minister);
     CHECK_FALSE(host.vehicle(idle)->minister);
+}
+
+TEST_CASE("computer control: what marks an object changed this turn, whose flag the orders carry (spec 06 §7 Q99(d))") {
+    const Rules& r = engineRules();
+    GameState s = newGame(true, true);
+    const DesignId design = addTestDesign(s, r, kMe, "Courier", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    const Location home = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const ObjectId planet = homeworld(s, kMe).planet;
+    const VehicleId renamed = addTestVehicle(s, r, design, home).id;
+    const VehicleId pressed = addTestVehicle(s, r, design, home).id;
+    const VehicleId toggled = addTestVehicle(s, r, design, home).id;
+    const VehicleId idle = addTestVehicle(s, r, design, home).id;
+    client::classic::ClassicSession session(sharedRules(), std::move(s), kMe, client::classic::SessionKind::Pbem);
+    // Before the switch: a rename, and an order button run for a ship and for the colony.
+    cmd::Rename name;
+    name.vehicle = renamed;
+    name.name = "Swift Courier";
+    REQUIRE(session.issue(name).ok);
+    const std::vector<VehicleId> buttons{pressed};
+    const std::vector<ObjectId> colonies{planet};
+    session.markChanged(buttons, colonies);
+    session.setComputerControl({{kMe, true}});
+    // After it: Toggle Minister Control carries its own flag, once.
+    REQUIRE(session.issue(cmd::SetMinister{toggled, {}, false, false}).ok);
+    std::map<VehicleId, int> perVehicle;
+    bool colonyFlag = false;
+    for (const Command& c : session.ordersThisTurn())
+        if (const auto* f = std::get_if<cmd::SetMinister>(&c); f && !f->empireWide) {
+            if (f->vehicle.valid()) ++perVehicle[f->vehicle];
+            if (f->planet == planet) colonyFlag = true;
+        }
+    CHECK(perVehicle[renamed] == 1);
+    CHECK(perVehicle[pressed] == 1);
+    CHECK(perVehicle[toggled] == 1);
+    CHECK(perVehicle.count(idle) == 0);
+    CHECK(colonyFlag);
+    // A local game marks nothing (only a player's copy carries flags).
+    GameState local = newGame(true, true);
+    client::classic::ClassicSession here(sharedRules(), std::move(local), kMe, client::classic::SessionKind::Local);
+    here.markChanged(buttons, colonies);
+    CHECK(here.ordersThisTurn().empty());
 }
 
 TEST_CASE("computer control: a game file with a master password asks for it, exactly") {

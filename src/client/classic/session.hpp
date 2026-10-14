@@ -57,6 +57,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -130,6 +131,14 @@ public:
     game::CommandResult issue(game::Command c);
     // Called with every command issue() accepted (the lesson runner counts them).
     std::function<void(const game::Command&)> onIssued;
+    // Objects changed during the turn (spec 06 §7 Q99(d), confirmed: binary):
+    // the main window marks the selected object, or each tagged one, whenever
+    // an order button or key runs for it (arming a pick or opening a window
+    // counts); the commands that change an object's orders, fleet, name,
+    // queue, cloak, cargo or colony type mark it themselves (issue()). On a
+    // player's copy after a Players-window switch of our own empire, each
+    // marked object carries its minister flag to the host, once.
+    void markChanged(std::span<const game::VehicleId> vehicles, std::span<const game::ObjectId> planets = {});
     const std::vector<game::Command>& ordersThisTurn() const { return orders_; }
 
     bool turnBased() const { return game::turnBased(state_); }
@@ -316,7 +325,17 @@ public:
 private:
     // Adds a command to this turn's orders.
     void record(game::Command c);
-    void carryFlags(const game::Command& c);
+    // The objects a command changes, as markChanged counts them.
+    struct Changed {
+        std::vector<game::VehicleId> vehicles;
+        std::vector<game::ObjectId> planets;
+    };
+    Changed changedBy(const game::Command& c) const;
+    // Whether this session's orders carry the flags of changed objects (a
+    // player's copy of a game on different machines).
+    bool marksChanges() const { return kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem; }
+    // Issues the minister flags of the objects marked changed not carried yet.
+    void carryFlags();
     void clearOrders();
     game::CommandResult issueCommand(game::Command c);
     void beginTurn();
@@ -368,8 +387,8 @@ private:
     // The Players window switched our own empire this turn (a player's copy):
     // the objects changed since carry their flags (carryFlags), once each.
     bool switchedOwn_ = false;
-    std::vector<game::VehicleId> flagged_;
-    std::vector<game::ObjectId> flaggedPlanets_;
+    std::vector<game::VehicleId> changed_, flagged_;
+    std::vector<game::ObjectId> changedPlanets_, flaggedPlanets_;
     std::vector<uint8_t> ended_;  // hotseat: humans who ended this turn
     bool waiting_ = false;
     std::unique_ptr<TurnTransport> transport_;

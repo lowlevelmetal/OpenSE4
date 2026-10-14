@@ -84,8 +84,9 @@ public:
     std::optional<Action> boundTo(const KeyChord& c, Action except) const;
 
     // True on the frame the action's key went down with exactly its modifiers
-    // (never while ImGui is typing text).
-    bool pressed(Action a) const;
+    // (never while ImGui is typing text); with `repeat`, also on the frames a
+    // held key repeats.
+    bool pressed(Action a, bool repeat = false) const;
 
 private:
     std::array<std::array<KeyChord, 2>, kActionCount> keys_;

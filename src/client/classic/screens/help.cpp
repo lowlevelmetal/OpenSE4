@@ -489,8 +489,8 @@ private:
                 if (group == 2) keys.assign(orders.begin(), orders.begin() + std::ptrdiff_t(half));
                 else {
                     keys.assign(orders.begin() + std::ptrdiff_t(half), orders.end());
-                    keys.push_back({"Ctrl+0..9", "Move to waypoint 0..9"});
-                    keys.push_back({"Alt+0..9", "Set waypoint 0..9 at the selected sector"});
+                    keys.push_back({"Ctrl+1..9, Ctrl+0", "Move to waypoint 1..10"});
+                    keys.push_back({"Alt+1..9, Alt+0", "Set waypoint 1..10 at the sector clicked next"});
                     for (Hotkey& k : boundKeys({"Movement log"})) keys.push_back(std::move(k));
                 }
                 break;

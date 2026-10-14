@@ -6,6 +6,7 @@
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/ships_common.hpp"
 #include "client/script/items.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/ai_data.hpp"
@@ -472,7 +473,8 @@ private:
 
 // ---- Waypoints -------------------------------------------------------------------------------
 
-std::string waypointName(const game::Waypoint& w, int slot) { return w.name.empty() ? std::format("Waypoint {}", slot) : w.name; }
+// Slot 0..9 holds waypoint 1..10 (spec 03 §8.1).
+std::string waypointName(const game::Waypoint& w, int slot) { return w.name.empty() ? std::format("Waypoint {}", slot + 1) : w.name; }
 
 class WaypointsScreen final : public Screen {
 public:
@@ -488,50 +490,46 @@ public:
         const float left = ui.px(330);
         ImGui::BeginChild("##left", ImVec2(left, 0), ImGuiChildFlags_None);
         heading(ui, "Waypoints");
-        if (ImGui::BeginTable("##wps", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, ui.px(22));
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-            ImGui::TableSetupColumn("Location", ImGuiTableColumnFlags_WidthStretch, 1.2f);
+        if (ImGui::BeginTable("##wps", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+            ImGui::TableSetupColumn("Waypoint", ImGuiTableColumnFlags_WidthStretch, 1.2f);
+            ImGui::TableSetupColumn("Location", ImGuiTableColumnFlags_WidthStretch, 1.0f);
             ImGui::TableHeadersRow();
+            // Rows "1 - name" to "10 - name" (spec 06 §1.2, confirmed: binary); the location column is ours.
             for (int i = 0; i < int(wps.size()); ++i) {
                 const game::Waypoint& w = wps[size_t(i)];
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(i);
-                if (ImGui::Selectable(std::to_string(i).c_str(), selected_ == i, ImGuiSelectableFlags_SpanAllColumns)) selected_ = i;
+                const std::string label = std::format("{} - {}", i + 1, w.set ? waypointName(w, i) : std::string());
+                if (ImGui::Selectable(label.c_str(), selected_ == i, ImGuiSelectableFlags_SpanAllColumns)) selected_ = i;
                 ImGui::PopID();
                 ImGui::TableSetColumnIndex(1);
-                if (w.set) ImGui::TextUnformatted(waypointName(w, i).c_str());
-                else dimText("(not set)");
-                ImGui::TableSetColumnIndex(2);
                 if (w.set) ImGui::TextUnformatted(sectorName(s, w.location, ui.session.player()).c_str());
+                else dimText("(not set)");
             }
             ImGui::EndTable();
         }
         ImGui::Spacing();
+        // En route: every vehicle with a Move To Waypoint order for it, fleet
+        // members one by one; a right-click opens its report (spec 06 §1.2,
+        // confirmed: binary).
         heading(ui, "Ships heading there");
         beginList(ui, "##ships", ImVec2(0, ui.px(130)), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
         int shown = 0;
         if (sel.set) {
-            auto headingThere = [&](const std::vector<game::Order>& orders) {
-                for (const game::Order& o : orders)
-                    if ((o.kind == game::OrderKind::MoveToWaypoint && o.amount == selected_) ||
-                        (o.kind == game::OrderKind::MoveTo && o.location == sel.location))
-                        return true;
-                return false;
-            };
-            for (const game::Fleet& f : s.fleets)
-                if (f.owner == me.id && headingThere(game::fleetOrders(s, f))) {
-                    ImGui::Text("%s (fleet, %zu ships)", f.name.c_str(), f.members.size());
-                    ++shown;
-                }
-            for (const game::Vehicle& v : s.vehicles)
-                if (v.owner == me.id && !v.fleet.valid() && headingThere(v.orders)) {
-                    image(ui, vehicleMini(ui, v), {18, 18});
-                    ImGui::SameLine();
-                    ImGui::TextUnformatted(v.name.c_str());
-                    ++shown;
-                }
+            for (const game::Vehicle& v : s.vehicles) {
+                if (v.owner != me.id || v.count <= 0 ||
+                    std::none_of(v.orders.begin(), v.orders.end(),
+                                 [&](const game::Order& o) { return o.kind == game::OrderKind::MoveToWaypoint && o.amount == selected_; }))
+                    continue;
+                ImGui::PushID(static_cast<int>(v.id.value));
+                image(ui, vehicleMini(ui, v), {18, 18});
+                ImGui::SameLine();
+                ImGui::Selectable(v.name.c_str(), false);
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) report_.vehicle(v.id);
+                ImGui::PopID();
+                ++shown;
+            }
         }
         if (shown == 0) dimText("None");
         endList(ui);
@@ -557,7 +555,7 @@ public:
         QuadrantMapOptions opt;
         opt.names = true;
         for (int i = 0; i < int(wps.size()); ++i)
-            if (wps[size_t(i)].set) opt.tags.emplace_back(wps[size_t(i)].location.system, std::to_string(i));
+            if (wps[size_t(i)].set) opt.tags.emplace_back(wps[size_t(i)].location.system, std::to_string(i + 1));
         if (sel.set) opt.highlight.push_back(sel.location.system);
         const ImVec2 avail = ImGui::GetContentRegionAvail();
         quadrantMap(ui, "##map", {avail.x / ui.k(), avail.y / ui.k() - 24}, opt);
@@ -570,7 +568,7 @@ public:
         bool keep = true;
         if (d.button("Set")) {
             const int slot = selected_;
-            std::string name = sel.set ? sel.name : std::format("Waypoint {}", slot);
+            std::string name = sel.set ? sel.name : std::format("Waypoint {}", slot + 1);
             ui.requests.pickLocation = [session = &ui.session, opener = ui.opener, slot, name](game::Location where) {
                 game::Waypoint w;
                 w.name = name;
@@ -585,11 +583,12 @@ public:
         }
         if (d.button("Delete", sel.set)) status_.issue(ui, cmd::SetWaypoint{selected_, std::nullopt});
         if (d.button("Rename", sel.set)) {
-            renameDraft_ = waypointName(sel, selected_);
+            renameDraft_.clear();   // the prompt starts empty (spec 06 §1.2, confirmed: binary)
             ImGui::OpenPopup("Rename Waypoint");
         }
         renamePopup(ui);
         d.close();
+        report_.draw(ui);
         return keep && d.keepOpen();
     }
 
@@ -617,6 +616,7 @@ private:
     int selected_ = 0;
     std::string renameDraft_;
     CommandStatus status_;
+    shipui::ReportPopup report_;
 };
 
 // ---- Strategies ------------------------------------------------------------------------------

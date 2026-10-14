@@ -61,7 +61,12 @@ public:
                     selected_ = static_cast<int>(i);
                 ImGui::PopID();
             }
-            if (orders.empty()) ImGui::TextColored(kDim, "No orders.");
+            // With Repeat on the list ends with a "(Repeat Orders)" row (spec 06 §1.3, confirmed: binary).
+            if (repeat) {
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (ui.px(24) - ImGui::GetTextLineHeight()) * 0.5f);
+                ImGui::TextUnformatted("(Repeat Orders)");
+            }
+            if (orders.empty() && !repeat) ImGui::TextColored(kDim, "No orders.");
             // For lessons: who the orders are for and the orders in the list (at least one row).
             const float rowsEnd = ImGui::GetCursorScreenPos().y + (orders.empty() ? ui.px(24) : 0.0f);
             const float right = ImGui::GetCurrentWindowRead()->InnerClipRect.Max.x;
@@ -134,13 +139,13 @@ public:
             if (!wps[i].set) continue;
             any = true;
             ImGui::PushID(static_cast<int>(i));
-            const std::string label = std::format("{} - {} ({})", i, wps[i].name, s.galaxy.system(wps[i].location.system).name);
+            const std::string label = std::format("{} - {} ({})", i + 1, wps[i].name, s.galaxy.system(wps[i].location.system).name);
             if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_None, ImVec2(0, ui.px(24)))) chosen = static_cast<int>(i);
             ImGui::PopID();
         }
         if (!any) {
             ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextColored(kDim, "No waypoints yet. Set one with Alt+0..9 on a selected sector, or in Empire Status -> Waypoints.");
+            ImGui::TextColored(kDim, "No waypoints yet. Set one with Alt+1..Alt+0 and a click on a sector, or in Empire Status -> Waypoints.");
             ImGui::PopTextWrapPos();
         }
         endPanel(ui, "Click a waypoint to choose it.");
@@ -214,8 +219,9 @@ public:
         ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(w, ui.px(26))) ||
-            (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)))
+            (!invalid_ && ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)))
             d.requestClose();
+        invalidNameBox(ui);
         return d.keepOpen();
     }
 
@@ -256,10 +262,37 @@ private:
     }
 
     bool apply(UiContext& ui) {
-        if (!command_ || buffer_[0] == '\0') return false;
+        if (!command_ || buffer_[0] == '\0' || invalid_) return false;
         game::cmd::Rename c = *command_;
         c.name = buffer_;
-        return status_.issue(ui, c);
+        const game::CommandResult r = ui.session.issue(c);
+        if (r.ok) return true;
+        // A name some space object has already: the "Invalid Name" box, then
+        // the prompt again (spec 03 §8 Change Name, confirmed: binary).
+        // (A turn-based game's refusal names the command first.)
+        if (r.error.ends_with(game::kNameInUse)) invalid_ = true;
+        else status_.error(r.error);
+        return false;
+    }
+
+    // The box over the prompt; OK, Enter or Esc closes it and the prompt takes the keys again.
+    void invalidNameBox(UiContext& ui) {
+        if (!invalid_) return;
+        if (!ImGui::IsPopupOpen("Invalid Name")) ImGui::OpenPopup("Invalid Name");
+        ImGui::SetNextWindowSize(ui.size({300, 0}));
+        ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (ImGui::BeginPopupModal("Invalid Name", nullptr,
+                                   ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
+            ui.promptWindow();
+            ImGui::TextWrapped("Another object already has the name \"%s\". Choose a different name.", buffer_);
+            ImGui::Spacing();
+            if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) {
+                invalid_ = false;
+                focus_ = true;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
     }
 
     ScreenArgs args_;
@@ -268,6 +301,7 @@ private:
     std::optional<game::cmd::Rename> command_;
     std::string what_;
     char buffer_[65]{};
+    bool invalid_ = false;   // the Invalid Name box is open
     Status status_;
 };
 

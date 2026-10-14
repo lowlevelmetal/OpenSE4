@@ -1,8 +1,9 @@
 # Tutorial 2, "Exploring and colonizing": the Explore order meant for an attack ship cannot go to
 # the colony ship. The steps that give the order keep the selection (the ship arrows are refused),
-# and the step that selects the second attack ship waits while the colony ship is selected and
-# refuses Explore meanwhile; the colony is still founded (docs/LEARNING.md "Conditions" and "The
-# input lock", docs/BUILDING.md "Input scripts").
+# the ship arrows never offer the colony ship once it has its orders and has used its movement
+# (spec 06 §2.3), and the step that selects the second attack ship refuses Explore until it is
+# selected; the colony is still founded (docs/LEARNING.md "Conditions" and "The input lock",
+# docs/BUILDING.md "Input scripts").
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=exploring-and-colonizing --layout=1024x768 --size=1280x800
 
@@ -34,18 +35,15 @@ repeat 2 until { order = "explore" }
 end
 wait-step 7
 assert { order = "explore", design_type = "Attack Ship" }
-# 7 The second attack ship: the arrows go back to the colony ship by mistake. The step waits, and
-# Explore is refused while it does.
-click item:prev in=tag:cycle:ship
-assert { selected = "ship", design_type = "Colony" }
+# 7 The second attack ship. Explore is refused until it is selected. The arrows pass the colony
+# ship by: back from the first attack ship comes the second.
 click tag:order:explore refused
 wait 30
 assert-step 7
-assert { not = { order = "explore", design_type = "Colony" } }
-# Back once more: the second attack ship.
 click item:prev in=tag:cycle:ship
 wait-step 8
 assert { selected = "ship", design_type = "Attack Ship" }
+assert { not = { order = "explore", design_type = "Colony" } }
 # 8 A second explorer.
 click tag:order:explore
 wait-step 9

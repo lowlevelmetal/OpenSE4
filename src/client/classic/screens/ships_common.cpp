@@ -131,27 +131,44 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
                 const game::Waypoint& w = wps[static_cast<size_t>(o.amount)];
                 return std::format("{} {} ({})", name, w.name, sectorName(s, w.location, ui.session.player()));
             }
-            return std::format("{} {}", name, o.amount);
+            return std::format("{} {}", name, o.amount + 1);   // slot 0..9 is waypoint 1..10
         }
         default: return orderText(s, o, ui.session.player());
     }
 }
 
+namespace {
+
+// The list as the original holds it, its current order in its place (spec 03
+// §8: ours keeps the current order first), and that order's index.
+std::pair<std::vector<game::Order>, size_t> listInPlace(const game::GameState& s, OrderOwner owner) {
+    const auto* orders = ordersOf(s, owner);
+    if (!orders) return {};
+    const bool repeat = repeatOf(s, owner);
+    uint16_t shift = 0;
+    if (const game::Colony* c = owner.planet.valid() ? s.colony(owner.planet) : nullptr) shift = c->repeatShift;
+    else if (const game::Fleet* f = s.fleet(owner.fleet)) {
+        if (const game::Vehicle* holder = game::fleetOrderHolder(s, *f)) shift = holder->repeatShift;
+    } else if (const game::Vehicle* v = s.vehicle(owner.vehicle)) shift = v->repeatShift;
+    return {game::originalOrderList(*orders, repeat, shift), game::orderListShift(*orders, repeat, shift)};
+}
+
+} // namespace
+
 std::vector<std::string> orderListLines(const UiContext& ui, OrderOwner owner, game::DesignId design) {
     std::vector<std::string> lines;
-    if (const auto* orders = ordersOf(ui.state(), owner))
-        for (const game::Order& o : *orders) lines.push_back(describeOrder(ui, o, design));
+    for (const game::Order& o : listInPlace(ui.state(), owner).first) lines.push_back(describeOrder(ui, o, design));
     return lines;
 }
 
 std::string orderSortText(const UiContext& ui, OrderOwner owner, game::DesignId design) {
-    const auto* orders = ordersOf(ui.state(), owner);
+    const auto [orders, current] = listInPlace(ui.state(), owner);
     const bool repeat = repeatOf(ui.state(), owner);
-    if (!orders || orders->empty()) return repeat ? "REPEAT ORDERS" : "None";
+    if (orders.empty()) return repeat ? "REPEAT ORDERS" : "None";
     std::string out;
-    for (size_t i = 0; i < orders->size(); ++i) {
-        const std::string d = describeOrder(ui, (*orders)[i], design);
-        out += (i ? ", " : "") + (i == 0 ? "[" + d + "]" : d);
+    for (size_t i = 0; i < orders.size(); ++i) {
+        const std::string d = describeOrder(ui, orders[i], design);
+        out += (i ? ", " : "") + (repeat && i == current ? "[" + d + "]" : d);
     }
     if (repeat) out += ", REPEAT ORDERS";
     return out;

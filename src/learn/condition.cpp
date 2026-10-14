@@ -133,6 +133,11 @@ bool commandOfType(const game::GameState& s, const game::Command& cmd, std::stri
             const game::Vehicle* x = s.vehicle(v);
             return vehicleOfType(s, v, wanted) || (x && fleetOfType(s, x->fleet, wanted));
         });
+    if (const auto* k = std::get_if<game::cmd::CloakVehicles>(&cmd))
+        return fleetOfType(s, k->fleet, wanted) || std::any_of(k->vehicles.begin(), k->vehicles.end(), [&](game::VehicleId v) {
+                   const game::Vehicle* x = s.vehicle(v);
+                   return vehicleOfType(s, v, wanted) || (x && fleetOfType(s, x->fleet, wanted));
+               });
     if (const auto* q = std::get_if<game::cmd::QueueAdd>(&cmd))
         return q->item.kind == game::QueueItem::Kind::Vehicle && designOfType(s, q->item.design, wanted);
     if (const auto* d = std::get_if<game::cmd::CreateDesign>(&cmd)) return designTypeMatches(d->design.designType, wanted);
@@ -364,11 +369,14 @@ bool holds(const Condition& c, const EvalContext& ctx) {
             auto gives = [&](const std::vector<game::Order>& orders) {
                 return std::any_of(orders.begin(), orders.end(), [&](const game::Order& order) { return order.kind == *kind; });
             };
-            // An order given to one vehicle, fleet or planet, or to tagged vehicles.
+            // An order given to one vehicle, fleet or planet, or to tagged
+            // vehicles; Cloak and Decloak act at once (cmd::CloakVehicles).
             for (const game::Command& cmd : commandsSince(ctx)) {
                 const auto* o = std::get_if<game::cmd::SetOrders>(&cmd);
                 const auto* t = std::get_if<game::cmd::OrderTagged>(&cmd);
-                if (((o && gives(o->orders)) || (t && gives(t->orders))) && commandOfType(ctx.state, cmd, c.designType)) return true;
+                const auto* k = std::get_if<game::cmd::CloakVehicles>(&cmd);
+                const bool cloaks = k && *kind == (k->cloak ? game::OrderKind::Cloak : game::OrderKind::Decloak);
+                if (((o && gives(o->orders)) || (t && gives(t->orders)) || cloaks) && commandOfType(ctx.state, cmd, c.designType)) return true;
             }
             return false;
         }

@@ -1,0 +1,96 @@
+# The main window's keys and picks that the original's executable settles (spec 06 §2.3, §2.4,
+# §3.1, spec 03 §8, §8.1), on a training game of our own (tests/input/learn-moves): turn-based,
+# two attack ships at home.
+# - Alt+digit and Ctrl+T ask for a sector, with nothing selected; the next click on a sector of
+#   the system view gives it, in a system not explored too.
+# - With no pick asked for, a click on a sector of a system not explored changes nothing.
+# - Space selects a ship; Change Name refuses a name another object has with the Invalid Name
+#   box, then asks again.
+# - Set Patrol adds each point as it is clicked; a click on the ship's own sector ends the route,
+#   and a route of one order is cleared.
+# (docs/BUILDING.md "Input scripts")
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-moves --training=moves --layout=1024x768 --size=1280x800
+
+wait-lesson moves
+wait 5
+click tag:lesson:hide
+key Ctrl+L
+wait-until { movement_lines = true }
+# Nothing selected: Alt+3 asks for a sector, and a click there sets waypoint 3.
+key Escape
+wait 3
+key Alt+3
+wait-until { picking = "location" }
+click sector:empty nth=20
+wait 3
+assert { command = "SetWaypoint" }
+assert { not = { picking = "location" } }
+# Ctrl+T the same, for a tagged minefield.
+key Ctrl+T
+wait-until { picking = "location" }
+click sector:empty nth=30
+wait 3
+assert { command = "TagMinefield" }
+# Space: an attack ship.
+key Space
+wait 3
+assert { selected = "ship" }
+# Another system, not explored: a click on one of its sectors keeps the ship selected; Alt+0
+# and a click there set waypoint 10, which Ctrl+0 sends the ship to.
+click system:!explored
+wait 3
+click sector:6,6
+wait 3
+assert { selected = "ship" }
+key Alt+0
+wait-until { picking = "location" }
+click sector:6,6
+wait 3
+assert { not = { picking = "location" } }
+assert { selected = "ship" }
+click system:home
+wait 3
+key Ctrl+0
+wait 3
+assert { order = "move-to-waypoint" }
+# Change Name: a new name for this ship, then the same name for the other ship is refused with
+# the Invalid Name box; OK, and the prompt asks again.
+key N
+wait-window rename
+key Ctrl+A
+type "Picket One"
+key Enter
+wait-closed rename
+key Space
+wait 3
+key N
+wait-window rename
+key Ctrl+A
+type "Picket One"
+key Enter
+wait-for item:"window:Invalid Name"
+assert-window rename
+key Enter
+wait-gone item:"window:Invalid Name"
+assert-window rename
+key Ctrl+A
+type "Picket Two"
+key Enter
+wait-closed rename
+assert { command = "Rename" }
+# Set Patrol: each point is added as it is clicked, and in a turn-based game the ship sets out at
+# once (inferred): here it reaches the first point (7,12) with its movement. A click on its own
+# sector, there, ends the route; the list then holds one order and is cleared.
+key P
+wait-until { picking = "patrol" }
+click sector:7,12
+wait 3
+assert { order = "move-to" }
+wait-gone sector:gliding
+assert { picking = "patrol" }
+screenshot patrol.png
+click sector:7,12
+wait 3
+assert { not = { picking = "patrol" } }
+assert { not = { route = true } }

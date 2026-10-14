@@ -26,9 +26,11 @@ using namespace shipui;
 
 struct Cell {
     std::string text;
+    std::vector<std::string> lines;   // in place of the text: one per 12 px line, at most three
 };
-Cell text(std::string t) { return Cell{std::move(t)}; }
-Cell number(int64_t v, std::string t = {}) { return Cell{t.empty() ? formatNumber(v) : std::move(t)}; }
+Cell text(std::string t) { return Cell{std::move(t), {}}; }
+Cell lines(std::vector<std::string> l) { return Cell{{}, std::move(l)}; }
+Cell number(int64_t v, std::string t = {}) { return Cell{t.empty() ? formatNumber(v) : std::move(t), {}}; }
 
 struct ListRow {
     game::VehicleId vehicle;  // ships and unit groups
@@ -37,7 +39,6 @@ struct ListRow {
     std::string name;
     Sprite picture;
     std::vector<Cell> cells;               // the shown tab's columns after Pic and Name
-    std::vector<std::string> orderLines;   // the Orders column: one order a line
 };
 
 // A column after Pic and Name: what it stands for, its heading, its width
@@ -151,8 +152,8 @@ private:
         }
         for (const game::Fleet& f : s.fleets)
             if (f.owner == ui.session.player()) ++totals_.fleets;
-        // The engine's own figure once the economy reports it; our estimate until then.
-        if (!ui.me().economy.maintenance.isZero()) totals_.maintenance = ui.me().economy.maintenance;
+        // Total Maintenance is the sum over the vehicles as they are now, not
+        // the last economy update's figure (spec 06 §1.2, confirmed: binary).
     }
 
     void statistics(UiContext& ui) {
@@ -193,7 +194,6 @@ private:
             row.system = v.location.system;
             row.name = v.count > 1 ? std::format("{} (x{})", v.name, v.count) : v.name;
             row.picture = unit ? unitMini(ui, v) : vehicleMini(ui, v);
-            row.orderLines = orderListLines(ui, orderOwner(s, v.id), v.design);
             ShipSortValues k = shipSortValues(r, s, v);
             k.type = roleOf(ui, v);
             k.designName = classOf(ui, v);
@@ -214,9 +214,6 @@ private:
                 row.picture = fleetMini(ui);
                 if (const game::Vehicle* lead = s.vehicle(f.leader.valid() ? f.leader : (f.members.empty() ? game::VehicleId{} : f.members.front())))
                     row.system = lead->location.system;
-                OrderOwner owner;
-                owner.fleet = f.id;
-                row.orderLines = orderListLines(ui, owner, {});
                 row.cells = fleetCells(ui, f);
                 rows.push_back(std::move(row));
             }
@@ -235,6 +232,25 @@ private:
     static std::string cargoWords(const UiContext& ui, const game::Vehicle& v) {
         return v.cargo.empty() ? std::string("None") : cargoSummary(ui, v.cargo);
     }
+    // The Cargo List: one line per entry (spec 06 §1.8.3, confirmed: binary).
+    static std::vector<std::string> cargoLines(const UiContext& ui, const game::Vehicle& v) {
+        const game::GameState& s = ui.state();
+        if (v.cargo.empty()) return {"None"};
+        std::vector<std::string> out;
+        for (const auto& pop : v.cargo.population)
+            out.push_back(std::format("{} {}M", pop.race.valid() ? s.empire(pop.race).race.name : std::string("Unknown"), formatNumber(pop.millions)));
+        for (const auto& u : v.cargo.units) out.push_back(std::format("{} x {}", u.count, s.design(u.design).name));
+        return out;
+    }
+    // A unit group's Type: "design - count" for each of its designs, at most
+    // three lines (spec 06 §1.8.3, confirmed: binary).
+    static std::vector<std::string> unitTypeLines(const UiContext& ui, const game::Vehicle& v) {
+        const game::GameState& s = ui.state();
+        std::vector<std::string> out;
+        if (v.mixed.empty()) out.push_back(std::format("{} - {}", s.design(v.design).name, v.count));
+        for (size_t i = 0; i < v.mixed.size() && i < 3; ++i) out.push_back(std::format("{} - {}", s.design(v.mixed[i].design).name, v.mixed[i].count));
+        return out;
+    }
 
     std::vector<Cell> vehicleCells(UiContext& ui, const game::Vehicle& v, const ShipSortValues& k) const {
         const game::GameState& s = ui.state();
@@ -247,12 +263,13 @@ private:
                 // Unlimited supply shows as "Endless" (spec 03 §7).
                 const std::string supplyText =
                     game::vehicleHasUnlimitedSupply(r, s, v) ? std::string("Endless") : std::format("{}/{}", formatNumber(v.supply), formatNumber(cap));
-                return {text(r.hull(d.hull).name), text(k.type), text(std::format("{}/{}", v.movement, game::vehicleMaxMovement(r, s, v))),
+                const Cell type = isUnitVehicle(r, s, v) ? lines(unitTypeLines(ui, v)) : text(k.type);
+                return {text(r.hull(d.hull).name), type, text(std::format("{}/{}", v.movement, game::vehicleMaxMovement(r, s, v))),
                         text(std::format("{}/{}", destroyed, total)), text(supplyText)};
             }
-            case ShipsTab::Orders: return {text(k.designName), text(k.orders)};
+            case ShipsTab::Orders: return {text(k.designName), lines(orderListLines(ui, orderOwner(s, v.id), v.design))};
             case ShipsTab::Cargo:
-                return {text(std::format("{}kT", formatNumber(k.cargoUsed))), text(std::format("{}kT", formatNumber(k.cargoCapacity))), text(k.cargo)};
+                return {text(std::format("{}kT", formatNumber(k.cargoUsed))), text(std::format("{}kT", formatNumber(k.cargoCapacity))), lines(cargoLines(ui, v))};
             case ShipsTab::Fleet: {
                 const game::Fleet* f = s.fleet(v.fleet);
                 return {text(game::combat::experienceLabel(v.experience, v.experienceTenths)), text(f ? f->name : std::string("None"))};
@@ -266,20 +283,20 @@ private:
     std::vector<Cell> fleetCells(UiContext& ui, const game::Fleet& f) const {
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
-        int move = 1 << 30, maxMove = 1 << 30, destroyed = 0, total = 0;
-        int64_t supply = 0, supplyCap = 0, used = 0, cap = 0;
+        int move = 1 << 30, maxMove = 1 << 30;
+        int64_t supply = 0, supplyCap = 0;
         game::Resources maintenance;
-        int members = 0;
         bool endless = true;
-        for (game::VehicleId id : f.members) {
+        // The fleet's row (spec 06 §1.8.3, confirmed: binary): Size is the
+        // number of members at the fleet's location, Type its formation's
+        // name; Dmg, the cargo columns, Class and Fleet are blank. Move and
+        // Supplies are ours, over the same members.
+        const std::vector<game::VehicleId> here = game::fleetGroup(s, f);
+        for (game::VehicleId id : here) {
             const game::Vehicle* v = s.vehicle(id);
             if (!v) continue;
-            ++members;
             move = std::min(move, v->movement);
             maxMove = std::min(maxMove, game::vehicleMaxMovement(r, s, *v));
-            const auto [lost, all] = destroyedComponents(r, s, *v);
-            destroyed += lost;
-            total += all;
             // Fighter groups and members with unlimited supply are left out (spec 03 §9).
             if (!game::vehicleHasUnlimitedSupply(r, s, *v)) {
                 endless = false;
@@ -288,21 +305,22 @@ private:
                     supplyCap += game::vehicleSupplyCapacity(r, s, *v);
                 }
             }
-            used += game::cargoSpaceUsed(r, s, v->cargo);
-            cap += game::vehicleCargoCapacity(r, s, *v);
-            maintenance += vehicleMaintenance(r, s, *v);
         }
+        for (game::VehicleId id : f.members)
+            if (const game::Vehicle* v = s.vehicle(id)) maintenance += vehicleMaintenance(r, s, *v);
+        const int members = static_cast<int>(here.size());
         if (members == 0) move = maxMove = 0;
+        const auto& formations = r.data().formations;
+        const std::string formation = f.formation < formations.size() ? formations[f.formation].name : std::string();
+        OrderOwner owner;
+        owner.fleet = f.id;
         switch (tab_) {
             case ShipsTab::General:
-                return {text("Fleet"), text(std::format("{} vessel{}", members, members == 1 ? "" : "s")), text(std::format("{}/{}", move, maxMove)),
-                        text(std::format("{}/{}", destroyed, total)),
+                return {text(std::to_string(members)), text(formation), text(std::format("{}/{}", move, maxMove)), text({}),
                         text(endless && members > 0 ? std::string("Endless") : std::format("{}/{}", formatNumber(supply), formatNumber(supplyCap)))};
-            case ShipsTab::Orders: return {text("Fleet"), text({})};
-            case ShipsTab::Cargo:
-                return {text(std::format("{}kT", formatNumber(used))), text(std::format("{}kT", formatNumber(cap))),
-                        text(std::format("{} vessel{}", members, members == 1 ? "" : "s"))};
-            case ShipsTab::Fleet: return {text(game::combat::experienceLabel(f.experience, f.experienceTenths)), text(f.name)};
+            case ShipsTab::Orders: return {text({}), lines(orderListLines(ui, owner, {}))};
+            case ShipsTab::Cargo: return {text({}), text({}), text({})};
+            case ShipsTab::Fleet: return {text(game::combat::experienceLabel(f.experience, f.experienceTenths)), text({})};
             case ShipsTab::Maintenance: return {number(maintenance.v[0]), number(maintenance.v[1]), number(maintenance.v[2])};
             case ShipsTab::Count: break;
         }
@@ -384,22 +402,22 @@ private:
                 };
                 cell(1, row.name);
                 for (size_t c = 0; c < row.cells.size() && c < cols.size(); ++c) {
-                    if (cols[c].id != ShipColumn::Orders) {
+                    if (row.cells[c].lines.empty()) {
                         cell(static_cast<int>(c) + 2, row.cells[c].text, cols[c].id == ShipColumn::Supplies);
                         continue;
                     }
-                    // One order per 12 px line.
+                    // One entry (an order, a design, a cargo entry) per 12 px line.
                     ImGui::TableSetColumnIndex(static_cast<int>(c) + 2);
                     const ImVec2 at = ImGui::GetCursorScreenPos();
+                    const std::vector<std::string>& entries = row.cells[c].lines;
                     ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-                    for (size_t l = 0; l < row.orderLines.size() && l < 3; ++l)
-                        ImGui::GetWindowDrawList()->AddText(ImVec2(at.x, at.y + ui.px(12.0f * float(l) - 1.0f)), IM_COL32_WHITE, row.orderLines[l].c_str());
+                    for (size_t l = 0; l < entries.size() && l < 3; ++l)
+                        ImGui::GetWindowDrawList()->AddText(ImVec2(at.x, at.y + ui.px(12.0f * float(l) - 1.0f)), IM_COL32_WHITE, entries[l].c_str());
                     ImGui::PopFont();
                 }
                 if (left && !viewOnly_) {
                     if (row.vehicle.valid()) selected_ = row.vehicle;
-                    else if (const game::Fleet* f = ui.state().fleet(row.fleet); f && !f->members.empty())
-                        selected_ = f->leader.valid() ? f->leader : f->members.front();
+                    else if (const auto first = firstMemberHere(ui, row.fleet)) selected_ = *first;
                 }
                 if (right) {
                     if (row.vehicle.valid()) report_.vehicle(row.vehicle);
@@ -430,14 +448,23 @@ private:
         if (click.left && !viewOnly_) {
             const ListRow& row = rows_[*click.left];
             if (row.vehicle.valid()) selected_ = row.vehicle;
-            else if (const game::Fleet* f = ui.state().fleet(row.fleet); f && !f->members.empty())
-                selected_ = f->leader.valid() ? f->leader : f->members.front();
+            else if (const auto first = firstMemberHere(ui, row.fleet)) selected_ = *first;
         }
         if (click.right) {
             const ListRow& row = rows_[*click.right];
             if (row.vehicle.valid()) report_.vehicle(row.vehicle);
             else report_.fleet(row.fleet);
         }
+    }
+
+    // A click on a fleet's row selects its first member at the fleet's
+    // location (spec 06 §1.8.3, confirmed: binary); else its first member.
+    static std::optional<game::VehicleId> firstMemberHere(const UiContext& ui, game::FleetId id) {
+        const game::Fleet* f = ui.state().fleet(id);
+        if (!f) return std::nullopt;
+        if (const std::vector<game::VehicleId> here = game::fleetGroup(ui.state(), *f); !here.empty()) return here.front();
+        if (!f->members.empty()) return f->members.front();
+        return std::nullopt;
     }
 
     struct Totals {
