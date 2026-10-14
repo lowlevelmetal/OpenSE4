@@ -414,8 +414,14 @@ protected:
     std::string constructConditions() {
         plan_.object = target(ObjectKind::Star);
         if (!plan_.object) return "No star here";
+        // The world the order names: the size chosen in the window, at most
+        // the device's value (spec 06 §1.3, confirmed: binary); none (the
+        // computer players' orders) is the one the value names, and a size
+        // above the value is refused here (both inferred, spec 01 §9).
+        if (o_.planetSize > actor_.value) return "The device cannot build a world that large";
+        const int64_t size = o_.planetSize > 0 ? o_.planetSize : actor_.value;
         for (const auto& ps : r_.data().planetSizes)
-            if (ps.constructed && ps.specialAbilityId == actor_.value) plan_.world = &ps;
+            if (ps.constructed && ps.specialAbilityId == size) plan_.world = &ps;
         if (!plan_.world) return "Unknown constructed planet";
         // Every requirement: the ships in this sector, whoever owns them, carry at
         // least Val 2 kT of components whose Custom Group is Val 1. The count goes

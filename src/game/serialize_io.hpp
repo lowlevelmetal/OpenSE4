@@ -404,6 +404,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     fields(ar, o.shipsTab, o.shipsShown);
     fields(ar, o.designToHit, o.designCondensed);
     if (ar.version() >= 8) fields(ar, o.designsHideObsolete, o.designsStatsView);   // format 7 files keep the defaults
+    if (formatVersion(ar) >= 10) fields(ar, o.galaxyMapNames, o.galaxyMapDistances);   // format 9 files keep the defaults
 }
 
 template <class Ar> void io(Ar& ar, Controller& c) { fields(ar, c.kind, c.mod, c.player, c.slot); }
@@ -466,7 +467,11 @@ void io(Ar& ar, Design& d) {
     if (formatVersion(ar) >= 9) fields(ar, d.picture);   // format 8 had no design pictures
 }
 
-template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount, o.from, o.to); }
+template <class Ar>
+void io(Ar& ar, Order& o) {
+    fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount, o.from, o.to);
+    if (formatVersion(ar) >= 10) fields(ar, o.planetSize);   // format 9 had no Construct size
+}
 
 template <class Ar>
 void io(Ar& ar, Vehicle& v) {
@@ -595,7 +600,11 @@ void io(Ar& ar, GameState& s) {
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------
 
-template <class Ar> void io(Ar& ar, cmd::SetOrders& c) { fields(ar, c.vehicle, c.fleet, c.orders, c.repeat, c.planet); }
+template <class Ar>
+void io(Ar& ar, cmd::SetOrders& c) {
+    fields(ar, c.vehicle, c.fleet, c.orders, c.repeat, c.planet);
+    if (formatVersion(ar) >= 10) fields(ar, c.ownList);   // format 9 had no own-list orders
+}
 template <class Ar> void io(Ar& ar, cmd::CreateFleet& c) { fields(ar, c.name, c.members); }
 template <class Ar> void io(Ar& ar, cmd::JoinFleet& c) { fields(ar, c.fleet, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::LeaveFleet& c) { fields(ar, c.vehicle); }

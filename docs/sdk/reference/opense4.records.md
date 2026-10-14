@@ -109,6 +109,8 @@ The Empire Options switches and what the windows remember. Only auto_claim_colon
 | `design_condensed` | `bool` | The designer's condensed view. |
 | `designs_hide_obsolete` | `bool` | The Designs window hides obsolete designs. |
 | `designs_stats_view` | `bool` | The Designs window shows statistics. |
+| `galaxy_map_names` | `bool` | The Galaxy Map shows system names. |
+| `galaxy_map_distances` | `bool` | The Galaxy Map shows distances when it asks for a warp point's destination. |
 
 ## `Order`
 
@@ -124,6 +126,7 @@ Its order list.
 | `amount` | `int` | A number whose meaning depends on the kind (see below). |
 | `from_resource` | `str` | Convert Resources: the resource converted. |
 | `to_resource` | `str` | Convert Resources: the resource it becomes. |
+| `planet_size` | `int` | Construct (create_constructed_planet): the world to build, by its planet size's special ability number, at most the device's value; 0 builds the one the device's value names. |
 
 ## `PackageItem`
 

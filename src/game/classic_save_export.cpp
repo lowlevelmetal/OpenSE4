@@ -619,6 +619,8 @@ private:
         for (size_t k = 0; k < o.queuesShown.size(); ++k) o.queuesShown[k] = ((u.queuesShown >> k) & 1u) != 0;
         o.designerCondensed = u.designCondensed;
         o.designerToHit = u.designToHit;
+        o.galaxyNames = u.galaxyMapNames;
+        o.galaxyDistances = u.galaxyMapDistances;
         o.planetsHideAvoided = u.planetsNoSysToAvoid;
         o.simulatorNoObsolete = u.simulatorNoObsolete;
         o.systemGrid = u.systemGrid;

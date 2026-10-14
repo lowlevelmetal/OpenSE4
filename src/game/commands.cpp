@@ -231,6 +231,9 @@ struct Applier {
         }
         for (const Order& o : c.orders)
             if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources) return R::fail("Only colonies carry out that order");
+        // A vehicle's own list alone (the Stellar Manipulation window's order,
+        // spec 06 §1.3): named by the vehicle, never by a fleet.
+        if (c.ownList && (c.fleet.valid() || !c.vehicle.valid())) return R::fail("Only a vehicle has a list of its own");
         // The Scrap window's orders come only from its commands (spec 03 §15);
         // a list may keep those it holds already.
         const std::vector<Order>* held = nullptr;
@@ -249,7 +252,7 @@ struct Applier {
         }
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
-        if (const Fleet* f = v->fleet.valid() ? s.fleet(v->fleet) : nullptr) return setFleetOrders(*f, v, c.orders, c.repeat);
+        if (const Fleet* f = !c.ownList && v->fleet.valid() ? s.fleet(v->fleet) : nullptr) return setFleetOrders(*f, v, c.orders, c.repeat);
         const size_t kept = static_cast<size_t>(std::mismatch(v->orders.begin(), v->orders.end(), c.orders.begin(), c.orders.end()).second - c.orders.begin());
         v->orders = expandGivenOrders(r, s, orderContextOf(s, *v), v->orders, c.orders);
         const bool cleared = clearBeforeUse(v->orders, kept);

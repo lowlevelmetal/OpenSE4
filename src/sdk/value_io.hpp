@@ -466,6 +466,7 @@ void fields(A& a, game::Order& x) {
     a("amount", x.amount);
     a("from_resource", ResourceCode{&x.from});
     a("to_resource", ResourceCode{&x.to});
+    a("planet_size", x.planetSize);
 }
 template <class A>
 void fields(A& a, game::PopulationGroup& x) {
@@ -629,6 +630,8 @@ void fields(A& a, game::InterfaceOptions& x) {
     a("design_condensed", x.designCondensed);
     a("designs_hide_obsolete", x.designsHideObsolete);
     a("designs_stats_view", x.designsStatsView);
+    a("galaxy_map_names", x.galaxyMapNames);
+    a("galaxy_map_distances", x.galaxyMapDistances);
 }
 template <class A>
 void fields(A& a, game::combat::Square& x) {
@@ -686,6 +689,7 @@ void fields(A& a, cmd::SetOrders& x) {
     a("planet", x.planet);
     a("orders", x.orders);
     a("repeat", x.repeat);
+    a("own_list", x.ownList);
 }
 template <class A>
 void fields(A& a, cmd::CreateFleet& x) {

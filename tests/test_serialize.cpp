@@ -277,6 +277,8 @@ TEST_CASE("serialize: orders round trip for every command type") {
     const auto& sent = std::get<cmd::SendMessage>(loaded->commands[25]).message;
     CHECK(sent.request.front().planet == ObjectId{12u});
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
+    CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front().planetSize == 2);   // format 10
+    CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).ownList);                          // format 10
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
     CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 5]).email == "someone@example.org");
     CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 4]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
@@ -523,8 +525,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x136cc7ee252f6d26ull;
-    constexpr size_t kGoldenSize = 1948;
+    constexpr uint64_t kGoldenChecksum = 0x58a5fabe0b710686ull;
+    constexpr size_t kGoldenSize = 1951;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -623,6 +625,46 @@ TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture
     const size_t colonies = static_cast<size_t>(std::count_if(plain.colonies.begin(), plain.colonies.end(), [](const auto& c) { return c.has_value(); }));
     CHECK(nine.size() == eight.size() + 4 * plain.designs.size() + 4 + 25 * plain.empires.size() + 25 +
                              4 * (plain.empires.size() + colonies + plain.vehicles.size()) + 28 + 24);
+}
+
+// Format 10 added, among the REA parity audit's state, the Galaxy Map's Show
+// Names and destination-mode Show Distances (spec 06 §2.6, spec 08 §3.6.7)
+// and a Construct order's size (Order::planetSize, spec 06 §1.3). Games saved
+// in format 9 (OpenSE4 0.11 and 0.12) still load, with both switches off and
+// every Construct order building the size its device names.
+TEST_CASE("serialize: format 9 games load; format 10 keeps the Galaxy Map's switches and a Construct order's size") {
+    GameState g = busyGame();
+    g.empires[0].interfaceOptions.galaxyMapNames = true;
+    g.empires[0].interfaceOptions.galaxyMapDistances = true;
+    REQUIRE_FALSE(g.vehicles.empty());
+    Order build;
+    build.kind = OrderKind::StellarManipulation;
+    build.amount = static_cast<int>(StellarAction::CreateConstructedPlanet);
+    build.planetSize = 2;
+    g.vehicles[0].orders.push_back(build);
+    auto now = deserializeState(serializeState(g));
+    REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
+    CHECK(now->empires[0].interfaceOptions.galaxyMapNames);
+    CHECK(now->empires[0].interfaceOptions.galaxyMapDistances);
+    CHECK(now->vehicles[0].orders.back().planetSize == 2);
+    CHECK(stateChecksum(*now) == stateChecksum(g));
+
+    // The same game as format 9 wrote it: none of them, version 9 in the envelope.
+    const std::vector<uint8_t> current = serializeState(g);
+    const std::string magic(current.begin(), current.begin() + 8);
+    std::vector<uint8_t> payload;
+    serial::write(payload, g, 9);
+    std::vector<uint8_t> old = wrapEnvelope(magic, payload);
+    old[8] = 9;
+    GameState plain = g;
+    for (Empire& e : plain.empires) e.interfaceOptions.galaxyMapNames = e.interfaceOptions.galaxyMapDistances = false;
+    plain.vehicles[0].orders.back().planetSize = 0;
+    auto before = deserializeState(old);
+    REQUIRE_MESSAGE(before.has_value(), (before ? std::string{} : before.error()));
+    CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapNames);
+    CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapDistances);
+    CHECK(before->vehicles[0].orders.back().planetSize == 0);
+    CHECK(stateChecksum(*before) == stateChecksum(plain));
 }
 
 // ---- Save files --------------------------------------------------------------------------------------------
