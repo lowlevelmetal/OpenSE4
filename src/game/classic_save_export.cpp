@@ -615,6 +615,8 @@ private:
         o.shipsTab = clampByte(u.shipsTab + 1);
         o.queuesTab = clampByte(u.queuesTab + 1);
         o.designsTab = clampByte(u.designsTab + 1);
+        o.designsStatsView = u.designsStatsView;
+        o.designsHideObsolete = u.designsHideObsolete;
         o.logFilter = clampByte(u.logFilter + 1);
         for (size_t k = 0; k < o.shipsShown.size(); ++k) o.shipsShown[k] = ((u.shipsShown >> k) & 1u) != 0;
         for (size_t k = 0; k < o.queuesShown.size(); ++k) o.queuesShown[k] = ((u.queuesShown >> k) & 1u) != 0;

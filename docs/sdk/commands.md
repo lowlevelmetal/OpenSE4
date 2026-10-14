@@ -605,7 +605,10 @@ area keeps its progress while it stays in the queue.
 
 ### `set_intel`
 
-Replaces the intelligence queue.
+Replaces the intelligence queue. A project keeps its progress while it stays
+in the queue: each entry takes that of an entry of the old queue with the same
+project and the same targets (specific or any), each old entry once, so a
+project added again starts from nothing.
 
 | Field | Type | Meaning |
 |---|---|---|

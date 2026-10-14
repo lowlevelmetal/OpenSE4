@@ -741,3 +741,46 @@ TEST_CASE("intel: turns are deterministic") {
     CHECK(a.first == b.first);
     CHECK(a.second == b.second);
 }
+
+TEST_CASE("intel: a queued project keeps its specific target, and its own progress") {
+    // Spec 05 §2.1: the target picked when the project is added (or "Any")
+    // stays with the queued project and is the one the operation strikes.
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    std::vector<VehicleId> ships;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kB && v.count > 0) ships.push_back(v.id);
+    REQUIRE(ships.size() >= 2);
+    IntelProjectOrder x = order(Effect::ShipDamage, kB), y = order(Effect::ShipDamage, kB);
+    x.targetVehicle = ships[0];
+    y.targetVehicle = ships[1];
+    x.progress = 1;
+    y.progress = 2;
+    s.empire(kA).intel = {x, y};
+
+    // Reordered: each copy keeps its target and its progress.
+    cmd::SetIntel c;
+    c.queue = {y, x};
+    REQUIRE(apply(r, s, kA, c).ok);
+    REQUIRE(s.empire(kA).intel.size() == 2);
+    CHECK(s.empire(kA).intel[0].targetVehicle == ships[1]);
+    CHECK(s.empire(kA).intel[0].progress == 2);
+    CHECK(s.empire(kA).intel[1].targetVehicle == ships[0]);
+    CHECK(s.empire(kA).intel[1].progress == 1);
+    // The same project added again starts from nothing.
+    c.queue = {y, x, y};
+    REQUIRE(apply(r, s, kA, c).ok);
+    CHECK(s.empire(kA).intel[0].progress == 2);
+    CHECK(s.empire(kA).intel[2].progress == 0);
+
+    // Funded, the copy aimed at the second ship strikes that ship only.
+    s.empire(kA).intel = {y};
+    const int before0 = vehicleDamageTaken(s, *s.vehicle(ships[0]));
+    const int before1 = vehicleDamageTaken(s, *s.vehicle(ships[1]));
+    step(s, kA, 100000);
+    CHECK(s.empire(kA).intel.empty());
+    CHECK(vehicleDamageTaken(s, *s.vehicle(ships[0])) == before0);
+    REQUIRE(s.vehicle(ships[1]));
+    CHECK(vehicleDamageTaken(s, *s.vehicle(ships[1])) > before1);
+}

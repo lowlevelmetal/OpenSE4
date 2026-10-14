@@ -876,11 +876,24 @@ struct Applier {
             if (!r.meets(emp(), r.data().intelProjects[p.project].requirements)) return R::fail("Project not available");
             if (p.target.valid() && (p.target.index() >= s.empires.size() || p.target == e)) return R::fail("Invalid target");
         }
+        // Progress belongs to the queued project: each entry keeps that of an
+        // entry of the old queue with the same project and the same targets
+        // (the empire and the specific one picked, or "Any"; spec 05 §2.1),
+        // each old entry handing on its progress once, so a project added
+        // again starts at 0 and reordering moves nothing between two copies.
         std::vector<IntelProjectOrder> q = c.queue;
+        std::vector<uint8_t> used(emp().intel.size(), 0);
         for (auto& p : q) {
             p.progress = 0;
-            for (const auto& old : emp().intel)
-                if (old.project == p.project && old.target == p.target) p.progress = old.progress;
+            for (size_t k = 0; k < emp().intel.size(); ++k) {
+                const IntelProjectOrder& old = emp().intel[k];
+                if (used[k] || old.project != p.project || old.target != p.target || old.targetPlanet != p.targetPlanet ||
+                    old.targetVehicle != p.targetVehicle || old.thirdEmpire != p.thirdEmpire || old.targetTech != p.targetTech)
+                    continue;
+                used[k] = 1;
+                p.progress = old.progress;
+                break;
+            }
         }
         emp().intel = std::move(q);
         emp().intelEvenly = c.evenly;

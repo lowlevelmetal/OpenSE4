@@ -113,28 +113,28 @@ void playGolden(std::string_view name, uint64_t seed, bool simultaneous, std::sp
 
 TEST_CASE("sdk rules golden: a simultaneous game a rules mod changes gives the golden checksums") {
     static constexpr std::array<Milestone, 8> kGolden{{
-        {0, 0x47f7f82ba79144cbull},
-        {1, 0xcdbc7df72ba67522ull},
-        {2, 0xfec010795b2a2a97ull},
-        {5, 0x339165ea46a01542ull},
-        {10, 0x11070d293dd750aeull},
-        {20, 0xdfb1c1c39be4af1full},
-        {40, 0xfe306a8044a0a63aull},
-        {60, 0x89b2b58264771746ull},
+        {0, 0x0525a481438d11fbull},
+        {1, 0x591095e98891001eull},
+        {2, 0xc03c164970652271ull},
+        {5, 0xc223ed6e439526b2ull},
+        {10, 0xbd839f66873412eeull},
+        {20, 0x22410152ab46c885ull},
+        {40, 0x7603fba7e02a2700ull},
+        {60, 0xa683358616074da4ull},
     }};
     playGolden("simultaneous", 151, true, kGolden);
 }
 
 TEST_CASE("sdk rules golden: a turn-based game a rules mod changes gives the golden checksums") {
     static constexpr std::array<Milestone, 8> kGolden{{
-        {0, 0xa21fbbfe6617c8faull},
-        {1, 0x9faa5be7b8d0d182ull},
-        {2, 0x9d707cb96db57c64ull},
-        {5, 0xbefd0530b0c32642ull},
-        {10, 0xc56371629af55880ull},
-        {20, 0x158e34d1ba4ad11dull},
-        {40, 0xc04d2e78b98728edull},
-        {60, 0xb0fb83719a413019ull},
+        {0, 0x90265d760e490a46ull},
+        {1, 0xc4c23efff4f47ce0ull},
+        {2, 0xaf34e71cb9f6bf34ull},
+        {5, 0x227039d92e951904ull},
+        {10, 0xb22f5aba4bb55ec2ull},
+        {20, 0x549aef05f326e7d9ull},
+        {40, 0xa83e20faee57ea07ull},
+        {60, 0x14d4406f4e142c1bull},
     }};
     playGolden("turn-based", 157, false, kGolden);
 }

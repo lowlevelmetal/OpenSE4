@@ -422,7 +422,7 @@ Replaces the research queue (at most 12 projects, one per tech area). A tech are
 set_intel(queue: Optional[Sequence[Dict[str, Any]]] = None, evenly: bool = True, repeat: bool = False) -> Dict[str, Any]
 ```
 
-Replaces the intelligence queue.
+Replaces the intelligence queue. A project keeps its progress while it stays in the queue: each entry takes that of an entry of the old queue with the same project and the same targets (specific or any), each old entry once, so a project added again starts from nothing.
 
 - `queue`: The projects, in order.
 - `evenly`: Share points evenly (the default), or in order.

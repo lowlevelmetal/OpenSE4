@@ -560,7 +560,11 @@ TEST_CASE("classic save: OpenSE4 games survive export and import, in both turn s
     const Rules& r = test::engineRules();
     for (const bool simultaneous : {true, false}) {
         INFO("turn style: " << std::string(simultaneous ? "simultaneous" : "turn-based"));
-        const GameState s = playedGame(simultaneous, 12);
+        GameState s = playedGame(simultaneous, 12);
+        // The Designs window's tab and check boxes are carried (§3.6.7).
+        s.empires[0].interfaceOptions.designsTab = 2;
+        s.empires[0].interfaceOptions.designsHideObsolete = true;
+        s.empires[0].interfaceOptions.designsStatsView = true;
         REQUIRE(validateState(s, &r).empty());
 
         // Export, encode, decode: the same values.

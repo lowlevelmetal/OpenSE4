@@ -626,14 +626,14 @@ and 0-based in OpenSE4.
 | bool | Galaxy warp lines | `galaxyWarpLines` |
 | bool | Latest construction items only | `latestConstructionOnly` |
 | bool | Latest components only | `latestComponentsOnly` |
-| bool | Designs window: statistics/strategy view | none |
-| bool | Designs window: hide obsolete | none |
+| bool | Designs window: statistics/strategy view | `designsStatsView` |
+| bool | Designs window: hide obsolete | `designsHideObsolete` |
 | bool | Choose the colony type on colonization | `Empire::chooseColonyType` |
 | byte, byte | System and sector shown when the player's turn last ended (turn-based) | none; export the home system and sector |
 | bool | Claim colonized systems automatically | `autoClaimColonized` |
 | byte ×4 | Tabs of the Colonies, Planets, Ships\Units and Construction Queues windows | `planetsTab`, `shipsTab`, `queuesTab` (value − 1); Colonies: none |
 | byte | Set Construction Queue tab **(observed: changes when the tab is visited)** | none |
-| byte | Designs window tab | none |
+| byte | Designs window tab: 1 Ship Designs, 2 Unit Designs, 3 Enemy Ship Dsgn, 4 Enemy Unit Dsgn; the window opens on it (confirmed: binary) | `designsTab` (value − 1, held to 0..3) |
 | byte | Politics window tab | none |
 | byte | Log filter: 1 All, 2..8 Construction..Misc | `logFilter` = value − 1 |
 | byte ×2 | Cargo and units transfer tabs (3) | none |
