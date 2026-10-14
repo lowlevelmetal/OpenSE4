@@ -35,9 +35,17 @@ struct SetOrders {           // replaces the order list (vehicle, fleet or plane
     // its fleet (spec 03 §8).
     bool ownList = false;
 };
-struct CreateFleet {         // new fleet from vehicles in one sector; first is the leader
+// A new fleet (spec 03 §9, confirmed: binary). The Fleet Transfer window's
+// form names no members: an empty fleet at `location`, which the window then
+// fills one vehicle at a time and deletes when it is still empty as it
+// closes. With `members` (an OpenSE4 form, for computer players and scripts)
+// the vehicles share a sector and the first leads. An empty name takes
+// defaultFleetName. It starts with the first formation and strategy, and
+// with minister control when the empire's new vehicles start under it.
+struct CreateFleet {
     std::string name;
     std::vector<VehicleId> members;
+    Location location;           // the empty form's sector (format 10)
 };
 // An order given to the vehicles tagged in the report panel's list (spec 03
 // §8 "Tagged vehicles", confirmed: binary): `orders` are appended to the own
@@ -137,7 +145,13 @@ struct Retrofit { VehicleId vehicle; DesignId design; };  // a Scrap window acti
 
 // ---- Planets -------------------------------------------------------------------------------
 struct SetColonyType { ObjectId planet; std::string colonyType; };
-struct AbandonPlanet { ObjectId planet; };
+// Abandon Planet (spec 02 §5, confirmed: binary): refused when more people
+// live there than `Maximum Population For Abandon Planet Order`; otherwise an
+// Abandon order is appended to the colony's list (`scrapFacilities`: scrap
+// every facility first, with the usual refund). A turn-based game runs the
+// colony's list at once; a simultaneous game carries it out on day 1 of the
+// movement phase, and Clear Orders takes it back.
+struct AbandonPlanet { ObjectId planet; bool scrapFacilities = false; };
 // Cloak or Decloak a colony (spec 01 §6.9, confirmed: binary): acts at once
 // in both turn styles and is never queued; no cost, no supply, and the
 // construction queue is untouched. Cloak needs a cloak level of 2 or more in
@@ -374,6 +388,11 @@ std::vector<ObjectId> coloniesNamed(std::span<const Command> commands);
 // names are not space objects' names. `kNameInUse` is the refusal's reason.
 bool spaceObjectNameInUse(const GameState& s, std::string_view name);
 inline constexpr std::string_view kNameInUse = "That name is already in use.";
+// The name Create Fleet offers (spec 03 §9, confirmed: binary): "<Greek
+// letter> Fleet" for the number of the empire's fleets plus one, Alpha to
+// Kappa, then two letters ("Alpha Alpha Fleet" is the 11th, inferred), the
+// number going up past names the empire's fleets use.
+std::string defaultFleetName(const GameState& s, EmpireId empire);
 
 // Scrap-window values shared with the UI (spec 03 §15): round(design cost × P %)
 // per resource; a fighter or satellite group returns that per unit.

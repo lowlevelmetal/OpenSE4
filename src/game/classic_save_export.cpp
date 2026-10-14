@@ -1243,6 +1243,11 @@ private:
                 rec.target = clampWord(grouped + 1);
                 break;
             }
+            case OrderKind::Abandon:
+                // Kind 64, target 1 to scrap the facilities first (§3.8.8).
+                rec.kind = 64;
+                rec.target = o.amount == 1 ? 1 : 0;
+                break;
             case OrderKind::ConvertResources:
                 rec.kind = 65;
                 rec.extra = static_cast<uint8_t>(std::min<int>(o.from, 2) + 1);

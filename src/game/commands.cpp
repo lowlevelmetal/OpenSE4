@@ -16,6 +16,7 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <map>
 #include <type_traits>
@@ -221,8 +222,15 @@ struct Applier {
         if (c.planet.valid()) {
             Colony* col = ownColony(s, e, c.planet);
             if (!col) return R::fail("Not your planet");
-            for (const Order& o : c.orders)
+            for (const Order& o : c.orders) {
+                // Abandon comes only from cmd::AbandonPlanet; a list may keep the one it holds.
+                if (o.kind == OrderKind::Abandon) {
+                    if (std::count(c.orders.begin(), c.orders.end(), o) > std::count(col->orders.begin(), col->orders.end(), o))
+                        return R::fail("That order is given only with Abandon Planet");
+                    continue;
+                }
                 if (!colonyOrder(o.kind)) return R::fail("Planets cannot carry out that order");
+            }
             std::vector<Order> list = c.orders;
             const size_t kept = static_cast<size_t>(std::mismatch(col->orders.begin(), col->orders.end(), list.begin(), list.end()).second - list.begin());
             // Convert Resources is given only to a colony with a converter, as
@@ -239,7 +247,8 @@ struct Applier {
             return {};
         }
         for (const Order& o : c.orders)
-            if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources) return R::fail("Only colonies carry out that order");
+            if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources || o.kind == OrderKind::Abandon)
+                return R::fail("Only colonies carry out that order");
         // A vehicle's own list alone (the Stellar Manipulation window's order,
         // spec 06 §1.3): named by the vehicle, never by a fleet.
         if (c.ownList && (c.fleet.valid() || !c.vehicle.valid())) return R::fail("Only a vehicle has a list of its own");
@@ -287,7 +296,8 @@ struct Applier {
         }
         for (const Order& o : c.orders) {
             if (auto p = orderProblem(s, e, o); !p.empty()) return R::fail(p);
-            if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources) return R::fail("Only colonies carry out that order");
+            if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources || o.kind == OrderKind::Abandon)
+                return R::fail("Only colonies carry out that order");
             if (scrapWindowOrder(o.kind)) return R::fail("That order is given only in the Scrap window");
         }
         std::vector<FleetId> fleetsDone;
@@ -326,8 +336,24 @@ struct Applier {
         return {};
     }
 
+    // Create Fleet (spec 03 §9, confirmed: binary): the window's form makes
+    // an empty fleet where the window is; the members form (OpenSE4's) takes
+    // vehicles that share a sector. Either way the first formation and
+    // strategy, minister control as for new vehicles, and the name given
+    // (not checked) or defaultFleetName.
     R operator()(const cmd::CreateFleet& c) {
-        if (c.members.empty()) return R::fail("A fleet needs members");
+        if (c.members.empty()) {
+            if (!knownSystem(s, c.location.system) || !c.location.sector.valid()) return R::fail("Invalid location");
+            if (std::none_of(s.vehicles.begin(), s.vehicles.end(), [&](const Vehicle& v) { return v.owner == e && v.count > 0 && v.location == c.location; }))
+                return R::fail("None of your vehicles is there");
+            Fleet f;
+            f.owner = e;
+            f.name = c.name.empty() ? defaultFleetName(s, e) : c.name;
+            f.location = c.location;
+            f.minister = emp().ministersForNewVehicles;
+            s.addFleet(std::move(f));
+            return {};
+        }
         const Vehicle* first = ownVehicle(s, e, c.members.front());
         if (!first) return R::fail("Not your vehicle");
         const Location where = first->location;
@@ -340,7 +366,8 @@ struct Applier {
         }
         Fleet f;
         f.owner = e;
-        f.name = c.name.empty() ? std::format("Fleet {}", s.nextFleetId + 1) : c.name;
+        f.name = c.name.empty() ? defaultFleetName(s, e) : c.name;
+        f.minister = emp().ministersForNewVehicles;
         f.members = c.members;
         f.leader = c.members.front();
         f.location = where;  // the fleet's own record of where it is (spec 03 §9)
@@ -466,14 +493,17 @@ struct Applier {
     R operator()(const cmd::FireOn& c) { return scrapWindow(c.vehicle, ScrapAction::FireOn); }
 
     // A Scrap window action on one vehicle (spec 03 §15, confirmed: binary):
-    // tested now; in a turn-based game carried out at once, the order list
-    // untouched; in a simultaneous game the list is cleared, Repeat goes off
-    // and the action becomes its only order, carried out (and tested again)
-    // at the vehicle's first action during movement.
+    // the window's test now; in a turn-based game the order's test too and
+    // then carried out at once, the order list untouched; in a simultaneous
+    // game the list is cleared, Repeat goes off and the action becomes its
+    // only order, carried out (and tested again) at the vehicle's first
+    // action during movement.
     R scrapWindow(VehicleId id, ScrapAction a, DesignId design = {}) {
         Vehicle* v = ownVehicle(s, e, id);
         if (!v || v->count <= 0) return R::fail("Not your vehicle");
         if (auto why = scrapActionProblem(r, s, e, *v, a, design); !why.empty()) return R::fail(why);
+        if (!s.options.simultaneous)
+            if (auto why = scrapActionProblem(r, s, e, *v, a, design, ScrapTest::Order); !why.empty()) return R::fail(why);
         if (s.options.simultaneous) {
             Order o{scrapOrderKind(a), v->location};
             o.design = design;
@@ -626,21 +656,21 @@ struct Applier {
         return {};
     }
 
+    // Abandon Planet (spec 02 §5, spec 06 §1.3, confirmed: binary): the
+    // population test is made when the order is given; then the Abandon
+    // order (kind 64 of the original's saves) goes to the end of the colony's
+    // list. A turn-based game runs the colony's list at once (turn_based.cpp);
+    // a simultaneous game carries it out on day 1 of the movement phase, and
+    // Clear Orders takes it back. Movement carries it out (movement.cpp).
     R operator()(const cmd::AbandonPlanet& c) {
         Colony* col = ownColony(s, e, c.planet);
         if (!col) return R::fail("Not your planet");
         if (col->totalPopulation() > r.setting("Maximum Population For Abandon Planet Order", 50))
             return R::fail("Too many people live there to abandon it");
-        // The people leave and the colony's anger is reset. The colony goes
-        // only when no facility is left (the player may scrap them first);
-        // otherwise the planet stays ours, empty, with its facilities, and
-        // nobody can colonize it (spec 06 §7 Q47, confirmed: binary).
-        col->population.clear();
-        col->anger = kNewColonyAnger;
-        if (col->facilities.empty()) s.colonies[c.planet.index()].reset();
-        addLog(s, e, LogCategory::Misc, std::format("{} abandoned", s.galaxy.object(c.planet).name), {}, locationOf(s.galaxy, c.planet),
-               logpicture::planet(c.planet));
-        addHistory(s, e, e, std::format("Abandoned {}", s.galaxy.object(c.planet).name), locationOf(s.galaxy, c.planet));
+        Order o{OrderKind::Abandon, locationOf(s.galaxy, c.planet)};
+        o.object = c.planet;
+        o.amount = c.scrapFacilities ? 1 : 0;
+        col->orders.push_back(o);
         return {};
     }
 
@@ -1483,6 +1513,23 @@ bool spaceObjectNameInUse(const GameState& s, std::string_view name) {
         for (ObjectId id : sys.objects)
             if (s.galaxy.object(id).name == name) return true;
     return false;
+}
+
+std::string defaultFleetName(const GameState& s, EmpireId empire) {
+    static constexpr std::array<std::string_view, 10> kLetters{"Alpha", "Beta", "Gamma", "Delta", "Epsilon",
+                                                               "Zeta",  "Eta",  "Theta", "Iota",  "Kappa"};
+    auto nameOf = [](size_t n) -> std::string {
+        if (n <= kLetters.size()) return std::format("{} Fleet", kLetters[n - 1]);
+        if (n <= kLetters.size() * (kLetters.size() + 1))
+            return std::format("{} {} Fleet", kLetters[(n - 1) / kLetters.size() - 1], kLetters[(n - 1) % kLetters.size()]);
+        return std::format("Fleet {}", n);
+    };
+    auto inUse = [&](const std::string& name) {
+        return std::any_of(s.fleets.begin(), s.fleets.end(), [&](const Fleet& f) { return f.owner == empire && f.name == name; });
+    };
+    size_t n = static_cast<size_t>(std::count_if(s.fleets.begin(), s.fleets.end(), [&](const Fleet& f) { return f.owner == empire; })) + 1;
+    while (inUse(nameOf(n))) ++n;
+    return nameOf(n);
 }
 
 Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {

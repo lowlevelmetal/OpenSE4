@@ -1580,9 +1580,10 @@ namespace {
 // (cmd::Scrap with moveFirst), whether or not it is cloaked or busy; the
 // Scrap order makes its own test when it is carried out, so a cloaked one is
 // not scrapped then. It gets no other orders that turn. A candidate in a
-// fleet leaves it first: what a Scrap at the head of a fleet member's list
-// does to its fleet is open (question 74), and OpenSE4 keeps its earlier
-// choice there (inferred).
+// fleet stays in it: its fleet's group carries the orders out, so the Move
+// To takes the members at the fleet's location to the yard and the Scrap
+// scraps the group's first member, which need not be the candidate
+// (question 74, movement's scrapOrder, confirmed: binary).
 void scrapOldest(Planner& p) {
     std::vector<VehicleId> list = p.ownVehicles(Minister::Scrap);
     std::sort(list.begin(), list.end(), [&](VehicleId a, VehicleId b) {
@@ -1612,7 +1613,6 @@ void scrapOldest(Planner& p) {
     }
     const auto near = nearestByTravel(p, p.st.vehicle(id)->location, places);
     if (!near) return;
-    if (p.st.vehicle(id)->fleet.valid()) p.emit(cmd::LeaveFleet{id});
     if (p.emit(cmd::Scrap{id, {}, -1, places[near->goal]})) p.busy.insert(id);
 }
 

@@ -1,9 +1,10 @@
 # Closing a window whose work the game keeps does not send the lesson back (docs/LEARNING.md
 # "Getting back"; docs/BUILDING.md "Input scripts"): tutorial 5's fleet. The fleet created at
-# step 4 is the game's, so when Fleet Transfer closes at step 5 (with Free Play on), the lesson
-# stays at step 5 and shows the way back (the Fleet Transfer order); the other attack ship then
-# still joins the fleet. Once joined, a fleet holding both attack ships is what step 5 asks for,
-# however it came about.
+# step 4 holds the first attack ship by step 5, so it is the game's: when Fleet Transfer closes
+# there (with Free Play on) the fleet stays, and the lesson stays at step 5 and shows the way back
+# (the Fleet Transfer order); the other attack ship then still joins the fleet. Once joined, a
+# fleet holding both attack ships is what step 5 asks for, however it came about. (An empty
+# fleet would go as the window closes.)
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --tutorial=fleets-and-movement --layout=1024x768 --size=1280x800
 
@@ -18,6 +19,10 @@ wait-step 4
 click tag:fleet-transfer:create-fleet
 click item:OK in="Create Fleet"
 wait-step 5
+wait-for tag:fleet-transfer:ships:named
+click tag:fleet-transfer:ships:named
+wait 5
+assert-step 5
 # Free Play (at 800x600 More shows it first): Fleet Transfer closes; the fleet stays.
 click item:More in=lesson optional
 click tag:lesson:free-play
@@ -29,6 +34,7 @@ wait 10
 assert-step 5
 assert-absent item:"hint:The * window was closed and*" in=lesson
 wait-for item:"hint:The Fleet Transfer window was closed*" in=lesson
+assert { fleets = 1 }
 # The way back: the Fleet Transfer order; the other attack ship is still outside fleets.
 click tag:order:fleet-transfer
 wait-window fleet-transfer

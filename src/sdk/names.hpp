@@ -60,7 +60,7 @@ constexpr std::span<const std::string_view> enumNames() {
 OPENSE4_SDK_ENUM(game::OrderKind, "order kind", "move_to", "warp", "attack", "resupply", "repair", "explore", "colonize", "sentry",
                  "load_cargo", "drop_cargo", "launch_units", "recover_units", "cloak", "decloak", "sweep_mines", "use_component",
                  "stellar_manipulation", "move_to_waypoint", "self_destruct", "use_facility", "convert_resources", "scrap", "analyze",
-                 "mothball", "unmothball", "retrofit", "fire_on", "seek", "join_fleet");
+                 "mothball", "unmothball", "retrofit", "fire_on", "seek", "join_fleet", "abandon_planet");
 OPENSE4_SDK_ENUM(game::StellarAction, "stellar manipulation", "create_planet", "destroy_planet", "create_star", "destroy_star",
                  "open_warp_point", "close_warp_point", "create_storm", "destroy_storm", "create_nebulae", "destroy_nebulae",
                  "create_black_hole", "destroy_black_hole", "create_constructed_planet");

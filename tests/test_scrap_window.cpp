@@ -387,12 +387,21 @@ TEST_CASE("scrap window: in a simultaneous game each action becomes the vehicle'
     CHECK(s.vehicle(sleeper)->status == VehicleStatus::Normal);
 }
 
-TEST_CASE("scrap window: a simultaneous order is tested again when it acts; a failure clears the list") {
+TEST_CASE("scrap window: a simultaneous order is tested again when it acts; a failed one counts as done") {
+    // Spec 03 §15 (confirmed: binary): the order leaves the list and the
+    // orders behind it run; the list is not cleared. Scrap, Analyze and Fire
+    // On say nothing.
     const Rules& r = engineRules();
     GameState s = newGame(r, true);
     const Location home = homeOf(s, kMe);
+    const Location away{home.system, Sector{home.sector.x == 0 ? 1 : home.sector.x - 1, home.sector.y}};   // one move away
     const DesignId gun = design(s, r, kMe, "Gun", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod", "Test Laser"});
     const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod"});
+    auto then = [&](VehicleId id) {
+        std::vector<Order> list = s.vehicle(id)->orders;
+        list.push_back(Order{OrderKind::MoveTo, away});
+        REQUIRE(apply(r, s, kMe, cmd::SetOrders{id, {}, list, false}).ok);
+    };
     // Two armed ships fired on: each saw the other when the orders were
     // given; whichever acts last finds no armed companion, and its order fails.
     const VehicleId x = addTestVehicle(s, r, gun, home).id;
@@ -404,26 +413,145 @@ TEST_CASE("scrap window: a simultaneous order is tested again when it acts; a fa
     const VehicleId scrapped = addTestVehicle(s, r, plain, home).id;
     REQUIRE(apply(r, s, kMe, cmd::Analyze{analyzed}).ok);
     REQUIRE(apply(r, s, kMe, cmd::Scrap{scrapped}).ok);
+    for (VehicleId id : {x, y, analyzed, scrapped}) then(id);
     std::erase_if(homeworld(s, kMe).facilities, [&](uint32_t f) { return hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard); });
     s.empire(kMe).log.clear();
     movementPhase(r, s);
     const bool xLeft = s.vehicle(x) != nullptr, yLeft = s.vehicle(y) != nullptr;
     CHECK(xLeft != yLeft);
-    const VehicleId survivor = xLeft ? x : y;
-    CHECK(s.vehicle(survivor)->orders.empty());
     CHECK(s.design(gun).lost == 1);
-    // Both failed and their lists are cleared; only the Scrap says why.
-    REQUIRE(s.vehicle(analyzed));
-    REQUIRE(s.vehicle(scrapped));
-    CHECK(s.vehicle(analyzed)->orders.empty());
-    CHECK(s.vehicle(scrapped)->orders.empty());
-    int cancelled = 0;
-    for (const LogEntry& l : s.empire(kMe).log)
-        if (l.title.starts_with("Unable to")) {
-            ++cancelled;
-            CHECK(l.title.find("Scrap") != std::string::npos);
-        }
-    CHECK(cancelled == 1);
+    // Each failed order counted as done: the Move To behind it ran.
+    for (VehicleId id : {xLeft ? x : y, analyzed, scrapped}) {
+        REQUIRE(s.vehicle(id));
+        CHECK(s.vehicle(id)->location == away);
+        CHECK(s.vehicle(id)->orders.empty());
+    }
+    for (const LogEntry& l : s.empire(kMe).log) {
+        CHECK_FALSE(l.title.starts_with("Unable to"));
+        CHECK(l.title.find("cancelled") == std::string::npos);
+        CHECK(l.title.find("Cannot") == std::string::npos);
+    }
+}
+
+TEST_CASE("scrap window: failed Mothball, Unmothball and Retrofit orders are reported and count as done") {
+    // Spec 03 §15 (confirmed: binary): the Mothball minister's "Cannot
+    // Unmothball" (not enough resources, or no space yard); the titles of the
+    // other two are ours. A Self-Destruct nobody can carry out counts as done.
+    const Rules& r = engineRules();
+    GameState s = newGame(r, true);
+    const Location home = homeOf(s, kMe);
+    const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod"});
+    const DesignId armored = design(s, r, kMe, "Armored", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod", "Test Armor Plate"});
+    const VehicleId sleeper = addTestVehicle(s, r, plain, home).id;
+    s.vehicle(sleeper)->status = VehicleStatus::Mothballed;
+    s.vehicle(sleeper)->movement = 0;
+    // The window's Unmothball needs the status and a yard, not the cost.
+    s.empire(kMe).stockpile = {};
+    REQUIRE(apply(r, s, kMe, cmd::Mothball{sleeper, false}).ok);
+    movementPhase(r, s);
+    CHECK(s.vehicle(sleeper)->status == VehicleStatus::Mothballed);
+    CHECK(s.vehicle(sleeper)->orders.empty());
+    CHECK(entries(s, kMe, "Cannot Unmothball") == 1);
+    // With the resources, but without a yard by then; Mothball and Retrofit too.
+    s.empire(kMe).stockpile = {100000, 100000, 100000};
+    s.empire(kMe).log.clear();
+    const VehicleId mothball = addTestVehicle(s, r, plain, home).id;
+    const VehicleId refit = addTestVehicle(s, r, plain, home).id;
+    REQUIRE(apply(r, s, kMe, cmd::Mothball{sleeper, false}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::Mothball{mothball, true}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::Retrofit{refit, armored}).ok);
+    std::erase_if(homeworld(s, kMe).facilities, [&](uint32_t f) { return hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard); });
+    movementPhase(r, s);
+    CHECK(s.vehicle(sleeper)->status == VehicleStatus::Mothballed);
+    CHECK(s.vehicle(mothball)->status == VehicleStatus::Normal);
+    CHECK(s.vehicle(refit)->design == plain);
+    for (VehicleId id : {sleeper, mothball, refit}) CHECK(s.vehicle(id)->orders.empty());
+    CHECK(entries(s, kMe, "Cannot Unmothball") == 1);
+    CHECK(entries(s, kMe, "Cannot Mothball") == 1);
+    CHECK(entries(s, kMe, "Cannot Retrofit") == 1);
+    // A Self-Destruct order nobody can carry out leaves the list too, silently.
+    const VehicleId plainShip = addTestVehicle(s, r, plain, home).id;
+    s.vehicle(plainShip)->orders = {Order{OrderKind::SelfDestruct, home}};
+    s.empire(kMe).log.clear();
+    movementPhase(r, s);
+    REQUIRE(s.vehicle(plainShip));
+    CHECK(s.vehicle(plainShip)->orders.empty());
+    for (const LogEntry& l : s.empire(kMe).log) {
+        CHECK_FALSE(l.title.starts_with("Unable to"));
+        CHECK(l.title.find("cancelled") == std::string::npos);
+    }
+}
+
+TEST_CASE("scrap window: a fleet member's Scrap scraps the fleet's first member") {
+    // Spec 05 §19 Q74 (confirmed: binary): the Scrap minister's Scrap on a
+    // fleet member's own list is carried out by its fleet's group and
+    // scraps the group's first vehicle in object order, when that one stands
+    // at a yard and is not cloaked. When it is another member, the order
+    // leaves the lists and the member that held it stays in the fleet; when
+    // it is the member itself, the run fails and the lists of the members
+    // left there are cleared.
+    const Rules& r = engineRules();
+    GameState s = newGame(r, true);
+    const Location home = homeOf(s, kMe);
+    const Location away{home.system, Sector{home.sector.x == 0 ? 1 : home.sector.x - 1, home.sector.y}};
+    const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod"});
+    const VehicleId a = addTestVehicle(s, r, plain, home).id;
+    const VehicleId b = addTestVehicle(s, r, plain, home).id;
+    const VehicleId c = addTestVehicle(s, r, plain, home).id;
+    REQUIRE(objectOrderKey(*s.vehicle(a)) < objectOrderKey(*s.vehicle(b)));
+    REQUIRE(objectOrderKey(*s.vehicle(b)) < objectOrderKey(*s.vehicle(c)));
+    // Members in another order than object order: the first in object order goes.
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Old Guard", {c, a, b}}).ok);
+    const FleetId fleet = s.vehicle(c)->fleet;
+    REQUIRE(apply(r, s, kMe, cmd::Scrap{c, {}, -1, home}).ok);
+    CHECK(s.vehicle(c)->orders == std::vector<Order>{Order{OrderKind::Scrap, home}});
+    movementPhase(r, s);
+    CHECK(s.vehicle(a) == nullptr);
+    CHECK(s.design(plain).scrapped == 1);
+    CHECK(entries(s, kMe, "Vehicle Scrapped") == 1);
+    REQUIRE(s.vehicle(c));
+    CHECK(s.vehicle(c)->fleet == fleet);
+    CHECK(s.vehicle(c)->orders.empty());
+    // Now the member that holds it comes first: it goes, and the others' lists are cleared.
+    REQUIRE(apply(r, s, kMe, cmd::Scrap{b, {}, -1, home}).ok);
+    s.vehicle(c)->orders = {Order{OrderKind::Sentry}};
+    s.vehicle(c)->repeatOrders = true;
+    movementPhase(r, s);
+    CHECK(s.vehicle(b) == nullptr);
+    REQUIRE(s.vehicle(c));
+    CHECK(s.vehicle(c)->orders.empty());
+    CHECK_FALSE(s.vehicle(c)->repeatOrders);
+    CHECK(s.design(plain).scrapped == 2);
+
+    // A cloaked first member is not scrapped, and nobody else is: the order is done.
+    const DesignId shade = design(s, r, kMe, "Shade", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod", "Test Cloak"});
+    const VehicleId d = addTestVehicle(s, r, shade, home).id;
+    const VehicleId e = addTestVehicle(s, r, plain, home).id;
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Shades", {d, e}}).ok);
+    s.vehicle(d)->status = VehicleStatus::Cloaked;
+    REQUIRE(apply(r, s, kMe, cmd::Scrap{e, {}, -1, home}).ok);
+    movementPhase(r, s);
+    CHECK(s.vehicle(d));
+    CHECK(s.design(shade).scrapped == 0);
+    REQUIRE(s.vehicle(e));
+    CHECK(s.vehicle(e)->orders.empty());
+    CHECK(s.design(plain).scrapped == 2);
+
+    // A member away from its fleet's location: its Move To sends the members
+    // there, its own list never advances and its Scrap is never reached.
+    const VehicleId p = addTestVehicle(s, r, plain, home).id;
+    const VehicleId q = addTestVehicle(s, r, plain, home).id;
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Strays", {p, q}}).ok);
+    s.vehicle(q)->location = away;
+    REQUIRE(apply(r, s, kMe, cmd::Scrap{q, {}, -1, home}).ok);
+    const std::vector<Order> held = s.vehicle(q)->orders;
+    CHECK(held == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
+    movementPhase(r, s);
+    REQUIRE(s.vehicle(p));
+    REQUIRE(s.vehicle(q));
+    CHECK(s.vehicle(q)->orders == held);
+    CHECK(s.vehicle(q)->location == away);
+    CHECK(s.design(plain).scrapped == 2);
 }
 
 TEST_CASE("scrap window: in a turn-based game each action is carried out at once, the order list untouched") {
@@ -499,4 +627,73 @@ TEST_CASE("scrap window: a self-destructed vehicle counts as scrapped, not lost"
         CHECK(s.design(boom).scrapped == 1);
         CHECK(s.design(boom).lost == 0);
     }
+}
+
+// ---- Create Fleet (spec 03 §9, confirmed: binary) ---------------------------------------------------
+
+TEST_CASE("fleet transfer: Create Fleet makes an empty fleet with a Greek name; turn processing drops it while empty") {
+    const Rules& r = engineRules();
+    GameState s = newGame(r, true);
+    const Location home = homeOf(s, kMe);
+    const Location away{home.system, Sector{home.sector.x == 0 ? 1 : 0, home.sector.y}};
+    const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine", "Test Engine", "Test Supply Pod"});
+    const VehicleId a = addTestVehicle(s, r, plain, home).id;
+    const VehicleId b = addTestVehicle(s, r, plain, home).id;
+    CHECK(defaultFleetName(s, kMe) == "Alpha Fleet");
+    // Not where none of ours stands.
+    CHECK_FALSE(apply(r, s, kMe, cmd::CreateFleet{{}, {}, away}).ok);
+    s.empire(kMe).ministersForNewVehicles = true;
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{{}, {}, home}).ok);
+    const Fleet& alpha = s.fleets.back();
+    const FleetId alphaId = alpha.id;
+    CHECK(alpha.name == "Alpha Fleet");
+    CHECK(alpha.members.empty());
+    CHECK(alpha.location == home);
+    CHECK(alpha.formation == 0);
+    CHECK(alpha.strategy == 0);
+    CHECK(alpha.minister);
+    // An empty fleet survives the tidying other changes make; vehicles join it one by one.
+    s.tidyFleets();
+    REQUIRE(s.fleet(alphaId));
+    CHECK(defaultFleetName(s, kMe) == "Beta Fleet");
+    REQUIRE(apply(r, s, kMe, cmd::JoinFleet{alphaId, a}).ok);
+    // The names skip one in use, and the typed name is not checked.
+    s.empire(kMe).ministersForNewVehicles = false;
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Gamma Fleet", {}, home}).ok);
+    CHECK_FALSE(s.fleets.back().minister);
+    CHECK(defaultFleetName(s, kMe) == "Delta Fleet");
+    REQUIRE(apply(r, s, kMe, cmd::CreateFleet{"Gamma Fleet", {}, home}).ok);
+    // The last member leaving still disbands a fleet.
+    REQUIRE(apply(r, s, kMe, cmd::JoinFleet{s.fleets.back().id, b}).ok);
+    const FleetId second = s.fleets.back().id;
+    REQUIRE(apply(r, s, kMe, cmd::LeaveFleet{b}).ok);
+    CHECK_FALSE(s.fleet(second));
+    REQUIRE(s.fleet(alphaId));
+    // Turn processing deletes a fleet left empty (with no minister in charge of
+    // the other, which the ministers would manage).
+    s.fleet(alphaId)->minister = false;
+    const size_t before = s.fleets.size();
+    TurnOptions o;
+    o.aiForMissing = false;
+    processTurn(r, s, {}, o);
+    CHECK(s.fleets.size() == before - 1);
+    CHECK(s.fleet(alphaId));
+    for (const Fleet& f : s.fleets) CHECK_FALSE(f.members.empty());
+}
+
+TEST_CASE("fleet transfer: the default names go Alpha to Kappa, then two letters") {
+    const Rules& r = engineRules();
+    GameState s = newGame(r, true);
+    const Location home = homeOf(s, kMe);
+    const DesignId plain = design(s, r, kMe, "Plain", "Test Frigate", {"Test Engine"});
+    addTestVehicle(s, r, plain, home);
+    std::vector<std::string> names;
+    for (int i = 0; i < 12; ++i) {
+        REQUIRE(apply(r, s, kMe, cmd::CreateFleet{{}, {}, home}).ok);
+        names.push_back(s.fleets.back().name);
+    }
+    CHECK(names[0] == "Alpha Fleet");
+    CHECK(names[9] == "Kappa Fleet");
+    CHECK(names[10] == "Alpha Alpha Fleet");
+    CHECK(names[11] == "Alpha Beta Fleet");
 }

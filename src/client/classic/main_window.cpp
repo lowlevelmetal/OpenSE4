@@ -7,6 +7,7 @@
 #include "client/classic/pointers.hpp"
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/screens/colony_logic.hpp"
+#include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/status_icons.hpp"
 #include "client/script/items.hpp"
@@ -1168,7 +1169,14 @@ void MainWindow::runOrderNow(UiContext& ui, OrderId id) {
         case OrderId::StellarManipulation: openFor(ui, ScreenId::StellarManipulation); return;
         case OrderId::ChangeName: openFor(ui, ScreenId::Rename); return;
         case OrderId::ViewOrders: openFor(ui, ScreenId::ViewOrders); return;
-        case OrderId::ScrapFacilities: openFor(ui, ScreenId::Scrap); return;
+        case OrderId::ScrapFacilities: {
+            // The Scrap window on its Facilities tab, for the selected colony (screens.hpp kFacilitiesTab).
+            ScreenArgs a;
+            if (object_) a.planet = *object_;
+            a.text = kFacilitiesTab;
+            ui.open(ScreenId::Scrap, a);
+            return;
+        }
         case OrderId::LoadCargo: chooseCargo(ui, Pick::LoadCargo); return;
         case OrderId::DropCargo: chooseCargo(ui, Pick::DropCargo); return;
         case OrderId::LaunchRemote: chooseCargo(ui, Pick::LaunchRemote); return;

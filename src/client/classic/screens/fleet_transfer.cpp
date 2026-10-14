@@ -1,6 +1,9 @@
 // Fleet Transfer (order F, docs/spec/06 §1.3, spec 03 §9-10): the vehicles
-// in a sector that are in no fleet, and the fleets there with their members.
-// Left-click moves a vehicle into the selected fleet or out of its fleet.
+// in a sector that are in no fleet and may join one, and the fleets whose
+// location is the sector with their members there. Left-click moves a
+// vehicle into the selected fleet or out of its fleet. Create Fleet makes an
+// empty fleet, filled by those clicks; one still empty when the window
+// closes is deleted (spec 03 §9, confirmed: binary).
 
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/list_widgets.hpp"
@@ -35,6 +38,19 @@ public:
 
 private:
     bool drawIn(UiContext& ui) {
+        const bool open = drawWindow(ui);
+        if (!open) deleteEmptyFleets(ui);
+        return open;
+    }
+
+    // The fleets this window created that are still empty go when it closes.
+    void deleteEmptyFleets(UiContext& ui) {
+        for (game::FleetId id : created_)
+            if (const game::Fleet* f = ui.state().fleet(id); f && f->members.empty()) ui.session.issue(game::cmd::DisbandFleet{id});
+        created_.clear();
+    }
+
+    bool drawWindow(UiContext& ui) {
         locate(ui);
         Dialog d(ui, screenTitle(ScreenId::FleetTransfer), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
@@ -66,11 +82,10 @@ private:
         fleet = s.fleet(selected_);  // clicks in the lists may have changed it
         const std::vector<ruleset::Formation>& formations = ui.rules().data().formations;
         const auto& strategies = ui.me().strategies;
-        if (d.button("Create Fleet", !loose.empty())) {
-            const game::Vehicle* first = startVehicle(ui, loose);
-            createPrompt_.open("Create Fleet", std::format("Name of the new fleet. It starts with {}; add more ships afterwards.", first->name),
-                               std::format("Fleet {}", s.nextFleetId + 1));
-        }
+        // An empty fleet, with the default name offered (spec 03 §9).
+        if (d.button("Create Fleet", where_.has_value()))
+            createPrompt_.open("Create Fleet", "Name of the new fleet. It starts empty: click ships to put them in it.",
+                               game::defaultFleetName(s, ui.session.player()));
         ui.tagItem("fleet-transfer:create-fleet");
         if (d.button("Formation", fleet && !formations.empty())) {
             std::vector<ListPicker::Item> items;
@@ -98,8 +113,9 @@ private:
                 if (status_.issue(ui, game::cmd::JoinFleet{selected_, v->id})) ++added;
             if (added > 0) status_.ok(std::format("{} vehicle{} joined the fleet.", added, added == 1 ? "" : "s"));
         }
-        if (d.button("Remove All", fleet != nullptr)) {
-            const std::vector<game::VehicleId> members = fleet->members;
+        if (d.button("Remove All", fleet != nullptr && !fleet->members.empty())) {
+            // The members the list shows: those at the fleet's location.
+            const std::vector<game::VehicleId> members = game::fleetMembersAt(s, *fleet);
             int removed = 0;
             for (game::VehicleId id : members)
                 if (status_.issue(ui, game::cmd::LeaveFleet{id})) ++removed;
@@ -108,7 +124,7 @@ private:
         if (d.button("Disband Fleet", fleet != nullptr)) status_.issue(ui, game::cmd::DisbandFleet{selected_}, "Fleet disbanded.");
         if (d.button("Rename Fleet", fleet != nullptr)) renamePrompt_.open("Rename Fleet", "New name of the fleet:", fleet->name);
         if (d.close()) return false;
-        popups(ui, loose);
+        popups(ui);
         return d.keepOpen();
     }
 
@@ -129,35 +145,17 @@ private:
         }
     }
 
+    // Only vehicles that may join a fleet: ships, fighter groups, bases when
+    // `Bases Can Join Fleets` (spec 03 §9, confirmed: binary).
     std::vector<const game::Vehicle*> looseVehicles(const UiContext& ui) const {
-        std::vector<const game::Vehicle*> out;
-        if (!where_) return out;
-        for (const game::Vehicle* v : ownVehiclesAt(ui, *where_))
-            if (!v->fleet.valid()) out.push_back(v);
-        return out;
+        if (!where_) return {};
+        return fleetTransferVehicles(ui.rules(), ui.state(), ui.session.player(), *where_);
     }
 
+    // The fleets whose own location is this sector.
     std::vector<const game::Fleet*> fleetsHere(const UiContext& ui) const {
-        std::vector<const game::Fleet*> out;
-        if (!where_) return out;
-        const game::GameState& s = ui.state();
-        for (const game::Fleet& f : s.fleets) {
-            if (f.owner != ui.session.player()) continue;
-            const bool here = std::any_of(f.members.begin(), f.members.end(), [&](game::VehicleId id) {
-                const game::Vehicle* v = s.vehicle(id);
-                return v && v->location == *where_;
-            });
-            if (here) out.push_back(&f);
-        }
-        return out;
-    }
-
-    // The engine creates fleets with at least one member: the vehicle the
-    // window was opened for when it is free, else the first free one.
-    const game::Vehicle* startVehicle(const UiContext&, const std::vector<const game::Vehicle*>& loose) const {
-        for (const game::Vehicle* v : loose)
-            if (v->id == anchor_) return v;
-        return loose.front();
+        if (!where_) return {};
+        return fleetTransferFleets(ui.state(), ui.session.player(), *where_);
     }
 
     void vehiclesPanel(UiContext& ui, const std::vector<const game::Vehicle*>& loose, ImVec2 size) {
@@ -190,7 +188,8 @@ private:
             const RowClick c = row(ui, 1000000 + static_cast<int>(f->id.value), fleetMini(ui), f->name, detail, st);
             if (c.left) selected_ = f->id;
             if (c.right) report_.fleet(f->id);
-            for (game::VehicleId id : f->members) {
+            // Its members at its location (spec 03 §9).
+            for (game::VehicleId id : game::fleetMembersAt(s, *f)) {
                 const game::Vehicle* v = s.vehicle(id);
                 if (!v) continue;
                 RowStyle ms;
@@ -204,6 +203,8 @@ private:
             }
         }
         if (fleets.empty()) ImGui::TextColored(kDim, "No fleets here. Use Create Fleet.");
+        for (const game::Fleet* f : fleets)
+            if (f->id == selected_ && f->members.empty()) ImGui::TextColored(kDim, "%s is empty: click ships on the left to put them in it.", f->name.c_str());
         endPanel(ui, "Click a fleet to select it; click a member to take it out.");
     }
 
@@ -222,15 +223,20 @@ private:
         leave_.reset();
     }
 
-    void popups(UiContext& ui, const std::vector<const game::Vehicle*>& loose) {
+    void popups(UiContext& ui) {
         const game::GameState& s = ui.state();
-        if (auto name = createPrompt_.draw(ui); name && !loose.empty()) {
-            const game::VehicleId first = startVehicle(ui, loose)->id;
+        if (auto name = createPrompt_.draw(ui); name && where_) {
+            // The typed name is not checked (spec 03 §9).
             game::cmd::CreateFleet c;
             c.name = *name;
-            c.members = {first};
-            if (status_.issue(ui, c, std::format("Fleet {} created.", *name)))
-                if (const game::Vehicle* v = ui.state().vehicle(first)) selected_ = v->fleet;
+            c.location = *where_;
+            const uint32_t next = s.nextFleetId;
+            if (status_.issue(ui, c))
+                if (const game::Fleet* f = ui.state().fleet(game::FleetId{next}); f && f->owner == ui.session.player()) {
+                    selected_ = f->id;
+                    created_.push_back(f->id);
+                    status_.ok(std::format("{} created.", f->name));
+                }
         }
         if (auto name = renamePrompt_.draw(ui)) {
             game::cmd::Rename c;
@@ -249,6 +255,7 @@ private:
 
     game::VehicleId anchor_;
     game::FleetId selected_;
+    std::vector<game::FleetId> created_;   // made by Create Fleet here: deleted at close while empty
     std::optional<game::VehicleId> join_, leave_;
     std::optional<game::Location> where_;
     Status status_;

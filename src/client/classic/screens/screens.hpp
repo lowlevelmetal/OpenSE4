@@ -139,6 +139,10 @@ const SimulatorSandbox* simulatorCargoSandbox();
 // spec 06 §7 Q79), the Ships\Units window is for viewing only: a left-click
 // on a row does nothing.
 inline constexpr const char* kViewOnly = "view";
+// Opened with ScreenArgs::text kFacilitiesTab and a colony, the Scrap window
+// opens on its Facilities tab (Scrap Facilities); otherwise on the vehicles
+// (spec 06 §1.3: the Scrap order on a colony lists the vehicles).
+inline constexpr const char* kFacilitiesTab = "facilities";
 // A tactical simulation is being fought: Designs closes, and the Tactical
 // Combat window opens it again with the simulator afterwards (spec 06 §1.10.4).
 bool tacticalSimulationRunning(const UiContext& ui);

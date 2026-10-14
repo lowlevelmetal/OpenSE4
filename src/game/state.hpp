@@ -592,6 +592,10 @@ enum class OrderKind : uint8_t {
     // binary). Players never give them; a human's ministers do.
     Seek,           // toward `location`, or after `vehicle` / the planet `object`; lasts one movement phase
     JoinFleet,      // amount = the fleet's id: follows the fleet wherever it goes and joins it where it stands
+    // A colony's Abandon Planet (spec 02 §5, spec 08 §3.8.8 kind 64,
+    // confirmed: binary): amount 1 = scrap the facilities first. It comes only
+    // from cmd::AbandonPlanet, never from cmd::SetOrders.
+    Abandon,
     Count
 };
 std::string_view displayName(OrderKind k);
@@ -1420,8 +1424,10 @@ struct GameState {
     // Fleet membership after vehicles left or were removed (spec 03 §9): a
     // member that is gone or no longer carries the fleet's tag is dropped, a
     // chosen leader that left is no longer chosen, and a fleet with no member
-    // left at its location is disbanded (disbandFleet).
-    void tidyFleets();
+    // left at its location is disbanded (disbandFleet). A fleet with no
+    // members at all is one Fleet Transfer is filling (cmd::CreateFleet): it
+    // is kept unless `keepEmpty` is false (turn processing).
+    void tidyFleets(bool keepEmpty = true);
     std::vector<const Vehicle*> vehiclesAt(Location where) const;
 };
 

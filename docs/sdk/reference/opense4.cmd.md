@@ -40,13 +40,14 @@ An order given to several vehicles at once, as when the player tags vehicles in 
 ## `create_fleet`
 
 ```python
-create_fleet(name: str = '', members: Optional[Sequence[Ref]] = None) -> Dict[str, Any]
+create_fleet(name: str = '', members: Optional[Sequence[Ref]] = None, location: Optional[LocationLike] = None) -> Dict[str, Any]
 ```
 
-Forms a new fleet of vehicles that share a sector; the first one leads it.
+Forms a new fleet of vehicles that share a sector; the first one leads it. With no members it makes an empty fleet at location, as the Fleet Transfer window does before vehicles join it one by one; an empty fleet is deleted when the turn is processed. An empty name gives the window's default ("Alpha Fleet", "Beta Fleet", ...). The fleet is under minister control when the empire's new vehicles start under it.
 
 - `name`: The fleet's name.
 - `members`: Its vehicles; the first leads.
+- `location`: With no members: where the empty fleet is (one of our vehicles must be there).
 
 ## `join_fleet`
 
@@ -317,12 +318,13 @@ Sets a colony's type (one of my.colony_types); also the answer when the game ask
 ## `abandon_planet`
 
 ```python
-abandon_planet(planet: Optional[Ref] = None) -> Dict[str, Any]
+abandon_planet(planet: Optional[Ref] = None, scrap_facilities: bool = False) -> Dict[str, Any]
 ```
 
-Gives up a colony.
+Gives up a colony: refused when more people live there than the setting allows; otherwise an abandon_planet order goes onto the colony's list. A turn-based game runs the colony's list at once; a simultaneous game carries it out on the movement phase's first day, and clearing the colony's orders takes it back. The people leave; the colony goes only when no facility is left, otherwise the planet stays ours, empty.
 
 - `planet`: The colony's planet.
+- `scrap_facilities`: Scrap every facility first, for the usual refund.
 
 ## `cloak_colony`
 

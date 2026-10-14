@@ -10,7 +10,9 @@
 // - in a simultaneous game nothing happens yet: the vehicle's order list is
 //   cleared (Repeat goes off) and the action becomes its only order. Movement
 //   carries it out at the vehicle's first action of the turn, testing again;
-//   a failed test fails the order and clears the list (movement.cpp).
+//   an order whose test fails counts as done all the same, so the orders
+//   behind it run (movement.cpp). Only Mothball, Unmothball and Retrofit
+//   report the failure.
 
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -43,22 +45,34 @@ bool scrapListed(const Vehicle& v, EmpireId e);
 // §6.9).
 bool scrapYardAt(const Rules& r, const GameState& s, EmpireId e, Location where);
 
-// Why `a` cannot be carried out on `v` for `e` now (empty: it can): `v` must
-// be listed, then the action's own test (spec 03 §15):
+// What a test is for (spec 03 §15, confirmed: binary): the Scrap window's,
+// which lights its buttons and is what the window's commands check, or the
+// order's, made when the action is carried out.
+enum class ScrapTest : uint8_t { Window, Order };
+
+// Why `a` cannot be carried out on `v` for `e` now (empty: it can).
+// The window's test: `v` must be listed (in no fleet, not cloaked), then the
+// action's own test (spec 03 §15):
 // - Scrap: a yard, and not a drone group or minefield;
 // - Analyze: a ship or base, and a yard;
 // - Mothball: a ship or base, a yard, status Normal and no cargo;
-// - Unmothball: status Mothballed and every resource of its cost in stock;
+// - Unmothball: status Mothballed and a yard (no cost test: the button is lit
+//   for a vehicle the empire cannot afford);
 // - Retrofit: retrofitProblem;
 // - Self-Destruct: movement::canSelfDestruct;
 // - Fire On: canBeFiredOn.
-std::string scrapActionProblem(const Rules& r, const GameState& s, EmpireId e, const Vehicle& v, ScrapAction a, DesignId retrofitTo = {});
+// The order's test is the same without the fleet test (the Scrap minister's
+// Scrap goes to fleet members too, spec 05 §7.5), and Unmothball needs every
+// resource of its cost in stock as well as the yard.
+std::string scrapActionProblem(const Rules& r, const GameState& s, EmpireId e, const Vehicle& v, ScrapAction a, DesignId retrofitTo = {},
+                               ScrapTest test = ScrapTest::Window);
 
 // Carries the action out on `v`, whose test passed. A vehicle destroyed is
 // left with no units (count 0); the caller removes dead vehicles and
 // recalculates sight.
 // - Scrap: the refund (scrapRefund), "Number Scrapped" (a ship or base 1, a
-//   unit group each living unit, inferred), a Construction entry; cargo lost.
+//   unit group each living unit, inferred), a "Vehicle Scrapped"
+//   Construction entry; cargo lost.
 // - Analyze: no refund; "Number Scrapped" + 1 on its design; one level per
 //   pair of analyzePairs (research::analyzeLevel).
 // - Mothball: status Mothballed, its orders, queue, supply and movement gone.

@@ -117,11 +117,17 @@ sector. In a turn-based game they then act at once as one group.
 ### `create_fleet`
 
 Forms a new fleet of vehicles that share a sector; the first one leads it.
+With no members it makes an empty fleet at `location`, as the Fleet Transfer
+window does before vehicles join it one by one; an empty fleet is deleted
+when the turn is processed. An empty name gives the window's default
+("Alpha Fleet", "Beta Fleet", ...). The fleet is under minister control when
+the empire's new vehicles start under it.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | text | The fleet's name. |
 | `members` | list of vehicle id | Its vehicles; the first leads. |
+| `location` | location | With no members: where the empty fleet is (one of our vehicles must be there). |
 
 ```json
 {"kind": "create_fleet", "name": "First Strike", "members": [31, 32, 40]}
@@ -474,14 +480,20 @@ game asks for a new colony's type.
 
 ### `abandon_planet`
 
-Gives up a colony.
+Gives up a colony: refused when more people live there than the setting
+allows; otherwise an `abandon_planet` order goes onto the colony's list. A
+turn-based game runs the colony's list at once; a simultaneous game carries
+it out on the movement phase's first day, and clearing the colony's orders
+takes it back. The people leave; the colony goes only when no facility is
+left, otherwise the planet stays ours, empty.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `planet` | object id, or null | The colony's planet. |
+| `scrap_facilities` | bool | Scrap every facility first, for the usual refund. |
 
 ```json
-{"kind": "abandon_planet", "planet": 19}
+{"kind": "abandon_planet", "planet": 19, "scrap_facilities": true}
 ```
 
 ### `cloak_colony`
@@ -1045,6 +1057,7 @@ kind of cargo (`cargo`), and they move every design of that kind. With `cargo`
 | `fire_on` | | Our armed ships destroy this vehicle. | `{"kind": "fire_on"}` |
 | `seek` | location, vehicle, object | The computer's ministers' order: head for a sector, follow a vehicle or a planet, for one movement phase. | `{"kind": "seek", "vehicle": 77}` |
 | `join_fleet` | amount | The ministers' order: follow the fleet whose id is `amount` and join it. | `{"kind": "join_fleet", "amount": 3}` |
+| `abandon_planet` | amount | A colony's: abandon the planet, scrapping its facilities first when `amount` is 1 (the `abandon_planet` command's). | `{"kind": "abandon_planet", "amount": 1}` |
 
 Notes:
 - Scrap, Analyze, Mothball, Unmothball, Retrofit and Fire On come from the
@@ -1052,7 +1065,9 @@ Notes:
   `fire_on`), which put them on the list. A `set_orders` list may keep those
   the vehicle already holds but cannot add new ones, and `order_tagged` takes
   none of them.
-- Use Facility and Convert Resources are colonies' orders only.
+- Use Facility, Convert Resources and Abandon Planet are colonies' orders
+  only; Abandon Planet comes from the `abandon_planet` command, and a
+  colony's `set_orders` list may keep it but cannot add it.
 - Seek and Join Fleet are what the computer player's ministers give; a script
   AI may give them too.
 - An expanded Colonize carries 1 in `amount`: its colonists were loaded by the

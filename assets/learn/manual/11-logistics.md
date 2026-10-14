@@ -66,19 +66,22 @@ are repaired first. Click groups on the left to add them to the order on the rig
 ## Scrapping and mothballing
 
 The [Scrap](window:scrap) window (`G`) acts on your ships and unit groups in the sector that are
-in no fleet and not cloaked. Click them in the list to select or unselect them; right-click one
-for its report. The statistics show the scrap value, the research potential, the cost to
-unmothball, and whether the selection can self-destruct or be fired on. A button lights only when
-**every** selected vehicle can do it. Scrap, Analyze, Retrofit and Mothball need a working
-**space yard** in the sector: one of your colonies or ships with a yard, not cloaked.
+in no fleet and not cloaked. It opens with nothing selected: click them in the list to select or
+unselect them, or use `Select All` and `Select None`; right-click one for its report.
+`Order By Name` and `Order By Class` sort the list (and drop the selection). The statistics show
+the scrap value and the cost to unmothball (each only while its button is lit), the research
+potential and the status of the last vehicle you selected, and whether the selection can
+self-destruct or be fired on. A button lights only when **every** selected vehicle can do it.
+Scrap, Analyze, Retrofit, Mothball and Unmothball need a working **space yard** in the sector:
+one of your colonies or ships with a yard, not cloaked.
 
 | Action | What it does |
 |---|---|
 | `Scrap` | Destroys the vehicles and refunds part of their cost: 30 % with the stock settings, more with a recycling facility in the sector. Cargo aboard is lost. Drone groups and minefields cannot be scrapped. It asks first. |
 | `Analyze` | Takes a ship or base apart to learn from it. Nothing is refunded. For every different technology level its intact components and its hull need that your empire has not reached, you gain one level in that field, never past the highest level it needs. It asks first. |
-| `Retrofit` | Changes the ships, all of one design, to another design on the same hull: pick it from a list that shows the cost of each. |
+| `Retrofit` | Changes the ships, all of one design, to another design on the same hull: pick it from a list of your designs on that hull that are not obsolete and that you can build now, with the cost of each (right-click one for its report). |
 | `Mothball` | Stores a ship with an empty hold: no upkeep, no abilities, no movement. |
-| `Unmothball` | Brings a mothballed ship back into service, for a fifth of its cost (stock settings); no space yard is needed. It has no supplies until it reaches a depot, unless it is a base. |
+| `Unmothball` | Brings a mothballed ship back into service at a space yard, for a fifth of its cost (stock settings). The button lights even when you cannot pay; then nothing happens. It has no supplies until it reaches a depot, unless it is a base. |
 | `Self-Destruct` | Destroys the vehicle, if it has a self-destruct device; satellites, mines and drones always can, fighters never (no space yard needed). It asks first. |
 | `Fire On` | Your own armed ships in the sector shoot the vehicle down: it is simply removed, with no battle. Another armed ship of yours must be there, so the last armed ship in a sector cannot be fired on. It asks first. |
 
@@ -92,10 +95,11 @@ When the actions happen depends on the turn style:
   armed ships at once, the last of them finds nobody left to fire and stays.
 - In a **simultaneous** game nothing happens yet. Each vehicle's orders are replaced by the action
   (its order list shows it), and it is carried out when the vehicle first acts in the turn. If it
-  can no longer be done then, the order fails and the vehicle's orders are cleared.
+  can no longer be done then, nothing happens and the orders after it go on; the log says so for
+  Mothball, Unmothball and Retrofit.
 
-The same window scraps **facilities**: open it on a colony with the Scrap Facilities order, or use
-its `Facilities` tab when one of your colonies is in the sector. Click facilities to select them,
+The same window scraps **facilities**: use its `Facilities` tab when one of your colonies is in
+the sector. Click facilities to select them,
 check the refund, and press `Scrap Facilities` (`Select All` and `Select None` help). Scrapping
 asks you to confirm, while the Empire Option *Confirm scrapping* is on.
 

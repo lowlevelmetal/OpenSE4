@@ -317,6 +317,9 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
         }
     }
     auto controlOf = [&](size_t i) { return i < control.size() ? control[i] : Control::Computer; };
+    // A fleet Fleet Transfer made and left empty goes (OpenSE4's own: the
+    // window deletes it as it closes, so only a lost window leaves one).
+    s.tidyFleets(false);
     // Once the orders are read, sight is recalculated in every system; no
     // first-contact check runs (spec 05 §9.2, confirmed: binary).
     sight::updateKnowledge(r, s);

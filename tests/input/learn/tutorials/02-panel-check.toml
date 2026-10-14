@@ -34,9 +34,9 @@ done = { window = "fleet-transfer" }
 
 [[step]]
 title = "Create a fleet"
-text = "Press **Create Fleet**, then **OK**."
-highlight = ["fleet-transfer:create-fleet"]
-done = { command = "CreateFleet" }
+text = "Press **Create Fleet**, then **OK**, then click a ship to put it in the empty fleet."
+highlight = ["fleet-transfer:create-fleet", "fleet-transfer:ships"]
+done = { fleet_ships = 1 }
 
 [[step]]
 title = "Close it"

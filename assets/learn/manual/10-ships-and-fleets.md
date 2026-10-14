@@ -89,9 +89,11 @@ fleets; drones, satellites and mines cannot. Bases cannot either, with the stock
 - A fleet is gone once no member is left where the fleet is; any members elsewhere leave it and lose their orders.
 
 Open [Fleet Transfer](window:fleet-transfer) with `F`. It lists the ships in the sector that are
-not in a fleet (**Vehicles in sector**) and the fleets there (**Fleets in sector**, the leader
-marked). `Create Fleet` asks for a name and makes a new fleet with your ship; then **click** ships
-to add them, and click members to take them out. `Formation` and `Strategy` choose the fleet's
+not in a fleet and can join one (**Vehicles in sector**: ships, fighter groups, and bases when the
+settings let bases join fleets) and the fleets whose place is this sector with their members here
+(**Fleets in sector**, the leader marked). `Create Fleet` asks for a name, offering Alpha Fleet,
+Beta Fleet and so on, and makes an empty fleet; then **click** ships to add them, and click
+members to take them out. A fleet still empty when the window closes is deleted. `Formation` and `Strategy` choose the fleet's
 combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do what they say, and
 `Existing Fleets` opens the Ships and Units window, with the tab and the Show switches you left it with, to look at your fleets; clicking a row there does nothing.
 

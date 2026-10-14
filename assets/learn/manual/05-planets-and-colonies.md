@@ -134,8 +134,10 @@ You can move people between planets as cargo: each 1M takes 5 kT of cargo space 
 settings. You can never take a colony's last 1M away. To give up a small colony, select it and
 use the **Abandon Planet** order (`Ctrl+A`). The game asks first, and refuses if more than 50M
 people live there (stock settings). If the planet has facilities, it then asks whether to scrap
-them: **Yes** returns part of their cost now, **No** leaves them on the planet for its next
-owner. The planet is then free for anyone to colonize.
+them: **Yes** returns part of their cost, **No** leaves them. In a turn-based game the people
+leave at once; in a simultaneous game the order waits in the colony's orders (where Clear Orders
+takes it back) until the turn is processed. With every facility gone the planet is free for
+anyone to colonize; with facilities left it stays yours, empty, and nobody else can settle it.
 
 ## Mood
 

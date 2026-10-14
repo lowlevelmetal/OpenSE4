@@ -195,6 +195,7 @@ ORDER_KIND: Tuple[str, ...] = (
     'fire_on',  # Our armed ships destroy this vehicle.
     'seek',  # The computer's ministers' order: head for a sector, follow a vehicle or a planet, for one movement phase.
     'join_fleet',  # The ministers' order: follow the fleet whose id is amount and join it.
+    'abandon_planet',  # A colony's: abandon the planet, scrapping its facilities first when amount is 1 (the abandon_planet command's).
 )
 
 PACKAGE_ITEM_KIND: Tuple[str, ...] = (

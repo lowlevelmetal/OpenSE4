@@ -554,6 +554,26 @@ def join_fleet(amount: int = 0) -> Dict[str, Any]:
     }
 
 
+def abandon_planet(amount: int = 0) -> Dict[str, Any]:
+    """A colony's: abandon the planet, scrapping its facilities first when amount is 1 (the
+    abandon_planet command's).
+
+    amount: A number whose meaning depends on the kind (see below).
+    """
+    return {
+        'kind': 'abandon_planet',
+        'location': {'system': None, 'x': 6, 'y': 6},
+        'object': None,
+        'vehicle': None,
+        'design': None,
+        'amount': _int(amount, 'abandon_planet.amount'),
+        'from_resource': 'minerals',
+        'to_resource': 'minerals',
+        'planet_size': 0,
+        'cargo': 'none',
+    }
+
+
 # Every kind, in the docs' order.
 KINDS = (
     'move_to',
@@ -585,4 +605,5 @@ KINDS = (
     'fire_on',
     'seek',
     'join_fleet',
+    'abandon_planet',
 )

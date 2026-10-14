@@ -157,6 +157,9 @@ void noteEffects(Effects& fx, const GameState& s, EmpireId e, const Command& c) 
         } else if (o->vehicle.valid()) {
             fx.move.vehicles.push_back(o->vehicle);
         }
+    } else if (const auto* a = std::get_if<cmd::AbandonPlanet>(&c)) {
+        // Abandon Planet runs the colony's list at once from its head (spec 02 §5, confirmed: binary).
+        fx.move.planets.push_back(a->planet);
     } else if (std::holds_alternative<cmd::SendMessage>(c) || std::holds_alternative<cmd::AnswerMessage>(c)) {
         fx.messages = true;
     }
@@ -294,6 +297,8 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     s.playerTurn.empire = e;
     s.playerTurn.started = true;
     s.playerTurn.questions.clear();
+    // A fleet Fleet Transfer made and left empty goes (OpenSE4's own, as in processTurn).
+    s.tidyFleets(false);
     const bool human = s.empire(e).kind == PlayerKind::Human;
     // 1. Before it a human player signs in, the autosave is written and the
     // endings are shown: the client's part (spec 06 §2.7). The Lose ending's

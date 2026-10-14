@@ -1084,7 +1084,7 @@ switched (docs/PARITY_GAPS.md).
 | 52 | Retrofit | target = design | Retrofit |
 | 58 | Use component | target = part position (1-based) | UseComponent (`amount` = position − 1) |
 | 59 | Use facility | target = position in the grouped facility list (1-based) | UseFacility |
-| 64 | Abandon planet | target = 1: scrap the facilities first | none |
+| 64 | Abandon planet | target = 1: scrap the facilities first (a colony's order, spec 02 §5) | Abandon (`amount` 1 = scrap first) |
 | 65 | Convert resources | extra = from (1..3), system = to (1..3), target = amount (at most 65,000) | ConvertResources |
 
 What the saves hold **(observed)**: a Move To or a Seek of a location gives the system and
@@ -1751,8 +1751,9 @@ Implemented on 2026-10-04 from this spec.
     the group stands, kind 10 as a Move To and kinds 12 and 13 as OpenSE4's one-phase
     Seek (§11.1 Q17).
   - An imported Colonize order counts as given (its colonists were loaded then); a Use
-    Facility position is turned between the grouped list and OpenSE4's own; Abandon Planet
-    orders are dropped (OpenSE4 abandons at once).
+    Facility position is turned between the grouped list and OpenSE4's own; an Abandon Planet
+    order (a colony's) becomes OpenSE4's Abandon, `amount` 1 for target 1, and back (since
+    2026-10-13; it used to be dropped, OpenSE4 abandoning at once).
   - Log entries: OpenSE4's are written unread (read date 0, §3.6.11) as kind 36 with
     picture key 0, unanswered messages as kind 19 with their record (a delivered message
     whose entry the log no longer holds gets one). Imported entries keep title, text,

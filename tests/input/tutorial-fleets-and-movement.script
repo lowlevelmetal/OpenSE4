@@ -15,15 +15,19 @@ assert { selected = "ship", design_type = "Attack Ship" }
 click tag:order:fleet-transfer
 wait-window fleet-transfer
 wait-step 4
-# 4 Create a fleet: Create Fleet, keeping the name offered.
+# 4 Create a fleet: Create Fleet, keeping the name offered. The fleet starts empty.
 click tag:fleet-transfer:create-fleet
 click item:OK in="Create Fleet"
 wait-step 5
-# 5 Add the second attack ship: the attack ship left outside fleets, as the step names it. The
-# colony ship's row is refused, and so is the fleet's list (taking its first ship out).
+assert { fleets = 1 }
+# 5 Add the attack ships: both, as the step names them. The colony ship's row is refused, and so
+# is the fleet's list.
 wait-for tag:fleet-transfer:ships:named
 click tag:fleet-transfer:ships:other refused
 click tag:fleet-transfer:fleets refused
+assert-step 5
+click tag:fleet-transfer:ships:named
+wait 5
 assert-step 5
 click tag:fleet-transfer:ships:named
 wait-step 6

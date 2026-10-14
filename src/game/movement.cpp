@@ -1165,7 +1165,9 @@ private:
                 decloaked(where(g).system);
             }
             const Exec e = colonyOrder(g, o);
-            if (Colony* after = s_.colony(g.planet); minister && after && sight::colonyCanCloak(*after)) after->cloaked = true;
+            // Not after Abandon Planet (spec 05 §7.5 "Ship Cloaking").
+            if (Colony* after = s_.colony(g.planet); minister && after && o.kind != OrderKind::Abandon && sight::colonyCanCloak(*after))
+                after->cloaked = true;
             return e;
         }
         switch (o.kind) {
@@ -1202,7 +1204,8 @@ private:
             case OrderKind::Seek: return seek(g, o);
             case OrderKind::JoinFleet: return joinFleetOrder(g, o);
             case OrderKind::UseFacility:
-            case OrderKind::ConvertResources: return fail(g, o, "Only colonies carry out that order.");
+            case OrderKind::ConvertResources:
+            case OrderKind::Abandon: return fail(g, o, "Only colonies carry out that order.");
             case OrderKind::Count: break;
         }
         return fail(g, o, "Unknown order.");
@@ -1215,7 +1218,43 @@ private:
         // facility still exists (spec 03 §8, confirmed: binary).
         if (o.kind == OrderKind::UseFacility) return Exec::Done;
         if (o.kind == OrderKind::ConvertResources) return convert(g, o);
+        if (o.kind == OrderKind::Abandon) return abandon(g, o);
         return fail(g, o, "Planets cannot carry out that order.");
+    }
+
+    // Abandon Planet (spec 02 §5, spec 06 §7 Q47, confirmed: binary). The
+    // population is not tested again. With `amount` 1 every facility is
+    // scrapped first, each returning round(cost × P %), P being the larger of
+    // `Scrap Facility Percent Returned` and the best `Resource Reclamation` of
+    // the owner's objects in the sector (worked out once, before the first
+    // goes, inferred). The people leave and the anger goes back to 25; the
+    // colony goes only when no facility is left, else the planet stays the
+    // owner's, empty. Only a run during turn processing reports it, through
+    // the Planet Minister; the turn-based run the player's order sets off
+    // says nothing (spec 02 §5). The history keeps it either way (OpenSE4's).
+    Exec abandon(Group& g, const Order& o) {
+        Colony* c = s_.colony(g.planet);
+        if (!c) return Exec::Gone;
+        const Location here = locationOf(s_.galaxy, g.planet);
+        const std::string planet = s_.galaxy.object(g.planet).name;
+        const bool scrap = o.amount == 1 && !c->facilities.empty();
+        if (scrap) {
+            const int64_t pct = std::max<int64_t>(r_.setting("Scrap Facility Percent Returned", 30), reclamationPercentAt(r_, s_, g.owner, here));
+            for (uint32_t f : c->facilities) s_.empire(g.owner).stockpile += Resources::from(r_.facility(f).cost).percentRounded(pct);
+            c->facilities.clear();
+        }
+        c->population.clear();
+        c->anger = kNewColonyAnger;
+        const bool gone = c->facilities.empty();
+        if (gone) s_.colonies[g.planet.index()].reset();
+        if (!live_)
+            ctx_.log(g.owner, LogCategory::Misc, std::format("{} abandoned", planet),
+                     std::format("The Planet Minister reports that our people have left {} in the {} system.{}", planet,
+                                 s_.galaxy.system(here.system).name, scrap ? " Its facilities were scrapped first." : ""),
+                     here, logpicture::planet(g.planet));
+        addHistory(s_, g.owner, g.owner, std::format("Abandoned {}", planet), here);
+        prune(g);
+        return gone ? Exec::Gone : Exec::Done;
     }
 
     // A vehicle or colony of an empire whose treaty with `e` is below
@@ -1749,8 +1788,10 @@ private:
     }
 
     // Self-Destruct (spec 03 §8, §15): every member that can is destroyed,
-    // counting as scrapped, not lost (spec 04 §15).
-    Exec selfDestruct(Group& g, Order& o) {
+    // counting as scrapped, not lost (spec 04 §15). Like the Scrap window's
+    // other orders it counts as done when nobody can (confirmed: binary), and
+    // says nothing then (inferred).
+    Exec selfDestruct(Group& g, Order&) {
         bool any = false;
         for (VehicleId id : std::vector<VehicleId>(g.members)) {
             Vehicle* v = s_.vehicle(id);
@@ -1758,7 +1799,7 @@ private:
             carryOutScrapAction(ctx_, *v, ScrapAction::SelfDestruct);
             any = true;
         }
-        if (!any) return fail(g, o, "It cannot self-destruct.");
+        if (!any) return Exec::Done;
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
     }
@@ -1766,18 +1807,74 @@ private:
     // The Scrap window's actions given in a simultaneous game (spec 03 §15,
     // confirmed: binary): carried out at the vehicle's first action, by the
     // acting vehicle alone even when it heads an ad-hoc group, with no
-    // movement needed or spent. The test is made again now: a failed one
-    // fails the order and clears the list, with no message for Analyze and
-    // Fire On.
+    // movement needed or spent. The order's test is made now; an order that
+    // fails it counts as done all the same, so the orders behind it run.
+    // Mothball, Unmothball and Retrofit report the failure; Analyze and Fire
+    // On say nothing. Scrap is scrapOrder.
     Exec scrapWindowAction(Group& g, Order& o) {
         const ScrapAction a = *scrapActionOf(o.kind);
+        if (a == ScrapAction::Scrap) return scrapOrder(g);
         Vehicle* v = s_.vehicle(g.actor);
         if (!v || !alive(*v)) return Exec::Gone;
-        if (const std::string why = scrapActionProblem(r_, s_, g.owner, *v, a, o.design); !why.empty())
-            return a == ScrapAction::Analyze || a == ScrapAction::FireOn ? Exec::Fail : fail(g, o, why + ".");
+        if (const std::string why = scrapActionProblem(r_, s_, g.owner, *v, a, o.design, ScrapTest::Order); !why.empty()) {
+            if (a == ScrapAction::Mothball || a == ScrapAction::Unmothball || a == ScrapAction::Retrofit) cannot(*v, a, why);
+            return Exec::Done;
+        }
         carryOutScrapAction(ctx_, *v, a, o.design);
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
+    }
+
+    // A Mothball, Unmothball or Retrofit order that could not be carried
+    // out: one entry from the minister in charge, "Cannot Unmothball" for an
+    // unmothballing (spec 03 §15, confirmed: binary); the other two titles,
+    // the category and the text are ours (inferred).
+    void cannot(const Vehicle& v, ScrapAction a, const std::string& why) {
+        const bool retrofit = a == ScrapAction::Retrofit;
+        const std::string_view title = a == ScrapAction::Mothball ? "Cannot Mothball" : retrofit ? "Cannot Retrofit" : "Cannot Unmothball";
+        ctx_.log(v.owner, LogCategory::Construction, std::string(title),
+                 std::format("The {} Minister reports that {} in {} could not be {}: {}.", retrofit ? "Retrofit" : "Mothball", v.name,
+                             sectorName(v.location), a == ScrapAction::Mothball ? "mothballed" : retrofit ? "retrofitted" : "unmothballed",
+                             lowerFirst(why)),
+                 v.location, logpicture::vehicle(r_, s_, v));
+    }
+
+    std::string sectorName(Location where) const {
+        const std::string system = validLocation(s_, where) ? s_.galaxy.system(where.system).name : "?";
+        return std::format("the {} system, sector ({}, {})", system, where.sector.x, where.sector.y);
+    }
+    static std::string lowerFirst(std::string text) {
+        if (!text.empty() && text[0] >= 'A' && text[0] <= 'Z') text[0] = static_cast<char>(text[0] - 'A' + 'a');
+        return text;
+    }
+
+    // The Scrap order (spec 03 §15, spec 05 §19 Q74, confirmed: binary). It
+    // scraps one vehicle, the group's first: for a fleet its member at the
+    // fleet's location that comes first in object order, whichever member's
+    // order it is, else the acting vehicle; and only when that vehicle stands
+    // at an own working space yard and is not cloaked. Either way the order
+    // counts as done (it leaves the head of every list at the location),
+    // except that when the acting vehicle itself was scrapped the run counts
+    // as failed: the lists of the members left at the location are cleared
+    // and Repeat goes off. A fleet member's Scrap may so scrap another member
+    // and stay in the fleet itself.
+    Exec scrapOrder(Group& g) {
+        const Vehicle* actor = s_.vehicle(g.actor);
+        if (!actor || !alive(*actor)) return Exec::Gone;
+        VehicleId first = g.actor;
+        if (const Fleet* f = !g.tagged && g.fleet.valid() ? s_.fleet(g.fleet) : nullptr) {
+            const std::vector<VehicleId> members = fleetGroup(s_, *f);
+            if (!members.empty())
+                first = *std::min_element(members.begin(), members.end(), [&](VehicleId a, VehicleId b) {
+                    return objectOrderKey(*s_.vehicle(a)) < objectOrderKey(*s_.vehicle(b));
+                });
+        }
+        Vehicle* target = s_.vehicle(first);
+        if (!target || !scrapActionProblem(r_, s_, g.owner, *target, ScrapAction::Scrap, {}, ScrapTest::Order).empty()) return Exec::Done;
+        carryOutScrapAction(ctx_, *target, ScrapAction::Scrap);
+        prune(g);
+        if (first == g.actor) return Exec::Fail;
+        return g.stopped ? Exec::Gone : Exec::Done;
     }
 
     Exec stellar(Group& g, Order& o) {

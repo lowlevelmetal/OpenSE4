@@ -14,6 +14,8 @@ def beacon(game, order, fx):
     count = order.args["count"]
     fx.add_resources(order.empire, minerals=count * game.option("beacon_bonus"))
     order.empire.mod_data["beacons"] = order.empire.mod_data.get("beacons", 0) + count
+    # A Log entry with a title and no body, for the Log's details pane (GitHub issue #9).
+    fx.log(order.empire, "", title="Beacons Lit")
 
 
 @rules.order("survey")

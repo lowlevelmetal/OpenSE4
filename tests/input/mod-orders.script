@@ -7,7 +7,8 @@
 #   panel (the report's MOD button) shows the mark, kept in the mod's data;
 # - the panel's button gives the same order again;
 # - the key the mod suggests (Ctrl+Shift+B) gives Light beacons: a number asked for, the
-#   minerals of the game's option per beacon, the Empires page counting them;
+#   minerals of the game's option per beacon, the Empires page counting them, and a Log
+#   entry with no body (GitHub issue #9);
 # - the colony's Survey order asks for a system picked on the map.
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --mods-dir=tests/fixtures/mods --mod=test.ui-fixture --learn-dir=tests/input/learn-mods --training=outfitters --layout=1024x768 --size=1280x800
@@ -56,6 +57,18 @@ assert-present item:"mod-cell:Terran:Bonus each:50"
 screenshot mod-orders-beacons.png
 key Escape
 wait-closed empires
+# The order's Log entry has a title and no body: its details pane draws without the error
+# tooltip v0.9.0 gave such entries (GitHub issue #9, as log-details.script did before
+# "Vehicle Scrapped" had a body).
+key F10
+wait-window log
+click item:"log:Beacons Lit" in=log
+wait 5
+move item:"log:Beacons Lit" in=log
+wait 10
+assert-window log
+key Escape
+wait-closed log
 # The colony's survey: a system picked on the map.
 click sector:home
 wait-for item:report:colony
