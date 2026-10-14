@@ -1735,7 +1735,8 @@ TEST_CASE("ai: a subject proposes no treaty, ignores treaty proposals and refuse
     // Not a subject: a good trade with a treaty in it, and a gift holding one, are accepted.
     {
         GameState g = s;
-        CHECK(answered(g, trade(g, true)) == true);
+        const MessageId good = trade(g, true);  // before `answered` copies the game
+        CHECK(answered(g, good) == true);
         const MessageId gift = deliver(g, master, cpu, MessageType::Gift);
         g.messages.back().offer.push_back(treatyItem);
         CHECK(answered(g, gift) == true);
@@ -1744,9 +1745,11 @@ TEST_CASE("ai: a subject proposes no treaty, ignores treaty proposals and refuse
     // A subject refuses them, and only them.
     {
         GameState g = s;
-        CHECK(answered(g, trade(g, true)) == false);
+        const MessageId withTreaty = trade(g, true);  // before `answered` copies the game
+        CHECK(answered(g, withTreaty) == false);
         g.messages.clear();
-        CHECK(answered(g, trade(g, false)) == true);
+        const MessageId plain = trade(g, false);
+        CHECK(answered(g, plain) == true);
         g.messages.clear();
         const MessageId gift = deliver(g, master, cpu, MessageType::Gift);
         g.messages.back().offer.push_back(treatyItem);
@@ -1756,7 +1759,8 @@ TEST_CASE("ai: a subject proposes no treaty, ignores treaty proposals and refuse
         g.messages.back().offer.push_back(treatyItem);
         CHECK(answered(g, tribute) == false);
         g.messages.clear();
-        CHECK(answered(g, deliver(g, master, cpu, MessageType::Gift)) == true);
+        const MessageId plainGift = deliver(g, master, cpu, MessageType::Gift);
+        CHECK(answered(g, plainGift) == true);
     }
     // A treaty proposal or counter-proposal gets no answer at all.
     for (MessageType type : {MessageType::ProposeTreaty, MessageType::CounterTreaty}) {
