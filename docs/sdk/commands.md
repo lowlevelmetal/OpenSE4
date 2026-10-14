@@ -91,6 +91,7 @@ takes only Launch Units, Recover Units, Use Facility and Convert Resources.
 | `planet` | object id, or null | Or one of our colonies, by its planet. |
 | `orders` | list of order | The new list (see [Orders](#orders)). |
 | `repeat` | bool | Repeat the list when it ends (false by default). |
+| `own_list` | bool | With `vehicle`: change only that vehicle's own list, even when it is in a fleet, as the Stellar Manipulation window does; the other members keep theirs. When false, a fleet member's orders go to its whole fleet. |
 
 ```json
 {"kind": "set_orders", "vehicle": 31, "orders": [{"kind": "move_to", "location": {"system": 4, "x": 6, "y": 6}}, {"kind": "sentry"}]}
@@ -924,6 +925,7 @@ same fields; each kind uses some of them.
 | `amount` | int | A number whose meaning depends on the kind (see below). |
 | `from_resource` | resource | Convert Resources: the resource converted. |
 | `to_resource` | resource | Convert Resources: the resource it becomes. |
+| `planet_size` | int | Construct (`create_constructed_planet`): the world to build, by its planet size's special ability number, at most the device's value; 0 builds the one the device's value names. |
 
 `from_resource` and `to_resource` are `"minerals"` unless the order converts
 resources. An order whose resource is no resource does nothing; it reads as a
@@ -949,7 +951,7 @@ number.
 | `decloak` | | Switch the cloak off. | `{"kind": "decloak"}` |
 | `sweep_mines` | | Sweep the mines in the sector. | `{"kind": "sweep_mines"}` |
 | `use_component` | amount | Use the component at position `amount` of the design. | `{"kind": "use_component", "amount": 3}` |
-| `stellar_manipulation` | amount, object, location | The manipulation numbered `amount` in `stellar_action`, on a target. | `{"kind": "stellar_manipulation", "amount": 6, "location": {"system": 4, "x": 2, "y": 2}}` |
+| `stellar_manipulation` | amount, object, location, planet_size | The manipulation numbered `amount` in `stellar_action`, on a target. | `{"kind": "stellar_manipulation", "amount": 6, "location": {"system": 4, "x": 2, "y": 2}}` |
 | `move_to_waypoint` | amount | Move to the waypoint in slot `amount`. | `{"kind": "move_to_waypoint", "amount": 2}` |
 | `self_destruct` | | Destroy the whole vehicle or group. | `{"kind": "self_destruct"}` |
 | `use_facility` | amount | A colony's: use the facility at position `amount`. | `{"kind": "use_facility", "amount": 0}` |
@@ -1294,6 +1296,8 @@ plus one, newest first, 0 for none.
 | `scenario_page` | int | In a game of one of the original's scenarios, the page of its text shown last (its place in the file, from 1; 1 by default). |
 | `designs_tab` | int | The Designs window's tab: 0 Ship Designs, 1 Unit Designs, 2 enemy ship designs, 3 enemy unit designs. |
 | `empires_tab` | int | The Empires window's tab: 0 Treaty, 1 Trade, 2 Tariff. |
+| `galaxy_map_names` | bool | The Galaxy Map shows system names. |
+| `galaxy_map_distances` | bool | The Galaxy Map shows distances when it asks for a warp point's destination. |
 
 ## Enumerations the commands use
 

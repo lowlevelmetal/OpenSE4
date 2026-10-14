@@ -143,10 +143,10 @@ QuadrantMapResult quadrantMap(UiContext& ui, const char* id, Vec2 frameSize, con
         }
     }
 
-    // Hover: the nearest system within reach of the mouse.
+    // Hover: the nearest system within reach of the mouse, or anywhere on the map.
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     if (boxHovered) {
-        float best = std::max(std::max(cw, ch) * 2.0f, ui.px(8));
+        float best = opt.nearestAnywhere ? FLT_MAX : std::max(std::max(cw, ch) * 2.0f, ui.px(8));
         for (const game::StarSystem& sys : g.systems) {
             const ImVec2 p = pos(sys.id);
             const float d = std::hypot(p.x - mouse.x, p.y - mouse.y);

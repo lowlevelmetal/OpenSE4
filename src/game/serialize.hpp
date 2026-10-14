@@ -91,6 +91,11 @@ class Rules;
 // §3.6.7). Format 7 still reads, without them.
 // Version 10: the REA parity audit's state (listed as each change lands).
 // Format 9 still reads, without it.
+// - The Construct size of a stellar manipulation order (Order::planetSize),
+//   cmd::SetOrders::ownList (an order for a fleet member's own list, the
+//   Stellar Manipulation window's), and the Galaxy Map's Show Names and
+//   destination-mode Show Distances (InterfaceOptions::galaxyMapNames,
+//   galaxyMapDistances) (spec 06 §1.3, §2.6, spec 08 §3.6.7).
 // - A turn-based game's last turn after its victory check was met
 //   (GameState::lastTurn, spec 05 §6); the Lose ending due at the start of a
 //   human's turn (PlayerTurn::loseEnding, spec 06 §7 Q99); an autosave's mark

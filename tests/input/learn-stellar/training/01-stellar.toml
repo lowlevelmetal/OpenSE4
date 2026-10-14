@@ -1,0 +1,19 @@
+# A training game for the input scripts (docs/BUILDING.md "Input scripts"): the player's
+# homeworld with stellar manipulation ships at the start, for the Stellar Manipulation window
+# and the Galaxy Map's destination mode. Free play: nothing to win in the scripts.
+title = "Stellar"
+summary = "Stellar manipulation ships at home."
+minutes = 1
+learned = ["Giving stellar manipulation orders"]
+
+[setup]
+seed = 7
+race = "Terran"
+computer_players = 1
+events = "none"
+tech_level = "high"
+starting_ships = ["Create Storm", "Close Warp Point", "Open Warp Point", "Destroy Planet"]
+
+[[objective]]
+text = "Hold 40 colonies"
+when = { colonies = 40 }

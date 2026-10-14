@@ -223,12 +223,15 @@ TEST_CASE("ship windows: stellar manipulation checks") {
 
     const shipui::StellarCheck none = shipui::checkStellar(r, s, other, StellarAction::CreatePlanet);
     CHECK_FALSE(none.hasAbility);
+    CHECK_FALSE(none.lit);
     CHECK_FALSE(none.possible);
     CHECK_FALSE(shipui::checkStellar(r, s, *s.vehicle(id), StellarAction::CreateStorm).hasAbility);
 
-    // No asteroids at the homeworld.
+    // No asteroids at the homeworld: the button is lit by the ability alone
+    // (spec 06 §1.3); the order's checks would fail.
     const shipui::StellarCheck noRocks = shipui::checkStellar(r, s, *s.vehicle(id), StellarAction::CreatePlanet);
     CHECK(noRocks.hasAbility);
+    CHECK(noRocks.lit);
     CHECK_FALSE(noRocks.possible);
 
     // Turn another planet of the system into an asteroid field and move there.
@@ -245,6 +248,7 @@ TEST_CASE("ship windows: stellar manipulation checks") {
     s.vehicle(id)->status = VehicleStatus::Cloaked;
     const shipui::StellarCheck cloaked = shipui::checkStellar(r, s, *s.vehicle(id), StellarAction::CreatePlanet);
     CHECK_FALSE(cloaked.possible);
+    CHECK(cloaked.lit);
     CHECK(cloaked.reason == "A cloaked ship cannot manipulate stars.");
     s.vehicle(id)->status = VehicleStatus::Normal;
 

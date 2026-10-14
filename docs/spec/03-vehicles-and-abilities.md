@@ -1046,7 +1046,9 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   Launch and Recover, and the titles other than Move and Colonize, are (inferred).
 - **Fleets:** a fleet has no list of its own; its orders are copies in the lists of its members
   at the fleet's location. Orders given to the fleet or to any member are appended to each of
-  those lists, and every change to the list applies to each of them. The fleet acts through the
+  those lists, and every change to the list applies to each of them. The Stellar
+  Manipulation window is the exception: its order goes to the selected vehicle's own list
+  alone (spec 06 §1.3). The fleet acts through the
   first member in object order that is due and has orders: the order at that member's own
   list position is carried out by the members at the fleet's location (a member elsewhere is not
   one of them, even when it is the one acting), and completing it removes, or with Repeat

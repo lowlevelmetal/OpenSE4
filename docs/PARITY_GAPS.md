@@ -798,6 +798,35 @@ remains different:
 | History's lists | Our empire, every empire we know and every empire the record names, each with OpenSE4's founding line and statistics lines; a galaxy map under the list | The empires that appear in the history file | L (OpenSE4's additions, kept) |
 | The Empires window's extra lines | After the original's: race, player, since, last war, anger value, "Inbox: N waiting"; trade of the maximum, what is shared; who pays whom | The original's lines only | None (OpenSE4's additions, kept) |
 
+Settled from the executable on 2026-10-11 (the REA parity audit) and implemented on
+2026-10-13:
+
+- **Stellar Manipulation** (`screens/stellar.cpp`, spec 06 §1.3, spec 01 §9): a button is
+  lit by the vehicle's own ability alone; Construct asks for the world's size
+  (`Order::planetSize`), then Confirm Action asks while the empire option says so, and only
+  then is the target chosen: none, the Galaxy Map's destination mode for Open Warp Point, or
+  the object of the vehicle's sector, with Pick Object when there are several and a "Cannot
+  Perform Action" box when there is none. The order is appended to the vehicle's own list
+  (`cmd::SetOrders::ownList`), never its fleet's; a simultaneous game's window then closes,
+  and a turn-based game carries the list out at once. Before, a button was lit only when
+  the order's checks passed, the target was found at once, the order went to the front of
+  the fleet's list and the window stayed open.
+- **Galaxy Map** (`screens/galaxy_map.cpp`, spec 06 §2.6): the destination mode for Open Warp
+  Point, which replaces OpenSE4's earlier pick of a sector of the destination system in the
+  main window; Show Names and the destination mode's Show Distances kept with the empire's
+  options (`InterfaceOptions::galaxyMapNames`, `galaxyMapDistances`; save format 10, read from
+  and written to the original's saved games); a click anywhere opening the Notes window of
+  the nearest system, explored or not, which names an unexplored one "Unexplored System"
+  (the inline editor showed its real name, against spec 01 §6.1); hovering anywhere showing
+  the nearest system's notes.
+
+What remains:
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| Stellar Manipulation's targets and Construct's sizes (`shipui::stellarCandidates`, `constructSizes`) | Every object of the kind in the vehicle's sector, seen or not, as Colonize's pick lists them; the size picker always shown, its sizes in PlanetSize.txt order | Not described (spec 06 §7 Q114) | L |
+| Stellar Construction in the original's saved games (`classic_save_*`) | The order's size is neither read nor written; an imported order builds the size its device names | The record carries the size, in a place not known (spec 08 §11.1 Q7) | L |
+
 ## Computer player (spec 05 §7)
 
 The four AI_Settings movement flags become the computer empire's own Ship Movement and

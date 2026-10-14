@@ -280,6 +280,8 @@ TEST_CASE("serialize: orders round trip for every command type") {
     const auto& sent = std::get<cmd::SendMessage>(loaded->commands[25]).message;
     CHECK(sent.request.front().planet == ObjectId{12u});
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
+    CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front().planetSize == 2);   // format 10
+    CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).ownList);                          // format 10
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
     CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 5]).email == "someone@example.org");
     CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 4]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
@@ -526,8 +528,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x943faea01dffab77ull;
-    constexpr size_t kGoldenSize = 1968;
+    constexpr uint64_t kGoldenChecksum = 0x1c9a603d3f48c849ull;
+    constexpr size_t kGoldenSize = 1971;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -551,7 +553,10 @@ void dropFormat10(GameState& g) {
         e.statistics.clear();
         e.economy.partners.clear();
         e.interfaceOptions.empiresTab = 0;
+        e.interfaceOptions.galaxyMapNames = e.interfaceOptions.galaxyMapDistances = false;
     }
+    for (Vehicle& v : g.vehicles)
+        for (Order& o : v.orders) o.planetSize = 0;
 }
 
 } // namespace
@@ -645,15 +650,19 @@ TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture
                              4 * (plain.empires.size() + colonies + plain.vehicles.size()) + 28 + 24);
 }
 
-// Format 10 added, for the diplomacy package: a human player's statistics
-// record (Empire::statistics, spec 05 §5), the economy report's trade and
-// tariffs empire by empire (EconomyReport::partners) and the Empires window's
-// tab (InterfaceOptions::empiresTab). Games saved in format 9 (OpenSE4 0.11
-// and 0.12) still load, without them.
-TEST_CASE("serialize: format 9 games load; format 10 keeps the statistics record, the partners' income and the Empires tab") {
+// Format 10 added the REA parity audit's state (serialize.hpp): among it a
+// human player's statistics record (Empire::statistics, spec 05 §5), the
+// economy report's trade and tariffs empire by empire (EconomyReport::partners),
+// the Empires window's tab (InterfaceOptions::empiresTab), the Galaxy Map's Show
+// Names and destination-mode Show Distances (spec 06 §2.6, spec 08 §3.6.7) and a
+// Construct order's size (Order::planetSize, spec 06 §1.3). Games saved in format
+// 9 (OpenSE4 0.11 and 0.12) still load, without them.
+TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, tabs, switches and a Construct order's size") {
     GameState g = busyGame();
     REQUIRE_FALSE(g.empires[0].statistics.empty());   // the human's record, a row a turn at least
     g.empires[0].interfaceOptions.empiresTab = 2;
+    g.empires[0].interfaceOptions.galaxyMapNames = true;
+    g.empires[0].interfaceOptions.galaxyMapDistances = true;
     PartnerIncome p;
     p.empire = EmpireId{1u};
     p.trade = {10, 20, 30};
@@ -661,6 +670,12 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the statistics record
     p.intelligence = 5;
     p.tariffReceived = {1, 2, 3};
     g.empires[0].economy.partners = {p};
+    REQUIRE_FALSE(g.vehicles.empty());
+    Order build;
+    build.kind = OrderKind::StellarManipulation;
+    build.amount = static_cast<int>(StellarAction::CreateConstructedPlanet);
+    build.planetSize = 2;
+    g.vehicles[0].orders.push_back(build);
     auto now = deserializeState(serializeState(g));
     REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
     CHECK(stateChecksum(*now) == stateChecksum(g));
@@ -668,7 +683,11 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the statistics record
     REQUIRE(now->empires[0].economy.partners.size() == 1);
     CHECK(now->empires[0].economy.partners[0].tariffReceived == Resources{1, 2, 3});
     CHECK(now->empires[0].statistics.size() == g.empires[0].statistics.size());
+    CHECK(now->empires[0].interfaceOptions.galaxyMapNames);
+    CHECK(now->empires[0].interfaceOptions.galaxyMapDistances);
+    CHECK(now->vehicles[0].orders.back().planetSize == 2);
 
+    // The same game as format 9 wrote it: none of them, version 9 in the envelope.
     const std::vector<uint8_t> current = serializeState(g);
     const std::string magic(current.begin(), current.begin() + 8);
     std::vector<uint8_t> payload;
@@ -685,6 +704,9 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the statistics record
     CHECK(before->empires[0].statistics.empty());
     CHECK(before->empires[0].economy.partners.empty());
     CHECK(before->empires[0].interfaceOptions.empiresTab == 0);
+    CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapNames);
+    CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapDistances);
+    CHECK(before->vehicles[0].orders.back().planetSize == 0);
     CHECK(stateChecksum(*before) == stateChecksum(nine));
 }
 

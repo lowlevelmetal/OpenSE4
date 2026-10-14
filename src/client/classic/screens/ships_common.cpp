@@ -120,9 +120,16 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
         case K::StellarManipulation: {
             const auto action = static_cast<game::StellarAction>(std::clamp(o.amount, 0, static_cast<int>(game::StellarAction::Count) - 1));
             std::string out = std::format("{}: {}", name, stellarInfo(action).name);
-            if (action == game::StellarAction::OpenWarpPoint && o.location.system.valid())
-                out += " to " + s.galaxy.system(o.location.system).name;
-            else if (!targetName().empty()) out += " (" + targetName() + ")";
+            // Construct names the world chosen (spec 06 §1.3).
+            if (action == game::StellarAction::CreateConstructedPlanet && o.planetSize > 0) {
+                for (const ruleset::PlanetSize& ps : ui.rules().data().planetSizes)
+                    if (ps.constructed && ps.specialAbilityId == o.planetSize) out = std::format("{}: Construct {}", name, ps.name);
+            }
+            // An unexplored destination is never named (spec 01 §6.1).
+            if (action == game::StellarAction::OpenWarpPoint && o.location.system.valid() && o.location.system.index() < s.galaxy.systems.size())
+                out += " to " + (ui.me().hasExplored(o.location.system) ? s.galaxy.system(o.location.system).name : std::string("an unexplored system"));
+            else if (!targetName().empty())
+                out += " (" + targetName() + ")";
             return out;
         }
         case K::MoveToWaypoint: {

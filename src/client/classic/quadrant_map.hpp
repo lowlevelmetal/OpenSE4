@@ -39,6 +39,10 @@ struct QuadrantMapOptions {
     std::optional<std::vector<game::EmpireId>> claimsOf;
     uint32_t frameColor = palette::kFrame;  // the map's frame line
     bool warpLines = true;                  // false: the grid and the systems only (Borders)
+    // The hovered and clicked system is the one nearest the pointer wherever
+    // it is on the map (the Galaxy Map window, spec 06 §2.6), not only one
+    // close to it.
+    bool nearestAnywhere = false;
 };
 
 struct QuadrantMapResult {

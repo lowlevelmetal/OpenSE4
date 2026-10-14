@@ -167,7 +167,7 @@ Use the component at position amount of the design.
 ## `stellar_manipulation`
 
 ```python
-stellar_manipulation(amount: Union[int, str] = 0, object: Optional[Ref] = None, location: Optional[LocationLike] = None) -> Dict[str, Any]
+stellar_manipulation(amount: Union[int, str] = 0, object: Optional[Ref] = None, location: Optional[LocationLike] = None, planet_size: int = 0) -> Dict[str, Any]
 ```
 
 The manipulation numbered amount in stellar_action, on a target.
@@ -175,6 +175,7 @@ The manipulation numbered amount in stellar_action, on a target.
 - `amount`: A number whose meaning depends on the kind (see below).
 - `object`: A stellar object: a warp point, a planet, a manipulation's target.
 - `location`: Where: a sector (Move To, Seek, a stellar manipulation's target).
+- `planet_size`: Construct (create_constructed_planet): the world to build, by its planet size's special ability number, at most the device's value; 0 builds the one the device's value names.
 
 ## `move_to_waypoint`
 

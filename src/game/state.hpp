@@ -405,6 +405,11 @@ struct InterfaceOptions {
     // The Empires window's tab, 0 Treaty, 1 Trade, 2 Tariff: the original keeps
     // it with the empire's options (spec 06 §1.5, spec 08 §3.6.7; save format 10).
     uint8_t empiresTab = 0;
+    // The Galaxy Map's Show Names, and Show Distances in its destination mode
+    // (Open Warp Point), kept with the empire's options in the saved game and
+    // not shown in Empire Options (spec 06 §2.6, spec 08 §3.6.7; save format 10).
+    bool galaxyMapNames = false;
+    bool galaxyMapDistances = false;
 
     bool operator==(const InterfaceOptions&) const = default;
 };
@@ -602,6 +607,11 @@ struct Order {
     // values; with any other value the order does nothing (spec 02 §5.6).
     uint8_t from = 0;
     uint8_t to = 0;
+    // Construct (StellarAction::CreateConstructedPlanet): the constructed
+    // world the player chose in the Stellar Manipulation window, by its
+    // PlanetSize `Special Ability ID`, at most the device's value; 0 builds
+    // the one whose ID equals the device's value (spec 01 §9, spec 06 §1.3).
+    uint8_t planetSize = 0;
     bool operator==(const Order&) const = default;
 };
 

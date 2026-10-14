@@ -3,6 +3,7 @@
 
 #include "movement_fixture.hpp"
 
+#include "client/classic/screens/ships_logic.hpp"
 #include "game/economy.hpp"
 #include "game/movement.hpp"
 
@@ -327,4 +328,153 @@ TEST_CASE("destroyed stars count as stars for solar collectors and solar resourc
     Colony& c = w.colony(w.planet(a, {4, 4}), kA, 1000, {"Mv Solar Plant"});
     const auto out = economy::colonyOutput(r, w.s, c);
     CHECK(out.solar == Resources{2 * 30, 0, 0});
+}
+
+// ---- The Stellar Manipulation window's orders (docs/spec/06 §1.3, spec 01 §9) ------------------------
+
+namespace {
+
+namespace shipui = opense4::client::classic::shipui;
+
+// The test rules with a second constructed world (Special Ability ID 2) and a
+// device that can build up to it.
+Rules sphereRules() {
+    ruleset::Ruleset data = buildRuleset();
+    ruleset::PlanetSize sphere;
+    for (const ruleset::PlanetSize& ps : data.planetSizes)
+        if (ps.constructed) sphere = ps;
+    REQUIRE(sphere.constructed);
+    sphere.name = "Sphereworld";
+    sphere.specialAbilityId = 2;
+    data.planetSizes.push_back(sphere);
+    for (const ruleset::Component& c : data.components)
+        if (c.name == "Mv World Builder") {
+            ruleset::Component big = c;
+            big.name = "Mv Sphere Builder";
+            big.abilities = {ab(AbilityKind::CreateConstructedPlanet, 2), ab(AbilityKind::ConstructedPlanetRequirements, 42, 20),
+                             ab(AbilityKind::ComponentDestroyedOnUse)};
+            data.components.push_back(big);
+            break;
+        }
+    data.reindex();
+    return Rules{std::move(data)};
+}
+
+Order construct(ObjectId star, int size) {
+    Order o = stellar(StellarAction::CreateConstructedPlanet, star);
+    o.planetSize = static_cast<uint8_t>(size);
+    return o;
+}
+
+} // namespace
+
+TEST_CASE("stellar manipulation: Construct builds the world its order names, up to the device's value (spec 06 §1.3)") {
+    const Rules r = sphereRules();
+    auto build = [&](std::string_view device, int size) {
+        World w(r);
+        const SystemId a = w.system("A");
+        const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});
+        const VehicleId builder = w.spawn(w.design(kA, "Builder", "Test Frigate", {"Test Bridge", "Mv Tank", device, "Mv Girder"}), at(a, 6, 6));
+        w.spawn(w.ship(kA, "Girders", 1, {"Mv Girder"}), at(a, 6, 6));
+        w.order(builder, construct(star, size));
+        w.move();
+        std::string made;
+        for (ObjectId o : w.s.galaxy.system(a).objects)
+            if (w.s.galaxy.object(o).kind == ObjectKind::Planet) made = w.s.galaxy.object(o).size;
+        return std::pair{made, w.logged(kA, "cannot build a world that large")};
+    };
+    // The size chosen, at most the device's value.
+    CHECK(build("Mv Sphere Builder", 1).first == "Ringworld");
+    CHECK(build("Mv Sphere Builder", 2).first == "Sphereworld");
+    // No size: the one the device's value names (the computer players' orders).
+    CHECK(build("Mv Sphere Builder", 0).first == "Sphereworld");
+    CHECK(build("Mv World Builder", 0).first == "Ringworld");
+    // A size above the device's value is refused.
+    const auto tooLarge = build("Mv World Builder", 2);
+    CHECK(tooLarge.first.empty());
+    CHECK(tooLarge.second);
+}
+
+TEST_CASE("stellar manipulation: the window lights a button by the vehicle's own ability and finds the target afterwards") {
+    const Rules r = sphereRules();
+    World w(r);
+    const SystemId a = w.system("A");
+    const ObjectId first = w.object(a, ObjectKind::Star, {6, 6});
+    const ObjectId gone = w.object(a, ObjectKind::DestroyedStar, {6, 6});
+    w.object(a, ObjectKind::Star, {2, 2});   // another sector
+    const VehicleId ship = w.spawn(w.ship(kA, "Breaker", 1, {"Mv Star Breaker", "Mv Sphere Builder", "Mv Storm Maker"}), at(a, 6, 6));
+
+    // Lit by the ability alone: cloaked, the order's checks fail, the button stays lit.
+    w.v(ship).status = VehicleStatus::Cloaked;
+    const shipui::StellarCheck cloaked = shipui::checkStellar(r, w.s, w.v(ship), StellarAction::DestroyStar);
+    CHECK(cloaked.lit);
+    CHECK_FALSE(cloaked.possible);
+    w.v(ship).status = VehicleStatus::Normal;
+    CHECK_FALSE(shipui::checkStellar(r, w.s, w.v(ship), StellarAction::CloseWarpPoint).lit);
+    // A storm needs no object: the button is lit in an empty sector too.
+    CHECK(shipui::checkStellar(r, w.s, w.v(ship), StellarAction::CreateStorm).lit);
+
+    // The aims.
+    CHECK(shipui::stellarAim(StellarAction::CreateStorm) == shipui::StellarAim::None);
+    CHECK(shipui::stellarAim(StellarAction::CreatePlanet) == shipui::StellarAim::None);
+    CHECK(shipui::stellarAim(StellarAction::OpenWarpPoint) == shipui::StellarAim::System);
+    CHECK(shipui::stellarAim(StellarAction::CloseWarpPoint) == shipui::StellarAim::Object);
+    CHECK(shipui::stellarTargetKind(StellarAction::CreateConstructedPlanet) == ObjectKind::Star);
+    CHECK(shipui::stellarTargetKind(StellarAction::DestroyPlanet) == ObjectKind::Planet);
+
+    // The stars of the vehicle's sector, a destroyed one too, in the system's object order.
+    const std::vector<ObjectId> stars = shipui::stellarCandidates(w.s, w.v(ship), StellarAction::DestroyStar);
+    REQUIRE(stars.size() == 2);
+    CHECK(stars[0] == first);
+    CHECK(stars[1] == gone);
+    CHECK(shipui::stellarCandidates(w.s, w.v(ship), StellarAction::DestroyStorm).empty());
+
+    // Construct's sizes: every constructed world up to the device's value, in file order.
+    const std::vector<shipui::ConstructSize> sizes = shipui::constructSizes(r, w.s, w.v(ship));
+    REQUIRE(sizes.size() == 2);
+    CHECK(sizes[0].name == "Ringworld");
+    CHECK(sizes[0].id == 1);
+    CHECK(sizes[1].name == "Sphereworld");
+    const Order o = shipui::stellarOrder(w.v(ship), StellarAction::CreateConstructedPlanet, first, sizes[0].id);
+    CHECK(o.planetSize == 1);
+    CHECK(o.object == first);
+    // Open Warp Point names the system picked on the Galaxy Map (its sector is not used).
+    const SystemId b = w.system("B", 5, 5);
+    const Order open = shipui::stellarOrder(w.v(ship), StellarAction::OpenWarpPoint, {}, 0, b);
+    CHECK(open.location == Location{b, Sector{}});
+}
+
+TEST_CASE("stellar manipulation: the window's order goes to a fleet member's own list, carried out at once in a turn-based game") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const VehicleId maker = w.spawn(w.ship(kA, "Maker", 1, {"Mv Storm Maker"}), at(a, 6, 6));
+    const VehicleId mate = w.spawn(w.ship(kA, "Mate", 1), at(a, 6, 6));
+    w.spawn(w.ship(kB, "Keeper", 1), at(a, 12, 12));   // B stays alive
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {maker, mate}}).ok);
+    const Order storm = shipui::stellarOrder(w.v(maker), StellarAction::CreateStorm, {});
+
+    // A fleet member's order normally goes to the whole fleet; the window's goes to its own list.
+    const cmd::SetOrders own = shipui::stellarCommand(w.v(maker), storm);
+    CHECK(own.ownList);
+    CHECK(own.vehicle == maker);
+    REQUIRE(apply(r, w.s, kA, own).ok);
+    CHECK(w.v(maker).orders == std::vector<Order>{storm});
+    CHECK(w.v(mate).orders.empty());
+    // Only a vehicle has a list of its own.
+    cmd::SetOrders fleetOwn;
+    fleetOwn.fleet = w.v(maker).fleet;
+    fleetOwn.ownList = true;
+    CHECK_FALSE(apply(r, w.s, kA, fleetOwn).ok);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{maker, {}, {}, false}).ok);   // Clear Orders: the fleet's lists
+
+    // Turn-based: the vehicle's list is carried out at once.
+    w.s.options.simultaneous = false;
+    resumeTurnBased(r, w.s);
+    REQUIRE(w.s.playerTurn.empire == kA);
+    const TurnResult res = applyLive(r, w.s, kA, shipui::stellarCommand(w.v(maker), storm));
+    CHECK(res.rejected.empty());
+    CHECK(countKind(w.s, a, ObjectKind::Storm) == 1);
+    CHECK(w.v(maker).orders.empty());
+    CHECK(w.v(mate).orders.empty());
 }

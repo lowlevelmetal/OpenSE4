@@ -577,6 +577,8 @@ private:
         u.replayGrid = o.replayGrid;
         u.designToHit = o.designerToHit;
         u.designCondensed = o.designerCondensed;
+        u.galaxyMapNames = o.galaxyNames;
+        u.galaxyMapDistances = o.galaxyDistances;
         return u;
     }
 

@@ -13,7 +13,7 @@ Contents: [`set_orders`](#set_orders), [`order_tagged`](#order_tagged), [`create
 ## `set_orders`
 
 ```python
-set_orders(vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, planet: Optional[Ref] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False) -> Dict[str, Any]
+set_orders(vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, planet: Optional[Ref] = None, orders: Optional[Sequence[Dict[str, Any]]] = None, repeat: bool = False, own_list: bool = False) -> Dict[str, Any]
 ```
 
 Replaces the order list of a vehicle, a fleet or a colony (name one of the three). The orders that start the new list and repeat the current one are kept as they are; every order after them is expanded the moment it is given, as in the classic game: Explore becomes a move to the nearest unexplored warp point and a warp, Resupply and Repair a move to the nearest place for them, and an order aimed somewhere else gets a Move To in front of it. A colony takes only Launch Units, Recover Units, Use Facility and Convert Resources.
@@ -23,6 +23,7 @@ Replaces the order list of a vehicle, a fleet or a colony (name one of the three
 - `planet`: Or one of our colonies, by its planet.
 - `orders`: The new list (see Orders).
 - `repeat`: Repeat the list when it ends (false by default).
+- `own_list`: With vehicle: change only that vehicle's own list, even when it is in a fleet, as the Stellar Manipulation window does; the other members keep theirs. When false, a fleet member's orders go to its whole fleet.
 
 ## `order_tagged`
 
@@ -883,7 +884,7 @@ A unit_stack (docs/sdk/commands.md).
 ## `interface_options`
 
 ```python
-interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: bool = True, confirm_scrap: bool = True, confirm_stellar_manipulation: bool = True, confirm_delete_research: bool = True, confirm_delete_intel: bool = True, confirm_delete_first_queue_item: bool = True, note_similar_abilities: bool = True, skip_under_construction: bool = False, skip_damaged: bool = False, stop_once_per_location: bool = False, skip_in_fleets: bool = False, warp_point_names: bool = True, planet_names: bool = False, colonizable_markers: bool = True, system_grid: bool = False, coordinate_location: bool = True, facility_markers: int = 0, galaxy_grid_lines: bool = True, galaxy_warp_lines: bool = True, latest_construction_only: bool = False, latest_components_only: bool = False, auto_claim_colonized: bool = True, log_filter: int = 0, log_position: int = 0, log_scroll: int = 0, planets_tab: int = 0, planets_no_sys_to_avoid: bool = False, queues_tab: int = 0, queues_shown: int = 15, simulator_no_obsolete: bool = False, ships_tab: int = 0, ships_shown: int = 7, planets_sort: Optional[Sequence[int]] = None, colonies_sort: Optional[Sequence[int]] = None, ships_sort: Optional[Sequence[int]] = None, queues_sort: Optional[Sequence[int]] = None, replay_animate: bool = True, replay_fast: bool = False, replay_view_rect: bool = True, replay_grid: bool = False, design_to_hit: bool = False, design_condensed: bool = False, designs_hide_obsolete: bool = False, designs_stats_view: bool = False, scenario_page: int = 1, designs_tab: int = 0, empires_tab: int = 0) -> Dict[str, Any]
+interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: bool = True, confirm_scrap: bool = True, confirm_stellar_manipulation: bool = True, confirm_delete_research: bool = True, confirm_delete_intel: bool = True, confirm_delete_first_queue_item: bool = True, note_similar_abilities: bool = True, skip_under_construction: bool = False, skip_damaged: bool = False, stop_once_per_location: bool = False, skip_in_fleets: bool = False, warp_point_names: bool = True, planet_names: bool = False, colonizable_markers: bool = True, system_grid: bool = False, coordinate_location: bool = True, facility_markers: int = 0, galaxy_grid_lines: bool = True, galaxy_warp_lines: bool = True, latest_construction_only: bool = False, latest_components_only: bool = False, auto_claim_colonized: bool = True, log_filter: int = 0, log_position: int = 0, log_scroll: int = 0, planets_tab: int = 0, planets_no_sys_to_avoid: bool = False, queues_tab: int = 0, queues_shown: int = 15, simulator_no_obsolete: bool = False, ships_tab: int = 0, ships_shown: int = 7, planets_sort: Optional[Sequence[int]] = None, colonies_sort: Optional[Sequence[int]] = None, ships_sort: Optional[Sequence[int]] = None, queues_sort: Optional[Sequence[int]] = None, replay_animate: bool = True, replay_fast: bool = False, replay_view_rect: bool = True, replay_grid: bool = False, design_to_hit: bool = False, design_condensed: bool = False, designs_hide_obsolete: bool = False, designs_stats_view: bool = False, scenario_page: int = 1, designs_tab: int = 0, empires_tab: int = 0, galaxy_map_names: bool = False, galaxy_map_distances: bool = False) -> Dict[str, Any]
 ```
 
 The Empire Options switches and what the windows remember. Only auto_claim_colonized changes the game. Sort keys are five column numbers plus one, newest first, 0 for none.
@@ -936,6 +937,8 @@ The Empire Options switches and what the windows remember. Only auto_claim_colon
 - `scenario_page`: In a game of one of the original's scenarios, the page of its text shown last (its place in the file, from 1; 1 by default).
 - `designs_tab`: The Designs window's tab: 0 Ship Designs, 1 Unit Designs, 2 enemy ship designs, 3 enemy unit designs.
 - `empires_tab`: The Empires window's tab: 0 Treaty, 1 Trade, 2 Tariff.
+- `galaxy_map_names`: The Galaxy Map shows system names.
+- `galaxy_map_distances`: The Galaxy Map shows distances when it asks for a warp point's destination.
 
 ## `build`
 

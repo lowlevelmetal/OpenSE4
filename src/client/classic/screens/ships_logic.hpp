@@ -236,14 +236,53 @@ struct StellarInfo {
 const StellarInfo& stellarInfo(game::StellarAction a);
 
 struct StellarCheck {
-    bool hasAbility = false;
-    bool possible = false;   // ability and precondition
+    bool hasAbility = false;  // a working part of the vehicle's own gives the ability
+    // The window's button (spec 06 §1.3, confirmed: binary): the ability alone,
+    // with a value above 0 for Create Planet, Destroy Planet, Open Warp Point
+    // and Construct. The order's checks are made when it is carried out.
+    bool lit = false;
+    bool possible = false;   // the order's checks would pass now (ours: what the window says about it)
     std::string reason;      // why not, or what will happen
-    game::ObjectId target;   // the object acted on, if any
+    game::ObjectId target;   // the object the checks found, if any
     bool destroysSystem = false;  // wipes out the system, the ship included
-    bool needsDestination = false;  // Open Warp Point: pick the other end
+    bool needsDestination = false;  // Open Warp Point: the other end is picked on the Galaxy Map
 };
 StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, game::StellarAction a);
-game::Order stellarOrder(const game::Vehicle& v, game::StellarAction a, game::ObjectId target);
+
+// What a manipulation is aimed at once the player has confirmed it (spec 06
+// §1.3, confirmed: binary): nothing (Create Planet, Create Star, Create Storm,
+// Destroy Nebulae, Destroy Black Hole act where the vehicle is), a system
+// picked in the Galaxy Map's destination mode (Open Warp Point), or one
+// object of the vehicle's sector.
+enum class StellarAim { None, System, Object };
+StellarAim stellarAim(game::StellarAction a);
+// The kind of object an Object aim takes: a star (Destroy Star, Create
+// Nebulae, Create Black Hole, Construct; a destroyed star counts), a warp
+// point (Close Warp Point), a storm (Destroy Storm), a planet (Destroy Planet).
+std::optional<game::ObjectKind> stellarTargetKind(game::StellarAction a);
+// Its candidates: every object of that kind in the vehicle's sector, in the
+// system's object order, whether or not the empire sees it, as for Colonize
+// (inferred, spec 06 §7 Q114). One is the target at once; several open Pick
+// Object; none gives the "Cannot Perform Action" box and no order.
+std::vector<game::ObjectId> stellarCandidates(const game::GameState& s, const game::Vehicle& v, game::StellarAction a);
+
+// Construct's size picker (spec 06 §1.3, confirmed: binary): the constructed
+// worlds (PlanetSize records with `Constructed`) whose `Special Ability ID`
+// is from 1 to the vehicle's best Create Constructed Planet value, in
+// PlanetSize.txt order (the order inferred, §7 Q114).
+struct ConstructSize {
+    int id = 0;          // the record's Special Ability ID: what the order stores
+    std::string name;    // "Ringworld"
+};
+std::vector<ConstructSize> constructSizes(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+
+// The order: `amount` the action, at the vehicle's sector, naming `target`
+// (Open Warp Point: the system `destination`, whose sector is not used) and,
+// for Construct, the size chosen (Order::planetSize).
+game::Order stellarOrder(const game::Vehicle& v, game::StellarAction a, game::ObjectId target, int planetSize = 0,
+                         game::SystemId destination = {});
+// The window gives it to the vehicle's own list, appended, never to its
+// fleet's (spec 06 §1.3, confirmed: binary).
+game::cmd::SetOrders stellarCommand(const game::Vehicle& v, const game::Order& order);
 
 } // namespace opense4::client::classic::shipui

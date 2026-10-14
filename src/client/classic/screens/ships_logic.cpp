@@ -460,14 +460,24 @@ const StellarInfo& stellarInfo(StellarAction a) {
 StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, StellarAction a) {
     StellarCheck c;
     const StellarInfo& info = stellarInfo(a);
-    c.hasAbility = game::hasAbility(game::vehicleAbilities(r, s, v), info.ability);
+    const std::vector<game::ParsedAbility> abilities = game::vehicleAbilities(r, s, v);
+    c.hasAbility = game::hasAbility(abilities, info.ability);
     if (!c.hasAbility) {
         c.reason = std::format("This vehicle has no working component with {}.", game::identifier(info.ability));
         return c;
     }
-    // The checks the turn makes when it carries out the order (docs/spec/01 §9):
-    // the button is enabled only when they pass now. Open Warp Point's
-    // destination is picked on the map afterwards.
+    // The button: the vehicle's own ability, and for four of them a value
+    // above 0 (spec 06 §1.3, confirmed: binary).
+    const bool valued = a == StellarAction::CreatePlanet || a == StellarAction::DestroyPlanet || a == StellarAction::OpenWarpPoint ||
+                        a == StellarAction::CreateConstructedPlanet;
+    c.lit = !valued || game::bestValue1(abilities, info.ability) > 0;
+    if (!c.lit) {
+        c.reason = std::format("Its {} has no value above 0.", game::identifier(info.ability));
+        return c;
+    }
+    // Ours: what the turn's checks (docs/spec/01 §9) would say if the order
+    // were carried out now. They do not light or dim the button. Open Warp
+    // Point's destination is picked on the Galaxy Map afterwards.
     game::Order o = stellarOrder(v, a, {});
     if (a == StellarAction::OpenWarpPoint) o.location = {};
     if (std::string why = game::movement::stellarProblem(r, s, v.id, o, &c.target); !why.empty()) {
@@ -484,7 +494,7 @@ StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const 
             break;
         case StellarAction::OpenWarpPoint:
             c.needsDestination = true;
-            c.reason = "Pick a sector of the destination system on the map.";
+            c.reason = "Pick the destination system on the Galaxy Map.";
             break;
         case StellarAction::CloseWarpPoint: c.reason = "Both ends of the warp point disappear."; break;
         case StellarAction::CreateStorm: c.reason = "A storm forms in this sector."; break;
@@ -506,11 +516,72 @@ StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const 
     return c;
 }
 
-game::Order stellarOrder(const game::Vehicle& v, StellarAction a, game::ObjectId target) {
+StellarAim stellarAim(StellarAction a) {
+    switch (a) {
+        case StellarAction::CreatePlanet:
+        case StellarAction::CreateStar:
+        case StellarAction::CreateStorm:
+        case StellarAction::DestroyNebulae:
+        case StellarAction::DestroyBlackHole: return StellarAim::None;
+        case StellarAction::OpenWarpPoint: return StellarAim::System;
+        default: return StellarAim::Object;
+    }
+}
+
+std::optional<game::ObjectKind> stellarTargetKind(StellarAction a) {
+    switch (a) {
+        case StellarAction::DestroyStar:
+        case StellarAction::CreateNebulae:
+        case StellarAction::CreateBlackHole:
+        case StellarAction::CreateConstructedPlanet: return game::ObjectKind::Star;
+        case StellarAction::CloseWarpPoint: return game::ObjectKind::WarpPoint;
+        case StellarAction::DestroyStorm: return game::ObjectKind::Storm;
+        case StellarAction::DestroyPlanet: return game::ObjectKind::Planet;
+        default: return std::nullopt;
+    }
+}
+
+std::vector<game::ObjectId> stellarCandidates(const game::GameState& s, const game::Vehicle& v, StellarAction a) {
+    std::vector<game::ObjectId> out;
+    const std::optional<game::ObjectKind> kind = stellarTargetKind(a);
+    if (!kind || !v.location.system.valid() || v.location.system.index() >= s.galaxy.systems.size()) return out;
+    for (game::ObjectId id : s.galaxy.system(v.location.system).objects) {
+        const game::SpaceObject& o = s.galaxy.object(id);
+        if (o.sector != v.location.sector) continue;
+        if (o.kind == *kind || (game::isStarKind(*kind) && game::isStarKind(o.kind))) out.push_back(id);
+    }
+    std::stable_sort(out.begin(), out.end(),
+                     [&](game::ObjectId x, game::ObjectId y) { return game::objectOrderKey(s, x) < game::objectOrderKey(s, y); });
+    return out;
+}
+
+std::vector<ConstructSize> constructSizes(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    std::vector<ConstructSize> out;
+    const int64_t cap = game::bestValue1(game::vehicleAbilities(r, s, v), AbilityKind::CreateConstructedPlanet);
+    for (const ruleset::PlanetSize& ps : r.data().planetSizes)
+        if (ps.constructed && ps.specialAbilityId >= 1 && ps.specialAbilityId <= cap) out.push_back({ps.specialAbilityId, ps.name});
+    return out;
+}
+
+game::Order stellarOrder(const game::Vehicle& v, StellarAction a, game::ObjectId target, int planetSize, game::SystemId destination) {
     game::Order o{game::OrderKind::StellarManipulation, v.location};
     o.object = target;
     o.amount = static_cast<int>(a);
+    // Open Warp Point names the system to link to (spec 08 §3.8.8 kind 17);
+    // the sector is not used.
+    if (a == StellarAction::OpenWarpPoint && destination.valid()) o.location = {destination, game::Sector{}};
+    o.planetSize = static_cast<uint8_t>(std::clamp(planetSize, 0, 255));
     return o;
+}
+
+game::cmd::SetOrders stellarCommand(const game::Vehicle& v, const game::Order& order) {
+    game::cmd::SetOrders c;
+    c.vehicle = v.id;
+    c.ownList = true;
+    c.orders = v.orders;
+    c.orders.push_back(order);
+    c.repeat = v.repeatOrders;
+    return c;
 }
 
 } // namespace opense4::client::classic::shipui

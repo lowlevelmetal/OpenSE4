@@ -29,6 +29,11 @@ struct SetOrders {           // replaces the order list (vehicle, fleet or plane
     std::vector<Order> orders;
     bool repeat = false;
     ObjectId planet;         // an own colony: Launch Units and Recover Units only (spec 03 §12)
+    // With `vehicle`: only that vehicle's own list changes, even when it is in
+    // a fleet, whose other members keep theirs (the Stellar Manipulation
+    // window's order, spec 06 §1.3). Otherwise a fleet member's orders go to
+    // its fleet (spec 03 §8).
+    bool ownList = false;
 };
 struct CreateFleet {         // new fleet from vehicles in one sector; first is the leader
     std::string name;

@@ -85,6 +85,7 @@ EmpireOrders busyOrders(const Rules& r, const GameState& s, EmpireId me, int rou
 
 game::EmpireOrders everyCommandSample(const Rules& r) {
     Order order{OrderKind::LoadCargo, {SystemId{3u}, Sector{1, 12}}, ObjectId{4u}, VehicleId{5u}, DesignId{6u}, -1};
+    order.planetSize = 2;   // Construct's size (save format 10)
     const cmd::QueueTarget yard{ObjectId{9u}, VehicleId{10u}};
     QueueItem item{QueueItem::Kind::Upgrade, DesignId{2u}, 17, 3, Resources{1, 2, 3}};
     Design design = warbirdDesign(r);
@@ -112,7 +113,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
 
     EmpireOrders orders{EmpireId{1u}, 42, {}};
     auto& c = orders.commands;
-    c.push_back(cmd::SetOrders{VehicleId{1u}, FleetId{2u}, {order, Order{}}, true});
+    c.push_back(cmd::SetOrders{VehicleId{1u}, FleetId{2u}, {order, Order{}}, true, {}, true});   // an own list (format 10)
     c.push_back(cmd::CreateFleet{"Strike Group", {VehicleId{3u}, VehicleId{4u}}});
     c.push_back(cmd::JoinFleet{FleetId{5u}, VehicleId{6u}});
     c.push_back(cmd::LeaveFleet{VehicleId{7u}});
