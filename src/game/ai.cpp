@@ -813,8 +813,11 @@ void Planner::runEconomy() {
 // ---- Strategies ------------------------------------------------------------------------------
 
 void planStrategies(Planner& p) {
-    // The AI's combat strategies (AI_Strategies) join the empire's list once,
-    // so design templates and fleets can refer to them by name.
+    // A computer player starts with its AI strategies table's strategies
+    // (setup, spec 05 §7.7, confirmed: binary), so this adds nothing in a game
+    // it began. An empire handed to the computer later, or one whose saved list
+    // lacks them, gets the missing ones once, at the end of its list, so design
+    // templates and fleets can refer to them by name (OpenSE4's, inferred).
     for (const auto& s : p.prof.strategies) {
         bool have = false;
         for (const auto& mine : p.emp().strategies) have = have || keysEqual(mine.name, s.name);

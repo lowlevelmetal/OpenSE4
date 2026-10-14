@@ -2762,7 +2762,8 @@ binary).
   100 but declares nothing, and an accepted demand is still carried out (§7.4). In the stock files the pools of the generic demand/request/warn
   and of the Accept and Refuse Demand messages are empty.
 - **`AI_Strategies`**: the same schema as `DefaultStrategies.txt` (§7.7). Other tables
-  refer to it by name.
+  refer to it by name. A computer player starts with this table's strategies in place of
+  `DefaultStrategies.txt` (§7.7) (confirmed: binary).
 
 ### 7.6 Mega Evil Empire (MEE)
 
@@ -2784,7 +2785,20 @@ Each computer empire works out the MEE for itself once per turn (confirmed: bina
 Scores are the ones from §5. AIs then add the MEE anger each turn and may make an MEE
 declaration (§7.3, §7.4).
 
-### 7.7 Player default lists (not used by the AI) [M]
+### 7.7 Default lists
+
+The manual calls these the player's default lists and says the AI does not use them. That
+is only partly so (confirmed: binary; corrected 2026-10-14, complete listing: this
+heading said earlier "not used by the AI"). Every new empire, computer players included,
+gets the default design-type and colony-type lists. A computer player takes its combat
+strategies from its AI strategies table (`AI_Strategies`, found by the rule of §7.2); when
+that gives none (no file, or an empty one) it starts with `DefaultStrategies.txt`, as a
+human does. An empire that brings its own lists from an empire file keeps them (spec 08
+§13.4). Since 2026-10-14 our engine follows (`setup.cpp`); before, a computer player
+started with `DefaultStrategies.txt` and its first turn added the table's strategies
+after them. Our computer players still add any of the table's strategies their list lacks,
+at its end, once (`planStrategies`): that happens only to an empire handed to the computer
+during the game or loaded with such a list (OpenSE4's, inferred).
 
 - **`DefaultDesignTypes.txt`**: design-type labels. Ministers use them to find, for
   example, colony ships. The AI tables and ministers work with a fixed set of 39 design
@@ -2792,7 +2806,8 @@ declaration (§7.3, §7.4).
 - **`DefaultColonyTypes.txt`**: colony-type labels. A planet's colony type selects its
   facility-minister queue. Only the nine fixed names of §7.5 mean anything to the
   ministers; any other label is built like Homeworld (confirmed: binary).
-- **`DefaultStrategies.txt`**: the starting combat strategies. Fields:
+- **`DefaultStrategies.txt`**: the starting combat strategies of a human, and of a
+  computer player whose AI strategies table gives none. Fields:
   - `Primary/Secondary Movement Strategy`;
   - `Targeting Priority 1..4`;
   - `Use Type Priority First`;

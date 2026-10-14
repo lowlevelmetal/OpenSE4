@@ -5161,6 +5161,57 @@ TEST_CASE("ai: the layers' star-destroyer flag: dates that are multiples of 20, 
     CHECK(flag(s));
 }
 
+TEST_CASE("ai: a computer player starts with its AI strategies, else the data set's; every empire gets the default name lists") {
+    // Spec 05 §7.7 (confirmed: binary).
+    auto names = [](const std::vector<ruleset::CombatStrategy>& list) {
+        std::vector<std::string> out;
+        for (const auto& st : list) out.push_back(st.name);
+        return out;
+    };
+    auto game = [](const Rules& r, std::vector<ruleset::CombatStrategy> fileStrategies = {}) {
+        GameSetup setup;
+        setup.seed = 5;
+        setup.options.systemCount = 8;
+        for (PlayerKind kind : {PlayerKind::Human, PlayerKind::Computer, PlayerKind::Neutral, PlayerKind::Computer}) {
+            EmpireSetup e;
+            e.name = std::format("Empire {}", setup.empires.size() + 1);
+            e.kind = kind;
+            setup.empires.push_back(std::move(e));
+        }
+        setup.empires.back().strategies = std::move(fileStrategies);  // from an empire file
+        auto g = createGame(r, setup);
+        REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+        return std::move(*g);
+    };
+    TempTree t("startstrategies");
+    t.write("Ai/Default_AI_Strategies.txt",
+            "Name := AI Bold\nPrimary Movement Strategy := Optimal Weapons Range\n"
+            "Name := AI Careful\nPrimary Movement Strategy := Don't Get Hurt\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    const std::vector<std::string> dataSet = names(r.data().combatStrategies);
+    REQUIRE_FALSE(dataSet.empty());
+    const std::vector<std::string> fromAi{"AI Bold", "AI Careful"};
+    const std::vector<std::string> fromFile{"Saved"};
+    GameState s = game(r, {ruleset::CombatStrategy{"Saved", {}}});
+    CHECK(names(s.empire(EmpireId{0u}).strategies) == dataSet);  // a human
+    CHECK(names(s.empire(EmpireId{1u}).strategies) == fromAi);   // the table's, in its order, not added to the data set's
+    CHECK(names(s.empire(EmpireId{2u}).strategies) == fromAi);   // a neutral too
+    CHECK(names(s.empire(EmpireId{3u}).strategies) == fromFile); // an empire file's list comes whole
+    for (const Empire& e : s.empires) {
+        CHECK(e.designTypes == r.data().names.designTypes);
+        CHECK(e.colonyTypes == r.data().names.colonyTypes);
+    }
+    // Nothing is joined on the first turn: the list is already the table's.
+    for (const Command& c : ai::planTurn(r, s, EmpireId{1u})) CHECK_FALSE(as<cmd::SetStrategy>(c));
+
+    // An empty table, or none at all, gives the data set's, as for a human.
+    TempTree empty("emptystrategies");
+    empty.write("Ai/Default_AI_Strategies.txt", "");
+    const Rules rEmpty{buildEngineRuleset(), empty.root};
+    CHECK(names(game(rEmpty).empire(EmpireId{1u}).strategies) == dataSet);
+    CHECK(names(game(engineRules()).empire(EmpireId{1u}).strategies) == names(engineRules().data().combatStrategies));
+}
+
 TEST_CASE("installed data set: AI files load and computer players play (opt-in)") {
     const Rules* r = installedRules();
     if (!r) return;

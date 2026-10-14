@@ -1015,7 +1015,10 @@ facilities switched by an upgrade change in place and keep what was paid
 (`cmd::QueueReplaceFacility`); a war declaration whose speech pool is empty declares
 nothing but still sets the anger to 100 (`cmd::DecideWar`); a new design's fallback
 strategy follows the design type as §7.5 lists it, so transports, colony ships and the
-other unarmed types get Don't Get Hurt.
+other unarmed types get Don't Get Hurt. Since 2026-10-14 a computer player starts with its
+`AI_Strategies` table's strategies, and with `DefaultStrategies.txt` only when the table gives
+none (spec 05 §7.7, complete listing); before, it had the data set's list with the table's
+strategies added after it.
 
 On 2026-09-30 the engine's own choices (spec 05 open question 37) were answered from the
 executable, with the demand lists (questions 47 and 49). The rows found then were implemented
