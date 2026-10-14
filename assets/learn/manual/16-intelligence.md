@@ -40,8 +40,10 @@ Between them they can do these things:
 | Defense | Protect your empire against enemy projects. |
 
 You can aim projects only at empires you are in contact with, friend or foe. Projects aimed at an empire you lose contact with are deleted, and when you are in contact with nobody at all, your whole queue is cleared, defense projects included. Depending on the project you
-also pick a planet, a ship, a technology area or a third empire. Most projects also offer an
-**Any** target, which lets your agents choose for you.
+also pick one of the empire's ships or planets that you can see, a technology area you could
+research yourself, or a third empire (for the political projects); each of these lists starts
+with an **Any** row (*Any Ship*, *Any Planet*, ...), which lets your agents choose for you. Your
+choice stays with the project until it runs.
 
 > An "Any" technology theft never works: your agents only pick areas where you are already ahead. Name the area you want to steal instead.
 
@@ -72,8 +74,8 @@ The [Intelligence](window:intelligence) window opens from the **Intelligence** b
 It is laid out like the [Research](research#the-research-window) window.
 
 - The title strip shows the **Intelligence Points Available** this turn.
-- The list fills the top of the window: the projects you can start, under their groups, with their cost. **Click a project** to add it. One that needs a target then asks for the empire, and after that for the planet, ship, technology area or third empire (or **Any**). Point at a project to read its description.
-- Below the list, your current projects appear four at a time: each box shows the project, its target, when it will finish, the points it gets each turn and its progress in the small box under it. **Click a project** to cancel it; the game asks first while the Empire Option for it is on.
+- The list fills the top of the window: the projects you can start, under their groups, with their cost. **Click a project** to add it (with twelve queued, nothing happens). Intelligence Defense is added at once; any other project asks for the empire in *Select Empire*, and some after that for the ship, planet, technology area or third empire (or **Any**). `Cancel` at either step adds nothing. Point at a project to read its description, or right-click it for its report.
+- Below the list, your current projects appear four at a time: each box shows the project, the ship, planet, area or empire it is aimed at (or *Any ...*), *Against* and the target empire's flag, when it will finish, the points it gets each turn and its progress in the small box under it. Right-click a project for its report. **Click a project** to cancel it; the game asks first while the Empire Option for it is on.
 - `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch pages. `Repeat Projects`, `Divide Pts Evenly` and `Reorder Projects` work as in the [Research](research#the-research-queue) window. Divide Pts Evenly is on for a new empire.
 
 ## Intelligence advice

@@ -110,6 +110,7 @@ The Empire Options switches and what the windows remember. Only auto_claim_colon
 | `designs_hide_obsolete` | `bool` | The Designs window hides obsolete designs. |
 | `designs_stats_view` | `bool` | The Designs window shows statistics. |
 | `scenario_page` | `int` | In a game of one of the original's scenarios, the page of its text shown last (its place in the file, from 1; 1 by default). |
+| `designs_tab` | `int` | The Designs window's tab: 0 Ship Designs, 1 Unit Designs, 2 enemy ship designs, 3 enemy unit designs. |
 
 ## `Order`
 

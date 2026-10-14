@@ -570,20 +570,39 @@ The players' reports on v0.9.0 (GitHub issues #1 to #4, #6, #9 and #10) were ans
 
 OpenSE4's own additions in these windows, none of which moves an original control: the Find
 box in Help's heading row; the Galaxy Map's Show Distances (in an empty slot), the legend (in
-three empty slots) and the notes line under the map's hint; the target pickers of an
-intelligence project (the original's are not described); the Designs window's note in its
+three empty slots) and the notes line under the map's hint; the Designs window's note in its
 title strip, the scroll to a design just made and its Make Current label for an obsolete
-design; the hover tooltips of the Research and Intelligence lists. What remains different:
+design; the hover tooltips of the Research, Intelligence and Tech Tree lists. What remains
+different:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
-| Designs window's tab | Opens on Ship Designs, or on the tab of the design it is opened for | Kept with the empire's options in the saved game, as its Hide Obsolete and Stats\Strategy are (spec 08 §3.6.7) | L |
 | E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Moves shown in the system window (`ship_glides.cpp`, `turn_start.cpp`) | The moves of an engine call glide together once it has made them all, several steps of one group as one straight glide; a battle that stops the call is shown before the moves that led to it; a click or a key shows a turn's moves at once | Each group's steps animated one after another as they are made, a battle when it starts (spec 06 §2.4, §2.7, §7 Q112) | L |
 | Last turn of a human defeated in its own turn-based turn (`turn_based.cpp` `finishPlayerTurn`) | Marked dead at the end of that turn, without a Lose ending first | Marked dead only after its Lose window (spec 06 §7 Q83); the original's check when a human loses everything during its own turn is not described (inferred) | L |
 | Choosing one of the original's scenarios (`screens/learn_screens.cpp`) | The intro's Tutorial and Scenario open OpenSE4's Learn window; its Scenarios tab lists the original's scenarios beside the mods', and Start Game starts one. The scenario folder is the install's, or that of the last classic mod in use that has one | Tutorial starts the tutorial at once; Scenario opens the "Load Scenario" picker with Change Directory; the folder is that of the `Path.txt` mod when it has one (spec 06 §1.1, §5.6) | L |
 | Scenario pages in network and e-mail games (`classic_mode.cpp` `openTurnPage`) | Each player's own computer shows that player's page at the start of their turn | The host's turn processing shows every human's page on the host's screen; a network player never sees them (spec 06 §5.6) | L |
 | Scenario quirks not copied (`classic_scenario.hpp`) | `For Players` is a list of numbers; "Page i of n" counts i within the page's series; loading a scenario game from the intro keeps it one; a new game never carries the tutorial's flag; the page shown last is kept per empire | Player 1 also gets player 11's pages; i is the page's place in the whole file; Load Game and Resume Game from the intro drop scenario mode; the Game Menu's New keeps the tutorial's flag, "T" and pages (inferred); one page shown last for the game (spec 06 §5.6, spec 08 §3.4) | L |
+
+The 2026-10-11 audit of the original's designs, research and intelligence windows (spec 05
+§2.1, spec 06 §7 Q92–Q94 and Q99(c), confirmed: binary) brought these windows in line: the
+Designs window opens on the tab kept with the empire's options (`designsTab`, save format
+10, carried in the original's saves with Hide Obsolete and Stats\Strategy), lights its
+buttons as the original and lists on its enemy tabs every design seen of the living empires;
+Create Design reorders the design itself under Condensed View, picks the size, the component
+group and the mount in the original's list windows, refuses a design with warnings or a name
+in use in its "Design Warnings" box, ignores components before a size, offers every line of
+the name file and keeps its caption when editing; Research draws queued areas green with
+their cost, its groups in alphabetical order, and opens an area's report on a right-click;
+the Tech Tree lists every area in the original's columns and exports `TechAreas.txt` and
+`TechLevels.txt`; the Weapons Report lists the weapons whatever the mount, offers the hull's
+mounts and starts on Normal Mount; an intelligence project asks for its targets in the
+original's list windows and keeps them, each queued project with its own progress. Choices
+the executable did not settle are spec 06 §7 Q113. What stays different on purpose:
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| Create Design's name (`designs.cpp`, `cmd::CreateDesign`, `cmd::EditDesign`) | "Design Name" is a hint in an empty box, and an empty name is refused in the "Design Warnings" box | The box holds the words, so a design made without typing is named "Design Name", and an erased name is accepted as empty (spec 03 §4.1) | L |
 
 Seen side by side with the running original on 2026-10-03 ([spec 07](spec/07-observations.md),
 session 5, which gives each original layout in full): the setup screens, the front end,

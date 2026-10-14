@@ -1,0 +1,20 @@
+# A training game for the input scripts (docs/BUILDING.md "Input scripts"): a tiny galaxy
+# crowded with computer empires and high starting technology, so the player has met other
+# empires and has projects of every kind in the Intelligence window at the start. Free play:
+# nothing to win in the scripts.
+title = "Spies"
+summary = "A crowded little galaxy, to aim intelligence projects."
+minutes = 1
+learned = ["Choosing an intelligence project's target"]
+
+[setup]
+seed = 7
+race = "Terran"
+computer_players = 5
+systems = 3
+events = "none"
+tech_level = "high"
+
+[[objective]]
+text = "Hold 40 colonies"
+when = { colonies = 40 }

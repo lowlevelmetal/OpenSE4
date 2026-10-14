@@ -2,6 +2,7 @@
 
 #include "client/classic/screens/empire_logic.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/screens/item_ref.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/pointers.hpp"
@@ -10,10 +11,14 @@
 #include "game/research.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <fstream>
+#include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -23,19 +28,10 @@ namespace {
 
 using ruleset::TechAreaId;
 
-// Tech areas in data order, grouped by their Group (in order of first appearance).
+// Tech areas grouped by their Group: the groups in alphabetical order, the
+// areas in data order under each (spec 06 §1.11, §7 Q92, confirmed: binary).
 std::vector<std::pair<std::string, std::vector<TechAreaId>>> byGroup(const game::Rules& r, const std::vector<TechAreaId>& areas) {
-    std::vector<std::pair<std::string, std::vector<TechAreaId>>> out;
-    for (TechAreaId a : areas) {
-        const std::string& g = r.tech(a).group;
-        auto it = std::find_if(out.begin(), out.end(), [&](const auto& p) { return p.first == g; });
-        if (it == out.end()) {
-            out.push_back({g, {}});
-            it = out.end() - 1;
-        }
-        it->second.push_back(a);
-    }
-    return out;
+    return techAreasByGroup(r, areas);
 }
 
 std::string joined(const std::vector<std::string>& names, size_t limit = 0) {
@@ -50,21 +46,18 @@ std::string joined(const std::vector<std::string>& names, size_t limit = 0) {
     return out;
 }
 
-// Areas worth showing in the Tech Tree: allowed in this game, and racial or
-// unique areas only for empires that can have them.
-bool treeShows(const game::Rules& r, const game::GameState& s, const game::Empire& e, TechAreaId a) {
-    const auto& allowed = s.options.techAreasAllowed;
-    if (!allowed.empty() && a.index() < allowed.size() && !allowed[a.index()]) return false;
-    const ruleset::TechArea& t = r.tech(a);
-    if (t.racialArea == 0 && t.uniqueArea == 0) return true;
-    return e.techLevel(a) > 0 || r.techVisible(s, e, a);
-}
-
 // ---- Research ---------------------------------------------------------------------------------
 
 class ResearchScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
+        const bool keep = drawDialog(ui);
+        popup_.draw(ui);
+        return keep;
+    }
+
+private:
+    bool drawDialog(UiContext& ui) {
         Dialog d(ui, "Research", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         const game::Empire& e = ui.me();
@@ -103,7 +96,9 @@ public:
         ImGui::SetCursorScreenPos(d.at({17, 303}));
         status_.draw();
         textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {575, 305}, blue, "(click a research area to add it as a project)");
-        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 316}, blue, std::format("{} Current Projects", e.research.size()));
+        // "1 Current Project", "N Current Projects" (confirmed: binary).
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {15, 316}, blue,
+               std::format("{} Current Project{}", e.research.size(), e.research.size() == 1 ? "" : "s"));
         textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {575, 318}, blue, "(click a project to cancel it)");
         projects(ui, d);
         ui.tag("research:queue", d.at(kProjectBoxesAt), d.at(kProjectBoxesAt + Vec2{projectBoxesInUse(e.research.size(), page_), 130}));
@@ -127,9 +122,10 @@ public:
         } else {
             d.spacer();
         }
+        // The reorder window's rows are the areas' names (confirmed: binary).
         if (d.button("Reorder Projects", e.research.size() > 1)) {
             std::vector<std::string> rows;
-            for (const auto& p : e.research) rows.push_back(std::format("{} {}", ui.rules().tech(p.area).name, e.techLevel(p.area) + 1));
+            for (const auto& p : e.research) rows.push_back(ui.rules().tech(p.area).name);
             reorder_.open(std::move(rows));
         }
         if (auto order = reorder_.draw(ui)) {
@@ -141,7 +137,6 @@ public:
         return d.keepOpen();
     }
 
-private:
     void set(UiContext& ui, std::vector<game::ResearchProject> queue, bool evenly, bool repeat) {
         game::cmd::SetResearch c;
         c.queue = std::move(queue);
@@ -154,16 +149,11 @@ private:
         return std::any_of(e.research.begin(), e.research.end(), [&](const game::ResearchProject& p) { return p.area == a; });
     }
 
+    // A click on an area adds it; on a queued area, or with the queue full,
+    // nothing happens (confirmed: binary).
     void add(UiContext& ui, TechAreaId a) {
         const game::Empire& e = ui.me();
-        if (queued(e, a)) {
-            status_.set(std::format("{} is already being researched.", ui.rules().tech(a).name), true);
-            return;
-        }
-        if (static_cast<int>(e.research.size()) >= kMaxProjects) {
-            status_.set(std::format("At most {} projects can run at once.", kMaxProjects), true);
-            return;
-        }
+        if (queued(e, a) || static_cast<int>(e.research.size()) >= kMaxProjects) return;
         auto q = e.research;
         q.push_back({a, 0});
         set(ui, q, e.researchEvenly, e.repeatResearch);
@@ -176,7 +166,9 @@ private:
         const game::Empire& e = ui.me();
         // Researchable areas and, in their places, the completed ones: dimmed,
         // with "Complete" as the cost, and a click does nothing (observed, spec 07
-        // session 3).
+        // session 3). A queued area is green and still shows its next level's
+        // cost (confirmed: binary). A right-click on a row opens the area's
+        // report (confirmed: binary); the hover detail is ours.
         const std::vector<ResearchListArea> areas = researchListAreas(r, s, e);
         std::vector<TechAreaId> ids;
         for (const ResearchListArea& a : areas) ids.push_back(a.area);
@@ -200,7 +192,7 @@ private:
                 const int level = e.techLevel(a);
                 const bool done = complete(a);
                 const bool inQueue = queued(e, a);
-                const ImVec4 color = done ? imColorV(palette::kDim) : inQueue ? kTextDim : ImVec4(1, 1, 1, 1);
+                const ImVec4 color = done ? imColorV(palette::kDim) : inQueue ? kQueuedGreen : ImVec4(1, 1, 1, 1);
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(int(a.index()));
@@ -208,11 +200,11 @@ private:
                 if (ImGui::Selectable(t.name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns) && !done) add(ui, a);
                 ImGui::PopStyleColor();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = a;
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({ItemRef::Kind::TechArea, a.value});
                 ImGui::TableSetColumnIndex(1);
                 right(std::to_string(level), color);
                 ImGui::TableSetColumnIndex(2);
-                right(done ? std::string("Complete") : inQueue ? std::string("Queued") : std::to_string(game::research::levelCost(r, s, a, level + 1)),
-                      color);
+                right(done ? std::string("Complete") : std::to_string(game::research::levelCost(r, s, a, level + 1)), color);
                 ImGui::PopID();
             }
         }
@@ -250,9 +242,11 @@ private:
             // truncate(points paid × 100 / level cost), within 0 and 100.
             b.percent = cost > 0 ? int(std::clamp<int64_t>(p.progress * 100 / cost, 0, 100)) : 0;
         }
-        int over = -1;
-        const int clicked = projectBoxes(ui, d, kProjectBoxesAt, boxes, &over);
+        int over = -1, rightClicked = -1;
+        const int clicked = projectBoxes(ui, d, kProjectBoxesAt, boxes, &over, &rightClicked);
         if (over >= 0) hovered_ = e.research[size_t(page_ * kProjectsPerPage + over)].area;
+        // A right-click on a box opens its area's report (confirmed: binary).
+        if (rightClicked >= 0) popup_.open({ItemRef::Kind::TechArea, e.research[size_t(page_ * kProjectsPerPage + rightClicked)].area.value});
         if (clicked >= 0) {
             // Clicking a project cancels it, asking first while the Empire
             // Options' "confirm deleting a research project" is on (spec 06 §1.9).
@@ -313,6 +307,9 @@ private:
         }
     }
 
+    // A queued area's colour (inferred: the progress bar's green).
+    static constexpr ImVec4 kQueuedGreen{0.0f, 1.0f, 0.0f, 1.0f};
+
     int page_ = 0;
     std::optional<TechAreaId> hovered_;
     std::optional<TechAreaId> pinned_;
@@ -320,190 +317,147 @@ private:
     YesNoPrompt confirm_;
     ReorderPopup reorder_;
     StatusLine status_;
+    ItemReportPopup popup_;
 };
 
 // ---- Tech Tree ---------------------------------------------------------------------------------
+//
+// The original's window (spec 06 §7 Q92, confirmed: binary): titled
+// "Technology Tree", it lists every tech area of the data set, nothing
+// hidden, under the groups' headings in alphabetical order; an area the
+// empire can research now is white, any other grey (#606060). Tech Areas
+// shows each area's requirements (columns Tech Name, Required Tech, Level),
+// Tech Levels what each level makes available (Tech Name, Level, "Item
+// [Number of Tech Dependencies]"). Export in slot 13 writes the view shown to
+// TechAreas.txt or TechLevels.txt in the saves folder, one line per row with
+// its cells joined by commas, then says where in "Export Successful". Ours:
+// the places of the list and its columns; an area's description under the
+// pointer.
 
 class TechTreeScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
-        Dialog d(ui, "Tech Tree", DialogSize::Large);
+        const bool keep = drawDialog(ui);
+        exportNote(ui);
+        return keep;
+    }
+
+private:
+    bool drawDialog(UiContext& ui) {
+        Dialog d(ui, "Technology Tree", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
-        d.beginContent();
-        status_.draw();
-        if (levels_) levelsView(ui);
-        else areasView(ui);
+        d.beginContent(576);
+        list(ui, d);
         d.beginButtons();
         if (d.tab("Tech Areas", !levels_)) levels_ = false;
         ui.tagTab("tech-areas", !levels_);
         if (d.tab("Tech Levels", levels_)) levels_ = true;
         ui.tagTab("tech-levels", levels_);
-        d.spacer();
+        for (int gap = 0; gap < 10; ++gap) d.spacer();
         if (d.button("Export")) exportView(ui);
+        ui.tagItem("tech-tree:export");
         d.close();
         return d.keepOpen();
     }
 
-private:
-    std::vector<TechAreaId> shownAreas(const UiContext& ui) const {
-        std::vector<TechAreaId> out;
-        for (uint32_t i = 0; i < ui.rules().data().techAreas.size(); ++i)
-            if (treeShows(ui.rules(), ui.state(), ui.me(), TechAreaId{i})) out.push_back(TechAreaId{i});
-        return out;
-    }
-
-    ImVec4 areaColor(const UiContext& ui, TechAreaId a) const {
-        const int level = ui.me().techLevel(a);
-        if (level >= ui.rules().tech(a).maxLevel) return kTextGood;
-        if (ui.rules().techVisible(ui.state(), ui.me(), a)) return ImVec4(0.92f, 0.94f, 1.0f, 1.0f);
-        return kTextDim;
-    }
-
-    void areasView(UiContext& ui) {
+    // The column headings at (16,39) over the list at (16,59), 557x403 (ours).
+    void list(UiContext& ui, const Dialog& d) {
         const game::Rules& r = ui.rules();
-        const game::Empire& e = ui.me();
-        heading(ui, "Tech Areas");
-        ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "Prerequisites of every area. Green: complete, white: researchable, grey: locked. Click for levels.");
-        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable;
-        if (!beginListTable(ui, "##tree", 4, flags, ImVec2(0, 0), kListLineStep)) return;
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Area", ImGuiTableColumnFlags_WidthFixed, ui.px(190));
-        ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(52));
-        ImGui::TableSetupColumn("Requires", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Leads To", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableHeadersRow();
-        for (const auto& [group, list] : byGroup(r, shownAreas(ui))) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::TextColored(kTextWarn, "%s", group.empty() ? "Other" : group.c_str());
-            for (TechAreaId a : list) {
-                const ruleset::TechArea& t = r.tech(a);
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::PushID(int(a.index()));
-                ImGui::PushStyleColor(ImGuiCol_Text, areaColor(ui, a));
-                if (ImGui::Selectable(t.name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
-                    selected_ = a;
-                    levels_ = true;
+        static constexpr ListColumn kAreaColumns[] = {{"Tech Name", 210, 0, false}, {"Required Tech", 0, 0, false}, {"Level", 110, 0, false}};
+        static constexpr ListColumn kLevelColumns[] = {{"Tech Name", 210, 0, false}, {"Level", 60, 0, false},
+                                                       {"Item [Number of Tech Dependencies]", 0, 0, false}};
+        const std::span<const ListColumn> cols = levels_ ? std::span<const ListColumn>(kLevelColumns) : std::span<const ListColumn>(kAreaColumns);
+        ImGui::SetCursorScreenPos(d.at({16, 39}));
+        const float listW = ui.px(557);
+        const float rowsW = listRowsWidth(ui, listW);
+        listHeader(ui, levels_ ? "##levelhead" : "##areahead", cols, rowsW);
+        const std::vector<float> edges = columnEdges(ui, cols, rowsW);
+        // White: an area the empire can research now; grey otherwise.
+        const std::vector<TechAreaId> open = researchableAreas(r, ui.state(), ui.me());
+        std::vector<TechAreaId> all;
+        for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) all.push_back(TechAreaId{i});
+        ImGui::SetCursorScreenPos(d.at({16, 59}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        beginList(ui, levels_ ? "##levels" : "##areas", ImVec2(listW, ui.px(403)), kRowH);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float w = ImGui::GetContentRegionAvail().x;
+        const float viewTop = ImGui::GetScrollY(), viewH = ImGui::GetWindowHeight();
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        float y = 0;
+        std::optional<TechAreaId> hovered;
+        auto inView = [&](float top) { return top + ui.px(kRowH) > viewTop && top < viewTop + viewH; };
+        for (const auto& [group, areas] : techAreasByGroup(r, all)) {
+            if (inView(y)) {
+                ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+                dl->AddText({origin.x + ui.px(4), origin.y + y + ui.px(1)}, imColor(palette::kHeading), group.empty() ? "Other" : group.c_str());
+                ImGui::PopFont();
+            }
+            y += ui.px(kRowH);
+            for (TechAreaId a : areas) {
+                const ImU32 color = std::find(open.begin(), open.end(), a) != open.end() ? IM_COL32_WHITE : imColor(palette::kDim);
+                for (const TechTreeRow& row : levels_ ? techLevelRows(r, a) : techAreaRows(r, a)) {
+                    if (inView(y)) {
+                        const ImVec2 at{origin.x, origin.y + y};
+                        if (ImGui::IsMouseHoveringRect(at, {at.x + w, at.y + ui.px(kRowH)}) && ImGui::IsWindowHovered()) hovered = a;
+                        for (size_t c = 0; c < 3; ++c) {
+                            dl->PushClipRect({at.x + edges[c], at.y}, {at.x + edges[c + 1] - ui.px(2), at.y + ui.px(kRowH)}, true);
+                            dl->AddText({at.x + edges[c] + ui.px(4), at.y + ui.px(1)}, color, row.cells[c].c_str());
+                            dl->PopClipRect();
+                        }
+                    }
+                    y += ui.px(kRowH);
                 }
-                ImGui::PopStyleColor();
-                if (ImGui::IsItemHovered() && !t.description.empty()) {
-                    ImGui::BeginTooltip();
-                    ImGui::PushTextWrapPos(ui.px(360));
-                    ImGui::TextUnformatted(t.description.c_str());
-                    ImGui::PopTextWrapPos();
-                    ImGui::EndTooltip();
-                }
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%d / %d", e.techLevel(a), t.maxLevel);
-                ImGui::TableSetColumnIndex(2);
-                reqList(ui, t.requirements);
-                ImGui::TableSetColumnIndex(3);
-                std::string leads;
-                for (TechAreaId dep : dependentAreas(r, a)) leads += (leads.empty() ? "" : ", ") + r.tech(dep).name;
-                ImGui::PushTextWrapPos(0.0f);
-                ImGui::TextColored(kTextDim, "%s", leads.empty() ? "-" : leads.c_str());
-                ImGui::PopTextWrapPos();
-                ImGui::PopID();
             }
         }
-        endListTable(ui);
-    }
-
-    // Requirements, each coloured by whether we meet it.
-    void reqList(UiContext& ui, const std::vector<ruleset::TechRequirement>& reqs) {
-        if (reqs.empty()) {
-            ImGui::TextColored(kTextDim, "None");
-            return;
-        }
-        ImGui::PushTextWrapPos(0.0f);
-        std::string text;
-        bool allMet = true;
-        for (const auto& q : reqs) {
-            if (!q.area.valid() || q.area.index() >= ui.rules().data().techAreas.size()) continue;
-            text += std::format("{}{} {}", text.empty() ? "" : ", ", ui.rules().tech(q.area).name, q.level);
-            allMet = allMet && ui.me().techLevel(q.area) >= q.level;
-        }
-        ImGui::TextColored(allMet ? kTextGood : kTextWarn, "%s", text.c_str());
-        ImGui::PopTextWrapPos();
-    }
-
-    void levelsView(UiContext& ui) {
-        const game::Rules& r = ui.rules();
-        const game::GameState& s = ui.state();
-        const game::Empire& e = ui.me();
-        const auto areas = shownAreas(ui);
-        if (areas.empty()) return;
-        if (!selected_ || std::find(areas.begin(), areas.end(), *selected_) == areas.end()) selected_ = areas.front();
-
-        beginList(ui, "##levelAreas", ImVec2(ui.px(220), 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-        for (const auto& [group, list] : byGroup(r, areas)) {
-            ImGui::TextColored(kTextWarn, "%s", group.empty() ? "Other" : group.c_str());
-            for (TechAreaId a : list) {
-                ImGui::PushID(int(a.index()));
-                ImGui::PushStyleColor(ImGuiCol_Text, areaColor(ui, a));
-                if (ImGui::Selectable(r.tech(a).name.c_str(), *selected_ == a)) selected_ = a;
-                ImGui::PopStyleColor();
-                ImGui::PopID();
-            }
-        }
+        ImGui::SetCursorScreenPos(origin);
+        ImGui::Dummy(ImVec2(w, std::max(1.0f, y)));
         endList(ui);
-        ImGui::SameLine();
-        ImGui::BeginChild("##levels", ImVec2(0, 0));
-        const TechAreaId a = *selected_;
-        const ruleset::TechArea& t = r.tech(a);
-        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
-        ImGui::TextUnformatted(t.name.c_str());
-        ImGui::PopFont();
-        ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "%s, our level %d of %d", t.group.c_str(), e.techLevel(a), t.maxLevel);
-        if (!t.description.empty()) wrappedText(t.description, kTextDim);
-        ImGui::TextColored(kTextBlue, "Requires");
-        ImGui::SameLine();
-        reqList(ui, t.requirements);
-        ImGui::Spacing();
-        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV;
-        if (beginListTable(ui, "##levelTable", 3, flags, ImVec2(0, 0), kListLineStep)) {
-            ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(48));
-            ImGui::TableSetupColumn("Cost (RP)", ImGuiTableColumnFlags_WidthFixed, ui.px(86));
-            ImGui::TableSetupColumn("Unlocks", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableHeadersRow();
-            for (int level = 1; level <= t.maxLevel; ++level) {
-                const bool have = e.techLevel(a) >= level;
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextColored(have ? kTextGood : ImVec4(0.92f, 0.94f, 1.0f, 1.0f), "%d", level);
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(formatNumber(game::research::levelCost(r, s, a, level)).c_str());
-                ImGui::TableSetColumnIndex(2);
-                const auto unlocks = techUnlocks(r, a, level);
-                if (unlocks.empty()) ImGui::TextColored(kTextDim, "-");
-                for (const TechUnlock& u : unlocks) {
-                    ImGui::TextColored(kTextDim, "%s:", std::string(unlockKindName(u.kind)).c_str());
-                    ImGui::SameLine();
-                    ImGui::TextUnformatted(u.name.c_str());
-                }
-            }
-            endListTable(ui);
+        ImGui::PopStyleVar(2);
+        ui.tagItem("tech-tree:list");
+        if (hovered && !r.tech(*hovered).description.empty()) {
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(ui.px(360));
+            ImGui::TextUnformatted(r.tech(*hovered).description.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
         }
-        ImGui::EndChild();
     }
 
     void exportView(UiContext& ui) {
         const BusyPointer busy;  // the Hourglass while it writes the file (spec 06 §5.8)
-        const std::string text = levels_ ? techLevelsExport(ui.rules(), ui.state(), ui.me()) : techAreasExport(ui.rules(), ui.state(), ui.me());
-        const std::filesystem::path file = userDataDir() / (levels_ ? "tech_levels.txt" : "tech_areas.txt");
+        const std::string text = techTreeExport(techTreeRows(ui.rules(), levels_));
+        const std::filesystem::path dir = savesDir();
+        const std::filesystem::path file = dir / (levels_ ? "TechLevels.txt" : "TechAreas.txt");
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
         std::ofstream out(file, std::ios::binary);
         out << text;
-        if (out.good()) status_.set(std::format("Saved to {}", file.string()), false);
-        else status_.set(std::format("Could not write {}", file.string()), true);
+        out.close();
+        if (out) note_ = {"Export Successful", std::format("Exported to {}.", file.string())};
+        else note_ = {"Export Failed", std::format("Could not write {}.", file.string())};
     }
 
+    // The box after Export.
+    void exportNote(UiContext& ui) {
+        if (!note_) return;
+        const std::string id = note_->first + "###techexport";
+        if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
+        ImGui::SetNextWindowSize(ui.size({420, 0}));
+        if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
+            ImGui::TextWrapped("%s", note_->second.c_str());
+            ImGui::Spacing();
+            if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) {
+                ImGui::CloseCurrentPopup();
+                note_.reset();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    static constexpr float kRowH = 18.0f;   // the list's rows and headings (ours)
     bool levels_ = false;
-    std::optional<TechAreaId> selected_;
-    StatusLine status_;
+    std::optional<std::pair<std::string, std::string>> note_;   // title, text
 };
 
 } // namespace

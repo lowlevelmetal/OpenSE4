@@ -378,6 +378,10 @@ struct InterfaceOptions {
     // (docs/spec/06 §5.6; save format 10). The original keeps one for the
     // game (spec 08 §3.4); ours keeps one per empire.
     uint16_t scenarioPage = 1;
+    // The Designs window's tab (0 Ship Designs, 1 Unit Designs, 2 Enemy Ship
+    // Dsgn, 3 Enemy Unit Dsgn), kept with the empire's options like the two
+    // check boxes: the window opens on it (spec 08 §3.6.7; save format 10).
+    uint8_t designsTab = 0;
 
     bool operator==(const InterfaceOptions&) const = default;
 };

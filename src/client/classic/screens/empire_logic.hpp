@@ -8,6 +8,7 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -103,17 +104,77 @@ std::pair<int, int> techProgress(const game::Rules& r, const game::GameState& s,
 // "1.3 years" for a turn count (-1 = "Never").
 std::string etaText(int turns);
 
-// Tech Tree export (plain text).
-std::string techAreasExport(const game::Rules& r, const game::GameState& s, const game::Empire& e);
-std::string techLevelsExport(const game::Rules& r, const game::GameState& s, const game::Empire& e);
+// ---- Tech Tree (spec 06 §7 Q92, confirmed: binary) -----------------------------------------
+
+// `areas` under their Group: the groups in alphabetical order (the letter
+// case ignored, ours), the areas in data order under each. The Research
+// list and the Tech Tree both use it.
+std::vector<std::pair<std::string, std::vector<ruleset::TechAreaId>>> techAreasByGroup(const game::Rules& r,
+                                                                                       const std::vector<ruleset::TechAreaId>& areas);
+
+// One row of the Tech Tree's lists and of its export: three cells.
+struct TechTreeRow {
+    ruleset::TechAreaId area;
+    std::array<std::string, 3> cells;
+};
+// The Tech Areas view's rows of an area (columns Tech Name, Required Tech,
+// Level): one per requirement; a racial area adds a row naming the racial
+// trait with "Racial Trait" as its level, a unique area one reading "Unique
+// Technology" and "(Must Be Found)". An area that needs nothing gets one row
+// with its name only (inferred). Each row names the area (inferred).
+std::vector<TechTreeRow> techAreaRows(const game::Rules& r, ruleset::TechAreaId area);
+// The Tech Levels view's rows of an area (columns Tech Name, Level, "Item
+// [Number of Tech Dependencies]"): for each level from 1 to its maximum, one
+// row per vehicle size, component, facility and intelligence project, in that
+// order, that needs exactly that level of the area, its name followed by
+// " [N]" when it has N > 1 requirements. A level that makes nothing available
+// gets one row without an item (inferred).
+std::vector<TechTreeRow> techLevelRows(const game::Rules& r, ruleset::TechAreaId area);
+// Every tech area of the data set, nothing hidden, in the window's order.
+std::vector<TechTreeRow> techTreeRows(const game::Rules& r, bool levels);
+// The export (TechAreas.txt, TechLevels.txt): one line per row, its cells
+// joined by commas, no heading line (inferred).
+std::string techTreeExport(const std::vector<TechTreeRow>& rows);
 
 // ---- Intelligence ---------------------------------------------------------------------------
 
-enum class IntelTarget : uint8_t { None, Empire, Planet, Vehicle, ThirdEmpire };
-// What an intel project targets, from its `Type` (inferred from the effect list, spec 05 §2.3).
+// What a project asks for when it is added (spec 05 §2.1, confirmed: binary):
+// nothing (Intelligence Defense), the target empire only, or the empire and
+// then a ship, a planet, a technology area or a third empire of a second list.
+enum class IntelTarget : uint8_t { None, Empire, Planet, Vehicle, Tech, ThirdEmpire };
+// From the project's `Type`: the seven ship sabotage types a ship; Conditions
+// Change to Facility Damage and Planet - Info a planet; Research - Steal an
+// area; the five Politics types a third empire; every other type (a mod's
+// too) the empire only.
 IntelTarget intelTargetKind(const ruleset::IntelProject& p);
 // Projects whose requirements the empire meets, in data order.
 std::vector<uint32_t> availableIntelProjects(const game::Rules& r, const game::Empire& e);
+
+// One of the list windows an intelligence project asks for when `me` adds it
+// (spec 05 §2.1, confirmed: binary): its title and its rows, each the order a
+// click on it makes. `stage` 0 is "Select Empire", the living empires `me` is
+// in contact with, in empire order, with no "Any" row; stage 1 the second
+// list of the project's kind for `order.target`, its "Any ..." row first:
+// "Select Ship" (the target's vehicles `me` sees now), "Select Planet" (its
+// colonies `me` sees), "Select Technology" (the areas `me` can research now),
+// each sorted by name with the letter case ignored (ours), or "Select Empire"
+// (`me`'s other contacts, in empire order). `last`: a click on a row of this
+// list completes the order.
+struct IntelTargetRow {
+    std::string label;
+    game::IntelProjectOrder order;
+};
+struct IntelTargetList {
+    std::string title;
+    std::vector<IntelTargetRow> rows;
+    bool last = true;
+};
+IntelTargetList intelTargetList(const game::Rules& r, const game::GameState& s, game::EmpireId me, const game::IntelProjectOrder& order,
+                                int stage);
+// The line of a project's box that names its target (spec 05 §2.1, confirmed:
+// binary): for a project with a second list the target picked, or "Any Ship",
+// "Any Planet", "Any Technology", "Any Empire"; empty for the others.
+std::string intelTargetLine(const game::Rules& r, const game::GameState& s, const game::IntelProjectOrder& order);
 
 // ---- Statistics -------------------------------------------------------------------------------
 

@@ -645,6 +645,8 @@ drop-down list as in a list of a window:
 | `communicate:message-type` | the message types as ids: `propose-treaty`, `gift`, `declare-war`, ... | Communicate's Message Type list |
 | `communicate:treaty` | `non-aggression`, `trade-alliance`, ... (the treaty kinds), `none` | Communicate's treaty list |
 | `intelligence:projects` | `defense`, `other` | the Intelligence projects of the Intelligence Defense type, and the others |
+| `intelligence:target` | `none`, `empire`, `ship`, `planet`, `technology`, `third-empire` | the Intelligence projects by what they ask for when added: nothing (Intelligence Defense), the empire only, or the empire and then a ship, a planet, a technology area or a third empire |
+| `intelligence:pick` | `1`, `2`, ... | the rows of the list window a project asks its target in, by place (in the second list, `1` is its "Any ..." row) |
 | `colony-type` | `suggested`, `other` | the Colony Type question |
 
 - A step that names an option in `highlight` or `allow` (`allow = ["designs:create:ship"]`)
@@ -1144,6 +1146,7 @@ the Weapons Report.
 | `cycle:ship`, `cycle:fleet`, `cycle:colony` | the previous and next selectors |
 | `research:areas`, `research:queue`, `research:tech-tree` | Research: the list of areas (a click adds a project), the current projects, Tech Tree |
 | `research:headings`, `research:points` | Research: the headings of the areas' columns (Current Level, Cost); the research points in its title strip |
+| `tech-tree:list`, `tech-tree:export` | Technology Tree: the list of the view shown, Export |
 | `set-queue:available`, `set-queue:queue` | Set Construction Queue: what can be built (a click adds it), the queue |
 | `set-queue:rate` | Set Construction Queue: the queue's build rate and the treasury |
 | `queues:list` | Construction Queues: the list of queues |
@@ -1153,7 +1156,7 @@ the Weapons Report.
 | `create-design:figures` | Create Design: the figures box (Space Used, Total Cost, Movement, ...) |
 | `create-design:name`, `create-design:suggest` | the Design Name box, and the button beside it that lists names |
 | `create-design:on-design`, `create-design:components` | the Components on Design strip, the Components Available grid |
-| `create-design:warnings`, `create-design:save` | the Warnings box, Create Design (Save Design when editing) |
+| `create-design:warnings`, `create-design:save` | the Warnings box, Create Design (also when editing) |
 | `fleet-transfer:ships`, `fleet-transfer:fleets`, `fleet-transfer:create-fleet` | Fleet Transfer: the ships outside fleets, the fleets, Create Fleet |
 | `combat-simulator:vehicles`, `combat-simulator:items`, `combat-simulator:owners` | Combat Simulator: the Combat Vehicles list's rows in use (at least one row's height), the Items to choose list (a click adds the item for the chosen race), the Owner for item list (Race 1 to Race 10) |
 | `combat-simulator:strategies`, `combat-simulator:begin` | its Strategies and Begin buttons (its Tactical and Strategic tabs: `combat-simulator:tactical`, `combat-simulator:strategic`) |

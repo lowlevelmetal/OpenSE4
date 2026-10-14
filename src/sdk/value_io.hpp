@@ -630,6 +630,7 @@ void fields(A& a, game::InterfaceOptions& x) {
     a("designs_hide_obsolete", x.designsHideObsolete);
     a("designs_stats_view", x.designsStatsView);
     a("scenario_page", x.scenarioPage);
+    a("designs_tab", x.designsTab);
 }
 template <class A>
 void fields(A& a, game::combat::Square& x) {

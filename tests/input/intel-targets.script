@@ -1,0 +1,89 @@
+# The target lists of an intelligence project (spec 05 §2.1; docs/BUILDING.md "Input scripts"),
+# on a training game of our own (tests/input/learn-intel): other empires met and projects of
+# every kind at the start.
+# - Intelligence Defense is added at once; every other project asks for the empire in "Select
+#   Empire", then by its kind for a ship, a planet, a technology area or a third empire in a
+#   second list whose first row is "Any ...". Cancel at either step adds nothing.
+# - A right-click on a project opens its report.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-intel --training=intel --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 10
+assert { empires_met = 1 }
+click tag:command:empires
+wait-window empires
+click tag:empires:intelligence
+wait-window intelligence
+# Defense: no list window.
+click tag:intelligence:target:none
+wait 3
+assert-absent item:"window:Select*"
+assert { command = "SetIntel" }
+# The empire only: one list window, no "Any" row.
+click tag:intelligence:target:empire
+wait-for item:"window:Select Empire*"
+assert-absent item:"Any Empire" in="Select Empire*"
+screenshot select-empire.png
+click tag:intelligence:pick:1
+wait-gone item:"window:Select Empire*"
+# A ship: Cancel in the first list adds nothing; then the empire and "Select Ship".
+wheel tag:intelligence:projects -20
+click tag:intelligence:target:ship
+wait-for item:"window:Select Empire*"
+click item:Cancel in="Select Empire*"
+wait-gone item:"window:Select Empire*"
+click tag:intelligence:target:ship
+wait-for item:"window:Select Empire*"
+click tag:intelligence:pick:1
+wait-for item:"window:Select Ship*"
+assert-present item:"Any Ship" in="Select Ship*"
+screenshot select-ship.png
+click item:"Any Ship" in="Select Ship*"
+wait-gone item:"window:Select Ship*"
+# A planet.
+click tag:intelligence:target:planet
+wait-for item:"window:Select Empire*"
+click tag:intelligence:pick:1
+wait-for item:"window:Select Planet*"
+assert-present item:"Any Planet" in="Select Planet*"
+click item:"Any Planet" in="Select Planet*"
+wait-gone item:"window:Select Planet*"
+# A technology area: the areas we can research now, none at this starting technology, so only
+# "Any Technology".
+wheel tag:intelligence:projects 20
+click tag:intelligence:target:technology
+wait-for item:"window:Select Empire*"
+click tag:intelligence:pick:1
+wait-for item:"window:Select Technology*"
+assert-present item:"Any Technology" in="Select Technology*"
+assert-absent tag:intelligence:pick:2
+screenshot select-technology.png
+click tag:intelligence:pick:1
+wait-gone item:"window:Select Technology*"
+# A third empire: "Any Empire" first; Cancel in the second list adds nothing.
+click tag:intelligence:target:third-empire
+wait-for item:"window:Select Empire*"
+click tag:intelligence:pick:1
+wait 3
+assert-present item:"Any Empire" in="Select Empire*"
+screenshot select-third-empire.png
+click item:Cancel in="Select Empire*"
+wait-gone item:"window:Select Empire*"
+screenshot intel-queue.png
+# A right-click on a project, of the list or of the queue, opens its report; a click closes it.
+right-click tag:intelligence:target:none
+wait-for item:window:##itemreport in=intelligence
+screenshot intel-report.png
+click item:window:##itemreport in=intelligence
+wait-gone item:window:##itemreport
+# The lesson panel covers the boxes at 800x600: out of the way first.
+click tag:lesson:hide
+wait-gone tag:lesson:panel
+right-click item:##box in=intelligence nth=1
+wait-for item:window:##itemreport in=intelligence
+click item:window:##itemreport in=intelligence
+wait-gone item:window:##itemreport
+assert-window intelligence
+key Escape
+wait-closed intelligence

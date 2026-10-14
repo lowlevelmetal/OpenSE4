@@ -158,6 +158,7 @@ constexpr std::string_view kOtherTags[] = {
     "log:messages", "log:details", "log:categories", "log:send-reply",
     "empires:list", "empires:intelligence", "empires:treaty-grid", "empires:scores", "empires:victory-conditions", "empires:our-race",
     "intelligence:projects", "intelligence:queue",
+    "tech-tree:list", "tech-tree:export",
     "strategies:list", "strategies:pages", "strategies:page", "view-orders:list",
     "empire-status:budget", "empire-status:net",
     "communicate:message-type", "communicate:treaty", "communicate:tone", "communicate:text", "communicate:send",
@@ -410,6 +411,11 @@ std::vector<ChoiceGroup> buildChoiceGroups() {
     out.push_back({"communicate:treaty", owned(std::move(treaties)), true, "Communicate: the treaty list (`non-aggression`, ...)"});
     out.push_back({"intelligence:projects", {"defense", "other"}, false,
                    "Intelligence: the projects, those of the Intelligence Defense type and the others"});
+    out.push_back({"intelligence:target", {"none", "empire", "planet", "ship", "technology", "third-empire"}, false,
+                   "Intelligence: the projects by what they ask for when added (spec 05 §2.1)"});
+    out.push_back({"intelligence:pick", numbered("", 12), true,
+                   "Intelligence: the rows of the list window a project asks its target in, from 1 (the second list's 1 is its \"Any ...\" row)",
+                   true});
     out.push_back({"colony-type", {"suggested", "other"}, true, "the Colony Type question: the suggested type and the others"});
     return out;
 }

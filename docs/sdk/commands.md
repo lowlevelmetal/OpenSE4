@@ -605,7 +605,10 @@ area keeps its progress while it stays in the queue.
 
 ### `set_intel`
 
-Replaces the intelligence queue.
+Replaces the intelligence queue. A project keeps its progress while it stays
+in the queue: each entry takes that of an entry of the old queue with the same
+project and the same targets (specific or any), each old entry once, so a
+project added again starts from nothing.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -1279,6 +1282,7 @@ plus one, newest first, 0 for none.
 | `designs_hide_obsolete` | bool | The Designs window hides obsolete designs. |
 | `designs_stats_view` | bool | The Designs window shows statistics. |
 | `scenario_page` | int | In a game of one of the original's scenarios, the page of its text shown last (its place in the file, from 1; 1 by default). |
+| `designs_tab` | int | The Designs window's tab: 0 Ship Designs, 1 Unit Designs, 2 enemy ship designs, 3 enemy unit designs. |
 
 ## Enumerations the commands use
 

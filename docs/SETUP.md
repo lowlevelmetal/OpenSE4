@@ -388,7 +388,7 @@ in the working folder.
 |---|---|
 | `settings.toml` | The Settings window's Graphics (with the title bar), Controls and Files pages: this computer's display, keys and saves folder. |
 | `classic_settings.toml` | The Options window and the Settings window's Sound and Modding pages, the mods you play with, the last game you saved (for Resume Game) and your progress in the lessons. |
-| `saves/` | Your saved games (`.gam`), the autosaves `AutoSav0` to `AutoSav9` (named after the last digit of the turn count), and the players' history files copied beside each save. `saves/Space Empires IV/` is where *Save for SE IV* suggests writing games for the original. Settings → Files can put saved games in another folder (below). |
+| `saves/` | Your saved games (`.gam`), the autosaves `AutoSav0` to `AutoSav9` (named after the last digit of the turn count), and the players' history files copied beside each save; the Technology Tree's exports (`TechAreas.txt`, `TechLevels.txt`) and the Weapons Report's. `saves/Space Empires IV/` is where *Save for SE IV* suggests writing games for the original. Settings → Files can put saved games in another folder (below). |
 | `History/` | The players' statistics, history and log files of the game being played. |
 | `maps/`, `empires/` | Maps ([MAPS.md](MAPS.md)) and empire files you saved. |
 | `Mods/` | Your mods (see "Mods"). |
@@ -396,7 +396,7 @@ in the working folder.
 | `pbem/` | Play-by-e-mail game and turn files ([MULTIPLAYER.md](MULTIPLAYER.md)). |
 | `lessons/` | Where you left a tutorial or training game, to go on from there. |
 | `host_key.txt`, `known_hosts.txt` | This computer's key as a network host, and the hosts it trusts ([MULTIPLAYER.md](MULTIPLAYER.md)). |
-| `queue_types.txt`, `tech_levels.txt`, `tech_areas.txt` | Construction queue templates, and the Research window's exports. |
+| `queue_types.txt` | Construction queue templates. |
 | `python/` | The Python package `opense4-sdk` writes for external computer players ([docs/sdk](sdk/)). |
 | `opense4.log`, `opense4.previous.log` | The log of this run and of the run before. |
 

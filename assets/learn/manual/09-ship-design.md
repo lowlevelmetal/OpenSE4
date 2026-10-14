@@ -46,7 +46,7 @@ be created.
 - At most one **space yard** component.
 - Special-purpose hulls need a share of their tonnage in one kind of component: carriers in fighter bays, colony ships in colony modules, transports in cargo space.
 
-> If Create Design refuses the design, read the Warnings box: it names every rule that fails.
+> If Create Design refuses the design with its *Design Warnings* box, read the Warnings box: it names every rule that fails.
 
 ## Movement, supply and cost
 
@@ -62,7 +62,9 @@ size and cost. Larger mounts need larger hulls. In the designer, choose a mount 
 `Weap Mount`; it applies to the weapons you add after that. A mounted component shows the mount's
 letter. One design can mix mounts.
 
-The [Weapons Report](help:weapons) shows what each weapon does with each mount.
+The [Weapons Report](help:weapons) shows what each weapon does with each mount. Opened from the
+designer, its `Weapon Mount` list offers the mounts the design's hull can take; opened from Help,
+only *Normal Mount*.
 
 ## Combat numbers worth knowing
 
@@ -77,11 +79,11 @@ These rules from [Combat](combat) matter when you design:
 
 ## Prototypes, editing and upgrading
 
-- A new design is a **prototype** until you build one. You can **Edit** a prototype freely, as long as it is not in a construction queue.
+- A new design is a **prototype** until you build one. You can **Edit** a prototype freely, as long as it is not in a construction queue (Edit then says so in a *Cannot Edit Design* box).
 - Once a design has been built, it cannot change. Use **Copy** to start a new design from it.
 - **Upgrade** opens the designer on a copy of the design in which every component is replaced by the newest one of its family that you have researched, the one listed last in the game's component list (so a newer line of engines replaces an older line's best). Create it as a new design; the old one stays. Then build the new design, or retrofit old ships to it (see [Supply, cargo and repair](logistics#scrapping-and-mothballing)).
 - **Make Obsolete** marks a design you no longer want; **Hide Obsolete** hides such designs from your lists. An obsolete design is removed for good once no vehicle of it exists, it is in no queue and no other empire has seen it for 50 turns.
-- Design names must be unique among all the designs in the game, every empire's included.
+- Design names must be unique among all the designs in the game, every empire's included, letter case counting. A design needs a name in OpenSE4 (the original lets one go without).
 
 Each design has a **design type**, such as attack ship, colony ship or transport. The type is a
 label: your ministers use it to find ships for each job. Each design also has a **default
@@ -91,12 +93,13 @@ strategy** for combat, which a fleet's own strategy overrides.
 
 You learn other empires' designs by fighting them, by scanning their ships with a long range
 scanner, and through intelligence. They appear on the **Enemy Ship Dsgn** and **Enemy Unit Dsgn**
-tabs. You forget an enemy design you have not seen for 50 turns.
+tabs, obsolete or not, until their empire is eliminated. You forget an enemy design you have not
+seen for 50 turns.
 
 ## The Designs window
 
 [Designs](window:designs) (`F3`) lists your designs on four tabs: **Ship Designs**, **Unit
-Designs**, **Enemy Ship Dsgn** and **Enemy Unit Dsgn**. Your designs are grouped under their
+Designs**, **Enemy Ship Dsgn** and **Enemy Unit Dsgn**; it opens on the tab you left it on. Your designs are grouped under their
 design types (enemy designs under their empire's name), the groups and the designs in each in
 alphabetical order; each row has a lamp (green for the selected design), the design's picture,
 its name and hull, and **Prototype** while it has never been built. Select a design to see its
@@ -108,8 +111,8 @@ that no vehicle or queue uses any more are deleted by themselves, as the note un
 
 | Button | What it does |
 |---|---|
-| `Create` | Ask which kind of vehicle to design (ship, base, satellite, ...), then open the designer for it. |
-| `Copy` | Open the designer with a copy of the selected design. |
+| `Create` | Ask which kind of vehicle to design (ship, base, satellite, ...), then open the designer for it. Not on the enemy tabs. |
+| `Copy` | Open the designer with a copy of the selected design (your own designs only, as for Edit, Upgrade and Make Obsolete). |
 | `Edit` | Change a prototype that has never been built and is in no queue. |
 | `Upgrade` | Make a new design with the newest components. |
 | `Make Obsolete` | Mark the design obsolete, or current again. |
@@ -121,19 +124,23 @@ that no vehicle or queue uses any more are deleted by themselves, as the note un
 
 [Create Design](window:create-design) is the designer. It is titled after the kind of vehicle
 you chose (**Ship Design**, **Base Design**, ...) and starts without a size, a design type or a
-name: their boxes read *Size*, *Design Type* and *Design Name*.
+name: their boxes read *Vehicle Size*, *Design Type* and *Design Name*.
 
-1. Press the arrow button beside **Size** and pick the hull. Pick a **Design Type** the same
-   way, and type a **Design Name**, or press the arrow button beside it to pick one from your
-   race's list.
-2. **Click** a component in **Components Available** (a grid, three to a row) to add it. The
+1. Press the arrow button beside **Size** and pick the hull in *Select Vehicle Size*, which
+   lists each hull's picture, tonnage and cost and, under the list, the abilities of the hull
+   under the pointer (`Cancel` leaves the design without a size). Pick a **Design Type** the
+   same way, and type a **Design Name**, or press the arrow button beside it to pick one from
+   your race's list (every name of it, used ones too).
+2. Once a size is chosen, **click** a component in **Components Available** (a grid, three to a row) to add it. The
    design's components appear in the strip of **Components on Design**; **click** one there to
    remove it, and use the strip's arrows when it is longer than the window. **Right-click** a
    component for its full report. Point at a component to see it in **Component Details**.
 3. Watch the figures at the top right (space used, total cost, movement, shields, cargo space,
    supply capacity) and the **Warnings** box at the bottom left, which lists every rule the
-   design breaks, a missing size or name too, each after a red dot.
-4. Press `Create Design` when the Warnings box has nothing left; `Cancel` closes the designer.
+   design breaks, a missing size too, each after a red dot.
+4. Press `Create Design` (also when you edit a design) when the Warnings box has nothing left:
+   with a warning left, or a name that is empty or already in use, a *Design Warnings* box
+   says why. `Cancel` closes the designer.
 
 With mods that add ship pictures (see [Mods](settings#mods)), a small arrow appears in the
 corner of the design's picture: it lists the hull's picture and the mods' pictures, and the
@@ -143,9 +150,9 @@ The buttons on the right help:
 
 | Button | What it does |
 |---|---|
-| `Comp Type` | Show only one group of components. |
-| `Weap Mount` | Choose the mount for the weapons you add next (once a size is chosen). |
+| `Comp Type` | Show only one group of components, or *All*, picked in *Select Component Group*. |
+| `Weap Mount` | Choose the mount for the weapons you add next (once a size is chosen) in *Select Weapon Mount*, which describes each one; *Normal Mount* is none. The mount's name is shown beside **Components Available**. |
 | `To Hit Modifiers` | A check box: the figures show the design's **Offense Bonus** and **Defense Bonus** (its combat to-hit bonuses) instead of shields, cargo space and supply capacity. It is kept with your empire. |
-| `Condensed View` | A check box: show identical components (the same component and mount) once in the strip, with their count. It is kept with your empire. |
+| `Condensed View` | A check box: show identical components (the same component and mount) once in the strip, with their count. While it is on, the design's identical components are moved next to the first of their kind (when you tick it and after each component you add), and weapons fire in the design's order. It is kept with your empire. |
 | `Only Latest` | A check box: of components of one family listed one after another, show only the last (the newest). It is an Empire Options setting, kept as you leave it. |
-| `Weapons Report` | Compare weapons, with the chosen mount. |
+| `Weapons Report` | Compare weapons with the mounts this hull can take. |

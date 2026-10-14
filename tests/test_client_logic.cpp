@@ -255,29 +255,190 @@ TEST_CASE("client logic: tech progress, ETA text and exports") {
     CHECK(etaText(13) == "1.3 years");
     CHECK(etaText(4) == "0.4 years");
 
-    const std::string areas = techAreasExport(r, s, e);
-    CHECK(areas.find("Test Missiles") != std::string::npos);
-    CHECK(areas.find("Requires:  Test Physics 2") != std::string::npos);
-    const std::string levels = techLevelsExport(r, s, e);
-    CHECK(levels.find("Test Master Computer [Component]") != std::string::npos);
+}
+
+TEST_CASE("client logic: the Tech Tree's rows and export") {
+    // Spec 06 §7 Q92 (confirmed: binary): every area of the data set, under
+    // the groups in alphabetical order, data order under each.
+    ruleset::Ruleset rs = buildEngineRuleset();
+    ruleset::RacialTrait mind;
+    mind.name = "Test Mind Gift";
+    mind.traitType = "Tech Area";
+    mind.values = {"1"};
+    rs.racialTraits.push_back(mind);
+    rs.reindex();
+    const Rules r(std::move(rs));
+    const auto areaRows = techTreeRows(r, false);
+    std::vector<std::string> groups;
+    for (const TechTreeRow& row : areaRows)
+        if (groups.empty() || groups.back() != r.tech(row.area).group) groups.push_back(r.tech(row.area).group);
+    CHECK(groups == std::vector<std::string>{"Applied Science", "Theoretical Science", "Weapon Technology"});
+    size_t areasListed = 0;
+    for (size_t i = 0; i < areaRows.size(); ++i)
+        if (i == 0 || areaRows[i].area != areaRows[i - 1].area) ++areasListed;
+    CHECK(areasListed == r.data().techAreas.size());   // racial and unique areas too
+
+    // Tech Areas: a row per requirement, the racial trait, a unique area's mark.
+    auto rowsOf = [&](std::string_view name, bool levels) {
+        return levels ? techLevelRows(r, techArea(r, name)) : techAreaRows(r, techArea(r, name));
+    };
+    const auto missiles = rowsOf("Test Missiles", false);
+    REQUIRE(missiles.size() == 1);
+    CHECK(missiles[0].cells == std::array<std::string, 3>{"Test Missiles", "Test Physics", "2"});
+    const auto psionics = rowsOf("Test Psionics", false);
+    REQUIRE(psionics.size() == 1);
+    CHECK(psionics[0].cells == std::array<std::string, 3>{"Test Psionics", "Test Mind Gift", "Racial Trait"});
+    const auto relics = rowsOf("Test Relics", false);
+    REQUIRE(relics.size() == 1);
+    CHECK(relics[0].cells == std::array<std::string, 3>{"Test Relics", "Unique Technology", "(Must Be Found)"});
+    const auto physics = rowsOf("Test Physics", false);
+    REQUIRE(physics.size() == 1);
+    CHECK(physics[0].cells == std::array<std::string, 3>{"Test Physics", "", ""});
+
+    // Tech Levels: every level; the items a level makes available, " [N]"
+    // after one with more than one requirement; areas are not items.
+    const auto levels = rowsOf("Test Physics", true);
+    auto at = [&](int level) {
+        std::vector<std::string> items;
+        for (const TechTreeRow& row : levels)
+            if (row.cells[1] == std::to_string(level)) items.push_back(row.cells[2]);
+        return items;
+    };
+    CHECK(at(1).size() >= 1);
+    CHECK(at(2) == std::vector<std::string>{""});   // only areas need Physics 2
+    const auto four = at(4);
+    CHECK(std::find(four.begin(), four.end(), "Test Master Computer") != four.end());
+    CHECK(levels.back().cells[1] == "5");
+
+    // The export: one line per row, the cells joined by commas.
+    const std::string text = techTreeExport(missiles);
+    CHECK(text == "Test Missiles,Test Physics,2\n");
+    CHECK(techTreeExport(techTreeRows(r, true)).find("Test Physics,4,Test Master Computer\n") != std::string::npos);
 }
 
 TEST_CASE("client logic: intel project targets") {
+    // The second list window a project asks for (spec 05 §2.1, confirmed: binary).
     ruleset::IntelProject p;
-    p.type = "Intelligence Defense";
-    CHECK(intelTargetKind(p) == IntelTarget::None);
-    p.type = "Planet - Population Change";
-    CHECK(intelTargetKind(p) == IntelTarget::Planet);
-    p.type = "Planet - Locations";
-    CHECK(intelTargetKind(p) == IntelTarget::Empire);
-    p.type = "Ship - Rebel";
-    CHECK(intelTargetKind(p) == IntelTarget::Vehicle);
-    p.type = "Ship - Concentrations";
-    CHECK(intelTargetKind(p) == IntelTarget::Empire);
-    p.type = "Politics - Fake Messages";
-    CHECK(intelTargetKind(p) == IntelTarget::ThirdEmpire);
-    p.type = "Points - Steal";
-    CHECK(intelTargetKind(p) == IntelTarget::Empire);
+    auto kind = [&](const char* type) {
+        p.type = type;
+        return intelTargetKind(p);
+    };
+    CHECK(kind("Intelligence Defense") == IntelTarget::None);
+    // The seven ship sabotage types (listed in an order of our own).
+    for (const char* t : {"Ship - Orders Change", "Ship - Rebel", "Ship - Damage", "Ship - Cargo Damage", "Ship - Lose Supply",
+                          "Ship - Experience Change", "Ship - Lose Movement"})
+        CHECK(kind(t) == IntelTarget::Vehicle);
+    for (const char* t : {"Planet - Info", "Planet - Facility Damage", "Planet - Population Rebel", "Planet - Value Change",
+                          "Planet - Cargo Damage", "Planet - Population Riot", "Planet - Conditions Change", "Planet - Population Anger Change",
+                          "Planet - Population Change"})
+        CHECK(kind(t) == IntelTarget::Planet);
+    CHECK(kind("Research - Steal") == IntelTarget::Tech);
+    // The five Politics types.
+    for (const char* t : {"Politics - Treaty Info", "Politics - Fake Messages", "Politics - Prevent Messages", "Politics - Disrupt Trade",
+                          "Politics - Intercept Messages"})
+        CHECK(kind(t) == IntelTarget::ThirdEmpire);
+    // Only the empire: reports, points, deleting projects, design and log theft, and a mod's types.
+    for (const char* t : {"Ship - Concentrations", "Ship - Construction Info", "Planet - Locations", "Points - Change", "Points - Steal",
+                          "Research - Delete Project", "Intel - Delete Project", "System - Info", "Empire - Info", "Tech Level - Info",
+                          "Ship Designs - Steal", "Unit Designs - Steal", "Log Reports - Steal", "A Mod's Own Type"})
+        CHECK(kind(t) == IntelTarget::Empire);
+}
+
+TEST_CASE("client logic: intelligence target lists and the box's target line") {
+    // Spec 05 §2.1 (confirmed: binary): "Select Empire" without "Any", then a
+    // second list by the project's kind, its "Any ..." row first.
+    using effects::Effect;
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame(5, 4);
+    const EmpireId a{0u}, b{1u}, c{2u}, d{3u};
+    setContact(s, a, b);
+    setContact(s, a, c);
+    setContact(s, a, d);
+    s.empire(d).alive = false;   // the dead are not listed
+    auto order = [&](Effect e, EmpireId target = {}) {
+        IntelProjectOrder o;
+        o.project = projectFor(e);
+        o.target = target;
+        return o;
+    };
+    auto labels = [](const IntelTargetList& list) {
+        std::vector<std::string> out;
+        for (const IntelTargetRow& row : list.rows) out.push_back(row.label);
+        return out;
+    };
+
+    // Stage 0: the living contacts, in empire order; the empire-only kinds end there.
+    const IntelTargetList empires = intelTargetList(r, s, a, order(Effect::ShipDamage), 0);
+    CHECK(empires.title == "Select Empire");
+    CHECK(labels(empires) == std::vector<std::string>{s.empire(b).name, s.empire(c).name});
+    CHECK(empires.rows[1].order.target == c);
+    CHECK_FALSE(empires.last);
+    CHECK(intelTargetList(r, s, a, order(Effect::PointsChange), 0).last);
+
+    // Ships: the target's vehicles we see now, by name with the case ignored.
+    std::vector<VehicleId> theirs;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == b && v.count > 0) theirs.push_back(v.id);
+    REQUIRE(theirs.size() >= 3);
+    s.vehicle(theirs[0])->name = "zeta";
+    s.vehicle(theirs[1])->name = "Alpha";
+    s.vehicle(theirs[2])->name = "beta";
+    std::vector<VehicleId>& seen = s.empire(a).knowledge.visibleVehicles;
+    seen = {theirs[0], theirs[1], theirs[2]};
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == c && v.count > 0) seen.push_back(v.id);   // another empire's: not listed
+    const IntelTargetList ships = intelTargetList(r, s, a, order(Effect::ShipRebel, b), 1);
+    CHECK(ships.title == "Select Ship");
+    CHECK(labels(ships) == std::vector<std::string>{"Any Ship", "Alpha", "beta", "zeta"});
+    CHECK_FALSE(ships.rows[0].order.targetVehicle.valid());
+    CHECK(ships.rows[1].order.targetVehicle == theirs[1]);
+    CHECK(ships.rows[1].order.target == b);
+    CHECK(intelTargetLine(r, s, ships.rows[0].order) == "Any Ship");
+    CHECK(intelTargetLine(r, s, ships.rows[3].order) == "zeta");
+
+    // Planets: the target's colonies we see; none before we explore their system.
+    const IntelTargetList blind = intelTargetList(r, s, a, order(Effect::PlanetInfo, b), 1);
+    CHECK(blind.title == "Select Planet");
+    CHECK(labels(blind) == std::vector<std::string>{"Any Planet"});
+    ObjectId home;
+    for (const auto& col : s.colonies)
+        if (col && col->owner == b) home = col->planet;
+    REQUIRE(home.valid());
+    const SystemId homeSystem = s.galaxy.object(home).system;
+    s.empire(a).knowledge.explored[homeSystem.index()] = 1;
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == a && v.count > 0) {
+            v.location = Location{homeSystem, s.galaxy.object(home).sector};   // a sensor in the system
+            break;
+        }
+    const IntelTargetList planets = intelTargetList(r, s, a, order(Effect::PlanetInfo, b), 1);
+    REQUIRE(planets.rows.size() >= 2);
+    CHECK(planets.rows[0].label == "Any Planet");
+    CHECK(std::any_of(planets.rows.begin(), planets.rows.end(), [&](const IntelTargetRow& row) { return row.order.targetPlanet == home; }));
+    CHECK(intelTargetLine(r, s, planets.rows[1].order) == planets.rows[1].label);
+
+    // Technology: the areas the spy can research now, in alphabetical order.
+    const IntelTargetList areas = intelTargetList(r, s, a, order(Effect::ResearchSteal, b), 1);
+    CHECK(areas.title == "Select Technology");
+    REQUIRE(areas.rows.size() >= 3);
+    CHECK(areas.rows[0].label == "Any Technology");
+    for (size_t i = 2; i < areas.rows.size(); ++i) CHECK(areas.rows[i - 1].label <= areas.rows[i].label);
+    const std::vector<ruleset::TechAreaId> open = researchableAreas(r, s, s.empire(a));
+    CHECK(areas.rows.size() == open.size() + 1);
+    for (size_t i = 1; i < areas.rows.size(); ++i)
+        CHECK(std::find(open.begin(), open.end(), areas.rows[i].order.targetTech) != open.end());
+    CHECK(intelTargetLine(r, s, areas.rows[0].order) == "Any Technology");
+
+    // A third empire: our other living contacts, the target left out.
+    const IntelTargetList third = intelTargetList(r, s, a, order(Effect::PoliticsDisruptTrade, b), 1);
+    CHECK(third.title == "Select Empire");
+    CHECK(labels(third) == std::vector<std::string>{"Any Empire", s.empire(c).name});
+    CHECK(third.rows[1].order.thirdEmpire == c);
+    CHECK(intelTargetLine(r, s, third.rows[1].order) == s.empire(c).name);
+
+    // The empire-only kinds and defense: no target line.
+    CHECK(intelTargetLine(r, s, order(Effect::PointsSteal, b)).empty());
+    CHECK(intelTargetLine(r, s, order(Effect::IntelligenceDefense)).empty());
 }
 
 TEST_CASE("client logic: statistics series and timeline") {

@@ -46,7 +46,9 @@ click tag:designs:create
 click item:Ship in=designs
 wait-window create-design
 click item:##size in=create-design
-click item:"Escort Carrier (350 kT)"
+wait-for item:"window:Select Vehicle Size*"
+click item:"Escort Carrier" in="Select Vehicle Size*"
+wait-gone item:"window:Select Vehicle Size*"
 wait 3
 assert { design_hull_chosen = true }
 key Escape

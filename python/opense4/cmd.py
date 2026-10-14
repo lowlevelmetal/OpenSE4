@@ -544,7 +544,9 @@ def set_research(queue: Optional[Sequence[Dict[str, Any]]] = None, evenly: bool 
 
 
 def set_intel(queue: Optional[Sequence[Dict[str, Any]]] = None, evenly: bool = True, repeat: bool = False) -> Dict[str, Any]:
-    """Replaces the intelligence queue.
+    """Replaces the intelligence queue. A project keeps its progress while it stays in the queue: each
+    entry takes that of an entry of the old queue with the same project and the same targets
+    (specific or any), each old entry once, so a project added again starts from nothing.
 
     queue: The projects, in order.
     evenly: Share points evenly (the default), or in order.
@@ -799,7 +801,7 @@ def set_interface_options(options: Optional[Dict[str, Any]] = None) -> Dict[str,
     """
     return {
         'kind': 'set_interface_options',
-        'options': {'show_log_at_turn_start': True, 'confirm_end_turn': True, 'confirm_scrap': True, 'confirm_stellar_manipulation': True, 'confirm_delete_research': True, 'confirm_delete_intel': True, 'confirm_delete_first_queue_item': True, 'note_similar_abilities': True, 'skip_under_construction': False, 'skip_damaged': False, 'stop_once_per_location': False, 'skip_in_fleets': False, 'warp_point_names': True, 'planet_names': False, 'colonizable_markers': True, 'system_grid': False, 'coordinate_location': True, 'facility_markers': 0, 'galaxy_grid_lines': True, 'galaxy_warp_lines': True, 'latest_construction_only': False, 'latest_components_only': False, 'auto_claim_colonized': True, 'log_filter': 0, 'log_position': 0, 'log_scroll': 0, 'planets_tab': 0, 'planets_no_sys_to_avoid': False, 'queues_tab': 0, 'queues_shown': 15, 'simulator_no_obsolete': False, 'ships_tab': 0, 'ships_shown': 7, 'planets_sort': [0, 0, 0, 0, 0], 'colonies_sort': [0, 0, 0, 0, 0], 'ships_sort': [0, 0, 0, 0, 0], 'queues_sort': [0, 0, 0, 0, 0], 'replay_animate': True, 'replay_fast': False, 'replay_view_rect': True, 'replay_grid': False, 'design_to_hit': False, 'design_condensed': False, 'designs_hide_obsolete': False, 'designs_stats_view': False, 'scenario_page': 1} if options is None else _struct(options, 'interface_options', 'set_interface_options.options'),
+        'options': {'show_log_at_turn_start': True, 'confirm_end_turn': True, 'confirm_scrap': True, 'confirm_stellar_manipulation': True, 'confirm_delete_research': True, 'confirm_delete_intel': True, 'confirm_delete_first_queue_item': True, 'note_similar_abilities': True, 'skip_under_construction': False, 'skip_damaged': False, 'stop_once_per_location': False, 'skip_in_fleets': False, 'warp_point_names': True, 'planet_names': False, 'colonizable_markers': True, 'system_grid': False, 'coordinate_location': True, 'facility_markers': 0, 'galaxy_grid_lines': True, 'galaxy_warp_lines': True, 'latest_construction_only': False, 'latest_components_only': False, 'auto_claim_colonized': True, 'log_filter': 0, 'log_position': 0, 'log_scroll': 0, 'planets_tab': 0, 'planets_no_sys_to_avoid': False, 'queues_tab': 0, 'queues_shown': 15, 'simulator_no_obsolete': False, 'ships_tab': 0, 'ships_shown': 7, 'planets_sort': [0, 0, 0, 0, 0], 'colonies_sort': [0, 0, 0, 0, 0], 'ships_sort': [0, 0, 0, 0, 0], 'queues_sort': [0, 0, 0, 0, 0], 'replay_animate': True, 'replay_fast': False, 'replay_view_rect': True, 'replay_grid': False, 'design_to_hit': False, 'design_condensed': False, 'designs_hide_obsolete': False, 'designs_stats_view': False, 'scenario_page': 1, 'designs_tab': 0} if options is None else _struct(options, 'interface_options', 'set_interface_options.options'),
     }
 
 
@@ -1136,7 +1138,7 @@ def unit_stack(design: Optional[Ref] = None, count: int = 0) -> Dict[str, Any]:
     }
 
 
-def interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: bool = True, confirm_scrap: bool = True, confirm_stellar_manipulation: bool = True, confirm_delete_research: bool = True, confirm_delete_intel: bool = True, confirm_delete_first_queue_item: bool = True, note_similar_abilities: bool = True, skip_under_construction: bool = False, skip_damaged: bool = False, stop_once_per_location: bool = False, skip_in_fleets: bool = False, warp_point_names: bool = True, planet_names: bool = False, colonizable_markers: bool = True, system_grid: bool = False, coordinate_location: bool = True, facility_markers: int = 0, galaxy_grid_lines: bool = True, galaxy_warp_lines: bool = True, latest_construction_only: bool = False, latest_components_only: bool = False, auto_claim_colonized: bool = True, log_filter: int = 0, log_position: int = 0, log_scroll: int = 0, planets_tab: int = 0, planets_no_sys_to_avoid: bool = False, queues_tab: int = 0, queues_shown: int = 15, simulator_no_obsolete: bool = False, ships_tab: int = 0, ships_shown: int = 7, planets_sort: Optional[Sequence[int]] = None, colonies_sort: Optional[Sequence[int]] = None, ships_sort: Optional[Sequence[int]] = None, queues_sort: Optional[Sequence[int]] = None, replay_animate: bool = True, replay_fast: bool = False, replay_view_rect: bool = True, replay_grid: bool = False, design_to_hit: bool = False, design_condensed: bool = False, designs_hide_obsolete: bool = False, designs_stats_view: bool = False, scenario_page: int = 1) -> Dict[str, Any]:
+def interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: bool = True, confirm_scrap: bool = True, confirm_stellar_manipulation: bool = True, confirm_delete_research: bool = True, confirm_delete_intel: bool = True, confirm_delete_first_queue_item: bool = True, note_similar_abilities: bool = True, skip_under_construction: bool = False, skip_damaged: bool = False, stop_once_per_location: bool = False, skip_in_fleets: bool = False, warp_point_names: bool = True, planet_names: bool = False, colonizable_markers: bool = True, system_grid: bool = False, coordinate_location: bool = True, facility_markers: int = 0, galaxy_grid_lines: bool = True, galaxy_warp_lines: bool = True, latest_construction_only: bool = False, latest_components_only: bool = False, auto_claim_colonized: bool = True, log_filter: int = 0, log_position: int = 0, log_scroll: int = 0, planets_tab: int = 0, planets_no_sys_to_avoid: bool = False, queues_tab: int = 0, queues_shown: int = 15, simulator_no_obsolete: bool = False, ships_tab: int = 0, ships_shown: int = 7, planets_sort: Optional[Sequence[int]] = None, colonies_sort: Optional[Sequence[int]] = None, ships_sort: Optional[Sequence[int]] = None, queues_sort: Optional[Sequence[int]] = None, replay_animate: bool = True, replay_fast: bool = False, replay_view_rect: bool = True, replay_grid: bool = False, design_to_hit: bool = False, design_condensed: bool = False, designs_hide_obsolete: bool = False, designs_stats_view: bool = False, scenario_page: int = 1, designs_tab: int = 0) -> Dict[str, Any]:
     """The Empire Options switches and what the windows remember. Only auto_claim_colonized changes the
     game. Sort keys are five column numbers plus one, newest first, 0 for none.
 
@@ -1187,6 +1189,8 @@ def interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: boo
     designs_stats_view: The Designs window shows statistics.
     scenario_page: In a game of one of the original's scenarios, the page of its text shown last
         (its place in the file, from 1; 1 by default).
+    designs_tab: The Designs window's tab: 0 Ship Designs, 1 Unit Designs, 2 enemy ship designs,
+        3 enemy unit designs.
     """
     return {
         'show_log_at_turn_start': _bool(show_log_at_turn_start, 'interface_options.show_log_at_turn_start'),
@@ -1235,6 +1239,7 @@ def interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: boo
         'designs_hide_obsolete': _bool(designs_hide_obsolete, 'interface_options.designs_hide_obsolete'),
         'designs_stats_view': _bool(designs_stats_view, 'interface_options.designs_stats_view'),
         'scenario_page': _int(scenario_page, 'interface_options.scenario_page'),
+        'designs_tab': _int(designs_tab, 'interface_options.designs_tab'),
     }
 
 

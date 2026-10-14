@@ -1,0 +1,57 @@
+# The designer's list windows and its Design Warnings box (spec 06 §7 Q94; docs/BUILDING.md
+# "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait-for tag:command:designs
+# On the fixtures the player is alone: the conquest ending comes at once (manual-game.script).
+click item:Close in=finale optional
+click item:Yes in=finale optional
+click tag:command:designs
+wait-window designs
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+assert { design_hull_chosen = false }
+# Without a size the warnings ask for one, and Create Design says it cannot make the design.
+click tag:create-design:save
+wait-for item:"window:Design Warnings*"
+click item:OK in="Design Warnings*"
+wait-gone item:"window:Design Warnings*"
+assert-window create-design
+# "Select Vehicle Size": Cancel leaves the design without a size; a row picks one.
+click item:##size in=create-design
+wait-for item:"window:Select Vehicle Size*"
+click item:Cancel in="Select Vehicle Size*"
+wait-gone item:"window:Select Vehicle Size*"
+assert { design_hull_chosen = false }
+click item:##size in=create-design
+wait-for item:"window:Select Vehicle Size*"
+screenshot vehicle-size.png
+click item:##0 in="Select Vehicle Size*"
+wait-gone item:"window:Select Vehicle Size*"
+assert { design_hull_chosen = true }
+# A component, then "Select Component Group": its rows hold All.
+click item:##tile in=create-design nth=1
+assert { design_components = 1 }
+click item:"Comp Type" in=create-design
+wait-for item:"window:Select Component Group*"
+assert-present item:All in="Select Component Group*"
+screenshot component-group.png
+click item:All in="Select Component Group*"
+wait-gone item:"window:Select Component Group*"
+# The hull has no bridge yet: Create Design still refuses, the design stays open.
+click tag:create-design:name
+type "Script Cutter"
+click tag:create-design:save
+wait-for item:"window:Design Warnings*"
+click item:OK in="Design Warnings*"
+wait-gone item:"window:Design Warnings*"
+assert-window create-design
+screenshot designer-lists.png
+click tag:create-design:close
+wait-closed create-design
+key Escape
+wait-closed designs

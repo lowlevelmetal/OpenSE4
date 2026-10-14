@@ -1,0 +1,24 @@
+# The Technology Tree's two views, Export and its "Export Successful" box (spec 06 §7 Q92;
+# docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --empires=4 --seed=7 --open=tech-tree --layout=1024x768 --size=1280x800
+
+wait-screen game
+# On the fixtures the player is alone: the conquest ending comes at once (manual-game.script).
+click item:Close in=finale optional
+click item:Yes in=finale optional
+wait-window tech-tree
+assert-present item:"Tech Areas" in=tech-tree
+assert-present tag:tech-tree:list
+screenshot tech-areas.png
+click item:"Tech Levels" in=tech-tree
+assert-present tag:tech-tree:list
+screenshot tech-levels.png
+click tag:tech-tree:export
+wait-for item:"window:Export Successful*"
+click item:OK in="Export Successful*"
+wait-gone item:"window:Export Successful*"
+assert-window tech-tree
+key Escape
+wait-closed tech-tree

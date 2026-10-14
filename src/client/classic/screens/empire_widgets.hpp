@@ -69,6 +69,12 @@ void projectPageButtons(Dialog& d, int& page);
 struct ProjectBox {
     std::string name;        // the area or project; empty: an empty slot ("None")
     std::string level;       // "Research Level N" under the name, or empty
+    // An intelligence project's lines (spec 05 §2.1, confirmed: binary): the
+    // specific target picked, or "Any Ship" and the like, at y 40 (empty: no
+    // such line), and "Against " followed by the target empire's flag, centred
+    // on x 65 at y 54 (`againstStyle` the empire's race style; empty: none).
+    std::string target;
+    std::string againstStyle;
     int64_t remaining = 0;   // points it still needs
     int64_t perTurn = 0;     // the points it gets this turn
     int percent = 0;         // points paid of the cost, 0..100
@@ -89,8 +95,10 @@ inline float projectBoxesInUse(size_t projects, int page) {
 // type, "Completion:" and "Cost Per Turn:" at (3,75) and (3,87) with their
 // values at x 82; at its foot the small box (1,102)-(138,128) holding a bar of
 // up to 19 green 5×22 blocks, 7 px apart from x 3. Returns the box clicked
-// (one holding a project), or -1; `hovered` gets the one under the pointer.
-int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<ProjectBox>& boxes, int* hovered = nullptr);
+// (one holding a project), or -1; `hovered` gets the one under the pointer and
+// `rightClicked` the one right-clicked (or -1).
+int projectBoxes(UiContext& ui, const Dialog& d, Vec2 at, const std::vector<ProjectBox>& boxes, int* hovered = nullptr,
+                 int* rightClicked = nullptr);
 // Completion as the boxes write it: the whole turns left, rounded up and at
 // least one, times the turn length ("0.3 years"); "Never" without points
 // (OpenSE4's word, inferred).

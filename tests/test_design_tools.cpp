@@ -11,7 +11,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <format>
+#include <optional>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -193,6 +195,17 @@ TEST_CASE("design tools: condensed view groups identical entries") {
     CHECK(groupEntries({}).empty());
 }
 
+TEST_CASE("design tools: Condensed View moves identical entries together on the design") {
+    // Spec 06 §7 Q94 (confirmed: binary): each next to the first of its kind,
+    // the order otherwise kept; a mounted part is a different part.
+    std::vector<DesignEntry> entries{{1, -1}, {2, -1}, {1, -1}, {1, 0}, {2, -1}, {3, -1}, {1, -1}};
+    CHECK(condenseEntries(entries));
+    CHECK(entries == std::vector<DesignEntry>{{1, -1}, {1, -1}, {1, -1}, {2, -1}, {2, -1}, {1, 0}, {3, -1}});
+    CHECK_FALSE(condenseEntries(entries));   // already together
+    std::vector<DesignEntry> none;
+    CHECK_FALSE(condenseEntries(none));
+}
+
 TEST_CASE("design tools: designer component list follows hull, tech, group and Only Latest") {
     const Rules& r = rulesWithMount();
     const Empire e = empireWith(r, {{"Test Construction", 2}, {"Test Propulsion", 3}, {"Test Beams", 3}, {"Test Units", 1}});
@@ -214,6 +227,8 @@ TEST_CASE("design tools: designer component list follows hull, tech, group and O
     const auto weapons = designerComponents(r, e, frigate, "weapons", false);  // group names ignore case
     CHECK(weapons == std::vector<uint32_t>{laser1, laser2});
     CHECK(componentGroups(r, e, frigate) == std::vector<std::string>{"Weapons"});
+    // "Select Component Group": the groups and "All", the letter case ignored.
+    CHECK(componentGroupRows(r, e, frigate) == std::vector<std::string>{"All", "Weapons"});
 
     CHECK(contains(designerComponents(r, e, fighter, {}, false), gun));
     CHECK(isUnitHull(r.hull(fighter).type));
@@ -287,7 +302,11 @@ TEST_CASE("design tools: weapon mounts") {
     CHECK(mountFor(r, frigate, laser, static_cast<int32_t>(mount)) == -1);
     CHECK(mountFor(r, cruiser, laser, -1) == -1);
 
-    // The Weapons Report ignores the hull.
+    // The Weapons Report's mounts: those the designer's hull allows, none from Help.
+    CHECK(contains(reportMounts(r, e, cruiser), mount));
+    CHECK_FALSE(contains(reportMounts(r, e, frigate), mount));   // too small
+    CHECK(reportMounts(r, e, std::nullopt).empty());
+
     CHECK(mountFitsWeapon(r, mount, laser));
     CHECK_FALSE(mountFitsWeapon(r, mount, missile));
     CHECK_FALSE(mountFitsWeapon(r, mount + 1, laser));
@@ -315,7 +334,17 @@ TEST_CASE("design tools: known weapons by type") {
 TEST_CASE("design tools: design names") {
     GameState s = newEngineGame(5, 2, 10);
     const Empire& e = s.empires[0];
-    const std::string taken = s.design(addTestDesign(s, engineRules(), e.id, "Courier", "Test Frigate", {"Test Bridge"})).name;
+    const DesignId courier = addTestDesign(s, engineRules(), e.id, "Courier", "Test Frigate", {"Test Bridge"});
+    const std::string taken = s.design(courier).name;
+    // Create Design's check (spec 03 §4.1): exact, every design in the game,
+    // except the design an Edit changes.
+    CHECK(designNameClashes(s, e, taken));
+    CHECK_FALSE(designNameClashes(s, e, taken, courier));
+    const DesignId theirs = addTestDesign(s, engineRules(), s.empires[1].id, "Foreign", "Test Frigate", {"Test Bridge"});
+    CHECK(designNameClashes(s, e, s.design(theirs).name));
+    std::string upper = taken;
+    for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (upper != taken) CHECK_FALSE(designNameClashes(s, e, upper));   // the letter case counts
     const std::vector<std::string> list{taken, "Aurora", "Borealis"};
     size_t cursor = 0;
     CHECK(suggestDesignName(s, e, list, cursor) == "Aurora");
