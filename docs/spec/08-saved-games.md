@@ -446,10 +446,20 @@ Then **(confirmed: binary)**:
 | byte | Sector selected in it **(observed: follows the map cursor)** | none |
 | byte | **Current player** | `playerTurn.empire` in a turn-based game |
 | int | **Game random seed**, 0..9998: drawn for a new game; the random generator is reseeded from it on every load and it never changes in play | `seed` (OpenSE4's generator state is lost; reseed) |
-| bool | Scenario game (from 0.40) | none; export off |
-| bool | The scenario is the tutorial (from 0.49) | none; export off |
-| string | Scenario file stem (`<stem>_Settings.txt`) | none; export empty |
-| word | Last scenario text page shown (1) | none; export 1 |
+| bool | Scenario game (from 0.40) | `classicScenario.active` |
+| bool | The scenario is the tutorial (from 0.49) | `classicScenario.tutorial` |
+| string | Scenario file stem: the full path of `<stem>_Settings.txt` without that suffix, as the original's scenario start remembers it | `classicScenario.stem` |
+| word | Last scenario text page shown: the page's place in the text file, from 1 (default 1) | every empire's `interfaceOptions.scenarioPage`; export: the shown empire's |
+
+The scenario fields are those of the original's scenarios and tutorial (spec 06 §5.6)
+**(confirmed: binary)**. The file holds nothing about which pages were shown. Loading a
+scenario game restores the flags and reads the scenario's two text files again from the
+stem; loading another game clears them. OpenSE4 keeps them as
+`GameState::classicScenario` (save format 10), apart from the mods' scenarios, and the
+page shown last per empire (`InterfaceOptions::scenarioPage`), where the original keeps
+one for the game. The export writes the stem with backslashes; a stem from another
+computer is not found there, and the original then looks for the files by their names
+in its own scenario folder (spec 06 §5.6), as OpenSE4 does on import.
 
 ### 3.5 Systems
 
@@ -1169,9 +1179,9 @@ The loader reads one stream for every release since the early betas: each field 
 later is read only when the stored version string is not older than the release that
 added it. The comparison is a plain string comparison, so "1.95" is newer than "0.47"
 and "1.17". Both sample saves and every save we made are "1.95", which has every field;
-this spec describes that version. An importer should accept "1.95" and refuse anything
-else unless it implements the gates; the main ones are listed here so that refusing is a
-choice (all **confirmed: binary**):
+this spec describes that version. The original's other files that start with a version
+string and hold the same records (empire files, maps) read them with the same gates
+**(confirmed: binary)**. The main gates (all **confirmed: binary**):
 
 | Section | Fields and the version that added them |
 |---|---|
@@ -1182,6 +1192,33 @@ choice (all **confirmed: binary**):
 | Lists | message item text 1.22; battle details for 20 players 0.39, damage 0.61; fleet experience as a float 1.46, minister 0.28, leader 1.09, counter 1.05; strategy fields 0.64–1.81 |
 | Designs | template name 1.62; mounts 0.26; type code 0.33; 20 sightings 0.39; scrapped 1.14; changed flag 1.03 |
 | Objects | ship supply as int 0.24, experience as a float 1.46, changed flag 1.03, cloak 0.27, minister 0.28; colony population list 0.46, cloak 0.27, atmosphere counter 0.42, militia 0.63, orders 0.30, capital 0.45, minister 0.28; population amounts as int 0.65; queue counter 0.28; order names 1.51; drone names 1.51 |
+
+**The gates from 1.40 on.** OpenSE4 reads (and, for tests, writes) the files of versions
+1.40 to 1.95 in the form digit, point, two digits, and refuses any other with a message
+naming the version and that range. The original's tutorial starting game is a 1.58 file
+and the stock empire files are 1.51. Above 1.58 the stream has exactly four gates; with
+those below, a file older than a release lacks the fields it added and the model keeps
+their defaults:
+
+| Release | Fields added (default for an older file) |
+|---|---|
+| 1.42 | Options: the seven data-set checksums (0) |
+| 1.43 | Options: the connection (1, manual file moving) |
+| 1.46 | Empires: the network name (empty). Fleets and ships: experience as a float; before, a whole number in an int **(inferred)** |
+| 1.51 | Empires: the drone-name counter (0); strategies: the Drones target category, the last of 14, in both the type priorities and the break-formation flags (13 categories before); orders: the target name (empty); drone groups: their name (empty). Reading an empire of an older file appends the design types Anti-Planet Drone and Anti-Ship Drone to its list |
+| 1.62 | Designs: the computer players' template name (empty) |
+| 1.72 | Options: the game code, the turn code and the program's byte sum (0) |
+| 1.78 | Empire options: the facility markers of groups 2 to 12 (off) |
+| 1.81 | Strategies: drones per target (3) |
+
+The options' "codes and sums" are the two gates 1.42 and 1.72 of the table above. A 1.58
+file holds exactly seven of their ten ints **(observed: the tutorial's starting game
+decodes to its end)**, all 0 there; that these seven are the checksums and the three
+missing ones the codes is **(inferred)** (§11.1 Q23). An empire file from before 1.14
+also holds the eight derived flags of §3.6.1 that later empire files leave out; files
+that old are not read. `classic_save.hpp` names each release (`classic::release`) and
+the codec's record routines take the version from their archive, so the importer of the
+original's other files reads the same records with its own file's version.
 
 ### 5.3 What the original recomputes or changes after loading
 
@@ -1254,6 +1291,7 @@ memory between turns and have no source are a loss on import (§7.6).
 | `playerTurn.launched` | Closing list (§3.9) | Closing list |
 | `startingPoints` | Starting-point lists (§3.5) | Same |
 | `leftFacilities` | Always empty | — |
+| `classicScenario` | The scenario fields (§3.4): flags and stem; the page shown last goes to every empire's `interfaceOptions.scenarioPage` | The same; the page of the shown empire, the stem with backslashes |
 
 ### 6.2 Galaxy
 
@@ -1366,7 +1404,7 @@ Write them correctly or the game misbehaves silently **(confirmed: binary)**:
 | Summary | As §2.6, from the same values as the body |
 | Prologue | Unused flags off; autosave and hand-over flags off; copies equal to the real values; turn counter 367 + `turn` |
 | Options | Setup-only fields at their defaults (random empires on, number of computer players 2); game master password, game name and save folder empty; play style 1 (same machine) and connection 1; replay counter, codes and program sum 0; **the seven checksums computed from the data set (§3.2.1)**, without which no player can sign in to a simultaneous game **(observed)** |
-| Globals | Main-window system and sector: the current player's home system and sector; scenario fields off, empty, 1 |
+| Globals | Main-window system and sector: the current player's home system and sector; the scenario fields of the game (§3.4): off, empty, 1 for a game that is no scenario's |
 | Systems | "Changed" off; type attributes copied from the system's SystemTypes.txt record |
 | Empires | Art folder = race folder; emblem folder, network name and password empty; unused fields as stated in §3.6; default formation, fleet strategy and planet strategy 1; capability flags off; name counters from the vehicles; window memories without counterparts at their defaults (tabs 1, transfer tabs 3); the system and sector shown at turn end: home system and sector |
 | Log | OpenSE4's entries as kind 36, picture key 0, no other empire, **read date 0** (§3.6.11); imported entries with the kind, picture key, other empire, event kind, tech area and read date they came with (§12); diplomatic entries as kind 19 with the message record; combat entries as kinds 9..14 with their battle details |
@@ -1624,6 +1662,14 @@ carries out OpenSE4's start of that player's turn before writing (§12).
       loaded hand-over file starts the turn of the empire it names (spec 05 §9.1). Writing
       one of them might let the original carry out the start itself, but how a game on one
       machine (play style 1) treats them has not been tried.
+23. **The options' codes and sums in files before 1.72 (inferred).** §5.2 gives the
+    options' game code, turn code, program byte sum and seven data-set checksums two gates,
+    1.42 and 1.72, and a 1.58 file holds seven of the ten ints (all 0 in the tutorial's
+    starting game). OpenSE4 takes the seven to be the checksums (added in 1.42) and the
+    three codes to come with 1.72. Which fields each gate covers, in the executable, would
+    settle it; only a pre-1.72 file with non-zero values there would show the difference.
+    Likewise a fleet's or ship's experience before 1.46 is read as a whole number in an
+    int, which no file of that age has confirmed.
 
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 
@@ -1659,6 +1705,9 @@ Implemented on 2026-10-04 from this spec.
   `classic_save_tables.cpp` Appendix A and §3.7.1. The client imports on Load Game and
   `--load` (the file's first bytes tell the formats apart) and exports from Save Game's
   *Save for SE IV*; `opense4-convert` converts on the command line (docs/BUILDING.md).
+- **Versions.** Files of versions 1.40 to 1.95 are read with the gates of §5.2 (since
+  2026-10-13; before, only 1.95), so the original's tutorial starting game (1.58) plays
+  (spec 06 §5.6). The export always writes 1.95.
 - **Text** is Latin-1 in the file and UTF-8 in OpenSE4; a character Latin-1 lacks is
   written as "?". **Floats** are kept as their 80-bit pattern and converted with the
   emulated x87 arithmetic (`xmath.hpp`): conditions exactly, experience in tenths.

@@ -324,9 +324,18 @@ private:
         g.viewSystem = sys(shown.homeSystem);
         g.viewSector = sec(shown.homeSector);
         g.seed = static_cast<int32_t>(s_.seed % 9999);
-        g.scenario = false;
-        g.tutorial = false;
-        g.scenarioPage = 1;
+        // A scenario game (§3.4). The stem is written with the original's
+        // separators: a path of another computer (or of Linux) is not found
+        // there, and the original then looks for the files by their names in
+        // its own scenario folder. The original keeps one page shown last for
+        // the game; ours keeps one per empire, and the file gets the shown
+        // empire's.
+        const ClassicScenarioState& sc = s_.classicScenario;
+        g.scenario = sc.active;
+        g.tutorial = sc.tutorial;
+        g.scenarioStem = sc.stem;
+        std::replace(g.scenarioStem.begin(), g.scenarioStem.end(), '/', '\\');
+        g.scenarioPage = std::max<uint16_t>(1, shown.interfaceOptions.scenarioPage);
         // Timed events (§3.4).
         for (const PendingEvent& pe : s_.pendingEvents) {
             TimedEvent t;

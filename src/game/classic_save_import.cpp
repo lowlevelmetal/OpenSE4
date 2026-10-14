@@ -44,9 +44,9 @@ public:
     Importer(const Rules& r, const ClassicSave& in, ConversionReport& report) : r_(r), d_(r.data()), in_(in), report_(report) {}
 
     std::expected<GameState, std::string> run() {
-        if (in_.version != kVersion || in_.prologue.version != kVersion)
-            return std::unexpected(std::format("the game was saved by version {} of Space Empires IV; only version {} is supported", in_.prologue.version,
-                                               kVersion));
+        // The file's version decides which fields it holds (§5.2); the
+        // prologue's copy is not read.
+        if (auto problem = versionProblem(in_.version)) return std::unexpected(std::move(*problem));
         if (in_.traitCount != d_.racialTraits.size())
             return std::unexpected(std::format("the save was read for {} racial traits; the data set has {}", in_.traitCount,
                                                d_.racialTraits.size()));
@@ -68,6 +68,7 @@ public:
         orders();
         logsAndMessages();
         events();
+        scenario();
         knowledge();
         playerTurn();
         if (!error_.empty()) return std::unexpected(error_);
@@ -430,6 +431,9 @@ private:
                 if (wp.system != 0) e.waypoints[w].location = {system(wp.system, where + " waypoints"), sector(wp.sector)};
             }
             e.designTypes = in.designTypes;
+            // A file from before the drones gets their two design types, as the original's reading adds them (§5.2).
+            if (!versionAtLeast(in_.version, release::kDrones))
+                for (std::string_view t : kOldDesignTypesAdded) e.designTypes.emplace_back(t);
             e.colonyTypes = in.colonyTypes;
             if (!in.queueTemplates.empty()) count("saved construction queue templates", static_cast<int>(in.queueTemplates.size()));
             e.repairPriorities = in.repairPriorities;
@@ -1322,6 +1326,18 @@ private:
     }
 
     // ---- Timed events, starting points (§3.4, §3.5) ---------------------------------------------------------------
+
+    // The scenario fields (§3.4): the flags, the stem (a full path, which
+    // the client tries first and then by its file name in the scenario
+    // folder) and the page shown last (a position in the text file), which
+    // every empire gets (the original keeps one for the game).
+    void scenario() {
+        const Globals& g = in_.globals;
+        s_.classicScenario.active = g.scenario;
+        s_.classicScenario.tutorial = g.tutorial;
+        s_.classicScenario.stem = g.scenarioStem;
+        for (Empire& e : s_.empires) e.interfaceOptions.scenarioPage = std::max<uint16_t>(1, g.scenarioPage);
+    }
 
     void events() {
         for (const TimedEvent& t : in_.events) {

@@ -1278,6 +1278,7 @@ plus one, newest first, 0 for none.
 | `design_condensed` | bool | The designer's condensed view. |
 | `designs_hide_obsolete` | bool | The Designs window hides obsolete designs. |
 | `designs_stats_view` | bool | The Designs window shows statistics. |
+| `scenario_page` | int | In a game of one of the original's scenarios, the page of its text shown last (its place in the file, from 1; 1 by default). |
 
 ## Enumerations the commands use
 

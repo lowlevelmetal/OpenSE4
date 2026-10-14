@@ -372,6 +372,12 @@ struct InterfaceOptions {
     // §3.6.7), so they come back on every opening (save format 8).
     bool designsHideObsolete = false;
     bool designsStatsView = false;
+    // The scenario window's page shown last in a game of one of the
+    // original's scenarios (GameState::classicScenario): its 1-based position
+    // in the scenario's text file, which Ctrl+H and the T buttons show again
+    // (docs/spec/06 §5.6; save format 10). The original keeps one for the
+    // game (spec 08 §3.4); ours keeps one per empire.
+    uint16_t scenarioPage = 1;
 
     bool operator==(const InterfaceOptions&) const = default;
 };
@@ -1196,6 +1202,19 @@ struct ScenarioState {
     bool operator==(const ScenarioState&) const = default;
 };
 
+// A game started from one of the original's scenarios, the tutorial among
+// them (docs/spec/06 §5.6, spec 08 §3.4; save format 10), apart from the
+// mods' scenarios (ScenarioState). The scenario's text pages are not kept:
+// the client reads them again from `stem` on every load. The page each
+// empire saw last is InterfaceOptions::scenarioPage. Set when the game
+// starts from the scenario and never changed in play.
+struct ClassicScenarioState {
+    bool active = false;     // a scenario game: its pages show, Ctrl+H shows the last one again
+    bool tutorial = false;   // the scenario is the tutorial: its T buttons
+    std::string stem;        // the files' full path without "_Settings.txt" and "_Text.txt"
+    bool operator==(const ClassicScenarioState&) const = default;
+};
+
 // ---- The game --------------------------------------------------------------------------------
 
 struct GameState {
@@ -1246,6 +1265,8 @@ struct GameState {
     std::vector<ModRulesState> modRules;
     ScenarioState scenario;
     std::string endReason;
+    // The original's scenario the game was started from, if any (save format 10).
+    ClassicScenarioState classicScenario;
 
     // Accessors.
     Empire& empire(EmpireId id) { return empires[id.index()]; }

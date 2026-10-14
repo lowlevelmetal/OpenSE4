@@ -404,6 +404,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     fields(ar, o.shipsTab, o.shipsShown);
     fields(ar, o.designToHit, o.designCondensed);
     if (ar.version() >= 8) fields(ar, o.designsHideObsolete, o.designsStatsView);   // format 7 files keep the defaults
+    if (ar.version() >= 10) fields(ar, o.scenarioPage);                              // format 9 had no scenarios of the original
 }
 
 template <class Ar> void io(Ar& ar, Controller& c) { fields(ar, c.kind, c.mod, c.player, c.slot); }
@@ -579,6 +580,7 @@ void io(Ar& ar, ModRulesState& m) {
     unsaved(ar, m.budgetUsed);
 }
 template <class Ar> void io(Ar& ar, ScenarioState& m) { fields(ar, m.mod, m.name, m.met); }
+template <class Ar> void io(Ar& ar, ClassicScenarioState& c) { fields(ar, c.active, c.tutorial, c.stem); }
 
 template <class Ar>
 void io(Ar& ar, GameState& s) {
@@ -587,6 +589,7 @@ void io(Ar& ar, GameState& s) {
            s.startingPoints, s.leftFacilities, s.arrivals);
     if (formatVersion(ar) >= 9) fields(ar, s.mods);   // format 8 had no mods
     if (formatVersion(ar) >= 9) fields(ar, s.modData, s.modRules, s.scenario, s.endReason);   // nor mods' rules
+    if (formatVersion(ar) >= 10) fields(ar, s.classicScenario);   // format 9 had no scenarios of the original
     // The happiness events waiting for an empire's next update are not saved:
     // a loaded game starts with none (spec 02 §4, confirmed: binary). Nor is
     // the journal of the players' answers (docs/sdk/ai-protocol.md §8).

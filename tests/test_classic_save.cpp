@@ -65,6 +65,22 @@ ClassicSave exportOrFail(const Rules& r, const GameState& s, uint64_t keySeed = 
     return std::move(*save);
 }
 
+// The bytes of `save` encoded at its own version, with the stored version
+// string then made to say `claimed` (as long): its characters are xored
+// with keys of their own (§2.4), so changing them leaves the rest of the
+// file as it was. For versions the writer refuses.
+std::vector<uint8_t> claimingVersion(const ClassicSave& save, std::string_view claimed) {
+    REQUIRE(claimed.size() == save.version.size());
+    std::vector<uint8_t> bytes = encodeOrFail(save);
+    size_t pos = 0;
+    for (int i = 0; i < 6; ++i) pos += 1 + (bytes[pos] == 2 ? 1u : bytes[pos] == 3 ? 2u : 4u);   // the key header's compact integers
+    REQUIRE(bytes[pos] == 6);
+    REQUIRE(bytes[pos + 1] == save.version.size());
+    for (size_t k = 0; k < claimed.size(); ++k)
+        bytes[pos + 2 + k] = static_cast<uint8_t>(bytes[pos + 2 + k] ^ static_cast<uint8_t>(save.version[k]) ^ static_cast<uint8_t>(claimed[k]));
+    return bytes;
+}
+
 GameState importOrFail(const Rules& r, const ClassicSave& save, ConversionReport* out = nullptr) {
     ConversionReport report;
     auto s = importClassicSave(r, save, report);
@@ -1395,12 +1411,16 @@ TEST_CASE("classic save: damaged files and other data sets give clear messages")
     REQUIRE_FALSE(tail.has_value());
     CHECK(tail.error().find("left after the last section") != std::string::npos);
 
-    // Another version.
+    // A version older than the oldest one read (§5.2), or newer than the last release.
     ClassicSave old = exportOrFail(r, s);
-    old.version = "1.50";
-    auto version = decodeClassicSave(encodeOrFail(old), traits);
-    REQUIRE_FALSE(version.has_value());
-    CHECK(version.error().find("version 1.50") != std::string::npos);
+    old.version = "1.40";
+    for (std::string_view other : {"1.39", "1.96", "0.99"}) {
+        auto version = decodeClassicSave(claimingVersion(old, other), traits);
+        REQUIRE_FALSE(version.has_value());
+        CHECK(version.error().find(std::format("version {}", other)) != std::string::npos);
+        CHECK(version.error().find("versions 1.40 to 1.95") != std::string::npos);
+    }
+    CHECK(decodeClassicSave(claimingVersion(old, "1.40"), traits).has_value());
 
     // A data set with another number of racial traits: the file reads only
     // with the count it was written with, and the message says so.
@@ -1836,4 +1856,190 @@ TEST_CASE("classic save: a game whose mods only change data is written, with wha
     REQUIRE(exportClassicSave(r, plain, none, {3, "test"}).has_value());
     CHECK_FALSE(noteMentions(none, "opense4-sdk dump"));
     CHECK(compareSaves(*save, exportOrFail(r, plain), 20).empty());   // the mods leave the file as it was
+}
+
+// ---- Older versions (spec 08 §5.2) and the scenario fields (§3.4) --------------------------------------
+
+TEST_CASE("classic save: files of older versions leave out the fields added later (§5.2)") {
+    const Rules& r = test::engineRules();
+    const GameState s = playedGame(false, 4, 41);
+    ClassicSave now = exportOrFail(r, s);
+    // Values the older files cannot hold, so that their absence shows.
+    now.options.gameCode = 77;
+    now.options.turnCode = 78;
+    now.options.programSum = 79;
+    now.options.connection = 2;
+    REQUIRE_FALSE(now.empires.empty());
+    now.empires[0].options.facilityMarkers2to12[3] = true;
+    now.empires[0].networkName = "net";
+    now.empires[0].droneNameCounter = 5;
+    REQUIRE_FALSE(now.empires[0].strategies.empty());
+    now.empires[0].strategies[0].dronesPerTarget = 9;
+    now.empires[0].strategies[0].typePriority[kStrategyCategories - 1] = 4;
+    now.empires[0].strategies[0].breakFormation[kStrategyCategories - 1] = true;
+    REQUIRE_FALSE(now.designs.empty());
+    now.designs[0].templateName = "Template";
+    // A ship's experience: a float from 1.46, a whole number before (inferred).
+    const auto ship = std::find_if(now.objects.begin(), now.objects.end(), [](const ObjectRecord& o) { return o.cls == uint8_t(ObjectClass::Ship); });
+    REQUIRE(ship != now.objects.end());
+    const size_t shipAt = static_cast<size_t>(ship - now.objects.begin());
+    now.objects[shipAt].experience = tenthsToFloat80(125);
+    const size_t traits = r.data().racialTraits.size();
+    const size_t full = encodeOrFail(now).size();
+
+    auto at = [&](std::string_view version) {
+        ClassicSave old = now;
+        old.version = std::string(version);
+        const std::vector<uint8_t> bytes = encodeOrFail(old);
+        auto back = decodeClassicSave(bytes, traits);
+        REQUIRE_MESSAGE(back.has_value(), (back ? std::string{} : back.error()));
+        CHECK(back->version == version);
+        CHECK(bytes.size() < full);
+        return std::move(*back);
+    };
+    {
+        const ClassicSave v = at("1.58");   // the tutorial's starting game
+        CHECK(v.designs[0].templateName.empty());
+        // A 1.58 file has the seven checksums but not the game code, the turn code and the program's sum.
+        CHECK(v.options.gameCode == 0);
+        CHECK(v.options.turnCode == 0);
+        CHECK(v.options.programSum == 0);
+        CHECK(v.options.checksums == now.options.checksums);
+        CHECK(v.options.connection == 2);
+        CHECK_FALSE(v.empires[0].options.facilityMarkers2to12[3]);
+        CHECK(v.empires[0].strategies[0].dronesPerTarget == 3);
+        CHECK(v.empires[0].networkName == "net");
+        CHECK(v.empires[0].droneNameCounter == 5);
+        CHECK(v.empires[0].strategies[0].typePriority[kStrategyCategories - 1] == 4);
+        // It imports, and gets no drone design types (it is newer than 1.51).
+        ConversionReport report;
+        auto game = importClassicSave(r, v, report);
+        REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+        CHECK(game->empires[0].designTypes.size() == v.empires[0].designTypes.size());
+    }
+    {
+        const ClassicSave v = at("1.72");
+        CHECK(v.designs[0].templateName == "Template");
+        CHECK(v.options.gameCode == 77);
+        CHECK_FALSE(v.empires[0].options.facilityMarkers2to12[3]);
+        CHECK(v.empires[0].strategies[0].dronesPerTarget == 3);
+    }
+    {
+        const ClassicSave v = at("1.78");
+        CHECK(v.empires[0].options.facilityMarkers2to12[3]);
+        CHECK(v.empires[0].strategies[0].dronesPerTarget == 3);
+    }
+    {
+        const ClassicSave v = at("1.42");   // the checksums, not the connection yet
+        CHECK(v.options.checksums == now.options.checksums);
+        CHECK(v.options.connection == 1);
+    }
+    {
+        const ClassicSave v = at("1.43");   // the connection; experience still whole numbers
+        CHECK(v.options.connection == 2);
+        CHECK(v.empires[0].networkName.empty());
+        CHECK(float80Tenths(v.objects[shipAt].experience) == 120);
+    }
+    {
+        const ClassicSave v = at("1.46");   // the network name, experience as a float
+        CHECK(float80Tenths(v.objects[shipAt].experience) == 125);
+        CHECK(v.empires[0].networkName == "net");
+        CHECK(v.empires[0].droneNameCounter == 0);
+        CHECK(v.empires[0].strategies[0].typePriority[kStrategyCategories - 1] == 0);
+    }
+    {
+        const ClassicSave v = at("1.40");   // the oldest read
+        CHECK(v.options.programSum == 0);
+        CHECK(v.options.checksums == DataSetChecksums{});
+        CHECK(v.options.connection == 1);
+        CHECK(v.empires[0].networkName.empty());
+        CHECK(v.empires[0].droneNameCounter == 0);
+        CHECK(v.empires[0].strategies[0].typePriority[kStrategyCategories - 1] == 0);
+        CHECK_FALSE(v.empires[0].strategies[0].breakFormation[kStrategyCategories - 1]);
+        ConversionReport report;
+        auto game = importClassicSave(r, v, report);
+        REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+        // Reading an empire of a file before the drones adds their two design types.
+        const auto& types = game->empires[0].designTypes;
+        REQUIRE(types.size() == v.empires[0].designTypes.size() + 2);
+        CHECK(types[types.size() - 2] == "Anti-Planet Drone");
+        CHECK(types.back() == "Anti-Ship Drone");
+    }
+    // Versions outside the range are refused, by the reader and the writer.
+    CHECK(readableVersion("1.40"));
+    CHECK(readableVersion("1.95"));
+    CHECK_FALSE(readableVersion("1.39"));
+    CHECK_FALSE(readableVersion("1.96"));
+    CHECK_FALSE(readableVersion("1.5"));
+    CHECK(versionAtLeast("1.58", release::kTemplateName) == false);
+    CHECK(versionAtLeast("1.62", release::kTemplateName));
+    ClassicSave bad = now;
+    bad.version = "1.39";
+    CHECK_FALSE(encodeClassicSave(bad).has_value());
+}
+
+TEST_CASE("classic save: a scenario game's fields go both ways (§3.4)") {
+    const Rules& r = test::engineRules();
+    GameState s = playedGame(false, 2, 43);
+    s.classicScenario.active = true;
+    s.classicScenario.tutorial = true;
+    s.classicScenario.stem = "/games/se4/Scenarios/Tutorial";
+    for (Empire& e : s.empires) e.interfaceOptions.scenarioPage = 7;
+    const ClassicSave save = exportOrFail(r, s);
+    CHECK(save.globals.scenario);
+    CHECK(save.globals.tutorial);
+    // The original's separators: it finds the files by their names in its own folder.
+    CHECK(save.globals.scenarioStem == "\\games\\se4\\Scenarios\\Tutorial");
+    CHECK(save.globals.scenarioPage == 7);
+    const GameState t = importOrFail(r, save);
+    CHECK(t.classicScenario.active);
+    CHECK(t.classicScenario.tutorial);
+    CHECK(t.classicScenario.stem == save.globals.scenarioStem);
+    for (const Empire& e : t.empires) CHECK(e.interfaceOptions.scenarioPage == 7);
+    // OpenSE4's own format keeps them.
+    auto loaded = deserializeSave(serializeSave(t, SaveInfo{}));
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->first.classicScenario == t.classicScenario);
+    CHECK(loaded->first.empires[0].interfaceOptions.scenarioPage == 7);
+    // A game that is not a scenario writes the defaults.
+    const ClassicSave plain = exportOrFail(r, playedGame(false, 1, 44));
+    CHECK_FALSE(plain.globals.scenario);
+    CHECK(plain.globals.scenarioStem.empty());
+    CHECK(plain.globals.scenarioPage == 1);
+}
+
+// The original's tutorial starting game, a file of version 1.58 (opt-in:
+// OPENSE4_CLASSIC_DATA): it decodes to its end and imports.
+TEST_CASE("classic save: the installed tutorial's starting game imports (opt-in)") {
+    const Rules* r = installRules();
+    if (!r || r->gameRoot().empty()) return;
+    const std::filesystem::path file = ruleset::childIgnoringCase(ruleset::childIgnoringCase(r->gameRoot(), "Scenarios"), "Tutorial.gam");
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(file, ec)) {
+        MESSAGE("skipped: no Scenarios/Tutorial.gam in the install");
+        return;
+    }
+    auto bytes = readFileBytes(file);
+    REQUIRE(bytes.has_value());
+    auto save = decodeClassicSave(*bytes, r->data().racialTraits.size());
+    REQUIRE_MESSAGE(save.has_value(), (save ? std::string{} : save.error()));
+    MESSAGE("version " << save->version << ", " << save->empires.size() << " empires, " << save->objects.size() << " objects");
+    CHECK(readableVersion(save->version));
+    checkInvariants(*r, *save);
+    // Encoded again at its own version with other keys: the same values.
+    ClassicSave again = *save;
+    again.keys = drawKeys(99);
+    auto reread = decodeClassicSave(encodeOrFail(again), r->data().racialTraits.size());
+    REQUIRE(reread.has_value());
+    reread->keys = save->keys;
+    CHECK(*reread == *save);
+    ConversionReport report;
+    auto game = importClassicSave(*r, *save, report);
+    REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+    MESSAGE("turn " << game->turn << ", scenario " << save->globals.scenario << ", tutorial " << save->globals.tutorial << ", stem '"
+                    << save->globals.scenarioStem << "', page " << save->globals.scenarioPage << ", current player " << int(save->globals.currentPlayer));
+    CHECK(validateState(*game, r).empty());
+    GameState played = *game;
+    processTurn(*r, played, {});
+    CHECK(validateState(played, r).empty());
 }
