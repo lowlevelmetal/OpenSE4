@@ -12,13 +12,16 @@ options --layout=1024x768 --size=1280x800
 wait-screen front
 click item:"New Game" in=front
 wait-for item:"Add New" in=front
-# Add New: an empire with a name from the picker and a password.
+# Add New: an empire with a name from the picker, an emperor (Create Empire asks for one)
+# and a password.
 click item:"Add New" in=front
 wait-for item:"Create Empire" in=front
 click item:##pick in=front nth=1
 wait-for item:##pick in=##listpicker
 click item:##pick in=##listpicker nth=1
 wait-gone item:##pick in=##listpicker
+click item:##edit in=front nth=4
+type "Ada"
 click item:##password in=front
 type "Secret"
 click item:"Create Empire" in=front

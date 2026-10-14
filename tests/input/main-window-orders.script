@@ -54,6 +54,12 @@ wait 3
 key Ctrl+0
 wait 3
 assert { order = "move-to-waypoint" }
+# A turn-based game carries the order out at once: no known route leads into the system not
+# explored, so the "Move" box says so and the list is cleared (spec 03 §8 "Where the player
+# reads why").
+wait-for item:"window:Move"
+click item:OK in="Move"
+wait-gone item:"window:Move"
 # Change Name: a new name for this ship, then the same name for the other ship is refused with
 # the Invalid Name box; OK, and the prompt asks again.
 key N
