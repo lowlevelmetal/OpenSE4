@@ -516,6 +516,26 @@ private:
     void noteMovesBefore(Call call);
 };
 
+// Passwords as the sign-in windows compare them (spec 06 §1.1, §1.2.1,
+// confirmed: binary). `trimPassword`: without the spaces (and other control
+// characters) before and after. `passwordForms`: the forms of a typed
+// password to try against a stored hash, best first, each once (with
+// `foldCase` the trimmed one in small letters first), since OpenSE4 keeps
+// only the hash of the password as it was set. `storedPasswordOpens`:
+// whether one of them opens `stored`, a net::passwordVerifier salted with
+// `gameId` when `verifier` (games on several machines, and their files
+// played here), else a game::hashPassword; an empty form opens nothing. Fails
+// (in words) when the computer lacks the memory a verifier's Argon2id needs.
+std::string trimPassword(std::string_view p);
+std::vector<std::string> passwordForms(std::string_view typed, bool foldCase);
+std::expected<bool, std::string> storedPasswordOpens(const std::string& stored, std::string_view typed, bool foldCase, bool verifier,
+                                                    uint64_t gameId);
+
+// Whether a saved game's header names this data set, as Login To Game checks
+// it (ClassicSession::dataSetMatches): a header with a data set's identity
+// must name this one; OpenSE4's local saves keep only the game folder's name.
+bool savedDataSetMatches(const game::SaveInfo& info, const game::Rules& rules);
+
 // Where OpenSE4 keeps saves and settings (created on demand): the user
 // folder (client/app_settings.hpp userDataDirectory), and the saves folder,
 // "saves" in it unless Settings → Files chose another (FileSettings).

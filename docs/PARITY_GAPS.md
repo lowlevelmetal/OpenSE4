@@ -802,10 +802,20 @@ additions:
   Drive box (the root outside Windows), a folder typed into Current Directory and the
   Default button; Begin Game without a chosen portrait asks for one; the pictures under the
   page buttons come from the seed; the lists use the shared arrow column.
-- **The command line and the network game's sounds** (impact L, since 2026-10-11): the
-  program's fourth argument that is not an option names a mod folder, as the original's
-  does (spec 05 §9.2); OpenSE4 plays it as a classic mod for the run, since it reads the
-  game's data from mods and never from `Path.txt`'s folder. The original's TCP/IP sounds
+- **The command line and the network game's sounds** (impact L, since 2026-10-11; the
+  command line since 2026-10-14): the program reads the original's
+  `<game file> <password> [<player number> [<mod folder>]]` (spec 05 §9.2). The fourth
+  argument names a mod folder, which OpenSE4 plays as a classic mod for the run, since it
+  reads the game's data from mods and never from `Path.txt`'s folder. Hosting takes
+  OpenSE4's play-by-e-mail game file and processes it as `opense4-server pbem process` does:
+  no question for a missing orders file (the computer plays that empire), and no hosting of
+  a local game, a turn file or the original's saved game, whose `.plr` files OpenSE4 does
+  not read. Signing in takes a turn file, an OpenSE4 saved game or the original's saved
+  game; for OpenSE4's files the data check is the data set's identity and the mods, and the
+  original's Quick Start files, whose checksums are 0, are not compared. A password set
+  with capitals must be typed with them (OpenSE4 keeps only a hash). The not-found case,
+  the boxes `-nd` suppresses and turn-based games are our choices (spec 05 question 82).
+  The original's TCP/IP sounds
   play in OpenSE4's network games and lobby (spec 06 §5.5); its host generates the turn by
   itself once every order is in, so it has no alert for being ready to generate one.
 

@@ -1,4 +1,5 @@
 #include "client/app.hpp"
+#include "client/classic/command_line.hpp"
 #include "client/classic/computer_players.hpp"
 #include "client/crash_report.hpp"
 #include "client/script/script.hpp"
@@ -52,7 +53,7 @@ void attachParentConsole() {
 constexpr const char* kUsage = R"(OpenSE4 - an open-source engine reimplementation for Space Empires IV Deluxe
 (requires your own copy of the game; not affiliated with its publishers)
 
-Usage: opense4 [options] [ARG1 ARG2 ARG3 MODFOLDER]
+Usage: opense4 [options] [GAMEFILE PASSWORD [PLAYER [MODFOLDER]]] [-nd]
 
 Plays Space Empires IV Deluxe on your own installed copy of the game. The game is
 found in your Steam libraries, or given with --classic-dir (see docs/SETUP.md).
@@ -78,9 +79,6 @@ Game:
   --mods-dir=DIR                  Where mods are looked up by id (default: Mods in OpenSE4's user folder);
                                   then among the mods that come with OpenSE4 (mods/ beside the program)
   --no-bundled-mods               Leave out the mods that come with OpenSE4
-  ARG1 ARG2 ARG3 MODFOLDER        As the original: with four arguments that are not options, the fourth
-                                  names a mod folder (in the game folder, or a path) to play as a classic
-                                  mod, in place of the one Path.txt names; the first three are ignored
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --load=GAME.gam                 Open a saved game at once: OpenSE4's, or the original's (imported,
                                   see docs/SETUP.md "Games of the original")
@@ -130,9 +128,28 @@ Play by e-mail (see docs/MULTIPLAYER.md):
                                   saves your orders file (.plr) to send back
   --pbem-empire=N                 Your empire's number (default: the only one that can play now)
   --pbem-password=PW              Your empire's password
-  --pbem-orders=DIR               Where to save the orders file (default: the game file's folder)
+  --pbem-orders=DIR               Where to save the orders file (default: the game file's folder); where
+                                  the host's command line reads them (see below)
   --pbem-end-turn                 End the turn at once, write the orders file and quit
                                   (with --screenshot: quit after the screenshot)
+
+The original's command line (see docs/MULTIPLAYER.md "From the command line"):
+  GAMEFILE PASSWORD [0]           As the host (no player number, or 0): process the turn of a play-by-e-mail
+                                  game file (.gam) whose host (master) password this is, from the orders
+                                  files (.plr) beside it (or in --pbem-orders=DIR), save it, write the next
+                                  turn files and quit, with no window; a wrong password quits with exit code 1
+  GAMEFILE PASSWORD PLAYER        Sign in as empire number PLAYER (1 or more) with its password and play its
+                                  turn: a turn file (.turn, as --pbem plays it), an OpenSE4 saved game or a
+                                  saved game of the original. A wrong password, or a game made with other
+                                  data files ("Invalid Data Files"), quits with exit code 2
+  GAMEFILE PASSWORD PLAYER MODFOLDER
+                                  The fourth names a mod folder (in the game folder, or a path) to play as
+                                  a classic mod, in place of the one Path.txt names
+                                  Passwords count without the spaces around them and, as far as OpenSE4's
+                                  password hashes allow, without regard to letter case. GAMEFILE is looked
+                                  for as given, then in the mod folder, the saves folder and the pbem
+                                  folder; one that is not found quits with exit code 1
+  -nd, /nd                        No message boxes (the log and standard error say why)
 
 Paths:
   --assets=DIR                    OpenSE4's own assets directory (default: auto-detect, else built in)
@@ -226,8 +243,13 @@ int main(int argc, char** argv) {
 
     for (const std::string& argument : args) {
         const std::string_view arg = argument;
-        // An argument that is not an option, as the original reads them: the
-        // fourth names a mod folder, the others are ignored (docs/spec/05 §9.2).
+        // The original's switch that suppresses message boxes, and the
+        // arguments that are not options, as the original reads them: game
+        // file, password, player number, mod folder (docs/spec/05 §9.2).
+        if (client::classic::isNoDialogsSwitch(arg)) {
+            options.noDialogs = true;
+            continue;
+        }
         if (arg.empty() || arg.front() != '-') {
             options.positional.push_back(argument);
             continue;
@@ -387,6 +409,13 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "Invalid argument: %s\n\n%s", argument.c_str(), kUsage);
             return 2;
         }
+    }
+
+    // A game file on the command line starts that game: no other start goes with it.
+    if (!options.positional.empty() && (!options.loadFile.empty() || !options.pbemFile.empty() || !options.tutorial.empty() || !options.training.empty())) {
+        std::fprintf(stderr, "A game file on the command line (%s) cannot go with --load, --pbem, --tutorial or --training.\n\n%s",
+                     options.positional.front().c_str(), kUsage);
+        return 2;
     }
 
     // A script run is the same every time: a fixed seed unless one is given.

@@ -27,6 +27,7 @@ add_executable(opense4
     client/classic/classic_mode.cpp
     client/classic/classic_scenario.cpp
     client/classic/classic_probe.cpp
+    client/classic/command_line.cpp
     client/classic/computer_players.cpp
     client/classic/data_export.cpp
     client/classic/finale.cpp

@@ -686,4 +686,30 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
     }
 }
 
+std::vector<std::string> reportLines(const ProcessReport& rep, bool deletedProcessed, const game::SaveInfo& info) {
+    std::vector<std::string> out;
+    const std::string played = !rep.submitted.empty() ? rep.submitted.front() : !rep.playedByComputer.empty() ? rep.playedByComputer.front() : "";
+    if (rep.turnBased && !played.empty())
+        out.push_back(std::format("Played {}'s turn of turn {}; the game is now at turn {}.", played, rep.turnBefore, rep.turnAfter));
+    else if (rep.turnBased)
+        out.push_back(std::format("The computer players played on; the game is now at turn {}.", rep.turnAfter));
+    else
+        out.push_back(std::format("Processed turn {}; the game is now at turn {}.", rep.turnBefore, rep.turnAfter));
+    for (const auto& s : rep.submitted) out.push_back("  orders: " + s);
+    for (const auto& s : rep.playedByComputer) out.push_back("  no orders, played by the computer: " + s);
+    for (const auto& s : rep.warnings) out.push_back("  warning: " + s);
+    for (const auto& s : rep.migratedPasswords)
+        out.push_back(std::format("  password migration: {} showed the form of OpenSE4 0.6 of its password once; its new password counts from now on.", s));
+    for (const auto& s : rep.rejectedCommands) out.push_back("  refused: " + s);
+    if (deletedProcessed && !rep.used.empty()) out.push_back(std::format("  deleted {} processed .plr files", rep.used.size()));
+    if (!rep.next.empty()) out.push_back(std::format("Next: empire {} ({}).", rep.nextEmpire.value + 1, rep.next));
+    for (const auto& [empire, file] : rep.turnFiles) {
+        const std::string player = empire.index() < info.players.size() ? info.players[empire.index()] : std::string{};
+        out.push_back(std::format("Send {} to empire {}{}{}.", file.string(), empire.value + 1, player.empty() ? "" : ", player ", player));
+    }
+    // Shown to the host only: nothing tells the players (spec 06 §1.9).
+    for (const auto& [empire, password] : rep.passwordResets) out.push_back(std::format("Password Reset: empire {} gets the password {}.", empire.value + 1, password));
+    return out;
+}
+
 } // namespace opense4::net::pbem

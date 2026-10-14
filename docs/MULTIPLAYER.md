@@ -153,7 +153,10 @@ the same name and password. If the game has a master password, pass it again wit
 
 `tools/server_smoke.sh` runs complete games: a server with one human slot and one
 computer empire, and the server's scripted `bot` client, which plays two turns; a
-turn-based game with two bots and a computer empire; and a turn-based PBEM game. The
+turn-based game with two bots and a computer empire; and a turn-based PBEM game. With the
+game client built, it also plays a PBEM turn in the client, and a simultaneous PBEM game
+from the command line (a player's turn, then the host's, see
+[From the command line](#from-the-command-line)). The
 `bot` client (`opense4-server bot --name=NAME --connect=HOST[:PORT]`, for tests; its options
 are in `--help`) joins, readies up and plays `--turns` turns; with `--master-password` and
 `--start` it starts the game. It is not an external bot of a mod (below).
@@ -615,6 +618,40 @@ question is only asked in local and hotseat turn-based games.
 ordinary local or hotseat game on the host's machine, for instance to go on without the
 other players. The empire passwords keep working as they did in the multiplayer game, and the
 game saved from there keeps them that way.
+
+### From the command line
+
+The game also takes the classic game's command line,
+`opense4 GAMEFILE PASSWORD [PLAYER [MODFOLDER]]` (spec 05 §9.2):
+
+```sh
+opense4 campaign.gam boss                  # the host: process the turn, save, quit
+opense4 campaign_02.turn my-password 2     # empire 2: play its turn
+```
+
+- **Without a player number, or with 0**, the game is the host. With the game's master
+  password it processes the turn of the PBEM game file as `opense4-server pbem process`
+  does: it reads the `.plr` files beside the game file (or in `--pbem-orders=DIR`),
+  replaces the game file (keeping `.bak`), writes the new turn files beside it, deletes the
+  `.plr` files it used, prints the report and quits. No window opens. The computer plays
+  the empires whose orders are missing. It uses the host key in OpenSE4's user folder,
+  the one the game's own host uses, and the game's own mods unless `--mod` or a
+  `MODFOLDER` names others. A wrong password quits with exit code 1, and so does a file
+  that cannot be hosted: a player's turn file, a game played on one computer, or a saved
+  game of the original (OpenSE4 does not read the original's orders files).
+- **With a player number**, that empire signs in with its password and plays its turn: a
+  turn file opens as `--pbem` opens it (`--pbem-orders` and `--pbem-end-turn` work with
+  it), and an OpenSE4 saved game or a saved game of the original opens on that empire's
+  turn, without the Login To Game window. A wrong password quits with exit code 2. So does
+  a game made with other data files or other mods, after the "Invalid Data Files" box.
+- Passwords count without the spaces around them and, as far as OpenSE4's password
+  hashes allow, without regard to letter case: a password set with capitals must be typed
+  with them, and one set in small letters may be typed in any case.
+- The game file is looked for as given, then in the mod folder, the saves folder and the
+  `pbem` folder of OpenSE4's user folder. A file that is not found quits with exit code 1.
+- `-nd` (or `/nd`) shows no message box: the reason goes to the log and to standard error
+  only. OpenSE4's own options can stand beside these arguments, except `--load`, `--pbem`,
+  `--tutorial` and `--training`.
 
 ## Setup files
 

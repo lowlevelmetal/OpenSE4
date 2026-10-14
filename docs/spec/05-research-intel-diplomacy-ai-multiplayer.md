@@ -3046,16 +3046,75 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
   - Cargo transfer and launch/recover become orders.
   - Attack becomes a pursuit of a moving target.
   - There is no tactical combat.
-- **The command line** (confirmed: binary): any argument skips the launcher (spec 06
-  §1.1). With four or more arguments the fourth names the mod folder, in place of the one
-  `Path.txt` names (§1 "Mods"); the first three are never read in 1.95, so the original
-  has no headless hosting from its command line (the save path, password and player
-  number once thought to be read there [H] are not). OpenSE4 reads its own options
-  (`--name=value`) as before and, like the original, any other argument: the fourth
-  names a mod folder (in the game folder, or a path), which OpenSE4 plays as a classic
-  mod for that run (as `--mod` would, after any `--mod`) and reads for fonts and pointers
-  in `Path.txt`'s place; the others are ignored. OpenSE4's headless hosting is
-  `opense4-server` (docs/MULTIPLAYER.md), an OpenSE4 extension.
+- **The command line** (confirmed: binary; corrected 2026-10-14, complete listing). Any
+  argument skips the launcher (spec 06 §1.1). The intro window then stays hidden, and the
+  program reads its arguments as `<game file> <password> [<player number> [<mod folder>]]`:
+  - The fourth names the mod folder, in place of the one `Path.txt` names (§1 "Mods").
+  - The game file is looked up, in the mod folder too, and loaded. When it is not found,
+    the program quits.
+  - **Hosting.** Without a player number, with 0, or with text that is not a number, the
+    program acts as the host. When the password is the game's host (game master)
+    password, it runs the host's turn processing of the simultaneous game from the
+    players' `.plr` files (step 4 above), saves the game without the notice that it was
+    saved, and quits. A missing `.plr` still brings up the usual question whether to go on
+    without it. With a wrong password the program quits at once, with exit code 1.
+  - **Signing in as a player.** With a player number N of 1 or more and the password of
+    empire N, the data files are checked: the seven data-set checksums of the game file
+    against the data set (spec 08 §3.2). On a mismatch the "Invalid Data Files" box shows
+    and the program quits with exit code 2. Otherwise the game opens directly on player N's
+    turn, without Login To Game. With a wrong password the program quits with exit code 2.
+  - Both passwords are compared without the spaces around them and without regard to
+    letter case.
+  - A switch `nd`, written after a dash or a slash, suppresses some message boxes, among
+    them the demo's time-out notice and some boxes about files that do not load. Which ones
+    exactly is (inferred).
+
+  So the original hosts a simultaneous turn from its command line, as the hint [H] had it.
+  Until 2026-10-14 this spec said that the first three arguments are never read: the
+  listing it rested on had lost the routine that reads them.
+
+  OpenSE4 follows this since 2026-10-14 (`client/classic/command_line.*`; docs/MULTIPLAYER.md
+  "From the command line"). It reads its own options (`--name=value`) beside these
+  arguments, and `-nd` or `/nd` in any letter case. The fourth argument names a mod folder
+  in the game folder (or a path), which OpenSE4 plays as a classic mod for that run (as
+  `--mod` would, after any `--mod`) and reads for fonts and pointers in `Path.txt`'s place.
+  The game file is looked for as given, then in the mod folder, OpenSE4's saves folder and
+  its `pbem` folder; one that is not found shows a box (none with `-nd`) and quits with
+  exit code 1 (inferred, question 82). Our client differs where the files differ:
+  - *Hosting* takes an OpenSE4 game file that has a host: the `.gam` of a play-by-e-mail
+    game (or of a network game, which goes on by e-mail from there). It runs the e-mail
+    host's processing, as `opense4-server pbem process` does (`net::pbem::processGameFile`):
+    the `.plr` files come from the game file's folder (or `--pbem-orders=DIR`), the new
+    turn files go beside the game, and the report goes to standard output. It also plays
+    the turn of a turn-based e-mail game (§9.5). No question is asked for a missing `.plr`:
+    the computer plays that empire, and the report says so. A game made with another data
+    set is refused, as `pbem process` refuses it (exit code 1). A local or hotseat save, a
+    player's turn file and a saved game of the original cannot be hosted: a local game has
+    no host, and OpenSE4 does not read the original's `.plr` files (snapshots of the
+    player's part of the game, not commands, step 3 above). The program says so and quits
+    with exit code 1 (inferred).
+  - *Signing in* takes a player's turn file (`.turn`), which opens as `--pbem` opens it
+    (End Turn writes the `.plr`; `--pbem-orders` and `--pbem-end-turn` work as with
+    `--pbem`); an OpenSE4 saved game, a host's file opened as a local game included; or a
+    saved game of the original, which is imported. N is the empire's number in the game.
+    The password is checked first, then the data files: the seven checksums for the
+    original's saved game when the file holds them (a Quick Start game's are all 0, spec 08
+    §4, and are not compared: inferred, question 82), and for OpenSE4's files the data
+    set's identity and the game's mods, as Login To Game checks them (spec 06 §1.1). An
+    empire without a password takes only an empty one. A turn file of another empire, an
+    empire that is destroyed or played by the computer, and a turn-based game in which it
+    is another empire's turn sign nobody in, with exit code 2 (inferred).
+  - OpenSE4 keeps only a hash or verifier of each password, so letter case is ignored only
+    as far as Login To Game ignores it: the password typed is tried trimmed in small
+    letters, then trimmed as typed, so one set with capitals must be typed with them. The
+    original's saved game keeps its passwords in the clear and is compared as the original
+    compares them.
+  - A wrong password quits without a box, as the original does, but the reason, like every
+    refusal, also goes to standard error and the log file. `-nd` suppresses every box of
+    the command line (inferred).
+  - `--load`, `--pbem`, `--tutorial` and `--training` cannot go with a game file on the
+    command line. The original's exit codes are kept; OpenSE4's other failures use 1 for
+    hosting and 2 for signing in.
 
 ### 9.3 Simultaneous movement and combat timing
 
@@ -4688,3 +4747,21 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     enforce for them. To verify in the executable: does the computer player's vehicle list
     look at the ship limit before it places an item, and if not, does it fill its queues
     with ships that wait there?
+82. **The command line's details** (§9.2 "The command line", raised 2026-10-14 when the
+    complete listing showed that the original reads its first three arguments). Settled
+    (confirmed: binary): the arguments, hosting with the host password, signing in as
+    player N after the data-set checksums, the exit codes 1 and 2, the password comparison
+    and the `nd` switch. Open, to check in the executable or by observation:
+    (a) the exit code, and whether a box shows, when the game file is not found;
+    (b) which boxes `nd` suppresses, the "Invalid Data Files" box among them or not;
+    (c) whether a game file whose seven checksums are all 0 (a Quick Start game, spec 08 §4)
+    refuses every sign-in from the command line;
+    (d) what hosting and signing in do with a turn-based game, and with an empire that is
+    destroyed or played by the computer;
+    (e) whether the switch counts among the four arguments, and what an empty game file
+    name (`""`) does.
+    Our client's choices (inferred): (a) a box unless `-nd`, exit code 1; (b) `-nd`
+    suppresses every box of the command line; (c) a file without checksums is not compared;
+    (d) a turn-based e-mail game is hosted as `pbem process` hosts it, and signing in needs
+    a living human empire whose turn it is; (e) `-nd` and `/nd` are not counted, and an
+    empty name is a file that is not found.

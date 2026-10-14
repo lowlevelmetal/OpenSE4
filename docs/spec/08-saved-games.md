@@ -343,8 +343,8 @@ a new options record. Everything **(confirmed: binary)**.
 | int | Combat replay counter | none; export 0 |
 | int | Game code: random 1..999,999,999 | none; export 0 |
 | int | Host turn code: new at each host save; a player changes file must carry the same game and turn codes | none; export 0 |
-| int | Byte sum of the host's program, never checked | none; export 0 |
-| int ×7 | Data-set checksums: components, facilities, vehicle sizes, planet sizes, tech areas, mounts, racial traits (§3.2.1). Recomputed when a host processes a turn. Compared when a player (not the game master) signs in to a simultaneous game, hotseat included: a mismatch refuses the sign-in with "Invalid Data Files" **(observed)**. Never checked on a normal load. | none; **export the values computed from the data set (§3.2.1)** |
+| int | Byte sum of the host's program, never checked **(confirmed: binary; rechecked 2026-10-14, complete listing)** | none; export 0 |
+| int ×7 | Data-set checksums: components, facilities, vehicle sizes, planet sizes, tech areas, mounts, racial traits (§3.2.1). Recomputed when a host processes a turn. Compared when a player (not the game master) signs in to a simultaneous game, hotseat included: a mismatch refuses the sign-in with "Invalid Data Files" **(observed)**. Also compared when the program starts from the command line with the game file, a player number and that player's password (spec 05 §9.2): a mismatch shows "Invalid Data Files", the player is not signed in and the program quits **(confirmed: binary; corrected 2026-10-14, complete listing)**. A normal Load Game never compares them. OpenSE4's command line compares them for a saved game of the original that holds them (spec 05 §9.2); its import only warns of a difference (§4). | none; **export the values computed from the data set (§3.2.1)** |
 
 The game code, the turn code and the seven checksums were already set in a new
 simultaneous game saved right after its creation, and all 0 in a Quick Start

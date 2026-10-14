@@ -184,7 +184,8 @@ std::optional<std::string> ClassicMode::changeMods(const std::vector<std::string
     return std::nullopt;
 }
 
-std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const ClassicOptions& options, std::string& error) {
+std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const ClassicOptions& options, std::string& error, int& exitCode) {
+    exitCode = 1;
     const auto dataDir = ruleset::findInstalledDataDir(options.installDir);
     if (!dataDir) {
         error = missingInstallMessage(options.installDir);
@@ -199,9 +200,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     // game folder (or anywhere), played as a classic mod for this run, after
     // any --mod, in place of the settings' mods.
     if (!options.commandLineModFolder.empty()) {
-        std::filesystem::path folder(options.commandLineModFolder);
-        std::error_code ec;
-        if (folder.is_relative() && std::filesystem::is_directory(dataDir->parent_path() / folder, ec)) folder = dataDir->parent_path() / folder;
+        const std::filesystem::path folder = modFolderPath(options.commandLineModFolder, dataDir->parent_path());
         log::info("Mod folder from the command line: {}", folder.string());
         mode->options_.mods.push_back(folder.string());
         mode->options_.modsGiven = true;
@@ -252,7 +251,10 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->restyle();
     mode->learn_ = loadLearnContent(platform.assetsDir, options.learnDir, mode->art_->files());
 
-    if (!options.pbemFile.empty()) {
+    if (options.commandLine) {
+        // The original's command line with a player number (spec 05 §9.2).
+        if (!mode->signInFromCommandLine(*options.commandLine, error, exitCode)) return nullptr;
+    } else if (!options.pbemFile.empty()) {
         // --pbem: play a play-by-e-mail game file at once.
         auto game = loadPbemGame(*mode->rules_, options.pbemFile);
         if (!game) {
@@ -279,24 +281,9 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             error = turn.error();
             return nullptr;
         }
-        mode->startGame(ClassicSession::pbem(mode->rules_, std::move(*game), std::move(*turn), pbemDraftsDir()));
-        if (options.pbemEndTurn) {
-            mode->session_->endTurn();
-            if (!mode->session_->pbemError().empty()) {
-                error = mode->session_->pbemError();
-                return nullptr;
-            }
-            std::printf("Orders saved to %s\n", mode->session_->ordersFile().string().c_str());
-            if (options.pbemExit) mode->ui_->requests.quitGame = true;
-        }
-        if (!options.openWindow.empty() && !frontScreenByName(options.openWindow)) {
-            mode->openLogOnTurn_ = false;
-            const auto id = screenFromName(options.openWindow);
-            if (!id) {
-                error = std::format("Unknown window '{}'", options.openWindow);
-                return nullptr;
-            }
-            mode->openScreen(*id, {});
+        if (auto problem = mode->playPbemTurn(std::move(*game), std::move(*turn))) {
+            error = *problem;
+            return nullptr;
         }
     } else if (!options.loadFile.empty()) {
         // --load: a saved game, OpenSE4's or the original's, at once.
@@ -394,6 +381,79 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->front_ = makeFrontScreen(FrontId::Intro);
     }
     return mode;
+}
+
+std::optional<std::string> ClassicMode::playPbemTurn(PbemGame game, PbemTurn turn) {
+    startGame(ClassicSession::pbem(rules_, std::move(game), std::move(turn), pbemDraftsDir()));
+    if (options_.pbemEndTurn) {
+        session_->endTurn();
+        if (!session_->pbemError().empty()) return session_->pbemError();
+        std::printf("Orders saved to %s\n", session_->ordersFile().string().c_str());
+        if (options_.pbemExit) ui_->requests.quitGame = true;
+    }
+    if (!options_.openWindow.empty() && !frontScreenByName(options_.openWindow)) {
+        openLogOnTurn_ = false;
+        const auto id = screenFromName(options_.openWindow);
+        if (!id) return std::format("Unknown window '{}'", options_.openWindow);
+        openScreen(*id, {});
+    }
+    return std::nullopt;
+}
+
+bool ClassicMode::signInFromCommandLine(const CommandLineGame& line, std::string& error, int& exitCode) {
+    const auto file = findGameFile(line.gameFile, gameFileFolders(line, dataDir_.parent_path()));
+    if (!file) {
+        exitCode = kHostRefused;
+        error = std::format("The game file {} was not found.", line.gameFile);
+        return false;
+    }
+    log::info("Command line: signing in to {} as empire {}", file->string(), line.player);
+    SignInCheck check;
+    std::optional<PbemGame> game;
+    std::optional<PbemTurn> turn;
+    std::unique_ptr<ClassicSession> session;
+    if (gameFileKind(*file) == GameFileKind::TurnFile) {
+        TurnFileSignIn in = signInToTurnFile(*rules_, *file, line.player, line.password, options_.pbemOrdersDir);
+        check = std::move(in.check);
+        game = std::move(in.game);
+        turn = std::move(in.turn);
+    } else {
+        SavedGameSignIn in = signInToSavedGame(rules_, *file, line.player, line.password);
+        check = std::move(in.check);
+        session = std::move(in.session);
+    }
+    if (!check.ok()) {
+        // The original quits: without a word for a wrong password (the log
+        // says why), with the "Invalid Data Files" box for other data files.
+        // OpenSE4's own reasons show in a box too (none with -nd: the log).
+        exitCode = kSignInRefused;
+        error.clear();
+        if (check.verdict == SignInVerdict::WrongPassword)
+            log::error("Not signed in to {} as empire {}: {}", file->filename().string(), line.player, check.why);
+        else if (check.verdict == SignInVerdict::InvalidDataFiles)
+            error = std::format("Invalid Data Files\n\n{}: {}", file->filename().string(), check.why);
+        else
+            error = std::format("Not signed in to {} as empire {}: {}", file->filename().string(), line.player, check.why);
+        return false;
+    }
+    if (game && turn) {
+        if (auto problem = playPbemTurn(std::move(*game), std::move(*turn))) {
+            error = *problem;
+            return false;
+        }
+        return true;
+    }
+    restoreHistoryFrom(*file);
+    startGame(std::move(session));
+    if (auto problem = selectForAutomation(options_.select)) {
+        error = *problem;
+        return false;
+    }
+    if (auto problem = openAutomationWindow(options_.openWindow)) {
+        error = *problem;
+        return false;
+    }
+    return true;
 }
 
 bool ClassicMode::heldUp(const ImGuiWindow* w) const {
