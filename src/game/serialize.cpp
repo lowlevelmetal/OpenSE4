@@ -225,6 +225,8 @@ std::string validateState(const GameState& s, const Rules* rules) {
                 return std::format("empire {} has a history entry about a missing empire or place", i);
         for (const Waypoint& w : e.waypoints)
             if (w.set && !placeOk(w.location)) return std::format("empire {} has a waypoint outside the galaxy", i);
+        for (const QueueType& t : e.queueTypes)
+            if (!queueOk(ConstructionQueue{t.items})) return std::format("empire {} has a queue type with a missing item", i);
         if (rules) {
             const size_t nTech = rules->data().techAreas.size();
             if (e.techLevels.size() > nTech) return std::format("empire {} knows more tech areas than the data set has", i);

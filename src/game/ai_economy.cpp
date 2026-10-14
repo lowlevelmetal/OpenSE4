@@ -346,18 +346,22 @@ private:
     // Whether a design may be queued at a target. Nothing the builder does
     // changes the answer during its turn (queueing builds no ship yet).
     std::map<std::tuple<uint32_t, uint32_t, uint32_t>, bool> queueable_;
-    // Defense Bases placed in a colony queue without a space yard this turn:
-    // they count as queued until the construction step drops them.
-    int64_t lostBases_ = 0;
     std::map<uint32_t, int64_t> production_;
 
+    // The queue's own refusals (spec 02 §6.5), and the builder's: no ship or
+    // base while the empire is at its ship limit. The queues take them (the
+    // limit is met when one is built), so the builder checks the limit itself,
+    // as the engine's queues did before 2026-10-13 (inferred, spec 05
+    // question 81).
     bool queueable(DesignId design, const cmd::QueueTarget& target) {
         const auto key = std::tuple(design.value, target.planet.value, target.vehicle.value);
         if (auto it = queueable_.find(key); it != queueable_.end()) return it->second;
         QueueItem probe;
         probe.kind = QueueItem::Kind::Vehicle;
         probe.design = design;
-        return queueable_[key] = queueItemProblem(p_.r, p_.st, p_.id, target, probe).empty();
+        bool ok = queueItemProblem(p_.r, p_.st, p_.id, target, probe).empty();
+        if (ok && !isUnitType(p_.info(design).stats.vehicleType)) ok = shipCount(p_.r, p_.st, p_.id) < p_.st.options.maxShipsPerPlayer;
+        return queueable_[key] = ok;
     }
 
     const std::vector<VehicleId>& yardShips() {
@@ -505,7 +509,7 @@ private:
                 if (item.kind == QueueItem::Kind::Vehicle) add(item.design, std::max(1, item.count));
     }
 
-    // An item the loop placed (or a Defense Base it spent on without a yard).
+    // An item the loop placed.
     void count(DesignId design, int64_t n) { counts_[p_.info(design).aiType] += n; }
 
     // The count of a type; the three colony-ship types share one count.
@@ -607,12 +611,11 @@ private:
     // two bases; otherwise to a queue of the list drawn at random. The
     // backlog test is made on that queue alone. A colony queue without a space
     // yard takes the base, which the empire's construction step then drops
-    // (spec 02 §6.1): the commands refuse such an item, so the builder counts
-    // it and spends on it without queueing anything.
+    // (spec 02 §6.1).
     bool placeDefenseBase(DesignId design) {
         const std::vector<cmd::QueueTarget> list = queueList(p_);
         if (list.empty()) return false;
-        int64_t queuedBases = lostBases_;  // an item counts as many bases as it builds (inferred, spec 05 Q60)
+        int64_t queuedBases = 0;  // an item counts as many bases as it builds (inferred, spec 05 Q60)
         for (const cmd::QueueTarget& t : list)
             if (const ConstructionQueue* q = queueOf(t))
                 for (const QueueItem& item : q->items)
@@ -634,13 +637,7 @@ private:
         item.kind = QueueItem::Kind::Vehicle;
         item.design = design;
         const Resources cost = economy::itemCost(p_.r, p_.st, p_.id, target, item);
-        if (queueable(design, target)) {
-            if (!p_.emit(cmd::QueueAdd{target, item, -1})) return false;
-        } else {
-            const Colony* c = target.planet.valid() ? p_.st.colony(target.planet) : nullptr;
-            if (!c || colonyHasSpaceYard(p_.r, *c)) return false;
-            ++lostBases_;  // queued without a yard: dropped at the construction step
-        }
+        if (!queueable(design, target) || !p_.emit(cmd::QueueAdd{target, item, -1})) return false;
         budget_ -= min(cost, rate);
         count(design, 1);
         return true;
@@ -775,7 +772,9 @@ void planFacilities(Planner& p, bool firstPass) {
             QueueItem item;
             item.kind = QueueItem::Kind::Facility;
             item.facility = *facility;
-            // The queue must accept it (a colony without population cannot build).
+            // The queue must accept it (its slots, one space yard, research; spec
+            // 02 §6.5). A colony without population takes it too and builds it
+            // once it has people.
             if (!queueItemProblem(p.r, p.st, p.id, {planet, {}}, item).empty()) continue;
             if (p.emit(cmd::QueueAdd{{planet, {}}, item, -1})) break;
         }

@@ -98,7 +98,7 @@ TEST_CASE("sdk players golden: a simultaneous game two script players play gives
         {40, 0xd9bec1fafcf04158ull},
         {60, 0xb76a557244ef1c6full},
     }};
-    playGolden("simultaneous", 51, true, kGolden);
+    playGolden("simultaneous", 66, true, kGolden);
 }
 
 TEST_CASE("sdk players golden: a turn-based game two script players play gives the golden checksums") {
@@ -112,7 +112,7 @@ TEST_CASE("sdk players golden: a turn-based game two script players play gives t
         {40, 0x50d48a8a276dc3f0ull},
         {60, 0x92632fe2bcb258e6ull},
     }};
-    playGolden("turn-based", 46, false, kGolden);
+    playGolden("turn-based", 48, false, kGolden);
 }
 
 

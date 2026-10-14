@@ -62,6 +62,7 @@ public:
         stellarObjects();
         empires();
         designs();
+        queueTypes();
         vehicles();
         colonies();
         fleets();
@@ -434,7 +435,6 @@ private:
             if (!versionAtLeast(in_.version, release::kDrones))
                 for (std::string_view t : kOldDesignTypesAdded) e.designTypes.emplace_back(t);
             e.colonyTypes = in.colonyTypes;
-            if (!in.queueTemplates.empty()) count("saved construction queue templates", static_cast<int>(in.queueTemplates.size()));
             e.repairPriorities = in.repairPriorities;
             for (const StrategyRecord& t : in.strategies) e.strategies.push_back(strategy(t));
             if (e.strategies.empty()) e.strategies.push_back({"Default", {}});
@@ -457,7 +457,6 @@ private:
             e.ministers = 0;
             for (size_t k = 0; k < in.ministers.size(); ++k)
                 if (in.ministers[k]) e.ministers |= uint32_t{1} << k;
-            e.ministerAll = e.ministers == kAllMinisters;
             // Options (§3.6.7).
             const EmpireOptions& o = in.options;
             e.clearOrdersOnEncounter = o.clearOnAny ? EncounterClear::Any : o.clearOnEnemy ? EncounterClear::Enemy : EncounterClear::Never;
@@ -552,6 +551,8 @@ private:
         u.planetsTab = static_cast<uint8_t>(std::max(0, int{o.planetsTab} - 1));
         u.planetsNoSysToAvoid = o.planetsHideAvoided;
         u.queuesTab = static_cast<uint8_t>(std::max(0, int{o.queuesTab} - 1));
+        u.setQueueTab = static_cast<uint8_t>(std::clamp(int{o.setQueueTab} - 1, 0, 3));
+        u.coloniesTab = static_cast<uint8_t>(std::clamp(int{o.coloniesTab} - 1, 0, 8));
         u.queuesShown = 0;
         for (size_t k = 0; k < o.queuesShown.size(); ++k)
             if (o.queuesShown[k]) u.queuesShown = static_cast<uint8_t>(u.queuesShown | (1u << k));
@@ -614,6 +615,23 @@ private:
         add("Damage Percent Per Satellite Group", std::to_string(t.damagePercent[3]));
         add("Damage Until All Weapons Gone", yesNo(t.damageUntilWeaponsGone));
         return out;
+    }
+
+    // The empires' queue types (§3.6.6), once the designs exist: the queue
+    // record's items and counts; the flags and progress of a queue type mean
+    // nothing and are dropped.
+    void queueTypes() {
+        for (size_t i = 0; i < in_.empires.size() && i < s_.empires.size() && error_.empty(); ++i)
+            for (const QueueTemplate& t : in_.empires[i].queueTemplates) {
+                QueueType type;
+                type.name = t.name;
+                type.items = queue(t.queue, std::format("empire {} queue type {}", i + 1, t.name)).items;
+                for (QueueItem& item : type.items) {
+                    item.spent = {};
+                    item.count = std::max(1, item.count);
+                }
+                s_.empires[i].queueTypes.push_back(std::move(type));
+            }
     }
 
     // ---- Designs (§3.7) -------------------------------------------------------------------------------------

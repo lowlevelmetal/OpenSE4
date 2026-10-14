@@ -113,6 +113,7 @@ add_executable(opense4
     client/classic/screens/stellar.cpp
     client/classic/screens/strategic_combat.cpp
     client/classic/screens/tactical.cpp
+    client/classic/screens/type_picker.cpp
     client/classic/screens/vehicle_orders.cpp
     client/classic/session.cpp
     client/classic/settings.cpp

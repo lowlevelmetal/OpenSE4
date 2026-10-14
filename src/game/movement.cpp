@@ -1705,7 +1705,7 @@ private:
             if (v->status != VehicleStatus::Normal || !canCloak(r_, s_, *v)) continue;
             if (v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) continue;
             v->status = VehicleStatus::Cloaked;
-            v->queue.items.clear();  // cloaked ships cannot build (spec 01 §6.4)
+            economy::clearQueue(v->queue);  // cloaked ships cannot build (spec 01 §6.4, spec 02 §6.4)
             changed = true;
         }
         if (lowered) decloaked(where(g).system);

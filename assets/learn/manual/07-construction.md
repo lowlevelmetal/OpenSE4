@@ -70,8 +70,10 @@ Facilities** button of the Construction Queues window queues every possible upgr
 also switches facilities still waiting in your queues to the newest level.
 
 **Scrapping** a facility frees its slot and refunds part of its cost at once: 30 % with the stock
-settings, or more if you have a recycling facility in that sector. Scrapping a space yard also
-removes the ships from that planet's queue.
+settings, or more if you have a recycling facility in that sector. **Scrap Facil Types** in the
+Colonies window scraps every facility of the types you tick on all your colonies, at the plain
+30 %: recycling facilities do not add to it. Scrapping a space yard also removes the ships from
+that planet's queue.
 
 ## The Construction Queues window
 
@@ -98,7 +100,8 @@ The window remembers the tab and the check boxes.
 for a selected colony or ship.
 
 - The top shows the queue's owner, its rate, your stockpile, its facility slots (and how many are free after the queue) and population, its cargo space, its mode and where new ships go.
-- The list on the left shows what this queue can build, with the build time in turns. The tabs are **Ships**, **Facilities**, **Units** and **Upgrades** (ships and bases have only the first and third). **Only Latest** hides old facility levels (of facilities of one family listed one after another, only the last shows) and obsolete designs; it is the Empire Options' setting of the same name, so it stays as you leave it. On the Units tab, `1`, `5`, `10` and `20` choose how many to build at once. Items that cannot be built here are greyed; click one to see why. **Click** an item to add it to the end of the queue.
+- The list on the left shows what this queue can build, with the build time in turns, grouped under grey headings: designs by their design type, facilities by their group. The tabs are **Ships** (only where a space yard works), **Facilities** (planets only), **Units** and **Upgrades**; the window opens on the tab you used last. **Only Latest** hides old facility levels (of facilities of one family listed one after another, only the last shows) and obsolete designs; it is the Empire Options' setting of the same name, so it stays as you leave it. Designs your technology cannot build yet are grey.
+- **Click** an item to add it to the end of the queue. A unit design first asks the **Amount**: One Turn's Worth (as many as the queue finishes in one turn) or a number from 1 to 200. When the queue cannot take an item, a **Warning** says why. A queue takes ships even where no space yard works, and at your ship limit: such ships are dropped, or wait, when their turn comes.
 - The queue on the right shows each item's progress and when it will be done, in turns. `Top`, `Up`, `Down`, `Bottom` and `Remove` change it, and `-` and `+` change the count of a unit item; `Delete` removes the selected item too. Removing the first item asks first (an Empire Option), because its progress is lost.
 - Hover over an item to see its cost, build time and details. **Right-click** a ship, base or unit, in either list, for its design's report (size, type, cost, maintenance, movement, shields, cargo, supplies and components); right-click a facility for the facility's report.
 
@@ -109,13 +112,15 @@ The buttons on the right:
 | `Emergency Build`, `Repeat Build`, `Queue On Hold` | Check boxes for the build modes above. Emergency Build is dim while the yard recovers from an emergency. |
 | `Set Move To`, `Clear Move To` | Send new ships to one of your waypoints, or stop doing so. |
 | `Fill Queue` | Add a saved list of items (a queue type). |
-| `Clear Queue` | Empty the queue (it asks first). |
+| `Clear Queue` | Empty the queue (it asks first), switch Repeat Build and Queue On Hold off and forget the Move To waypoint. An emergency and the slow period after it stay. |
 
-**Queue types** save typing. `Fill Queue` offers ready-made types that fill a planet's free
-facility slots with the best producer of one kind (minerals, organics, radioactives, research,
-intelligence) or a balanced mix, and the types you saved yourself. Type a name and press
-`Add Type` to save the current queue as a new type, which you can use in every game; `Delete Type`
-removes one of yours.
+**Queue types** save typing. `Fill Queue` lists your empire's queue types, which are saved with
+the game: `Add Type` asks for a name and saves the current queue as a new type, and `Delete Type`
+removes the one you picked. Fill adds each item of the type with its count; each item the queue
+cannot take gives its own **Warning**. Below your empire's types OpenSE4 also lists the types kept
+on this computer for every game (`Keep on Computer` saves one) and ready-made types that fill a
+planet's free facility slots with the best producer of one kind (minerals, organics,
+radioactives, research, intelligence) or a balanced mix.
 
 ## Construction advice
 

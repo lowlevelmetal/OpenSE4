@@ -1255,6 +1255,19 @@ Point Blank and Drone Attack.
 | `Damage Percent Per Ship / Planet / Fighter Group / Satellite Group` | (confirmed: binary) While choosing targets, a ship, planet, fighter group or satellite group already damaged by more than this percentage is skipped, unless `Damage Until All Weapons Gone` is set and it still has weapons. Drones and seekers are never skipped this way. If no target is left, the choice is made again without this filter. |
 | `Damage Until All Weapons Gone` | See the row above. |
 
+**The Strategies window** (confirmed: binary). Its pages are Movement, Firing, Damage,
+Launching and Formation. Damage holds the four `Damage Percent` settings and `Damage Until
+All Weapons Gone`. Launching holds two pick lists: Fighter Group Size (5, 8, 10, 15, 20, 30,
+40 or 50) and Drones Per Target (1, 2, 3, 5, 8, 10, 15 or 20). Add asks "Enter Strategy
+Name" and makes a new strategy from built-in values: fighters launched in groups of 5, 3
+drones per target, `Damage Percent Per Ship` 80 and the other three 100, `Damage Until All
+Weapons Gone` off, and Break Formation on for Carriers, Colony Ships, Fighters, Satellites,
+Planets, Transports, Seekers on us and Seekers on others, off for Bases, Ships, Mines, Bases
+(no weapons), Ships (no weapons) and Drones (spec 08 §3.6.13 order). The rest of its values
+are question 98. Since 2026-10-13 our client follows (`combat::newStrategyRecord`). Copy and
+Remove are OpenSE4's own buttons, and a value a data file gives that is not in a pick list
+shows as it is.
+
 **How the computer gives out targets** (confirmed: binary). A computer piece chooses
 targets for all its weapons at once, when it plans its move (§16.1) and again each time
 it fires. Both use the same steps; only the firing choice checks distance.
@@ -2348,3 +2361,10 @@ traced and are OpenSE4's choices until a session with the executable settles the
     in a battle join when the owner has several there (the engine: the last in object
     order, as outside combat), and whether the window shows its refusals in a battle in
     the same message boxes as on the map.
+98. **A new strategy's other values.** The Strategies window's Add (§16) makes a strategy
+    whose launch group (5), drones per target (3), damage percentages (80 per ship, 100
+    for the rest), "until all weapons gone" (off) and Break Formation flags are known
+    (confirmed: binary). OpenSE4 gives it the movement (Optimal Weapons Range, then Point
+    Blank), targeting (Has Weapons, then Nearest), type priorities and Don't Fire On flags
+    (none) of its own neutral defaults (`combat::Strategy`, inferred). To verify in the
+    executable: the values the original's new strategy starts with for these.

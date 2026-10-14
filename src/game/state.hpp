@@ -319,6 +319,27 @@ struct Knowledge {
     std::vector<std::string> notes;          // per SystemId, player notes
 };
 
+struct QueueItem {
+    enum class Kind : uint8_t { Vehicle, Facility, Upgrade };
+    Kind kind = Kind::Vehicle;
+    DesignId design;          // Vehicle
+    uint32_t facility = 0;    // Facility: Facility.txt index; Upgrade: the target facility, fixed when queued
+    int count = 1;            // built as a batch; Upgrade: facilities to convert, fixed when queued (spec 02 §6.6)
+    Resources spent;          // progress on the current item
+};
+
+// A queue type (spec 02 §6.4, spec 08 §3.6.6, confirmed: binary): a named
+// copy of a construction queue's items with their counts, kept by the empire
+// and saved with the game (format 10). Set Construction Queue's Add Type stores
+// one, Fill Queue appends its items, each checked as it is added
+// (cmd::SetQueueTypes). The items carry no progress.
+struct QueueType {
+    std::string name;
+    std::vector<QueueItem> items;
+};
+inline constexpr size_t kMaxQueueTypes = 255;
+inline constexpr size_t kMaxQueueTypeItems = 255;
+
 // The Empire Options window's switches and what some windows remember
 // (spec 06 §1.9, §1.8, §1.10.3, §1.10.4, §4.1; confirmed: binary). They belong
 // to the empire and are saved with the game, so each hotseat player keeps
@@ -416,6 +437,12 @@ struct InterfaceOptions {
     // options, Ten at first (spec 08 §3.6.7, confirmed: binary; save format 10).
     uint8_t cargoStep = 2;
     uint8_t unitsStep = 2;
+    // The tab Set Construction Queue opens on (0 Ships, 1 Facilities, 2 Units,
+    // 3 Upgrades) and the Colonies window's (ColonyTab: 0 General ... 8
+    // Orders), stored when each window closes (spec 06 §1.8.3, spec 08
+    // §3.6.7, confirmed: binary; save format 10).
+    uint8_t setQueueTab = 0;
+    uint8_t coloniesTab = 0;
 
     bool operator==(const InterfaceOptions&) const = default;
 };
@@ -483,6 +510,7 @@ struct Empire {
     std::array<Waypoint, 10> waypoints{};
     std::vector<std::string> designTypes;
     std::vector<std::string> colonyTypes;
+    std::vector<QueueType> queueTypes;      // Select Queue Type's own list (save format 10)
     std::vector<ruleset::CombatStrategy> strategies;
     std::vector<std::string> repairPriorities;
     std::vector<DesignId> designs;          // own designs
@@ -506,7 +534,10 @@ struct Empire {
     int aiDifficulty = -1;                  // kDifficulty*; -1 until the AI step assigns it (ai::difficultyOf)
     PoliticsMark politicsMark;              // turn-based games: what its political steps have counted
 
-    bool ministerAll = false;               // full minister control
+    // Full minister control: the Players window's computer control and a stand-in
+    // for a missing player set it (ai::setComputerControl, ai::standIn), and a
+    // rebel empire has it. The Ministers window's Complete AI does not (spec 02 §10).
+    bool ministerAll = false;
     uint32_t ministers = kIndividualMinisters;  // human empires: minister areas switched on (bit = Minister)
     std::string ministerStyle;              // "Aggressive", "Defensive", "Neutral"; empty: the race's own AI files
     bool useRaceMinisterStyle = false;      // "Use Race Minister Style": the race's files even with a style (spec 05 §7.1)
@@ -669,15 +700,6 @@ struct Cargo {
         return 0;
     }
     bool empty() const { return population.empty() && units.empty(); }
-};
-
-struct QueueItem {
-    enum class Kind : uint8_t { Vehicle, Facility, Upgrade };
-    Kind kind = Kind::Vehicle;
-    DesignId design;          // Vehicle
-    uint32_t facility = 0;    // Facility: Facility.txt index; Upgrade: the target facility, fixed when queued
-    int count = 1;            // built as a batch; Upgrade: facilities to convert, fixed when queued (spec 02 §6.6)
-    Resources spent;          // progress on the current item
 };
 
 struct ConstructionQueue {

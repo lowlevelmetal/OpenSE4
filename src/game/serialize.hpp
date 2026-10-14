@@ -131,6 +131,11 @@ class Rules;
 //   cmd::AbandonPlanet::scrapFacilities and cmd::CreateFleet::location (an
 //   empty fleet, spec 03 §9). A format 9 AbandonPlanet reads as one that
 //   keeps the facilities, a CreateFleet as one with no place.
+// - The economy package: each empire's queue types (Empire::queueTypes,
+//   QueueType, cmd::SetQueueTypes, spec 02 §6.4), the tabs Set Construction
+//   Queue and Colonies open on (InterfaceOptions::setQueueTab, coloniesTab,
+//   spec 06 §1.8.3) and Scrap Facil Types' refund (cmd::Scrap::typeWide,
+//   spec 02 §6.6).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

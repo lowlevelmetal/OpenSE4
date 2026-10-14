@@ -75,8 +75,8 @@ key Escape
 wait-closed ships
 
 # Construction Queues: headings sort. A queue's row opens Set Construction Queue: a right-click
-# on an item shows its report, a click closes it; on the Ships tab of a queue that builds ships,
-# a right-click on a design shows the Design Report.
+# on an item shows its report, a click closes it; on the Ships tab of a queue that builds ships
+# (one with a working space yard), a right-click on a design shows the Design Report.
 key F7
 wait-window queues
 repeat 3 until { command = "SetInterfaceOptions" }
@@ -91,7 +91,9 @@ click item:window:##itemreport in=set-queue
 wait-gone item:window:##itemreport
 key Escape
 wait-closed set-queue
-click item:##row in=queues nth=2
+# Only the queues with a working space yard (Planets off): their Ships tab is lit.
+click item:Planets in=queues
+click item:##row in=queues
 wait-window set-queue
 click item:Ships in=set-queue
 right-click item:##row in=set-queue nth=1

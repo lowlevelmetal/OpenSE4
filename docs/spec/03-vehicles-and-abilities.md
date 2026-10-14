@@ -1199,7 +1199,11 @@ group's cargo after the orders before it (inferred).
   it in a dialog; otherwise it is chosen automatically, as a computer player chooses it
   (spec 05 §7.5). The dialog interrupts the order: the colony is made when it closes, with the
   type picked, or with no type at all (an empty name) when the player cancels (confirmed:
-  binary).
+  binary). The dialog is the colony-type list window with Add Type and Delete Type (spec 02
+  §10). Our client differs: the colony is made first with the type the computer would pick,
+  and the dialog then asks with that type marked "(suggested)" and selected, so a click on
+  it, OK or Enter takes it; Cancel keeps it, where the original leaves the colony without a
+  type.
 - When two ships target the same planet, the first one processed wins; the other's order fails.
 - A colony with 0 population is legal but cannot build facilities.
 - **The reasons, in the order tested:** the named planet is gone, is not seen by the ship's owner

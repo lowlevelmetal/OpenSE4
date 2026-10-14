@@ -16,11 +16,12 @@ key F9
 wait-window empires
 click item:"Treaty Grid" in=empires
 wait-window treaty-grid
-assert-present item:"Empires 11-12" in=treaty-grid
+# The second page: the empires after the tenth that are still in the game (11 or 12).
+assert-present item:"Empires 11-*" in=treaty-grid
 assert-fits treaty-grid
 assert-whole treaty-grid
 screenshot treaty-grid.png
-click item:"Empires 11-12" in=treaty-grid
+click item:"Empires 11-*" in=treaty-grid
 wait 2
 assert-fits treaty-grid
 assert-whole treaty-grid

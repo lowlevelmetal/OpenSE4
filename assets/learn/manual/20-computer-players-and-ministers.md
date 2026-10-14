@@ -107,8 +107,8 @@ Open [Ministers](window:ministers) from [Empire Status](window:empire-status) (`
 
 - Each minister has a lamp: click it to switch that minister on or off.
 - `Select All` and `Select None` switch every minister on or off.
-- `Indiv. On` and `Indiv. Off` put every ship, fleet and colony you own under minister control, or take them all back.
-- `Complete AI On` hands your whole empire to the computer: every minister, every ship and colony, and every new one. `Complete AI Off` takes it all back.
+- `Indiv. On` and `Indiv. Off` put every ship, fleet and colony you own under minister control, or take them all back; each asks first.
+- `Complete AI On` switches every minister on and puts every ship, colony and new vehicle under minister control at once, which hands your whole empire to the computer. `Complete AI Off` switches it all off. Neither is a lasting mode: you can still switch single ministers or ships off afterwards.
 - A switch puts newly built ships and launched units under minister control automatically.
 - Another switch is for missed turns in simultaneous multiplayer games (see below).
 - The **minister style** chooses the personality your ministers follow: your race's own, or one of the styles in the game data. You can change it at any time.

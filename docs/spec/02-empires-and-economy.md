@@ -925,10 +925,13 @@ banked. The UI shows it in parentheses and adds a "No Spaceport" icon.
 ### 6.1 Ownership
 
 **Who has a queue**
-- Every colony has a queue, but a colony with zero population cannot build.
+- Every colony has a queue. A colony with zero population takes items like any other
+  (§6.5 "Acceptance"), but its rate is 0 (§6.2), so it builds nothing until it has people.
 - A ship has a queue only if it carries a Space Yard component.
 - Building ships needs a space yard, either a facility or a component. A planet can have
-  at most one space yard facility [H].
+  at most one space yard facility. The yard is not checked when a ship is queued: a colony
+  without a working yard loses its ship and base items at the removal pass below
+  (confirmed: binary).
 
 **Blocking rules** [H]
 - A cloaked ship cannot build, and cloaking a ship clears its queue. A cloaked colony is
@@ -1036,13 +1039,33 @@ use emergency build (confirmed: binary).
 - It cannot be avoided by mothballing and unmothballing the ship.
 - It cannot be avoided by cloaking.
 
+**Clearing a queue** (confirmed: binary). One clear empties a queue: its items with their
+progress, On Hold, Repeat Build and the automatic Move To waypoint go; emergency mode and
+its turn counter stay, so slow mode still follows. It runs for Clear Queue (spec 06 §7
+Q28), for a ship whose space yard stops working (cloaked or mothballed, spec 06 §1.8.2),
+and when a planet is handed to another empire by treaty or package (and on the intelligence
+and rebellion paths that use the same transfer). So emergency and slow mode go with a
+planet that changes hands. Since 2026-10-13 the engine follows (`economy::clearQueue`);
+before, a transfer gave the planet a fresh queue and a cloaked ship kept its waypoint and
+flags. A colony taken in ground combat still gets a fresh queue: the original's capture
+path was not checked.
+
 **Other controls**
 - **Repeat Build** rebuilds the top item forever, as long as it is still valid.
 - **On Hold** freezes the queue and spends nothing.
 - **Move To** sends newly built ships to a waypoint.
-- **Queue types** are named templates:
-  - Fill appends a template's items, checking each against current tech.
-  - Add Type saves the current queue as a new template.
+- **Queue types** (confirmed: binary) are named copies of queues that belong to the empire
+  and are saved with the game (spec 08 §3.6.6; `Empire::queueTypes`, save format 10):
+  - Select Queue Type (Fill Queue) lists them. Add Type asks for a "Queue Type Name" and
+    stores a copy of the current queue's items with their counts; Delete Type removes the
+    selected type.
+  - Fill appends each item of the type with its stored count. Each item goes through the
+    queue's acceptance (§6.5), and each one refused gives its own "Warning" message box
+    with the reason; the others are added.
+  - OpenSE4 keeps its own types beside them in the same list: those kept on one computer
+    for every game (`queue_types.txt`, Keep on Computer) and the built-in ones that fill
+    the free facility slots. Those resolve their facilities to the newest level we have
+    researched. The empire's types are changed with `cmd::SetQueueTypes`.
 - **Multi-Add** adds ships or units to several selected queues at once.
 - **Only Latest** (confirmed: binary; spec 06 §7 Q109). The list is first built in
   data-file order from the items that pass the window's other filters. With Only Latest
@@ -1075,6 +1098,24 @@ use emergency build (confirmed: binary).
 An item has a count; its cost is the unit cost times the count, and it completes all at
 once (confirmed: binary).
 
+**Acceptance** (confirmed: binary). A queue refuses an item only for these reasons, each
+with a message box titled "Warning" naming the reason:
+- a ship, base or unit: no such design; a design of another empire; a design beyond our
+  technology (its hull, a component or a weapon mount not researched);
+- a facility: no such facility; a ship's queue (silently); the facilities built plus the
+  whole count of every facility item already queued fill the planet's slots; a space yard
+  when the planet has one built, has one queued, or its facilities give the Space Yard
+  ability; a facility not researched;
+- an upgrade: an upgrade to the same target is already in the queue.
+
+Nothing else is checked when an item is queued. The colony's population, the ship limit
+(met when a ship is built, below) and a space yard for ships (the removal pass of §6.1) are
+not. Since 2026-10-13 the engine follows (`queueItemProblem`). It also refuses commands no
+window of the original gives: another empire's queue, a ship queue that does not exist (no
+yard, or cloaked), an upgrade target that is unknown or not researched, and an upgrade with
+nothing to upgrade. The computer players keep their own rule against queueing ships or bases
+at the ship limit (spec 05 §7.5, question 81).
+
 **Ships**
 - A ship appears at the queue's location when finished. It is invisible while being built.
 - Each ship built logs a `Ship Constructed` event in that sector (§4) (confirmed: binary).
@@ -1084,9 +1125,10 @@ once (confirmed: binary).
   ships can go past it.
 
 **Facilities**
-- Only as many facilities can be queued as there are free slots, counting ones already
-  queued. The game warns when this is exceeded.
-- Adding a system-wide facility that is already present in the system shows a notice [H].
+- Only as many facilities can be queued as there are free slots, counting the whole count
+  of every facility item already queued (Acceptance above).
+- Adding a facility by hand whose system-wide abilities an object of ours in the system
+  already has shows a "Note" first, whether or not the queue then takes it (spec 06 §7 Q29).
 - On completion (confirmed: binary):
   - If the colony has fewer facilities than slots, the item's whole count is added, even
     if that goes past the slots.
@@ -1096,7 +1138,15 @@ once (confirmed: binary).
 - A finished facility fires `Facility Constructed`, once per facility (confirmed: binary).
 
 **Units** (confirmed: binary unless marked)
-- The player picks how many to build.
+- The player picks how many to build: a click on a unit design in Set Construction Queue
+  opens the "Amount" list: One Turn's Worth, then 1, 5, 10, 15, 20, 25, 30, 35, 40, 45,
+  50, 100, 150 and 200; Cancel adds nothing. A ship or base is always added one at a time.
+  One Turn's Worth is the largest count n of at least 1 whose build time from scratch at
+  the queue's current rate is one turn, a build time being the largest, over the
+  resources whose rate is above 0, of `trunc(n × cost / rate + 0.9999)`; it is 1 when the
+  three rates are 0 and for a design the computer counts as a "Recon Satellite" (spec 05
+  §7.5). The Multi-Add window offers the same list without One Turn's Worth. Our client
+  caps One Turn's Worth at 65,535, the largest count a saved game holds.
 - Each unit is placed on its own: in the builder's cargo if it fits, else in the cargo of
   another planet or ship of the empire **in the same sector**, taken in the game's object
   order (planets and ships mixed).
@@ -1146,8 +1196,11 @@ once (confirmed: binary).
 
 **Scrapping** (confirmed: binary)
 - Facilities can be scrapped on one planet, or one type everywhere.
-- The refund % is the larger of the Settings `Scrap … Percent Returned` and the best
-  `Resource Reclamation` among the empire's planets and ships in that sector.
+- On one planet (Scrap Facilities), the refund % is the larger of `Scrap Facility Percent
+  Returned` and the best `Resource Reclamation` among the empire's planets and ships in
+  that sector. Scrap Facil Types (every checked type on every colony) uses `Scrap Facility
+  Percent Returned` alone, with no Resource Reclamation. Since 2026-10-13 the engine follows
+  (`cmd::Scrap::typeWide`, `facilityScrapPercent`); before, both used the larger value.
 - A facility refunds `round(cost × % / 100)` of each resource, paid into the treasury at
   once. The storage cap applies later in the turn (§5.6).
 
@@ -1461,9 +1514,18 @@ is on (confirmed: binary).
   player's missed turn, the stand-in changes nothing (confirmed: binary).
 - Bulk buttons (confirmed: binary):
   - Select All and Select None tick or clear every minister.
-  - Indiv. Ministers On and Off set the flag on all of the player's ships, planets and
-    fleets.
-  - Complete AI On and Off do both, and also set the new-vehicles option.
+  - Indiv. Ministers On and Off ask first, in a Yes/No "Confirm" box, whether to turn
+    individual ministers on (or off) for all ships and planets; Yes sets the flag on all of
+    the player's ships, planets and fleets.
+  - Complete AI On and Off do both at once without asking, and also set the new-vehicles
+    option. They are no latch: the window shows no Complete AI state, and a later Select
+    None, a single minister switched off or one ship's flag cleared takes effect as usual.
+    The minister lamps take effect when the window closes.
+  - Since 2026-10-13 our client follows: Complete AI On no longer sets `Empire::ministerAll`
+    (the full control that the Players window's computer control, a stand-in for a missing
+    player and a rebel empire keep), Complete AI Off clears it, and the saved game's 25
+    switches are the empire's own (spec 08 §3.6.9). Our client applies each switch at once
+    rather than when the window closes.
 
 **Minister style**
 - The style is a personality set taken from `Ai/<Aggressive|Defensive|Neutral>/`.
@@ -1493,6 +1555,14 @@ is on (confirmed: binary).
 **Colony types**
 - A colony type is a label chosen at colonization or later. The defaults come from
   `DefaultColonyTypes.txt`.
+- The colony-type picker (Colonies' Set Colony Type, and the question a new colony asks,
+  spec 03 §8) is a list window with Add Type and Delete Type (confirmed: binary). Add Type
+  asks for a "Colony Type Name" and appends it to the empire's colony types when it is not
+  empty and not already listed; Delete Type removes the selected type without asking. The
+  list is saved with the game. Cancelling Set Colony Type in the original sets the colony's
+  type to an empty one. Our client differs: Cancel leaves the type as it was. Our client
+  sends the list's changes with `cmd::SetColonyTypes` and holds at most 255 types, what the
+  saved game's list can hold.
 - The Facility Construction minister and the AI know nine fixed types (confirmed:
   binary): Homeworld (also "Imperial Center"), Mining Colony, Farming Colony, Refining
   Colony, Resupply Base, Research Compound, Intelligence Compound, Construction Yard and
@@ -1530,8 +1600,9 @@ is on (confirmed: binary).
 - **Construction Queues:** list columns Rate, Usage, Planet Value, Facilities and Cargo.
   - Filters: Ships, Planets, Ship SY, Planet SY.
   - Buttons: Multi-Add, Scrap Facilities, Upgrade Facilities.
-- **Set Construction Queue:** tabs Ships (needs a yard), Facilities (planets only), Units
-  and Upgrades.
+- **Set Construction Queue:** tabs Ships (needs a working yard), Facilities (planets
+  only), Units and Upgrades; the list is grouped, and the tab is remembered (spec 06
+  §1.8.3).
   - The hover report shows cost and build time. For the top item, the real remaining time
     is shown in parentheses.
 - **Select Facilities** is the scrap checklist, with the refund for each facility.
@@ -1812,3 +1883,5 @@ must change.
     empire's own and uses known technology. Its Upgrades tab offers only researched
     targets. OpenSE4 choice: the command check also refuses an unresearched target, since
     commands can come from any client. No difference in play is expected.
+    *Corrected 2026-10-13* (REA audit, confirmed: binary): a facility item is also refused
+    when the facility is not researched; the full list is §6.5 "Acceptance".

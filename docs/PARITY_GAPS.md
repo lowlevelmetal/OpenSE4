@@ -666,6 +666,24 @@ The players' reports on v0.9.0 (GitHub issues #1 to #4, #6, #9 and #10) were ans
   stop. The Log's details pane on an entry without a body no longer makes one.
 - **The Log** restores its scroll position only with the stored entry (spec 06 §4.1).
 
+The 2026-10-13 audit of the economy windows against the executable (spec 02 §6.4–§6.6, §10,
+spec 04 §16, spec 06 §1.8.3, §7 Q28, Q90, Q94, spec 08 §3.6.6–§3.6.9) brought in: the
+queue's own refusals only (no check of population, the ship limit or a yard for ships when an
+item is queued), each refusal a "Warning" box and the "Note" before the add; the Units tab's
+"Amount" list with One Turn's Worth; the available list grouped under grey headers with
+unbuildable designs in grey; the Ships tab lit only with a working yard and the tab
+remembered (`InterfaceOptions::setQueueTab`); the empire's queue types saved with the game
+and carried to and from the original's saved games (`Empire::queueTypes`,
+`cmd::SetQueueTypes`), Fill giving a "Warning" per refused item; Clear Queue's clear (Move To
+too, the emergency kept) for a cloaked or mothballed ship and a planet handed over by treaty;
+Scrap Facil Types refunding the setting alone (`cmd::Scrap::typeWide`); the type list window
+with Add Type and Delete Type for colony and design types; Complete AI as plain buttons that
+no longer latch full control, the 25 minister switches written to the original's file as they
+are, and Indiv. On/Off asking "Confirm"; the Strategies window's Damage page, its Launching
+pick lists and Add's "Enter Strategy Name" with the original's new strategy; the Colonies
+window's tab remembered (`InterfaceOptions::coloniesTab`); Shift+click doing nothing in
+Planets. What stays different from that audit is in the table below.
+
 OpenSE4's own additions in these windows, none of which moves an original control: the Find
 box in Help's heading row; the Galaxy Map's Show Distances (in an empty slot), the legend (in
 three empty slots) and the notes line under the map's hint; the Designs window's note in its
@@ -675,6 +693,11 @@ different:
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
+| Cancel in a type list (`TypeListPicker`) | Set Colony Type and the designer's Design Type keep the type they had; the question a new colony asks keeps the suggested type, which the colony already has | Set Colony Type's Cancel empties the colony's type; the colonization question's Cancel leaves the new colony without a type; the designer's leaves the design without one (spec 02 §10, spec 03 §8, spec 06 §7 Q94) | L |
+| Minister switches (`MinistersScreen`) | Each lamp, Select All and Select None take effect at once (`cmd::SetMinisters`) | The lamps take effect when the window closes (spec 02 §10) | L |
+| Queue types (`queues.cpp`) | Select Queue Type also lists OpenSE4's types kept on this computer (`queue_types.txt`, Keep on Computer) and the built-in ones that fill the free facility slots, under headings of their own | The empire's types only (spec 02 §6.4) | L |
+| Ships at the limit, computer players (`ShipBuilder::queueable`) | Place no ship or base while the empire is at its ship limit (inferred) | Not known whether the vehicle list checks the limit; the queues do not (spec 05 question 81) | L |
+| A colony taken in ground combat (`combat_ground.cpp`) | Gets a fresh queue: emergency and slow mode end | Not checked; a planet handed over by treaty keeps them (spec 02 §6.4) | L |
 | E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Moves shown in the system window (`ship_glides.cpp`, `turn_start.cpp`) | The moves of an engine call glide together once it has made them all, several steps of one group as one straight glide; a battle that stops the call is shown before the moves that led to it; a click or a key shows a turn's moves at once | Each group's steps animated one after another as they are made, a battle when it starts (spec 06 §2.4, §2.7, §7 Q112) | L |
 | Choosing one of the original's scenarios (`screens/learn_screens.cpp`) | The intro's Tutorial and Scenario open OpenSE4's Learn window; its Scenarios tab lists the original's scenarios beside the mods', and Start Game starts one. The scenario folder is the install's, or that of the last classic mod in use that has one | Tutorial starts the tutorial at once; Scenario opens the "Load Scenario" picker with Change Directory; the folder is that of the `Path.txt` mod when it has one (spec 06 §1.1, §5.6) | L |
@@ -1082,8 +1105,8 @@ computer player's home system, avoided systems) apply only to neighbour systems;
 whose Politics minister is on claims by the same rule; colonization danger adds 1 per
 non-friendly empire beyond each warp point; a Defense Base goes to the K-th queue of the
 empire's queue list, or a random one, with the backlog test on that queue alone, and a base
-sent to a colony without a yard is counted and paid for but never queued (the original's
-construction step drops it); mines, satellites, weapon platforms and fighters take the first
+sent to a colony without a yard is queued there and dropped by the construction step, as in
+the original (since 2026-10-13; it used to be counted and paid for but never queued); mines, satellites, weapon platforms and fighters take the first
 colony queue by backlog, free cargo, units of that kind held, planet size, production and
 rate, and nothing is placed without room for the batch; no item tries a second queue;
 facility upgrades come first on every fifth turn; the research and intelligence lists and the

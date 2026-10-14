@@ -179,17 +179,19 @@ def rename(vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, design: O
     }
 
 
-def scrap(vehicle: Optional[Ref] = None, facility_planet: Optional[Ref] = None, facility_slot: int = -1, move_first: Optional[LocationLike] = None) -> Dict[str, Any]:
+def scrap(vehicle: Optional[Ref] = None, facility_planet: Optional[Ref] = None, facility_slot: int = -1, move_first: Optional[LocationLike] = None, type_wide: bool = False) -> Dict[str, Any]:
     """The Scrap window's Scrap for one vehicle, or Scrap Facilities for one facility of a colony. A
     vehicle is scrapped at once in a turn-based game; in a simultaneous game Scrap becomes its only
     order, carried out when it next acts. With move_first the vehicle first moves to that sector
     (the computer player's way of scrapping at a yard). Scrap Facilities acts at once in both turn
-    styles.
+    styles; it refunds the larger of the scrap setting and our best Resource Reclamation in that
+    sector, or with type_wide (the Colonies window's Scrap Facil Types) the setting alone.
 
     vehicle: The vehicle to scrap.
     facility_planet: Or the colony whose facility goes.
     facility_slot: That facility's position in the colony's list (-1 by default).
     move_first: Where to go before scrapping (no system: stay).
+    type_wide: Scrap Facil Types: refund the scrap setting only (false by default).
     """
     return {
         'kind': 'scrap',
@@ -197,6 +199,7 @@ def scrap(vehicle: Optional[Ref] = None, facility_planet: Optional[Ref] = None, 
         'facility_planet': _id(facility_planet, 'object', 'scrap.facility_planet'),
         'facility_slot': _int(facility_slot, 'scrap.facility_slot'),
         'move_first': {'system': None, 'x': 6, 'y': 6} if move_first is None else _struct(move_first, 'location', 'scrap.move_first'),
+        'type_wide': _bool(type_wide, 'scrap.type_wide'),
     }
 
 
@@ -820,6 +823,18 @@ def set_colony_types(colony_types: Optional[Sequence[str]] = None) -> Dict[str, 
     }
 
 
+def set_queue_types(queue_types: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Replaces our queue types: the named queues Set Construction Queue's Fill Queue adds from. At
+    most 255 types of at most 255 items each; what was paid into an item is not kept.
+
+    queue_types: The types, in the order the window lists them.
+    """
+    return {
+        'kind': 'set_queue_types',
+        'queue_types': [] if queue_types is None else _structs(queue_types, 'queue_type', 'set_queue_types.queue_types'),
+    }
+
+
 def set_empire_options(ai_minimal_changes: Optional[bool] = None, password_hash: Optional[str] = None, choose_colony_type: Optional[bool] = None) -> Dict[str, Any]:
     """Empire options; a null field is left as it is.
 
@@ -892,7 +907,7 @@ def set_interface_options(options: Optional[Dict[str, Any]] = None) -> Dict[str,
     """
     return {
         'kind': 'set_interface_options',
-        'options': {'show_log_at_turn_start': True, 'confirm_end_turn': True, 'confirm_scrap': True, 'confirm_stellar_manipulation': True, 'confirm_delete_research': True, 'confirm_delete_intel': True, 'confirm_delete_first_queue_item': True, 'note_similar_abilities': True, 'skip_under_construction': False, 'skip_damaged': False, 'stop_once_per_location': False, 'skip_in_fleets': False, 'warp_point_names': True, 'planet_names': False, 'colonizable_markers': True, 'system_grid': False, 'coordinate_location': True, 'facility_markers': 0, 'galaxy_grid_lines': True, 'galaxy_warp_lines': True, 'latest_construction_only': False, 'latest_components_only': False, 'auto_claim_colonized': True, 'log_filter': 0, 'log_position': 0, 'log_scroll': 0, 'planets_tab': 0, 'planets_no_sys_to_avoid': False, 'queues_tab': 0, 'queues_shown': 15, 'simulator_no_obsolete': False, 'ships_tab': 0, 'ships_shown': 7, 'planets_sort': [0, 0, 0, 0, 0], 'colonies_sort': [0, 0, 0, 0, 0], 'ships_sort': [0, 0, 0, 0, 0], 'queues_sort': [0, 0, 0, 0, 0], 'replay_animate': True, 'replay_fast': False, 'replay_view_rect': True, 'replay_grid': False, 'design_to_hit': False, 'design_condensed': False, 'designs_hide_obsolete': False, 'designs_stats_view': False, 'scenario_page': 1, 'designs_tab': 0, 'empires_tab': 0, 'galaxy_map_names': False, 'galaxy_map_distances': False, 'cargo_step': 2, 'units_step': 2} if options is None else _struct(options, 'interface_options', 'set_interface_options.options'),
+        'options': {'show_log_at_turn_start': True, 'confirm_end_turn': True, 'confirm_scrap': True, 'confirm_stellar_manipulation': True, 'confirm_delete_research': True, 'confirm_delete_intel': True, 'confirm_delete_first_queue_item': True, 'note_similar_abilities': True, 'skip_under_construction': False, 'skip_damaged': False, 'stop_once_per_location': False, 'skip_in_fleets': False, 'warp_point_names': True, 'planet_names': False, 'colonizable_markers': True, 'system_grid': False, 'coordinate_location': True, 'facility_markers': 0, 'galaxy_grid_lines': True, 'galaxy_warp_lines': True, 'latest_construction_only': False, 'latest_components_only': False, 'auto_claim_colonized': True, 'log_filter': 0, 'log_position': 0, 'log_scroll': 0, 'planets_tab': 0, 'planets_no_sys_to_avoid': False, 'queues_tab': 0, 'queues_shown': 15, 'simulator_no_obsolete': False, 'ships_tab': 0, 'ships_shown': 7, 'planets_sort': [0, 0, 0, 0, 0], 'colonies_sort': [0, 0, 0, 0, 0], 'ships_sort': [0, 0, 0, 0, 0], 'queues_sort': [0, 0, 0, 0, 0], 'replay_animate': True, 'replay_fast': False, 'replay_view_rect': True, 'replay_grid': False, 'design_to_hit': False, 'design_condensed': False, 'designs_hide_obsolete': False, 'designs_stats_view': False, 'scenario_page': 1, 'designs_tab': 0, 'empires_tab': 0, 'galaxy_map_names': False, 'galaxy_map_distances': False, 'cargo_step': 2, 'units_step': 2, 'set_queue_tab': 0, 'colonies_tab': 0} if options is None else _struct(options, 'interface_options', 'set_interface_options.options'),
     }
 
 
@@ -1007,6 +1022,18 @@ def queue_item(kind: str = 'vehicle', design: Optional[Ref] = None, facility: Re
         'facility': _index(facility, 'queue_item.facility'),
         'count': _int(count, 'queue_item.count'),
         'spent': {'minerals': 0, 'organics': 0, 'radioactives': 0} if spent is None else _struct(spent, 'resources', 'queue_item.spent'),
+    }
+
+
+def queue_type(name: str = '', items: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """A named list of queue items with their counts (our queue types).
+
+    name: Its name.
+    items: Its items, in order.
+    """
+    return {
+        'name': _text(name, 'queue_type.name'),
+        'items': [] if items is None else _structs(items, 'queue_item', 'queue_type.items'),
     }
 
 
@@ -1229,7 +1256,7 @@ def unit_stack(design: Optional[Ref] = None, count: int = 0) -> Dict[str, Any]:
     }
 
 
-def interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: bool = True, confirm_scrap: bool = True, confirm_stellar_manipulation: bool = True, confirm_delete_research: bool = True, confirm_delete_intel: bool = True, confirm_delete_first_queue_item: bool = True, note_similar_abilities: bool = True, skip_under_construction: bool = False, skip_damaged: bool = False, stop_once_per_location: bool = False, skip_in_fleets: bool = False, warp_point_names: bool = True, planet_names: bool = False, colonizable_markers: bool = True, system_grid: bool = False, coordinate_location: bool = True, facility_markers: int = 0, galaxy_grid_lines: bool = True, galaxy_warp_lines: bool = True, latest_construction_only: bool = False, latest_components_only: bool = False, auto_claim_colonized: bool = True, log_filter: int = 0, log_position: int = 0, log_scroll: int = 0, planets_tab: int = 0, planets_no_sys_to_avoid: bool = False, queues_tab: int = 0, queues_shown: int = 15, simulator_no_obsolete: bool = False, ships_tab: int = 0, ships_shown: int = 7, planets_sort: Optional[Sequence[int]] = None, colonies_sort: Optional[Sequence[int]] = None, ships_sort: Optional[Sequence[int]] = None, queues_sort: Optional[Sequence[int]] = None, replay_animate: bool = True, replay_fast: bool = False, replay_view_rect: bool = True, replay_grid: bool = False, design_to_hit: bool = False, design_condensed: bool = False, designs_hide_obsolete: bool = False, designs_stats_view: bool = False, scenario_page: int = 1, designs_tab: int = 0, empires_tab: int = 0, galaxy_map_names: bool = False, galaxy_map_distances: bool = False, cargo_step: int = 2, units_step: int = 2) -> Dict[str, Any]:
+def interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: bool = True, confirm_scrap: bool = True, confirm_stellar_manipulation: bool = True, confirm_delete_research: bool = True, confirm_delete_intel: bool = True, confirm_delete_first_queue_item: bool = True, note_similar_abilities: bool = True, skip_under_construction: bool = False, skip_damaged: bool = False, stop_once_per_location: bool = False, skip_in_fleets: bool = False, warp_point_names: bool = True, planet_names: bool = False, colonizable_markers: bool = True, system_grid: bool = False, coordinate_location: bool = True, facility_markers: int = 0, galaxy_grid_lines: bool = True, galaxy_warp_lines: bool = True, latest_construction_only: bool = False, latest_components_only: bool = False, auto_claim_colonized: bool = True, log_filter: int = 0, log_position: int = 0, log_scroll: int = 0, planets_tab: int = 0, planets_no_sys_to_avoid: bool = False, queues_tab: int = 0, queues_shown: int = 15, simulator_no_obsolete: bool = False, ships_tab: int = 0, ships_shown: int = 7, planets_sort: Optional[Sequence[int]] = None, colonies_sort: Optional[Sequence[int]] = None, ships_sort: Optional[Sequence[int]] = None, queues_sort: Optional[Sequence[int]] = None, replay_animate: bool = True, replay_fast: bool = False, replay_view_rect: bool = True, replay_grid: bool = False, design_to_hit: bool = False, design_condensed: bool = False, designs_hide_obsolete: bool = False, designs_stats_view: bool = False, scenario_page: int = 1, designs_tab: int = 0, empires_tab: int = 0, galaxy_map_names: bool = False, galaxy_map_distances: bool = False, cargo_step: int = 2, units_step: int = 2, set_queue_tab: int = 0, colonies_tab: int = 0) -> Dict[str, Any]:
     """The Empire Options switches and what the windows remember. Only auto_claim_colonized changes the
     game. Sort keys are five column numbers plus one, newest first, 0 for none.
 
@@ -1290,6 +1317,9 @@ def interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: boo
         a hundred, 4 all.
     units_step: How much a click moves in Launch \\ Recover Units: 0 one, 1 five, 2 ten (the
         default), 3 all.
+    set_queue_tab: The tab Set Construction Queue opens on (0 Ships, 1 Facilities, 2 Units, 3
+        Upgrades).
+    colonies_tab: The Colonies window's tab (0 General to 8 Orders).
     """
     return {
         'show_log_at_turn_start': _bool(show_log_at_turn_start, 'interface_options.show_log_at_turn_start'),
@@ -1344,6 +1374,8 @@ def interface_options(show_log_at_turn_start: bool = True, confirm_end_turn: boo
         'galaxy_map_distances': _bool(galaxy_map_distances, 'interface_options.galaxy_map_distances'),
         'cargo_step': _int(cargo_step, 'interface_options.cargo_step'),
         'units_step': _int(units_step, 'interface_options.units_step'),
+        'set_queue_tab': _int(set_queue_tab, 'interface_options.set_queue_tab'),
+        'colonies_tab': _int(colonies_tab, 'interface_options.colonies_tab'),
     }
 
 
@@ -1401,6 +1433,7 @@ COMMAND_KINDS = (
     'set_repair_priorities',
     'set_design_types',
     'set_colony_types',
+    'set_queue_types',
     'set_empire_options',
     'set_email',
     'set_ministers',
@@ -1417,6 +1450,7 @@ TYPES = (
     'resources',
     'queue_target',
     'queue_item',
+    'queue_type',
     'design',
     'design_entry',
     'research_project',

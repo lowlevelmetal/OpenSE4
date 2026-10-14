@@ -483,7 +483,9 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
         if (!c || c->owner != me) continue;
         if (!colonies_.empty() && std::find(colonies_.begin(), colonies_.end(), c->planet) == colonies_.end()) continue;
         ++colonyCount;
-        const int pct = scrapPercent(ui, c->planet);
+        // Scrap Facil Types refunds the setting alone, no Resource
+        // Reclamation (spec 02 §6.6, confirmed: binary).
+        const int pct = game::facilityScrapPercent(r, s, me, c->planet, true);
         std::map<uint32_t, int> here;
         for (uint32_t f : c->facilities) ++here[f];
         for (const auto& [f, n] : here) {

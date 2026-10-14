@@ -532,7 +532,9 @@ void transferColony(GameState& s, ObjectId planet, EmpireId to) {
     if (!c || !validEmpire(s, to) || c->owner == to) return;
     c->owner = to;
     c->homeworld = false;
-    c->queue = ConstructionQueue{};  // the old owner's orders and designs do not carry over
+    // The queue is cleared as Clear Queue clears it: the old owner's items and
+    // waypoint go, emergency mode and its counter stay (spec 02 §6.4, confirmed: binary).
+    economy::clearQueue(c->queue);
     c->minister = false;
     explore(s, to, s.galaxy.object(planet).system);
 }

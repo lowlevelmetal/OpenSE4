@@ -134,7 +134,7 @@ def build_facilities(player, view, parts):
         if f is None:
             continue
         item = cmd.queue_item(kind="facility", facility=f.id)
-        # The engine says whether the queue takes it (restrictions, population...).
+        # The engine says whether the queue takes it (its slots, one space yard, research).
         if player.query("queue_item_problem", planet=colony, item=item).problem:
             continue
         commands.append(cmd.queue_add(target=colony, item=item))

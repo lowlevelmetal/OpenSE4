@@ -4,18 +4,21 @@
 
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 #include "client/script/items.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/ai_data.hpp"
+#include "game/combat.hpp"
 #include "game/setup.hpp"
 
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <format>
+#include <span>
 #include <utility>
 
 namespace opense4::client::classic {
@@ -324,15 +327,7 @@ public:
         Dialog d(ui, "Ministers", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         const game::Empire& me = ui.me();
-        const bool completeAi = me.ministerAll;
         d.beginContent();
-        ImGui::BeginGroup();
-        lamp(ui, completeAi, 16);
-        ImGui::SameLine();
-        ImGui::TextUnformatted(completeAi ? "Complete AI is on: the computer runs the whole empire."
-                                         : "Complete AI is off: the ministers below handle only their own areas.");
-        ImGui::EndGroup();
-        ImGui::Spacing();
         const float col = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         // Room below the lists for the new-vehicle switch, the style switch and picker, and a status line.
         const float below = ImGui::GetFrameHeightWithSpacing() * 5 + ImGui::GetStyle().ItemSpacing.y * 2;
@@ -367,17 +362,29 @@ public:
         d.beginButtons();
         if (d.button("Select All")) status_.issue(ui, cmd::SetMinisters{.areas = game::kAllMinisters});
         if (d.button("Select None")) status_.issue(ui, cmd::SetMinisters{.areas = 0u});
-        if (d.button("Indiv. On")) status_.issue(ui, cmd::SetMinisters{.individual = true});
-        if (d.button("Indiv. Off")) status_.issue(ui, cmd::SetMinisters{.individual = false});
+        // Indiv. On and Off ask first; Complete AI does not (spec 02 §10, confirmed: binary).
+        if (d.button("Indiv. On")) {
+            individualOn_ = true;
+            confirm_.open("Turn individual ministers ON for all ships and planets?", "Confirm");
+        }
+        if (d.button("Indiv. Off")) {
+            individualOn_ = false;
+            confirm_.open("Turn individual ministers OFF for all ships and planets?", "Confirm");
+        }
         d.spacer();
-        if (d.tab("Complete AI On", completeAi, !completeAi)) status_.issue(ui, cmd::SetMinisters{.completeAi = true});
-        if (d.tab("Complete AI Off", !completeAi, completeAi)) status_.issue(ui, cmd::SetMinisters{.completeAi = false});
+        // Plain buttons: Complete AI is a bulk change, not a state the window
+        // shows (spec 02 §10, confirmed: binary).
+        if (d.button("Complete AI On")) status_.issue(ui, cmd::SetMinisters{.completeAi = true});
+        if (d.button("Complete AI Off")) status_.issue(ui, cmd::SetMinisters{.completeAi = false});
         d.close();
+        if (confirm_.draw(ui)) status_.issue(ui, cmd::SetMinisters{.individual = individualOn_});
         return d.keepOpen();
     }
 
 private:
     CommandStatus status_;
+    ConfirmPopup confirm_;
+    bool individualOn_ = true;
 
     // The personality set the ministers' AI files come from (spec 05 §7.2).
     // OpenSE4 lets the player change it during the game.
@@ -755,7 +762,8 @@ public:
             switch (page_) {
                 case 0: changed |= movementPage(ui, st); break;
                 case 1: changed |= firingPage(ui, st); break;
-                case 2: changed |= launchingPage(ui, st); break;
+                case 2: changed |= damagePage(ui, st); break;
+                case 3: changed |= launchingPage(ui, st); break;
                 default: changed |= formationPage(ui, st); break;
             }
             pageEnd_ = ImGui::GetCursorScreenPos().y;
@@ -767,22 +775,17 @@ public:
         ui.tag("strategies:page", ImGui::GetItemRectMin(), ImVec2(ImGui::GetItemRectMax().x, std::min(ImGui::GetItemRectMax().y, pageEnd_ + ui.px(4))));
 
         d.beginButtons();
-        static constexpr std::array<const char*, 4> kPages{"Movement", "Firing", "Launching", "Formation"};
+        // The original's five pages (spec 04 §16, confirmed: binary).
+        static constexpr std::array<const char*, 5> kPages{"Movement", "Firing", "Damage", "Launching", "Formation"};
         ImVec2 pagesMin;
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < int(kPages.size()); ++i) {
             if (d.tab(kPages[size_t(i)], page_ == i)) page_ = i;
             if (i == 0) pagesMin = ImGui::GetItemRectMin();
         }
         ui.tag("strategies:pages", pagesMin, ImGui::GetItemRectMax());
         d.spacer();
-        if (d.button("Add")) {
-            ruleset::CombatStrategy st = !ui.rules().data().combatStrategies.empty() ? ui.rules().data().combatStrategies.front()
-                                         : !list.empty()                            ? list[size_t(selected_)]
-                                                                                    : ruleset::CombatStrategy{};
-            st.name = "New Strategy";
-            status_.issue(ui, cmd::SetStrategy{-1, st});
-            if (status_.error.empty()) selected_ = int(ui.me().strategies.size()) - 1;
-        }
+        // Add asks for the name and makes the original's new strategy (spec 04 §16).
+        if (d.button("Add")) namePrompt_.open("Enter Strategy Name", "Enter Strategy Name", "");
         if (d.button("Copy", !list.empty())) {
             ruleset::CombatStrategy st = list[size_t(selected_)];
             st.name = "Copy of " + st.name;
@@ -795,6 +798,10 @@ public:
         status_.draw();
         ImGui::PopTextWrapPos();
         d.close();
+        if (const std::optional<std::string> name = namePrompt_.draw(ui)) {
+            status_.issue(ui, cmd::SetStrategy{-1, game::combat::newStrategyRecord(*name)});
+            if (status_.error.empty()) selected_ = int(ui.me().strategies.size()) - 1;
+        }
         return d.keepOpen();
     }
 
@@ -866,7 +873,12 @@ private:
             }
             ImGui::EndTable();
         }
-        ImGui::Spacing();
+        return changed;
+    }
+
+    // The Damage page: when a target counts as done with (spec 04 §16).
+    bool damagePage(UiContext& ui, ruleset::CombatStrategy& st) {
+        bool changed = false;
         heading(ui, "Switching targets");
         wrappedDim("Move on to a fresh target once the current one has taken this share of its structure.");
         for (const char* what : {"Ship", "Planet", "Fighter Group", "Satellite Group"}) {
@@ -879,19 +891,46 @@ private:
         return changed;
     }
 
+    // A pick list of the original's counts (spec 04 §16, confirmed: binary);
+    // a count from a data file that is not in it shows as it is.
+    static bool countList(UiContext& ui, const char* id, std::string& value, std::span<const int> counts) {
+        bool changed = false;
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        ImGui::SetNextItemWidth(ui.px(120));
+        // Input scripts find the list by its name (the box itself, open or not).
+        script::reportItem(id, at, ImVec2(at.x + ui.px(120), at.y + ImGui::GetFrameHeight()));
+        if (ImGui::BeginCombo(id, value.c_str())) {
+            for (int n : counts) {
+                const std::string text = std::to_string(n);
+                if (ImGui::Selectable(text.c_str(), text == value) && text != value) {
+                    value = text;
+                    changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        return changed;
+    }
+
     bool launchingPage(UiContext& ui, ruleset::CombatStrategy& st) {
+        static constexpr std::array<int, 8> kFighterGroups{5, 8, 10, 15, 20, 30, 40, 50};
+        static constexpr std::array<int, 8> kDronesPerTarget{1, 2, 3, 5, 8, 10, 15, 20};
         bool changed = false;
         heading(ui, "Fighters");
-        fieldLabel(ui, "Fighters per group", 170);
-        ImGui::SetNextItemWidth(ui.px(220));
-        changed |= intSlider("Fighters Launch Group Amount", valueRef(st, "Fighters Launch Group Amount", "10"), 1, 100);
+        fieldLabel(ui, "Fighter Group Size", 170);
+        changed |= countList(ui, "##Fighter Group Size", valueRef(st, "Fighters Launch Group Amount", "10"), kFighterGroups);
         wrappedDim("How many fighters leave a carrier together as one group.");
+        ImGui::Spacing();
+        heading(ui, "Drones");
+        fieldLabel(ui, "Drones Per Target", 170);
+        changed |= countList(ui, "##Drones Per Target", valueRef(st, "Drones Per Target", "3"), kDronesPerTarget);
+        wrappedDim("How many drones the computer sends at each target.");
         // Anything the other pages do not cover (e.g. fields added by a mod).
         bool header = false;
         for (auto& [k, v] : st.settings) {
             if (k.starts_with("Primary Movement") || k.starts_with("Secondary Movement") || k.starts_with("Targeting Priority") ||
                 k.starts_with("Use Type Priority") || k.starts_with("Type Priority") || k.starts_with("Dont Fire On") ||
-                k.starts_with("Damage ") || k.starts_with("Break Formation") || k == "Fighters Launch Group Amount")
+                k.starts_with("Damage ") || k.starts_with("Break Formation") || k == "Fighters Launch Group Amount" || k == "Drones Per Target")
                 continue;
             if (!header) {
                 ImGui::Spacing();
@@ -924,6 +963,7 @@ private:
 
     int selected_ = 0;
     int page_ = 0;
+    shipui::TextPrompt namePrompt_;   // Add's "Enter Strategy Name"
     std::string nameDraft_;
     int nameFor_ = -1;
     bool editingName_ = false;

@@ -16,20 +16,21 @@ click item:Strategies in=empire-status
 wait-window strategies
 click item:Copy in=strategies
 wait-for item:"Copy of *" in=strategies
-click item:Launching in=strategies
-# The slider changes the strategy (a command of the game) once it is let go.
-repeat 2 until { command = "SetStrategy" }
-  drag item:"Fighters Launch Group Amount"@5,50% in=strategies to item:"Fighters Launch Group Amount"@-3,50% in=strategies
-end
-repeat 2 until { command = "SetStrategy" }
-  drag item:"Fighters Launch Group Amount"@-3,50% in=strategies to item:"Fighters Launch Group Amount"@40%,50% in=strategies frames=20
-end
-# The Firing page's sliders lie below its table: the wheel scrolls to them.
-click item:Firing in=strategies
-wheel item:"Rank (1 = first)" in=strategies -10
+# The Damage page's sliders change the strategy (a command of the game) once they are let go.
+click item:Damage in=strategies
 wait-for item:"Damage Percent Per Ship" in=strategies
 repeat 2 until { command = "SetStrategy" }
   drag item:"Damage Percent Per Ship"@-3,50% in=strategies to item:"Damage Percent Per Ship"@50%,50% in=strategies
+end
+repeat 2 until { command = "SetStrategy" }
+  drag item:"Damage Percent Per Planet"@-3,50% in=strategies to item:"Damage Percent Per Planet"@40%,50% in=strategies frames=20
+end
+# The Launching page's pick lists: Fighter Group Size takes one of the original's counts.
+click item:Launching in=strategies
+repeat 2 until { command = "SetStrategy" }
+  click item:"##Fighter Group Size" in=strategies
+  wait-for item:"15"
+  click item:"15"
 end
 key Escape
 wait-closed strategies

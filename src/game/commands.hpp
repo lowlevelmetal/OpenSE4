@@ -96,12 +96,16 @@ struct Rename {              // vehicle, fleet, design or planet
 // style the vehicle's list becomes a Move To that sector (only when the
 // vehicle can move and stands elsewhere), then Scrap, put straight onto it
 // without the Scrap window's checks; the Scrap order makes its test when it
-// is carried out (spec 03 §15).
+// is carried out (spec 03 §15). Scrap Facilities with `typeWide` is the
+// Colonies window's Scrap Facil Types, one command per facility: it refunds
+// only `Scrap Facility Percent Returned`, without Resource Reclamation (spec
+// 02 §6.6, confirmed: binary; save format 10).
 struct Scrap {
     VehicleId vehicle;
     ObjectId facilityPlanet;
     int32_t facilitySlot = -1;
     Location moveFirst;
+    bool typeWide = false;
 };
 struct Mothball { VehicleId vehicle; bool mothball = true; };   // Mothball, or Unmothball
 struct Analyze { VehicleId vehicle; };
@@ -285,6 +289,11 @@ struct SetStrategy { int32_t index = -1; ruleset::CombatStrategy strategy; bool 
 struct SetRepairPriorities { std::vector<std::string> priorities; };
 struct SetDesignTypes { std::vector<std::string> designTypes; };
 struct SetColonyTypes { std::vector<std::string> colonyTypes; };
+// Replaces the empire's queue types (Empire::queueTypes, spec 02 §6.4): Select
+// Queue Type's Add Type and Delete Type. At most kMaxQueueTypes types of at
+// most kMaxQueueTypeItems items; names are not checked (the window asks for
+// one); the items keep no progress. Save format 10.
+struct SetQueueTypes { std::vector<QueueType> queueTypes; };
 struct SetEmpireOptions {
     std::optional<bool> aiMinimalChanges;
     std::optional<std::string> passwordHash;
@@ -303,7 +312,7 @@ struct SetMinisters {
     std::optional<bool> newVehicles;        // new vehicles and launched units start under minister control
     std::optional<bool> individual;         // "Indiv. Ministers On/Off": the flag on every own vehicle, fleet and colony
     std::optional<bool> fleets;             // the flag on every own fleet (a player's orders after a Players-window switch, spec 06 §7 Q84)
-    std::optional<bool> completeAi;         // "Complete AI On/Off": all areas, every flag, the new-vehicle option and ministerAll
+    std::optional<bool> completeAi;         // "Complete AI On/Off": all areas, every flag and the new-vehicle option (Off also clears ministerAll)
 };
 
 // ---- Ship Movement and Ship Orders options (spec 03 §6.2, §6.4) ----------------------------------
@@ -356,7 +365,7 @@ using Command = std::variant<
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
     cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader, cmd::ModCommand,
-    cmd::CloakVehicles, cmd::LaunchUnitsNow, cmd::RecoverUnitsNow>;
+    cmd::CloakVehicles, cmd::LaunchUnitsNow, cmd::RecoverUnitsNow, cmd::SetQueueTypes>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {
@@ -398,6 +407,11 @@ std::string defaultFleetName(const GameState& s, EmpireId empire);
 // per resource; a fighter or satellite group returns that per unit.
 Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v);
 Resources unmothballCharge(const Rules& r, const GameState& s, const Vehicle& v);
+// The refund percentage of a facility scrapped on `planet` (spec 02 §6.6,
+// confirmed: binary): on one planet, the larger of `Scrap Facility Percent
+// Returned` and the empire's best Resource Reclamation in that sector; with
+// `typeWide` (Scrap Facil Types), the setting alone.
+int facilityScrapPercent(const Rules& r, const GameState& s, EmpireId empire, ObjectId planet, bool typeWide);
 
 // Queue helpers shared with the economy and the UI.
 ConstructionQueue* findQueue(GameState& s, EmpireId empire, const cmd::QueueTarget& t);

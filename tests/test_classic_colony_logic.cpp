@@ -366,6 +366,58 @@ TEST_CASE("classic ui: facility upgrades and choices") {
         CHECK(apply(r, s, kMe, cmd::QueueAdd{{home.planet, {}}, item, -1}).ok);
     }
     CHECK(possibleUpgrades(r, s, kMe, homeworld(s, kMe)).empty());
+    // Set Construction Queue still lists it, and the queue refuses it (spec 06 §1.8.3).
+    const auto listed = possibleUpgrades(r, s, kMe, homeworld(s, kMe), true);
+    REQUIRE(upgradesMine(listed));
+    for (const QueueItem& item : listed)
+        CHECK(queueItemProblem(r, s, kMe, cmd::QueueTarget{home.planet, {}}, item) == "That upgrade is already in the construction queue");
+}
+
+TEST_CASE("classic ui: Set Construction Queue's groups, amounts and free slots (spec 06 §1.8.3, spec 02 §6.5)") {
+    // Groups A to Z ignoring case, each keeping its rows' order.
+    const auto groups = groupedRows({"scout", "Attack Ship", "", "Scout", "attack ship", "Attack Ship"});
+    REQUIRE(groups.size() == 5);
+    CHECK(groups[0].first.empty());
+    CHECK(groups[1].first == "Attack Ship");
+    CHECK(groups[1].second == std::vector<size_t>{1, 5});
+    CHECK(groups[2].first == "attack ship");
+    CHECK(groups[3].first == "scout");   // equal ignoring case: first seen first
+    CHECK(groups[4].first == "Scout");
+
+    // One Turn's Worth: the most that one turn's rate builds from scratch.
+    CHECK(oneTurnsWorth(Resources{100, 0, 0}, Resources{1000, 0, 0}) == 10);
+    CHECK(oneTurnsWorth(Resources{100, 0, 0}, Resources{999, 0, 0}) == 9);
+    // trunc(n × cost / rate + 0.9999) is 1 up to 1.0001 times the rate.
+    CHECK(oneTurnsWorth(Resources{10000, 0, 0}, Resources{10001, 0, 0}) == 1);
+    CHECK(oneTurnsWorth(Resources{5000, 0, 0}, Resources{10001, 0, 0}) == 2);
+    CHECK(oneTurnsWorth(Resources{5000, 0, 0}, Resources{10000, 0, 0}) == 2);
+    CHECK(oneTurnsWorth(Resources{5001, 0, 0}, Resources{10000, 0, 0}) == 1);
+    // Every resource with a rate counts; one without a rate does not.
+    CHECK(oneTurnsWorth(Resources{100, 50, 900}, Resources{1000, 200, 0}) == 4);
+    CHECK(oneTurnsWorth(Resources{100, 0, 0}, Resources{0, 0, 0}) == 1);
+    CHECK(oneTurnsWorth(Resources{2000, 0, 0}, Resources{1000, 0, 0}) == 1);
+    CHECK(oneTurnsWorth(Resources{0, 0, 0}, Resources{1000, 0, 0}) == kMaxBatch);
+
+    // Add Type: not empty, not listed yet, under the limit.
+    const std::vector<std::string> types{"Mining", "Research"};
+    CHECK(canAddType(types, "Farming", 255));
+    CHECK_FALSE(canAddType(types, "", 255));
+    CHECK_FALSE(canAddType(types, "Mining", 255));
+    CHECK_FALSE(canAddType(types, "Farming", 2));
+
+    // Free slots count every facility of every queued item.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(3, 2, 12);
+    Colony& home = homeworld(s, kMe);
+    home.facilities.clear();
+    home.queue.items.clear();
+    const int slots = facilitySlots(r, s, home);
+    QueueItem labs;
+    labs.kind = QueueItem::Kind::Facility;
+    labs.facility = facilityIndex(r, "Test Lab");
+    labs.count = 2;
+    home.queue.items.push_back(labs);
+    CHECK(freeFacilitySlots(r, s, home) == std::max(0, slots - 2));
 }
 
 TEST_CASE("classic ui: scrapping one facility type everywhere") {
@@ -380,6 +432,7 @@ TEST_CASE("classic ui: scrapping one facility type everywhere") {
     const auto commands = scrapFacilityType(s, kMe, mine);
     REQUIRE(commands.size() == mines);
     for (size_t i = 1; i < commands.size(); ++i) CHECK(commands[i - 1].facilitySlot > commands[i].facilitySlot);
+    for (const auto& c : commands) CHECK(c.typeWide);   // Scrap Facil Types' refund: the setting alone (spec 02 §6.6)
     CHECK(scrapFacilityType(s, kMe, mine, {homeworld(s, kOther).planet}).empty());
     for (const auto& c : commands) CHECK(apply(r, s, kMe, c).ok);
     const Colony& after = homeworld(s, kMe);

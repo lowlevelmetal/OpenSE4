@@ -55,6 +55,7 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
         e.systemsToAvoid.clear();
         e.taggedMinefields.clear();
         e.repairPriorities.clear();
+        e.queueTypes.clear();  // its queue types name its designs and plans
         e.aiState = 0;
         e.aiTurnsInState = 0;
         e.script = {};     // a script player's memory is its own (docs/sdk/ai-protocol.md §2)

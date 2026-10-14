@@ -26,6 +26,7 @@ wait-step 6
 click item:##type in=create-design
 wait-for tag:create-design:type:attack-ship
 click tag:create-design:type:attack-ship
+click item:OK in="Select Design Type"
 wait-step 7
 click item:##tile in=create-design nth=2
 # Under the lock Esc is refused.
@@ -56,5 +57,6 @@ wait-step 6
 click item:##type in=create-design
 wait-for tag:create-design:type:attack-ship
 click tag:create-design:type:attack-ship
+click item:OK in="Select Design Type"
 wait-step 7
 assert { design_type_chosen = "Attack Ship" }

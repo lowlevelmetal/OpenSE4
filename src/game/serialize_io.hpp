@@ -398,6 +398,9 @@ void io(Ar& ar, Knowledge& k) {
     fields(ar, k.explored, k.present, k.knownWarpLink, k.lastSeen, k.visibleVehicles, k.seenDesigns, k.notes);
 }
 
+template <class Ar> void io(Ar& ar, QueueItem& q) { fields(ar, q.kind, q.design, q.facility, q.count, q.spent); }
+template <class Ar> void io(Ar& ar, QueueType& t) { fields(ar, t.name, t.items); }
+
 template <class Ar>
 void io(Ar& ar, InterfaceOptions& o) {
     fields(ar, o.showLogAtTurnStart, o.confirmEndTurn, o.confirmScrap, o.confirmStellarManipulation, o.confirmDeleteResearch,
@@ -417,6 +420,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     if (formatVersion(ar) >= 10) fields(ar, o.empiresTab);   // format 9 files open Empires on Treaty
     if (formatVersion(ar) >= 10) fields(ar, o.galaxyMapNames, o.galaxyMapDistances);   // format 9 files keep the defaults
     if (ar.version() >= 10) fields(ar, o.cargoStep, o.unitsStep);                     // format 9 files: Ten
+    if (ar.version() >= 10) fields(ar, o.setQueueTab, o.coloniesTab);   // format 9 files keep the defaults
 }
 
 template <class Ar> void io(Ar& ar, Controller& c) { fields(ar, c.kind, c.mod, c.player, c.slot); }
@@ -441,6 +445,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.politicsMark);
     if (formatVersion(ar) >= 9) fields(ar, e.controller, e.script, e.modData);   // format 8 had no script players or mods' data
     if (formatVersion(ar) >= 10) fields(ar, e.statistics);   // format 9 had no statistics record
+    if (formatVersion(ar) >= 10) fields(ar, e.queueTypes);   // format 9 had no queue types
     // The computer player's notes of the turn are not saved.
     unsaved(ar, e.aiNotes);
 }
@@ -450,7 +455,6 @@ void io(Ar& ar, Empire& e) {
 template <class Ar> void io(Ar& ar, PopulationGroup& p) { fields(ar, p.race, p.millions); }
 template <class Ar> void io(Ar& ar, UnitStack& u) { fields(ar, u.design, u.count); }
 template <class Ar> void io(Ar& ar, Cargo& c) { fields(ar, c.population, c.units); }
-template <class Ar> void io(Ar& ar, QueueItem& q) { fields(ar, q.kind, q.design, q.facility, q.count, q.spent); }
 
 template <class Ar>
 void io(Ar& ar, ConstructionQueue& q) {
@@ -651,7 +655,11 @@ template <class Ar> void io(Ar& ar, cmd::DisbandFleet& c) { fields(ar, c.fleet);
 template <class Ar> void io(Ar& ar, cmd::SetFleetOptions& c) { fields(ar, c.fleet, c.formation, c.strategy); }
 template <class Ar> void io(Ar& ar, cmd::SetVehicleStrategy& c) { fields(ar, c.design, c.strategy); }
 template <class Ar> void io(Ar& ar, cmd::Rename& c) { fields(ar, c.vehicle, c.fleet, c.design, c.planet, c.name); }
-template <class Ar> void io(Ar& ar, cmd::Scrap& c) { fields(ar, c.vehicle, c.facilityPlanet, c.facilitySlot, c.moveFirst); }
+template <class Ar>
+void io(Ar& ar, cmd::Scrap& c) {
+    fields(ar, c.vehicle, c.facilityPlanet, c.facilitySlot, c.moveFirst);
+    if (formatVersion(ar) >= 10) fields(ar, c.typeWide);   // format 9 had no Scrap Facil Types refund
+}
 template <class Ar> void io(Ar& ar, cmd::Mothball& c) { fields(ar, c.vehicle, c.mothball); }
 template <class Ar>
 void io(Ar& ar, cmd::SetMinister& c) {
@@ -729,6 +737,7 @@ template <class Ar> void io(Ar& ar, cmd::SetFleetLeader& c) { fields(ar, c.fleet
 template <class Ar> void io(Ar& ar, cmd::ModCommand& c) { fields(ar, c.mod, c.name, c.vehicle, c.fleet, c.planet, c.empire, c.args); }
 template <class Ar> void io(Ar& ar, cmd::LaunchUnitsNow& c) { fields(ar, c.vehicle, c.planet, c.design, c.amount); }
 template <class Ar> void io(Ar& ar, cmd::RecoverUnitsNow& c) { fields(ar, c.vehicle, c.planet, c.group, c.design, c.amount); }
+template <class Ar> void io(Ar& ar, cmd::SetQueueTypes& c) { fields(ar, c.queueTypes); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

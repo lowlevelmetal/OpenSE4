@@ -239,7 +239,9 @@ facility of a colony. A vehicle is scrapped at once in a turn-based game; in
 a simultaneous game Scrap becomes its only order, carried out when it next
 acts. With `move_first` the vehicle first moves to that sector (the
 computer player's way of scrapping at a yard). Scrap Facilities acts at once
-in both turn styles.
+in both turn styles; it refunds the larger of the scrap setting and our best
+Resource Reclamation in that sector, or with `type_wide` (the Colonies
+window's Scrap Facil Types) the setting alone.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -247,6 +249,7 @@ in both turn styles.
 | `facility_planet` | object id, or null | Or the colony whose facility goes. |
 | `facility_slot` | int | That facility's position in the colony's list (-1 by default). |
 | `move_first` | location | Where to go before scrapping (no system: stay). |
+| `type_wide` | bool | Scrap Facil Types: refund the scrap setting only (false by default). |
 
 ```json
 {"kind": "scrap", "vehicle": 52}
@@ -882,6 +885,20 @@ Replaces our list of colony types.
 {"kind": "set_colony_types", "colony_types": ["Mining", "Research"]}
 ```
 
+### `set_queue_types`
+
+Replaces our queue types: the named queues Set Construction Queue's Fill
+Queue adds from. At most 255 types of at most 255 items each; what was paid
+into an item is not kept.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `queue_types` | list of queue_type | The types, in the order the window lists them. |
+
+```json
+{"kind": "set_queue_types", "queue_types": [{"name": "Outpost", "items": [{"kind": "facility", "facility": 6, "count": 2}]}]}
+```
+
 ### `set_empire_options`
 
 Empire options; a null field is left as it is.
@@ -1199,6 +1216,15 @@ yard. Name one.
 | `count` | int | How many are built together (1 by default); an upgrade's count is fixed when it is queued. |
 | `spent` | resources | What was paid into it so far (the engine keeps this; leave it out). |
 
+### `queue_type`
+
+A named list of queue items with their counts (our queue types).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | text | Its name. |
+| `items` | list of queue_item | Its items, in order. |
+
 ### `queue_item_kind`
 
 | Value | Meaning |
@@ -1397,6 +1423,8 @@ plus one, newest first, 0 for none.
 | `galaxy_map_distances` | bool | The Galaxy Map shows distances when it asks for a warp point's destination. |
 | `cargo_step` | int | How much a click moves in Transfer Cargo: 0 one, 1 five, 2 ten (the default), 3 a hundred, 4 all. |
 | `units_step` | int | How much a click moves in Launch \ Recover Units: 0 one, 1 five, 2 ten (the default), 3 all. |
+| `set_queue_tab` | int | The tab Set Construction Queue opens on (0 Ships, 1 Facilities, 2 Units, 3 Upgrades). |
+| `colonies_tab` | int | The Colonies window's tab (0 General to 8 Orders). |
 
 ## Enumerations the commands use
 

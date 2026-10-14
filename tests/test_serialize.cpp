@@ -132,6 +132,7 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(UnitStack);
     CHECK_ALL_FIELDS(Cargo);
     CHECK_ALL_FIELDS(QueueItem);
+    CHECK_ALL_FIELDS(QueueType);
     CHECK_ALL_FIELDS(ConstructionQueue);
     CHECK_ALL_FIELDS(Colony);
     CHECK_ALL_FIELDS(DesignEntry);
@@ -567,8 +568,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x4a1dac62b9033b67ull;
-    constexpr size_t kGoldenSize = 1978;
+    constexpr uint64_t kGoldenChecksum = 0x43e9c312f41d793full;
+    constexpr size_t kGoldenSize = 1984;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -594,6 +595,8 @@ void dropFormat10(GameState& g) {
         e.interfaceOptions.empiresTab = 0;
         e.interfaceOptions.galaxyMapNames = e.interfaceOptions.galaxyMapDistances = false;
         e.interfaceOptions.cargoStep = e.interfaceOptions.unitsStep = 2;
+        e.interfaceOptions.setQueueTab = e.interfaceOptions.coloniesTab = 0;
+        e.queueTypes.clear();
     }
     for (Vehicle& v : g.vehicles) {
         for (Order& o : v.orders) {
@@ -707,7 +710,8 @@ TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture
 // Names and destination-mode Show Distances (spec 06 §2.6, spec 08 §3.6.7) and a
 // Construct order's size (Order::planetSize, spec 06 §1.3), a repeating list's
 // turn (Vehicle::repeatShift, spec 03 §8), a cargo order's kind (Order::cargo)
-// and the cargo windows' steps (InterfaceOptions::cargoStep, unitsStep). Games
+// the cargo windows' steps (InterfaceOptions::cargoStep, unitsStep), the queue
+// types and the Colonies window's tab (Empire::queueTypes, coloniesTab). Games
 // saved in format 9 (OpenSE4 0.11 and 0.12) still load, without them.
 TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, tabs, switches and a Construct order's size") {
     GameState g = busyGame();
@@ -733,6 +737,8 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     load.cargo = CargoKind::Troops;   // a cargo order by kind (spec 03 §8)
     g.vehicles[0].orders.push_back(load);
     g.empires[0].interfaceOptions.cargoStep = 4;
+    g.empires[0].interfaceOptions.coloniesTab = 5;
+    g.empires[0].queueTypes = {QueueType{"Frontier", {}}};   // Select Queue Type's own list (spec 02 §6.4)
     auto now = deserializeState(serializeState(g));
     REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
     CHECK(stateChecksum(*now) == stateChecksum(g));
@@ -746,6 +752,9 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     CHECK(now->vehicles[0].repeatShift == 3);
     CHECK(now->vehicles[0].orders.back().cargo == CargoKind::Troops);
     CHECK(now->empires[0].interfaceOptions.cargoStep == 4);
+    CHECK(now->empires[0].interfaceOptions.coloniesTab == 5);
+    REQUIRE(now->empires[0].queueTypes.size() == 1);
+    CHECK(now->empires[0].queueTypes[0].name == "Frontier");
 
     // The same game as format 9 wrote it: none of them, version 9 in the envelope.
     const std::vector<uint8_t> current = serializeState(g);
@@ -770,6 +779,8 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     CHECK(before->vehicles[0].repeatShift == 0);
     CHECK(before->vehicles[0].orders.back().cargo == CargoKind::None);
     CHECK(before->empires[0].interfaceOptions.cargoStep == 2);
+    CHECK(before->empires[0].interfaceOptions.coloniesTab == 0);
+    CHECK(before->empires[0].queueTypes.empty());
     CHECK(stateChecksum(*before) == stateChecksum(nine));
 }
 

@@ -5,6 +5,7 @@
 #include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
+#include "client/classic/screens/type_picker.hpp"
 
 #include "game/design.hpp"
 #include "game/economy.hpp"
@@ -226,8 +227,9 @@ private:
                 const bool hovered = ImGui::IsItemHovered();
                 if (hovered) hovered_ = p.id;
                 if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) report_.openPlanet(p.id);
-                // Left-click: the window closes and the main window shows the planet.
-                if (clicked) {
+                // Left-click: the window closes and the main window shows the
+                // planet; with Shift it does nothing (spec 06 §1.8.1).
+                if (clicked && !ImGui::GetIO().KeyShift) {
                     ui.requests.selectPlanet = p.id;
                     leave = true;
                 }
@@ -427,6 +429,11 @@ public:
     }
 
     bool draw(UiContext& ui) override {
+        if (!restored_) {
+            // The tab comes back from the empire (spec 06 §1.8.3, spec 08 §3.6.7).
+            setTab(static_cast<ColonyTab>(std::min<int>(ui.options().coloniesTab, static_cast<int>(ColonyTab::Count) - 1)));
+            restored_ = true;
+        }
         if (revision_ != ui.session.revision()) refresh(ui);
         bool keep = true;
         {
@@ -476,7 +483,10 @@ public:
                 pendingPlanetPick_ = true;
                 pickRow_ = 0;
             }
-            if (d.close()) return false;
+            if (d.close()) {
+                storeTab(ui);
+                return false;
+            }
             report_.draw(ui);
             scrapTypes_.draw(ui, status_);
             planetPicker(ui);
@@ -485,9 +495,11 @@ public:
             keep = d.keepOpen();
         }
         if (goto_) {
+            storeTab(ui);
             ui.requests.selectPlanet = *goto_;
             return false;
         }
+        if (!keep) storeTab(ui);
         return keep;
     }
 
@@ -496,6 +508,13 @@ private:
         if (t == tab_) return;
         tab_ = t;
         tableId_ = std::format("##colonies{}", static_cast<int>(t));
+    }
+
+    // The tab is stored with the empire when the window closes (spec 06 §1.8.3).
+    void storeTab(UiContext& ui) const {
+        game::InterfaceOptions o = ui.options();
+        o.coloniesTab = static_cast<uint8_t>(tab_);
+        ui.setOptions(o);
     }
 
     void refresh(UiContext& ui) {
@@ -831,7 +850,6 @@ private:
             } else if (c) {
                 typing_ = planet;
                 pendingColonyType_ = true;
-                chosenType_ = -1;
             }
             ImGui::CloseCurrentPopup();
         } else if (cancel) {
@@ -840,46 +858,42 @@ private:
         ImGui::EndPopup();
     }
 
+    // Select Colony Type (spec 02 §10, spec 06 §7 Q90, confirmed: binary): the
+    // empire's colony types with Add Type and Delete Type, whose changes go
+    // out at once as cmd::SetColonyTypes.
     void colonyTypePopup(UiContext& ui) {
-        const char* id = "Set Colony Type###colonytype";
+        const game::GameState& s = ui.state();
         if (pendingColonyType_) {
-            ImGui::OpenPopup(id);
+            TypeListPicker::Config config;
+            config.title = "Select Colony Type";
+            config.addTitle = "Colony Type Name";
+            config.limit = kMaxColonyTypes;
+            if (typing_ && typing_->index() < s.galaxy.objects.size()) config.text = std::format("Colony type for {}:", s.galaxy.object(*typing_).name);
+            typePicker_.open(std::move(config));
             pendingColonyType_ = false;
         }
-        if (!beginModal(ui, id, {380, 480})) return;
-        const auto& types = ui.me().colonyTypes;
-        const game::GameState& s = ui.state();
-        if (typing_ && *typing_ != game::ObjectId{} && typing_->index() < s.galaxy.objects.size())
-            ImGui::TextColored(kTextDim, "Colony type for %s:", s.galaxy.object(*typing_).name.c_str());
-        const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
-        beginList(ui, "##types", ImVec2(0, -footer), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
-        for (size_t i = 0; i < types.size(); ++i)
-            if (ImGui::Selectable(types[i].c_str(), chosenType_ == static_cast<int>(i), ImGuiSelectableFlags_AllowDoubleClick))
-                chosenType_ = static_cast<int>(i);
-        if (types.empty()) ImGui::TextColored(kTextDim, "No colony types are defined.");
-        endList(ui);
-        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        bool apply = chosenType_ >= 0 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
-        ImGui::BeginDisabled(chosenType_ < 0);
-        apply = ImGui::Button("Set Type", ImVec2(w, ui.px(26))) || apply;
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        const bool cancel = ImGui::Button("Cancel", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-        if (apply && typing_ && chosenType_ >= 0 && static_cast<size_t>(chosenType_) < types.size()) {
-            const std::string type = types[static_cast<size_t>(chosenType_)];
-            if (status_.issue(ui, game::cmd::SetColonyType{*typing_, type}))
-                status_.info(std::format("{} set to {}", s.galaxy.object(*typing_).name, type));
-            typing_.reset();
-            ImGui::CloseCurrentPopup();
-        } else if (cancel) {
-            typing_.reset();
-            ImGui::CloseCurrentPopup();
+        const std::vector<std::string>& types = ui.me().colonyTypes;
+        const TypeListPicker::Result res = typePicker_.drawPopup(ui, types);
+        if (res.added || res.deleted) {
+            std::vector<std::string> list = types;
+            if (res.added) list.push_back(*res.added);
+            if (res.deleted) std::erase(list, *res.deleted);
+            status_.issue(ui, game::cmd::SetColonyTypes{std::move(list)});
         }
-        ImGui::EndPopup();
+        if (res.chosen && typing_) {
+            if (status_.issue(ui, game::cmd::SetColonyType{*typing_, *res.chosen}))
+                status_.info(std::format("{} set to {}", s.galaxy.object(*typing_).name, *res.chosen));
+            typing_.reset();
+        } else if (res.cancelled) {
+            // Our client differs: the original empties the colony's type on
+            // Cancel; ours leaves it as it was (spec 02 §10).
+            typing_.reset();
+        }
     }
 
     std::vector<ColonyRow> rows_;
     uint64_t revision_ = 0;
+    bool restored_ = false;
     ColonyTab tab_ = ColonyTab::General;
     bool modsTab_ = false;   // the mods' columns shown (OpenSE4's own)
     std::string tableId_ = "##colonies0";
@@ -895,7 +909,7 @@ private:
     int pickRow_ = 0;
     std::optional<game::ObjectId> typing_;    // the planet whose colony type is being chosen
     bool pendingColonyType_ = false;
-    int chosenType_ = -1;
+    TypeListPicker typePicker_;
 };
 
 } // namespace

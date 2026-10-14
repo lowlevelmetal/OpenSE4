@@ -122,7 +122,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     c.push_back(cmd::SetFleetOptions{FleetId{9u}, 2, 3});
     c.push_back(cmd::SetVehicleStrategy{DesignId{4u}, 5});
     c.push_back(cmd::Rename{VehicleId{1u}, FleetId{2u}, DesignId{3u}, ObjectId{4u}, "New Name \xE2\x9C\x93"});
-    c.push_back(cmd::Scrap{VehicleId{11u}, ObjectId{12u}, 3});
+    c.push_back(cmd::Scrap{VehicleId{11u}, ObjectId{12u}, 3, {}, true});
     c.push_back(cmd::Mothball{VehicleId{13u}, false});
     c.push_back(cmd::SetMinister{VehicleId{14u}, ObjectId{15u}, true, false, FleetId{52u}});
     c.push_back(cmd::QueueAdd{yard, item, 2});
@@ -150,6 +150,13 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     c.push_back(cmd::SetRepairPriorities{{"Bases", "Ships", "Units"}});
     c.push_back(cmd::SetDesignTypes{{"Carrier"}});
     c.push_back(cmd::SetColonyTypes{{"Mining", "Farming"}});
+    {
+        QueueItem lab;
+        lab.kind = QueueItem::Kind::Facility;
+        lab.facility = 6;
+        lab.count = 2;
+        c.push_back(cmd::SetQueueTypes{{{"Outpost", {lab, item}}, {"Empty", {}}}});
+    }
     c.push_back(cmd::SetEmpireOptions{true, std::string("verifier")});
     c.push_back(cmd::SetEmpireOptions{std::nullopt, std::nullopt});
     c.push_back(cmd::SetMinisters{kAllMinisters, std::string("Aggressive"), true, false, std::nullopt, true});

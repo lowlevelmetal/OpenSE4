@@ -270,6 +270,7 @@ Our own affairs (docs/sdk/view.md, `my_empire`), with our vehicles, fleets, colo
 | `strategies` | `List[OwnStrategy]` | Our combat strategies. |
 | `design_types` | `List[str]` | Our design types. |
 | `colony_types` | `List[str]` | Our colony types. |
+| `queue_types` | `List[QueueType]` | Our queue types, which Fill Queue adds from. |
 | `repair_priorities` | `List[str]` | The order repairs are made in. |
 | `colony_type_choices` | `List[SpaceObject]` | New colonies waiting for us to choose their type (turn-based games). |
 | `colony_type_choice_ids` | `List[int]` | The ids of `colony_type_choices`. |

@@ -14,6 +14,7 @@
 #include "game/combat.hpp"
 #include "game/commands.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/events.hpp"
 #include "game/query.hpp"
@@ -25,6 +26,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <format>
 #include <functional>
 #include <memory>
 
@@ -1357,6 +1359,128 @@ TEST_CASE("economy: ships leave a queue that has lost its yard at the start of i
     CHECK(s.design(fighter).everBuilt);  // built at least once (spec 05 §2.3)
     CHECK_FALSE(s.design(ship).everBuilt);
     CHECK_FALSE(logged(s, kMe, "cannot build"));
+}
+
+TEST_CASE("economy: a queue refuses only what the original refuses (spec 02 §6.5)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = plainHome(r, s, {});   // no space yard
+    const cmd::QueueTarget q{home.planet, {}};
+    QueueItem warship;
+    warship.design = frigate(s, r, kMe);
+    // A ship on a colony without a yard, at the ship limit, on a colony
+    // without population: the queue takes it (the yard and the limit are met
+    // later, spec 02 §6.1 and §6.5).
+    s.options.maxShipsPerPlayer = shipCount(r, s, kMe);
+    CHECK(queueItemProblem(r, s, kMe, q, warship).empty());
+    home.population.clear();
+    CHECK(queueItemProblem(r, s, kMe, q, warship).empty());
+    QueueItem lab;
+    lab.kind = QueueItem::Kind::Facility;
+    lab.facility = facilityIndex(r, "Test Lab");
+    CHECK(queueItemProblem(r, s, kMe, q, lab).empty());
+    home.population = {{kMe, 1000}};
+
+    // Designs: none, another empire's, one beyond our technology.
+    QueueItem none;
+    none.design = DesignId{static_cast<uint32_t>(s.designs.size())};
+    CHECK(queueItemProblem(r, s, kMe, q, none) == "There is no such vehicle design");
+    QueueItem theirs;
+    theirs.design = frigate(s, r, kThem, "Corsair");
+    CHECK(queueItemProblem(r, s, kMe, q, theirs) == "We do not own the design of the Corsair");
+    QueueItem fast;
+    fast.design = addTestDesign(s, r, kMe, "Racer", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine II"});
+    s.empire(kMe).techLevels[techArea(r, "Test Propulsion").index()] = 1;
+    CHECK(queueItemProblem(r, s, kMe, q, fast) == "The Racer design is beyond our current technology to build");
+
+    // Facilities: one space yard, built or queued; research.
+    QueueItem yard;
+    yard.kind = QueueItem::Kind::Facility;
+    yard.facility = facilityIndex(r, "Test Space Yard");
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, yard}).ok);
+    CHECK(queueItemProblem(r, s, kMe, q, yard) == "A planet can have only one space yard");
+    home.queue.items.clear();
+    home.facilities.push_back(yard.facility);
+    CHECK(queueItemProblem(r, s, kMe, q, yard) == "A planet can have only one space yard");
+    QueueItem mine2;
+    mine2.kind = QueueItem::Kind::Facility;
+    mine2.facility = facilityIndex(r, "Test Mine II");
+    s.empire(kMe).techLevels[techArea(r, "Test Economics").index()] = 1;
+    CHECK(queueItemProblem(r, s, kMe, q, mine2) == "The Test Mine II is beyond our current technology");
+
+    // The slots count every facility of every queued item, not the items.
+    const int slots = facilitySlots(r, s, home);
+    REQUIRE(slots > 2);
+    lab.count = slots - 2;   // with the yard built: one slot left
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, lab}).ok);
+    lab.count = 1;
+    REQUIRE(queueItemProblem(r, s, kMe, q, lab).empty());
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, lab}).ok);
+    CHECK(queueItemProblem(r, s, kMe, q, lab) == std::format("There is room for only {} facilities on this planet", slots));
+    CHECK(queueItemProblem(r, s, kMe, q, mine2).starts_with("There is room"));   // the slots come before the research
+
+    // Upgrades: only a second one to the same target is refused.
+    home.queue.items.clear();
+    home.facilities = {facilityIndex(r, "Test Mine"), facilityIndex(r, "Test Mine")};
+    s.empire(kMe).techLevels[techArea(r, "Test Economics").index()] = 3;
+    QueueItem upgrade;
+    upgrade.kind = QueueItem::Kind::Upgrade;
+    upgrade.facility = mine2.facility;
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, upgrade}).ok);
+    CHECK(home.queue.items.front().count == 2);
+    CHECK(queueItemProblem(r, s, kMe, q, upgrade) == "That upgrade is already in the construction queue");
+}
+
+TEST_CASE("economy: Clear Queue's clear keeps the emergency and its counter (spec 02 §6.4)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = plainHome(r, s, {"Test Space Yard"});
+    QueueItem warship;
+    warship.design = frigate(s, r, kMe);
+    home.queue.items = {warship, warship};
+    home.queue.onHold = home.queue.repeat = home.queue.emergency = true;
+    home.queue.emergencyTurns = 3;
+    home.queue.slowTurns = 2;
+    home.queue.autoWaypoint = 4;
+    economy::clearQueue(home.queue);
+    CHECK(home.queue.items.empty());
+    CHECK_FALSE(home.queue.onHold);
+    CHECK_FALSE(home.queue.repeat);
+    CHECK(home.queue.autoWaypoint == -1);
+    CHECK(home.queue.emergency);
+    CHECK(home.queue.emergencyTurns == 3);
+    CHECK(home.queue.slowTurns == 2);
+
+    // A planet handed over by treaty keeps them too; the old owner's items go.
+    home.queue.items = {warship};
+    home.queue.autoWaypoint = 2;
+    const ObjectId planet = home.planet;
+    diplomacy::transferColony(s, planet, kThem);
+    const Colony& given = *s.colony(planet);
+    CHECK(given.owner == kThem);
+    CHECK(given.queue.items.empty());
+    CHECK(given.queue.autoWaypoint == -1);
+    CHECK(given.queue.emergency);
+    CHECK(given.queue.emergencyTurns == 3);
+}
+
+TEST_CASE("economy: Scrap Facil Types refunds the setting alone, a planet's scrap the reclamation too (spec 02 §6.6)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = plainHome(r, s, {"Test Lab", "Test Lab", "Test Recycler"});
+    const int setting = static_cast<int>(r.setting("Scrap Facility Percent Returned", 30));
+    REQUIRE(setting < 60);
+    CHECK(facilityScrapPercent(r, s, kMe, home.planet, false) == 60);   // the recycler's Resource Reclamation
+    CHECK(facilityScrapPercent(r, s, kMe, home.planet, true) == setting);
+    const Resources cost = Resources::from(r.facility(facilityIndex(r, "Test Lab")).cost);
+    const Resources before = s.empire(kMe).stockpile;
+    cmd::Scrap one{{}, home.planet, 0, {}};
+    REQUIRE(apply(r, s, kMe, one).ok);
+    CHECK(s.empire(kMe).stockpile == before + cost.percentRounded(60));
+    cmd::Scrap wide{{}, home.planet, 0, {}};
+    wide.typeWide = true;
+    REQUIRE(apply(r, s, kMe, wide).ok);
+    CHECK(s.empire(kMe).stockpile == before + cost.percentRounded(60) + cost.percentRounded(setting));
 }
 
 TEST_CASE("economy: space yard ships build where they are, but not while cloaked") {
