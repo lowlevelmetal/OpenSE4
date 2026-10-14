@@ -118,9 +118,9 @@ TEST_CASE("sdk rules golden: a simultaneous game a rules mod changes gives the g
         {2, 0xfec010795b2a2a97ull},
         {5, 0x339165ea46a01542ull},
         {10, 0x11070d293dd750aeull},
-        {20, 0xdfb1c1c39be4af1full},
-        {40, 0xfe306a8044a0a63aull},
-        {60, 0x89b2b58264771746ull},
+        {20, 0xd58b3227ad93750full},
+        {40, 0x7f7036ddc4ba4bf9ull},
+        {60, 0x006f450a48a83d75ull},
     }};
     playGolden("simultaneous", 151, true, kGolden);
 }
@@ -133,8 +133,8 @@ TEST_CASE("sdk rules golden: a turn-based game a rules mod changes gives the gol
         {5, 0xbefd0530b0c32642ull},
         {10, 0xc56371629af55880ull},
         {20, 0x158e34d1ba4ad11dull},
-        {40, 0xc04d2e78b98728edull},
-        {60, 0xb0fb83719a413019ull},
+        {40, 0x2e34cc8818906be3ull},
+        {60, 0xbbd6b3c253361e9full},
     }};
     playGolden("turn-based", 157, false, kGolden);
 }

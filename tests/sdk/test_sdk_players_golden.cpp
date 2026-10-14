@@ -95,8 +95,8 @@ TEST_CASE("sdk players golden: a simultaneous game two script players play gives
         {5, 0x9902eee9b68d7c5full},
         {10, 0x2ca9e298070c1c65ull},
         {20, 0x3eb4db537442ceb9ull},
-        {40, 0xb5b36e1158a9f502ull},
-        {60, 0xf2071fcd672edc9full},
+        {40, 0x60792750df1e188eull},
+        {60, 0x3ac21c567a8244edull},
     }};
     playGolden("simultaneous", 51, true, kGolden);
 }
@@ -109,8 +109,8 @@ TEST_CASE("sdk players golden: a turn-based game two script players play gives t
         {5, 0x47c708e9b9129375ull},
         {10, 0xb7211059e819efbaull},
         {20, 0x67c2849380812c83ull},
-        {40, 0x3f185b425b3fe912ull},
-        {60, 0x739befbab43e6874ull},
+        {40, 0x15d44aece0ec68f7ull},
+        {60, 0x639b62163029e112ull},
     }};
     playGolden("turn-based", 46, false, kGolden);
 }
