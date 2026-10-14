@@ -5,13 +5,17 @@
 #include "client/audio.hpp"
 
 #include "client/classic/classic_mode.hpp"
+#include "client/classic/command_line.hpp"
 #include "client/script/items.hpp"
 #include "client/script/sdl_input.hpp"
 #include "client/ui/imgui_errors.hpp"
 #include "client/ui/theme.hpp"
 #include "client/window_hit.hpp"
 #include "core/log.hpp"
+#include "mods/mod_set.hpp"
+#include "net/secure.hpp"
 #include "ruleset/ruleset.hpp"
+#include "sdk/process.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -84,6 +88,57 @@ SDL_HitTestResult SDLCALL windowHitTest(SDL_Window*, const SDL_Point* point, voi
     return SDL_HITTEST_NORMAL;
 }
 
+// The original's command line as the host (docs/spec/05 §9.2): the game
+// file's turn is processed from the players' orders files, saved, and the
+// program quits, with no window. A wrong host password quits without a word
+// (but the log and standard error say why); OpenSE4's other refusals show a
+// box unless -nd.
+int hostFromCommandLine(const AppOptions& options, const classic::CommandLineGame& line, const std::filesystem::path& dataDir) {
+    auto refuse = [&](const std::string& why, bool box) {
+        log::error("{}", why);
+        if (box && !options.noDialogs) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenSE4", why.c_str(), nullptr);
+        return classic::kHostRefused;
+    };
+    const std::filesystem::path gameRoot = dataDir.parent_path();
+    const auto file = classic::findGameFile(line.gameFile, classic::gameFileFolders(line, gameRoot));
+    if (!file) return refuse(std::format("The game file {} was not found.", line.gameFile), true);
+    log::info("Command line: hosting the turn of {}", file->string());
+    // The data set with the mods given (--mod, the command line's mod
+    // folder), else with the game's own, as `opense4-server pbem process`.
+    std::vector<std::string> mods = options.mods;
+    bool modsGiven = options.modsGiven;
+    if (!line.modFolder.empty()) {
+        mods.push_back(classic::modFolderPath(line.modFolder, gameRoot).string());
+        modsGiven = true;
+    }
+    const std::filesystem::path userDir = userDataDirectory();
+    mods::ModFolders folders;
+    folders.user = options.modsDir.empty() ? mods::modsFolderIn(userDir) : std::filesystem::path(options.modsDir);
+    if (!options.noBundledMods) folders.bundled = mods::bundledModsFolder(sdk::executableDir());
+    mods::OpenOptions open;
+    open.cacheDir = mods::modCacheIn(userDir);
+    auto rules = classic::rulesForHosting(dataDir, *file, mods, modsGiven, folders, open);
+    if (!rules) return refuse(rules.error(), true);
+    // The host's key, the one the game's own host uses (host_key.txt in the user folder).
+    const std::filesystem::path keyFile = userDir / net::secure::kHostKeyFileName;
+    auto key = net::secure::loadOrCreateHostKey(keyFile);
+    if (!key) return refuse(key.error(), true);
+    if (!key->warning.empty()) log::warn("{}", key->warning);
+    log::info("Play-by-e-mail host key {} ({}): players see it when they open their turn files",
+              net::crypto::fingerprint(key->keys.pbem.signing.publicKey), keyFile.string());
+    const classic::HostOutcome outcome = classic::hostTurn(**rules, *file, line.password, options.pbemOrdersDir, key->keys.pbem);
+    if (outcome.exitCode != 0) {
+        refuse(outcome.error, !outcome.wrongPassword);
+        return outcome.exitCode;
+    }
+    // Saved without a notice, as the original; the report goes to standard output.
+    for (const std::string& l : outcome.report) std::printf("%s\n", l.c_str());
+    std::fflush(stdout);
+    log::info("Command line: the turn of {} is processed and the game saved{}", file->string(),
+              outcome.report.empty() ? std::string() : ": " + outcome.report.front());
+    return 0;
+}
+
 std::string videoDriver() {
     const char* name = SDL_GetCurrentVideoDriver();
     return name ? name : "?";
@@ -103,6 +158,13 @@ int App::run(const AppOptions& options) {
         fatal(missingInstallMessage(options.installDir));
         SDL_Quit();
         return 1;
+    }
+    // The original's command line without a player number: the host's turn, and no window.
+    const auto commandLine = classic::commandLineGame(options.positional);
+    if (commandLine && commandLine->host()) {
+        const int code = hostFromCommandLine(options, *commandLine, *dataDir);
+        SDL_Quit();
+        return code;
     }
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fatal(std::format("SDL_Init failed: {}", SDL_GetError()));
@@ -129,6 +191,7 @@ int App::run(const AppOptions& options) {
     co.modsDir = options.modsDir;
     co.noBundledMods = options.noBundledMods;
     co.commandLineModFolder = assets::modDirectoryFromArguments(options.positional);
+    co.commandLine = commandLine;
     co.seed = options.seed;
     co.seedGiven = options.seedGiven;
     co.systemCount = options.systemCount;
@@ -156,11 +219,14 @@ int App::run(const AppOptions& options) {
     co.lessonAudit = options.lessonAudit;
     co.lessonCheckQuits = options.screenshotPath.empty();
     co.scripted = scripted;
-    mode_ = ClassicMode::create(platform, co, error);
+    int failure = 1;
+    mode_ = ClassicMode::create(platform, co, error, failure);
     if (!mode_) {
-        fatal(error);
+        // Empty: nothing to show (a wrong password on the command line, as the original); -nd: no box.
+        if (!error.empty() && options.noDialogs) log::error("{}", error);
+        else if (!error.empty()) fatal(error);
         shutdown();
-        return 1;
+        return failure;
     }
     // Sound needs a real session: not with --no-audio, and not for screenshots or
     // scripts unless --audio asks for it (to check the audio itself).

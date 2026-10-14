@@ -46,11 +46,16 @@ struct AppOptions {
     bool modsGiven = false;
     std::string modsDir;
     bool noBundledMods = false;
-    // The arguments that are not options, as the original reads them: with
-    // four or more, the fourth names a mod folder (docs/spec/05 §9.2), played
-    // as a classic mod for this run and read for fonts and pointers in place
-    // of the one Path.txt names. The others are ignored.
+    // The arguments that are not options, read as the original reads them
+    // (docs/spec/05 §9.2, client/classic/command_line.hpp): `<game file>
+    // <password> [<player number> [<mod folder>]]`. Without a player number
+    // the turn of the game file is processed as its host, with no window;
+    // with one the game opens on that player's turn. The fourth names a mod
+    // folder, played as a classic mod for this run and read for fonts and
+    // pointers in place of the one Path.txt names.
     std::vector<std::string> positional;
+    // -nd or /nd: no message boxes (the log and standard error say why).
+    bool noDialogs = false;
 
     // New games.
     uint64_t seed = 0;               // 0 = from the clock

@@ -17,6 +17,7 @@ add_executable(opense4_tests
     test_client_layout.cpp
     test_client_logic.cpp
     test_colony_orders.cpp
+    test_command_line.cpp
     test_combat.cpp
     test_computer_control.cpp
     test_crash_report.cpp
@@ -136,6 +137,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/art.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/classic_scenario.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/command_line.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/computer_players.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp

@@ -11,7 +11,11 @@
 #      file on and refuses a turn file signed by another key;
 #   4. when the game client was built (and SMOKE_CLIENT is not 0), it plays the
 #      next turn of that game offscreen from the player's turn file (--pbem ...
-#      --pbem-end-turn), and the server processes the .plr it wrote.
+#      --pbem-end-turn), and the server processes the .plr it wrote;
+#   5. then the original's command line (docs/spec/05 §9.2): a player signs in
+#      with "<turn file> <password> <player>", and the client hosts the turn of
+#      a simultaneous e-mail game with "<game file> <host password>", with no
+#      window; wrong passwords quit with exit codes 1 (host) and 2 (player).
 # Keys, trusted host keys and settings go to a scratch user folder
 # (OPENSE4_USER_DIR), never the user's own.
 # Needs a data set (the installed classic game is found automatically, or pass
@@ -140,5 +144,43 @@ if [[ -x $CLIENT && ${SMOKE_CLIENT:-1} != 0 ]]; then
     "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" --host-key="$WORK/host_key.txt" "$@" | tee "$WORK/process3.log"
     grep -q "orders: " "$WORK/process3.log"
     grep -q "Next: empire 2" "$WORK/process3.log"
+
+    # 5. The original's command line, on a simultaneous game made with the
+    # user folder's host key, the one the client hosts with.
+    cat >"$WORK/line.toml" <<'EOF'
+name = "Line"
+seed = 4
+master_password = "Boss"
+[options]
+systems = 12
+[[empire]]
+kind = "human"
+player = "carol"
+password = "c"
+[[empire]]
+kind = "computer"
+EOF
+    mkdir "$WORK/line"
+    "$SERVER" pbem new --setup="$WORK/line.toml" --out="$WORK/line/line.gam" "$@" >/dev/null
+    expect_exit() {
+        local want=$1 rc=0
+        shift
+        SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio "$@" -nd "${CLIENT_ARGS[@]}" >"$WORK/line.log" 2>&1 || rc=$?
+        if [[ $rc != "$want" ]]; then
+            cat "$WORK/line.log" >&2
+            echo "server smoke test FAILED: opense4 $* exited with $rc, not $want" >&2
+            exit 1
+        fi
+    }
+    expect_exit 1 "$WORK/line/line.gam" wrong
+    expect_exit 2 "$WORK/line/Line_01.turn" wrong 1 --pbem-end-turn
+    expect_exit 1 "$WORK/line/missing.gam" Boss
+    SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio "$WORK/line/Line_01.turn" " C " 1 --pbem-end-turn -nd "${CLIENT_ARGS[@]}" | tee "$WORK/line1.log"
+    grep -q "Orders saved to .*Line_01.plr" "$WORK/line1.log"
+    SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio "$WORK/line/line.gam" "Boss " -nd "${CLIENT_ARGS[@]}" | tee "$WORK/line2.log"
+    grep -q "Processed turn 0; the game is now at turn 1." "$WORK/line2.log"
+    grep -q "orders: " "$WORK/line2.log"
+    grep -q "Send .*Line_01.turn to empire 1" "$WORK/line2.log"
+    [[ ! -e $WORK/line/Line_01.plr ]]
 fi
 echo "server smoke test passed"

@@ -812,26 +812,8 @@ int pbemProcess(std::span<char*> args) {
     auto rep = net::pbem::processGameFile(**rules, o->get("game"), o->get("orders"), options);
     if (bots) bots->sayGoodbye(script::Value(script::ValueMap{{"reason", script::Value("the turn is processed")}}));
     if (!rep) return fail(rep.error(), 1);
-    const std::string played = !rep->submitted.empty() ? rep->submitted.front() : !rep->playedByComputer.empty() ? rep->playedByComputer.front() : "";
-    if (rep->turnBased && !played.empty())
-        std::printf("Played %s's turn of turn %u; the game is now at turn %u.\n", played.c_str(), rep->turnBefore, rep->turnAfter);
-    else if (rep->turnBased)
-        std::printf("The computer players played on; the game is now at turn %u.\n", rep->turnAfter);
-    else
-        std::printf("Processed turn %u; the game is now at turn %u.\n", rep->turnBefore, rep->turnAfter);
-    for (const auto& s : rep->submitted) std::printf("  orders: %s\n", s.c_str());
-    for (const auto& s : rep->playedByComputer) std::printf("  no orders, played by the computer: %s\n", s.c_str());
-    for (const auto& s : rep->warnings) std::printf("  warning: %s\n", s.c_str());
-    for (const auto& s : rep->migratedPasswords)
-        std::printf("  password migration: %s showed the form of OpenSE4 0.6 of its password once; its new password counts from now on.\n",
-                    s.c_str());
-    for (const auto& s : rep->rejectedCommands) std::printf("  refused: %s\n", s.c_str());
-    if (options.deleteProcessed && !rep->used.empty()) std::printf("  deleted %zu processed .plr files\n", rep->used.size());
-    if (!rep->next.empty()) std::printf("Next: empire %u (%s).\n", rep->nextEmpire.value + 1, rep->next.c_str());
-    if (auto info = game::readSaveInfo(o->get("game"))) listTurnFiles(rep->turnFiles, *info);
-    // Shown to the host only: nothing tells the players (spec 06 §1.9).
-    for (const auto& [empire, password] : rep->passwordResets)
-        std::printf("Password Reset: empire %u gets the password %s.\n", empire.value + 1, password.c_str());
+    const game::SaveInfo info = game::readSaveInfo(o->get("game")).value_or(game::SaveInfo{});
+    for (const std::string& line : net::pbem::reportLines(*rep, options.deleteProcessed, info)) std::printf("%s\n", line.c_str());
     return 0;
 }
 

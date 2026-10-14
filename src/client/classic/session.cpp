@@ -69,6 +69,14 @@ void writePlayerRecords(const std::vector<game::score::PlayerRecords>& records) 
     }
 }
 
+std::string lowerPassword(std::string p) {
+    for (char& c : p)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return p;
+}
+
+} // namespace
+
 // A password as the sign-in windows compare it (spec 06 §1.2.1, confirmed:
 // binary): without the spaces (and other control characters) before and
 // after it, and for Login To Game in small letters.
@@ -77,12 +85,6 @@ std::string trimPassword(std::string_view p) {
     while (a < b && static_cast<unsigned char>(p[a]) <= ' ') ++a;
     while (b > a && static_cast<unsigned char>(p[b - 1]) <= ' ') --b;
     return std::string(p.substr(a, b - a));
-}
-
-std::string lowerPassword(std::string p) {
-    for (char& c : p)
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-    return p;
 }
 
 // The forms of a typed password to try against a stored hash, best first,
@@ -99,7 +101,22 @@ std::vector<std::string> passwordForms(std::string_view typed, bool foldCase) {
     return out;
 }
 
-} // namespace
+std::expected<bool, std::string> storedPasswordOpens(const std::string& stored, std::string_view typed, bool foldCase, bool verifier,
+                                                    uint64_t gameId) {
+    for (const std::string& form : passwordForms(typed, foldCase)) {
+        if (form.empty()) continue;
+        if (verifier) {
+            try {
+                if (net::checkPassword(stored, form, gameId)) return true;
+            } catch (const net::PasswordWorkError& error) {
+                return std::unexpected(std::string(error.what()));
+            }
+        } else if (game::hashPassword(form) == stored) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // A simultaneous turn processed on a thread of its own (setBackground): the
 // engine works on a copy of the game, with the answers given so far; the
@@ -363,24 +380,14 @@ std::expected<std::string, std::string> ClassicSession::empirePasswordValue(std:
 
 std::expected<bool, std::string> ClassicSession::storedPasswordMatches(const std::string& stored, std::string_view password, bool foldCase) const {
     const bool verifier = kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem || multiplayerGameId_ != 0;
-    for (const std::string& form : passwordForms(password, foldCase)) {
-        if (form.empty()) continue;
-        if (verifier) {
-            try {
-                if (net::checkPassword(stored, form, multiplayerGameId_)) return true;
-            } catch (const net::PasswordWorkError& error) {
-                return std::unexpected(std::string(error.what()));
-            }
-        } else if (game::hashPassword(form) == stored) {
-            return true;
-        }
-    }
-    return false;
+    return storedPasswordOpens(stored, password, foldCase, verifier, multiplayerGameId_);
 }
 
-bool ClassicSession::dataSetMatches() const {
-    if (loadedInfo_.dataSet.find('#') == std::string::npos) return true;
-    return game::sameDataSet(loadedInfo_, *rules_);
+bool ClassicSession::dataSetMatches() const { return savedDataSetMatches(loadedInfo_, *rules_); }
+
+bool savedDataSetMatches(const game::SaveInfo& info, const game::Rules& rules) {
+    if (info.dataSet.find('#') == std::string::npos) return true;
+    return game::sameDataSet(info, rules);
 }
 
 bool ClassicSession::passwordAsked(const game::Empire& e) const {

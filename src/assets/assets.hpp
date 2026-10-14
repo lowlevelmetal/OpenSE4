@@ -166,8 +166,8 @@ private:
 std::string modDirectoryFromPathTxt(std::string_view text);
 // The mod folder named on the command line (docs/spec/05 §9.2, confirmed:
 // binary): with four or more arguments that are not options, the fourth
-// names it, in Path.txt's place; the first three are never read. Empty
-// with fewer.
+// names it, in Path.txt's place, after the game file, the password and the
+// player number (client/classic/command_line.hpp). Empty with fewer.
 std::string modDirectoryFromArguments(std::span<const std::string> positional);
 
 } // namespace opense4::assets

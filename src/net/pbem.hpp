@@ -281,4 +281,13 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
 std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rules, const std::filesystem::path& gameFile,
                                                           const std::filesystem::path& ordersDir, const ProcessOptions& options);
 
+// The report of a processed turn for the host, line by line, as
+// `opense4-server pbem process` and the game's command line (docs/spec/05
+// §9.2) print it: what was played, each empire's orders or the computer in
+// its place, the warnings, the refused commands, the .plr files deleted
+// (`deletedProcessed`), whose turn is next, the turn file to send to each
+// player (`info`: the game file's header, for the players' names) and the
+// new passwords of Reset Passwords (for the host only).
+std::vector<std::string> reportLines(const ProcessReport& rep, bool deletedProcessed, const game::SaveInfo& info);
+
 } // namespace opense4::net::pbem

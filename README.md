@@ -222,10 +222,20 @@ See [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 
 ```
 opense4 [--renderer=auto|vulkan|opengl] [--classic-dir=DIR] [--quick-start[=RACE]] [--seed=N]
+opense4 [options] GAMEFILE PASSWORD [PLAYER [MODFOLDER]] [-nd]
 ```
 
 `--help` lists every option. With `--renderer=auto` (the default) the game tries
 Vulkan 1.3 and falls back to OpenGL 3.3 if Vulkan is missing or unsuitable.
+
+The second form is the original's command line. Without a player number the game is the
+host of a play-by-e-mail game: given the game's master password, it processes the turn
+from the players' orders files, saves the game and quits without opening a window (exit
+code 1 for a wrong password). With a player number, that empire signs in with its
+password and plays its turn, from a turn file, an OpenSE4 saved game or a saved game of
+the original (exit code 2 for a wrong password, or for a game made with other data
+files). The fourth argument names a mod folder, and `-nd` shows no message boxes. See
+[docs/MULTIPLAYER.md](docs/MULTIPLAYER.md), "From the command line".
 
 The game has the original's two screen layouts, 800x600 and 1024x768, drawn with your
 install's art, fonts and mouse pointers and scaled to the window. Like the original,
@@ -241,6 +251,8 @@ addition).
 ./build/debug/opense4-datacheck                      # validate an installed data set (or a classic mod's)
 ./build/debug/opense4 --mod=path/to/a/mod            # play with a mod (docs/sdk/packages-and-data.md)
 ./build/debug/opense4 --load=/path/to/se4/SaveGame/GAME.gam   # play on a saved game of the original
+./build/debug/opense4 campaign.gam boss              # host an e-mail game's turn, as the original's command line
+./build/debug/opense4 campaign_02.turn secret 2      # play empire 2's turn of it
 ./build/debug/opense4-convert --info GAME.gam        # describe a saved game of the original
 ./build/debug/opense4-server --players=2 --ai=3      # host a network game without playing
 ```

@@ -109,7 +109,8 @@ TEST_CASE("install: Path.txt names the mod folder, found before the base tree") 
 }
 
 TEST_CASE("install: the command line's fourth argument names the mod folder in Path.txt's place") {
-    // The first three are never read; fewer than four name no folder (spec 05 §9.2).
+    // The game file, the password and the player number come first; fewer than
+    // four arguments name no folder (spec 05 §9.2).
     CHECK(modDirectoryFromArguments(std::vector<std::string>{}).empty());
     CHECK(modDirectoryFromArguments(std::vector<std::string>{"game.gam", "secret", "1"}).empty());
     CHECK(modDirectoryFromArguments(std::vector<std::string>{"a", "b", "c", "Other Mod"}) == "Other Mod");

@@ -6,6 +6,7 @@
 
 #include "client/audio.hpp"
 #include "client/classic/classic_scenario.hpp"
+#include "client/classic/command_line.hpp"
 #include "client/classic/frontend.hpp"
 #include "client/classic/learn_content.hpp"
 #include "client/classic/lesson_audit.hpp"
@@ -41,6 +42,11 @@ struct ClassicOptions {
     // relative to the game folder, played as a classic mod for this run and
     // read in Path.txt's place. Empty: none.
     std::string commandLineModFolder;
+    // The original's command line (command_line.hpp, spec 05 §9.2) with a
+    // player number: sign in to its game file as that player at once (a
+    // turn file plays as with --pbem, with --pbem-orders and --pbem-end-turn).
+    // The host's (no player number) runs before any window (client/app.cpp).
+    std::optional<classic::CommandLineGame> commandLine;
     uint64_t seed = 1;
     bool seedGiven = false;  // the player gave the seed (--seed, or a script run)
     int systemCount = 0;     // 0 = default
@@ -89,7 +95,10 @@ std::string missingInstallMessage(const std::string& installDir);
 
 class ClassicMode final : public Mode, private script::Probe {
 public:
-    static std::unique_ptr<ClassicMode> create(const Platform& platform, const ClassicOptions& options, std::string& error);
+    // On failure: why (empty when nothing is to be shown: a wrong password on
+    // the command line, which the original quits on without a word; the log
+    // says why) and the program's exit code.
+    static std::unique_ptr<ClassicMode> create(const Platform& platform, const ClassicOptions& options, std::string& error, int& exitCode);
     ~ClassicMode() override;
 
     bool update(const FrameState& fs) override;
@@ -143,6 +152,13 @@ private:
     std::unique_ptr<classic::FrontScreen> nextFrontScreen_;
 
     void startGame(std::unique_ptr<classic::ClassicSession> session);
+    // Plays a play-by-e-mail turn just opened (--pbem, or a turn file on the
+    // command line): ended at once with --pbem-end-turn, --open's window
+    // over it. On failure returns why.
+    std::optional<std::string> playPbemTurn(classic::PbemGame game, classic::PbemTurn turn);
+    // The command line's sign-in as its player (ClassicOptions::commandLine).
+    // On failure sets why (empty for a wrong password) and the exit code.
+    bool signInFromCommandLine(const classic::CommandLineGame& line, std::string& error, int& exitCode);
     // Starts a lesson's game from its [setup] through the quick start; on
     // failure returns why. `chosen`: the player chose it (the Learn window,
     // the lesson panel), so leaving it keeps its place; false on the command
