@@ -101,6 +101,18 @@ std::vector<std::string> passwordForms(std::string_view typed, bool foldCase) {
 
 } // namespace
 
+// A simultaneous turn processed on a thread of its own (setBackground): the
+// engine works on a copy of the game, with the answers given so far; the
+// session takes the copy and the results when it is done (pollJob).
+struct ClassicSession::Job {
+    std::thread thread;
+    std::atomic<bool> finished{false};
+    std::atomic<int> stepsDone{0}, stepsTotal{0};
+    game::GameState state;
+    game::TurnResult result;
+    std::exception_ptr failure;
+};
+
 uint64_t ClassicSession::nextSessionSerial() {
     static std::atomic<uint64_t> next{1};
     return next++;
@@ -573,18 +585,6 @@ void ClassicSession::noteMovesBefore(Call call) {
         case Call::None: break;
     }
 }
-
-// A simultaneous turn processed on a thread of its own (setBackground): the
-// engine works on a copy of the game, with the answers given so far; the
-// session takes the copy and the results when it is done (pollJob).
-struct ClassicSession::Job {
-    std::thread thread;
-    std::atomic<bool> finished{false};
-    std::atomic<int> stepsDone{0}, stepsTotal{0};
-    game::GameState state;
-    game::TurnResult result;
-    std::exception_ptr failure;
-};
 
 ClassicSession::~ClassicSession() {
     // A turn being processed cannot be stopped: it is waited for, and dropped.
