@@ -89,8 +89,12 @@ class Rules;
 // spec 06 §2.5); the Designs window's Hide Obsolete and Stats\Strategy check
 // boxes (InterfaceOptions::designsHideObsolete, designsStatsView, spec 08
 // §3.6.7). Format 7 still reads, without them.
-// Version 10: the REA parity audit's state (listed as each change lands).
-// Format 9 still reads, without it.
+// Version 10: what the REA parity audit of 2026-10-11 to 10-14 brought in
+// line with the original: the windows' remembered tabs, steps and switches,
+// cargo orders by kind and a repeating list's turn, the game flow's last turn
+// and endings, diplomacy's records, the battle records' hit details, empire
+// files' settings, and the commands CloakVehicles, LaunchUnitsNow,
+// RecoverUnitsNow and SetQueueTypes. Format 9 still reads, without it:
 // - The Construct size of a stellar manipulation order (Order::planetSize),
 //   cmd::SetOrders::ownList (an order for a fleet member's own list, the
 //   Stellar Manipulation window's), and the Galaxy Map's Show Names and

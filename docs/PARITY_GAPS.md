@@ -236,9 +236,10 @@ The REA parity audit of 2026-10-11 found these about cargo and units, implemente
   only for the kind. The original's saved games carry the kind both ways. OpenSE4's
   computer players still give these orders for one design (the classic AI's own choice),
   and orders saved before format 10 keep their design.
-- **Launch and recovery warnings** (`movement::UnitTransfer`): a human owner's order logs
-  "Launch Warning" or "Recover Warning" with the reasons; a launch that went well is no
-  longer logged.
+- **Launch and recovery warnings** (`movement::UnitTransfer`): a human owner's order gives
+  "Launch Warning" or "Recover Warning" with the reasons, as a log entry or, while its
+  turn-based turn is live, a message box (spec 03 §8 "Where the player reads why"); a
+  launch that went well is no longer logged.
 - **The window Launch \ Recover Units** (`launch_recover.cpp`, `launch_window.hpp`,
   `cmd::LaunchUnitsNow`, `cmd::RecoverUnitsNow`): a click acts at once on the holder clicked,
   with no order and no log, shows the four "Can Launch:" lines, lists every own colony, and
@@ -378,8 +379,9 @@ their order and boxes, enemy seekers and neutral obstacles rammed, a leader pick
 formation for its own number, clicks, Auto and E before Begin, Center Map only for a piece
 out of view, group identifiers on every piece, the weapon cells, the buttons after Resolve
 Combat, and the simulator's Begin (one side, no sight test, a planet added again). The
-details it left open are spec 04 §19.6 Q91–Q96. Launching in battle (the Launch Units
-window, mines) belongs to the units work.
+details it left open are spec 04 §19.6 Q91–Q96. Launching and recovering in battle (the
+Launch \ Recover Units window, mines laid) is in the units part of "Vehicles, movement and
+logistics" above, its open question spec 04 §19.7 Q97.
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 

@@ -147,25 +147,39 @@ questions are what the observation sessions still have to settle.
       install too, with their pages (spec 06 §5.6), since saved games from version 1.40 on
       are read (spec 08 §5.2).
 
+### REA parity audit (2026-10-11 to 10-14, done)
+The original's 98 dialogs and the engine actions behind them were compared with OpenSE4's
+code against the executable (about 130 differences), and twelve packages brought them in
+line, each rule written into `docs/spec/` first ("(confirmed: binary)" where traced) and
+OpenSE4's own additions kept: the original's scenarios and tutorial with their pages;
+designs, research and intelligence targets; the game flow (a turn-based game's last turn,
+endings, the autosave, Load and Save Game); the combat windows; diplomacy (Communicate,
+packages, the Empires window's columns, the statistics record and Comparisons); the main
+window's cycle, keys, picks and orders; Launch \ Recover Units and cargo orders by kind;
+the Scrap window, Abandon Planet and Create Fleet; Set Construction Queue, queue types and
+the type lists; the setup screens; Stellar Manipulation and the Galaxy Map; the original's
+empire and map files. It needed save format 10 and protocol 8 (MULTIPLAYER.md "Protocol").
+What stays different is in [PARITY_GAPS.md](PARITY_GAPS.md); the choices the executable
+did not settle are open questions: spec 03 §19 Q84, spec 04 §19.6–§19.7 Q91–Q98, spec 05
+Q79–Q81, spec 06 §7 Q113–Q119 and spec 08 §11.1 Q23–Q29.
+
 ## Next steps
 
 1. **Computer players: enemy colonies inside the territories.** The second debugger round
    (spec 07, 2026-10-03) and its rules leave every pace figure within the original's
    spread except two, which both follow how many enemy colonies lie inside an empire's
    territory: colonies at turn 100 (15.7 against 17.0) and battles at enemy colonies
-   (2.6 against 3.0–4.9 per empire and 25 turns). See spec 05 questions 76 and 77; question
-   74 (a Scrap order on a fleet member) is not traced yet.
+   (2.6 against 3.0–4.9 per empire and 25 turns). See spec 05 questions 76 and 77.
 2. **The interface's last open choices:**
-   - spec 06 §7 Q99: endings when a human loses during its own turn, intelligence targets,
-     changed objects;
-   - Q60: Windows' own Small Fonts size, which needs a Windows machine;
+   - the REA parity audit's open questions (above), for a session with the executable;
+   - spec 06 §7 Q60: Windows' own Small Fonts size, which needs a Windows machine;
    - the OpenSE4 choice the setup screens listed in [PARITY_GAPS.md](PARITY_GAPS.md): Login
      To Game. (Spec 01 Q46, Ring 8 and Ring 9, the spin steps, the characteristics' words and
      Compare Culture Modifiers were settled by the REA audit of 2026-10-11.)
 3. **Keep the interface covered by input scripts.**
-   - `tools/run_input_tests.py` plays 77 scripts through the client's own input, covering
+   - `tools/run_input_tests.py` plays 94 scripts through the client's own input, covering
      every tutorial and training game, the mouse-only features and what mods add to the
-     windows. Thirteen of them run in CI on fixture data ([BUILDING.md](BUILDING.md) "Input
+     windows. 23 of them run in CI on fixture data ([BUILDING.md](BUILDING.md) "Input
      scripts").
    - A new window or lesson gets a script.
 4. **Multiplayer.** Protocol 5's security design was reviewed twice ([MULTIPLAYER.md](MULTIPLAYER.md)

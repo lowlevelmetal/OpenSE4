@@ -562,9 +562,11 @@ python3 tests/sdk/python/check_doc_snippets.py --fixtures /tmp/fx.json # the doc
 ```
 
 A change to the SDK must leave games without mods as they were: hashed at save format 8
-(`serial::hash(state, 8)` in place of `stateChecksum`'s format, for the check), they give the
-determinism goldens recorded before the SDK, which `test_determinism.cpp` now holds at format 9
-(docs/MODDING_SDK.md §14.4). `tools/update_micropython.sh` regenerates the interpreter's
+(`serial::hash(state, 8)` in place of `stateChecksum`'s format, for the check), they gave the
+determinism goldens recorded before the SDK, which `test_determinism.cpp` held at format 9
+(docs/MODDING_SDK.md §14.4) until the REA parity audit's rule changes moved the games on
+purpose (2026-10-14); its goldens are now those of format 10, and an SDK change must leave
+them as they are. `tools/update_micropython.sh` regenerates the interpreter's
 sources (see "MicroPython").
 
 `test_xmath.cpp` checks the emulated x87 arithmetic of the rules against exact

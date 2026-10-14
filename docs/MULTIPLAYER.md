@@ -1052,6 +1052,15 @@ of format 9 also covers the game folder's AI tables, race files and design-name 
 the game-changing mods; a save of format 8 or older
 is compared with the identity as its format computed it, so it is not taken for another
 data set. Protocol 7 does not play with 0.10.0; format 8 and 7 saves still load.
+Protocol 8 and save format 10 came with the REA parity audit (2026-10-11 to 10-14): the
+messages are laid out as before, but the `State` and orders blobs carry format 10's new
+state (the windows' remembered tabs and steps, orders by cargo kind, a repeating list's
+turn, a turn-based game's last turn, a human's statistics record, the battle records' hit
+details, queue types and more: `game/serialize.hpp` lists them), the commands
+`cmd::CloakVehicles`, `LaunchUnitsNow`, `RecoverUnitsNow` and `SetQueueTypes` and new
+fields of older commands, and `SubmitSetup` and `Lobby` an empire setup's settings and
+name lists from an empire file. Protocol 8 does not play with 0.12.0; the format 9 saves
+of 0.11.0 and 0.12.0 still load.
 
 ### Save format
 

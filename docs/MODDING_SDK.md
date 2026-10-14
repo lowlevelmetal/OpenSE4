@@ -758,7 +758,8 @@ numbers, as the engine uses.
   memory, journals, new commands). The first change that needs a field bumps them; later
   SDK changes add their fields under 9 and 7 without bumping again until the next release.
   OpenSE4 0.11.0 shipped them, so the next change to saved or sent state bumps them again
-  (save format 8 and protocol 6 were 0.10.0's).
+  (save format 8 and protocol 6 were 0.10.0's). The REA parity audit did (save format 10,
+  protocol 8: MULTIPLAYER.md "Protocol").
 - **The SDK's own interface** is `api = 1`.
 
 ### 14.6 Where things live
