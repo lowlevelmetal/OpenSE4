@@ -497,12 +497,26 @@ up the trade chain [M].
   not even with its master. Its Communicate window leaves Propose Treaty out of the list,
   and refuses a Propose or Counter Treaty ("Subjugated races cannot propose treaties") and an
   Accept Treaty ("Subjugated races cannot accept treaties"). Break Treaty and Declare War stay.
-  The original checks this in the window only: a computer player's and a Politics
-  minister's messages and answers are not checked, and a treaty in an accepted package still
-  takes effect. Our engine differs: it also refuses such a message or answer from a human
-  player in the command itself (`cmd::SendMessage`, `cmd::AnswerMessage` without their
-  `minister` mark), so a network player cannot get round the window. It replaces OpenSE4's
-  earlier choice, which stopped a subject's treaties with third empires when they were set.
+- **A subject's computer player and Politics minister** (confirmed: binary; corrected
+  2026-10-14, complete listing: this section said earlier that they were not checked). The
+  computer player applies the rule to itself, and so does a human empire's Politics
+  minister, which runs the same rules (§7.4). While the empire is the subordinate side of a
+  Subjugation:
+  - it never proposes a treaty;
+  - a treaty proposal or counter-proposal sent to it gets no answer at all: no accept, no
+    refusal and no counter-proposal;
+  - it refuses every trade, gift or tribute whose package holds a treaty.
+
+  It does not test whether the empire it proposes to is a subject. What stays unchecked:
+  the processing of the messages themselves, so an Accept Treaty takes effect whoever sends
+  it and a treaty in an accepted package still takes effect; and a human subject accepting,
+  in the window, a trade that holds a treaty. Our engine follows (`ai_diplomacy.cpp`,
+  `Politician::subject`; the refusal of a package with a treaty since 2026-10-14, before
+  the team rules, inferred). It also refuses a subject's treaty message or answer from a
+  human player in the command itself (`cmd::SendMessage`, `cmd::AnswerMessage` without
+  their `minister` mark), so a network player cannot get round the window. That replaces
+  OpenSE4's earlier choice, which stopped a subject's treaties with third empires when they
+  were set.
 - **OpenSE4 choices** [I]:
   - A Treaty package item makes the receiver the master unless it names the giver.
   - Break Treaty does not end a war (the window offers it only from Non-Aggression up,
@@ -1604,6 +1618,8 @@ follows the same pattern as war, with the Break Treaty threshold and the break l
 - Otherwise accepted when value received ≥ value given × pct / 100 (truncated), where
   pct is `Accept Trade From Friend …` or `… Enemy …`. Every treaty item in either package
   must also pass the accept rule.
+- A subject (§3.2) refuses every trade that holds a treaty on either side (confirmed:
+  binary; added 2026-10-14, complete listing).
 
 **Item values**, for the receiving side:
 
@@ -1627,7 +1643,9 @@ in finite-resource games), plus, when it is colonized, 100 × its population in 
 
 **Gifts and tributes received** are accepted when:
 - anger ≤ `Max Anger Level for Accept a Gift` (or `… Tribute`);
-- every treaty item inside passes the accept rule.
+- every treaty item inside passes the accept rule;
+- the AI is not a subject (§3.2) or the package holds no treaty (confirmed: binary; added
+  2026-10-14, complete listing).
 
 Team mates are always accepted, and team enemies always refused.
 
@@ -3874,7 +3892,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - **The flag:** the request is chosen before its `Will Send …` flag is tested; a
       forbidden request cancels steps 1–5 for that turn.
     - **Ministers:** a human empire whose Politics minister is on sends these requests by
-      the same rules, unchecked.
+      the same rules, unchecked. "Unchecked" means the player's picker tests are not made;
+      the computer player's own rule for a subject (§3.2: no treaty proposals, no answer
+      to one, no package that holds a treaty) does apply to the minister, which runs the
+      same rules (confirmed: binary; corrected 2026-10-14, complete listing).
     - **Recipients:** a computer recipient that carries the request out records the named
       empire without any check (question 51); for "attack an empire in a system" it
       records only the system and never uses the empire. A human recipient reads the

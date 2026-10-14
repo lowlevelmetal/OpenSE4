@@ -460,7 +460,10 @@ follows them since 2026-10-14:
   can neither propose nor accept a treaty, not even with its master; Break Treaty and Declare
   War stay (`diplomacy::isSubjugated`, spec 05 §3.2). Nothing stops a treaty itself any more:
   OpenSE4's earlier choice, which refused a subject's treaties with third empires when they
-  were set, is gone, and a treaty in an accepted package takes effect.
+  were set, is gone, and a treaty in an accepted package takes effect. A subject's computer
+  player and Politics minister propose no treaty, leave treaty proposals unanswered and,
+  since 2026-10-14 (complete listing), refuse every trade, gift or tribute holding a treaty
+  (`ai_diplomacy.cpp`, `Politician::subject`).
 - The treaty grid shows the treaties of the empires we hold Non-Aggression or better with,
   not only our allies' (`diplomacy::treatyVisible`).
 - A player's messages follow the original's window (`diplomacy::playerMessageProblem`, spec

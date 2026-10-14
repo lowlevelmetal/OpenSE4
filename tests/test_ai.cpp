@@ -1685,6 +1685,97 @@ TEST_CASE("ai: trades are judged on item values") {
     CHECK(trade(900000, 60000) == false);
 }
 
+TEST_CASE("ai: a subject proposes no treaty, ignores treaty proposals and refuses packages that hold a treaty") {
+    // Spec 05 §3.2 (confirmed: binary): the computer player and a Politics
+    // minister apply the subjugated-race rule to themselves.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 3, 12, false);
+    const EmpireId master{0u}, cpu{1u}, third{2u};
+    meet(s, master, cpu);
+    meet(s, cpu, third);
+    meet(s, master, third);
+    s.empire(cpu).stockpile = Resources{50000, 50000, 50000};
+    s.empire(cpu).relation(master).anger = 0;
+    s.empire(cpu).relation(third).anger = 0;
+    auto subjugate = [&](GameState& g) {
+        g.empire(cpu).relation(master).treaty = Treaty::Subjugation;
+        g.empire(master).relation(cpu).treaty = Treaty::Subjugation;
+        g.empire(master).relation(cpu).dominant = true;
+    };
+    PackageItem treatyItem;
+    treatyItem.kind = PackageItem::Kind::Treaty;
+    treatyItem.treaty = Treaty::NonAggression;
+    auto trade = [&](GameState& g, bool withTreaty) {
+        DiplomaticMessage m;
+        m.id = MessageId{g.nextMessageId++};
+        m.from = third;
+        m.to = cpu;
+        m.type = MessageType::ProposeTrade;
+        m.sentTurn = g.turn;
+        m.delivered = true;
+        PackageItem offer, request;
+        offer.resources = {20000, 0, 0};
+        request.resources = {1000, 0, 0};
+        m.offer.push_back(offer);
+        if (withTreaty) m.offer.push_back(treatyItem);
+        m.request.push_back(request);
+        g.messages.push_back(m);
+        return m.id;
+    };
+    auto answered = [&](GameState g, MessageId id) {
+        std::optional<bool> a;
+        for (uint32_t turn = 60; turn < 70 && !a; ++turn) {
+            g.turn = turn;
+            a = answerTo(r, g, cpu, id);
+        }
+        return a;
+    };
+    s.turn = 60;
+    // Not a subject: a good trade with a treaty in it, and a gift holding one, are accepted.
+    {
+        GameState g = s;
+        CHECK(answered(g, trade(g, true)) == true);
+        const MessageId gift = deliver(g, master, cpu, MessageType::Gift);
+        g.messages.back().offer.push_back(treatyItem);
+        CHECK(answered(g, gift) == true);
+    }
+    subjugate(s);
+    // A subject refuses them, and only them.
+    {
+        GameState g = s;
+        CHECK(answered(g, trade(g, true)) == false);
+        g.messages.clear();
+        CHECK(answered(g, trade(g, false)) == true);
+        g.messages.clear();
+        const MessageId gift = deliver(g, master, cpu, MessageType::Gift);
+        g.messages.back().offer.push_back(treatyItem);
+        CHECK(answered(g, gift) == false);
+        g.messages.clear();
+        const MessageId tribute = deliver(g, third, cpu, MessageType::Tribute);
+        g.messages.back().offer.push_back(treatyItem);
+        CHECK(answered(g, tribute) == false);
+        g.messages.clear();
+        CHECK(answered(g, deliver(g, master, cpu, MessageType::Gift)) == true);
+    }
+    // A treaty proposal or counter-proposal gets no answer at all.
+    for (MessageType type : {MessageType::ProposeTreaty, MessageType::CounterTreaty}) {
+        GameState g = s;
+        const MessageId id = deliver(g, third, cpu, type, Treaty::NonAggression);
+        for (uint32_t turn = 60; turn < 70; ++turn) {
+            g.turn = turn;
+            CHECK_FALSE(answerTo(r, g, cpu, id));
+            CHECK_FALSE(sentInReply(r, g, cpu, id));
+        }
+    }
+    // And it never proposes one, to its master or anyone else.
+    for (uint32_t turn = 0; turn < 80; ++turn) {
+        s.turn = turn;
+        for (const Command& c : ai::planTurn(r, s, cpu))
+            if (const auto* m = as<cmd::SendMessage>(c))
+                CHECK((m->message.type != MessageType::ProposeTreaty && m->message.type != MessageType::CounterTreaty));
+    }
+}
+
 TEST_CASE("ai: an accepted demand is carried out half of the time, before the reply, even when the reply's pool is empty") {
     TempTree t("request");
     t.write("Ai/Default_AI_Politics.txt",
