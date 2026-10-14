@@ -150,9 +150,13 @@ The choices and defaults below are confirmed: binary.
 
 **Players tab**
 
-- The list of explicit empires, with Add New, Add Existing, Edit, Remove and Save. Add New
-  and Edit open Empire Setup (spec 02 §9: its pages, the characteristics' arrows and
-  words, the culture comparison and Create Empire's checks).
+- The list of explicit empires, with Add New, Add Existing, Edit, Remove and Save To File
+  (confirmed: binary). Add New and Edit open Empire Setup (spec 02 §9: its pages, the
+  characteristics' arrows and words, the culture comparison and Create Empire's checks).
+  Add Existing reads an empire file and checks its technology and racial points against
+  this setup at once; Edit asks for the empire's password first (an exact comparison);
+  Remove asks nothing; Save To File asks whether to save the designs and writes the empire
+  with computer control off (spec 08 §13.4, §13.5).
 - **Random computer players** has two checkboxes, both on in a new game (observed, spec 07
   session 5). *Regular* AIs are full empires; *neutral* AIs stay in their home system. So a
   default game, and Quick Start, which keeps the defaults (§2.1), has 3–7 computer players
@@ -1502,8 +1506,12 @@ highlighted, and an X marks each empire that has met one.
 ## 12. Maps and scenarios on disk
 
 - **Maps/.** Empty in this install. Map files come from Save Map (File menu, or the
-  Quadrant tab) and from the separate map editor. We found no text-format map, so treat
-  the format as ours to define.
+  Quadrant tab) and perhaps from the separate map editor (spec 08 §11.1 Q29). They are the
+  saved-game container holding the systems, the starting points and the stellar objects,
+  laid out in spec 08 §14 (confirmed: binary). OpenSE4 reads and writes them, beside its
+  own text format (docs/MAPS.md, spec 08 §14.5). After Load Map or Generate Map Now, Begin
+  Game makes no quadrant and plays on the one present; which game seed it then keeps is
+  not known (spec 08 §11.1 Q27).
   - A map should hold the systems with positions, names and type, every object with its
     SectType, abilities and name, the warp links, and optional **starting points**.
   - A *specific* starting point belongs to one player slot. A *common* one can take
@@ -1522,7 +1530,8 @@ highlighted, and an X marks each empire that has met one.
     are not written as starting points.
   - OpenSE4's map format is described in [docs/MAPS.md](../MAPS.md). Maps live in the
     user's data folder, never in the install. The file layout is an OpenSE4 extension; the
-    original writes its own binary format, the saved-game container (spec 08 §1.3, §2).
+    original writes its own binary format, the saved-game container (spec 08 §14), which
+    OpenSE4's Load Map lists too and its Save Map windows write with *Save for SE IV*.
 - **Scenarios/.** Each scenario is a triple:
   - `<Name>_Settings.txt`: one record with `Name`, `Description` and `Starting Game`,
     the filename of a prepared savegame in the same folder. Only `Starting Game` is

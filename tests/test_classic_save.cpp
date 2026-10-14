@@ -1047,6 +1047,43 @@ TEST_CASE("classic save: a pursuing Attack is kind 11 and an Attack where the gr
     CHECK_FALSE(backHere.location.system.valid());
 }
 
+// The original keeps a repeating list in place, its current order an index
+// into it; OpenSE4 keeps the current order first and counts the places the
+// list has turned (repeatShift = current order less 1, spec 08 §3.8.8, spec 03 §8).
+TEST_CASE("classic save: a repeating list's turn is the current order, both ways") {
+    const Rules& r = test::engineRules();
+    GameState s = test::newEngineGame(71, 2, 12, true);
+    test::addHomeShips(s, r);
+    Vehicle* ship = nullptr;
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == EmpireId{0u} && !ship) ship = &v;
+    REQUIRE(ship);
+    const Location home = ship->location;
+    const Order first{OrderKind::MoveTo, home};
+    const Order second{OrderKind::Sentry};
+    const Order third{OrderKind::MoveTo, home};
+    // The list as the original holds it: first, second, third; turned by one, second is current.
+    ship->orders = {second, third, first};
+    ship->repeatOrders = true;
+    ship->repeatShift = 1;
+    const uint32_t slot = ship->slot;
+
+    const ClassicSave save = exportOrFail(r, s);
+    const OrderList& list = save.objects[slot].orders;
+    CHECK(list.repeat);
+    REQUIRE(list.orders.size() == 3);
+    CHECK(list.current == 2);
+    CHECK(list.orders[0].kind == 1);   // Move To, the list's first order, in place
+    CHECK(list.orders[1].kind == 25);  // the Sentry, current
+
+    const GameState t = importOrFail(r, save);
+    const Vehicle* back = bySlot(t).at(slot);
+    REQUIRE(back->orders.size() == 3);
+    CHECK(back->orders[0].kind == OrderKind::Sentry);   // the current order first again
+    CHECK(back->repeatShift == 1);
+    CHECK(originalOrderList(back->orders, back->repeatOrders, back->repeatShift).front().kind == OrderKind::MoveTo);
+}
+
 TEST_CASE("classic save: Launch and Recover name the unit kind as Load does") {
     const Rules& r = test::engineRules();
     GameState s = test::newEngineGame(81, 2, 12, true);

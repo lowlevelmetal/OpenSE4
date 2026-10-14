@@ -1,0 +1,114 @@
+# The original's empire and map files in Game Setup (docs/spec/08 §13, §14; docs/SETUP.md
+# "Games of the original"): Edit asks for an empire's password and refuses a wrong one (letter
+# case counts); Save To File asks "Save Designs", writes OpenSE4's empire file and, with Save for
+# SE IV, the original's; Add Existing lists both kinds and adds the original's; the Quadrant
+# page's Save Map writes the original's map file with Save for SE IV, which Load Map lists and
+# loads; in the game, the Game Menu's Save Empire and Save Map offer Save for SE IV too
+# (docs/BUILDING.md "Input scripts").
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --layout=1024x768 --size=1280x800
+
+wait-screen front
+click item:"New Game" in=front
+wait-for item:"Add New" in=front
+# Add New: an empire with a name from the picker and a password.
+click item:"Add New" in=front
+wait-for item:"Create Empire" in=front
+click item:##pick in=front nth=1
+wait-for item:##pick in=##listpicker
+click item:##pick in=##listpicker nth=1
+wait-gone item:##pick in=##listpicker
+click item:##password in=front
+type "Secret"
+click item:"Create Empire" in=front
+wait-for item:"Add New" in=front
+
+# Edit: the password first; "secret" is not "Secret".
+click item:Edit in=front
+wait-for item:OK in="Enter Empire Password"
+type "secret"
+key Enter
+wait-for item:OK in="Invalid Password"
+screenshot invalid-password.png
+click item:OK in="Invalid Password"
+wait-gone item:OK in="Invalid Password"
+assert-present item:"Add New" in=front
+click item:Edit in=front
+wait-for item:OK in="Enter Empire Password"
+type "Secret"
+key Enter
+wait-for item:"Save Empire" in=front
+click item:Cancel in=front
+wait-for item:"Add New" in=front
+
+# Save To File: Save Designs (No), OpenSE4's file, then Save for SE IV.
+click item:"Save To File" in=front
+wait-for item:Yes in="Save Designs"
+click item:No in="Save Designs"
+wait-for item:"Save for SE IV" in="Save Empire"
+click item:"Save for SE IV" in="Save Empire"
+wait-for item:result:saved in="Save Empire"
+screenshot save-empire.png
+click item:OK in="Save Empire"
+wait-gone item:"Save for SE IV" in="Save Empire"
+
+# Remove it; Add Existing lists both files and adds the original's (it has no password then).
+click item:Remove in=front
+assert-disabled item:Edit in=front
+click item:"Add Existing" in=front
+wait-for item:"*.EMP" in=front
+screenshot load-empire.png
+click item:"*.EMP" in=front
+wait-gone item:"*.EMP" in=front
+assert-enabled item:Edit in=front
+click item:Edit in=front
+wait-for item:"Save Empire" in=front
+click item:Cancel in=front
+wait-for item:"Add New" in=front
+
+# The Quadrant page: Save Map for SE IV, then Load Map lists and loads it.
+click item:Quadrant in=front
+wait-for item:"Generate Map Now" in=front
+click item:"Generate Map Now" in=front
+click item:"Save Map" in=front
+wait-for item:"Save for SE IV" in="Save Map"
+screenshot save-map.png
+click item:"Save for SE IV" in="Save Map"
+wait-gone item:"Save for SE IV" in="Save Map"
+click item:"Load Map" in=front
+wait-for item:"*Space Empires IV map*" in="Load Map"
+screenshot load-map.png
+click item:"*Space Empires IV map*" in="Load Map"
+wait-gone item:"*Space Empires IV map*" in="Load Map"
+# A game that lets players save the map.
+click item:"Game Settings" in=front
+wait-for item:"Players can save the map during the game" in=front
+click item:"Players can save the map during the game" in=front
+click item:"Begin Game" in=front
+wait-screen game
+wait 5
+# On the fixtures the player is soon alone: the conquest ending, then play on.
+click item:Close in=finale optional
+click item:Yes in=finale optional
+
+# The Game Menu's Save Empire: Save Designs, then Save for SE IV.
+key F2
+wait-window game-menu
+click item:"Save Empire" in=game-menu
+wait-for item:Yes in="Save Designs"
+click item:Yes in="Save Designs"
+wait-for item:"Save for SE IV" in="Save Empire"
+click item:"Save for SE IV" in="Save Empire"
+wait-for item:result:saved in="Save Empire"
+screenshot game-save-empire.png
+click item:OK in="Save Empire"
+wait-gone item:"Save for SE IV" in="Save Empire"
+# Its Save Map: Save for SE IV.
+click item:"Save Map" in=game-menu
+wait-for item:"Save for SE IV" in="Save Map"
+click item:"Save for SE IV" in="Save Map"
+wait-for item:result:saved in="Save Map"
+screenshot game-save-map.png
+click item:Close in="Save Map"
+wait-gone item:"Save for SE IV" in="Save Map"

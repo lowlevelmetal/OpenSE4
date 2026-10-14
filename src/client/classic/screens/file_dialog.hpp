@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -40,13 +41,22 @@ public:
     // A line under the list (a file that could not be read).
     void setError(std::string text) { error_ = std::move(text); }
     void rescan() { scanned_ = false; }
+    // Also lists the files with `extension` in the folder listed, then those
+    // of `folder` with `folderExtension` (Add Existing: OpenSE4's empire files
+    // and the original's, and the install's Empires folder, spec 08 §13.4).
+    // Such files show their extension after their name.
+    void alsoList(std::string extension);
+    void alsoListFolder(std::filesystem::path folder, std::string folderExtension);
 
 private:
     // Change Directory's "Select Directory" window, and its folder shown.
     void changeDirectoryPopup(const Painter& p);
     void browse(std::filesystem::path dir);
+    void scan();
 
     std::string title_, nameHeading_, extension_;
+    std::vector<std::string> extraExtensions_;
+    std::vector<std::pair<std::filesystem::path, std::string>> extraFolders_;
     std::filesystem::path& directory_;
     std::filesystem::path defaultDirectory_;
     std::vector<FileEntry> files_;

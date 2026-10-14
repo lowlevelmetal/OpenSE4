@@ -11,6 +11,7 @@
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/script/items.hpp"
+#include "game/classic_files.hpp"
 #include "game/map_file.hpp"
 #include "ruleset/ruleset.hpp"
 
@@ -18,6 +19,7 @@
 #include <expected>
 #include <format>
 #include <optional>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -170,7 +172,7 @@ public:
                 saveEmpire(ui, *designs);
                 ImGui::OpenPopup("Save Empire");
             }
-            notePopup(ui, "Save Empire", empireNote_);
+            saveEmpirePopup(ui);
         }
         ImGui::End();
         return keep;
@@ -194,52 +196,116 @@ private:
         if (!mapNote_.empty()) {
             ImGui::PushTextWrapPos(0.0f);
             ImGui::TextColored(mapSaved_ ? kGoodText : kErrorText, "%s", mapNote_.c_str());
+            script::reportItem(mapSaved_ ? "result:saved" : "result:failed", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());   // for input scripts
             ImGui::PopTextWrapPos();
         }
+        // Save for SE IV: the original's map file (docs/spec/08 §14), in a folder of the player's.
+        ImGui::TextColored(kLabelBlue, "Folder for SE IV");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        inputString("##classicmaps", classicMapsFolder(), 1024);
         ImGui::Spacing();
-        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3.0f;
         if (ImGui::Button("Save", ImVec2(w, ui.px(26))) || enter) {
             const auto saved = game::saveMapFile(file, ui.session.rules().data(), game::mapOfGame(ui.state(), mapName_));
             mapSaved_ = saved.has_value();
             mapNote_ = saved ? std::format("Saved to {}", file.string()) : saved.error();
         }
         ImGui::SameLine();
+        if (ImGui::Button("Save for SE IV", ImVec2(w, ui.px(26)))) {
+            const BusyPointer busy;
+            const std::filesystem::path classicFile =
+                std::filesystem::path(classicMapsFolder()) / game::classic::classicFileName(mapName_, game::classic::kMapFileExtension);
+            game::classic::ConversionReport report;
+            const auto saved = game::classic::writeClassicMap(ui.session.rules().data(), game::mapOfGame(ui.state(), mapName_), classicFile, report,
+                                                              std::random_device{}());
+            mapSaved_ = saved.has_value();
+            mapNote_ = saved ? setup::withNotes(std::format("Saved for Space Empires IV to {}. Copy it into the original's Maps folder to load it there.",
+                                                            classicFile.string()),
+                                                report.notes)
+                             : saved.error();
+        }
+        ImGui::SameLine();
         if (ImGui::Button("Close", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 
-    // Save Empire (spec 06 §6.1, §7 Q48, Q72): the empire's name, leader, race,
-    // minister style, experience and combat strategies, and with `designs`
-    // every design of the player's (each losing its obsolete and built marks,
+    // The folders Save for SE IV writes the original's maps and empire files
+    // to: OpenSE4's own maps and empires folders until another is typed, kept
+    // for the session.
+    static std::string& classicMapsFolder() {
+        static std::string dir = (userDataDir() / "maps").string();
+        return dir;
+    }
+    static std::string& classicEmpiresFolder() {
+        static std::string dir = (userDataDir() / "empires").string();
+        return dir;
+    }
+
+    // Save Empire (spec 06 §6.1, §7 Q48, Q72, spec 08 §13.2): the empire's
+    // name, leader, race, password, e-mail, minister style and settings,
+    // experience, combat strategies and name lists, and with `designs` every
+    // design of the player's (each losing its obsolete and built marks,
     // keeping its strategy and creation date), as an empire file for a later
     // game's setup (our format, named after the empire, under <user
-    // data>/empires); the game state is not kept.
+    // data>/empires); the game state is not kept. Save for SE IV in the
+    // window that follows writes it as the original's empire file too.
     void saveEmpire(UiContext& ui, bool designs) {
         const game::Empire& e = ui.me();
-        game::EmpireSetup out;
-        out.name = e.name;
-        out.empireType = e.empireType;
-        out.leaderTitle = e.leaderTitle;
-        out.leaderName = e.leaderName;
-        out.customRace = e.race;
-        out.ministerStyle = e.ministerStyle;
-        out.useRaceMinisterStyle = e.useRaceMinisterStyle;
-        out.experience = e.experience;
-        out.strategies = e.strategies;
-        if (designs)
-            for (const game::DesignId d : e.designs)
-                if (d.valid() && d.index() < ui.state().designs.size()) {
-                    game::Design copy = ui.state().design(d);
-                    copy.obsolete = false;
-                    copy.everBuilt = false;
-                    copy.retrofitted = false;
-                    out.designs.push_back(std::move(copy));
-                }
+        empireCopy_ = setup::savedCopy(setup::empireOfGame(ui.state(), e.id, designs), designs);
+        empireDesigns_ = designs;
+        empirePlayer_ = static_cast<uint8_t>(std::min<size_t>(e.id.index() + 1, 20));
+        classicEmpireName_ = e.name;
+        classicEmpireNote_.clear();
         const BusyPointer busy;
-        const auto saved = setup::saveEmpireFile(ui.rules(), userDataDir() / "empires", out);
+        const auto saved = setup::saveEmpireFile(ui.rules(), userDataDir() / "empires", empireCopy_);
         empireNote_ = saved ? std::format("The {} empire is saved as {}{}. New games can use it in the empire setup.", e.name, saved->string(),
-                                          designs ? std::format(" with {} designs", out.designs.size()) : std::string{})
+                                          designs ? std::format(" with {} designs", empireCopy_.designs.size()) : std::string{})
                             : std::format("The empire was not saved: {}", saved.error());
+    }
+
+    void saveEmpirePopup(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({420, 0}));
+        if (!ImGui::BeginPopupModal("Save Empire", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
+        ImGui::TextWrapped("%s", empireNote_.c_str());
+        ImGui::Spacing();
+        ImGui::Separator();
+        // Save for SE IV: the original's empire file (docs/spec/08 §13), in a folder of the player's.
+        wrappedDim("Save for SE IV also writes the empire as an empire file of the original Space Empires IV, for its Add Existing.");
+        ImGui::TextColored(kLabelBlue, "Folder");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        inputString("##classicempires", classicEmpiresFolder(), 1024);
+        ImGui::TextColored(kLabelBlue, "File name");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        inputString("##classicempire", classicEmpireName_, 80);
+        const std::string fileName = game::classic::classicFileName(classicEmpireName_, game::classic::kEmpireFileExtension);
+        wrappedDim(fileName.c_str());
+        if (!classicEmpireNote_.empty()) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextColored(classicEmpireSaved_ ? kGoodText : kErrorText, "%s", classicEmpireNote_.c_str());
+            script::reportItem(classicEmpireSaved_ ? "result:saved" : "result:failed", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());   // for input scripts
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::Spacing();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("Save for SE IV", ImVec2(w, ui.px(26)))) {
+            const BusyPointer busy;
+            const std::filesystem::path file = std::filesystem::path(classicEmpiresFolder()) / fileName;
+            game::classic::ConversionReport report;
+            game::classic::EmpireExportOptions options;
+            options.keySeed = std::random_device{}();
+            options.player = empirePlayer_;
+            options.designs = empireDesigns_;
+            const auto saved = game::classic::writeClassicEmpire(ui.rules(), empireCopy_, file, report, options);
+            classicEmpireSaved_ = saved.has_value();
+            classicEmpireNote_ = saved ? setup::withNotes(std::format("Saved for Space Empires IV as {}. Copy it into the original's Empires folder to add "
+                                                                      "it there.",
+                                                                      file.string()),
+                                                          report.notes)
+                                       : std::format("Not saved: {}", saved.error());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("OK", ImVec2(w, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
     }
 
     void notePopup(UiContext& ui, const char* id, const std::string& note) {
@@ -256,6 +322,12 @@ private:
     std::string draftNote_;
     std::string empireNote_;
     bool mapSaved_ = false;
+    game::EmpireSetup empireCopy_;   // the empire Save Empire saved, for Save for SE IV
+    bool empireDesigns_ = false;
+    uint8_t empirePlayer_ = 1;
+    std::string classicEmpireName_;
+    std::string classicEmpireNote_;
+    bool classicEmpireSaved_ = false;
 
     void draftPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({380, 0}));

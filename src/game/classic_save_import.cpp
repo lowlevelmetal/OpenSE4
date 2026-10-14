@@ -28,6 +28,108 @@ namespace opense4::game::classic {
 using namespace detail;
 using datafile::keysEqual;
 
+namespace detail {
+
+// §3.6.7: the empire options OpenSE4 keeps.
+InterfaceOptions interfaceOptionsFromRecord(const EmpireOptions& o) {
+    InterfaceOptions u;
+    u.showLogAtTurnStart = o.showLogAtStart;
+    u.confirmEndTurn = o.confirmEndTurn;
+    u.confirmScrap = o.confirmScrap;
+    u.confirmStellarManipulation = o.confirmStellar;
+    u.confirmDeleteResearch = o.confirmDeleteResearch;
+    u.confirmDeleteIntel = o.confirmDeleteIntel;
+    u.confirmDeleteFirstQueueItem = o.confirmDeleteFirstQueueItem;
+    u.noteSimilarAbilities = o.noteSimilar;
+    u.skipUnderConstruction = o.skipUnderConstruction;
+    u.skipDamaged = o.skipDamaged;
+    u.stopOncePerLocation = o.stopOncePerLocation;
+    u.skipInFleets = o.skipInFleets;
+    u.warpPointNames = o.warpPointNames;
+    u.planetNames = o.planetNames;
+    u.colonizableMarkers = o.colonizableMarkers;
+    u.systemGrid = o.systemGrid;
+    u.coordinateLocation = o.coordinateLocation;
+    u.facilityMarkers = o.facilityMarker1 ? 1 : 0;
+    for (size_t k = 0; k < o.facilityMarkers2to12.size(); ++k)
+        if (o.facilityMarkers2to12[k]) u.facilityMarkers = static_cast<uint16_t>(u.facilityMarkers | (1u << (k + 1)));
+    u.galaxyGridLines = o.galaxyGridLines;
+    u.galaxyWarpLines = o.galaxyWarpLines;
+    u.latestConstructionOnly = o.latestConstruction;
+    u.latestComponentsOnly = o.latestComponents;
+    u.autoClaimColonized = o.autoClaim;
+    u.logFilter = static_cast<uint8_t>(std::clamp(int{o.logFilter} - 1, 0, 7));
+    u.planetsTab = static_cast<uint8_t>(std::max(0, int{o.planetsTab} - 1));
+    u.planetsNoSysToAvoid = o.planetsHideAvoided;
+    u.queuesTab = static_cast<uint8_t>(std::max(0, int{o.queuesTab} - 1));
+    u.setQueueTab = static_cast<uint8_t>(std::clamp(int{o.setQueueTab} - 1, 0, 3));
+    u.coloniesTab = static_cast<uint8_t>(std::clamp(int{o.coloniesTab} - 1, 0, 8));
+    u.queuesShown = 0;
+    for (size_t k = 0; k < o.queuesShown.size(); ++k)
+        if (o.queuesShown[k]) u.queuesShown = static_cast<uint8_t>(u.queuesShown | (1u << k));
+    u.simulatorNoObsolete = o.simulatorNoObsolete;
+    // The transfer windows' Move One.. radios, 1-based in the file (§3.6.7).
+    u.cargoStep = static_cast<uint8_t>(std::clamp(int{o.cargoTransferTab} - 1, 0, 4));
+    u.unitsStep = static_cast<uint8_t>(std::clamp(int{o.unitsTransferTab} - 1, 0, 3));
+    u.shipsTab = static_cast<uint8_t>(std::max(0, int{o.shipsTab} - 1));
+    // The Designs window: its tab and two check boxes (§3.6.7).
+    u.designsTab = static_cast<uint8_t>(std::clamp(int{o.designsTab} - 1, 0, 3));
+    u.designsStatsView = o.designsStatsView;
+    u.designsHideObsolete = o.designsHideObsolete;
+    u.empiresTab = static_cast<uint8_t>(std::clamp(int{o.politicsTab} - 1, 0, 2));
+    u.shipsShown = 0;
+    for (size_t k = 0; k < o.shipsShown.size(); ++k)
+        if (o.shipsShown[k]) u.shipsShown = static_cast<uint8_t>(u.shipsShown | (1u << k));
+    // The sort keys' column numbers are not known to match OpenSE4's
+    // (§11.1 Q4): the windows start sorted by name.
+    u.replayAnimate = o.replayAnimate;
+    u.replayFast = o.replayFast;
+    u.replayViewRect = o.replayViewRect;
+    u.replayGrid = o.replayGrid;
+    u.designToHit = o.designerToHit;
+    u.designCondensed = o.designerCondensed;
+    u.galaxyMapNames = o.galaxyNames;
+    u.galaxyMapDistances = o.galaxyDistances;
+    return u;
+}
+
+// §3.6.13: a strategy record as the keys of the strategy data files.
+ruleset::CombatStrategy strategyFromRecord(const StrategyRecord& t) {
+    ruleset::CombatStrategy out;
+    out.name = t.name;
+    auto add = [&](std::string key, std::string value) { out.settings.emplace_back(std::move(key), std::move(value)); };
+    auto yesNo = [](bool b) { return std::string(b ? "True" : "False"); };
+    auto movement = [](uint8_t c) { return std::string(kMovementNames[static_cast<size_t>(std::clamp(int{c}, 1, 8) - 1)]); };
+    add("Primary Movement Strategy", movement(t.primary));
+    add("Secondary Movement Strategy", movement(t.secondary));
+    for (size_t i = 0; i < t.targeting.size(); ++i)
+        add(std::format("Targeting Priority {}", i + 1), std::string(kTargetingNames[std::min<size_t>(t.targeting[i], 12)]));
+    add("Use Type Priority First", yesNo(t.typePriorityFirst));
+    // In the order of the data files (TargetCategory).
+    std::array<size_t, kTargetCategories> fileIndex{};
+    for (size_t f = 0; f < kStrategyCategoryOrder.size(); ++f) fileIndex[static_cast<size_t>(kStrategyCategoryOrder[f])] = f;
+    for (size_t c = 0; c < kTargetCategories; ++c)
+        add(std::format("Type Priority {}", identifier(static_cast<TargetCategory>(c))), std::to_string(t.typePriority[fileIndex[c]]));
+    for (size_t c = 0; c < kTargetCategories; ++c)
+        add(std::format("Dont Fire On {}", identifier(static_cast<TargetCategory>(c))), yesNo(t.dontFireOn[fileIndex[c]]));
+    add("Fighters Launch Group Amount", std::to_string(t.fighterGroup));
+    add("Drones Per Target", std::to_string(t.dronesPerTarget));
+    for (size_t c = 0; c < kTargetCategories; ++c) {
+        const auto cat = static_cast<TargetCategory>(c);
+        // The seekers' flags are fixed in the original (§3.6.13).
+        if (cat == TargetCategory::SeekersOnUs || cat == TargetCategory::SeekersOnOthers) continue;
+        add(std::format("Break Formation {}", identifier(cat)), yesNo(t.breakFormation[fileIndex[c]]));
+    }
+    add("Damage Percent Per Ship", std::to_string(t.damagePercent[0]));
+    add("Damage Percent Per Planet", std::to_string(t.damagePercent[1]));
+    add("Damage Percent Per Fighter Group", std::to_string(t.damagePercent[2]));
+    add("Damage Percent Per Satellite Group", std::to_string(t.damagePercent[3]));
+    add("Damage Until All Weapons Gone", yesNo(t.damageUntilWeaponsGone));
+    return out;
+}
+
+} // namespace detail
+
 namespace {
 
 // A 1-based position within a list of n items.
@@ -436,7 +538,7 @@ private:
                 for (std::string_view t : kOldDesignTypesAdded) e.designTypes.emplace_back(t);
             e.colonyTypes = in.colonyTypes;
             e.repairPriorities = in.repairPriorities;
-            for (const StrategyRecord& t : in.strategies) e.strategies.push_back(strategy(t));
+            for (const StrategyRecord& t : in.strategies) e.strategies.push_back(strategyFromRecord(t));
             if (e.strategies.empty()) e.strategies.push_back({"Default", {}});
             e.experience = in.experience;
             // Computer player state (§3.6.9).
@@ -463,7 +565,7 @@ private:
             e.avoidTaggedMinefields = o.avoidTaggedMines;
             e.avoidRestrictedSystems = o.avoidRestricted;
             e.chooseColonyType = o.chooseColonyType;
-            e.interfaceOptions = interfaceOptions(o);
+            e.interfaceOptions = interfaceOptionsFromRecord(o);
             s_.empires.push_back(std::move(e));
         }
         // Intelligence (§3.6.3), once every empire exists.
@@ -518,103 +620,6 @@ private:
         for (size_t c = 0; c < race.characteristics.size(); ++c) race.characteristics[c] = in.characteristics[c];
         if (!in.artFolder.empty() && !keysEqual(in.artFolder, in.raceFolder)) count("empires whose art came from another race");
         if (!in.emblemFolder.empty()) count("rebel empires' own emblems");
-    }
-
-    static InterfaceOptions interfaceOptions(const EmpireOptions& o) {
-        InterfaceOptions u;
-        u.showLogAtTurnStart = o.showLogAtStart;
-        u.confirmEndTurn = o.confirmEndTurn;
-        u.confirmScrap = o.confirmScrap;
-        u.confirmStellarManipulation = o.confirmStellar;
-        u.confirmDeleteResearch = o.confirmDeleteResearch;
-        u.confirmDeleteIntel = o.confirmDeleteIntel;
-        u.confirmDeleteFirstQueueItem = o.confirmDeleteFirstQueueItem;
-        u.noteSimilarAbilities = o.noteSimilar;
-        u.skipUnderConstruction = o.skipUnderConstruction;
-        u.skipDamaged = o.skipDamaged;
-        u.stopOncePerLocation = o.stopOncePerLocation;
-        u.skipInFleets = o.skipInFleets;
-        u.warpPointNames = o.warpPointNames;
-        u.planetNames = o.planetNames;
-        u.colonizableMarkers = o.colonizableMarkers;
-        u.systemGrid = o.systemGrid;
-        u.coordinateLocation = o.coordinateLocation;
-        u.facilityMarkers = o.facilityMarker1 ? 1 : 0;
-        for (size_t k = 0; k < o.facilityMarkers2to12.size(); ++k)
-            if (o.facilityMarkers2to12[k]) u.facilityMarkers = static_cast<uint16_t>(u.facilityMarkers | (1u << (k + 1)));
-        u.galaxyGridLines = o.galaxyGridLines;
-        u.galaxyWarpLines = o.galaxyWarpLines;
-        u.latestConstructionOnly = o.latestConstruction;
-        u.latestComponentsOnly = o.latestComponents;
-        u.autoClaimColonized = o.autoClaim;
-        u.logFilter = static_cast<uint8_t>(std::clamp(int{o.logFilter} - 1, 0, 7));
-        u.planetsTab = static_cast<uint8_t>(std::max(0, int{o.planetsTab} - 1));
-        u.planetsNoSysToAvoid = o.planetsHideAvoided;
-        u.queuesTab = static_cast<uint8_t>(std::max(0, int{o.queuesTab} - 1));
-        u.setQueueTab = static_cast<uint8_t>(std::clamp(int{o.setQueueTab} - 1, 0, 3));
-        u.coloniesTab = static_cast<uint8_t>(std::clamp(int{o.coloniesTab} - 1, 0, 8));
-        u.queuesShown = 0;
-        for (size_t k = 0; k < o.queuesShown.size(); ++k)
-            if (o.queuesShown[k]) u.queuesShown = static_cast<uint8_t>(u.queuesShown | (1u << k));
-        u.simulatorNoObsolete = o.simulatorNoObsolete;
-        // The transfer windows' Move One.. radios, 1-based in the file (§3.6.7).
-        u.cargoStep = static_cast<uint8_t>(std::clamp(int{o.cargoTransferTab} - 1, 0, 4));
-        u.unitsStep = static_cast<uint8_t>(std::clamp(int{o.unitsTransferTab} - 1, 0, 3));
-        u.shipsTab = static_cast<uint8_t>(std::max(0, int{o.shipsTab} - 1));
-        // The Designs window: its tab and two check boxes (§3.6.7).
-        u.designsTab = static_cast<uint8_t>(std::clamp(int{o.designsTab} - 1, 0, 3));
-        u.designsStatsView = o.designsStatsView;
-        u.designsHideObsolete = o.designsHideObsolete;
-        u.empiresTab = static_cast<uint8_t>(std::clamp(int{o.politicsTab} - 1, 0, 2));
-        u.shipsShown = 0;
-        for (size_t k = 0; k < o.shipsShown.size(); ++k)
-            if (o.shipsShown[k]) u.shipsShown = static_cast<uint8_t>(u.shipsShown | (1u << k));
-        // The sort keys' column numbers are not known to match OpenSE4's
-        // (§11.1 Q4): the windows start sorted by name.
-        u.replayAnimate = o.replayAnimate;
-        u.replayFast = o.replayFast;
-        u.replayViewRect = o.replayViewRect;
-        u.replayGrid = o.replayGrid;
-        u.designToHit = o.designerToHit;
-        u.designCondensed = o.designerCondensed;
-        u.galaxyMapNames = o.galaxyNames;
-        u.galaxyMapDistances = o.galaxyDistances;
-        return u;
-    }
-
-    // §3.6.13: a strategy record as the keys of the strategy data files.
-    static ruleset::CombatStrategy strategy(const StrategyRecord& t) {
-        ruleset::CombatStrategy out;
-        out.name = t.name;
-        auto add = [&](std::string key, std::string value) { out.settings.emplace_back(std::move(key), std::move(value)); };
-        auto yesNo = [](bool b) { return std::string(b ? "True" : "False"); };
-        auto movement = [](uint8_t c) { return std::string(kMovementNames[static_cast<size_t>(std::clamp(int{c}, 1, 8) - 1)]); };
-        add("Primary Movement Strategy", movement(t.primary));
-        add("Secondary Movement Strategy", movement(t.secondary));
-        for (size_t i = 0; i < t.targeting.size(); ++i)
-            add(std::format("Targeting Priority {}", i + 1), std::string(kTargetingNames[std::min<size_t>(t.targeting[i], 12)]));
-        add("Use Type Priority First", yesNo(t.typePriorityFirst));
-        // In the order of the data files (TargetCategory).
-        std::array<size_t, kTargetCategories> fileIndex{};
-        for (size_t f = 0; f < kStrategyCategoryOrder.size(); ++f) fileIndex[static_cast<size_t>(kStrategyCategoryOrder[f])] = f;
-        for (size_t c = 0; c < kTargetCategories; ++c)
-            add(std::format("Type Priority {}", identifier(static_cast<TargetCategory>(c))), std::to_string(t.typePriority[fileIndex[c]]));
-        for (size_t c = 0; c < kTargetCategories; ++c)
-            add(std::format("Dont Fire On {}", identifier(static_cast<TargetCategory>(c))), yesNo(t.dontFireOn[fileIndex[c]]));
-        add("Fighters Launch Group Amount", std::to_string(t.fighterGroup));
-        add("Drones Per Target", std::to_string(t.dronesPerTarget));
-        for (size_t c = 0; c < kTargetCategories; ++c) {
-            const auto cat = static_cast<TargetCategory>(c);
-            // The seekers' flags are fixed in the original (§3.6.13).
-            if (cat == TargetCategory::SeekersOnUs || cat == TargetCategory::SeekersOnOthers) continue;
-            add(std::format("Break Formation {}", identifier(cat)), yesNo(t.breakFormation[fileIndex[c]]));
-        }
-        add("Damage Percent Per Ship", std::to_string(t.damagePercent[0]));
-        add("Damage Percent Per Planet", std::to_string(t.damagePercent[1]));
-        add("Damage Percent Per Fighter Group", std::to_string(t.damagePercent[2]));
-        add("Damage Percent Per Satellite Group", std::to_string(t.damagePercent[3]));
-        add("Damage Until All Weapons Gone", yesNo(t.damageUntilWeaponsGone));
-        return out;
     }
 
     // The empires' queue types (§3.6.6), once the designs exist: the queue
@@ -961,11 +966,11 @@ private:
             const ObjectRecord& o = in_.objects[i];
             if (refs_[i].vehicle.valid()) {
                 Vehicle* v = s_.vehicle(refs_[i].vehicle);
-                v->orders = orderList(o.orders, v->owner, v, nullptr);
+                v->orders = orderList(o.orders, v->owner, v, nullptr, &v->repeatShift);
                 v->repeatOrders = o.orders.repeat;
             } else if (o.colony && refs_[i].object.valid()) {
                 if (Colony* c = s_.colony(refs_[i].object)) {
-                    c->orders = orderList(o.colony->orders, c->owner, nullptr, c);
+                    c->orders = orderList(o.colony->orders, c->owner, nullptr, c, &c->repeatShift);
                     c->repeatOrders = o.colony->orders.repeat;
                 }
             }
@@ -974,10 +979,17 @@ private:
 
     // A unit design of this kind for a load, drop, launch or recover: the
     // first stack of that kind in `cargo`, else the owner's newest design of it.
-    std::vector<Order> orderList(const OrderList& list, EmpireId owner, const Vehicle* vehicle, const Colony* colony) {
+    // The list turned to start at its current order; `shift` gets how far a
+    // repeating list has turned, the orders kept before the current one
+    // (§3.8.8, spec 03 §8).
+    std::vector<Order> orderList(const OrderList& list, EmpireId owner, const Vehicle* vehicle, const Colony* colony, uint16_t* shift) {
         std::vector<Order> out;
         std::vector<Order> converted;
-        for (const OrderRecord& rec : list.orders) {
+        const size_t currentRecord = inRange(list.current, list.orders.size()) ? list.current - 1u : 0;
+        size_t current = 0;   // the current record's first order in `converted`
+        for (size_t r = 0; r < list.orders.size(); ++r) {
+            const OrderRecord& rec = list.orders[r];
+            if (r == currentRecord) current = converted.size();
             // Launch or Recover of every unit kind (kind byte 0): one order per kind (§3.8.8).
             if ((rec.kind == 34 || rec.kind == 35) && rec.extra == 0) {
                 std::vector<Order> each = everyUnitKind(rec, vehicle, colony);
@@ -993,12 +1005,14 @@ private:
             else converted.push_back(Order{OrderKind::Count});   // a placeholder keeps the positions
         }
         // OpenSE4 keeps the current order first: rotate (§3.8.8).
-        const size_t current = inRange(list.current, converted.size()) ? list.current - 1u : 0;
         if (current > 0) count("order lists turned to start at their current order");
         for (size_t k = 0; k < converted.size(); ++k) {
             const Order& o = converted[(current + k) % converted.size()];
             if (o.kind != OrderKind::Count) out.push_back(o);
         }
+        const auto before = std::count_if(converted.begin(), converted.begin() + static_cast<std::ptrdiff_t>(current),
+                                          [](const Order& o) { return o.kind != OrderKind::Count; });
+        *shift = list.repeat && !out.empty() ? static_cast<uint16_t>(before) : uint16_t{0};
         return out;
     }
 

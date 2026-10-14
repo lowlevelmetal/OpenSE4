@@ -705,6 +705,46 @@ std::vector<size_t> traitCountsThatDecode(std::span<const uint8_t> bytes);
 // hold (a list longer than its count, a byte out of range).
 std::expected<std::vector<uint8_t>, std::string> encodeClassicSave(const ClassicSave& save);
 
+// ---- Empire files and map files (§13, §14) ---------------------------------------------------------------
+
+// An empire file (Empires\*.emp, §13.1): the key header, the version, one
+// empire record in its empire-file form and the designs saved with it.
+struct ClassicEmpireFile {
+    Keys keys;
+    std::string version{kVersion};
+    EmpireRecord empire;
+    std::vector<DesignRecord> designs;
+    // Not in the file: the racial-trait count it was read with (§3.6.5).
+    size_t traitCount = 0;
+    bool operator==(const ClassicEmpireFile&) const = default;
+};
+// Decodes an empire file, which must end exactly after its designs; the
+// errors name the field and the byte as for a saved game.
+std::expected<ClassicEmpireFile, std::string> decodeClassicEmpire(std::span<const uint8_t> bytes, size_t traitCount);
+// The racial-trait counts (0..80) with which an empire file decodes.
+std::vector<size_t> empireTraitCountsThatDecode(std::span<const uint8_t> bytes);
+std::expected<std::vector<uint8_t>, std::string> encodeClassicEmpire(const ClassicEmpireFile& file);
+
+// A map file (Maps\*.map, §14.1): the systems in their map form (the
+// explored and claimed sets and the notes are not stored: decoding leaves
+// them empty and encoding ignores them), the two starting-point lists and
+// the stellar objects.
+struct ClassicMapFile {
+    Keys keys;
+    std::string version{kVersion};
+    std::vector<SystemRecord> systems;
+    std::vector<StartPointRecord> specificStarts;
+    std::vector<StartPointRecord> commonStarts;
+    std::vector<ObjectRecord> objects;
+    bool operator==(const ClassicMapFile&) const = default;
+};
+std::expected<ClassicMapFile, std::string> decodeClassicMap(std::span<const uint8_t> bytes);
+std::expected<std::vector<uint8_t>, std::string> encodeClassicMap(const ClassicMapFile& file);
+
+// Readable summaries (the converter's --info).
+std::string describe(const ClassicEmpireFile& file);
+std::string describe(const ClassicMapFile& file);
+
 // The key stream of §2.3 / §2.4, for tests: the first `n` values of rows 1,
 // 57 and 123, and the character keys of `text` followed by the next number key.
 struct KeyRows {

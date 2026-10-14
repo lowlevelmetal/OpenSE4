@@ -591,95 +591,16 @@ private:
         }
         x.fleetsCreated = clampWord(static_cast<int64_t>(x.fleets.size()));
         // Strategies (§3.6.13).
-        for (size_t k = 0; k < e.strategies.size(); ++k) x.strategies.push_back(strategy(e.strategies[k], k));
+        for (size_t k = 0; k < e.strategies.size(); ++k) x.strategies.push_back(strategyRecord(e.strategies[k], k, &replaced_));
         return x;
     }
 
     EmpireOptions empireOptions(const Empire& e) {
-        const InterfaceOptions& u = e.interfaceOptions;
-        EmpireOptions o;
-        o.showLogAtStart = u.showLogAtTurnStart;
-        o.confirmEndTurn = u.confirmEndTurn;
-        o.confirmScrap = u.confirmScrap;
-        o.confirmStellar = u.confirmStellarManipulation;
-        o.confirmDeleteResearch = u.confirmDeleteResearch;
-        o.confirmDeleteIntel = u.confirmDeleteIntel;
-        o.confirmDeleteFirstQueueItem = u.confirmDeleteFirstQueueItem;
-        o.noteSimilar = u.noteSimilarAbilities;
-        o.skipUnderConstruction = u.skipUnderConstruction;
-        o.avoidTaggedMines = e.avoidTaggedMinefields;
-        o.avoidRestricted = e.avoidRestrictedSystems;
-        o.skipDamaged = u.skipDamaged;
-        o.stopOncePerLocation = u.stopOncePerLocation;
-        o.skipInFleets = u.skipInFleets;
-        o.clearOnEnemy = e.clearOrdersOnEncounter != EncounterClear::Never;
-        o.clearOnAny = e.clearOrdersOnEncounter == EncounterClear::Any;
-        o.warpPointNames = u.warpPointNames;
-        o.planetNames = u.planetNames;
-        o.facilityMarker1 = (u.facilityMarkers & 1u) != 0;
-        o.colonizableMarkers = u.colonizableMarkers;
-        o.coordinateLocation = u.coordinateLocation;
-        for (size_t k = 0; k < o.facilityMarkers2to12.size(); ++k) o.facilityMarkers2to12[k] = ((u.facilityMarkers >> (k + 1)) & 1u) != 0;
-        o.galaxyGridLines = u.galaxyGridLines;
-        o.galaxyWarpLines = u.galaxyWarpLines;
-        o.latestConstruction = u.latestConstructionOnly;
-        o.latestComponents = u.latestComponentsOnly;
-        o.chooseColonyType = e.chooseColonyType;
+        EmpireOptions o = empireOptionsRecord(e.interfaceOptions, e.clearOrdersOnEncounter, e.avoidTaggedMinefields, e.avoidRestrictedSystems,
+                                              e.chooseColonyType);
         o.turnEndSystem = sys(e.homeSystem);
         o.turnEndSector = sec(e.homeSector);
-        o.autoClaim = u.autoClaimColonized;
-        o.planetsTab = clampByte(u.planetsTab + 1);
-        o.shipsTab = clampByte(u.shipsTab + 1);
-        o.politicsTab = clampByte(u.empiresTab + 1);
-        o.queuesTab = clampByte(u.queuesTab + 1);
-        o.designsTab = clampByte(u.designsTab + 1);
-        o.designsStatsView = u.designsStatsView;
-        o.designsHideObsolete = u.designsHideObsolete;
-        o.setQueueTab = clampByte(u.setQueueTab + 1);
-        o.coloniesTab = clampByte(u.coloniesTab + 1);
-        o.logFilter = clampByte(u.logFilter + 1);
-        for (size_t k = 0; k < o.shipsShown.size(); ++k) o.shipsShown[k] = ((u.shipsShown >> k) & 1u) != 0;
-        for (size_t k = 0; k < o.queuesShown.size(); ++k) o.queuesShown[k] = ((u.queuesShown >> k) & 1u) != 0;
-        o.designerCondensed = u.designCondensed;
-        o.designerToHit = u.designToHit;
-        o.galaxyNames = u.galaxyMapNames;
-        o.galaxyDistances = u.galaxyMapDistances;
-        o.planetsHideAvoided = u.planetsNoSysToAvoid;
-        o.simulatorNoObsolete = u.simulatorNoObsolete;
-        o.cargoTransferTab = clampByte(std::min<int>(u.cargoStep, 4) + 1);
-        o.unitsTransferTab = clampByte(std::min<int>(u.unitsStep, 3) + 1);
-        o.systemGrid = u.systemGrid;
-        o.replayFast = u.replayFast;
-        o.replayAnimate = u.replayAnimate;
-        o.replayGrid = u.replayGrid;
-        o.replayViewRect = u.replayViewRect;
         return o;
-    }
-
-    StrategyRecord strategy(const ruleset::CombatStrategy& cs, size_t index) {
-        const combat::Strategy st = combat::parseStrategy(cs);
-        StrategyRecord t;
-        t.position = clampWord(static_cast<int64_t>(index) + 1);
-        t.name = text(cs.name);
-        t.primary = static_cast<uint8_t>(static_cast<uint8_t>(st.primary) + 1);
-        t.secondary = static_cast<uint8_t>(static_cast<uint8_t>(st.secondary) + 1);
-        t.typePriorityFirst = st.typePriorityFirst;
-        for (size_t k = 0; k < t.targeting.size(); ++k) t.targeting[k] = static_cast<uint8_t>(st.targeting[k]);
-        for (size_t f = 0; f < kStrategyCategoryOrder.size(); ++f) {
-            const auto c = static_cast<size_t>(kStrategyCategoryOrder[f]);
-            t.typePriority[f] = clampByte(st.typePriority[c]);
-            t.dontFireOn[f] = st.dontFireOn[c];
-            t.breakFormation[f] = st.breakFormation[c];
-        }
-        // The seekers' break-formation flags stay on in the original (§3.6.13).
-        t.breakFormation[11] = true;
-        t.breakFormation[12] = true;
-        t.fighterGroup = clampWord(st.fighterLaunchGroup);
-        t.dronesPerTarget = clampWord(st.dronesPerTarget);
-        t.damagePercent = {clampByte(st.damagePercentShip), clampByte(st.damagePercentPlanet), clampByte(st.damagePercentFighters),
-                           clampByte(st.damagePercentSatellites)};
-        t.damageUntilWeaponsGone = st.damageUntilWeaponsGone;
-        return t;
     }
 
     // ---- The log and messages (§3.6.11) --------------------------------------------------------------------------
@@ -883,13 +804,7 @@ private:
             rec.created = date(d.createdTurn);
             rec.obsolete = d.obsolete;
             rec.everBuilt = d.everBuilt;
-            if (d.hull < d_.vehicleSizes.size()) {
-                // The values the original trusts and never recomputes (§3.7, §7.2).
-                const DesignStats st = computeDesignStats(r_, nullptr, d);
-                rec.speed = clampByte(designMovement(r_, d.hull, d.entries));
-                for (size_t k = 0; k < 3; ++k) rec.cost[k] = clampInt(st.cost.v[k]);
-                rec.typeCode = designTypeCode(d.designType).value_or(designTypeCode(ai::detail::aiTypeOf(r_, d, st)).value_or(1));
-            }
+            cachedDesignValues(r_, d, rec);
             for (const DesignEntry& entry : d.entries) rec.parts.push_back({clampWord(int64_t{entry.component} + 1), clampByte(entry.mount + 1)});
             rec.strategy = clampWord(int64_t{d.strategy} + 1);
             // Last seen: the other players' knowledge; the owner's own entry, its last battle.
@@ -988,7 +903,7 @@ private:
         rec.landedTroops = units(c.landedTroops);
         rec.invader = player(c.invader);
         rec.militia = rec.invader ? clampWord(c.militia) : 0;
-        rec.orders = orderList(c.orders, c.repeatOrders, c.owner, &c);
+        rec.orders = orderList(c.orders, c.repeatOrders, c.repeatShift, c.owner, &c);
         rec.capital = c.homeworld;
         rec.minister = c.minister;
         return rec;
@@ -1061,7 +976,7 @@ private:
         o.owner = player(v.owner);
         o.minister = v.minister;
         o.cloaked = v.status == VehicleStatus::Cloaked;
-        o.orders = orderList(v.orders, v.repeatOrders, v.owner, nullptr, &v);
+        o.orders = orderList(v.orders, v.repeatOrders, v.repeatShift, v.owner, nullptr, &v);
         if (v.immobileUntil > s_.turn) count("vehicles held in place by sabotage or an event (they move again in the original)");
         if (c == ObjectClass::Ship) {
             const Design& d = s_.design(v.design);
@@ -1101,12 +1016,20 @@ private:
 
     // ---- Orders (§3.8.8) ---------------------------------------------------------------------------------------------
 
-    OrderList orderList(const std::vector<Order>& orders, bool repeat, EmpireId owner, const Colony* colony, const Vehicle* vehicle = nullptr) {
+    // A repeating list in place, as the original keeps it: turned back by
+    // `shift`, its current order an index into it (§3.8.8, spec 03 §8).
+    OrderList orderList(const std::vector<Order>& orders, bool repeat, uint16_t shift, EmpireId owner, const Colony* colony,
+                        const Vehicle* vehicle = nullptr) {
         OrderList list;
         list.repeat = repeat;
         list.current = 1;
-        for (const Order& o : orders)
-            if (auto rec = order(o, owner, colony, vehicle)) list.orders.push_back(std::move(*rec));
+        const size_t turned = orderListShift(orders, repeat, shift);
+        const std::vector<Order> inPlace = originalOrderList(orders, repeat, shift);
+        for (size_t k = 0; k < inPlace.size(); ++k) {
+            if (k == turned) list.current = clampWord(static_cast<int64_t>(list.orders.size()) + 1);
+            if (auto rec = order(inPlace[k], owner, colony, vehicle)) list.orders.push_back(std::move(*rec));
+        }
+        if (list.current > list.orders.size()) list.current = 1;   // the current order was the last one, and is not written
         return list;
     }
 
@@ -1378,6 +1301,106 @@ private:
 };
 
 } // namespace
+
+namespace detail {
+
+// §3.6.7: the empire options from what OpenSE4 keeps; the system and sector
+// shown at turn end are the caller's.
+EmpireOptions empireOptionsRecord(const InterfaceOptions& u, EncounterClear clear, bool avoidTaggedMines, bool avoidRestricted, bool chooseColonyType) {
+    EmpireOptions o;
+    o.showLogAtStart = u.showLogAtTurnStart;
+    o.confirmEndTurn = u.confirmEndTurn;
+    o.confirmScrap = u.confirmScrap;
+    o.confirmStellar = u.confirmStellarManipulation;
+    o.confirmDeleteResearch = u.confirmDeleteResearch;
+    o.confirmDeleteIntel = u.confirmDeleteIntel;
+    o.confirmDeleteFirstQueueItem = u.confirmDeleteFirstQueueItem;
+    o.noteSimilar = u.noteSimilarAbilities;
+    o.skipUnderConstruction = u.skipUnderConstruction;
+    o.avoidTaggedMines = avoidTaggedMines;
+    o.avoidRestricted = avoidRestricted;
+    o.skipDamaged = u.skipDamaged;
+    o.stopOncePerLocation = u.stopOncePerLocation;
+    o.skipInFleets = u.skipInFleets;
+    o.clearOnEnemy = clear != EncounterClear::Never;
+    o.clearOnAny = clear == EncounterClear::Any;
+    o.warpPointNames = u.warpPointNames;
+    o.planetNames = u.planetNames;
+    o.facilityMarker1 = (u.facilityMarkers & 1u) != 0;
+    o.colonizableMarkers = u.colonizableMarkers;
+    o.coordinateLocation = u.coordinateLocation;
+    for (size_t k = 0; k < o.facilityMarkers2to12.size(); ++k) o.facilityMarkers2to12[k] = ((u.facilityMarkers >> (k + 1)) & 1u) != 0;
+    o.galaxyGridLines = u.galaxyGridLines;
+    o.galaxyWarpLines = u.galaxyWarpLines;
+    o.latestConstruction = u.latestConstructionOnly;
+    o.latestComponents = u.latestComponentsOnly;
+    o.chooseColonyType = chooseColonyType;
+    o.autoClaim = u.autoClaimColonized;
+    o.planetsTab = clampByte(u.planetsTab + 1);
+    o.shipsTab = clampByte(u.shipsTab + 1);
+    o.politicsTab = clampByte(u.empiresTab + 1);
+    o.queuesTab = clampByte(u.queuesTab + 1);
+    o.designsTab = clampByte(u.designsTab + 1);
+    o.designsStatsView = u.designsStatsView;
+    o.designsHideObsolete = u.designsHideObsolete;
+    o.setQueueTab = clampByte(u.setQueueTab + 1);
+    o.coloniesTab = clampByte(u.coloniesTab + 1);
+    o.logFilter = clampByte(u.logFilter + 1);
+    for (size_t k = 0; k < o.shipsShown.size(); ++k) o.shipsShown[k] = ((u.shipsShown >> k) & 1u) != 0;
+    for (size_t k = 0; k < o.queuesShown.size(); ++k) o.queuesShown[k] = ((u.queuesShown >> k) & 1u) != 0;
+    o.designerCondensed = u.designCondensed;
+    o.designerToHit = u.designToHit;
+    o.galaxyNames = u.galaxyMapNames;
+    o.galaxyDistances = u.galaxyMapDistances;
+    o.planetsHideAvoided = u.planetsNoSysToAvoid;
+    o.simulatorNoObsolete = u.simulatorNoObsolete;
+    o.cargoTransferTab = clampByte(std::min<int>(u.cargoStep, 4) + 1);
+    o.unitsTransferTab = clampByte(std::min<int>(u.unitsStep, 3) + 1);
+    o.systemGrid = u.systemGrid;
+    o.replayFast = u.replayFast;
+    o.replayAnimate = u.replayAnimate;
+    o.replayGrid = u.replayGrid;
+    o.replayViewRect = u.replayViewRect;
+    return o;
+}
+
+// §3.6.13: a combat strategy of OpenSE4 as the record.
+StrategyRecord strategyRecord(const ruleset::CombatStrategy& cs, size_t index, size_t* replaced) {
+    const combat::Strategy st = combat::parseStrategy(cs);
+    StrategyRecord t;
+    t.position = clampWord(static_cast<int64_t>(index) + 1);
+    t.name = latin1Safe(cs.name, replaced);
+    t.primary = static_cast<uint8_t>(static_cast<uint8_t>(st.primary) + 1);
+    t.secondary = static_cast<uint8_t>(static_cast<uint8_t>(st.secondary) + 1);
+    t.typePriorityFirst = st.typePriorityFirst;
+    for (size_t k = 0; k < t.targeting.size(); ++k) t.targeting[k] = static_cast<uint8_t>(st.targeting[k]);
+    for (size_t f = 0; f < kStrategyCategoryOrder.size(); ++f) {
+        const auto c = static_cast<size_t>(kStrategyCategoryOrder[f]);
+        t.typePriority[f] = clampByte(st.typePriority[c]);
+        t.dontFireOn[f] = st.dontFireOn[c];
+        t.breakFormation[f] = st.breakFormation[c];
+    }
+    // The seekers' break-formation flags stay on in the original (§3.6.13).
+    t.breakFormation[11] = true;
+    t.breakFormation[12] = true;
+    t.fighterGroup = clampWord(st.fighterLaunchGroup);
+    t.dronesPerTarget = clampWord(st.dronesPerTarget);
+    t.damagePercent = {clampByte(st.damagePercentShip), clampByte(st.damagePercentPlanet), clampByte(st.damagePercentFighters),
+                       clampByte(st.damagePercentSatellites)};
+    t.damageUntilWeaponsGone = st.damageUntilWeaponsGone;
+    return t;
+}
+
+// The values the original trusts and never recomputes in a saved game (§3.7, §7.2).
+void cachedDesignValues(const Rules& r, const Design& d, DesignRecord& rec) {
+    if (d.hull >= r.data().vehicleSizes.size()) return;
+    const DesignStats st = computeDesignStats(r, nullptr, d);
+    rec.speed = clampByte(designMovement(r, d.hull, d.entries));
+    for (size_t k = 0; k < 3; ++k) rec.cost[k] = clampInt(st.cost.v[k]);
+    rec.typeCode = designTypeCode(d.designType).value_or(designTypeCode(ai::detail::aiTypeOf(r, d, st)).value_or(1));
+}
+
+} // namespace detail
 
 std::optional<std::string> modsExportProblem(const Rules& rules, const GameState& s, const ExportOptions& options) {
     // Ability names a mod declared: the original knows only its own (Appendix A).

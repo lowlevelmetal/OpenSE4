@@ -101,18 +101,20 @@ fs::path ScenarioFiles::startingGameFile() const {
     return folder / file;
 }
 
-fs::path scenarioFolder(const game::Rules& r) {
+fs::path classicGameFolder(const game::Rules& r, std::string_view name) {
     fs::path folder;
     std::error_code ec;
     for (const mods::Package& p : sdk::gamePackages(r)) {
         if (!p.classic) continue;
-        const fs::path dir = ruleset::childIgnoringCase(p.root, "Scenarios");
+        const fs::path dir = ruleset::childIgnoringCase(p.root, name);
         if (fs::is_directory(dir, ec)) folder = dir;
     }
     if (!folder.empty()) return folder;
     if (r.gameRoot().empty()) return {};
-    return ruleset::childIgnoringCase(r.gameRoot(), "Scenarios");
+    return ruleset::childIgnoringCase(r.gameRoot(), name);
 }
+
+fs::path scenarioFolder(const game::Rules& r) { return classicGameFolder(r, "Scenarios"); }
 
 std::vector<std::string> scenarioNames(const fs::path& folder) {
     std::vector<std::string> out;

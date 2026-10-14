@@ -735,8 +735,10 @@ void io(Ar& ar, Globals& g) {
     ar.u16(g.scenarioPage, "scenario page");
 }
 
+// A map file's systems (§14.1) end after their abilities: nobody's
+// knowledge, no notes.
 template <class Ar>
-void io(Ar& ar, SystemRecord& y) {
+void io(Ar& ar, SystemRecord& y, bool mapForm = false) {
     ar.str(y.name, "name");
     ar.u8(y.number, "number");
     ar.u8(y.x, "x");
@@ -749,6 +751,7 @@ void io(Ar& ar, SystemRecord& y) {
     ar.str(y.backgroundBitmap, "background");
     ar.flag(y.changed, "changed");
     abilities(ar, y.abilities);
+    if (mapForm) return;
     ar.set(y.explored, "explored");
     ar.set(y.claimed, "claimed");
     for (std::string& note : y.notes) ar.str(note, "note");
@@ -1246,6 +1249,39 @@ void io(Ar& ar, ObjectRecord& o) {
 
 // ---- The whole body ---------------------------------------------------------------------------------------------
 
+// The two starting-point lists of §3.5, which map files hold too (§14.1).
+template <class Ar>
+void startPoints(Ar& ar, std::vector<StartPointRecord>& specific, std::vector<StartPointRecord>& common) {
+    list16(ar, specific, "specific starting point", [&](StartPointRecord& p) {
+        ar.u16(p.system, "system");
+        ar.u16(p.sector, "sector");
+        ar.u8(p.player, "player");
+    });
+    list16(ar, common, "common starting point", [&](StartPointRecord& p) {
+        ar.u16(p.system, "system");
+        ar.u16(p.sector, "sector");
+    });
+}
+
+// An empire file after its version (§13.1).
+template <class Ar>
+void empireFileBody(Ar& ar, ClassicEmpireFile& f) {
+    {
+        Scope<Ar> s(ar, "empire");
+        io(ar, f.empire, f.traitCount, EmpireForm::EmpireFile);
+    }
+    if (!ar.ok()) return;
+    list16(ar, f.designs, "design", [&](DesignRecord& d) { io(ar, d); });
+}
+
+// A map file after its version (§14.1).
+template <class Ar>
+void mapFileBody(Ar& ar, ClassicMapFile& m) {
+    list8(ar, m.systems, "system", [&](SystemRecord& y) { io(ar, y, true); });
+    startPoints(ar, m.specificStarts, m.commonStarts);
+    list16(ar, m.objects, "object", [&](ObjectRecord& o) { io(ar, o); });
+}
+
 template <class Ar>
 void body(Ar& ar, ClassicSave& s) {
     io(ar, s.prologue);
@@ -1261,15 +1297,7 @@ void body(Ar& ar, ClassicSave& s) {
     });
     io(ar, s.globals);
     list8(ar, s.systems, "system", [&](SystemRecord& y) { io(ar, y); });
-    list16(ar, s.specificStarts, "specific starting point", [&](StartPointRecord& p) {
-        ar.u16(p.system, "system");
-        ar.u16(p.sector, "sector");
-        ar.u8(p.player, "player");
-    });
-    list16(ar, s.commonStarts, "common starting point", [&](StartPointRecord& p) {
-        ar.u16(p.system, "system");
-        ar.u16(p.sector, "sector");
-    });
+    startPoints(ar, s.specificStarts, s.commonStarts);
     if (!ar.ok()) return;
     items(ar, s.empires, s.prologue.empireCount, "empire", [&](EmpireRecord& e) { io(ar, e, s.traitCount, EmpireForm::SavedGame); });
     list16(ar, s.designs, "design", [&](DesignRecord& d) { io(ar, d); });
@@ -1527,6 +1555,126 @@ std::expected<std::vector<uint8_t>, std::string> encodeClassicSave(const Classic
     body(e, s);
     if (!e.ok()) return std::unexpected(e.error());
     return std::move(e.out());
+}
+
+// ---- Empire files and map files (§13, §14) ---------------------------------------------------------------------------
+
+namespace {
+
+// The key header and the version string that start every file of the
+// original (§2.2, §2.5); the version then decides the gates (§5.2).
+std::optional<std::string> readHead(Decoder& d, std::span<const uint8_t> bytes, Keys& keys, std::string& version, std::string_view what) {
+    if (!looksLikeClassicSave(bytes)) return std::format("this is not a Space Empires IV {} (no key header)", what);
+    for (int32_t& k : keys.k) d.compact(k, "the key header");
+    d.startKeys(keys);
+    d.str(version, "the version");
+    if (!d.ok()) return d.error();
+    if (auto problem = versionProblem(version, what)) return problem;
+    d.setVersion(version);
+    return std::nullopt;
+}
+
+// The file must end where its last section does.
+std::optional<std::string> endProblem(const Decoder& d) {
+    if (!d.ok()) return d.error();
+    if (d.remaining() != 0) return std::format("{} bytes are left after the last section (byte {})", d.remaining(), d.position());
+    return std::nullopt;
+}
+
+std::optional<std::string> writeHead(Encoder& e, Keys keys, std::string version) {
+    if (!readableVersion(version))
+        return std::format("version {} cannot be written; the versions are {} to {}", version, kOldestVersion, kVersion);
+    e.setVersion(version);
+    for (int32_t& k : keys.k) e.compact(k, "key");
+    e.startKeys(keys);
+    e.str(version, "version");
+    return std::nullopt;
+}
+
+std::expected<ClassicEmpireFile, std::string> decodeEmpireWith(std::span<const uint8_t> bytes, size_t traitCount) {
+    Decoder d(bytes);
+    ClassicEmpireFile f;
+    f.traitCount = traitCount;
+    if (auto problem = readHead(d, bytes, f.keys, f.version, "empire file")) return std::unexpected(std::move(*problem));
+    empireFileBody(d, f);
+    if (auto problem = endProblem(d)) return std::unexpected(std::move(*problem));
+    return f;
+}
+
+} // namespace
+
+std::expected<ClassicEmpireFile, std::string> decodeClassicEmpire(std::span<const uint8_t> bytes, size_t traitCount) {
+    return decodeEmpireWith(bytes, traitCount);
+}
+
+std::vector<size_t> empireTraitCountsThatDecode(std::span<const uint8_t> bytes) {
+    std::vector<size_t> out;
+    for (size_t t = 0; t <= 80; ++t)
+        if (decodeEmpireWith(bytes, t)) out.push_back(t);
+    return out;
+}
+
+std::expected<std::vector<uint8_t>, std::string> encodeClassicEmpire(const ClassicEmpireFile& file) {
+    ClassicEmpireFile f = file;   // the writers take references
+    Encoder e;
+    if (auto problem = writeHead(e, f.keys, f.version)) return std::unexpected(std::move(*problem));
+    empireFileBody(e, f);
+    if (!e.ok()) return std::unexpected(e.error());
+    return std::move(e.out());
+}
+
+std::expected<ClassicMapFile, std::string> decodeClassicMap(std::span<const uint8_t> bytes) {
+    Decoder d(bytes);
+    ClassicMapFile m;
+    if (auto problem = readHead(d, bytes, m.keys, m.version, "map file")) return std::unexpected(std::move(*problem));
+    mapFileBody(d, m);
+    if (auto problem = endProblem(d)) return std::unexpected(std::move(*problem));
+    return m;
+}
+
+std::expected<std::vector<uint8_t>, std::string> encodeClassicMap(const ClassicMapFile& file) {
+    ClassicMapFile m = file;
+    Encoder e;
+    if (auto problem = writeHead(e, m.keys, m.version)) return std::unexpected(std::move(*problem));
+    mapFileBody(e, m);
+    if (!e.ok()) return std::unexpected(e.error());
+    return std::move(e.out());
+}
+
+std::string describe(const ClassicEmpireFile& f) {
+    const EmpireRecord& e = f.empire;
+    size_t levels = 0, traits = 0, ministers = 0;
+    for (uint16_t l : e.techLevels) levels += l;
+    for (bool t : e.traits) traits += t;
+    for (bool m : e.ministers) ministers += m;
+    std::string out = std::format("Space Empires IV empire file, version {}\n", f.version);
+    out += std::format("{} {} ({}), led by {} {}; player {} in the game it was saved from, {}{}\n", e.name, e.type, e.raceFolder, e.leaderTitle,
+                       e.leaderName, e.player, e.computer ? "computer" : "human", e.neutral ? ", neutral" : "");
+    out += std::format("{} of {} racial traits, experience {}; {} tech areas ({} levels)\n", traits, e.traits.size(), e.experience,
+                       e.techLevels.size(), levels);
+    out += std::format("{} strategies, {} design types, {} colony types, {} queue templates, {} repair priorities\n", e.strategies.size(),
+                       e.designTypes.size(), e.colonyTypes.size(), e.queueTemplates.size(), e.repairPriorities.size());
+    out += std::format("{} of 25 minister switches on{}; {}{}\n", ministers, e.ministerStyle.empty() ? "" : ", minister style " + e.ministerStyle,
+                       e.password.empty() ? "no password" : "a password", e.email.empty() ? "" : ", e-mail " + e.email);
+    out += std::format("{} designs\n", f.designs.size());
+    return out;
+}
+
+std::string describe(const ClassicMapFile& m) {
+    std::string out = std::format("Space Empires IV map file, version {}\n", m.version);
+    out += std::format("{} systems, {} specific and {} common starting points\n", m.systems.size(), m.specificStarts.size(), m.commonStarts.size());
+    std::map<int, std::pair<size_t, size_t>> classes;   // class -> (objects, blanks)
+    for (const ObjectRecord& o : m.objects) {
+        auto& [n, blanks] = classes[o.cls];
+        ++n;
+        blanks += o.blank();
+    }
+    out += std::format("{} objects:", m.objects.size());
+    for (const auto& [c, counts] : classes)
+        out += std::format(" {} {}{}", counts.first, displayName(static_cast<ObjectClass>(c)),
+                           counts.second ? std::format(" ({} blank)", counts.second) : std::string{});
+    out += "\n";
+    return out;
 }
 
 // ---- Describe and compare ----------------------------------------------------------------------------------------------

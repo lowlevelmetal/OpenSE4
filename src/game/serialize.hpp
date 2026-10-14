@@ -136,6 +136,10 @@ class Rules;
 //   Queue and Colonies open on (InterfaceOptions::setQueueTab, coloniesTab,
 //   spec 06 §1.8.3) and Scrap Facil Types' refund (cmd::Scrap::typeWide,
 //   spec 02 §6.6).
+// - Empire files: what one brings to a new game's empire besides its race,
+//   designs and strategies: its minister switches, Empire Options and
+//   movement options (EmpireSetup::settings, EmpireSettings) and its design
+//   types, colony types and repair priorities (spec 08 §13).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

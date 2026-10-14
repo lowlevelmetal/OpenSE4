@@ -2,8 +2,9 @@
 
 A map file holds a quadrant: its systems, every object in them, the warp links, and
 optional starting points for the empires. Game Setup can start a game on a map
-instead of generating a quadrant (spec 01 §12). The original game's map format is not
-documented, so OpenSE4 uses a text format of its own, described here.
+instead of generating a quadrant (spec 01 §12). OpenSE4 saves maps in a text format of
+its own, described here, and also reads and writes the original game's map files
+(`.map`, see "Maps of the original" below).
 
 ## Where maps live
 
@@ -26,6 +27,32 @@ into the game install. The file name is the map name followed by `.toml`.
   starts on it. The quadrant options on that page (type, size, warp point options) no
   longer apply. Loading a map replaces the previous map together with its starting
   points. **Generate Map Now** returns to a generated quadrant.
+
+## Maps of the original
+
+The original keeps its maps as `.map` files in its `Maps` folder, in the same binary
+container as its saved games (spec 08 §14). OpenSE4 reads and writes them beside its own:
+
+- **Load Map** lists OpenSE4's maps and any `.map` file in the `maps` folder, and the
+  `.map` files of the installed game's `Maps` folder (or of the last classic mod in use
+  that has one). Those are marked "Space Empires IV map"; their name is the file's.
+- **Save for SE IV** in both Save Map windows (Game Setup's Quadrant page and the Game
+  Menu) writes the map as the original's map file, named after the map in lower case, into
+  the folder typed under it (OpenSE4's `maps` folder unless you type another; OpenSE4
+  never writes into the installation by itself). Copy it into the original's `Maps` folder
+  to load it there.
+- On the command line, `opense4-convert IN.map OUT.toml --to=opense4` and
+  `opense4-convert IN.toml OUT.map --to=original` convert a map either way, and
+  `opense4-convert --info FILE.map` says what a map of the original holds.
+
+The original's map file holds the systems, the stellar objects and the starting points,
+like ours; it names a system's type only by the type's description and picture, so a map
+read from it takes the first type of the data set that has both (else the first of the same
+physical type). Abilities keep their values as whole numbers, an empty value becoming 0.
+Map files of the original name the data set's records by their position, so a map is read
+with the data set it was made with; a record past the end of a data file is refused with a
+message that names it. No map of the original was available when this was written, so
+these files were tested only with maps OpenSE4 wrote.
 
 ## Placement with starting points
 

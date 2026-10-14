@@ -58,6 +58,11 @@ struct ScenarioFiles {
     std::filesystem::path startingGameFile() const;
 };
 
+// A folder of the original's files ("Scenarios", "Empires", "Maps"): the
+// folder of that name of the last classic mod in use that has one (OpenSE4's
+// classic mods stand for the original's Path.txt mod folder), else the
+// install's. Empty for a data set without a game folder.
+std::filesystem::path classicGameFolder(const game::Rules& r, std::string_view name);
 // The scenario folder: the Scenarios folder of the last classic mod in use
 // that has one (OpenSE4's classic mods stand for the original's Path.txt mod
 // folder), else the install's. Empty for a data set without a game folder.
