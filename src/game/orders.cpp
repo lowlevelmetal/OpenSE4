@@ -243,8 +243,11 @@ void advanceOrderContext(const GameState& s, OrderContext& ctx, const Order& o) 
         case OrderKind::LaunchUnits:
         case OrderKind::RecoverUnits:
             if (validLocation(s, o.location)) ctx.at = o.location;
-            if (!o.design.valid() && o.kind == OrderKind::LoadCargo) ctx.carriesPopulation = true;
-            if (!o.design.valid() && o.kind == OrderKind::DropCargo) ctx.carriesPopulation = false;
+            // Population: the kind, or (an order by design) no design.
+            if (o.cargo == CargoKind::Population || (o.cargo == CargoKind::None && !o.design.valid())) {
+                if (o.kind == OrderKind::LoadCargo) ctx.carriesPopulation = true;
+                if (o.kind == OrderKind::DropCargo) ctx.carriesPopulation = false;
+            }
             break;
         case OrderKind::StellarManipulation:
             if (const auto t = movement::detail::stellarTarget(s, o, ctx.at)) ctx.at = *t;

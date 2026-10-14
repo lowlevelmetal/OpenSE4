@@ -88,47 +88,51 @@ Wait, ready to fight.
 ## `load_cargo`
 
 ```python
-load_cargo(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]
+load_cargo(design: Optional[Ref] = None, amount: int = 0, cargo: str = 'none') -> Dict[str, Any]
 ```
 
-Load units of the design, or population (no design); amount -1 is as much as fits.
+Load a kind of cargo (every design of it), or units of the design, or population (neither); amount -1 is as much as fits.
 
 - `design`: A design: the units to load, launch or recover, a retrofit's design.
 - `amount`: A number whose meaning depends on the kind (see below).
+- `cargo`: Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when design names it.
 
 ## `drop_cargo`
 
 ```python
-drop_cargo(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]
+drop_cargo(design: Optional[Ref] = None, amount: int = 0, cargo: str = 'none') -> Dict[str, Any]
 ```
 
-Drop units or population, as for loading.
+Drop a kind of cargo, units or population, as for loading.
 
 - `design`: A design: the units to load, launch or recover, a retrofit's design.
 - `amount`: A number whose meaning depends on the kind (see below).
+- `cargo`: Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when design names it.
 
 ## `launch_units`
 
 ```python
-launch_units(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]
+launch_units(design: Optional[Ref] = None, amount: int = 0, cargo: str = 'none') -> Dict[str, Any]
 ```
 
-Launch units of the design from cargo.
+Launch a kind of unit (every design of it), or units of the design, from cargo.
 
 - `design`: A design: the units to load, launch or recover, a retrofit's design.
 - `amount`: A number whose meaning depends on the kind (see below).
+- `cargo`: Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when design names it.
 
 ## `recover_units`
 
 ```python
-recover_units(design: Optional[Ref] = None, vehicle: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]
+recover_units(design: Optional[Ref] = None, vehicle: Optional[Ref] = None, amount: int = 0, cargo: str = 'none') -> Dict[str, Any]
 ```
 
-Take units back aboard: every group of the design's kind, or only design from the group vehicle, up to amount.
+Take units back aboard: every group of the kind (or of the design's kind), or only design from the group vehicle, up to amount.
 
 - `design`: A design: the units to load, launch or recover, a retrofit's design.
 - `vehicle`: A vehicle: an attack's target, a pursuit, the unit group to recover from.
 - `amount`: A number whose meaning depends on the kind (see below).
+- `cargo`: Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when design names it.
 
 ## `cloak`
 

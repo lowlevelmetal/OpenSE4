@@ -191,7 +191,7 @@ A response is a map; any other value, or an unknown field, fails the request.
 | `acted` | bool | It has had its turn this phase. |
 | `leader`, `is_leader`, `group`, `formation` | int, bool, int, int | Combat groups (-1: none). |
 | `budget`, `engaged` | int | Targets it may engage this combat turn, and has. |
-| `launch_left` | `{fighters, satellites, drones}` | What it may still launch this combat turn. |
+| `launch_left` | `{fighters, satellites, drones, mines}` | What it may still launch this combat turn. |
 | `seek_target`, `launcher`, `carrier`, `drone_target` | int | Pieces (-1: none). |
 | `weapons` | list of battle_round_weapon | Its weapons, in the order tactical orders number them. |
 | `cargo` | list of unit_stack | Units on board. |

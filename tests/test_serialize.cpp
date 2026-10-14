@@ -256,6 +256,18 @@ TEST_CASE("serialize: state round trip is byte-identical after several turns") {
     }
 }
 
+namespace {
+
+// The last command of type T in a list (null: none).
+template <class T>
+const T* lastCommand(const std::vector<Command>& list) {
+    for (auto it = list.rbegin(); it != list.rend(); ++it)
+        if (const T* x = std::get_if<T>(&*it)) return x;
+    return nullptr;
+}
+
+} // namespace
+
 TEST_CASE("serialize: orders round trip for every command type") {
     const Rules& r = engineRules();
     const EmpireOrders orders = everyCommandSample(r);
@@ -283,24 +295,42 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front().planetSize == 2);   // format 10
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).ownList);                          // format 10
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
-    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 6]).email == "someone@example.org");
-    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 5]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
-    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 4]);
-    CHECK(tagged.vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
-    CHECK(tagged.orders.size() == 1);
-    CHECK(tagged.repeat);
-    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands[c.size() - 3]);
-    CHECK(leader.fleet == FleetId{46u});
-    CHECK(leader.vehicle == VehicleId{47u});
+    // The last command of each kind, found by kind (newer kinds are appended to the samples).
+    const auto& all = loaded->commands;
+    const auto* email = lastCommand<cmd::SetEmail>(all);
+    REQUIRE(email);
+    CHECK(email->email == "someone@example.org");
+    const auto* entry = lastCommand<cmd::EnterSector>(all);
+    REQUIRE(entry);
+    CHECK(entry->tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
+    const auto* tagged = lastCommand<cmd::OrderTagged>(all);
+    REQUIRE(tagged);
+    CHECK(tagged->vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
+    CHECK(tagged->orders.size() == 1);
+    CHECK(tagged->repeat);
+    const auto* leader = lastCommand<cmd::SetFleetLeader>(all);
+    REQUIRE(leader);
+    CHECK(leader->fleet == FleetId{46u});
+    CHECK(leader->vehicle == VehicleId{47u});
     // A mod's order (format 9).
-    const auto& mod = std::get<cmd::ModCommand>(loaded->commands[c.size() - 2]);
-    CHECK(mod == std::get<cmd::ModCommand>(c[c.size() - 2]));
-    CHECK(mod.args == R"({"power":2,"note":"x"})");
+    const auto* mod = lastCommand<cmd::ModCommand>(all);
+    REQUIRE(mod);
+    CHECK(*mod == *lastCommand<cmd::ModCommand>(c));
+    CHECK(mod->args == R"({"power":2,"note":"x"})");
+    // The Launch \ Recover Units window's commands and an order's cargo kind (format 10).
+    const auto* launch = lastCommand<cmd::LaunchUnitsNow>(all);
+    REQUIRE(launch);
+    CHECK(*launch == cmd::LaunchUnitsNow{VehicleId{49u}, ObjectId{}, DesignId{50u}, 5});
+    const auto* recover = lastCommand<cmd::RecoverUnitsNow>(all);
+    REQUIRE(recover);
+    CHECK(*recover == cmd::RecoverUnitsNow{{}, ObjectId{51u}, VehicleId{52u}, DesignId{}, -1});
+    CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front().cargo == CargoKind::Satellites);
     // Cloak and Decloak of vehicles (format 10).
-    const auto& cloak = std::get<cmd::CloakVehicles>(loaded->commands.back());
-    CHECK(cloak.vehicles == std::vector<VehicleId>{VehicleId{49u}, VehicleId{50u}});
-    CHECK(cloak.fleet == FleetId{51u});
-    CHECK_FALSE(cloak.cloak);
+    const auto* cloak = lastCommand<cmd::CloakVehicles>(all);
+    REQUIRE(cloak);
+    CHECK(cloak->vehicles == std::vector<VehicleId>{VehicleId{49u}, VehicleId{50u}});
+    CHECK(cloak->fleet == FleetId{51u});
+    CHECK_FALSE(cloak->cloak);
 }
 
 // ---- Hostile input ------------------------------------------------------------------------------------
@@ -533,8 +563,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x1577a43b485a8aa9ull;
-    constexpr size_t kGoldenSize = 1975;
+    constexpr uint64_t kGoldenChecksum = 0x4a1dac62b9033b67ull;
+    constexpr size_t kGoldenSize = 1978;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -559,13 +589,20 @@ void dropFormat10(GameState& g) {
         e.economy.partners.clear();
         e.interfaceOptions.empiresTab = 0;
         e.interfaceOptions.galaxyMapNames = e.interfaceOptions.galaxyMapDistances = false;
+        e.interfaceOptions.cargoStep = e.interfaceOptions.unitsStep = 2;
     }
     for (Vehicle& v : g.vehicles) {
-        for (Order& o : v.orders) o.planetSize = 0;
+        for (Order& o : v.orders) {
+            o.planetSize = 0;
+            o.cargo = CargoKind::None;
+        }
         v.repeatShift = 0;
     }
     for (auto& c : g.colonies)
-        if (c) c->repeatShift = 0;
+        if (c) {
+            for (Order& o : c->orders) o.cargo = CargoKind::None;
+            c->repeatShift = 0;
+        }
 }
 
 } // namespace
@@ -664,8 +701,10 @@ TEST_CASE("serialize: format 8 games load; format 9 keeps a design's own picture
 // economy report's trade and tariffs empire by empire (EconomyReport::partners),
 // the Empires window's tab (InterfaceOptions::empiresTab), the Galaxy Map's Show
 // Names and destination-mode Show Distances (spec 06 §2.6, spec 08 §3.6.7) and a
-// Construct order's size (Order::planetSize, spec 06 §1.3). Games saved in format
-// 9 (OpenSE4 0.11 and 0.12) still load, without them.
+// Construct order's size (Order::planetSize, spec 06 §1.3), a repeating list's
+// turn (Vehicle::repeatShift, spec 03 §8), a cargo order's kind (Order::cargo)
+// and the cargo windows' steps (InterfaceOptions::cargoStep, unitsStep). Games
+// saved in format 9 (OpenSE4 0.11 and 0.12) still load, without them.
 TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, tabs, switches and a Construct order's size") {
     GameState g = busyGame();
     REQUIRE_FALSE(g.empires[0].statistics.empty());   // the human's record, a row a turn at least
@@ -686,6 +725,10 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     build.planetSize = 2;
     g.vehicles[0].orders.push_back(build);
     g.vehicles[0].repeatShift = 3;   // a repeating list turned three places (spec 03 §8)
+    Order load{OrderKind::LoadCargo, g.vehicles[0].location};
+    load.cargo = CargoKind::Troops;   // a cargo order by kind (spec 03 §8)
+    g.vehicles[0].orders.push_back(load);
+    g.empires[0].interfaceOptions.cargoStep = 4;
     auto now = deserializeState(serializeState(g));
     REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
     CHECK(stateChecksum(*now) == stateChecksum(g));
@@ -695,8 +738,10 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     CHECK(now->empires[0].statistics.size() == g.empires[0].statistics.size());
     CHECK(now->empires[0].interfaceOptions.galaxyMapNames);
     CHECK(now->empires[0].interfaceOptions.galaxyMapDistances);
-    CHECK(now->vehicles[0].orders.back().planetSize == 2);
+    CHECK(now->vehicles[0].orders.end()[-2].planetSize == 2);
     CHECK(now->vehicles[0].repeatShift == 3);
+    CHECK(now->vehicles[0].orders.back().cargo == CargoKind::Troops);
+    CHECK(now->empires[0].interfaceOptions.cargoStep == 4);
 
     // The same game as format 9 wrote it: none of them, version 9 in the envelope.
     const std::vector<uint8_t> current = serializeState(g);
@@ -717,8 +762,10 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     CHECK(before->empires[0].interfaceOptions.empiresTab == 0);
     CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapNames);
     CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapDistances);
-    CHECK(before->vehicles[0].orders.back().planetSize == 0);
+    CHECK(before->vehicles[0].orders.end()[-2].planetSize == 0);
     CHECK(before->vehicles[0].repeatShift == 0);
+    CHECK(before->vehicles[0].orders.back().cargo == CargoKind::None);
+    CHECK(before->empires[0].interfaceOptions.cargoStep == 2);
     CHECK(stateChecksum(*before) == stateChecksum(nine));
 }
 

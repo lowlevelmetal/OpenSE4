@@ -71,21 +71,6 @@ game::cmd::SetOrders withAppended(const game::GameState& s, OrderOwner o, const 
     return setOrders(o, std::move(orders), repeatOf(s, o));
 }
 
-bool immediateKind(game::OrderKind k) {
-    using game::OrderKind;
-    return k == OrderKind::LaunchUnits || k == OrderKind::RecoverUnits || k == OrderKind::StellarManipulation || k == OrderKind::UseComponent ||
-           k == OrderKind::SelfDestruct;
-}
-
-void insertImmediate(std::vector<game::Order>& orders, const game::Order& order, game::Location here) {
-    auto it = std::find_if(orders.begin(), orders.end(), [&](const game::Order& o) {
-        const bool atHere = !o.location.system.valid() || o.location == here ||
-                            (o.kind == game::OrderKind::StellarManipulation && o.amount == static_cast<int>(game::StellarAction::OpenWarpPoint));
-        return !immediateKind(o.kind) || !atHere;
-    });
-    orders.insert(it, order);
-}
-
 std::optional<game::Location> ownerLocation(const game::GameState& s, OrderOwner o) {
     if (o.planet.valid()) {
         if (!s.colony(o.planet)) return std::nullopt;
@@ -95,13 +80,6 @@ std::optional<game::Location> ownerLocation(const game::GameState& s, OrderOwner
     if (const game::Fleet* f = s.fleet(o.fleet)) id = f->leader.valid() ? f->leader : f->members.empty() ? game::VehicleId{} : f->members.front();
     if (const game::Vehicle* v = s.vehicle(id)) return v->location;
     return std::nullopt;
-}
-
-game::cmd::SetOrders withImmediate(const game::GameState& s, OrderOwner o, const game::Order& order) {
-    std::vector<game::Order> orders;
-    if (const auto* cur = ordersOf(s, o)) orders = *cur;
-    insertImmediate(orders, order, ownerLocation(s, o).value_or(order.location));
-    return setOrders(o, std::move(orders), repeatOf(s, o));
 }
 
 size_t moveOrder(std::vector<game::Order>& orders, size_t index, int delta) {

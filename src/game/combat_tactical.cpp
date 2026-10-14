@@ -6,6 +6,7 @@
 
 #include "game/combat_battle.hpp"
 #include "game/players.hpp"
+#include "game/query.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
@@ -32,6 +33,7 @@ std::string_view identifier(TacticalOrder::Kind k) {
         case TacticalOrder::Kind::AutoPhase: return "AutoPhase";
         case TacticalOrder::Kind::EndPhase: return "EndPhase";
         case TacticalOrder::Kind::ResolveCombat: return "ResolveCombat";
+        case TacticalOrder::Kind::Recover: return "Recover";
     }
     return "?";
 }
@@ -107,7 +109,7 @@ std::string Battle::checkLaunch(const TacticalOrder& o) const {
         std::none_of(p.unit.cargo.units.begin(), p.unit.cargo.units.end(), [&](const UnitStack& u) { return u.design == o.design && u.count > 0; }))
         return "It carries no such units.";
     const int kind = launchKindOf(o.design);
-    if (kind < 0) return "Only fighters, satellites and drones are launched in combat.";
+    if (kind < 0) return "Only fighters, satellites, mines and drones are launched.";
     if (o.kind == OK::LaunchFighters) {
         // Launch Fighters in Groups: fighters only, in groups of 5 to 50 (spec 04 §10.4).
         if (kind != kLaunchFighters) return "Only fighters are launched in groups.";
@@ -118,7 +120,44 @@ std::string Battle::checkLaunch(const TacticalOrder& o) const {
     }
     if (launchLeft(o.piece)[static_cast<size_t>(kind)] <= 0) return "It cannot launch more of those this turn.";
     if (kind == kLaunchSatellites && satellitesPresent(p.owner) >= satelliteCap_) return "The satellite limit for this sector is reached.";
+    if (kind == kLaunchMines && minesPresent(p.owner) >= mineCap_) return "The mine limit for this sector is reached.";
     return {};
+}
+
+// Free cargo space of a ship or planet piece, as the battle has left it.
+int64_t Battle::carrierRoom(int i) const {
+    const Piece& p = pieces_[static_cast<size_t>(i)];
+    if (p.kind == Kind::Vehicle) return std::max<int64_t>(0, vehicleCargoCapacity(r_, s_, p.unit) - cargoSpaceUsed(r_, s_, p.unit.cargo));
+    const Colony* real = p.kind == Kind::Planet ? s_.colony(p.object) : nullptr;
+    if (!real) return 0;
+    Colony c = *real;
+    c.facilities = p.facilities;
+    Cargo dead;
+    dead.units = p.cargoDead;   // killed units take their room until the battle ends (spec 02 §2)
+    return std::max<int64_t>(0, colonyCargoCapacity(r_, s_, c) - cargoSpaceUsed(r_, s_, p.unit.cargo) - cargoSpaceUsed(r_, s_, dead));
+}
+
+// The Launch \ Recover Units window in a battle (spec 04 §10.4, spec 06
+// §1.10.2): a click on a group launched while the window is open takes it
+// back aboard. Only fighters and satellites come back, a ship needs its bay
+// of the kind, and cargo room is the limit; the full-movement test of a
+// turn-based game does not apply in a battle (confirmed: binary).
+std::string Battle::checkRecover(const TacticalOrder& o) const {
+    if (std::string e = checkPiece(o, false); !e.empty()) return e;
+    const Piece& p = pieces_[static_cast<size_t>(o.piece)];
+    if (p.kind != Kind::Vehicle && p.kind != Kind::Planet) return "Only ships and planets take units aboard.";
+    if (o.target < 0 || static_cast<size_t>(o.target) >= pieces_.size()) return "No such group.";
+    const Piece& g = pieces_[static_cast<size_t>(o.target)];
+    if (!g.alive || g.kind != Kind::UnitGroup || g.owner != p.owner || !g.launched || g.carrier != o.piece || o.group <= 0 ||
+        g.launchWindow != o.group)
+        return "Only a group it launched in this window comes back.";
+    if (g.vtype != VehicleType::Fighter && g.vtype != VehicleType::Satellite) return "Only fighters and satellites can be recovered.";
+    const AbilityKind bay = g.vtype == VehicleType::Fighter ? AbilityKind::LaunchRecoverFighters : AbilityKind::LaunchRecoverSatellites;
+    if (p.kind == Kind::Vehicle && !hasAbility(vehicleAbilities(r_, s_, p.unit), bay))
+        return std::format("{} has nothing that can recover {}.", p.name, g.vtype == VehicleType::Fighter ? "fighters" : "satellites");
+    for (const UnitStack& st : g.stacks)
+        if (st.count > 0 && carrierRoom(o.piece) >= std::max(1, r_.hull(s_.design(st.design).hull).tonnage)) return {};
+    return "There is no room aboard.";
 }
 
 std::string Battle::check(const TacticalOrder& o) const {
@@ -177,6 +216,7 @@ std::string Battle::check(const TacticalOrder& o) const {
         }
         case OK::Launch:
         case OK::LaunchFighters: return checkLaunch(o);
+        case OK::Recover: return checkRecover(o);
         case OK::DropTroops: {
             // The order names no planet: the landing takes the adjacent colony of
             // another side that comes last in piece order, whatever the treaty
@@ -366,6 +406,7 @@ void Battle::execute(const TacticalOrder& o) {
         }
         case OK::Launch:
         case OK::LaunchFighters: launchOrder(o); return;
+        case OK::Recover: recoverOrder(o); return;
         case OK::DropTroops: dropTroops(o.piece); return;
         case OK::Ram: ram(o.piece, o.target); return;
         case OK::Capture: board(o.piece, o.target); return;
@@ -384,14 +425,18 @@ void Battle::execute(const TacticalOrder& o) {
 // from the piece in one window session share the group made first, whatever
 // their design; drones are one per group. "Launch Fighters in Groups": fighters
 // in single-design groups of the chosen size. Every launch stays within the
-// per-turn rate (and the satellite cap). Drones a player launches first act at
-// the side's next phase.
+// per-turn rate (and the satellite and mine caps). Drones a player launches
+// first act at the side's next phase. Mines are no pieces: they leave the
+// cargo for the sector's minefield, which they join when the battle ends
+// (spec 04 §10.6).
 void Battle::launchOrder(const TacticalOrder& o) {
     const int i = o.piece;
     const int kind = launchKindOf(o.design);
     const size_t ki = static_cast<size_t>(kind);
+    const EmpireId owner = pieces_[static_cast<size_t>(i)].owner;
     int left = std::min(o.count, launchLeft(i)[ki]);
-    if (kind == kLaunchSatellites) left = std::min(left, std::max(0, satelliteCap_ - satellitesPresent(pieces_[static_cast<size_t>(i)].owner)));
+    if (kind == kLaunchSatellites) left = std::min(left, std::max(0, satelliteCap_ - satellitesPresent(owner)));
+    if (kind == kLaunchMines) left = static_cast<int>(std::min<int64_t>(left, std::max<int64_t>(0, mineCap_ - minesPresent(owner))));
     size_t u = 0;
     const std::vector<UnitStack>& units = pieces_[static_cast<size_t>(i)].unit.cargo.units;
     while (u < units.size() && !(units[u].design == o.design && units[u].count > 0)) ++u;
@@ -402,10 +447,17 @@ void Battle::launchOrder(const TacticalOrder& o) {
     auto spawned = [&](int idx, int n) {
         if (idx < 0) return false;
         if (isDrone(pieces_[static_cast<size_t>(idx)])) acted_[static_cast<size_t>(idx)] = 1;   // it first acts next phase
+        if (o.kind == OK::Launch) pieces_[static_cast<size_t>(idx)].launchWindow = o.group;
         launched += n;
         return true;
     };
-    if (kind == kLaunchDrones) {
+    if (kind == kLaunchMines) {
+        std::vector<UnitStack>& laid = minesLaid_[owner.value];
+        auto st = std::find_if(laid.begin(), laid.end(), [&](const UnitStack& x) { return x.design == o.design; });
+        if (st == laid.end()) laid.push_back({o.design, left});
+        else st->count += left;
+        launched = left;
+    } else if (kind == kLaunchDrones) {
         for (int n = 0; n < left; ++n)
             if (!spawned(spawnUnit(i, o.design, 1), 1)) break;
     } else if (o.kind == OK::LaunchFighters) {
@@ -426,6 +478,36 @@ void Battle::launchOrder(const TacticalOrder& o) {
     }
     pieces_[static_cast<size_t>(i)].unit.cargo.units[u].count -= launched;
     pieces_[static_cast<size_t>(i)].launchedNow[ki] += launched;
+    refreshStats(i);
+}
+
+// The group comes back aboard, design by design, as far as room allows; with
+// nothing left it leaves the map, which is no loss. What the carrier launched
+// this combat turn stays counted (inferred, spec 04 §19 Q97).
+void Battle::recoverOrder(const TacticalOrder& o) {
+    const int i = o.piece, t = o.target;
+    Piece& g = pieces_[static_cast<size_t>(t)];
+    int64_t room = carrierRoom(i);
+    int taken = 0;
+    for (UnitStack& st : g.stacks) {
+        const int64_t tons = std::max(1, r_.hull(s_.design(st.design).hull).tonnage);
+        const int n = static_cast<int>(std::min<int64_t>(st.count, room / tons));
+        if (n <= 0) continue;
+        detail::joinUnits(pieces_[static_cast<size_t>(i)].unit.cargo.units, std::vector<UnitStack>{{st.design, n}});
+        st.count -= n;
+        room -= n * tons;
+        taken += n;
+    }
+    if (taken <= 0) return;
+    // Emptied stacks stay in place with no units, as after losses: the weapons refer to them by position.
+    syncGroup(g);
+    event(Ev::Recovered, t, i, taken);
+    if (g.unit.count <= 0) {
+        g.alive = false;   // back aboard: no loss (unitsLost is not counted)
+        vacate(t);
+    } else {
+        afterDamage(t);
+    }
     refreshStats(i);
 }
 
@@ -601,6 +683,7 @@ void Battle::describe(std::vector<TacticalPiece>& views) const {
             if (st.count > 0) v.landed.push_back(st);
         if (!v.landed.empty()) v.invader = p.invader;
         if (p.alive) v.launchLeft = launchLeft(i);
+        v.launchWindow = p.launchWindow;
         if (p.kind == CombatPiece::Kind::Vehicle) {
             v.boardingAttack = componentSum(r_, s_, p.unit, AbilityKind::BoardingAttack);
             v.troops = hasTroops(i);

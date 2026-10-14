@@ -104,6 +104,7 @@ std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
         case OrderKind::RecoverUnits:
             if (o.location.system.valid() && !knownSystem(s, o.location.system)) return "Invalid location";
             if (o.design.valid() && o.design.index() >= s.designs.size()) return "Invalid unit design";
+            if (o.cargo >= CargoKind::Count) return "Unknown cargo kind";
             break;
         default: break;
     }
@@ -839,6 +840,44 @@ struct Applier {
         return {};
     }
 
+    // The Launch \ Recover Units window (spec 03 §12, confirmed: binary): at
+    // once, on exactly the holder named, in a turn-based player's turn.
+    R holderProblem(VehicleId vehicle, ObjectId planet) {
+        if (s.options.simultaneous) return R::fail("Units are launched and recovered at once only in turn-based games");
+        if (s.playerTurn.empire.valid() && s.playerTurn.empire != e) return R::fail("It is not your turn");
+        if (vehicle.valid()) {
+            const Vehicle* v = ownVehicle(s, e, vehicle);
+            if (!v || v->count <= 0) return R::fail("Not your vehicle");
+            if (isUnitType(vehicleType(r, s, *v))) return R::fail("Unit groups carry no units");
+            return {};
+        }
+        if (!ownColony(s, e, planet)) return R::fail("Not your planet");
+        return {};
+    }
+
+    static R transferResult(const movement::UnitTransfer& t, const char* none) {
+        if (t.moved > 0) return {};
+        std::string why;
+        for (const std::string& w : t.warnings) why += (why.empty() ? "" : " ") + w;
+        return R::fail(why.empty() ? std::string(none) : why);
+    }
+
+    R operator()(const cmd::LaunchUnitsNow& c) {
+        if (R p = holderProblem(c.vehicle, c.planet); !p.ok) return p;
+        if (!c.design.valid() || c.design.index() >= s.designs.size()) return R::fail("Invalid unit design");
+        TurnContext ctx{r, s, {}, {}, {}};
+        return transferResult(movement::launchNow(ctx, c.vehicle, c.planet, c.design, c.amount), "Nothing could be launched");
+    }
+
+    R operator()(const cmd::RecoverUnitsNow& c) {
+        if (R p = holderProblem(c.vehicle, c.planet); !p.ok) return p;
+        const Vehicle* g = ownVehicle(s, e, c.group);
+        if (!g || g->count <= 0 || !isUnitType(vehicleType(r, s, *g))) return R::fail("Not your unit group");
+        if (c.design.valid() && c.design.index() >= s.designs.size()) return R::fail("Invalid unit design");
+        TurnContext ctx{r, s, {}, {}, {}};
+        return transferResult(movement::recoverNow(ctx, c.vehicle, c.planet, c.group, c.design, c.amount), "Nothing could be recovered");
+    }
+
     R operator()(const cmd::CreateDesign& c) {
         Design d = c.design;
         if (d.name.empty()) return R::fail("A design needs a name");
@@ -1393,6 +1432,8 @@ OPENSE4_CMD_NAME(OrderTagged)
 OPENSE4_CMD_NAME(SetFleetLeader)
 OPENSE4_CMD_NAME(ModCommand)
 OPENSE4_CMD_NAME(CloakVehicles)
+OPENSE4_CMD_NAME(LaunchUnitsNow)
+OPENSE4_CMD_NAME(RecoverUnitsNow)
 #undef OPENSE4_CMD_NAME
 
 } // namespace
@@ -1419,7 +1460,8 @@ std::vector<ObjectId> coloniesNamed(std::span<const Command> commands) {
                 if constexpr (std::is_same_v<T, cmd::SetOrders> || std::is_same_v<T, cmd::Rename> || std::is_same_v<T, cmd::SetMinister> ||
                               std::is_same_v<T, cmd::SetColonyType> || std::is_same_v<T, cmd::AbandonPlanet> ||
                               std::is_same_v<T, cmd::JettisonCargo> || std::is_same_v<T, cmd::CloakColony> ||
-                              std::is_same_v<T, cmd::ModCommand>)
+                              std::is_same_v<T, cmd::ModCommand> || std::is_same_v<T, cmd::LaunchUnitsNow> ||
+                              std::is_same_v<T, cmd::RecoverUnitsNow>)
                     add(x.planet);
                 else if constexpr (std::is_same_v<T, cmd::Scrap>)
                     add(x.facilityPlanet);

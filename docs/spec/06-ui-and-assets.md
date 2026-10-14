@@ -307,9 +307,9 @@ OpenSE4's own choices, (inferred):
 |---|---|---|
 | Select Waypoint | Choose a waypoint as a destination. | Move To Waypoint; Set Construction Queue → Set Move To. |
 | Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. | Order F; Combat Simulator. |
-| Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / Hundred / All (titled "Transfer Cargo"; no order buttons, spec 04 §17 for the simulator's use). The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
-| Launch \ Recover Units | Same two-list pattern for units in space. Not available in simultaneous games. | Order U; tactical combat orders. |
-| Cargo-type / unit-type picker, then location pick | Deferred Load, Drop, Launch-Remote, Recover-Remote orders. | Orders L, D, I, O. |
+| Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / Hundred / All (titled "Transfer Cargo"; no order buttons, spec 04 §17 for the simulator's use). Every holder with cargo space is listed, each with its cargo lines, a colony's population one line per race; holders with no cargo space are left out. The empire's options keep the step, Ten at first (spec 08 §3.6.7); loading from a planet quarantined by plague is refused in a message box. The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
+| Launch \ Recover Units | Two lists. Left, the carriers of the sector: the own colonies (also with nothing aboard) and the own ships and bases that can take part, each with "Can Launch:" and a line each for fighters, satellites, mines and drones (what it may still launch this turn against its rate), then the units it carries. Right, the own unit groups in space there. A click on a unit launches it from that carrier; a click on a group recovers it into the carrier selected on the left; each acts at once on exactly that holder, giving and running no order and logging nothing (spec 03 §12). Move One / Move Five / Move Ten / Move All, kept with the empire's options, Ten at first (spec 08 §3.6.7). A launch or recovery that cannot fully happen says why in a message box titled "Launch Warning" or "Recover Warning". Not available in simultaneous games. In a battle the same window opens in battle mode (§1.10.2, spec 04 §10.4) (confirmed: binary). | Order U; tactical combat orders. |
+| Location pick, then cargo-kind / unit-kind picker | Load, Drop, Launch Units Remotely and Recover Units Remotely: the sector is picked first (and for Drop its destination, §2.9); at the click a picker offers the kinds, the same whatever the selection carries: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms for Load and Drop; Fighters, Satellites, Mines, Drones for Launch; Fighters, Satellites, Drones for Recover. A colony's Launch and Recover ask only the kind: the order is given at once at the colony (spec 03 §8, confirmed: binary). | Orders L, D, I, O. |
 | Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). How it gives its orders: below the table (confirmed: binary). | Order B. |
 | Scrap | Selected Vehicles list (own vehicles at the location in no fleet and not cloaked); Statistics: Scrap Value, Research Potential (None, Minor, Moderate, Sizable or Major, of the last selected vehicle; "None" when any selected one cannot be analyzed), Status, Cost to Unmothball, Can Self-Destruct and Can Be Fired On (Yes only when every selected vehicle can), Space Yard In Sector; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On, each lit only when every selected vehicle qualifies. Rules and turn styles in spec 03 §15 (confirmed: binary). | Order G. |
 | View Orders | Pending orders of the selected object, read-only; with Repeat on the list ends with a "(Repeat Orders)" row (confirmed: binary). Ours adds Move Up, Move Down, Delete Order, Clear Orders and the Repeat Orders box, and shows the current order first. | Order V. |
@@ -389,9 +389,18 @@ the Combat Piece Report. Left-clicks on these pages do nothing.
   gave it.
 - **Cargo**: a right-click on units opens their design's report, on population the race's
   report.
+- **Detail** (an own colony's Planet Report): a right-click on the population (x 196–236,
+  y 230–290 of the page) opens **Races On Planet**, a list of the races living there, one
+  row each with the race's picture, its name and its population, and a Close button. It is
+  read-only (spec 03 §11).
 
 Since 2026-10-04 our client follows for Facil and Comps (§7 Q105), still drawn as rows,
-not the 36 px grid; Cargo takes no right-click.
+not the 36 px grid; Cargo takes no right-click. Since 2026-10-14 the Detail page's
+right-click opens Races On Planet. Our client differs: it takes the right-click on the
+Population line, where our page draws the population, and offers it for own colonies
+only (inferred: whether the original opens it for another empire's colony is not known).
+The window Jettison Cargo takes the same right-clicks as the Cargo page on its lines (a
+design's report, a race's report; confirmed: binary).
 
 **The Ability page** (confirmed: binary; observed, spec 07 session 6). A plain list of
 text lines. Each line starts with the blue 13×13 lamp of `Pictures/Game/General.bmp` (the
@@ -1044,7 +1053,7 @@ opens after the menu has gone:
 
 | Button | Key | Effect |
 |---|---|---|
-| Launch Units | L | opens the Launch Units window for the selected piece |
+| Launch Units | L | opens the Launch \ Recover Units window in battle mode for the selected piece (spec 04 §10.4): the left list holds only that piece and its units, with "Can Launch:" and what it may still launch this combat turn of each kind; the right list only the groups launched while the window has been open, which a click takes back aboard |
 | Launch Fighters in Groups | — | opens a list window titled "Select Fighters Per group", one column "Amount", rows 5, 8, 10, 15, 20, 30, 40, 50 |
 | Drop Troops | T | acts at once, no target click: lands all troops of the selected ship on the adjacent colonized planet of another side (the side its piece fights for) that comes last in piece order, **whatever the treaty**; refused when that colony already holds a third empire's troops; ground combat follows at once (spec 04 §11). For a side played by hand a message box titled "Drop Troops" explains a refusal; the tests run in this order: no colonized planet of another side adjacent, troops of another empire already on the colony the landing takes, no units of any kind aboard. A ship with units but no troops is refused without a message. The selected piece's kind is not checked: a colony's planet piece drops the troops of its colony's cargo (confirmed: binary; spec 04 §19.4 Q88) |
 | Ram Ship | R | arms a target mode, even with nothing selected; the next left-click on a piece rams it, a click on an empty square cancels. Refusals (spec 04 §10.3), in a message box titled "Ram Ship": no piece of ours selected, no target, not adjacent, no movement left, a target that is ours or an ally's |
@@ -2342,7 +2351,9 @@ asks:
 The picked object becomes the order's target: Colonize gives Load Cargo (population, when the
 ship carries none), Move To and Colonize naming that planet; Warp gives Move To and Warp
 through that warp point; Drop Cargo delivers into that object; the pursuit follows that
-object. Nothing about the target is checked when it is picked; the order's own tests run when
+object. Load, Drop, Launch Remotely and Recover Remotely then ask the kind of cargo (§1.3);
+for Drop the destination comes first and the kind after it (inferred: which of the two the
+original asks first is not known). Nothing about the target is checked when it is picked; the order's own tests run when
 it is carried out (spec 03 §8). In a turn-based game the selected vehicle's orders then run at
 once.
 
@@ -2391,8 +2402,8 @@ several turns.
 | Q | Set Construction Queue | |
 | T | Cargo Transfer | the manual says not in simultaneous games; the executable allows it in both (§2.8) |
 | U | Launch\Recover Units | not in simultaneous games |
-| L / D | Load Cargo / Drop Cargo (deferred) | pick type, then location |
-| I / O | Launch / Recover Units Remotely | pick type, then location |
+| L / D | Load Cargo / Drop Cargo (deferred) | pick the location, then the kind |
+| I / O | Launch / Recover Units Remotely | pick the location, then the kind (a colony: the kind only) |
 | Y | Sentry | when the list already starts with a Sentry, the list is cleared instead (spec 03 §19 Q76) |
 | E | Explore | |
 | P | Set Patrol | each point clicked is added at once; a click on the object's own sector ends it and turns on Repeat Orders (spec 03 §8) |
@@ -5844,3 +5855,22 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
 118. **Change Formation\Strategy cancelled half way.** Ours sets the formation as it is
      picked; Cancel on the strategy picker that follows keeps it. Does the original keep the
      formation, or change nothing unless both are picked?
+
+**From implementing the REA parity audit's units package (2026-10-14).**
+
+119. **The units and cargo windows' open points.** The audit settled the windows of §1.3 and
+     §1.10.2 and spec 03 §8 and §12; OpenSE4 chose these where it was silent (inferred):
+     - *Launch \ Recover Units on the map.* The audit says the original's two lists are
+       swapped against ours of 2026-10-11 (carriers on the left, groups in space on the
+       right), and also that in a battle the left list holds the carrier and the right the
+       launched groups. Ours keeps the carriers on the left in both modes. Which side holds
+       which on the map?
+     - Which own ships and bases the map's left list holds besides the colonies: ours lists
+       those with a launcher, with units aboard, and the one the window opened with.
+     - *The pickers of Load, Drop, Launch and Recover Remotely.* For Drop Cargo, does the
+       kind picker come before or after the Pick Object window? Ours asks the destination
+       first. Their titles and look are ours.
+     - *Races On Planet* for a colony of another empire: ours opens it for own colonies only.
+     - *The step bytes of the empire options* (spec 08 §3.6.7) are taken as the radio's
+       position counted from 1 (Move One 1 .. Move All 5 for Transfer Cargo, 4 for the
+       window Launch \ Recover Units); the stock value 3 is Move Ten either way.

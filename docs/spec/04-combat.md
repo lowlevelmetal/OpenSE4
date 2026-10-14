@@ -824,11 +824,25 @@ same (§10.6).
   smaller; an amount of 0 puts all of them in one group. In all it launches the smaller of
   the launch rate left and the fighters aboard (confirmed: binary). The tactical "Launch
   Fighters in Groups" order does the same with a size the player picks from 5, 8, 10, 15,
-  20, 30, 40 and 50; it launches fighters only. The tactical "Launch Units" window
-  launches 1, 5, 10 or all units of a stack at a time; while the window stays open, units
-  of the same kind launched from that piece join the group made earlier in the same
-  window, whatever their design, so a group can mix designs; opening the window again
-  starts new groups. Every launch stays within the per-turn launch rate. The Settings
+  20, 30, 40 and 50; it launches fighters only. "Launch Units" (L, or the Orders window)
+  opens the map's Launch \ Recover Units window in battle mode (spec 06 §1.10.2): its
+  left list holds only the selected piece, with "Can Launch:" and a line each for the
+  fighters, satellites, mines and drones it may still launch this combat turn, and the
+  units it carries; a click on a unit launches 1, 5, 10 or all of it (the radios Move
+  One, Move Five, Move Ten and Move All, which the empire's options keep for both
+  modes of the window). While the window stays open, units of the same kind launched
+  from that piece join the group made earlier in the same window, whatever their
+  design, so a group can mix designs; opening the window again starts new groups. Every
+  launch stays within the per-turn launch rate. The right list holds only the groups
+  launched while the window has been open, empty at first; a click on one takes it back
+  aboard the piece, design by design as far as its cargo has room (only fighters and
+  satellites; a ship needs its bay of the kind; the full-movement test of a turn-based
+  game is skipped in a battle), which undoes a launch before the window closes. A
+  recovered group leaves the map and is no loss. Whether a recovery gives back launch
+  capacity is not known: the engine leaves what was launched this combat turn counted
+  (inferred, §19 Q97). A refused launch or recovery shows in a message box titled
+  "Launch Warning" or "Recover Warning" (confirmed: binary, except the box in a battle,
+  inferred). The Settings
   `Combat Fighter Group Amount`, `Combat Mine Group Amount` and `Combat Satellite Group
   Amount` are loaded but never used.
 - A fighter group has a target budget of 1 and fires its identical weapons as one
@@ -849,7 +863,8 @@ same (§10.6).
   holds in combat too, as does the mine cap: at the cap a launch is refused, below it the
   launch is cut to what is left (confirmed: binary).
 - The computer never launches satellites (or mines) in combat; only a player does, with
-  the "Launch Units" window, which groups them as in §10.4 (confirmed: binary).
+  the Launch \ Recover Units window, which groups satellites as in §10.4 (confirmed:
+  binary). Mines laid there follow §10.6.
 - Weapon platforms are never pieces. They are the planet's guns (§11): every weapon of
   every platform is a separate weapon of the planet (confirmed: binary).
 
@@ -884,6 +899,16 @@ same (§10.6).
   and a `Shields Only` warhead does nothing to a unit group. Later draws never fall on an
   emptied stack.
 - A player may have at most `Maximum Mines Per Player Per Sector` (100) in one sector.
+- **Laying mines in a battle** (confirmed: binary). A player lays mines with the window
+  Launch \ Recover Units (§10.4): a ship up to the total `Lay Mines` Value1 of its intact
+  layers per combat turn, a planet that holds mines up to 100 per combat turn. The
+  per-sector cap holds: the player's mines in the sector, the minefield there and those
+  laid in this battle, may not pass it; at the cap the launch is refused, below it cut to
+  the room left. Laid mines never become pieces: they leave the carrier's cargo and join
+  the owner's minefield in the sector. Since 2026-10-14 the engine follows; it adds them
+  when the battle ends to the owner's last mine group in the sector in object order, as
+  a launch outside combat does (spec 03 §12), or to a new group (inferred), and they
+  strike only groups that enter later.
 
 ### 10.7 Drones
 
@@ -904,7 +929,7 @@ same (§10.6).
   launches again in the same phase whenever the limit and its rate allow, for example
   after its drones died ramming. That option is set in the strategies window
   and stored with the game; it is not a key of DefaultStrategies.txt (confirmed: binary).
-  A player launches drones with the "Launch Units" window, still one per group.
+  A player launches drones with the Launch \ Recover Units window, still one per group.
 - **The drone target** (confirmed: binary; history 1.53, 1.58, 1.65). Each drone group
   has one drone target, the piece its Ram strategy goes for (§16.1). It is chosen for
   every drone group in space when the battle is set up (in piece order), for each drone
@@ -2311,3 +2336,15 @@ traced and are OpenSE4's choices until a session with the executable settles the
     "Cannot Fire Weapons" box (spec 06 §1.10.2). Ours writes every other reason a click
     does not fire (out of range, reloading, no supplies) on the map, as before (inferred).
     Which of them does the original put in a box?
+
+### 19.7 Questions from the REA parity audit's other packages (2026-10-14)
+
+97. **A recovery in a battle and the launch rate.** The Launch \ Recover Units window in
+    a battle takes back a group launched while it is open (§10.4). Does that give the
+    carrier back the launches it spent this combat turn, so that the units can be
+    launched again at once? The engine does not: the count of what the carrier launched
+    this combat turn stays as it was (inferred). To check in the executable: what the
+    recovery does to the carrier's launch counts. Also open: which mine group mines laid
+    in a battle join when the owner has several there (the engine: the last in object
+    order, as outside combat), and whether the window shows its refusals in a battle in
+    the same message boxes as on the map.

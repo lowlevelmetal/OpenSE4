@@ -178,7 +178,9 @@ private:
     // leave it as it is.
     void startLocationPick(UiContext& ui, Pick p, int slot = 0);
     void openFor(UiContext& ui, ScreenId id);   // a window about the selected vehicle, fleet or colony
-    void chooseCargo(UiContext& ui, Pick p);    // Load / Drop Cargo, Launch / Recover Units Remotely: the type first
+    // Load / Drop Cargo, Launch / Recover Units Remotely: the place first
+    // (`where` once picked, the Drop's `target`), then the kind of cargo.
+    void chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where = std::nullopt, PickCandidate target = {});
     void note(UiContext& ui, std::string text);
     void hotkeys(UiContext& ui);
     void drawChooser(UiContext& ui);
@@ -305,7 +307,6 @@ private:
     int patrolPoints_ = 0;   // Move Tos the patrol being picked has appended
     int pickSlot_ = 0;       // the waypoint slot Alt+digit picks a sector for
     std::function<void(game::Location)> pickCallback_;
-    game::DesignId pickDesign_;
     std::optional<game::Sector> hover_;
     std::optional<game::SystemId> galaxyHover_;
     std::optional<Chooser> chooser_;

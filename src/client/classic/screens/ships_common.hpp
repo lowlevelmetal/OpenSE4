@@ -43,11 +43,6 @@ struct Holder {
     bool operator==(const Holder&) const = default;
 };
 
-// Asks the main window for a location (the calling window should close so
-// the map takes input), then gives `order` there: appended to the owner's
-// orders, or at the head when `immediate`.
-void pickLocationForOrder(UiContext& ui, OrderOwner owner, game::Order order, std::string prompt, bool immediate = false);
-
 // ---- Text ---------------------------------------------------------------------------------
 
 std::string describeOrder(const UiContext& ui, const game::Order& o, game::DesignId design = {});

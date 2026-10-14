@@ -1070,22 +1070,54 @@ TEST_CASE("classic save: Launch and Recover name the unit kind as Load does") {
     CHECK(orders[2].extra == 6);   // drones
     CHECK(orders[3].kind == 35);
     CHECK(orders[3].extra == 3);   // fighters
-    // Back: each kind its design; kind 0 (every kind) one order per kind carried.
+    // Back: each order of its kind, as OpenSE4's orders are given now (save
+    // format 10); kind 0 (every kind) one order per kind carried.
     save.objects[slot].orders.orders.push_back({34, 0, 0, 0, 0, {}});
     const GameState t = importOrFail(r, save);
     const std::vector<Order>& back = bySlot(t).at(slot)->orders;
     REQUIRE(back.size() == 4 + 3);
-    CHECK(back[0].design == sat);
-    CHECK(back[1].design == mine);
-    CHECK(back[2].design == drone);
+    CHECK(back[0].cargo == CargoKind::Satellites);
+    CHECK(back[1].cargo == CargoKind::Mines);
+    CHECK(back[2].cargo == CargoKind::Drones);
+    for (size_t k = 0; k < 3; ++k) CHECK_FALSE(back[k].design.valid());
     CHECK(back[3].kind == OrderKind::RecoverUnits);
-    CHECK(r.hull(t.design(back[3].design).hull).type == ruleset::VehicleType::Fighter);
-    std::set<DesignId> every;
+    CHECK(back[3].cargo == CargoKind::Fighters);
+    std::set<CargoKind> every;
     for (size_t k = 4; k < back.size(); ++k) {
         CHECK(back[k].kind == OrderKind::LaunchUnits);
-        every.insert(back[k].design);
+        every.insert(back[k].cargo);
     }
-    CHECK(every == std::set<DesignId>{sat, mine, drone});
+    CHECK(every == std::set<CargoKind>{CargoKind::Satellites, CargoKind::Mines, CargoKind::Drones});
+
+    // Orders by kind are written and read as they are: Load and Drop of
+    // population and of troops, Launch of fighters, Recover of satellites.
+    auto byKind = [](OrderKind k, CargoKind cargo) {
+        Order o;
+        o.kind = k;
+        o.cargo = cargo;
+        o.amount = -1;
+        return o;
+    };
+    carrier->orders = {byKind(OrderKind::LoadCargo, CargoKind::Population), byKind(OrderKind::LoadCargo, CargoKind::Troops),
+                       byKind(OrderKind::DropCargo, CargoKind::WeaponPlatforms), byKind(OrderKind::LaunchUnits, CargoKind::Fighters),
+                       byKind(OrderKind::RecoverUnits, CargoKind::Satellites)};
+    ClassicSave kinds = exportOrFail(r, s);
+    const auto& written = kinds.objects[slot].orders.orders;
+    REQUIRE(written.size() == 5);
+    CHECK(written[0].extra == 1);
+    CHECK(written[1].extra == 2);
+    CHECK(written[2].kind == 7);
+    CHECK(written[2].extra == 7);
+    CHECK(written[3].extra == 3);
+    CHECK(written[4].extra == 5);
+    const GameState u = importOrFail(r, kinds);
+    const std::vector<Order>& read = bySlot(u).at(slot)->orders;
+    REQUIRE(read.size() == 5);
+    for (size_t k = 0; k < read.size(); ++k) {
+        CHECK(read[k].kind == carrier->orders[k].kind);
+        CHECK(read[k].cargo == carrier->orders[k].cargo);
+        CHECK_FALSE(read[k].design.valid());
+    }
 }
 
 // ---- The start of the current player's turn (spec 08 §9.1, §9.2, §12) ----------------------------------------

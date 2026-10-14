@@ -646,7 +646,7 @@ and 0-based in OpenSE4.
 | byte | Designs window tab: 1 Ship Designs, 2 Unit Designs, 3 Enemy Ship Dsgn, 4 Enemy Unit Dsgn; the window opens on it (confirmed: binary) | `designsTab` (value − 1, held to 0..3) |
 | byte | Politics (Empires) window tab: 1 Treaty, 2 Trade, 3 Tariff (confirmed: binary that the window keeps it here; the numbering as the other tabs', inferred) | `empiresTab` (value − 1) |
 | byte | Log filter: 1 All, 2..8 Construction..Misc | `logFilter` = value − 1 |
-| byte ×2 | Cargo and units transfer tabs (3) | none |
+| byte ×2 | The step radios of Transfer Cargo (1 Move One .. 5 Move All) and of Launch \ Recover Units (1 Move One .. 4 Move All), each 3 (Move Ten) in a new empire **(confirmed: binary; the numbering inferred)** | `cargoStep`, `unitsStep` = value − 1 |
 | bool ×3 | Ships\Units window: show ships, units, fleets | `shipsShown` bits 0..2 |
 | bool ×4 | Construction Queues window: ships, planets, ship yards, planet yards | `queuesShown` bits 0..3 |
 | bool | Designer condensed view | `designCondensed` |
@@ -1065,8 +1065,8 @@ switched (docs/PARITY_GAPS.md).
 | 2 | Move To Waypoint | target = waypoint 1..10 | MoveToWaypoint (`amount` = waypoint − 1) |
 | 3 | Warp | target = warp point | Warp |
 | 4 | Colonize | target = planet | Colonize |
-| 6 | Load cargo | extra = cargo kind: 1 population, 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms (loads all of that kind) | LoadCargo (by kind, not by design: lossy both ways) |
-| 7 | Drop cargo | extra = kind, target = planet (0 here) | DropCargo |
+| 6 | Load cargo | extra = cargo kind: 1 population, 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms (loads all of that kind) | LoadCargo with `cargo` = that `CargoKind` (save format 10; the values are the same) |
+| 7 | Drop cargo | extra = kind, target = planet (0 here) | DropCargo, the same |
 | 8 | Attack | none: it attacks where the group stands (the turn-based Attack of spec 03 §8) | Attack without a target |
 | 9 | Scrap | | Scrap |
 | 10, 12 | Seek a location | system, sector. Nothing in this version creates kind 10; kind 12 comes only from the ministers and computer players **(confirmed: binary)** | 10: MoveTo (inferred); 12: Seek |
@@ -1078,7 +1078,7 @@ switched (docs/PARITY_GAPS.md).
 | 60, 62 | Create nebulae, create black hole | target = an object (a star for nebulae) | StellarManipulation |
 | 66 | Stellar construction | target = object, a planet-size parameter: the size chosen in the window (spec 06 §1.3, confirmed: binary; inferred: in extra) | StellarManipulation (CreateConstructedPlanet); the size, `planetSize`, is neither read nor written while its place is open (§11.1 Q7) |
 | 25 | Sentry | | Sentry |
-| 34, 35 | Launch, recover units | extra = unit kind in the cargo-kind numbering of Load: 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms; 0 every kind **(confirmed: binary)**. Not the closing list's vehicle types (§3.9), which number mines and satellites the other way round | LaunchUnits, RecoverUnits (by kind) |
+| 34, 35 | Launch, recover units | extra = unit kind in the cargo-kind numbering of Load: 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms; 0 every kind **(confirmed: binary)**. Not the closing list's vehicle types (§3.9), which number mines and satellites the other way round | LaunchUnits, RecoverUnits with `cargo` = that kind |
 | 42..46 | Analyze, mothball, unmothball, self-destruct, fire on | | Analyze, Mothball, Unmothball, SelfDestruct, FireOn |
 | 47 | Join fleet | target = fleet number | JoinFleet |
 | 52 | Retrofit | target = design | Retrofit |
@@ -1438,7 +1438,7 @@ next turn does not continue OpenSE4's random sequence.
 
 | Direction | Lost or approximated |
 |---|---|
-| Both | Partial damage of a ship's parts (only destroyed or intact is stored); load and drop orders by cargo kind in the original versus by design in OpenSE4; the random sequence (reseeded from the seed); undelivered diplomatic messages; window memories that only one side has |
+| Both | Partial damage of a ship's parts (only destroyed or intact is stored); the load, drop, launch and recover orders of OpenSE4's computer players, which name one design (written by its kind); the random sequence (reseeded from the seed); undelivered diplomatic messages; window memories that only one side has |
 | Import | The original's AI memory not covered by §3.6.9 (OpenSE4's `Relation` memory fields, `politicsMark`, `aiMemory.avoid`, `attackSystems`, `metMinefield` start at their defaults); `treatyTurn`, `lastWarTurn`, `foundedTurn`, `builtTurn` and the per-system last-seen turns are unknown; combat records exist only as log summaries; one-way warp links become links with no far end (OpenSE4 expects pairs); the queue templates; the original's game-master password |
 | Export | OpenSE4's history and statistics unless the companion files are written; `arrival`, `cameFrom`, `immobileUntil` (blocked movement after sabotage or events is forgotten); OpenSE4's own log targets beyond the original's seven; passwords (§7.4) |
 
@@ -1737,13 +1737,14 @@ Implemented on 2026-10-04 from this spec.
     again (§11.2).
   - Fleets with no member in their own sector are disbanded on import, as the original
     does on loading; their members keep their orders.
-  - Load, Drop, Launch and Recover orders: by kind in the file, by design in OpenSE4. An
-    imported order takes the first design of that kind in the vehicle's or colony's cargo
-    (a Drop or Launch), else the owner's newest design of that kind; an exported one is
-    written by its design's kind and as much as fits. Launch and Recover use the
-    cargo-kind numbering both ways (§11.1 Q16); a kind byte of 0 (every kind) becomes one
-    order per kind: a launch for each unit kind the launcher carries, a recovery for
-    fighters and for satellites.
+  - Load, Drop, Launch and Recover orders: by kind in the file and, since save format 10,
+    in OpenSE4 (`Order::cargo`), so they are read and written as they are. An order of
+    OpenSE4's computer players, which names one design, is written by its design's kind
+    and as much as fits. Launch and Recover use the cargo-kind numbering both ways (§11.1
+    Q16); a kind byte of 0 (every kind) becomes one order per kind: a launch for each unit
+    kind the launcher carries, a recovery for fighters and for satellites. A kind the
+    numbering does not have (0 for Load and Drop, 0 or 1 for Launch and Recover besides
+    that case, or above 7) drops the order.
   - Attack: OpenSE4's Attack on a target (a vehicle or an object) is written as kind 11
     with the target, its place and its name, and one without a target as kind 8, which
     names nothing; kind 11 is read as an Attack on its target, kind 8 as an Attack where

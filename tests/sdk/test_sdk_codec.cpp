@@ -229,7 +229,7 @@ TEST_CASE("sdk codec: every order kind round trips, alone and in an order list")
 
 TEST_CASE("sdk codec: tactical orders round trip") {
     using K = combat::TacticalOrder::Kind;
-    for (size_t k = 0; k <= static_cast<size_t>(K::ResolveCombat); ++k) {
+    for (size_t k = 0; k <= static_cast<size_t>(K::Recover); ++k) {
         combat::TacticalOrder o;
         o.kind = static_cast<K>(k);
         o.empire = EmpireId{static_cast<uint32_t>(k % 3)};

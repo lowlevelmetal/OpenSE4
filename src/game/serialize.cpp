@@ -165,7 +165,7 @@ std::string validateState(const GameState& s, const Rules* rules) {
     auto placeOk = [&](const Location& l) { return l.system.valid() && l.system.index() < nSys && l.sector.valid(); };
     auto ordersOk = [&](const std::vector<Order>& orders) {
         return std::all_of(orders.begin(), orders.end(), [&](const Order& o) {
-            return o.kind < OrderKind::Count && systemOk(o.location.system) && objectOk(o.object) && designOk(o.design);
+            return o.kind < OrderKind::Count && o.cargo < CargoKind::Count && systemOk(o.location.system) && objectOk(o.object) && designOk(o.design);
         });
     };
     auto cargoOk = [&](const Cargo& c) {

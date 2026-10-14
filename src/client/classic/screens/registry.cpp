@@ -70,13 +70,14 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::Comparisons: return "Comparisons";
         case ScreenId::History: return "History";
         case ScreenId::RaceReport: return "Race Report";
+        case ScreenId::RacesOnPlanet: return "Races On Planet";
         case ScreenId::VictoryConditions: return "Victory Conditions";
         case ScreenId::Borders: return "Borders";
         case ScreenId::CombatReplay: return "Combat Replay";
         case ScreenId::TacticalCombat: return "Tactical Combat";
         case ScreenId::TacticalOrders: return "Tactical Combat Orders";
         case ScreenId::TacticalOptions: return "Combat Options";
-        case ScreenId::TacticalLaunch: return "Launch Units";
+        case ScreenId::TacticalLaunch: return "Launch \\ Recover Units";
         case ScreenId::CombatPieceReport: return "Combat Piece Report";
         case ScreenId::CombatReplayOptions: return "Combat Replay Options";
         case ScreenId::CombatSimulator: return "Combat Simulator";
@@ -167,6 +168,7 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args) {
         case ScreenId::Comparisons: return makeComparisons(args);
         case ScreenId::History: return makeHistory(args);
         case ScreenId::RaceReport: return makeRaceReport(args);
+        case ScreenId::RacesOnPlanet: return makeRacesOnPlanet(args);
         case ScreenId::VictoryConditions: return makeVictoryConditions(args);
         case ScreenId::Borders: return makeBorders(args);
         case ScreenId::CombatReplay: return makeCombatReplay(args);

@@ -81,16 +81,6 @@ std::vector<const game::Colony*> ownColoniesAt(const UiContext& ui, game::Locati
     return out;
 }
 
-void pickLocationForOrder(UiContext& ui, OrderOwner owner, game::Order order, std::string prompt, bool immediate) {
-    ClassicSession* session = &ui.session;
-    ui.requests.pickPrompt = std::move(prompt);
-    ui.requests.pickLocation = [session, owner, order, immediate](game::Location where) mutable {
-        order.location = where;
-        const game::GameState& s = session->state();
-        session->issue(immediate ? withImmediate(s, owner, order) : withAppended(s, owner, order));
-    };
-}
-
 // ---- Text -------------------------------------------------------------------------------------
 
 std::string describeOrder(const UiContext& ui, const game::Order& o, game::DesignId design) {
@@ -99,7 +89,10 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
     const std::string name(game::displayName(o.kind));
     const auto at = [&] { return o.location.system.valid() ? " at " + sectorName(s, o.location, ui.session.player()) : std::string(); };
     const auto amount = [&](const char* none) {
-        const std::string item = o.design.valid() && o.design.index() < s.designs.size() ? s.design(o.design).name : std::string(none);
+        // A kind of cargo (the orders a player gives), else one design, else `none`.
+        const std::string item = o.cargo != game::CargoKind::None ? std::string(game::displayName(o.cargo))
+                                 : o.design.valid() && o.design.index() < s.designs.size() ? s.design(o.design).name
+                                                                                           : std::string(none);
         return o.amount < 0 ? "all " + item : std::format("{} {}", o.amount, item);
     };
     const auto targetName = [&]() { return objectName(s, o.object, ui.session.player()); };

@@ -64,6 +64,8 @@ OPENSE4_SDK_ENUM(game::OrderKind, "order kind", "move_to", "warp", "attack", "re
 OPENSE4_SDK_ENUM(game::StellarAction, "stellar manipulation", "create_planet", "destroy_planet", "create_star", "destroy_star",
                  "open_warp_point", "close_warp_point", "create_storm", "destroy_storm", "create_nebulae", "destroy_nebulae",
                  "create_black_hole", "destroy_black_hole", "create_constructed_planet");
+OPENSE4_SDK_ENUM(game::CargoKind, "cargo kind", "none", "population", "troops", "fighters", "mines", "satellites", "drones",
+                 "weapon_platforms");
 OPENSE4_SDK_ENUM(game::Resource, "resource", "minerals", "organics", "radioactives");
 OPENSE4_SDK_ENUM(game::Treaty, "treaty", "war", "non_intercourse", "none", "non_aggression", "subjugation", "protectorate",
                  "trade_alliance", "trade_research_alliance", "military_alliance", "partnership");
@@ -85,7 +87,7 @@ OPENSE4_SDK_ENUM(game::Minister, "minister", "design", "ship_construction", "exp
                  "stellar_manipulation", "ship_cloaking", "space_yard_ships", "troops");
 OPENSE4_SDK_ENUM(game::combat::TacticalOrder::Kind, "tactical order kind", "move", "fire", "toggle_weapon", "launch",
                  "launch_fighters", "drop_troops", "ram", "capture", "set_leader", "set_member", "clear_group", "clear_all_groups",
-                 "auto", "auto_phase", "end_phase", "resolve_combat");
+                 "auto", "auto_phase", "end_phase", "resolve_combat", "recover");
 OPENSE4_SDK_ENUM(game::VehicleStatus, "vehicle status", "normal", "mothballed", "cloaked");
 OPENSE4_SDK_ENUM(game::ObjectKind, "object kind", "star", "planet", "asteroids", "storm", "warp_point", "destroyed_star", "comet");
 OPENSE4_SDK_ENUM(game::PlayerKind, "player kind", "human", "computer", "neutral");

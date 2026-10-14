@@ -128,34 +128,9 @@ inline constexpr std::array<std::string_view, 13> kTargetingNames{
     "Does Not Have Weapons",   // 12
 };
 
-// §3.8.8 and §3.9: cargo kinds of Load and Drop (1 population, 2 troops, 3
-// fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms) and the unit
-// kinds of the launch list (3 fighters, 4 satellites, 5 mines, 7 drones: the
-// vehicle type numbers).
-inline std::optional<ruleset::VehicleType> cargoKindType(uint8_t kind) {
-    using V = ruleset::VehicleType;
-    switch (kind) {
-        case 2: return V::Troop;
-        case 3: return V::Fighter;
-        case 4: return V::Mine;
-        case 5: return V::Satellite;
-        case 6: return V::Drone;
-        case 7: return V::WeaponPlatform;
-        default: return std::nullopt;
-    }
-}
-inline uint8_t cargoKindOf(ruleset::VehicleType t) {
-    using V = ruleset::VehicleType;
-    switch (t) {
-        case V::Troop: return 2;
-        case V::Fighter: return 3;
-        case V::Mine: return 4;
-        case V::Satellite: return 5;
-        case V::Drone: return 6;
-        case V::WeaponPlatform: return 7;
-        default: return 1;
-    }
-}
+// §3.9: the unit kinds of the launch list (3 fighters, 4 satellites, 5 mines,
+// 7 drones: the vehicle type numbers). The cargo kinds of §3.8.8 are
+// game::CargoKind's values.
 inline std::optional<ruleset::VehicleType> unitKindType(uint8_t kind) {
     if (kind < 1 || kind > static_cast<uint8_t>(ruleset::VehicleType::Count)) return std::nullopt;
     return static_cast<ruleset::VehicleType>(kind - 1);

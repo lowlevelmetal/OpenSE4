@@ -86,6 +86,7 @@ EmpireOrders busyOrders(const Rules& r, const GameState& s, EmpireId me, int rou
 game::EmpireOrders everyCommandSample(const Rules& r) {
     Order order{OrderKind::LoadCargo, {SystemId{3u}, Sector{1, 12}}, ObjectId{4u}, VehicleId{5u}, DesignId{6u}, -1};
     order.planetSize = 2;   // Construct's size (save format 10)
+    order.cargo = CargoKind::Satellites;   // a kind of cargo (save format 10)
     const cmd::QueueTarget yard{ObjectId{9u}, VehicleId{10u}};
     QueueItem item{QueueItem::Kind::Upgrade, DesignId{2u}, 17, 3, Resources{1, 2, 3}};
     Design design = warbirdDesign(r);
@@ -173,6 +174,9 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     // A mod's order (docs/sdk/rules.md "Orders"), its arguments as the SDK writes them.
     c.push_back(cmd::ModCommand{"test.mod", "boost", VehicleId{48u}, {}, {}, {}, R"({"power":2,"note":"x"})"});
     c.push_back(cmd::CloakVehicles{{VehicleId{49u}, VehicleId{50u}}, FleetId{51u}, false});
+    // The Launch \ Recover Units window (save format 10).
+    c.push_back(cmd::LaunchUnitsNow{VehicleId{49u}, ObjectId{}, DesignId{50u}, 5});
+    c.push_back(cmd::RecoverUnitsNow{{}, ObjectId{51u}, VehicleId{52u}, DesignId{}, -1});
 
     return orders;
 }

@@ -72,6 +72,7 @@ add_executable(opense4_tests
     test_game_flow.cpp
     test_turn_order.cpp
     test_unit_groups.cpp
+    test_unit_orders.cpp
     test_window_hit.cpp
     test_wincursor.cpp
     test_winfont.cpp

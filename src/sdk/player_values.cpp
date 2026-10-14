@@ -73,8 +73,8 @@ Value pieceValue(size_t index, const game::combat::TacticalPiece& p) {
                "shields_max", num(p.shieldsMax))("movement", num(p.movement))("speed", num(p.movementMax))("supply", num(p.supply))(
                "has_supply", Value(p.hasSupply))("count", num(p.count))("acted", Value(p.acted))("leader", orNone(p.leader))(
                "is_leader", Value(p.isLeader))("group", orNone(p.group))("formation", orNone(p.formation))("budget", num(p.budget))(
-               "engaged", num(p.engaged))("launch_left", Map(3)("fighters", num(p.launchLeft[0]))("satellites", num(p.launchLeft[1]))(
-                                                             "drones", num(p.launchLeft[2]))
+               "engaged", num(p.engaged))("launch_left", Map(4)("fighters", num(p.launchLeft[0]))("satellites", num(p.launchLeft[1]))(
+                                                             "drones", num(p.launchLeft[2]))("mines", num(p.launchLeft[3]))
                                                              .done())("seek_target", orNone(p.seekTarget))("launcher", orNone(p.launcher))(
                "carrier", orNone(p.carrier))("drone_target", orNone(p.droneTarget))("weapons", Value(std::move(weapons)))(
                "cargo", stacks(p.cargo))("troops", Value(p.troops))("boarding_attack", num(p.boardingAttack))

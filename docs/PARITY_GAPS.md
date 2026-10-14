@@ -226,6 +226,41 @@ were implemented the same day:
 
 No row remains.
 
+The REA parity audit of 2026-10-11 found these about cargo and units, implemented on
+2026-10-14 (spec 03 §8, §11, §12, spec 04 §10.4, §10.6, spec 06 §1.3, §1.4, §1.10.2):
+
+- **Cargo orders by kind** (`Order::cargo`, save format 10; `movement_util.cpp`
+  `CargoWhat`). Load Cargo, Drop Cargo, Launch Units Remotely and Recover Units Remotely
+  name a kind of cargo and move every design of it; the main window asks for the place
+  first and the kind after (`MainWindow::chooseCargo`), and a colony's Launch and Recover
+  only for the kind. The original's saved games carry the kind both ways. OpenSE4's
+  computer players still give these orders for one design (the classic AI's own choice),
+  and orders saved before format 10 keep their design.
+- **Launch and recovery warnings** (`movement::UnitTransfer`): a human owner's order logs
+  "Launch Warning" or "Recover Warning" with the reasons; a launch that went well is no
+  longer logged.
+- **The window Launch \ Recover Units** (`launch_recover.cpp`, `launch_window.hpp`,
+  `cmd::LaunchUnitsNow`, `cmd::RecoverUnitsNow`): a click acts at once on the holder clicked,
+  with no order and no log, shows the four "Can Launch:" lines, lists every own colony, and
+  says why in message boxes. The same window opens in a battle (`TacticalLaunchScreen`):
+  only the selected piece, only the groups launched while it is open, which a click takes
+  back aboard (`TacticalOrder::Kind::Recover`). Its Move One .. Move All and Transfer
+  Cargo's steps are kept with the empire (`InterfaceOptions::unitsStep`, `cargoStep`; spec
+  08 §3.6.7). OpenSE4's buttons Launch Remotely and Recover Remotely in the window and its
+  list of orders given are gone with the orders; the I and O order buttons remain.
+- **Mines in a battle** (`Battle::launchOrder`, `minesLaid_`): laid with that window at
+  the layers' combat rate and within the sector's cap; they join the minefield when the
+  battle ends.
+- **Transfer Cargo**: every holder's cargo lines shown, holders without cargo space left
+  out, the plague refusal in a message box. **Jettison Cargo**: a right-click on a line
+  opens the design's or the race's report. **Races On Planet**: from the Planet Report's
+  population.
+
+What stays different, by choice (inferred where the audit was silent): the map's window
+keeps the carriers on the left (spec 06 §7 Q119); a recovery in a battle leaves the
+launches of the combat turn counted (spec 04 §19 Q97); Races On Planet opens from our
+page's Population line and only for own colonies.
+
 ## Combat (spec 04)
 
 The combat engine follows the rules of spec 04 settled on 2026-09-30 (§2-§19.1): start

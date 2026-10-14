@@ -25,7 +25,9 @@
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/pointers.hpp"
 #include "client/classic/screens/combat_map.hpp"
+#include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/design_tools.hpp"
+#include "client/classic/screens/launch_window.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
@@ -124,6 +126,7 @@ struct TacticalUi {
     Picker picker = Picker::None;
     int ordersGroup = 1;         // the group number picked for Set Group Leader
     int launchWindow = 0;        // the Launch Units window's session (spec 04 §10.4)
+    std::optional<uint8_t> unitsStep;   // its Move One .. Move All during this battle (InterfaceOptions::unitsStep)
     std::string message;         // the last refusal or hint on the map (ours)
     std::vector<CombatNotice> notices;   // message boxes waiting, one shown at a time
     float cx = 36, cy = 31;      // squares at the map's centre
@@ -1484,12 +1487,19 @@ public:
     }
 };
 
-// ---- Launch Units (L; spec 04 §10.4) ---------------------------------------------------------------------------
+// ---- Launch \ Recover Units in a battle (L; spec 04 §10.4, spec 06 §1.10.2) -----------------------------------
 
-// The selected piece's fighters, satellites and drones, launched 1, 5, 10 or
-// all at a time. While this window stays open, units of one kind launched
-// from the piece join the group made first in it, whatever their design;
-// drones are one per group.
+// The main window's Launch \ Recover Units (launch_window.hpp) in battle
+// mode (confirmed: binary): the left list holds only the selected piece, with
+// "Can Launch:" and what it may still launch this combat turn of each kind,
+// and its units; a click on a unit launches 1, 5, 10 or all of it (Move One
+// .. Move All, kept with the empire's options). While this window stays open,
+// units of one kind launched from the piece join the group made first in it,
+// whatever their design; drones are one per group, and mines join the
+// sector's minefield. The right list holds only the groups launched while
+// this window has been open; a click on one takes it back aboard (the
+// full-movement test of the map does not apply). A refusal shows in a message
+// box titled "Launch Warning" or "Recover Warning".
 class TacticalLaunchScreen final : public Screen {
 public:
     TacticalLaunchScreen() { window_ = ++state().launchWindow; }   // each opening is a new Launch Units session
@@ -1500,52 +1510,93 @@ public:
         if (!f || !f->battle) return false;
         TacticalBattle& b = *f->battle;
         TacticalUi& u = stateFor(f);
+        if (!u.unitsStep) u.unitsStep = launchui::pendingStep().value_or(std::min<uint8_t>(ui.options().unitsStep, 3));
         const game::EmpireId side = b.phaseEmpire();
         const TacticalPiece* p = ownSelected(b, u);
-        Dialog d(ui, screenTitle(ScreenId::TacticalLaunch), DialogSize::Prompt, 120);
+        Dialog d(ui, screenTitle(ScreenId::TacticalLaunch), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         d.beginContent();
-        if (!p) {
-            dimText("Select one of your pieces first.");
-        } else {
-            const game::GameState& s = b.state();
-            ImGui::TextUnformatted(p->name.c_str());
-            dimText(std::format("It may launch {} fighters, {} satellites and {} drones more this turn.", p->launchLeft[0], p->launchLeft[1],
-                                p->launchLeft[2])
-                        .c_str());
-            bool any = false;
-            for (const game::UnitStack& st : p->cargo) {
-                if (st.design.index() >= s.designs.size()) continue;
-                const ruleset::VehicleType t = ui.rules().hull(s.design(st.design).hull).type;
-                if (t != ruleset::VehicleType::Fighter && t != ruleset::VehicleType::Satellite && t != ruleset::VehicleType::Drone) continue;
-                any = true;
-                ImGui::PushID(int(st.design.value));
-                ImGui::TextUnformatted(std::format("{} x{}", s.design(st.design).name, st.count).c_str());
-                ImGui::SameLine(ui.px(170));
-                for (const int n : {1, 5, 10, 0}) {
-                    TacticalOrder o{OK::Launch, side, u.selected};
-                    o.design = st.design;
-                    o.count = n > 0 ? n : st.count;
-                    o.group = window_;
-                    ImGui::PushID(n);
-                    if (classicButton(ui, n > 0 ? std::format("{}", n).c_str() : "All", {40, 20}, 0, false, b.check(o).empty())) submit(*f, o);
-                    ImGui::PopID();
-                    ImGui::SameLine(0, ui.px(3));
-                }
-                ImGui::NewLine();
-                ImGui::PopID();
+        const game::GameState& s = b.state();
+        launchui::Lists lists;
+        lists.carriersCaption = "Units Aboard";
+        lists.groupsCaption = "Launched";
+        lists.noCarriers = "Select one of your ships or planets first.";
+        lists.noGroups = "None launched yet.";
+        std::vector<int> groups;
+        if (p) {
+            launchui::CarrierRow row;
+            row.name = p->name;
+            row.picture = picture(ui, s, *p);
+            static constexpr std::array<const char*, 4> kKinds{"Fighters", "Satellites", "Mines", "Drones"};
+            static constexpr std::array<size_t, 4> kLeft{0, 1, 3, 2};   // TacticalPiece::launchLeft: fighters, satellites, drones, mines
+            for (size_t k = 0; k < kKinds.size(); ++k) row.canLaunch[k] = launchui::canLaunchLine(p->launchLeft[kLeft[k]], 0, kKinds[k], true);
+            for (const game::UnitStack& st : p->cargo)
+                if (st.design.index() < s.designs.size()) row.units.push_back({st.design, s.design(st.design).name, unitPicture(ui, s, st.design), st.count});
+            row.selected = true;
+            lists.carriers.push_back(std::move(row));
+            for (size_t i = 0; i < b.pieces().size(); ++i) {
+                const TacticalPiece& g = b.pieces()[i];
+                if (!g.alive || g.kind != PieceKind::UnitGroup || g.carrier != u.selected || g.launchWindow != window_) continue;
+                launchui::GroupRow gr;
+                gr.name = g.name;
+                gr.picture = picture(ui, s, g);
+                gr.detail = std::format("{} unit{}", g.count, g.count == 1 ? "" : "s");
+                lists.groups.push_back(std::move(gr));
+                groups.push_back(static_cast<int>(i));
             }
-            if (!any) dimText("It carries no fighters, satellites or drones.");
         }
+        const float h = ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 2.4f;
+        const launchui::Click click = launchui::drawLists(ui, lists, ImVec2(ImGui::GetContentRegionAvail().x, h));
         if (!u.message.empty()) ImGui::TextColored(ImVec4(1, 0.72f, 0.45f, 1), "%s", u.message.c_str());
         d.beginButtons();
-        d.close();
+        uint8_t step = *u.unitsStep;
+        if (launchui::stepRadios(d, step)) {
+            u.unitsStep = step;
+            // Kept with the empire's options when a command can be given now, else the next window on the map keeps it.
+            game::InterfaceOptions o = ui.options();
+            o.unitsStep = step;
+            if (ui.setOptions(o)) launchui::pendingStep().reset();
+            else launchui::pendingStep() = step;
+        }
+        d.spacer();
+        const bool close = d.close();
+        notice_.draw(ui);
+        if (p && click.launch && click.launch->second < p->cargo.size()) {
+            const game::UnitStack& st = p->cargo[click.launch->second];
+            TacticalOrder o{OK::Launch, side, u.selected};
+            o.design = st.design;
+            o.count = static_cast<int>(launchui::stepCount(*u.unitsStep, st.count));
+            o.group = window_;
+            if (std::string why = b.check(o); !why.empty()) notice_.open(why, "Launch Warning");
+            else submit(*f, o);
+        }
+        std::optional<size_t> back = click.recover;
+        if (click.recoverDesign) back = click.recoverDesign->first;
+        if (p && back && *back < groups.size()) {
+            TacticalOrder o{OK::Recover, side, u.selected, groups[*back]};
+            o.group = window_;
+            if (std::string why = b.check(o); !why.empty()) notice_.open(why, "Recover Warning");
+            else submit(*f, o);
+        }
         flush(*f);
+        if (close) return false;
         return d.keepOpen();
     }
 
 private:
+    static Sprite unitPicture(UiContext& ui, const game::GameState& s, game::DesignId d) {
+        const game::Design& design = s.design(d);
+        const std::string style = design.owner.valid() && design.owner.index() < s.empires.size() ? s.empire(design.owner).race.style : std::string{};
+        return ui.art.designMini(style, ui.rules().hull(design.hull), design.picture);
+    }
+    static Sprite picture(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
+        if (p.design.valid() && p.design.index() < s.designs.size()) return unitPicture(ui, s, p.design);
+        if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) return objectSprite(ui, s.galaxy.object(p.planet));
+        return {};
+    }
+
     int window_ = 0;
+    NoticePopup notice_;
 };
 
 // ---- Combat Options (spec 06 §1.10.3) ---------------------------------------------------------------------------

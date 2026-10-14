@@ -38,26 +38,6 @@ DesignId frigate(GameState& s, const Rules& r, EmpireId owner, std::string_view 
 
 } // namespace
 
-TEST_CASE("ship windows: immediate orders run first, in the order given") {
-    const Location here{SystemId{0u}, Sector{3, 3}};
-    const Location there{SystemId{0u}, Sector{5, 5}};
-    std::vector<Order> orders{Order{OrderKind::MoveTo, there}, Order{OrderKind::Explore}};
-    Order launch{OrderKind::LaunchUnits, here};
-    launch.amount = 5;
-    shipui::insertImmediate(orders, launch, here);
-    Order recover{OrderKind::RecoverUnits, here};
-    shipui::insertImmediate(orders, recover, here);
-    REQUIRE(orders.size() == 4);
-    CHECK(orders[0] == launch);
-    CHECK(orders[1] == recover);
-    CHECK(orders[2].kind == OrderKind::MoveTo);
-
-    // A remote launch elsewhere is not "here": a new immediate order goes before it.
-    std::vector<Order> remote{Order{OrderKind::LaunchUnits, there}};
-    shipui::insertImmediate(remote, launch, here);
-    CHECK(remote.front() == launch);
-}
-
 TEST_CASE("ship windows: moving orders and transfer steps") {
     std::vector<Order> orders{Order{OrderKind::Explore}, Order{OrderKind::Sentry}, Order{OrderKind::Resupply}};
     CHECK(shipui::moveOrder(orders, 2, -1) == 1);

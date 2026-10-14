@@ -119,6 +119,13 @@ class Rules;
 //   how far a repeating order list has turned since Repeat was switched on
 //   (Vehicle::repeatShift, Colony::repeatShift, spec 03 §8); Cloak and
 //   Decloak of vehicles at once (cmd::CloakVehicles, a new command).
+// - Cargo orders by kind (Order::cargo; spec 03 §8): a Load, Drop, Launch or
+//   Recover a player gives names a kind of cargo, not a design.
+// - The steps of Transfer Cargo and Launch \ Recover Units
+//   (InterfaceOptions::cargoStep, unitsStep; spec 08 §3.6.7).
+// - The window Launch \ Recover Units: the commands cmd::LaunchUnitsNow and
+//   cmd::RecoverUnitsNow, and a battle's CombatEvent::Kind::Recovered (spec 03
+//   §12, spec 04 §10.4).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

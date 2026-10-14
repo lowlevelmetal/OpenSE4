@@ -3,10 +3,14 @@
 // space and the colonies). The left list ("Cargo From") holds the selected
 // ship, base or colony, and with a fleet member its fleet-mates there; the
 // right list ("Cargo To") every other holder in the sector, other own
-// colonies included (spec 03 §11, confirmed: binary). Select a holder in each
-// list, then click a cargo item under one to move it to the one selected in
-// the other list, one, five, ten, a hundred or all at a time: population
-// between two colonies goes from population to population. The window has no
+// colonies included (spec 03 §11, confirmed: binary). Every holder with cargo
+// space is listed, each followed by its cargo lines (a colony's population
+// one line per race); one with none is left out. Select a holder in each
+// list, then click a cargo line under any holder to move it to the one
+// selected in the other list, one, five, ten, a hundred or all at a time
+// (the empire's options keep the choice, Ten at first): population between
+// two colonies goes from population to population. Loading from a planet
+// quarantined by plague is refused in a message box. The window has no
 // order buttons (the Load and Drop Cargo orders have their own buttons, spec
 // 06 §7 Q80) and works in both turn styles.
 //
@@ -15,6 +19,7 @@
 // Vehicles list, all sides together, and the right list only the temporary
 // Storehouse; cargo moves only between them.
 
+#include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
@@ -61,6 +66,9 @@ private:
     bool drawIn(UiContext& ui) {
         const SimulatorSandbox* sim = sandbox_ ? simulatorCargoSandbox() : nullptr;
         if (!sim) locate(ui);
+        // The step the empire's options keep (spec 08 §3.6.7); the simulator's sandbox keeps its own.
+        if (!stepRead_ && !sim) step_ = static_cast<Step>(std::min<uint8_t>(ui.options().cargoStep, 4));
+        stepRead_ = true;
         Dialog d(ui, screenTitle(ScreenId::CargoTransfer), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         // The simulator's Change Cargo: the setup's holders against the Storehouse.
@@ -98,10 +106,16 @@ private:
 
         // Move One, Five, Ten, Hundred and All, and nothing else, in every mode (§7 Q80).
         d.beginButtons();
-        stepButtons(d, step_, true);
+        if (stepButtons(d, step_, true) && !sim) {
+            game::InterfaceOptions o = ui.options();
+            o.cargoStep = static_cast<uint8_t>(step_);
+            ui.setOptions(o);
+        }
         d.spacer();
-        if (d.close()) return false;
+        const bool close = d.close();
         report_.draw(ui);
+        notice_.draw(ui);
+        if (close) return false;
         return d.keepOpen();
     }
 
@@ -120,15 +134,16 @@ private:
         origin_ = from_;
     }
 
-    // Every own holder in the sector: the colonies, and the ships and bases
-    // with cargo space or cargo; the selected holder always.
+    // Every own holder in the sector with cargo space: the colonies (every
+    // planet size has cargo spaces) and the ships and bases with capacity
+    // above 0 (spec 03 §11, confirmed: binary).
     std::vector<Holder> holdersHere(const UiContext& ui) const {
         std::vector<Holder> out;
         if (!where_) return out;
         for (const game::Colony* c : ownColoniesAt(ui, *where_)) out.push_back(Holder{{}, c->planet});
         for (const game::Vehicle* v : ownVehiclesAt(ui, *where_)) {
             if (isUnitVehicle(ui.rules(), ui.state(), *v)) continue;
-            if (game::vehicleCargoCapacity(ui.rules(), ui.state(), *v) > 0 || !v->cargo.empty() || v->id == origin_.vehicle) out.push_back(Holder{v->id, {}});
+            if (game::vehicleCargoCapacity(ui.rules(), ui.state(), *v) > 0) out.push_back(Holder{v->id, {}});
         }
         return out;
     }
@@ -192,7 +207,8 @@ private:
             if (const game::Vehicle* v = ownVehicle(ui, h.vehicle)) script::reportItem(v->name);   // input scripts: rows by name
             else if (h.planet.valid()) script::reportItem(s.galaxy.object(h.planet).name);
             if (c.left) mine = h;
-            if (h == mine) {
+            // Every holder's cargo lines, the selected one's or not (spec 03 §11).
+            {
                 int k = 0;
                 for (const Item& item : itemsOf(ui, h)) {
                     RowStyle is;
@@ -230,6 +246,12 @@ private:
             status_.error("Select a different destination in the other list first.");
             return;
         }
+        // Nothing is loaded from a planet quarantined by plague: a message box says so.
+        if (const game::Colony* c = from.planet.valid() ? s.colony(from.planet) : nullptr; c && c->plagueLevel > 0) {
+            notice_.open(std::format("Nothing can be taken from {}: the planet is quarantined by plague.", s.galaxy.object(from.planet).name),
+                         "Transfer Cargo");
+            return;
+        }
         game::cmd::TransferCargo c;
         c.fromVehicle = from.vehicle;
         c.fromPlanet = from.planet;
@@ -251,8 +273,10 @@ private:
     Holder origin_;   // the selected holder the window opened with
     Holder from_, to_;
     Step step_ = Step::Ten;
+    bool stepRead_ = false;
     Status status_;
-    ReportPopup report_;
+    shipui::ReportPopup report_;
+    NoticePopup notice_;
     bool sandbox_ = false;   // opened by the Combat Simulator's Change Cargo
 };
 
@@ -262,7 +286,8 @@ private:
 // right-hand list at once, in both turn styles (cmd::JettisonCargo); Cancel
 // drops nothing. Each race's population shows its own amount, and exactly
 // the lines moved are dropped (OpenSE4's choice over the original window's
-// two faults).
+// two faults). A right-click on a line opens the units' design report, or
+// the race's report for population (confirmed: binary).
 class JettisonScreen final : public Screen {
 public:
     explicit JettisonScreen(const ScreenArgs& args) : vehicle_(args.vehicle), planet_(args.vehicle.valid() ? game::ObjectId{} : args.planet) {}
@@ -299,7 +324,9 @@ public:
         if (d.button("OK", usable && !lists_.chosen.empty())) {
             if (const auto c = jettisonCommand(lists_, vehicle_, planet_); c && status_.issue(ui, *c)) return false;
         }
-        if (d.close(true, "Cancel")) return false;
+        const bool cancel = d.close(true, "Cancel");
+        designReport_.draw(ui);
+        if (cancel) return false;
         return d.keepOpen();
     }
 
@@ -321,7 +348,17 @@ private:
                 detail = std::format("{}M", formatNumber(l.amount));
                 pic = ui.art.populationMini(l.race.valid() && l.race.index() < s.empires.size() ? s.empire(l.race).race.style : "");
             }
-            if (row(ui, static_cast<int>(i), pic, title, detail).left) lists_.move(present, i, step_);
+            const RowClick c = row(ui, static_cast<int>(i), pic, title, detail);
+            if (c.left) lists_.move(present, i, step_);
+            if (c.right) {
+                if (l.unit.valid()) {
+                    designReport_.open(l.unit);
+                } else if (l.race.valid() && l.race.index() < s.empires.size()) {
+                    ScreenArgs a;
+                    a.empire = l.race;
+                    ui.open(ScreenId::RaceReport, a);
+                }
+            }
         }
         if (lines.empty()) ImGui::TextColored(kDim, present ? "No cargo." : "Nothing chosen.");
         endPanel(ui, present ? "Click cargo to jettison it." : "Click a line to keep it.");
@@ -333,6 +370,7 @@ private:
     bool loaded_ = false;
     Step step_ = Step::All;
     Status status_;
+    DesignReportPopup designReport_;
 };
 
 } // namespace

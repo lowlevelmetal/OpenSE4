@@ -1,0 +1,46 @@
+# The cargo orders and the window Launch \ Recover Units (spec 03 §8, §12; spec 06 §1.3), on a
+# training game of our own (tests/input/learn-orders) with two colony ships at home:
+# - Load Cargo asks for the place first, then the kind of cargo from the fixed seven, and gives
+#   the order for that kind;
+# - a colony's Recover Units Remotely asks only the kind, and the order is given at once at the
+#   colony (a turn-based game then carries it out);
+# - the window opens on the colony, and its amount radios answer (docs/BUILDING.md "Input
+#   scripts").
+options --learn-dir=tests/input/learn-orders --training=settlers --layout=1024x768 --size=1280x800
+
+wait-lesson settlers
+wait 5
+click tag:lesson:hide
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+# Load Cargo: the sector first, then the kind.
+key L
+wait-until { picking = "load-cargo" }
+click sector:home
+wait-for item:"Weapon Platforms"
+assert-present item:"Population"
+assert-present item:"Troops"
+click item:"Population"
+wait-gone item:"Weapon Platforms"
+assert { order = "load-cargo" }
+# The colony: Recover Units Remotely asks only the kind (three of them), no place.
+click sector:home
+wait-for item:report:colony
+click item:report:colony nth=1
+wait 2
+key O
+wait-for item:"Drones"
+assert-present item:"Satellites"
+assert-absent item:"Mines"
+click item:"Fighters"
+wait-gone item:"Drones"
+assert { order = "recover-units" }
+# The window, on the colony: its row, and the radios.
+key U
+wait-window launch-recover
+click item:"Move One" in=launch-recover
+wait 2
+click tag:launch-recover:close
+wait-gone window:launch-recover

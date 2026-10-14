@@ -808,7 +808,9 @@ private:
             case OrderKind::Seek:
             case OrderKind::JoinFleet: return "Move";
             case OrderKind::DropCargo:
-                if (o.design.valid() && o.design.index() < s_.designs.size() && r_.hull(s_.design(o.design).hull).type == VehicleType::Troop)
+                if (o.cargo == CargoKind::Troops) return "Drop Troops";
+                if (o.cargo == CargoKind::None && o.design.valid() && o.design.index() < s_.designs.size() &&
+                    r_.hull(s_.design(o.design).hull).type == VehicleType::Troop)
                     return "Drop Troops";
                 return std::string(displayName(o.kind));
             default: return std::string(displayName(o.kind));
@@ -1594,50 +1596,55 @@ private:
         return Exec::Fail;
     }
 
-    // Load, Launch and Recover are always done; Drop can fail (§8, confirmed: binary).
+    // Load, Launch and Recover are always done; Drop can fail (§8, confirmed:
+    // binary). Each moves the order's kind of cargo, every design of it (one
+    // design for the orders of OpenSE4's computer players). A launch or
+    // recovery that cannot fully happen gives a human owner one warning,
+    // "Launch Warning" or "Recover Warning" (spec 03 §12 "Warnings",
+    // confirmed: binary), a log entry or a box as `tell` says; nothing else
+    // is logged.
     Exec cargo(Group& g, Order& o) {
         if (!g.planet.valid() && o.location.system.valid()) {
             const Travel t = travel(g, o.location);
             if (t != Travel::Arrived) return afterTravel(g, o, t);
         }
+        const CargoWhat what = cargoWhat(o);
+        const bool units = o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits;
         int64_t moved = 0;
-        auto part = [&]() {
-            Order p = o;
-            if (o.amount >= 0) p.amount = static_cast<int>(std::max<int64_t>(0, o.amount - moved));
-            return p;
+        UnitTransfer done;
+        auto add = [&](const UnitTransfer& t) {
+            moved += t.moved;
+            for (const std::string& w : t.warnings)
+                if (std::find(done.warnings.begin(), done.warnings.end(), w) == done.warnings.end()) done.warnings.push_back(w);
         };
+        auto left = [&]() { return o.amount < 0 ? int64_t{-1} : std::max<int64_t>(0, o.amount - moved); };
         if (g.planet.valid()) {
             const Launcher from{{}, g.planet};
-            moved = o.kind == OrderKind::LaunchUnits ? launchUnits(ctx_, budget_, from, o) : recoverUnits(ctx_, from, o);
+            add(o.kind == OrderKind::LaunchUnits ? launchUnits(ctx_, budget_, from, what, o.amount)
+                                                 : recoverUnits(ctx_, from, what, o.amount, o.vehicle));
         } else {
             for (VehicleId id : std::vector<VehicleId>(g.members)) {
-                const Order p = part();
-                if (o.amount >= 0 && p.amount <= 0) break;
+                const int64_t amount = left();
+                if (amount == 0) break;
                 switch (o.kind) {
-                    case OrderKind::LoadCargo: moved += loadCargo(ctx_, id, o.design, p.amount, g.members); break;
-                    case OrderKind::DropCargo: moved += dropCargo(ctx_, id, o.design, p.amount, g.members, o.object, o.vehicle); break;
-                    case OrderKind::LaunchUnits: moved += launchUnits(ctx_, budget_, Launcher{id, {}}, p); break;
-                    case OrderKind::RecoverUnits: moved += recoverUnits(ctx_, Launcher{id, {}}, p); break;
+                    case OrderKind::LoadCargo: moved += loadCargo(ctx_, id, what, amount, g.members); break;
+                    case OrderKind::DropCargo: moved += dropCargo(ctx_, id, what, amount, g.members, o.object, o.vehicle); break;
+                    case OrderKind::LaunchUnits: add(launchUnits(ctx_, budget_, Launcher{id, {}}, what, amount)); break;
+                    case OrderKind::RecoverUnits: add(recoverUnits(ctx_, Launcher{id, {}}, what, amount, o.vehicle)); break;
                     default: break;
                 }
             }
         }
         if (o.kind == OrderKind::DropCargo && moved <= 0) return fail(g, o, "Nothing could be dropped here.");
-        // Nothing launched or recovered: the order is still done, with a
-        // warning told as `tell` says, a box titled "Launch Warning" or
-        // "Recover Warning", or an entry with the picture AtMaxUnits (spec 06
-        // §4.1; when it comes is inferred).
-        if (moved <= 0 && (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits)) {
-            const bool launch = o.kind == OrderKind::LaunchUnits;
-            const std::string title = launch ? "Launch Warning" : "Recover Warning";
-            const std::string text = std::format("{} could not {} any units here.", name(g), launch ? "launch" : "recover");
+        // The reasons a launch or recovery could not fully happen reach a
+        // human owner as `tell` says: a box titled "Launch Warning" or
+        // "Recover Warning" while its turn-based turn is live, otherwise the
+        // log entry with the picture AtMaxUnits (spec 03 §8, §12, spec 06 §4.1).
+        if (units && !done.warnings.empty() && s_.empire(g.owner).kind == PlayerKind::Human) {
+            std::string text;
+            for (const std::string& w : done.warnings) text += (text.empty() ? "" : " ") + w;
+            const std::string title = o.kind == OrderKind::LaunchUnits ? "Launch Warning" : "Recover Warning";
             tell(g.owner, title, text, [&] { ctx_.log(g.owner, LogCategory::Misc, title, text, where(g), "AtMaxUnits"); });
-        }
-        if (moved > 0 && (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits)) {
-            const bool byKind = o.kind == OrderKind::RecoverUnits && !o.vehicle.valid();
-            const std::string what = byKind ? std::string("units") : s_.design(o.design).name;
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{} {} {} {}", name(g), o.kind == OrderKind::LaunchUnits ? "launched" : "recovered", moved, what),
-                     {}, where(g), picture(g));
         }
         return Exec::Acted;
     }

@@ -38,12 +38,16 @@ between your own ships, bases and colonies in the same sector. You can never tak
 
 [Cargo Transfer](window:cargo-transfer) (`T`, the window titled *Transfer Cargo*) moves cargo at
 once, in both turn styles. **Cargo From** holds the ship, base or colony you selected (and a
-fleet member's fleet-mates there), **Cargo To** everything else of yours in the sector, other
-colonies included. Click a holder in each list: each lists its cargo below it. People moved from
-one colony to another go straight into its population, as far as it has room. Choose how much to move with `Move One`, `Move Five`, `Move Ten` (the default),
-`Move Hundred` or `Move All`, then click an item to move it across. To have a ship (or its fleet)
-load or unload population or a kind of unit later, at a sector you pick on the map, use the
-**Load Cargo** and **Drop Cargo** order buttons instead.
+fleet member's fleet-mates there), **Cargo To** everything else of yours in the sector that has
+cargo space, other colonies included. Each holder lists its cargo below it. Select a holder in
+each list, then click an item under any holder to move it to the holder selected in the other
+list. People moved from one colony to another go straight into its population, as far as it has
+room; nothing can be taken from a planet quarantined by plague. Choose how much to move with
+`Move One`, `Move Five`, `Move Ten` (the first choice), `Move Hundred` or `Move All`: your empire
+remembers it. To have a ship (or its fleet) load or unload population or a kind of unit later,
+use the **Load Cargo** and **Drop Cargo** order buttons instead: pick the sector on the map (for
+a drop, then the planet or ship there), then the kind of cargo. They move every design of that
+kind.
 
 When a ship's cargo space is damaged, cargo that no longer fits is lost, people first.
 

@@ -416,6 +416,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     if (ar.version() >= 10) fields(ar, o.designsTab);
     if (formatVersion(ar) >= 10) fields(ar, o.empiresTab);   // format 9 files open Empires on Treaty
     if (formatVersion(ar) >= 10) fields(ar, o.galaxyMapNames, o.galaxyMapDistances);   // format 9 files keep the defaults
+    if (ar.version() >= 10) fields(ar, o.cargoStep, o.unitsStep);                     // format 9 files: Ten
 }
 
 template <class Ar> void io(Ar& ar, Controller& c) { fields(ar, c.kind, c.mod, c.player, c.slot); }
@@ -484,6 +485,7 @@ template <class Ar>
 void io(Ar& ar, Order& o) {
     fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount, o.from, o.to);
     if (formatVersion(ar) >= 10) fields(ar, o.planetSize);   // format 9 had no Construct size
+    if (formatVersion(ar) >= 10) fields(ar, o.cargo);   // format 9 orders name a design
 }
 
 template <class Ar>
@@ -717,6 +719,8 @@ template <class Ar> void io(Ar& ar, cmd::FireOn& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::OrderTagged& c) { fields(ar, c.vehicles, c.orders, c.repeat); }
 template <class Ar> void io(Ar& ar, cmd::SetFleetLeader& c) { fields(ar, c.fleet, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::ModCommand& c) { fields(ar, c.mod, c.name, c.vehicle, c.fleet, c.planet, c.empire, c.args); }
+template <class Ar> void io(Ar& ar, cmd::LaunchUnitsNow& c) { fields(ar, c.vehicle, c.planet, c.design, c.amount); }
+template <class Ar> void io(Ar& ar, cmd::RecoverUnitsNow& c) { fields(ar, c.vehicle, c.planet, c.group, c.design, c.amount); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

@@ -285,7 +285,30 @@ void trimCargo(const Rules& r, const GameState& s, Vehicle& v) {
     }
 }
 
-int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group) {
+CargoWhat cargoWhat(const Order& o) {
+    CargoWhat w;
+    if (o.cargo != CargoKind::None) {
+        w.type = unitTypeOf(o.cargo);   // Population: neither a type nor a design
+        return w;
+    }
+    w.design = o.design;
+    return w;
+}
+
+bool CargoWhat::takes(const Rules& r, const GameState& s, DesignId d) const {
+    if (!d.valid() || d.index() >= s.designs.size()) return false;
+    if (type) return r.hull(s.design(d).hull).type == *type;
+    return d == design;
+}
+
+std::vector<DesignId> designsIn(const Rules& r, const GameState& s, const Cargo& c, const CargoWhat& what) {
+    std::vector<DesignId> out;
+    for (const UnitStack& u : c.units)
+        if (u.count > 0 && what.takes(r, s, u.design) && std::find(out.begin(), out.end(), u.design) == out.end()) out.push_back(u.design);
+    return out;
+}
+
+int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
@@ -297,14 +320,19 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
     const int64_t mass = std::max<int64_t>(1, r.setting("Population Mass", 5));
 
     auto fromCargo = [&](Cargo& src) {
-        v = s.vehicle(id);
-        if (unit.valid()) {
-            const int64_t n = moveUnits(src, v->cargo, unit, std::min(want, freeCargo(r, s, *v) / unitTons(r, s, unit)));
-            want -= n;
-            moved += n;
+        if (!what.population()) {
+            // Every design it takes, stack by stack in the source's cargo order.
+            for (DesignId unit : designsIn(r, s, src, what)) {
+                if (want <= 0) break;
+                v = s.vehicle(id);
+                const int64_t n = moveUnits(src, v->cargo, unit, std::min(want, freeCargo(r, s, *v) / unitTons(r, s, unit)));
+                want -= n;
+                moved += n;
+            }
             return;
         }
         for (EmpireId race : racesOf(src.population, owner)) {
+            v = s.vehicle(id);
             const int64_t n = movePopulation(src.population, v->cargo.population, race, std::min(want, freeCargo(r, s, *v) / mass));
             want -= n;
             moved += n;
@@ -315,7 +343,7 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
     for (ObjectId o : ownColoniesHere(s, owner, where)) {
         Colony* c = s.colony(o);
         if (want <= 0 || c->plagueLevel > 0) continue;
-        if (unit.valid()) {
+        if (!what.population()) {
             fromCargo(c->cargo);
             continue;
         }
@@ -335,7 +363,7 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
     return moved;
 }
 
-int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group, ObjectId colony,
+int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group, ObjectId colony,
                   VehicleId into) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
@@ -347,16 +375,23 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
     int64_t moved = 0;
     const int64_t mass = std::max<int64_t>(1, r.setting("Population Mass", 5));
 
+    // Into a holder's cargo: every design it takes, stack by stack in the ship's cargo order.
+    auto unitsInto = [&](Cargo& to, auto room) {
+        for (DesignId unit : designsIn(r, s, s.vehicle(id)->cargo, what)) {
+            if (want <= 0) break;
+            const int64_t n = moveUnits(s.vehicle(id)->cargo, to, unit, std::min(want, room() / unitTons(r, s, unit)));
+            want -= n;
+            moved += n;
+        }
+    };
     const bool named = colony.valid() || into.valid();
     for (ObjectId o : ownColoniesHere(s, owner, where)) {
         if (want <= 0) break;
         if (named && o != colony) continue;
         Colony* c = s.colony(o);
         v = s.vehicle(id);
-        if (unit.valid()) {
-            const int64_t n = moveUnits(v->cargo, c->cargo, unit, std::min(want, colonyFreeCargo(r, s, *c) / unitTons(r, s, unit)));
-            want -= n;
-            moved += n;
+        if (!what.population()) {
+            unitsInto(c->cargo, [&] { return colonyFreeCargo(r, s, *c); });
         } else {
             for (EmpireId race : racesOf(v->cargo.population, owner)) {
                 const int64_t room = std::max<int64_t>(0, maxPopulation(r, s, *c) - c->totalPopulation());
@@ -367,23 +402,24 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount,
         }
     }
     // Troops dropped on an enemy planet land there to fight (combat::landTroops).
-    if (unit.valid() && !named && combat::isTroopDesign(r, s, unit))
-        for (ObjectId o : planetsAt(s, where)) {
-            const Colony* c = s.colony(o);
-            if (want <= 0 || !c || c->owner == owner || !hostile(s, owner, c->owner)) continue;
-            const int n = combat::landTroops(r, s, id, o, unit, static_cast<int>(std::min<int64_t>(want, s.vehicle(id)->cargo.unitCount(unit))));
-            want -= n;
-            moved += n;
+    if (!what.population() && !named)
+        for (DesignId unit : designsIn(r, s, s.vehicle(id)->cargo, what)) {
+            if (!combat::isTroopDesign(r, s, unit)) continue;
+            for (ObjectId o : planetsAt(s, where)) {
+                const Colony* c = s.colony(o);
+                if (want <= 0 || !c || c->owner == owner || !hostile(s, owner, c->owner)) continue;
+                const int n = combat::landTroops(r, s, id, o, unit, static_cast<int>(std::min<int64_t>(want, s.vehicle(id)->cargo.unitCount(unit))));
+                want -= n;
+                moved += n;
+            }
         }
     for (VehicleId b : ownHoldersHere(r, s, owner, where, id, group)) {
         if (want <= 0) break;
         if (named && b != into) continue;
         Vehicle* holder = s.vehicle(b);
         v = s.vehicle(id);
-        if (unit.valid()) {
-            const int64_t n = moveUnits(v->cargo, holder->cargo, unit, std::min(want, freeCargo(r, s, *holder) / unitTons(r, s, unit)));
-            want -= n;
-            moved += n;
+        if (!what.population()) {
+            unitsInto(holder->cargo, [&] { return freeCargo(r, s, *holder); });
         } else {
             for (EmpireId race : racesOf(v->cargo.population, owner)) {
                 const int64_t n = movePopulation(v->cargo.population, holder->cargo.population, race, std::min(want, freeCargo(r, s, *holder) / mass));
@@ -399,7 +435,7 @@ int64_t loadColonists(TurnContext& ctx, VehicleId id) {
     const Vehicle* v = ctx.state.vehicle(id);
     if (!v || !alive(*v) || v->cargo.totalPopulation() > 0) return 0;
     if (ownColoniesHere(ctx.state, v->owner, v->location).empty()) return 0;
-    return loadCargo(ctx, id, {}, -1);
+    return loadCargo(ctx, id, CargoWhat{}, -1);
 }
 
 // ---- Units -------------------------------------------------------------------------------------
@@ -426,169 +462,355 @@ int64_t unitsOfTypeHere(const Rules& r, const GameState& s, EmpireId owner, Loca
     return n;
 }
 
+// "fighters", "mines", ...: a unit type in a warning's words.
+std::string unitWords(VehicleType t) {
+    switch (t) {
+        case VehicleType::Fighter: return "fighters";
+        case VehicleType::Satellite: return "satellites";
+        case VehicleType::Mine: return "mines";
+        case VehicleType::Drone: return "drones";
+        case VehicleType::Troop: return "troops";
+        case VehicleType::WeaponPlatform: return "weapon platforms";
+        default: return "ships";
+    }
+}
+
+// A launcher or recoverer: an own ship or base, or a colonized planet.
 struct Holder {
-    Cargo* cargo = nullptr;
+    const Cargo* cargo = nullptr;
     EmpireId owner;
     Location where;
-    int64_t perTurn = 0;       // launches per unit kind this game turn
-    bool canRecover = false;
+    std::string name;
+    bool planet = false;
+    std::vector<ParsedAbility> abilities;   // a vehicle's
     int64_t freeSpace = 0;
 };
 
-Holder holderOf(const Rules& r, GameState& s, Launcher l, AbilityKind k) {
+Holder holderOf(const Rules& r, const GameState& s, Launcher l) {
     Holder h;
     if (l.vehicle.valid()) {
-        Vehicle* v = s.vehicle(l.vehicle);
+        const Vehicle* v = s.vehicle(l.vehicle);
         if (!v || !alive(*v) || !isShipOrBase(vehicleType(r, s, *v))) return h;
-        const std::vector<ParsedAbility> abilities = vehicleAbilities(r, s, *v);
         h.cargo = &v->cargo;
         h.owner = v->owner;
         h.where = v->location;
-        h.perTurn = abilitySum(abilities, k, true);  // Σ Val 2, no fallback to Val 1 (confirmed: binary)
-        h.canRecover = hasAbility(abilities, k);     // recovery needs the matching bay too (§12, confirmed: binary)
+        h.name = v->name;
+        h.abilities = vehicleAbilities(r, s, *v);
         h.freeSpace = freeCargo(r, s, *v);
         return h;
     }
-    Colony* c = s.colony(l.planet);
+    const Colony* c = s.colony(l.planet);
     if (!c) return h;
     h.cargo = &c->cargo;
     h.owner = c->owner;
     h.where = locationOf(s.galaxy, c->planet);
-    h.perTurn = kPlanetLaunchesPerTurn;  // no ability needed (confirmed: binary)
-    h.canRecover = true;
+    h.name = s.galaxy.object(c->planet).name;
+    h.planet = true;
     h.freeSpace = colonyFreeCargo(r, s, *c);
     return h;
 }
 
-} // namespace
+// Launches per unit kind this game turn: Σ Val 2 of the matching ability, no
+// fallback to Val 1 (confirmed: binary); a planet's 1000, no ability needed.
+int64_t perTurn(const Holder& h, AbilityKind k) { return h.planet ? kPlanetLaunchesPerTurn : abilitySum(h.abilities, k, true); }
 
-int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const Order& o) {
-    const Rules& r = ctx.rules;
-    GameState& s = ctx.state;
-    if (!o.design.valid() || o.design.index() >= s.designs.size()) return 0;
-    const DesignId unit = o.design;
-    const VehicleType type = r.hull(s.design(unit).hull).type;
-    const AbilityKind k = launcherFor(type);
-    if (k == AbilityKind::Unknown) return 0;  // troops and weapon platforms are never launched into space
-    Holder h = holderOf(r, s, from, k);
-    if (!h.cargo) return 0;
-    const auto key = std::make_tuple(from.vehicle, from.planet, k);
-    int64_t n = std::min<int64_t>(h.cargo->unitCount(unit), h.perTurn - budget.launched[key]);
-    if (o.amount >= 0) n = std::min<int64_t>(n, o.amount);
-    // Mines and satellites per sector: refused at the cap, otherwise cut to the room left.
-    const char* capKey = type == VehicleType::Mine ? "Maximum Mines Per Player Per Sector"
-                         : type == VehicleType::Satellite ? "Maximum Satellites Per Player Per Sector"
-                                                          : nullptr;
-    if (capKey) {
-        const int64_t room = r.setting(capKey, 100) - unitsOfTypeHere(r, s, h.owner, h.where, type);
-        if (room <= 0) return 0;
-        n = std::min(n, room);
-    }
-    // Units in space: the empire must be below the cap before the stack; the
-    // launch is not cut to fit (confirmed: binary).
-    if (unitsInSpace(r, s, h.owner) >= s.options.maxUnitsPerPlayer) return 0;
-    if (n <= 0) return 0;
+// Recovery needs the matching bay too; a planet none (§12, confirmed: binary).
+bool canRecover(const Holder& h, AbilityKind k) { return h.planet || hasAbility(h.abilities, k); }
 
-    Cargo taken;
-    n = moveUnits(*h.cargo, taken, unit, n);
-    budget.launched[key] += n;
-    const EmpireId owner = h.owner;
-    const Location where = h.where;
-    const Design& d = s.design(unit);
-
-    // A new group starts full, with 0 movement; a turn-based launch gives it
-    // its full movement, so it can move and be recovered in the same turn
-    // (§12, confirmed: binary). A drone gets no target and no order.
-    auto newGroup = [&](int count) {
-        Vehicle g;
-        g.owner = owner;
-        g.design = unit;
-        g.name = d.name;
-        g.location = where;
-        g.count = count;
-        g.damage.assign(d.entries.size(), 0);
-        g.movement = 0;
-        g.builtTurn = s.turn;
-        Vehicle& added = s.addVehicle(std::move(g));
-        added.supply = initialSupply(r, s, added);
-        if (budget.turnBased) added.movement = turnMovement(r, s, added);
-    };
-    if (type == VehicleType::Drone) {
-        for (int64_t i = 0; i < n; ++i) newGroup(1);  // every drone is its own group and never merges (confirmed: binary)
-        return n;
-    }
-    // The units join the last group of their kind and owner in the sector's
-    // object order, whatever its designs, fleet, orders or cloak, and only that
-    // group is refilled to its new maximum (§12, confirmed: binary).
-    Vehicle* last = nullptr;
-    for (VehicleId id : vehiclesInObjectOrder(s))
-        if (Vehicle* g = s.vehicle(id); g && alive(*g) && g->owner == owner && g->location == where && vehicleType(r, s, *g) == type) last = g;
-    if (!last) {
-        newGroup(static_cast<int>(n));
-        return n;
-    }
-    addGroupUnits(s, *last, unit, static_cast<int>(n));
-    last->supply = initialSupply(r, s, *last);
-    return n;
+void warn(UnitTransfer& t, std::string text) {
+    if (std::find(t.warnings.begin(), t.warnings.end(), text) == t.warnings.end()) t.warnings.push_back(std::move(text));
 }
 
-int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o) {
-    const Rules& r = ctx.rules;
-    GameState& s = ctx.state;
-    if (!o.design.valid() || o.design.index() >= s.designs.size()) return 0;
-    const VehicleType type = r.hull(s.design(o.design).hull).type;
-    if (type != VehicleType::Fighter && type != VehicleType::Satellite) return 0;  // only fighters and satellites come back
-    const Holder h = holderOf(r, s, into, launcherFor(type));
-    if (!h.cargo || !h.canRecover) return 0;
-    Cargo* cargo = into.vehicle.valid() ? &s.vehicle(into.vehicle)->cargo : &s.colony(into.planet)->cargo;
-    int64_t room = h.freeSpace;  // no per-turn limit: free cargo space is the only limit (confirmed: binary)
-    int64_t moved = 0;
-    // Units of one design leave the group into the cargo, as far as room allows.
-    auto take = [&](Vehicle& g, DesignId unit, int64_t wanted) {
-        const int64_t fit = std::min(wanted, room / unitTons(r, s, unit));
-        if (fit <= 0) return int64_t{0};
-        const int n = removeGroupUnits(s, g, unit, static_cast<int>(std::min<int64_t>(fit, std::numeric_limits<int>::max())));
-        // (inferred) the supply left over stays with the group, up to what the rest can hold.
-        if (g.count > 0) g.supply = std::min(g.supply, vehicleSupplyCapacity(r, s, g));
-        room -= int64_t{n} * unitTons(r, s, unit);
-        auto it = std::find_if(cargo->units.begin(), cargo->units.end(), [&](const UnitStack& u) { return u.design == unit; });
-        if (it == cargo->units.end()) cargo->units.push_back({unit, n});
-        else it->count += n;
-        return int64_t{n};
-    };
-    auto ofKindHere = [&](const Vehicle& g) {
-        return alive(g) && g.id != into.vehicle && g.owner == h.owner && g.location == h.where && vehicleType(r, s, g) == type;
-    };
-    // In turn-based games a fighter group comes back only with its full movement (§12, confirmed: binary).
-    auto recoverable = [&](const Vehicle& g) {
-        return ofKindHere(g) && (s.options.simultaneous || type != VehicleType::Fighter || g.movement >= turnMovement(r, s, g));
-    };
-    if (o.vehicle.valid()) {
-        // The Launch/Recover window names one group and one design of it (OpenSE4's
-        // stand-in for the turn-based window in simultaneous games, inferred).
-        Vehicle* g = s.vehicle(o.vehicle);
-        if (!g || !recoverable(*g)) return 0;
-        const int64_t wanted = o.amount >= 0 ? o.amount : groupUnits(*g, o.design);
-        return take(*g, o.design, std::min<int64_t>(wanted, groupUnits(*g, o.design)));
+// One stack of a launch or recovery as planned: `count` units of `design`
+// (from or into the unit group `group`, for a recovery).
+struct Step {
+    DesignId design;
+    int64_t count = 0;
+    VehicleId group;
+};
+struct Plan {
+    UnitTransfer result;
+    std::vector<Step> steps;
+};
+
+// The launch rules of §12 (confirmed: binary), stack by stack in cargo order:
+// the per-turn budget per launcher and kind, the order's amount, the mines
+// and satellites per sector (refused at the cap, otherwise cut to the room
+// left), and the units in space, which must be below the cap before each
+// stack (the launch is not cut to fit). Warnings (§12 "Warnings"): a kind
+// that is never launched, no launcher of the kind, the units-in-space cap and
+// the per-sector cap; the per-turn budget and an empty hold give none.
+Plan launchPlan(const Rules& r, const GameState& s, const UnitBudget& budget, Launcher from, const CargoWhat& what, int64_t amount) {
+    Plan p;
+    const Holder h = holderOf(r, s, from);
+    if (!h.cargo) return p;
+    std::optional<VehicleType> type = what.type;
+    if (!type && what.design.valid() && what.design.index() < s.designs.size()) type = r.hull(s.design(what.design).hull).type;
+    const AbilityKind k = type ? launcherFor(*type) : AbilityKind::Unknown;
+    if (k == AbilityKind::Unknown) {
+        // Troops and weapon platforms are never launched into space, nor population.
+        warn(p.result, std::format("Only fighters, satellites, mines and drones can be launched; {} cannot launch {}.", h.name,
+                                   type ? unitWords(*type) : std::string("population")));
+        return p;
     }
-    // Recover Units names a unit kind: each own group of that kind in the sector,
-    // in object order, gives the units of every design as far as cargo room
-    // allows; the next group comes only while the previous one gave at least
-    // one unit (spec 03 §8, confirmed: binary).
-    for (VehicleId id : vehiclesInObjectOrder(s)) {
-        Vehicle* g = s.vehicle(id);
-        if (!g || !ofKindHere(*g)) continue;
+    if (!h.planet && !hasAbility(h.abilities, k)) {
+        warn(p.result, std::format("{} has nothing that can launch {}.", h.name, unitWords(*type)));
+        return p;
+    }
+    const auto it = budget.launched.find(std::make_tuple(from.vehicle, from.planet, k));
+    int64_t left = perTurn(h, k) - (it == budget.launched.end() ? 0 : it->second);
+    int64_t want = amount < 0 ? std::numeric_limits<int64_t>::max() : amount;
+    const char* capKey = *type == VehicleType::Mine ? "Maximum Mines Per Player Per Sector"
+                         : *type == VehicleType::Satellite ? "Maximum Satellites Per Player Per Sector"
+                                                           : nullptr;
+    const int64_t cap = capKey ? r.setting(capKey, 100) : 0;
+    int64_t present = capKey ? unitsOfTypeHere(r, s, h.owner, h.where, *type) : 0;
+    int64_t inSpace = unitsInSpace(r, s, h.owner);
+    for (DesignId unit : designsIn(r, s, *h.cargo, what)) {
+        int64_t n = std::min({int64_t{h.cargo->unitCount(unit)}, left, want});
+        if (n <= 0) continue;
+        if (capKey) {
+            const int64_t room = cap - present;
+            if (room < n) warn(p.result, std::format("At most {} of our {} may be in one sector, so {} could launch {}.", cap, unitWords(*type),
+                                                     h.name, room <= 0 ? std::string("none") : std::format("only {}", room)));
+            if (room <= 0) continue;
+            n = std::min(n, room);
+        }
+        if (inSpace >= s.options.maxUnitsPerPlayer) {
+            warn(p.result, std::format("{} cannot launch more units: the empire already has {} units in space, the most this game allows.",
+                                       h.name, s.options.maxUnitsPerPlayer));
+            continue;
+        }
+        p.steps.push_back(Step{unit, n, {}});
+        p.result.moved += n;
+        left -= n;
+        want -= n;
+        present += n;
+        inSpace += n;
+    }
+    return p;
+}
+
+// The recovery rules of §12 (confirmed: binary): only fighters and
+// satellites; a ship or base needs the matching bay; free cargo space is the
+// only limit; in a turn-based game a fighter group comes back only with its
+// full movement. A named group (the window) gives up to `amount` of the
+// design `what` takes, or of every design; otherwise each own group of the
+// type in the sector, in object order, gives the units of every design as far
+// as room allows, whatever the amount, and the next group comes only while
+// the previous one gave at least one unit.
+Plan recoverPlan(const Rules& r, const GameState& s, bool turnBased, Launcher into, const CargoWhat& what, int64_t amount, VehicleId named) {
+    Plan p;
+    const Holder h = holderOf(r, s, into);
+    if (!h.cargo) return p;
+    const Vehicle* only = named.valid() ? s.vehicle(named) : nullptr;
+    if (named.valid() && (!only || !alive(*only))) return p;
+    std::optional<VehicleType> type = what.type;
+    if (!type && what.design.valid() && what.design.index() < s.designs.size()) type = r.hull(s.design(what.design).hull).type;
+    if (!type && only) type = vehicleType(r, s, *only);
+    if (!type || (*type != VehicleType::Fighter && *type != VehicleType::Satellite)) {
+        warn(p.result, "Only fighters and satellites can be recovered.");
+        return p;
+    }
+    if (!canRecover(h, launcherFor(*type))) {
+        warn(p.result, std::format("{} has nothing that can recover {}.", h.name, unitWords(*type)));
+        return p;
+    }
+    int64_t room = h.freeSpace;
+    // Recover Units takes what room allows; only the window's named group has an amount.
+    int64_t want = amount < 0 || !only ? std::numeric_limits<int64_t>::max() : amount;
+    auto ofKindHere = [&](const Vehicle& g) {
+        return alive(g) && g.id != into.vehicle && g.owner == h.owner && g.location == h.where && vehicleType(r, s, g) == *type;
+    };
+    // In turn-based games a fighter group comes back only with its full movement.
+    auto recoverable = [&](const Vehicle& g) {
+        if (!turnBased || *type != VehicleType::Fighter || g.movement >= turnMovement(r, s, g)) return true;
+        warn(p.result, std::format("{} has moved this turn: fighters come back aboard only with their full movement.", g.name));
+        return false;
+    };
+    // The units of one group, design by design, as far as room allows.
+    auto take = [&](const Vehicle& g, bool everyDesign) {
         int64_t gave = 0;
-        if (recoverable(*g))
-            for (const UnitStack& st : groupStacks(*g)) {
-                if (!alive(*g)) break;
-                gave += take(*g, st.design, st.count);
-            }
-        moved += gave;
+        for (const UnitStack& st : groupStacks(g)) {
+            if (want <= 0) break;
+            if (!everyDesign && st.design != what.design) continue;
+            const int64_t n = std::min({int64_t{st.count}, want, room / unitTons(r, s, st.design)});
+            if (n <= 0) continue;
+            p.steps.push_back(Step{st.design, n, g.id});
+            room -= n * unitTons(r, s, st.design);
+            want -= n;
+            gave += n;
+        }
+        p.result.moved += gave;
+        return gave;
+    };
+    if (only) {
+        if (ofKindHere(*only) && recoverable(*only)) take(*only, !what.design.valid() || what.type.has_value());
+        return p;
+    }
+    for (VehicleId id : vehiclesInObjectOrder(s)) {
+        const Vehicle* g = s.vehicle(id);
+        if (!g || !ofKindHere(*g)) continue;
+        const int64_t gave = recoverable(*g) ? take(*g, true) : 0;
         if (gave <= 0) break;
     }
-    return moved;
+    return p;
 }
+
+} // namespace
+
+UnitTransfer planLaunch(const Rules& r, const GameState& s, const UnitBudget& budget, Launcher from, const CargoWhat& what, int64_t amount) {
+    return launchPlan(r, s, budget, from, what, amount).result;
+}
+
+UnitTransfer planRecover(const Rules& r, const GameState& s, bool turnBased, Launcher into, const CargoWhat& what, int64_t amount,
+                         VehicleId group) {
+    return recoverPlan(r, s, turnBased, into, what, amount, group).result;
+}
+
+UnitTransfer launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const CargoWhat& what, int64_t amount) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    Plan plan = launchPlan(r, s, budget, from, what, amount);
+    if (plan.steps.empty()) return plan.result;
+    const Holder h = holderOf(r, s, from);
+    const EmpireId owner = h.owner;
+    const Location where = h.where;
+    for (const Step& st : plan.steps) {
+        const DesignId unit = st.design;
+        const VehicleType type = r.hull(s.design(unit).hull).type;
+        // Taken each time: a new group may move the vehicles in memory.
+        Cargo& cargo = from.vehicle.valid() ? s.vehicle(from.vehicle)->cargo : s.colony(from.planet)->cargo;
+        Cargo taken;
+        const int64_t n = moveUnits(cargo, taken, unit, st.count);
+        budget.launched[std::make_tuple(from.vehicle, from.planet, launcherFor(type))] += n;
+        const Design& d = s.design(unit);
+        // A new group starts full, with 0 movement; a turn-based launch gives it
+        // its full movement, so it can move and be recovered in the same turn
+        // (§12, confirmed: binary). A drone gets no target and no order.
+        auto newGroup = [&](int count) {
+            Vehicle g;
+            g.owner = owner;
+            g.design = unit;
+            g.name = d.name;
+            g.location = where;
+            g.count = count;
+            g.damage.assign(d.entries.size(), 0);
+            g.movement = 0;
+            g.builtTurn = s.turn;
+            Vehicle& added = s.addVehicle(std::move(g));
+            added.supply = initialSupply(r, s, added);
+            if (budget.turnBased) added.movement = turnMovement(r, s, added);
+        };
+        if (type == VehicleType::Drone) {
+            for (int64_t i = 0; i < n; ++i) newGroup(1);  // every drone is its own group and never merges (confirmed: binary)
+            continue;
+        }
+        // The units join the last group of their kind and owner in the sector's
+        // object order, whatever its designs, fleet, orders or cloak, and only that
+        // group is refilled to its new maximum (§12, confirmed: binary).
+        Vehicle* last = nullptr;
+        for (VehicleId id : vehiclesInObjectOrder(s))
+            if (Vehicle* g = s.vehicle(id); g && alive(*g) && g->owner == owner && g->location == where && vehicleType(r, s, *g) == type) last = g;
+        if (!last) {
+            newGroup(static_cast<int>(n));
+            continue;
+        }
+        addGroupUnits(s, *last, unit, static_cast<int>(n));
+        last->supply = initialSupply(r, s, *last);
+    }
+    return plan.result;
+}
+
+UnitTransfer recoverUnits(TurnContext& ctx, Launcher into, const CargoWhat& what, int64_t amount, VehicleId group) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    Plan plan = recoverPlan(r, s, !s.options.simultaneous, into, what, amount, group);
+    Cargo* cargo = into.vehicle.valid() ? (s.vehicle(into.vehicle) ? &s.vehicle(into.vehicle)->cargo : nullptr)
+                                        : (s.colony(into.planet) ? &s.colony(into.planet)->cargo : nullptr);
+    if (!cargo) return plan.result;
+    // Units of one design leave the group into the cargo.
+    for (const Step& st : plan.steps) {
+        Vehicle* g = s.vehicle(st.group);
+        if (!g) continue;
+        const int n = removeGroupUnits(s, *g, st.design, static_cast<int>(std::min<int64_t>(st.count, std::numeric_limits<int>::max())));
+        // (inferred) the supply left over stays with the group, up to what the rest can hold.
+        if (g->count > 0) g->supply = std::min(g->supply, vehicleSupplyCapacity(r, s, *g));
+        auto it = std::find_if(cargo->units.begin(), cargo->units.end(), [&](const UnitStack& u) { return u.design == st.design; });
+        if (it == cargo->units.end()) cargo->units.push_back({st.design, n});
+        else it->count += n;
+    }
+    return plan.result;
+}
+
+} // namespace detail
+
+namespace {
+
+// The turn's launch budget of a turn-based player's turn (GameState::playerTurn).
+detail::UnitBudget turnBudget(const GameState& s) {
+    detail::UnitBudget b;
+    b.turnBased = !s.options.simultaneous;
+    for (const TurnLaunches& l : s.playerTurn.launched) b.launched[{l.vehicle, l.planet, static_cast<AbilityKind>(l.kind)}] = l.count;
+    return b;
+}
+
+detail::CargoWhat oneDesign(DesignId d) {
+    detail::CargoWhat w;
+    w.design = d;
+    return w;
+}
+
+} // namespace
+
+UnitTransfer checkLaunch(const Rules& r, const GameState& s, VehicleId vehicle, ObjectId planet, DesignId design, int64_t amount) {
+    return detail::planLaunch(r, s, turnBudget(s), detail::Launcher{vehicle, vehicle.valid() ? ObjectId{} : planet}, oneDesign(design), amount);
+}
+
+UnitTransfer checkRecover(const Rules& r, const GameState& s, VehicleId vehicle, ObjectId planet, VehicleId group, DesignId design,
+                          int64_t amount) {
+    return detail::planRecover(r, s, !s.options.simultaneous, detail::Launcher{vehicle, vehicle.valid() ? ObjectId{} : planet}, oneDesign(design),
+                               amount, group);
+}
+
+UnitTransfer launchNow(TurnContext& ctx, VehicleId vehicle, ObjectId planet, DesignId design, int64_t amount) {
+    GameState& s = ctx.state;
+    detail::UnitBudget budget = turnBudget(s);
+    const UnitTransfer t =
+        detail::launchUnits(ctx, budget, detail::Launcher{vehicle, vehicle.valid() ? ObjectId{} : planet}, oneDesign(design), amount);
+    s.playerTurn.launched.clear();
+    for (const auto& [key, n] : budget.launched) {
+        const auto& [v, p, kind] = key;
+        s.playerTurn.launched.push_back({v, p, static_cast<uint16_t>(kind), n});
+    }
+    return t;
+}
+
+LaunchCapacity launchCapacity(const Rules& r, const GameState& s, VehicleId vehicle, ObjectId planet) {
+    LaunchCapacity out;
+    const detail::Launcher l{vehicle, vehicle.valid() ? ObjectId{} : planet};
+    const detail::UnitBudget budget = turnBudget(s);
+    using ruleset::VehicleType;
+    const std::array<VehicleType, 4> kinds{VehicleType::Fighter, VehicleType::Satellite, VehicleType::Mine, VehicleType::Drone};
+    const detail::Holder h = detail::holderOf(r, s, l);
+    for (size_t k = 0; k < kinds.size(); ++k) {
+        const AbilityKind a = detail::launcherFor(kinds[k]);
+        if (!h.cargo || (!h.planet && !hasAbility(h.abilities, a))) {
+            out.rate[k] = -1;
+            continue;
+        }
+        out.rate[k] = detail::perTurn(h, a);
+        const auto it = budget.launched.find(std::make_tuple(l.vehicle, l.planet, a));
+        out.left[k] = std::max<int64_t>(0, out.rate[k] - (it == budget.launched.end() ? 0 : it->second));
+    }
+    return out;
+}
+
+UnitTransfer recoverNow(TurnContext& ctx, VehicleId vehicle, ObjectId planet, VehicleId group, DesignId design, int64_t amount) {
+    return detail::recoverUnits(ctx, detail::Launcher{vehicle, vehicle.valid() ? ObjectId{} : planet}, oneDesign(design), amount, group);
+}
+
+namespace detail {
 
 // ---- One-shot components -----------------------------------------------------------------------------
 

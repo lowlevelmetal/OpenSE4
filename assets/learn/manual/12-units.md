@@ -50,19 +50,35 @@ move at once in a turn-based game, but only from the next turn in a simultaneous
 ## The Launch and Recover window
 
 The [Launch and Recover Units](window:launch-recover) window (`U`, titled
-`Launch \ Recover Units`) works for a selected ship or colony in turn-based games.
+`Launch \ Recover Units`) works for a selected ship or colony in turn-based games. Every click
+acts at once on exactly the ship, base or colony you click: no order is given, and nothing goes
+to the log.
 
-- The left list, **Units in sector**, shows your ships with bays or units aboard, with their launch rates per turn (or *No launch bays*), and your colonies that hold units (1,000 of each kind a turn). Click a unit type under a holder to launch it.
-- The right list, **Units in space**, shows your unit groups in the sector. Click a group (or one design of a mixed group) to recover it into the ship or colony selected on the left.
+- The left list, **Units Aboard**, shows your colonies in the sector (even with nothing aboard)
+  and your ships and bases with launchers or units aboard. Under each, **Can Launch:** says how
+  many fighters, satellites, mines and drones it may still launch this turn, against its rate (a
+  colony: 1,000 of each kind). Then come the units it carries: click one to launch it from that
+  holder.
+- The right list, **Units In Space**, shows your unit groups in the sector. Click a group (or one
+  design of a mixed group) to bring it aboard the ship or colony selected on the left.
 - `Move One`, `Move Five`, `Move Ten` and `Move All` choose how many units each click moves.
-- `Launch Remotely` and `Recover Remotely` give the ship an order to launch or recover at a sector you pick later.
+  Your empire remembers the choice.
 
-Each click becomes an order at the head of the holder's list (for a ship in a fleet, the fleet's),
-and is carried out at once; the orders given are listed at the bottom. In a simultaneous game,
-use the orders **Launch Units Remotely** (`I`) and **Recover Units Remotely** (`O`) instead: they
-are carried out during the turn's movement.
+When a launch or a recovery cannot fully happen, a message box says why: the units cannot be
+launched at all, the ship has no bay or launcher of that kind, your empire has the most units in
+space the game allows, the sector already holds the most mines or satellites of yours, or
+fighters have moved this turn.
 
-In tactical combat, `L` opens **Launch Units** for the selected piece.
+In a simultaneous game, use the orders **Launch Units Remotely** (`I`) and **Recover Units
+Remotely** (`O`) instead: they are carried out during the turn's movement. Pick the sector on
+the map first, then the kind of unit; for a colony only the kind. They act on every design of
+that kind. When one of them cannot do everything, the log says why ("Launch Warning",
+"Recover Warning").
+
+In tactical combat, `L` opens the same window for the selected piece: it lists only that piece,
+what it may still launch this combat turn, and on the right the groups launched while the window
+is open. Clicking one brings it back aboard, to undo a launch. Ships with mine layers lay mines
+there too: the mines join the sector's minefield.
 
 ## Fighters
 

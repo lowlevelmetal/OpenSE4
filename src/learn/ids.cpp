@@ -26,7 +26,7 @@ constexpr WindowInfo kWindows[] = {
     {"fleet-transfer"}, {"cargo-transfer"}, {"launch-recover"}, {"scrap"}, {"view-orders"}, {"select-waypoint"},
     {"stellar-manipulation"}, {"rename"}, {"abandon-planet", false}, {"jettison-cargo", false}, {"convert-resources", false},
     {"communicate"}, {"intelligence"}, {"treaty-grid"}, {"scores"}, {"comparisons"}, {"history"}, {"race-report"},
-    {"victory-conditions"}, {"borders"},
+    {"victory-conditions"}, {"borders"}, {"races-on-planet", false},
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},
     {"tactical-launch", false}, {"combat-piece-report", false}, {"combat-replay-options", false},
     {"combat-simulator"}, {"strategic-combat", false}, {"ground-combat", false}, {"finale", false},
@@ -339,8 +339,8 @@ namespace {
 // In the order of game::combat::TacticalOrder::Kind.
 constexpr std::string_view kBattleOrders[] = {"move", "fire", "toggle-weapon", "launch", "launch-fighters", "drop-troops",
                                               "ram", "capture", "set-leader", "set-member", "clear-group", "clear-all-groups",
-                                              "auto", "auto-phase", "end-turn", "resolve-combat"};
-static_assert(std::size(kBattleOrders) == static_cast<size_t>(game::combat::TacticalOrder::Kind::ResolveCombat) + 1);
+                                              "auto", "auto-phase", "end-turn", "resolve-combat", "recover"};
+static_assert(std::size(kBattleOrders) == static_cast<size_t>(game::combat::TacticalOrder::Kind::Recover) + 1);
 } // namespace
 
 std::span<const std::string_view> battleOrderKinds() { return kBattleOrders; }

@@ -37,15 +37,8 @@ game::cmd::SetOrders setOrders(OrderOwner o, std::vector<game::Order> orders, bo
 
 // Appends an order to the owner's list (keeps Repeat as it is).
 game::cmd::SetOrders withAppended(const game::GameState& s, OrderOwner o, const game::Order& order);
-// Orders the classic game carries out at once from a window (launch, recover,
-// stellar manipulation, self-destruct) run first here: they go to the head of
-// the list, after any such orders already given for `here` (the vehicle's
-// sector), so they execute where the vehicle is now.
-bool immediateKind(game::OrderKind k);
-void insertImmediate(std::vector<game::Order>& orders, const game::Order& order, game::Location here);
 // Where the owner is: the vehicle's sector, or the fleet leader's.
 std::optional<game::Location> ownerLocation(const game::GameState& s, OrderOwner o);
-game::cmd::SetOrders withImmediate(const game::GameState& s, OrderOwner o, const game::Order& order);
 
 // Moves an order up (delta < 0) or down; returns its new index.
 size_t moveOrder(std::vector<game::Order>& orders, size_t index, int delta);

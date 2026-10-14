@@ -554,6 +554,10 @@ TEST_CASE("tactical: drones launched by a player act on their own") {
     CHECK(b.pieces()[before].count == 1);
     CHECK(b.pieces()[before + 1].count == 1);
     CHECK(b.pieces()[before].acted);
+    // Drones never come back aboard (spec 03 §12).
+    TacticalOrder back = order(OK::Recover, ar.a, pieceIndex(b, rack), static_cast<int>(before));
+    back.group = 1;
+    CHECK(b.check(back) == "Only fighters and satellites can be recovered.");
     const int x0 = b.pieces()[before].x, y0 = b.pieces()[before].y;
     TacticalOrder mv = order(OK::Move, ar.a, static_cast<int>(before));
     mv.x = 0;
@@ -1455,4 +1459,81 @@ TEST_CASE("client session: a strategic answer, and a game without tactical comba
         CHECK(session.state().combats.size() == 1);
         CHECK(session.takeStrategicBattles().empty());   // a local game shows its battles as they happen
     }
+}
+
+TEST_CASE("tactical: mines are laid in combat, up to the rate and the sector's cap, and join the minefield") {
+    Skirmish k;
+    GameState& s = k.ar.s;
+    const EmpireId a = k.ar.a;
+    const DesignId mine = design(s, a, "Pebble", "Test Mine Hull", {"Test Warhead"});
+    const VehicleId layer = spawn(s, frigate(s, a, "Layer", 1, {"Test Mine Layer", "CT Big Armor"}), k.ar.loc);
+    s.vehicle(layer)->cargo.units.push_back({mine, 6});   // 60 kT: the layer's hold
+    const VehicleId field = spawn(s, mine, k.ar.loc);
+    s.vehicle(field)->count = 97;
+    setGroupStacks(s, *s.vehicle(field), {{mine, 97}});
+    // Nobody entered: the mines do not strike, so the field stays as it is.
+    TacticalBattle b(combatRules(), s, TacticalBattle::Setup{k.ar.loc, std::vector<VehicleId>{}, {a}});
+    REQUIRE(b.started());
+    while (b.awaitingOrders() && b.phaseEmpire() != a) b.submit(order(OK::EndPhase, b.phaseEmpire()));
+    REQUIRE(b.phaseEmpire() == a);
+    const int piece = pieceIndex(b, layer);
+    CHECK(b.pieces()[static_cast<size_t>(piece)].launchLeft[3] == 4);   // Lay Mines Val 1 a combat turn
+    TacticalOrder lay = order(OK::Launch, a, piece);
+    lay.design = mine;
+    lay.count = 10;
+    lay.group = 1;
+    const size_t pieces = b.pieces().size();
+    CHECK(b.submit(lay).empty());
+    CHECK(b.pieces().size() == pieces);   // mines are no pieces
+    CHECK(b.pieces()[static_cast<size_t>(piece)].cargo == std::vector<UnitStack>{{mine, 3}});   // the cap left room for 3
+    CHECK(b.check(lay) == "The mine limit for this sector is reached.");
+    b.submit(order(OK::ResolveCombat, a));
+    REQUIRE(b.finished());
+    b.finish();
+    // They joined the minefield there; the layer kept the rest.
+    const GameState& after = b.state();
+    REQUIRE(after.vehicle(field));
+    CHECK(after.vehicle(field)->count == 100);
+    if (const Vehicle* l = after.vehicle(layer); l && l->count > 0) CHECK(l->cargo.unitCount(mine) == 3);
+}
+
+TEST_CASE("tactical: the Launch Units window takes back the groups it launched") {
+    Skirmish k;
+    k.ar.s.vehicle(k.carrier)->cargo.units = {{k.fighter, 5}};   // 100 kT of the bays' 120
+    TacticalBattle b = startSkirmish(k);
+    const EmpireId a = k.ar.a;
+    const int carrier = pieceIndex(b, k.carrier);
+    TacticalOrder launch = order(OK::Launch, a, carrier);
+    launch.design = k.fighter;
+    launch.count = 3;
+    launch.group = 4;   // the window's session
+    const size_t before = b.pieces().size();
+    REQUIRE(b.submit(launch).empty());
+    REQUIRE(b.pieces().size() == before + 1);
+    const int group = static_cast<int>(before);
+    CHECK(b.pieces()[before].launchWindow == 4);
+    CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 5);
+    // Only from the same window session, and only by its carrier.
+    TacticalOrder back = order(OK::Recover, a, carrier, group);
+    back.group = 5;
+    CHECK(b.check(back) == "Only a group it launched in this window comes back.");
+    back.group = 4;
+    TacticalOrder other = order(OK::Recover, a, pieceIndex(b, k.gunner), group);
+    other.group = 4;
+    CHECK(b.check(other) == "Only a group it launched in this window comes back.");
+    CHECK(b.submit(back).empty());
+    CHECK_FALSE(b.pieces()[before].alive);
+    CHECK(b.pieces()[static_cast<size_t>(carrier)].cargo == std::vector<UnitStack>{{k.fighter, 5}});
+    // What was launched this combat turn stays counted (inferred, spec 04 §19 Q97).
+    CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 5);
+    bool told = false;
+    for (const CombatEvent& e : b.record().events)
+        if (e.kind == CombatEvent::Kind::Recovered && e.piece == static_cast<uint32_t>(group) && e.target == static_cast<uint32_t>(carrier) && e.amount == 3)
+            told = true;
+    CHECK(told);
+    // No loss: the fighters are aboard after the battle.
+    b.submit(order(OK::ResolveCombat, a));
+    REQUIRE(b.finished());
+    b.finish();
+    CHECK(b.state().design(k.fighter).lost == 0);
 }

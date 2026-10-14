@@ -114,6 +114,8 @@ The Empire Options switches and what the windows remember. Only auto_claim_colon
 | `empires_tab` | `int` | The Empires window's tab: 0 Treaty, 1 Trade, 2 Tariff. |
 | `galaxy_map_names` | `bool` | The Galaxy Map shows system names. |
 | `galaxy_map_distances` | `bool` | The Galaxy Map shows distances when it asks for a warp point's destination. |
+| `cargo_step` | `int` | How much a click moves in Transfer Cargo: 0 one, 1 five, 2 ten (the default), 3 a hundred, 4 all. |
+| `units_step` | `int` | How much a click moves in Launch \ Recover Units: 0 one, 1 five, 2 ten (the default), 3 all. |
 
 ## `Order`
 
@@ -130,6 +132,7 @@ Its order list.
 | `from_resource` | `str` | Convert Resources: the resource converted. |
 | `to_resource` | `str` | Convert Resources: the resource it becomes. |
 | `planet_size` | `int` | Construct (create_constructed_planet): the world to build, by its planet size's special ability number, at most the device's value; 0 builds the one the device's value names. |
+| `cargo` | `str` | Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when design names it. |
 
 ## `PackageItem`
 

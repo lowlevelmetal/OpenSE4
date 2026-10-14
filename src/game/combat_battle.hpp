@@ -30,7 +30,8 @@ inline constexpr int kRangeTable = kCombatMapWidth;   // longest range the movem
 inline constexpr int kGroups = 10;                     // tactical combat groups 0-9 (spec 04 §5)
 
 // Launch kinds: the per-turn launch counts of a carrier (spec 04 §4, §10).
-enum LaunchKind : size_t { kLaunchFighters = 0, kLaunchSatellites = 1, kLaunchDrones = 2 };
+enum LaunchKind : size_t { kLaunchFighters = 0, kLaunchSatellites = 1, kLaunchDrones = 2, kLaunchMines = 3 };
+inline constexpr size_t kLaunchKinds = 4;
 
 inline int sgn(int v) { return (v > 0) - (v < 0); }
 inline bool onMap(int x, int y) { return x >= 0 && y >= 0 && x < kW && y < kH; }
@@ -105,7 +106,7 @@ struct Piece {
     bool arrived = false;             // moved into the sector this turn: an attacker's piece
     bool warped = false;              // came through a warp point (another system)
     int boxDx = 0, boxDy = 0;         // the neighbouring sector it came from (start box)
-    std::array<int, 3> launchedNow{}; // units launched this combat turn, by LaunchKind
+    std::array<int, kLaunchKinds> launchedNow{};   // units launched this combat turn, by LaunchKind
     // Seekers.
     int seekTarget = -1, launcher = -1, travelled = 0, speed = 0, members = 1, launchRound = 0;
     int64_t hp = 0;
@@ -113,6 +114,7 @@ struct Piece {
     // Launched units and drones.
     int carrier = -1;
     bool launched = false;
+    int launchWindow = 0;             // launched with the Launch Units window: its session (0: none)
     int droneTarget = -1;
     EmpireId droneTargetOwner;
     // The piece's number (spec 04 §10.7): its place in piece order at set-up;
@@ -252,7 +254,7 @@ public:
     int64_t hitPoints(int j) const;
     int damagePercent(int j) const;
     int maxMovement(int i) const { return computeMp(i); }
-    std::array<int, 3> launchLeft(int i) const;
+    std::array<int, kLaunchKinds> launchLeft(int i) const;
     bool hasTroops(int i) const;
     bool hasUnitsAboard(int i) const;     // units of any kind in its cargo (a planet piece: its colony's)
     int leaderOf(int i) const;             // the piece i follows (-1: none)
@@ -415,6 +417,8 @@ private:
     void syncGroup(Piece& p);
     int launchKindOf(DesignId design) const;   // LaunchKind, or -1 for units that are not launched
     int satellitesPresent(EmpireId e) const;
+    // The empire's mines in the sector: its minefield there and what it laid in this battle.
+    int64_t minesPresent(EmpireId e) const;
 
     // ---- Movement.
     MovePlan plan(int i, const Targeting& T);
@@ -451,10 +455,13 @@ private:
     bool playerPhase() const { return stage_ == Stage::Orders || stage_ == Stage::Paused; }
     std::string checkPiece(const TacticalOrder& o, bool moving) const;
     std::string checkLaunch(const TacticalOrder& o) const;
+    std::string checkRecover(const TacticalOrder& o) const;
     void startPlayerPhase();         // the side's drones and seekers move, then the player takes over
     void execute(const TacticalOrder& o);
     void finishPlayerPhase();
     void launchOrder(const TacticalOrder& o);
+    void recoverOrder(const TacticalOrder& o);
+    int64_t carrierRoom(int i) const;     // free cargo space of a ship or planet piece
     void setGroup(int i, int group, bool leader, int formation);
     void leaveGroup(int i);
     void logOrder(TacticalOrder o) const {
@@ -502,8 +509,11 @@ private:
     std::vector<OverkillTotal> overkill_;                             // per piece, kept between choices (spec 04 §16)
     // Launch Units window sessions: (piece, session, launch kind) -> the group made (spec 04 §10.4).
     std::map<std::tuple<int, int, int>, int> launchGroups_;
+    // Mines laid in the battle, by owner: they join the sector's minefield when it ends (spec 04 §10.6).
+    std::map<uint32_t, std::vector<UnitStack>> minesLaid_;
     int round_ = 1;
     int satelliteCap_ = 100;
+    int64_t mineCap_ = 100;
     int interference_ = 0;
     int disruption_ = 0;
 

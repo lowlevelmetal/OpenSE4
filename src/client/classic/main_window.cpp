@@ -725,16 +725,10 @@ void MainWindow::givePicked(UiContext& ui, Pick p, game::Location where, const P
             giveOrder(ui, o);
             return;
         }
-        case Pick::DropCargo: {
-            // Delivered into the object picked.
-            game::Order o{game::OrderKind::DropCargo, where};
-            o.design = pickDesign_;
-            o.amount = -1;
-            o.object = c.object;
-            o.vehicle = c.vehicle;
-            giveOrder(ui, o);
+        case Pick::DropCargo:
+            // Delivered into the object picked; what to drop is asked now (inferred: after the object).
+            chooseCargo(ui, p, where, c);
             return;
-        }
         default: return;
     }
 }
@@ -790,15 +784,7 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
         }
         case Pick::LoadCargo:
         case Pick::LaunchRemote:
-        case Pick::RecoverRemote: {
-            static constexpr std::array<game::OrderKind, 4> kKinds{game::OrderKind::LoadCargo, game::OrderKind::DropCargo,
-                                                                   game::OrderKind::LaunchUnits, game::OrderKind::RecoverUnits};
-            game::Order o{kKinds[static_cast<size_t>(p) - static_cast<size_t>(Pick::LoadCargo)], where};
-            o.design = pickDesign_;
-            o.amount = -1;
-            giveOrder(ui, o);
-            return;
-        }
+        case Pick::RecoverRemote: chooseCargo(ui, p, where); return;
         case Pick::Callback: {
             // Taken first: the callback may ask for another pick (a mod order's next argument).
             std::function<void(game::Location)> callback = std::move(pickCallback_);
@@ -984,61 +970,52 @@ void MainWindow::finishPatrol(UiContext& ui, bool atHome) {
     orderDone();
 }
 
-void MainWindow::chooseCargo(UiContext& ui, Pick p) {
-    const game::GameState& s = ui.state();
-    const game::Rules& r = ui.rules();
-    const game::EmpireId me = ui.session.player();
+// Load Cargo, Drop Cargo, Launch Units Remotely and Recover Units Remotely
+// (spec 03 §8, spec 06 §1.3, confirmed: binary): the place is picked first;
+// at the click the picker asks for the kind of cargo, from a fixed list
+// whatever the selection carries, and the order is given for that kind (it
+// moves every design of it). A colony's Launch and Recover ask only the kind:
+// the order is given at once at the colony, and a turn-based game carries
+// out the colony's orders then. Drop Cargo asks after its destination is
+// picked (§2.9; inferred order).
+void MainWindow::chooseCargo(UiContext& ui, Pick p, std::optional<game::Location> where, PickCandidate target) {
     static constexpr std::array<const char*, 4> kTitles{"Load Cargo", "Drop Cargo", "Launch Units Remotely", "Recover Units Remotely"};
     static constexpr std::array<const char*, 4> kPrompts{"Load Cargo: pick where", "Drop Cargo: pick where", "Launch Units: pick where",
                                                          "Recover Units: pick where"};
+    static constexpr std::array<const char*, 4> kNotes{"What should be loaded?", "What should be dropped?", "What should be launched?",
+                                                       "What should be recovered?"};
+    static constexpr std::array<game::OrderKind, 4> kOrders{game::OrderKind::LoadCargo, game::OrderKind::DropCargo, game::OrderKind::LaunchUnits,
+                                                            game::OrderKind::RecoverUnits};
+    using K = game::CargoKind;
     const size_t k = static_cast<size_t>(p) - static_cast<size_t>(Pick::LoadCargo);
+    if (!where) {
+        const game::Colony* colony = selectedColony(ui);
+        if (colony && !selectedVehicle(ui) && tagged_.empty() && (p == Pick::LaunchRemote || p == Pick::RecoverRemote)) {
+            where = game::locationOf(ui.state().galaxy, colony->planet);
+        } else {
+            startPick(ui, p, kPrompts[k]);
+            return;
+        }
+    }
+    std::vector<K> kinds;
+    switch (p) {
+        case Pick::LoadCargo:
+        case Pick::DropCargo: kinds = {K::Population, K::Troops, K::Fighters, K::Mines, K::Satellites, K::Drones, K::WeaponPlatforms}; break;
+        case Pick::LaunchRemote: kinds = {K::Fighters, K::Satellites, K::Mines, K::Drones}; break;
+        default: kinds = {K::Fighters, K::Satellites, K::Drones}; break;
+    }
     Chooser c;
     c.title = kTitles[k];
-    c.note = "Pick what, then the sector.";
-    auto add = [&](std::string label, game::DesignId d) {
-        c.items.push_back({std::move(label), [this, &ui, p, d, k] {
-                               pickDesign_ = d;
-                               startPick(ui, p, kPrompts[k]);
+    c.note = kNotes[k];
+    for (const K kind : kinds)
+        c.items.push_back({std::string(game::displayName(kind)), [this, &ui, k, kind, at = *where, target] {
+                               game::Order o{kOrders[k], at};
+                               o.cargo = kind;
+                               o.amount = -1;
+                               o.object = target.object;
+                               o.vehicle = target.vehicle;
+                               giveOrder(ui, o);
                            }});
-    };
-    // What the selection carries (Drop, Launch) or could carry (Load).
-    game::Cargo carried;
-    bool population = false;
-    for (const OrderOwner& w : orderOwners(ui)) {
-        auto take = [&](const game::Cargo& cargo) {
-            population = population || cargo.totalPopulation() > 0;
-            for (const game::UnitStack& u : cargo.units)
-                if (std::none_of(carried.units.begin(), carried.units.end(), [&](const game::UnitStack& x) { return x.design == u.design; }))
-                    carried.units.push_back(u);
-        };
-        if (const game::Fleet* f = s.fleet(w.fleet))
-            for (game::VehicleId m : f->members) {
-                if (const game::Vehicle* v = s.vehicle(m)) take(v->cargo);
-            }
-        else if (const game::Vehicle* v = s.vehicle(w.vehicle)) take(v->cargo);
-        else if (const game::Colony* col = s.colony(w.planet)) take(col->cargo);
-    }
-    if (p == Pick::LoadCargo || (p == Pick::DropCargo && population)) add("Population", {});
-    if (p == Pick::LoadCargo) {
-        for (game::DesignId d : s.empire(me).designs)
-            if (game::isUnitType(r.hull(s.design(d).hull).type) && !s.design(d).obsolete) add(s.design(d).name, d);
-    } else if (p == Pick::RecoverRemote) {
-        // A unit kind, not a design: fighters or satellites (spec 03 §8); any design of the kind names it.
-        for (const ruleset::VehicleType kind : {ruleset::VehicleType::Fighter, ruleset::VehicleType::Satellite})
-            for (game::DesignId d : s.empire(me).designs)
-                if (r.hull(s.design(d).hull).type == kind) {
-                    add(kind == ruleset::VehicleType::Fighter ? "Fighters" : "Satellites", d);
-                    break;
-                }
-    } else {
-        for (const game::UnitStack& u : carried.units)
-            if (p == Pick::DropCargo || r.hull(s.design(u.design).hull).type != ruleset::VehicleType::Troop)
-                add(s.design(u.design).name, u.design);
-    }
-    if (c.items.empty()) {
-        note(ui, std::string(kTitles[k]) + ": nothing to choose.");
-        return;
-    }
     chooser_ = std::move(c);
 }
 

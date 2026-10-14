@@ -107,15 +107,28 @@ int64_t freeCargo(const Rules& r, const GameState& s, const Vehicle& v);
 // Cargo that no longer fits (hold destroyed) is lost: population first, 1M at a
 // time from the first entry, then units one at a time from the first stack (§11).
 void trimCargo(const Rules& r, const GameState& s, Vehicle& v);
+// What a cargo order moves (spec 03 §8): population, every unit design of
+// one type (a cargo kind, as players give these orders), or one design (the
+// orders OpenSE4's computer players give and games saved before format 10).
+struct CargoWhat {
+    DesignId design;
+    std::optional<ruleset::VehicleType> type;
+    bool population() const { return !design.valid() && !type; }
+    bool takes(const Rules& r, const GameState& s, DesignId d) const;
+};
+CargoWhat cargoWhat(const Order& o);
+// The designs of `c`'s unit stacks that `what` takes, in cargo order.
+std::vector<DesignId> designsIn(const Rules& r, const GameState& s, const Cargo& c, const CargoWhat& what);
+
 // Load/drop at the vehicle's sector: own colonies first, then own ships and
 // bases outside `group` (troops are also dropped onto a hostile colony to
-// invade it). `unit` invalid means population. amount < 0: as much as possible.
-int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group = {});
+// invade it). amount < 0: as much as possible.
+int64_t loadCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group = {});
 // `colony` or `holder`: the destination the player picked (spec 06 §2.9):
 // only that own colony or vehicle takes the cargo; with neither, every own
 // colony there, enemy planets for troops, then every own holder.
-int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group = {}, ObjectId colony = {},
-                  VehicleId holder = {});
+int64_t dropCargo(TurnContext& ctx, VehicleId id, const CargoWhat& what, int64_t amount, std::span<const VehicleId> group = {},
+                  ObjectId colony = {}, VehicleId holder = {});
 // Colony ships take colonists from an own colony where the order starts.
 int64_t loadColonists(TurnContext& ctx, VehicleId id);
 
@@ -133,8 +146,18 @@ struct UnitBudget {
     bool turnBased = false;
 };
 AbilityKind launcherFor(ruleset::VehicleType unitType);
-int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const Order& o);
-int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o);
+// Launches `amount` (-1: as many as allowed) of what `what` takes from the
+// launcher's cargo, stack by stack in cargo order.
+UnitTransfer launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const CargoWhat& what, int64_t amount);
+// Recovers into the holder: from the group `group` alone when it is valid
+// (the Launch \ Recover Units window: `what` one design of it, or every
+// design when it takes none), else from every own group of the unit type in
+// the sector, as Recover Units does.
+UnitTransfer recoverUnits(TurnContext& ctx, Launcher into, const CargoWhat& what, int64_t amount, VehicleId group = {});
+// The same without changing the game: what they would do now.
+UnitTransfer planLaunch(const Rules& r, const GameState& s, const UnitBudget& budget, Launcher from, const CargoWhat& what, int64_t amount);
+UnitTransfer planRecover(const Rules& r, const GameState& s, bool turnBased, Launcher into, const CargoWhat& what, int64_t amount,
+                         VehicleId group = {});
 
 // ---- One-shot components ---------------------------------------------------------------------------
 // The vehicle uses the part at design entry `entry`, whatever it is (spec 03

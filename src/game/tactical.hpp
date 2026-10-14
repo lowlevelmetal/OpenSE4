@@ -81,7 +81,7 @@ struct TacticalOrder {
         ToggleWeapon,    // `piece`'s `weapon` (-1: all) on or off (`on`)
         Launch,          // "Launch Units": `piece` launches `count` units of `design`; `group` is the window
                          // session: units of one kind launched from the piece in one session share a group
-                         // (drones: one each) (spec 04 §10.4)
+                         // (drones: one each); mines join the sector's minefield instead (spec 04 §10.4, §10.6)
         LaunchFighters,  // "Launch Fighters in Groups": `count` fighters of `design` in groups of `group` (5-50)
         DropTroops,      // `piece` lands its troops on the adjacent colony of another empire that comes last in
                          // piece order, whatever the treaty (spec 04 §11; `target` is ignored)
@@ -96,6 +96,8 @@ struct TacticalOrder {
         AutoPhase,       // the strategies play the rest of this phase (an OpenSE4 extension)
         EndPhase,        // "End Turn": the side's phase ends (or, paused by Auto, play goes on)
         ResolveCombat,   // every empire follows its strategies to the end of the battle
+        Recover,         // the Launch \ Recover Units window: `piece` takes back aboard the fighter or satellite group
+                         // `target` it launched in the window session `group` (spec 04 §10.4)
     };
     Kind kind = Kind::EndPhase;
     EmpireId empire;              // the side giving it: the empire whose phase it is
@@ -164,7 +166,8 @@ struct TacticalPiece {
     std::vector<UnitStack> cargo;  // units carried (planets: their stored units)
     std::vector<UnitStack> landed; // planets: troops landed by `invader`, fighting on the ground
     EmpireId invader;
-    std::array<int, 3> launchLeft{};  // fighters, satellites, drones it may still launch this turn
+    std::array<int, 4> launchLeft{};  // fighters, satellites, drones, mines it may still launch this turn
+    int launchWindow = 0;         // a group launched with the Launch Units window: that window's session (0: none)
     int64_t boardingAttack = 0;
     bool troops = false;          // carries troops (they land for its owner)
     // For the Combat Piece Report (spec 06 §1.10.1):
