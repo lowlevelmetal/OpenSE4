@@ -163,6 +163,21 @@ What stays different is in [PARITY_GAPS.md](PARITY_GAPS.md); the choices the exe
 did not settle are open questions: spec 03 §19 Q84, spec 04 §19.6–§19.7 Q91–Q98, spec 05
 Q79–Q81, spec 06 §7 Q113–Q119 and spec 08 §11.1 Q23–Q29.
 
+### Players' reports on 0.12.0 and the complete listing (2026-10-14, done)
+GitHub issues #11 to #18 and a follow-up on #5 were settled from the executable first.
+One answer the specs had given was wrong: the "claim every system we colonize" option is
+read after all (spec 06 §7 Q47). The decompiled export had stopped every routine at its
+first `try ... finally` block, so code after it was missing. The export was repaired
+(docs/CLEANROOM.md), and the 81 spec answers that said the original never reads, calls or
+does something were checked again on the complete listing. Two were wrong (the claim option
+and the command line, spec 05 §9.2) and seven partly wrong (formation design types, a
+captured colony's queue, subjugated computer players and treaties, the computer players'
+strategies, two demand kinds, the data check at a command-line sign-in). All of them are
+corrected and implemented, marked "corrected 2026-10-14, complete listing". The reports'
+answers are spec 03 §19 Q85 and spec 06 §7 Q120–Q122; still open are spec 05 Q82–Q84 and
+the parts of those answers marked inferred. The changed rules needed protocol 9
+(MULTIPLAYER.md "Protocol").
+
 ## Next steps
 
 1. **Computer players: enemy colonies inside the territories.** The second debugger round

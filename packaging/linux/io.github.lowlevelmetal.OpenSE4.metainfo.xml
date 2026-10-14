@@ -72,6 +72,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.14.0" date="2026-10-14" type="development">
+      <description>
+        <p>Fixes from players' reports: damaged ships never show more movement than their engines allow, colonies claim their systems, battles go on while missiles fly, a right-click on an empire's flag opens its Race Report, damage counts components, the designer shows a component's whole report, and a tech area's report lists what each later level brings. Several rules were corrected against a complete reading of the original, and its command line can host a play-by-e-mail turn. Network protocol 9: does not play with 0.13.0, reads its saves.</p>
+      </description>
+    </release>
     <release version="0.13.0" date="2026-10-14" type="development">
       <description>
         <p>A feature-parity pass against the original game: its tutorial and scenarios play from the Learn window, its empire and map files load and save, and the windows, orders, diplomacy, combat, designs, research, intelligence, setup and game flow behave as in the original in many details. Network protocol 8 and save format 10: does not play with 0.12.0, reads its saves.</p>
