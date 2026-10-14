@@ -253,8 +253,15 @@ public:
     bool setAutosaveTurns(int everyTurns);
     // An OpenSE4 save, or a saved game of the original, which is imported
     // (docs/spec/08; told apart by the file's first bytes, both are .gam).
+    // With `scenario`, the Starting Game of one of the original's scenarios
+    // (docs/spec/06 §5.6): the game it holds, read as any other, becomes a
+    // game of that scenario, from its first page (takeScenarioStart).
     static std::expected<std::unique_ptr<ClassicSession>, std::string> load(std::shared_ptr<const game::Rules> rules,
-                                                                            const std::filesystem::path& file);
+                                                                            const std::filesystem::path& file,
+                                                                            const game::ClassicScenarioState* scenario = nullptr);
+    // The game was just started from one of the original's scenarios (load
+    // with `scenario`): its pages come up now. Taken once.
+    bool takeScenarioStart() { return std::exchange(scenarioStart_, false); }
     // After loading a saved game of the original: what the import
     // approximated, short lines for the player (the details are in the log
     // file). Taken once.
@@ -357,6 +364,7 @@ private:
     // its empire passwords are verifiers, and saving keeps the game id.
     uint64_t multiplayerGameId_ = 0;
     std::vector<std::string> importNotes_;
+    bool scenarioStart_ = false;
     // The master password verifier of a network or PBEM game file opened
     // here (SaveInfo::masterPasswordVerifier); kept when the game is saved.
     std::string masterVerifier_;

@@ -170,8 +170,8 @@ that is how `tools/check_audio.py` checks OpenSE4's sound without a sound card
 
 ## Games of the original
 
-OpenSE4 reads the saved games of the original (version 1.95, the last release) and writes
-games back in its format, so a game can move between the two. The format is described in
+OpenSE4 reads the saved games of the original (versions 1.40 to 1.95, the last release)
+and writes games back in its format (1.95), so a game can move between the two. The format is described in
 [spec/08-saved-games.md](spec/08-saved-games.md).
 
 - **Load an original game.** Load Game lists `.gam` files; both games use that extension,
@@ -206,7 +206,11 @@ games back in its format, so a game can move between the two. The format is desc
   by their position, so it only means something with the data set it was played with:
   the installed game, or the same mod. A save made with another number of racial traits
   or tech areas, or one that names a record the data set lacks, is refused with a message
-  that says so. Saves of versions other than 1.95 are refused too.
+  that says so. Saves older than version 1.40 (or newer than 1.95) are refused too; an
+  older save lacks the fields later releases added, which get their defaults (spec 08
+  §5.2).
+- **The original's tutorial and scenarios** play from the Learn window's Scenarios tab,
+  with their pages of text (docs/LEARNING.md "The original's tutorial and scenarios").
 
 What carries over, both ways: the galaxy (systems, stars, planets with their conditions
 and values, storms, warp points, comets, stellar abilities), every empire (race,

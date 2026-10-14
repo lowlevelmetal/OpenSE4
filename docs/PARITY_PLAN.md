@@ -143,8 +143,9 @@ questions are what the observation sessions still have to settle.
 - [x] Encrypted network connections with pinned host keys and signed logins; reconnects
       that keep the turn's orders; desyncs detected, named and repaired.
 - [x] Tutorials, training games and the manual: OpenSE4's own, in our own words
-      ([LEARNING.md](LEARNING.md)). The original's tutorial cannot be played: its starting
-      game is a binary `.gam`.
+      ([LEARNING.md](LEARNING.md)). The original's tutorial and scenarios play from the
+      install too, with their pages (spec 06 §5.6), since saved games from version 1.40 on
+      are read (spec 08 §5.2).
 
 ## Next steps
 

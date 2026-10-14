@@ -1313,6 +1313,13 @@ void MainWindow::statusButtons(UiContext& ui) {
                 ui.requests.toggleLessonPanel = true;
             }
             ui.tagItem("status:lesson");
+        } else if (ui.scenarioTutorial) {
+            // The original's tutorial: its page shown last (§5.6).
+            if (button("##scenario", 2, {barRight - 42, 7})) {
+                audio().play("button");
+                ui.requests.showScenarioPage = true;
+            }
+            ui.tagItem("status:scenario");
         }
     }
     ImGui::End();

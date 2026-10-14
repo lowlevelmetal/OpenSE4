@@ -145,6 +145,11 @@ public:
 
     explicit Decoder(std::span<const uint8_t> in) : in_(in) {}
 
+    // The file's version (§5.2): a field added later is read only from files
+    // of that release or later; older ones keep the model's default.
+    void setVersion(std::string_view v) { version_ = v; }
+    bool since(std::string_view release) const { return versionAtLeast(version_, release); }
+
     bool ok() const { return error_.empty(); }
     const std::string& error() const { return error_; }
     size_t position() const { return pos_; }
@@ -308,6 +313,7 @@ private:
     std::optional<KeyStream> keys_;
     std::string error_;
     std::vector<std::string> path_;
+    std::string version_{kVersion};
 };
 
 // ---- Writing ---------------------------------------------------------------------------------------------
@@ -315,6 +321,10 @@ private:
 class Encoder {
 public:
     static constexpr bool kReading = false;
+
+    // A file of an older version leaves out the fields added later (§5.2).
+    void setVersion(std::string_view v) { version_ = v; }
+    bool since(std::string_view release) const { return versionAtLeast(version_, release); }
 
     bool ok() const { return error_.empty(); }
     const std::string& error() const { return error_; }
@@ -399,6 +409,7 @@ private:
     std::optional<KeyStream> keys_;
     std::string error_;
     std::vector<std::string> path_;
+    std::string version_{kVersion};
 };
 
 // ---- Recording (describe, compare) ------------------------------------------------------------------------
@@ -409,6 +420,9 @@ public:
     static constexpr bool kReading = false;
 
     std::vector<std::pair<std::string, std::string>> values;
+
+    void setVersion(std::string_view v) { version_ = v; }
+    bool since(std::string_view release) const { return versionAtLeast(version_, release); }
 
     bool ok() const { return true; }
     void startKeys(const Keys&) {}
@@ -451,6 +465,7 @@ private:
     }
     std::vector<std::string> path_;
     std::map<std::string, int> seen_;
+    std::string version_{kVersion};
 };
 
 // RAII path element.
@@ -587,8 +602,18 @@ void io(Ar& ar, OrderList& o) {
         ar.u8(r.sector, "sector");
         ar.u8(r.extra, "extra");
         ar.u16(r.target, "target");
-        ar.str(r.targetName, "target name");
+        if (ar.since(release::kDrones)) ar.str(r.targetName, "target name");
     });
+}
+
+// A fleet's or ship's experience: a float from release::kFloatExperience
+// on, a whole number in an int before (inferred).
+template <class Ar>
+void experience(Ar& ar, Float80& v) {
+    if (ar.since(release::kFloatExperience)) return ar.real(v, "experience");
+    auto whole = static_cast<int32_t>(float80Tenths(v) / 10);
+    ar.i32(whole, "experience");
+    if constexpr (Ar::kReading) v = toFloat80(xmath::Ext(int64_t{whole}));
 }
 
 // ---- Prologue to systems (§3.1 - §3.5) ---------------------------------------------------------------------------
@@ -664,15 +689,18 @@ void io(Ar& ar, Options& o) {
     ar.u8(o.playStyle, "play style");
     ar.str(o.gameName, "game name");
     ar.str(o.saveFolder, "save folder");
-    ar.u8(o.connection, "connection");
+    if (ar.since(release::kConnection)) ar.u8(o.connection, "connection");
     ar.u8(o.autosaveTurns, "autosave");
     ar.flag(o.turnBased, "turn-based");
     ar.flag(o.simultaneous, "simultaneous");
     ar.i32(o.replayCounter, "replay counter");
-    ar.i32(o.gameCode, "game code");
-    ar.i32(o.turnCode, "turn code");
-    ar.i32(o.programSum, "program sum");
-    for (int32_t& c : o.checksums) ar.i32(c, "data checksum");
+    if (ar.since(release::kCodes)) {
+        ar.i32(o.gameCode, "game code");
+        ar.i32(o.turnCode, "turn code");
+        ar.i32(o.programSum, "program sum");
+    }
+    if (ar.since(release::kChecksums))
+        for (int32_t& c : o.checksums) ar.i32(c, "data checksum");
 }
 
 template <class Ar>
@@ -757,7 +785,8 @@ void io(Ar& ar, EmpireOptions& o) {
     ar.flag(o.facilityMarker1, "facility marker 1");
     ar.flag(o.colonizableMarkers, "colonizable markers");
     ar.flag(o.coordinateLocation, "coordinate location");
-    for (bool& m : o.facilityMarkers2to12) ar.flag(m, "facility marker");
+    if (ar.since(release::kFacilityMarkers))
+        for (bool& m : o.facilityMarkers2to12) ar.flag(m, "facility marker");
     ar.flag(o.galaxyGridLines, "grid lines");
     ar.flag(o.galaxyWarpLines, "warp lines");
     ar.flag(o.latestConstruction, "latest construction");
@@ -881,19 +910,21 @@ void io(Ar& ar, StrategyRecord& t) {
     ar.u8(t.secondary, "secondary movement");
     ar.flag(t.typePriorityFirst, "type priority first");
     for (uint8_t& k : t.targeting) ar.u8(k, "targeting priority");
-    for (size_t i = 0; i < kStrategyCategories; ++i) {
+    // Files older than release::kDrones have no Drones category, the last.
+    const size_t categories = ar.since(release::kDrones) ? kStrategyCategories : kStrategyCategories - 1;
+    for (size_t i = 0; i < categories; ++i) {
         ar.u8(t.typePriority[i], "type priority");
         ar.flag(t.dontFireOn[i], "don't fire on");
     }
     ar.u16(t.fighterGroup, "fighter launch group");
-    ar.u16(t.dronesPerTarget, "drones per target");
-    for (bool& b : t.breakFormation) ar.flag(b, "break formation");
+    if (ar.since(release::kDronesPerTarget)) ar.u16(t.dronesPerTarget, "drones per target");
+    for (size_t i = 0; i < categories; ++i) ar.flag(t.breakFormation[i], "break formation");
     for (uint8_t& d : t.damagePercent) ar.u8(d, "damage percent");
     ar.flag(t.damageUntilWeaponsGone, "until weapons gone");
 }
 
 template <class Ar>
-void io(Ar& ar, EmpireRecord& e, size_t traitCount) {
+void io(Ar& ar, EmpireRecord& e, size_t traitCount, EmpireForm form) {
     // §3.6.1
     ar.str(e.leaderName, "leader name");
     ar.str(e.leaderTitle, "leader title");
@@ -929,8 +960,11 @@ void io(Ar& ar, EmpireRecord& e, size_t traitCount) {
     for (int32_t& x : e.stored) ar.i32(x, "stored resources");
     ar.i32(e.researchPoints, "research points");
     ar.i32(e.intelPoints, "intelligence points");
-    for (bool& b : e.canColonize) ar.flag(b, "can colonize");
-    for (bool& b : e.breathes) ar.flag(b, "breathes");
+    // An empire file leaves out these derived flags from release::kEmpireFileFlags on.
+    if (form == EmpireForm::SavedGame || !ar.since(release::kEmpireFileFlags)) {
+        for (bool& b : e.canColonize) ar.flag(b, "can colonize");
+        for (bool& b : e.breathes) ar.flag(b, "breathes");
+    }
     ar.str(e.password, "password");
     ar.str(e.email, "e-mail");
     if (!ar.ok()) return;
@@ -1025,11 +1059,11 @@ void io(Ar& ar, EmpireRecord& e, size_t traitCount) {
         for (uint8_t& x : e.unused7) ar.u8(x, "unused");
         ar.u16(e.shipNameIndex, "ship-name index");
         for (bool& b : e.enemyCapabilities) ar.flag(b, "enemy capability");
-        ar.u16(e.droneNameCounter, "drone name counter");
+        if (ar.since(release::kDrones)) ar.u16(e.droneNameCounter, "drone name counter");
     }
     // §3.6.10
     ar.flag(e.destroyed, "destroyed");
-    ar.str(e.networkName, "network name");
+    if (ar.since(release::kNetworkName)) ar.str(e.networkName, "network name");
     // §3.6.11
     list16(ar, e.log, "log entry", [&](LogRecord& l) { io(ar, l); });
     // §3.6.12
@@ -1039,7 +1073,7 @@ void io(Ar& ar, EmpireRecord& e, size_t traitCount) {
         ar.str(f.name, "name");
         ar.u8(f.system, "system");
         ar.u8(f.sector, "sector");
-        ar.real(f.experience, "experience");
+        experience(ar, f.experience);
         ar.u16(f.formation, "formation");
         ar.u16(f.strategy, "strategy");
         ar.flag(f.minister, "minister");
@@ -1058,7 +1092,7 @@ void io(Ar& ar, DesignRecord& d) {
     ar.u8(d.owner, "owner");
     ar.u16(d.hull, "hull");
     ar.str(d.type, "design type");
-    ar.str(d.templateName, "template");
+    if (ar.since(release::kTemplateName)) ar.str(d.templateName, "template");
     ar.str(d.name, "name");
     ar.i32(d.created, "date created");
     ar.flag(d.obsolete, "obsolete");
@@ -1161,7 +1195,7 @@ void io(Ar& ar, ObjectRecord& o) {
             ar.u8(o.maxMovement, "maximum movement");
             ar.i32(o.supply, "supply");
             ar.u8(o.status, "status");
-            ar.real(o.experience, "experience");
+            experience(ar, o.experience);
             ar.flag(o.changed, "changed");
             ar.flag(o.cloaked, "cloaked");
             ar.str(o.name, "name");
@@ -1201,7 +1235,7 @@ void io(Ar& ar, ObjectRecord& o) {
             ar.u8(o.heading, "heading");
             ar.u8(o.owner, "owner");
             ar.flag(o.changed, "changed");
-            if (c == ObjectClass::DroneGroup) ar.str(o.name, "name");
+            if (c == ObjectClass::DroneGroup && ar.since(release::kDrones)) ar.str(o.name, "name");
             ar.u16(o.fleet, "fleet");
             ar.flag(o.minister, "minister");
             units(ar, o.units, "unit");
@@ -1237,7 +1271,7 @@ void body(Ar& ar, ClassicSave& s) {
         ar.u16(p.sector, "sector");
     });
     if (!ar.ok()) return;
-    items(ar, s.empires, s.prologue.empireCount, "empire", [&](EmpireRecord& e) { io(ar, e, s.traitCount); });
+    items(ar, s.empires, s.prologue.empireCount, "empire", [&](EmpireRecord& e) { io(ar, e, s.traitCount, EmpireForm::SavedGame); });
     list16(ar, s.designs, "design", [&](DesignRecord& d) { io(ar, d); });
     list16(ar, s.objects, "object", [&](ObjectRecord& o) { io(ar, o); });
     list16(ar, s.launched, "launch", [&](LaunchRecord& l) {
@@ -1405,6 +1439,18 @@ std::vector<uint32_t> keySample(const Keys& keys, std::string_view text, size_t 
 
 // ---- Decoding and encoding ------------------------------------------------------------------------------------------
 
+bool readableVersion(std::string_view version) {
+    const auto digit = [](char c) { return c >= '0' && c <= '9'; };
+    const bool shaped = version.size() == 4 && digit(version[0]) && version[1] == '.' && digit(version[2]) && digit(version[3]);
+    return shaped && versionAtLeast(version, kOldestVersion) && version <= kVersion;
+}
+
+std::optional<std::string> versionProblem(std::string_view version, std::string_view what) {
+    if (readableVersion(version)) return std::nullopt;
+    return std::format("the {} was saved by version {} of Space Empires IV; only files of versions {} to {} can be read", what, version,
+                       kOldestVersion, kVersion);
+}
+
 bool looksLikeClassicSave(std::span<const uint8_t> bytes) {
     // Six compact integers, then a string tag (the version): tags 2, 3 or 4.
     size_t pos = 0;
@@ -1429,9 +1475,8 @@ std::expected<ClassicSave, std::string> decodeWith(std::span<const uint8_t> byte
     d.startKeys(s.keys);
     d.str(s.version, "the version");
     if (!d.ok()) return std::unexpected(d.error());
-    if (s.version != kVersion)
-        return std::unexpected(std::format("the game was saved by version {} of Space Empires IV; only saves of version {} can be read",
-                                           s.version, kVersion));
+    if (auto problem = versionProblem(s.version)) return std::unexpected(std::move(*problem));
+    d.setVersion(s.version);
     // The summary: a fixed head, then one row per empire (§2.6).
     if (d.remaining() < kSummaryHead) return std::unexpected(std::string("the file ends in the summary"));
     std::string head;
@@ -1470,7 +1515,10 @@ std::expected<std::vector<uint8_t>, std::string> encodeClassicSave(const Classic
         return std::unexpected(std::format("the summary counts {} empires but has {} rows", s.summary.empires, s.summary.rows.size()));
     if (s.empires.size() != s.prologue.empireCount)
         return std::unexpected(std::format("the prologue counts {} empires; there are {}", s.prologue.empireCount, s.empires.size()));
+    if (!readableVersion(s.version))
+        return std::unexpected(std::format("version {} cannot be written; the versions are {} to {}", s.version, kOldestVersion, kVersion));
     Encoder e;
+    e.setVersion(s.version);   // an older version leaves out the later fields (tests)
     for (int32_t& k : s.keys.k) e.compact(k, "key");
     e.startKeys(s.keys);
     e.str(s.version, "version");
@@ -1492,6 +1540,9 @@ std::string describe(const ClassicSave& s) {
     out += std::format("Date {}.{} (date counter {}, turn counter {}), {} game\n", date / 10, date % 10, date, s.prologue.turnCounter,
                        s.options.simultaneous ? "simultaneous" : "turn-based");
     out += std::format("Current player {}, seed {}\n", s.globals.currentPlayer, s.globals.seed);
+    if (s.globals.scenario)
+        out += std::format("A game of the scenario {}{}, page {} shown last\n", s.globals.scenarioStem, s.globals.tutorial ? " (the tutorial)" : "",
+                           s.globals.scenarioPage);
     out += std::format("{} empires:\n", s.empires.size());
     for (const EmpireRecord& e : s.empires) {
         size_t levels = 0;
@@ -1523,6 +1574,8 @@ std::string describe(const ClassicSave& s) {
 
 std::vector<std::string> compareSaves(const ClassicSave& a, const ClassicSave& b, size_t limit) {
     Recorder ra, rb;
+    ra.setVersion(a.version);
+    rb.setVersion(b.version);
     ClassicSave x = a, y = b;
     {
         std::string version = x.version;

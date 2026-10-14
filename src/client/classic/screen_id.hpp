@@ -32,6 +32,8 @@ enum class ScreenId {
     Options, Settings,
     // OpenSE4's own: what went wrong with computer players of mods (the main window's notice).
     PlayerErrors,
+    // The text of one of the original's scenarios, its tutorial among them (§1.7, §5.6).
+    ScenarioText,
     // Learning to play (docs/LEARNING.md): tutorials, training games and the manual.
     Learn, Manual,
     Count

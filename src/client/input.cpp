@@ -25,7 +25,7 @@ constexpr std::array<ActionInfo, kActionCount> kActions{{
     {Action::EndTurn, "Windows", "End turn", "end_turn"},
     {Action::Settings, "Windows", "Settings", "settings"},
     {Action::ContextHelp, "Windows", "Manual page of the window in front", "context_help"},
-    {Action::LessonText, "Lesson panel", "Show or hide the lesson or training panel", "lesson_text"},
+    {Action::LessonText, "Lesson panel", "Show or hide the lesson or training panel (a scenario of the original: its last page)", "lesson_text"},
     {Action::LessonNext, "Lesson panel", "Next (or Finish)", "lesson_next"},
     {Action::LessonBack, "Lesson panel", "Back", "lesson_back"},
     {Action::LessonSkip, "Lesson panel", "Skip, when the panel offers it", "lesson_skip"},

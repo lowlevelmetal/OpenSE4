@@ -141,6 +141,9 @@ struct UiRequests {
     std::optional<std::pair<learn::LessonKind, std::string>> resumeLesson;   // at the place the player left it
     bool leaveLesson = false;
     bool toggleLessonPanel = false;
+    // A tutorial game of the original's: a T button asks for the page of its
+    // text shown last (docs/spec/06 §5.6).
+    bool showScenarioPage = false;
 };
 
 // A rectangle a lesson can outline (docs/LEARNING.md "UI tags"), in ImGui
@@ -158,6 +161,7 @@ struct UiTag {
 };
 
 struct LearnContent;
+struct ScenarioFiles;
 class UiContext;
 
 // What the classic widgets need to draw: the pictures, the fonts and the frame
@@ -305,6 +309,12 @@ public:
     const LearnContent* learn = nullptr;
     bool lessonRunning = false;
     bool lessonLocked = false;
+    // A game of one of the original's scenarios (GameState::classicScenario,
+    // docs/spec/06 §5.6): its pages as read (null: none read), and whether it
+    // is the tutorial, whose T buttons show the status bar and every large
+    // dialog. Never during a lesson.
+    const ScenarioFiles* scenarioText = nullptr;
+    bool scenarioTutorial = false;
     // The rows the active tutorial step names: its {design:<type>} tokens
     // filled in (docs/LEARNING.md "Text tokens"). A list that shows one
     // scrolls it into view the first time (lessonRow, screens/list_widgets.hpp);
@@ -468,6 +478,8 @@ public:
 
 private:
     Dialog(const Painter& painter, const char* title, const Rect& rect, float buttonColumn, bool contentFrame = true);
+    // A tutorial game of the original's: the T button of a large dialog.
+    void scenarioButton(UiContext& ui);
     void endChild();
     bool slot(const char* label, int style, bool on, bool enabled);
     Painter ui_;

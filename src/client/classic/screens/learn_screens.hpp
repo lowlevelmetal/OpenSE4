@@ -30,10 +30,12 @@ struct LearnHost {
     std::function<void(const std::string&)> openManual;
     // Follows a `window:` or `help:` link (games only).
     std::function<void(const learn::Link&)> follow;
-    // The scenarios of the game's rules mods (docs/sdk/rules.md "Scenarios"),
-    // on the Scenarios tab while there are any, and how one starts.
+    // The original's scenarios, its tutorial among them (docs/spec/06 §5.6),
+    // and those of the game's rules mods (docs/sdk/rules.md "Scenarios"), on
+    // the Scenarios tab while there are any, and how one starts.
     struct Scenario {
-        std::string mod, name;     // its mod's id, its file's name
+        bool classic = false;      // one of the original's: `name` is its file stem in the scenario folder
+        std::string mod, name;     // its mod's id (none for the original's), its file's name
         std::string title, summary, modName;
         std::vector<std::string> objectives;
         std::vector<std::string> empires;   // "Lamplighters (you)", "Drifters (computer)"

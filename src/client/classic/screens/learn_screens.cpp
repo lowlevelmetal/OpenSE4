@@ -4,13 +4,16 @@
 #include "client/classic/screens/learn_screens.hpp"
 
 #include "client/audio.hpp"
+#include "client/classic/classic_scenario.hpp"
 #include "client/classic/frontend.hpp"
 #include "client/classic/mod_ui.hpp"
+#include "client/classic/pointers.hpp"
 #include "client/classic/session.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/script/items.hpp"
+#include "ruleset/ruleset.hpp"
 #include "sdk/players.hpp"
 #include "sdk/scenario.hpp"
 
@@ -229,8 +232,12 @@ void LearnView::scenarios(const Painter& p, LearnHost& host) {
     auto key = [](const LearnHost::Scenario& sc) { return sc.mod + ":" + sc.name; };
     if (std::none_of(host.scenarios.begin(), host.scenarios.end(), [&](const LearnHost::Scenario& sc) { return key(sc) == sel; }))
         sel = key(host.scenarios.front());
-    heading(p, "Scenarios of the mods");
-    dim("Games the mods in use set up, each with its own objectives.");
+    const bool classic = std::any_of(host.scenarios.begin(), host.scenarios.end(), [](const LearnHost::Scenario& sc) { return sc.classic; });
+    const bool mods = std::any_of(host.scenarios.begin(), host.scenarios.end(), [](const LearnHost::Scenario& sc) { return !sc.classic; });
+    heading(p, classic ? "Scenarios" : "Scenarios of the mods");
+    dim(classic && mods ? "The original game's scenarios, its tutorial among them, and games the mods in use set up."
+        : classic       ? "The original game's scenarios, its tutorial among them: prepared games with pages of text that come up as you play."
+                        : "Games the mods in use set up, each with its own objectives.");
     ImGui::Spacing();
     const float rowH = std::max(p.px(34), ImGui::GetTextLineHeight() * 2.0f + p.px(2));
     ImGui::BeginChild("##scenarios", ImVec2(p.px(250), 0), ImGuiChildFlags_Borders);
@@ -255,7 +262,8 @@ void LearnView::scenarios(const Painter& p, LearnHost& host) {
     ImGui::BeginChild("##scenario", ImVec2(0, 0), ImGuiChildFlags_Borders);
     if (chosen) {
         heading(p, chosen->title.c_str());
-        ImGui::TextColored(kLabelBlue, "From the mod %s", chosen->modName.c_str());
+        if (chosen->classic) ImGui::TextColored(kLabelBlue, "%s", chosen->modName.c_str());
+        else ImGui::TextColored(kLabelBlue, "From the mod %s", chosen->modName.c_str());
         ImGui::Spacing();
         wrapped(ImVec4(1, 1, 1, 1), chosen->summary);
         if (!chosen->problem.empty()) {
@@ -612,6 +620,40 @@ std::vector<LearnHost::Scenario> modScenarios(const game::Rules& r) {
     return out;
 }
 
+// The original's scenarios in the scenario folder (docs/spec/06 §5.6), its
+// tutorial among them, each by its file stem. Both of a scenario's files are
+// read here, so that their errors show before it is started.
+std::vector<LearnHost::Scenario> classicScenarios(const game::Rules& r) {
+    std::vector<LearnHost::Scenario> out;
+    const std::filesystem::path folder = scenarioFolder(r);
+    std::error_code ec;
+    const bool fromMod = !folder.empty() && !r.gameRoot().empty() &&
+                         !std::filesystem::equivalent(folder, ruleset::childIgnoringCase(r.gameRoot(), "Scenarios"), ec);
+    for (const std::string& name : scenarioNames(folder)) {
+        LearnHost::Scenario sc;
+        sc.classic = true;
+        sc.name = name;
+        sc.title = name;   // the file stem: the original shows neither Name nor Description (spec 01 §12)
+        sc.modName = fromMod ? std::format("From the Scenarios folder of a classic mod ({})", folder.parent_path().filename().string())
+                             : std::string("From the original game");
+        const ScenarioFiles files = readScenarioFiles((folder / name).string(), folder);
+        sc.summary = isTutorial(name)
+                         ? "The original game's own tutorial: its prepared game, with pages of explanation that come up as you play. "
+                           "Ctrl+H, or the T button in the status bar and in the large windows, shows the last page again."
+                         : "A scenario in the original game's form: its prepared game, with pages of text that come up as you play. "
+                           "Ctrl+H shows the last page again.";
+        if (files.ok()) {
+            sc.summary += std::format(" Starting game: {}; {} page{} of text.", files.startingGame, files.pages.size(), files.pages.size() == 1 ? "" : "s");
+            if (!std::filesystem::is_regular_file(files.startingGameFile(), ec))
+                sc.problem = std::format("Its starting game, {}, is not in {}.", files.startingGame, folder.string());
+        } else {
+            sc.problem = files.problem();
+        }
+        out.push_back(std::move(sc));
+    }
+    return out;
+}
+
 class LearnFrontScreen final : public FrontScreen {
 public:
     // `start`: a Learn tab name, or "manual:<slug#anchor>" to open the manual
@@ -641,9 +683,10 @@ public:
             if (manual_) manual_->go(target);
             else manual_.emplace(target);
         };
-        // The mods' scenarios (docs/sdk/rules.md "Scenarios"), read once per data set.
+        // The original's scenarios (docs/spec/06 §5.6), then the mods' (docs/sdk/rules.md "Scenarios"), read once per data set.
         if (ctx.rules && scenariosFor_ != ctx.rules.get()) {
-            scenarios_ = modScenarios(*ctx.rules);
+            scenarios_ = classicScenarios(*ctx.rules);
+            for (LearnHost::Scenario& sc : modScenarios(*ctx.rules)) scenarios_.push_back(std::move(sc));
             scenariosFor_ = ctx.rules.get();
         }
         host.scenarios = scenarios_;
@@ -669,6 +712,7 @@ public:
 private:
     // A new game from the scenario, played by its first human empire; the reason when it cannot start.
     static std::string startScenario(MenuContext& ctx, const LearnHost::Scenario& sc) {
+        if (sc.classic) return startClassicScenario(ctx, sc);
         const mods::Package* mod = nullptr;
         for (const mods::Package& p : sdk::gamePackages(*ctx.rules))
             if (p.id() == sc.mod) mod = &p;
@@ -687,6 +731,32 @@ private:
         auto session = std::make_unique<ClassicSession>(ctx.rules, std::move(*state), player, humans > 1 ? SessionKind::Hotseat : SessionKind::Local);
         newGameStarted(simultaneous);
         ctx.startGame(std::move(session));
+        return {};
+    }
+
+    // One of the original's scenarios (docs/spec/06 §5.6): both its files are
+    // read (it does not start when either has errors), then its Starting
+    // Game, always from the scenario folder, with the normal loader: the game
+    // decides who plays, the turn style, the options and the victory
+    // conditions. It becomes a game of that scenario, with its stem as a
+    // full path, the tutorial's flag for the Tutorial alone; its first page
+    // comes up in the main window, with the background music.
+    static std::string startClassicScenario(MenuContext& ctx, const LearnHost::Scenario& sc) {
+        const std::filesystem::path folder = scenarioFolder(*ctx.rules);
+        const std::string stem = (folder / sc.name).string();
+        const ScenarioFiles files = readScenarioFiles(stem, folder);
+        if (!files.ok()) return files.problem();
+        const std::filesystem::path file = files.startingGameFile();
+        const game::ClassicScenarioState state = scenarioState(stem);
+        std::expected<std::unique_ptr<ClassicSession>, std::string> session;
+        {
+            const BusyPointer busy;
+            session = ClassicSession::load(ctx.rules, file, &state);
+        }
+        if (!session) return std::format("Its starting game {} could not be loaded: {}", file.filename().string(), session.error());
+        newGameStarted((*session)->state().options.simultaneous);
+        if (ctx.loadedFromIntro) ctx.loadedFromIntro();   // Tutorial and Scenario: the background music (spec 06 §5.5)
+        ctx.startGame(std::move(*session));
         return {};
     }
 

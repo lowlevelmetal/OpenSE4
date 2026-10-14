@@ -39,8 +39,66 @@ class Rules;
 
 namespace opense4::game::classic {
 
-// The only version this reader accepts (§5.2): every save of the last release.
+// The version of the last release (§5.2), which the export writes and which
+// has every field.
 inline constexpr std::string_view kVersion = "1.95";
+// The oldest version this reader accepts (§5.2). The original's tutorial
+// starting game is a 1.58 file, the stock empire files are 1.51.
+inline constexpr std::string_view kOldestVersion = "1.40";
+// Whether a file of `version` holds a field added in release `since` (§5.2):
+// the original compares the two version strings as plain strings.
+constexpr bool versionAtLeast(std::string_view version, std::string_view since) { return version >= since; }
+// Whether this reader reads files of `version`: kOldestVersion through
+// kVersion, in the form digit, point, two digits.
+bool readableVersion(std::string_view version);
+// Why a file of `version` cannot be read or written (nullopt: it can), for
+// the messages of every file of the original that starts with a version
+// (§2.5): `what` names what the file holds ("game", "empire", "map").
+std::optional<std::string> versionProblem(std::string_view version, std::string_view what = "game");
+
+// The releases that added fields to the records of the original's files
+// (§5.2), from kOldestVersion on. A file older than the release lacks the
+// field and the model keeps its default. The record readers and writers of
+// the codec (classic_save_codec.cpp) apply them through the version their
+// archive is given (setVersion; `ar.since(release::...)`), so the original's
+// other files that hold the same records (empire files, maps) read and write
+// them with their own version string.
+namespace release {
+// Options (§3.2): the seven data-set checksums. "Codes and sums" have the
+// two gates 1.42 and 1.72; a 1.58 file holds seven of their ten ints
+// (observed), taken to be these (inferred, §11.1 Q23).
+inline constexpr std::string_view kChecksums = "1.42";
+// Options: the connection (before: 1, manual file moving).
+inline constexpr std::string_view kConnection = "1.43";
+// Empires (§3.6.10): the network name. Fleets and ships (§3.6.12, §3.8.6):
+// experience as a float; before, a whole number in an int (inferred).
+inline constexpr std::string_view kNetworkName = "1.46";
+inline constexpr std::string_view kFloatExperience = "1.46";
+// Drones: the empire's drone-name counter (§3.6.9), the target category
+// Drones in strategies (§3.6.13: 13 categories before, in the type
+// priorities and the break-formation flags), an order's target name
+// (§3.8.8), a drone group's name (§3.8.10); reading an empire of an older
+// file appends the design types Anti-Planet Drone and Anti-Ship Drone to its
+// list (kOldDesignTypesAdded, done by the import).
+inline constexpr std::string_view kDrones = "1.51";
+// Designs (§3.7): the computer players' template name.
+inline constexpr std::string_view kTemplateName = "1.62";
+// Options: the game code, the turn code and the program's byte sum (the
+// three ints a 1.58 file lacks, inferred as for kChecksums).
+inline constexpr std::string_view kCodes = "1.72";
+// Empire options (§3.6.7): facility marker groups 2..12.
+inline constexpr std::string_view kFacilityMarkers = "1.78";
+// Strategies (§3.6.13): drones per target (before: 3).
+inline constexpr std::string_view kDronesPerTarget = "1.81";
+// Empire files: from this release on they leave out the eight derived
+// flags of §3.6.1 (can colonize, breathes), which a saved game always holds.
+inline constexpr std::string_view kEmpireFileFlags = "1.14";
+} // namespace release
+// An empire record as a saved game holds it (§3.6), or as an empire file
+// does (Empires\*.emp: the same record without the derived flags).
+enum class EmpireForm : uint8_t { SavedGame, EmpireFile };
+// The design types an empire read from a file older than release::kDrones gets added.
+inline constexpr std::array<std::string_view, 2> kOldDesignTypesAdded{"Anti-Planet Drone", "Anti-Ship Drone"};
 // Player numbers run 1..20 (§3.6).
 inline constexpr int kMaxPlayers = 20;
 // The date counter of 2400.0 (§3): GameState::turn = date - kDateBase.
@@ -251,6 +309,9 @@ struct Globals {
     uint8_t viewSector = 0;
     uint8_t currentPlayer = 0;
     int32_t seed = 0;
+    // A scenario game (§3.4): the flags, the scenario's file stem as a full
+    // path (`<stem>_Settings.txt`) and the 1-based position in its text file
+    // of the page shown last.
     bool scenario = false;
     bool tutorial = false;
     std::string scenarioStem;

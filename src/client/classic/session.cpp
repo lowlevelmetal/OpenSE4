@@ -776,7 +776,8 @@ std::expected<std::vector<std::string>, std::string> ClassicSession::exportClass
 }
 
 std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load(std::shared_ptr<const game::Rules> rules,
-                                                                                 const std::filesystem::path& file) {
+                                                                                 const std::filesystem::path& file,
+                                                                                 const game::ClassicScenarioState* scenario) {
     std::vector<std::string> importNotes;
     std::expected<std::pair<game::GameState, game::SaveInfo>, std::string> loaded;
     if (auto bytes = game::readFileBytes(file); bytes && game::classic::looksLikeClassicSave(*bytes)) {
@@ -800,6 +801,14 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
         why += "\nChoose the same ones in the main menu's Mods window (or start OpenSE4 with them: --mod).";
         return std::unexpected(why);
     }
+    // A scenario of the original starts from its Starting Game, which the
+    // normal loader reads: the file decides the players, the turn style, the
+    // options and the victory conditions, and the scenario adds only its own
+    // state, every empire at its first page (docs/spec/06 §5.6).
+    if (scenario) {
+        s.classicScenario = *scenario;
+        for (game::Empire& e : s.empires) e.interfaceOptions.scenarioPage = 1;
+    }
     // Reading a game file recalculates every colony's cloak and sensor levels,
     // a colony that can no longer cloak decloaking as by Decloak (spec 01
     // §6.9, §14 Q44, confirmed: binary).
@@ -818,7 +827,10 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     // on here as a local game; its passwords are the verifiers the host checks.
     session->multiplayerGameId_ = loaded->second.gameId;
     session->masterVerifier_ = loaded->second.masterPasswordVerifier;
-    session->importNotes_ = std::move(importNotes);
+    // A scenario's Starting Game is no game the player chose to convert: what
+    // its import approximated goes to the log file only.
+    if (!scenario) session->importNotes_ = std::move(importNotes);
+    session->scenarioStart_ = scenario != nullptr;
     return session;
 }
 

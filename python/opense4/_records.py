@@ -415,6 +415,12 @@ class InterfaceOptions(Record):
         """The Designs window shows statistics."""
         return self._d['designs_stats_view']
 
+    @property
+    def scenario_page(self) -> int:
+        """In a game of one of the original's scenarios, the page of its text shown last (its place in
+        the file, from 1; 1 by default)."""
+        return self._d['scenario_page']
+
 
 
 class LocationFields(Record):
@@ -5315,7 +5321,7 @@ FIELDS: Dict[str, Tuple[str, ...]] = {
     'intel_project': ('id', 'name', 'description', 'group', 'cost', 'type', 'effect_amount', 'requirements'),
     'intel_project_order': ('project', 'target', 'target_planet', 'target_vehicle', 'third_empire', 'target_tech', 'progress'),
     'intel_state': ('points', 'income', 'evenly', 'repeat', 'defense', 'queue'),
-    'interface_options': ('show_log_at_turn_start', 'confirm_end_turn', 'confirm_scrap', 'confirm_stellar_manipulation', 'confirm_delete_research', 'confirm_delete_intel', 'confirm_delete_first_queue_item', 'note_similar_abilities', 'skip_under_construction', 'skip_damaged', 'stop_once_per_location', 'skip_in_fleets', 'warp_point_names', 'planet_names', 'colonizable_markers', 'system_grid', 'coordinate_location', 'facility_markers', 'galaxy_grid_lines', 'galaxy_warp_lines', 'latest_construction_only', 'latest_components_only', 'auto_claim_colonized', 'log_filter', 'log_position', 'log_scroll', 'planets_tab', 'planets_no_sys_to_avoid', 'queues_tab', 'queues_shown', 'simulator_no_obsolete', 'ships_tab', 'ships_shown', 'planets_sort', 'colonies_sort', 'ships_sort', 'queues_sort', 'replay_animate', 'replay_fast', 'replay_view_rect', 'replay_grid', 'design_to_hit', 'design_condensed', 'designs_hide_obsolete', 'designs_stats_view'),
+    'interface_options': ('show_log_at_turn_start', 'confirm_end_turn', 'confirm_scrap', 'confirm_stellar_manipulation', 'confirm_delete_research', 'confirm_delete_intel', 'confirm_delete_first_queue_item', 'note_similar_abilities', 'skip_under_construction', 'skip_damaged', 'stop_once_per_location', 'skip_in_fleets', 'warp_point_names', 'planet_names', 'colonizable_markers', 'system_grid', 'coordinate_location', 'facility_markers', 'galaxy_grid_lines', 'galaxy_warp_lines', 'latest_construction_only', 'latest_components_only', 'auto_claim_colonized', 'log_filter', 'log_position', 'log_scroll', 'planets_tab', 'planets_no_sys_to_avoid', 'queues_tab', 'queues_shown', 'simulator_no_obsolete', 'ships_tab', 'ships_shown', 'planets_sort', 'colonies_sort', 'ships_sort', 'queues_sort', 'replay_animate', 'replay_fast', 'replay_view_rect', 'replay_grid', 'design_to_hit', 'design_condensed', 'designs_hide_obsolete', 'designs_stats_view', 'scenario_page'),
     'location': ('system', 'x', 'y'),
     'log_entry': ('turn', 'category', 'title', 'text', 'location', 'goto', 'message'),
     'message': ('id', 'from_empire', 'to_empire', 'sent_turn', 'type', 'tone', 'text', 'treaty', 'offer', 'request', 'third_empire', 'system', 'planet', 'in_reply_to', 'delivered', 'answered', 'dated'),

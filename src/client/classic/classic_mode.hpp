@@ -5,6 +5,7 @@
 // layout (a fixed 1024×768 frame, scaled to fit). See docs/spec/06.
 
 #include "client/audio.hpp"
+#include "client/classic/classic_scenario.hpp"
 #include "client/classic/frontend.hpp"
 #include "client/classic/learn_content.hpp"
 #include "client/classic/lesson_audit.hpp"
@@ -203,6 +204,18 @@ private:
     void openTurnStartWindows(classic::UiContext& ui, const classic::TurnStartGate& gate);
     bool confirmEndTurn_ = false;
     bool modalOpen_ = false;   // a window or a question is open this frame: the main window takes no input
+    // A game of one of the original's scenarios (docs/spec/06 §5.6): its
+    // pages, read from the scenario's stem when the game starts or loads
+    // (none: not such a game, or its files could not be read).
+    std::optional<classic::ScenarioFiles> scenarioFiles_;
+    // The page of the turn may come up: the scenario has just started, a
+    // human player's turn has started here, or a hand-over (Next Player)
+    // came first; once the start of the turn lets the Log open, the first
+    // page for the turn and the player opens (a plain load shows none).
+    bool scenarioCheckDue_ = false;
+    void openTurnPage(classic::UiContext& ui);
+    // Ctrl+H and the T buttons: the page shown last.
+    void openLastScenarioPage(classic::UiContext& ui);
     // The tutorial or training game being played, if any.
     std::unique_ptr<classic::LessonRunner> lesson_;
     std::string lessonError_;   // a lesson that could not start
