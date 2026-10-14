@@ -1,6 +1,7 @@
 #include "client/classic/screens/item_reports.hpp"
 
 #include "client/classic/screens/design_tools.hpp"
+#include "client/classic/screens/empire_logic.hpp"
 #include "client/script/items.hpp"
 #include "game/design.hpp"
 
@@ -129,9 +130,17 @@ void damageTable(UiContext& ui, const game::DesignEntry& entry) {
         ImGui::TextColored(kDimText, "No damage at any range");
         return;
     }
-    constexpr int kPerRow = 10;
-    for (int start = 1; start <= maxRange; start += kPerRow) {
-        const int n = std::min(kPerRow, maxRange - start + 1);
+    // Ten ranges to a row, or five where ten do not fit the pane (the
+    // designer's Component Details); the figures never wrap inside a cell.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    float widest = ImGui::CalcTextSize(std::to_string(maxRange).c_str()).x;
+    for (int range = 1; range <= maxRange; ++range)
+        widest = std::max(widest, ImGui::CalcTextSize(std::to_string(game::weaponDamageAtRange(r, entry, range)).c_str()).x);
+    const float column = widest + style.CellPadding.x * 2 + 1;
+    const int perRow = column * 10 <= ImGui::GetContentRegionAvail().x ? 10 : 5;
+    ImGui::PushTextWrapPos(-1.0f);
+    for (int start = 1; start <= maxRange; start += perRow) {
+        const int n = std::min(perRow, maxRange - start + 1);
         ImGui::PushID(start);
         if (ImGui::BeginTable("##dmg", n, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedSame | ImGuiTableFlags_NoHostExtendX)) {
             ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
@@ -150,6 +159,7 @@ void damageTable(UiContext& ui, const game::DesignEntry& entry) {
         }
         ImGui::PopID();
     }
+    ImGui::PopTextWrapPos();
 }
 
 void componentDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
@@ -283,6 +293,21 @@ void techDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(itemName(ui, u).c_str());
+    }
+
+    // OpenSE4's own (GitHub issue #11): what each later level up to the
+    // area's maximum brings, a line per level that brings something, so the
+    // player sees when the next armour or hull comes.
+    const std::vector<LevelUnlocks> later = levelUnlocksFrom(r, id, level + 2);
+    if (!later.empty()) section(ui, "Later levels bring");
+    for (const LevelUnlocks& l : later) {
+        std::string names;
+        for (const TechUnlock& u : l.items) {
+            if (!names.empty()) names += ", ";
+            names += u.kind == TechUnlock::Kind::TechArea ? std::format("{} (tech area)", u.name) : u.name;
+        }
+        row(ui, std::format("Level {}", l.level).c_str(), names, st);
+        script::reportItem(std::format("later-level:{}", l.level));   // input scripts find each line
     }
 }
 
@@ -443,7 +468,8 @@ void ItemReportPopup::draw(UiContext& ui) {
         request_ = false;
     }
     ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSizeConstraints(ui.size({340, 60}), ui.size({340, 720}));
+    // At most the frame's height less a margin (the 800x600 frame too); a longer report scrolls.
+    ImGui::SetNextWindowSizeConstraints(ui.size({340, 60}), ui.size({340, std::min(720.0f, frameH() - 40.0f)}));
     if (ImGui::BeginPopup("##itemreport", ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
         itemDetail(ui, item_, DetailStyle::Report);
         ImGui::Spacing();

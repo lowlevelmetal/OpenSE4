@@ -191,6 +191,14 @@ std::string_view unlockKindName(TechUnlock::Kind k);
 std::vector<TechUnlock> techUnlocks(const game::Rules& r, ruleset::TechAreaId area, int level);
 // Names for the Research window: research::unlockedBy, or techUnlocks as a fallback.
 std::vector<std::string> unlockNames(const game::Rules& r, ruleset::TechAreaId area, int level);
+// The levels of an area from `first` up to its maximum that make something
+// available, each with what it brings (techUnlocks); levels that bring nothing
+// are left out. For the area report's "Later levels bring" (ours, GitHub issue #11).
+struct LevelUnlocks {
+    int level = 0;
+    std::vector<TechUnlock> items;
+};
+std::vector<LevelUnlocks> levelUnlocksFrom(const game::Rules& r, ruleset::TechAreaId area, int first);
 // "Physics 2, Chemistry 1" (or "None").
 std::string requirementText(const game::Rules& r, const std::vector<ruleset::TechRequirement>& reqs);
 // Areas that list `area` as a prerequisite.

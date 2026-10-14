@@ -638,6 +638,30 @@ TEST_CASE("client logic: what a tech level unlocks") {
     CHECK(named(techUnlocks(r, physics, 4), "Test Master Computer", TechUnlock::Kind::Component));
     CHECK_FALSE(unlockNames(r, physics, 4).empty());
 
+    // The area report's later levels (ours, GitHub issue #11): from a level up
+    // to the area's maximum, only the levels that bring something.
+    const auto later = levelUnlocksFrom(r, physics, 3);
+    REQUIRE_FALSE(later.empty());
+    CHECK(later.front().level == 3);
+    CHECK(named(later.front().items, "Test Cloaking", TechUnlock::Kind::TechArea));
+    for (size_t i = 0; i < later.size(); ++i) {
+        CHECK_FALSE(later[i].items.empty());
+        CHECK(later[i].level <= r.tech(physics).maxLevel);
+        if (i > 0) CHECK(later[i - 1].level < later[i].level);
+    }
+    const auto at4 = std::find_if(later.begin(), later.end(), [](const LevelUnlocks& l) { return l.level == 4; });
+    REQUIRE(at4 != later.end());
+    CHECK(named(at4->items, "Test Master Computer", TechUnlock::Kind::Component));
+    CHECK(levelUnlocksFrom(r, physics, r.tech(physics).maxLevel + 1).empty());
+    // Every level that brings something is listed, and no other.
+    for (const auto area : {physics, techArea(r, "Test Missiles"), techArea(r, "Test Cloaking")}) {
+        const auto all = levelUnlocksFrom(r, area, 1);
+        for (int level = 1; level <= r.tech(area).maxLevel; ++level) {
+            const bool listed = std::any_of(all.begin(), all.end(), [&](const LevelUnlocks& l) { return l.level == level; });
+            CHECK(listed == !techUnlocks(r, area, level).empty());
+        }
+    }
+
     const auto deps = dependentAreas(r, physics);
     CHECK(std::find(deps.begin(), deps.end(), techArea(r, "Test Cloaking")) != deps.end());
     CHECK(requirementText(r, r.tech(techArea(r, "Test Missiles")).requirements) == "Test Physics 2");

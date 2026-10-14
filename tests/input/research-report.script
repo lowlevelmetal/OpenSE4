@@ -1,0 +1,26 @@
+# Research's area report (spec 06 §1.2, §1.11; GitHub issue #11): a right-click on a project in
+# progress opens its area's report, and so does one on an area's row; under "Level N brings" the
+# report lists what each later level up to the area's maximum brings, a line per level that
+# brings something (ours) (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start=Terran --seed=7 --turns=1 --open=research --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait-window research
+# The project the computer chose in the turn played is in progress.
+right-click item:##box in=research
+wait-for item:"window:##itemreport"
+assert-fits research
+screenshot research-report-project.png
+click item:"window:##itemreport"
+wait-gone item:"window:##itemreport"
+# Ship Construction: a hull at each later level, up to the last.
+right-click item:"Ship Construction" in=research
+wait-for item:"window:##itemreport"
+assert-present item:"later-level:9"
+assert-inside item:"later-level:9" item:"window:##itemreport"
+assert-fits research
+screenshot research-report-area.png
+click item:"window:##itemreport"
+wait-gone item:"window:##itemreport"
+assert-window research

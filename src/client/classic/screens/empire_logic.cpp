@@ -578,6 +578,13 @@ std::vector<TechUnlock> techUnlocks(const game::Rules& r, ruleset::TechAreaId ar
     return out;
 }
 
+std::vector<LevelUnlocks> levelUnlocksFrom(const game::Rules& r, ruleset::TechAreaId area, int first) {
+    std::vector<LevelUnlocks> out;
+    for (int level = std::max(1, first); level <= r.tech(area).maxLevel; ++level)
+        if (std::vector<TechUnlock> items = techUnlocks(r, area, level); !items.empty()) out.push_back({level, std::move(items)});
+    return out;
+}
+
 std::vector<std::string> unlockNames(const game::Rules& r, ruleset::TechAreaId area, int level) {
     auto names = game::research::unlockedBy(r, area, level);
     if (!names.empty()) return names;

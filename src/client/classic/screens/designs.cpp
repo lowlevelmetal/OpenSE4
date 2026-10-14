@@ -610,6 +610,11 @@ private:
 // Details at (309,369) over a box at (309,385), 264x76. Buttons: Comp Type,
 // Weap Mount, To Hit Modifiers, Condensed View and Only Latest (slots 8 to
 // 10), Weapons Report (11), Create Design (13), Cancel.
+//
+// Our client differs (GitHub issue #14): at 1024x768 the window is as tall as
+// the list windows (the frame's height less 100, 668 px), and the height it
+// gains goes to the Warnings and Component Details boxes, so a component's
+// details show without scrolling; at 800x600 it keeps the original's 475 px.
 
 namespace cd {
 // Sums of ImGui positions (ImGui's own operators are not enabled here).
@@ -823,8 +828,10 @@ private:
     }
 
     bool drawDialog(UiContext& ui) {
-        Dialog d(ui, title_.c_str(), DialogSize::Large);
+        Dialog d(ui, title_.c_str(), DialogSize::LargeTall);
         if (!d.open()) return d.keepOpen();
+        // The height beyond the original's 475 px, for the lower boxes.
+        lowerExtra_ = std::max(0.0f, d.size().y - 475.0f);
         // For lessons: the design being built.
         ui.facts.designComponents = static_cast<int64_t>(entries_.size());
         ui.facts.designHullChosen = hullChosen_;
@@ -1187,12 +1194,14 @@ private:
     // text after a small red ball per requirement the design does not meet,
     // 18 px apart (observed, spec 07 session 5); Component Details at (309,369)
     // over a box at (309,385), 264x76 (the component under the pointer, else the hull).
+    // Both are taller by the window's height beyond 475 px (ours).
     void sideBoxes(UiContext& ui, const Dialog& d, const std::optional<game::DesignStats>& st) {
+        const Vec2 grow{0, lowerExtra_};
         label(ui, d, {19, 369}, "Warnings");
         ImGui::SetCursorScreenPos(d.at(cd::kWarnings));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-        beginList(ui, "##warnings", ui.size(cd::kWarningsSize), 18);
+        beginList(ui, "##warnings", ui.size(cd::kWarningsSize + grow), 18);
         const std::vector<std::string> lines = problems(st);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
@@ -1215,7 +1224,7 @@ private:
         ImGui::SetCursorScreenPos(d.at(cd::kDetails));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({3, 2}));
         ImGui::PushStyleColor(ImGuiCol_Border, imColorV(palette::kFrameLight));
-        ImGui::BeginChild("##details", ui.size(cd::kDetailsSize), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::BeginChild("##details", ui.size(cd::kDetailsSize + grow), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PopStyleColor();
         ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
         ImGui::PushTextWrapPos(0.0f);
@@ -1226,6 +1235,7 @@ private:
         ImGui::PopFont();
         ImGui::EndChild();
         ImGui::PopStyleVar();
+        ui.tagItem("create-design:details");
     }
 
     void buttons(UiContext& ui, Dialog& d, const std::optional<game::DesignStats>& st) {
@@ -1356,6 +1366,7 @@ private:
     bool onlyLatest_ = true;
     bool toHit_ = false;
     int stripFirst_ = 0;
+    float lowerExtra_ = 0;   // the window's height beyond 475 px, given to the lower boxes
     std::optional<ItemRef> hover_, hovered_;
 
     std::vector<std::string> names_;

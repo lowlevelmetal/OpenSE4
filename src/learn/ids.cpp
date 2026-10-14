@@ -145,7 +145,7 @@ constexpr std::string_view kOtherTags[] = {
     "designs:list", "designs:details", "designs:create", "designs:copy", "designs:edit", "designs:upgrade", "designs:simulator",
     "create-design:hull", "create-design:type", "create-design:name", "create-design:suggest", "create-design:figures",
     "create-design:on-design", "create-design:components",
-    "create-design:warnings", "create-design:save",
+    "create-design:warnings", "create-design:details", "create-design:save",
     "fleet-transfer:ships", "fleet-transfer:fleets", "fleet-transfer:create-fleet",
     "combat-simulator:vehicles", "combat-simulator:items", "combat-simulator:owners", "combat-simulator:strategies",
     "combat-simulator:begin",

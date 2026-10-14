@@ -433,7 +433,11 @@ private:
 
 // ---- Classic dialog layout -----------------------------------------------------------------
 
-enum class DialogSize { Large, Tall, Report, Picker, Prompt, Full };
+// Large: the 780x475 dialog. Tall: the four list windows, 780 wide and as tall
+// as listWindowHeight. LargeTall: a large dialog that grows as the list windows
+// do (ours: Create Design, docs/spec/06 §7 Q94), keeping a large dialog's T
+// button in a tutorial of the original's.
+enum class DialogSize { Large, Tall, LargeTall, Report, Picker, Prompt, Full };
 
 // Usage:
 //   Dialog d(ui, "Designs", DialogSize::Large);
@@ -453,6 +457,8 @@ public:
     Dialog& operator=(const Dialog&) = delete;
 
     bool open() const { return visible_; }
+    // The window's size in frame pixels.
+    Vec2 size() const { return rect_.size(); }
     // Screen position (ImGui units) of a point given in frame pixels from the window's top left.
     ImVec2 at(Vec2 windowPos) const { return ui_.at(rect_.min + windowPos); }
     // Extra text or a picture in the title strip (e.g. Research's points), at x frame pixels from the window's left.
@@ -483,8 +489,9 @@ public:
 
 private:
     Dialog(const Painter& painter, const char* title, const Rect& rect, float buttonColumn, bool contentFrame = true);
-    // A tutorial game of the original's: the T button of a large dialog.
-    void scenarioButton(UiContext& ui);
+    // A tutorial game of the original's: the T button of a large dialog
+    // (`largeForm`: the window is one, whatever its height).
+    void scenarioButton(UiContext& ui, bool largeForm);
     void endChild();
     bool slot(const char* label, int style, bool on, bool enabled);
     Painter ui_;
