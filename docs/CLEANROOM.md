@@ -118,7 +118,7 @@ EXE=".../Space Empires IV Deluxe/se4/Se4.exe"; RE=reference/re
 tools/re/delphi_classes.py "$EXE" $RE/out/classes.json              # Delphi class records
 $RE/venv/bin/python tools/re/ghidra_delphi.py $RE/ghidra se4 $RE/out/classes.json [$RE/out/names.tsv]
 $RE/venv/bin/python tools/re/ghidra_types.py $RE/ghidra se4 $RE/out/types.tsv
-$RE/venv/bin/python tools/re/ghidra_export.py $RE/ghidra se4 $RE/decomp
+$RE/venv/bin/python tools/re/ghidra_export.py $RE/ghidra se4 $RE/decomp-full
 ```
 
 `ghidra_delphi.py` finds the methods that only class records point to, applies
@@ -127,6 +127,14 @@ marks string literals. `ghidra_types.py` applies structure layouts that we
 write by hand from the data-file loaders. `ghidra_export.py` writes the
 decompiled functions, an index of callers and strings, and the class tables.
 All of this output stays in `reference/re/`.
+
+Before exporting, `ghidra_export.py` repairs Delphi's `try ... finally` exits. A
+finally block ends in a plain return that resumes the routine, and Ghidra takes
+that return for the routine's end. Without the repair every routine stops at its
+first finally block, and the code reached only from those tails is missing. Until
+2026-10-14 the export in `reference/re/decomp` had that fault, and one spec answer
+built on it was wrong (spec 06 §7 Q47). Use `decomp-full`, and settle a claim that
+nothing reads or calls something from every cross-reference, not from one listing.
 
 ## Testing against the player's data
 
