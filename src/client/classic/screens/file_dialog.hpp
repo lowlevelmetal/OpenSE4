@@ -51,7 +51,9 @@ public:
     void rescan() { scanned_ = false; }
 
 private:
+    // Change Directory's "Select Directory" window, and its folder shown.
     void changeDirectoryPopup(const Painter& p);
+    void browse(std::filesystem::path dir);
 
     std::string title_, nameHeading_, extension_;
     std::filesystem::path& directory_;
@@ -61,6 +63,9 @@ private:
     FileEntry chosen_;
     std::string error_;
     std::string folderField_, folderError_;
+    std::filesystem::path browsing_;      // Select Directory's current folder
+    std::vector<std::string> folders_;    // its folders, ".." first
+    int pickedFolder_ = -1;
 };
 
 } // namespace opense4::client::classic

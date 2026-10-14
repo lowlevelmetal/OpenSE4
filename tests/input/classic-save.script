@@ -1,6 +1,6 @@
 # Games of the original (docs/spec/08, docs/SETUP.md "Games of the original"): Save Game's
 # "Save for SE IV" writes the game as a saved game of the original into the saves folder's
-# "Space Empires IV" folder; Load Game's Change Directory finds it there, and loading it
+# "Space Empires IV" folder; Load Game's Change Directory (Select Directory) finds it there, and loading it
 # imports it, with the note of what came across only approximately (docs/BUILDING.md
 # "Input scripts").
 # ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
@@ -34,13 +34,15 @@ wait-window game-menu
 click item:Load in=game-menu
 wait-for item:"Change Directory" in=load-game
 click item:"Change Directory" in=load-game
-wait-for item:Default in="Change Directory"
-click item:Default in="Change Directory"
-click item:##folder in="Change Directory"
-key End
-type "/Space Empires IV"
-key Enter
-wait-gone item:Default in="Change Directory"
+wait-for item:Default in="Select Directory"
+# Select Directory: Default goes to the saves folder, a double click opens a folder, OK takes it.
+click item:Default in="Select Directory"
+wait-for item:"Space Empires IV" in="Select Directory"
+double-click item:"Space Empires IV" in="Select Directory"
+wait-for item:.. in="Select Directory"
+screenshot select-directory.png
+click item:OK in="Select Directory"
+wait-gone item:Default in="Select Directory"
 wait-for item:"* 2400.3" in=load-game
 click item:"* 2400.3" in=load-game
 # The import's note, then the game (on the fixtures the conquest ending first, again).

@@ -9,14 +9,22 @@
 options --layout=1024x768 --size=1280x800
 
 wait-screen front
-# Load Game: the 420x520 dialog, its Change Directory box, Cancel back to the intro.
+# Load Game: the 420x520 dialog, its Change Directory (Select Directory), Cancel back to the intro.
 click item:"Load Game" in=front
 wait-for item:"Change Directory" in=front
 screenshot load-game.png
 click item:"Change Directory" in=front
-wait-for item:Default in="Change Directory"
-click item:Cancel in="Change Directory"
-wait-gone item:Default in="Change Directory"
+wait-for item:Default in="Select Directory"
+# Select Directory: a folder typed into Current Directory and Enter go there; Cancel keeps the old one.
+wait-for item:##drive in="Select Directory"
+click item:##folder in="Select Directory"
+key Ctrl+A
+type "/no/such/folder/here"
+key Enter
+wait-for item:"There is no such folder." in="Select Directory"
+screenshot select-directory.png
+click item:Cancel in="Select Directory"
+wait-gone item:Default in="Select Directory"
 click item:Cancel in=front
 wait-for item:"Quick Start" in=front
 # Quick Start: Begin Game is lit before a portrait is chosen; Cancel goes back.
