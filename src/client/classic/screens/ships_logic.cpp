@@ -223,6 +223,13 @@ std::pair<int, int> destroyedComponents(const game::Rules& r, const game::GameSt
     return {destroyed, static_cast<int>(d.entries.size())};
 }
 
+DamageBar damageBar(int destroyed, int total) {
+    if (total <= 0) return {};
+    destroyed = std::clamp(destroyed, 0, total);
+    if (total < 16) return {total, destroyed};
+    return {15, 15 * destroyed / total};
+}
+
 ShipSortValues shipSortValues(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     ShipSortValues out;
     out.name = v.name;

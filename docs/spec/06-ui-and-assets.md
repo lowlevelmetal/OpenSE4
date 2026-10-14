@@ -366,7 +366,7 @@ reports render inside the right-hand panel (§2.5).
 
 | Report | Tabs / content |
 |---|---|
-| Ship Report | Detail (owner flag, 128 px portrait with status icons under it, name, class, size, movement, damage, supplies, crew experience, fleet, maintenance), Comps, Cargo, Ability. Less detail for foreign ships. |
+| Ship Report | Detail (owner flag, 128 px portrait with status icons under it, name, class, size, movement, damage, supplies, crew experience, fleet, maintenance), Comps, Cargo, Ability. Less detail for foreign ships. Damage counts destroyed components ("Damage on the Ship Report" below). |
 | Planet Report | Detail (owner flag, picture, status icons, physical data, value, description, then colony data: type, population, mood, output, construction), Facil, Cargo, Ability. An "Empty" variant without tabs for planets that are not ours. |
 | Race Report | Detail, Descr (free-text blocks), Race (characteristics, each with its level word as on Empire Setup's Characteristics page (spec 02 §9, confirmed: binary), traits), Tech (known tech). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); Detail in the object report's places (the race's portrait with the flag on it, the name from x 120 at y 4, label lines at x 130 every 30 px with values at x 140); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate) and closes with it; Esc closes it (inferred, as the Combat Piece Report). |
 | Fleet, Storm reports | Fleet: movement, supply pool, experience, formation, strategy, ships. Storm: picture, size, description, abilities. |
@@ -393,6 +393,31 @@ the Combat Piece Report. Left-clicks on these pages do nothing.
   y 230–290 of the page) opens **Races On Planet**, a list of the races living there, one
   row each with the race's picture, its name and its population, and a Close button. It is
   read-only (spec 03 §11).
+
+**Damage on the Ship Report** (confirmed: binary). The Detail page of a ship or base has
+"Damage" in #7D9FFF at (130,110) and under it, in white at (140,125), "D/N" with no spaces
+and no percentage: D the vehicle's destroyed components, N the components of its design,
+each mounted component counted once (ten armour plates count ten). Structure points appear
+nowhere on the page. At (220,125) follows a bar: a box framed in #647EC7, 13 px tall, with
+3×9 px cells every 4 px from 2 px in, one per component, the first D red (255,0,0) and the
+rest green (0,255,0); from 16 components on it has 15 cells, truncate(15 × D ÷ N) of them
+red. The Comps page starts with "Damaged Components" in #7D9FFF at (4,4) and the same
+"D/N" in white, right-aligned to x 200. The unit-group reports (fighters, satellites,
+drones, mines) and the Fleet Report have no damage line: fighter groups show Number of
+Fighters, Movement and Supplies, drone groups Movement and Supplies, satellite groups and
+mine fields Number of Satellites or Number of Mines. The Movement, Damage and Supplies
+lines are shown for the player's own ships and bases unless mothballed (then "Status" at
+(130,80) with "Mothballed" under it instead), and for another empire's only while the
+player's long-range scanners inspect it (spec 03 `Long Range Scanner`) and it is not
+jammed; otherwise only Class and Size, and the grey note "Long range scanning being
+jammed." at (4,182) when a scan is blocked by a jammer. Repair counts in the same unit: a
+repair point restores one destroyed component, and the `Component Repair` that space yards
+and repair bays show is components per turn (spec 03 §13). Since 2026-10-14 our client
+follows (§7 Q121, GitHub issue #16) in its own layout (label lines, the bar 80 px after
+the value). Our client differs: hovering the Damage line shows the structure lost against
+the design's ("Structure lost: S of T (P%)"), which the original shows nowhere; our
+unit-group reports keep their Units and Movement lines; the bar's frame ends 2 px after
+the last cell (inferred).
 
 Since 2026-10-04 our client follows for Facil and Comps (§7 Q105), still drawn as rows,
 not the 36 px grid; Cargo takes no right-click. Since 2026-10-14 the Detail page's
@@ -762,7 +787,7 @@ counts as 100 plus its number of units, so groups come after every ship and base
 
 | Tab | Columns and keys |
 |---|---|
-| General | Size (99; the hull's name): hull number as above. Type (120; the design type): A to Z. Move (40; "left/max"): movement left, highest first. Dmg (47; "destroyed/total" components): destroyed components, highest first. Supplies (rest): **lowest first**, unlimited supply counting as 60000 |
+| General | Size (99; the hull's name): hull number as above. Type (120; the design type): A to Z. Move (40; "left/max"): movement left, highest first. Dmg (47; "destroyed/total" components, each mounted component counted once, as on the Ship Report; blank for unit groups, confirmed: binary): destroyed components, highest first. Supplies (rest): **lowest first**, unlimited supply counting as 60000 |
 | Orders | Class (120; the design name): A to Z. Orders (rest; one order per 12 px line): A to Z by the list written as one line ("None", "REPEAT ORDERS", or the orders joined by ", ", the current one in brackets when Repeat is on) |
 | Cargo | Space (65) and Max (65): highest first. Cargo List (rest): A to Z by the cargo in words ("N People, …", or "None") |
 | Fleet | Experience (120): **lowest first**. Fleet (rest; the fleet's name or "None"): by fleet number, highest first, vehicles in no fleet counting 0 |
@@ -5943,6 +5968,26 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
 
 **Players' reports on v0.12.0: the reports and the Strategic Combat map (GitHub issues #15–#17,
 2026-10-14).**
+
+121. **What the Ship Report's damage counts.** "Damaged vessels show the combined structure
+     size of the damaged components, rather than the number of components damaged, while the
+     number of components repaired per turn is the number displayed by Space Yards/Repair
+     Bays." The player added: "It's interesting seeing the structure tonnage, though."
+     (GitHub issue #16: ours showed "290 / 490 (59%)".) **Answer** (confirmed: binary): the
+     original's Damage line is "D/N", the destroyed components against the design's, with a
+     bar of red and green cells; the Comps page and the Ships\Units window's Dmg column give
+     the same figure (the column blank for unit groups), and the unit-group reports have no
+     damage line. The line shows for own ships and bases that are not mothballed, and for
+     another empire's only under long-range scan (§1.4 "Damage on the Ship Report"). Repair
+     works off the same count (spec 03 §13), so what the report shows is what the space yards'
+     and repair bays' figures repair.
+     Since 2026-10-14 our client follows: `vehicleReport` (`client/classic/reports.cpp`) shows
+     "D/N" and the bar (`shipui::damageBar`), the Comps page starts with "Damaged Components",
+     the Dmg column is blank for unit groups, the Movement and Damage lines follow the
+     original's conditions, and a foreign report blocked by a jammer says so
+     (`sight::scannerBlocked`). Our client differs: hovering the Damage line shows the
+     structure lost ("Structure lost: S of T (P%)"), which keeps the figure the player
+     liked without putting it on the line.
 
 122. **A square left on the Strategic Combat map.** "At the end of a strategic combat,
      sometimes it still shows a dot for a ship even if there are no ships of that empire left

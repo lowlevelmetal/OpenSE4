@@ -160,8 +160,18 @@ std::optional<ShipColumn> shipColumnOf(int key);
 // while no key is stored), as indices into `rows`. Fleet rows are not sorted:
 // the window puts them after every vehicle, in the empire's fleet order.
 std::vector<size_t> shipRowOrder(const std::vector<ShipSortValues>& rows, const std::array<uint8_t, 5>& slots);
-// "N/M": destroyed and total components of a vehicle (the Dmg column).
+// "N/M": destroyed and total components of a vehicle, each mounted component
+// counted once (the Dmg column, the Ship Report's Damage line and Comps page).
 std::pair<int, int> destroyedComponents(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+// The Ship Report's damage bar (spec 06 §1.4, §7 Q121, confirmed: binary): one
+// cell per component, the first `destroyed` red; from 16 components on, 15
+// cells with truncate(15 x destroyed / total) red.
+struct DamageBar {
+    int cells = 0;
+    int red = 0;
+    bool operator==(const DamageBar&) const = default;
+};
+DamageBar damageBar(int destroyed, int total);
 
 // ---- Units --------------------------------------------------------------------------------
 

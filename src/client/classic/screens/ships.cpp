@@ -263,9 +263,11 @@ private:
                 // Unlimited supply shows as "Endless" (spec 03 §7).
                 const std::string supplyText =
                     game::vehicleHasUnlimitedSupply(r, s, v) ? std::string("Endless") : std::format("{}/{}", formatNumber(v.supply), formatNumber(cap));
-                const Cell type = isUnitVehicle(r, s, v) ? lines(unitTypeLines(ui, v)) : text(k.type);
+                const bool unit = isUnitVehicle(r, s, v);
+                const Cell type = unit ? lines(unitTypeLines(ui, v)) : text(k.type);
+                // Dmg: destroyed against the design's components, blank for a unit group (spec 06 §1.8.3, §7 Q121).
                 return {text(r.hull(d.hull).name), type, text(std::format("{}/{}", v.movement, game::vehicleMaxMovement(r, s, v))),
-                        text(std::format("{}/{}", destroyed, total)), text(supplyText)};
+                        text(unit ? std::string() : std::format("{}/{}", destroyed, total)), text(supplyText)};
             }
             case ShipsTab::Orders: return {text(k.designName), lines(orderListLines(ui, orderOwner(s, v.id), v.design))};
             case ShipsTab::Cargo:

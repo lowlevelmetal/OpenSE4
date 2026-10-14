@@ -4,6 +4,7 @@
 
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/list_widgets.hpp"
+#include "client/classic/screens/ships_logic.hpp"
 #include "client/classic/sector_view.hpp"
 #include "client/classic/status_icons.hpp"
 
@@ -284,6 +285,39 @@ void noteForeignReport(UiContext& ui, const game::Vehicle& v) {
         }
 }
 
+// The Damage line of a ship's or base's report (spec 06 §1.4, §7 Q121,
+// confirmed: binary): "D/N", the destroyed components against the design's,
+// each mounted component counted once, then the bar 80 px after the value: a
+// #647EC7 frame 13 px tall holding 3x9 cells every 4 px from 2 px in, one per
+// component, the first D red and the rest green; from 16 components on, 15
+// cells with truncate(15 x D / N) red. The frame's width (2 px after the last
+// cell) is inferred. Ours: the line's tooltip gives the structure lost, which
+// the original shows nowhere.
+void damageLine(UiContext& ui, const game::Vehicle& v) {
+    const game::GameState& s = ui.state();
+    const game::Rules& r = ui.rules();
+    const auto [destroyed, total] = shipui::destroyedComponents(r, s, v);
+    const ImVec2 start = ImGui::GetCursorScreenPos();
+    labelValue(ui, "Damage", std::format("{}/{}", destroyed, total));
+    const ImVec2 value = ImGui::GetItemRectMin();
+    const float lineH = ImGui::GetItemRectSize().y;
+    const auto [cells, red] = shipui::damageBar(destroyed, total);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float x = value.x + ui.px(80), y = std::floor(value.y + (lineH - ui.px(13)) * 0.5f);
+    const ImVec2 boxMax{x + ui.px(4.0f * float(cells) + 3.0f), y + ui.px(13)};
+    if (cells > 0) {
+        dl->AddRect({x, y}, boxMax, imColor(palette::kFrameLight), 0.0f, std::max(1.0f, ui.px(1)));
+        for (int k = 0; k < cells; ++k) {
+            const ImVec2 a{x + ui.px(2.0f + 4.0f * float(k)), y + ui.px(2)};
+            dl->AddRectFilled(a, {a.x + ui.px(3), a.y + ui.px(9)}, k < red ? IM_COL32(255, 0, 0, 255) : IM_COL32(0, 255, 0, 255));
+        }
+    }
+    const int structure = game::vehicleStructure(r, s, v);
+    const int lost = std::min(structure, game::vehicleDamageTaken(s, v));
+    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(start, {std::max(boxMax.x, value.x + ImGui::GetItemRectSize().x), start.y + lineH}))
+        ImGui::SetTooltip("Structure lost: %d of %d (%d%%)", lost, structure, structure > 0 ? lost * 100 / structure : 0);
+}
+
 } // namespace
 
 std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab, bool simulator) {
@@ -319,10 +353,18 @@ std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, Repo
             ImGui::EndGroup();
             // The status icons under the portrait, for own vehicles only.
             if (own) statusRow(ui, vehicleStatusCells(r, s, v));
-            const int structure = game::vehicleStructure(r, s, v);
-            const int damage = std::min(structure, game::vehicleDamageTaken(s, v));
-            labelValue(ui, "Movement", std::format("{} / {}", v.movement, game::vehicleMaxMovement(r, s, v)));
-            labelValue(ui, "Damage", std::format("{} / {} ({}%)", damage, structure, structure > 0 ? damage * 100 / structure : 0));
+            // Movement and Damage (spec 06 §1.4, §7 Q121, confirmed: binary): an own
+            // vehicle's unless mothballed (its Status says so instead), another
+            // empire's only while long-range scanners inspect it, with a grey note
+            // when its jammer blocks them. Unit groups have no Damage line.
+            const bool mothballed = v.status == game::VehicleStatus::Mothballed;
+            const bool shown = own || simulator ? !mothballed : game::sight::scannerReaches(r, s, ui.session.player(), v);
+            if (shown) {
+                labelValue(ui, "Movement", std::format("{} / {}", v.movement, game::vehicleMaxMovement(r, s, v)));
+                if (!game::isUnitType(game::vehicleType(r, s, v))) damageLine(ui, v);
+            } else if (!own && !simulator && game::sight::scannerBlocked(r, s, ui.session.player(), v)) {
+                ImGui::TextColored(kDim, "Long range scanning being jammed.");
+            }
             if (own) {
                 labelValue(ui, "Supplies", game::vehicleHasUnlimitedSupply(r, s, v)
                                                ? std::string("Endless")
@@ -350,6 +392,17 @@ std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, Repo
             // A right-click on a component opens its Component Report, with
             // the mount the design gave it (spec 06 §1.4, §7 Q105).
             int row = 0;
+            // A ship's or base's page starts with "Damaged Components" and its "D/N",
+            // right-aligned to x 200 (spec 06 §1.4, §7 Q121, confirmed: binary).
+            if (!game::isUnitType(game::vehicleType(r, s, v))) {
+                const auto [destroyed, total] = shipui::destroyedComponents(r, s, v);
+                const std::string count = std::format("{}/{}", destroyed, total);
+                ImGui::TextColored(kLabelBlue, "Damaged Components");
+                script::reportText("Damaged Components");
+                const float labelEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + ui.px(8);
+                ImGui::SameLine(std::max(labelEnd, ImGui::GetCursorStartPos().x + ui.px(200) - ImGui::CalcTextSize(count.c_str()).x));
+                ImGui::TextUnformatted(count.c_str());
+            }
             auto rightClicked = [&](const game::DesignEntry& e, std::string_view label) {
                 script::reportItem(label);   // input scripts find a row by what it shows
                 if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))

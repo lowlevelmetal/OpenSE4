@@ -371,6 +371,10 @@ TEST_CASE("sight: long range scanners reveal designs when a human opens the repo
     CHECK(sight::scannerReaches(r, w.s, kA, w.v(nearV)));
     CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(farV)));
     CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(jamV)));
+    // The jammer blocks scanners in reach; out of reach nothing is blocked (its report's note, spec 06 §1.4).
+    CHECK(sight::scannerBlocked(r, w.s, kA, w.v(jamV)));
+    CHECK_FALSE(sight::scannerBlocked(r, w.s, kA, w.v(nearV)));
+    CHECK_FALSE(sight::scannerBlocked(r, w.s, kA, w.v(farV)));
     CHECK_FALSE(apply(r, w.s, kA, cmd::OpenVehicleReport{farV}).ok);
     // A ship's report dates only its own design, never the units in its
     // cargo (spec 05 §8, open question 43).

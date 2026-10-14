@@ -483,10 +483,14 @@ void updateKnowledge(const Rules& r, GameState& s) {
     // (learnFromReport, spec 05 §8 "Design knowledge", confirmed: binary).
 }
 
-bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target) {
+namespace {
+
+// Some object of the viewer's would inspect the visible foreign vehicle, a
+// Scanner Jammer aside.
+bool scannerInRange(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target) {
     if (!viewer.valid() || viewer.index() >= s.empires.size() || !alive(target) || target.owner == viewer) return false;
     const auto& visible = s.empire(viewer).knowledge.visibleVehicles;
-    if (!std::binary_search(visible.begin(), visible.end(), target.id) || scannerJammed(r, s, target)) return false;
+    if (!std::binary_search(visible.begin(), visible.end(), target.id)) return false;
     // `Long Range Scanner - System` covers ships and bases only, never unit
     // groups (spec 03 §3.3, confirmed: binary).
     const bool shipOrBase = !isUnitType(vehicleType(r, s, target));
@@ -507,6 +511,16 @@ bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const V
         if (const Colony* c = s.colony(o); c && c->owner == viewer && reaches(colonyAbilities(r, s, *c), s.galaxy.object(o).sector))
             return true;
     return false;
+}
+
+} // namespace
+
+bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target) {
+    return !scannerJammed(r, s, target) && scannerInRange(r, s, viewer, target);
+}
+
+bool scannerBlocked(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target) {
+    return scannerJammed(r, s, target) && scannerInRange(r, s, viewer, target);
 }
 
 std::vector<DesignId> reportDesigns(const Rules& r, const GameState& s, const Vehicle& v) {
