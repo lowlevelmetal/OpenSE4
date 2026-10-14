@@ -19,6 +19,7 @@
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
+#include "client/classic/screens/type_picker.hpp"
 #include "client/script/items.hpp"
 #include "client/classic/widgets.hpp"
 
@@ -873,16 +874,32 @@ private:
         }
 
         // Design Type: a new design has none, its box reading "Design Type".
+        // The box opens the type list, Select Design Type (spec 06 §7 Q94,
+        // confirmed: binary), whose Add Type and Delete Type change the
+        // empire's design types at once.
         label(ui, d, {cd::kLabelX, 79}, "Design Type");
-        if (dropBox(ui, d, "##type", 95, designType_, "Design Type")) ImGui::OpenPopup("##types");
+        if (dropBox(ui, d, "##type", 95, designType_, "Design Type")) {
+            TypeListPicker::Config config;
+            config.title = "Select Design Type";
+            config.addTitle = "Design Type Name";
+            config.limit = kMaxDesignTypes;
+            config.tagChooser = "create-design:type";
+            config.tagOption = [](const std::string& t) { return learn::optionId(t); };
+            typePicker_.open(std::move(config), designType_.empty() ? std::nullopt : std::optional<std::string>(designType_));
+        }
         ui.tag("create-design:type", d.at({cd::kBoxX, 95}), d.at({cd::kBoxX + cd::kBoxW, 95 + cd::kBoxH}));
-        if (ImGui::BeginPopup("##types")) {
-            const auto& types = ui.me().designTypes;
-            for (size_t i = 0; i < types.size(); ++i) {
-                if (ImGui::Selectable(std::format("{}##{}", types[i], i).c_str(), types[i] == designType_)) designType_ = types[i];
-                ui.tagOption("create-design:type", learn::optionId(types[i]));
+        {
+            const std::vector<std::string>& types = ui.me().designTypes;
+            const TypeListPicker::Result res = typePicker_.drawPopup(ui, types);
+            if (res.added || res.deleted) {
+                std::vector<std::string> list = types;
+                if (res.added) list.push_back(*res.added);
+                if (res.deleted) std::erase(list, *res.deleted);
+                ui.session.issue(game::cmd::SetDesignTypes{std::move(list)});
             }
-            ImGui::EndPopup();
+            // Our client differs: the original's Cancel leaves the design
+            // with no type; ours keeps the one it had (spec 06 §7 Q94).
+            if (res.chosen) designType_ = *res.chosen;
         }
 
         // Design Name: typed, or picked from the race's list with its arrow;
@@ -1216,6 +1233,7 @@ private:
     std::optional<uint32_t> hull_;  // none until a size is chosen
     bool hullChosen_ = false;   // the player picked a hull in the Size list
     std::string designType_;
+    TypeListPicker typePicker_;   // Select Design Type
     std::array<char, 64> name_{};
     std::vector<game::DesignEntry> entries_;
     uint32_t strategy_ = 0;

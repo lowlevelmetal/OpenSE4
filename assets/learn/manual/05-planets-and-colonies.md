@@ -201,10 +201,14 @@ homeworld, mining, farming, refining, resupply base, research, intelligence, con
 or military. It has no effect of its own. You set it with **Set Colony Type** in the
 [Colonies](window:colonies) window. A homeworld's type cannot be changed.
 
+The types are listed in a window of their own: click a type to select it, then press `OK` (or
+double-click it). `Add Type` asks for the name of a new type and adds it to your empire's list;
+`Delete Type` removes the selected one. Your list is saved with the game.
+
 When you found a colony in a turn-based game, a **Colony Type** window asks what kind of colony
-it should be, with one button per type; the computer's choice is marked *(suggested)*. Switch
-**Pick the colony type when a colony is founded** off in [Empire Options](settings#empire-options)
-to let the computer choose every time.
+it should be; the computer's choice is marked *(suggested)* and already selected, so one click on
+it, `OK` or `Enter` takes it. Switch **Pick the colony type when a colony is founded** off in
+[Empire Options](settings#empire-options) to let the computer choose every time.
 
 ## Colony orders and cloaking
 
@@ -309,5 +313,5 @@ the **Build Queue** order when the colony is selected in the main window.
 
 | Button | What it does |
 |---|---|
-| `Scrap Facil Types` | Scrap every facility of one type, on the selected colonies or on all of them. |
-| `Set Colony Type` | Change the colony type of the selected colonies. |
+| `Scrap Facil Types` | Scrap every facility of the types you tick, on all your colonies, at the plain refund (no recycling bonus). |
+| `Set Colony Type` | Pick a colony, then its new type. |

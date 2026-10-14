@@ -38,11 +38,13 @@ click tag:create-design:hull:other refused
 click tag:create-design:hull:smallest
 wait-step 6
 assert { design_hull_chosen = true }
-# 6 Choose a type: the arrow beside Design Type, then Attack Ship; another type is refused.
+# 6 Choose a type: the arrow beside Design Type, then Attack Ship and OK in the type list;
+# another type is refused.
 click item:##type in=create-design
 wait-for tag:create-design:type:attack-ship
 click tag:create-design:type:defense-base refused
 click item:"Attack Ship"
+click item:OK in="Select Design Type"
 wait-step 7
 assert { design_type_chosen = "Attack Ship" }
 # 7 Add components (Esc still refused): the tiles of Components Available, by their place in the stock data set:

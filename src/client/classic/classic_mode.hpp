@@ -10,6 +10,7 @@
 #include "client/classic/lesson_audit.hpp"
 #include "client/classic/lesson_runner.hpp"
 #include "client/classic/main_window.hpp"
+#include "client/classic/screens/type_picker.hpp"
 #include "client/classic/turn_start.hpp"
 #include "client/mode.hpp"
 #include "client/script/player.hpp"
@@ -279,6 +280,8 @@ private:
     // Turn-based games: the colony type of a colony just founded (spec 03 §8).
     std::optional<game::ObjectId> colonyTypeChoice(const classic::UiContext& ui) const;
     void drawColonyTypeChoice(classic::UiContext& ui, game::ObjectId planet);
+    classic::TypeListPicker colonyTypePicker_;
+    std::optional<game::ObjectId> colonyTypeAsked_;   // the colony the picker was set up for
     // Turn-based games: the combat resolution prompt, Tactical or Strategic for
     // each human side of the battle that waits (spec 06 §1.6, spec 04 §3).
     void drawBattleQuestion(classic::UiContext& ui);

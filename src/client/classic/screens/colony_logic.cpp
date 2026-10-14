@@ -4,6 +4,7 @@
 
 #include "datafile/datafile.hpp"
 #include "datafile/reader.hpp"
+#include "game/ai_planner.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/movement.hpp"
@@ -317,7 +318,11 @@ std::vector<game::cmd::Scrap> scrapFacilityType(const game::GameState& s, game::
         if (!c || c->owner != e) continue;
         if (!only.empty() && std::find(only.begin(), only.end(), c->planet) == only.end()) continue;
         for (size_t i = c->facilities.size(); i-- > 0;)
-            if (c->facilities[i] == facility) out.push_back(game::cmd::Scrap{{}, c->planet, static_cast<int32_t>(i)});
+            if (c->facilities[i] == facility) {
+                game::cmd::Scrap cmd{{}, c->planet, static_cast<int32_t>(i)};
+                cmd.typeWide = true;   // Scrap Facil Types' refund (spec 02 §6.6)
+                out.push_back(cmd);
+            }
     }
     return out;
 }
@@ -673,7 +678,8 @@ std::vector<std::pair<uint32_t, uint32_t>> reorderMoves(const std::vector<size_t
     return moves;
 }
 
-std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Colony& c) {
+std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Colony& c,
+                                              bool keepQueued) {
     // One item per family, to the newest level researched, with the count the
     // queue will store: every lower-level facility of the family here. A queue
     // refuses a second upgrade to the same target (spec 02 §6.6).
@@ -687,10 +693,12 @@ std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::
         const int family = r.facility(f).family;
         if (seen.contains(family)) continue;
         const auto latest = r.latestFacilityOfFamily(emp, family);
-        if (!latest || r.facility(*latest).romanNumeral <= r.facility(f).romanNumeral || queued.contains(*latest)) continue;
+        if (!latest || r.facility(*latest).romanNumeral <= r.facility(f).romanNumeral || (!keepQueued && queued.contains(*latest))) continue;
         seen.insert(family);
         out.push_back(game::economy::upgradeItem(r, c, *latest));
     }
+    // In Facility.txt order of the targets (spec 06 §1.8.3).
+    std::stable_sort(out.begin(), out.end(), [](const game::QueueItem& a, const game::QueueItem& b) { return a.facility < b.facility; });
     return out;
 }
 
@@ -735,8 +743,48 @@ std::vector<game::DesignId> designChoices(const game::Rules& r, const game::Game
 
 int freeFacilitySlots(const game::Rules& r, const game::GameState& s, const game::Colony& c) {
     int queued = 0;
-    for (const game::QueueItem& q : c.queue.items) queued += q.kind == game::QueueItem::Kind::Facility;
+    for (const game::QueueItem& q : c.queue.items)
+        if (q.kind == game::QueueItem::Kind::Facility) queued += std::max(1, q.count);
     return std::max(0, game::facilitySlots(r, s, c) - static_cast<int>(c.facilities.size()) - queued);
+}
+
+std::vector<std::pair<std::string, std::vector<size_t>>> groupedRows(const std::vector<std::string>& keys) {
+    std::vector<std::pair<std::string, std::vector<size_t>>> groups;
+    for (size_t i = 0; i < keys.size(); ++i) {
+        auto it = std::find_if(groups.begin(), groups.end(), [&](const auto& g) { return g.first == keys[i]; });
+        if (it == groups.end()) groups.push_back({keys[i], {i}});
+        else it->second.push_back(i);
+    }
+    std::stable_sort(groups.begin(), groups.end(), [](const auto& a, const auto& b) { return compareNames(a.first, b.first) < 0; });
+    return groups;
+}
+
+int oneTurnsWorth(const game::Resources& unitCost, const game::Resources& rate) {
+    int64_t most = kMaxBatch;
+    bool anyRate = false;
+    for (size_t k = 0; k < 3; ++k) {
+        if (rate.v[k] <= 0) continue;
+        anyRate = true;
+        // 10000 × n × cost < 10001 × rate, so n < 10001 × rate / (10000 × cost).
+        if (unitCost.v[k] <= 0) continue;
+        const int64_t bound = (10001 * rate.v[k] - 1) / (10000 * unitCost.v[k]);
+        most = std::min(most, bound);
+    }
+    if (!anyRate) return 1;
+    return static_cast<int>(std::clamp<int64_t>(most, 1, kMaxBatch));
+}
+
+int oneTurnsWorth(const game::Rules& r, const game::GameState& s, game::DesignId design, const game::Resources& rate) {
+    if (!design.valid() || design.index() >= s.designs.size()) return 1;
+    const game::Design& d = s.design(design);
+    const game::DesignStats st = game::computeDesignStats(r, nullptr, d);
+    // Recon satellites are built one at a time (spec 05 §7.5 "Units").
+    if (game::ai::detail::aiTypeOf(r, d, st) == "Recon Satellite") return 1;
+    return oneTurnsWorth(st.cost, rate);
+}
+
+bool canAddType(const std::vector<std::string>& types, const std::string& name, size_t limit) {
+    return !name.empty() && types.size() < limit && std::find(types.begin(), types.end(), name) == types.end();
 }
 
 // ---- Queue types ---------------------------------------------------------------------------------

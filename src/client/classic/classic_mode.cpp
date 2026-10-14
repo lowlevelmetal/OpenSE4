@@ -7,6 +7,7 @@
 #include "client/classic/net_transport.hpp"
 #include "client/classic/pointers.hpp"
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
@@ -1652,28 +1653,52 @@ std::optional<game::ObjectId> ClassicMode::colonyTypeChoice(const UiContext& ui)
 }
 
 // Turn-based games: a colony was just founded; the player picks its type
-// (spec 03 §8, the empire's "choose the colony type" option).
+// (spec 03 §8, the empire's "choose the colony type" option) in the type
+// list the original shows (spec 02 §10, confirmed: binary), with the type
+// the computer would give it marked and selected, so that a click on it, OK
+// or Enter takes it. Add Type and Delete Type change the empire's list.
 void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
     const game::GameState& s = ui.state();
     const game::Empire& me = s.empire(session_->player());
     const game::Colony& c = *s.colony(planet);
     std::vector<std::string> types = me.colonyTypes;
     if (std::find(types.begin(), types.end(), c.colonyType) == types.end()) types.insert(types.begin(), c.colonyType);
+    if (colonyTypeAsked_ != planet) {
+        colonyTypeAsked_ = planet;
+        TypeListPicker::Config config;
+        config.title = "Colony Type";
+        config.addTitle = "Colony Type Name";
+        config.limit = kMaxColonyTypes;
+        config.marked = c.colonyType;
+        config.text = std::format("A new colony on {}. What kind of colony should it be?", s.galaxy.object(planet).name);
+        config.rows = 14;
+        config.tagChooser = "colony-type";   // a lesson may let the suggested one through
+        config.tagOption = [suggested = c.colonyType](const std::string& t) { return std::string(t == suggested ? "suggested" : "other"); };
+        colonyTypePicker_.configure(std::move(config), c.colonyType);
+    }
     ImGui::SetNextWindowPos(ui.at({std::floor(frameW() * 0.5f), std::floor(frameH() * 0.5f)}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(300), ui.textPx(300)), 0));
+    ImGui::SetNextWindowSize(ImVec2(std::max(ui.px(340), ui.textPx(340)), 0));
     ImGui::PushFont(fonts_.regular, ui.textPx(kTextSize));
     ImGui::Begin("Colony Type", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
     ui.promptWindow();   // never covered by a tutorial's input lock
-    ImGui::TextWrapped("%s", std::format("A new colony on {}. What kind of colony should it be?", s.galaxy.object(planet).name).c_str());
-    ImGui::Spacing();
-    for (const std::string& t : types) {
-        if (ImGui::Button(std::format("{}{}", t, t == c.colonyType ? " (suggested)" : "").c_str(),
-                          ImVec2(-FLT_MIN, std::max(ui.px(26), ImGui::GetFrameHeight()))))
-            session_->issue(game::cmd::SetColonyType{planet, t});
-        ui.tagOption("colony-type", t == c.colonyType ? "suggested" : "other");   // a lesson may let the suggested one through
-    }
+    const TypeListPicker::Result res = colonyTypePicker_.drawBody(ui, types);
     ImGui::End();
     ImGui::PopFont();
+    if (res.added || res.deleted) {
+        std::vector<std::string> list = me.colonyTypes;
+        if (res.added && canAddType(list, *res.added, kMaxColonyTypes)) list.push_back(*res.added);
+        if (res.deleted) std::erase(list, *res.deleted);
+        session_->issue(game::cmd::SetColonyTypes{std::move(list)});
+    }
+    if (res.chosen) {
+        session_->issue(game::cmd::SetColonyType{planet, *res.chosen});
+        colonyTypeAsked_.reset();
+    } else if (res.cancelled) {
+        // Our client differs: the original leaves the new colony without a
+        // type on Cancel; ours keeps the one it was given (spec 03 §8).
+        session_->issue(game::cmd::SetColonyType{planet, c.colonyType});
+        colonyTypeAsked_.reset();
+    }
 }
 
 void ClassicMode::drawBattleQuestion(UiContext& ui) {

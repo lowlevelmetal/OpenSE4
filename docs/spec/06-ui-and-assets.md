@@ -100,18 +100,18 @@ sit below; **Close is always the bottom slot** [S].
 | Colonies | Own colonies. | Statistics; mini-map; sortable list whose columns depend on the tab: General, Value, Production, Facilities, Cargo, Construction, Status (status icons), Races, Orders. Actions: Scrap Facil Types, Set Colony Type [T]. Columns and sorting in §1.8.3 (confirmed: binary). | F5. |
 | Ships\Units | Own ships, units, fleets. | Statistics; mini-map; list. Column tabs: General, Orders, Cargo, Fleet, Maintenance (each starts with a picture column); toggles Show Ships / Show Units / Show Fleets [T]. Columns and sorting in §1.8.3 (confirmed: binary). | F6. |
 | Construction Queues | All queues. | Statistics; quadrant map; queue list. Column tabs Rate, Usage, Planet Value, Facilities, Cargo; inclusion toggles Ships, Planets, Ship SY, Planet SY; Multi-Add (acts on the shift-selected queues), Scrap Facilities, Upgrade Facilities [T]. Rules and layout in §1.8.2 (confirmed: binary). | F7; Log → Constr. Queues. |
-| Set Construction Queue | Edit one queue. | Buildable-items list (tabs Ships, Facilities, Units, Upgrades; Only Latest); queue owner header; the queue itself; hover detail. Toggles Emergency Build, Repeat Build, Queue On Hold; Set Move To / Clear Move To; Fill Queue; Clear Queue; Reorder Queue [T]. | Order "Build Queue" (Q); row in Construction Queues. |
-| Select Queue Type | Fill a queue from a template. | Template list; Add Type, Delete Type, Cancel. | Set Construction Queue → Fill Queue. |
+| Set Construction Queue | Edit one queue. | Buildable-items list (tabs Ships, Facilities, Units, Upgrades, grouped under headers; Only Latest); queue owner header; the queue itself; hover detail. Toggles Emergency Build, Repeat Build, Queue On Hold; Set Move To / Clear Move To; Fill Queue; Clear Queue; Reorder Queue [T]. A unit design asks for the "Amount" first; refusals are "Warning" boxes (§1.8.3, spec 02 §6.5). | Order "Build Queue" (Q); row in Construction Queues. |
+| Select Queue Type | Fill a queue from one of the empire's queue types. | Type list; Add Type ("Queue Type Name"), Delete Type, Cancel (spec 02 §6.4, confirmed: binary). Ours adds the types kept on this computer and the built-in ones under their own headings, and Keep on Computer. | Set Construction Queue → Fill Queue. |
 | Research | Choose research. | Points available; tech-area list (left-click adds); current projects in pages of four (Projects 1-4, 5-8, 9-12); Repeat Projects, Divide Pts Evenly, Tech Tree (only if the game allows it), Reorder Projects [T]. | F8. |
 | Tech Tree | Whole tree. | Two list views: Tech Areas (prerequisites), Tech Levels (what each level unlocks); Export (writes the view to a text file) [T]. | Research → Tech Tree. |
 | Empires | Diplomacy hub. | One portrait per known empire with a stat column under each; tabs Treaty, Trade, Tariff. Buttons History, Treaty Grid, Intelligence, Borders, Victory Conditions, Scores, Comparisons, Our Race [T]. Left-click a portrait opens Communicate; right-click opens Race Report. | F9. |
 | Log | Turn news. | See §4.1. | F10; auto-opens at turn start. |
 | Empire Status | Budget and empire settings. | Balance sheet (income lines, expense lines, net per turn, treasury and storage cap; see spec 02). Buttons Empire Options, Ministers, Systems To Avoid, Waypoints, Strategies, Repair Priorities, Change Email, Change Password [T]. | F11. |
 | Options (Empire Options) | Per-empire UI and behaviour switches, saved with the game. | Scrolling list grouped under headings: General Options, Next/Previous, Ship Movement, Ship Orders, System Display, Galaxy Display, Latest Items, Politics [S]. Full list with defaults in §1.9 (confirmed: binary). | Empire Status → Empire Options; Log → Goto on some entries. Not Game Menu → Options, which opens the per-computer Options window (confirmed: binary). |
-| Ministers | Automation switches. | Minister list with lamps; Select All/None; individual ministers on/off; Complete AI On/Off [T]. | Empire Status. |
+| Ministers | Automation switches. | Minister list with lamps; Select All/None; Indiv. On/Off (each asks "Confirm" first); Complete AI On/Off, plain buttons without a state of their own (spec 02 §10, confirmed: binary) [T]. | Empire Status. |
 | Systems To Avoid | Mark systems for pathing. | Map (click to toggle); tabs Avoid, Presence, Ally Claimed, Enemy Claimed [T]. | Empire Status. |
 | Waypoints | Manage waypoints. | Waypoint list; quadrant map; ships heading there; yards auto-sending there; Set (returns to main window to pick a spot), Delete, Rename [T]. | Empire Status. |
-| Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Launching, Formation); Add [T]. | Empire Status; Combat Simulator. |
+| Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Damage, Launching, Formation); Add asks "Enter Strategy Name" (spec 04 §16, confirmed: binary) [T]. Copy and Remove are ours. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
 | Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. | F1. |
 | Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point-Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. | Help; Create Design. |
@@ -599,7 +599,24 @@ counts as 100 plus its number of units, so groups come after every ship and base
 Fleet rows, shown with Show Fleets, always come after every ship and unit row, in the
 empire's fleet order, and are never sorted.
 
-**Set Construction Queue.** A right-click on a queued ship, base or unit opens the
+**Set Construction Queue** (confirmed: binary). The tabs: Ships only while the queue's
+owner has a working space yard (a colony without one, or a cloaked colony, has it dim);
+Facilities on planets only; Units always; Upgrades always, an empty list for a ship. The
+tab shown is stored with the empire's options when the window closes, and the window
+opens on it, or on the first tab that is lit (spec 08 §3.6.7). The available list is
+grouped: ships and units under their design type, facilities and upgrades under their
+`Facility Group`; the groups A to Z ignoring case, each under a header row in grey #C0C0C0
+that a click does nothing on; the items indented 10 px, in the game's design order or
+Facility.txt order. A design we cannot build yet (§6.5 of spec 02) is drawn in grey
+#A0A0A0, and an upgrade already queued stays listed and is refused when clicked. A click on
+a unit design opens the "Amount" list (spec 02 §6.5); any other click adds one. Adding a
+facility by hand first shows the "Note" of §7 Q29 when it applies; a refusal then comes as
+an OK box titled "Warning" with the reason, one box per refused item (Fill Queue gives one
+for each). Since 2026-10-13 our client follows; ours names the group of designs without a
+type "No Type", keeps a status line for what was added, and says in the detail pane why an
+item cannot be built.
+
+A right-click on a queued ship, base or unit opens the
 design's report: the Design Report window, the same one a right-click on a design in the
 buildable list opens (name, size, design type, date created, "(Obsolete)", cost,
 maintenance cost, movement, shields, cargo space, supply capacity and the components). A
@@ -3274,8 +3291,11 @@ executable:
        progress and applies the new order; No drops the whole reorder.
 
     (confirmed: binary)
+    Clearing also clears the queue's automatic Move To waypoint, and keeps Emergency Build
+    and its turn counter (confirmed: binary; spec 02 §6.4 "Clearing a queue").
     Our client follows this: a left-click deletes an entry, only the first asking; Clear
-    Queue asks and also turns off On Hold and Repeat Build; Reorder Queue opens the
+    Queue asks and also turns off On Hold and Repeat Build and clears Move To (since
+    2026-10-13); an empty queue's Clear Queue turns those off without asking; Reorder Queue opens the
     reorder list and asks "Move First Queue Item" when another entry would come first, No
     dropping the whole reorder; nothing asks in the Multi-Add queue. When the first item
     changes, its progress is discarded by queueing it again at its new place. A
@@ -4685,9 +4705,17 @@ choices (inferred):
       Colony Type"; then the colony-type picker. *Scrap Facil Types* opens the facility-type
       check list and scraps every checked type on **every** colony of the empire, at
       `Scrap Facility Percent Returned`.
-    Our client follows the answer since 2026-10-03. Our choices: Total Population is written
-    "2000M"; Select Planet to Set and the colony-type picker are list windows of ours, the
-    homeworld's refusal in our words; the facility-type check list shows each type's count and
+    - *The colony-type picker* (confirmed: binary) is a list window of the empire's colony
+      types with Add Type ("Colony Type Name") and Delete Type (spec 02 §10). Cancel sets the
+      colony's type to an empty one.
+    - *The window's tab* is stored with the empire's options when the window closes and comes
+      back on the next opening (spec 08 §3.6.7).
+    Our client follows the answer since 2026-10-03; the type list's Add Type and Delete Type,
+    the plain refund of Scrap Facil Types and the remembered tab since 2026-10-13
+    (`InterfaceOptions::coloniesTab`). Our choices: Total Population is written "2000M";
+    Select Planet to Set is a list window of ours, the homeworld's refusal in our words; the
+    colony-type picker shares the design-type picker's list window (Q94), and its Cancel
+    keeps the colony's type; the facility-type check list shows each type's count and
     refund.
 91. **The Log's Goto with nothing selected.** The original's Goto is lit in an empty Log. Ours
     lights it whenever no entry is selected, and a click then does nothing. Is it lit for any
@@ -4843,6 +4871,18 @@ choices (inferred):
     `game::designToHit`). Our choices: the strip's arrows are the small left and right arrows
     (`SmallLeftRightArrows.bmp`), 16 × 38, at its ends; a tile holds the 36 px picture, the
     name and the size in small type; the Component Details box shows our compact report.
+
+    *Design Type* (confirmed: binary): the box opens "Select Design Type", a list window of
+    the empire's design types with one "Name" column, Add Type, Delete Type, OK and Cancel.
+    Add Type asks "Design Type Name" and adds the name at the end when it is not empty, not
+    already listed and the list holds fewer than 250; otherwise nothing happens and nothing
+    is said. Delete Type removes the selected type without asking and without looking at
+    the designs that use it. The list belongs to the empire and is saved with the game.
+    Cancel, or OK with nothing picked, leaves the design with no type (its box reads
+    "Design Type"). Since 2026-10-13 our client follows, with the colony-type pickers' list
+    window (spec 02 §10, `TypeListPicker`): a click selects a row, and OK, a double click or
+    a click on the row already selected picks it; the changes go out as
+    `cmd::SetDesignTypes`. Our client differs: Cancel keeps the type the design had.
 95. **Empire Status.** Ours draws one table per block under its silver heading, the amounts in
     the resource colours, each block's first row with the resource icons, Net Resources Per Turn
     as a block of one unlabelled row. Our engine's other income (resources generated by

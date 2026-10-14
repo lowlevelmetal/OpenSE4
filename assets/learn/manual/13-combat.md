@@ -134,9 +134,13 @@ strategy, and a fleet's strategy overrides it for the fleet's armed members.
 Open [Strategies](window:strategies) from Empire Status or from the Combat Simulator. Its pages:
 
 - **Movement**: a primary and a secondary movement strategy. The secondary is used when the primary is impossible (for example, dropping troops with no troops aboard).
-- **Firing**: up to four target priorities (nearest, weakest, most damaged, has weapons and so on), a ranking of target types, the types never to fire on, and how badly damaged a target may be before the ship turns to another.
-- **Launching**: how many fighters to launch per group.
+- **Firing**: up to four target priorities (nearest, weakest, most damaged, has weapons and so on), a ranking of target types and the types never to fire on.
+- **Damage**: how badly damaged a target may be before the ship turns to another, and whether it keeps firing until the target has no working weapons.
+- **Launching**: how many fighters leave a carrier as one group, and how many drones the computer sends at each target.
 - **Formation**: which kinds of ships leave their formation in combat.
+
+**Add** asks for a name and makes a new strategy with the game's own starting values; **Copy**
+copies the strategy selected and **Remove** deletes it.
 
 The movement strategies are:
 

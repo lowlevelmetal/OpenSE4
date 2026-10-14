@@ -167,8 +167,9 @@ std::string shortAmount(int64_t n);
 std::vector<int> colonyStatusIcons(const game::Rules& r, const game::GameState& s, const game::Colony& c, bool connected);
 
 // Scrap commands that remove every facility of one type from the given
-// colonies (all own colonies when `only` is empty). Slots are listed from the
-// highest down, so the commands stay valid when applied in order.
+// colonies (all own colonies when `only` is empty), as Scrap Facil Types
+// gives them (cmd::Scrap::typeWide: the setting's refund alone). Slots are
+// listed from the highest down, so the commands stay valid when applied in order.
 std::vector<game::cmd::Scrap> scrapFacilityType(const game::GameState& s, game::EmpireId e, uint32_t facility,
                                                 const std::vector<game::ObjectId>& only = {});
 
@@ -339,8 +340,11 @@ bool similarAbilityCounts(game::AbilityKind k);
 std::vector<std::pair<uint32_t, uint32_t>> reorderMoves(const std::vector<size_t>& order);
 
 // Upgrade items this colony could queue: one per facility family that has an
-// older level than the newest one researched, skipping families already queued.
-std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Colony& c);
+// older level than the newest one researched, in Facility.txt order of the
+// target. An upgrade already queued is left out, or with `keepQueued` listed
+// (Set Construction Queue lists it, and the queue refuses it, spec 06 §1.8.3).
+std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Colony& c,
+                                              bool keepQueued = false);
 // Queued facility items of an older level than the newest one researched in
 // their family, with that newest level: what Upgrade Facilities switches in
 // place (spec 02 §6.6, cmd::QueueReplaceFacility). Pairs of (item index, facility).
@@ -355,8 +359,36 @@ std::vector<uint32_t> facilityChoices(const game::Rules& r, const game::Empire& 
 std::vector<game::DesignId> designChoices(const game::Rules& r, const game::GameState& s, game::EmpireId e, bool units, bool onlyLatest);
 bool isUnitDesign(const game::Rules& r, const game::Design& d);
 
-// Free facility slots after what is built and queued (planets only).
+// Free facility slots after what is built and queued (planets only): every
+// facility of every queued item counts (spec 02 §6.5).
 int freeFacilitySlots(const game::Rules& r, const game::GameState& s, const game::Colony& c);
+
+// The groups of Set Construction Queue's available list (spec 06 §1.8.3,
+// confirmed: binary): the rows under one header per distinct key (a design's
+// type, a facility's Facility Group), the headers A to Z ignoring case, the
+// rows of each in the order given. Each pair is the key and the rows' indices.
+std::vector<std::pair<std::string, std::vector<size_t>>> groupedRows(const std::vector<std::string>& keys);
+
+// The Units tab's "One Turn's Worth" (spec 02 §6.5, confirmed: binary): the
+// largest count n of at least 1 whose build time from scratch at the queue's
+// rate is one turn, a build time being the largest, over the resources with
+// a rate above 0, of trunc(n × cost / rate + 0.9999); in whole numbers,
+// 10000 × n × cost < 10001 × rate for each of them. 1 when every rate is 0,
+// and for a design the computer counts as a "Recon Satellite"; at most
+// kMaxBatch.
+inline constexpr int kMaxBatch = 65535;
+int oneTurnsWorth(const game::Resources& unitCost, const game::Resources& rate);
+int oneTurnsWorth(const game::Rules& r, const game::GameState& s, game::DesignId design, const game::Resources& rate);
+// The Units tab's "Amount" list (spec 02 §6.5): One Turn's Worth (not in
+// Multi-Add, shown as 0 here), then these counts.
+inline constexpr std::array<int, 14> kUnitAmounts{1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 100, 150, 200};
+
+// Add Type of the type lists (spec 06 §7 Q94, spec 02 §10, confirmed:
+// binary): `name` is added when it is not empty, not in `types` yet, and the
+// list holds fewer than `limit`; otherwise nothing happens.
+bool canAddType(const std::vector<std::string>& types, const std::string& name, size_t limit);
+inline constexpr size_t kMaxDesignTypes = 250;   // the original's limit
+inline constexpr size_t kMaxColonyTypes = 255;   // OpenSE4's: what the saved game's list holds
 
 // ---- Queue types (named templates, spec 02 §6.4) -------------------------------------------------
 

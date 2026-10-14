@@ -77,7 +77,7 @@ manual = "ship-design#hulls-and-components"
 [[step]]
 title = "Choose a type"
 text = """
-**Press the arrow beside Design Type** and pick **Attack Ship**.
+**Press the arrow beside Design Type**, pick **Attack Ship** and press **OK**.
 
 The type sorts the design in your lists and tells your ministers what it is for. A design without
 one lands under No Type.
