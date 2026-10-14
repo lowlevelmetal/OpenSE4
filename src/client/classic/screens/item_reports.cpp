@@ -129,9 +129,17 @@ void damageTable(UiContext& ui, const game::DesignEntry& entry) {
         ImGui::TextColored(kDimText, "No damage at any range");
         return;
     }
-    constexpr int kPerRow = 10;
-    for (int start = 1; start <= maxRange; start += kPerRow) {
-        const int n = std::min(kPerRow, maxRange - start + 1);
+    // Ten ranges to a row, or five where ten do not fit the pane (the
+    // designer's Component Details); the figures never wrap inside a cell.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    float widest = ImGui::CalcTextSize(std::to_string(maxRange).c_str()).x;
+    for (int range = 1; range <= maxRange; ++range)
+        widest = std::max(widest, ImGui::CalcTextSize(std::to_string(game::weaponDamageAtRange(r, entry, range)).c_str()).x);
+    const float column = widest + style.CellPadding.x * 2 + 1;
+    const int perRow = column * 10 <= ImGui::GetContentRegionAvail().x ? 10 : 5;
+    ImGui::PushTextWrapPos(-1.0f);
+    for (int start = 1; start <= maxRange; start += perRow) {
+        const int n = std::min(perRow, maxRange - start + 1);
         ImGui::PushID(start);
         if (ImGui::BeginTable("##dmg", n, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedSame | ImGuiTableFlags_NoHostExtendX)) {
             ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
@@ -150,6 +158,7 @@ void damageTable(UiContext& ui, const game::DesignEntry& entry) {
         }
         ImGui::PopID();
     }
+    ImGui::PopTextWrapPos();
 }
 
 void componentDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {

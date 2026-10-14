@@ -1,0 +1,33 @@
+# Create Design's Component Details box at 1024x768 (GitHub issue #14, spec 06 §7 Q94; docs/BUILDING.md
+# "Input scripts"): the window is as tall as the list windows, and the Warnings and Component
+# Details boxes take the height it gains, down to near the window's bottom.
+# ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
+options --quick-start --empires=4 --seed=7 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait-for tag:command:designs
+# On the fixtures the player is alone: the conquest ending comes at once (manual-game.script).
+click item:Close in=finale optional
+click item:Yes in=finale optional
+click tag:command:designs
+wait-window designs
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+click item:##size in=create-design
+wait-for item:"window:Select Vehicle Size*"
+click item:##0 in="Select Vehicle Size*"
+wait-gone item:"window:Select Vehicle Size*"
+move item:##tile in=create-design nth=1
+wait 2
+# The window spans the frame's height less 100 (from y 50 to 718), the boxes from y 435 to 704.
+assert-inside at:500,60 window:create-design
+assert-inside at:500,710 window:create-design
+assert-inside at:500,700 tag:create-design:details
+assert-inside at:300,700 tag:create-design:warnings
+assert-fits create-design
+screenshot designer-details.png
+click tag:create-design:close
+wait-closed create-design
+key Escape
+wait-closed designs

@@ -30,7 +30,8 @@ Rect dialogRect(DialogSize size) {
     Vec2 s;
     switch (size) {
         case DialogSize::Large: s = {780, 475}; break;
-        case DialogSize::Tall: s = {780, listWindowHeight(screenLayout(), fh)}; break;
+        case DialogSize::Tall:
+        case DialogSize::LargeTall: s = {780, listWindowHeight(screenLayout(), fh)}; break;
         case DialogSize::Report: s = {400, 540}; break;
         case DialogSize::Picker: s = {540, 660}; break;
         case DialogSize::Prompt: s = {420, 190}; break;
@@ -555,7 +556,7 @@ Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonCo
     : Dialog(ui.painter(), title, dialogRect(size), buttonColumn, contentFrame) {
     game_ = &ui;
     if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
-    scenarioButton(ui);
+    scenarioButton(ui, size == DialogSize::LargeTall);
 }
 
 Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
@@ -564,15 +565,17 @@ Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
              buttonColumn) {
     game_ = &ui;
     if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
-    scenarioButton(ui);
+    scenarioButton(ui, false);
 }
 
-void Dialog::scenarioButton(UiContext& ui) {
+void Dialog::scenarioButton(UiContext& ui, bool largeForm) {
     // In a tutorial game of the original's, every large 780x475 dialog has a
     // 20x20 T button at (746,8) that shows the page of the tutorial's text
-    // shown last again (docs/spec/06 §5.6, confirmed: binary). Not in
-    // OpenSE4's lessons, whose T is the status bar's alone.
-    if (!visible_ || !ui.scenarioTutorial || rect_.size().x != 780.0f || rect_.size().y != 475.0f) return;
+    // shown last again (docs/spec/06 §5.6, confirmed: binary); our designer
+    // keeps it at its taller size. Not in OpenSE4's lessons, whose T is the
+    // status bar's alone.
+    const bool large = rect_.size().x == 780.0f && (largeForm || rect_.size().y == 475.0f);
+    if (!visible_ || !ui.scenarioTutorial || !large) return;
     const ImVec2 cursor = ImGui::GetCursorPos();
     const Vec2 at = rect_.min + Vec2{746, 8};
     ImGui::SetCursorScreenPos(ui.at(at));

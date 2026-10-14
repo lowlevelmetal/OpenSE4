@@ -1,8 +1,9 @@
 # The original's tutorial, started from the Learn window's Scenarios tab (docs/spec/06 §5.6,
 # docs/LEARNING.md "The original's tutorial and scenarios"): its first page at once, Previous
 # and Next through the series, Esc keeping the page shown last for Ctrl+H, the status bar's T
-# and the T of a large window showing it again over that window; a game saved in OpenSE4's
-# format and loaded again stays the tutorial's, shows no page by itself and keeps the page.
+# and the T of a large window showing it again over that window (the taller designer keeps its
+# T); a game saved in OpenSE4's format and loaded again stays the tutorial's, shows no page by
+# itself and keeps the page.
 # It needs the installed game's Scenarios folder.
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --layout=1024x768 --size=1280x800
@@ -63,6 +64,13 @@ screenshot classic-tutorial-over-designs.png
 key Escape
 wait-closed scenario-text
 assert-window designs
+# The designer, taller than a large window at 1024x768 (ours, GitHub issue #14), keeps its T.
+click tag:designs:create
+click item:Ship in=designs
+wait-window create-design
+assert-present item:scenario-t in=create-design
+click tag:create-design:close
+wait-closed create-design
 key Escape
 wait-closed designs
 

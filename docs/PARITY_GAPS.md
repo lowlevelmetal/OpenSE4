@@ -747,6 +747,7 @@ the executable did not settle are spec 06 §7 Q113. What stays different on purp
 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
+| Create Design's height (`designs.cpp`, `DialogSize::LargeTall`) | At 1024x768 as tall as the list windows (668 px), the height it gains in the Warnings and Component Details boxes, 269 px tall (GitHub issue #14); 780x475 at 800x600 | 780x475 in both layouts, the boxes 76 px tall (spec 06 §7 Q94) | L (cosmetic) |
 | Create Design's name (`designs.cpp`, `cmd::CreateDesign`, `cmd::EditDesign`) | "Design Name" is a hint in an empty box, and an empty name is refused in the "Design Warnings" box | The box holds the words, so a design made without typing is named "Design Name", and an erased name is accepted as empty (spec 03 §4.1) | L |
 
 Seen side by side with the running original on 2026-10-03 ([spec 07](spec/07-observations.md),

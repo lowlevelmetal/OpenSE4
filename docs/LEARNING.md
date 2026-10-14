@@ -1160,6 +1160,7 @@ the Weapons Report.
 | `create-design:name`, `create-design:suggest` | the Design Name box, and the button beside it that lists names |
 | `create-design:on-design`, `create-design:components` | the Components on Design strip, the Components Available grid |
 | `create-design:warnings`, `create-design:save` | the Warnings box, Create Design (also when editing) |
+| `create-design:details` | the Component Details box (the component under the pointer, else the hull) |
 | `fleet-transfer:ships`, `fleet-transfer:fleets`, `fleet-transfer:create-fleet` | Fleet Transfer: the ships outside fleets, the fleets, Create Fleet |
 | `combat-simulator:vehicles`, `combat-simulator:items`, `combat-simulator:owners` | Combat Simulator: the Combat Vehicles list's rows in use (at least one row's height), the Items to choose list (a click adds the item for the chosen race), the Owner for item list (Race 1 to Race 10) |
 | `combat-simulator:strategies`, `combat-simulator:begin` | its Strategies and Begin buttons (its Tactical and Strategic tabs: `combat-simulator:tactical`, `combat-simulator:strategic`) |

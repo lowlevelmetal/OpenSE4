@@ -112,7 +112,7 @@ simultaneous game is loaded from a saved game (Load Game, Resume Game, the Game 
 | Player Computer Control | Hand empires to the computer or take them back. | Check list titled "Empires Under Computer Control", 420x520, OK / Cancel: one row per empire in empire-number order (every empire, neutral and destroyed ones included) with a lamp, the empire's flag and its name; a lit lamp means computer-controlled. The same window serves the Combat Simulator [T] and Reset Passwords (§1.9). Rules in §1.2.1 (confirmed: binary). | Game Menu → Players. |
 | Options (per computer) | Sound, music, animation and autosave. | Lamp list under headings; Close. Full list in §1.9 (confirmed: binary). | Game Menu → Options. |
 | Designs | Browse and manage designs. | Design list; detail pane (stats, then either components or, with Stats\Strategy on, build/loss/kill counts and default strategy). Tabs: Ship Designs, Unit Designs, Enemy Ship Dsgn, Enemy Unit Dsgn; the window opens on the tab kept with the empire's options. Actions: Create, Copy, Edit, Upgrade, Make Obsolete, Hide Obsolete, Stats\Strategy, Simulator [T]. Which are lit, and what the enemy tabs list: §7 Q93 (confirmed: binary). | F3. |
-| Create Design | Ship designer. | Size, type and name pickers; running totals; components-on-design and components-available lists; warnings box; hover detail. Comp Type (group filter), Weap Mount, Condensed View, Only Latest, Weapons Report, Create Design, Cancel [T]. | Designs → Create / Copy / Edit. |
+| Create Design | Ship designer. | Size, type and name pickers; running totals; components-on-design and components-available lists; warnings box; hover detail. Comp Type (group filter), Weap Mount, Condensed View, Only Latest, Weapons Report, Create Design, Cancel [T]. Ours is taller at 1024x768 (§7 Q94). | Designs → Create / Copy / Edit. |
 | Select Vehicle Size | Pick the design's size. | List window: the researched hulls of the vehicle type in data order, columns Pic, Name, Size, Cost; an "Abilities" box under the list; Cancel (§7 Q94, confirmed: binary). | Create Design → Size. |
 | Select Component Group | Filter Components Available. | List window: the General Groups of the components available and "All", sorted; Cancel picks All (§7 Q94, confirmed: binary). | Create Design → Comp Type. |
 | Select Weapon Mount | Pick a mount for weapons added next. | List window: "Normal Mount" first, then each mount with its description in grey under its name; a description pane under the list; Cancel (§7 Q94, confirmed: binary). | Create Design → Weap Mount; Weapons Report. |
@@ -1559,6 +1559,8 @@ coordinate line, list window height and tactical title strip from the table. It 
   layout never does (inferred).
 - OpenSE4's own windows taller than 580 px (some pickers) are cut to fit the 800x600
   frame; the setup screens use the layout's frame, not an 800x600 area in both layouts.
+- Since 2026-10-14 Create Design grows at 1024x768 as the four list windows do, its lower
+  boxes taking the height (§7 Q94, GitHub issue #14).
 - At 800x600 a lesson that points at an order on another page of the order strip
   outlines the pager arrow that leads there (ours: the original has no lessons).
 - The tactical window keeps OpenSE4's own panels, laid out over the frame's width.
@@ -5414,6 +5416,20 @@ choices (inferred):
     refusal as a warnings line, let components be added before a size, read "Save Design"
     when editing, offered only the unused names of the list (or "<hull> N" without one),
     merged Condensed View on screen only, and used plain pop-up lists.
+
+    *Height* (GitHub issue #14, on 0.12.0 at 1920×1080: "Could the Ship and Unit Design
+    screens be stretched some so that the Component Details section is a bit more visible? I
+    have to scroll to see pretty much anything in it."; the player adds that some scrolling
+    would be fine). **Our client differs:** since 2026-10-14, at 1024x768 the designer is as
+    tall as the four list windows (the frame's height less 100, 668 px, §2.1.1), and the
+    193 px it gains go to the Warnings and Component Details boxes, both 269 px tall from
+    y 385, so a component's compact report (a weapon's damage by range included) shows
+    without scrolling; everything above them keeps the places of the answer. At 800x600 it
+    keeps the original's 780×475 and its 76 px boxes, which scroll. It keeps a large
+    window's T button in the original's tutorial (§5.6), and the damage-by-range rows of
+    the report hold five ranges where ten do not fit (`DialogSize::LargeTall`,
+    `CreateDesignScreen::sideBoxes` in `screens/designs.cpp`; `damageTable` in
+    `screens/item_reports.cpp`).
 
     *Design Type* (confirmed: binary): the box opens "Select Design Type", a list window of
     the empire's design types with one "Name" column, Add Type, Delete Type, OK and Cancel.
