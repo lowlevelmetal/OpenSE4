@@ -20,6 +20,7 @@
 #include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
+#include "game/serialize.hpp"
 #include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
@@ -1974,6 +1975,36 @@ TEST_CASE("ai: the demand lists are emptied at the start of turns whose date is 
     CHECK(rel.promises == 0);
     CHECK(s.empire(cpu).aiMemory.avoid.empty());
     CHECK(s.empire(cpu).aiMemory.attackSystems.empty());
+}
+
+TEST_CASE("ai: a carried-out request to attack an empire in a system or a planet changes nothing in the plans") {
+    // Spec 05 §7.4 (confirmed: binary): the system is recorded, and nothing
+    // reads the record before the 10-turn clear empties it.
+    const Rules& r = engineRules();
+    GameState a = computerGame(11, 3, 0, 12);
+    const EmpireId asker{0u}, cpu{1u}, third{2u};
+    for (EmpireId x : {asker, cpu, third})
+        for (EmpireId y : {asker, cpu, third})
+            if (x != y) a.empire(x).relation(y).contact = true;
+    a.turn = 1;
+    GameState b = a;
+    const MessageId inSystem = deliver(b, asker, cpu, MessageType::RequestAttackEmpire);
+    b.messages.back().thirdEmpire = third;
+    b.messages.back().system = b.galaxy.object(homeworld(b, third).planet).system;
+    REQUIRE(apply(r, b, cpu, cmd::CarryOutDemand{inSystem}).ok);
+    const MessageId planet = deliver(b, asker, cpu, MessageType::RequestAttackPlanet);
+    b.messages.back().planet = homeworld(b, asker).planet;
+    REQUIRE(apply(r, b, cpu, cmd::CarryOutDemand{planet}).ok);
+    REQUIRE(b.empire(cpu).aiMemory.attackSystems.size() == 2);
+    b.messages = a.messages;
+    b.nextMessageId = a.nextMessageId;
+    for (int turn = 0; turn < 6; ++turn) {
+        processTurn(r, a, {});
+        processTurn(r, b, {});
+        GameState same = b;
+        same.empire(cpu).aiMemory.attackSystems.clear();
+        CHECK(stateChecksum(same) == stateChecksum(a));
+    }
 }
 
 TEST_CASE("ai: a furious AI declares war, and the declaration sets anger to 100") {

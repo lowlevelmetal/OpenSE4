@@ -1683,7 +1683,12 @@ Team mates are always accepted, and team enemies always refused.
     are never abandoned;
   - declare war on, support against, break with or make peace with a third empire: one
     entry naming that empire is added to the matching demand list (below);
-  - attack an empire in a system, or attack a planet: that system becomes an attack target;
+  - attack an empire in a system, or attack a planet: the system is recorded, but nothing
+    ever reads that record, which only waits for the 10-turn clear below. So these two
+    change nothing in the computer player's plans, like "stop attacks in a system"
+    (confirmed: binary; corrected 2026-10-14, complete listing: this line said earlier
+    that the system became an attack target). Our engine matches: it records the system
+    (`AiMemory::attackSystems`) and no planner reads it;
   - stop espionage or sabotage: intelligence projects against the requester are cancelled;
   - stop hostile actions against an empire: a promise about the empire the demand names,
     not the requester (§7.3 term 8);
@@ -3913,8 +3918,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       same rules (confirmed: binary; corrected 2026-10-14, complete listing).
     - **Recipients:** a computer recipient that carries the request out records the named
       empire without any check (question 51); for "attack an empire in a system" it
-      records only the system and never uses the empire. A human recipient reads the
-      empire's name in the text, whatever that empire's state.
+      records only the system and never uses the empire. Nothing reads the recorded
+      system either, so the request changes nothing in its plans (§7.4, confirmed:
+      binary; added 2026-10-14, complete listing). A human recipient reads the empire's
+      name in the text, whatever that empire's state.
 
     Since 2026-10-01 the engine follows this (`ai_diplomacy.cpp`, `chooseRequest()` and
     `demand()`; `commands.cpp`, `SendMessage`): steps 1-5 choose the request first and

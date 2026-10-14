@@ -1156,6 +1156,9 @@ struct Applier {
             case MessageType::RequestMakePeace:
                 if (named) ++named->queuedPeace;
                 break;
+            // The system is recorded and nothing reads it before the 10-turn
+            // clear: these two change nothing in the plans (spec 05 §7.4,
+            // confirmed: binary).
             case MessageType::RequestAttackEmpire: addUnique(me.aiMemory.attackSystems, d.system); break;
             case MessageType::RequestAttackPlanet: addUnique(me.aiMemory.attackSystems, d.system.valid() ? d.system : planetSystem); break;
             // A promise about the empire the demand names, not the requester
