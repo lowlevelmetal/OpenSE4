@@ -67,6 +67,12 @@ struct Square {
 // message (a Drop Troops from a piece that carries units but no troops,
 // spec 04 §19.4 Q88): the client shows nothing for it.
 inline constexpr std::string_view kSilentRefusal = "(refused without a message)";
+// The last refusals of Ram and Capture (spec 04 §10.3, §12, spec 06 §1.10.2,
+// confirmed: binary): the target is our own piece or one of an empire we are
+// not at war with. The window titles both "Ram Ship", and shows the Capture
+// one even while Auto is on.
+inline constexpr std::string_view kRamFriendly = "That piece is yours or a friend's: it cannot be rammed.";
+inline constexpr std::string_view kCaptureFriendly = "That ship belongs to a friendly empire: it cannot be boarded.";
 
 struct TacticalOrder {
     enum class Kind : uint8_t {

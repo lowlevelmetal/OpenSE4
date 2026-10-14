@@ -95,7 +95,7 @@ TEST_CASE("sdk players golden: a simultaneous game two script players play gives
         {5, 0x9902eee9b68d7c5full},
         {10, 0x2ca9e298070c1c65ull},
         {20, 0x3eb4db537442ceb9ull},
-        {40, 0xb5b36e1158a9f502ull},
+        {40, 0xa4f43d43aec70a3full},
         {60, 0xf2071fcd672edc9full},
     }};
     playGolden("simultaneous", 51, true, kGolden);

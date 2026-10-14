@@ -598,6 +598,20 @@ TEST_CASE("tactical: combat groups follow their leader") {
     CHECK(b.check(second) == "Group 3 already has a leader.");
     CHECK(b.submit(member).empty());
     CHECK(b.check(member) == "It already belongs to a group.");
+    // The leader given its own number again picks a new formation; another
+    // number, or a member, is refused (spec 04 §5, spec 06 §1.10.2).
+    TacticalOrder again = leader;
+    CHECK(b.check(again).empty());
+    again.formation = -1;
+    CHECK(b.check(again) == "Pick a formation for the group.");
+    again.formation = 0;
+    again.group = 4;
+    CHECK(b.check(again) == "It already belongs to a group.");
+    TacticalOrder memberLeads = order(OK::SetLeader, a, boarder);
+    memberLeads.group = 3;
+    memberLeads.formation = 0;
+    CHECK(b.check(memberLeads) == "It already belongs to a group.");
+    CHECK(b.submit(leader).empty());
     CHECK(b.pieces()[static_cast<size_t>(gunner)].isLeader);
     CHECK(b.pieces()[static_cast<size_t>(gunner)].group == 3);
     CHECK(b.pieces()[static_cast<size_t>(boarder)].leader == gunner);
@@ -636,9 +650,9 @@ TEST_CASE("tactical: ramming and boarding need an adjacent target; boarding need
     TacticalBattle b = startSkirmish(k);
     const EmpireId a = k.ar.a;
     const int boarder = pieceIndex(b, k.boarder), target = pieceIndex(b, k.target), shielded = pieceIndex(b, k.shielded);
-    CHECK(b.check(order(OK::Capture, a, pieceIndex(b, k.gunner), target)) == "It has no boarding parties.");
+    CHECK(b.check(order(OK::Capture, a, pieceIndex(b, k.gunner), target)) == "The target must be adjacent.");
+    CHECK(b.check(order(OK::Capture, a, boarder, pieceIndex(b, k.gunner))) == "That ship is already yours.");
     CHECK(b.check(order(OK::DropTroops, a, boarder, target)) == "No colony of another empire is adjacent.");
-    CHECK(b.check(order(OK::Ram, a, boarder, pieceIndex(b, k.gunner))) == "Only an enemy ship, unit group or planet can be rammed.");
     // Close on the shielded ship: boarding waits for its shields, ramming only for adjacency.
     for (int round = 0; round < 10 && b.distance(boarder, shielded) > 1 && b.phaseEmpire() == a; ++round) {
         if (b.distance(boarder, shielded) > 1) {
@@ -1112,9 +1126,18 @@ TEST_CASE("simulator: setups that cannot be fought") {
     const Rules& r = combatRules();
     const GameState& s = w.ar.s;
     CHECK(combat::simulatorProblem(r, s, w.duel(false)).empty());
-    combat::SimulatorSetup lonely = w.duel(false);
-    lonely.items[1].side = 0;
-    CHECK(combat::simulatorProblem(r, s, lonely) == "At least two sides need something to fight with.");
+    // Begin is refused only when nothing belongs to a side (spec 04 §17).
+    combat::SimulatorSetup empty = w.duel(false);
+    empty.items.clear();
+    CHECK(combat::simulatorProblem(r, s, empty) == "At least one side needs something on the field.");
+    combat::SimulatorSetup neutral = empty;
+    for (ObjectId o : combat::simulatorPlanets(s, w.ar.a))
+        if (!s.colony(o)) {
+            neutral.items.push_back({combat::SimulatorItem::Kind::Planet, {}, o, 0});
+            break;
+        }
+    REQUIRE(neutral.items.size() == 1);
+    CHECK(combat::simulatorProblem(r, s, neutral) == "At least one side needs something on the field.");
     combat::SimulatorSetup secret = w.duel(false);
     secret.items[1].design = w.unseen;
     CHECK(combat::simulatorProblem(r, s, secret) == "Only your designs and enemy designs you have seen can be used.");
@@ -1127,9 +1150,44 @@ TEST_CASE("simulator: setups that cannot be fought") {
     combat::SimulatorSetup elsewhere = w.duel(false);
     elsewhere.items.push_back({combat::SimulatorItem::Kind::Planet, {}, homeworld(w.ar.s, w.ar.b).planet, 1});
     CHECK(combat::simulatorProblem(r, s, elsewhere) == "Sample planets come from the home system.");
-    combat::SimulatorSetup oneSide = w.duel(false);
-    oneSide.sides.resize(1);
-    CHECK(combat::simulatorProblem(r, s, oneSide) == "A battle needs at least two sides.");
+    combat::SimulatorSetup noSides = w.duel(false);
+    noSides.sides.clear();
+    CHECK(combat::simulatorProblem(r, s, noSides) == "A battle needs at least one side.");
+}
+
+TEST_CASE("simulator: one side is enough, no sight test, and the same planet may come twice (spec 04 §17)") {
+    SimWorld w;
+    const Rules& r = combatRules();
+    const GameState& s = w.ar.s;
+    // Both items on side 1: a real game never fights where nobody hostile sees
+    // anyone; the simulator's battle starts anyway, and ends at its first end check.
+    combat::SimulatorSetup lonely = w.duel(false);
+    lonely.items[1].side = 0;
+    lonely.sides.resize(1);
+    REQUIRE(combat::simulatorProblem(r, s, lonely).empty());
+    TacticalBattle alone = combat::startSimulation(r, combat::buildSimulation(r, s, lonely));
+    CHECK(alone.started());
+    CHECK(alone.finished());
+    alone.finish();
+    CHECK(alone.record().pieces.size() == 4);
+    // The player's home planet twice, for side 1 and for side 2.
+    combat::SimulatorSetup twice = w.duel(false);
+    const ObjectId home = homeworld(w.ar.s, w.ar.a).planet;
+    twice.items.push_back({combat::SimulatorItem::Kind::Planet, {}, home, 0});
+    twice.items.push_back({combat::SimulatorItem::Kind::Planet, {}, home, 1});
+    REQUIRE(combat::simulatorProblem(r, s, twice).empty());
+    TacticalBattle both = combat::startSimulation(r, combat::buildSimulation(r, s, twice));
+    REQUIRE(both.started());
+    int planets = 0;
+    std::vector<EmpireId> owners;
+    for (const combat::TacticalPiece& p : both.pieces())
+        if (p.kind == CombatPiece::Kind::Planet) {
+            ++planets;
+            owners.push_back(p.owner);
+        }
+    CHECK(planets == 2);
+    REQUIRE(owners.size() == 2);
+    CHECK(owners[0] != owners[1]);
 }
 
 TEST_CASE("simulator: the battle is fought on a sandbox and the real game never changes") {
@@ -1186,6 +1244,47 @@ TEST_CASE("simulator: the battle is fought on a sandbox and the real game never 
         CHECK_FALSE(battle.record().events.empty());
         CHECK(stateChecksum(w.ar.s) == before);
     }
+}
+
+TEST_CASE("simulator: releasing Auto gives side 1 to the player and every other side to the computer, whatever Computer Control said") {
+    SimWorld w;
+    const Rules& r = combatRules();
+    combat::SimulatorSetup setup = w.duel(false);
+    setup.sides = {{"Blue", true}, {"Red", false}};   // side 1 by the computer, side 2 by hand
+    REQUIRE(combat::simulatorProblem(r, w.ar.s, setup).empty());
+    const combat::Simulation sim = combat::buildSimulation(r, w.ar.s, setup);
+    const EmpireId one = sim.sides[0], two = sim.sides[1];
+    TacticalBattle b = combat::startSimulation(r, sim);
+    REQUIRE(b.awaitingOrders());
+    CHECK(b.isPlayer(two));
+    CHECK_FALSE(b.isPlayer(one));
+    TacticalOrder on = order(OK::Auto, two);
+    on.on = true;
+    REQUIRE(b.submit(on).empty());
+    REQUIRE(b.submit(order(OK::EndPhase, two)).empty());
+    // Auto pauses play after the player's phase of the combat turn; released there.
+    REQUIRE(b.awaitingOrders());
+    REQUIRE(b.paused());
+    TacticalOrder off = order(OK::Auto, b.phaseEmpire());
+    off.on = false;
+    REQUIRE(b.submit(off).empty());
+    CHECK(b.isPlayer(one));
+    CHECK_FALSE(b.isPlayer(two));
+
+    // In a real battle each empire gets its own control back.
+    Skirmish k;
+    TacticalBattle real = startSkirmish(k);
+    TacticalOrder realOn = order(OK::Auto, k.ar.a);
+    realOn.on = true;
+    REQUIRE(real.submit(realOn).empty());
+    REQUIRE(real.submit(order(OK::EndPhase, k.ar.a)).empty());
+    if (real.awaitingOrders()) {
+        TacticalOrder realOff = order(OK::Auto, real.phaseEmpire());
+        realOff.on = false;
+        REQUIRE(real.submit(realOff).empty());
+    }
+    CHECK(real.isPlayer(k.ar.a));
+    CHECK_FALSE(real.isPlayer(k.ar.b));
 }
 
 TEST_CASE("simulator: the same setup and seed give the same battle") {

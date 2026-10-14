@@ -187,24 +187,36 @@ std::string Battle::check(const TacticalOrder& o) const {
             return landingProblem(o.piece);
         }
         case OK::Ram: {
-            if (std::string e = checkPiece(o, true); !e.empty()) return e;
-            if (pieces_[static_cast<size_t>(o.piece)].mp <= 0) return "No movement left to ram with.";
-            if (o.target < 0 || static_cast<size_t>(o.target) >= pieces_.size() || !combatant(o.target) ||
-                pieces_[static_cast<size_t>(o.target)].kind == Kind::Seeker || !hostileTo(o.piece, o.target))
-                return "Only an enemy ship, unit group or planet can be rammed.";
+            // Spec 04 §10.3, spec 06 §1.10.2 (confirmed: binary): the refusals in
+            // this order. Any piece that is not ours or a friend's can be rammed:
+            // enemy seekers too, and unowned pieces (neutral obstacles) count as hostile.
+            // A planet is refused as any piece without movement.
+            if (o.piece < 0) return "No ship is selected to ram with.";
+            if (std::string e = checkPiece(o, false); !e.empty()) return e;
+            if (o.target < 0 || static_cast<size_t>(o.target) >= pieces_.size() || !pieces_[static_cast<size_t>(o.target)].alive)
+                return "There is nothing there to ram.";
             if (dist(o.piece, o.target) > 1) return "The target must be adjacent.";
+            const Piece& p = pieces_[static_cast<size_t>(o.piece)];
+            const Piece& t = pieces_[static_cast<size_t>(o.target)];
+            if (p.mp <= 0) return "No movement left to ram with.";
+            if (t.owner.valid() && (t.owner == p.owner || !detail::enemies(s_, p.owner, t.owner))) return std::string(kRamFriendly);
             return {};
         }
         case OK::Capture: {
+            // Spec 04 §12, spec 06 §1.10.2 (confirmed: binary): the refusals in this order.
+            if (o.piece < 0) return "No ship is selected to board with.";
             if (std::string e = checkPiece(o, false); !e.empty()) return e;
-            if (pieces_[static_cast<size_t>(o.piece)].kind != Kind::Vehicle) return "Only ships board.";
-            if (detail::componentSum(r_, s_, pieces_[static_cast<size_t>(o.piece)].unit, AbilityKind::BoardingAttack) <= 0)
-                return "It has no boarding parties.";
-            if (o.target < 0 || static_cast<size_t>(o.target) >= pieces_.size() || !combatant(o.target) ||
-                pieces_[static_cast<size_t>(o.target)].kind != Kind::Vehicle || !hostileTo(o.piece, o.target))
-                return "Only enemy ships and bases can be captured.";
+            if (o.target < 0 || static_cast<size_t>(o.target) >= pieces_.size() || !pieces_[static_cast<size_t>(o.target)].alive)
+                return "There is no ship there to board.";
+            const Piece& p = pieces_[static_cast<size_t>(o.piece)];
+            const Piece& t = pieces_[static_cast<size_t>(o.target)];
+            if (!t.owner.valid() || t.kind != Kind::Vehicle) return "That cannot be captured.";
+            if (p.kind != Kind::Vehicle) return "Only ships board.";
+            if (t.owner == p.owner) return "That ship is already yours.";
             if (dist(o.piece, o.target) > 1) return "The target must be adjacent.";
-            if (pieces_[static_cast<size_t>(o.target)].sh.current > 0) return "Its shields must be down first.";
+            if (detail::componentSum(r_, s_, p.unit, AbilityKind::BoardingAttack) <= 0) return "It has no boarding parties.";
+            if (t.sh.current > 0) return "Its shields must be down first.";
+            if (!hostileTo(o.piece, o.target)) return std::string(kCaptureFriendly);
             return {};
         }
         case OK::SetLeader:
@@ -213,10 +225,15 @@ std::string Battle::check(const TacticalOrder& o) const {
             if (std::string e = checkPiece(o, true); !e.empty()) return e;
             if (o.group < 0 || o.group >= kGroups) return "Groups are numbered 0 to 9.";
             const Piece& p = pieces_[static_cast<size_t>(o.piece)];
-            if (p.isLeader || p.group >= 0) return "It already belongs to a group.";
+            // A leader given its own number again picks a new formation (spec 04 §5,
+            // spec 06 §1.10.2, confirmed: binary); any other piece in a group is refused.
+            const bool again = o.kind == OK::SetLeader && p.isLeader && p.group == o.group;
+            if (!again && (p.isLeader || p.group >= 0)) return "It already belongs to a group.";
             int leader = -1;
             for (size_t k = 0; k < pieces_.size(); ++k)
-                if (pieces_[k].alive && pieces_[k].owner == o.empire && pieces_[k].isLeader && pieces_[k].group == o.group) leader = static_cast<int>(k);
+                if (static_cast<int>(k) != o.piece && pieces_[k].alive && pieces_[k].owner == o.empire && pieces_[k].isLeader &&
+                    pieces_[k].group == o.group)
+                    leader = static_cast<int>(k);
             if (o.kind == OK::SetMember) return leader >= 0 ? std::string{} : std::format("Group {} has no leader.", o.group);
             if (leader >= 0) return std::format("Group {} already has a leader.", o.group);
             const size_t formations = r_.data().formations.size();

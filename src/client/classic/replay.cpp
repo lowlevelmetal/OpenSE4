@@ -158,6 +158,7 @@ void CombatPlayback::apply(const game::CombatEvent& e) {
             }
             break;
         case Kind::UnitsLost: p.units = std::max(0, p.units - std::max(0, int(e.amount))); break;
+        case Kind::Boarding: break;   // its hits and the capture are events of their own
         case Kind::Seeker:
             if (p.destroyed) break;
             if (!p.onMap) {
@@ -324,6 +325,7 @@ std::vector<AnimationFrame> CombatPlayback::framesOf(size_t i) const {
         case Kind::Launch:
         case Kind::Miss:        // the shot was drawn by its Fire, ending off the target
         case Kind::UnitsLost:   // shown by the Hit before it
+        case Kind::Boarding:    // the message boxes say how it went (Tactical Combat)
             // A loss plays no second explosion: the destroying hit played it.
             // A seeker that struck vanishes; launches, landings and captures
             // are only redrawn (spec 06 §1.10.3).

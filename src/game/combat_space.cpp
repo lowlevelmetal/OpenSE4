@@ -375,7 +375,8 @@ bool Battle::setup() {
     disruption_ = overrides_ ? overrides_->disruption : detail::shieldDisruption(s_, where_);
     satelliteCap_ = static_cast<int>(r_.setting("Maximum Satellites Per Player Per Sector", 100));
 
-    const detail::Forces forces = detail::battleForces(r_, s_, where_, check_);
+    // The simulator's battle starts without a sight test (spec 04 §17).
+    const detail::Forces forces = detail::battleForces(r_, s_, where_, check_, !simulated());
     if (!forces.battle) return false;
     empires_ = forces.empires;
     if (!overrides_)
@@ -1872,17 +1873,26 @@ void Battle::recordHit(int att, int t, DamageType type, int64_t damage, uint32_t
     event(Ev::Hit, att, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), component);
     const size_t at = rec_.events.size() - 1;
     const int64_t before = hitPoints(t);
+    const int shieldsBefore = pieces_[static_cast<size_t>(t)].sh.current;
     applyHit(att, t, type, damage);
-    markHit(at, t, before);
+    markHit(at, t, before, shieldsBefore);
 }
 
-void Battle::markHit(size_t at, int t, int64_t before) {
+void Battle::markHit(size_t at, int t, int64_t before, int shieldsBefore) {
     if (at >= rec_.events.size()) return;
-    const bool gone = !pieces_[static_cast<size_t>(t)].alive;
+    const Piece& p = pieces_[static_cast<size_t>(t)];
+    const bool gone = !p.alive;
+    const int64_t after = hitPoints(t);
     uint8_t flags = 0;
-    if (gone || hitPoints(t) < before) flags |= CombatEvent::kStructure;
+    if (gone || after < before) flags |= CombatEvent::kStructure;
     if (gone) flags |= CombatEvent::kDestroyed;
-    rec_.events[at].flags = flags;
+    CombatEvent& e = rec_.events[at];
+    e.flags = flags;
+    // The target panel's damage line (spec 06 §1.10.1): what the shields and the
+    // structure lost; a destroying hit counts everything the target had left.
+    auto clamp32 = [](int64_t v) { return static_cast<int32_t>(std::clamp<int64_t>(v, 0, INT32_MAX)); };
+    e.shieldDamage = clamp32(gone ? shieldsBefore : shieldsBefore - p.sh.current);
+    e.structureDamage = clamp32(gone ? before : before - after);
 }
 
 void Battle::launchSeeker(int i, const Weapon& w, int t, int count) {
@@ -2506,10 +2516,11 @@ void Battle::moveSeekers(EmpireId e) {
                 event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), w.de.component);
                 const size_t hitAt = rec_.events.size() - 1;
                 const int64_t before = hitPoints(t);
+                const int shieldsBefore = pieces_[static_cast<size_t>(t)].sh.current;
                 pieces_[k].alive = false;
                 event(Ev::Destroyed, i, i);
                 applyHit(i, t, w.type, damage);
-                markHit(hitAt, t, before);
+                markHit(hitAt, t, before, shieldsBefore);
                 break;
             }
         }
@@ -3314,22 +3325,29 @@ void Battle::board(int i, int t) {
     if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::Capture, pieces_[i].owner, i, t});
     pieces_[i].fired = true;
     event(Ev::Fire, i, t);
+    // The outcome is recorded for the boarding message boxes, with the empire
+    // the boarded ship belonged to (spec 04 §12, spec 06 §1.10.2).
+    const uint32_t defender = b.owner.value;
+    auto outcome = [&](int32_t what) { event(Ev::Boarding, i, t, what, defender); };
     if (offense > defense) {
         if (detail::hasIntactComponent(r_, s_, b.unit, AbilityKind::SelfDestruct)) {
             // The self-destruct device: both ships take 10000 Normal damage instead (confirmed: binary).
             note(std::format("{} self-destructed rather than be captured", label(t)));
             applyHit(i, t, DamageType::Normal, kSelfDestruct);
             if (combatant(i)) applyHit(t, i, DamageType::Normal, kSelfDestruct);
+            outcome(CombatEvent::kBoardingSelfDestruct);
             return;
         }
         capture(t, i, true);
         applyHit(-1, i, DamageType::OnlyBoardingParties, kBoardingSpend);   // the boarding parties are spent
         applyHit(-1, t, DamageType::OnlySecurityStations, kBoardingSpend);
+        outcome(CombatEvent::kBoardingTaken);
         return;
     }
     note(std::format("{} repelled boarders from {}", label(t), label(i)));
     applyHit(-1, i, DamageType::OnlyBoardingParties, kBoardingSpend);
     applyHit(-1, t, DamageType::OnlySecurityStations, rng_.rangeInt(1, 5));
+    outcome(CombatEvent::kBoardingFailed);
 }
 
 void Battle::ram(int i, int t) {
@@ -3342,10 +3360,13 @@ void Battle::ram(int i, int t) {
     const DesignId targetDesign = b.unit.design;
     int64_t dealt = xmath::pctTrunc(ramHitPoints(i), cs_.ramSourcePercent);
     int64_t taken = xmath::pctTrunc(ramHitPoints(t), cs_.ramTargetPercent);
-    if (b.kind == Kind::Planet) {
+    // A planet or a neutral obstacle does not give way.
+    if (b.kind == Kind::Planet || b.kind == Kind::Obstacle) {
         dealt /= 4;
         taken = kImmovable;
     }
+    // An obstacle takes no damage, so it is never destroyed by the blow.
+    const bool wasCombatant = combatant(t);
     if (drone) taken = kImmovable;
     // Warheads: the rammer's that can hit the target and all of the target's; both explode.
     int64_t warheads = 0;
@@ -3385,10 +3406,10 @@ void Battle::ram(int i, int t) {
             recordHit(i, t, type, blow(value));
         }
         if (combatant(t)) recordHit(i, t, DamageType::Normal, blow(dealt));
-    } else {
+    } else if (wasCombatant) {
         recordHit(i, t, DamageType::Normal, blow(dealt + warheads));
     }
-    const bool targetDestroyed = !combatant(t) || (pieces_[t].kind == Kind::Obstacle && pieces_[t].colonyLost);
+    const bool targetDestroyed = wasCombatant && (!combatant(t) || (pieces_[t].kind == Kind::Obstacle && pieces_[t].colonyLost));
     if (!combatant(i)) return;
     pieces_[i].mp = 0;
     // A ram kill counts twice: the rammer's design gets a ship target's hull

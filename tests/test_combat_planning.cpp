@@ -1355,3 +1355,168 @@ TEST_CASE("ground combat: the record keeps every stack's count after every round
     CHECK(hw.militia == prevM);
     CHECK(rec.captured == o.captured);
 }
+
+// ---- Ram and Capture by hand, and what a boarding or a hit records (spec 04 §10.3, §12; spec 06 §1.10.1, §1.10.2) ----
+
+namespace {
+
+int obstacleOf(const Battle& b) {
+    for (size_t i = 0; i < b.pieces().size(); ++i)
+        if (b.pieces()[i].kind == CombatPiece::Kind::Obstacle) return static_cast<int>(i);
+    FAIL("no obstacle");
+    return -1;
+}
+
+} // namespace
+
+TEST_CASE("ram: the refusals in their order; enemy seekers and neutral obstacles can be rammed") {
+    Arena ar = makeArena(7, 3);
+    GameState& s = ar.s;
+    setTreaty(s, ar.a, ar.c, Treaty::MilitaryAlliance);
+    SpaceObject rock;
+    rock.kind = ObjectKind::Star;
+    rock.name = "Rock";
+    rock.sector = ar.loc.sector;
+    s.addObject(std::move(rock), ar.loc.system);
+    const VehicleId rammer = spawn(s, frigate(s, ar.a, "Rammer", 4, {"CT Combat Thruster"}), ar.loc);
+    const VehicleId mate = spawn(s, frigate(s, ar.a, "Mate", 2, {}), ar.loc);
+    const VehicleId enemy = spawn(s, frigate(s, ar.b, "Enemy", 2, {}), ar.loc);
+    const VehicleId missile = spawn(s, frigate(s, ar.b, "Missile", 2, {}), ar.loc);
+    const VehicleId friend_ = spawn(s, frigate(s, ar.c, "Friend", 2, {}), ar.loc);
+    Bench k(std::move(ar));
+    Battle& b = k.start({k.ar.a});
+    const int r = k.at(rammer), m = k.at(mate), e = k.at(enemy), sk = k.at(missile), f = k.at(friend_), o = obstacleOf(b);
+    untilPlayer(b, k.ar.a);
+    k.arrange({{o, 30, 30}, {r, 40, 40}, {m, 41, 40}, {e, 50, 50}, {sk, 39, 41}, {f, 41, 41}});
+    auto ram = [&](int piece, int target) { return b.check(TacticalOrder{OK::Ram, k.ar.a, piece, target}); };
+    // 1. No source, 2. no target, 3. not adjacent, 4. no movement, 5. a friendly piece.
+    CHECK(ram(-1, e) == "No ship is selected to ram with.");
+    CHECK(ram(r, -1) == "There is nothing there to ram.");
+    CHECK(ram(r, e) == "The target must be adjacent.");
+    b.piece(r).mp = 0;
+    CHECK(ram(r, m) == "No movement left to ram with.");
+    b.piece(r).mp = 3;
+    CHECK(ram(r, m) == combat::kRamFriendly);
+    CHECK(ram(r, f) == combat::kRamFriendly);   // an ally
+    // An enemy seeker is a target (made one here by hand), and so is a neutral obstacle.
+    b.piece(sk).kind = CombatPiece::Kind::Seeker;
+    CHECK(ram(r, sk).empty());
+    b.piece(sk).kind = CombatPiece::Kind::Vehicle;
+    k.arrange({{o, 30, 30}, {r, 34, 31}, {m, 41, 40}, {e, 50, 50}, {sk, 60, 41}, {f, 41, 41}});
+    CHECK(ram(r, o).empty());
+    // The obstacle does not give way: it takes nothing, the rammer takes the planet's blow.
+    const size_t events = b.record().events.size();
+    CHECK(b.submit(TacticalOrder{OK::Ram, k.ar.a, r, o}).empty());
+    CHECK(b.pieces()[static_cast<size_t>(o)].alive);
+    CHECK_FALSE(b.pieces()[static_cast<size_t>(r)].alive);
+    for (size_t i = events; i < b.record().events.size(); ++i) CHECK_FALSE(b.record().events[i].kind == CombatEvent::Kind::Hit);
+}
+
+TEST_CASE("capture: the refusals in their order") {
+    Arena ar = makeArena(7, 3);
+    GameState& s = ar.s;
+    setTreaty(s, ar.a, ar.c, Treaty::MilitaryAlliance);
+    SpaceObject rock;
+    rock.kind = ObjectKind::Star;
+    rock.name = "Rock";
+    rock.sector = ar.loc.sector;
+    s.addObject(std::move(rock), ar.loc.system);
+    const DesignId wasp = design(s, ar.a, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "CT Fighter Fuel"});
+    const VehicleId boarder = spawn(s, frigate(s, ar.a, "Boarder", 2, {"Test Boarding Party", "Test Boarding Party"}), ar.loc);
+    const VehicleId plain = spawn(s, frigate(s, ar.a, "Plain", 2, {}), ar.loc);
+    const VehicleId swarm = spawn(s, wasp, ar.loc, 2);
+    const VehicleId enemy = spawn(s, frigate(s, ar.b, "Enemy", 2, {"Test Shield"}), ar.loc);
+    const VehicleId friend_ = spawn(s, frigate(s, ar.c, "Friend", 2, {}), ar.loc);
+    Bench k(std::move(ar));
+    Battle& b = k.start({k.ar.a});
+    const int bo = k.at(boarder), pl = k.at(plain), g = k.at(swarm), e = k.at(enemy), f = k.at(friend_), o = obstacleOf(b);
+    untilPlayer(b, k.ar.a);
+    k.arrange({{o, 30, 30}, {bo, 40, 40}, {pl, 41, 40}, {g, 39, 40}, {e, 50, 50}, {f, 41, 41}});
+    auto board = [&](int piece, int target) { return b.check(TacticalOrder{OK::Capture, k.ar.a, piece, target}); };
+    CHECK(board(-1, e) == "No ship is selected to board with.");
+    CHECK(board(bo, -1) == "There is no ship there to board.");
+    CHECK(board(bo, o) == "That cannot be captured.");           // unowned
+    CHECK(board(g, e) == "Only ships board.");                   // the target is judged first
+    CHECK(board(bo, pl) == "That ship is already yours.");
+    CHECK(board(bo, e) == "The target must be adjacent.");
+    k.arrange({{o, 30, 30}, {bo, 40, 40}, {pl, 41, 40}, {g, 39, 40}, {e, 40, 39}, {f, 41, 41}});
+    CHECK(board(pl, e) == "It has no boarding parties.");
+    REQUIRE(b.pieces()[static_cast<size_t>(e)].sh.current > 0);
+    CHECK(board(bo, e) == "Its shields must be down first.");
+    CHECK(board(bo, f) == combat::kCaptureFriendly);             // last: an ally with its shields down
+    b.piece(e).sh.current = 0;
+    CHECK(board(bo, e).empty());
+}
+
+TEST_CASE("capture: the record says how a boarding went, and whose ship it was") {
+    for (int outcome : {CombatEvent::kBoardingTaken, CombatEvent::kBoardingFailed, CombatEvent::kBoardingSelfDestruct}) {
+        CAPTURE(outcome);
+        Arena ar = makeArena(5);
+        GameState& s = ar.s;
+        const VehicleId boarder = spawn(s, frigate(s, ar.a, "Boarder", 2, {"Test Boarding Party", "Test Boarding Party"}), ar.loc);
+        const DesignId prize = outcome == CombatEvent::kBoardingTaken    ? frigate(s, ar.b, "Prize", 2, {})
+                               : outcome == CombatEvent::kBoardingFailed ? frigate(s, ar.b, "Guarded", 2, {"Test Security Station", "Test Security Station"})
+                                                                         : frigate(s, ar.b, "Trap", 2, {"Test Self Destruct"});
+        const VehicleId target = spawn(s, prize, ar.loc);
+        Bench k(std::move(ar));
+        Battle& b = k.start({k.ar.a});
+        const int i = k.at(boarder), t = k.at(target);
+        untilPlayer(b, k.ar.a);
+        k.arrange({{i, 40, 40}, {t, 41, 40}});
+        b.piece(t).sh.current = 0;
+        REQUIRE(b.submit(TacticalOrder{OK::Capture, k.ar.a, i, t}).empty());
+        const CombatEvent& last = b.record().events.back();
+        CHECK(last.kind == CombatEvent::Kind::Boarding);
+        CHECK(static_cast<int>(last.piece) == i);
+        CHECK(static_cast<int>(last.target) == t);
+        CHECK(last.amount == outcome);
+        CHECK(last.component == k.ar.b.value);   // whose ship it was, though it may have changed hands
+        CHECK((b.pieces()[static_cast<size_t>(t)].owner == k.ar.a) == (outcome == CombatEvent::kBoardingTaken));
+    }
+}
+
+TEST_CASE("hits: the record splits each hit between the shields and the structure; a destroying hit counts all that was left") {
+    Arena ar = makeArena(5);
+    GameState& s = ar.s;
+    const VehicleId gunner = spawn(s, frigate(s, ar.a, "Gunner", 2, {"Test Laser", "Test Laser", "Test Laser", "Test Laser"}), ar.loc);
+    // A base: it cannot move, so it never rams the gunner.
+    const VehicleId target = spawn(s, design(s, ar.b, "Target", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Shield"}), ar.loc);
+    Bench k(std::move(ar));
+    Battle& b = k.start({k.ar.a});
+    const int g = k.at(gunner), t = k.at(target);
+    int hits = 0;
+    bool destroyed = false;
+    for (int round = 0; round < 25 && !destroyed && b.stage() != Battle::Stage::Finished; ++round) {
+        b.advance();
+        if (b.phaseEmpire() != k.ar.a) break;
+        k.arrange({{g, 40, 40}, {t, 41, 40}});
+        for (size_t w = 0; w < b.pieces()[static_cast<size_t>(g)].weapons.size() && !destroyed; ++w) {
+            b.piece(g).alwaysHit = true;
+            const int shields = b.pieces()[static_cast<size_t>(t)].sh.current;
+            const int64_t hp = b.hitPoints(t);
+            TacticalOrder fire{OK::Fire, k.ar.a, g, t};
+            fire.weapon = static_cast<int>(w);
+            if (!b.check(fire).empty()) continue;
+            const size_t before = b.record().events.size();
+            REQUIRE(b.submit(fire).empty());
+            for (size_t ev = before; ev < b.record().events.size(); ++ev) {
+                const CombatEvent& e = b.record().events[ev];
+                if (e.kind != CombatEvent::Kind::Hit) continue;
+                ++hits;
+                destroyed = (e.flags & CombatEvent::kDestroyed) != 0;
+                if (destroyed) {
+                    CHECK(e.shieldDamage == shields);
+                    CHECK(e.structureDamage == hp);
+                } else {
+                    CHECK(e.shieldDamage == shields - b.pieces()[static_cast<size_t>(t)].sh.current);
+                    CHECK(e.structureDamage == hp - b.hitPoints(t));
+                    CHECK(((e.flags & CombatEvent::kStructure) != 0) == (e.structureDamage > 0));
+                }
+            }
+        }
+        if (b.phaseEmpire() == k.ar.a && !destroyed) REQUIRE(b.submit(TacticalOrder{OK::EndPhase, k.ar.a}).empty());
+
+    }
+    CHECK(hits >= 2);
+    CHECK(destroyed);
+}

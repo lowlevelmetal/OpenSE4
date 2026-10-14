@@ -69,7 +69,8 @@
 //   Fire       piece fired at target; component = component index, amount =
 //              design entry index (rams and boarding attempts: 0)
 //   Hit        piece (a shooter, seeker or rammer) hit target; amount = damage
-//              of the hit after the system damage modifier, before shields
+//              of the hit after the system damage modifier, before shields;
+//              shieldDamage and structureDamage what it took from each
 //   Miss       piece missed target
 //   Destroyed  piece destroyed; target = the piece that did it (itself when a
 //              seeker expires). A planet whose colony dies stays on the map as
@@ -80,6 +81,10 @@
 //              or piece = a troop ship, target = the planet, amount = troops landed
 //              (its ground combat is CombatRecord::grounds, whose `event` names it)
 //   Seeker     piece = new seeker, target = its target, amount = members, component
+//   UnitsLost  unit group `piece` lost `amount` units to a hit by `target`
+//   Boarding   ship `piece` boarded ship `target` (after the Fire and the hits
+//              of the attempt); amount = the outcome (CombatEvent::kBoarding*),
+//              component = the id of the empire the target belonged to then
 // With Settings `Create Combat Replay` off, events are left out (pieces and
 // the summary lines remain).
 

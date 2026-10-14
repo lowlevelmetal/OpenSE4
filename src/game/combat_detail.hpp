@@ -30,7 +30,9 @@ bool colonyVisibleTo(const Rules& r, const GameState& s, EmpireId viewer, Object
 // check passes (BattleCheck), even with nobody hostile having pieces there
 // (only minefields seen): it then ends at its first end check. Once it
 // starts, every owned vehicle that can be a piece and every colony there take
-// part, including empires hostile to nobody present.
+// part, including empires hostile to nobody present. The combat simulator's
+// battle runs no check (`sightTest` false): it starts whenever someone is
+// there, one side alone too (spec 04 §17, confirmed: binary).
 struct Forces {
     bool battle = false;               // the check passed
     std::vector<EmpireId> empires;     // every empire with a piece, by id
@@ -38,7 +40,7 @@ struct Forces {
     std::vector<ObjectId> colonies;    // every colony there, in object order
     std::vector<ObjectId> obstacles;   // stars, warp points, comets, uncolonised planets
 };
-Forces battleForces(const Rules& r, const GameState& s, Location where, const BattleCheck& check = {});
+Forces battleForces(const Rules& r, const GameState& s, Location where, const BattleCheck& check = {}, bool sightTest = true);
 
 // Whether a vehicle moved into its sector this turn (spec 04 §3), whether it
 // came through a warp point (the sector it left is in another system), and
