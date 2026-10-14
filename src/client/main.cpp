@@ -52,7 +52,7 @@ void attachParentConsole() {
 constexpr const char* kUsage = R"(OpenSE4 - an open-source engine reimplementation for Space Empires IV Deluxe
 (requires your own copy of the game; not affiliated with its publishers)
 
-Usage: opense4 [options]
+Usage: opense4 [options] [ARG1 ARG2 ARG3 MODFOLDER]
 
 Plays Space Empires IV Deluxe on your own installed copy of the game. The game is
 found in your Steam libraries, or given with --classic-dir (see docs/SETUP.md).
@@ -78,6 +78,9 @@ Game:
   --mods-dir=DIR                  Where mods are looked up by id (default: Mods in OpenSE4's user folder);
                                   then among the mods that come with OpenSE4 (mods/ beside the program)
   --no-bundled-mods               Leave out the mods that come with OpenSE4
+  ARG1 ARG2 ARG3 MODFOLDER        As the original: with four arguments that are not options, the fourth
+                                  names a mod folder (in the game folder, or a path) to play as a classic
+                                  mod, in place of the one Path.txt names; the first three are ignored
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --load=GAME.gam                 Open a saved game at once: OpenSE4's, or the original's (imported,
                                   see docs/SETUP.md "Games of the original")
@@ -223,6 +226,12 @@ int main(int argc, char** argv) {
 
     for (const std::string& argument : args) {
         const std::string_view arg = argument;
+        // An argument that is not an option, as the original reads them: the
+        // fourth names a mod folder, the others are ignored (docs/spec/05 §9.2).
+        if (arg.empty() || arg.front() != '-') {
+            options.positional.push_back(argument);
+            continue;
+        }
         const auto eq = arg.find('=');
         const std::string_view key = arg.substr(0, eq);
         const std::string_view value = eq == std::string_view::npos ? std::string_view{} : arg.substr(eq + 1);

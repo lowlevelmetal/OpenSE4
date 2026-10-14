@@ -133,6 +133,9 @@ public:
     // classic game finds its fonts and pointers (docs/spec/06 §5.1, §5.4,
     // §5.8). The mods' layers come before both.
     const std::string& modDirectory() const { return mod_; }
+    // Another mod folder in Path.txt's place, relative to the root (the
+    // program's fourth argument, modDirectoryFromArguments); empty: none.
+    void setModDirectory(std::string_view relative);
     std::optional<std::filesystem::path> findModFirst(std::string_view relative) const;
 
     // A file the game wanted is not in the install (the caller gives up on
@@ -161,5 +164,10 @@ private:
 
 // The mod folder named by the text of a Path.txt (empty for "None" or none).
 std::string modDirectoryFromPathTxt(std::string_view text);
+// The mod folder named on the command line (docs/spec/05 §9.2, confirmed:
+// binary): with four or more arguments that are not options, the fourth
+// names it, in Path.txt's place; the first three are never read. Empty
+// with fewer.
+std::string modDirectoryFromArguments(std::span<const std::string> positional);
 
 } // namespace opense4::assets

@@ -108,6 +108,27 @@ TEST_CASE("install: Path.txt names the mod folder, found before the base tree") 
     CHECK(files.findModFirst("pictures/game/normal.cur"));
 }
 
+TEST_CASE("install: the command line's fourth argument names the mod folder in Path.txt's place") {
+    // The first three are never read; fewer than four name no folder (spec 05 §9.2).
+    CHECK(modDirectoryFromArguments(std::vector<std::string>{}).empty());
+    CHECK(modDirectoryFromArguments(std::vector<std::string>{"game.gam", "secret", "1"}).empty());
+    CHECK(modDirectoryFromArguments(std::vector<std::string>{"a", "b", "c", "Other Mod"}) == "Other Mod");
+    CHECK(modDirectoryFromArguments(std::vector<std::string>{"a", "b", "c", "Other Mod", "e"}) == "Other Mod");
+
+    InstallFiles files(kInstall);
+    REQUIRE(files.modDirectory() == "testmod");
+    // Another folder: the mod's font is no longer found first.
+    files.setModDirectory("Elsewhere\\");
+    CHECK(files.modDirectory() == "elsewhere");
+    const auto font = files.findModFirst("fonts/testface.FON");
+    if (font) CHECK(font->string().find("testmod") == std::string::npos);
+    // Back to the test mod by its name, in any case.
+    files.setModDirectory("TestMod");
+    REQUIRE(files.findModFirst("fonts/testface.FON"));
+    std::string error;
+    CHECK(loadFon(*files.findModFirst("fonts/testface.FON"), &error)[0].face == "Mod Face");
+}
+
 TEST_CASE("tiny font: our own small face covers the printable characters") {
     const BitmapFont f = makeTinyFont();
     CHECK(f.face == kTinyFaceName);

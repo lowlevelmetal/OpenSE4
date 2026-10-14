@@ -1,5 +1,7 @@
 #include "client/app.hpp"
 
+#include "assets/assets.hpp"
+
 #include "client/audio.hpp"
 
 #include "client/classic/classic_mode.hpp"
@@ -126,6 +128,7 @@ int App::run(const AppOptions& options) {
     co.modsGiven = options.modsGiven;
     co.modsDir = options.modsDir;
     co.noBundledMods = options.noBundledMods;
+    co.commandLineModFolder = assets::modDirectoryFromArguments(options.positional);
     co.seed = options.seed;
     co.seedGiven = options.seedGiven;
     co.systemCount = options.systemCount;

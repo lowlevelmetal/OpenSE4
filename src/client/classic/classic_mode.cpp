@@ -80,7 +80,8 @@ std::string missingInstallMessage(const std::string& installDir) {
                        kIntro, installDir, kHelp);
 }
 
-std::expected<ClassicMode::DataSet, std::string> ClassicMode::readDataSet(const std::filesystem::path& dataDir, const mods::ModChoice& choice) {
+std::expected<ClassicMode::DataSet, std::string> ClassicMode::readDataSet(const std::filesystem::path& dataDir, const mods::ModChoice& choice,
+                                                                          const std::optional<std::string>& modFolder) {
     const std::filesystem::path gameRoot = dataDir.parent_path();
     auto modSet = mods::selectMods(choice);
     if (!modSet) {
@@ -99,6 +100,7 @@ std::expected<ClassicMode::DataSet, std::string> ClassicMode::readDataSet(const 
     DataSet d;
     d.rules = std::make_shared<const game::Rules>(std::move(*loaded.ruleset), gameRoot);
     d.files = assets::InstallFiles(gameRoot);
+    if (modFolder) d.files.setModDirectory(*modFolder);   // the command line's, in Path.txt's place (spec 05 §9.2)
     for (const mods::Package& p : modSet->packages) {
         log::info("Mod {} ({}) from {}", p.label(), mods::ModManager::summary(p), p.source.string());
         for (const std::string& w : p.warnings) log::warn("Mod {}: {}", p.id(), w);
@@ -152,7 +154,7 @@ void ClassicMode::useDataSet(DataSet d) {
 std::optional<std::string> ClassicMode::changeMods(const std::vector<std::string>& ids) {
     // Only in the front end: nothing of a game holds the data set then.
     if (session_) return std::string("The mods cannot change during a game.");
-    auto data = readDataSet(dataDir_, modChoice(ids));
+    auto data = readDataSet(dataDir_, modChoice(ids), commandLineModFolder());
     if (!data) return data.error();
     log::info("Mods changed to: {}", ids.empty() ? std::string("none") : ruleset::describeMods(data->mods.records()));
     useDataSet(std::move(*data));
@@ -177,14 +179,29 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->dataDir_ = *dataDir;
     // Mods (docs/sdk/packages-and-data.md): the command line's, else the ones
     // the settings enable, layered over the install.
-    mods::ModChoice choice = mode->modChoice(options.modsGiven ? options.mods : settings().enabledMods);
+    // The command line's fourth argument (spec 05 §9.2): a mod folder of the
+    // game folder (or anywhere), played as a classic mod for this run, after
+    // any --mod, in place of the settings' mods.
+    if (!options.commandLineModFolder.empty()) {
+        std::filesystem::path folder(options.commandLineModFolder);
+        std::error_code ec;
+        if (folder.is_relative() && std::filesystem::is_directory(dataDir->parent_path() / folder, ec)) folder = dataDir->parent_path() / folder;
+        log::info("Mod folder from the command line: {}", folder.string());
+        mode->options_.mods.push_back(folder.string());
+        mode->options_.modsGiven = true;
+        const std::filesystem::path inGame = folder.lexically_normal().lexically_relative(dataDir->parent_path().lexically_normal());
+        const bool inside = !inGame.empty() && *inGame.begin() != "..";
+        mode->commandLineModDir_ = inside ? inGame.generic_string() : std::string();
+    }
+    const ClassicOptions& opts = mode->options_;
+    mods::ModChoice choice = mode->modChoice(opts.modsGiven ? opts.mods : settings().enabledMods);
     LoadedMods& loaded = loadedMods();
     loaded = LoadedMods{};
-    loaded.fromCommandLine = options.modsGiven;
+    loaded.fromCommandLine = opts.modsGiven;
     loaded.folders = choice.folders;
     loaded.open = choice.open;
-    auto data = readDataSet(*dataDir, choice);
-    if (!data && !options.modsGiven && !choice.mods.empty()) {
+    auto data = readDataSet(*dataDir, choice, mode->commandLineModFolder());
+    if (!data && !opts.modsGiven && !choice.mods.empty()) {
         // The settings' mods: started without them, and the Mods window says why.
         log::warn("Starting without the mods of the settings: {}", data.error());
         for (size_t at = 0; at < data.error().size();) {
@@ -194,7 +211,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         }
         mode->frontError_ = "Your mods could not be loaded: OpenSE4 started without them (see Mods).";
         choice.mods.clear();
-        data = readDataSet(*dataDir, choice);
+        data = readDataSet(*dataDir, choice, mode->commandLineModFolder());
     }
     if (!data) {
         error = data.error();
@@ -1404,6 +1421,10 @@ void ClassicMode::keepFocusOnFrontWindow() {
 void ClassicMode::drawNetwork(UiContext& ui) {
     auto* net = dynamic_cast<NetTransport*>(session_->transport());
     if (!net) return;
+    // The network's sounds; the turn alert also brings back a minimized game window (docs/spec/06 §5.5).
+    for (const std::string& sound : net->takeSounds()) audio().play(sound);
+    if (net->takeTurnAlert() && platform_.window && (SDL_GetWindowFlags(platform_.window) & SDL_WINDOW_MINIMIZED) != 0)
+        SDL_RestoreWindow(platform_.window);
     // A status strip at the bottom of the system panel: who we wait for, the
     // latest line. As narrow as the PBEM strip, so the planet panel's buttons
     // stay clear; the full lines show as a tooltip.

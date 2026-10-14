@@ -342,6 +342,19 @@ std::string modDirectoryFromPathTxt(std::string_view text) {
     return {};
 }
 
+std::string modDirectoryFromArguments(std::span<const std::string> positional) {
+    return positional.size() >= 4 ? positional[3] : std::string();
+}
+
+void InstallFiles::setModDirectory(std::string_view relative) {
+    std::string_view value = relative;
+    auto blank = [](char c) { return c == ' ' || c == '\t' || c == '/' || c == '\\'; };
+    while (!value.empty() && blank(value.front())) value.remove_prefix(1);
+    while (!value.empty() && blank(value.back())) value.remove_suffix(1);
+    mod_ = lowerSlashed(value);
+    log::info("Mod folder from the command line: {}", mod_.empty() ? std::string("none") : mod_);
+}
+
 void InstallFiles::addLayer(const std::filesystem::path& folder, std::string name) {
     Layer layer{std::move(name), indexFolder(folder)};
     log::info("Mod files: {} ({} files from {})", layer.name, layer.index.size(), folder.string());
