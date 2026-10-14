@@ -1,0 +1,113 @@
+# The Stellar Manipulation window and the Galaxy Map (spec 06 §1.3, §2.6), on a training game of
+# our own in tests/input/learn-stellar (four stellar manipulation ships at home, turn-based):
+# - Create Storm asks Confirm Action; the turn-based list carries the order out at once (the
+#   storm maker's one-shot part is used up) and the window stays open;
+# - Close Warp Point where there is none: the "Cannot Perform Action" box, and no order;
+# - Destroy Planet in a sector of a planet and its two moons: Pick Object lists the three, and
+#   Cancel gives no order;
+# - Open Warp Point opens the Galaxy Map in its destination mode: no overlay buttons, Show
+#   Distances and Cancel; Cancel gives no order; a click on a system opens the warp point;
+# - the plain Galaxy Map: a click on an unexplored system opens "Notes for Unexplored System"
+#   (never its name), and the note saved shows under the map (docs/BUILDING.md "Input scripts").
+options --learn-dir=tests/input/learn-stellar --training=stellar --layout=1024x768 --size=1280x800
+
+wait-lesson stellar
+wait 5
+click tag:lesson:hide
+# Create Storm (the second ship by name).
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=3
+wait 2
+key B
+wait-window stellar-manipulation
+assert-disabled item:"Close Warp Point"
+click item:"Create Storm"
+wait-for item:"window:Confirm Action*"
+click item:Yes
+wait-for item:"status:Create Storm: ordered."
+assert-window stellar-manipulation
+assert-disabled item:"Create Storm"
+click tag:stellar-manipulation:close
+wait-closed stellar-manipulation
+# Close Warp Point in a sector without a warp point.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=2
+wait 2
+key B
+wait-window stellar-manipulation
+click item:"Close Warp Point"
+wait-for item:"window:Confirm Action*"
+click item:Yes
+wait-for item:"window:Cannot Perform Action*"
+click item:OK
+wait-gone item:"window:Cannot Perform Action*"
+assert-absent item:"status:*"
+click tag:stellar-manipulation:close
+wait-closed stellar-manipulation
+# Destroy Planet beside a planet and its moons: Pick Object, then Cancel.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+wait 2
+key M
+click sector:9,3
+wait 20
+key B
+wait-window stellar-manipulation
+click item:"Destroy Planet"
+wait-for item:"window:Confirm Action*"
+click item:Yes
+wait-for tag:pick-object:list
+assert-present item:"Eurul IV"
+assert-present item:"Eurul IV A"
+assert-present item:"Eurul IV B"
+click item:Cancel
+wait-gone item:"Eurul IV A"
+assert-absent item:"status:*"
+click tag:stellar-manipulation:close
+wait-closed stellar-manipulation
+# Open Warp Point: the destination on the Galaxy Map.
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=3
+wait 2
+key B
+wait-window stellar-manipulation
+click item:"Open Warp Point"
+wait-for item:"window:Confirm Action*"
+click item:Yes
+wait-window galaxy-map
+assert-absent item:Presence in=galaxy-map
+assert-present item:"Show Distances" in=galaxy-map
+assert-present item:"Show Names" in=galaxy-map
+click item:Cancel in=galaxy-map
+wait-closed galaxy-map
+assert-window stellar-manipulation
+assert-absent item:"status:*"
+click item:"Open Warp Point"
+wait-for item:"window:Confirm Action*"
+click item:Yes
+wait-window galaxy-map
+click tag:galaxy-map:map@75,282
+wait-closed galaxy-map
+wait-for item:"status:Open Warp Point: ordered."
+assert-disabled item:"Open Warp Point"
+click tag:stellar-manipulation:close
+wait-closed stellar-manipulation
+# The plain Galaxy Map: an unexplored system's notes.
+right-click tag:panel:galaxy
+wait-window galaxy-map
+assert-present item:Presence in=galaxy-map
+click tag:galaxy-map:map@300,100
+wait-for item:"window:Notes for Unexplored System*"
+type "Rich moons"
+key Enter
+wait-gone item:"window:Notes for*"
+move tag:galaxy-map:map@100,300
+wait 2
+move tag:galaxy-map:map@300,100
+wait-for item:"notes:Rich moons"
+click tag:galaxy-map:close
+wait-closed galaxy-map

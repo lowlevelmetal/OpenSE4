@@ -115,6 +115,10 @@ struct ScreenArgs {
     int index = -1;
     int sub = -1;          // a second index (a ground combat within a battle)
     std::string text;
+    // The Galaxy Map's destination mode (Open Warp Point, spec 06 §2.6): the
+    // system clicked, given back to the window that asked (`location` holds
+    // the origin). Empty: the plain Galaxy Map.
+    std::function<void(game::SystemId)> pickSystem;
 };
 
 // Requests from windows to the main window / mode.
