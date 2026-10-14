@@ -9,12 +9,15 @@
 // frame followed by the original's wait unless Fast Tactical Combat is on
 // (spec 06 §1.10.3; replay.hpp). In a combat simulation the sides show as
 // numbered colour boxes instead of flags (spec 04 §17).
-// The window opens with Begin, Orders dim; Begin starts the battle and
-// becomes End Turn. Left-click selects an own piece, moves it to an empty
-// square or fires its enabled weapons at an enemy; right-click opens the
-// Combat Piece Report. When the battle is over a "Combat Complete" message
-// shows and the window closes. Hotkeys follow spec 06 §3.3; Esc does nothing
-// here but cancel a Ram or Capture target.
+// The window opens with Begin, Orders dim (a click shows any piece, E and
+// Auto work); Begin starts the battle and becomes End Turn. Left-click
+// selects an own piece, moves it to an empty square or fires the weapons
+// ticked in the grid at an enemy (the ticks are the window's, spec 06
+// §1.10.1); right-click opens the Combat Piece Report. Refusals the original
+// explains in message boxes, and the outcome of a boarding, show as boxes
+// that hold the playback. When the battle is over a "Combat Complete"
+// message shows and the window closes. Hotkeys follow spec 06 §3.3; Esc does
+// nothing here but cancel a Ram or Capture target.
 
 #include "client/audio.hpp"
 #include "client/classic/replay.hpp"
@@ -41,8 +44,10 @@
 #include <cmath>
 #include <format>
 #include <functional>
-#include <utility>
+#include <map>
 #include <numbers>
+#include <optional>
+#include <utility>
 
 namespace opense4::client::classic {
 
@@ -88,28 +93,48 @@ enum class Aim { None, Ram, Capture };
 
 // The pickers the Orders window's items open, each a modal window of its own
 // once the menu has closed (spec 06 §1.10.2).
-enum class Picker { None, GroupSize, LeaderNumber, MemberNumber, Formation, Resolve, DropTroops };
+enum class Picker { None, GroupSize, LeaderNumber, MemberNumber, Formation, Resolve };
+
+// An order given while a window draws, carried out when it has drawn.
+struct Queued {
+    TacticalOrder order;
+    // The shots of one click on an enemy: one Fire order per ticked weapon, in
+    // design order; a weapon that fires is unticked, and a refusal is told only
+    // when none of them fired (0: an order on its own).
+    int volley = 0;
+};
 
 // What the windows share for the battle in progress.
 struct TacticalUi {
     const TacticalFight* fight = nullptr;
     bool begun = false;          // Begin was pressed (spec 06 §1.10.1)
+    bool resolved = false;       // Resolve Combat was confirmed: the four buttons dim, Auto shows pressed (§1.10.1)
     int selected = -1;
-    int target = -1;             // the enemy last hovered or fired at
-    bool hoverEnemy = false;     // the pointer is over an enemy now (to-hit chances)
+    // The weapons ticked in the grid, the window's and not the piece's (spec 06
+    // §1.10.1): reset to every intact ready weapon when a piece becomes
+    // selected, at the start of each phase and after the piece moves.
+    std::vector<char> ticks;
+    int ticksOf = -1;            // the piece they are for
+    int target = -1;             // the piece the target panel shows (-1: none)
+    int hoverEnemy = -1;         // the enemy under the pointer now (to-hit chances)
+    // The target panel's damage line: the shields' and the structure's loss in
+    // the last hit drawn while the panel showed a piece (spec 06 §1.10.1).
+    std::optional<std::pair<int32_t, int32_t>> damage;
     Aim aim = Aim::None;
     Picker picker = Picker::None;
     int ordersGroup = 1;         // the group number picked for Set Group Leader
     int launchWindow = 0;        // the Launch Units window's session (spec 04 §10.4)
-    std::string message;         // the last refusal or hint
-    std::string refusal;         // the "Drop Troops" message box's text (Picker::DropTroops)
+    std::string message;         // the last refusal or hint on the map (ours)
+    std::vector<CombatNotice> notices;   // message boxes waiting, one shown at a time
     float cx = 36, cy = 31;      // squares at the map's centre
     float cellFrame = 36;        // zoom: frame pixels per square (36 in the original; the wheel zooms, ours)
     bool placed = false;         // the view has been centred on the player's pieces
+    std::pair<int, uint32_t> phaseSeen{-1, 0};   // the combat turn and empire of the last phase that began here
     // Orders given while a window draws, carried out when it has drawn (they
     // change the pieces the window is drawing), and whether to work out the
     // results then.
-    std::vector<TacticalOrder> queue;
+    std::vector<Queued> queue;
+    int volleys = 0;
     bool finishNow = false;
     bool stop = false;           // Stop Combat (simulator only)
 };
@@ -129,7 +154,23 @@ TacticalUi& stateFor(const TacticalFight* fight) {
     return u;
 }
 
-void submit(TacticalFight&, TacticalOrder o) { state().queue.push_back(std::move(o)); }
+void submit(TacticalFight&, TacticalOrder o) { state().queue.push_back(Queued{std::move(o)}); }
+
+// The selection, with the weapons ticked afresh (spec 06 §1.10.1).
+void selectPiece(const TacticalBattle& b, int piece) {
+    TacticalUi& u = state();
+    u.selected = piece;
+    u.ticksOf = piece;
+    u.ticks = piece >= 0 && size_t(piece) < b.pieces().size() ? readyTicks(b.pieces()[size_t(piece)]) : std::vector<char>{};
+}
+
+// The selected piece's ticks, sized to its weapons.
+std::vector<char>& ticksFor(const TacticalBattle& b) {
+    TacticalUi& u = state();
+    if (u.ticksOf != u.selected) selectPiece(b, u.selected);
+    if (u.selected >= 0 && size_t(u.selected) < b.pieces().size()) u.ticks.resize(b.pieces()[size_t(u.selected)].weapons.size(), 0);
+    return u.ticks;
+}
 
 } // namespace
 
@@ -143,37 +184,50 @@ namespace {
 // Carries out the orders given this frame, in order.
 void flush(TacticalFight& f) {
     TacticalUi& u = state();
-    std::vector<TacticalOrder> queue = std::move(u.queue);
+    std::vector<Queued> queue = std::move(u.queue);
     u.queue.clear();
-    for (const TacticalOrder& o : queue) {
-        std::string why = f.battle->submit(o);
+    TacticalBattle& b = *f.battle;
+    // Per volley: whether a weapon fired, and the first refusal.
+    std::map<int, std::pair<bool, std::string>> volleys;
+    for (const Queued& q : queue) {
+        const TacticalOrder& o = q.order;
+        std::string why = b.submit(o);
         // Every order the battle took, for the lessons (battle_order).
         if (why.empty()) tacticalOrderLog().emplace_back(learn::battleOrderId(o.kind));
+        if (q.volley != 0) {
+            auto& [fired, first] = volleys[q.volley];
+            if (why.empty()) {
+                fired = true;
+                // A weapon that fired is unticked (spec 06 §1.10.1).
+                if (u.ticksOf == o.piece && o.weapon >= 0 && size_t(o.weapon) < u.ticks.size()) u.ticks[size_t(o.weapon)] = 0;
+            } else if (first.empty()) {
+                first = std::move(why);
+            }
+            continue;
+        }
+        // After every move of the selected piece its weapons are ticked afresh.
+        if (why.empty() && o.kind == OK::Move && o.piece == u.selected) selectPiece(b, u.selected);
+        // Ram and Capture explain a refusal in a message box (spec 06 §1.10.2).
+        if (o.kind == OK::Ram || o.kind == OK::Capture) {
+            if (const std::optional<CombatNotice> n = ramCaptureNotice(o.kind, why, b.autoOn())) u.notices.push_back(*n);
+            continue;
+        }
         // The group orders refuse silently (spec 06 §1.10.2), and so does a
         // landing from a piece with units but no troops (spec 04 §19.4 Q88).
         const bool group = o.kind == OK::SetLeader || o.kind == OK::SetMember || o.kind == OK::ClearGroup || o.kind == OK::ClearAllGroups;
         u.message = group || why == game::combat::kSilentRefusal ? std::string{} : std::move(why);
     }
-    if (u.finishNow && f.battle->finished() && !f.battle->applied()) f.battle->finish();
+    // A volley's refusal shows only when no weapon fired (ours: on the map).
+    for (auto& [id, v] : volleys) u.message = v.first ? std::string{} : std::move(v.second);
+    if (u.finishNow && b.finished() && !b.applied()) b.finish();
     u.finishNow = false;
 }
 
 bool isDrone(const TacticalPiece& p) { return p.kind == PieceKind::UnitGroup && p.type == ruleset::VehicleType::Drone; }
 
-// An own piece that takes orders.
-bool commandable(const TacticalPiece& p, game::EmpireId side) {
-    return p.alive && p.owner == side && p.kind != PieceKind::Seeker && p.kind != PieceKind::Obstacle && !isDrone(p) && !p.mothballed;
-}
-bool canMove(const TacticalPiece& p, game::EmpireId side) {
-    return commandable(p, side) && (p.kind == PieceKind::Vehicle || p.kind == PieceKind::UnitGroup) && p.movement > 0;
-}
-bool canFire(const TacticalPiece& p, game::EmpireId side) {
-    if (!commandable(p, side) || !p.hasSupply) return false;
-    for (const TacticalWeapon& w : p.weapons)
-        for (int k = 0; k < w.instances && k < int(w.reload.size()); ++k)
-            if (w.reload[size_t(k)] == 0) return true;
-    return false;
-}
+// An own piece that takes orders, and those that can still move.
+bool commandable(const TacticalPiece& p, game::EmpireId side) { return tacticalCommandable(p, side); }
+bool canMove(const TacticalPiece& p, game::EmpireId side) { return tacticalCanMove(p, side); }
 
 // The selected piece when it is one the player may give orders to now.
 const TacticalPiece* ownSelected(const TacticalBattle& b, const TacticalUi& u) {
@@ -181,17 +235,6 @@ const TacticalPiece* ownSelected(const TacticalBattle& b, const TacticalUi& u) {
     if (!side.valid() || !b.awaitingOrders() || b.paused() || u.selected < 0 || size_t(u.selected) >= b.pieces().size()) return nullptr;
     const TacticalPiece& p = b.pieces()[size_t(u.selected)];
     return commandable(p, side) ? &p : nullptr;
-}
-
-// The next own piece (after `from`, backwards with `step` -1) that passes `test`.
-template <class Test>
-int cycle(const TacticalBattle& b, int from, int step, Test&& test) {
-    const int n = int(b.pieces().size());
-    for (int k = 1; k <= n; ++k) {
-        const int i = ((from < 0 ? (step > 0 ? -1 : 0) : from) + step * k % n + n * 2) % n;
-        if (test(b.pieces()[size_t(i)])) return i;
-    }
-    return -1;
 }
 
 // Facing 0..7 of a direction (spec 03 §10 order), for the move pointer.
@@ -228,10 +271,7 @@ void dropTroops(TacticalFight& f) {
     }
     const TacticalOrder o = dropTroopsOrder(b, u.selected);
     if (std::string why = b.check(o); !why.empty()) {
-        if (why != game::combat::kSilentRefusal) {
-            u.refusal = std::move(why);
-            u.picker = Picker::DropTroops;
-        }
+        if (why != game::combat::kSilentRefusal) u.notices.push_back({"Drop Troops", std::move(why)});
         return;
     }
     submit(f, o);
@@ -310,6 +350,7 @@ public:
         overview(ui, d, paint);
         keys(ui, *f);
         pickers(ui, *f);
+        if (u.picker == Picker::None) noticeBox(ui);
         // A refusal, or the Ram / Capture aim, over the map's top left (ours).
         const std::string note = u.aim != Aim::None ? std::string(u.aim == Aim::Ram ? "Click the enemy to ram." : "Click the enemy ship to board.")
                                                     : u.message;
@@ -337,11 +378,68 @@ public:
             groundsSeen_ = grounds.size();
         }
         // The end: "Combat Complete", then the window closes by itself.
-        if (b.finished() && b.applied() && !animating() && completePrompt(ui)) return finishWindow(ui, *f);
+        if (b.finished() && b.applied() && !animating() && u.notices.empty() && completePrompt(ui)) return finishWindow(ui, *f);
         return true;
     }
 
 private:
+    // The first message box waiting (refusals, boarding outcomes; spec 06
+    // §1.10.2): titled, with OK; Esc and Enter close it too (§3.4). Play waits
+    // while one is open.
+    void noticeBox(UiContext& ui) {
+        TacticalUi& u = state();
+        if (u.notices.empty()) return;
+        const CombatNotice& n = u.notices.front();
+        const std::string id = n.title + "##tacticalnotice";
+        if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
+        ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ui.size({320, 130}), ImGuiCond_Always);
+        bool done = false;
+        if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags)) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextUnformatted(n.text.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ui.px(36));
+            if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || (okKey() && !ImGui::IsWindowAppearing())) {
+                done = true;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        if (done) u.notices.erase(u.notices.begin());
+    }
+
+    // What the window does as the playback passes events (spec 06 §1.10.1,
+    // §1.10.2): a hit drawn writes the target panel's damage line, a seeker's
+    // impact also puts the struck piece in the panel (and in view, with Center
+    // Map on Current Ship), and a boarding gives its message boxes to the
+    // sides played by hand.
+    void passEvents(TacticalBattle& b) {
+        TacticalUi& u = state();
+        const size_t to = std::min(playback_.cursor(), playback_.eventCount());
+        if (eventsSeen_ > to) eventsSeen_ = to;
+        const game::CombatRecord& rec = b.record();
+        auto nameOf = [&](uint32_t i) {
+            if (i < b.pieces().size()) return b.pieces()[i].name;
+            return i < rec.pieces.size() ? rec.pieces[i].name : std::string("?");
+        };
+        for (; eventsSeen_ < to; ++eventsSeen_) {
+            const game::CombatEvent& e = playback_.event(eventsSeen_);
+            if (e.kind == game::CombatEvent::Kind::Hit) {
+                if (e.piece < rec.pieces.size() && rec.pieces[e.piece].kind == PieceKind::Seeker && e.target < b.pieces().size()) {
+                    u.target = int(e.target);
+                    centreOn(b, int(e.target));
+                }
+                if (u.target >= 0) u.damage = std::pair{e.shieldDamage, e.structureDamage};
+            } else if (e.kind == game::CombatEvent::Kind::Boarding) {
+                const game::EmpireId attacker = playback_.validPiece(e.piece) ? playback_.pieces()[e.piece].owner
+                                                : e.piece < b.pieces().size() ? b.pieces()[e.piece].owner : game::EmpireId{};
+                auto byHand = [&](game::EmpireId x) { return b.isPlayer(x) && !b.autoOn(); };
+                for (CombatNotice& n : boardingNotices(e, nameOf(e.piece), nameOf(e.target), attacker, byHand)) u.notices.push_back(std::move(n));
+            }
+        }
+    }
+
     // Closes the window: a game battle's orders answer its question and the game
     // carries on; after a simulation Designs and the Combat Simulator open
     // again with the same setup (spec 06 §1.10.4).
@@ -389,6 +487,7 @@ private:
             playback_.seekEvent(std::min(cursor, playback_.eventCount()));
             // Before Begin the map stays as the battle starts.
             if (state().begun && !playback_.atEnd()) playback_.play();
+            if (!record_) eventsSeen_ = playback_.cursor();   // what was shown before this window opened
             record_ = &rec;
             events_ = rec.events.size();
             pieces_ = rec.pieces.size();
@@ -398,9 +497,12 @@ private:
         if (playback_.pace().fast != settings().fastTacticalCombat || playback_.pace().animateMoves != settings().animateCombatMovement)
             playback_.setPace(windowPace(ui));
         if (!playback_.playing() && !playback_.atEnd()) playback_.play();
+        // Play waits while a message box is open.
+        if (!state().notices.empty()) return;
         const size_t before = playback_.cursor();
         playback_.advance(ui.dt);
         CombatMapPainter(ui, b.state(), rec, playback_).sounds(before, playback_.cursor());
+        passEvents(b);
     }
 
     // The Tactical Combat window's pace: the 0.3 s pause after a seeker's
@@ -436,31 +538,35 @@ private:
             submit(f, TacticalOrder{OK::EndPhase, side});
             return;
         }
-        // Keep a piece of the side in phase selected, and an enemy in the target panel.
-        if (u.selected < 0 || size_t(u.selected) >= b.pieces().size() || !commandable(b.pieces()[size_t(u.selected)], side)) {
-            u.selected = cycle(b, -1, 1, [&](const TacticalPiece& p) { return canMove(p, side); });
-            if (u.selected < 0) u.selected = cycle(b, -1, 1, [&](const TacticalPiece& p) { return commandable(p, side); });
-            centreOn(b, u.selected);
-        }
-        if (u.selected >= 0 && (u.target < 0 || size_t(u.target) >= b.pieces().size() || !b.pieces()[size_t(u.target)].alive ||
-                                !b.hostile(side, b.pieces()[size_t(u.target)].owner))) {
-            int best = -1;
-            for (size_t j = 0; j < b.pieces().size(); ++j) {
-                const TacticalPiece& q = b.pieces()[j];
-                if (!q.alive || q.kind == PieceKind::Seeker || q.kind == PieceKind::Obstacle || !b.hostile(side, q.owner)) continue;
-                if (best < 0 || b.distance(u.selected, int(j)) < b.distance(u.selected, best)) best = int(j);
-            }
-            u.target = best;
+        // At the start of each phase played by hand the selection is made by the
+        // search forward from the first piece: a group leader that can move first
+        // (spec 06 §1.10.1, §3.3, confirmed: binary), its weapons ticked afresh.
+        const std::pair<int, uint32_t> phase{b.round(), side.value};
+        if (phase != u.phaseSeen) {
+            u.phaseSeen = phase;
+            int first = nextTacticalPiece(b.pieces(), side, -1, PieceSearch::Move, true);
+            if (first < 0)
+                for (size_t i = 0; i < b.pieces().size() && first < 0; ++i)
+                    if (commandable(b.pieces()[i], side)) first = int(i);
+            selectPiece(b, first);
+            centreOn(b, first);
         }
         (void)ui;
     }
 
-    // Center Map on Current Ship (spec 06 §1.10.3): the view follows the selection when it is on.
+    // Center Map on Current Ship (spec 06 §1.10.3, confirmed: binary): with it
+    // on, the view moves to a newly selected piece only when its square is
+    // outside the part of the map shown.
     void centreOn(const TacticalBattle& b, int piece, bool always = false) {
         if (piece < 0 || size_t(piece) >= b.pieces().size()) return;
         if (!always && !settings().centerOnCurrentShip) return;
         TacticalUi& u = state();
         const TacticalPiece& p = b.pieces()[size_t(piece)];
+        if (!always && viewSize_.x > 0.0f && viewSize_.y > 0.0f) {
+            const ImVec2 half{viewSize_.x * 0.5f, viewSize_.y * 0.5f};
+            if (squareInView(view_, {view_.center.x - half.x, view_.center.y - half.y}, {view_.center.x + half.x, view_.center.y + half.y}, p.x, p.y))
+                return;
+        }
         u.cx = float(p.x) + float(p.size) * 0.5f;
         u.cy = float(p.y) + float(p.size) * 0.5f;
         u.placed = true;
@@ -484,8 +590,6 @@ private:
         const bool live = side.valid() && u.begun && b.awaitingOrders();
         const bool inert = animating();
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        auto movable = [&](const TacticalPiece& p) { return canMove(p, side); };
-        auto armed = [&](const TacticalPiece& p) { return canFire(p, side); };
         for (int group = 0; group < 2; ++group) {
             const Vec2 at{frameW() - 146 + 48.0f * float(group), 5};
             bool hovered = false, held = false;
@@ -499,10 +603,9 @@ private:
                 hovered = hovered || (live && ImGui::IsItemHovered());
                 held = held || (live && ImGui::IsItemActive());
                 if (!clicked || !live || inert) continue;
-                // The left half picks the next piece, the right half the previous one.
-                const int step = half == 0 ? 1 : -1;
-                u.selected = group == 0 ? cycle(b, u.selected, step, movable) : cycle(b, u.selected, step, armed);
-                centreOn(b, u.selected);
+                // The left half picks the next piece, the right half the previous one
+                // (the search of spec 06 §3.3: "next" walks the list backwards).
+                pick(b, group == 0 ? PieceSearch::Move : PieceSearch::Fire, half == 1);
             }
             const int row = !live ? 3 : held ? 2 : hovered ? 1 : 0;
             // Nextprev.bmp: the ship selector (column 0) and the crosshair (column 3).
@@ -576,11 +679,21 @@ private:
             const ImVec2 c = paint.piecePos(v, uint32_t(i));
             const float h = v.cell * float(p.size) * 0.5f;
             if (int(i) == u.selected) dl->AddRect({c.x - h - 1, c.y - h - 1}, {c.x + h + 1, c.y + h + 1}, IM_COL32(255, 230, 80, 255), 0.0f, ui.px(2));
-            if (settings().showGroupIdentifiers && (p.isLeader || p.leader >= 0 || p.group >= 0) && b.isPlayer(p.owner)) {
-                const ImU32 badge = p.isLeader ? IM_COL32(70, 120, 255, 255) : IM_COL32(230, 60, 60, 255);
-                const float r = std::max(3.0f, v.cell * 0.18f);
-                dl->AddRectFilled({c.x + h - 2 * r, c.y - h}, {c.x + h, c.y - h + 2 * r}, badge);
-                if (p.group >= 0 && v.cell >= 14) dl->AddText({c.x + h - 2 * r + 1, c.y - h - 2}, IM_COL32_WHITE, std::format("{}", p.group).c_str());
+            // Show Group Identifiers (spec 06 §1.10.3, confirmed: binary): on every
+            // piece with a group number, of any empire, a 14 x 12 box at the top
+            // right of its square, blue for a leader and red for a member, with the
+            // number in white in its middle (scaled with the zoom, ours).
+            if (settings().showGroupIdentifiers && p.group >= 0) {
+                const float k = v.cell / 36.0f;
+                const ImVec2 b0{c.x + h - 14 * k, c.y - h}, b1{c.x + h, c.y - h + 12 * k};
+                dl->AddRectFilled(b0, b1, p.isLeader ? IM_COL32(0, 0, 255, 255) : IM_COL32(255, 0, 0, 255));
+                if (k >= 0.6f) {
+                    ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+                    const float textSize = std::min(ui.fontPx(kSmallSize), 12 * k);
+                    const std::string n = std::to_string(p.group);
+                    const ImVec2 t = small->CalcTextSizeA(textSize, FLT_MAX, 0.0f, n.c_str());
+                    dl->AddText(small, textSize, {(b0.x + b1.x - t.x) * 0.5f, (b0.y + b1.y - t.y) * 0.5f}, IM_COL32_WHITE, n.c_str());
+                }
             }
         }
 
@@ -591,8 +704,16 @@ private:
         const TacticalPiece* over = hovered && *hovered < b.pieces().size() ? &b.pieces()[*hovered] : nullptr;
         if (over && !over->alive) over = nullptr;
         const bool enemy = over && side.valid() && b.hostile(side, over->owner) && over->kind != PieceKind::Obstacle;
-        u.hoverEnemy = enemy;
-        if (enemy) u.target = int(*hovered);
+        u.hoverEnemy = enemy && ours ? int(*hovered) : -1;
+        // The target panel follows the pointer (spec 06 §1.10.1): empty before Begin.
+        if (u.begun && (hoveredBox || u.aim != Aim::None)) {
+            const int own = sel && b.isPlayer(sel->owner) ? u.selected : -1;
+            const int next = targetPanelPiece(b.pieces(), own, over ? int(*hovered) : -1, hoveredBox, u.aim != Aim::None, u.target);
+            if (next != u.target) {
+                u.target = next;
+                u.damage.reset();
+            }
+        }
         bool hidePointer = false;
         // The install's pointers (spec 06 §5.8, §1.10.1): Target, Select and the
         // eight arrows over the map; our drawn ones only when a file is missing.
@@ -616,8 +737,8 @@ private:
                 if (!filePointer) pointerCross(ui, dl, io.MousePos, enemy ? IM_COL32(255, 200, 60, 255) : IM_COL32(150, 150, 150, 200));
                 hidePointer = !filePointer;
             } else if (enemy) {
-                const std::string why = b.check(TacticalOrder{OK::Fire, side, u.selected, int(*hovered)});
-                if (!filePointer) pointerCross(ui, dl, io.MousePos, why.empty() ? IM_COL32(80, 255, 90, 255) : IM_COL32(255, 70, 60, 255));
+                const bool can = !volleyOf(b, int(*hovered)).empty() && volleyProblem(b, int(*hovered)).empty();
+                if (!filePointer) pointerCross(ui, dl, io.MousePos, can ? IM_COL32(80, 255, 90, 255) : IM_COL32(255, 70, 60, 255));
                 hidePointer = !filePointer;
             } else if (!over && canMove(*sel, side)) {
                 const std::vector<Square> path = b.pathTo(u.selected, hx, hy);
@@ -632,11 +753,14 @@ private:
         dl->PopClipRect();
         dl->AddRect(o, o2, IM_COL32(66, 107, 216, 255));
 
-        // Clicks.
-        if (hoveredBox && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && u.begun) {
-            if (animating()) {
+        // Clicks. Before Begin a click on any piece, an enemy's too, shows it in the
+        // current-piece panel and the weapon grid; an empty square does nothing (spec 06 §1.10.1).
+        if (hoveredBox && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            if (!u.begun) {
+                if (over) selectPiece(b, int(*hovered));
+            } else if (animating()) {
                 skipAnimation();   // a click while the battle plays skips to its end
-            } else {
+            } else if (!u.resolved) {
                 click(ui, f, hovered ? int(*hovered) : -1, hx, hy);
             }
         }
@@ -689,47 +813,80 @@ private:
         dl->AddLine({at.x, at.y + r * 0.4f}, {at.x, at.y + r * 1.5f}, color, ui.px(1.6f));
     }
 
+    // The Fire orders of a click on `target`: one per weapon ticked, in design order (spec 04 §6, spec 06 §1.10.1).
+    std::vector<TacticalOrder> volleyOf(const TacticalBattle& b, int target) const {
+        std::vector<TacticalOrder> out;
+        const TacticalUi& u = state();
+        if (u.ticksOf != u.selected) return out;
+        for (size_t w = 0; w < u.ticks.size(); ++w) {
+            if (!u.ticks[w]) continue;
+            TacticalOrder o{OK::Fire, b.phaseEmpire(), u.selected, target};
+            o.weapon = int(w);
+            out.push_back(o);
+        }
+        return out;
+    }
+    // Why none of the ticked weapons can fire at `target` now (empty: one can).
+    std::string volleyProblem(const TacticalBattle& b, int target) const {
+        std::string first;
+        for (const TacticalOrder& o : volleyOf(b, target)) {
+            std::string why = b.check(o);
+            if (why.empty()) return {};
+            if (first.empty()) first = std::move(why);
+        }
+        return first.empty() ? std::string("No weapon is ticked.") : first;
+    }
+
     void click(UiContext& ui, TacticalFight& f, int piece, int x, int y) {
         TacticalBattle& b = *f.battle;
         TacticalUi& u = state();
         const game::EmpireId side = b.phaseEmpire();
         const TacticalPiece* over = piece >= 0 && size_t(piece) < b.pieces().size() && b.pieces()[size_t(piece)].alive ? &b.pieces()[size_t(piece)] : nullptr;
         if (!side.valid()) {
-            if (over) u.selected = piece;
+            if (over) selectPiece(b, piece);
             return;
         }
         if (u.aim != Aim::None) {
-            // Ram or Capture: a click on a piece aims it, one on an empty square cancels.
+            // Ram or Capture: a click on a piece aims it, one on an empty square
+            // cancels. With nothing of ours selected the order is refused (spec 06 §1.10.2).
             const OK kind = u.aim == Aim::Ram ? OK::Ram : OK::Capture;
             u.aim = Aim::None;
             if (over) {
-                submit(f, TacticalOrder{kind, side, u.selected, piece});
+                submit(f, TacticalOrder{kind, side, ownSelected(b, u) ? u.selected : -1, piece});
                 audio().play("button");
             }
             return;
         }
         if (over && commandable(*over, side)) {
-            u.selected = piece;
+            selectPiece(b, piece);   // its weapons ticked afresh, the same piece clicked again too
             u.message.clear();
             return;
         }
-        if (u.selected < 0) {
-            if (over) u.selected = piece;
+        if (!ownSelected(b, u)) {
+            if (over) selectPiece(b, piece);   // nothing of ours selected: look at it (ours)
             return;
         }
-        if (over && b.hostile(side, over->owner)) {
-            u.target = piece;
-            submit(f, TacticalOrder{OK::Fire, side, u.selected, piece});
+        if (over) {
+            // Another empire's piece: the ticked weapons fire at it. A piece that is
+            // not hostile (an ally, our own drones or seekers, a neutral obstacle) is
+            // refused in a message box (spec 04 §6, spec 06 §1.10.2).
+            if (!b.hostile(side, over->owner) || over->kind == PieceKind::Obstacle) {
+                u.notices.push_back({"Cannot Fire Weapons", "You cannot fire on that: it is not an enemy."});
+                return;
+            }
+            const std::vector<TacticalOrder> shots = volleyOf(b, piece);
+            if (shots.empty()) {
+                u.message = "No weapon is ticked.";
+                return;
+            }
+            const int volley = ++u.volleys;
+            for (const TacticalOrder& o : shots) u.queue.push_back(Queued{o, volley});
             return;
         }
-        if (!over) {
-            TacticalOrder mv{OK::Move, side, u.selected};
-            mv.x = x;
-            mv.y = y;
-            submit(f, mv);
-            return;
-        }
-        u.selected = piece;   // someone else's piece: look at it
+        TacticalOrder mv{OK::Move, side, u.selected};
+        mv.x = x;
+        mv.y = y;
+        submit(f, mv);
         (void)ui;
     }
 
@@ -824,10 +981,12 @@ private:
             weaponTop_ = 0;
         }
         // The weapon grid of 36 px cells, 6 to a row, empty cells drawn too:
-        // click a weapon to switch it on or off. With Show Weapon To Hit
-        // Chances on, hovering an enemy shows each weapon's chance (spec 06
-        // §1.10.3). When the piece has more weapons than cells the arrows under
-        // the grid scroll it a row at a time (shown only then, inferred).
+        // click a weapon to tick or untick it; a click on an enemy fires the
+        // ticked ones (spec 06 §1.10.1). A reloading weapon may be ticked by hand
+        // too (inferred, spec 04 §19.6 Q91). With Show Weapon To Hit Chances on,
+        // hovering an enemy shows each ready weapon's chance (spec 06 §1.10.3).
+        // When the piece has more weapons than cells the arrows under the grid
+        // scroll it a row at a time (shown only then, inferred).
         const Vec2 grid{sideX(), kWeaponsY};
         const int rows = weaponRows();
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -838,8 +997,9 @@ private:
         if (have) {
             const TacticalPiece& p = b.pieces()[size_t(u.selected)];
             weapons = p.weapons.size();
-            const bool ours = u.begun && b.phaseEmpire().valid() && p.owner == b.phaseEmpire() && commandable(p, p.owner);
-            const int chancesAt = settings().showToHitChances && u.hoverEnemy && ours ? u.target : -1;
+            const bool ours = u.begun && !u.resolved && b.phaseEmpire().valid() && p.owner == b.phaseEmpire() && commandable(p, p.owner);
+            const int chancesAt = settings().showToHitChances && ours ? u.hoverEnemy : -1;
+            std::vector<char>& ticks = ticksFor(b);
             const size_t first = size_t(weaponTop_) * size_t(kWeaponColumns);
             for (size_t w = first; w < p.weapons.size() && w < first + size_t(kWeaponColumns * rows); ++w) {
                 const TacticalWeapon& tw = p.weapons[w];
@@ -847,24 +1007,17 @@ private:
                 const Vec2 cell = grid + Vec2{kWeaponCell * float(slot % kWeaponColumns), kWeaponCell * float(slot / kWeaponColumns)};
                 ImGui::SetCursorScreenPos(d.at(cell));
                 ImGui::PushID(int(w));
-                if (ImGui::InvisibleButton("##weapon", ui.size({kWeaponCell, kWeaponCell})) && ours) {
-                    TacticalOrder t{OK::ToggleWeapon, p.owner, u.selected};
-                    t.weapon = int(w);
-                    t.on = !tw.enabled;
-                    submit(f, t);
+                if (ImGui::InvisibleButton("##weapon", ui.size({kWeaponCell, kWeaponCell})) && ours && w < ticks.size()) {
+                    ticks[w] = ticks[w] ? 0 : 1;
+                    tacticalOrderLog().emplace_back(learn::battleOrderId(OK::ToggleWeapon));   // for the lessons
                 }
                 const ImVec2 a = d.at(cell);
-                weaponCell(ui, b.state(), p, tw, a, ImGui::IsItemHovered());
-                if (chancesAt >= 0 && b.fireProblem(u.selected, int(w), chancesAt).empty()) {
-                    // The chance across the middle of the cell (its place is ours).
-                    const std::string chance = std::format("{}%", b.hitChance(u.selected, int(w), chancesAt));
-                    ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
-                    const float tw2 = small->CalcTextSizeA(ui.fontPx(kSmallSize), FLT_MAX, 0.0f, chance.c_str()).x;
-                    const ImVec2 c{a.x + (ui.px(kWeaponCell) - tw2) * 0.5f, a.y + ui.px(13)};
-                    dl->AddRectFilled({c.x - 1, c.y}, {c.x + tw2 + 1, c.y + ui.px(10)}, IM_COL32(0, 0, 0, 200));
-                    dl->AddText(small, ui.fontPx(kSmallSize), c, IM_COL32(255, 255, 0, 255), chance.c_str());
-                }
-                if (ImGui::IsItemHovered()) weaponTooltip(ui, b, int(w), tw);
+                const bool ticked = w < ticks.size() && ticks[w] != 0;
+                // The to-hit chance of a ready weapon, right-aligned at the top right (spec 06 §1.10.1).
+                std::optional<int> chance;
+                if (chancesAt >= 0 && b.fireProblem(u.selected, int(w), chancesAt).empty()) chance = b.hitChance(u.selected, int(w), chancesAt);
+                weaponCell(ui, b.state(), p, tw, a, ImGui::IsItemHovered(), ticked, chance);
+                if (ImGui::IsItemHovered()) weaponTooltip(ui, b, int(w), tw, ticked);
                 ImGui::PopID();
             }
         }
@@ -891,26 +1044,31 @@ private:
         }
     }
 
-    // A weapon's cell (spec 06 §7 Q97 and spec 07 session 5, observed): the
-    // component's picture on a teal background when it is ready, the mount's
-    // code in white at the top left, the level's numeral at the bottom right
-    // and a small red mark at the top once it has fired. A weapon switched off
-    // is drawn dim, a destroyed one in red, and identical weapons of a unit
-    // group show how many are ready at the bottom left (ours).
-    void weaponCell(UiContext& ui, const game::GameState& s, const TacticalPiece& p, const TacticalWeapon& tw, ImVec2 a, bool hovered) {
+    // A weapon's cell (spec 06 §1.10.1, §7 Q97, confirmed: binary and
+    // observed): the component's picture on a teal background while the
+    // weapon is ticked, the mount's code in white at the top left and the
+    // level's numeral at the bottom right; one red 3 x 6 bar per combat turn of
+    // reload left, up to 5, drawn leftward from x 32, 4 px apart; with Show
+    // Weapon To Hit Chances, a ready weapon's chance right-aligned at the top
+    // right; and a unit group's count of the weapon at the top right when it is
+    // more than 1 (under the chance when both show, inferred). A destroyed
+    // weapon is drawn in red (ours).
+    void weaponCell(UiContext& ui, const game::GameState& s, const TacticalPiece& p, const TacticalWeapon& tw, ImVec2 a, bool hovered, bool ticked,
+                    std::optional<int> chance) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const game::Rules& r = ui.rules();
         const ImVec2 sz = ui.size({kWeaponCell, kWeaponCell});
         const bool destroyed = tw.instances <= 0;
-        int ready = 0;
-        for (int k = 0; k < tw.instances && k < int(tw.reload.size()); ++k)
-            if (tw.reload[size_t(k)] == 0) ++ready;
-        if (ready > 0) dl->AddRectFilled(a, {a.x + sz.x, a.y + sz.y}, IM_COL32(0, 128, 128, 255));
+        if (ticked) dl->AddRectFilled(a, {a.x + sz.x, a.y + sz.y}, IM_COL32(0, 128, 128, 255));
         const ruleset::Component& c = r.component(tw.component);
         if (Sprite icon = ui.art.component(c.picture))
-            drawSprite(dl, icon, {a.x + ui.px(2), a.y + ui.px(2)}, {a.x + ui.px(34), a.y + ui.px(34)},
-                       destroyed ? IM_COL32(255, 80, 80, 150) : tw.enabled ? IM_COL32_WHITE : IM_COL32(110, 110, 110, 200));
-        if (!destroyed && ready == 0) dl->AddRectFilled({a.x + ui.px(14), a.y + ui.px(1)}, {a.x + ui.px(22), a.y + ui.px(4)}, IM_COL32(255, 0, 0, 255));
+            drawSprite(dl, icon, {a.x + ui.px(2), a.y + ui.px(2)}, {a.x + ui.px(34), a.y + ui.px(34)}, destroyed ? IM_COL32(255, 80, 80, 150) : IM_COL32_WHITE);
+        // The reload bars, the first one with its left edge at x 32 (inferred: from the cell's top, y 2 to 8).
+        const int bars = reloadBars(tw);
+        for (int k = 0; k < bars; ++k) {
+            const float x = 32.0f - 4.0f * float(k);
+            dl->AddRectFilled({a.x + ui.px(x), a.y + ui.px(2)}, {a.x + ui.px(x + 3), a.y + ui.px(8)}, IM_COL32(255, 0, 0, 255));
+        }
         ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
         const float size = ui.fontPx(kSmallSize);
         if (p.design.valid() && p.design.index() < s.designs.size()) {
@@ -926,11 +1084,20 @@ private:
             const ImVec2 t = small->CalcTextSizeA(size, FLT_MAX, 0.0f, level.c_str());
             dl->AddText(small, size, {a.x + sz.x - t.x - ui.px(2), a.y + sz.y - t.y}, IM_COL32_WHITE, level.c_str());
         }
-        if (tw.instances > 1) dl->AddText(small, size, {a.x + ui.px(2), a.y + sz.y - ui.px(11)}, IM_COL32(220, 220, 220, 255), std::to_string(ready).c_str());
+        float topRight = ui.px(1);
+        auto rightAligned = [&](const std::string& text, ImU32 color) {
+            const ImVec2 t = small->CalcTextSizeA(size, FLT_MAX, 0.0f, text.c_str());
+            const ImVec2 at{a.x + sz.x - t.x - ui.px(2), a.y + topRight};
+            dl->AddRectFilled({at.x - 1, at.y}, {at.x + t.x + 1, at.y + t.y}, IM_COL32(0, 0, 0, 160));
+            dl->AddText(small, size, at, color, text.c_str());
+            topRight += t.y;
+        };
+        if (chance) rightAligned(std::format("{}%", *chance), IM_COL32(255, 255, 0, 255));
+        if (tw.instances > 1) rightAligned(std::to_string(tw.instances), IM_COL32_WHITE);
         if (hovered) dl->AddRect(a, {a.x + sz.x, a.y + sz.y}, IM_COL32(168, 188, 255, 255));
     }
 
-    void weaponTooltip(UiContext& ui, TacticalBattle& b, int w, const TacticalWeapon& tw) {
+    void weaponTooltip(UiContext& ui, TacticalBattle& b, int w, const TacticalWeapon& tw, bool ticked) {
         TacticalUi& u = state();
         const ruleset::Component& c = ui.rules().component(tw.component);
         ImGui::BeginTooltip();
@@ -938,7 +1105,7 @@ private:
         dimText(std::format("{} · reload {} · reach {}{}", tw.kind == ruleset::WeaponKind::Seeking ? "Seeking" : tw.kind == ruleset::WeaponKind::PointDefense ? "Point-defense" : "Direct fire",
                             tw.reloadRate, tw.reach, tw.instances > 1 ? std::format(" · {} weapons", tw.instances) : std::string{})
                     .c_str());
-        dimText(tw.enabled ? "On: fires with the piece. Click to switch off." : "Off. Click to switch on.");
+        dimText(ticked ? "Ticked: fires when you click an enemy. Click to untick." : "Not ticked. Click to tick.");
         if (u.target >= 0 && size_t(u.target) < b.pieces().size() && b.pieces()[size_t(u.target)].alive) {
             const std::string why = b.fireProblem(u.selected, w, u.target);
             if (why.empty()) ImGui::Text("At the target: %d%% to hit, %d damage", b.hitChance(u.selected, w, u.target), b.damageAt(u.selected, w, u.target));
@@ -951,6 +1118,9 @@ private:
 
     // The target's panel, 216 x 100 at (W-232,373): "Dist" its distance in
     // squares from the current piece (spec 06 §7 Q97); empty without a target.
+    // After a hit is drawn while it shows a piece, a 220 x 20 line 66 px below
+    // its top says "Damage: " in white, the shields' loss in blue, "/" in
+    // white and the structure's loss in red (spec 06 §1.10.1, confirmed: binary).
     void targetPanel(UiContext& ui, const Dialog& d, TacticalFight& f, const CombatMapPainter& paint) {
         TacticalBattle& b = *f.battle;
         TacticalUi& u = state();
@@ -958,9 +1128,22 @@ private:
         ImGui::SetCursorScreenPos(d.at(at));
         ImGui::Dummy(ui.size({kSideW, kTargetH}));
         ui.tagItem("tactical-combat:target");
-        if (u.target < 0 || size_t(u.target) >= b.pieces().size() || !b.pieces()[size_t(u.target)].alive) return;
+        if (u.target < 0 || size_t(u.target) >= b.pieces().size()) return;
         const bool fromSelected = u.selected >= 0 && size_t(u.selected) < b.pieces().size() && b.pieces()[size_t(u.selected)].alive;
         piecePanel(ui, d, at, b, u.target, "Dist", fromSelected ? std::to_string(b.distance(u.selected, u.target)) : std::string{}, paint);
+        if (!u.damage) return;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 c = d.at(at + Vec2{2, 66});
+        dl->PushClipRect(c, d.at(at + Vec2{222, 86}), true);
+        auto part = [&](const std::string& text, ImU32 color) {
+            dl->AddText(c, color, text.c_str());
+            c.x += ImGui::CalcTextSize(text.c_str()).x;
+        };
+        part("Damage: ", IM_COL32_WHITE);
+        part(std::to_string(u.damage->first), IM_COL32(0, 0, 255, 255));
+        part("/", IM_COL32_WHITE);
+        part(std::to_string(u.damage->second), IM_COL32(255, 0, 0, 255));
+        dl->PopClipRect();
     }
 
     // ---- Buttons and the overview map ------------------------------------------------------------------
@@ -971,20 +1154,22 @@ private:
         TacticalBattle& b = *f.battle;
         TacticalUi& u = state();
         const game::EmpireId side = b.phaseEmpire();
-        const bool orders = u.begun && side.valid() && !animating();
+        // After Resolve Combat all four dim and Auto shows pressed (spec 06 §1.10.1, confirmed: binary).
+        const bool live = !u.resolved;
+        const bool orders = live && u.begun && side.valid() && !animating();
         const float x = frameW() - 234, y = frameH() - 266;
         ImGui::SetCursorScreenPos(d.at({x, y}));
-        if (classicButton(ui, "Options", {113, 30})) ui.open(ScreenId::TacticalOptions);
+        if (classicButton(ui, "Options", {113, 30}, 0, false, live)) ui.open(ScreenId::TacticalOptions);
         ui.tagItem("tactical-combat:options");
         ImGui::SetCursorScreenPos(d.at({x + 113, y}));
         if (classicButton(ui, "Orders", {113, 30}, 0, false, orders && !b.paused())) ui.open(ScreenId::TacticalOrders);
         ui.tagItem("tactical-combat:orders");
         // Auto: one toggle for every empire, from the next phase on (spec 04 §4);
-        // a check box (observed, spec 07 session 3).
+        // a check box (observed, spec 07 session 3), live before Begin too (spec 06 §1.10.1).
         TacticalOrder toggle{OK::Auto, side};
         toggle.on = !b.autoOn();
         ImGui::SetCursorScreenPos(d.at({x, y + 30}));
-        if (classicButton(ui, "Auto", {113, 30}, 2, b.autoOn(), orders)) submit(f, toggle);
+        if (classicButton(ui, "Auto", {113, 30}, 2, b.autoOn() || u.resolved, live && side.valid() && !animating())) submit(f, toggle);
         ui.tagItem("tactical-combat:auto");
         // Begin, then End Turn in the same place: one tag.
         ImGui::SetCursorScreenPos(d.at({x + 113, y + 30}));
@@ -1012,6 +1197,17 @@ private:
 
     // ---- The Orders window's pickers (spec 06 §1.10.2) --------------------------------------------------
 
+    // Whether Set Group Leader with number `group` goes on to the formation
+    // list: a piece in no group, or the leader of that very number (which picks
+    // a new formation); a member, or the leader of another number, gets nothing
+    // (spec 04 §5, spec 06 §1.10.2, confirmed: binary).
+    static bool leaderMayPick(UiContext& ui, const TacticalBattle& b, int piece, int group) {
+        TacticalOrder o{OK::SetLeader, b.phaseEmpire(), piece};
+        o.group = group;
+        o.formation = ui.rules().data().formations.empty() ? -1 : 0;
+        return b.check(o).empty();
+    }
+
     // Each picker is a modal list window of its own, opened once the Orders
     // menu has closed: "Select Fighters Per group" (Amount 5 to 50), "Select
     // Combat Group" (1 to 9) and, for a new leader, "Select Formation" (closed
@@ -1023,7 +1219,7 @@ private:
         TacticalBattle& b = *f.battle;
         const game::EmpireId side = b.phaseEmpire();
         const TacticalPiece* p = ownSelected(b, u);
-        if (u.picker != Picker::Resolve && u.picker != Picker::DropTroops && !p) {
+        if (u.picker != Picker::Resolve && !p) {
             u.picker = Picker::None;
             return;
         }
@@ -1056,26 +1252,18 @@ private:
                 for (const ruleset::Formation& fm : formations) rows.push_back(fm.name);
                 break;
             case Picker::Resolve: title = "Resolve Combat"; break;
-            case Picker::DropTroops: title = "Drop Troops"; break;
             case Picker::None: return;
         }
         const std::string id = title + "##tacticalpicker";
         if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
-        const bool box = u.picker == Picker::Resolve || u.picker == Picker::DropTroops;
+        const bool box = u.picker == Picker::Resolve;
         const Vec2 size = box ? Vec2{320, 120} : Vec2{240, 60 + 22 * float(std::min<size_t>(rows.size(), 10)) + 40};
         ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
         int picked = -1;
         bool cancelled = false, yes = false;
         if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags)) {
-            if (u.picker == Picker::DropTroops) {
-                // A message box with OK; Enter and Esc close it too (spec 06 §3.4).
-                ImGui::PushTextWrapPos(0.0f);
-                ImGui::TextUnformatted(u.refusal.c_str());
-                ImGui::PopTextWrapPos();
-                ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ui.px(36));
-                cancelled = ImGui::Button("OK", ui.size({140, 26})) || okKey();
-            } else if (u.picker == Picker::Resolve) {
+            if (u.picker == Picker::Resolve) {
                 // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
                 ImGui::PushTextWrapPos(0.0f);
                 ImGui::TextUnformatted("Should the rest of the battle be fought automatically?");
@@ -1107,7 +1295,7 @@ private:
             case Picker::LeaderNumber:
                 if (picked >= 0) {
                     u.ordersGroup = picked + 1;
-                    u.picker = Picker::Formation;
+                    if (leaderMayPick(ui, b, u.selected, u.ordersGroup)) u.picker = Picker::Formation;
                 }
                 break;
             case Picker::MemberNumber:
@@ -1128,9 +1316,11 @@ private:
                 }
                 break;
             case Picker::Resolve:
-                if (yes) submit(f, TacticalOrder{OK::ResolveCombat, side});
+                if (yes) {
+                    submit(f, TacticalOrder{OK::ResolveCombat, side});
+                    u.resolved = true;   // the four buttons dim, Auto shows pressed (spec 06 §1.10.1)
+                }
                 break;
-            case Picker::DropTroops: u.refusal.clear(); break;
             case Picker::None: break;
         }
     }
@@ -1161,13 +1351,18 @@ private:
         const ImGuiIO& io = ImGui::GetIO();
         combatViewKeys(ui, u.cx, u.cy);
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) u.aim = Aim::None;   // Esc closes nothing here
-        if (!u.begun) return;
+        const bool plain = !io.KeyCtrl && !io.KeyAlt && !io.KeyShift;
+        // E presses the fourth button whatever it says: Begin before the battle begins (spec 06 §3.3).
+        if (!u.begun) {
+            if (plain && ImGui::IsKeyPressed(ImGuiKey_E, false)) begin(b);
+            return;
+        }
         if (animating()) {
             if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) skipAnimation();
             return;
         }
         const game::EmpireId side = b.phaseEmpire();
-        if (!side.valid()) return;
+        if (!side.valid() || u.resolved) return;
         // Alt+1..9 / Ctrl+1..9: leader / member of a group; Alt or Ctrl+0 clears the marks.
         for (int n = 0; n <= 9; ++n) {
             if (!ImGui::IsKeyPressed(ImGuiKey(int(ImGuiKey_0) + n), false) || !(io.KeyAlt || io.KeyCtrl)) continue;
@@ -1175,37 +1370,44 @@ private:
             if (n == 0) {
                 clearGroup(f);
             } else if (io.KeyAlt) {
-                // A new leader then picks its formation.
+                // A new leader, or the leader of that number, then picks its formation.
                 u.ordersGroup = n;
-                u.picker = Picker::Formation;
+                if (leaderMayPick(ui, b, u.selected, n)) u.picker = Picker::Formation;
             } else {
                 TacticalOrder o{OK::SetMember, side, u.selected};
                 o.group = n;
                 submit(f, o);
             }
         }
-        const bool plain = !io.KeyCtrl && !io.KeyAlt && !io.KeyShift;
         if (plain && ImGui::IsKeyPressed(ImGuiKey_L, false) && ownSelected(b, u)) ui.open(ScreenId::TacticalLaunch);
         if (plain && ImGui::IsKeyPressed(ImGuiKey_T, false)) dropTroops(f);
-        if (plain && ImGui::IsKeyPressed(ImGuiKey_R, false) && ownSelected(b, u)) u.aim = Aim::Ram;
-        if (plain && ImGui::IsKeyPressed(ImGuiKey_C, false) && ownSelected(b, u)) u.aim = Aim::Capture;
+        // R and C arm the aim even with nothing selected: the click on the target is refused then (spec 06 §1.10.2).
+        if (plain && ImGui::IsKeyPressed(ImGuiKey_R, false)) u.aim = Aim::Ram;
+        if (plain && ImGui::IsKeyPressed(ImGuiKey_C, false)) u.aim = Aim::Capture;
         if (plain && ImGui::IsKeyPressed(ImGuiKey_E, false)) submit(f, TacticalOrder{OK::EndPhase, side});
-        auto pick = [&](int direction, auto test) {
-            u.selected = cycle(b, u.selected, direction, test);
-            centreOn(b, u.selected);
-        };
-        auto movable = [&](const TacticalPiece& p) { return canMove(p, side); };
-        auto armed = [&](const TacticalPiece& p) { return canFire(p, side); };
-        if ((plain && ImGui::IsKeyPressed(ImGuiKey_Space, false)) || (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false))) pick(1, movable);
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_B, false)) pick(-1, movable);
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) pick(1, armed);
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) pick(-1, armed);
-        // Shift+A / Shift+C: every weapon of the piece on / off.
-        if (io.KeyShift && u.selected >= 0 && (ImGui::IsKeyPressed(ImGuiKey_A, false) || ImGui::IsKeyPressed(ImGuiKey_C, false))) {
-            TacticalOrder o{OK::ToggleWeapon, side, u.selected};
-            o.on = ImGui::IsKeyPressed(ImGuiKey_A, false);
-            submit(f, o);
+        // Space and Ctrl+N: the next piece that can move; Ctrl+B the previous one;
+        // Ctrl+F / Ctrl+D the same for firing ("next" walks the list backwards).
+        if ((plain && ImGui::IsKeyPressed(ImGuiKey_Space, false)) || (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false))) pick(b, PieceSearch::Move, false);
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_B, false)) pick(b, PieceSearch::Move, true);
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) pick(b, PieceSearch::Fire, false);
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) pick(b, PieceSearch::Fire, true);
+        // Shift+A ticks the intact weapons that are ready, Shift+C unticks all (spec 06 §1.10.1).
+        if (io.KeyShift && ownSelected(b, u) && (ImGui::IsKeyPressed(ImGuiKey_A, false) || ImGui::IsKeyPressed(ImGuiKey_C, false))) {
+            std::vector<char>& ticks = ticksFor(b);
+            const std::vector<char> was = ticks;
+            if (ImGui::IsKeyPressed(ImGuiKey_A, false)) ticks = readyTicks(b.pieces()[size_t(u.selected)]);
+            else std::fill(ticks.begin(), ticks.end(), 0);
+            if (ticks != was) tacticalOrderLog().emplace_back(learn::battleOrderId(OK::ToggleWeapon));   // for the lessons
         }
+    }
+
+    // The next (or previous, `forward`) piece of the side in phase, by the search of spec 06 §3.3.
+    void pick(const TacticalBattle& b, PieceSearch kind, bool forward) {
+        TacticalUi& u = state();
+        const int next = nextTacticalPiece(b.pieces(), b.phaseEmpire(), u.selected, kind, forward);
+        if (next < 0) return;
+        selectPiece(b, next);
+        centreOn(b, next);
     }
 
     CombatPlayback playback_;
@@ -1214,6 +1416,7 @@ private:
     CombatView view_;
     ImVec2 viewSize_{0, 0};
     size_t groundsSeen_ = 0;   // ground combats of the record already shown
+    size_t eventsSeen_ = 0;    // playback events the window has passed (passEvents)
     int weaponsOf_ = -1;       // the piece whose weapons the grid shows
     int weaponTop_ = 0;        // its first row shown
 };
@@ -1234,7 +1437,6 @@ public:
         TacticalBattle& b = *f->battle;
         TacticalUi& u = stateFor(f);
         const game::EmpireId side = b.phaseEmpire();
-        const TacticalPiece* p = ownSelected(b, u);
         const Vec2 size{326, 350};
         const Vec2 min{(frameW() - size.x) * 0.5f, (frameH() - size.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
@@ -1260,18 +1462,19 @@ public:
                     close = true;
                 }
             };
-            const bool can = p != nullptr;
-            const bool phase = side.valid() && b.awaitingOrders();
-            item("Launch Units", can, [&ui] { ui.open(ScreenId::TacticalLaunch); });
-            item("Launch Fighters in Groups", can, [&u] { u.picker = Picker::GroupSize; });
-            item("Drop Troops", can, [f] { dropTroops(*f); });
-            item("Ram Ship", can && p->movement > 0, [&u] { u.aim = Aim::Ram; });
-            item("Capture Ship", can && p->boardingAttack > 0, [&u] { u.aim = Aim::Capture; });
-            item("Resolve Combat", phase, [&u] { u.picker = Picker::Resolve; });
-            item("Set Group Leader", can, [&u] { u.picker = Picker::LeaderNumber; });
-            item("Set Group Member", can, [&u] { u.picker = Picker::MemberNumber; });
-            item("Clear Group Assignment", can, [f] { clearGroup(*f); });
-            item("Clear All Group Assignments", phase && !b.paused(), [f, side] { submit(*f, TacticalOrder{OK::ClearAllGroups, side}); });
+            // Every item stays lit (spec 06 §1.10.2, confirmed: binary): an order
+            // that cannot be given is refused once chosen, by a message box where the
+            // original shows one.
+            item("Launch Units", true, [&ui] { ui.open(ScreenId::TacticalLaunch); });
+            item("Launch Fighters in Groups", true, [&u] { u.picker = Picker::GroupSize; });
+            item("Drop Troops", true, [f] { dropTroops(*f); });
+            item("Ram Ship", true, [&u] { u.aim = Aim::Ram; });
+            item("Capture Ship", true, [&u] { u.aim = Aim::Capture; });
+            item("Resolve Combat", true, [&u] { u.picker = Picker::Resolve; });
+            item("Set Group Leader", true, [&u] { u.picker = Picker::LeaderNumber; });
+            item("Set Group Member", true, [&u] { u.picker = Picker::MemberNumber; });
+            item("Clear Group Assignment", true, [f] { clearGroup(*f); });
+            item("Clear All Group Assignments", true, [f, side] { submit(*f, TacticalOrder{OK::ClearAllGroups, side}); });
             item("Cancel", true, [] {});
         }
         ImGui::End();

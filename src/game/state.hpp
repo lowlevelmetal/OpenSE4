@@ -877,7 +877,11 @@ struct DiplomaticMessage {
 struct CombatEvent {
     // UnitsLost: unit group `piece` loses `amount` units to a hit by `target`
     // (it may be Destroyed next, when none is left).
-    enum class Kind : uint8_t { Move, Fire, Hit, Miss, Destroyed, Captured, Launch, Seeker, UnitsLost };
+    // Boarding: ship `piece` boarded ship `target`, which belonged to empire
+    // `component` then; `amount` is the outcome (kBoardingFailed,
+    // kBoardingTaken, kBoardingSelfDestruct), for the boarding message boxes
+    // (spec 06 §1.10.2).
+    enum class Kind : uint8_t { Move, Fire, Hit, Miss, Destroyed, Captured, Launch, Seeker, UnitsLost, Boarding };
     Kind kind = Kind::Move;
     uint8_t round = 0;
     uint32_t piece = 0;       // index into CombatRecord::pieces
@@ -892,6 +896,15 @@ struct CombatEvent {
     uint8_t flags = 0;
     static constexpr uint8_t kStructure = 1;
     static constexpr uint8_t kDestroyed = 2;
+    static constexpr int32_t kBoardingFailed = 0;
+    static constexpr int32_t kBoardingTaken = 1;
+    static constexpr int32_t kBoardingSelfDestruct = 2;
+    // A Hit's damage as the Tactical Combat window's target panel writes it
+    // (spec 06 §1.10.1): what the target's shields and its structure lost;
+    // a hit that destroys the target counts all the shields and structure it
+    // had left.
+    int32_t shieldDamage = 0;
+    int32_t structureDamage = 0;
 };
 
 struct CombatPiece {

@@ -397,7 +397,7 @@ TEST_CASE("combat windows: the simulator adds one vehicle a click, lists rows pe
     CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, drone, {}, 0}));
     const ObjectId home = homeworld(s, ar.a).planet;
     CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Planet, {}, home, 1}));
-    CHECK_FALSE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Planet, {}, home, 2}));   // once
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Planet, {}, home, 2}));   // each click adds another copy
     // The home system's unowned objects come as neutral obstacles.
     const auto objects = combat::simulatorPlanets(s, ar.a);
     ObjectId neutral;
@@ -410,7 +410,8 @@ TEST_CASE("combat windows: the simulator adds one vehicle a click, lists rows pe
     std::vector<std::string> names;
     for (const auto& row : rows) names.push_back(row.name);
     const std::string star = s.galaxy.object(neutral).name;
-    CHECK(names == std::vector<std::string>{"Lancer 0001", "Lancer 0002", "Wasp", "Bee", "Bee", "Lancer 0001", s.galaxy.object(home).name, star});
+    CHECK(names == std::vector<std::string>{"Lancer 0001", "Lancer 0002", "Wasp", "Bee", "Bee", "Lancer 0001", s.galaxy.object(home).name,
+                                            s.galaxy.object(home).name, star});
     CHECK(rows[2].units == 2);         // one fighter group of two
     CHECK(rows[5].side == 1);
     CHECK(rows.back().side == -1);     // neutral
@@ -430,6 +431,11 @@ TEST_CASE("combat windows: the simulator adds one vehicle a click, lists rows pe
             CHECK_FALSE(sim.state.colony(o));
         }
     CHECK(copies == 1);
+    // The planet added twice stands on the field twice, each copy a colony of its side.
+    int homes = 0;
+    for (ObjectId o : sim.state.galaxy.system(sim.where.system).objects)
+        if (sim.state.galaxy.object(o).name == s.galaxy.object(home).name && sim.state.colony(o)) ++homes;
+    CHECK(homes == 2);
 
     // Removing the fighter group row removes both clicks' worth.
     classic::simulatorRemove(setup, rows[2]);
@@ -712,4 +718,136 @@ TEST_CASE("combat windows: every battle with a human side stops to be shown; fou
         applyLive(*rules, silent.s, silent.a, cmd::EnterSector{warship, {}, to, true}, nullptr);
         CHECK(stateChecksum(session.state()) == stateChecksum(silent.s));
     }
+}
+
+// ---- The Tactical Combat window's choices (spec 06 §1.10.1, §1.10.2, §3.3) -----------------------------
+
+namespace {
+
+combat::TacticalPiece tacticalPiece(EmpireId owner, CombatPiece::Kind kind = CombatPiece::Kind::Vehicle, int movement = 3, bool leader = false) {
+    combat::TacticalPiece p;
+    p.kind = kind;
+    p.owner = owner;
+    p.movement = movement;
+    p.isLeader = leader;
+    p.group = leader ? 1 : -1;
+    combat::TacticalWeapon w;
+    w.instances = 1;
+    w.reload = {0};
+    p.weapons.push_back(w);
+    return p;
+}
+
+} // namespace
+
+TEST_CASE("combat windows: next and previous piece search leaders first, then any piece, then the first planet") {
+    const EmpireId me{0u}, them{1u};
+    using classic::PieceSearch;
+    std::vector<combat::TacticalPiece> pieces{
+        tacticalPiece(me, CombatPiece::Kind::Planet, 0),   // 0: our planet
+        tacticalPiece(me),                                  // 1
+        tacticalPiece(me, CombatPiece::Kind::Vehicle, 3, true),   // 2: a leader
+        tacticalPiece(them),                                // 3: not ours
+        tacticalPiece(me),                                  // 4
+        tacticalPiece(me, CombatPiece::Kind::Vehicle, 3, true),   // 5: a leader
+        tacticalPiece(me, CombatPiece::Kind::Seeker),       // 6: never
+    };
+    // The phase start walks forward from before the first piece: the first leader that can move.
+    CHECK(classic::nextTacticalPiece(pieces, me, -1, PieceSearch::Move, true) == 2);
+    // "Next" walks backwards, "previous" forwards, each from after the current piece.
+    CHECK(classic::nextTacticalPiece(pieces, me, 2, PieceSearch::Move, false) == 5);
+    CHECK(classic::nextTacticalPiece(pieces, me, 2, PieceSearch::Move, true) == 5);
+    CHECK(classic::nextTacticalPiece(pieces, me, 5, PieceSearch::Move, true) == 2);
+    CHECK(classic::nextTacticalPiece(pieces, me, 4, PieceSearch::Move, false) == 2);
+    // A single leader is found again from itself.
+    pieces[5].movement = 0;
+    CHECK(classic::nextTacticalPiece(pieces, me, 2, PieceSearch::Move, false) == 2);
+    // No leader can move: any piece that can, then the side's first planet.
+    pieces[2].movement = 0;
+    CHECK(classic::nextTacticalPiece(pieces, me, 1, PieceSearch::Move, true) == 4);
+    CHECK(classic::nextTacticalPiece(pieces, me, 1, PieceSearch::Move, false) == 4);
+    CHECK(classic::nextTacticalPiece(pieces, me, 4, PieceSearch::Move, false) == 1);
+    pieces[1].movement = 0;
+    pieces[4].movement = 0;
+    CHECK(classic::nextTacticalPiece(pieces, me, 4, PieceSearch::Move, true) == 0);
+    // Firing has no planet pass: the planet fires like any piece.
+    CHECK(classic::nextTacticalPiece(pieces, me, 0, PieceSearch::Fire, true) == 2);   // a leader that can fire
+    for (combat::TacticalPiece& p : pieces) p.weapons[0].reload = {1};
+    CHECK(classic::nextTacticalPiece(pieces, me, 0, PieceSearch::Fire, true) == -1);
+    pieces[0].kind = CombatPiece::Kind::Vehicle;   // no planet left
+    CHECK(classic::nextTacticalPiece(pieces, me, 0, PieceSearch::Move, true) == -1);
+}
+
+TEST_CASE("combat windows: weapons ticked afresh, reload bars, and the target panel's piece") {
+    const EmpireId me{0u}, them{1u};
+    combat::TacticalPiece p = tacticalPiece(me);
+    combat::TacticalWeapon reloading;
+    reloading.instances = 1;
+    reloading.reload = {3};
+    combat::TacticalWeapon destroyed;
+    destroyed.instances = 0;
+    destroyed.reload = {0};
+    combat::TacticalWeapon stack;
+    stack.instances = 3;
+    stack.reload = {7, 2, 9};
+    p.weapons.push_back(reloading);
+    p.weapons.push_back(destroyed);
+    p.weapons.push_back(stack);
+    CHECK(classic::readyTicks(p) == std::vector<char>{1, 0, 0, 0});
+    CHECK(classic::reloadBars(p.weapons[0]) == 0);
+    CHECK(classic::reloadBars(reloading) == 3);
+    CHECK(classic::reloadBars(destroyed) == 0);
+    CHECK(classic::reloadBars(stack) == 2);   // the first to be ready
+    stack.reload = {8, 9, 7};
+    CHECK(classic::reloadBars(stack) == 5);   // five at most
+
+    // The panel: another empire's piece under the pointer while one of ours is selected.
+    std::vector<combat::TacticalPiece> pieces{tacticalPiece(me), tacticalPiece(them), tacticalPiece(EmpireId{2u}), tacticalPiece(me),
+                                              tacticalPiece(EmpireId{}, CombatPiece::Kind::Obstacle)};
+    CHECK(classic::targetPanelPiece(pieces, 0, 1, true, false, -1) == 1);
+    CHECK(classic::targetPanelPiece(pieces, 0, 2, true, false, 1) == 2);    // an ally too
+    CHECK(classic::targetPanelPiece(pieces, 0, 3, true, false, 1) == 1);    // our own: unchanged
+    CHECK(classic::targetPanelPiece(pieces, -1, 2, true, false, 1) == 1);   // nothing of ours selected: unchanged
+    CHECK(classic::targetPanelPiece(pieces, 0, -1, true, false, 1) == -1);  // an empty square empties it
+    CHECK(classic::targetPanelPiece(pieces, 0, 4, true, false, 1) == -1);   // so does a neutral piece
+    CHECK(classic::targetPanelPiece(pieces, 0, 2, true, true, 1) == -1);    // and a Ram or Capture aim
+    CHECK(classic::targetPanelPiece(pieces, 0, -1, false, false, 1) == 1);  // off the map: unchanged
+}
+
+TEST_CASE("combat windows: the message boxes of Ram, Capture and a boarding") {
+    using classic::CombatNotice;
+    // Ram and Capture refusals: boxes while Auto is off; Capture's friendly one always, titled "Ram Ship".
+    CHECK(classic::ramCaptureNotice(OK::Ram, "The target must be adjacent.", false) == CombatNotice{"Ram Ship", "The target must be adjacent."});
+    CHECK_FALSE(classic::ramCaptureNotice(OK::Ram, "The target must be adjacent.", true));
+    CHECK(classic::ramCaptureNotice(OK::Capture, "It has no boarding parties.", false) == CombatNotice{"Capture Ship", "It has no boarding parties."});
+    CHECK_FALSE(classic::ramCaptureNotice(OK::Capture, "It has no boarding parties.", true));
+    const std::string friendly(combat::kCaptureFriendly);
+    CHECK(classic::ramCaptureNotice(OK::Capture, friendly, true) == CombatNotice{"Ram Ship", friendly});
+    CHECK(classic::ramCaptureNotice(OK::Capture, friendly, false) == CombatNotice{"Ram Ship", friendly});
+    CHECK_FALSE(classic::ramCaptureNotice(OK::Ram, "", false));
+
+    // Boarding outcomes, by who plays by hand.
+    const EmpireId a{0u}, b{1u};
+    CombatEvent e = ev(CombatEvent::Kind::Boarding, 1, 0, 1);
+    e.component = b.value;
+    auto notices = [&](int outcome, bool aByHand, bool bByHand) {
+        e.amount = outcome;
+        return classic::boardingNotices(e, "Raider", "Prize", a, [&](EmpireId x) { return x == a ? aByHand : x == b ? bByHand : false; });
+    };
+    // Taken: the boarder's side, else the side that lost the ship.
+    CHECK(notices(CombatEvent::kBoardingTaken, true, true) == std::vector<CombatNotice>{{"Ship Boarded", "Raider boarded Prize and took it over."}});
+    CHECK(notices(CombatEvent::kBoardingTaken, false, true) ==
+          std::vector<CombatNotice>{{"Ship Boarded", "Prize was boarded and taken over by Raider."}});
+    CHECK(notices(CombatEvent::kBoardingTaken, false, false).empty());
+    // Failed and self-destructed: each side played by hand.
+    CHECK(notices(CombatEvent::kBoardingFailed, true, true).size() == 2);
+    CHECK(notices(CombatEvent::kBoardingFailed, false, true) == std::vector<CombatNotice>{{"Boarding Failed", "Raider failed to board Prize."}});
+    CHECK(notices(CombatEvent::kBoardingFailed, false, false).empty());
+    const std::vector<CombatNotice> boom = notices(CombatEvent::kBoardingSelfDestruct, true, false);
+    REQUIRE(boom.size() == 1);
+    CHECK(boom[0].title == "Self-Destruct");
+    CHECK(notices(CombatEvent::kBoardingSelfDestruct, true, true).size() == 2);
+    // Every other kind of event gives none.
+    e.kind = CombatEvent::Kind::Captured;
+    CHECK(notices(CombatEvent::kBoardingTaken, true, true).empty());
 }

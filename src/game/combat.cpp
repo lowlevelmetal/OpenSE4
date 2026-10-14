@@ -1025,7 +1025,7 @@ std::pair<int, int> arrivalDirection(const GameState& s, const Vehicle& v) {
     return {sign(v.cameFrom.sector.x - v.location.sector.x), sign(v.cameFrom.sector.y - v.location.sector.y)};
 }
 
-Forces battleForces(const Rules& r, const GameState& s, Location where, const BattleCheck& check) {
+Forces battleForces(const Rules& r, const GameState& s, Location where, const BattleCheck& check, bool sightTest) {
     Forces f;
     if (!where.system.valid() || where.system.index() >= s.galaxy.systems.size()) return f;
     std::vector<const Vehicle*> vehicles;
@@ -1045,7 +1045,7 @@ Forces battleForces(const Rules& r, const GameState& s, Location where, const Ba
     // A check that passes always starts a battle, even when the only hostile
     // objects it saw are minefields; such a battle ends at its first end check
     // (spec 04 §2, §19.2 Q73, confirmed: binary).
-    f.battle = !present.empty() && battleCheck(r, s, where, check);
+    f.battle = !present.empty() && (!sightTest || battleCheck(r, s, where, check));
     if (!f.battle) {
         f.colonies.clear();
         return f;

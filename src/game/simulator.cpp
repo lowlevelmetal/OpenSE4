@@ -193,7 +193,7 @@ int64_t simulatorCargoUsed(const Rules& r, const GameState& s, const SimulatorIt
 std::string simulatorProblem(const Rules& r, const GameState& s, const SimulatorSetup& setup) {
     const EmpireId viewer = setup.viewer;
     if (!viewer.valid() || viewer.index() >= s.empires.size()) return "No empire to simulate for.";
-    if (setup.sides.size() < 2) return "A battle needs at least two sides.";
+    if (setup.sides.empty()) return "A battle needs at least one side.";
     if (setup.sides.size() > static_cast<size_t>(kSimulatorMaxSides)) return std::format("At most {} sides.", kSimulatorMaxSides);
     const std::vector<ObjectId> samples = simulatorPlanets(s, viewer);
     const size_t strategies = std::max<size_t>(1, s.empire(viewer).strategies.size());
@@ -212,16 +212,11 @@ std::string simulatorProblem(const Rules& r, const GameState& s, const Simulator
                 // A neutral object: on no side.
                 if (item.count != 1 || item.fleet >= 0 || !item.cargo.empty() || item.replaceCargo || !item.people.empty() || item.replacePeople)
                     return "A neutral object takes no orders or cargo.";
-                for (const SimulatorItem& other : setup.items)
-                    if (&other != &item && other.kind == SimulatorItem::Kind::Planet && other.planet == item.planet)
-                        return "Each sample planet can be used once.";
                 continue;
             }
-            if (item.count != 1) return "Each sample planet can be used once.";
+            // The same planet may be added again: each item is a copy of its own (spec 06 §1.10.4, confirmed: binary).
+            if (item.count != 1) return "A sample planet item stands for one planet.";
             if (item.fleet >= 0) return "Planets are not in fleets.";
-            for (const SimulatorItem& other : setup.items)
-                if (&other != &item && other.kind == SimulatorItem::Kind::Planet && other.planet == item.planet)
-                    return "Each sample planet can be used once.";
         } else {
             if (!usable(s, viewer, item.design)) return "Only your designs and enemy designs you have seen can be used.";
             const VehicleType t = hullType(r, s, item.design);
@@ -251,7 +246,9 @@ std::string simulatorProblem(const Rules& r, const GameState& s, const Simulator
         ++used[static_cast<size_t>(item.side)];
     }
     if (vehicles > kSimulatorMaxVehicles) return std::format("At most {} ships and groups.", kSimulatorMaxVehicles);
-    if (std::count_if(used.begin(), used.end(), [](int n) { return n > 0; }) < 2) return "At least two sides need something to fight with.";
+    // Begin is refused only when nothing belongs to a side: one side is enough,
+    // and no side needs to see another (spec 04 §17, spec 06 §1.10.4, confirmed: binary).
+    if (std::none_of(used.begin(), used.end(), [](int n) { return n > 0; })) return "At least one side needs something on the field.";
     return {};
 }
 

@@ -235,6 +235,110 @@ game::combat::TacticalOrder dropTroopsOrder(const game::combat::TacticalBattle& 
     return o;
 }
 
+bool tacticalCommandable(const game::combat::TacticalPiece& p, game::EmpireId side) {
+    const bool drone = p.kind == PieceKind::UnitGroup && p.type == ruleset::VehicleType::Drone;
+    return p.alive && side.valid() && p.owner == side && p.kind != PieceKind::Seeker && p.kind != PieceKind::Obstacle && !drone && !p.mothballed;
+}
+
+bool tacticalCanMove(const game::combat::TacticalPiece& p, game::EmpireId side) {
+    return tacticalCommandable(p, side) && (p.kind == PieceKind::Vehicle || p.kind == PieceKind::UnitGroup) && p.movement > 0;
+}
+
+bool tacticalCanFire(const game::combat::TacticalPiece& p, game::EmpireId side) {
+    if (!tacticalCommandable(p, side) || !p.hasSupply) return false;
+    for (const game::combat::TacticalWeapon& w : p.weapons)
+        for (int k = 0; k < w.instances && k < int(w.reload.size()); ++k)
+            if (w.reload[size_t(k)] == 0) return true;
+    return false;
+}
+
+int nextTacticalPiece(const std::vector<game::combat::TacticalPiece>& pieces, game::EmpireId side, int current, PieceSearch kind, bool forward) {
+    const int n = int(pieces.size());
+    if (n == 0) return -1;
+    auto able = [&](const game::combat::TacticalPiece& p) { return kind == PieceSearch::Move ? tacticalCanMove(p, side) : tacticalCanFire(p, side); };
+    // Around the list from after `current` (from before the first piece when
+    // there is none), ending on `current` itself.
+    auto around = [&](auto&& test) {
+        const int step = forward ? 1 : -1;
+        const int from = current >= 0 && current < n ? current : (forward ? -1 : n);
+        for (int k = 1; k <= n; ++k) {
+            const int i = ((from + step * k) % n + n) % n;
+            if (test(pieces[size_t(i)])) return i;
+        }
+        return -1;
+    };
+    if (const int leader = around([&](const game::combat::TacticalPiece& p) { return p.isLeader && able(p); }); leader >= 0) return leader;
+    if (const int any = around(able); any >= 0) return any;
+    if (kind == PieceSearch::Move)
+        for (int i = 0; i < n; ++i)
+            if (pieces[size_t(i)].kind == PieceKind::Planet && tacticalCommandable(pieces[size_t(i)], side)) return i;
+    return -1;
+}
+
+std::vector<char> readyTicks(const game::combat::TacticalPiece& p) {
+    std::vector<char> out(p.weapons.size(), 0);
+    for (size_t w = 0; w < p.weapons.size(); ++w) {
+        const game::combat::TacticalWeapon& tw = p.weapons[w];
+        for (int k = 0; k < tw.instances && k < int(tw.reload.size()); ++k)
+            if (tw.reload[size_t(k)] == 0) out[w] = 1;
+    }
+    return out;
+}
+
+int reloadBars(const game::combat::TacticalWeapon& w) {
+    if (w.instances <= 0) return 0;
+    int soonest = -1;
+    for (int k = 0; k < w.instances && k < int(w.reload.size()); ++k)
+        if (soonest < 0 || w.reload[size_t(k)] < soonest) soonest = w.reload[size_t(k)];
+    return std::clamp(soonest, 0, 5);
+}
+
+int targetPanelPiece(const std::vector<game::combat::TacticalPiece>& pieces, int own, int hovered, bool overMap, bool aiming, int current) {
+    if (aiming) return -1;
+    if (!overMap) return current;
+    if (hovered < 0 || size_t(hovered) >= pieces.size() || !pieces[size_t(hovered)].alive) return -1;   // an empty square
+    const game::combat::TacticalPiece& q = pieces[size_t(hovered)];
+    if (!q.owner.valid()) return -1;   // a neutral piece
+    if (own < 0 || size_t(own) >= pieces.size() || !pieces[size_t(own)].alive) return current;
+    return q.owner != pieces[size_t(own)].owner ? hovered : current;
+}
+
+std::optional<CombatNotice> ramCaptureNotice(game::combat::TacticalOrder::Kind kind, const std::string& why, bool autoOn) {
+    using OK = game::combat::TacticalOrder::Kind;
+    if (why.empty() || (kind != OK::Ram && kind != OK::Capture)) return std::nullopt;
+    if (kind == OK::Capture && why == game::combat::kCaptureFriendly) return CombatNotice{"Ram Ship", why};
+    if (autoOn) return std::nullopt;
+    return CombatNotice{kind == OK::Ram ? "Ram Ship" : "Capture Ship", why};
+}
+
+std::vector<CombatNotice> boardingNotices(const game::CombatEvent& e, const std::string& boarder, const std::string& boarded,
+                                          game::EmpireId attacker, const std::function<bool(game::EmpireId)>& byHand) {
+    std::vector<CombatNotice> out;
+    if (e.kind != game::CombatEvent::Kind::Boarding) return out;
+    const game::EmpireId defender{e.component};
+    const bool attackerByHand = attacker.valid() && byHand(attacker);
+    const bool defenderByHand = defender.valid() && defender != attacker && byHand(defender);
+    switch (e.amount) {
+        case game::CombatEvent::kBoardingTaken:
+            if (attackerByHand) out.push_back({"Ship Boarded", std::format("{} boarded {} and took it over.", boarder, boarded)});
+            else if (defenderByHand) out.push_back({"Ship Boarded", std::format("{} was boarded and taken over by {}.", boarded, boarder)});
+            break;
+        case game::CombatEvent::kBoardingSelfDestruct: {
+            const CombatNotice n{"Self-Destruct", std::format("{} blew itself up as {} boarded it. Both ships are lost.", boarded, boarder)};
+            if (attackerByHand) out.push_back(n);
+            if (defenderByHand) out.push_back(n);
+            break;
+        }
+        default: {
+            const CombatNotice n{"Boarding Failed", std::format("{} failed to board {}.", boarder, boarded)};
+            if (attackerByHand) out.push_back(n);
+            if (defenderByHand) out.push_back(n);
+            break;
+        }
+    }
+    return out;
+}
+
 // ---- Combat Simulator ---------------------------------------------------------------------------
 
 std::vector<SimulatorRow> simulatorRows(const game::Rules& r, const game::GameState& s, const game::combat::SimulatorSetup& setup) {
@@ -320,8 +424,7 @@ bool simulatorAdd(const game::Rules& r, const game::GameState& s, game::combat::
     using game::combat::SimulatorItem;
     item.count = 1;
     if (item.kind == SimulatorItem::Kind::Planet) {
-        for (const SimulatorItem& i : setup.items)
-            if (i.kind == SimulatorItem::Kind::Planet && i.planet == item.planet) return false;
+        // Each click adds another copy, the same object again too (spec 06 §1.10.4, confirmed: binary).
         setup.items.push_back(std::move(item));
         return true;
     }

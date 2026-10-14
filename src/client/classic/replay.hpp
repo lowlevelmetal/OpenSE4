@@ -20,6 +20,8 @@
 //   Seeker     seeker piece `piece` flies to (x, y) toward `target`; it appears
 //              on its first event.
 //   UnitsLost  unit group `piece` loses `amount` units to a hit by `target`.
+//   Boarding   ship `piece` boarded ship `target`: `amount` says how it went
+//              (taken, failed, self-destructed); nothing is drawn for it.
 // Pieces of kind Seeker, and pieces launched by a Launch event, start off the
 // map. Planets and obstacles cover 4x4 squares from their top-left square.
 // Events are played in round order (stable for equal rounds).

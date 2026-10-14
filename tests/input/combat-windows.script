@@ -7,11 +7,16 @@ options --quick-start --empires=4 --seed=7 --open=tactical --layout=1024x768 --s
 
 wait-window tactical-combat
 wait-for item:Begin in=tactical-combat
-click item:Begin in=tactical-combat
-wait-for item:"End Turn" in=tactical-combat
-# Zoom all the way out: the whole map shows.
+# Before Begin: Auto is live, Orders dim, and a click on any piece, an enemy's too, shows it
+# in the panel (spec 06 §1.10.1). Zoom all the way out first: the whole map shows.
+assert-enabled item:Auto in=tactical-combat
+assert-disabled item:Orders in=tactical-combat
 wheel tag:tactical-combat:map -9
 wait-for item:piece:enemy in=tactical-combat
+click item:piece:enemy in=tactical-combat
+# E presses Begin.
+key E
+wait-for item:"End Turn" in=tactical-combat
 # The middle button drags the map; zoomed in again, then out.
 drag tag:tactical-combat:map@50%,50% to tag:tactical-combat:map@40%,45% middle
 wheel tag:tactical-combat:map 2
@@ -39,9 +44,23 @@ wait-closed tactical-options
 click item:piece:own in=tactical-combat
 click tag:tactical-combat:orders
 wait-window tactical-orders
-# The menu takes no keys (spec 06 §3.4); Cancel closes it.
+# Every item is lit (spec 06 §1.10.2); the menu takes no keys (spec 06 §3.4); Cancel closes it.
+assert-enabled item:"Capture Ship" in=tactical-orders
+assert-enabled item:"Drop Troops" in=tactical-orders
 click item:Cancel in=tactical-orders
 wait-closed tactical-orders
+# Ram Ship on an enemy out of reach: refused in a message box titled "Ram Ship".
+click tag:tactical-combat:orders
+wait-window tactical-orders
+click item:"Ram Ship" in=tactical-orders
+wait-closed tactical-orders
+click item:piece:enemy in=tactical-combat
+wait-for item:"window:Ram Ship"
+click item:OK in="Ram Ship"
+wait-gone item:"window:Ram Ship"
+# Shift+C unticks every weapon, Shift+A ticks the ready ones again.
+key Shift+C
+key Shift+A
 # Resolve Combat, from the menu, asks first; No leaves the battle as it is.
 click tag:tactical-combat:orders
 wait-window tactical-orders

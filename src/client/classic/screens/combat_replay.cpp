@@ -248,7 +248,8 @@ private:
                 case Kind::Miss: ImGui::TextColored(ImVec4(0.6f, 0.62f, 0.68f, 1), "  %s", text.c_str()); break;
                 case Kind::Destroyed: ImGui::TextColored(ImVec4(1, 0.4f, 0.35f, 1), "%s", text.c_str()); break;
                 case Kind::UnitsLost: ImGui::TextColored(ImVec4(1, 0.55f, 0.45f, 1), "  %s", text.c_str()); break;
-                case Kind::Captured: ImGui::TextColored(ImVec4(1, 0.85f, 0.3f, 1), "%s", text.c_str()); break;
+                case Kind::Captured:
+                case Kind::Boarding: ImGui::TextColored(ImVec4(1, 0.85f, 0.3f, 1), "%s", text.c_str()); break;
                 default: ImGui::TextUnformatted(text.c_str()); break;
             }
         }

@@ -330,6 +330,21 @@ This row remains:
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | Random numbers of a battle shown tactically (client drawing) | The display draws no random numbers | Spec 04 §19.1, spec 06 §7 Q77: a miss's direction and a planet's point are drawn from the battle's sequence, so a shown battle continues differently | M |
+| A click on an enemy that does not fire (out of range, reloading, no supplies) | The reason is written on the map (ours); only a click on a piece that is not hostile gets the "Cannot Fire Weapons" box | Spec 04 §19.6 Q96: which of these reasons the original puts in a box was not traced | L |
+
+The parity audit of 2026-10-11 (REA) brought the tactical window and the simulator in
+line on 2026-10-14 (spec 04 §5, §6, §10.3, §12, §17, spec 06 §1.10.1–§1.10.4, §3.3): the
+boarding outcome's message boxes (the record keeps a `Boarding` event), the weapon ticks
+as the window's own (the engine's `ToggleWeapon` switch stays for script players), the
+next and previous piece search and the selection at each phase's start, the target panel
+that follows the pointer with its damage line (each hit's shield and structure damage is
+recorded), the Orders menu always lit with the original's Ram and Capture refusals in
+their order and boxes, enemy seekers and neutral obstacles rammed, a leader picking a new
+formation for its own number, clicks, Auto and E before Begin, Center Map only for a piece
+out of view, group identifiers on every piece, the weapon cells, the buttons after Resolve
+Combat, and the simulator's Begin (one side, no sight test, a planet added again). The
+details it left open are spec 04 §19.6 Q91–Q96. Launching in battle (the Launch Units
+window, mines) belongs to the units work.
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 

@@ -11,7 +11,9 @@
 #include "game/state.hpp"
 #include "game/tactical.hpp"
 
+#include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -111,6 +113,62 @@ std::vector<std::string> pieceReportAbilities(const game::Rules& r, const game::
 int dropTroopsColony(const game::combat::TacticalBattle& b, int piece);
 game::combat::TacticalOrder dropTroopsOrder(const game::combat::TacticalBattle& b, int piece);
 
+// Pieces of `side` that take orders (no seekers, drones, obstacles or
+// mothballed ships), those of them that can still move (ships and unit
+// groups with movement left), and those that can still fire (supplies and a
+// weapon with an instance ready).
+bool tacticalCommandable(const game::combat::TacticalPiece& p, game::EmpireId side);
+bool tacticalCanMove(const game::combat::TacticalPiece& p, game::EmpireId side);
+bool tacticalCanFire(const game::combat::TacticalPiece& p, game::EmpireId side);
+
+// The next or previous piece (Space, Ctrl+N/B, Ctrl+F/D, the title strip's
+// selectors; spec 06 §1.10.1, §3.3, confirmed: binary): up to three passes
+// around the side's pieces, each starting after `current` and ending on it:
+// first the group leaders that can move (or fire), then any piece that can,
+// and for the move kind only the side's first planet. "Next" walks the list
+// backwards, "previous" (`forward`) in piece order. At the start of a phase
+// played by hand the window makes the same search forward from before the
+// first piece. -1: none.
+enum class PieceSearch : uint8_t { Move, Fire };
+int nextTacticalPiece(const std::vector<game::combat::TacticalPiece>& pieces, game::EmpireId side, int current, PieceSearch kind, bool forward);
+
+// The weapons the grid ticks when a piece becomes selected, at the start of
+// each phase and after the piece moves, and what Shift+A ticks (spec 06
+// §1.10.1, confirmed: binary): every intact weapon that is not reloading
+// (one of its instances ready). The ticks are the window's, not the piece's.
+std::vector<char> readyTicks(const game::combat::TacticalPiece& p);
+// The red bars a weapon's cell shows (spec 06 §1.10.1): one per combat turn
+// of reload left, at most 5; the first instance to be ready counts (inferred).
+int reloadBars(const game::combat::TacticalWeapon& w);
+
+// The piece the target panel shows once the pointer moved (spec 06 §1.10.1,
+// confirmed: binary): a piece of another empire (allies too) under the
+// pointer while one of ours (`own`, -1: none) is selected; the pointer on
+// an empty square, on a neutral piece or a Ram or Capture aim empties it;
+// anything else leaves `current` as it is. `hovered` -1 with `overMap`: an
+// empty square.
+int targetPanelPiece(const std::vector<game::combat::TacticalPiece>& pieces, int own, int hovered, bool overMap, bool aiming, int current);
+
+// A message box of the Tactical Combat window.
+struct CombatNotice {
+    std::string title, text;
+    bool operator==(const CombatNotice&) const = default;
+};
+// The box a refused Ram or Capture shows (spec 06 §1.10.2, confirmed:
+// binary): titled after the order, and only while Auto is off; Capture's
+// last refusal (a friendly ship, game::combat::kCaptureFriendly) is titled
+// "Ram Ship" and shows even with Auto on. nullopt: no box.
+std::optional<CombatNotice> ramCaptureNotice(game::combat::TacticalOrder::Kind kind, const std::string& why, bool autoOn);
+// The boxes a boarding's outcome gives (spec 04 §12, spec 06 §1.10.2,
+// confirmed: binary), from the record's Boarding event: `byHand` says
+// whether an empire's side is played by hand now (the window's player, Auto
+// off). A ship taken tells its boarder's side, else the side that lost it
+// ("Ship Boarded"); a failure ("Boarding Failed") and a self-destruct
+// ("Self-Destruct") tell each side played by hand. `attacker` owns the
+// boarding ship; the event names the target's owner then.
+std::vector<CombatNotice> boardingNotices(const game::CombatEvent& e, const std::string& boarder, const std::string& boarded,
+                                          game::EmpireId attacker, const std::function<bool(game::EmpireId)>& byHand);
+
 // ---- Combat Simulator (spec 06 §1.10.4) ---------------------------------------------------------
 
 // One row of the combat vehicles list: one per ship or base, one per unit
@@ -135,8 +193,10 @@ struct SimulatorRow {
 std::vector<SimulatorRow> simulatorRows(const game::Rules& r, const game::GameState& s, const game::combat::SimulatorSetup& setup);
 
 // Adds one click's worth of an item (spec 06 §1.10.4): one ship, or one unit
-// for the side's group of that kind (a drone always makes a new group), or a
-// planet once. Returns false when the object is already in the battle.
+// for the side's group of that kind (a drone always makes a new group), or
+// one more copy of a home-system object, the same one again too (confirmed:
+// binary). Returns false when the item cannot be added (no such design, or a
+// group at its largest).
 bool simulatorAdd(const game::Rules& r, const game::GameState& s, game::combat::SimulatorSetup& setup, game::combat::SimulatorItem item);
 // Removes a row's items (a fleet left without members is simply not formed).
 void simulatorRemove(game::combat::SimulatorSetup& setup, const SimulatorRow& row);

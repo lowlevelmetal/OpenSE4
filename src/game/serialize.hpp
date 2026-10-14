@@ -99,6 +99,9 @@ class Rules;
 //   (GameState::classicScenario) and the page of its text each empire saw
 //   last (InterfaceOptions::scenarioPage; spec 06 §5.6, spec 08 §3.4).
 // - The Designs window's tab (InterfaceOptions::designsTab, spec 08 §3.6.7).
+// - Combat records: each Hit's damage to the shields and to the structure
+//   (CombatEvent::shieldDamage, structureDamage) for the Tactical Combat
+//   window's target panel (spec 06 §1.10.1).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 
