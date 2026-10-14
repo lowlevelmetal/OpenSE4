@@ -1098,6 +1098,13 @@ details, queue types and more: `game/serialize.hpp` lists them), the commands
 fields of older commands, and `SubmitSetup` and `Lobby` an empire setup's settings and
 name lists from an empire file. Protocol 8 does not play with 0.12.0; the format 9 saves
 of 0.11.0 and 0.12.0 still load.
+Protocol 9 came with 0.14.0, with the save format still 10. The messages and blobs are laid
+out as in protocol 8, but rules that both sides apply changed: a ship's movement is capped
+whenever its maximum drops, colonies claim their systems, a battle goes on while seekers fly,
+and the computer players' strategies and treaty rules (GitHub issues #13, #17, #18 and the
+spec answers corrected on 2026-10-14). A client of 0.13.0 would work out turn-based moves
+differently from the host and fall out of step, so the two releases refuse each other.
+0.13.0's saves load.
 
 ### Save format
 
