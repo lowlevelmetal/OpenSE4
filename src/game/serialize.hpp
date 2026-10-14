@@ -93,7 +93,10 @@ class Rules;
 // Format 9 still reads, without it. The scenario of the original a game
 // was started from (GameState::classicScenario) and the page of its text
 // each empire saw last (InterfaceOptions::scenarioPage; spec 06 §5.6, spec
-// 08 §3.4).
+// 08 §3.4). What an empire file brings to a new game's empire besides its
+// race, designs and strategies: its minister switches, Empire Options and
+// movement options (EmpireSetup::settings, EmpireSettings) and its design
+// types, colony types and repair priorities (spec 08 §13).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

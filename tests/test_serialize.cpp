@@ -156,6 +156,7 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(ClassicScenarioState);
     CHECK_ALL_FIELDS(GameState);
     CHECK_ALL_FIELDS(EmpireOrders);
+    CHECK_ALL_FIELDS(EmpireSettings);
     CHECK_ALL_FIELDS(EmpireSetup);
     CHECK_ALL_FIELDS(GameSetup);
     CHECK_ALL_FIELDS(SaveInfo);

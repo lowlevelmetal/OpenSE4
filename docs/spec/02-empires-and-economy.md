@@ -337,16 +337,27 @@ type gets 10.0 % calmer.
 ### 1.10 Empire files and race presets
 
 **`Empires/*.emp`** files are binary: the saved-game container holding one empire record
-(spec 08 §1.3, §3.6). Our engine defines its own TOML empire format.
+and its designs, laid out in spec 08 §13. Our engine reads and writes them, beside its
+own TOML empire format (spec 08 §13.6, docs/SETUP.md).
 
-A saved empire holds:
-- everything in §9;
+A saved empire is the game's empire record with its game state cleared (spec 08 §13.2,
+confirmed: binary). It holds:
+- everything in §9, the password and the e-mail address included;
 - experience, from which the race age is derived (§9);
-- its strategies, designs and minister settings [H].
+- its strategies, its designs when saved with them, the minister switches and their two
+  flags, the Empire Options and window memories, the repair priorities and the
+  design-type, colony-type and queue-template lists [H] (confirmed: binary).
 
-When an empire is loaded, it is checked against the current game's rules, such as the
-racial point budget [M]. Designs that are not valid in the game are dropped, and the rest
-are recomputed [H].
+Begin Game copies each listed empire into the game whole (confirmed: binary), so the new
+game inherits all of this; that nothing at game creation resets the ministers or the
+options is inferred (spec 08 §11.1 Q24). OpenSE4's empire files keep the same, except the
+queue templates (OpenSE4 keeps its templates per computer) and the computer players'
+memory.
+
+When an empire is loaded with Add Existing, it is checked at once against the setup on the
+screen: its technology and its racial points (spec 08 §13.4, confirmed: binary). Designs
+that are not valid in the game are dropped without a message, and the cost and speed of the
+rest are computed again (confirmed: binary).
 
 **Race presets.** Stock race presets are readable text in
 `Pictures/Races/<Race>/<Race>_AI_General.txt`, with these keys:
@@ -1275,7 +1286,9 @@ Racial combat bonuses also apply to fighter groups [H].
 - **Description:** biology, society and history texts, plus demeanor and happiness type.
 
 Create Empire is refused while the point balance is negative. A password-protected empire
-also needs its password before it can be edited [H].
+also needs its password before Game Setup's Edit opens it: the comparison is exact, letter
+case and spaces counting, and a wrong one shows "Invalid Password" (spec 08 §13.4,
+confirmed: binary).
 
 **Experience and race age** (confirmed: binary)
 - Experience is a whole number kept with the empire. It starts at 0 and is saved in games

@@ -1,9 +1,13 @@
 // opense4-convert: the original's saved games (.gam) and OpenSE4's, both ways
-// (docs/spec/08-saved-games.md, docs/SETUP.md "Games of the original").
+// (docs/spec/08-saved-games.md, docs/SETUP.md "Games of the original"), and
+// its map files (.map) and OpenSE4's (.toml), both ways (spec 08 §14).
 //
 //   opense4-convert --info GAME.gam                  what an original save holds
+//   opense4-convert --info FILE.emp|FILE.map         what an empire or map file of the original holds
 //   opense4-convert IN.gam OUT.gam --to=opense4      an original save as an OpenSE4 save
 //   opense4-convert IN.gam OUT.gam --to=original     an OpenSE4 save as an original save
+//   opense4-convert IN.map OUT.toml --to=opense4     an original map as an OpenSE4 map
+//   opense4-convert IN.toml OUT.map --to=original    an OpenSE4 map as an original map
 //   opense4-convert --compare A.gam B.gam            field differences of two original saves
 //
 // The data set is the installed game's (or --classic-dir=DIR): a save holds
@@ -11,7 +15,9 @@
 // was played with.
 
 #include "core/environment.hpp"
+#include "game/classic_files.hpp"
 #include "game/classic_save.hpp"
+#include "game/map_file.hpp"
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
 #include "ruleset/ruleset.hpp"
@@ -33,13 +39,15 @@ namespace {
 
 void usage(std::FILE* to = stderr) {
     std::fputs("Usage:\n"
-               "  opense4-convert --info GAME.gam [--classic-dir=DIR]\n"
+               "  opense4-convert --info GAME.gam|FILE.emp|FILE.map [--classic-dir=DIR]\n"
                "  opense4-convert IN.gam OUT.gam --to=opense4|original [--classic-dir=DIR] [--seed=N]\n"
+               "  opense4-convert IN.map OUT.toml --to=opense4 [--classic-dir=DIR]\n"
+               "  opense4-convert IN.toml OUT.map --to=original [--classic-dir=DIR] [--seed=N]\n"
                "  opense4-convert --compare A.gam B.gam [--classic-dir=DIR]\n"
                "\n"
-               "  --info        describe a saved game of the original (sections, counts)\n"
-               "  --to=opense4  read an original save and write it as an OpenSE4 save\n"
-               "  --to=original read an OpenSE4 save and write it as an original save\n"
+               "  --info        describe a saved game, an empire file or a map file of the original\n"
+               "  --to=opense4  read an original save (or map) and write it as an OpenSE4 save (or map)\n"
+               "  --to=original read an OpenSE4 save (or map) and write it as an original save (or map)\n"
                "  --compare     list the fields in which two original saves differ\n"
                "  --classic-dir the installed game (or its Data folder); default: found automatically\n"
                "  --seed=N      the keys of the written file (default: random)\n"
@@ -84,6 +92,13 @@ std::expected<game::classic::ClassicSave, std::string> decodeFile(const game::Ru
     return save;
 }
 
+std::string lowerExtension(const std::string& file) {
+    std::string ext = std::filesystem::path(file).extension().string();
+    for (char& c : ext)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return ext;
+}
+
 void printReport(const game::classic::ConversionReport& report, bool verbose) {
     for (const std::string& n : report.notes) std::printf("  note: %s\n", n.c_str());
     if (verbose)
@@ -98,6 +113,69 @@ int run(const Options& o) {
     if (!rules) {
         std::fprintf(stderr, "%s\n", error.c_str());
         return 2;
+    }
+    const std::string inExt = lowerExtension(o.files[0]);
+    if (o.info && (inExt == game::classic::kEmpireFileExtension || inExt == game::classic::kMapFileExtension)) {
+        auto bytes = game::readFileBytes(o.files[0]);
+        if (!bytes) {
+            std::fprintf(stderr, "%s\n", bytes.error().c_str());
+            return 1;
+        }
+        std::string text;
+        if (inExt == game::classic::kMapFileExtension) {
+            auto map = game::classic::decodeClassicMap(*bytes);
+            if (!map) {
+                std::fprintf(stderr, "%s: %s\n", o.files[0].c_str(), map.error().c_str());
+                return 1;
+            }
+            text = game::classic::describe(*map);
+        } else {
+            auto empire = game::classic::decodeClassicEmpire(*bytes, rules->data().racialTraits.size());
+            if (!empire) {
+                std::fprintf(stderr, "%s: %s\n", o.files[0].c_str(), empire.error().c_str());
+                return 1;
+            }
+            text = game::classic::describe(*empire);
+        }
+        std::printf("%s", text.c_str());
+        return 0;
+    }
+    // Maps: the original's and OpenSE4's.
+    if (!o.info && !o.compare && (inExt == game::classic::kMapFileExtension || (inExt == game::kMapExtension && o.to == "original"))) {
+        game::classic::ConversionReport report;
+        if (o.to == "opense4") {
+            if (inExt != game::classic::kMapFileExtension) {
+                std::fprintf(stderr, "%s is already an OpenSE4 map.\n", o.files[0].c_str());
+                return 1;
+            }
+            auto map = game::classic::readClassicMap(rules->data(), o.files[0], report);
+            if (!map) {
+                std::fprintf(stderr, "%s\n", map.error().c_str());
+                return 1;
+            }
+            if (auto saved = game::saveMapFile(o.files[1], rules->data(), *map); !saved) {
+                std::fprintf(stderr, "%s\n", saved.error().c_str());
+                return 1;
+            }
+            std::printf("Imported the map %s (%zu systems, %zu starting points) into %s.\n", o.files[0].c_str(), map->galaxy.systems.size(),
+                        map->startingPoints.size(), o.files[1].c_str());
+        } else {
+            auto loaded = game::loadMapFile(o.files[0], rules->data());
+            if (!loaded) {
+                std::fprintf(stderr, "%s\n", loaded.error().c_str());
+                return 1;
+            }
+            for (const std::string& w : loaded->warnings) report.note(w);
+            if (auto written = game::classic::writeClassicMap(rules->data(), loaded->map, o.files[1], report, o.seed ? *o.seed : std::random_device{}());
+                !written) {
+                std::fprintf(stderr, "%s\n", written.error().c_str());
+                return 1;
+            }
+            std::printf("Exported the map %s (%zu systems, %zu starting points) to %s.\n", o.files[0].c_str(), loaded->map.galaxy.systems.size(),
+                        loaded->map.startingPoints.size(), o.files[1].c_str());
+        }
+        printReport(report, o.verbose);
+        return 0;
     }
     if (o.info) {
         auto save = decodeFile(*rules, o.files[0]);

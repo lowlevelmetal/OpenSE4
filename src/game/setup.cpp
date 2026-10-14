@@ -256,6 +256,37 @@ uint32_t defaultEmpireColor(size_t index) {
     return kColors[index % kColors.size()];
 }
 
+EmpireSettings settingsOf(const Empire& e) {
+    EmpireSettings s;
+    s.ministers = e.ministers;
+    s.ministerAll = e.ministerAll;
+    s.ministersForNewVehicles = e.ministersForNewVehicles;
+    s.aiMinimalChanges = e.aiMinimalChanges;
+    s.clearOrdersOnEncounter = e.clearOrdersOnEncounter;
+    s.avoidTaggedMinefields = e.avoidTaggedMinefields;
+    s.avoidRestrictedSystems = e.avoidRestrictedSystems;
+    s.chooseColonyType = e.chooseColonyType;
+    s.interfaceOptions = e.interfaceOptions;
+    // Places in this game's log and scenario mean nothing in another game.
+    const InterfaceOptions fresh;
+    s.interfaceOptions.logPosition = fresh.logPosition;
+    s.interfaceOptions.logScroll = fresh.logScroll;
+    s.interfaceOptions.scenarioPage = fresh.scenarioPage;
+    return s;
+}
+
+void applySettings(Empire& e, const EmpireSettings& s) {
+    e.ministers = s.ministers & kAllMinisters;
+    e.ministerAll = s.ministerAll;
+    e.ministersForNewVehicles = s.ministersForNewVehicles;
+    e.aiMinimalChanges = s.aiMinimalChanges;
+    e.clearOrdersOnEncounter = s.clearOrdersOnEncounter;
+    e.avoidTaggedMinefields = s.avoidTaggedMinefields;
+    e.avoidRestrictedSystems = s.avoidRestrictedSystems;
+    e.chooseColonyType = s.chooseColonyType;
+    e.interfaceOptions = s.interfaceOptions;
+}
+
 std::string hashPassword(std::string_view password) {
     if (password.empty()) return {};
     Hasher h;
@@ -464,9 +495,12 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         // The strategies saved with the empire, else the data set's (spec 06 §7 Q72).
         e.strategies = es.strategies.empty() ? r.data().combatStrategies : es.strategies;
         if (e.strategies.empty()) e.strategies.push_back({"Default", {}});
-        e.designTypes = r.data().names.designTypes;
-        e.colonyTypes = r.data().names.colonyTypes;
-        e.repairPriorities = r.data().names.repairPriorities;
+        // An empire file's name lists and settings come with it whole (spec 08
+        // §13.4, confirmed: binary); an empty list is the data set's (inferred, §11.1 Q25).
+        e.designTypes = !es.designTypes.empty() ? es.designTypes : r.data().names.designTypes;
+        e.colonyTypes = !es.colonyTypes.empty() ? es.colonyTypes : r.data().names.colonyTypes;
+        e.repairPriorities = !es.repairPriorities.empty() ? es.repairPriorities : r.data().names.repairPriorities;
+        if (es.settings) applySettings(e, *es.settings);
         s.empires.push_back(std::move(e));
         starts.push_back({s.empires.back().name, s.empires.back().race.nativeSurface, s.empires.back().race.atmosphere});
     }

@@ -16,6 +16,29 @@
 
 namespace opense4::game {
 
+// What an empire file keeps of a game's empire besides its identity, race,
+// designs, strategies and name lists (docs/spec/08 §13.2, spec 02 §1.10;
+// save format 10): the minister switches and their two flags, the Empire
+// Options with the windows' memories, and the movement and encounter
+// options. Begin Game gives them to the empire whole (spec 08 §13.4,
+// confirmed: binary; that nothing resets them is inferred, §11.1 Q24).
+struct EmpireSettings {
+    uint32_t ministers = kIndividualMinisters;
+    bool ministerAll = false;
+    bool ministersForNewVehicles = false;
+    bool aiMinimalChanges = false;
+    EncounterClear clearOrdersOnEncounter = EncounterClear::Enemy;
+    bool avoidTaggedMinefields = true;
+    bool avoidRestrictedSystems = true;
+    bool chooseColonyType = true;
+    InterfaceOptions interfaceOptions;
+    bool operator==(const EmpireSettings&) const = default;
+};
+// A game's empire's settings, as Save Empire keeps them: its place in this
+// game's log and the scenario page are left out.
+EmpireSettings settingsOf(const Empire& e);
+void applySettings(Empire& e, const EmpireSettings& s);
+
 struct EmpireSetup {
     std::string name;             // empty: from the race preset
     std::string empireType;
@@ -55,6 +78,14 @@ struct EmpireSetup {
     // Who plays the empire while it is computer-controlled (save format 9;
     // docs/sdk/ai-protocol.md): becomes Empire::controller.
     Controller controller;
+    // What an empire file brought besides (save format 10, spec 08 §13):
+    // its settings (nullopt for an empire made in Empire Setup, which starts
+    // with a new empire's), and its design types, colony types and repair
+    // priorities (each empty: the data set's, spec 08 §11.1 Q25, inferred).
+    std::optional<EmpireSettings> settings;
+    std::vector<std::string> designTypes;
+    std::vector<std::string> colonyTypes;
+    std::vector<std::string> repairPriorities;
 };
 
 struct GameSetup {

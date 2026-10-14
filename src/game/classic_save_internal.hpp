@@ -203,6 +203,20 @@ inline bool answerableMessage(MessageType t) {
     }
 }
 
+// Record conversions that the saved games and the empire files share
+// (classic_save_import.cpp, classic_save_export.cpp, classic_files.cpp).
+// §3.6.7: the empire options as OpenSE4 keeps them, and back (the system and
+// sector shown at turn end are left to the caller).
+InterfaceOptions interfaceOptionsFromRecord(const EmpireOptions& o);
+EmpireOptions empireOptionsRecord(const InterfaceOptions& u, EncounterClear clear, bool avoidTaggedMines, bool avoidRestricted,
+                                  bool chooseColonyType);
+// §3.6.13: a strategy record as the keys of the strategy data files, and back
+// (`replaced` counts the characters of the name Latin-1 lacks).
+ruleset::CombatStrategy strategyFromRecord(const StrategyRecord& t);
+StrategyRecord strategyRecord(const ruleset::CombatStrategy& cs, size_t index, size_t* replaced);
+// §3.7, §7.2: a design's speed, cost and type code as the original computes them.
+void cachedDesignValues(const Rules& r, const Design& d, DesignRecord& rec);
+
 inline std::string trimmed(std::string_view s) {
     size_t a = 0, b = s.size();
     while (a < b && (s[a] == ' ' || s[a] == '\t')) ++a;

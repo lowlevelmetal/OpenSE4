@@ -675,10 +675,18 @@ template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.tu
 // ---- New-game setup (setup.hpp) ----------------------------------------------------------------------
 
 template <class Ar>
+void io(Ar& ar, EmpireSettings& s) {
+    fields(ar, s.ministers, s.ministerAll, s.ministersForNewVehicles, s.aiMinimalChanges, s.clearOrdersOnEncounter, s.avoidTaggedMinefields,
+           s.avoidRestrictedSystems, s.chooseColonyType, s.interfaceOptions);
+}
+
+template <class Ar>
 void io(Ar& ar, EmpireSetup& e) {
     fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash,
            e.email, e.ministerStyle, e.useRaceMinisterStyle, e.experience, e.designs, e.strategies);
     if (formatVersion(ar) >= 9) fields(ar, e.controller);   // format 8 had no script players
+    // Format 9 had no empire-file settings or name lists (spec 08 §13).
+    if (formatVersion(ar) >= 10) fields(ar, e.settings, e.designTypes, e.colonyTypes, e.repairPriorities);
 }
 
 template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }

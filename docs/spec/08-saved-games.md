@@ -76,13 +76,14 @@ of OpenSE4's `Empire::history` into `_plr_<n>_stats.txt` is possible but optiona
 ### 1.3 Other files in the same container
 
 The same container (§2) and the same section writers are used by four other files. They
-are not needed for import or export of a game but an importer can share the decoder.
+are not needed for import or export of a game; OpenSE4 reads and writes the empire and map
+files with the same decoder (§13, §14) **(confirmed: binary)**.
 
 | File | Content after the version string |
 |---|---|
-| Empire file (`Empires\*.emp`) | One empire record in its "empire file" form, optionally with its designs. |
-| Map file (Save Map) | The systems and the stellar objects in their "map" form (no per-empire knowledge, no vehicles), plus the starting points (spec 01 §12). |
-| Game setup file | The game options (§3.2) and the victory block (§3.3). |
+| Empire file (`Empires\*.emp`) | One empire record in its "empire file" form, then its designs (none when saved without them): §13. |
+| Map file (`Maps\*.map`, Save Map) | The systems and the stellar objects in their "map" form (no per-empire knowledge, no vehicles), plus the starting points (spec 01 §12): §14. |
+| Game setup file | The game options (§3.2) and the victory block (§3.3): §14.4. |
 | Player changes file (`.plr`, simultaneous games on different machines) | Date counter, random codes and the game's two codes (§3.2), then one player's systems view, its empire record, its designs and its changed objects, each in "player" form (spec 05 §9.2). |
 
 ---
@@ -1559,8 +1560,8 @@ carries out OpenSE4's start of that player's turn before writing (§12).
 
 ## 10. Cross-references
 
-- Spec 01 §12: maps and scenarios; the original's map files use this container (§1.3).
-- Spec 02 §1.10: empire files use this container and the empire record of §3.6.
+- Spec 01 §12: maps and scenarios; the original's map files use this container (§1.3, §14).
+- Spec 02 §1.10: empire files use this container and the empire record of §3.6 (§13).
 - Spec 05 §9.2: player changes files and the multiplayer flow; their content is the
   "player" form of these sections.
 - docs/PARITY_GAPS.md: import and export are implemented since 2026-10-04 (§12).
@@ -1670,6 +1671,30 @@ carries out OpenSE4's start of that player's turn before writing (§12).
     settle it; only a pre-1.72 file with non-zero values there would show the difference.
     Likewise a fleet's or ship's experience before 1.46 is read as a whole number in an
     int, which no file of that age has confirmed.
+24. **Empire files: what game creation resets (§13).** Begin Game copies each listed
+    empire into the game whole (confirmed: binary); whether anything at game creation then
+    resets what an empire file brought (the minister switches, the Empire Options, anger
+    and turns since war) was not traced. 45 of the 163 files examined have all 25 minister
+    switches on; the 20 stock files have all 25 off (observed). OpenSE4 keeps them
+    (inferred).
+25. **Empire files with empty lists (§13).** Files saved from Game Setup's Players page
+    have no strategies and no design-type or colony-type list (observed). Whether the game
+    gives such an empire the defaults at creation, and whether an empire saved during a game
+    then gets them a second time, is not known. OpenSE4 gives an empty list the data set's
+    (inferred).
+26. **Save To File and the designs it picks (§13.5).** The Players page's Save To File
+    selects the designs by the empire's present place in the list, while designs that Add
+    Existing brought keep the key they were added with; after a Remove the two can differ,
+    so the original may save another empire's designs (inferred). OpenSE4 keeps each listed
+    empire's designs with the empire and saves those.
+27. **The game seed after a loaded or generated map.** After Load Map or Generate Map Now,
+    Begin Game makes no quadrant; which seed the game then keeps is not known (spec 01).
+28. **Map files of a finite-resources game (§14).** A planet's values are written as they
+    are, so a map saved from a finite-resources game stores the remaining stocks, which a
+    normal game reads as percentages (inferred).
+29. **The map editor's files (§14).** Whether the separate map-editor program of the
+    install writes this same format was not analysed; no `.map` sample exists on this
+    machine.
 
 ### 11.2 Side findings for other specs (confirmed: binary, found while reading the loader)
 
@@ -1810,6 +1835,296 @@ Implemented on 2026-10-04 from this spec.
   an export and import with every field the format carries, and a second round trip
   changes nothing. The large sample, imported and played on for five turns, saves and
   loads in OpenSE4's format and exports again.
+
+---
+
+## 13. Empire files (Empires\*.emp)
+
+Written on 2026-10-14 from an analysis of the executable and from 163 empire files decoded
+to their last byte: the 20 of the install and 143 of four of the mods that come with it
+(75, 47, 20 and 1 files), of versions 1.49 to 1.91; the stock files are 1.51. None of them
+carries designs, so the layout with designs comes from the executable only.
+
+### 13.1 Layout
+
+**(confirmed: binary; observed: all 163 files end exactly after these parts)**
+
+1. The key header (§2.2). Every file gets new random keys.
+2. The version string (§2.5); 1.95 writes "1.95". The reader uses it as the version for the
+   gates of §5.2 for the rest of the file.
+3. One empire record (§3.6) in its empire-file form (below).
+4. A word: the number of designs n, always written (0 for a file saved without designs);
+   then n design records (§3.7).
+
+Nothing else: no plain-text summary, prologue, options, victory block, globals, systems,
+objects or closing list.
+
+**The empire-file form** of the record is the saved game's field for field, except that
+the eight derived flags of §3.6.1 (can colonize Rock, Ice and Gas Giant; the five
+"breathes" flags) are left out. Files older than 1.14 still hold them (§5.2). As in a saved
+game the racial-trait flags have no count of their own (§3.6.5), so a file reads only with a
+data set that has the same number of racial traits **(observed: each stock file decodes to
+its end only with 14 of the counts 0 to 80; the mods' files only with their own data
+sets' counts, 15, 10 and 20)**. A reader should require the exact end of the file and,
+when it fails, can name the trait counts that fit, as for a saved game.
+
+**Version gates** **(confirmed: binary; every one of the 163 files decodes with them)**. The
+version is compared as a string (§5.2). For files from 1.40 on, the record readers of §5.2
+apply: below 1.46 no network name; below 1.51 no drone-name counter, 13 target categories
+in a strategy's type priorities and break-formation flags instead of 14, and the design
+types Anti-Planet Drone and Anti-Ship Drone appended on reading; below 1.62 no template name
+in a design; below 1.78 no facility marker groups 2 to 12 in the empire options; below 1.81
+no drones per target. Below 0.61 the design block is not read at all.
+
+### 13.2 What Save Empire writes
+
+The saver copies the empire, clears the game state of the copy and writes the copy
+**(confirmed: binary; observed in all 163 files)**:
+
+- Control flags: computer controlled, neutral and destroyed all off.
+- Pools: the three stored resources, the research pool and the intelligence pool 0.
+- Research: repeat off, divide evenly on; no unique areas; one tech level per tech area of
+  the data set, every level 0 (observed: 83 to 158 areas, following each data set); an
+  empty queue.
+- Intelligence: no project; its two flags as they were.
+- Politics: all 20 entries "no contact" (code 3), not dominant, counter 0.
+- An empty log, no fleets (fleets created 0, observed), ten waypoints with an empty name and
+  system and sector 0, no tagged mine fields, no systems to avoid.
+- The two unused copies of the starting maintenance and reproduction percentages hold the
+  empire's effective percentages at the time (observed 8 to 105 and 0 to 43); nothing reads
+  them, any value is safe.
+- Everything else as the game had it: the four name strings; the player number in the
+  source game (observed 1 in 146 files, up to 20 in the others); the "use race minister
+  style" box; the race and art folders (always lower case; the art folder equals the race
+  folder in all 163), the emblem override (empty in all), the ship-name file; the home
+  system and sector of the source game (0 in the 95 files saved from Game Setup); the
+  race: atmosphere, surface, the three texts, demeanor, happiness type, culture, traits and
+  characteristics (observed 50 to 150); experience; the default formation, default strategy
+  and planet strategy; the computer difficulty; the unused fields; the password and the
+  e-mail address in plain text; the design-type, colony-type and queue-template lists; the
+  empire options; the repair priorities; the whole ministers block (the computer players'
+  memory, the minister style, the 25 switches and both flags, anger 50 and turns since war
+  999 and up, the unused bytes 0, 0, 0, 1, 1, 1, 0, the name counters, the capability
+  flags); the network name; the combat strategies.
+
+Observed split: the 95 files saved from Game Setup's Players page have no strategies and no
+design-type or colony-type list; the 68 saved during a game, the 20 stock files among
+them, have 10 or 11 strategies, 22 or 23 design types and 8 colony types.
+
+**Designs** **(confirmed: binary)**. Saved with designs, the file holds every design of the
+game's list owned by the saving empire's player number, in list order, free slots left out.
+Each is a full §3.7 record of a copy with id 0, the owner that player number, obsolete and
+"built at least once" off, the 20 last-seen dates 0 and the changed flag off; everything
+else is kept (type, template, name, creation date, cached speed and cost, parts and mounts,
+strategy position, type code, extra abilities, the four statistics). Saved without, the
+count is 0.
+
+### 13.3 Reading
+
+**(confirmed: binary)**
+
+1. The version string, then the empire into a fresh empire.
+2. The eight derived flags are cleared and derived again: the empire breathes only its
+   native atmosphere and can colonize only its native surface. A computer-controlled
+   empire (never one in a file Save Empire wrote) gets its strategies from its race's
+   computer-player strategy file.
+3. When the caller asks for designs (Add Existing and the network host always do), every
+   design the game's list holds for this empire is blanked first. Then for each design of
+   the file: its owner becomes this empire; its cost and speed are computed again from the
+   data set (unlike a saved game); it is checked with the designer's rules except the
+   component technology test (spec 03 §4.2 rule 2). The hull and the components are
+   positions in the data files (§4), so another data set silently gives other parts. A
+   valid design goes into the list's first free slot, or at its end, marked changed; an
+   invalid one is dropped without a message.
+4. Any error in the stream ends the load with a "Load Error" box saying that the empire
+   file could not be loaded and naming it; nothing is added.
+
+### 13.4 Game Setup's Players page
+
+The buttons, in order: Add New, Add Existing, Edit, Remove, Save To File
+**(confirmed: binary)**.
+
+- **Add Existing** opens the Load Empire picker: one column, "Empire Filename", listing
+  every `*.emp` of the Empires folder (the active mod's, when it has one), with Change
+  Directory. No password is asked. The file is read with its designs, then checked at once
+  against the setup on the screen; if both checks pass the empire is added as the next
+  player, its stored player number ignored (it becomes its place in the list). A failed
+  check shows one "Invalid Empire" box and adds nothing **(confirmed: binary)**:
+  - *Technology:* the sum of the empire's tech levels, each capped at its area's maximum,
+    must not exceed the sum, over the allowed areas, of the level a new player gets at the
+    setup's Technology Level for New Player (Low: the area's start level; Medium: its raise
+    level; High: its maximum). The message says the empire's technology differs from what
+    the game allows. Files that Save Empire wrote have every level at 0, so this only
+    refuses hand-made or very old files.
+  - *Racial points:* the traits and characteristics must not cost more than the setup's
+    Racial Points for New Players. The message says the empire spent more racial points
+    than the game allows. When both fail, this is the message shown.
+- **Edit** of an empire with a password first asks for it ("Enter Empire Password"). The
+  comparison is exact: letter case and spaces count. A wrong password shows an "Invalid
+  Password" box saying it is incorrect, and the editor does not open; Cancel does nothing.
+  Add Existing, Remove and Save To File never ask.
+- **Remove** takes the empire off the list at once, without asking, and frees the designs
+  it brought.
+- **Begin Game** copies every listed empire whole into the game, numbers the players in
+  list order and hands each its designs.
+
+### 13.5 Saving
+
+Save To File (Players page) and the Game Menu's Save Empire **(confirmed: binary)**:
+
+1. A "Save Designs" yes/no question; Esc and Enter mean No.
+2. The Save Empire picker: the `.emp` files, New Empire File (asks for an Empire Name and
+   makes `<folder>\<name>.emp`), Change Directory, Cancel.
+3. The full path is lower-cased before writing.
+4. An error shows a message that the empire could not be saved.
+
+The Game Menu saves the empire of the player whose turn it is. The copy Save To File writes
+always has computer control off (§13.2).
+
+**Network** (context only; OpenSE4 replaces it): a TCP/IP player's Game Setup writes the
+player's empire with its designs in this format to `temp\CurrEmp.dat` and sends it; the host
+stores it as `temp\<player>.emp`, reads it with its designs and sets its network name from
+the lobby; a failure shows "Empire Load Error".
+
+### 13.6 OpenSE4
+
+- **Where.** `classic_save.hpp` holds the model of the file (`ClassicEmpireFile`) and
+  `decodeClassicEmpire` / `encodeClassicEmpire`, which use the saved game's record readers
+  with the file's version; `classic_files.hpp` the conversion to and from an empire of Game
+  Setup (`game::EmpireSetup`): `importClassicEmpire`, `exportClassicEmpire`, and on files
+  `readClassicEmpire` / `writeClassicEmpire`.
+- **Import** (an empire of Game Setup): the four name strings; the race folder looked up as
+  a race style ignoring case, the race's atmosphere, surface, culture, happiness type and
+  demeanor as in §3.6, its traits by position, its characteristics clamped to the
+  Settings.txt limits as for OpenSE4's own empire files; the ship-name file, the minister
+  style, the "use race minister style" box, experience; the password as the hash of its
+  trimmed, lower-cased text (§3.6.1); the e-mail address; the strategies (§3.6.13); the
+  designs (§3.7: hull, parts and mounts by position, name, type, strategy position and
+  creation date); the minister switches and their two flags, the Empire Options and
+  window memories (§3.6.7), the design-type, colony-type and repair-priority lists. A file
+  older than 1.51 gets the two drone design types appended to a list that is not empty
+  (an empty list stands for the data set's in OpenSE4). What has no counterpart is left out
+  and noted: the queue templates (OpenSE4 keeps its own per computer), the computer
+  players' memory and difficulty, the source game's player number and home. A
+  computer-controlled empire in the file comes in computer-controlled, with the data set's
+  strategies (inferred for OpenSE4's computer players, which do not read the race's
+  strategy file).
+- **Export** writes "1.95", the reset values of §13.2, one flag per racial trait of the data
+  set and one tech level per tech area (all 0), and for what OpenSE4 does not hold the
+  values a new empire record has: computer state 1, staging, secured and incursion systems
+  0, empty lists; anger 50 and turns since war 999 for every player; the zero byte, then
+  0, 0, 0, 1, 1, 1, 0; name counters 0, the eight capability flags off; default formation,
+  default strategy and planet strategy 1; difficulty 2. The password is written empty
+  (§7.4). An empire without a design-type or colony-type list of its own writes the data
+  set's, and one without strategies the data set's strategies, as the game would give it.
+  Each design is written as §13.2 says, with its speed, cost and type code computed as for
+  a saved game (§7.2).
+- **Game Setup** (`screens/setup.cpp`): Add Existing lists OpenSE4's own empire files of
+  the user's `empires` folder and the `.emp` files there, and the `.emp` files of the
+  install's `Empires` folder (or of the last classic mod in use that has one), and makes the
+  two checks of §13.4 (the technology check only for `.emp` files, as OpenSE4's files hold
+  no tech levels). Edit asks for the password when the empire has one. Save To File and the
+  Game Menu's Save Empire ask "Save Designs" first, write OpenSE4's own empire file with
+  computer control off, and offer *Save for SE IV*, which writes the empire as a `.emp` file
+  into a folder of the player's (by default the user's `empires` folder), its file name in
+  lower case.
+- **Our client differs:** OpenSE4 keeps only the hash of an imported password, of its
+  trimmed lower-case text, so Edit (an exact comparison of what is typed) accepts it typed
+  in lower case; Save for SE IV lower-cases the file name, not the folder (folder names can
+  matter outside Windows); there is no New Empire File button (the file is named after
+  the empire, or typed); a file that cannot be read is named under the picker's list
+  rather than in a "Load Error" box, and the picker stays open.
+- **Checked** on the 20 stock files (opt-in test): each decodes to its end with the data
+  set's trait count, encodes again with its own keys to the same bytes, imports, and
+  exports and imports again to the same empire.
+
+## 14. Map files (Maps\*.map)
+
+Written on 2026-10-14 from an analysis of the executable; no map file exists on this
+machine, so nothing below was observed.
+
+### 14.1 Layout
+
+**(confirmed: binary)**
+
+1. The key header (§2.2).
+2. The version string.
+3. A byte: the number of systems; then each system in its map form: the §3.5 record up to
+   and including its ability list (name, number, x, y, type description, physical type,
+   empires-can-start flag, mask flag, non-tiled flag, background picture, changed flag,
+   abilities), without the explored set, the claimed set and the 20 notes.
+4. The two starting-point lists exactly as in §3.5: the specific points (system, sector,
+   player) and the common points (system, sector), with word counts and word fields. Maps
+   and saved games both have them: Game Setup's Save Map writes the loaded map's lists,
+   and a game started from a map keeps them (spec 01 §12).
+5. A word: the number of objects; then every object of class 1 (star), 2 (warp point),
+   3 (storm), 4 (planet or asteroid field) or 6 (comet), in list order, each the class byte
+   and its §3.8 record exactly as a saved game writes it, except that a planet's "colony
+   follows" flag is always off. Blank slots of these classes are included.
+
+No ships, unit groups, designs, empires, options or closing list. Each object's stored id
+is its id in the source game, not renumbered; warp points name their far end by (system,
+sector), so the links survive.
+
+### 14.2 Reading
+
+Game Setup's Load Map **(confirmed: binary)**:
+
+1. The version gates of a saved game apply.
+2. The object list is emptied and the system list rebuilt from the file: new systems that
+   nobody has explored or claimed, without notes.
+3. Both starting-point lists are replaced, exact duplicates dropped (§3.5).
+4. The objects are read with the saved game's reader and numbered by position; the stored
+   ids are ignored; each system's object list is rebuilt.
+5. An error shows a message that the map could not be loaded, naming the file; whatever was
+   read stays.
+6. After Load Map (even a failed one) or Generate Map Now, Begin Game generates no quadrant:
+   it plays on the systems and objects present and places the empires from the starting
+   points first (spec 01 §3.6).
+
+### 14.3 Saving
+
+Save Map on Game Setup's Quadrant page, or the Game Menu's Save Map when the game allows it
+(spec 01 §12) **(confirmed: binary)**: the "Save Map" picker with a "Map Filename" list, New
+Map File (asks for a Map Name), Change Directory and Cancel. The path is lower-cased; an
+error shows a message that the map could not be saved.
+
+### 14.4 Game setup files
+
+**(confirmed: binary; no sample)** The key header, the version string, the game options
+(§3.2) and the victory block (§3.3); nothing else, and the name is not lower-cased. Only
+TCP/IP games use one: the host writes `temp\GameSetup.dat` after Game Setup and sends it to
+each connected player, whose game reads it into its options and victory conditions; Game
+Setup then opens with every option shown but locked, and the player adds or creates an
+empire. Errors say the file could not be saved or loaded. No button saves or loads a setup
+file, and every Game Setup starts from the defaults. OpenSE4 replaces TCP/IP games with its
+own network play, so it has no counterpart and needs none.
+
+### 14.5 OpenSE4
+
+- **Where.** `classic_save.hpp`: the model (`ClassicMapFile`), `decodeClassicMap` /
+  `encodeClassicMap` with the saved game's record readers; `classic_files.hpp`:
+  `importClassicMap` / `exportClassicMap` between it and OpenSE4's map
+  (`game::QuadrantMap`), and on files `readClassicMap` / `writeClassicMap`.
+- **Import:** each system becomes a `StarSystem`, its type found as for a saved game (§3.5,
+  §12); each object that is not blank a `SpaceObject` (its SectType.txt record the stored
+  value − 1, its abilities by the ids of Appendix A, numbered by position); each warp point
+  leads to the warp point at its stored (system, sector), the one leading back preferred;
+  a specific point for player p is reserved for player slot p, a common point is common;
+  exact duplicate points are dropped. Objects of other classes are left out with a note.
+  Errors name the system or object.
+- **Export:** "1.95"; the systems with their type's copied attributes (§3.5), changed off;
+  the starting points; the stars, warp points, storms, planets and asteroid fields and
+  comets each system lists, by slot, numbered by position + 1, a planet without a colony.
+- **Game Setup and the Game Menu:** Load Map lists OpenSE4's maps of the user's `maps`
+  folder, the `.map` files there and those of the install's `Maps` folder (or of the last
+  classic mod in use that has one). Both Save Map windows offer *Save for SE IV*, which
+  writes `<name>.map` (the name in lower case) into a folder of the player's, by default the
+  user's `maps` folder. `opense4-convert` describes a map or empire file (`--info`) and
+  converts maps both ways.
+- **Checked** with OpenSE4's own maps of the test data (a generated quadrant with its
+  warp links and starting points survives an export and an import); no map of the original
+  was available.
 
 ---
 

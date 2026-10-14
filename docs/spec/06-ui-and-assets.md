@@ -2931,16 +2931,15 @@ kind, and the tactical map then draws its own move arrows and crosshairs.
 | `Scenarios/<N>_Settings.txt` | text | Standard record format, one record: Name, Description, Starting Game [M]. Only Starting Game is used (§5.6, confirmed: binary). |
 | `Scenarios/<N>_Text.txt` | text | Records with `ID`, `Series`, `Segment` (order inside the series; previous/next browse a series), `Turn` (0 = the date 2400.0), `For Players` (player numbers), `Text Title`, `Text Number of Paragraphs`, `Text Paragraph <n>`, `Image` (a BMP in Scenarios/) [M]. Pages keep the file's order and their ID is ignored (§5.6, confirmed: binary). |
 | `Path.txt` | text | One record: `Using Mod Directory` [M]. |
-| `Empires/*.emp` | **binary** | 3–4 KB, entropy about 7.2–7.6 bits/byte, no readable strings. The start looks like a type-tagged value stream (a tag byte, then 1, 2 or 4 bytes, or a length-prefixed string whose bytes are obfuscated) [M]. Holds a saved empire (name, race style, traits, experience, password...) [T]. Treat as opaque; import is out of scope. |
+| `Empires/*.emp` | **binary** | 3–4 KB: the saved-game container (spec 08 §2) holding one empire record and its designs, laid out in spec 08 §13 (confirmed: binary; observed: 163 files decoded to their end). Holds a saved empire (name, race, traits, experience, password, ministers, Empire Options, strategies, designs). OpenSE4 reads and writes them beside its own empire files (spec 08 §13.6). |
 | `SaveGame/*.gam` | **binary** | Same tagged/obfuscated style (the tutorial `.gam` is 75 KB), except for one **plain ASCII fixed-width summary block** near the start: the format version (`1.58`), the date, the player count, `Turn Based`/`Simultaneous`, `Same Machine`/`Different Machines`, then per player a number, empire name, emperor title and name, and `Alive` [M]. This is likely what the load/login screens read without decoding the rest (inferred). |
 | `*.plr`, `*.trn`, `*.cmb` | binary (inferred) | Simultaneous play: player orders sent to the host; turn movement log (for the replay); combat log (for combat replays) [T]. Names and places in §6.1 (confirmed: binary). |
 | `History/plr_<N>_stats.txt`, `plr_<N>_events.txt`, `plr_<N>_log.txt` | plain text, fixed-width columns | Per-player statistics, history events and log copy; layout in §6.1 (confirmed: binary). The manual's `<game>_events.txt` / `<game>_stats.txt` are the copies kept next to a save. |
-| `Maps/*.map` | binary (inferred) | Written by File → Save Map and the map editor; read by Game Setup → Load Map. Holds only the systems and their objects (confirmed: binary). |
+| `Maps/*.map` | **binary** | Written by File → Save Map (and perhaps the map editor, spec 08 §11.1 Q29); read by Game Setup → Load Map. The saved-game container holding the systems, the starting points and the stellar objects, laid out in spec 08 §14 (confirmed: binary). OpenSE4 reads and writes them beside its own maps (spec 08 §14.5). |
 
 For our engine: keep our own save format (deterministic state plus a command log, see
-ENGINE.md). Reading `.gam`/`.emp` is not needed for parity and would mean reverse
-engineering an obfuscated format; the one useful piece, the save list's
-name/date/summary, can be shown from our own saves.
+ENGINE.md), and read and write the original's `.gam`, `.emp` and `.map` files beside it
+(spec 08: saved games §12, empire files §13, map files §14).
 
 ### 6.1 Files the game writes
 
@@ -4288,6 +4287,13 @@ Our own choices made while implementing Q41–Q55 for the Log, the engine and Sa
     - OpenSE4 choices that stand: renaming on a name clash (spec 03 Q50), parts stored by
       name with a warning when one is missing (our own file format), and the file named
       after the empire without a picker.
+
+    Since 2026-10-14 our empire file (format 4) also keeps the password's check, the e-mail
+    address, the minister switches and their two flags, the Empire Options and window
+    memories and the name lists, as the original's does (spec 08 §13.2); the copy has
+    computer control off. The empire window's Save To File asks about the designs too.
+    After saving, *Save for SE IV* also writes the empire as the original's empire file
+    (`.emp`, spec 08 §13), with its designs on Yes.
 
 Bringing the battle flow in line with Q30–Q33 (2026-10-01) left these choices of ours,
 each marked "(inferred)" in the client. Q73 and Q76 are settled from the executable (what

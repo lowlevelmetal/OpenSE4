@@ -64,6 +64,11 @@ std::string checkSetup(const game::Rules& r, const game::GameOptions& options, g
     s.preset = proto::sanitize(s.preset, 64);
     s.ministerStyle = proto::sanitize(s.ministerStyle, 64);
     s.email = game::cleanEmail(s.email);
+    // An empire file's name lists (spec 08 §13), kept to what the original's lists hold.
+    for (std::vector<std::string>* list : {&s.designTypes, &s.colonyTypes, &s.repairPriorities}) {
+        if (list->size() > 250) list->resize(250);
+        for (std::string& name : *list) name = proto::sanitize(name, 64);
+    }
     s.passwordHash.clear();
     s.kind = game::PlayerKind::Human;
     s.presetTier = std::clamp(s.presetTier, 0, 2);
