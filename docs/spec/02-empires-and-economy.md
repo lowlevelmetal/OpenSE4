@@ -1270,12 +1270,52 @@ Racial combat bonuses also apply to fighter groups [H].
   - experience and Race Age, both read-only ("Newborn" when new).
 - **Environment:** the atmosphere breathed, which is also the homeworld's, and the home
   planet type.
-- **Culture:** with a window comparing the modifiers.
+- **Culture:** with a window comparing the modifiers (below).
 - **Characteristics** and **Advanced Traits:** both show the points left.
 - **Description:** biology, society and history texts, plus demeanor and happiness type.
 
-Create Empire is refused while the point balance is negative. A password-protected empire
-also needs its password before it can be edited [H].
+**Characteristics page** (confirmed: binary). Each characteristic's arrows move it by 1 %
+a click and keep it between its `Min Pct` and `Max Pct` (§8.1). Beside the value stands a
+word for its level, the same word the Race Report shows:
+
+| Value | Word |
+|---|---|
+| 130 % and up | God-like |
+| 120–129 % | Superior |
+| 110–119 % | Impressive |
+| 105–109 % | Enhanced |
+| 100–104 % | Average |
+| 95–99 % | Reduced |
+| 90–94 % | Weak |
+| 80–89 % | Pathetic |
+| below 80 % | Non-Existant (the original's spelling) |
+
+Then, in grey, the change it makes to its racial effect: "(+10% to Research)", "(0% to
+Research)" at 100 %, "(-5% to Research)" below. The effects are named, in the order of
+§8.1: Ground Combat, Research, Intelligence, Tolerance, Reproduction, Happiness, Ship
+Attack, Ship Defense, Trade, Mineral Prod., Organics Prod., Radioactives Prod., Space Yard
+Rate, Repair Rate and Maintenance Reduction.
+
+**Culture Modifiers Comparison** (confirmed: binary). The Culture page's Compare Culture
+Modifiers opens a 780 × 475 dialog of that name with Close. A list at (20,60), 550 × 320
+with 20 px rows, holds every culture: its name in 100 px, then ten 42 px columns headed
+Prod., Res., Intel., Trade, SC, GC, Happy, Maint., SY and Repair. A modifier of 0 is left
+blank; the others read "N%", with "+" before a positive one. Under the list a legend in
+three columns spells the headings out: Resource Production, Research, Intelligence and
+Trade; Space Combat, Ground Combat, Population Happiness and Maintenance; Space Yard Rate
+and Component Repair. Our client differs: the race's current culture is written in yellow,
+and the legend's places are ours (inferred).
+
+**Create Empire** (confirmed: binary) checks the empire in this order and stops at the
+first check that fails, saying so in a message with a title:
+1. the racial points spent exceed the game's racial points;
+2. the empire has no name;
+3. the emperor has no name;
+4. the race breathes no atmosphere (None) and its home planet type is Gas Giant;
+5. no culture is chosen.
+
+The messages' titles and wording are ours. A password-protected empire also needs its
+password before it can be edited [H].
 
 **Experience and race age** (confirmed: binary)
 - Experience is a whole number kept with the empire. It starts at 0 and is saved in games

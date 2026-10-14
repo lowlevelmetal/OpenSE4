@@ -149,7 +149,9 @@ The choices and defaults below are confirmed: binary.
 
 **Players tab**
 
-- The list of explicit empires, with Add New, Add Existing, Edit, Remove and Save.
+- The list of explicit empires, with Add New, Add Existing, Edit, Remove and Save. Add New
+  and Edit open Empire Setup (spec 02 §9: its pages, the characteristics' arrows and
+  words, the culture comparison and Create Empire's checks).
 - **Random computer players** has two checkboxes, both on in a new game (observed, spec 07
   session 5). *Regular* AIs are full empires; *neutral* AIs stay in their home system. So a
   default game, and Quick Start, which keeps the defaults (§2.1), has 3–7 computer players
@@ -168,8 +170,10 @@ The choices and defaults below are confirmed: binary.
 **Game Settings tab**
 
 - The master password and the maximum units and ships per player. The caps default to
-  `Default Number Of Units/Ships Per Player`. The window checks neither cap: each is read as
-  a whole number and held in 16 bits (confirmed: binary).
+  `Default Number Of Units/Ships Per Player`. Each cap's arrows move it by 100 and keep it
+  from 100 to 20,000; the value is read as a whole number and held in 16 bits (confirmed:
+  binary). Our client differs: a number typed into the box (OpenSE4's) is kept in that
+  range too.
 - A list of twelve check boxes, in this order (confirmed: binary): Cheat codes allowed;
   Team Mode; No Tactical Combat; Players can see the complete tech tree; Allow
   gifts/tributes; Allow technology gifts, tributes and trades; Allow surrender; Allow
@@ -661,9 +665,13 @@ binary.
   is o + R(s). Corners can be reached from two sides, so they are twice as likely. The draw
   is repeated while the sector is occupied, up to 101 draws, after which the last one is
   kept anyway.
-- `Ring 8` and `Ring 9` have no rule here: the ring formula would put the object outside
-  the 13 × 13 grid (o = −1 or −2). The engine uses `Ring 7` and warns **(OpenSE4 choice,
-  §14 Q46)**. The stock data uses no ring above 7.
+- `Ring 8` and `Ring 9` take the same formula unclamped (confirmed: binary): side 2k − 1
+  and offset o = −1 for `Ring 8`, −2 for `Ring 9`, so the draw can fall outside the
+  13 × 13 grid. The sector number is row × 13 + column kept to its low byte, so a position
+  off a side wraps to the other side of the grid, and one off the top or bottom becomes a
+  number from 169 to 255, which is no sector at all; the occupancy test then reads past the
+  end of its table, so the result is undefined (§14 Q46). The engine places such an object
+  on `Ring 7` and warns **(OpenSE4 choice)**. The stock data uses no ring above 7.
 - `Circle Radius R`: a uniformly random unoccupied sector whose Euclidean distance from
   the centre, **truncated**, equals R. If there is none, the object goes to sector (0,0).
 - `Coord X,Y`: a fixed sector with no randomness and no occupancy check.
@@ -1453,11 +1461,28 @@ in spec 05 §6; in short (confirmed: binary):
 6. **Qualifier.** Nothing is checked before 2400.0 + N years. This is not a condition by
    itself. Initial value 5 years.
 
-The setup stores every "years" value as a number of turns (years × 10). The values above
-are the original's initial values; the setup window may show its own. On a fresh start the
-Victory Conditions page shows every condition unchecked with a score of 5,000,000, 10.0
-years, 300 % of the second place, 50 % of the tech areas, 1.0 year of peace and 5.0 years
-before the conditions apply (observed, spec 07 session 3).
+The setup stores every "years" value as a number of turns (years × 10), and so does
+OpenSE4 since save format 10. The values above are the original's initial values; the
+setup window may show its own. On a fresh start the Victory Conditions page shows every
+condition unchecked with a score of 5,000,000, 10.0 years, 300 % of the second place, 50 %
+of the tech areas, 1.0 year of peace and 5.0 years before the conditions apply (observed,
+spec 07 session 3).
+
+Each value has a spin control. A click on an arrow moves the value by one step and then
+keeps it in the control's range; the arrows ignore Shift and Ctrl (confirmed: binary):
+
+| Condition | Step | Range | Shown |
+|---|---|---|---|
+| Score | 200,000 | 100,000 to 10,000,000 | a whole number |
+| Years elapsed | 1.0 year | 3.0 to 500.0 years | one decimal |
+| Lead over second place | 20 % | 150 % to 1,000 % | "N%" |
+| Research share | 10 % | 10 % to 100 % | "N%" |
+| Quadrant at peace | 0.2 year | 0.2 to 10.0 years | one decimal |
+| Qualifier | 1.0 year | 1.0 to 100.0 years | one decimal |
+
+A value from elsewhere that lies outside the range (a saved game's, say) comes back into it
+at the first click. Our client differs: the value box also takes a typed number (one decimal
+for the years), kept in the same range.
 
 Meeting any condition ends the game after that turn; the original does not pick a winner,
 and the Scores window's ranking shows the result. With nothing enabled, nothing ends the
@@ -1788,8 +1813,10 @@ highlighted, and an X marks each empire that has met one.
     (perhaps the "within 4 jumps" strength test, then at most two real jumps) (inferred: not
     traced to their spec 05 rules).
 
-46. **Ring 8 and Ring 9.** *Open* (raised 2026-10-03). A system template's `Ring k` is read as
-    one digit (§4.3), so `Ring 8` and `Ring 9` are possible, but the ring formula (side
-    2k − 1, offset 7 − k) then reaches past the grid's edge. What does the original do with
-    them: place the object off the grid, clamp it, or something else? The stock data never
-    uses them. The engine places them on `Ring 7` with a warning (OpenSE4 choice).
+46. **Ring 8 and Ring 9.** *Answered* (confirmed: binary): the original does not clamp the
+    ring formula (side 2k − 1, offset 7 − k), so `Ring 8` and `Ring 9` can draw positions
+    off the grid. The sector number keeps only its low byte: a position off a side wraps
+    to the far side, one off the top or bottom is no sector (169 to 255), and the
+    occupancy test then reads past its table, with no defined result (§4.3). The stock data
+    never uses them. The engine keeps placing them on `Ring 7` with a warning, a stated
+    OpenSE4 choice.

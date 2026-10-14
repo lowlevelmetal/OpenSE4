@@ -273,7 +273,11 @@ are left out, and the title screen and the Mods window say why.
 Classic mods for the original (a folder of replacement data files and pictures, without
 a `mod.toml`) load the same way: `--mod=path/to/the/mod`. Applying one to a **copy** of
 the game directory and passing that copy with `--classic-dir` works too, as before; run
-`opense4-datacheck` on the copy first.
+`opense4-datacheck` on the copy first. A shortcut made for the original that names a mod
+folder as its fourth argument (`se4.exe a b c MyMod`) works with OpenSE4 too: given four
+arguments that are not options, OpenSE4 ignores the first three and plays the fourth,
+a folder in the game directory (or a path), as a classic mod for that run, as the original
+reads it in place of the one `Path.txt` names (docs/spec/05 §9.2).
 
 Everyone in a network or e-mail game needs the same mods, apart from mods with only
 pictures and sounds; the lobby lists the host's mods, and refuses a player whose mods

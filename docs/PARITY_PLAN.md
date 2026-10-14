@@ -158,9 +158,9 @@ questions are what the observation sessions still have to settle.
    - spec 06 §7 Q99: endings when a human loses during its own turn, intelligence targets,
      changed objects;
    - Q60: Windows' own Small Fonts size, which needs a Windows machine;
-   - spec 01 Q46: Ring 8 and Ring 9;
-   - the OpenSE4 choices the setup screens listed in [PARITY_GAPS.md](PARITY_GAPS.md): spin
-     steps, characteristic words, Compare Culture Modifiers, Login To Game.
+   - the OpenSE4 choice the setup screens listed in [PARITY_GAPS.md](PARITY_GAPS.md): Login
+     To Game. (Spec 01 Q46, Ring 8 and Ring 9, the spin steps, the characteristics' words and
+     Compare Culture Modifiers were settled by the REA audit of 2026-10-11.)
 3. **Keep the interface covered by input scripts.**
    - `tools/run_input_tests.py` plays 77 scripts through the client's own input, covering
      every tutorial and training game, the mouse-only features and what mods add to the
