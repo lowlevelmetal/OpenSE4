@@ -191,7 +191,7 @@ std::string orderText(const game::GameState& s, const game::Order& o, game::Empi
         case OrderKind::Attack:
             if (const game::Vehicle* t = s.vehicle(o.vehicle)) return std::format("{} {}", name, t->name);
             return name;
-        case OrderKind::MoveToWaypoint: return std::format("{} {}", name, o.amount);
+        case OrderKind::MoveToWaypoint: return std::format("{} {}", name, o.amount + 1);   // slot 0..9 is waypoint 1..10
         default: return name;
     }
 }

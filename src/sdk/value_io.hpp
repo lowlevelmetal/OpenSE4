@@ -772,6 +772,7 @@ void fields(A& a, cmd::SetMinister& x) {
     a("planet", x.planet);
     a("empire_wide", x.empireWide);
     a("on", x.on);
+    a("fleet", x.fleet);
 }
 template <class A>
 void fields(A& a, cmd::EnterSector& x) {
@@ -835,6 +836,12 @@ void fields(A& a, cmd::AbandonPlanet& x) {
 template <class A>
 void fields(A& a, cmd::CloakColony& x) {
     a("planet", x.planet);
+    a("cloak", x.cloak);
+}
+template <class A>
+void fields(A& a, cmd::CloakVehicles& x) {
+    a("vehicles", x.vehicles);
+    a("fleet", x.fleet);
     a("cloak", x.cloak);
 }
 template <class A>

@@ -1043,7 +1043,9 @@ TEST_CASE("learn access: a done condition needs the tags that bring it about") {
     CHECK_FALSE(ok("{ order = \"explore\" }", access({"order:move-to"})));
     CHECK(ok("{ order = \"move-to\" }", access({"panel:system"})));
     CHECK(ok("{ order = \"move-to-waypoint\" }", access({}, {"Ctrl+1"})));
-    CHECK(ok("{ command = \"SetWaypoint\" }", access({}, {"Alt+1"})));
+    // Alt+digit asks for a sector, which a click on the system view gives (spec 06 §3.1).
+    CHECK(ok("{ command = \"SetWaypoint\" }", access({"panel:system"}, {"Alt+1"})));
+    CHECK_FALSE(ok("{ command = \"SetWaypoint\" }", access({}, {"Alt+1"})));
     CHECK_FALSE(ok("{ command = \"SetWaypoint\" }", access({"panel:system"})));
     CHECK(ok("{ command = \"QueueAdd\" }", access({"set-queue:available"})));
     CHECK_FALSE(ok("{ command = \"QueueAdd\" }", access({"set-queue:queue"})));

@@ -283,19 +283,24 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front().planetSize == 2);   // format 10
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).ownList);                          // format 10
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
-    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 5]).email == "someone@example.org");
-    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 4]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
-    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 3]);
+    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 6]).email == "someone@example.org");
+    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 5]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
+    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 4]);
     CHECK(tagged.vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
     CHECK(tagged.orders.size() == 1);
     CHECK(tagged.repeat);
-    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands[c.size() - 2]);
+    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands[c.size() - 3]);
     CHECK(leader.fleet == FleetId{46u});
     CHECK(leader.vehicle == VehicleId{47u});
     // A mod's order (format 9).
-    const auto& mod = std::get<cmd::ModCommand>(loaded->commands.back());
-    CHECK(mod == std::get<cmd::ModCommand>(c.back()));
+    const auto& mod = std::get<cmd::ModCommand>(loaded->commands[c.size() - 2]);
+    CHECK(mod == std::get<cmd::ModCommand>(c[c.size() - 2]));
     CHECK(mod.args == R"({"power":2,"note":"x"})");
+    // Cloak and Decloak of vehicles (format 10).
+    const auto& cloak = std::get<cmd::CloakVehicles>(loaded->commands.back());
+    CHECK(cloak.vehicles == std::vector<VehicleId>{VehicleId{49u}, VehicleId{50u}});
+    CHECK(cloak.fleet == FleetId{51u});
+    CHECK_FALSE(cloak.cloak);
 }
 
 // ---- Hostile input ------------------------------------------------------------------------------------
@@ -528,8 +533,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x2b24457d37a67651ull;
-    constexpr size_t kGoldenSize = 1971;
+    constexpr uint64_t kGoldenChecksum = 0x1577a43b485a8aa9ull;
+    constexpr size_t kGoldenSize = 1975;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -555,8 +560,12 @@ void dropFormat10(GameState& g) {
         e.interfaceOptions.empiresTab = 0;
         e.interfaceOptions.galaxyMapNames = e.interfaceOptions.galaxyMapDistances = false;
     }
-    for (Vehicle& v : g.vehicles)
+    for (Vehicle& v : g.vehicles) {
         for (Order& o : v.orders) o.planetSize = 0;
+        v.repeatShift = 0;
+    }
+    for (auto& c : g.colonies)
+        if (c) c->repeatShift = 0;
 }
 
 } // namespace
@@ -676,6 +685,7 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     build.amount = static_cast<int>(StellarAction::CreateConstructedPlanet);
     build.planetSize = 2;
     g.vehicles[0].orders.push_back(build);
+    g.vehicles[0].repeatShift = 3;   // a repeating list turned three places (spec 03 §8)
     auto now = deserializeState(serializeState(g));
     REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
     CHECK(stateChecksum(*now) == stateChecksum(g));
@@ -686,6 +696,7 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     CHECK(now->empires[0].interfaceOptions.galaxyMapNames);
     CHECK(now->empires[0].interfaceOptions.galaxyMapDistances);
     CHECK(now->vehicles[0].orders.back().planetSize == 2);
+    CHECK(now->vehicles[0].repeatShift == 3);
 
     // The same game as format 9 wrote it: none of them, version 9 in the envelope.
     const std::vector<uint8_t> current = serializeState(g);
@@ -707,6 +718,7 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapNames);
     CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapDistances);
     CHECK(before->vehicles[0].orders.back().planetSize == 0);
+    CHECK(before->vehicles[0].repeatShift == 0);
     CHECK(stateChecksum(*before) == stateChecksum(nine));
 }
 

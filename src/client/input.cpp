@@ -252,10 +252,10 @@ std::optional<Action> Bindings::boundTo(const KeyChord& c, Action except) const 
     return std::nullopt;
 }
 
-bool Bindings::pressed(Action a) const {
+bool Bindings::pressed(Action a, bool repeat) const {
     if (ImGui::GetIO().WantTextInput) return false;
     for (const KeyChord& c : keys_[static_cast<size_t>(a)])
-        if (!c.empty() && ImGui::IsKeyPressed(c.key, false) && modifiersDown(c)) return true;
+        if (!c.empty() && ImGui::IsKeyPressed(c.key, repeat) && modifiersDown(c)) return true;
     return false;
 }
 

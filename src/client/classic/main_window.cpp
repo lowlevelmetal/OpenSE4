@@ -398,30 +398,16 @@ const game::Colony* MainWindow::selectedColony(const UiContext& ui) const {
     return ui.state().colony(*object_);
 }
 
-void MainWindow::cycleVehicle(UiContext& ui, int dir, bool idleOnly) {
-    // The Next/Previous switches of the Empire Options (spec 06 §1.9, §2.3). "Skip
-    // ships under construction" has nothing to skip: our ships appear finished.
+void MainWindow::cycleVehicle(UiContext& ui, int dir) {
+    // One cycle for Space, Ctrl+N, Ctrl+B and the selector's arrows, with the
+    // Next/Previous switches of the Empire Options (spec 06 §1.9, §2.3).
     const game::InterfaceOptions& prefs = ui.options();
-    const game::Vehicle* current = selectedVehicle(ui);
-    std::vector<game::VehicleId> list;
-    for (const game::Vehicle& v : ui.state().vehicles) {
-        if (v.owner != ui.session.player() || game::isUnitType(game::vehicleType(ui.rules(), ui.state(), v))) continue;
-        // "Next ship": in a turn-based game the ships that still have movement
-        // points, in a simultaneous game those without orders (spec 03 §17).
-        if (idleOnly && ui.session.turnBased() && v.movement <= 0) continue;
-        if (idleOnly && !ui.session.turnBased() && !(v.orders.empty() && (!v.fleet.valid() || game::fleetOrders(ui.state(), *ui.state().fleet(v.fleet)).empty())))
-            continue;
-        if (prefs.skipDamaged && game::vehicleDamageTaken(ui.state(), v) > 0) continue;
-        if (prefs.skipInFleets && v.fleet.valid() && !(current && v.id == current->id)) continue;
-        // "Stop once per location": skip other ships in the sector we are leaving.
-        if (prefs.stopOncePerLocation && current && v.id != current->id && v.location == current->location) continue;
-        list.push_back(v.id);
-    }
-    if (list.empty()) return;
-    auto it = vehicle_ ? std::find(list.begin(), list.end(), *vehicle_) : list.end();
-    size_t i = it == list.end() ? 0 : size_t(it - list.begin());
-    if (it != list.end()) i = (i + list.size() + size_t(dir + int(list.size()))) % list.size();
-    selectVehicle(ui, list[i]);
+    ShipCycleOptions options;
+    options.turnBased = ui.session.turnBased();
+    options.skipDamaged = prefs.skipDamaged;
+    options.skipInFleets = prefs.skipInFleets;
+    options.stopOncePerLocation = prefs.stopOncePerLocation;
+    if (const auto next = cycleShip(ui.rules(), ui.state(), ui.session.player(), vehicle_, dir, options, shipCycle_)) selectVehicle(ui, *next);
 }
 
 void MainWindow::cycleFleet(UiContext& ui, int dir) {
@@ -624,7 +610,10 @@ std::string_view MainWindow::pickingId() const {
         case Pick::DropCargo: return "drop-cargo";
         case Pick::LaunchRemote: return "launch-units";
         case Pick::RecoverRemote: return "recover-units";
-        case Pick::Callback: return "location";
+        case Pick::Callback:
+        case Pick::Waypoint:
+        case Pick::TagMinefield:
+        case Pick::UntagMinefield: return "location";
     }
     return {};
 }
@@ -632,7 +621,16 @@ std::string_view MainWindow::pickingId() const {
 void MainWindow::startPick(UiContext&, Pick p, std::string prompt) {
     pick_ = p;
     pickPrompt_ = std::move(prompt);
-    patrol_.clear();
+    patrolPoints_ = 0;
+}
+
+void MainWindow::startLocationPick(UiContext& ui, Pick p, int slot) {
+    // The prompts are ours; the original asks to select a location for the
+    // waypoint, or to add or to remove a tagged minefield.
+    pickSlot_ = slot;
+    if (p == Pick::Waypoint) startPick(ui, p, std::format("Set Waypoint {}: pick a sector", slot + 1));
+    else if (p == Pick::TagMinefield) startPick(ui, p, "Add Tagged Minefield: pick a sector");
+    else startPick(ui, p, "Remove Tagged Minefield: pick a sector");
 }
 
 void MainWindow::note(UiContext& ui, std::string text) {
@@ -768,9 +766,28 @@ void MainWindow::completePick(UiContext& ui, game::Location where, std::optional
             return;
         }
         case Pick::Patrol:
-            patrol_.push_back(where);
-            pick_ = Pick::Patrol;  // keep collecting until Enter or a right click
+            pick_ = Pick::Patrol;   // the route goes on until the object's own sector, Enter or a right click
+            addPatrolPoint(ui, where);
             return;
+        case Pick::Waypoint: {
+            // Waypoint slot+1 at the sector clicked: its name kept, else
+            // "Waypoint N" (spec 06 §3.1, confirmed: binary).
+            game::Waypoint w;
+            const game::Waypoint& before = ui.me().waypoints[static_cast<size_t>(std::clamp(pickSlot_, 0, 9))];
+            w.name = before.name.empty() ? std::format("Waypoint {}", pickSlot_ + 1) : before.name;
+            w.location = where;
+            w.set = true;
+            if (const game::CommandResult r = ui.session.issue(game::cmd::SetWaypoint{pickSlot_, w}); !r.ok) note(ui, r.error);
+            return;
+        }
+        case Pick::TagMinefield:
+        case Pick::UntagMinefield: {
+            // Added when not there, removed when there (spec 06 §3.1, confirmed: binary).
+            const auto& tagged = ui.me().taggedMinefields;
+            const bool there = std::find(tagged.begin(), tagged.end(), where) != tagged.end();
+            if (p == Pick::TagMinefield ? !there : there) ui.session.issue(game::cmd::TagMinefield{where, p == Pick::TagMinefield});
+            return;
+        }
         case Pick::LoadCargo:
         case Pick::LaunchRemote:
         case Pick::RecoverRemote: {
@@ -873,16 +890,98 @@ void MainWindow::drawPickObject(UiContext& ui) {
     }
 }
 
-void MainWindow::finishPatrol(UiContext& ui) {
-    std::vector<game::Order> orders;
-    for (const auto& l : patrol_) orders.push_back(game::Order{game::OrderKind::MoveTo, l});
+std::optional<game::Location> MainWindow::patrolHome(UiContext& ui) const {
+    // The object's own sector: the first tagged vehicle's (they share it), the fleet's, the vehicle's.
+    const game::GameState& s = ui.state();
+    if (!tagged_.empty()) {
+        if (const game::Vehicle* v = s.vehicle(tagged_.front())) return v->location;
+        return std::nullopt;
+    }
+    if (const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr) return f->location;
+    if (const game::Vehicle* v = selectedVehicle(ui)) return v->location;
+    return std::nullopt;
+}
+
+std::string MainWindow::patrolPrompt() const {
+    // The point by its ordinal, and how to end (the original's: a click on the ship).
+    const int n = patrolPoints_ + 1;
+    const char* suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th";
+    return std::format("Set Patrol: pick the {}{} point; the ship's own sector ends the route", n, suffix);
+}
+
+void MainWindow::addPatrolPoint(UiContext& ui, game::Location where) {
+    const std::optional<game::Location> home = patrolHome(ui);
+    const game::Order move{game::OrderKind::MoveTo, where};
+    if (!tagged_.empty()) {
+        // Each tagged list gets the point; the tags stay until the route ends.
+        if (const game::CommandResult r = ui.session.issue(game::cmd::OrderTagged{tagged_, {move}, false}); !r.ok) note(ui, r.error);
+    } else {
+        for (const OrderOwner& w : orderOwners(ui)) {
+            game::cmd::SetOrders c;
+            c.vehicle = w.vehicle;
+            c.fleet = w.fleet;
+            const game::GameState& s = ui.state();
+            if (const game::Fleet* f = s.fleet(w.fleet)) {
+                c.orders = game::fleetOrders(s, *f);
+                c.repeat = game::fleetRepeats(s, *f);
+            } else if (const game::Vehicle* v = s.vehicle(w.vehicle)) {
+                c.orders = v->orders;
+                c.repeat = v->repeatOrders;
+            }
+            c.orders.push_back(move);
+            if (const game::CommandResult r = ui.session.issue(c); !r.ok) note(ui, r.error);
+        }
+    }
+    ++patrolPoints_;
+    if (home && where == *home) finishPatrol(ui, true);
+    else pickPrompt_ = patrolPrompt();
+}
+
+void MainWindow::finishPatrol(UiContext& ui, bool atHome) {
     pick_ = Pick::None;
-    if (orders.empty()) return;
-    // A patrol of one point is just a move (spec 03 §8 Set Patrol). A tagged
-    // group's patrol is appended to every tagged list, Repeat on.
-    if (orders.size() == 1) giveOrder(ui, orders.front());
-    else if (!tagged_.empty()) giveTagged(ui, std::move(orders), true);
-    else replaceOrders(ui, std::move(orders), true);
+    if (patrolPoints_ == 0) {
+        orderDone();
+        return;
+    }
+    patrolPoints_ = 0;
+    // Repeat on in each list; a list that holds one order only is cleared
+    // when the route ends on the object's own sector (the original's), and
+    // kept as a plain move when Enter or a right click ends it (ours).
+    const game::GameState& s = ui.state();
+    std::vector<game::cmd::SetOrders> changes;
+    auto change = [&](game::VehicleId vehicle, game::FleetId fleet, const std::vector<game::Order>& orders) {
+        game::cmd::SetOrders c;
+        c.vehicle = vehicle;
+        c.fleet = fleet;
+        if (orders.size() == 1 && !atHome) return;
+        if (orders.size() != 1) {
+            c.orders = orders;
+            c.repeat = true;
+        }
+        changes.push_back(std::move(c));
+    };
+    std::vector<game::FleetId> fleets;
+    if (!tagged_.empty()) {
+        for (game::VehicleId id : game::taggedVehicles(s, ui.session.player(), tagged_)) {
+            const game::Vehicle* v = s.vehicle(id);
+            if (!v) continue;
+            if (const game::Fleet* f = s.fleet(v->fleet)) {
+                if (std::find(fleets.begin(), fleets.end(), f->id) != fleets.end()) continue;
+                fleets.push_back(f->id);
+                change({}, f->id, game::fleetOrders(s, *f));
+            } else {
+                change(id, {}, v->orders);
+            }
+        }
+    } else {
+        for (const OrderOwner& w : orderOwners(ui)) {
+            if (const game::Fleet* f = s.fleet(w.fleet)) change({}, f->id, game::fleetOrders(s, *f));
+            else if (const game::Vehicle* v = s.vehicle(w.vehicle)) change(v->id, {}, v->orders);
+        }
+    }
+    for (game::cmd::SetOrders& c : changes)
+        if (const game::CommandResult r = ui.session.issue(std::move(c)); !r.ok) note(ui, r.error);
+    orderDone();
 }
 
 void MainWindow::chooseCargo(UiContext& ui, Pick p) {
@@ -944,6 +1043,77 @@ void MainWindow::chooseCargo(UiContext& ui, Pick p) {
 }
 
 void MainWindow::runOrder(UiContext& ui, OrderId id) {
+    // What the order runs for is marked changed this turn, when it ends: the
+    // tagged objects, else the selected vehicle or colony; arming a pick or
+    // opening a window counts (spec 06 §7 Q99(d), confirmed: binary).
+    std::vector<game::VehicleId> vehicles = tagged_;
+    std::vector<game::ObjectId> planets;
+    if (vehicles.empty() && vehicle_) vehicles.push_back(*vehicle_);
+    if (vehicles.empty())
+        if (const game::Colony* c = selectedColony(ui); c && c->owner == ui.session.player()) planets.push_back(c->planet);
+    runOrderNow(ui, id);
+    ui.session.markChanged(vehicles, planets);
+}
+
+void MainWindow::cloakNow(UiContext& ui, bool cloak) {
+    // Cloak and Decloak act at once and leave the order lists alone (spec
+    // 03 §8, confirmed: binary): a colony's, the tagged objects', a fleet's
+    // members at its location, or the vehicle.
+    audio().play(cloak ? "cloakon" : "cloakoff");
+    game::CommandResult r;
+    if (const game::Colony* colony = selectedColony(ui); colony && !vehicle_ && tagged_.empty()) {
+        r = ui.session.issue(game::cmd::CloakColony{colony->planet, cloak});
+    } else if (!tagged_.empty()) {
+        r = ui.session.issue(game::cmd::CloakVehicles{tagged_, {}, cloak});
+        orderDone();
+    } else if (fleet_) {
+        r = ui.session.issue(game::cmd::CloakVehicles{{}, *fleet_, cloak});
+    } else if (vehicle_) {
+        r = ui.session.issue(game::cmd::CloakVehicles{{*vehicle_}, {}, cloak});
+    }
+    if (!r.ok) note(ui, r.error);
+}
+
+void MainWindow::chooseFormation(UiContext& ui) {
+    const game::Fleet* f = fleet_ ? ui.state().fleet(*fleet_) : nullptr;
+    if (!f) return;
+    // Two pickers in turn (spec 06 §1.3, confirmed: binary): the formation,
+    // which is set as it is picked, then the strategy (inferred: Cancel on the
+    // second keeps the formation picked).
+    Chooser c;
+    c.title = "Select Formation";
+    c.note = f->name;
+    const game::FleetId fid = f->id;
+    const uint32_t strategy = f->strategy;
+    const auto& formations = ui.rules().data().formations;
+    for (uint32_t i = 0; i < formations.size(); ++i)
+        c.items.push_back({formations[i].name,
+                           [this, &ui, fid, i, strategy] {
+                               if (const game::CommandResult r = ui.session.issue(game::cmd::SetFleetOptions{fid, i, strategy}); !r.ok) note(ui, r.error);
+                               chooseStrategy(ui, fid);
+                           },
+                           i == f->formation});
+    chooser_ = std::move(c);
+}
+
+void MainWindow::chooseStrategy(UiContext& ui, game::FleetId fid) {
+    const game::Fleet* f = ui.state().fleet(fid);
+    if (!f) return;
+    Chooser c;
+    c.title = "Select Strategy";
+    c.note = f->name;
+    const uint32_t formation = f->formation;
+    const auto& strategies = ui.me().strategies;
+    for (uint32_t i = 0; i < strategies.size(); ++i)
+        c.items.push_back({strategies[i].name,
+                           [this, &ui, fid, formation, i] {
+                               if (const game::CommandResult r = ui.session.issue(game::cmd::SetFleetOptions{fid, formation, i}); !r.ok) note(ui, r.error);
+                           },
+                           i == f->strategy});
+    chooser_ = std::move(c);
+}
+
+void MainWindow::runOrderNow(UiContext& ui, OrderId id) {
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
     const game::Vehicle* v = selectedVehicle(ui);
@@ -954,7 +1124,10 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
         case OrderId::Warp: startPick(ui, Pick::Warp, "Warp: pick a warp point"); return;
         case OrderId::Colonize: startPick(ui, Pick::Colonize, "Colonize: pick a planet"); return;
         case OrderId::Attack: startPick(ui, Pick::Attack, "Attack: pick a target"); return;
-        case OrderId::Patrol: startPick(ui, Pick::Patrol, "Patrol: pick points, then Enter or a right click"); return;
+        case OrderId::Patrol:
+            startPick(ui, Pick::Patrol, {});
+            pickPrompt_ = patrolPrompt();
+            return;
         case OrderId::MoveToWaypoint:
             if (tagged_.empty()) {
                 openFor(ui, ScreenId::SelectWaypoint);
@@ -965,7 +1138,7 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
                 const auto& wps = ui.me().waypoints;
                 for (size_t i = 0; i < wps.size(); ++i)
                     if (wps[i].set)
-                        c.items.push_back({std::format("{} - {}", i, wps[i].name), [this, &ui, i] {
+                        c.items.push_back({std::format("{} - {}", i + 1, wps[i].name), [this, &ui, i] {
                                                game::Order o{game::OrderKind::MoveToWaypoint};
                                                o.amount = int(i);
                                                giveOrder(ui, o);
@@ -976,19 +1149,22 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
         case OrderId::Resupply: simple(game::OrderKind::Resupply); return;
         case OrderId::Repair: simple(game::OrderKind::Repair); return;
         case OrderId::Explore: simple(game::OrderKind::Explore); return;
-        case OrderId::Sentry: simple(game::OrderKind::Sentry); return;
+        case OrderId::Sentry: {
+            // Sentry toggles: when the list already starts with a Sentry it
+            // is cleared instead (spec 03 §19 Q76, confirmed: binary).
+            const auto owners = orderOwners(ui);
+            const std::vector<game::Order>* first = nullptr;
+            if (!owners.empty()) {
+                if (const game::Fleet* f = s.fleet(owners.front().fleet)) first = &game::fleetOrders(s, *f);
+                else if (const game::Vehicle* x = s.vehicle(owners.front().vehicle)) first = &x->orders;
+            }
+            if (tagged_.empty() && first && !first->empty() && first->front().kind == game::OrderKind::Sentry) replaceOrders(ui, {}, false);
+            else simple(game::OrderKind::Sentry);
+            return;
+        }
         case OrderId::SweepMines: simple(game::OrderKind::SweepMines); return;
         case OrderId::Cloak:
-        case OrderId::Decloak:
-            audio().play(id == OrderId::Cloak ? "cloakon" : "cloakoff");
-            // A colony cloaks at once, never through its order list (spec 01 §6.9).
-            if (colony && !v && tagged_.empty()) {
-                const game::CommandResult res = ui.session.issue(game::cmd::CloakColony{colony->planet, id == OrderId::Cloak});
-                if (!res.ok) note(ui, res.error);
-                return;
-            }
-            simple(id == OrderId::Cloak ? game::OrderKind::Cloak : game::OrderKind::Decloak);
-            return;
+        case OrderId::Decloak: cloakNow(ui, id == OrderId::Cloak); return;
         case OrderId::ClearOrders: replaceOrders(ui, {}, false); return;
         case OrderId::RepeatOrders: {
             const auto owners = orderOwners(ui);
@@ -1035,27 +1211,7 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             }
             openFor(ui, ScreenId::Scrap);
             return;
-        case OrderId::Strategy: {
-            const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr;
-            if (!f) return;
-            Chooser c;
-            c.title = "Formation \\ Strategy";
-            c.note = f->name;
-            const game::FleetId fid = f->id;
-            const uint32_t formation = f->formation, strategy = f->strategy;
-            c.items.push_back({"Formation", nullptr});
-            const auto& formations = r.data().formations;
-            for (uint32_t i = 0; i < formations.size(); ++i)
-                c.items.push_back({formations[i].name, [&ui, fid, i, strategy] { ui.session.issue(game::cmd::SetFleetOptions{fid, i, strategy}); },
-                                   i == formation});
-            c.items.push_back({"Strategy", nullptr});
-            const auto& strategies = ui.me().strategies;
-            for (uint32_t i = 0; i < strategies.size(); ++i)
-                c.items.push_back({strategies[i].name, [&ui, fid, formation, i] { ui.session.issue(game::cmd::SetFleetOptions{fid, formation, i}); },
-                                   i == strategy});
-            chooser_ = std::move(c);
-            return;
-        }
+        case OrderId::Strategy: chooseFormation(ui); return;
         // "Select Component": each position of the selected vehicle whose part
         // is intact and has Emergency Resupply or Emergency Energy; "Select
         // Facility": each facility position of the colony with either ability.
@@ -1108,6 +1264,13 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
                 for (game::VehicleId t : std::vector<game::VehicleId>(tagged_))
                     if (const game::Vehicle* x = s.vehicle(t)) ui.session.issue(game::cmd::SetMinister{t, {}, false, !x->minister});
                 orderDone();
+            } else if (const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr) {
+                // A fleet's own flag flips, and every member at its location
+                // gets it (spec 03 §8, confirmed: binary).
+                game::cmd::SetMinister c;
+                c.fleet = f->id;
+                c.on = !f->minister;
+                ui.session.issue(c);
             } else if (v) {
                 ui.session.issue(game::cmd::SetMinister{v->id, {}, false, !v->minister});
             } else if (colony) {
@@ -1410,7 +1573,7 @@ void MainWindow::commandPanel(UiContext& ui) {
             // Repeat Orders and Minister Control show their pressed state when on.
             bool on = false;
             if (enabled && slot.order == OrderId::RepeatOrders) on = f ? game::fleetRepeats(s, *f) : v && v->repeatOrders;
-            if (enabled && slot.order == OrderId::Minister) on = tagged_.empty() && (v ? v->minister : c && c->minister);
+            if (enabled && slot.order == OrderId::Minister) on = tagged_.empty() && (f ? f->minister : v ? v->minister : c && c->minister);
             const int state = !enabled ? 3 : on ? 2 : hovered ? 1 : 0;
             drawAt(ui, dl, orderCell(ui.art, slot.band, slot.column, state), at, {34, 34});
             if (hovered && slot.order) {
@@ -1455,7 +1618,7 @@ void MainWindow::commandPanel(UiContext& ui) {
         ui.tagFrame(kCycleTags[size_t(row)], Rect{at, at + Vec2{48, 24}});
         if (prev || next) {
             const int dir = next ? 1 : -1;
-            if (row == 0) cycleVehicle(ui, dir, false);
+            if (row == 0) cycleVehicle(ui, dir);
             else if (row == 1) cycleFleet(ui, dir);
             else cycleColony(ui, dir);
         }
@@ -1795,7 +1958,7 @@ void MainWindow::overlayText(UiContext& ui) {
     };
     const auto& wps = ui.me().waypoints;
     for (size_t i = 0; i < wps.size(); ++i)
-        if (wps[i].set && wps[i].location.system == shown_) corner(wps[i].location.sector, std::to_string(i));
+        if (wps[i].set && wps[i].location.system == shown_) corner(wps[i].location.sector, std::to_string(i + 1));
     for (const game::Location& m : ui.me().taggedMinefields)
         if (m.system == shown_) corner(m.sector, "M");
 
@@ -2092,6 +2255,10 @@ void MainWindow::mouse(UiContext& ui) {
                 giveOrder(ui, game::Order{game::OrderKind::MoveTo, where});
             return;
         }
+        // With no pick armed, a click on a sector of a system we have not
+        // explored does nothing: the selection, the report, the tags and the
+        // marked sector stay (spec 06 §2.4, confirmed: binary).
+        if (!ui.me().hasExplored(shown_)) return;
         selectSector(ui, *sec, true);
     }
 }
@@ -2101,11 +2268,16 @@ void MainWindow::hotkeys(UiContext& ui) {
     if (io.WantTextInput) return;
     const Bindings& keys = appSettings().controls.bindings;
     auto pressed = [&](Action a) { return keys.pressed(a); };
+    // A held key repeats, as the original's key-down does (spec 06 §3,
+    // inferred): ours only for the selection cycles and the movement log's
+    // single step, so that a held key never opens a window again, flips an
+    // order twice or ends several turns.
+    auto pressedOrHeld = [&](Action a) { return keys.pressed(a, true); };
 
     // The four movement-log keys start the replay whatever their buttons show
     // (§2.8); while it plays no other main-window key works (§3).
     for (const OrderId o : {OrderId::ReplayPlay, OrderId::ReplayShip, OrderId::ReplayStep, OrderId::ReplayRewind})
-        if (const auto a = orderAction(o); a && pressed(*a)) {
+        if (const auto a = orderAction(o); a && (o == OrderId::ReplayStep ? pressedOrHeld(*a) : pressed(*a))) {
             startReplay(ui, o);
             return;
         }
@@ -2130,14 +2302,13 @@ void MainWindow::hotkeys(UiContext& ui) {
         else if (pick_ == Pick::None) ui.requests.endTurn = true;
     }
 
-    // Selection cycling and tags.
-    if (pressed(Action::NextIdleShip)) cycleVehicle(ui, 1, true);
-    if (pressed(Action::NextShip)) cycleVehicle(ui, 1, false);
-    if (pressed(Action::PreviousShip)) cycleVehicle(ui, -1, false);
-    if (pressed(Action::NextFleet)) cycleFleet(ui, 1);
-    if (pressed(Action::PreviousFleet)) cycleFleet(ui, -1);
-    if (pressed(Action::NextColony)) cycleColony(ui, 1);
-    if (pressed(Action::PreviousColony)) cycleColony(ui, -1);
+    // Selection cycling and tags. Space and Ctrl+N run the same cycle (spec 06 §2.3).
+    if (pressedOrHeld(Action::NextIdleShip) || pressedOrHeld(Action::NextShip)) cycleVehicle(ui, 1);
+    if (pressedOrHeld(Action::PreviousShip)) cycleVehicle(ui, -1);
+    if (pressedOrHeld(Action::NextFleet)) cycleFleet(ui, 1);
+    if (pressedOrHeld(Action::PreviousFleet)) cycleFleet(ui, -1);
+    if (pressedOrHeld(Action::NextColony)) cycleColony(ui, 1);
+    if (pressedOrHeld(Action::PreviousColony)) cycleColony(ui, -1);
     if (pressed(Action::TagAll)) tagAll(ui);
     if (pressed(Action::ClearTags)) tagged_.clear();
     // Ctrl+L flips the Options window's "Display Ship Movement Lines" (spec 06 §1.9).
@@ -2158,25 +2329,25 @@ void MainWindow::hotkeys(UiContext& ui) {
         saveSettings();
         note(ui, settings().soundOn ? "Sound effects on" : "Sound effects off");
     }
-    // Tagged minefields (Ctrl+T / Ctrl+R) at the selected sector.
-    if (sector_ && (pressed(Action::TagMinefield) || pressed(Action::UntagMinefield)))
-        ui.session.issue(game::cmd::TagMinefield{{shown_, *sector_}, pressed(Action::TagMinefield)});
+    // Tagged minefields (Ctrl+T / Ctrl+R) and waypoints (Alt+0..9) ask for a
+    // sector of the system panel: the next left-click there completes them,
+    // with or without a selection, in any system shown, and no lit button is
+    // needed (spec 06 §3.1, confirmed: binary).
+    if (pressed(Action::TagMinefield)) startLocationPick(ui, Pick::TagMinefield);
+    else if (pressed(Action::UntagMinefield)) startLocationPick(ui, Pick::UntagMinefield);
 
-    // Waypoints: Alt+0..9 sets one at the selected sector; Ctrl+0..9 moves there
-    // when Move To Waypoint is lit.
+    // Waypoints 1..10 are keys 1..9 and 0 (spec 03 §8.1): Alt sets one, Ctrl
+    // moves there when Move To Waypoint is lit.
     const bool ctrl = io.KeyCtrl, alt = io.KeyAlt;
-    for (int i = 0; i < 10; ++i) {
-        const ImGuiKey key = static_cast<ImGuiKey>(ImGuiKey_0 + i);
+    for (int digit = 0; digit < 10; ++digit) {
+        const ImGuiKey key = static_cast<ImGuiKey>(ImGuiKey_0 + digit);
         if (!ImGui::IsKeyPressed(key, false)) continue;
-        if (alt && sector_) {
-            game::Waypoint w;
-            w.name = std::format("Waypoint {}", i);
-            w.location = {shown_, *sector_};
-            w.set = true;
-            ui.session.issue(game::cmd::SetWaypoint{i, w});
-        } else if (ctrl && litNow(ui)[static_cast<size_t>(OrderId::MoveToWaypoint)]) {
+        const int slot = (digit + 9) % 10;
+        if (alt && !ctrl) {
+            startLocationPick(ui, Pick::Waypoint, slot);
+        } else if (ctrl && !alt && litNow(ui)[static_cast<size_t>(OrderId::MoveToWaypoint)]) {
             game::Order o{game::OrderKind::MoveToWaypoint};
-            o.amount = i;
+            o.amount = slot;
             giveOrder(ui, o);
         }
     }

@@ -852,8 +852,8 @@ private:
         if (q.autoWaypoint >= 0 && static_cast<size_t>(q.autoWaypoint) < ui.me().waypoints.size()) {
             const game::Waypoint& w = ui.me().waypoints[static_cast<size_t>(q.autoWaypoint)];
             // Waypoints are numbered 0-9, as in the Waypoints window and the hotkeys.
-            moveTo = w.set ? std::format("{} ({})", w.name.empty() ? std::format("Waypoint {}", q.autoWaypoint) : w.name, sectorName(s, w.location, ui.session.player()))
-                           : std::format("Waypoint {} (not set)", q.autoWaypoint);
+            moveTo = w.set ? std::format("{} ({})", w.name.empty() ? std::format("Waypoint {}", q.autoWaypoint + 1) : w.name, sectorName(s, w.location, ui.session.player()))
+                           : std::format("Waypoint {} (not set)", q.autoWaypoint + 1);
         }
         labelValue(ui, "New ships to", moveTo, 90);
         if (c && c->totalPopulation() == 0) ImGui::TextColored(kTextWarn, "A colony without population cannot build.");

@@ -531,7 +531,8 @@ keys the client ignored followed the specs:
   `isNeutral()` for the rules), so a neutral empire handed to a human keeps the neutral rules.
   A player's copy of a game on different machines changes only there; its orders carry the
   minister switches and the fleets' flag (`cmd::SetMinisters::fleets`) and, of the ships,
-  units and colonies, only the flags of those given orders that turn (`ClassicSession::carryFlags`).
+  units and colonies, only the flags of those changed that turn (`ClassicSession::markChanged`,
+  spec 06 §7 Q99(d)).
   The TCP/IP host's toggle flips only the mark (`ai::setComputerMark`) on every row, an empire
   that was a computer player from the start included, which the host then plays ("[Host]").
 - **Reset Passwords** (spec 06 §1.9): six digits from a source apart from the game's, shown to
@@ -839,6 +840,51 @@ What remains:
 |---|---|---|---|
 | Stellar Manipulation's targets and Construct's sizes (`shipui::stellarCandidates`, `constructSizes`) | Every object of the kind in the vehicle's sector, seen or not, as Colonize's pick lists them; the size picker always shown, its sizes in PlanetSize.txt order | Not described (spec 06 §7 Q114) | L |
 | Stellar Construction in the original's saved games (`classic_save_*`) | The order's size is neither read nor written; an imported order builds the size its device names | The record carries the size, in a place not known (spec 08 §11.1 Q7) | L |
+
+The REA parity audit of the main window (2026-10-14, spec 06 §2.3, §2.4, §2.8, §3, §7 Q99(d),
+Q115–Q118; spec 03 §8, §8.1) brought the client and engine in line with the executable:
+
+- **One ship cycle** for Space, Ctrl+N, Ctrl+B and the top selector (`cycleShip`): own ships
+  and bases that can move, not mothballed, with movement left (turn-based) or no orders
+  (simultaneous), never one whose first order is Sentry; then the Empire Options' filters,
+  "Stop once per location" with its table of places.
+- **Location keys**: Alt+1..9 and Alt+0 (waypoint 10), Ctrl+T and Ctrl+R ask for a sector and
+  the next click gives it, with nothing selected and in any system; waypoints are numbered 1
+  to 10 everywhere (keys, map labels, default names, lists), as the original's saved games
+  number them; deleting a waypoint resets the queues sending ships there.
+- **Orders**: Set Patrol adds each point as it is clicked and ends on the object's own sector
+  with Repeat on (a lone order cleared); Sentry pressed on a list that starts with one clears
+  it; switching Repeat restarts the list at its first order (`repeatShift`, save format 10);
+  Cloak and Decloak at once (`cmd::CloakVehicles`); Toggle Minister Control on a fleet
+  (`cmd::SetMinister::fleet`); Change Name refuses a name any space object has, with the
+  Invalid Name box; Explore, Resupply and Repair search from where the object is and add the
+  Move To even there; Colonize loads colonists when the object's own cargo has none;
+  Formation and Strategy as two pickers.
+- **Clicks and lit buttons**: a click on a sector of a system not explored does nothing
+  without a pick; Decloak is lit for anything cloaked; a fleet's speed, Colonize, Cloak and
+  Decloak count its members at its location.
+- **Windows**: Ships\Units' fleet rows (members at the location, formation, blank cells), a
+  unit group's designs and the cargo one per line, the order list in place with the current
+  order bracketed only with Repeat on, the maintenance total summed live, a fleet row's click
+  selecting its first member there; Waypoints' "1 - name" rows, an empty Rename prompt, the
+  ships en route by Move To Waypoint only, one by one, with a right-click report; View
+  Orders' "(Repeat Orders)" row.
+- **Changed objects** (Q99(d), `ClassicSession::markChanged`): the objects whose minister
+  flags a player's copy carries are those the original marks: every order run for them,
+  and the commands that change their orders, fleet, name, flag, cloak, queue, colony type or
+  cargo.
+
+What remains different:
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| Change Name on the unchanged name | Taken as no change | Refused as a name in use, the prompt asked again | none (a quirk not copied) |
+| Held keys (spec 06 §3) | Only the selection cycles and the movement log's single step repeat | Every main-window key repeats while held (inferred) | L |
+| Set Patrol's end | Also Enter or a right click (OpenSE4's), Repeat on, a lone order kept as a plain move | Only a click on the object's own sector | none (an addition) |
+| View Orders | Editable (Move Up, Move Down, Delete Order, Clear Orders, Repeat), the current order first | Read-only, the list in place | none (an addition) |
+| A repeating list imported from the original mid-way (spec 08 §3.8.8) | Its turn is not imported: switching Repeat restarts it at the imported current order; the export writes the current order first | Restarts at the list's first order | L |
+| Opening Set Construction Queue from Construction Queues | Marks the object changed only when something is changed there | Marks it as the window opens | L (which minister flags a switched player's copy carries) |
+| Ships\Units' fleet rows | Move and Supplies over the members at the location (ours) | Not described | none |
 
 ## Computer player (spec 05 §7)
 

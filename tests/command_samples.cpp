@@ -123,7 +123,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     c.push_back(cmd::Rename{VehicleId{1u}, FleetId{2u}, DesignId{3u}, ObjectId{4u}, "New Name \xE2\x9C\x93"});
     c.push_back(cmd::Scrap{VehicleId{11u}, ObjectId{12u}, 3});
     c.push_back(cmd::Mothball{VehicleId{13u}, false});
-    c.push_back(cmd::SetMinister{VehicleId{14u}, ObjectId{15u}, true, false});
+    c.push_back(cmd::SetMinister{VehicleId{14u}, ObjectId{15u}, true, false, FleetId{52u}});
     c.push_back(cmd::QueueAdd{yard, item, 2});
     c.push_back(cmd::QueueRemove{yard, 4});
     c.push_back(cmd::QueueMove{yard, 1, 5});
@@ -172,6 +172,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     c.push_back(cmd::SetFleetLeader{FleetId{46u}, VehicleId{47u}});
     // A mod's order (docs/sdk/rules.md "Orders"), its arguments as the SDK writes them.
     c.push_back(cmd::ModCommand{"test.mod", "boost", VehicleId{48u}, {}, {}, {}, R"({"power":2,"note":"x"})"});
+    c.push_back(cmd::CloakVehicles{{VehicleId{49u}, VehicleId{50u}}, FleetId{51u}, false});
 
     return orders;
 }

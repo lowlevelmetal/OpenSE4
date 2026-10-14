@@ -137,7 +137,7 @@ manual = "ships-and-fleets#moving-around"
 [[step]]
 title = "Set a waypoint"
 text = """
-**Click a sector in the system view, then press `Alt+1`**: that sector becomes waypoint 1, and a
+**Press `Alt+1`, then click a sector in the system view**: that sector becomes waypoint 1, and a
 cyan frame with the number marks it.
 
 **Waypoints** are ten places you can send ships to quickly. The sector with a warp point is a
@@ -151,10 +151,12 @@ manual = "ships-and-fleets#waypoints"
 [[step]]
 title = "Your fleet again"
 text = """
-**Select your fleet again**: an attack ship, with the ship arrows. The report shows the
-fleet.
+**Select your fleet again** with the arrows of the second row of selectors, the fleets', or
+`Ctrl+F`. The report shows the fleet.
+
+The ship arrows pass it by now: they offer only ships that can still move this turn.
 """
-highlight = ["cycle:ship"]
+highlight = ["cycle:fleet"]
 show = ["panel:report"]
 done = { selected = "fleet", design_type = "Attack Ship" }
 manual = "ships-and-fleets#fleets"

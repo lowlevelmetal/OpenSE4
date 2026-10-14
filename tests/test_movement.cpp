@@ -4154,14 +4154,16 @@ TEST_CASE("orders: composite orders are expanded into simple ones when they are 
     CHECK(w.v(hauler).orders[0] == moveTo(a, 2, 6));
     CHECK(w.v(hauler).orders[1].kind == OrderKind::LoadCargo);
 
-    // Resupply: Move To the nearest depot; already at one, nothing is added.
+    // Resupply: Move To the nearest depot; already at one, the Move To is
+    // added all the same, and completes at once (spec 03 §8, confirmed: binary).
     const VehicleId tanker = w.spawn(w.ship(kA, "Tanker", 3), at(a, 6, 12));
     w.give(tanker, {mk(OrderKind::Resupply)});
     REQUIRE(w.v(tanker).orders.size() == 1);
     CHECK(w.v(tanker).orders[0] == moveTo(a, 2, 6));
     const VehicleId docked = w.spawn(w.ship(kA, "Docked", 3), at(a, 2, 6));
     w.give(docked, {mk(OrderKind::Resupply)});
-    CHECK(w.v(docked).orders.empty());
+    REQUIRE(w.v(docked).orders.size() == 1);
+    CHECK(w.v(docked).orders[0] == moveTo(a, 2, 6));
 
     // Fleets: expanded once from the fleet's location, into every member's copy.
     const VehicleId f1 = w.spawn(w.ship(kA, "Wing", 3), at(a, 12, 0));
@@ -4576,4 +4578,205 @@ TEST_CASE("movement: a turn-based Colonize at a planet the ship cannot settle fa
     movement::runLive(ctx, move);
     CHECK(ctx.messages.empty());
     CHECK(w.v(third).orders.empty());
+}
+
+// ---- The main window's orders (the REA parity audit, spec 03 §8, §8.1) ----------------------------
+
+TEST_CASE("orders: switching Repeat restarts a turning list at its first order; orders added go after its last (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const VehicleId ship = w.spawn(w.ship(kA, "Rounds", 3), at(a, 6, 6));
+    const Order m1 = moveTo(a, 1, 1), m2 = moveTo(a, 2, 2), m3 = moveTo(a, 3, 3), m4 = moveTo(a, 4, 4);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{ship, {}, {m1, m2, m3}, true}).ok);
+    // The first order done: with Repeat on it goes to the end, and the list has turned once.
+    Vehicle& v = w.v(ship);
+    completeHeadOrder(v.orders, v.repeatOrders, v.repeatShift);
+    CHECK(v.orders == std::vector<Order>{m2, m3, m1});
+    CHECK(orderListShift(v.orders, v.repeatOrders, v.repeatShift) == 1);
+    CHECK(originalOrderList(v.orders, v.repeatOrders, v.repeatShift) == std::vector<Order>{m1, m2, m3});
+    // An order added goes after the list's last order, in front of the turned part.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{ship, {}, {m2, m3, m1, m4}, true}).ok);
+    CHECK(w.v(ship).orders == std::vector<Order>{m2, m3, m4, m1});
+    CHECK(originalOrderList(w.v(ship).orders, true, w.v(ship).repeatShift) == std::vector<Order>{m1, m2, m3, m4});
+    // Repeat switched off: the list starts again at its first order.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{ship, {}, w.v(ship).orders, false}).ok);
+    CHECK(w.v(ship).orders == std::vector<Order>{m1, m2, m3, m4});
+    CHECK_FALSE(w.v(ship).repeatOrders);
+    CHECK(w.v(ship).repeatShift == 0);
+    // Switched on again after turning: the same.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{ship, {}, w.v(ship).orders, true}).ok);
+    completeHeadOrder(w.v(ship).orders, w.v(ship).repeatOrders, w.v(ship).repeatShift);
+    completeHeadOrder(w.v(ship).orders, w.v(ship).repeatOrders, w.v(ship).repeatShift);
+    CHECK(w.v(ship).orders.front() == m3);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{ship, {}, w.v(ship).orders, false}).ok);
+    CHECK(w.v(ship).orders.front() == m1);
+    // A list replaced in another way keeps no turn.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{ship, {}, {m4, m3}, true}).ok);
+    CHECK(w.v(ship).orders == std::vector<Order>{m4, m3});
+    CHECK(w.v(ship).repeatShift == 0);
+    // The turn is saved (format 10).
+    completeHeadOrder(w.v(ship).orders, w.v(ship).repeatOrders, w.v(ship).repeatShift);
+    const auto back = deserializeState(serializeState(w.s));
+    REQUIRE(back.has_value());
+    CHECK(back->vehicle(ship)->repeatShift == 1);
+}
+
+TEST_CASE("orders: Explore, Resupply and Repair search from where the ship is now; Colonize loads when its own cargo has no colonists (spec 03 §8)") {
+    World w;
+    const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+    w.link(a, {12, 6}, b, {0, 6});
+    w.exploreAll(kA);
+    const ObjectId nearHome = w.planet(a, {9, 6});
+    const ObjectId farAway = w.planet(b, {3, 6});
+    w.colony(nearHome, kA, 1000, {"Test Depot"});
+    w.colony(farAway, kA, 1000, {"Test Depot"});
+    const VehicleId ship = w.spawn(w.ship(kA, "Wanderer", 3), at(a, 11, 6));
+    fuel(w, ship);
+    // The list leaves the ship in B, next to the depot there; the search starts
+    // where the ship is now, so the nearest depot is the one in A.
+    w.give(ship, {moveTo(b, 2, 6), mk(OrderKind::Resupply)});
+    REQUIRE(w.v(ship).orders.size() == 2);
+    CHECK(w.v(ship).orders[1] == moveTo(a, 9, 6));
+
+    // Colonize: the selected ship's own cargo holds no colonists, so the
+    // colonists come aboard where the list leaves it, whatever the orders
+    // before it load.
+    const ObjectId target = w.planet(a, {5, 5});
+    const VehicleId settler = w.spawn(w.ship(kA, "Settler", 3, {"Test Rock Pod"}), at(a, 9, 6));
+    fuel(w, settler);
+    w.give(settler, {mk(OrderKind::LoadCargo, at(a, 9, 6), {}, {}, {}, -1), mk(OrderKind::Colonize, {}, target)});
+    const auto& o = w.v(settler).orders;
+    REQUIRE(o.size() == 4);
+    CHECK(o[0].kind == OrderKind::LoadCargo);
+    CHECK(o[1].kind == OrderKind::LoadCargo);
+    CHECK(o[2] == moveTo(a, 5, 5));
+    CHECK(o[3].kind == OrderKind::Colonize);
+}
+
+TEST_CASE("orders: Change Name refuses a name some space object has; its own name changes nothing (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("Sol");
+    const ObjectId home = w.planet(a, {2, 2});
+    w.colony(home, kA);
+    const ObjectId star = w.object(a, ObjectKind::Star, {6, 6}, "Sol Prime");
+    const VehicleId ours = w.spawn(w.ship(kA, "Scout", 1), at(a, 1, 1));
+    const VehicleId theirs = w.spawn(w.ship(kB, "Raider", 1), at(a, 3, 3));
+    w.v(ours).name = "Scout 0001";
+    w.v(theirs).name = "Raider 0001";
+    auto rename = [&](VehicleId v, ObjectId planet, FleetId fleet, std::string name) {
+        cmd::Rename c;
+        c.vehicle = v;
+        c.planet = planet;
+        c.fleet = fleet;
+        c.name = std::move(name);
+        return apply(r, w.s, kA, c);
+    };
+    // Another empire's ship, a star, a planet: in use, exactly and case counting.
+    for (const std::string& taken : {std::string("Raider 0001"), w.s.galaxy.object(star).name, w.s.galaxy.object(home).name}) {
+        const CommandResult res = rename(ours, {}, {}, taken);
+        CHECK_FALSE(res.ok);
+        CHECK(res.error == kNameInUse);
+    }
+    CHECK(rename(ours, {}, {}, "raider 0001").ok);
+    CHECK(w.v(ours).name == "raider 0001");
+    // Its own name again is no change (OpenSE4's choice; the original refuses it).
+    CHECK(rename(ours, {}, {}, "raider 0001").ok);
+    // A colony and a fleet take the same test; fleets' names are not compared.
+    CHECK_FALSE(rename({}, home, {}, "Raider 0001").ok);
+    CHECK(rename({}, home, {}, "New Earth").ok);
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"First Fleet", {ours}}).ok);
+    const FleetId fleet = w.v(ours).fleet;
+    CHECK_FALSE(rename({}, {}, fleet, "New Earth").ok);
+    const VehicleId other = w.spawn(w.ship(kA, "Other", 1), at(a, 1, 1));
+    CHECK(rename(other, {}, {}, "First Fleet").ok);
+    CHECK(rename({}, {}, fleet, "Home Guard").ok);
+    CHECK(w.s.fleet(fleet)->name == "Home Guard");
+}
+
+TEST_CASE("orders: Toggle Minister Control on a fleet sets its flag and every member's at its location (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const VehicleId lead = w.spawn(w.ship(kA, "Lead", 2), at(a, 1, 1));
+    const VehicleId mate = w.spawn(w.ship(kA, "Mate", 2), at(a, 1, 1));
+    const VehicleId away = w.spawn(w.ship(kA, "Away", 2), at(a, 1, 1));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Wing", {lead, mate, away}}).ok);
+    const FleetId fleet = w.v(lead).fleet;
+    w.v(away).location = at(a, 5, 5);
+    cmd::SetMinister c;
+    c.fleet = fleet;
+    c.on = true;
+    REQUIRE(apply(r, w.s, kA, c).ok);
+    CHECK(w.s.fleet(fleet)->minister);
+    CHECK(w.v(lead).minister);
+    CHECK(w.v(mate).minister);
+    CHECK_FALSE(w.v(away).minister);
+    c.on = false;
+    REQUIRE(apply(r, w.s, kA, c).ok);
+    CHECK_FALSE(w.s.fleet(fleet)->minister);
+    CHECK_FALSE(w.v(lead).minister);
+    // Someone else's fleet: refused.
+    CHECK_FALSE(apply(r, w.s, kB, c).ok);
+}
+
+TEST_CASE("orders: Cloak and Decloak act at once and leave the order lists alone (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const VehicleId shade = w.spawn(w.ship(kA, "Shade", 2, {"Mv Cloak"}), at(a, 1, 1));
+    w.v(shade).queue.items.push_back(QueueItem{});
+    w.order(shade, moveTo(a, 5, 5));
+    REQUIRE(apply(r, w.s, kA, cmd::CloakVehicles{{shade}, {}, true}).ok);
+    CHECK(w.v(shade).status == VehicleStatus::Cloaked);
+    CHECK(w.v(shade).queue.items.empty());   // a cloaked ship cannot build
+    CHECK(w.v(shade).orders == std::vector<Order>{moveTo(a, 5, 5)});
+    // Nothing to change: refused.
+    CHECK_FALSE(apply(r, w.s, kA, cmd::CloakVehicles{{shade}, {}, true}).ok);
+    const VehicleId plain = w.spawn(w.ship(kA, "Plain", 2), at(a, 1, 1));
+    CHECK_FALSE(apply(r, w.s, kA, cmd::CloakVehicles{{plain}, {}, true}).ok);
+    // Decloak works even when the ship could no longer cloak.
+    w.v(shade).supply = 0;
+    REQUIRE(apply(r, w.s, kA, cmd::CloakVehicles{{shade}, {}, false}).ok);
+    CHECK(w.v(shade).status == VehicleStatus::Normal);
+    CHECK(w.v(shade).orders.size() == 1);
+    // A fleet: its members at its location, each that can.
+    const VehicleId one = w.spawn(w.ship(kA, "One", 2, {"Mv Cloak"}), at(a, 2, 2));
+    const VehicleId two = w.spawn(w.ship(kA, "Two", 2, {"Mv Cloak"}), at(a, 2, 2));
+    const VehicleId three = w.spawn(w.ship(kA, "Three", 2), at(a, 2, 2));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Veil", {one, two, three}}).ok);
+    const FleetId fleet = w.v(one).fleet;
+    w.v(two).location = at(a, 7, 7);
+    REQUIRE(apply(r, w.s, kA, cmd::CloakVehicles{{}, fleet, true}).ok);
+    CHECK(w.v(one).status == VehicleStatus::Cloaked);
+    CHECK(w.v(two).status == VehicleStatus::Normal);   // away from the fleet's location
+    CHECK(w.v(three).status == VehicleStatus::Normal); // cannot cloak
+    // Not ours: refused.
+    CHECK_FALSE(apply(r, w.s, kB, cmd::CloakVehicles{{one}, {}, false}).ok);
+}
+
+TEST_CASE("orders: deleting a waypoint clears every own queue's automatic Move To naming it (spec 03 §8.1)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId home = w.planet(a, {2, 2});
+    w.colony(home, kA);
+    const ObjectId theirs = w.planet(a, {4, 4});
+    w.colony(theirs, kB);
+    const VehicleId yard = w.spawn(w.ship(kA, "Yard", 1), at(a, 1, 1));
+    w.s.colony(home)->queue.autoWaypoint = 9;
+    w.s.colony(theirs)->queue.autoWaypoint = 9;
+    w.v(yard).queue.autoWaypoint = 9;
+    REQUIRE(apply(r, w.s, kA, cmd::SetWaypoint{9, Waypoint{"Waypoint 10", at(a, 6, 6), true}}).ok);
+    REQUIRE(apply(r, w.s, kA, cmd::SetWaypoint{8, Waypoint{"Waypoint 9", at(a, 7, 7), true}}).ok);
+    // Setting one again leaves the queues alone; deleting another one too.
+    CHECK(w.s.colony(home)->queue.autoWaypoint == 9);
+    REQUIRE(apply(r, w.s, kA, cmd::SetWaypoint{8, std::nullopt}).ok);
+    CHECK(w.v(yard).queue.autoWaypoint == 9);
+    REQUIRE(apply(r, w.s, kA, cmd::SetWaypoint{9, std::nullopt}).ok);
+    CHECK(w.s.colony(home)->queue.autoWaypoint == -1);
+    CHECK(w.v(yard).queue.autoWaypoint == -1);
+    CHECK(w.s.colony(theirs)->queue.autoWaypoint == 9);   // another empire's queue
+    CHECK_FALSE(w.s.empire(kA).waypoints[9].set);
 }

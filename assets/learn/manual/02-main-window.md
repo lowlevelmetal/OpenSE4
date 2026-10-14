@@ -63,7 +63,9 @@ it, put it under minister control and abandon it. See
 Some orders need you to pick a place. The bottom of the system panel then shows a prompt, such
 as `Move To: pick a destination`, and the sector under the pointer gets green corner marks. Click
 a sector in the system panel, or click a system in the galaxy panel first to show another system
-and then click a sector there. Press `Esc` to cancel.
+and then click a sector there. Press `Esc` to cancel. The waypoint keys (`Alt+1` to `Alt+0`) and
+the minefield tags (`Ctrl+T`, `Ctrl+R`) ask for a sector the same way, with or without a
+selection.
 
 **Colonize**, **Warp**, **Drop Cargo** and an **Attack** that chases its target need one thing in
 the sector you click: a planet, a warp point, one of your own colonies or ships, or a target. When
@@ -92,7 +94,8 @@ asteroid fields, storms, warp points and ships appear at their sectors. The syst
 the top left, followed by the coordinates of the sector under the pointer.
 
 - **Left-click** a sector. If it holds one thing, the report panel shows its report. If it holds several, the panel lists them; click one in the list to see its report, and the up-arrow button at the report's top right to go back.
-- **Left-click empty space** to read about the whole system: its type and its special features. The sector stays selected, so that you can set a waypoint there, but it is not marked.
+- **Left-click empty space** to read about the whole system: its type and its special features. The sector stays selected, but it is not marked.
+- A click on a system you have not explored does nothing: what you had selected stays. Picking a place for an order or a waypoint works there all the same.
 - **Right-click** a sector while one of your ships is selected, and the ship moves there (an OpenSE4 shortcut; you can turn it off in [Settings](settings#controls)). Otherwise a right-click in the system panel does nothing.
 - Showing another system, with a click on the galaxy panel or the Galaxy Map's `Goto System`, changes nothing else: the report, its tab and the order buttons stay, so you can give the selected ship an order with a target in that system.
 - The selected sector has yellow corner marks while it holds something you can see; the coordinate line then also gives the range from it to the sector under the pointer.

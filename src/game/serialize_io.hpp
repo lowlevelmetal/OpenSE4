@@ -465,6 +465,7 @@ void io(Ar& ar, Colony& c) {
     fields(ar, c.cloaked, c.cloakLevels, c.sensorLevels);
     if (formatVersion(ar) >= 8) fields(ar, c.destroyedFacilities);   // format 7 had none
     if (formatVersion(ar) >= 9) fields(ar, c.modData);   // format 8 had no mods' data
+    if (formatVersion(ar) >= 10) fields(ar, c.repeatShift);   // format 9 kept no turn of a repeating list
 }
 
 // ---- Designs and vehicles -----------------------------------------------------------------------
@@ -491,6 +492,7 @@ void io(Ar& ar, Vehicle& v) {
            v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.builtTurn,
            v.immobileUntil, v.cameFrom, v.cameFromTurn, v.heading, v.arrival);
     if (formatVersion(ar) >= 9) fields(ar, v.modData);   // format 8 had no mods' data
+    if (formatVersion(ar) >= 10) fields(ar, v.repeatShift);   // format 9 kept no turn of a repeating list
 }
 
 template <class Ar>
@@ -645,7 +647,11 @@ template <class Ar> void io(Ar& ar, cmd::SetVehicleStrategy& c) { fields(ar, c.d
 template <class Ar> void io(Ar& ar, cmd::Rename& c) { fields(ar, c.vehicle, c.fleet, c.design, c.planet, c.name); }
 template <class Ar> void io(Ar& ar, cmd::Scrap& c) { fields(ar, c.vehicle, c.facilityPlanet, c.facilitySlot, c.moveFirst); }
 template <class Ar> void io(Ar& ar, cmd::Mothball& c) { fields(ar, c.vehicle, c.mothball); }
-template <class Ar> void io(Ar& ar, cmd::SetMinister& c) { fields(ar, c.vehicle, c.planet, c.empireWide, c.on); }
+template <class Ar>
+void io(Ar& ar, cmd::SetMinister& c) {
+    fields(ar, c.vehicle, c.planet, c.empireWide, c.on);
+    if (formatVersion(ar) >= 10) fields(ar, c.fleet);   // format 9 had no fleet's Toggle Minister Control
+}
 template <class Ar> void io(Ar& ar, cmd::QueueTarget& c) { fields(ar, c.planet, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::QueueAdd& c) { fields(ar, c.target, c.item, c.position); }
 template <class Ar> void io(Ar& ar, cmd::QueueRemove& c) { fields(ar, c.target, c.index); }
@@ -704,6 +710,7 @@ void io(Ar& ar, cmd::EnterSector& c) {
 template <class Ar> void io(Ar& ar, cmd::OpenVehicleReport& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::JettisonCargo& c) { fields(ar, c.vehicle, c.planet, c.population, c.units); }
 template <class Ar> void io(Ar& ar, cmd::CloakColony& c) { fields(ar, c.planet, c.cloak); }
+template <class Ar> void io(Ar& ar, cmd::CloakVehicles& c) { fields(ar, c.vehicles, c.fleet, c.cloak); }
 template <class Ar> void io(Ar& ar, cmd::Analyze& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::SelfDestruct& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::FireOn& c) { fields(ar, c.vehicle); }

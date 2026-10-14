@@ -705,6 +705,9 @@ struct Colony {
     // runs the list. It follows the list rules of spec 03 §8, Repeat included.
     std::vector<Order> orders;
     bool repeatOrders = false;
+    // With Repeat on, how far the list has turned since Repeat was switched
+    // on (repeatShift, below; save format 10).
+    uint16_t repeatShift = 0;
     // Colony (planetary) cloaking (spec 01 §6.9, confirmed: binary). The cloak
     // and sensor levels per sight type come from the colony's facilities
     // alone and are stored: sight::recalculateColony refreshes them, only when
@@ -805,6 +808,12 @@ struct Vehicle {
     int movement = 0;               // movement points left this turn
     std::vector<Order> orders;
     bool repeatOrders = false;
+    // With Repeat on, how many completed orders have gone from the front of
+    // the list to its end since Repeat was switched on (save format 10). The
+    // original keeps a repeating list in place and steps a current-order
+    // index through it; OpenSE4 keeps the current order first, so the list is
+    // the original's turned by this many places (orderListShift, spec 03 §8).
+    uint16_t repeatShift = 0;
     FleetId fleet;
     Cargo cargo;
     int experience = 0;
@@ -1436,6 +1445,31 @@ std::vector<VehicleId> taggedVehicles(const GameState& s, EmpireId empire, std::
 const Vehicle* fleetOrderHolder(const GameState& s, const Fleet& f);
 const std::vector<Order>& fleetOrders(const GameState& s, const Fleet& f);
 bool fleetRepeats(const GameState& s, const Fleet& f);
+
+// ---- Repeating order lists (spec 03 §8, §19 Q76, confirmed: binary) ----------------------------
+// The original keeps a repeating list in place and steps a current-order
+// index through it: switching Repeat on or off puts the index back on the
+// list's first order, and an order added goes at the end of the list, after
+// its last order. OpenSE4 keeps the current order first (a completed order
+// goes to the end while Repeat is on) and counts in `repeatShift` the places
+// the list has turned; these keep the two alike.
+
+// The places a list has turned: 0 with Repeat off or an empty list.
+size_t orderListShift(const std::vector<Order>& orders, bool repeat, uint16_t shift);
+// The head order is done: it leaves the list, or with Repeat on goes to its end.
+void completeHeadOrder(std::vector<Order>& orders, bool repeat, uint16_t& shift);
+// The head order is taken out of the list, Repeat or not.
+void removeHeadOrder(std::vector<Order>& orders, bool repeat, uint16_t& shift);
+// The list as the original holds it: turned back to its first order.
+std::vector<Order> originalOrderList(const std::vector<Order>& orders, bool repeat, uint16_t shift);
+// cmd::SetOrders' change to one list. `full` is the new list; when `added`
+// holds a value, the list held exactly full's first *added orders and the
+// rest were added to it. Added orders go where the original adds them, at
+// the end of its list (in front of its first order while the list turns). A
+// change of the Repeat switch restarts the list at its first order. Any
+// other list replaces the old one.
+void changeOrderList(std::vector<Order>& orders, bool& repeat, uint16_t& shift, std::vector<Order> full, std::optional<size_t> added,
+                     bool newRepeat);
 // A fleet member moved, by any means (a step, a warp, drift, an event): the
 // fleet's location goes with it.
 void fleetMemberMoved(GameState& s, const Vehicle& v);

@@ -131,7 +131,7 @@ simultaneous game is loaded from a saved game (Load Game, Resume Game, the Game 
 | Options (Empire Options) | Per-empire UI and behaviour switches, saved with the game. | Scrolling list grouped under headings: General Options, Next/Previous, Ship Movement, Ship Orders, System Display, Galaxy Display, Latest Items, Politics [S]. Full list with defaults in §1.9 (confirmed: binary). | Empire Status → Empire Options; Log → Goto on some entries. Not Game Menu → Options, which opens the per-computer Options window (confirmed: binary). |
 | Ministers | Automation switches. | Minister list with lamps; Select All/None; individual ministers on/off; Complete AI On/Off [T]. | Empire Status. |
 | Systems To Avoid | Mark systems for pathing. | Map (click to toggle); tabs Avoid, Presence, Ally Claimed, Enemy Claimed [T]. | Empire Status. |
-| Waypoints | Manage waypoints. | Waypoint list; quadrant map; ships heading there; yards auto-sending there; Set (returns to main window to pick a spot), Delete, Rename [T]. | Empire Status. |
+| Waypoints | Manage waypoints. | Waypoint list; quadrant map; ships heading there; yards auto-sending there; Set (returns to main window to pick a spot), Delete, Rename [T]. The list's rows read "1 - name" to "10 - name"; Rename's prompt starts empty; the ships en route are the own vehicles with a Move To Waypoint order for it anywhere in their lists (a plain Move To there does not count), fleet members one by one, and a right-click on one opens its report (confirmed: binary). Ours follows since 2026-10-14; its Location column is its own. | Empire Status. |
 | Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Launching, Formation); Add [T]. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
 | Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. The original's Manual opens the installed `manual\SE4 Manual.htm` in the browser at once (confirmed: binary); ours opens OpenSE4's Manual window, and since 2026-10-14 the gap (slot 11) holds Original Manual, which opens the installed manual in the browser, when the install has one. | F1. |
@@ -281,9 +281,9 @@ sign-in.
 - On a player's copy of a game on different machines (network or e-mail), the window
   changes only that copy; for the player's own empire the session also gives
   `cmd::SetMinisters` (every area and the fleets' flag) and `cmd::SetMinister` (complete
-  control), and, of its ships, units and colonies, a `cmd::SetMinister` for each one given
-  orders during the turn, before or after the switch (`ClassicSession::carryFlags`), so the
-  orders carry what §7 Q84 lists, never the mark.
+  control), and, of its ships, units and colonies, a `cmd::SetMinister` for each one changed
+  during the turn as §7 Q99(d) counts it, before or after the switch
+  (`ClassicSession::markChanged`), so the orders carry what §7 Q84 lists, never the mark.
 - The TCP/IP host's toggle (`HostSession::setAiControl`, the in-game host's Empires list)
   flips only the mark (`ai::setComputerMark`), spec 05 §9.4, on every row: the list holds
   every empire but the host's own, and an empire that was a computer player from the start,
@@ -312,13 +312,13 @@ OpenSE4's own choices, (inferred):
 | Cargo-type / unit-type picker, then location pick | Deferred Load, Drop, Launch-Remote, Recover-Remote orders. | Orders L, D, I, O. |
 | Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). How it gives its orders: below the table (confirmed: binary). | Order B. |
 | Scrap | Selected Vehicles list (own vehicles at the location in no fleet and not cloaked); Statistics: Scrap Value, Research Potential (None, Minor, Moderate, Sizable or Major, of the last selected vehicle; "None" when any selected one cannot be analyzed), Status, Cost to Unmothball, Can Self-Destruct and Can Be Fired On (Yes only when every selected vehicle can), Space Yard In Sector; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On, each lit only when every selected vehicle qualifies. Rules and turn styles in spec 03 §15 (confirmed: binary). | Order G. |
-| View Orders | Pending orders of the selected object. | Order V. |
+| View Orders | Pending orders of the selected object, read-only; with Repeat on the list ends with a "(Repeat Orders)" row (confirmed: binary). Ours adds Move Up, Move Down, Delete Order, Clear Orders and the Repeat Orders box, and shows the current order first. | Order V. |
 | Select Facilities | Pick facilities to scrap on a planet. | Scrap Facilities order. |
 | Select Component | Pick a usable component. | Use Component order. |
 | Select Facility | Pick a usable facility. | Use Facility order. |
 | Convert Resources | Choose source/target resource and amount. | Convert Resources order (Ctrl+V). |
-| Change Name | Text prompt. | Order N. |
-| Formation \ Strategy picker | For a selected fleet. | Order H. |
+| Change Name | Text prompt "Enter New Name" holding the current name (the fleet's for a fleet). A name exactly equal, case counting, to the name of any space object of the game (a ship, base or unit group, a planet, star, warp point or other stellar object, of any empire) is refused with an "Invalid Name" box saying the name is in use, and the prompt opens again until the name is free or the player cancels; fleets' names are not compared (confirmed: binary). The original also refuses OK on the unchanged current name, as in use. Our client differs: that is taken as no change. Since 2026-10-14 the engine refuses such names for every player (`cmd::Rename`, `spaceObjectNameInUse`) and our prompt shows the box. | Order N. |
+| Formation \ Strategy picker | For a selected fleet: two pickers in turn, the formation, then the strategy (confirmed: binary). Ours sets the formation as it is picked, and Cancel on the strategy picker keeps it (inferred). | Order H. |
 | Abandon Planet confirmation | Choose whether to scrap facilities. | Ctrl+A. |
 | Pick Object | Choose one planet, warp point, own object or target when the sector clicked holds several (§2.9), or the object a stellar manipulation acts on when the vehicle's sector holds several (below) (confirmed: binary). | Colonize, Warp, Drop Cargo, a pursuing Attack, Stellar Manipulation. |
 | Colony-type picker | Shown when a colonize order completes, if the empire option is on. | Colonize. |
@@ -761,6 +761,18 @@ counts as 100 plus its number of units, so groups come after every ship and base
 
 Fleet rows, shown with Show Fleets, always come after every ship and unit row, in the
 empire's fleet order, and are never sorted.
+
+**What the cells show** (confirmed: binary). A fleet's row: Size is the number of its
+members at the fleet's location, Type its formation's name; Dmg, the cargo columns, Class
+and Fleet are blank. A unit group's Type is up to three lines "design - count", one for each
+design in it. The Cargo List has one line per cargo entry. The Orders column writes the list
+in its own order, and its sort text brackets the current order only while Repeat is on.
+Total Maintenance at the top is the sum over the vehicles as they are now, not the last
+economy update's figure. A left-click on a fleet's row selects its first member at the
+fleet's location. Our client follows since 2026-10-14; a fleet row's Move and Supplies are
+ours (over its members at the location), and its Orders cell lists the fleet's orders. The
+order cells write a repeating list from its first order, as the original keeps it
+(`game::originalOrderList`).
 
 **Set Construction Queue.** A right-click on a queued ship, base or unit opens the
 design's report: the Design Report window, the same one a right-click on a design in the
@@ -1580,11 +1592,24 @@ Three groups, left to right [T][S]:
      and dim buttons do nothing.
 3. **Selection buttons**: three stacked "previous | icon | next" controls (48x24) cycling
    through ships, fleets and colonies, at the panel's top right: 48 px left of its right
-   edge, at (448,34) at 800x600 and (965,34) at 1024x768 (confirmed: binary). In
-   turn-based games the ship cycle visits ships with
-   movement left; in simultaneous games, ships without orders. Empire options can make
-   the cycle skip ships under construction, damaged ships or ships in fleets, or stop
-   once per location [T][S] (confirmed: binary).
+   edge, at (448,34) at 800x600 and (965,34) at 1024x768 (confirmed: binary).
+   **The ship cycle** (confirmed: binary). The top selector's arrows, Space, Ctrl+N and
+   Ctrl+B all run one command over the same ships: next (Space, Ctrl+N, the right arrow)
+   or previous (Ctrl+B, the left arrow) through the vehicles in object order, wrapping
+   round the list's end. A candidate is one of the player's own ships or bases, never a
+   unit group, whose maximum movement is above 0 and that is not mothballed (so a base or
+   a mothballed ship is never visited); in a turn-based game it has movement left, in a
+   simultaneous game its own order list is empty; and its first order is not Sentry,
+   whatever the turn style (so a sentried ship with movement left is passed by in a
+   turn-based game). The Empire Options' four Next/Previous switches then filter [T][S]:
+   skip ships under construction, skip damaged ships, skip ships in fleets, and stop once
+   per location. "Stop once per location" keeps a table of the places the cycle has
+   stopped at and passes by a candidate whose place is in it; the table is emptied when
+   the cycle wraps round the list's end, and when the player or the direction changes.
+   Our client follows this since 2026-10-14 (`cycleShip`, `order_rules.hpp`). Its
+   choices (inferred, §7 Q115): the place of the ship the cycle leaves counts as visited,
+   so a press from a ship selected by a click goes to another place; "skip ships under
+   construction" has nothing to skip, as our ships appear finished.
 
 **Hover hint** (confirmed: binary). Hovering a command or order button writes two
 centred lines of white text, with no box or border, straight over the system picture in
@@ -1787,7 +1812,8 @@ text has a transparent background.
   bottom on the cell's bottom edge. Planet names and warp point names are stacked
   separately, so the two can overlap. The planet in sector (0,0) never gets its name: the
   game's loop starts at the second sector.
-- **Waypoints** 1–10 of the viewer in this system: a cyan (0,255,255) 1 px rectangle on the
+- **Waypoints** 1–10 of the viewer in this system (the number shown is the waypoint's, 1 to
+  10, never 0; confirmed: binary): a cyan (0,255,255) 1 px rectangle on the
   cell's edges and the number in Futurist small cyan at the cell's bottom-right inner
   corner (right edge 1 px in from the cell's right edge, bottom on the cell's bottom). The
   "M" marker of §2.4 is drawn the same way.
@@ -1945,6 +1971,10 @@ panel: a right-click does nothing there, and there is no double-click action, so
 double-click on a warp point is two clicks on its sector and never shows the system it
 leads to (confirmed: binary; observed, spec 07 session 6). Since 2026-10-04 our client
 follows (§7 Q103); OpenSE4's optional right-click Move To still uses the right button.
+With no pick armed, a left-click on a sector of a system the player has not explored does
+nothing: the selection, the report, the tags and the marked sector stay. A pick armed by an
+order, a window or the location keys (§3.1) completes there as anywhere else (confirmed:
+binary). Our client follows since 2026-10-14.
 
 ### 2.5 Ship list / report panel
 
@@ -2237,6 +2267,11 @@ orders.
 | Clear Orders, View Orders, Repeat Orders | any member has orders |
 | Cloak / Decloak | any member can cloak and is not cloaked / any member is cloaked |
 
+The fleet's speed and its Colonize, Cloak and Decloak tests look only at the members at the
+fleet's location; a member elsewhere counts for neither. Decloak is lit for any cloaked
+object, whether or not it could still cloak (confirmed: binary). Our client follows since
+2026-10-14 (before, a fleet counted every member and a ship's Decloak needed a working cloak).
+
 **Own colony.**
 
 | Order | Lit when |
@@ -2330,14 +2365,22 @@ and the turn is not being ended or the movement log replayed, and an order key o
 when its button is lit (§2.8; the movement-log keys are the exception). The main window
 has no Esc or Enter binding (confirmed: binary).
 
+A held key repeats: the main window acts on every key-down message the system sends, so
+holding Space keeps cycling through the ships and holding Ctrl+I keeps stepping the movement
+log's days (inferred: the usual key-down repeat, with nothing in the handlers telling a
+repeat apart). Our client differs: only the selection cycles (Space, Ctrl+N, Ctrl+B, Ctrl+F,
+Ctrl+D, Ctrl+C, Ctrl+X) and the movement log's single step repeat; a held window, order or
+End Turn key acts once, so that it never opens a window again, flips an order twice or ends
+several turns.
+
 ### 3.1 Main window: orders
 
 | Key | Order | Notes |
 |---|---|---|
 | M | Move To | then pick a destination in any system |
 | Ctrl+W | Move To Waypoint | opens Select Waypoint (confirmed: binary) |
-| Ctrl+0..9 | Move To Waypoint # | |
-| Alt+0..9 | Set Waypoint # | at the selected location |
+| Ctrl+1..9, Ctrl+0 | Move To Waypoint # | waypoints 1 to 9, and 10 for key 0 (confirmed: binary) |
+| Alt+1..9, Alt+0 | Set Waypoint # | asks for a sector: the next left-click on the system panel sets that waypoint there (below) |
 | W | Warp | only needed for unexplored destinations |
 | A | Attack | same-sector attack; in simultaneous games, pursue a target |
 | C | Colonize | queues load-population, move, colonize |
@@ -2350,9 +2393,9 @@ has no Esc or Enter binding (confirmed: binary).
 | U | Launch\Recover Units | not in simultaneous games |
 | L / D | Load Cargo / Drop Cargo (deferred) | pick type, then location |
 | I / O | Launch / Recover Units Remotely | pick type, then location |
-| Y | Sentry | |
+| Y | Sentry | when the list already starts with a Sentry, the list is cleared instead (spec 03 §19 Q76) |
 | E | Explore | |
-| P | Set Patrol | also turns on Repeat Orders |
+| P | Set Patrol | each point clicked is added at once; a click on the object's own sector ends it and turns on Repeat Orders (spec 03 §8) |
 | K | Repeat Orders (toggle) | |
 | B | Stellar Manipulation | |
 | V | View Orders | |
@@ -2362,13 +2405,23 @@ has no Esc or Enter binding (confirmed: binary).
 | J | Jettison Cargo | |
 | Z / X | Cloak / Decloak | |
 | Ctrl+M | Sweep Mines | |
-| Ctrl+T / Ctrl+R | Add / Remove Tagged Minefield | |
+| Ctrl+T / Ctrl+R | Add / Remove Tagged Minefield | asks for a sector, as Alt+digit does (below) |
 | Ctrl+A | Abandon Planet | |
 | Ctrl+V | Convert Resources | |
 | Ctrl+Z | Use Component | (confirmed: binary) |
 | Ctrl+J | Use Facility | (confirmed: binary) |
 | Ctrl+K | Scrap Facilities | (confirmed: binary) |
 | Ctrl+Y | Toggle Minister Control | (confirmed: binary) |
+
+**Location picks** (confirmed: binary). Alt+0..9, Ctrl+T and Ctrl+R arm a pick of a
+location, with a prompt asking to select a location for the waypoint, for the tagged
+minefield to add, or for the one to remove; the next left-click on a sector of the system
+panel completes it. They work with nothing selected and in any system shown, explored or
+not (the pick is tested before the explored test of a click, §2.4), need no lit button,
+and leave the selection as it was. Alt+n sets waypoint n (key 0 is waypoint 10) at that
+sector, keeping the waypoint's name, or "Waypoint n" when it has none. Ctrl+T adds the
+sector to the tagged minefields when it is not one; Ctrl+R removes it when it is. Since
+2026-10-14 our client follows (`MainWindow::startLocationPick`); its prompts are its own.
 
 ### 3.2 Main window: windows, selection, display
 
@@ -2386,7 +2439,7 @@ has no Esc or Enter binding (confirmed: binary).
 | F10 | Log |
 | F11 | Empire Status |
 | F12 | End Turn |
-| Space or Ctrl+N / Ctrl+B | Next / previous ship |
+| Space or Ctrl+N / Ctrl+B | Next / previous ship: one cycle, the top selector's (§2.3) |
 | Ctrl+F / Ctrl+D | Next / previous fleet |
 | Ctrl+C / Ctrl+X | Next / previous colony |
 | Ctrl+P | Movement log replay, full |
@@ -4943,10 +4996,10 @@ counterpart:
     Our client follows the answer since 2026-10-03: neutral empires switch and stay neutral
     (`Empire::neutral`, `isNeutral()`); the TCP/IP host's list and toggle cover every empire
     but the host's own; a player's copy sends its minister switches, the fleets' flag
-    (`cmd::SetMinisters::fleets`) and the flags of the ships, units and colonies given orders
-    that turn (`ClassicSession::carryFlags`; "changed" means given orders, or the order panel's
-    minister button, inferred). Our client differs: our headless server offers Reset Passwords
-    to an admin (an OpenSE4 extension).
+    (`cmd::SetMinisters::fleets`) and the flags of the ships, units and colonies changed that
+    turn (`ClassicSession::markChanged`; what marks an object changed is Q99(d), settled on
+    2026-10-14). Our client differs: our headless server offers Reset Passwords to an admin (an
+    OpenSE4 extension).
 
 Implementing the movement lines (§2.4) on 2026-10-01 left these choices (inferred):
 
@@ -5478,6 +5531,29 @@ Implementing Q83, Q84, Q88–Q96 and the session 5 windows on 2026-10-03 left th
     intelligence project? (d) "Changed during the turn" (Q84) is, in ours, a ship, unit group,
     fleet member or colony given orders, or whose minister button was pressed. Do other
     commands (a rename, a construction queue change) mark an object too?
+    **Answer to (d)** (confirmed: binary): the original marks an object changed during the
+    turn
+    - whenever an order button or key's handler runs for the selected object (for each
+      tagged object), at its end: Change Name, View Orders, Fleet Transfer, Cargo Transfer,
+      Scrap, Toggle Minister Control and Cloak or Decloak included, and merely arming a
+      targeted order, even one then abandoned; only a dim button or no selection marks
+      nothing;
+    - when its order list changes: orders added, cleared or repeated, a fleet's orders
+      marking each member;
+    - when a ship's or fighter group's fleet changes;
+    - for a construction queue, when Set Construction Queue is opened for the object by any
+      route (even with no change), when items are added and by Multi-Add;
+    - when a colony's type is set (Planets, Colonies), by the Scrap window's actions, by Cargo
+      Transfer and by launching or recovering units.
+    A system's notes have a "notes changed" mark of their own, set by OK or Enter in the
+    notes window.
+    Since 2026-10-14 our client follows (`ClassicSession::markChanged`): the main window marks
+    the selected object, or each tagged one, after every order it runs (`MainWindow::runOrder`),
+    and the commands that change an object's orders, fleet, name, minister flag, cloak,
+    construction queue, colony type or cargo, and the Scrap window's, mark it as they are
+    given. Opening Set Construction Queue from the Construction Queues window marks nothing
+    until a change is made there (inferred, a simplification of ours); our system notes travel
+    as commands of their own.
 
     **Answer (a), (b)** (confirmed: binary): (a) No destruction check runs for a human at the
     end of its own turn: one that lost everything during it is alive while the others play. At
@@ -5747,3 +5823,24 @@ an imported turn-based game of the original.
      does the Construct size picker list the constructed worlds in PlanetSize.txt order, and
      appear when only one size qualifies? Our client lists every object of the kind, seen or
      not, and always shows the size picker, its sizes in file order (inferred).
+
+**The REA parity audit's main window (2026-10-14).** The audit of the original's main window
+against the executable settled the ship cycle, the location keys, Set Patrol, Change Name,
+Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.3, §2.4,
+§2.8, §3.1, Q99(d), spec 03 §8, §8.1). Implementing them left these choices (inferred):
+
+115. **The ship cycle's start.** Ours counts the place of the ship the cycle leaves as
+     visited by "Stop once per location", so that a press from a ship the player selected
+     with a click goes to another place. Does the original's table hold only the places the
+     cycle itself stopped at? And does a press start from the selected ship, or from the last
+     ship the cycle selected?
+116. **Set Patrol in a turn-based game.** Each point clicked adds its Move To at once. In a
+     turn-based game every order given runs at once, so in ours the ship sets out for the
+     first point as soon as it is clicked, and a point it reaches leaves the list before the
+     route is closed. Does the original run the list after each point, or only when the route
+     ends?
+117. **Held keys.** Which of the main window's keys repeat while held, and does End Turn?
+     Ours repeats only the selection cycles and the movement log's single step (§3).
+118. **Change Formation\Strategy cancelled half way.** Ours sets the formation as it is
+     picked; Cancel on the strategy picker that follows keeps it. Does the original keep the
+     formation, or change nothing unless both are picked?

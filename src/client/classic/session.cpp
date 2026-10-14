@@ -22,7 +22,9 @@
 #include <random>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -159,43 +161,142 @@ void ClassicSession::record(game::Command c) {
 }
 
 game::CommandResult ClassicSession::issue(game::Command c) {
-    if (!onIssued && !switchedOwn_) return issueCommand(std::move(c));
-    const game::Command copy = c;
+    // What the command changes is read before it runs (a disbanded fleet's members, say).
+    std::optional<Changed> changed;
+    bool minister = false;
+    if (marksChanges()) {
+        changed = changedBy(c);
+        minister = std::holds_alternative<game::cmd::SetMinister>(c);
+    }
+    std::optional<game::Command> copy;
+    if (onIssued) copy = c;
     game::CommandResult r = issueCommand(std::move(c));
-    if (r.ok && onIssued) onIssued(copy);
-    if (r.ok) carryFlags(copy);
+    if (!r.ok) return r;
+    if (copy) onIssued(*copy);
+    if (changed) {
+        // Toggle Minister Control carries its own flag.
+        if (minister && switchedOwn_) {
+            flagged_.insert(flagged_.end(), changed->vehicles.begin(), changed->vehicles.end());
+            flaggedPlanets_.insert(flaggedPlanets_.end(), changed->planets.begin(), changed->planets.end());
+        }
+        markChanged(changed->vehicles, changed->planets);
+    }
     return r;
 }
 
+// Which commands mark which objects changed this turn (spec 06 §7 Q99(d),
+// confirmed: binary): order lists (a fleet's: every member), fleet
+// membership, Change Name, Toggle Minister Control, Cloak and Decloak,
+// construction queues, colony types, the Scrap window's actions and Cargo
+// Transfer. Launching and recovering units are order lists here.
+ClassicSession::Changed ClassicSession::changedBy(const game::Command& c) const {
+    Changed out;
+    const game::GameState& s = state_;
+    auto fleet = [&](game::FleetId id) {
+        if (const game::Fleet* f = s.fleet(id)) out.vehicles.insert(out.vehicles.end(), f->members.begin(), f->members.end());
+    };
+    auto vehicle = [&](game::VehicleId id) {
+        if (id.valid()) out.vehicles.push_back(id);
+    };
+    auto planet = [&](game::ObjectId id) {
+        if (id.valid()) out.planets.push_back(id);
+    };
+    auto queue = [&](const game::cmd::QueueTarget& q) {
+        vehicle(q.vehicle);
+        planet(q.planet);
+    };
+    std::visit(
+        [&]<class T>(const T& x) {
+            using namespace game::cmd;
+            if constexpr (std::is_same_v<T, SetOrders>) {
+                vehicle(x.vehicle);
+                // A fleet's orders, given to the fleet or to a member: every member.
+                const game::Vehicle* addressed = x.vehicle.valid() ? s.vehicle(x.vehicle) : nullptr;
+                fleet(x.fleet.valid() ? x.fleet : addressed ? addressed->fleet : game::FleetId{});
+                planet(x.planet);
+            } else if constexpr (std::is_same_v<T, OrderTagged>) {
+                out.vehicles = game::taggedVehicles(s, player_, x.vehicles);
+            } else if constexpr (std::is_same_v<T, CloakVehicles>) {
+                out.vehicles = game::taggedVehicles(s, player_, x.vehicles);
+                if (const game::Fleet* f = s.fleet(x.fleet)) {
+                    const std::vector<game::VehicleId> group = game::fleetGroup(s, *f);
+                    out.vehicles.insert(out.vehicles.end(), group.begin(), group.end());
+                }
+            } else if constexpr (std::is_same_v<T, CreateFleet>) {
+                out.vehicles = x.members;
+            } else if constexpr (std::is_same_v<T, JoinFleet> || std::is_same_v<T, LeaveFleet> || std::is_same_v<T, Mothball> ||
+                                 std::is_same_v<T, Analyze> || std::is_same_v<T, SelfDestruct> || std::is_same_v<T, FireOn> ||
+                                 std::is_same_v<T, Retrofit>) {
+                vehicle(x.vehicle);
+            } else if constexpr (std::is_same_v<T, DisbandFleet>) {
+                fleet(x.fleet);
+            } else if constexpr (std::is_same_v<T, Scrap>) {
+                vehicle(x.vehicle);
+                planet(x.facilityPlanet);
+            } else if constexpr (std::is_same_v<T, Rename>) {
+                vehicle(x.vehicle);   // a fleet's new name marks no ship (the order button marks the selected one)
+                planet(x.planet);
+            } else if constexpr (std::is_same_v<T, SetMinister>) {
+                if (!x.empireWide) {
+                    vehicle(x.vehicle);
+                    if (const game::Fleet* f = s.fleet(x.fleet)) {
+                        const std::vector<game::VehicleId> group = game::fleetGroup(s, *f);   // those that get the flag
+                        out.vehicles.insert(out.vehicles.end(), group.begin(), group.end());
+                    }
+                    planet(x.planet);
+                }
+            } else if constexpr (std::is_same_v<T, QueueAdd> || std::is_same_v<T, QueueRemove> || std::is_same_v<T, QueueMove> ||
+                                 std::is_same_v<T, QueueSetCount> || std::is_same_v<T, QueueFlags> || std::is_same_v<T, QueueReplaceFacility>) {
+                queue(x.target);
+            } else if constexpr (std::is_same_v<T, SetColonyType> || std::is_same_v<T, CloakColony>) {
+                planet(x.planet);
+            } else if constexpr (std::is_same_v<T, TransferCargo>) {
+                vehicle(x.fromVehicle);
+                vehicle(x.toVehicle);
+                planet(x.fromPlanet);
+                planet(x.toPlanet);
+            }
+        },
+        c);
+    return out;
+}
+
+void ClassicSession::markChanged(std::span<const game::VehicleId> vehicles, std::span<const game::ObjectId> planets) {
+    if (!marksChanges()) return;
+    for (game::VehicleId id : vehicles)
+        if (std::find(changed_.begin(), changed_.end(), id) == changed_.end()) changed_.push_back(id);
+    for (game::ObjectId id : planets)
+        if (std::find(changedPlanets_.begin(), changedPlanets_.end(), id) == changedPlanets_.end()) changedPlanets_.push_back(id);
+    carryFlags();
+}
+
 // After a Players-window switch of our own empire on a player's copy, an
-// object changed this turn (given orders) carries its minister flag to the
-// host with the orders (spec 06 §7 Q84, confirmed: binary); a SetMinister
-// (the order panel's minister button) carries its own. Which commands count
-// as a change is ours (inferred, spec 06 §7 Q99).
-void ClassicSession::carryFlags(const game::Command& c) {
-    if (!switchedOwn_ || (kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem)) return;
-    std::vector<game::VehicleId> vehicles;
-    const auto* o = std::get_if<game::cmd::SetOrders>(&c);
-    if (const auto* t = std::get_if<game::cmd::OrderTagged>(&c)) vehicles = game::taggedVehicles(state_, player_, t->vehicles);
-    else if (!o) return;
-    if (o && o->vehicle.valid()) vehicles.push_back(o->vehicle);
-    if (const game::Fleet* f = o ? state_.fleet(o->fleet) : nullptr) vehicles.insert(vehicles.end(), f->members.begin(), f->members.end());
-    for (game::VehicleId id : vehicles) {
+// object changed this turn carries its minister flag to the host with the
+// orders (spec 06 §7 Q84, Q99(d), confirmed: binary), once.
+void ClassicSession::carryFlags() {
+    if (!switchedOwn_ || !marksChanges()) return;
+    // Each flag is noted as carried before it is issued: issuing marks again.
+    for (size_t i = 0; i < changed_.size(); ++i) {
+        const game::VehicleId id = changed_[i];
         const game::Vehicle* v = state_.vehicle(id);
         if (!v || v->owner != player_ || std::find(flagged_.begin(), flagged_.end(), id) != flagged_.end()) continue;
         flagged_.push_back(id);
         issue(game::cmd::SetMinister{id, {}, false, v->minister});
     }
-    if (const game::Colony* col = o && o->planet.valid() ? state_.colony(o->planet) : nullptr;
-        col && col->owner == player_ && std::find(flaggedPlanets_.begin(), flaggedPlanets_.end(), o->planet) == flaggedPlanets_.end()) {
-        flaggedPlanets_.push_back(o->planet);
-        issue(game::cmd::SetMinister{{}, o->planet, false, col->minister});
+    for (size_t i = 0; i < changedPlanets_.size(); ++i) {
+        const game::ObjectId id = changedPlanets_[i];
+        const game::Colony* col = state_.colony(id);
+        if (!col || col->owner != player_ || std::find(flaggedPlanets_.begin(), flaggedPlanets_.end(), id) != flaggedPlanets_.end()) continue;
+        flaggedPlanets_.push_back(id);
+        issue(game::cmd::SetMinister{{}, id, false, col->minister});
     }
 }
 
 void ClassicSession::clearOrders() {
     orders_.clear();
     switchedOwn_ = false;
+    changed_.clear();
+    changedPlanets_.clear();
     flagged_.clear();
     flaggedPlanets_.clear();
 }
@@ -413,8 +514,7 @@ void ClassicSession::setComputerControl(const std::vector<std::pair<game::Empire
             switchedOwn_ = true;
             flagged_.clear();
             flaggedPlanets_.clear();
-            const std::vector<game::Command> earlier = orders_;
-            for (const game::Command& c : earlier) carryFlags(c);
+            carryFlags();   // the objects changed earlier this turn
         }
     }
     // A second human makes a local game hotseat: End Turn then passes to the

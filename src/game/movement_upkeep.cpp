@@ -153,14 +153,10 @@ bool colonizeAt(const GameState& s, const Order& o, Location where) {
            locationOf(s.galaxy, o.object) == where;
 }
 
-void popFront(std::vector<Order>& list, bool repeat) {
+void popFront(std::vector<Order>& list, bool repeat, uint16_t& shift) {
     if (list.empty()) return;
-    Order done = list.front();
-    list.erase(list.begin());
-    if (repeat) {
-        done.amount = 0;
-        list.push_back(done);
-    }
+    completeHeadOrder(list, repeat, shift);
+    if (repeat) list.back().amount = 0;
 }
 
 // ---- Upkeep ---------------------------------------------------------------------------------------
@@ -470,7 +466,7 @@ void colonizeWaiting(TurnContext& ctx, std::optional<EmpireId> only) {
         if (colonizer.valid()) {
             colonize(ctx, colonizer, o.object);
             for (VehicleId id : group)
-                if (Vehicle* v = s.vehicle(id); v && alive(*v)) popFront(v->orders, v->repeatOrders);
+                if (Vehicle* v = s.vehicle(id); v && alive(*v)) popFront(v->orders, v->repeatOrders, v->repeatShift);
         } else {
             // A failed order clears the lists and switches Repeat off (§8).
             colonizationFailed(ctx, owner, name, where, why);

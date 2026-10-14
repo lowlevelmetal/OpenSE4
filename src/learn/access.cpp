@@ -140,8 +140,9 @@ std::optional<std::string> leafProblem(const Condition& c, const StepAccess& a) 
                 return missing("an order button or the system view");
             }
             if (c.text == "SetWaypoint") {
-                if (hasDigitKey(a, "Alt+")) return std::nullopt;
-                return missing("an Alt+digit key");
+                // Alt+digit, then a click on a sector of the system view (spec 06 §3.1).
+                if (hasDigitKey(a, "Alt+") && a.has("panel:system")) return std::nullopt;
+                return missing("an Alt+digit key and panel:system");
             }
             bool known = false;
             for (const auto& [command, tag] : kCommandWidgets) {

@@ -43,10 +43,15 @@ movement::RouteOptions routeOptions(const Rules& r, const GameState& s, const Or
     return options;
 }
 
-// The nearest of `goals` by travel from ctx.at, if any is reachable.
+// Where Explore, Resupply and Repair search from: the selected object's
+// sector now, whatever orders come before them (spec 03 §8, confirmed: binary).
+Location searchStart(const GameState& s, const OrderContext& ctx) { return validLocation(s, ctx.here) ? ctx.here : ctx.at; }
+
+// The nearest of `goals` by travel from where the search starts, if any is reachable.
 std::optional<size_t> nearest(const Rules& r, const GameState& s, const OrderContext& ctx, std::span<const Location> goals) {
-    if (goals.empty() || !validLocation(s, ctx.at)) return std::nullopt;
-    const auto p = movement::findPathToNearest(r, s, ctx.owner, ctx.at, goals, routeOptions(r, s, ctx));
+    const Location from = searchStart(s, ctx);
+    if (goals.empty() || !validLocation(s, from)) return std::nullopt;
+    const auto p = movement::findPathToNearest(r, s, ctx.owner, from, goals, routeOptions(r, s, ctx));
     if (!p) return std::nullopt;
     return p->goal;
 }
@@ -71,8 +76,10 @@ void travelThen(const GameState& s, OrderContext& ctx, Location where, const Ord
     advanceOrderContext(s, ctx, o);
 }
 
+// The Move To of Explore, Resupply and Repair: added even when it leads where
+// the object already is, where it completes at once (spec 03 §8, confirmed: binary).
 void moveTo(const GameState& s, OrderContext& ctx, Location where, std::vector<Order>& out) {
-    if (!validLocation(s, where) || where == ctx.at) return;  // already there: nothing to add (inferred)
+    if (!validLocation(s, where)) return;
     Order move;
     move.kind = OrderKind::MoveTo;
     move.location = where;
@@ -124,7 +131,9 @@ void explore(const Rules& r, const GameState& s, OrderContext& ctx, std::vector<
     warp.kind = OrderKind::Warp;
     warp.object = candidates[*pick];
     warp.location = goals[*pick];
-    travelThen(s, ctx, goals[*pick], warp, out);
+    moveTo(s, ctx, goals[*pick], out);
+    out.push_back(warp);
+    advanceOrderContext(s, ctx, warp);
 }
 
 // ---- Resupply and Repair (spec 03 §8, confirmed: binary) -----------------------------------------------------
@@ -181,10 +190,12 @@ OrderContext orderContextOf(const GameState&, const Vehicle& v) {
     ctx.lead = v.id;
     ctx.at = v.location;
     ctx.carriesPopulation = v.cargo.totalPopulation() > 0;
+    ctx.here = v.location;
+    ctx.selfCarriesPopulation = ctx.carriesPopulation;
     return ctx;
 }
 
-OrderContext orderContextOf(const GameState& s, const Fleet& f) {
+OrderContext orderContextOf(const GameState& s, const Fleet& f, const Vehicle* addressed) {
     OrderContext ctx;
     ctx.owner = f.owner;
     ctx.members = fleetGroup(s, f);
@@ -193,6 +204,9 @@ OrderContext orderContextOf(const GameState& s, const Fleet& f) {
     ctx.lead = lead && lead->location == f.location ? lead->id : ctx.members.front();
     ctx.at = f.location;
     ctx.carriesPopulation = carriesPopulation(s, ctx.members);
+    const Vehicle* self = addressed ? addressed : s.vehicle(ctx.lead);
+    ctx.here = self ? self->location : f.location;
+    ctx.selfCarriesPopulation = self && self->cargo.totalPopulation() > 0;
     return ctx;
 }
 
@@ -265,9 +279,11 @@ void expandOrder(const Rules& r, const GameState& s, OrderContext& ctx, const Or
             advanceOrderContext(s, ctx, o);
             return;
         case OrderKind::Colonize: {
-            // Colonists come aboard where the order is given, when the ship carries
-            // none; a Colonize expanded before already had its Load Cargo.
-            if (!ctx.carriesPopulation && o.amount != kColonizeExpanded) {
+            // Colonists come aboard where the list then leaves the ship, when the
+            // selected object's own cargo holds no population now, whatever the
+            // orders before do (spec 03 §8, confirmed: binary); a Colonize
+            // expanded before already had its Load Cargo.
+            if (!ctx.selfCarriesPopulation && o.amount != kColonizeExpanded) {
                 Order load;
                 load.kind = OrderKind::LoadCargo;
                 load.location = ctx.at;

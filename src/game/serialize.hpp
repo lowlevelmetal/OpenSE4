@@ -115,6 +115,10 @@ class Rules;
 // - The victory conditions' three "years" values in turns, tenths of a year,
 //   as the original keeps them (VictoryConditions::yearsTurns, peaceTurns,
 //   delayTurns; docs/spec/01 §11): format 9 held whole years.
+// - A fleet's Toggle Minister Control (cmd::SetMinister::fleet, spec 03 §8);
+//   how far a repeating order list has turned since Repeat was switched on
+//   (Vehicle::repeatShift, Colony::repeatShift, spec 03 §8); Cloak and
+//   Decloak of vehicles at once (cmd::CloakVehicles, a new command).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

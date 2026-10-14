@@ -76,7 +76,9 @@ public:
     float galaxyCellSize() const;
 
 private:
-    enum class Pick { None, MoveTo, Warp, Colonize, Attack, Patrol, LoadCargo, DropCargo, LaunchRemote, RecoverRemote, Callback };
+    // The last three are the location picks of Alt+0..9, Ctrl+T and Ctrl+R (spec 06 §3.1).
+    enum class Pick { None, MoveTo, Warp, Colonize, Attack, Patrol, LoadCargo, DropCargo, LaunchRemote, RecoverRemote, Callback, Waypoint,
+                      TagMinefield, UntagMinefield };
     // Who an order goes to: a vehicle, a fleet or a colony.
     struct OrderOwner {
         game::VehicleId vehicle;
@@ -116,7 +118,9 @@ private:
     // every redraw; the selection itself stays as clicked (spec 06 §2.4, §7 Q64).
     bool selectedSectorMarked(const UiContext& ui) const;
     std::vector<const game::Vehicle*> vehiclesAt(const UiContext& ui, game::Location where) const;
-    void cycleVehicle(UiContext& ui, int dir, bool idleOnly);
+    // The ship cycle of Space, Ctrl+N, Ctrl+B and the top selector (cycleShip, spec 06 §2.3).
+    void cycleVehicle(UiContext& ui, int dir);
+    ShipCycleMemory shipCycle_;
     void cycleFleet(UiContext& ui, int dir);
     void cycleColony(UiContext& ui, int dir);
     // Tagging (Shift+click, Shift+A, Shift+C; §2.5): a vehicle in a fleet tags the fleet.
@@ -127,7 +131,15 @@ private:
     // Orders.
     LitOrders litNow(UiContext& ui) const;
     std::vector<OrderOwner> orderOwners(UiContext& ui) const;
+    // Runs a lit order for the selection, then marks what it ran for as
+    // changed this turn (ClassicSession::markChanged, spec 06 §7 Q99(d)).
     void runOrder(UiContext& ui, OrderId o);
+    void runOrderNow(UiContext& ui, OrderId o);
+    // Cloak or Decloak at once (cmd::CloakVehicles, cmd::CloakColony; spec 03 §8).
+    void cloakNow(UiContext& ui, bool cloak);
+    // Change Formation\Strategy: the formation picker, then the strategy picker (spec 06 §1.3).
+    void chooseFormation(UiContext& ui);
+    void chooseStrategy(UiContext& ui, game::FleetId fleet);
     void giveOrder(UiContext& ui, game::Order o);
     // Orders for the tagged group, as one cmd::OrderTagged; `repeat` switches Repeat on (Set Patrol).
     void giveTagged(UiContext& ui, std::vector<game::Order> orders, bool repeat);
@@ -152,7 +164,19 @@ private:
     std::vector<PickCandidate> pickCandidates(UiContext& ui, Pick p, game::Location where) const;
     void givePicked(UiContext& ui, Pick p, game::Location where, const PickCandidate& c);
     void drawPickObject(UiContext& ui);
-    void finishPatrol(UiContext& ui);
+    // Set Patrol (spec 03 §8, confirmed: binary): each point clicked appends
+    // a Move To at once; a click on the object's own sector appends that one
+    // too and ends the route with Repeat on, or clears a list of one order.
+    // Enter or a right click also ends it (ours): Repeat on, a list of one
+    // order kept as a plain move.
+    void addPatrolPoint(UiContext& ui, game::Location where);
+    void finishPatrol(UiContext& ui, bool atHome = false);
+    std::optional<game::Location> patrolHome(UiContext& ui) const;
+    std::string patrolPrompt() const;
+    // The location picks of Alt+0..9 (`slot`, waypoint slot+1), Ctrl+T and
+    // Ctrl+R (spec 06 §3.1, confirmed: binary): they need no selection and
+    // leave it as it is.
+    void startLocationPick(UiContext& ui, Pick p, int slot = 0);
     void openFor(UiContext& ui, ScreenId id);   // a window about the selected vehicle, fleet or colony
     void chooseCargo(UiContext& ui, Pick p);    // Load / Drop Cargo, Launch / Recover Units Remotely: the type first
     void note(UiContext& ui, std::string text);
@@ -278,7 +302,8 @@ private:
 
     Pick pick_ = Pick::None;
     std::string pickPrompt_;
-    std::vector<game::Location> patrol_;
+    int patrolPoints_ = 0;   // Move Tos the patrol being picked has appended
+    int pickSlot_ = 0;       // the waypoint slot Alt+digit picks a sector for
     std::function<void(game::Location)> pickCallback_;
     game::DesignId pickDesign_;
     std::optional<game::Sector> hover_;

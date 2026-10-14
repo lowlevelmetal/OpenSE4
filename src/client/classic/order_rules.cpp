@@ -103,9 +103,11 @@ void vehicleFacts(const game::Rules& r, const game::GameState& s, const game::Ve
     f.canColonize = anyOf(abilities, {AbilityKind::ColonizeRock, AbilityKind::ColonizeIce, AbilityKind::ColonizeGas});
     f.spaceYard = game::vehicleHasSpaceYard(r, s, v);
     f.cloaked = v.status == game::VehicleStatus::Cloaked;
-    const bool canCloak = vehicleCanCloak(r, s, v);
-    f.cloak = canCloak && !f.cloaked;
-    f.decloak = canCloak && f.cloaked;
+    // Cloak when it can cloak and is not cloaked; Decloak whenever it is
+    // cloaked, even when it could no longer cloak (spec 06 §2.8, confirmed:
+    // binary), as for a colony.
+    f.cloak = vehicleCanCloak(r, s, v) && !f.cloaked;
+    f.decloak = f.cloaked;
     f.cargoCapacity = game::vehicleCargoCapacity(r, s, v) > 0;
     f.cargoHolds = !v.cargo.empty();
     f.mineSweeping = game::hasAbility(abilities, AbilityKind::MineSweeping);
@@ -185,6 +187,59 @@ bool vehicleCanCloak(const game::Rules& r, const game::GameState& s, const game:
     for (size_t t = 0; t < game::kSightTypes; ++t)
         if (game::abilityPerSightType(abilities, AbilityKind::CloakLevel, static_cast<game::SightType>(t)) >= 2) return true;
     return false;
+}
+
+bool shipCycleCandidate(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, const game::Vehicle& v, bool turnBased) {
+    if (v.owner != viewer || v.count <= 0 || game::isUnitType(game::vehicleType(r, s, v))) return false;
+    if (v.status == game::VehicleStatus::Mothballed || game::vehicleMaxMovement(r, s, v) <= 0) return false;
+    if (turnBased ? v.movement <= 0 : !v.orders.empty()) return false;
+    return v.orders.empty() || v.orders.front().kind != game::OrderKind::Sentry;
+}
+
+std::optional<game::VehicleId> cycleShip(const game::Rules& r, const game::GameState& s, game::EmpireId viewer,
+                                         std::optional<game::VehicleId> current, int direction, const ShipCycleOptions& options,
+                                         ShipCycleMemory& memory) {
+    const int dir = direction < 0 ? -1 : 1;
+    if (memory.player != viewer || memory.direction != dir) {
+        memory.player = viewer;
+        memory.direction = dir;
+        memory.visited.clear();
+    }
+    const std::vector<game::VehicleId> list = game::vehiclesInObjectOrder(s);
+    const auto n = static_cast<std::ptrdiff_t>(list.size());
+    if (n == 0) return std::nullopt;
+    auto visited = [&](const game::Location& l) { return std::find(memory.visited.begin(), memory.visited.end(), l) != memory.visited.end(); };
+    // Where the cycle starts; the place of the ship it leaves counts as
+    // visited, so the next stop is another place (inferred, spec 06 §7 Q115).
+    std::ptrdiff_t at = dir > 0 ? -1 : n;
+    if (current) {
+        if (const auto it = std::find(list.begin(), list.end(), *current); it != list.end()) {
+            at = it - list.begin();
+            const game::Vehicle* v = s.vehicle(*current);
+            if (options.stopOncePerLocation && v && v->owner == viewer && !visited(v->location)) memory.visited.push_back(v->location);
+        }
+    }
+    bool wrapped = false;
+    for (std::ptrdiff_t step = 1; step <= n; ++step) {
+        const std::ptrdiff_t raw = at + dir * step;
+        if (!wrapped && (raw < 0 || raw >= n)) {
+            // Round the list's end: the places visited are forgotten.
+            wrapped = true;
+            memory.visited.clear();
+        }
+        const std::ptrdiff_t i = ((raw % n) + n) % n;
+        const game::Vehicle* v = s.vehicle(list[static_cast<size_t>(i)]);
+        if (!v || !shipCycleCandidate(r, s, viewer, *v, options.turnBased)) continue;
+        // "Skip ships under construction" has nothing to skip: our ships appear finished.
+        if (options.skipDamaged && game::vehicleDamageTaken(s, *v) > 0) continue;
+        if (options.skipInFleets && v->fleet.valid()) continue;
+        if (options.stopOncePerLocation) {
+            if (visited(v->location)) continue;
+            memory.visited.push_back(v->location);
+        }
+        return v->id;
+    }
+    return std::nullopt;
 }
 
 LitOrders litOrders(const OrderFacts& f) {
@@ -335,19 +390,24 @@ OrderFacts orderFacts(const game::Rules& r, const game::GameState& s, game::Empi
         if (fleet && fleet->owner == viewer) {
             f.target = OrderTarget::Fleet;
             f.hasOrders = !game::fleetOrders(s, *fleet).empty();
-            int speed = fleet->members.empty() ? 0 : 1 << 30;
-            for (game::VehicleId id : fleet->members) {
+            // The members at the fleet's location only make its speed and
+            // its Colonize, Cloak and Decloak (spec 06 §2.8, confirmed: binary).
+            const std::vector<game::VehicleId> group = game::fleetGroup(s, *fleet);
+            int speed = group.empty() ? 0 : 1 << 30;
+            for (game::VehicleId id : group) {
                 const game::Vehicle* v = s.vehicle(id);
                 if (!v) continue;
                 speed = std::min(speed, game::vehicleMaxMovement(r, s, *v));
                 OrderFacts m;
                 vehicleFacts(r, s, *v, m);
                 f.canColonize = f.canColonize || m.canColonize;
-                f.hasOrders = f.hasOrders || m.hasOrders;
                 f.cloak = f.cloak || m.cloak;          // any member can cloak and is not cloaked
                 f.decloak = f.decloak || m.cloaked;    // any member is cloaked
                 f.cloaked = f.cloaked || m.cloaked;
             }
+            // Clear, View and Repeat Orders: any member has orders, wherever it is.
+            for (game::VehicleId id : fleet->members)
+                if (const game::Vehicle* v = s.vehicle(id)) f.hasOrders = f.hasOrders || !v->orders.empty();
             f.mobile = speed > 0;
             f.canWarp = f.mobile;
             return f;

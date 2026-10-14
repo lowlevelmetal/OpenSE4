@@ -1021,7 +1021,14 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   - failed: the **whole list is cleared** and Repeat is switched off.
 - Done orders chain: the next order runs in the same pass, up to 21 order executions per vehicle
   per pass. Orders that need no MP can therefore complete several times in one turn.
-- Clear Orders also switches Repeat off. Switching Repeat on restarts at the first order.
+- Clear Orders also switches Repeat off. Switching Repeat on (or off) restarts at the first
+  order. The original keeps a repeating list in place and steps a current-order index
+  through it; an order added goes at the end of the list, after its last order. The engine
+  keeps the current order first instead (a done order goes to the end while Repeat is on)
+  and counts how far the list has turned since Repeat was switched on
+  (`Vehicle::repeatShift`, `Colony::repeatShift`, saved from format 10), so that since
+  2026-10-14 switching Repeat puts the list back on its first order and an order added goes
+  in front of the turned part, where the original adds it (`changeOrderList`).
 - Repeat with a single order that completes without effect makes the vehicle idle. This is legal.
 - New orders are **appended**. Giving orders to a vehicle that already has some is a common player
   mistake, so the UI should show the queue.
@@ -1122,16 +1129,16 @@ sector is elsewhere) plus the action.
 | Order (hotkey) | Parameters | Behaviour |
 |---|---|---|
 | Move To (M) | sector, in any known system | Paths and warps as needed (§6.2). Done on arrival; waits when out of MP; fails on an invalid destination or a blocked path. |
-| Move To Waypoint (Ctrl 0–9) | waypoint | The waypoint is looked up when the order runs; if it has been deleted the order fails (§8.1). |
-| Set Waypoint (Alt 0–9) | sector | Empire-level. Defines a waypoint (§8.1). |
+| Move To Waypoint (Ctrl 1–9, 0) | waypoint | The waypoint is looked up when the order runs; if it has been deleted the order fails (§8.1). |
+| Set Waypoint (Alt 1–9, 0) | sector | Empire-level. Defines a waypoint (§8.1): the key asks for a sector, which the next click on the system panel gives (spec 06 §3.1). |
 | Attack (A) | target | In turn-based games (except for drones) it becomes Move To the sector the target is in when the order is given (added even when the group is already there) plus an Attack. The stored Attack names no target and no place: it attacks wherever the group stands when it runs, which costs 1 MP and one move's supply and starts combat at once; with no MP left it is removed doing nothing. It decloaks nobody (§6.4). In simultaneous games, and for drones, it becomes a pursuit: on each action the group moves toward the target's current sector, warping as needed. Once there, a group holding a drone whose own first order pursues an object in that sector attacks: its cloaked drones decloak, then 1 MP and one move's supply (the battle itself comes from the day's combat check, §6.3, or at once in a turn-based game). A group with no such drone just waits there, spending neither MP nor supply. The order stays either way. The pursuit is done when the target no longer exists (or its slot holds another object), belongs to the attacker's owner, or is a planet without a colony; there is no visibility test. In a battle, a drone group's target is the object its first order pursues (§12). A drone given a warp point as target gets Move To plus Warp instead (confirmed: binary). |
 | Warp (W) | warp point | Composite. Needed for links to unexplored systems. The transit needs MP (else it waits), a warp point in the sector and every group member able to warp (else it fails), and no member with a space yard whose queue is not empty (else it fails). It costs 1 MP and one move's supply (§7). On each transit there is a 50 % chance that every member takes damage equal to the warp point's total `Warp Point - Turbulence`; taking that damage, or meeting mines or enemies on arrival, fails the order (confirmed: binary). |
-| Resupply (S) | — | Expanded at once into Move To the nearest depot: a colonized planet with `Supply Generation` owned by the empire or by an empire with Military Alliance or better, in an explored system, skipping sectors that hold a visible, armed, non-mothballed hostile, nearest by travel distance (the first one found wins a tie). The Move To is added even when the depot is in the current sector, where it completes at once; with no reachable depot nothing is added (confirmed: binary). |
-| Repair (R) | — | Expanded at once into Move To the nearest own object with `Component Repair`, preferring immobile sources (planets, bases); repair ships are used only if there is no immobile source. As for Resupply, the Move To is added even for the current sector, and nothing is added without a reachable source (confirmed: binary). |
-| Explore (E) | — | Expanded at once into Move To plus Warp for the warp point, nearest by travel distance, that lies in a system the empire has explored and leads to one it has not (nothing else about the link is checked), skipping every warp point that some own vehicle has a Warp order for anywhere in its list, the ordered vehicle's own earlier orders and fleet copies included. With no candidate nothing is added (confirmed: binary). |
-| Colonize (C) | planet | Composite. At the current location it first adds Load Cargo (population), but only if the ship carries no population; that Load Cargo completes and chains into the next order within the same action (§6.3). See the rules below the table. |
+| Resupply (S) | — | Expanded at once into Move To the nearest depot: a colonized planet with `Supply Generation` owned by the empire or by an empire with Military Alliance or better, in an explored system, skipping sectors that hold a visible, armed, non-mothballed hostile, nearest by travel distance (the first one found wins a tie). The distance is reckoned from the selected object's current sector, whatever orders come before in its list. The Move To is added even when the depot is in the current sector, where it completes at once; with no reachable depot nothing is added (confirmed: binary). |
+| Repair (R) | — | Expanded at once into Move To the nearest own object with `Component Repair`, preferring immobile sources (planets, bases); repair ships are used only if there is no immobile source. As for Resupply, the search starts from the selected object's current sector, the Move To is added even for the current sector, and nothing is added without a reachable source (confirmed: binary). |
+| Explore (E) | — | Expanded at once into Move To plus Warp for the warp point, nearest by travel distance from the selected object's current sector (whatever orders come before), that lies in a system the empire has explored and leads to one it has not (nothing else about the link is checked), skipping every warp point that some own vehicle has a Warp order for anywhere in its list, the ordered vehicle's own earlier orders and fleet copies included. The Move To is added even when the warp point is in the current sector. With no candidate nothing is added (confirmed: binary). |
+| Colonize (C) | planet | Composite. It first adds Load Cargo (population) where the list then leaves the ship, but only if the selected object's own cargo holds no population now, whatever the orders before it load (confirmed: binary); that Load Cargo completes and chains into the next order within the same action (§6.3). See the rules below the table. |
 | Sentry (Y) | — | Stays at the head at no MP cost. It ends when the owner can see, anywhere in the same **system**, an object (ship, base, unit group or colony) of an empire whose treaty with it is below Non-Aggression (War, Non-Intercourse, None or no contact), or when any group member's supply is below `Supply Amount for Low Supply Warning` (for fighter groups one tenth of it). The Sentry then counts as done: without Repeat it is removed and the following orders run; with Repeat on it stays in the list and execution moves past it. The list is not cleared (confirmed: binary). |
-| Set Patrol (P) | list of points | Each click appends a Move To. Clicking the ship's own location ends it and turns Repeat on; if only one order results, the list is cleared instead (confirmed: binary). |
+| Set Patrol (P) | list of points | Each click appends a Move To at once to the existing list; the prompt names the point by its ordinal and says that a click on the ship ends the route. A click on the object's own system and sector appends that Move To too, ends the pick and turns Repeat on; if the whole list then holds exactly one order, it is cleared instead (confirmed: binary). Our client follows since 2026-10-14; Enter and a right click also end the route (OpenSE4's), turning Repeat on and keeping a list of one order as a plain move. In a turn-based game each point's Move To runs as it is added, as every order given there does (inferred, spec 06 §7 Q116). |
 | Repeat Orders (K) | toggle | See the list rules above. |
 | Clear Orders (Del) | — | Empties the list and switches Repeat off. |
 | View Orders (V) | — | UI only. |
@@ -1144,16 +1151,21 @@ sector is elsewhere) plus the action.
 | Jettison Cargo (J) | window | Not an order: destroys the cargo chosen in a window at once, in both turn styles, at no MP or supply cost. See the rules below the table (confirmed: binary). |
 | Fleet Transfer (F) | — | Window (§9). |
 | Change Formation\Strategy (H) | — | Fleet only. |
-| Cloak (Z) / Decloak (X) | — | Take effect immediately; they are not queued. Cloaking needs a working part whose `Cloak Level` gives level 2 or more in some sight type, and supply above 0. While cloaked the vehicle pays, every turn, the total mounted `Supply Amount Used` of its working cloak parts (a group of fighters pays it per unit), and it decloaks by itself at 0 supply or when it can no longer cloak. A cloaked vehicle cannot colonize, manipulate stellar objects, be mothballed, scrapped, analyzed or retrofitted (confirmed: binary). Colonies cloak by other rules: no supply, no upkeep, and their queue is kept (spec 01 §6.9). |
+| Cloak (Z) / Decloak (X) | — | Take effect immediately, for the ship or unit group, a fleet's members at its location, or every tagged object; they are not queued, the order list is left alone, and the sound plays. Since 2026-10-14 the client gives them as `cmd::CloakVehicles` (the order kinds stay for imported games). Cloaking needs a working part whose `Cloak Level` gives level 2 or more in some sight type, and supply above 0. While cloaked the vehicle pays, every turn, the total mounted `Supply Amount Used` of its working cloak parts (a group of fighters pays it per unit), and it decloaks by itself at 0 supply or when it can no longer cloak. A cloaked vehicle cannot colonize, manipulate stellar objects, be mothballed, scrapped, analyzed or retrofitted (confirmed: binary). Colonies cloak by other rules: no supply, no upkeep, and their queue is kept (spec 01 §6.9). |
 | Sweep Mines (Ctrl M) | — | Runs the whole mine encounter of the current sector again (sweeping, then the remaining hostile mines strike the group, §12), then, if the group survived, costs 1 MP (if any is left) and one move's supply. Always done (confirmed: binary). |
 | Add / Remove Tagged Minefield (Ctrl T / Ctrl R) | sector | Empire-level. |
 | Use Component (Ctrl Z) | component position | Given through a picker; in a turn-based game it first clears the list. Only the acting group's first member uses the part (rules below the table). A part with `Component Destroyed On Use` is destroyed first. `Emergency Energy`, only when the vehicle's maximum MP is above 0: in turn-based games it adds V1 to this turn's remaining MP, without a cap; in simultaneous games it adds V1 to the day counter (§6.3), giving up to V1 extra actions at one per day. `Emergency Resupply` adds V1 supply, capped at the maximum, with no effect on unlimited supply or mothballed vehicles. No supply is charged for the use (confirmed: binary). |
 | Self-Destruct | — | A separate order. A ship or base needs `Self-Destruct` in its ability list; satellite groups, minefields and drone groups need nothing; fighter groups cannot self-destruct (§15) (confirmed: binary). |
 | Stellar Manipulation (B) | action | See below. |
 | Scrap / Analyze / Mothball (G) | — | §15. |
-| Change Name (N) | text | — |
-| Toggle Minister Control | — | Puts the vehicle under AI control, limited by the minister categories the empire enables. |
+| Change Name (N) | text | A vehicle, fleet or colony cannot take a name that some space object of the game has, exactly and case counting: a ship, base or unit group, a planet, star, warp point or other stellar object, of any empire, its own included; fleets' names are not compared. The prompt then says the name is in use and asks again (spec 06 §1.3) (confirmed: binary). Our engine takes the object's own name again as no change instead of refusing it (OpenSE4's choice). A design keeps the rule of §4.1. |
+| Toggle Minister Control | — | Puts the vehicle under AI control, limited by the minister categories the empire enables. For a fleet it flips the fleet's own flag and gives it to every member at the fleet's location (confirmed: binary; `cmd::SetMinister::fleet` since 2026-10-14). |
 | Build Queue (Q) | — | Only if the vehicle has a `Space Yard`. |
+
+Since 2026-10-14 the engine follows the table's Explore, Resupply, Repair and Colonize
+expansions (`orders.cpp`, `OrderContext::here`): before, it searched from where the list left
+the group, added no Move To for the current sector, and judged Colonize's Load Cargo by the
+group's cargo after the orders before it (inferred).
 
 **Colonize** (confirmed: binary):
 
@@ -1344,16 +1356,23 @@ only.
 
 ### 8.1 Waypoints
 
-- A waypoint is an empire-owned, named sector reference. Each empire has exactly 10, slots 0–9,
-  addressed by the hotkeys (confirmed: binary).
+- A waypoint is an empire-owned, named sector reference. Each empire has exactly 10, numbered
+  1 to 10 and addressed by the keys 1 to 9 and 0 (waypoint 10) with Ctrl and Alt; map labels,
+  default names ("Waypoint 3") and lists use the numbers 1 to 10 (confirmed: binary). OpenSE4
+  keeps them in slots 0 to 9 (`Empire::waypoints`, `cmd::SetWaypoint::slot`): slot n holds
+  waypoint n + 1, as the original's saved games store them (spec 08 §3.6.8); before
+  2026-10-14 our keys and labels used the slot numbers, so that waypoint 1 of an imported
+  game was key 0.
 - A waypoint supports rename, delete and re-set. The window lists the ships en route to it and the
   space yards whose **automatic Move To** targets it.
 - A construction queue (planet or ship) can have an automatic Move To waypoint. Every newly built
   vehicle then receives a plain Move To the waypoint's sector, fixed at build time; nothing is
   added if the waypoint is unset (confirmed: binary).
-- Deleting a waypoint clears the slot. A pending Move To Waypoint that refers to it fails when it
-  is reached, which clears that vehicle's list. Move To orders already given by yard auto-move are
-  unaffected, since they hold the sector (confirmed: binary).
+- Deleting a waypoint clears the slot, and every own construction queue's automatic Move To
+  that targets it is reset to none (confirmed: binary; the engine since 2026-10-14). A pending
+  Move To Waypoint that refers to it fails when it is reached, which clears that vehicle's list.
+  Move To orders already given by yard auto-move are unaffected, since they hold the sector
+  (confirmed: binary).
 
 ---
 
@@ -2470,7 +2489,10 @@ binary.
 
     The engine follows this since 2026-10-01: an order, Clear or Repeat given to an away member
     reaches only the members at the location, list by list. OpenSE4 choice: taking an order
-    back or putting one in front makes every list at the location the new list.
+    back or putting one in front makes every list at the location the new list. Since
+    2026-10-14 the client follows the Sentry rule (a Sentry given while the list starts with
+    one clears the list) and the engine the restart at the first order when Repeat is
+    switched (§8).
 
 The questions below came up while the engine was brought in line with the answers to 72–76 and
 with the Jettison, Use Component and Use Facility rules of §8. Each gives the engine's choice,

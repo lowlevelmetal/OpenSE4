@@ -707,8 +707,9 @@ Writing steps for the lock:
 - An action step's `highlight` and `allow` must include what its `done` needs: a tag
   that opens the window it waits for, the order button of the order, the widget that
   gives the command, a way to close a window (`window:<id>`, `<id>:close` or the
-  `Escape` key), End Turn for anything that comes with turns, an `Alt+digit` key for
-  `SetWaypoint`. The content test checks this (`learn::reachProblems`).
+  `Escape` key), End Turn for anything that comes with turns, an `Alt+digit` key and
+  `panel:system` for `SetWaypoint` (the key asks for a sector, the click gives it). The
+  content test checks this (`learn::reachProblems`).
 - Say exactly what to click, and only what is allowed: "another way" hints belong in a
   later step or are written as something for later.
 - An explanation step says to press **Next** (the last step: **Finish**); an action
@@ -977,7 +978,7 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`, and the `design_type` qu
 | `simulator_owners` | N | the Combat Simulator is open and N races ("Owner for item") have items in the battle (an unowned object is a neutral obstacle and counts for none) |
 | `simulator_items` | N | the Combat Simulator is open and the battle has N items |
 | `simulator_owner` | `race-1` to `race-10` | the Combat Simulator is open and its Owner for item is that race: the items clicked next go to it |
-| `picking` | `move-to`, `warp`, `colonize`, `attack`, `patrol`, `load-cargo`, `drop-cargo`, `launch-units`, `recover-units`, `location` (a window asked for a place) | the main window waits for the place that order goes to: its button was pressed, the sector not yet clicked |
+| `picking` | `move-to`, `warp`, `colonize`, `attack`, `patrol`, `load-cargo`, `drop-cargo`, `launch-units`, `recover-units`, `location` (a window, `Alt+digit`, `Ctrl+T` or `Ctrl+R` asked for a place) | the main window waits for the place that order goes to: its button was pressed, the sector not yet clicked |
 | `movement_lines` | true or false | the system view shows the ships' movement lines (`Ctrl+L`, a client setting) |
 | `route` | true or false | the selected ship, or the fleet it is in, has a Move To order to another sector or a Move To Waypoint order: a route the system view draws |
 | `draft_message_type` | a message type id (`propose-treaty`, `gift`, ...) | the Communicate window is writing a message of that type |

@@ -63,6 +63,12 @@ struct SetFleetOptions { FleetId fleet; uint32_t formation = 0; uint32_t strateg
 // formation.
 struct SetFleetLeader { FleetId fleet; VehicleId vehicle; };
 struct SetVehicleStrategy { DesignId design; uint32_t strategy = 0; };
+// A vehicle, fleet or colony takes a name no space object of the game has
+// (ships, bases, unit groups, planets, stars, warp points and the rest, of
+// every empire; spec 03 §8 Change Name, confirmed: binary): exactly, case
+// counting. Fleets' names are not compared. Its own name again changes
+// nothing (OpenSE4's choice: the original refuses it as in use). A design
+// keeps the rule of spec 03 §4.1 instead.
 struct Rename {              // vehicle, fleet, design or planet
     VehicleId vehicle;
     FleetId fleet;
@@ -93,7 +99,10 @@ struct Mothball { VehicleId vehicle; bool mothball = true; };   // Mothball, or 
 struct Analyze { VehicleId vehicle; };
 struct SelfDestruct { VehicleId vehicle; };
 struct FireOn { VehicleId vehicle; };
-struct SetMinister { VehicleId vehicle; ObjectId planet; bool empireWide = false; bool on = true; };
+// Toggle Minister Control (spec 03 §8): a vehicle's or colony's flag, or the
+// empire-wide one. For a fleet (`fleet`) the fleet's own flag, given to every
+// member at the fleet's location (confirmed: binary).
+struct SetMinister { VehicleId vehicle; ObjectId planet; bool empireWide = false; bool on = true; FleetId fleet; };
 // Turn-based games: the answer to the Attack Sector question (spec 03 §6.2).
 // A move of the vehicle (or fleet) stopped before a sector with enemies;
 // `enter` carries it on into that sector and its battle, otherwise the move
@@ -140,6 +149,16 @@ struct AbandonPlanet { ObjectId planet; };
 // contact check makes only the player's side of a first contact (spec 01
 // §6.9, §14 Q44, spec 05 §9.2, confirmed: binary).
 struct CloakColony { ObjectId planet; bool cloak = true; };
+// Cloak and Decloak of vehicles (spec 03 §8, confirmed: binary): immediate,
+// like a colony's cloak, and the order lists are left alone. The vehicles
+// are ours (a tagged group: a fleet member stands for its fleet's members at
+// the fleet's location), or `fleet` names a fleet, whose members at its
+// location count. Cloak cloaks each of them that can (a working part of
+// Cloak Level 2 or more, supplies above 0, neither mothballed nor cloaked)
+// and empties its construction queue; Decloak decloaks each that is
+// cloaked, and runs the first-contact check in its system. Refused when it
+// changes nothing.
+struct CloakVehicles { std::vector<VehicleId> vehicles; FleetId fleet; bool cloak = true; };
 struct TransferCargo {       // immediate transfer between own holders in the same sector
     VehicleId fromVehicle;
     ObjectId fromPlanet;
@@ -215,6 +234,9 @@ enum class DemandList : uint8_t { War, Break, Peace };
 struct UseDemandEntry { DemandList list = DemandList::War; EmpireId about; };
 
 // ---- Empire-wide lists ------------------------------------------------------------------------
+// Slot 0..9 holds waypoint 1..10 (keys 1..9 and 0, spec 03 §8.1). Clearing a
+// slot (no `waypoint`) also clears every own construction queue's automatic
+// Move To that names it (confirmed: binary).
 struct SetWaypoint { int slot = 0; std::optional<Waypoint> waypoint; };
 struct SetSystemFlags { SystemId system; std::optional<bool> avoid; std::optional<bool> claim; };
 struct SetSystemNote { SystemId system; std::string note; };
@@ -293,7 +315,8 @@ using Command = std::variant<
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
-    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader, cmd::ModCommand>;
+    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader, cmd::ModCommand,
+    cmd::CloakVehicles>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {
@@ -318,6 +341,13 @@ std::string_view commandName(const Command& c);
 // (spec 05 §9.2: the objects that got a command or a queue change; which
 // commands count is inferred).
 std::vector<ObjectId> coloniesNamed(std::span<const Command> commands);
+
+// Change Name's test (cmd::Rename, spec 03 §8): some space object of the
+// game, of any empire, has exactly this name (case counting): a ship, base or
+// unit group, or a planet, star, warp point or other stellar object. Fleets'
+// names are not space objects' names. `kNameInUse` is the refusal's reason.
+bool spaceObjectNameInUse(const GameState& s, std::string_view name);
+inline constexpr std::string_view kNameInUse = "That name is already in use.";
 
 // Scrap-window values shared with the UI (spec 03 §15): round(design cost × P %)
 // per resource; a fighter or satellite group returns that per unit.

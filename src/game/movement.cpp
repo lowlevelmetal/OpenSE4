@@ -594,11 +594,11 @@ private:
     template <class Fn>
     void forEachList(const Group& g, Fn&& fn) {
         if (g.planet.valid()) {
-            if (Colony* c = s_.colony(g.planet)) fn(c->orders, c->repeatOrders);
+            if (Colony* c = s_.colony(g.planet)) fn(c->orders, c->repeatOrders, c->repeatShift);
             return;
         }
         for (VehicleId id : g.holders)
-            if (Vehicle* v = s_.vehicle(id)) fn(v->orders, v->repeatOrders);
+            if (Vehicle* v = s_.vehicle(id)) fn(v->orders, v->repeatOrders, v->repeatShift);
     }
     // Replaces every list of the group and switches Repeat off.
     void setLists(const Group& g, const std::vector<Order>& list) {
@@ -710,7 +710,7 @@ private:
     // The order stays where it is, as the execution left it (a Colonize whose
     // colonists came aboard): in each list whose head it still is.
     void writeBack(const Group& g, const Order& head, const Order& o) {
-        forEachList(g, [&](std::vector<Order>& list, bool) {
+        forEachList(g, [&](std::vector<Order>& list, bool, uint16_t&) {
             if (!list.empty() && list.front() == head) list.front() = o;
         });
     }
@@ -718,19 +718,12 @@ private:
     // Done: the order leaves the head; with Repeat on it goes to the end (§8).
     void complete(Group& g) {
         routes_.erase(routeKey(g));
-        forEachList(g, [&](std::vector<Order>& list, bool repeat) {
-            if (list.empty()) return;
-            const Order done = list.front();
-            list.erase(list.begin());
-            if (repeat) list.push_back(done);
-        });
+        forEachList(g, [&](std::vector<Order>& list, bool repeat, uint16_t& shift) { completeHeadOrder(list, repeat, shift); });
     }
 
     void removeFront(Group& g) {
         routes_.erase(routeKey(g));
-        forEachList(g, [&](std::vector<Order>& list, bool) {
-            if (!list.empty()) list.erase(list.begin());
-        });
+        forEachList(g, [&](std::vector<Order>& list, bool repeat, uint16_t& shift) { removeHeadOrder(list, repeat, shift); });
     }
 
     // Where the player reads about something its own order ran into (spec
@@ -1512,7 +1505,7 @@ private:
             ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {}", name(g), why), {}, where(g), picture(g));
             return Exec::Removed;
         }
-        forEachList(g, [&](std::vector<Order>& list, bool) {
+        forEachList(g, [&](std::vector<Order>& list, bool, uint16_t&) {
             if (list.empty()) return;
             list.erase(list.begin());
             list.insert(list.begin(), expanded.begin(), expanded.end());

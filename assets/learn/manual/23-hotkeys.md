@@ -32,8 +32,8 @@ pointing at an order button shows its name and key at the top of the system pane
 |---|---|
 | Move To | `M` |
 | Move To Waypoint, from a list | `Ctrl+W` |
-| Move To Waypoint 0 to 9 | `Ctrl+0` to `Ctrl+9` |
-| Set waypoint 0 to 9 at the selected sector | `Alt+0` to `Alt+9` |
+| Move To Waypoint 1 to 10 | `Ctrl+1` to `Ctrl+9`, `Ctrl+0` |
+| Set waypoint 1 to 10 at the sector you click next | `Alt+1` to `Alt+9`, `Alt+0` |
 | Warp | `W` |
 | Attack | `A` |
 | Colonize | `C` |
@@ -41,7 +41,7 @@ pointing at an order button shows its name and key at the top of the system pane
 | Resupply At Nearest | `S` |
 | Repair At Nearest | `R` |
 | Sentry | `Y` |
-| Set Patrol (then `Enter` or right-click to finish) | `P` |
+| Set Patrol (click the points, then the ship's own sector; `Enter` or right-click also finishes) | `P` |
 | Repeat Orders on or off | `K` |
 | Clear Orders | `Delete` or `Backspace` |
 | Fleet Transfer | `F` |
@@ -58,7 +58,7 @@ pointing at an order button shows its name and key at the top of the system pane
 | Cloak, Decloak | `Z`, `X` |
 | Use Component | `Ctrl+Z` |
 | Sweep Mines | `Ctrl+M` |
-| Tag or untag the selected sector as a minefield | `Ctrl+T`, `Ctrl+R` |
+| Tag or untag a sector as a minefield: press the key, then click the sector | `Ctrl+T`, `Ctrl+R` |
 | Abandon Planet | `Ctrl+A` |
 | Scrap Facilities | `Ctrl+K` |
 | Toggle Minister Control | `Ctrl+Y` |
@@ -83,8 +83,8 @@ moves are being played, these keys are ignored.
 
 | Key | Action |
 |---|---|
-| `Space` | Next ship without orders (turn-based games: next ship with movement left) |
-| `Ctrl+N`, `Ctrl+B` | Next, previous ship |
+| `Space`, `Ctrl+N` | Next ship that can move and has no orders (turn-based games: has movement left); never a base, a mothballed ship or a ship on Sentry. Held down, it keeps going |
+| `Ctrl+B` | Previous ship, the same way |
 | `Ctrl+F`, `Ctrl+D` | Next, previous fleet |
 | `Ctrl+C`, `Ctrl+X` | Next, previous colony |
 | `Shift+click` in the list of a sector | Tag a ship (a ship in a fleet tags the fleet), so that one order goes to every tagged ship |
