@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <format>
 
 namespace opense4::client::classic {
@@ -42,6 +43,24 @@ std::vector<EntryGroup> groupEntries(std::span<const game::DesignEntry> entries)
         }
     }
     return out;
+}
+
+bool condenseEntries(std::vector<game::DesignEntry>& entries) {
+    std::vector<game::DesignEntry> out;
+    out.reserve(entries.size());
+    std::vector<uint8_t> taken(entries.size(), 0);
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (taken[i]) continue;
+        // The first of its kind, then every later identical entry right after it.
+        for (size_t k = i; k < entries.size(); ++k)
+            if (!taken[k] && entries[k] == entries[i]) {
+                taken[k] = 1;
+                out.push_back(entries[k]);
+            }
+    }
+    if (out == entries) return false;
+    entries = std::move(out);
+    return true;
 }
 
 namespace {
@@ -113,6 +132,28 @@ std::vector<std::string> componentGroups(const game::Rules& r, const game::Empir
     return out;
 }
 
+// Letter case ignored (ours, as in Designs' alphabetical lists).
+static bool beforeNoCase(std::string_view a, std::string_view b) {
+    return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end(), [](char p, char q) {
+        return std::tolower(static_cast<unsigned char>(p)) < std::tolower(static_cast<unsigned char>(q));
+    });
+}
+
+std::vector<std::string> componentGroupRows(const game::Rules& r, const game::Empire& e, uint32_t hull) {
+    std::vector<std::string> out = componentGroups(r, e, hull);
+    if (std::none_of(out.begin(), out.end(), [](const std::string& g) { return datafile::keysEqual(g, "All"); })) out.emplace_back("All");
+    std::stable_sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) { return beforeNoCase(a, b); });
+    return out;
+}
+
+std::vector<uint32_t> reportMounts(const game::Rules& r, const game::Empire& e, std::optional<uint32_t> hull) {
+    std::vector<uint32_t> out;
+    if (!hull || *hull >= r.data().vehicleSizes.size()) return out;
+    for (uint32_t m = 0; m < r.data().weaponMounts.size(); ++m)
+        if (r.mountAvailable(e, m) && game::mountOffered(r, *hull, m) && game::mountFitsHull(r, *hull, m)) out.push_back(m);
+    return out;
+}
+
 std::vector<uint32_t> hullMounts(const game::Rules& r, const game::Empire& e, uint32_t hull) {
     std::vector<uint32_t> out;
     const auto comps = designerComponents(r, e, hull, {}, false);
@@ -154,6 +195,14 @@ bool designNameTaken(const game::GameState& s, const game::Empire& e, std::strin
     // exactly (spec 03 §4.1); a client sees the foreign designs it knows.
     return std::any_of(e.designs.begin(), e.designs.end(), [&](game::DesignId id) { return s.design(id).name == name; }) ||
            game::designNameInUse(s, name);
+}
+
+bool designNameClashes(const game::GameState& s, const game::Empire& e, std::string_view name, game::DesignId editing) {
+    auto clash = [&](game::DesignId id) { return id != editing && id.index() < s.designs.size() && s.design(id).name == name; };
+    if (std::any_of(e.designs.begin(), e.designs.end(), clash)) return true;
+    for (const game::Empire& other : s.empires)
+        if (std::any_of(other.designs.begin(), other.designs.end(), clash)) return true;
+    return false;
 }
 
 std::string romanNumeral(int n) {

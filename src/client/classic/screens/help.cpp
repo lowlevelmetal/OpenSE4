@@ -11,10 +11,12 @@
 // Opening arguments (ScreenArgs::text): a tab name ("components",
 // "weapmount", "facilities", "shipsizes", "unitsizes", "techareas", "treaties",
 // "intelprojects", "formations", "hotkeys") with `index` selecting an item, or
-// "weapons" for the Weapons Report with `index` as the initial weapon mount.
+// "weapons" for the Weapons Report with `index` the hull of the design being
+// made (-1 from Help: only Normal Mount is offered).
 
 #include "client/app_settings.hpp"
 #include "client/classic/data_export.hpp"
+#include "client/classic/screens/design_pickers.hpp"
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
@@ -29,7 +31,9 @@
 #include <cctype>
 #include <deque>
 #include <format>
+#include <optional>
 #include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -94,8 +98,10 @@ public:
     explicit HelpScreen(const ScreenArgs& args) {
         const std::string want = squash(args.text);
         if (want == "weapons" || want == "weaponsreport") {
+            // From the designer: its hull; the report starts on Normal Mount
+            // (spec 06 §1.2, confirmed: binary).
             weapons_ = true;
-            mount_ = args.index;
+            if (args.index >= 0) hull_ = static_cast<uint32_t>(args.index);
             return;
         }
         for (size_t i = 0; i < kTabCount; ++i)
@@ -119,6 +125,9 @@ private:
     bool drawDialog(UiContext& ui) {
         Dialog d(ui, weapons_ ? "Weapons Report###help" : "Help###help", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
+        // The Weapons Report's mount, in yellow in the title strip (confirmed:
+        // binary; its place is ours).
+        if (weapons_) d.titleText(190, imColor(0xffff00), mount_ >= 0 ? ui.rules().data().weaponMounts[static_cast<size_t>(mount_)].longName : std::string("Normal Mount"));
         d.beginContent(weapons_ ? 0.0f : 576.0f);
         if (weapons_) weaponsReport(ui);
         else topics(ui, d);
@@ -562,13 +571,15 @@ private:
 
     // ---- Weapons Report ----------------------------------------------------------------------
 
+    // The weapons of the chosen kind the empire knows, whatever the mount: the
+    // mount changes only their size and damage figures (spec 06 §1.2,
+    // confirmed: binary), for a weapon it applies to.
     void weaponsReport(UiContext& ui) {
         const game::Rules& r = ui.rules();
-        std::vector<uint32_t> list = knownWeapons(r, ui.me(), kind_, onlyLatest_);
-        if (mount_ >= 0) std::erase_if(list, [&](uint32_t c) { return !mountFitsWeapon(r, static_cast<uint32_t>(mount_), c); });
+        const std::vector<uint32_t> list = knownWeapons(r, ui.me(), kind_, onlyLatest_);
         const int first = page_ * 10 + 1;
 
-        const std::string mount = mount_ >= 0 ? r.data().weaponMounts[static_cast<size_t>(mount_)].longName : std::string("No mount");
+        const std::string mount = mount_ >= 0 ? r.data().weaponMounts[static_cast<size_t>(mount_)].longName : std::string("Normal Mount");
         ImGui::TextColored(kBlueText, "%s", kind_ == WeaponKind::None ? "All weapons" : std::string(weaponKindName(kind_)).c_str());
         ImGui::SameLine();
         ImGui::TextColored(kDimText, "- %zu known, %s, damage at ranges %d to %d. Right-click a weapon for its report.", list.size(),
@@ -626,25 +637,20 @@ private:
         static constexpr std::array<std::pair<WeaponKind, const char*>, 5> kKinds{{{WeaponKind::None, "All"},
                                                                                    {WeaponKind::DirectFire, "Direct Fire"},
                                                                                    {WeaponKind::Seeking, "Seeking"},
-                                                                                   {WeaponKind::PointDefense, "Point-Defense"},
+                                                                                   {WeaponKind::PointDefense, "Point Defense"},
                                                                                    {WeaponKind::Warhead, "Warhead"}}};
         for (const auto& [kind, label] : kKinds)
             if (lampButton(ui, d, label, kind_ == kind)) kind_ = kind;
         d.spacer();
-        if (lampButton(ui, d, "Weapon Mount", mount_ >= 0, !r.data().weaponMounts.empty())) ImGui::OpenPopup("##mounts");
-        if (ImGui::BeginPopup("##mounts")) {
-            if (ImGui::Selectable("No mount", mount_ < 0)) mount_ = -1;
-            for (uint32_t m = 0; m < r.data().weaponMounts.size(); ++m) {
-                if (!r.mountAvailable(ui.me(), m)) continue;
-                const auto& wm = r.data().weaponMounts[m];
-                if (ImGui::Selectable(std::format("{}##{}", wm.longName, m).c_str(), mount_ == static_cast<int32_t>(m)))
-                    mount_ = static_cast<int32_t>(m);
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Damage %d%%, size %d%%, cost %d%%, range %+d, to hit %+d%%", wm.damagePercent, wm.tonnagePercent,
-                                      wm.costPercent, wm.rangeModifier, wm.toHitModifier);
-            }
-            ImGui::EndPopup();
+        // "Select Weapon Mount": Normal Mount, then the mounts the designer's
+        // hull allows (none from Help); Cancel picks Normal Mount (inferred).
+        static constexpr const char* kMountPicker = "Select Weapon Mount###reportmount";
+        if (lampButton(ui, d, "Weapon Mount", mount_ >= 0)) {
+            mounts_ = reportMounts(r, ui.me(), hull_);
+            ImGui::OpenPopup(kMountPicker);
         }
+        if (const ListPick pick = weaponMountWindow(ui, kMountPicker, mounts_, mount_); pick.done)
+            mount_ = pick.row && *pick.row > 0 && *pick.row <= mounts_.size() ? static_cast<int32_t>(mounts_[*pick.row - 1]) : -1;
         if (d.check("Only Latest", onlyLatest_)) onlyLatest_ = !onlyLatest_;
         if (lampButton(ui, d, "Dmg 1-10", page_ == 0)) page_ = 0;
         if (lampButton(ui, d, "Dmg 11-20", page_ == 1)) page_ = 1;
@@ -697,7 +703,9 @@ private:
 
     bool weapons_ = false;
     WeaponKind kind_ = WeaponKind::None;
-    int32_t mount_ = -1;
+    int32_t mount_ = -1;                     // -1: Normal Mount
+    std::optional<uint32_t> hull_;           // the designer's hull (none from Help)
+    std::vector<uint32_t> mounts_;           // the mount list's rows while it is open
     bool onlyLatest_ = false;
     int page_ = 0;
     std::deque<std::pair<std::string, std::string>> exportQueue_;   // title, text

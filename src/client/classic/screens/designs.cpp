@@ -8,12 +8,13 @@
 //   ScreenArgs::design the template for copy / edit / upgrade
 //   ScreenArgs::index  the hull of a new design (optional)
 // Edit is offered only for an own design that is still a prototype (nothing
-// built or retrofitted to it) and in no construction queue, and changes that
-// design in place (cmd::EditDesign); Copy and Upgrade save a new design
-// (spec 03 §4.1).
+// built or retrofitted to it); one in a construction queue is refused with
+// the "Cannot Edit Design" box. Edit changes that design in place
+// (cmd::EditDesign); Copy and Upgrade save a new design (spec 03 §4.1).
 
 #include "client/classic/mod_ui.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
+#include "client/classic/screens/design_pickers.hpp"
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
@@ -331,7 +332,9 @@ private:
         text(top + Vec2{152, 85}, white, own ? (d.designType.empty() ? std::string("-") : d.designType) : (d.owner.valid() ? s.empire(d.owner).name : std::string("-")));
         text(top + Vec2{140, 100}, blue, "Date Created");
         text(top + Vec2{152, 115}, white, formatDate(d.createdTurn));
-        if (d.obsolete) text(top + Vec2{202, 115}, imColor(0xffff00), "(Obsolete)");
+        // Only for an own design: whether another empire made one obsolete is
+        // its owner's business (ours; the enemy tabs list it either way).
+        if (d.obsolete && own) text(top + Vec2{202, 115}, imColor(0xffff00), "(Obsolete)");
         // The three amounts after a label: right-aligned, each followed by its icon (ours).
         auto amounts = [&](float y, const game::Resources& v) {
             static constexpr std::array<float, 3> kRight{172, 225, 278};
@@ -653,20 +656,10 @@ private:
         return first == std::string::npos ? std::string{} : n.substr(first);
     }
 
-    // The names the Design Name list offers: the race's list without the names
-    // in use, or with no list in the install "<Hull> 1", "<Hull> 2"... (ours).
-    std::vector<std::string> nameChoices(const UiContext& ui) const {
-        std::vector<std::string> out;
-        for (const std::string& n : names_)
-            if (!designNameTaken(ui.state(), ui.me(), n)) out.push_back(n);
-        if (!out.empty() || !names_.empty()) return out;
-        const std::string base = std::string(ruleset::displayName(type_));
-        for (int i = 1; out.size() < 10; ++i) {
-            const std::string n = std::format("{} {}", hull_ ? ui.rules().hull(*hull_).name : base, i);
-            if (!designNameTaken(ui.state(), ui.me(), n)) out.push_back(n);
-        }
-        return out;
-    }
+    // The names the Design Name list offers (spec 06 §6, §7 Q94, confirmed:
+    // binary): every line of the race's name file in file order, names in use
+    // included; without a file, none. Blank lines are left out (ours).
+    const std::vector<std::string>& nameChoices() const { return names_; }
 
     void pickDesignType(const UiContext& ui) {
         // Prefer a design type named after the vehicle type (fighters, satellites, ...).
@@ -788,10 +781,7 @@ private:
             const std::string& name = pictures_[i];
             const std::string caption = name.empty() ? std::format("{} (the hull's)", h.primaryBitmap) : name;
             const ImVec2 at = ImGui::GetCursorScreenPos();
-            if (ImGui::Selectable(std::format("##picture{}", i).c_str(), datafile::keysEqual(picture_, name), 0, ui.size({200, 38}))) {
-                picture_ = name;
-                error_.clear();
-            }
+            if (ImGui::Selectable(std::format("##picture{}", i).c_str(), datafile::keysEqual(picture_, name), 0, ui.size({200, 38}))) picture_ = name;
             script::reportItem("picture:" + (name.empty() ? std::string("hull") : name));   // input scripts pick a picture by its name
             ImDrawList* pdl = ImGui::GetWindowDrawList();
             if (const Sprite mini = ui.art.designMini(style, h, name)) drawSprite(pdl, mini, {at.x + ui.px(1), at.y + ui.px(1)}, {at.x + ui.px(37), at.y + ui.px(37)});
@@ -808,16 +798,26 @@ private:
         hull_ = hull;
         mounts_ = hullMounts(ui.rules(), ui.me(), hull);
         if (mount_ >= 0 && std::find(mounts_.begin(), mounts_.end(), static_cast<uint32_t>(mount_)) == mounts_.end()) mount_ = -1;
-        error_.clear();
     }
 
-    std::vector<std::string> problems(const UiContext& ui, const std::optional<game::DesignStats>& st) const {
+    // Cancel in "Select Vehicle Size" leaves the design without a size
+    // (spec 06 §7 Q94); its components stay.
+    void clearHull(const UiContext& ui) {
+        hullChosen_ = false;
+        if (!hull_) return;
+        if (datafile::keysEqual(picture_, ui.rules().hull(*hull_).alternateBitmap)) picture_.clear();
+        hull_.reset();
+        mounts_.clear();
+        mount_ = -1;
+    }
+
+    // The warnings (spec 06 §7 Q94, confirmed: binary): the requirements the
+    // design does not meet yet, a size first. The name is never one of them:
+    // Create Design checks it after them.
+    static std::vector<std::string> problems(const std::optional<game::DesignStats>& st) {
         std::vector<std::string> out;
-        if (!hull_) out.emplace_back("Choose a size for the design");
-        const std::string n = name();
-        if (n.empty()) out.emplace_back("The design needs a name");
-        else if (designNameTaken(ui.state(), ui.me(), n)) out.emplace_back("Another design already has this name");
-        if (st) out.insert(out.end(), st->problems.begin(), st->problems.end());
+        if (!st) out.emplace_back("Choose a size for the design");
+        else out.insert(out.end(), st->problems.begin(), st->problems.end());
         return out;
     }
 
@@ -867,6 +867,75 @@ private:
         return arrowButton(ui, id, ArrowGlyph::Down, {cd::kBoxH, cd::kBoxH}, enabled);
     }
 
+    // "Select Vehicle Size" (spec 06 §7 Q94, confirmed: binary): a list
+    // window of the empire's researched hulls of the vehicle type in data
+    // order (ours: the hull of a design being edited stays listed), columns
+    // Pic, Name, Size (the tonnage) and Cost (minerals, organics and
+    // radioactives in their colours), and under the list an "Abilities" box
+    // for the hull under the pointer, else the design's (inferred). A click
+    // on a row picks that size; Cancel leaves the design without one, even
+    // one chosen before (inferred, as Cancel in Design Type's list).
+    static constexpr const char* kSizePicker = "Select Vehicle Size###vehiclesize";
+    void sizePicker(UiContext& ui) {
+        if (!beginModal(ui, kSizePicker, {480, 450})) return;
+        const game::Rules& r = ui.rules();
+        const std::vector<uint32_t> hulls = hullsOfType(r, ui.me(), type_, hull_);
+        // For lessons: the smallest hull (the first of equals) and the others.
+        const auto smallest = std::min_element(hulls.begin(), hulls.end(), [&](uint32_t a, uint32_t b) { return r.hull(a).tonnage < r.hull(b).tonnage; });
+        static constexpr ListColumn kColumns[] = {{kPicHeading, 40, 0, false}, {"Name", 0, 0, false}, {"Size", 60, 0, false}, {"Cost", 150, 0, false}};
+        constexpr float kAbilitiesH = 84;
+        const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
+        const float below = ui.px(kAbilitiesH + 18) + ImGui::GetStyle().ItemSpacing.y * 2;
+        const float rowsW = listRowsWidth(ui, ImGui::GetContentRegionAvail().x);
+        listHeader(ui, "##sizehead", kColumns, rowsW);
+        const std::vector<float> edges = columnEdges(ui, kColumns, rowsW);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        beginList(ui, "##sizes", ImVec2(0, -(footer + below)), kListRowH);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float w = ImGui::GetContentRegionAvail().x;
+        std::optional<uint32_t> picked, hovered;
+        for (auto h = hulls.begin(); h != hulls.end(); ++h) {
+            const ruleset::VehicleSize& v = r.hull(*h);
+            const ImVec2 a = ImGui::GetCursorScreenPos();
+            // Named after the hull (input scripts find it by "##<index>"); the text is drawn below.
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 0));
+            if (ImGui::Selectable(std::format("{}##{}", v.name, *h).c_str(), hull_ == *h, ImGuiSelectableFlags_None, ImVec2(w, ui.px(kListRowH)))) picked = *h;
+            ImGui::PopStyleColor();
+            ui.tagOption("create-design:hull", h == smallest ? "smallest" : "other");
+            if (ImGui::IsItemHovered()) hovered = *h;
+            if (const Sprite pic = ui.art.designMini(ui.me().race.style, v, {})) drawSprite(dl, pic, {a.x + edges[0] + ui.px(2), a.y}, {a.x + edges[0] + ui.px(38), a.y + ui.px(36)});
+            const float textY = a.y + ui.px(10);
+            dl->PushClipRect({a.x + edges[1], a.y}, {a.x + edges[2], a.y + ui.px(kListRowH)}, true);
+            dl->AddText({a.x + edges[1] + ui.px(4), textY}, IM_COL32_WHITE, v.name.c_str());
+            dl->PopClipRect();
+            dl->AddText({a.x + edges[2] + ui.px(4), textY}, IM_COL32_WHITE, std::format("{}kT", v.tonnage).c_str());
+            const std::array<int64_t, 3> cost{v.cost.minerals, v.cost.organics, v.cost.radioactives};
+            static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+            for (size_t k = 0; k < 3; ++k)
+                dl->AddText({a.x + edges[3] + ui.px(4 + 48 * float(k)), textY}, imColor(kColors[k]), formatNumber(cost[k]).c_str());
+        }
+        endList(ui);
+        ImGui::PopStyleVar(2);
+        // The Abilities box.
+        ImGui::TextColored(kLabelBlue, "Abilities");
+        const std::optional<uint32_t> shown = hovered ? hovered : hull_;
+        ImGui::PushStyleColor(ImGuiCol_Border, imColorV(palette::kFrameLight));
+        ImGui::BeginChild("##sizeabilities", ImVec2(0, ui.px(kAbilitiesH)), ImGuiChildFlags_Borders);
+        ImGui::PopStyleColor();
+        if (shown) {
+            ImGui::PushTextWrapPos(0.0f);
+            for (const ruleset::Ability& ab : r.hull(*shown).abilities) ImGui::TextUnformatted(abilityText(ab).c_str());
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::EndChild();
+        const bool cancel = ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        if (picked) setHull(ui, *picked);
+        else if (cancel) clearHull(ui);
+        if (picked || cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
     void topRow(UiContext& ui, const Dialog& d, const std::optional<game::DesignStats>& st) {
         const game::Rules& r = ui.rules();
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -884,21 +953,12 @@ private:
             ImGui::Dummy(ui.size({128, 128}));
         }
 
-        // Size.
+        // Size: without one the box reads "Vehicle Size" (confirmed: binary).
         label(ui, d, {cd::kLabelX, 39}, "Size");
         const std::string size = hull_ ? std::format("{} ({}kT)", r.hull(*hull_).name, r.hull(*hull_).tonnage) : std::string{};
-        if (dropBox(ui, d, "##size", 55, size, "Size")) ImGui::OpenPopup("##sizes");
+        if (dropBox(ui, d, "##size", 55, size, "Vehicle Size")) ImGui::OpenPopup(kSizePicker);
         ui.tag("create-design:hull", d.at({cd::kBoxX, 55}), d.at({cd::kBoxX + cd::kBoxW, 55 + cd::kBoxH}));
-        if (ImGui::BeginPopup("##sizes")) {
-            const std::vector<uint32_t> hulls = hullsOfType(r, ui.me(), type_, hull_);
-            // For lessons: the smallest hull (the first of equals) and the others.
-            const auto smallest = std::min_element(hulls.begin(), hulls.end(), [&](uint32_t a, uint32_t b) { return r.hull(a).tonnage < r.hull(b).tonnage; });
-            for (auto h = hulls.begin(); h != hulls.end(); ++h) {
-                if (ImGui::Selectable(std::format("{} ({} kT)##{}", r.hull(*h).name, r.hull(*h).tonnage, *h).c_str(), hull_ == *h)) setHull(ui, *h);
-                ui.tagOption("create-design:hull", h == smallest ? "smallest" : "other");
-            }
-            ImGui::EndPopup();
-        }
+        sizePicker(ui);
 
         // Design Type: a new design has none, its box reading "Design Type".
         label(ui, d, {cd::kLabelX, 79}, "Design Type");
@@ -921,20 +981,17 @@ private:
         ImGui::SetNextItemWidth(ui.px(cd::kBoxW - cd::kBoxH - 2));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ui.px(3), ui.px(1)));
-        if (ImGui::InputTextWithHint("##name", "Design Name", name_.data(), name_.size())) error_.clear();
+        ImGui::InputTextWithHint("##name", "Design Name", name_.data(), name_.size());
         ImGui::PopStyleVar(2);
         ui.tag("create-design:name", d.at({cd::kBoxX, 135}), d.at({cd::kBoxX + cd::kBoxW - cd::kBoxH, 135 + cd::kBoxH}));
         ImGui::SetCursorScreenPos(d.at({cd::kBoxX + cd::kBoxW - cd::kBoxH, 135}));
         if (arrowButton(ui, "##names", ArrowGlyph::Down, {cd::kBoxH, cd::kBoxH}, true)) ImGui::OpenPopup("##namelist");
         ui.tagItem("create-design:suggest");
         if (ImGui::BeginPopup("##namelist")) {
-            const std::vector<std::string> choices = nameChoices(ui);
+            const std::vector<std::string>& choices = nameChoices();
             for (size_t i = 0; i < choices.size(); ++i)
-                if (ImGui::Selectable(std::format("{}##{}", choices[i], i).c_str())) {
-                    setName(choices[i]);
-                    error_.clear();
-                }
-            if (choices.empty()) ImGui::TextColored(kDimText, "Every name of the list is in use.");
+                if (ImGui::Selectable(std::format("{}##{}", choices[i], i).c_str())) setName(choices[i]);
+            if (choices.empty()) ImGui::Dummy(ui.size({cd::kBoxW, 1}));   // an empty drop-down list
             ImGui::EndPopup();
         }
 
@@ -1033,22 +1090,22 @@ private:
             if (clicked) remove = c.remove;
         }
         ui.tag("create-design:on-design", boxA, boxB);
-        if (remove && *remove < entries_.size()) {
-            entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(*remove));
-            error_.clear();
-        }
+        if (remove && *remove < entries_.size()) entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(*remove));
     }
 
-    // "Components Available (<type>)" at (19,238), the hint right-aligned to
+    // "Components Available (<group>)" at (19,238) with the weapon mount's
+    // name drawn apart at x 319 (spec 06 §7 Q94, confirmed: binary; "Normal
+    // Mount" without one and white, inferred), the hint right-aligned to
     // x 573, the tiles in a list at (19,254), 550x114: 173x38 tiles of icon,
     // name and kT, three to a row; a click adds the component (with the chosen
-    // mount where it applies), a right-click opens its report.
+    // mount where it applies), and does nothing before a size is chosen
+    // (confirmed: binary); a right-click opens its report.
     void grid(UiContext& ui, const Dialog& d, const std::optional<game::DesignStats>& st) {
         const game::Rules& r = ui.rules();
         const uint32_t hull = probeHull(ui);
-        std::string kind = group_.empty() ? std::string("All") : group_;
-        if (mount_ >= 0) kind += ", " + r.data().weaponMounts[static_cast<size_t>(mount_)].longName;
-        label(ui, d, {19, 238}, std::format("Components Available ({})", kind));
+        label(ui, d, {19, 238}, std::format("Components Available ({})", group_.empty() ? std::string("All") : group_));
+        textAt(ui, d, ui.fonts.regular, kTextSize, kTextLead, {319, 238}, IM_COL32_WHITE,
+               mount_ >= 0 ? r.data().weaponMounts[static_cast<size_t>(mount_)].longName : std::string("Normal Mount"));
         textRightAt(ui, d, ui.fonts.small, kSmallSize, kSmallLead, {573, 240}, imColor(palette::kLabel), "(click to add component)");
         ImGui::SetCursorScreenPos(d.at(cd::kGrid));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -1091,9 +1148,10 @@ private:
             ImGui::PopFont();
             if (hovered) hovered_ = ItemRef{Kind::Component, ci, entry.mount};
             if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Component, ci, entry.mount});
-            if (clicked) {
+            if (clicked && hull_) {
                 entries_.push_back(entry);
-                error_.clear();
+                // Condensed View on: the new entry joins the first of its kind.
+                if (condensed_) condenseEntries(entries_);
             }
         }
         const float rows = std::ceil(float(comps.size()) / 3.0f);
@@ -1118,9 +1176,7 @@ private:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
         beginList(ui, "##warnings", ui.size(cd::kWarningsSize), 18);
-        std::vector<std::string> lines;
-        if (!error_.empty()) lines.push_back("Not created: " + error_);
-        for (const std::string& p : problems(ui, st)) lines.push_back(p);
+        const std::vector<std::string> lines = problems(st);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
         const float w = ImGui::GetContentRegionAvail().x;
@@ -1156,36 +1212,40 @@ private:
     }
 
     void buttons(UiContext& ui, Dialog& d, const std::optional<game::DesignStats>& st) {
-        (void)st;
         const game::Rules& r = ui.rules();
         const uint32_t hull = probeHull(ui);
-        if (d.button("Comp Type")) ImGui::OpenPopup("##groups");
-        if (ImGui::BeginPopup("##groups")) {
-            if (ImGui::Selectable("All Types", group_.empty())) group_.clear();
-            ImGui::Separator();
-            for (const std::string& g : componentGroups(r, ui.me(), hull))
-                if (ImGui::Selectable(g.c_str(), datafile::keysEqual(g, group_))) group_ = g;
-            ImGui::EndPopup();
+        // Comp Type: "Select Component Group", the General Groups of the
+        // components available and "All", the letter case ignored; Cancel
+        // picks All (spec 06 §7 Q94, confirmed: binary).
+        static constexpr const char* kGroupPicker = "Select Component Group###componentgroup";
+        if (d.button("Comp Type")) {
+            groupRows_ = componentGroupRows(r, ui.me(), hull);
+            ImGui::OpenPopup(kGroupPicker);
         }
-        if (d.button("Weap Mount", !mounts_.empty())) ImGui::OpenPopup("##mounts");
-        if (ImGui::BeginPopup("##mounts")) {
-            if (ImGui::Selectable("No Mount", mount_ < 0)) mount_ = -1;
-            for (uint32_t m : mounts_) {
-                const auto& wm = r.data().weaponMounts[m];
-                if (ImGui::Selectable(std::format("{}##{}", wm.longName, m).c_str(), mount_ == static_cast<int32_t>(m)))
-                    mount_ = static_cast<int32_t>(m);
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Damage %d%%, size %d%%, cost %d%%, range %+d, to hit %+d%%", wm.damagePercent, wm.tonnagePercent,
-                                      wm.costPercent, wm.rangeModifier, wm.toHitModifier);
-            }
-            ImGui::EndPopup();
+        if (const ListPick pick = nameListWindow(ui, kGroupPicker, groupRows_); pick.done) {
+            group_.clear();
+            if (pick.row && !datafile::keysEqual(groupRows_[*pick.row], "All")) group_ = groupRows_[*pick.row];
         }
+        // Weap Mount: "Select Weapon Mount", Normal Mount first, then the
+        // mounts the hull can use; Cancel picks Normal Mount (inferred, as the
+        // other list windows' Cancel picks their empty choice).
+        static constexpr const char* kMountPicker = "Select Weapon Mount###weaponmount";
+        if (d.button("Weap Mount", !mounts_.empty())) ImGui::OpenPopup(kMountPicker);
+        if (const ListPick pick = weaponMountWindow(ui, kMountPicker, mounts_, mount_); pick.done)
+            mount_ = pick.row && *pick.row > 0 && *pick.row <= mounts_.size() ? static_cast<int32_t>(mounts_[*pick.row - 1]) : -1;
         // Slots 3 to 7 empty; the check boxes in 8 to 10, Weapons Report in 11,
         // Create Design in 13 (spec 06 §7 Q94). To Hit Modifiers and Condensed
         // View are the empire's options.
         for (int gap = 0; gap < 5; ++gap) d.spacer();
         if (d.check("To Hit Modifiers", toHit_)) setToHit(ui, !toHit_);
-        if (d.check("Condensed View", condensed_)) setCondensed(ui, !condensed_);
+        if (d.check("Condensed View", condensed_)) {
+            // Ticking it moves identical components together on the design
+            // itself (spec 06 §7 Q94, confirmed: binary).
+            const bool on = !condensed_;
+            setCondensed(ui, on);
+            condensed_ = on;
+            if (on) condenseEntries(entries_);
+        }
         if (d.check("Only Latest", onlyLatest_)) {
             // The box is the Empire Options row "only latest components for
             // designs": a click changes the option (spec 02 §6.4).
@@ -1194,15 +1254,19 @@ private:
             o.latestComponentsOnly = onlyLatest_;
             ui.setOptions(o);
         }
+        // The report offers the mounts of this design's hull and starts on
+        // Normal Mount (spec 06 §1.2, confirmed: binary).
         if (d.button("Weapons Report")) {
             ScreenArgs a;
             a.text = "weapons";
-            a.index = mount_;
+            a.index = hull_ ? static_cast<int>(*hull_) : -1;
             ui.open(ScreenId::Help, a);
         }
         d.spacer();
-        if (d.button(editing_.valid() ? "Save Design" : "Create Design")) create(ui);
+        // "Create Design" for an edit too (confirmed: binary).
+        if (d.button("Create Design")) create(ui, st);
         ui.tagItem("create-design:save");
+        notice_.draw(ui);
     }
 
     static void setToHit(UiContext& ui, bool on) {
@@ -1217,13 +1281,27 @@ private:
         ui.setOptions(o);
     }
 
-    void create(UiContext& ui) {
-        if (!hull_) {
-            error_ = "the design has no size";
+    // Create Design (spec 06 §7 Q94, spec 03 §4.1, confirmed: binary): with
+    // any warning the "Design Warnings" box says the design cannot be made
+    // while it has warnings; then the name is checked, exactly, against every
+    // design in the game, and a clash gets the same box. Our client differs:
+    // an empty name is refused too (the original accepts it).
+    void create(UiContext& ui, const std::optional<game::DesignStats>& st) {
+        if (!hull_ || !problems(st).empty()) {
+            notice_.open("The design cannot be created while it has warnings.", "Design Warnings");
+            return;
+        }
+        const std::string n = name();
+        if (n.empty()) {
+            notice_.open("The design needs a name.", "Design Warnings");
+            return;
+        }
+        if (designNameClashes(ui.state(), ui.me(), n, editing_)) {
+            notice_.open("That design name is already in use.", "Design Warnings");
             return;
         }
         game::Design d;
-        d.name = name();
+        d.name = n;
         d.designType = designType_;
         d.hull = *hull_;
         d.entries = entries_;
@@ -1232,7 +1310,7 @@ private:
         const game::CommandResult res =
             editing_.valid() ? ui.session.issue(game::cmd::EditDesign{editing_, std::move(d)}) : ui.session.issue(game::cmd::CreateDesign{std::move(d)});
         if (res.ok) done_ = true;
-        else error_ = res.error;
+        else notice_.open(res.error, "Design Warnings");   // a refusal of the engine (ours)
     }
 
     ScreenArgs args_;
@@ -1250,9 +1328,10 @@ private:
     std::string picture_;   // the design's own picture; empty: the hull's
     std::vector<std::string> pictures_;   // the choices for the hull below
     std::optional<std::optional<uint32_t>> choicesFor_;
-    std::string error_;
+    NoticePopup notice_;
 
     std::string group_;  // Comp Type filter; empty = all
+    std::vector<std::string> groupRows_;   // the rows of "Select Component Group" while it is open
     int32_t mount_ = -1;
     std::vector<uint32_t> mounts_;
     bool condensed_ = false;   // the empire's options, read each frame (drawDialog)

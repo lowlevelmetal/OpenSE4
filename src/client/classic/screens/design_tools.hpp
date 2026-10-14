@@ -56,6 +56,12 @@ struct EntryGroup {
     size_t last = 0;
 };
 std::vector<EntryGroup> groupEntries(std::span<const game::DesignEntry> entries);
+// Condensed View on the design itself (spec 06 §7 Q94, confirmed: binary): when
+// the box is ticked, and after each component added while it is on, identical
+// entries (same component and mount) move next to the first of their kind,
+// the order otherwise kept. Weapons fire in the design's order (spec 04), so
+// this changes a battle's firing order. Returns true if anything moved.
+bool condenseEntries(std::vector<game::DesignEntry>& entries);
 
 // Components the empire has researched that fit on the hull's vehicle type, in data
 // order. `group` filters by General Group (empty = all); `onlyLatest` keeps the last of
@@ -63,19 +69,33 @@ std::vector<EntryGroup> groupEntries(std::span<const game::DesignEntry> entries)
 std::vector<uint32_t> designerComponents(const game::Rules& r, const game::Empire& e, uint32_t hull, std::string_view group, bool onlyLatest);
 // The General Groups among designerComponents(), sorted.
 std::vector<std::string> componentGroups(const game::Rules& r, const game::Empire& e, uint32_t hull);
+// The rows of Comp Type's "Select Component Group" list window (spec 06 §7
+// Q94, confirmed: binary): the General Groups of the components the empire
+// has for the hull and "All", sorted with the letter case ignored.
+std::vector<std::string> componentGroupRows(const game::Rules& r, const game::Empire& e, uint32_t hull);
 
 // Mounts that at least one of the empire's components can use on this hull.
 std::vector<uint32_t> hullMounts(const game::Rules& r, const game::Empire& e, uint32_t hull);
+// The Weapons Report's mounts (spec 06 §1.2, confirmed: binary): opened from
+// the designer, the researched mounts its vehicle type and hull size allow,
+// in data order; from Help (no hull) none, so only "Normal Mount" is offered.
+std::vector<uint32_t> reportMounts(const game::Rules& r, const game::Empire& e, std::optional<uint32_t> hull);
 // The mount a newly added component gets: `mount` if it applies, else -1.
 int32_t mountFor(const game::Rules& r, uint32_t hull, uint32_t component, int32_t mount);
-// Whether a mount's weapon-type requirement accepts a component, ignoring the hull (Weapons Report).
+// Whether a mount's weapon-type requirement accepts a component, ignoring the hull.
 bool mountFitsWeapon(const game::Rules& r, uint32_t mount, uint32_t component);
 
-// Weapons the empire has researched. `kind` None = every weapon type.
+// Weapons the empire has researched. `kind` None = every weapon type. The
+// Weapons Report lists them whatever the mount: the mount changes only their
+// size and damage figures (spec 06 §1.2, confirmed: binary).
 std::vector<uint32_t> knownWeapons(const game::Rules& r, const game::Empire& e, ruleset::WeaponKind kind, bool onlyLatest);
 
 // Whether one of the empire's designs already uses this name.
 bool designNameTaken(const game::GameState& s, const game::Empire& e, std::string_view name);
+// The Create Design check (spec 03 §4.1, spec 06 §7 Q94, confirmed: binary):
+// the name matches, exactly, that of a design in the game other than
+// `editing` (the design an Edit changes, which may keep its name).
+bool designNameClashes(const game::GameState& s, const game::Empire& e, std::string_view name, game::DesignId editing = {});
 // "Lancer" -> "Lancer II", "Lancer II" -> "Lancer III"; skips names already taken.
 std::string nextVersionName(const game::GameState& s, const game::Empire& e, std::string_view name);
 // The first name of `list`, starting at `start` and wrapping, that no own design uses. Sets

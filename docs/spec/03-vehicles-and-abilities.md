@@ -451,10 +451,17 @@ type, none = defined but unused.
 
 - Fields: name, design type, hull, ordered component list (each entry is a component plus an
   optional mount), creation date, obsolete flag, prototype flag, default combat strategy, and
-  statistics (number constructed, in service, lost, and enemy tonnage destroyed).
-- **Name** MUST be non-empty and differ from the name of every design in the game, other empires'
-  designs included. The comparison is exact and case-sensitive (confirmed: binary). Name
-  suggestions come from the empire's name list. The original checks the name only in the design
+  statistics (number constructed, in service, lost, and enemy tonnage destroyed). The list's
+  order is the order weapons fire in (spec 04); the designer's Condensed View reorders it,
+  moving identical entries next to the first of their kind (spec 06 §7 Q94, confirmed:
+  binary).
+- **Name** MUST differ from the name of every design in the game, other empires' designs
+  included. The comparison is exact and case-sensitive (confirmed: binary). The original does
+  not require a name: the design window's name box starts holding the words "Design Name", so
+  a design made without typing is named so, and an erased name is accepted as empty
+  (confirmed: binary; spec 06 §7 Q94). **Our client differs:** the words are a hint in an
+  empty box and an empty name is refused, by the designer and by `cmd::CreateDesign` and
+  `cmd::EditDesign`. Name suggestions come from the empire's name list. The original checks the name only in the design
   window and when a computer player picks a name. Designs that arrive in a player's turn file
   or come from an empire file (premade starting designs) are only checked for validity (§4.2),
   not for their name, so two designs can end up sharing a name. A computer player takes the
