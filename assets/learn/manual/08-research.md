@@ -87,8 +87,8 @@ project.
 Open [Research](window:research) with `F8` or the flask button.
 
 - The title strip shows the **Research Points Available** this turn.
-- The list fills the top of the window: every area you can research now, grouped by kind, with your current level and the cost of the next level. Areas you have completed stay in the list, dimmed, with **Complete** as their cost. Hover over an area to see its description and what its next level unlocks. **Click an area** to add it to the end of the queue.
-- Below the list, your current projects appear four at a time. Each box shows the area, the level being researched, when it will finish (**Completion**), the points it gets this turn (**Cost Per Turn**) and, in the small box under it, a bar of up to 19 green blocks for the share of the level already paid. The page buttons `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch between them. **Click a project** to cancel it; the game asks first (switch this off with the Empire Option *Confirm deleting a research project*), because its progress is lost.
+- The list fills the top of the window: every area you can research now, under its group's heading (the groups in alphabetical order), with your current level and the cost of the next level. Areas already in the queue are green; areas you have completed stay in the list, dimmed, with **Complete** as their cost. Hover over an area to see its description and what its next level unlocks, or right-click it for its report. **Click an area** to add it to the end of the queue; a click on a queued or completed area, or with twelve projects queued, does nothing.
+- Below the list, your current projects appear four at a time. Each box shows the area, the level being researched, when it will finish (**Completion**), the points it gets this turn (**Cost Per Turn**) and, in the small box under it, a bar of up to 19 green blocks for the share of the level already paid. The page buttons `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch between them. Right-click a project for its area's report. **Click a project** to cancel it; the game asks first (switch this off with the Empire Option *Confirm deleting a research project*), because its progress is lost.
 - The check boxes `Repeat Projects` and `Divide Pts Evenly` switch the two options above.
 - `Tech Tree` opens the [Tech Tree](window:tech-tree). It is there only when the game lets players see the complete tech tree (a Game Settings check box when the game is set up).
 - `Reorder Projects`, just above `Close` (with at least two projects), opens a window where you move projects up, down, to the top or to the bottom.
@@ -99,12 +99,13 @@ project gets no points.
 
 ## The Tech Tree window
 
-The [Tech Tree](window:tech-tree) shows every area allowed in the game, not just the ones you
-can research now.
+The [Tech Tree](window:tech-tree) (titled *Technology Tree*) lists every area of the game's
+data, under its group's heading: those you can research now in white, every other one in grey,
+racial and unique areas included.
 
-- **Tech Areas** lists each area with your level, what it requires and what it leads to. Green areas are complete, white ones can be researched now and grey ones are locked. Click an area to see its levels.
-- **Tech Levels** shows one area level by level: the cost of each level and what it unlocks (components, facilities, hulls, intelligence projects and other areas).
-- **Export** saves the current view as a text file in your OpenSE4 user data folder.
+- **Tech Areas** gives each area's requirements, one row each: the area, the area it requires and the level. A racial area adds a row naming the racial trait that opens it; a unique area, which must be found, says so.
+- **Tech Levels** gives, level by level, what each area makes available: hulls, components, facilities and intelligence projects. A number in brackets after an item says how many requirements it has, when it has more than one.
+- **Export** writes the view shown to `TechAreas.txt` or `TechLevels.txt` in your saves folder, one line per row with its columns separated by commas, and tells you where.
 
 ## Other ways to gain technology
 

@@ -1,11 +1,13 @@
 #include "client/classic/screens/empire_logic.hpp"
 
+#include "datafile/datafile.hpp"
 #include "game/ai.hpp"
 #include "game/design.hpp"
 #include "game/events.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
+#include "game/sight.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -27,11 +29,6 @@ std::string grouped(int64_t v) {
         out += digits[i];
     }
     return neg ? "-" + out : out;
-}
-
-bool areaAllowed(const game::GameState& s, ruleset::TechAreaId a) {
-    const auto& allowed = s.options.techAreasAllowed;
-    return allowed.empty() || a.index() >= allowed.size() || allowed[a.index()];
 }
 
 } // namespace
@@ -372,46 +369,88 @@ std::string etaText(int turns) {
     return std::format("{}.{} years", turns / 10, turns % 10);
 }
 
-std::string techAreasExport(const game::Rules& r, const game::GameState& s, const game::Empire& e) {
-    std::string out = std::format("Technology areas for {} ({})\n\n", e.name, std::format("{}.{}", 2400 + s.turn / 10, s.turn % 10));
-    const auto& areas = r.data().techAreas;
-    for (uint32_t i = 0; i < areas.size(); ++i) {
-        const ruleset::TechAreaId a{i};
-        if (!areaAllowed(s, a)) continue;
-        const ruleset::TechArea& t = areas[i];
-        out += std::format("{}\n", t.name);
-        out += std::format("  Group:     {}\n", t.group);
-        out += std::format("  Level:     {} of {}\n", e.techLevel(a), t.maxLevel);
-        out += std::format("  Requires:  {}\n", requirementText(r, t.requirements));
-        std::string leads;
-        for (ruleset::TechAreaId d : dependentAreas(r, a)) leads += (leads.empty() ? "" : ", ") + r.tech(d).name;
-        out += std::format("  Leads to:  {}\n\n", leads.empty() ? "Nothing" : leads);
+std::vector<std::pair<std::string, std::vector<ruleset::TechAreaId>>> techAreasByGroup(const game::Rules& r,
+                                                                                       const std::vector<ruleset::TechAreaId>& areas) {
+    std::vector<std::pair<std::string, std::vector<ruleset::TechAreaId>>> out;
+    for (ruleset::TechAreaId a : areas) {
+        const std::string& g = r.tech(a).group;
+        auto it = std::find_if(out.begin(), out.end(), [&](const auto& p) { return p.first == g; });
+        if (it == out.end()) {
+            out.push_back({g, {}});
+            it = out.end() - 1;
+        }
+        it->second.push_back(a);
+    }
+    std::stable_sort(out.begin(), out.end(), [](const auto& x, const auto& y) {
+        return std::lexicographical_compare(x.first.begin(), x.first.end(), y.first.begin(), y.first.end(), [](char p, char q) {
+            return std::tolower(static_cast<unsigned char>(p)) < std::tolower(static_cast<unsigned char>(q));
+        });
+    });
+    return out;
+}
+
+namespace {
+
+// The racial trait that opens a racial area: a trait of type "Tech Area"
+// whose first value is the area's Racial Area number (spec 05 §1.2).
+std::string racialTraitName(const game::Rules& r, int racialArea) {
+    for (const ruleset::RacialTrait& t : r.data().racialTraits)
+        if (datafile::keysEqual(t.traitType, "Tech Area") && !t.values.empty() && datafile::parseInteger(t.values.front()).value_or(-1) == racialArea)
+            return t.name;
+    return {};
+}
+
+} // namespace
+
+std::vector<TechTreeRow> techAreaRows(const game::Rules& r, ruleset::TechAreaId area) {
+    std::vector<TechTreeRow> out;
+    const ruleset::TechArea& t = r.tech(area);
+    for (const ruleset::TechRequirement& q : t.requirements)
+        if (q.area.valid() && q.area.index() < r.data().techAreas.size()) out.push_back({area, {t.name, r.tech(q.area).name, std::to_string(q.level)}});
+    if (t.racialArea > 0) out.push_back({area, {t.name, racialTraitName(r, t.racialArea), "Racial Trait"}});
+    if (t.uniqueArea > 0) out.push_back({area, {t.name, "Unique Technology", "(Must Be Found)"}});
+    if (out.empty()) out.push_back({area, {t.name, {}, {}}});
+    return out;
+}
+
+std::vector<TechTreeRow> techLevelRows(const game::Rules& r, ruleset::TechAreaId area) {
+    std::vector<TechTreeRow> out;
+    const ruleset::TechArea& t = r.tech(area);
+    const ruleset::Ruleset& d = r.data();
+    for (int level = 1; level <= t.maxLevel; ++level) {
+        const size_t before = out.size();
+        auto items = [&](const auto& list) {
+            for (const auto& item : list) {
+                const auto& reqs = item.requirements;
+                if (std::none_of(reqs.begin(), reqs.end(), [&](const ruleset::TechRequirement& q) { return q.area == area && q.level == level; }))
+                    continue;
+                std::string name = item.name;
+                if (reqs.size() > 1) name += std::format(" [{}]", reqs.size());
+                out.push_back({area, {t.name, std::to_string(level), std::move(name)}});
+            }
+        };
+        items(d.vehicleSizes);
+        items(d.components);
+        items(d.facilities);
+        items(d.intelProjects);
+        if (out.size() == before) out.push_back({area, {t.name, std::to_string(level), {}}});
     }
     return out;
 }
 
-std::string techLevelsExport(const game::Rules& r, const game::GameState& s, const game::Empire& e) {
-    std::string out = std::format("Technology levels for {} ({})\n\n", e.name, std::format("{}.{}", 2400 + s.turn / 10, s.turn % 10));
-    const auto& areas = r.data().techAreas;
-    for (uint32_t i = 0; i < areas.size(); ++i) {
-        const ruleset::TechAreaId a{i};
-        if (!areaAllowed(s, a)) continue;
-        const ruleset::TechArea& t = areas[i];
-        out += std::format("{} (level {} of {})\n", t.name, e.techLevel(a), t.maxLevel);
-        for (int level = 1; level <= t.maxLevel; ++level) {
-            const auto unlocks = techUnlocks(r, a, level);
-            out += std::format("  Level {:>2}  {:>9} RP", level, grouped(r.techLevelCost(a, level, s.options.techCost)));
-            if (unlocks.empty()) {
-                out += "\n";
-                continue;
-            }
-            out += "  ";
-            for (size_t k = 0; k < unlocks.size(); ++k)
-                out += std::format("{}{} [{}]", k ? ", " : "", unlocks[k].name, unlockKindName(unlocks[k].kind));
-            out += "\n";
-        }
-        out += "\n";
-    }
+std::vector<TechTreeRow> techTreeRows(const game::Rules& r, bool levels) {
+    std::vector<ruleset::TechAreaId> all;
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) all.push_back(ruleset::TechAreaId{i});
+    std::vector<TechTreeRow> out;
+    for (const auto& [group, areas] : techAreasByGroup(r, all))
+        for (ruleset::TechAreaId a : areas)
+            for (TechTreeRow& row : levels ? techLevelRows(r, a) : techAreaRows(r, a)) out.push_back(std::move(row));
+    return out;
+}
+
+std::string techTreeExport(const std::vector<TechTreeRow>& rows) {
+    std::string out;
+    for (const TechTreeRow& row : rows) out += std::format("{},{},{}\n", row.cells[0], row.cells[1], row.cells[2]);
     return out;
 }
 
@@ -457,6 +496,102 @@ std::vector<uint32_t> availableIntelProjects(const game::Rules& r, const game::E
     for (uint32_t i = 0; i < projects.size(); ++i)
         if (r.meets(e, projects[i].requirements)) out.push_back(i);
     return out;
+}
+
+namespace {
+
+// Rows sorted by their labels, the letter case ignored (ours).
+void sortRowsByName(std::vector<IntelTargetRow>& rows) {
+    std::stable_sort(rows.begin(), rows.end(), [](const IntelTargetRow& a, const IntelTargetRow& b) {
+        return std::lexicographical_compare(a.label.begin(), a.label.end(), b.label.begin(), b.label.end(), [](char p, char q) {
+            return std::tolower(static_cast<unsigned char>(p)) < std::tolower(static_cast<unsigned char>(q));
+        });
+    });
+}
+
+} // namespace
+
+IntelTargetList intelTargetList(const game::Rules& r, const game::GameState& s, game::EmpireId me, const game::IntelProjectOrder& order,
+                                int stage) {
+    IntelTargetList out;
+    out.title = "Select Empire";
+    if (order.project >= r.data().intelProjects.size() || !me.valid() || me.index() >= s.empires.size()) return out;
+    const game::Empire& e = s.empire(me);
+    const IntelTarget kind = intelTargetKind(r.data().intelProjects[order.project]);
+    auto row = [&](std::string label, auto set) {
+        IntelTargetRow x{std::move(label), order};
+        set(x.order);
+        return x;
+    };
+    if (stage == 0) {
+        for (game::EmpireId k : contactedEmpires(s, me)) out.rows.push_back(row(s.empire(k).name, [k](game::IntelProjectOrder& o) { o.target = k; }));
+        out.last = kind == IntelTarget::Empire || kind == IntelTarget::None;
+        return out;
+    }
+    std::vector<IntelTargetRow> named;
+    switch (kind) {
+        case IntelTarget::Vehicle:
+            out.title = "Select Ship";
+            out.rows.push_back(row("Any Ship", [](game::IntelProjectOrder& o) { o.targetVehicle = {}; }));
+            for (game::VehicleId id : e.knowledge.visibleVehicles)
+                if (const game::Vehicle* v = s.vehicle(id); v && v->owner == order.target)
+                    named.push_back(row(v->name, [id](game::IntelProjectOrder& o) { o.targetVehicle = id; }));
+            break;
+        case IntelTarget::Planet:
+            // The colonies `me` sees now, by the detection rule (spec 01
+            // §6.9); "Any" can still strike the others.
+            out.title = "Select Planet";
+            out.rows.push_back(row("Any Planet", [](game::IntelProjectOrder& o) { o.targetPlanet = {}; }));
+            for (const auto& c : s.colonies)
+                if (c && c->owner == order.target && e.hasExplored(s.galaxy.object(c->planet).system) &&
+                    game::sight::canSeeColony(r, s, me, c->planet)) {
+                    const game::ObjectId p = c->planet;
+                    named.push_back(row(s.galaxy.object(p).name, [p](game::IntelProjectOrder& o) { o.targetPlanet = p; }));
+                }
+            break;
+        case IntelTarget::Tech:
+            // The areas the spying empire can research now. "Any" keeps the
+            // original's draw, which finds only areas where the spy already
+            // leads (spec 05 §2.3).
+            out.title = "Select Technology";
+            out.rows.push_back(row("Any Technology", [](game::IntelProjectOrder& o) { o.targetTech = {}; }));
+            for (ruleset::TechAreaId a : researchableAreas(r, s, e))
+                named.push_back(row(r.tech(a).name, [a](game::IntelProjectOrder& o) { o.targetTech = a; }));
+            break;
+        case IntelTarget::ThirdEmpire:
+            out.rows.push_back(row("Any Empire", [](game::IntelProjectOrder& o) { o.thirdEmpire = {}; }));
+            for (game::EmpireId k : contactedEmpires(s, me))
+                if (k != order.target) out.rows.push_back(row(s.empire(k).name, [k](game::IntelProjectOrder& o) { o.thirdEmpire = k; }));
+            break;
+        case IntelTarget::None:
+        case IntelTarget::Empire: break;
+    }
+    sortRowsByName(named);
+    for (IntelTargetRow& x : named) out.rows.push_back(std::move(x));
+    return out;
+}
+
+std::string intelTargetLine(const game::Rules& r, const game::GameState& s, const game::IntelProjectOrder& o) {
+    if (o.project >= r.data().intelProjects.size()) return {};
+    switch (intelTargetKind(r.data().intelProjects[o.project])) {
+        case IntelTarget::Vehicle: {
+            if (!o.targetVehicle.valid()) return "Any Ship";
+            const game::Vehicle* v = s.vehicle(o.targetVehicle);
+            return v ? v->name : std::string("Unknown Ship");
+        }
+        case IntelTarget::Planet:
+            if (!o.targetPlanet.valid()) return "Any Planet";
+            return o.targetPlanet.index() < s.galaxy.objects.size() ? s.galaxy.object(o.targetPlanet).name : std::string("Unknown Planet");
+        case IntelTarget::Tech:
+            if (!o.targetTech.valid()) return "Any Technology";
+            return o.targetTech.index() < r.data().techAreas.size() ? r.tech(o.targetTech).name : std::string("Unknown Technology");
+        case IntelTarget::ThirdEmpire:
+            if (!o.thirdEmpire.valid()) return "Any Empire";
+            return o.thirdEmpire.index() < s.empires.size() ? s.empire(o.thirdEmpire).name : std::string("Unknown Empire");
+        case IntelTarget::None:
+        case IntelTarget::Empire: break;
+    }
+    return {};
 }
 
 // ---- Statistics -------------------------------------------------------------------------------

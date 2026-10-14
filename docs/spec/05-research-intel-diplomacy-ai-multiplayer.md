@@ -204,9 +204,44 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
 - **Queue**: the same as research, with 12 slots, Divide Evenly or in-order funding, Repeat
   and Reorder [M]. The shares use the same rules as §1.4 step 2, where "what a project still
   needs" is `Cost` − progress (confirmed: binary).
-- **Adding a project**: pick a target empire we are **in contact with** (§3.1), friend or
-  foe; defense projects take no target. Then pick a specific target according to the type:
-  a known planet or ship, or a third empire for political operations, or "Any" [M].
+- **Adding a project** (confirmed: binary): a click on a project in the Intelligence window
+  adds it. With 12 projects queued nothing happens, and nothing is said. Intelligence
+  Defense is added at once, with no target. Every other project first opens a list window,
+  "Select Empire", of the living empires we are **in contact with** (§3.1), friend or foe,
+  never ourselves, with no "Any" row. Then, by the project's `Type`, a second list window
+  whose first row is "Any ...":
+  - "Select Ship" ("Any Ship"): the target empire's vehicles we see now, sorted by name. For
+    the seven ship sabotage types: Damage, Lose Movement, Lose Supply, Rebel, Experience
+    Change, Cargo Damage and Orders Change.
+  - "Select Planet" ("Any Planet"): the target empire's planets we see, sorted by name. For
+    the planet types from Conditions Change to Facility Damage, and Planet - Info.
+  - "Select Technology" ("Any Technology"): the tech areas the **spying** empire can research
+    now (requirements met, allowed in the game), in alphabetical order. For Research - Steal.
+  - "Select Empire" ("Any Empire"): our other contacts, the target empire left out. For the
+    five Politics types: Disrupt Trade, Intercept Messages, Fake Messages, Treaty Info and
+    Prevent Messages.
+  Every other type (Ship - Concentrations, Ship - Construction Info, Planet - Locations, both
+  Points types, both Delete Project types, the three Info types, the design and log steals)
+  asks for the empire only. Cancel at either step adds nothing. The target picked, or "Any",
+  stays with the queued project, and the operation strikes it when the project completes
+  (below). Each queued project keeps its own progress: reordering the queue moves no points
+  between two copies of a project, and a project added again starts from nothing (inferred:
+  the saved game keeps the points of each entry, spec 08 §3.6.3).
+- **A project's box** (confirmed: binary): as Research's (spec 06 §7 Q92), with the name
+  word-wrapped at the top; for a project with a second list, the specific target picked, or
+  "Any Ship" and the like, on a line at y 40; at y 54, centred on x 65, "Against " followed
+  by the target empire's flag; then Completion and Cost Per Turn. A right-click on a project
+  of the list or on a box opens the project's report.
+
+  Our client follows this since 2026-10-11 (`client/classic/screens/intelligence.cpp`;
+  `intelTargetKind`, `intelTargetList` and `intelTargetLine` in `empire_logic.cpp`).
+  `IntelProjectOrder` keeps the targets in the saved game and the original's (spec 08
+  §3.6.3), and `cmd::SetIntel` matches each queued project to one of the old queue with the
+  same project and targets. Ours: the rows of these lists are sorted with the letter case
+  ignored and the empires are listed in empire order (inferred, spec 06 §7 Q113); a mod's
+  project type asks for the empire only; a project's description shows under the pointer.
+  Until 2026-10-11 a queued project took the progress of every other copy of it aimed at the
+  same empire, so two copies shared their points.
 - **Intelligence step** (confirmed: binary), once per turn for each empire in empire order
   (§8):
   1. An empire in contact with no living empire loses its whole queue. Projects aimed at
