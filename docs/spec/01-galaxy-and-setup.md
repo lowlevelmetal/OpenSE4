@@ -492,7 +492,7 @@ quadrant has more than 60 % of `Maximum Number Of Systems`, compared exactly).
    that hold a planet.
 
 Every starting planet, the homeworld included, is then set up the same way (spec 02 §9):
-its system is explored, ruins are removed, the values are set, any old colony is removed,
+its system is explored and claimed for the player, ruins are removed, the values are set, any old colony is removed,
 and it becomes a colony of the player's race at maximum population that is a **capital**
 of colony type "Homeworld". Neutral empires cannot use warp points at all (§8), so they
 never leave their home system.

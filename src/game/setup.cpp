@@ -536,7 +536,11 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         std::vector<ObjectId> planets{home};
         for (ObjectId o : extraStartingPlanets(r, s, e, *homes, more)) planets.push_back(o);
         for (ObjectId p : planets) setUpStartingPlanet(r, s, e, p);
-        e.claimedSystems.push_back(s.galaxy.object(home).system);
+        // The system of every starting planet is claimed, without condition
+        // (spec 02 §9, spec 06 §7 Q47, confirmed: binary). The list is kept sorted.
+        for (ObjectId p : planets)
+            if (const SystemId sys = s.galaxy.object(p).system; !std::binary_search(e.claimedSystems.begin(), e.claimedSystems.end(), sys))
+                e.claimedSystems.insert(std::upper_bound(e.claimedSystems.begin(), e.claimedSystems.end(), sys), sys);
     }
 
     // The starting stockpile and the research and intelligence pools are set

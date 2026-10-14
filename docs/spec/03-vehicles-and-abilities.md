@@ -1212,6 +1212,9 @@ group's cargo after the orders before it (inferred).
   `Automatic Colonization Population`, and then every kind of cargo on the ship is dropped under
   the Drop Cargo rules, so only what fits arrives; the rest is lost with the ship, which is
   consumed. Then the planet's ancient ruins take effect (§3.3).
+- When the colonizing empire's Empire Options switch "claim every system we colonize" is on (it
+  is on for a new empire, computer players included), the planet's system is claimed for it as
+  the colony is founded, whatever the system's other claims (spec 06 §7 Q47).
 - The colony type: when the empire's option to choose it on colonization is on (it is on for a
   new empire) and the colonizing empire is a human player in a turn-based game, the player picks
   it in a dialog; otherwise it is chosen automatically, as a computer player chooses it

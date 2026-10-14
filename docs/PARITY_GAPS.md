@@ -1125,7 +1125,9 @@ the exploration frontier holds only warp points into unexplored systems, whateve
 the link, for the state machine, the explorers, the Not Connected test and the Open Warp
 Point gate; the territory is the set of claimed systems, which the Politics minister
 rewrites (`ai::claimTerritory`; since 2026-10-02 first thing in its run), so the state
-update and the ministers use the claims of the previous turn, and its exclusions (another
+update and the ministers use the claims of the previous turn (and, since 2026-10-14, the
+systems colonized since, which the Empire Options switch claims at founding, spec 06 §7
+Q47), and its exclusions (another
 computer player's home system, avoided systems) apply only to neighbour systems; a human
 whose Politics minister is on claims by the same rule; colonization danger adds 1 per
 non-friendly empire beyond each warp point; a Defense Base goes to the K-th queue of the
