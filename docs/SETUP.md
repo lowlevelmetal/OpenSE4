@@ -200,6 +200,8 @@ and writes games back in its format (1.95), so a game can move between the two. 
   opense4-convert GAME.gam converted.gam --to=opense4    # an original save as an OpenSE4 save
   opense4-convert mine.gam ForSE4.gam --to=original      # an OpenSE4 save for the original
   opense4-convert --compare A.gam B.gam                  # the fields two original saves differ in
+  opense4-convert --info terran.emp                      # what an empire (or map) file of the original holds
+  opense4-convert Galaxy.map galaxy.toml --to=opense4    # a map of the original as OpenSE4's, or back with --to=original
   ```
 
 - **The data set must be the same.** A saved game of the original names data-file records
@@ -211,6 +213,21 @@ and writes games back in its format (1.95), so a game can move between the two. 
   §5.2).
 - **The original's tutorial and scenarios** play from the Learn window's Scenarios tab,
   with their pages of text (docs/LEARNING.md "The original's tutorial and scenarios").
+- **Empire files of the original** (`.emp`, spec 08 §13). Game Setup's Add Existing lists
+  OpenSE4's empire files and the original's: those you saved, and the `.emp` files of the
+  installed game's `Empires` folder (or of the last classic mod in use that has one), such
+  as the twenty stock empires. Like the original, it checks the empire at once against
+  the setup on the screen (its racial points, and an original file's technology) and adds
+  nothing when it does not fit. Save To File (Players page) and Save Empire (Game Menu) ask
+  whether to save the designs, write OpenSE4's empire file, and then offer *Save for SE IV*,
+  which writes the empire as the original's empire file, by default into OpenSE4's
+  `empires` folder; copy it into the original's `Empires` folder to use it there. A
+  password cannot go to the original's file (OpenSE4 keeps only a check of it); one read
+  from the original's file is typed in lower case in OpenSE4. `opense4-convert --info
+  FILE.emp` says what an empire file holds. An empire file, like a saved game, only reads
+  with a data set of the same number of racial traits.
+- **Map files of the original** (`.map`, spec 08 §14): Load Map lists them and both Save
+  Map windows offer *Save for SE IV* (docs/MAPS.md "Maps of the original").
 
 What carries over, both ways: the galaxy (systems, stars, planets with their conditions
 and values, storms, warp points, comets, stellar abilities), every empire (race,
@@ -390,7 +407,7 @@ in the working folder.
 | `classic_settings.toml` | The Options window and the Settings window's Sound and Modding pages, the mods you play with, the last game you saved (for Resume Game) and your progress in the lessons. |
 | `saves/` | Your saved games (`.gam`), the autosaves `AutoSav0` to `AutoSav9` (named after the last digit of the turn count), and the players' history files copied beside each save. `saves/Space Empires IV/` is where *Save for SE IV* suggests writing games for the original. Settings → Files can put saved games in another folder (below). |
 | `History/` | The players' statistics, history and log files of the game being played. |
-| `maps/`, `empires/` | Maps ([MAPS.md](MAPS.md)) and empire files you saved. |
+| `maps/`, `empires/` | Maps ([MAPS.md](MAPS.md)) and empire files you saved, OpenSE4's and those saved for the original (`.map`, `.emp`). |
 | `Mods/` | Your mods (see "Mods"). |
 | `ModCache/` | The `.zip` mods, unpacked once; made again when it is missing. |
 | `pbem/` | Play-by-e-mail game and turn files ([MULTIPLAYER.md](MULTIPLAYER.md)). |

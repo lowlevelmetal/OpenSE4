@@ -109,9 +109,14 @@ struct MapFileInfo {
     std::string name;
     int systems = 0;
     int startingPoints = 0;
+    bool classic = false;   // a map file of the original (.map, spec 08 §14)
 };
-// The map files in a folder (<user data>/maps), by name.
-std::vector<MapFileInfo> listMapFiles(const game::Rules& r, const std::filesystem::path& dir);
+// The map files in a folder (<user data>/maps): OpenSE4's and the
+// original's, and the original's in `classicDir` (the install's Maps folder,
+// classicGameFolder), by name.
+std::vector<MapFileInfo> listMapFiles(const game::Rules& r, const std::filesystem::path& dir, const std::filesystem::path& classicDir = {});
+// Load Map: a map file of either format (the original's by its extension).
+std::expected<game::LoadedMap, std::string> loadAnyMapFile(const game::Rules& r, const std::filesystem::path& file);
 // Where Save Map puts a map of this name in `dir`.
 std::filesystem::path mapFilePath(const std::filesystem::path& dir, std::string_view name);
 
@@ -277,6 +282,23 @@ std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, st
 std::expected<std::filesystem::path, std::string> saveEmpireFile(const game::Rules& r, const std::filesystem::path& dir,
                                                                  const game::EmpireSetup& e);
 std::expected<LoadedEmpire, std::string> loadEmpireFile(const game::Rules& r, const std::filesystem::path& file);
+
+// Add Existing (spec 08 §13.4): an empire file of either format, OpenSE4's
+// or the original's (.emp, by its extension). `techLevels` gets an original
+// file's tech levels, for addExistingProblem (game/classic_files.hpp).
+std::expected<LoadedEmpire, std::string> loadAnyEmpireFile(const game::Rules& r, const std::filesystem::path& file,
+                                                           std::vector<uint16_t>* techLevels = nullptr);
+// A message with a conversion's notes after it, each a sentence.
+std::string withNotes(std::string text, const std::vector<std::string>& notes);
+// The copy Save To File and Save Empire write (spec 08 §13.5): computer
+// control off, its designs only when `designs`.
+game::EmpireSetup savedCopy(const game::EmpireSetup& e, bool designs);
+// A game's empire as the Game Menu's Save Empire keeps it (spec 08 §13.2):
+// name, leader, race, password, e-mail, minister style, experience,
+// strategies, settings and name lists, and with `designs` every design of
+// its own (each losing its obsolete and built marks, keeping its strategy
+// and creation date); the game state is not kept.
+game::EmpireSetup empireOfGame(const game::GameState& s, game::EmpireId id, bool designs);
 
 struct EmpireFileInfo {
     std::filesystem::path path;

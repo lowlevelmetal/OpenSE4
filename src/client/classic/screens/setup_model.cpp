@@ -3,6 +3,7 @@
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
 #include "game/ai_data.hpp"
+#include "game/classic_files.hpp"
 #include "game/economy.hpp"
 #include "game/players.hpp"
 #include "ruleset/ruleset.hpp"
@@ -26,9 +27,154 @@ using datafile::keysEqual;
 
 constexpr std::array<std::string_view, 3> kLevelNames{"Low", "Medium", "High"};
 // 2: designs saved with the empire (spec 06 §7 Q48); 3: the combat strategies,
-// each design's strategy and creation date, no obsolete mark (§7 Q72).
-// Format 1 and 2 files still load.
-constexpr int kEmpireFileFormat = 3;
+// each design's strategy and creation date, no obsolete mark (§7 Q72); 4: what
+// the original's empire files keep besides (spec 08 §13): the e-mail address,
+// the settings (minister switches, Empire Options and window memories) and the
+// design-type, colony-type and repair-priority lists. Files of formats 1 to 3
+// still load, without them.
+constexpr int kEmpireFileFormat = 4;
+
+// The interface options an empire file keeps (game::EmpireSettings), by key;
+// the log's place and the scenario page belong to one game and are not kept.
+struct BoolKey {
+    const char* key;
+    bool game::InterfaceOptions::* field;
+};
+constexpr std::array<BoolKey, 32> kInterfaceBools{{
+    {"show_log_at_turn_start", &game::InterfaceOptions::showLogAtTurnStart},
+    {"confirm_end_turn", &game::InterfaceOptions::confirmEndTurn},
+    {"confirm_scrap", &game::InterfaceOptions::confirmScrap},
+    {"confirm_stellar_manipulation", &game::InterfaceOptions::confirmStellarManipulation},
+    {"confirm_delete_research", &game::InterfaceOptions::confirmDeleteResearch},
+    {"confirm_delete_intel", &game::InterfaceOptions::confirmDeleteIntel},
+    {"confirm_delete_first_queue_item", &game::InterfaceOptions::confirmDeleteFirstQueueItem},
+    {"note_similar_abilities", &game::InterfaceOptions::noteSimilarAbilities},
+    {"skip_under_construction", &game::InterfaceOptions::skipUnderConstruction},
+    {"skip_damaged", &game::InterfaceOptions::skipDamaged},
+    {"stop_once_per_location", &game::InterfaceOptions::stopOncePerLocation},
+    {"skip_in_fleets", &game::InterfaceOptions::skipInFleets},
+    {"warp_point_names", &game::InterfaceOptions::warpPointNames},
+    {"planet_names", &game::InterfaceOptions::planetNames},
+    {"colonizable_markers", &game::InterfaceOptions::colonizableMarkers},
+    {"system_grid", &game::InterfaceOptions::systemGrid},
+    {"coordinate_location", &game::InterfaceOptions::coordinateLocation},
+    {"galaxy_grid_lines", &game::InterfaceOptions::galaxyGridLines},
+    {"galaxy_warp_lines", &game::InterfaceOptions::galaxyWarpLines},
+    {"latest_construction_only", &game::InterfaceOptions::latestConstructionOnly},
+    {"latest_components_only", &game::InterfaceOptions::latestComponentsOnly},
+    {"auto_claim_colonized", &game::InterfaceOptions::autoClaimColonized},
+    {"planets_no_systems_to_avoid", &game::InterfaceOptions::planetsNoSysToAvoid},
+    {"simulator_no_obsolete", &game::InterfaceOptions::simulatorNoObsolete},
+    {"replay_animate", &game::InterfaceOptions::replayAnimate},
+    {"replay_fast", &game::InterfaceOptions::replayFast},
+    {"replay_view_rect", &game::InterfaceOptions::replayViewRect},
+    {"replay_grid", &game::InterfaceOptions::replayGrid},
+    {"design_to_hit", &game::InterfaceOptions::designToHit},
+    {"design_condensed", &game::InterfaceOptions::designCondensed},
+    {"designs_hide_obsolete", &game::InterfaceOptions::designsHideObsolete},
+    {"designs_stats_view", &game::InterfaceOptions::designsStatsView},
+}};
+struct ByteKey {
+    const char* key;
+    uint8_t game::InterfaceOptions::* field;
+};
+constexpr std::array<ByteKey, 6> kInterfaceBytes{{
+    {"log_filter", &game::InterfaceOptions::logFilter},
+    {"planets_tab", &game::InterfaceOptions::planetsTab},
+    {"queues_tab", &game::InterfaceOptions::queuesTab},
+    {"queues_shown", &game::InterfaceOptions::queuesShown},
+    {"ships_tab", &game::InterfaceOptions::shipsTab},
+    {"ships_shown", &game::InterfaceOptions::shipsShown},
+}};
+struct SortKey {
+    const char* key;
+    std::array<uint8_t, 5> game::InterfaceOptions::* field;
+};
+constexpr std::array<SortKey, 4> kInterfaceSorts{{
+    {"planets_sort", &game::InterfaceOptions::planetsSort},
+    {"colonies_sort", &game::InterfaceOptions::coloniesSort},
+    {"ships_sort", &game::InterfaceOptions::shipsSort},
+    {"queues_sort", &game::InterfaceOptions::queuesSort},
+}};
+constexpr std::array<std::string_view, 3> kEncounterNames{"Never", "Enemy", "Any"};
+
+toml::table settingsToToml(const game::EmpireSettings& s) {
+    toml::array ministers;
+    for (size_t k = 0; k < game::kMinisters; ++k)
+        if ((s.ministers >> k) & 1u) ministers.push_back(std::string(game::displayName(static_cast<game::Minister>(k))));
+    toml::table ui;
+    for (const BoolKey& b : kInterfaceBools) ui.insert(b.key, s.interfaceOptions.*b.field);
+    for (const ByteKey& b : kInterfaceBytes) ui.insert(b.key, static_cast<int64_t>(s.interfaceOptions.*b.field));
+    ui.insert("facility_markers", static_cast<int64_t>(s.interfaceOptions.facilityMarkers));
+    for (const SortKey& k : kInterfaceSorts) {
+        toml::array keys;
+        for (uint8_t v : s.interfaceOptions.*k.field) keys.push_back(static_cast<int64_t>(v));
+        ui.insert(k.key, std::move(keys));
+    }
+    return toml::table{
+        {"ministers", std::move(ministers)},
+        {"minister_all", s.ministerAll},
+        {"ministers_for_new_vehicles", s.ministersForNewVehicles},
+        {"ai_minimal_changes", s.aiMinimalChanges},
+        {"clear_orders_on_encounter", std::string(kEncounterNames[static_cast<size_t>(s.clearOrdersOnEncounter)])},
+        {"avoid_tagged_minefields", s.avoidTaggedMinefields},
+        {"avoid_restricted_systems", s.avoidRestrictedSystems},
+        {"choose_colony_type", s.chooseColonyType},
+        {"interface", std::move(ui)},
+    };
+}
+
+game::EmpireSettings settingsFromToml(const toml::table& t, std::vector<std::string>& warnings) {
+    game::EmpireSettings s;
+    if (const toml::array* ministers = t["ministers"].as_array()) {
+        s.ministers = 0;
+        for (const toml::node& n : *ministers) {
+            const std::string name = n.value_or(std::string{});
+            bool known = false;
+            for (size_t k = 0; k < game::kMinisters; ++k)
+                if (keysEqual(game::displayName(static_cast<game::Minister>(k)), name)) {
+                    s.ministers |= uint32_t{1} << k;
+                    known = true;
+                }
+            if (!known) warnings.push_back(std::format("Unknown minister {} ignored.", name));
+        }
+    }
+    s.ministerAll = t["minister_all"].value_or(s.ministerAll);
+    s.ministersForNewVehicles = t["ministers_for_new_vehicles"].value_or(s.ministersForNewVehicles);
+    s.aiMinimalChanges = t["ai_minimal_changes"].value_or(s.aiMinimalChanges);
+    const std::string clear = t["clear_orders_on_encounter"].value_or(std::string(kEncounterNames[1]));
+    for (size_t k = 0; k < kEncounterNames.size(); ++k)
+        if (keysEqual(kEncounterNames[k], clear)) s.clearOrdersOnEncounter = static_cast<game::EncounterClear>(k);
+    s.avoidTaggedMinefields = t["avoid_tagged_minefields"].value_or(s.avoidTaggedMinefields);
+    s.avoidRestrictedSystems = t["avoid_restricted_systems"].value_or(s.avoidRestrictedSystems);
+    s.chooseColonyType = t["choose_colony_type"].value_or(s.chooseColonyType);
+    if (const toml::table* ui = t["interface"].as_table()) {
+        game::InterfaceOptions& u = s.interfaceOptions;
+        for (const BoolKey& b : kInterfaceBools) u.*b.field = (*ui)[b.key].value_or(u.*b.field);
+        for (const ByteKey& b : kInterfaceBytes)
+            u.*b.field = static_cast<uint8_t>(std::clamp<int64_t>((*ui)[b.key].value_or(int64_t{u.*b.field}), 0, 255));
+        u.facilityMarkers = static_cast<uint16_t>(std::clamp<int64_t>((*ui)["facility_markers"].value_or(int64_t{u.facilityMarkers}), 0, 0xffff));
+        for (const SortKey& k : kInterfaceSorts)
+            if (const toml::array* keys = (*ui)[k.key].as_array())
+                for (size_t i = 0; i < (u.*k.field).size() && i < keys->size(); ++i)
+                    (u.*k.field)[i] = static_cast<uint8_t>(std::clamp<int64_t>((*keys)[i].value_or(int64_t{0}), 0, 255));
+    }
+    return s;
+}
+
+toml::array stringArray(const std::vector<std::string>& list) {
+    toml::array out;
+    for (const std::string& s : list) out.push_back(s);
+    return out;
+}
+
+std::vector<std::string> stringList(const toml::node_view<const toml::node>& node) {
+    std::vector<std::string> out;
+    if (const toml::array* list = node.as_array())
+        for (const toml::node& n : *list)
+            if (auto v = n.value<std::string>()) out.push_back(*v);
+    return out;
+}
 
 bool isNone(std::string_view s) { return s.empty() || keysEqual(s, "None"); }
 
@@ -204,16 +350,30 @@ game::QuadrantMap mapToSave(const NewGameSettings& s, const game::Galaxy& previe
     return m;
 }
 
-std::vector<MapFileInfo> listMapFiles(const game::Rules& r, const std::filesystem::path& dir) {
+std::expected<game::LoadedMap, std::string> loadAnyMapFile(const game::Rules& r, const std::filesystem::path& file) {
+    if (lowerAscii(file.extension().string()) != game::classic::kMapFileExtension) return game::loadMapFile(file, r.data());
+    game::classic::ConversionReport report;
+    auto map = game::classic::readClassicMap(r.data(), file, report);
+    if (!map) return std::unexpected(map.error());
+    return game::LoadedMap{std::move(*map), std::move(report.notes)};
+}
+
+std::vector<MapFileInfo> listMapFiles(const game::Rules& r, const std::filesystem::path& dir, const std::filesystem::path& classicDir) {
     std::vector<MapFileInfo> out;
     std::error_code ec;
-    for (const auto& f : std::filesystem::directory_iterator(dir, ec)) {
-        if (!f.is_regular_file(ec) || lowerAscii(f.path().extension().string()) != game::kMapExtension) continue;
-        auto loaded = game::loadMapFile(f.path(), r.data());
-        if (!loaded) continue;
-        out.push_back({f.path(), loaded->map.name, static_cast<int>(loaded->map.galaxy.systems.size()),
-                       static_cast<int>(loaded->map.startingPoints.size())});
-    }
+    auto scan = [&](const std::filesystem::path& folder, bool ours) {
+        for (const auto& f : std::filesystem::directory_iterator(folder, ec)) {
+            const std::string ext = lowerAscii(f.path().extension().string());
+            const bool classic = ext == game::classic::kMapFileExtension;
+            if (!f.is_regular_file(ec) || !(classic || (ours && ext == game::kMapExtension))) continue;
+            auto loaded = loadAnyMapFile(r, f.path());
+            if (!loaded) continue;
+            out.push_back({f.path(), loaded->map.name, static_cast<int>(loaded->map.galaxy.systems.size()),
+                           static_cast<int>(loaded->map.startingPoints.size()), classic});
+        }
+    };
+    scan(dir, true);
+    if (!classicDir.empty() && std::filesystem::is_directory(classicDir, ec) && !std::filesystem::equivalent(classicDir, dir, ec)) scan(classicDir, false);
     // Total orders throughout: the directory lists files in an order that differs
     // between platforms, and std::sort leaves ties in a library's own order.
     std::sort(out.begin(), out.end(), [](const MapFileInfo& a, const MapFileInfo& b) {
@@ -702,11 +862,17 @@ std::string empireToToml(const game::Rules& r, const game::EmpireSetup& e) {
         {"preset_tier", e.presetTier},
         {"color", static_cast<int64_t>(e.color)},
         {"password_hash", e.passwordHash},
+        {"email", e.email},
         {"minister_style", e.ministerStyle},
         {"use_race_minister_style", e.useRaceMinisterStyle},
         {"experience", static_cast<int64_t>(e.experience)},
         {"race", std::move(raceTable)},
     };
+    // What the original's empire files keep besides (format 4, spec 08 §13).
+    if (!e.designTypes.empty()) root.insert("design_types", stringArray(e.designTypes));
+    if (!e.colonyTypes.empty()) root.insert("colony_types", stringArray(e.colonyTypes));
+    if (!e.repairPriorities.empty()) root.insert("repair_priorities", stringArray(e.repairPriorities));
+    if (e.settings) root.insert("settings", settingsToToml(*e.settings));
     // The combat strategies saved with the empire (spec 06 §7 Q72): each a
     // name and its settings, in order (designs refer to them by place).
     if (!e.strategies.empty()) {
@@ -773,6 +939,7 @@ std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, st
     d.setup.presetTier = static_cast<int>(root["preset_tier"].value_or(int64_t{0}));
     d.setup.color = static_cast<uint32_t>(root["color"].value_or(int64_t{0}) & 0xffffff);
     d.setup.passwordHash = root["password_hash"].value_or(std::string{});
+    d.setup.email = game::cleanEmail(root["email"].value_or(std::string{}));
     d.setup.useRaceMinisterStyle = root["use_race_minister_style"].value_or(false);
     // Experience builds up over the games the empire is saved from (spec 02 §9).
     d.setup.experience = static_cast<int>(std::clamp<int64_t>(root["experience"].value_or(int64_t{0}), 0, game::economy::kMaxEmpireExperience));
@@ -837,6 +1004,12 @@ std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, st
                 out.warnings.push_back(std::format("Trait {} dropped: {}.", r.data().racialTraits[t].name, canAddTrait(r, race, t).reason));
     }
     out.empire = collapse(r, d);
+    // The settings and name lists (format 4, spec 08 §13).
+    if (const toml::table* settings = root["settings"].as_table()) out.empire.settings = settingsFromToml(*settings, out.warnings);
+    const toml::table& top = root;
+    out.empire.designTypes = stringList(top["design_types"]);
+    out.empire.colonyTypes = stringList(top["colony_types"]);
+    out.empire.repairPriorities = stringList(top["repair_priorities"]);
     // The combat strategies (format 3, spec 06 §7 Q72).
     if (const toml::array* strategies = root["strategy"].as_array())
         for (const toml::node& node : *strategies) {
@@ -911,6 +1084,75 @@ std::expected<LoadedEmpire, std::string> loadEmpireFile(const game::Rules& r, co
     std::stringstream ss;
     ss << in.rdbuf();
     return empireFromToml(r, ss.str());
+}
+
+std::expected<LoadedEmpire, std::string> loadAnyEmpireFile(const game::Rules& r, const std::filesystem::path& file,
+                                                           std::vector<uint16_t>* techLevels) {
+    if (techLevels) techLevels->clear();
+    if (lowerAscii(file.extension().string()) != game::classic::kEmpireFileExtension) return loadEmpireFile(r, file);
+    game::classic::ConversionReport report;
+    auto loaded = game::classic::readClassicEmpire(r, file, report);
+    if (!loaded) return std::unexpected(loaded.error());
+    if (techLevels) *techLevels = loaded->file.empire.techLevels;
+    LoadedEmpire out;
+    out.empire = std::move(loaded->empire);
+    out.warnings = std::move(report.notes);
+    // The race as Empire Setup shows it: a preset tier when it is one.
+    if (out.empire.customRace) {
+        EmpireDraft d;
+        d.setup = out.empire;
+        d.race = *out.empire.customRace;
+        out.empire = collapse(r, d);
+    }
+    return out;
+}
+
+std::string withNotes(std::string text, const std::vector<std::string>& notes) {
+    for (const std::string& n : notes) {
+        if (n.empty()) continue;
+        text += " " + n;
+        if (n.back() != '.') text += ".";
+    }
+    return text;
+}
+
+game::EmpireSetup savedCopy(const game::EmpireSetup& e, bool designs) {
+    game::EmpireSetup out = e;
+    out.kind = game::PlayerKind::Human;
+    out.controller = game::Controller{};
+    if (!designs) out.designs.clear();
+    return out;
+}
+
+game::EmpireSetup empireOfGame(const game::GameState& s, game::EmpireId id, bool designs) {
+    const game::Empire& e = s.empire(id);
+    game::EmpireSetup out;
+    out.name = e.name;
+    out.empireType = e.empireType;
+    out.leaderTitle = e.leaderTitle;
+    out.leaderName = e.leaderName;
+    out.preset = e.race.style;
+    out.customRace = e.race;
+    out.passwordHash = e.passwordHash;
+    out.email = e.email;
+    out.ministerStyle = e.ministerStyle;
+    out.useRaceMinisterStyle = e.useRaceMinisterStyle;
+    out.experience = e.experience;
+    out.strategies = e.strategies;
+    out.settings = game::settingsOf(e);
+    out.designTypes = e.designTypes;
+    out.colonyTypes = e.colonyTypes;
+    out.repairPriorities = e.repairPriorities;
+    if (designs)
+        for (const game::DesignId d : e.designs)
+            if (d.valid() && d.index() < s.designs.size()) {
+                game::Design copy = s.design(d);
+                copy.obsolete = false;
+                copy.everBuilt = false;
+                copy.retrofitted = false;
+                out.designs.push_back(std::move(copy));
+            }
+    return out;
 }
 
 std::vector<EmpireFileInfo> listEmpireFiles(const game::Rules& r, const std::filesystem::path& dir) {

@@ -5,6 +5,7 @@
 // table of possible events, Allow All and Remove All, moving empires in the
 // list, Restore Defaults) sit where the original's pages leave room.
 
+#include "client/classic/classic_scenario.hpp"
 #include "client/classic/frontend.hpp"
 #include "client/classic/mods_model.hpp"
 #include "client/classic/screens/file_dialog.hpp"
@@ -17,6 +18,7 @@
 #include "client/classic/widgets.hpp"
 #include "client/script/items.hpp"
 #include "datafile/datafile.hpp"
+#include "game/classic_files.hpp"
 #include "game/economy.hpp"
 
 #include <algorithm>
@@ -25,6 +27,7 @@
 #include <cmath>
 #include <format>
 #include <memory>
+#include <random>
 
 namespace opense4::client::classic {
 
@@ -146,6 +149,7 @@ public:
         const bool cancel = a.cancelButton() && !modal;
         ImGui::EndDisabled();
         if (loadEmpire_) drawLoadEmpire(a);
+        playersPopups(a);
         // OpenSE4's own windows over the pages: who plays the computer empires, and their limits.
         if (players_.isOpen()) {
             std::optional<game::Controller> choice = s_.computerPlayer;
@@ -390,7 +394,9 @@ private:
             mapShown_ = true;
         }
         if (a.button({419, 506}, {599, 531}, "Load Map")) {
-            mapFiles_ = listMapFiles(rules(), mapsDir());
+            // OpenSE4's maps and the original's (.map), and the original's of the
+            // install's (or a classic mod's) Maps folder (spec 08 §14.5).
+            mapFiles_ = listMapFiles(rules(), mapsDir(), classicGameFolder(rules(), "Maps"));
             ImGui::OpenPopup("Load Map");
         }
         if (a.button({604, 506}, {784, 531}, "Save Map", preview_.has_value() && (mapShown_ || s_.map))) {
@@ -446,9 +452,10 @@ private:
             for (size_t i = 0; i < mapFiles_.size(); ++i) {
                 const MapFileInfo& f = mapFiles_[i];
                 ImGui::PushID(static_cast<int>(i));
-                const std::string label = std::format("{}  ({} systems, {} starting points)", f.name, f.systems, f.startingPoints);
+                const std::string label =
+                    std::format("{}  ({} systems, {} starting points){}", f.name, f.systems, f.startingPoints, f.classic ? ", Space Empires IV map" : "");
                 if (ImGui::Selectable(label.c_str())) {
-                    auto loaded = game::loadMapFile(f.path, rules().data());
+                    auto loaded = loadAnyMapFile(rules(), f.path);
                     if (!loaded) {
                         setStatus(loaded.error(), true);
                     } else {
@@ -472,7 +479,7 @@ private:
 
     void saveMapPopup(SetupArea& a) {
         MenuContext& ctx = a.ctx();
-        ImGui::SetNextWindowSize(ctx.size({440, 150}), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ctx.size({460, 200}), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ctx.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ctx.size({10, 10}));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ctx.size({6, 4}));
@@ -484,10 +491,28 @@ private:
             const std::filesystem::path file = mapFilePath(mapsDir(), mapName_);
             std::error_code ec;
             if (std::filesystem::exists(file, ec)) ImGui::TextColored(kBad, "%s exists and will be replaced.", file.filename().string().c_str());
+            // Save for SE IV: the original's map file (spec 08 §14), in a folder of the player's.
+            ImGui::TextColored(kLabelBlue, "Folder for SE IV");
+            inputText("##classicmaps", classicMapsFolder(), -FLT_MIN);
             if ((classicButton(ctx.painter(), "Save", {120, 28}) || enter) && preview_) {
                 auto saved = game::saveMapFile(file, rules().data(), mapToSave(s_, preview_->galaxy, mapName_));
                 if (saved) setStatus(std::format("Map saved to {}", file.string()), false);
                 else setStatus(saved.error(), true);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (classicButton(ctx.painter(), "Save for SE IV", {150, 28}) && preview_) {
+                const std::filesystem::path classicFile =
+                    std::filesystem::path(classicMapsFolder()) / game::classic::classicFileName(mapName_, game::classic::kMapFileExtension);
+                game::classic::ConversionReport report;
+                auto saved = game::classic::writeClassicMap(rules().data(), mapToSave(s_, preview_->galaxy, mapName_), classicFile, report,
+                                                            std::random_device{}());
+                const std::string text =
+                    saved ? withNotes(std::format("Map saved for Space Empires IV to {}. Copy it into the original's Maps folder to load it there.",
+                                                  classicFile.string()),
+                                      report.notes)
+                          : saved.error();
+                setStatus(text, !saved.has_value());
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
@@ -647,7 +672,7 @@ private:
             const ImVec2 r0 = ImGui::GetCursorScreenPos();
             ImGui::PushID(static_cast<int>(i));
             if (ImGui::InvisibleButton("##empire", ImVec2(rowW, p.px(20)))) selected_ = static_cast<int>(i);
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) openEditor(static_cast<int>(i));
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) requestEdit(static_cast<int>(i));
             ImGui::PopID();
             script::reportItem(e.name);   // input scripts find an empire by its name
             const bool on = selected_ == static_cast<int>(i);
@@ -676,19 +701,25 @@ private:
         const bool full = static_cast<int>(players.size()) >= kMaxEmpires;
         if (a.button({603, 57}, {783, 82}, "Add New", !full)) openEditor(-1);
         if (a.button({603, 87}, {783, 112}, "Add Existing", !full)) {
+            // OpenSE4's empire files and the original's (.emp), and the
+            // original's of the install's (or a classic mod's) Empires folder
+            // (spec 08 §13.4).
             loadEmpire_.emplace("Load Empire", "Empire Filename", ".toml", empireDirectory(), userDataDir() / "empires");
+            loadEmpire_->alsoList(std::string(game::classic::kEmpireFileExtension));
+            loadEmpire_->alsoListFolder(classicGameFolder(rules(), "Empires"), std::string(game::classic::kEmpireFileExtension));
             loadEmpire_->rescan();
         }
-        if (a.button({603, 117}, {783, 142}, "Edit", has)) openEditor(selected_);
+        if (a.button({603, 117}, {783, 142}, "Edit", has)) requestEdit(selected_);
         if (a.button({603, 147}, {783, 172}, "Remove", has)) {
+            // At once, without asking; the designs it brought go with it (spec 08 §13.4).
             const std::string name = players[static_cast<size_t>(selected_)].name;
             players.erase(players.begin() + selected_);
             setStatus(std::format("{} removed.", name), false);
         }
         if (a.button({603, 177}, {783, 202}, "Save To File", has)) {
-            auto file = saveEmpireFile(rules(), userDataDir() / "empires", players[static_cast<size_t>(selected_)]);
-            if (file) setStatus(std::format("Saved to {}", file->string()), false);
-            else setStatus(file.error(), true);
+            // "Save Designs" first (spec 08 §13.5).
+            saveIndex_ = selected_;
+            pendingPopup_ = "Save Designs";
         }
         // OpenSE4's own: the order of the empires (player order).
         if (a.button({603, 207}, {783, 232}, "Move Up", has && selected_ > 0)) {
@@ -733,15 +764,25 @@ private:
     }
 
     // Add Existing: the Load Game dialog as "Load Empire" (spec 07 session 5).
+    // The empire is checked at once against the setup on the screen: its
+    // technology (only the original's files hold tech levels) and its racial
+    // points; one that fails is not added (spec 08 §13.4).
     void drawLoadEmpire(SetupArea& a) {
         const FileDialog::Result r = loadEmpire_->draw(a.painter(), "Load Empire###loadempire");
         if (r == FileDialog::Result::Cancelled) {
             loadEmpire_.reset();
         } else if (r == FileDialog::Result::Chosen) {
             const FileEntry f = loadEmpire_->chosen();
-            auto loaded = loadEmpireFile(rules(), f.path);
+            std::vector<uint16_t> techLevels;
+            auto loaded = loadAnyEmpireFile(rules(), f.path, &techLevels);
             if (!loaded) {
                 loadEmpire_->setError(loaded.error());
+                return;
+            }
+            if (auto problem = game::classic::addExistingProblem(rules(), s_.options, loaded->empire, techLevels)) {
+                loadEmpire_.reset();
+                popupText_ = std::move(*problem);
+                pendingPopup_ = "Invalid Empire";
                 return;
             }
             s_.players.push_back(loaded->empire);
@@ -751,6 +792,149 @@ private:
             setStatus(text, !loaded->warnings.empty());
             loadEmpire_.reset();
         }
+    }
+
+    // Edit: an empire with a password asks for it first; the comparison is
+    // exact, letter case and spaces counting (spec 08 §13.4).
+    void requestEdit(int index) {
+        if (index < 0 || static_cast<size_t>(index) >= s_.players.size()) return;
+        if (s_.players[static_cast<size_t>(index)].passwordHash.empty()) return openEditor(index);
+        editRequest_ = index;
+        passwordInput_.clear();
+        pendingPopup_ = "Enter Empire Password";
+    }
+
+    // Starts a modal popup in the middle of the screen; EndPopup and PopStyleVar(2) after.
+    bool beginPopup(SetupArea& a, const char* id, float width) {
+        MenuContext& ctx = a.ctx();
+        ImGui::SetNextWindowSize(ctx.size({width, 0}), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ctx.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ctx.size({10, 10}));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ctx.size({6, 4}));
+        if (ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) return true;
+        ImGui::PopStyleVar(2);
+        return false;
+    }
+    static void endPopup() {
+        ImGui::EndPopup();
+        ImGui::PopStyleVar(2);
+    }
+
+    // The Players page's questions and messages (spec 08 §13.4, §13.5).
+    void playersPopups(SetupArea& a) {
+        MenuContext& ctx = a.ctx();
+        const Painter p = ctx.painter();
+        if (!pendingPopup_.empty()) {
+            ImGui::OpenPopup(pendingPopup_.c_str());
+            pendingPopup_.clear();
+        }
+        // A message with OK (Invalid Empire, Invalid Password).
+        for (const char* id : {"Invalid Empire", "Invalid Password"}) {
+            if (!beginPopup(a, id, 380)) continue;
+            ImGui::TextWrapped("%s", popupText_.c_str());
+            ImGui::Spacing();
+            if (classicButton(p, "OK", {120, 28}) || okKey()) ImGui::CloseCurrentPopup();
+            endPopup();
+        }
+        if (beginPopup(a, "Enter Empire Password", 360)) {
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+            const bool enter = inputText("##empirepassword", passwordInput_, -FLT_MIN, ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+            const bool ok = classicButton(p, "OK", {120, 28}) || enter;
+            ImGui::SameLine();
+            const bool cancel = classicButton(p, "Cancel##password", {120, 28}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+            bool open = false;
+            if (ok && editRequest_ >= 0 && static_cast<size_t>(editRequest_) < s_.players.size()) {
+                open = setup::hashPassword(passwordInput_) == s_.players[static_cast<size_t>(editRequest_)].passwordHash;
+                if (!open) {
+                    popupText_ = "The password is not correct.";
+                    pendingPopup_ = "Invalid Password";
+                }
+            }
+            if (ok || cancel) {
+                passwordInput_.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            endPopup();
+            if (open) openEditor(editRequest_);
+        }
+        // Save To File: Yes saves the designs too; N, Esc and Enter mean No.
+        if (beginPopup(a, "Save Designs", 340)) {
+            ImGui::TextWrapped("Save the empire's designs with it?");
+            ImGui::Spacing();
+            std::optional<bool> answer;
+            const std::optional<bool> key = yesNoKey();
+            if (classicButton(p, "Yes", {120, 28}) || key == true) answer = true;
+            ImGui::SameLine();
+            if (classicButton(p, "No", {120, 28}) || key == false) answer = answer.value_or(false);
+            if (answer) ImGui::CloseCurrentPopup();
+            endPopup();
+            if (answer) saveToFile(*answer);
+        }
+        if (beginPopup(a, "Save Empire", 440)) {
+            ImGui::TextWrapped("%s", saveNote_.c_str());
+            ImGui::Spacing();
+            ImGui::Separator();
+            // Save for SE IV: the original's empire file too (spec 08 §13).
+            ImGui::PushStyleColor(ImGuiCol_Text, kDim);
+            ImGui::TextWrapped("Save for SE IV also writes the empire as an empire file of the original Space Empires IV, for its Add Existing.");
+            ImGui::PopStyleColor();
+            ImGui::TextColored(kLabelBlue, "Folder");
+            inputText("##classicempires", classicEmpiresFolder(), -FLT_MIN);
+            ImGui::TextColored(kLabelBlue, "File name");
+            inputText("##classicempire", classicName_, -FLT_MIN);
+            const std::string fileName = game::classic::classicFileName(classicName_, game::classic::kEmpireFileExtension);
+            ImGui::TextColored(kDim, "%s", fileName.c_str());
+            if (!classicNote_.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, classicSaved_ ? kGood : kBad);
+                ImGui::TextWrapped("%s", classicNote_.c_str());
+                ImGui::PopStyleColor();
+                script::reportItem(classicSaved_ ? "result:saved" : "result:failed", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());   // for input scripts
+            }
+            ImGui::Spacing();
+            if (classicButton(p, "Save for SE IV", {150, 28})) {
+                const std::filesystem::path file = std::filesystem::path(classicEmpiresFolder()) / fileName;
+                game::classic::ConversionReport report;
+                game::classic::EmpireExportOptions options;
+                options.keySeed = std::random_device{}();
+                options.player = static_cast<uint8_t>(std::clamp(saveIndex_ + 1, 1, kMaxEmpires));
+                options.designs = saveDesigns_;
+                const auto saved = game::classic::writeClassicEmpire(rules(), saveCopy_, file, report, options);
+                classicSaved_ = saved.has_value();
+                classicNote_ = saved ? withNotes(std::format("Saved for Space Empires IV as {}. Copy it into the original's Empires folder to add it there.",
+                                                             file.string()),
+                                                 report.notes)
+                                     : std::format("Not saved: {}", saved.error());
+            }
+            ImGui::SameLine();
+            if (classicButton(p, "OK##saveempire", {120, 28}) || okKey()) ImGui::CloseCurrentPopup();
+            endPopup();
+        }
+    }
+
+    // Save To File (spec 08 §13.5): OpenSE4's empire file, its copy with
+    // computer control off, and the designs only with `designs`.
+    void saveToFile(bool designs) {
+        if (saveIndex_ < 0 || static_cast<size_t>(saveIndex_) >= s_.players.size()) return;
+        saveCopy_ = savedCopy(s_.players[static_cast<size_t>(saveIndex_)], designs);
+        saveDesigns_ = designs;
+        auto file = saveEmpireFile(rules(), userDataDir() / "empires", saveCopy_);
+        saveNote_ = file ? std::format("Saved to {}", file->string()) : file.error();
+        setStatus(saveNote_, !file.has_value());
+        classicName_ = saveCopy_.name;
+        classicNote_.clear();
+        pendingPopup_ = "Save Empire";
+    }
+
+    // The folders Save for SE IV writes to: OpenSE4's own empires and maps
+    // folders until another is typed, kept for the session.
+    static std::string& classicEmpiresFolder() {
+        static std::string dir = (userDataDir() / "empires").string();
+        return dir;
+    }
+    static std::string& classicMapsFolder() {
+        static std::string dir = (userDataDir() / "maps").string();
+        return dir;
     }
 
     // ---- Victory Conditions ---------------------------------------------------------------------------
@@ -937,6 +1121,18 @@ private:
     std::string status_;
     bool statusError_ = false;
     std::optional<FileDialog> loadEmpire_;
+    // The Players page's popups (playersPopups): the one to open next, a
+    // message's text, the empire Edit asked the password for, Save To File's.
+    std::string pendingPopup_;
+    std::string popupText_;
+    int editRequest_ = -1;
+    std::string passwordInput_;
+    int saveIndex_ = -1;
+    game::EmpireSetup saveCopy_;
+    bool saveDesigns_ = false;
+    std::string saveNote_;
+    std::string classicName_, classicNote_;
+    bool classicSaved_ = false;
     std::string masterPassword_, multiplayerFile_;
     bool offersPlayers_ = false;   // the game's mods offer computer players
     PlayerPicker players_;

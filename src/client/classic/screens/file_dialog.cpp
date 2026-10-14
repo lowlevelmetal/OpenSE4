@@ -91,12 +91,39 @@ FileDialog::FileDialog(std::string title, std::string nameHeading, std::string e
     : title_(std::move(title)), nameHeading_(std::move(nameHeading)), extension_(std::move(extension)), directory_(directory),
       defaultDirectory_(std::move(defaultDirectory)) {}
 
+void FileDialog::alsoList(std::string extension) {
+    extraExtensions_.push_back(std::move(extension));
+    scanned_ = false;
+}
+
+void FileDialog::alsoListFolder(std::filesystem::path folder, std::string folderExtension) {
+    extraFolders_.emplace_back(std::move(folder), std::move(folderExtension));
+    scanned_ = false;
+}
+
+void FileDialog::scan() {
+    files_ = listFiles(directory_, extension_);
+    // Files of the other extensions show theirs (TERRAN.EMP beside TERRAN).
+    auto named = [](std::vector<FileEntry> list) {
+        for (FileEntry& f : list) f.name = f.path.filename().string();
+        return list;
+    };
+    for (const std::string& ext : extraExtensions_)
+        for (FileEntry& f : named(listFiles(directory_, ext))) files_.push_back(std::move(f));
+    std::stable_sort(files_.begin(), files_.end(), [](const FileEntry& a, const FileEntry& b) {
+        return a.modified != b.modified ? a.modified > b.modified : a.path.filename() < b.path.filename();
+    });
+    std::error_code ec;
+    for (const auto& [folder, ext] : extraFolders_) {
+        if (folder.empty() || !std::filesystem::is_directory(folder, ec) || std::filesystem::equivalent(folder, directory_, ec)) continue;
+        for (FileEntry& f : named(listFiles(folder, ext))) files_.push_back(std::move(f));
+    }
+    scanned_ = true;
+}
+
 FileDialog::Result FileDialog::draw(const Painter& p, const char* window, UiContext* game) {
     Result result = Result::None;
-    if (!scanned_) {
-        files_ = listFiles(directory_, extension_);
-        scanned_ = true;
-    }
+    if (!scanned_) scan();
     const Vec2 min{std::floor((frameW() - kDialogSize.x) * 0.5f), std::floor((frameH() - kDialogSize.y) * 0.5f)};
     const Rect rect{min, min + kDialogSize};
     ImGui::SetNextWindowPos(p.at(rect.min), ImGuiCond_Always);

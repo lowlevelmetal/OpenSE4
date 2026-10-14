@@ -13,7 +13,7 @@ What gets built:
 | `opense4` | The game client: Vulkan 1.3 with an OpenGL 3.3 fallback |
 | `opense4-server` | Dedicated multiplayer host, and the PBEM turn processor |
 | `opense4-datacheck` | Loads and validates an installed or modded classic data set |
-| `opense4-convert` | Converts saved games between the original's format and OpenSE4's, and describes the original's (see "Saved games of the original") |
+| `opense4-convert` | Converts saved games and maps between the original's format and OpenSE4's, and describes the original's saved games, empire files and maps (see "Saved games of the original") |
 | `opense4-sdk` | The modding SDK's tool: makes, checks, tests, dumps and packs mods, plays the arena and external bots ([docs/sdk/README.md](sdk/README.md)) |
 | `opense4-observe` | Linux-only harness for observing the original game (see docs/CLEANROOM.md) |
 | `opense4_tests` | Unit tests. They use only our own fixtures |
@@ -743,6 +743,7 @@ recorder is tested.
 | `ship-moves.script` | On a training game of our own in `tests/input/learn-moves` (two attack ships at home): no movement lines on a fresh computer, Ctrl+L; a Move To gliding at once with the line from the square the ship left; at End Turn the turn's start moving the ship first and the Log opening only after the glide; a key showing the moves at once and doing nothing else; OpenSE4's Ship movement speed at 1/8x and 8x |
 | `colonize-pick.script`, `follow-warp.script` | On a training game of our own in `tests/input/learn-orders` (two colony ships at home): Colonize's Pick Object window and Cancel, a wrong pick failing on arrival with the "Colonize" message box, the moons settled, population moved between them with Cargo Transfer; a warp the view follows to the arrival system |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
+| `classic-files.script` | The original's empire and map files: Edit asking for an empire's password and refusing a wrong one, Save To File's "Save Designs" and *Save for SE IV*, Add Existing listing both kinds of empire file and adding the original's, the Quadrant page's Save Map for SE IV and Load Map loading it, and the Game Menu's Save Empire and Save Map for SE IV (docs/SETUP.md "Games of the original") |
 | `classic-save.script` | Games of the original: Save Game's *Save for SE IV* writing the game into the saves folder's "Space Empires IV" folder, Load Game's Change Directory finding it there, and loading it, with the note of what came across only approximately (docs/SETUP.md "Games of the original") |
 | `classic-tutorial.script` | The original's tutorial from the install (docs/LEARNING.md "The original's tutorial and scenarios", spec 06 §5.6): the Learn window's Scenarios tab and Start Game, its first page at once with Previous dim, Previous and Next, Esc keeping the page for Ctrl+H, the status bar's T and a large window's T showing it over that window; saved and loaded again, still the tutorial's, with no page by itself and the page kept |
 | `save-typed-name.script` | Save Game keeping the name typed into its field when Save is clicked instead of pressing Enter |
@@ -947,6 +948,10 @@ played with: the installed game found automatically, or `--classic-dir`.
 ./build/debug/opense4-convert mine.gam ForSE4.gam --to=original      # export: a save for the original
 ./build/debug/opense4-convert GAME.gam again.gam --to=original       # an original save through OpenSE4 and back
 ./build/debug/opense4-convert --compare GAME.gam again.gam           # every field that differs, by its path
+./build/debug/opense4-convert --info terran.emp                      # an empire file of the original (spec 08 §13)
+./build/debug/opense4-convert --info Galaxy.map                      # a map file of the original (spec 08 §14)
+./build/debug/opense4-convert Galaxy.map galaxy.toml --to=opense4    # a map of the original as OpenSE4's map
+./build/debug/opense4-convert galaxy.toml Galaxy.map --to=original   # and back
 ```
 
 `--seed=N` fixes the keys of a written file (by default they are random, as the original's
@@ -954,7 +959,8 @@ are), and `-v` lists every detail of what was approximated. Exit status: 0 done,
 could not be read or written (the message names the section, record and byte), 2 no data
 set or bad arguments, 3 `--compare` found differences. The library behind it is
 `src/game/classic_save.hpp`: the container and its keys, a typed model of every section,
-and the import into and export from a `GameState`.
+and the import into and export from a `GameState`; `src/game/classic_files.hpp` converts
+the original's empire and map files to and from Game Setup's empires and OpenSE4's maps.
 
 ## Headless runs
 

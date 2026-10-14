@@ -402,13 +402,29 @@ starting planet is a capital of colony type "Homeworld", and the home system is 
 when the game is created (`Empire::homeSystem`). A new game and Quick Start are
 turn-based. Maps are saved and loaded in our own format ([MAPS.md](MAPS.md),
 `map_file.hpp`) with starting points placed first; the game keeps the points a later Save
-Map writes (`GameState::startingPoints`). The autosave choices are applied after each
+Map writes (`GameState::startingPoints`). Since 2026-10-14 the original's map files and
+empire files are read and written beside ours (spec 08 §13, §14; `classic_files.hpp`):
+Load Map and Add Existing list both kinds, the install's `Maps` and `Empires` folders
+included, Add Existing makes the original's technology and racial-point checks at once,
+Edit asks for an empire's password, Save To File asks "Save Designs" and writes a copy with
+computer control off, and both Save Map windows, Save To File and the Game Menu's Save
+Empire offer *Save for SE IV*. Our empire files keep what the original's do (the password's
+check, the e-mail address, the minister switches, the Empire Options and window memories,
+the name lists), and a new game gives it to the empire; what remains different is in the
+table after this paragraph. The autosave choices are applied after each
 processed game turn in local and hotseat games of either turn style, into files named
 after the last digit of the turn count, and can be changed during the game (Empire
 Options). Spec 01 §14 Q41–Q43 were answered from the executable; the engine follows them,
 and since 2026-10-01 a comet or warp point entry of a system template is placed like any
 other entry (its position and a record drawn, its sector marked and recorded for `Same As`)
 and keeps an empty name for the letters of later planets there (Q43).
+
+| Where | Engine now | Original | Impact |
+|---|---|---|---|
+| Passwords of the original's empire files (`classic_files.cpp`) | Read as OpenSE4's check of the trimmed lower-case password, so Edit (an exact comparison) and the game take it typed in lower case; *Save for SE IV* writes none (OpenSE4 cannot recover the text) | The plain text, compared exactly by Edit and trimmed and in lower case in the game (spec 08 §3.6.1, §13.4) | L |
+| What an empire file brings besides (`classic_files.cpp`) | The queue templates (OpenSE4 keeps them per computer), the computer players' memory and difficulty and the source game's player number and home are left out | The whole empire record goes into the new game (spec 08 §13.2, §13.4) | L |
+| The original's file pickers (`screens/setup.cpp`, `game_menu.cpp`) | Add Existing lists OpenSE4's `empires` folder (both kinds of file) and the install's `Empires` folder together; *Save for SE IV* takes a folder and a file name, lower-cases only the file name, and has no New Empire File or New Map File button | Load Empire lists the Empires folder (the mod's when it has one); the Save Empire and Save Map pickers have New Empire File / New Map File and lower-case the whole path (spec 08 §13.4, §13.5, §14.3) | L |
+| Begin Game after a loaded or generated map | OpenSE4's game seed is the setup's | Not known which seed the original keeps (spec 08 §11.1 Q27) | L |
 
 Colony (planetary) cloaking (§6.9) came on 2026-10-01: cloak and sensor levels from facilities
 alone, stored and recalculated only at the moments the spec names; Cloak and Decloak at once
@@ -578,7 +594,7 @@ design; the hover tooltips of the Research and Intelligence lists. What remains 
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Designs window's tab | Opens on Ship Designs, or on the tab of the design it is opened for | Kept with the empire's options in the saved game, as its Hide Obsolete and Stats\Strategy are (spec 08 §3.6.7) | L |
-| E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
+| E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game, and in empire files since 2026-10-14); it travels in a player's orders only as a Change Email command, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Moves shown in the system window (`ship_glides.cpp`, `turn_start.cpp`) | The moves of an engine call glide together once it has made them all, several steps of one group as one straight glide; a battle that stops the call is shown before the moves that led to it; a click or a key shows a turn's moves at once | Each group's steps animated one after another as they are made, a battle when it starts (spec 06 §2.4, §2.7, §7 Q112) | L |
 | Last turn of a human defeated in its own turn-based turn (`turn_based.cpp` `finishPlayerTurn`) | Marked dead at the end of that turn, without a Lose ending first | Marked dead only after its Lose window (spec 06 §7 Q83); the original's check when a human loses everything during its own turn is not described (inferred) | L |
 | Choosing one of the original's scenarios (`screens/learn_screens.cpp`) | The intro's Tutorial and Scenario open OpenSE4's Learn window; its Scenarios tab lists the original's scenarios beside the mods', and Start Game starts one. The scenario folder is the install's, or that of the last classic mod in use that has one | Tutorial starts the tutorial at once; Scenario opens the "Load Scenario" picker with Change Directory; the folder is that of the `Path.txt` mod when it has one (spec 06 §1.1, §5.6) | L |

@@ -8,6 +8,7 @@
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/session.hpp"
 #include "datafile/datafile.hpp"
+#include "game/classic_files.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
 
@@ -561,7 +562,7 @@ TEST_CASE("setup model: empire files keep the designs saved with them, and a new
     CHECK(missing->warnings.size() == 1);
     // A file of the first format, without designs, still loads.
     std::string old = setup::empireToToml(r, *e);
-    const auto fpos = old.find("format = 3");
+    const auto fpos = old.find("format = 4");
     REQUIRE(fpos != std::string::npos);
     old.replace(fpos, 10, "format = 1");
     CHECK(setup::empireFromToml(r, old).has_value());
@@ -595,6 +596,127 @@ TEST_CASE("setup model: empire files keep the designs saved with them, and a new
     // The file's valid designs are the empire's only designs.
     REQUIRE(first0.designs.size() == 1);
     CHECK(game->design(first0.designs.front()).name == "Long Reach");
+}
+
+TEST_CASE("setup model: empire files keep the e-mail, settings and name lists (format 4)") {
+    // What the original's empire files keep besides (spec 08 §13.2): OpenSE4's
+    // keeps it too, and files of the older formats load without it.
+    const game::Rules& r = setupRules();
+    auto e = setup::finishDraft(r, setup::draftFromPreset(r, *game::findPreset(r, "Gamma"), 0), 5000);
+    REQUIRE(e.has_value());
+    CHECK(setup::empireToToml(r, *e).find("[settings]") == std::string::npos);   // an Empire Setup empire has none
+    e->email = "gamma@example.org";
+    game::EmpireSettings settings;
+    settings.ministers = game::ministerBit(game::Minister::Design) | game::ministerBit(game::Minister::Troops);
+    settings.ministersForNewVehicles = true;
+    settings.clearOrdersOnEncounter = game::EncounterClear::Never;
+    settings.avoidRestrictedSystems = false;
+    settings.interfaceOptions.planetNames = true;
+    settings.interfaceOptions.facilityMarkers = 0x0f0;
+    settings.interfaceOptions.queuesTab = 3;
+    settings.interfaceOptions.shipsSort = {2, 1, 0, 0, 0};
+    e->settings = settings;
+    e->designTypes = {"Attack Ship", "Base"};
+    e->colonyTypes = {"Mining"};
+    e->repairPriorities = {"Armor"};
+    const std::string text = setup::empireToToml(r, *e);
+    CHECK(text.find("format = 4") != std::string::npos);
+    auto back = setup::empireFromToml(r, text);
+    REQUIRE_MESSAGE(back.has_value(), (back ? std::string{} : back.error()));
+    CHECK(back->warnings.empty());
+    CHECK(back->empire.email == "gamma@example.org");
+    REQUIRE(back->empire.settings.has_value());
+    CHECK(*back->empire.settings == settings);
+    CHECK(back->empire.designTypes == e->designTypes);
+    CHECK(back->empire.colonyTypes == e->colonyTypes);
+    CHECK(back->empire.repairPriorities == e->repairPriorities);
+    // A format 3 file has none of it.
+    game::EmpireSetup older = *e;
+    older.settings.reset();
+    older.designTypes.clear();
+    older.colonyTypes.clear();
+    older.repairPriorities.clear();
+    older.email.clear();
+    std::string three = setup::empireToToml(r, older);
+    three.replace(three.find("format = 4"), 10, "format = 3");
+    auto old = setup::empireFromToml(r, three);
+    REQUIRE(old.has_value());
+    CHECK_FALSE(old->empire.settings.has_value());
+    CHECK(old->empire.designTypes.empty());
+
+    // Save To File's copy: computer control off, the designs only when asked (spec 08 §13.5).
+    game::EmpireSetup listed = *e;
+    listed.kind = game::PlayerKind::Computer;
+    listed.designs.push_back(game::Design{});
+    CHECK(setup::savedCopy(listed, true).kind == game::PlayerKind::Human);
+    CHECK(setup::savedCopy(listed, true).designs.size() == 1);
+    CHECK(setup::savedCopy(listed, false).designs.empty());
+
+    // The Game Menu's Save Empire keeps the game's empire's password, e-mail, settings and lists.
+    setup::NewGameSettings ns = withFirstStyle(r, 9);
+    ns.options.systemCount = 10;
+    ns.players[0].passwordHash = setup::hashPassword("pw");
+    ns.players[0].email = "me@example.org";
+    auto g = setup::buildGameSetup(r, ns);
+    REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+    auto state = game::createGame(r, *g);
+    REQUIRE(state.has_value());
+    state->empires[0].ministers = game::ministerBit(game::Minister::Research);
+    state->empires[0].designTypes.push_back("Own Type");
+    state->empires[0].interfaceOptions.logPosition = 4;
+    const game::EmpireSetup saved = setup::empireOfGame(*state, game::EmpireId{0u}, false);
+    CHECK(saved.passwordHash == setup::hashPassword("pw"));
+    CHECK(saved.email == "me@example.org");
+    REQUIRE(saved.settings.has_value());
+    CHECK(saved.settings->ministers == game::ministerBit(game::Minister::Research));
+    CHECK(saved.settings->interfaceOptions.logPosition == 0);
+    CHECK(saved.designTypes.back() == "Own Type");
+    CHECK(saved.designs.empty());
+}
+
+TEST_CASE("setup model: Add Existing and Load Map read the original's files too") {
+    const game::Rules& r = setupRules();
+    const test::TempDir tmp("setup_model_classic");
+    // An empire file of the original (spec 08 §13): the race as a preset tier when it is one.
+    auto e = setup::finishDraft(r, setup::draftFromPreset(r, *game::findPreset(r, "Gamma"), 1), 5000);
+    REQUIRE(e.has_value());
+    game::classic::ConversionReport report;
+    const fs::path empireFile = tmp / "gamma.emp";
+    REQUIRE(game::classic::writeClassicEmpire(r, *e, empireFile, report).has_value());
+    std::vector<uint16_t> levels;
+    auto loaded = setup::loadAnyEmpireFile(r, empireFile, &levels);
+    REQUIRE_MESSAGE(loaded.has_value(), (loaded ? std::string{} : loaded.error()));
+    CHECK(loaded->empire.name == e->name);
+    CHECK(loaded->empire.preset == "Gamma");
+    CHECK(loaded->empire.presetTier == 1);
+    CHECK_FALSE(loaded->empire.customRace.has_value());
+    CHECK(levels.size() == r.data().techAreas.size());
+    // OpenSE4's own still loads through the same call.
+    auto toml = setup::saveEmpireFile(r, tmp / "empires", *e);
+    REQUIRE(toml.has_value());
+    auto ours = setup::loadAnyEmpireFile(r, *toml, &levels);
+    REQUIRE(ours.has_value());
+    CHECK(levels.empty());
+
+    // Maps: OpenSE4's and the original's of the maps folder, and the original's of the install's Maps folder.
+    auto preview = setup::previewQuadrant(r, 4, setup::defaultSettings(r, 4).options);
+    REQUIRE(preview.has_value());
+    game::QuadrantMap map;
+    map.name = "Ours";
+    map.galaxy = preview->galaxy;
+    const fs::path maps = tmp / "maps", install = tmp / "Maps";
+    REQUIRE(game::saveMapFile(setup::mapFilePath(maps, "Ours"), r.data(), map).has_value());
+    REQUIRE(game::classic::writeClassicMap(r.data(), map, maps / "theirs.map", report).has_value());
+    REQUIRE(game::classic::writeClassicMap(r.data(), map, install / "installed.map", report).has_value());
+    const auto list = setup::listMapFiles(r, maps, install);
+    REQUIRE(list.size() == 3);
+    CHECK(std::count_if(list.begin(), list.end(), [](const setup::MapFileInfo& f) { return f.classic; }) == 2);
+    for (const setup::MapFileInfo& f : list) {
+        CHECK(f.systems == static_cast<int>(map.galaxy.systems.size()));
+        auto m = setup::loadAnyMapFile(r, f.path);
+        REQUIRE_MESSAGE(m.has_value(), (m ? std::string{} : m.error()));
+        CHECK(m->map.galaxy.objects.size() == map.galaxy.objects.size());
+    }
 }
 
 TEST_CASE("setup model: the minister style of Empire Setup reaches the game and the empire file") {
