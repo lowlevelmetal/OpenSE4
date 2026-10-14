@@ -194,8 +194,10 @@ The defaults below are confirmed: binary.
 - Turn style: Turn-Based (sequential, the default) or Simultaneous.
 - Multiplayer filename and save directory.
 - Autosave: None (the default), or every 1, 2, 3, 5 or 10 turns; it can also be changed
-  during the game. The save is made after a turn is processed, whenever the number of turns
-  since 2400.0 (the game date in tenths of a year) is a multiple of N. The file is named
+  during the game. The save is made whenever the number of turns since 2400.0 (the game date
+  in tenths of a year) is a multiple of N: after a simultaneous turn is processed, and in a
+  turn-based game at the start of the first human player's turn of the new game turn, before
+  that turn starts (spec 06 §6.1). The file is named
   after the last digit of that number, into the save directory, so there are at most ten
   autosave files: every 2 turns uses five of them, every 5 turns two, every 10 turns one.
   Because the rule follows the game date, loading a game changes nothing about it.
@@ -1669,8 +1671,9 @@ highlighted, and an X marks each empire that has met one.
     and the menu entry is disabled without it. The original writes the starting points the
     game still holds (a loaded map's specific points and unused common points; none for a
     generated game), not the capitals (§12). The map file layout is an OpenSE4 extension.
-38. **Autosave.** *Answered* (confirmed: binary): after a turn is processed, when the number
-    of turns since 2400.0 is a multiple of N, into a file named after that number's last
+38. **Autosave.** *Answered* (confirmed: binary): after a turn is processed (in a turn-based
+    game at the start of the first human's turn of the new game turn, spec 06 §6.1), when the
+    number of turns since 2400.0 is a multiple of N, into a file named after that number's last
     digit, so at most ten files, and fewer for N = 2, 5 or 10 (§2.2). It follows the game
     date, so nothing restarts on loading. OpenSE4's file names, save format and the network
     host's own autosave setting are OpenSE4 extensions. The choice can be changed during a

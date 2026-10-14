@@ -418,7 +418,7 @@ Years are stored in turns (tenths of a year). **(confirmed: binary)**
 | bool, int | Peace condition on; turns | `peace`, `peaceYears` = turns / 10 |
 | int | Consecutive peaceful turns so far | `GameState::peacefulTurns` |
 | bool, int | Delay before conditions count on; turns | `delay`, `delayYears` = turns / 10 |
-| bool | Game completed (a condition was met; no further turns) | `GameState::gameOver` |
+| bool | Game completed (a condition was met): a turn-based game plays one more game turn, and the next wrap ends it (spec 05 §6) | `GameState::lastTurn` in a turn-based game, `gameOver` in a simultaneous one; written as `gameOver` or `lastTurn` |
 
 OpenSE4 keeps whole years, so a year count that is not a whole number is rounded on
 import (lossy).
@@ -1211,7 +1211,10 @@ choice (all **confirmed: binary**):
   combat replay file when replays are on.
 - Then the game resumes: a simultaneous game asks the players to sign in, a TCP/IP host
   asks whether to go on hosting, and a hand-over file or an autosave opens the
-  next-player screen.
+  next-player screen. OpenSE4's client does the same for a game loaded with Load Game since
+  2026-10-14 (spec 06 §1.1 Login To Game, §1.2.1 the Next Player window), from its own saves'
+  autosave mark (`SaveInfo::autosave`); an imported save's autosave and hand-over flags are
+  not read yet.
 
 ---
 
@@ -1246,7 +1249,8 @@ memory between turns and have no source are a loss on import (§7.6).
 | `combats` | Not in the file; optionally minimal records from the log's battle details | Battle details of the log entries (§3.6.11) |
 | `nextVehicleId`, `nextFleetId`, `nextMessageId`, `arrivals` | Derive from the imported lists | — |
 | `peacefulTurns` | Victory block counter | Same |
-| `gameOver` | Victory "game completed" | Same |
+| `gameOver` | Victory "game completed", in a simultaneous game | "Game completed" when `gameOver` or `lastTurn` |
+| `lastTurn` | Victory "game completed", in a turn-based game (spec 05 §6) | See `gameOver` |
 | `winner` | Not stored: derive from the victory rules, else invalid | — |
 | `playerTurn.empire` | Current player (turn-based games) | Current player (simultaneous games: the empire count, as in the simultaneous sample, observed) |
 | `playerTurn.started` | Not stored: true (the original saves within a player's turn, inferred) | Not stored: a human current player's turn that has not started is started on a copy first (§12) |
