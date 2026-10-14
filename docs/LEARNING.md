@@ -1081,9 +1081,10 @@ The kebab-case of the client's `ScreenId` names (`client/classic/screen_id.hpp`)
 `strategies`, `repair-priorities`, `fleet-transfer`, `cargo-transfer`,
 `launch-recover`, `scrap`, `view-orders`, `select-waypoint`, `stellar-manipulation`,
 `rename`, `abandon-planet`, `jettison-cargo`, `convert-resources`, `communicate`, `intelligence`, `treaty-grid`, `scores`,
-`comparisons`, `history`, `race-report`, `victory-conditions`, `borders`, `combat-replay`,
+`comparisons`, `history`, `race-report`, `victory-conditions`, `borders`,
+`races-on-planet` (a colony's races, from the Planet Report), `combat-replay`,
 `tactical-combat`, `tactical-orders`, `tactical-options` (Combat Options),
-`tactical-launch` (Launch Units), `combat-piece-report`, `combat-replay-options`,
+`tactical-launch` (Launch \ Recover Units in a battle), `combat-piece-report`, `combat-replay-options`,
 `combat-simulator`, `strategic-combat`, `ground-combat`, `finale` (the ending window),
 `save-game`, `load-game`,
 `options` (Game Menu → Options), `settings`, `learn`, `manual`.
@@ -1092,7 +1093,7 @@ A `window:` link cannot open the battle windows (`combat-replay`, `tactical-comb
 `tactical-orders`, `tactical-options`, `tactical-launch`, `combat-piece-report`,
 `combat-replay-options`, `strategic-combat`, `ground-combat`): they need a battle; nor
 `finale`, which only the end of a game opens; nor
-`abandon-planet`, `jettison-cargo` and `convert-resources`, which need a planet or a ship. Front matter may also
+`abandon-planet`, `jettison-cargo`, `convert-resources` and `races-on-planet`, which need a planet or a ship. Front matter may also
 name `main`, the main window.
 
 **Help tabs** (`help:` links): `components`, `weap-mount`, `facilities`, `ship-sizes`, `unit-sizes`,

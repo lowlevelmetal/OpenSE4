@@ -90,6 +90,7 @@ add_executable(opense4
     client/classic/screens/planets.cpp
     client/classic/screens/player_errors.cpp
     client/classic/screens/queues.cpp
+    client/classic/screens/races_on_planet.cpp
     client/classic/screens/registry.cpp
     client/classic/screens/research.cpp
     client/classic/screens/scrap.cpp

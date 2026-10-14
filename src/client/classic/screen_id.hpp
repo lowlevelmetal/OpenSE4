@@ -21,6 +21,8 @@ enum class ScreenId {
     JettisonCargo, ConvertResources,
     // Diplomacy and comparisons (§1.5).
     Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions, Borders,
+    // A report's own window: the races of a colony (§1.4).
+    RacesOnPlanet,
     // Combat (§1.6).
     CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, TacticalLaunch, CombatPieceReport, CombatReplayOptions, CombatSimulator,
     StrategicCombat, GroundCombat,

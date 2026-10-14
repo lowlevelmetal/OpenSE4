@@ -533,6 +533,16 @@ std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, Report
             const game::economy::ColonyOutput out = game::economy::colonyOutput(r, s, *c);
             line("Colony Type", c->colonyType);
             pen.sprite(ui.art.populationMini(s.empire(c->owner).race.style), 229, row - 4, 20, 20);
+            // A right-click on the population opens Races On Planet (spec 06 §1.4,
+            // confirmed: binary). Ours: on the Population line, where our page
+            // draws the population.
+            if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(pen.at(0, row - 4), pen.at(286, row + 16)) &&
+                ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !simulator) {
+                ScreenArgs a;
+                a.planet = c->planet;
+                ui.open(ScreenId::RacesOnPlanet, a);
+            }
+            script::reportItem("report:population", pen.at(0, row - 4), pen.at(286, row + 16));   // input scripts: where it is
             line("Population", std::format("{}M/{}M", c->totalPopulation(), game::maxPopulation(r, s, *c)));
             line("Reproduction", std::format("{}% per year", out.reproductionPercent));
             line("Mood", std::string(game::economy::moodName(r, s, *c)));

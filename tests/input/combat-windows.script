@@ -1,7 +1,7 @@
 # The Tactical Combat window's mouse-only parts on a sample battle (--open=tactical: the
 # player's warships against copies of them): the wheel zooms the map, a right-click on a
-# piece shows its Combat Piece Report, the Options and Orders windows (docs/BUILDING.md
-# "Input scripts").
+# piece shows its Combat Piece Report, the Options and Orders windows, Launch Units
+# (docs/BUILDING.md "Input scripts").
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --quick-start --empires=4 --seed=7 --open=tactical --layout=1024x768 --size=1280x800
 
@@ -42,6 +42,15 @@ wait-window tactical-orders
 # The menu takes no keys (spec 06 §3.4); Cancel closes it.
 click item:Cancel in=tactical-orders
 wait-closed tactical-orders
+# Launch Units: the map's Launch \ Recover Units window in battle mode, for the selected piece
+# (spec 06 §1.10.2); its amount radios answer.
+click tag:tactical-combat:orders
+wait-window tactical-orders
+click item:"Launch Units" in=tactical-orders
+wait-window tactical-launch
+click item:"Move Five" in=tactical-launch
+click tag:tactical-launch:close
+wait-closed tactical-launch
 # Resolve Combat, from the menu, asks first; No leaves the battle as it is.
 click tag:tactical-combat:orders
 wait-window tactical-orders
