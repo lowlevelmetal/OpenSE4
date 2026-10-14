@@ -1274,9 +1274,10 @@ TEST_CASE("diplomacy: the economy report gives the trade and tariffs empire by e
     CHECK(c->tariffReceived == diplomacy::tariffsPaid(r, s, kC));
     CHECK(c->tariffGiven == Resources{});
     // The subject's report: the tariff it gives its master.
-    const PartnerIncome* master = entry(economy::incomeReport(r, s, kC), kA);
+    const EconomyReport subject = economy::incomeReport(r, s, kC);   // kept: entry points into it
+    const PartnerIncome* master = entry(subject, kA);
     REQUIRE(master);
-    CHECK(master->tariffGiven == economy::incomeReport(r, s, kC).tariffsOut);
+    CHECK(master->tariffGiven == subject.tariffsOut);
     CHECK(master->tariffReceived == Resources{});
 }
 
