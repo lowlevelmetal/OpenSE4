@@ -30,7 +30,7 @@ constexpr WindowInfo kWindows[] = {
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},
     {"tactical-launch", false}, {"combat-piece-report", false}, {"combat-replay-options", false},
     {"combat-simulator"}, {"strategic-combat", false}, {"ground-combat", false}, {"finale", false},
-    {"save-game"}, {"load-game"}, {"options"}, {"settings"}, {"player-errors", false},
+    {"save-game"}, {"load-game"}, {"options"}, {"settings"}, {"player-errors", false}, {"scenario-text", false},
     {"learn"}, {"manual"},
 };
 
@@ -123,9 +123,10 @@ constexpr std::string_view kOtherTags[] = {
     // The command buttons (their ids are the windows they open) and End Turn.
     "command:game-menu", "command:designs", "command:planets", "command:colonies", "command:ships", "command:queues",
     "command:research", "command:empires", "command:log", "command:empire-status", "command:help", "button:end-turn",
-    // The status bar; status:lesson is the T button, shown during a lesson.
+    // The status bar; status:lesson is the T button, shown during a lesson,
+    // status:scenario the same button in a game of the original's tutorial.
     "status:empire", "status:leader", "status:date", "status:resources", "status:minerals", "status:organics",
-    "status:radioactives", "status:lesson",
+    "status:radioactives", "status:lesson", "status:scenario",
     // The main window's panels, the report's tabs and the selection cycles.
     "panel:system", "panel:report", "panel:galaxy", "panel:commands", "panel:orders", "panel:report-tabs",
     "cycle:ship", "cycle:fleet", "cycle:colony",

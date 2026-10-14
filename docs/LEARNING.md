@@ -13,9 +13,8 @@ started on the computer (and none is done), a note above the intro's buttons poi
 | **Training** | Practice games with objectives ("found five colonies by turn 40"), briefing pages, hints and a result. They follow the original's scenario model: titled pages tied to turns, browsed with previous and next, and re-opened with Ctrl+H or the **T** button in the status bar (spec 06 §1.7). |
 | **Manual** | Our own manual, in chapters, with a contents tree, search and links. Its links can open the game's windows. Shift+F1 opens the page for the window in front. If the player's install has the original's HTML manual, a button opens that in the browser. |
 
-All three are OpenSE4 extensions. The original's own tutorial needs its binary starting
-game (`Scenarios/*.gam`, spec 06 §6), which OpenSE4 cannot read, so OpenSE4 ships its own
-lessons instead.
+All three are OpenSE4 extensions, our own content. The original's own tutorial plays
+too, from the install (next section).
 
 Mods add a fourth kind: **scenarios**, a setup with objectives in a mod's
 `scenarios/*.toml` ([sdk/rules.md](sdk/rules.md) "Scenarios"). When the mods in use hold
@@ -23,6 +22,27 @@ some, the Learn window opened from the intro has a **Scenarios** tab that lists 
 them (see "The Learn window and the manual"). Their objectives are written in the lessons'
 condition language ("Conditions" below), but they are the mods' content: nothing in this
 document's library, progress or checks covers them.
+
+## The original's tutorial and scenarios
+
+The original's tutorial, and any other scenario of the original in the install's
+`Scenarios` folder (or in that of a classic mod in use), is listed on the same
+**Scenarios** tab, by its file name: `Tutorial` for the tutorial. **Start Game** reads its
+two text files (their errors show on the tab, and such a scenario does not start), loads
+its prepared game, a saved game of the original (spec 08; the tutorial's is of version
+1.58), and plays it as the original does (spec 06 §5.6): its pages of text come up in
+their own window at the start of the turns they name, Previous and Next browse a series,
+and **Ctrl+H** shows the page seen last again; in the tutorial, so does the **T** button in
+the status bar and at the top right of every large window. Saving and loading keep it a
+game of that scenario (save format 10, `GameState::classicScenario`).
+
+These are the original's content, read from the player's install at run time: nothing of
+them is in this repository, and none of this document's library, progress, panel, input
+lock or checks applies to them. They are no lessons: during a lesson Ctrl+H and the T
+button stay the lesson panel's. The pages' rules and the window are in
+`client/classic/classic_scenario.hpp` and `screens/scenario_text.cpp`; the tests in
+`tests/test_classic_scenario.cpp` use scenarios of our own, and the input script
+`classic-tutorial.script` plays the installed tutorial's first pages.
 
 ## Clean-room rules for the content
 
@@ -703,12 +723,16 @@ the chosen one's summary and its steps or objectives; **Start Lesson** or **Star
 (or a double click) starts its game. During a game this first asks, since the lesson's game
 replaces the one being played. Manual lists the chapters and their sections.
 
-When the rules mods in use hold scenarios, the Learn window opened from the intro has a
-fourth tab, **Scenarios** (`--open=learn:scenarios`): each scenario with its mod, its
-summary, its empires and its objectives, and **Start Game**, which starts it for its first
-human empire (`sdk::startScenario`). A scenario without a human empire (one for computer
-players: the arena, a server's setup file), or one that failed to start, says why and
-cannot be started here. The Learn window opened during a game has no Scenarios tab.
+When the install has scenarios of the original or the rules mods in use hold scenarios,
+the Learn window opened from the intro has a fourth tab, **Scenarios**
+(`--open=learn:scenarios`): first the original's (see "The original's tutorial and
+scenarios"), each with its source, what it is and the errors of its files; then each of
+the mods' with its mod, its summary, its empires and its objectives. **Start Game** starts
+the one chosen: the original's from its prepared game, a mod's for its first human empire
+(`sdk::startScenario`). A scenario without a human empire (one for computer players: the
+arena, a server's setup file), one whose files have errors, or one that failed to start,
+says why and cannot be started here. The Learn window opened during a game has no
+Scenarios tab.
 
 - The first lesson not done yet is marked **Next** (the others done are marked Done).
 - The window chooses the tutorial the player left last, while it can be resumed;
@@ -1085,12 +1109,14 @@ The kebab-case of the client's `ScreenId` names (`client/classic/screen_id.hpp`)
 `tactical-launch` (Launch Units), `combat-piece-report`, `combat-replay-options`,
 `combat-simulator`, `strategic-combat`, `ground-combat`, `finale` (the ending window),
 `save-game`, `load-game`,
-`options` (Game Menu → Options), `settings`, `learn`, `manual`.
+`options` (Game Menu → Options), `settings`, `player-errors`, `scenario-text` (the text
+window of the original's scenarios), `learn`, `manual`.
 
 A `window:` link cannot open the battle windows (`combat-replay`, `tactical-combat`,
 `tactical-orders`, `tactical-options`, `tactical-launch`, `combat-piece-report`,
 `combat-replay-options`, `strategic-combat`, `ground-combat`): they need a battle; nor
-`finale`, which only the end of a game opens; nor
+`finale`, which only the end of a game opens; nor `player-errors` and `scenario-text`,
+which need a failed computer player and a scenario of the original; nor
 `abandon-planet`, `jettison-cargo` and `convert-resources`, which need a planet or a ship. Front matter may also
 name `main`, the main window.
 
@@ -1110,6 +1136,7 @@ the Weapons Report.
 | `status:empire`, `status:leader`, `status:date` | the status bar's flag and empire name, leader, game date |
 | `status:resources`, `status:minerals`, `status:organics`, `status:radioactives` | the treasury, all of it or one resource |
 | `status:lesson` | the T button (only during a lesson) |
+| `status:scenario` | the same T button in a game of the original's tutorial (never during a lesson) |
 | `panel:system`, `panel:report`, `panel:galaxy` | the system view, the report panel, the galaxy panel |
 | `panel:commands`, `panel:orders`, `panel:report-tabs` | the command buttons, the order strip, the report's tabs |
 | `sector:home`, `report:colony` | the homeworld's sector in the system view (while the home system is shown); the player's colony in the report's list of a sector |

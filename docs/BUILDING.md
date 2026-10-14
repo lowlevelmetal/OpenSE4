@@ -744,6 +744,7 @@ recorder is tested.
 | `colonize-pick.script`, `follow-warp.script` | On a training game of our own in `tests/input/learn-orders` (two colony ships at home): Colonize's Pick Object window and Cancel, a wrong pick failing on arrival with the "Colonize" message box, the moons settled, population moved between them with Cargo Transfer; a warp the view follows to the arrival system |
 | `sliders.script` | Dragging sliders: a combat strategy's settings and OpenSE4's Settings |
 | `classic-save.script` | Games of the original: Save Game's *Save for SE IV* writing the game into the saves folder's "Space Empires IV" folder, Load Game's Change Directory finding it there, and loading it, with the note of what came across only approximately (docs/SETUP.md "Games of the original") |
+| `classic-tutorial.script` | The original's tutorial from the install (docs/LEARNING.md "The original's tutorial and scenarios", spec 06 §5.6): the Learn window's Scenarios tab and Start Game, its first page at once with Previous dim, Previous and Next, Esc keeping the page for Ctrl+H, the status bar's T and a large window's T showing it over that window; saved and loaded again, still the tutorial's, with no page by itself and the page kept |
 | `save-typed-name.script` | Save Game keeping the name typed into its field when Save is clicked instead of pressing Enter |
 | `window-title-bar-front.script`, `window-title-bar.script` | Settings → Graphics, "Hide the window's title bar" (`client/window_hit.hpp`), on the title screens and in a game: with the title bar every press is the game's; without it the band along the top of the title screens and the main window's top row move the window (`assert-window-hit`), OpenSE4's buttons in the band, the minimize button and the map keep their clicks, the window's edges and corners resize it; the Graphics page's note that SDL's offscreen driver keeps the title bar; unticked, every press is the game's again |
 | `settings-files.script` | Settings → Files: the folder in use and its rule (`OPENSE4_USER_DIR` in a script run, which makes the portable switch dim), a saves folder of the player's, one that cannot be made refused, `Default` |
@@ -934,8 +935,8 @@ Run it yourself before committing documentation or content.
 
 ## Saved games of the original
 
-`opense4-convert` converts saved games between the original's format (version 1.95) and
-OpenSE4's, both ways, and describes the original's. The client does the same through Load
+`opense4-convert` converts saved games between the original's format (reading versions
+1.40 to 1.95, writing 1.95) and OpenSE4's, both ways, and describes the original's. The client does the same through Load
 Game and Save Game's *Save for SE IV* (docs/SETUP.md, "Games of the original"); the format
 and what it holds are in docs/spec/08-saved-games.md. It needs the data set the game was
 played with: the installed game found automatically, or `--classic-dir`.

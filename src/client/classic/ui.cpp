@@ -555,6 +555,7 @@ Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonCo
     : Dialog(ui.painter(), title, dialogRect(size), buttonColumn, contentFrame) {
     game_ = &ui;
     if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
+    scenarioButton(ui);
 }
 
 Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
@@ -563,6 +564,30 @@ Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
              buttonColumn) {
     game_ = &ui;
     if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
+    scenarioButton(ui);
+}
+
+void Dialog::scenarioButton(UiContext& ui) {
+    // In a tutorial game of the original's, every large 780x475 dialog has a
+    // 20x20 T button at (746,8) that shows the page of the tutorial's text
+    // shown last again (docs/spec/06 §5.6, confirmed: binary). Not in
+    // OpenSE4's lessons, whose T is the status bar's alone.
+    if (!visible_ || !ui.scenarioTutorial || rect_.size().x != 780.0f || rect_.size().y != 475.0f) return;
+    const ImVec2 cursor = ImGui::GetCursorPos();
+    const Vec2 at = rect_.min + Vec2{746, 8};
+    ImGui::SetCursorScreenPos(ui.at(at));
+    const bool clicked = ImGui::InvisibleButton("##scenario-text", ui.size({20, 20}));
+    const int state = ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+    script::reportItem("scenario-t");   // input scripts press it
+    const Sprite t = ui.art.region("Pictures/Game/Buttons/Close.bmp", 40, state * 20, 20, 20, false);
+    if (t)
+        ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(t.tex.value)), ui.at(at), ui.at(at + Vec2{20, 20}),
+                                             {t.uv.min.x, t.uv.min.y}, {t.uv.max.x, t.uv.max.y});
+    if (clicked) {
+        audio().play("button");
+        ui.requests.showScenarioPage = true;
+    }
+    ImGui::SetCursorPos(cursor);
 }
 
 Dialog::Dialog(const Painter& ui, const char* title, DialogSize size, float buttonColumn) : Dialog(ui, title, dialogRect(size), buttonColumn) {}

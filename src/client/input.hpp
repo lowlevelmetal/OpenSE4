@@ -21,8 +21,9 @@ enum class Action : uint8_t {
     // Windows; ContextHelp opens the manual page of the window in front.
     Help, GameMenu, Designs, Planets, Colonies, Ships, Queues, Research, Empires, Log, EmpireStatus, EndTurn, Settings,
     ContextHelp,
-    // The lesson panel (docs/LEARNING.md): LessonText shows or hides it; the
-    // others press its Next, Back, Skip and Read More while it shows.
+    // The lesson panel (docs/LEARNING.md): LessonText shows or hides it (in a
+    // game of the original's scenarios, Ctrl+H: the page of its text shown
+    // last); the others press its Next, Back, Skip and Read More while it shows.
     LessonText, LessonNext, LessonBack, LessonSkip, LessonReadMore,
     // Orders for the selection (each works only while its button is lit, docs/spec/06 §2.8).
     MoveTo, Warp, Attack, Colonize, Resupply, Repair, ClearOrders, FleetTransfer, BuildQueue, CargoTransfer, LaunchRecover,

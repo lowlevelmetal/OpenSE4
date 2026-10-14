@@ -25,6 +25,7 @@ add_executable(opense4
     client/crash_report.cpp
     client/classic/art.cpp
     client/classic/classic_mode.cpp
+    client/classic/classic_scenario.cpp
     client/classic/classic_probe.cpp
     client/classic/computer_players.cpp
     client/classic/data_export.cpp
@@ -92,6 +93,7 @@ add_executable(opense4
     client/classic/screens/queues.cpp
     client/classic/screens/registry.cpp
     client/classic/screens/research.cpp
+    client/classic/screens/scenario_text.cpp
     client/classic/screens/scrap.cpp
     client/classic/screens/files_settings.cpp
     client/classic/screens/settings_screen.cpp

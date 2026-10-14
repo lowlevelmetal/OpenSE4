@@ -693,6 +693,7 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     session_->onNewTurn = [this] {
         cueMusic(MusicCue::TurnProcessed);  // a new background track every 5 turns
         openLogOnTurn_ = true;
+        scenarioCheckDue_ = true;  // the scenario's page of the turn, after the Log (docs/spec/06 §5.6)
         turnStarting_ = true;      // its moves are shown first (turn_start.hpp)
         strategicQueue_.clear();   // battles of the turn before: GameState::combats holds the new ones
     };
@@ -711,6 +712,42 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     handoffPlayer_ = {};
     handoff_ = false;
     front_.reset();
+    // A game of one of the original's scenarios reads its pages again from
+    // the scenario's stem, by its name in the scenario folder when the stem
+    // is not on this computer (docs/spec/06 §5.6). Its first page comes up
+    // when it has just started, and in a play-by-e-mail turn (the original's
+    // hand-over files); a plain load shows none.
+    scenarioFiles_.reset();
+    const game::ClassicScenarioState& scenario = session_->state().classicScenario;
+    if (scenario.active) {
+        classic::ScenarioFiles files = readScenarioFiles(scenario.stem, scenarioFolder(session_->rules()));
+        if (!files.ok()) log::warn("The scenario {} cannot show its pages:\n{}", scenario.stem, files.problem());
+        else scenarioFiles_ = std::move(files);
+    }
+    ui_->scenarioText = scenarioFiles_ ? &*scenarioFiles_ : nullptr;
+    scenarioCheckDue_ = session_->takeScenarioStart() || (scenario.active && session_->kind() == SessionKind::Pbem);
+}
+
+void ClassicMode::openTurnPage(UiContext& ui) {
+    // At the start of a human empire's turn (a computer-controlled one never
+    // gets one): the first page for the turn and the player (spec 06 §5.6).
+    // Our client shows it to the human whose turn starts on this computer;
+    // in network and e-mail games that is each player's own computer, where
+    // the original showed them all on the host's screen.
+    if (!scenarioFiles_ || lesson_ || !ui.state().classicScenario.active) return;
+    const game::EmpireId me = session_->player();
+    if (!me.valid() || me.index() >= ui.state().empires.size() || ui.state().empire(me).kind != game::PlayerKind::Human) return;
+    if (const auto page = pageForTurn(scenarioFiles_->pages, ui.state().turn, int(me.value) + 1))
+        openScreen(ScreenId::ScenarioText, ScreenArgs{.index = int(*page)});
+}
+
+void ClassicMode::openLastScenarioPage(UiContext& ui) {
+    // Ctrl+H in a game of one of the original's scenarios, and the T buttons
+    // of its tutorial: the page shown last (spec 06 §5.6). The window shows once.
+    if (!scenarioFiles_ || lesson_ || !ui.state().classicScenario.active) return;
+    if (std::any_of(screens_.begin(), screens_.end(), [](const auto& sc) { return sc.first == ScreenId::ScenarioText; })) return;
+    if (const auto page = lastShownPage(scenarioFiles_->pages, ui.options().scenarioPage))
+        openScreen(ScreenId::ScenarioText, ScreenArgs{.index = int(*page)});
 }
 
 std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, const std::string& slug, bool chosen) {
@@ -850,6 +887,11 @@ void ClassicMode::updateLesson(UiContext& ui, bool prompted) {
     if (!prompted && keys.pressed(Action::ContextHelp)) contextHelp();
     const bool toggle = ui.requests.toggleLessonPanel;
     ui.requests.toggleLessonPanel = false;
+    // A game of one of the original's scenarios is never a lesson: there
+    // Ctrl+H, and the T buttons of its tutorial, show the page of its text
+    // shown last (spec 06 §5.6). During a lesson they are the panel's.
+    const bool scenarioPage = std::exchange(ui.requests.showScenarioPage, false);
+    if (!lesson_ && (scenarioPage || (!prompted && keys.pressed(Action::LessonText)))) openLastScenarioPage(ui);
     if (!lesson_ && !options_.scripted) return;
     learn::ClientFacts facts = std::move(ui.facts);   // what the windows told this frame
     for (const auto& [id, screen] : screens_) facts.openWindows.emplace_back(windowId(id));
@@ -1099,6 +1141,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (!refusedKey_.empty() && lesson_) lesson_->refused(std::nullopt, fs.time, refusedKey_);
     refusedKey_.clear();
     ui.lessonRunning = lesson_ != nullptr;
+    // The original's tutorial: its T buttons (spec 06 §2.2, §5.6).
+    ui.scenarioTutorial = !lesson_ && session_->state().classicScenario.active && session_->state().classicScenario.tutorial;
     if (lesson_) {
         lesson_->nameRows(ui);
     } else {
@@ -1118,6 +1162,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (session_->kind() == SessionKind::Hotseat && session_->player() != handoffPlayer_) {
         handoffPlayer_ = session_->player();
         handoff_ = true;
+        scenarioCheckDue_ = true;   // after the hand-over, the player's page of the turn (spec 06 §5.6)
         handoffPassword_.clear();
         handoffError_.clear();
         screens_.clear();
@@ -1638,6 +1683,12 @@ void ClassicMode::openTurnStartWindows(UiContext& ui, const TurnStartGate& gate)
         openLogOnTurn_ = false;
         if (ui.options().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});
+    }
+    // Then a scenario's page of the turn, over the Log (inferred: where the
+    // original opens it among the turn's windows is not traced).
+    if (scenarioCheckDue_ && !handoff_ && gate.log && !isOpen(ScreenId::Finale) && !isOpen(ScreenId::StrategicCombat)) {
+        scenarioCheckDue_ = false;
+        openTurnPage(ui);
     }
 }
 

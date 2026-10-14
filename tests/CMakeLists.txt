@@ -8,6 +8,7 @@ add_executable(opense4_tests
     test_ai.cpp
     test_app_settings.cpp
     test_classic_save.cpp
+    test_classic_scenario.cpp
     test_audio.cpp
     test_audio_mix.cpp
     test_classic_colony_logic.cpp
@@ -131,6 +132,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ability_lines.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/art.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/classic_scenario.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/computer_players.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp

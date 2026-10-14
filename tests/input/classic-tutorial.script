@@ -1,0 +1,95 @@
+# The original's tutorial, started from the Learn window's Scenarios tab (docs/spec/06 §5.6,
+# docs/LEARNING.md "The original's tutorial and scenarios"): its first page at once, Previous
+# and Next through the series, Esc keeping the page shown last for Ctrl+H, the status bar's T
+# and the T of a large window showing it again over that window; a game saved in OpenSE4's
+# format and loaded again stays the tutorial's, shows no page by itself and keeps the page.
+# It needs the installed game's Scenarios folder.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --layout=1024x768 --size=1280x800
+
+wait-screen front
+click item:Scenario in=front
+wait-for item:Scenarios in=front
+click item:Scenarios in=front
+wait-for item:"scenario:Tutorial"
+click item:"scenario:Tutorial"
+assert-absent item:"scenario-problem:*"
+assert-enabled item:"Start Game"
+assert-fits front
+click item:"Start Game"
+wait-screen game
+assert-lesson none
+
+# The first page comes up with the game; Previous is dim on it.
+wait-window scenario-text
+assert-present item:"scenario-file-page:1"
+assert-present item:"scenario-page:1 of *"
+assert-disabled item:Previous in=scenario-text
+assert-fits scenario-text
+screenshot classic-tutorial-page.png
+click item:Next in=scenario-text
+wait-for item:"scenario-page:2 of *"
+assert-enabled item:Previous in=scenario-text
+click item:Previous in=scenario-text
+wait-for item:"scenario-page:1 of *"
+click item:Next in=scenario-text
+wait-for item:"scenario-page:2 of *"
+click item:Next in=scenario-text
+wait-for item:"scenario-file-page:3"
+# Esc closes it and keeps that page for Ctrl+H.
+key Escape
+wait-closed scenario-text
+key Ctrl+H
+wait-window scenario-text
+assert-present item:"scenario-file-page:3"
+click item:Close in=scenario-text
+wait-closed scenario-text
+# The status bar's T button (the tutorial's alone).
+click tag:status:scenario
+wait-window scenario-text
+assert-present item:"scenario-file-page:3"
+click item:Next in=scenario-text
+wait-for item:"scenario-file-page:4"
+key Escape
+wait-closed scenario-text
+# Every large window has the T button too, at its top right: the page comes up over it.
+key F3
+wait-window designs
+click item:scenario-t in=designs
+wait-window scenario-text
+assert-present item:"scenario-file-page:4"
+wait 1
+screenshot classic-tutorial-over-designs.png
+key Escape
+wait-closed scenario-text
+assert-window designs
+key Escape
+wait-closed designs
+
+# Saved in OpenSE4's format and loaded again: still the tutorial, with no page by itself.
+key F2
+wait-window game-menu
+click item:"Save Game" in=game-menu
+wait-window save-game
+click item:##name in=save-game
+key End
+type " tutorial"
+click item:Save in=save-game
+wait-for item:"* tutorial" in=save-game
+click item:Close in=save-game
+wait-closed save-game
+key F2
+wait-window game-menu
+click item:Load in=game-menu
+wait-for item:"* TUTORIAL" in=load-game
+click item:"* TUTORIAL" in=load-game
+wait-closed load-game
+wait 10
+assert-screen game
+assert-no-window scenario-text
+assert-present tag:status:scenario
+key Ctrl+H
+wait-window scenario-text
+assert-present item:"scenario-file-page:4"
+key Escape
+wait-closed scenario-text

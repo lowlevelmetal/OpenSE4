@@ -79,7 +79,8 @@ Conventions used throughout:
   stations, and the Satellite and Weapon Platform units. Nothing else (no scout, other
   colony types, minesweeper, mine layer or carrier) is made, as those templates need
   technology the race does not have yet (inferred).
-- **Scenario and Tutorial.** These load a prepared savegame plus a text script (§12).
+- **Scenario and Tutorial.** These load a prepared savegame plus a text script (§12,
+  spec 06 §5.6).
 
 ### 2.2 New Game: eight tabs
 
@@ -1495,13 +1496,16 @@ highlighted, and an X marks each empire that has met one.
     original writes its own binary format, the saved-game container (spec 08 §1.3, §2).
 - **Scenarios/.** Each scenario is a triple:
   - `<Name>_Settings.txt`: one record with `Name`, `Description` and `Starting Game`,
-    the filename of a prepared savegame in the same folder.
-  - The savegame (binary; ours would be our own save format).
-  - `<Name>_Text.txt`: records with `ID` (unique), `Series` (group), `Segment` (order
-    within the series, for previous and next), `Turn` (the turn on which the page
-    appears, counting the first turn as 0), `For Players` (player numbers), `Text Title`,
+    the filename of a prepared savegame in the same folder. Only `Starting Game` is
+    used: the original never shows `Name` or `Description` (confirmed: binary).
+  - The savegame: a saved game of the original (spec 08), read with the normal loader;
+    the tutorial's is a file of version 1.58 (spec 08 §5.2).
+  - `<Name>_Text.txt`: records with `ID` (unique; ignored), `Series` (group), `Segment`
+    (order within the series, for previous and next), `Turn` (the turn on which the page
+    appears, counting the date 2400.0 as 0), `For Players` (player numbers), `Text Title`,
     `Text Number of Paragraphs`, `Text Paragraph N`, and `Image` (a picture in the
-    scenario folder).
+    scenario folder). The pages keep the file's order.
+  - How a scenario starts, when its pages come up and its window: spec 06 §5.6.
 
 ---
 

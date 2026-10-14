@@ -23,7 +23,9 @@ Since 2026-10-04 the original's saved games (spec 08) are read and written, clos
 that said OpenSE4 could neither import nor export them: Load Game and `--load` import a
 `.gam` of the original, Save Game's *Save for SE IV* and `opense4-convert` write one
 (`game/classic_save.hpp`, docs/SETUP.md "Games of the original"). What a conversion still
-approximates is spec 08 §7.6 and §12. An imported game, like every load in the original,
+approximates is spec 08 §7.6 and §12. Since 2026-10-13 files of versions 1.40 to 1.95 are
+read with the original's version gates (spec 08 §5.2), and the original's tutorial and
+scenarios play with their pages (spec 06 §5.6). An imported game, like every load in the original,
 reseeds the random generator from the game's seed; OpenSE4's own saves keep the generator's
 state (the row "Random generator after a load" above).
 
@@ -579,6 +581,9 @@ design; the hover tooltips of the Research and Intelligence lists. What remains 
 | E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game); it travels in a player's orders only as a Change Email command, empire files do not keep it, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Moves shown in the system window (`ship_glides.cpp`, `turn_start.cpp`) | The moves of an engine call glide together once it has made them all, several steps of one group as one straight glide; a battle that stops the call is shown before the moves that led to it; a click or a key shows a turn's moves at once | Each group's steps animated one after another as they are made, a battle when it starts (spec 06 §2.4, §2.7, §7 Q112) | L |
 | Last turn of a human defeated in its own turn-based turn (`turn_based.cpp` `finishPlayerTurn`) | Marked dead at the end of that turn, without a Lose ending first | Marked dead only after its Lose window (spec 06 §7 Q83); the original's check when a human loses everything during its own turn is not described (inferred) | L |
+| Choosing one of the original's scenarios (`screens/learn_screens.cpp`) | The intro's Tutorial and Scenario open OpenSE4's Learn window; its Scenarios tab lists the original's scenarios beside the mods', and Start Game starts one. The scenario folder is the install's, or that of the last classic mod in use that has one | Tutorial starts the tutorial at once; Scenario opens the "Load Scenario" picker with Change Directory; the folder is that of the `Path.txt` mod when it has one (spec 06 §1.1, §5.6) | L |
+| Scenario pages in network and e-mail games (`classic_mode.cpp` `openTurnPage`) | Each player's own computer shows that player's page at the start of their turn | The host's turn processing shows every human's page on the host's screen; a network player never sees them (spec 06 §5.6) | L |
+| Scenario quirks not copied (`classic_scenario.hpp`) | `For Players` is a list of numbers; "Page i of n" counts i within the page's series; loading a scenario game from the intro keeps it one; a new game never carries the tutorial's flag; the page shown last is kept per empire | Player 1 also gets player 11's pages; i is the page's place in the whole file; Load Game and Resume Game from the intro drop scenario mode; the Game Menu's New keeps the tutorial's flag, "T" and pages (inferred); one page shown last for the game (spec 06 §5.6, spec 08 §3.4) | L |
 
 Seen side by side with the running original on 2026-10-03 ([spec 07](spec/07-observations.md),
 session 5, which gives each original layout in full): the setup screens, the front end,

@@ -79,7 +79,7 @@ sit below; **Close is always the bottom slot** [S].
 | Culture Modifiers | Compare cultures. | List; Close. | Empire Setup → Culture. |
 | Load Game | Pick a save. | Two-column list (name without extension, last-modified time), scroll arrows, Cancel. Clicking a row loads it [T][S]. A 420×520 dialog: "Save Game Name" and "Date" columns, names in capitals, Change Directory and Cancel under the list (observed, spec 07 session 5); Add Existing's "Load Empire" is the same dialog. | Intro; File Menu → Load. |
 | Load Map | Pick a saved map. | (not documented) | Game Setup → Quadrant. |
-| Scenario chooser | Pick a scenario. | (not documented; scenarios listed from `Scenarios/*_Settings.txt`) (inferred) | Intro → Scenario. |
+| Scenario chooser | Pick a scenario. | The Load Game picker in scenario mode, titled "Load Scenario": the first column "Scenario Filename", then Date. It lists the scenario folder's files whose lower-case name contains "_settings.txt", each as its name without that part in capitals, with the file's date; Change Directory and Cancel as in Load Game. A row starts the scenario with the stem folder + name (§5.6); Cancel does nothing. The Tutorial button starts the scenario folder's Tutorial without the picker (confirmed: binary). Ours: the Learn window's Scenarios tab lists them beside the mods' scenarios (§5.6). | Intro → Scenario. |
 | Credits | Rolling credits. | — | Intro. |
 | Login / password prompt | Enter an empire's (or the game master's) password before playing a turn. | — | Loading a multiplayer or password-protected save [T]. |
 
@@ -401,7 +401,7 @@ cultural, population-level and mood lines.
 | TCP/IP Host | Player list, own IP addresses, a status line naming the current step of the host cycle (spec 05), hideable chat; Begin Game, Process Turn, Add/Remove Empire, Play Turn, Chat, Minimize Game, Quit Game [T]. |
 | TCP/IP Player | Source and host IP, player name, status line, chat; Connect to Host, Create Empire, Play Turn, Chat, Minimize, Quit [T]. |
 | Movement log replay | Not a window: in simultaneous games the main window replays the host's 30-day movement (full, stepped by day, per ship, rewind) [T]. Exact behaviour: §7 Q51 (confirmed: binary). |
-| Tutorial / Scenario text window | Titled text with a 128x128 picture and previous/next through a series; re-opened with Ctrl+H or the "T" button in the status bar [T][M]. |
+| Tutorial / Scenario text window | A page of the scenario's text: title, a 128x128 picture, Previous and Next through its series; re-opened with Ctrl+H, and in the tutorial with the "T" buttons. Layout and rules in §5.6 (confirmed: binary). |
 | Finale | Full picture for victory, defeat, or "human players all dead", chosen from lists in Settings.txt [M]. Ours: §1.9 "Other Settings.txt keys". |
 
 ### 1.8 Planets, Construction Queues, Colonies and Ships\Units windows
@@ -1303,7 +1303,8 @@ Left to right: large empire flag, empire name, emperor title and name, "Game Dat
 game starts at 2400.0 and each turn adds 0.1), then stored minerals, organics and
 radioactives, each followed by its resource icon (blue crystal, green organic, red
 radiation symbol). At the far right a minimize button, and during the tutorial a "T"
-button that re-opens the tutorial text [T][S].
+button that re-opens the tutorial text [T][S]. The "T" shows in a game of the tutorial
+only, not in other scenarios, which have Ctrl+H alone (confirmed: binary, §5.6).
 
 Positions (confirmed: binary), relative to the status bar's top-left corner ((11,5) in
 the frame); all text is Futurist Medium (§5.4) with its top at y 4:
@@ -1318,8 +1319,10 @@ the frame); all text is Futurist Medium (§5.4) with its top at y 4:
 - on a simultaneous host's between-turns screen only "Host" at x 36 and the "Game Date"
   pair at x 400, in both layouts;
 - the 20x20 buttons from `Close.bmp`: the minimize button 2 px from the bar's right end
-  and 2 px below its top, and while a tutorial or scenario runs the "T" button just left
-  of it.
+  and 2 px below its top, and in a game of the tutorial the "T" button just left of it
+  (not in the other scenarios; every large 780x475 dialog of the tutorial has a "T" of
+  its own, §5.6). Ours shows the same "T" during OpenSE4's lessons, where it shows the
+  lesson panel again (docs/LEARNING.md).
 
 ### 2.3 Command panel
 
@@ -2123,7 +2126,7 @@ has no Esc or Enter binding (confirmed: binary).
 | Ctrl+U | Movement log replay, the button the executable names "for all ships" (the manual says follow ship) |
 | Ctrl+L | Toggle ship movement lines: flips the per-computer Display Ship Movement Lines switch (§1.9) and redraws the system panel. It is not stored at once but with the other per-computer settings the next time they are saved (a game save or autosave, closing an Options, Combat Options or Combat Replay Options window, starting a new simultaneous game); loading or starting a game before then reads the stored value back and undoes the toggle (confirmed: binary). Ours saves at once and shows a short note (§2.4). |
 | Ctrl+S | Toggle sound effects (the Sound On switch of §1.9; music is not touched) |
-| Ctrl+H | Show tutorial / scenario window |
+| Ctrl+H | Show the scenario's text window again at the page shown last, in a game of a scenario whose pages were read (§5.6). Ours: during OpenSE4's lessons it shows or hides the lesson panel instead (docs/LEARNING.md); a game of the original's scenarios is never a lesson |
 | Shift+A / Shift+C | Tag all / clear tagged ships in the ship list |
 | Shift+click | Tag one ship in the ship list |
 
@@ -2782,7 +2785,100 @@ differs:
 
 `Scenarios/` holds, per scenario `<Name>`: `<Name>_Settings.txt` (keys `Name`,
 `Description`, `Starting Game` = a `.gam` file in the same folder), `<Name>_Text.txt`,
-the starting `.gam`, and 128x128 BMP illustrations. Only `Tutorial` ships [M].
+the starting `.gam`, and 128x128 BMP illustrations. Only `Tutorial` ships [M]; its
+starting game is a saved game of version 1.58 (spec 08 §5.2).
+
+The rest of this section is **(confirmed: binary)** unless marked otherwise.
+
+**Files.** The scenario folder is `Scenarios` in the install, or the folder of that
+name in the mod folder `Path.txt` names when it has one. A scenario is known by its
+*stem*, the full path of its files without the suffixes. `<stem>_Settings.txt` is read
+for `Name`, `Description` and `Starting Game`; only `Starting Game` is used (Name and
+Description are never shown, spec 01 §12). `<stem>_Text.txt` holds the pages, kept in
+the file's order; their `ID` is ignored. A file that is not at its path is looked for
+under the same file name in the scenario folder. Both files are always read; errors in
+either are listed in the game's usual error list, titled "Scenario Settings Errors:
+<file>" or "Scenario Text Errors: <file>", and then the scenario does not start.
+
+**Starting**, in this order: the music switches to the background list; both files are
+read; the Starting Game is loaded from the scenario folder (whatever folder a picker
+showed) with the normal loader, so the saved game decides the human players, the turn
+style, the options and the victory conditions, and the scenario sets none of them; the
+scenario flag is set, and the tutorial flag for the Tutorial only; the stem is kept as a
+full path and both files are read again (loading the game cleared them); the status
+bar's buttons are rebuilt, the main window shows, the pages are checked (below), and the
+intro closes. Nothing ends a scenario but the victory conditions of its saved game.
+
+**Turns.** A page's `Turn` counts game turns from the date 2400.0: it matches when
+(game date − 2400.0) × 10 equals it.
+
+**Pages that come up by themselves.** At the start of each human empire's turn (never a
+computer-controlled one's) and right after the scenario starts, the game opens the first
+page in file order whose Turn matches and whose `For Players` contains the current
+player's number. Only that page opens, modally; the player browses the series from
+there. The test is a search of the text "<n>," in the list's text with a comma added, so
+player 1 also gets a page listed for player 11. A plain load shows no page; a load that
+opens the Next Player screen (a hand-over file, an autosave) does, after it. In a
+simultaneous game the turn processing checks once per living human empire, so the pages
+come up on the host's screen; a network player's computer never shows them.
+
+**The window**: about 416x453, without a title bar. The page's 128x128 `Image`, from the
+scenario folder, at (10,10); none when the field is empty or "None". The title to the
+right of the picture, or across the top without one. "Page i of n", right-aligned just
+above the text, where i is the page's place in the whole file and n the number of pages
+of its series. The text is a scrolling list with one entry per paragraph, each indented
+three spaces; without a picture it starts at y 36. One row of three equal buttons:
+Previous (the file's previous page; dim when the page's `Segment` is 1 or less), Close,
+Next (the file's next page; dim on the file's last page or when the next page belongs to
+another `Series`). Esc closes. On closing, the place in the file of the page on screen
+becomes the "last page shown" (1 at the start), which the saved game keeps (spec 08
+§3.4).
+
+**Showing it again.** Ctrl+H opens the last page shown whenever the scenario flag is set
+and the pages were read. In the tutorial only, a "T" button in the status bar just left
+of the minimize button (§2.2) and a 20x20 "T" at (746,8) in every large 780x475 dialog
+open it too. Other scenarios have Ctrl+H alone.
+
+**Saved games** keep the two flags, the stem and the last page shown, and nothing about
+which pages were seen (spec 08 §3.4). Loading one restores the flags and reads the files
+again; loading another game clears them.
+
+**Quirks.** Loading a game from the intro (Load Game, Resume Game) clears scenario mode
+after the load: no pages, no Ctrl+H, no "T"; the Game Menu's Load keeps it. The Game
+Menu's New clears nothing, so the tutorial's flag, its "T" and its pages carry into the
+new game (inferred: not traced to its end).
+
+**Ours** (`client/classic/classic_scenario.hpp`, `screens/scenario_text.cpp`):
+
+- The intro's Tutorial and Scenario buttons open OpenSE4's Learn window, as before
+  (docs/LEARNING.md). Its Scenarios tab, shown when there are any, lists the original's
+  scenarios by their stem beside the mods' scenarios, the Tutorial among them, with the
+  errors of their files; Start Game starts one as above. The scenario folder is the
+  install's `Scenarios`, or the `Scenarios` folder of the last classic mod in use that has
+  one (OpenSE4's classic mods stand for the `Path.txt` mod folder). A scenario's Starting
+  Game is a conversion the player did not ask for: what its import approximated goes to
+  the log file, not to a note on the screen.
+- The game keeps the flags and the stem (`GameState::classicScenario`, save format 10),
+  apart from the mods' scenarios (`GameState::scenario`), and the page shown last per
+  empire (`InterfaceOptions::scenarioPage`), stored with Set Interface Options when the
+  window closes; the pages are read again from the stem on every load.
+- In a local game a page comes up for the human whose turn starts on this computer: at
+  the scenario's start, at each turn start, and after the Next Player screen of a hotseat
+  game (a load that opens it included). Our client differs in network and e-mail games:
+  each player's own computer shows that player's page at the start of their turn (an
+  e-mail turn file opening counts as one), where the original showed them all on the
+  host's screen. The page opens after the Log, over it (inferred: where the original
+  opens it among the turn's windows is not traced).
+- In OpenSE4's lessons Ctrl+H and the status bar's "T" show or hide the lesson panel as
+  before; a game of the original's scenarios is never a lesson, and there they show its
+  last page. The large dialogs' "T" is the tutorial's alone.
+- Our client differs from these quirks of the original: `For Players` is a list of
+  numbers, so player 1 never gets player 11's page; "Page i of n" counts i within the
+  series (its place among the series' pages in the file); loading a scenario game from the
+  intro keeps it a scenario game; and a new game from the Game Menu (New returns to the
+  intro) never carries the old game's tutorial flag.
+- The window's places beyond the picture, the title and the text's top (the page line,
+  the text's bottom, the buttons) are ours (inferred).
 
 ### 5.7 AI files and other folders
 
@@ -2832,8 +2928,8 @@ kind, and the tactical map then draws its own move arrows and crosshairs.
 | Folder / file | Kind | Structure |
 |---|---|---|
 | `Dsgnname/*.TXT` | text, CRLF, Windows-1252 (some accented names) | One candidate design name per line, no header, alphabetical; 15 lists of 40–436 names with DOS 8.3 upper-case file names. The empire's "Design Name File" picks one; the designer offers names from it [M][T]. The player's name picker lists every line in file order; clicking one picks it, or the player types a name. Computer players and ministers take the next name no existing design uses; when the file runs out they reuse it with Roman numerals II to XV added; with no file, names are "Design <n>" (confirmed: binary). **Ship names** are the design name, a space and a four-digit serial with leading zeros, such as "Hood 0007"; the serial is one more than the highest serial among existing objects of that design (read from the last four characters of their names), so a number freed at the top is reused. The Combat Simulator numbers its ships with a counter per side instead (confirmed: binary). Manual captures show a bracketed hull `Code` after the serial [S]; the 1.95 executable never puts VehicleSize.txt `Code` into a name. It shows it in one place only: the Log's combat details, where a ship or base row reads "<ship name> (<Code>)" (§4.1, §7 Q18) (confirmed: binary). |
-| `Scenarios/<N>_Settings.txt` | text | Standard record format, one record: Name, Description, Starting Game [M]. |
-| `Scenarios/<N>_Text.txt` | text | Records with `ID`, `Series`, `Segment` (order inside the series; previous/next browse a series), `Turn` (0 = first turn), `For Players` (player numbers), `Text Title`, `Text Number of Paragraphs`, `Text Paragraph <n>`, `Image` (a BMP in Scenarios/) [M]. |
+| `Scenarios/<N>_Settings.txt` | text | Standard record format, one record: Name, Description, Starting Game [M]. Only Starting Game is used (§5.6, confirmed: binary). |
+| `Scenarios/<N>_Text.txt` | text | Records with `ID`, `Series`, `Segment` (order inside the series; previous/next browse a series), `Turn` (0 = the date 2400.0), `For Players` (player numbers), `Text Title`, `Text Number of Paragraphs`, `Text Paragraph <n>`, `Image` (a BMP in Scenarios/) [M]. Pages keep the file's order and their ID is ignored (§5.6, confirmed: binary). |
 | `Path.txt` | text | One record: `Using Mod Directory` [M]. |
 | `Empires/*.emp` | **binary** | 3–4 KB, entropy about 7.2–7.6 bits/byte, no readable strings. The start looks like a type-tagged value stream (a tag byte, then 1, 2 or 4 bytes, or a length-prefixed string whose bytes are obfuscated) [M]. Holds a saved empire (name, race style, traits, experience, password...) [T]. Treat as opaque; import is out of scope. |
 | `SaveGame/*.gam` | **binary** | Same tagged/obfuscated style (the tutorial `.gam` is 75 KB), except for one **plain ASCII fixed-width summary block** near the start: the format version (`1.58`), the date, the player count, `Turn Based`/`Simultaneous`, `Same Machine`/`Different Machines`, then per player a number, empire name, emperor title and name, and `Alive` [M]. This is likely what the load/login screens read without decoding the rest (inferred). |
@@ -3023,7 +3119,8 @@ the 800x600 layout in §2.1.1.
    Our client's intro has the original's buttons in its order, and Resume Game loads the
    last game saved with Save Game. It differs: it has no launcher and no logo sequence
    (the launcher is optional for parity: it only opens documents); Tutorial and Scenario
-   open OpenSE4's Learn window; Credits shows our own credits; OpenSE4's Multiplayer,
+   open OpenSE4's Learn window, whose Scenarios tab starts the original's tutorial and
+   scenarios (§5.6); Credits shows our own credits; OpenSE4's Multiplayer,
    Settings and Manual sit in a small row at the top right.
 10. **Map colours.** **Answer:** every colour and overlay rule is in §2.6 (galaxy panel,
     Galaxy Map window, Systems To Avoid, Borders) and §2.4 (system grid, waypoint
