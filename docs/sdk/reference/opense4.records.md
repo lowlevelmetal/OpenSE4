@@ -109,6 +109,8 @@ The Empire Options switches and what the windows remember. Only auto_claim_colon
 | `design_condensed` | `bool` | The designer's condensed view. |
 | `designs_hide_obsolete` | `bool` | The Designs window hides obsolete designs. |
 | `designs_stats_view` | `bool` | The Designs window shows statistics. |
+| `cargo_step` | `int` | How much a click moves in Transfer Cargo: 0 one, 1 five, 2 ten (the default), 3 a hundred, 4 all. |
+| `units_step` | `int` | How much a click moves in Launch \ Recover Units: 0 one, 1 five, 2 ten (the default), 3 all. |
 
 ## `Order`
 
@@ -124,6 +126,7 @@ Its order list.
 | `amount` | `int` | A number whose meaning depends on the kind (see below). |
 | `from_resource` | `str` | Convert Resources: the resource converted. |
 | `to_resource` | `str` | Convert Resources: the resource it becomes. |
+| `cargo` | `str` | Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when design names it. |
 
 ## `PackageItem`
 

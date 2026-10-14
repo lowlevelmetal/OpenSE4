@@ -553,6 +553,9 @@ private:
         for (size_t k = 0; k < o.queuesShown.size(); ++k)
             if (o.queuesShown[k]) u.queuesShown = static_cast<uint8_t>(u.queuesShown | (1u << k));
         u.simulatorNoObsolete = o.simulatorNoObsolete;
+        // The transfer windows' Move One.. radios, 1-based in the file (§3.6.7).
+        u.cargoStep = static_cast<uint8_t>(std::clamp(int{o.cargoTransferTab} - 1, 0, 4));
+        u.unitsStep = static_cast<uint8_t>(std::clamp(int{o.unitsTransferTab} - 1, 0, 3));
         u.shipsTab = static_cast<uint8_t>(std::max(0, int{o.shipsTab} - 1));
         u.shipsShown = 0;
         for (size_t k = 0; k < o.shipsShown.size(); ++k)
@@ -943,23 +946,13 @@ private:
 
     // A unit design of this kind for a load, drop, launch or recover: the
     // first stack of that kind in `cargo`, else the owner's newest design of it.
-    DesignId unitOfKind(EmpireId owner, ruleset::VehicleType type, const Cargo* cargo) {
-        if (cargo)
-            for (const UnitStack& u : cargo->units)
-                if (r_.hull(s_.design(u.design).hull).type == type) return u.design;
-        const Empire& e = s_.empire(owner);
-        for (auto it = e.designs.rbegin(); it != e.designs.rend(); ++it)
-            if (r_.hull(s_.design(*it).hull).type == type) return *it;
-        return {};
-    }
-
     std::vector<Order> orderList(const OrderList& list, EmpireId owner, const Vehicle* vehicle, const Colony* colony) {
         std::vector<Order> out;
         std::vector<Order> converted;
         for (const OrderRecord& rec : list.orders) {
             // Launch or Recover of every unit kind (kind byte 0): one order per kind (§3.8.8).
             if ((rec.kind == 34 || rec.kind == 35) && rec.extra == 0) {
-                std::vector<Order> each = everyUnitKind(rec, owner, vehicle, colony);
+                std::vector<Order> each = everyUnitKind(rec, vehicle, colony);
                 if (each.empty()) {
                     count("launch and recover orders of every unit kind with nothing to act on (dropped)");
                     converted.push_back(Order{OrderKind::Count});
@@ -967,7 +960,7 @@ private:
                 for (Order& o : each) converted.push_back(o);
                 continue;
             }
-            std::optional<Order> o = order(rec, owner, vehicle, colony);
+            std::optional<Order> o = order(rec, owner, colony);
             if (o) converted.push_back(*o);
             else converted.push_back(Order{OrderKind::Count});   // a placeholder keeps the positions
         }
@@ -982,9 +975,8 @@ private:
     }
 
     // A Launch or Recover of every unit kind: a launch per kind the launcher
-    // carries, a recovery per kind that comes back (fighters, satellites) of
-    // which the owner has a design.
-    std::vector<Order> everyUnitKind(const OrderRecord& rec, EmpireId owner, const Vehicle* vehicle, const Colony* colony) {
+    // carries, a recovery per kind that comes back (fighters, satellites).
+    std::vector<Order> everyUnitKind(const OrderRecord& rec, const Vehicle* vehicle, const Colony* colony) {
         using V = ruleset::VehicleType;
         std::vector<Order> out;
         const Cargo* from = vehicle ? &vehicle->cargo : colony ? &colony->cargo : nullptr;
@@ -993,19 +985,21 @@ private:
                                               : std::array<V, 4>{V::Fighter, V::Satellite, V::Count, V::Count};
         for (V type : kinds) {
             if (type == V::Count) continue;
-            const DesignId d = unitOfKind(owner, type, launch ? from : nullptr);
-            if (!d.valid() || (launch && (!from || from->unitCount(d) <= 0))) continue;
+            if (launch && (!from || std::none_of(from->units.begin(), from->units.end(), [&](const UnitStack& u) {
+                               return u.count > 0 && r_.hull(s_.design(u.design).hull).type == type;
+                           })))
+                continue;
             Order o;
             o.kind = launch ? OrderKind::LaunchUnits : OrderKind::RecoverUnits;
             o.amount = -1;
-            o.design = d;
+            o.cargo = cargoKindOf(type);
             out.push_back(o);
         }
         if (!out.empty()) count("launch and recover orders of every unit kind (now one order per kind)");
         return out;
     }
 
-    std::optional<Order> order(const OrderRecord& rec, EmpireId owner, const Vehicle* vehicle, const Colony* colony) {
+    std::optional<Order> order(const OrderRecord& rec, EmpireId owner, const Colony* colony) {
         Order o;
         const SystemId sys = inRange(rec.system, s_.galaxy.systems.size()) ? SystemId{rec.system - 1u} : SystemId{};
         const Location at{sys, sector(rec.sector)};
@@ -1047,13 +1041,10 @@ private:
                 o.amount = -1;
                 if (sys.valid()) o.location = at;
                 if (rec.kind == 7) o.object = target.object;
-                if (rec.extra != 1) {
-                    const auto type = cargoKindType(rec.extra);
-                    if (!type) return dropped("load and drop orders of an unknown cargo kind (dropped)");
-                    o.design = unitOfKind(owner, *type, rec.kind == 7 && vehicle ? &vehicle->cargo : nullptr);
-                    if (!o.design.valid()) return dropped("load and drop orders for units the empire has no design of (dropped)");
-                    count("load and drop orders by cargo kind (now one design of that kind)");
-                }
+                // The kind byte is the cargo kind the order moves, as in OpenSE4 (§3.8.8).
+                if (rec.extra < 1 || rec.extra >= static_cast<uint8_t>(CargoKind::Count))
+                    return dropped("load and drop orders of an unknown cargo kind (dropped)");
+                o.cargo = static_cast<CargoKind>(rec.extra);
                 return o;
             }
             case 8:
@@ -1110,13 +1101,11 @@ private:
             case 35: {
                 o.kind = rec.kind == 34 ? OrderKind::LaunchUnits : OrderKind::RecoverUnits;
                 o.amount = -1;
-                // The kind byte is a cargo kind, as Load's (§3.8.8, Q16).
-                const auto type = cargoKindType(rec.extra);
-                if (!type) return dropped("launch and recover orders of an unknown unit kind (dropped)");
-                const Cargo* from = vehicle ? &vehicle->cargo : colony ? &colony->cargo : nullptr;
-                o.design = unitOfKind(owner, *type, rec.kind == 34 ? from : nullptr);
-                if (!o.design.valid()) return dropped("launch and recover orders for units the empire has no design of (dropped)");
-                count("launch and recover orders by unit kind (now one design of that kind)");
+                // The kind byte is a cargo kind, as Load's (§3.8.8, Q16), and the
+                // order's own in OpenSE4; population is no unit kind.
+                if (rec.extra < 2 || rec.extra >= static_cast<uint8_t>(CargoKind::Count))
+                    return dropped("launch and recover orders of an unknown unit kind (dropped)");
+                o.cargo = static_cast<CargoKind>(rec.extra);
                 return o;
             }
             case 42: o.kind = OrderKind::Analyze; return o;

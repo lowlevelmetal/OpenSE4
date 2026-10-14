@@ -374,6 +374,7 @@ bool Battle::setup() {
     interference_ = overrides_ ? overrides_->interference : detail::sensorInterference(s_, where_);
     disruption_ = overrides_ ? overrides_->disruption : detail::shieldDisruption(s_, where_);
     satelliteCap_ = static_cast<int>(r_.setting("Maximum Satellites Per Player Per Sector", 100));
+    mineCap_ = r_.setting("Maximum Mines Per Player Per Sector", 100);
 
     const detail::Forces forces = detail::battleForces(r_, s_, where_, check_);
     if (!forces.battle) return false;
@@ -1008,17 +1009,19 @@ bool Battle::hostileTo(int i, int t) const {
 
 int Battle::occupant(int x, int y) const { return onMap(x, y) ? occ_[static_cast<size_t>(y * kW + x)] : -1; }
 
-std::array<int, 3> Battle::launchLeft(int i) const {
+std::array<int, kLaunchKinds> Battle::launchLeft(int i) const {
     const Piece& p = pieces_[i];
-    std::array<int, 3> left{};
+    std::array<int, kLaunchKinds> left{};
     if (!p.alive || p.mothballed) return left;
     if (p.kind == Kind::Planet) {
         // Up to 100 of each kind per combat turn (confirmed: binary).
-        left = {kPlanetLaunch, kPlanetLaunch, kPlanetLaunch};
+        left.fill(kPlanetLaunch);
     } else if (p.kind == Kind::Vehicle) {
         left[kLaunchFighters] = static_cast<int>(detail::componentSum(r_, s_, p.unit, AbilityKind::LaunchRecoverFighters));
         left[kLaunchSatellites] = static_cast<int>(detail::componentSum(r_, s_, p.unit, AbilityKind::LaunchRecoverSatellites));
         left[kLaunchDrones] = static_cast<int>(detail::componentSum(r_, s_, p.unit, AbilityKind::LaunchDrones));
+        // A ship lays mines at its mine-laying rate per combat turn (confirmed: binary).
+        left[kLaunchMines] = static_cast<int>(detail::componentSum(r_, s_, p.unit, AbilityKind::LayMines));
     }
     for (size_t k = 0; k < left.size(); ++k) left[k] = std::max(0, left[k] - p.launchedNow[k]);
     return left;
@@ -1029,6 +1032,7 @@ int Battle::launchKindOf(DesignId design) const {
         case VehicleType::Fighter: return kLaunchFighters;
         case VehicleType::Satellite: return kLaunchSatellites;
         case VehicleType::Drone: return kLaunchDrones;
+        case VehicleType::Mine: return kLaunchMines;
         default: return -1;
     }
 }
@@ -1037,6 +1041,15 @@ int Battle::satellitesPresent(EmpireId e) const {
     int present = 0;
     for (const Piece& q : pieces_)
         if (q.alive && q.owner == e && q.kind == Kind::UnitGroup && q.vtype == VehicleType::Satellite) present += q.unit.count;
+    return present;
+}
+
+int64_t Battle::minesPresent(EmpireId e) const {
+    int64_t present = 0;
+    for (const Vehicle& v : s_.vehicles)
+        if (v.count > 0 && v.owner == e && v.location == where_ && vehicleType(r_, s_, v) == VehicleType::Mine) present += v.count;
+    if (const auto it = minesLaid_.find(e.value); it != minesLaid_.end())
+        for (const UnitStack& st : it->second) present += st.count;
     return present;
 }
 
@@ -2529,7 +2542,7 @@ void Battle::moveSeekers(EmpireId e) {
 int Battle::launchFrom(int i) {
     Piece& c = pieces_[i];
     if (!c.alive || c.mothballed || (c.kind != Kind::Vehicle && c.kind != Kind::Planet) || c.unit.cargo.units.empty()) return 0;
-    std::array<int, 3> left = launchLeft(i);
+    std::array<int, kLaunchKinds> left = launchLeft(i);
     if (left[kLaunchFighters] + left[kLaunchDrones] <= 0) return 0;
     const EmpireId e = c.owner;
     const Strategy& S = strategy(e, strategyIndex(i));   // the carrier's strategy gives the batches
@@ -3961,6 +3974,35 @@ void Battle::finish() {
         v.builtTurn = s_.turn;
         s_.addVehicle(std::move(v));
     }
+
+    // Mines laid in the battle join their owner's minefield in the sector
+    // (spec 04 §10.6, confirmed: binary): the owner's last mine group there in
+    // object order, whatever its designs, as a launch outside combat joins
+    // one (spec 03 §12), else a new group (inferred).
+    for (const auto& [owner, laid] : minesLaid_)
+        for (const UnitStack& st : laid) {
+            if (st.count <= 0) continue;
+            Vehicle* last = nullptr;
+            for (VehicleId id : vehiclesInObjectOrder(s_))
+                if (Vehicle* g = s_.vehicle(id); g && g->count > 0 && g->owner == EmpireId{owner} && g->location == where_ &&
+                                                 vehicleType(r_, s_, *g) == VehicleType::Mine)
+                    last = g;
+            if (last) {
+                addGroupUnits(s_, *last, st.design, st.count);
+                continue;
+            }
+            const Design& d = s_.design(st.design);
+            Vehicle v;
+            v.owner = EmpireId{owner};
+            v.design = st.design;
+            v.name = d.name;
+            v.location = where_;
+            v.count = st.count;
+            v.damage.assign(d.entries.size(), 0);
+            v.builtTurn = s_.turn;
+            Vehicle& added = s_.addVehicle(std::move(v));
+            added.supply = initialSupply(r_, s_, added);
+        }
 }
 
 } // namespace detail

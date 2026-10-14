@@ -3402,11 +3402,17 @@ TEST_CASE("movement: planets launch and recover units by order, with no bay") {
     CHECK(inSpace(fighter) == 1000);  // 1000 of each kind a turn
     CHECK(w.s.colony(home)->cargo.unitCount(fighter) == 200);
     CHECK(w.s.colony(home)->orders.empty());
-    CHECK(w.logged(kA, "launched 1000"));
-    // The units-in-space cap (1000) is reached: the next launch is refused.
+    // A launch that went well is not logged, and the per-turn rate gives no
+    // warning (spec 03 §12 "Warnings", confirmed: binary).
+    CHECK_FALSE(w.logged(kA, "launched"));
+    CHECK_FALSE(w.logged(kA, "Launch Warning"));
+    // The units-in-space cap (1000) is reached: the next launch is refused,
+    // with a warning in the log.
     w.s.colony(home)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)};
     w.move();
     CHECK(inSpace(fighter) == 1000);
+    CHECK(w.logged(kA, "Launch Warning"));
+    CHECK(w.logged(kA, "the most this game allows"));
     // Mines count against the cap too; below it, a launch may go past it.
     w.s.options.maxUnitsPerPlayer = 1001;
     w.s.colony(home)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, mine, -1)};

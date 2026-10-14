@@ -99,7 +99,8 @@ def toggle_weapon(piece: Ref = -1, weapon: int = -1, on: bool = True, *, empire:
 
 
 def launch(piece: Ref = -1, design: Optional[Ref] = None, count: int = 0, group: int = 0, *, empire: Optional[Ref] = None) -> Dict[str, Any]:
-    """Launch units.
+    """Launch units: fighters, satellites and drones become groups on the map, mines join the sector's
+    minefield.
 
     piece: The piece acting (-1 by default: none).
     design: The units to launch.
@@ -431,6 +432,33 @@ def resolve_combat(*, empire: Optional[Ref] = None) -> Dict[str, Any]:
     }
 
 
+def recover(piece: Ref = -1, target: Ref = -1, group: int = 0, *, empire: Optional[Ref] = None) -> Dict[str, Any]:
+    """Take a fighter or satellite group that the piece launched in launch session group back aboard.
+
+    piece: The piece acting (-1 by default: none).
+    target: The target piece (-1 by default: none).
+    group: A combat group (0 to 9), a launch session, or a fighter group size.
+    empire: The side giving it: the empire whose phase it is.
+    """
+    return {
+        'kind': 'recover',
+        'empire': _id(empire, 'empire', 'recover.empire'),
+        'piece': _piece(piece, 'recover.piece'),
+        'target': _piece(target, 'recover.target'),
+        'weapon': -1,
+        'instance': -1,
+        'x': -1,
+        'y': -1,
+        'path': [],
+        'design': None,
+        'count': 0,
+        'group': _int(group, 'recover.group'),
+        'formation': -1,
+        'on': True,
+        'alone': False,
+    }
+
+
 # Every kind, in the docs' order.
 KINDS = (
     'move',
@@ -449,4 +477,5 @@ KINDS = (
     'auto_phase',
     'end_phase',
     'resolve_combat',
+    'recover',
 )

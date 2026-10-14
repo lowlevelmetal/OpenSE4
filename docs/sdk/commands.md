@@ -526,6 +526,43 @@ stored cargo (never its own population). Each unit thrown away counts as lost.
 {"kind": "jettison_cargo", "vehicle": 33, "units": [{"design": 21, "count": 4}]}
 ```
 
+### `launch_units_now`
+
+What a click in the Launch \ Recover Units window does: in a turn-based game,
+one of our ships, bases or colonies launches units of one design from its
+cargo at once, within its launches of the turn. The orders are not touched,
+and nothing is logged. Refused in a simultaneous game, and when nothing could
+be launched (the reason names the warnings the window shows).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `vehicle` | vehicle id, or null | The ship or base... |
+| `planet` | object id, or null | ...or the colony that launches. |
+| `design` | design id, or null | The units' design. |
+| `amount` | int | How many; -1 (the default) for as many as it may. |
+
+```json
+{"kind": "launch_units_now", "vehicle": 33, "design": 21, "amount": 10}
+```
+
+### `recover_units_now`
+
+The window's other half: in a turn-based game, one of our ships, bases or
+colonies takes units of one of our unit groups in its sector aboard at once,
+as far as its cargo has room.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `vehicle` | vehicle id, or null | The ship or base... |
+| `planet` | object id, or null | ...or the colony that takes them aboard. |
+| `group` | vehicle id, or null | The unit group in space. |
+| `design` | design id, or null | One design of the group; null for every design. |
+| `amount` | int | How many; -1 (the default) for as many as fit. |
+
+```json
+{"kind": "recover_units_now", "vehicle": 33, "group": 95, "amount": -1}
+```
+
 ## Designs
 
 ### `create_design`
@@ -911,10 +948,28 @@ same fields; each kind uses some of them.
 | `amount` | int | A number whose meaning depends on the kind (see below). |
 | `from_resource` | resource | Convert Resources: the resource converted. |
 | `to_resource` | resource | Convert Resources: the resource it becomes. |
+| `cargo` | cargo_kind | Load, Drop, Launch and Recover: the kind of cargo they move; `none` (the default) when `design` names it. |
 
 `from_resource` and `to_resource` are `"minerals"` unless the order converts
 resources. An order whose resource is no resource does nothing; it reads as a
 number.
+
+A player gives Load Cargo, Drop Cargo, Launch Units and Recover Units for a
+kind of cargo (`cargo`), and they move every design of that kind. With `cargo`
+`none` they move the units of `design`, or population when `design` is null.
+
+### `cargo_kind`
+
+| Value | Meaning |
+|---|---|
+| `none` | The order names a design instead. |
+| `population` | People. |
+| `troops` | Troops. |
+| `fighters` | Fighters. |
+| `mines` | Mines. |
+| `satellites` | Satellites. |
+| `drones` | Drones. |
+| `weapon_platforms` | Weapon platforms. |
 
 ### `order_kind`
 
@@ -928,10 +983,10 @@ number.
 | `explore` | | Explore the nearest system we have not explored. | `{"kind": "explore"}` |
 | `colonize` | object, amount | Colonize the planet. | `{"kind": "colonize", "object": 19}` |
 | `sentry` | | Wait, ready to fight. | `{"kind": "sentry"}` |
-| `load_cargo` | design, amount | Load units of the design, or population (no design); amount -1 is as much as fits. | `{"kind": "load_cargo", "amount": -1}` |
-| `drop_cargo` | design, amount | Drop units or population, as for loading. | `{"kind": "drop_cargo", "design": 21, "amount": 4}` |
-| `launch_units` | design, amount | Launch units of the design from cargo. | `{"kind": "launch_units", "design": 21, "amount": 10}` |
-| `recover_units` | design, vehicle, amount | Take units back aboard: every group of the design's kind, or only `design` from the group `vehicle`, up to `amount`. | `{"kind": "recover_units", "design": 21, "vehicle": 95, "amount": 10}` |
+| `load_cargo` | design, amount, cargo | Load a kind of cargo (every design of it), or units of the design, or population (neither); amount -1 is as much as fits. | `{"kind": "load_cargo", "cargo": "troops", "amount": -1}` |
+| `drop_cargo` | design, amount, cargo | Drop a kind of cargo, units or population, as for loading. | `{"kind": "drop_cargo", "cargo": "population", "amount": -1}` |
+| `launch_units` | design, amount, cargo | Launch a kind of unit (every design of it), or units of the design, from cargo. | `{"kind": "launch_units", "cargo": "fighters", "amount": -1}` |
+| `recover_units` | design, vehicle, amount, cargo | Take units back aboard: every group of the kind (or of the design's kind), or only `design` from the group `vehicle`, up to `amount`. | `{"kind": "recover_units", "cargo": "satellites", "amount": -1}` |
 | `cloak` | | Switch the cloak on. | `{"kind": "cloak"}` |
 | `decloak` | | Switch the cloak off. | `{"kind": "decloak"}` |
 | `sweep_mines` | | Sweep the mines in the sector. | `{"kind": "sweep_mines"}` |
@@ -1024,7 +1079,7 @@ battle's piece list and in a piece's weapon list.
 | `move` | piece, x, y or path, alone | Move toward a square, or along a path of neighbouring squares. | `{"kind": "move", "piece": 2, "x": 10, "y": 4}` |
 | `fire` | piece, target, weapon, instance | Fire at a piece. | `{"kind": "fire", "piece": 2, "target": 7, "weapon": -1}` |
 | `toggle_weapon` | piece, weapon, on | Switch a weapon (or all) on or off. | `{"kind": "toggle_weapon", "piece": 2, "weapon": 0, "on": false}` |
-| `launch` | piece, design, count, group | Launch units. | `{"kind": "launch", "piece": 2, "design": 21, "count": 6, "group": 1}` |
+| `launch` | piece, design, count, group | Launch units: fighters, satellites and drones become groups on the map, mines join the sector's minefield. | `{"kind": "launch", "piece": 2, "design": 21, "count": 6, "group": 1}` |
 | `launch_fighters` | piece, design, count, group | Launch fighters in groups of `group` (5 to 50). | `{"kind": "launch_fighters", "piece": 2, "design": 22, "count": 20, "group": 10}` |
 | `drop_troops` | piece | Land troops on the neighbouring enemy colony. | `{"kind": "drop_troops", "piece": 5}` |
 | `ram` | piece, target | Ram a neighbouring piece. | `{"kind": "ram", "piece": 2, "target": 7}` |
@@ -1037,6 +1092,7 @@ battle's piece list and in a piece's weapon list.
 | `auto_phase` | | The strategies play the rest of this phase. | `{"kind": "auto_phase"}` |
 | `end_phase` | | End the side's phase. | `{"kind": "end_phase"}` |
 | `resolve_combat` | | Every side follows its strategies to the end of the battle. | `{"kind": "resolve_combat"}` |
+| `recover` | piece, target, group | Take a fighter or satellite group that the piece launched in launch session `group` back aboard. | `{"kind": "recover", "piece": 2, "target": 9, "group": 1}` |
 
 ## Types the commands carry
 
@@ -1278,6 +1334,8 @@ plus one, newest first, 0 for none.
 | `design_condensed` | bool | The designer's condensed view. |
 | `designs_hide_obsolete` | bool | The Designs window hides obsolete designs. |
 | `designs_stats_view` | bool | The Designs window shows statistics. |
+| `cargo_step` | int | How much a click moves in Transfer Cargo: 0 one, 1 five, 2 ten (the default), 3 a hundred, 4 all. |
+| `units_step` | int | How much a click moves in Launch \ Recover Units: 0 one, 1 five, 2 ten (the default), 3 all. |
 
 ## Enumerations the commands use
 

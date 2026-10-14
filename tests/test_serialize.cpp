@@ -253,6 +253,18 @@ TEST_CASE("serialize: state round trip is byte-identical after several turns") {
     }
 }
 
+namespace {
+
+// The last command of type T in a list (null: none).
+template <class T>
+const T* lastCommand(const std::vector<Command>& list) {
+    for (auto it = list.rbegin(); it != list.rend(); ++it)
+        if (const T* x = std::get_if<T>(&*it)) return x;
+    return nullptr;
+}
+
+} // namespace
+
 TEST_CASE("serialize: orders round trip for every command type") {
     const Rules& r = engineRules();
     const EmpireOrders orders = everyCommandSample(r);
@@ -278,19 +290,36 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(sent.request.front().planet == ObjectId{12u});
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
-    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 5]).email == "someone@example.org");
-    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 4]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
-    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 3]);
-    CHECK(tagged.vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
-    CHECK(tagged.orders.size() == 1);
-    CHECK(tagged.repeat);
-    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands[c.size() - 2]);
-    CHECK(leader.fleet == FleetId{46u});
-    CHECK(leader.vehicle == VehicleId{47u});
+    // The last command of each kind, found by kind (newer kinds are appended to the samples).
+    const auto& all = loaded->commands;
+    const auto* email = lastCommand<cmd::SetEmail>(all);
+    REQUIRE(email);
+    CHECK(email->email == "someone@example.org");
+    const auto* entry = lastCommand<cmd::EnterSector>(all);
+    REQUIRE(entry);
+    CHECK(entry->tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
+    const auto* tagged = lastCommand<cmd::OrderTagged>(all);
+    REQUIRE(tagged);
+    CHECK(tagged->vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
+    CHECK(tagged->orders.size() == 1);
+    CHECK(tagged->repeat);
+    const auto* leader = lastCommand<cmd::SetFleetLeader>(all);
+    REQUIRE(leader);
+    CHECK(leader->fleet == FleetId{46u});
+    CHECK(leader->vehicle == VehicleId{47u});
     // A mod's order (format 9).
-    const auto& mod = std::get<cmd::ModCommand>(loaded->commands.back());
-    CHECK(mod == std::get<cmd::ModCommand>(c.back()));
-    CHECK(mod.args == R"({"power":2,"note":"x"})");
+    const auto* mod = lastCommand<cmd::ModCommand>(all);
+    REQUIRE(mod);
+    CHECK(*mod == *lastCommand<cmd::ModCommand>(c));
+    CHECK(mod->args == R"({"power":2,"note":"x"})");
+    // The Launch \ Recover Units window's commands and an order's cargo kind (format 10).
+    const auto* launch = lastCommand<cmd::LaunchUnitsNow>(all);
+    REQUIRE(launch);
+    CHECK(*launch == cmd::LaunchUnitsNow{VehicleId{49u}, ObjectId{}, DesignId{50u}, 5});
+    const auto* recover = lastCommand<cmd::RecoverUnitsNow>(all);
+    REQUIRE(recover);
+    CHECK(*recover == cmd::RecoverUnitsNow{{}, ObjectId{51u}, VehicleId{52u}, DesignId{}, -1});
+    CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front().cargo == CargoKind::Satellites);
 }
 
 // ---- Hostile input ------------------------------------------------------------------------------------
@@ -523,8 +552,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x136cc7ee252f6d26ull;
-    constexpr size_t kGoldenSize = 1948;
+    constexpr uint64_t kGoldenChecksum = 0xd43e3027608cb71aull;
+    constexpr size_t kGoldenSize = 1951;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

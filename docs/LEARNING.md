@@ -1002,7 +1002,8 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 
 **Battle order kinds** (`battle_order`): `move`, `fire`, `toggle-weapon`, `launch`,
 `launch-fighters`, `drop-troops`, `ram`, `capture`, `set-leader`, `set-member`,
-`clear-group`, `clear-all-groups`, `auto`, `auto-phase`, `end-turn`, `resolve-combat`.
+`clear-group`, `clear-all-groups`, `auto`, `auto-phase`, `end-turn`, `resolve-combat`,
+`recover`.
 
 **Window tabs** (`tab`, and each is a UI tag too), `<window>:<tab>`:
 

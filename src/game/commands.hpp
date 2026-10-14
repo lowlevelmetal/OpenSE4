@@ -159,6 +159,32 @@ struct JettisonCargo {
     std::vector<UnitStack> units;              // units per design
 };
 
+// The Launch \ Recover Units window (spec 03 §12, confirmed: binary): in a
+// turn-based game, the own ship, base or colony named (one of `vehicle`,
+// `planet`) launches `amount` (-1: as many as allowed) units of `design`
+// from its cargo, or recovers up to `amount` units from the own unit group
+// `group` in its sector (`design`: one design of the group; invalid: every
+// design), at once. The order list is not touched or run, nothing is
+// logged, and launches count against the holder's launch budget of the turn.
+// Refused when nothing could be moved (with the warnings, movement::
+// checkLaunch, checkRecover) and in simultaneous games, where the window is
+// not offered.
+struct LaunchUnitsNow {
+    VehicleId vehicle;
+    ObjectId planet;
+    DesignId design;
+    int amount = -1;
+    bool operator==(const LaunchUnitsNow&) const = default;
+};
+struct RecoverUnitsNow {
+    VehicleId vehicle;
+    ObjectId planet;
+    VehicleId group;
+    DesignId design;
+    int amount = -1;
+    bool operator==(const RecoverUnitsNow&) const = default;
+};
+
 // ---- Designs --------------------------------------------------------------------------------
 struct CreateDesign { Design design; };   // id/owner are assigned by the engine
 // Changes an own prototype design in place (spec 03 §4.1): refused for a
@@ -285,7 +311,8 @@ using Command = std::variant<
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
-    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader, cmd::ModCommand>;
+    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader, cmd::ModCommand,
+    cmd::LaunchUnitsNow, cmd::RecoverUnitsNow>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

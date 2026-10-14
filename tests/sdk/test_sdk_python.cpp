@@ -85,7 +85,7 @@ Value codecDefaults() {
     }
     ValueMap tactical;
     using K = combat::TacticalOrder::Kind;
-    for (size_t k = 0; k <= static_cast<size_t>(K::ResolveCombat); ++k) {
+    for (size_t k = 0; k <= static_cast<size_t>(K::Recover); ++k) {
         combat::TacticalOrder o;
         o.kind = static_cast<K>(k);
         tactical.emplace_back(std::string(sdk::enumName(o.kind)), sdk::encodeTacticalOrder(o));

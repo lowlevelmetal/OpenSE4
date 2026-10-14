@@ -372,6 +372,12 @@ struct InterfaceOptions {
     // §3.6.7), so they come back on every opening (save format 8).
     bool designsHideObsolete = false;
     bool designsStatsView = false;
+    // How much a click moves in Transfer Cargo (0 Move One, 1 Five, 2 Ten, 3
+    // Hundred, 4 All) and in Launch \ Recover Units, on the map and in
+    // battle (0 Move One, 1 Five, 2 Ten, 3 All): kept with the empire's
+    // options, Ten at first (spec 08 §3.6.7, confirmed: binary; save format 10).
+    uint8_t cargoStep = 2;
+    uint8_t unitsStep = 2;
 
     bool operator==(const InterfaceOptions&) const = default;
 };
@@ -552,6 +558,19 @@ enum class StellarAction : uint8_t {
     CreateConstructedPlanet, Count
 };
 
+// What a Load Cargo, Drop Cargo, Launch Units or Recover Units order moves
+// when the player gives it: a kind of cargo, never one design (spec 03 §8,
+// confirmed: binary). The values are the original's cargo-kind numbers
+// (spec 08 §3.8.8). None: the order names one design instead (`Order::design`,
+// population when that is invalid), as OpenSE4's computer players and games
+// saved before format 10 give them.
+enum class CargoKind : uint8_t { None, Population, Troops, Fighters, Mines, Satellites, Drones, WeaponPlatforms, Count };
+// The unit type of a cargo kind (nullopt: None, Population).
+std::optional<ruleset::VehicleType> unitTypeOf(CargoKind k);
+// The cargo kind of a unit type (None for ships and bases).
+CargoKind cargoKindOf(ruleset::VehicleType t);
+std::string_view displayName(CargoKind k);   // "Population", "Fighters", ...
+
 struct Order {
     OrderKind kind = OrderKind::MoveTo;
     Location location;
@@ -563,6 +582,8 @@ struct Order {
     // values; with any other value the order does nothing (spec 02 §5.6).
     uint8_t from = 0;
     uint8_t to = 0;
+    // Load, Drop, Launch and Recover: the kind of cargo (save format 10).
+    CargoKind cargo = CargoKind::None;
     bool operator==(const Order&) const = default;
 };
 
@@ -866,8 +887,10 @@ struct DiplomaticMessage {
 
 struct CombatEvent {
     // UnitsLost: unit group `piece` loses `amount` units to a hit by `target`
-    // (it may be Destroyed next, when none is left).
-    enum class Kind : uint8_t { Move, Fire, Hit, Miss, Destroyed, Captured, Launch, Seeker, UnitsLost };
+    // (it may be Destroyed next, when none is left). Recovered: carrier
+    // `target` took `amount` units of the launched group `piece` back aboard;
+    // with none left the group leaves the map (save format 10).
+    enum class Kind : uint8_t { Move, Fire, Hit, Miss, Destroyed, Captured, Launch, Seeker, UnitsLost, Recovered };
     Kind kind = Kind::Move;
     uint8_t round = 0;
     uint32_t piece = 0;       // index into CombatRecord::pieces

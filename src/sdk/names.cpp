@@ -10,6 +10,7 @@ constexpr bool coversCount() {
 }
 static_assert(coversCount<game::OrderKind>());
 static_assert(coversCount<game::StellarAction>());
+static_assert(coversCount<game::CargoKind>());
 static_assert(coversCount<game::Treaty>());
 static_assert(coversCount<game::MessageType>());
 static_assert(coversCount<game::Minister>());
@@ -18,7 +19,7 @@ static_assert(coversCount<game::Characteristic>());
 static_assert(coversCount<game::SightType>());
 static_assert(coversCount<ruleset::VehicleType>());
 static_assert(EnumNames<game::combat::TacticalOrder::Kind>::kNames.size() ==
-              static_cast<size_t>(game::combat::TacticalOrder::Kind::ResolveCombat) + 1);
+              static_cast<size_t>(game::combat::TacticalOrder::Kind::Recover) + 1);
 static_assert(EnumNames<game::LogGoto>::kNames.size() == static_cast<size_t>(game::LogGoto::Designs) + 1);
 static_assert(EnumNames<game::LogCategory>::kNames.size() == static_cast<size_t>(game::LogCategory::Misc) + 1);
 static_assert(EnumNames<game::PackageItem::Kind>::kNames.size() == static_cast<size_t>(game::PackageItem::Kind::System) + 1);
@@ -40,6 +41,7 @@ constexpr auto kCommandKindNames = std::to_array<std::string_view>({
     "set_ministers", "set_encounter_options", "enter_sector", "edit_design", "open_vehicle_report",
     "queue_replace_facility", "decide_war", "set_interface_options", "carry_out_demand", "use_demand_entry", "jettison_cargo",
     "cloak_colony", "analyze", "self_destruct", "fire_on", "set_email", "order_tagged", "set_fleet_leader", "mod_command",
+    "launch_units_now", "recover_units_now",
 });
 static_assert(kCommandKindNames.size() == kCommandKinds, "name the new command kind here");
 

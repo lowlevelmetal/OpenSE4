@@ -1107,12 +1107,12 @@ sector is elsewhere) plus the action.
 | Repeat Orders (K) | toggle | See the list rules above. |
 | Clear Orders (Del) | — | Empties the list and switches Repeat off. |
 | View Orders (V) | — | UI only. |
-| Load Cargo (L) | cargo type, sector | Composite. Loads as much of the type as fits, from own planets in the sector first, then own vehicles; in a group each member loads for itself. Always done, even when nothing loads (confirmed: binary). |
-| Drop Cargo (D) | cargo type, sector | Composite. Drops the type into an own colony or vehicle there that has room. Can fail (confirmed: binary). |
-| Launch Units Remotely (I) | unit type, sector | Composite. Launches as many units of the type as allowed (§12). Always done (confirmed: binary). |
-| Recover Units Remotely (O) | unit type, sector | Composite. Names a unit kind (fighters or satellites), not a design. For each own group of that kind in the sector, in object order, it recovers the units of every design as far as cargo room allows, and moves on to the next group only while the previous one gave at least one unit. Always done (confirmed: binary). |
-| Cargo Transfer (T) | — | Instant window, turn-based games only (§11). |
-| Launch/Recover Units (U) | — | Instant window, turn-based games only (§12). |
+| Load Cargo (L) | cargo kind, sector | Composite. The sector is picked first; at the click a picker asks for the kind of cargo, always the same seven: Population, Troops, Fighters, Mines, Satellites, Drones, Weapon Platforms, whatever the selection carries. Loads as much of the kind as fits, every design of it, from own planets in the sector first, then own vehicles; in a group each member loads for itself. Always done, even when nothing loads (confirmed: binary). |
+| Drop Cargo (D) | cargo kind, sector, object | Composite. The sector first, then its destination (spec 06 §2.9), then the kind from the same seven. Drops every design of the kind into that own colony or vehicle, as far as it has room. Can fail (confirmed: binary). |
+| Launch Units Remotely (I) | unit kind, sector | Composite. The sector first, then the kind: Fighters, Satellites, Mines or Drones. Launches as many units of the kind as allowed, every design of it (§12). A colony's: only the kind is asked; the order goes at once into the colony's list at its own sector, and in a turn-based game the colony carries out its list then. Always done; what could not be launched gives a warning (§12) (confirmed: binary). |
+| Recover Units Remotely (O) | unit kind, sector | Composite. The sector first, then the kind: Fighters, Satellites or Drones (a colony's: the kind only, as for the launch). Names a unit kind, not a design. For each own group of that kind in the sector, in object order, it recovers the units of every design as far as cargo room allows, and moves on to the next group only while the previous one gave at least one unit. Drones never come back, which gives a warning (§12). Always done (confirmed: binary). |
+| Cargo Transfer (T) | — | Instant window, both turn styles (§11; spec 06 §2.8). |
+| Launch/Recover Units (U) | — | Instant window, turn-based games only (§12 "The window"). |
 | Jettison Cargo (J) | window | Not an order: destroys the cargo chosen in a window at once, in both turn styles, at no MP or supply cost. See the rules below the table (confirmed: binary). |
 | Fleet Transfer (F) | — | Window (§9). |
 | Change Formation\Strategy (H) | — | Fleet only. |
@@ -1461,15 +1461,17 @@ All rules in this section are (confirmed: binary).
   defend.
 - **Transfer:** only between the player's own ships, bases and colonized planets in the same
   sector that have capacity above 0; never with allies. It costs nothing and uses no MP. It moves
-  1, 5, 10, 100 or all per click and only what fits. Nothing can be loaded from a planet
-  quarantined by plague. Taking population from a planet always leaves at least 1M; emptying a
-  colony needs the Abandon Planet order.
+  1, 5, 10, 100 or all per click and only what fits; the empire's options keep the choice, Ten
+  at first (spec 08 §3.6.7). Nothing can be loaded from a planet quarantined by plague: the
+  window says so in a message box. Taking population from a planet always leaves at least 1M;
+  emptying a colony needs the Abandon Planet order.
   - **The window** (Cargo Transfer, order T, lit for every own ship, base and colony in both
     turn styles, spec 06 §2.8). The left list ("Cargo From") holds the selected ship, base or
     colony, and with a fleet member its fleet-mates at that place; the right list ("Cargo To")
     every other qualifying holder in the sector, other own colonies included (every planet size
-    has cargo spaces, so every own colony there takes part). Each holder's row is followed by its
-    cargo lines: for a colony one line per race of its population, then its stored cargo. A list
+    has cargo spaces, so every own colony there takes part); a ship or base with no cargo space is
+    not listed. Each holder's row is followed by its cargo lines, the selected holder's or not:
+    for a colony one line per race of its population, then its stored cargo. A list
     keeps its selected holder when refilled, else selects its first. A click on a cargo line
     moves it from that line's holder to the holder selected in the other list.
   - **Population between two colonies** goes straight from population to population, not into
@@ -1480,8 +1482,16 @@ All rules in this section are (confirmed: binary).
     ship goes into the ship's cargo, capped by its room for population; population carried as
     cargo, on a ship or stored by a colony, moved to a colony goes into its population, capped by
     the same free population room. Units need free cargo space in the target.
-  - The Population window ("Races On Planet") is read-only.
+  - The Population window ("Races On Planet", spec 06 §1.4) is read-only.
 - **Captured or gifted ships** keep their cargo.
+
+**The engine's cargo orders.** Since 2026-10-14 the orders a player gives name their kind
+of cargo (`Order::cargo`, save format 10) and move every design of it, stack by stack in
+each holder's cargo order (inferred within a holder), as described above; the original's
+saved games carry the kind both ways (spec 08 §3.8.8). An order that names one design
+instead (`Order::design` with no kind: OpenSE4's computer players give them, and so did
+games saved before format 10) moves only that design, as it always did; population is
+the kind Population, or a Load or Drop naming neither.
 
 ---
 
@@ -1572,6 +1582,28 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 - **Self-destruct:** satellite groups, minefields and drone groups can self-destruct at any time
   with no ability; fighter groups never can. Drone groups and minefields cannot be scrapped
   (§15).
+- **Warnings** (confirmed: binary). A launch that cannot fully happen says why: a kind that
+  is never launched (troops, weapon platforms, population), a ship or base without a
+  launcher of the kind, the units-in-space cap, or the mines or satellites cap of the
+  sector. A recovery says why when the kind is not fighters or satellites, when the ship or
+  base has no bay of the kind, or when a fighter group has not its full movement in a
+  turn-based game. The per-turn launch budget, an empty hold and a full one give no
+  warning. From an order the reasons become one log entry for a human owner, titled
+  "Launch Warning" or "Recover Warning", category Misc, picture `AtMaxUnits`, going to the
+  order's place (spec 06 §4.1); a computer player gets none, and combat gives none. From
+  the window below they show in a message box with the same title. A launch or recovery
+  that went well is not logged (Our client differs: none; OpenSE4 logged one before
+  2026-10-14). Which warnings OpenSE4 gives when there is nothing of the kind to launch or
+  recover at all is ours (inferred): the kind and launcher tests warn whatever the hold
+  holds, the caps only for units that would have gone.
+- **The window** Launch \ Recover Units (order U, turn-based games only, spec 06 §1.3;
+  confirmed: binary). A click acts at once on exactly the ship, base or colony clicked,
+  never on its fleet-mates: a unit under a carrier launches from that carrier, a group in
+  space comes back aboard the carrier selected in the left list, by the amount the radios
+  set. The order list is neither touched nor run, nothing is logged, and launches count
+  against the holder's budget of the turn as orders do. The same window opens in a battle
+  (spec 04 §10.4). The engine gives these clicks as `cmd::LaunchUnitsNow` and
+  `cmd::RecoverUnitsNow`, refused in simultaneous games, where the window is not offered.
 
 ---
 

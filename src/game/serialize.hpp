@@ -91,6 +91,13 @@ class Rules;
 // §3.6.7). Format 7 still reads, without them.
 // Version 10: the REA parity audit's state (listed as each change lands).
 // Format 9 still reads, without it.
+// - Cargo orders by kind (Order::cargo; spec 03 §8): a Load, Drop, Launch or
+//   Recover a player gives names a kind of cargo, not a design.
+// - The steps of Transfer Cargo and Launch \ Recover Units
+//   (InterfaceOptions::cargoStep, unitsStep; spec 08 §3.6.7).
+// - The window Launch \ Recover Units: the commands cmd::LaunchUnitsNow and
+//   cmd::RecoverUnitsNow, and a battle's CombatEvent::Kind::Recovered (spec 03
+//   §12, spec 04 §10.4).
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

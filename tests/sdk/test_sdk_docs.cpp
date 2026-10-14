@@ -103,7 +103,7 @@ TEST_CASE("sdk docs: every order kind and tactical order kind is documented, wit
         CHECK_MESSAGE(text.find(std::format("\"kind\": \"{}\"", name)) != std::string::npos, "commands.md has no example of " << name);
     }
     using K = combat::TacticalOrder::Kind;
-    for (size_t k = 0; k <= static_cast<size_t>(K::ResolveCombat); ++k) {
+    for (size_t k = 0; k <= static_cast<size_t>(K::Recover); ++k) {
         combat::TacticalOrder o;
         o.kind = static_cast<K>(k);
         o.path = {{1, 2}};
@@ -118,6 +118,7 @@ TEST_CASE("sdk docs: every order kind and tactical order kind is documented, wit
 TEST_CASE("sdk docs: every enumeration lists exactly its names, in order") {
     checkEnum<OrderKind>("order_kind");
     checkEnum<StellarAction>("stellar_action");
+    checkEnum<CargoKind>("cargo_kind");
     checkEnum<Resource>("resource");
     checkEnum<Treaty>("treaty");
     checkEnum<MessageType>("message_type");

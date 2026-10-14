@@ -19,6 +19,7 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <array>
 #include <functional>
 #include <optional>
 #include <span>
@@ -392,6 +393,37 @@ bool canSelfDestruct(const Rules& r, const GameState& s, const Vehicle& v);
 // cargo that no longer fits removed (§11). Unlimited supply is left alone
 // (a vehicle that lost its reactor drops back when it next moves).
 void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v);
+
+// ---- Launching and recovering units (spec 03 §12) -------------------------------------------
+// What a launch or recovery did, or would do: the units moved, and the
+// warnings of one that could not fully happen (spec 03 §12 "Warnings",
+// confirmed: binary), in our words. An order's warnings become one log entry
+// for a human owner ("Launch Warning", "Recover Warning"); the window
+// Launch \ Recover Units shows them in a message box with that title.
+struct UnitTransfer {
+    int64_t moved = 0;
+    std::vector<std::string> warnings;
+};
+// The Launch \ Recover Units window (cmd::LaunchUnitsNow, cmd::RecoverUnitsNow):
+// launch `amount` (-1: as many as allowed) units of `design` from the own
+// ship, base or colony named (one of `vehicle`, `planet`), or recover into
+// it from the unit group `group` (`design` invalid: every design of the
+// group), at once, within the turn's launch budget of a turn-based player's
+// turn (GameState::playerTurn). check* change nothing; launchNow and
+// recoverNow carry it out. The order list is not touched and nothing is
+// logged (spec 03 §12, confirmed: binary).
+UnitTransfer checkLaunch(const Rules& r, const GameState& s, VehicleId vehicle, ObjectId planet, DesignId design, int64_t amount);
+UnitTransfer checkRecover(const Rules& r, const GameState& s, VehicleId vehicle, ObjectId planet, VehicleId group, DesignId design,
+                          int64_t amount);
+UnitTransfer launchNow(TurnContext& ctx, VehicleId vehicle, ObjectId planet, DesignId design, int64_t amount);
+// What the holder may still launch this game turn, and its rate, per kind
+// (fighters, satellites, mines, drones): the window's "Can Launch:" lines.
+// A rate of -1: no launcher of the kind (a colony needs none: 1000 each).
+struct LaunchCapacity {
+    std::array<int64_t, 4> left{}, rate{};
+};
+LaunchCapacity launchCapacity(const Rules& r, const GameState& s, VehicleId vehicle, ObjectId planet);
+UnitTransfer recoverNow(TurnContext& ctx, VehicleId vehicle, ObjectId planet, VehicleId group, DesignId design, int64_t amount);
 
 // Places a newly built vehicle (economy uses it); applies the queue's
 // automatic Move To waypoint.

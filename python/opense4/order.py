@@ -28,6 +28,7 @@ def move_to(location: Optional[LocationLike] = None) -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -45,6 +46,7 @@ def warp(object: Optional[Ref] = None) -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -64,6 +66,7 @@ def attack(vehicle: Optional[Ref] = None, object: Optional[Ref] = None, location
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -78,6 +81,7 @@ def resupply() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -92,6 +96,7 @@ def repair() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -106,6 +111,7 @@ def explore() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -124,6 +130,7 @@ def colonize(object: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]:
         'amount': _int(amount, 'colonize.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -138,14 +145,18 @@ def sentry() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
-def load_cargo(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]:
-    """Load units of the design, or population (no design); amount -1 is as much as fits.
+def load_cargo(design: Optional[Ref] = None, amount: int = 0, cargo: str = 'none') -> Dict[str, Any]:
+    """Load a kind of cargo (every design of it), or units of the design, or population (neither);
+    amount -1 is as much as fits.
 
     design: A design: the units to load, launch or recover, a retrofit's design.
     amount: A number whose meaning depends on the kind (see below).
+    cargo: Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when
+        design names it.
     """
     return {
         'kind': 'load_cargo',
@@ -156,14 +167,17 @@ def load_cargo(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]:
         'amount': _int(amount, 'load_cargo.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': _enum(cargo, enums.CARGO_KIND, 'load_cargo.cargo'),
     }
 
 
-def drop_cargo(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]:
-    """Drop units or population, as for loading.
+def drop_cargo(design: Optional[Ref] = None, amount: int = 0, cargo: str = 'none') -> Dict[str, Any]:
+    """Drop a kind of cargo, units or population, as for loading.
 
     design: A design: the units to load, launch or recover, a retrofit's design.
     amount: A number whose meaning depends on the kind (see below).
+    cargo: Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when
+        design names it.
     """
     return {
         'kind': 'drop_cargo',
@@ -174,14 +188,17 @@ def drop_cargo(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]:
         'amount': _int(amount, 'drop_cargo.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': _enum(cargo, enums.CARGO_KIND, 'drop_cargo.cargo'),
     }
 
 
-def launch_units(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]:
-    """Launch units of the design from cargo.
+def launch_units(design: Optional[Ref] = None, amount: int = 0, cargo: str = 'none') -> Dict[str, Any]:
+    """Launch a kind of unit (every design of it), or units of the design, from cargo.
 
     design: A design: the units to load, launch or recover, a retrofit's design.
     amount: A number whose meaning depends on the kind (see below).
+    cargo: Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when
+        design names it.
     """
     return {
         'kind': 'launch_units',
@@ -192,16 +209,19 @@ def launch_units(design: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any
         'amount': _int(amount, 'launch_units.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': _enum(cargo, enums.CARGO_KIND, 'launch_units.cargo'),
     }
 
 
-def recover_units(design: Optional[Ref] = None, vehicle: Optional[Ref] = None, amount: int = 0) -> Dict[str, Any]:
-    """Take units back aboard: every group of the design's kind, or only design from the group vehicle,
-    up to amount.
+def recover_units(design: Optional[Ref] = None, vehicle: Optional[Ref] = None, amount: int = 0, cargo: str = 'none') -> Dict[str, Any]:
+    """Take units back aboard: every group of the kind (or of the design's kind), or only design from
+    the group vehicle, up to amount.
 
     design: A design: the units to load, launch or recover, a retrofit's design.
     vehicle: A vehicle: an attack's target, a pursuit, the unit group to recover from.
     amount: A number whose meaning depends on the kind (see below).
+    cargo: Load, Drop, Launch and Recover: the kind of cargo they move; none (the default) when
+        design names it.
     """
     return {
         'kind': 'recover_units',
@@ -212,6 +232,7 @@ def recover_units(design: Optional[Ref] = None, vehicle: Optional[Ref] = None, a
         'amount': _int(amount, 'recover_units.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': _enum(cargo, enums.CARGO_KIND, 'recover_units.cargo'),
     }
 
 
@@ -226,6 +247,7 @@ def cloak() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -240,6 +262,7 @@ def decloak() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -254,6 +277,7 @@ def sweep_mines() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -271,6 +295,7 @@ def use_component(amount: int = 0) -> Dict[str, Any]:
         'amount': _int(amount, 'use_component.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -290,6 +315,7 @@ def stellar_manipulation(amount: Union[int, str] = 0, object: Optional[Ref] = No
         'amount': _stellar(amount, 'stellar_manipulation.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -307,6 +333,7 @@ def move_to_waypoint(amount: int = 0) -> Dict[str, Any]:
         'amount': _int(amount, 'move_to_waypoint.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -321,6 +348,7 @@ def self_destruct() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -338,6 +366,7 @@ def use_facility(amount: int = 0) -> Dict[str, Any]:
         'amount': _int(amount, 'use_facility.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -357,6 +386,7 @@ def convert_resources(amount: int = 0, from_resource: str = 'minerals', to_resou
         'amount': _int(amount, 'convert_resources.amount'),
         'from_resource': _enum(from_resource, enums.RESOURCE, 'convert_resources.from_resource'),
         'to_resource': _enum(to_resource, enums.RESOURCE, 'convert_resources.to_resource'),
+        'cargo': 'none',
     }
 
 
@@ -371,6 +401,7 @@ def scrap() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -385,6 +416,7 @@ def analyze() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -399,6 +431,7 @@ def mothball() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -413,6 +446,7 @@ def unmothball() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -430,6 +464,7 @@ def retrofit(design: Optional[Ref] = None) -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -444,6 +479,7 @@ def fire_on() -> Dict[str, Any]:
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -464,6 +500,7 @@ def seek(location: Optional[LocationLike] = None, vehicle: Optional[Ref] = None,
         'amount': 0,
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 
@@ -481,6 +518,7 @@ def join_fleet(amount: int = 0) -> Dict[str, Any]:
         'amount': _int(amount, 'join_fleet.amount'),
         'from_resource': 'minerals',
         'to_resource': 'minerals',
+        'cargo': 'none',
     }
 
 

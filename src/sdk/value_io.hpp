@@ -466,6 +466,7 @@ void fields(A& a, game::Order& x) {
     a("amount", x.amount);
     a("from_resource", ResourceCode{&x.from});
     a("to_resource", ResourceCode{&x.to});
+    a("cargo", x.cargo);
 }
 template <class A>
 void fields(A& a, game::PopulationGroup& x) {
@@ -629,6 +630,8 @@ void fields(A& a, game::InterfaceOptions& x) {
     a("design_condensed", x.designCondensed);
     a("designs_hide_obsolete", x.designsHideObsolete);
     a("designs_stats_view", x.designsStatsView);
+    a("cargo_step", x.cargoStep);
+    a("units_step", x.unitsStep);
 }
 template <class A>
 void fields(A& a, game::combat::Square& x) {
@@ -983,6 +986,21 @@ void fields(A& a, cmd::ModCommand& x) {
     a("planet", x.planet);
     a("empire", x.empire);
     a("args", JsonArgs{&x.args});
+}
+template <class A>
+void fields(A& a, cmd::LaunchUnitsNow& x) {
+    a("vehicle", x.vehicle);
+    a("planet", x.planet);
+    a("design", x.design);
+    a("amount", x.amount);
+}
+template <class A>
+void fields(A& a, cmd::RecoverUnitsNow& x) {
+    a("vehicle", x.vehicle);
+    a("planet", x.planet);
+    a("group", x.group);
+    a("design", x.design);
+    a("amount", x.amount);
 }
 
 // The number of fields fields() lists for T (tests compare it with the struct's members).

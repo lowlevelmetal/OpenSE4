@@ -42,6 +42,50 @@ std::string_view displayName(OrderKind k) {
     return "?";
 }
 
+std::optional<ruleset::VehicleType> unitTypeOf(CargoKind k) {
+    using V = ruleset::VehicleType;
+    switch (k) {
+        case CargoKind::Troops: return V::Troop;
+        case CargoKind::Fighters: return V::Fighter;
+        case CargoKind::Mines: return V::Mine;
+        case CargoKind::Satellites: return V::Satellite;
+        case CargoKind::Drones: return V::Drone;
+        case CargoKind::WeaponPlatforms: return V::WeaponPlatform;
+        case CargoKind::None:
+        case CargoKind::Population:
+        case CargoKind::Count: break;
+    }
+    return std::nullopt;
+}
+
+CargoKind cargoKindOf(ruleset::VehicleType t) {
+    using V = ruleset::VehicleType;
+    switch (t) {
+        case V::Troop: return CargoKind::Troops;
+        case V::Fighter: return CargoKind::Fighters;
+        case V::Mine: return CargoKind::Mines;
+        case V::Satellite: return CargoKind::Satellites;
+        case V::Drone: return CargoKind::Drones;
+        case V::WeaponPlatform: return CargoKind::WeaponPlatforms;
+        default: return CargoKind::None;
+    }
+}
+
+std::string_view displayName(CargoKind k) {
+    switch (k) {
+        case CargoKind::Population: return "Population";
+        case CargoKind::Troops: return "Troops";
+        case CargoKind::Fighters: return "Fighters";
+        case CargoKind::Mines: return "Mines";
+        case CargoKind::Satellites: return "Satellites";
+        case CargoKind::Drones: return "Drones";
+        case CargoKind::WeaponPlatforms: return "Weapon Platforms";
+        case CargoKind::None:
+        case CargoKind::Count: break;
+    }
+    return "";
+}
+
 std::string_view displayName(MessageType t) {
     switch (t) {
         case MessageType::General: return "General Message";

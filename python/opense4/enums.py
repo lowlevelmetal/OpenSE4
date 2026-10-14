@@ -27,6 +27,17 @@ BATTLE_PIECE_KIND: Tuple[str, ...] = (
     'obstacle',  # Something in the way.
 )
 
+CARGO_KIND: Tuple[str, ...] = (
+    'none',  # The order names a design instead.
+    'population',  # People.
+    'troops',  # Troops.
+    'fighters',  # Fighters.
+    'mines',  # Mines.
+    'satellites',  # Satellites.
+    'drones',  # Drones.
+    'weapon_platforms',  # Weapon platforms.
+)
+
 CONDITIONS_BAND: Tuple[str, ...] = (
     'optimal',  # The best.
     'good',  # Good.
@@ -163,10 +174,10 @@ ORDER_KIND: Tuple[str, ...] = (
     'explore',  # Explore the nearest system we have not explored.
     'colonize',  # Colonize the planet.
     'sentry',  # Wait, ready to fight.
-    'load_cargo',  # Load units of the design, or population (no design); amount -1 is as much as fits.
-    'drop_cargo',  # Drop units or population, as for loading.
-    'launch_units',  # Launch units of the design from cargo.
-    'recover_units',  # Take units back aboard: every group of the design's kind, or only design from the group vehicle, up to amount.
+    'load_cargo',  # Load a kind of cargo (every design of it), or units of the design, or population (neither); amount -1 is as much as fits.
+    'drop_cargo',  # Drop a kind of cargo, units or population, as for loading.
+    'launch_units',  # Launch a kind of unit (every design of it), or units of the design, from cargo.
+    'recover_units',  # Take units back aboard: every group of the kind (or of the design's kind), or only design from the group vehicle, up to amount.
     'cloak',  # Switch the cloak on.
     'decloak',  # Switch the cloak off.
     'sweep_mines',  # Sweep the mines in the sector.
@@ -235,7 +246,7 @@ TACTICAL_ORDER_KIND: Tuple[str, ...] = (
     'move',  # Move toward a square, or along a path of neighbouring squares.
     'fire',  # Fire at a piece.
     'toggle_weapon',  # Switch a weapon (or all) on or off.
-    'launch',  # Launch units.
+    'launch',  # Launch units: fighters, satellites and drones become groups on the map, mines join the sector's minefield.
     'launch_fighters',  # Launch fighters in groups of group (5 to 50).
     'drop_troops',  # Land troops on the neighbouring enemy colony.
     'ram',  # Ram a neighbouring piece.
@@ -248,6 +259,7 @@ TACTICAL_ORDER_KIND: Tuple[str, ...] = (
     'auto_phase',  # The strategies play the rest of this phase.
     'end_phase',  # End the side's phase.
     'resolve_combat',  # Every side follows its strategies to the end of the battle.
+    'recover',  # Take a fighter or satellite group that the piece launched in launch session group back aboard.
 )
 
 TREATY: Tuple[str, ...] = (
@@ -297,6 +309,7 @@ WEAPON_KIND: Tuple[str, ...] = (
 ALL: Dict[str, Tuple[str, ...]] = {
     'aggregation': AGGREGATION,
     'battle_piece_kind': BATTLE_PIECE_KIND,
+    'cargo_kind': CARGO_KIND,
     'conditions_band': CONDITIONS_BAND,
     'demand_list': DEMAND_LIST,
     'encounter_clear': ENCOUNTER_CLEAR,

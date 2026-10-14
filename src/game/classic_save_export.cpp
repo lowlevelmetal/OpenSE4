@@ -621,6 +621,8 @@ private:
         o.designerToHit = u.designToHit;
         o.planetsHideAvoided = u.planetsNoSysToAvoid;
         o.simulatorNoObsolete = u.simulatorNoObsolete;
+        o.cargoTransferTab = clampByte(std::min<int>(u.cargoStep, 4) + 1);
+        o.unitsTransferTab = clampByte(std::min<int>(u.unitsStep, 3) + 1);
         o.systemGrid = u.systemGrid;
         o.replayFast = u.replayFast;
         o.replayAnimate = u.replayAnimate;
@@ -1106,10 +1108,14 @@ private:
                 place(t->location);
             }
         };
-        auto unitKind = [&](DesignId d) -> uint8_t {
-            if (!d.valid() || d.index() >= s_.designs.size()) return 0;
-            // The cargo-kind numbering of Load and Drop (§3.8.8, Q16).
-            return cargoKindOf(r_.hull(s_.design(d).hull).type);
+        // The cargo-kind byte (§3.8.8, Q16): the order's own kind, or the kind
+        // of the one design an order of OpenSE4's computer players names
+        // (population when it names none).
+        auto cargoKind = [&](const Order& order, std::string_view what) -> uint8_t {
+            if (order.cargo != CargoKind::None) return static_cast<uint8_t>(order.cargo);
+            if (!order.design.valid() || order.design.index() >= s_.designs.size()) return static_cast<uint8_t>(CargoKind::Population);
+            count(std::string(what));
+            return static_cast<uint8_t>(game::cargoKindOf(r_.hull(s_.design(order.design).hull).type));
         };
         switch (o.kind) {
             case OrderKind::MoveTo: rec.kind = 1; place(o.location); break;
@@ -1119,11 +1125,8 @@ private:
             case OrderKind::LoadCargo:
             case OrderKind::DropCargo: {
                 rec.kind = o.kind == OrderKind::LoadCargo ? 6 : 7;
-                rec.extra = 1;
-                if (o.design.valid() && o.design.index() < s_.designs.size()) {
-                    rec.extra = cargoKindOf(r_.hull(s_.design(o.design).hull).type);
-                    count("load and drop orders of one design (now of every unit of its kind)");
-                }
+                rec.extra = cargoKind(o, "load and drop orders of one design (now of every unit of its kind)");
+                if (rec.extra == static_cast<uint8_t>(CargoKind::None)) return std::nullopt;   // a ship's or base's design
                 // A drop names its planet alone (observed: no system or sector).
                 if (o.kind == OrderKind::DropCargo && o.object.valid()) {
                     rec.target = objectId(o.object);
@@ -1187,9 +1190,8 @@ private:
             case OrderKind::LaunchUnits:
             case OrderKind::RecoverUnits:
                 rec.kind = o.kind == OrderKind::LaunchUnits ? 34 : 35;
-                rec.extra = unitKind(o.design);
-                if (rec.extra == 0) return std::nullopt;
-                count("launch and recover orders of one design (now of every unit of its kind)");
+                rec.extra = cargoKind(o, "launch and recover orders of one design (now of every unit of its kind)");
+                if (rec.extra < static_cast<uint8_t>(CargoKind::Troops)) return std::nullopt;   // no unit kind
                 break;
             case OrderKind::Analyze: rec.kind = 42; break;
             case OrderKind::Mothball: rec.kind = 43; break;
