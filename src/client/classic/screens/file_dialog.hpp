@@ -7,8 +7,10 @@
 // file name column at x 4, "Date" at x 204, divided at x 201), the names in
 // capitals and each file's date and time, rows 32 px apart, then Change
 // Directory (12,452)–(407,477) and Cancel (12,482)–(407,507). A click on a
-// row chooses the file.
+// row chooses the file. The list starts sorted by name, A to Z; a click on a
+// column's heading sorts by it (FileSortHistory).
 
+#include "client/classic/screens/file_list.hpp"
 #include "client/classic/ui.hpp"
 
 #include <filesystem>
@@ -17,17 +19,6 @@
 #include <vector>
 
 namespace opense4::client::classic {
-
-struct FileEntry {
-    std::filesystem::path path;
-    std::string name;   // the file name without its extension
-    std::filesystem::file_time_type modified;
-};
-
-// The files of a folder with this extension (any case), newest first, then by name.
-std::vector<FileEntry> listFiles(const std::filesystem::path& dir, std::string_view extension);
-// A file's date and time as the dialog shows it: "9/30/2026 1:38:30 PM" (local time).
-std::string fileDate(std::filesystem::file_time_type t);
 
 // The folder Load Game lists: the saved games folder until Change Directory
 // picks another, kept for the rest of the session (from the intro and in a game).
@@ -57,6 +48,7 @@ private:
     std::filesystem::path& directory_;
     std::filesystem::path defaultDirectory_;
     std::vector<FileEntry> files_;
+    FileSortHistory sort_;
     bool scanned_ = false;
     FileEntry chosen_;
     std::string error_;

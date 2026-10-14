@@ -18,6 +18,7 @@
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/list_widgets.hpp"
+#include "client/classic/learn_content.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 #include "client/script/items.hpp"
@@ -542,7 +543,10 @@ private:
     }
 
     // The original's column: the ten tabs, a gap, Weapons Report (slot 12),
-    // Manual (slot 13), Close (spec 07 session 5).
+    // Manual (slot 13), Close (spec 07 session 5). The original's Manual
+    // opens the installed manual in the browser at once; ours opens
+    // OpenSE4's Manual window, and the gap holds Original Manual for the
+    // installed one (spec 06 §1.2).
     void topicButtons(UiContext& ui, Dialog& d) {
         ImVec2 first, last;
         for (size_t i = 0; i < kTabCount; ++i) {
@@ -555,7 +559,11 @@ private:
             last = ImGui::GetItemRectMax();
         }
         ui.tag("help:tabs", first, last);
-        d.spacer();
+        if (ui.learn && !ui.learn->originalManual.empty()) {
+            if (d.button("Original Manual")) openOriginalManual(*ui.learn);
+        } else {
+            d.spacer();
+        }
         if (d.button("Weapons Report")) weapons_ = true;
         if (d.button("Manual")) ui.open(ScreenId::Manual);
     }

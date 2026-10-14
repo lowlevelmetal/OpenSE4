@@ -31,8 +31,6 @@ const ImVec4 kGoodText{0.5f, 0.9f, 0.5f, 1.0f};
 
 using SaveFile = FileEntry;
 
-std::vector<SaveFile> listSaves() { return listFiles(savesDir(), ".gam"); }
-
 std::string formatTime(std::filesystem::file_time_type t) { return fileDate(t); }
 
 // Characters allowed in a save name (it becomes a file name).
@@ -158,8 +156,10 @@ public:
                 !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))
                 keep = false;
 
-            if (confirmPopup(ui, "New Game", "Leave this game and return to the title screen? Anything not saved is lost."))
-                ui.requests.quitToIntro = true;
+            // New asks whether to cancel this game for a new one; Yes opens the
+            // Game Setup at once (its Cancel goes to the intro) (spec 06 §1.2,
+            // confirmed: binary).
+            if (confirmPopup(ui, "New Game", "Cancel this game and set up a new one? Anything not saved is lost.")) ui.requests.newGame = true;
             if (confirmPopup(ui, "Quit Game", "Quit OpenSE4? Anything not saved is lost.")) ui.requests.quitGame = true;
             masterPasswordPopup(ui);
             notePopup(ui, "Invalid Password", masterNote_);
@@ -374,6 +374,10 @@ bool installHasShipPicture(UiContext& ui, std::string_view name) {
 
 // ---- Save Game -------------------------------------------------------------------------------
 
+// OpenSE4's own Save Game window, with the original's Change Directory (here
+// Change Folder: this window's saves go to another folder) and its refusal
+// of a name that cannot be a file name ("Invalid File Name.", titled
+// "Error"); the overwrite question is ours (spec 06 §1.2).
 class SaveGameScreen final : public Screen {
 public:
     explicit SaveGameScreen(std::string name) : name_(std::move(name)) {}
@@ -382,8 +386,9 @@ public:
         Dialog d(ui, "Save Game", DialogSize::Picker, 150);
         if (!d.open()) return d.keepOpen();
         if (name_.empty()) name_ = std::format("{} {}", ui.me().name, formatDate(ui.state().turn));
+        if (folder_.empty()) folder_ = savesDir();
         if (saves_.empty() && !listed_) {
-            saves_ = listSaves();
+            saves_ = listFiles(folder_, ".gam");
             listed_ = true;
         }
         d.beginContent();
@@ -397,6 +402,7 @@ public:
             ImGui::PopTextWrapPos();
         }
         if (!saved_.empty()) ImGui::TextColored(kGoodText, "Saved as %s", saved_.c_str());
+        if (folder_ != savesDir()) wrappedDim(std::format("Saving in {}", folder_.string()).c_str());
         ImGui::Spacing();
         ImGui::TextColored(kLabelBlue, "Saved games (click one to reuse its name)");
         beginList(ui, "##saves", ImVec2(0, 0), kListLineStep, ImGuiChildFlags_AlwaysUseWindowPadding);
@@ -409,15 +415,30 @@ public:
         endList(ui);
 
         d.beginButtons();
-        const std::string clean = cleanName(name_);
-        if (d.button("Save", !clean.empty()) || (enter && !clean.empty())) {
-            // A save whose name differs only in case is the same game, as on Windows.
-            const std::filesystem::path file = ruleset::childIgnoringCase(savesDir(), clean + ".gam");
-            if (std::filesystem::exists(file)) ImGui::OpenPopup("Overwrite");
-            else save(ui, file, clean);
+        const std::string typed = trimmedSaveName(name_);
+        if (d.button("Save", !typed.empty()) || (enter && !typed.empty())) {
+            if (!validSaveName(typed)) {
+                ImGui::OpenPopup("Error");
+            } else {
+                // A save whose name differs only in case is the same game, as on Windows.
+                const std::filesystem::path file = ruleset::childIgnoringCase(folder_, typed + ".gam");
+                if (std::filesystem::exists(file)) ImGui::OpenPopup("Overwrite");
+                else save(ui, file, typed);
+            }
         }
-        if (confirmPopup(ui, "Overwrite", std::format("A saved game named \"{}\" exists. Replace it?", clean)))
-            save(ui, ruleset::childIgnoringCase(savesDir(), clean + ".gam"), clean);
+        if (confirmPopup(ui, "Overwrite", std::format("A saved game named \"{}\" exists. Replace it?", typed)))
+            save(ui, ruleset::childIgnoringCase(folder_, typed + ".gam"), typed);
+        notePopup(ui, "Error", "Invalid File Name.");
+        // The original's Change Directory (its whole caption does not fit our
+        // button): this window's saves go to another folder; the saves folder
+        // stays the default for the next one.
+        if (d.button("Change Folder")) {
+            folderField_ = folder_.string();
+            folderError_.clear();
+            ImGui::OpenPopup("Change Directory");
+        }
+        folderPopup(ui);
+        const std::string clean = cleanName(name_);
         // A saved game for the original's Load Game (docs/spec/08 §7), in a folder of the player's.
         const bool whole = ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat;
         if (d.button("Save for SE IV", whole && !clean.empty())) {
@@ -498,6 +519,46 @@ private:
         ImGui::EndPopup();
     }
 
+    void notePopup(UiContext& ui, const char* id, const std::string& note) {
+        ImGui::SetNextWindowSize(ui.size({300, 0}));
+        if (!ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
+        ImGui::TextWrapped("%s", note.c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    // The folder typed in, as Load Game's Change Directory asks for it.
+    void folderPopup(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({400, 0}));
+        if (!ImGui::BeginPopupModal("Change Directory", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
+        ImGui::TextColored(kLabelBlue, "Folder");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = inputString("##savefolder", folderField_, 1024, ImGuiInputTextFlags_EnterReturnsTrue);
+        if (!folderError_.empty()) ImGui::TextColored(kErrorText, "%s", folderError_.c_str());
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3.0f;
+        if (ImGui::Button("OK", ImVec2(w, ui.px(26))) || enter) {
+            std::error_code ec;
+            const std::filesystem::path dir(folderField_);
+            if (std::filesystem::is_directory(dir, ec)) {
+                folder_ = dir;
+                saves_ = listFiles(folder_, ".gam");
+                listed_ = true;
+                ImGui::CloseCurrentPopup();
+            } else {
+                folderError_ = "There is no such folder.";
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Default", ImVec2(w, ui.px(26)))) folderField_ = savesDir().string();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    std::filesystem::path folder_;
+    std::string folderField_, folderError_;
     std::string classicName_;
     std::string classicFolder_;
     std::string classicResult_;
@@ -513,7 +574,7 @@ private:
             if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) copyHistoryNextTo(file);
             error_.clear();
             saved_ = name;
-            saves_ = listSaves();
+            saves_ = listFiles(folder_, ".gam");
         } else {
             error_ = "Could not save: " + result.error();
             saved_.clear();

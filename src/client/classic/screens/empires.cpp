@@ -659,7 +659,11 @@ public:
                                                              "Statistics are shown for us and empires at Non-Aggression or better.",
                                                              "Every empire's statistics are public in this game."};
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(kTextDim, "%s", s.gameOver ? "The game is over: every score is shown." : kDisplay[size_t(std::clamp(s.options.scoreDisplay, 0, 2))]);
+        // Once the game is decided every score shows (score::scoreVisible): over, or a turn-based game's last turn.
+        const bool decided = s.gameOver || s.lastTurn;
+        ImGui::TextColored(kTextDim, "%s", s.gameOver  ? "The game is over: every score is shown."
+                                           : decided ? "This is the game's last turn: every score is shown."
+                                                     : kDisplay[size_t(std::clamp(s.options.scoreDisplay, 0, 2))]);
         ImGui::PopTextWrapPos();
 
         // Rank among every living empire.
@@ -673,7 +677,7 @@ public:
             return 0;
         };
         std::vector<EmpireId> order;
-        if (s.options.scoreDisplay == 2 || s.gameOver) {
+        if (s.options.scoreDisplay == 2 || decided) {
             for (const auto& [score, e] : ranking) order.push_back(e);
         } else {
             order = usAndKnown(ui);
@@ -1196,8 +1200,9 @@ public:
         const bool any = v.score || v.years || v.percentOfSecond || v.techPercent || v.peace;
         ImGui::TextColored(kTextDim, "%s", any ? "Checked at the end of every turn; the first condition met ends the game."
                                              : "None set: nothing ends the game automatically.");
-        if (s.gameOver) {
-            ImGui::TextColored(kTextWarn, "The game is over; the Scores window shows the final ranking.");
+        if (s.gameOver || s.lastTurn) {
+            ImGui::TextColored(kTextWarn, "%s", s.gameOver ? "The game is over; the Scores window shows the final ranking."
+                                                           : "A condition is met: this is the last turn. The Scores window shows the ranking.");
             if (validEmpire(s, s.winner)) {
                 ImGui::SameLine();
                 ImGui::TextColored(kTextWarn, "Best score:");

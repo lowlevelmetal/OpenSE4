@@ -393,8 +393,10 @@ EventVerdict App::handleEvent(SDL_Event& event, bool& running) {
         case EventVerdict::Drop: break;
         case EventVerdict::PointerAway: ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX); break;
     }
-    if (event.type == SDL_EVENT_QUIT) running = false;
-    if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window_)) running = false;
+    // Closing the window: the mode may ask first (a game in progress asks whether to quit it).
+    const bool closing = event.type == SDL_EVENT_QUIT ||
+                         (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window_));
+    if (closing && !mode_->closeRequested()) running = false;
     if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) updateUiScale();
     // Back in a window from fullscreen (Alt+Enter): with or without its title bar, as set.
     if (event.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN && event.window.windowID == SDL_GetWindowID(window_)) applyTitleBar();

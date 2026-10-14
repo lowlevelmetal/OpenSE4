@@ -81,6 +81,12 @@ public:
             question_.open("Do you want to continue playing?", "All Players Eliminated");
             return true;
         }
+        // No human left: the game is over. The original exits the program;
+        // OpenSE4 returns to the intro, as at its other endings (spec 06 §1.7).
+        if (kind == FinaleKind::HumanDead) {
+            ui.requests.quitToIntro = true;
+            return false;
+        }
         return advance();
     }
 
@@ -99,14 +105,19 @@ private:
         const game::GameState& s = ui.state();
         switch (k) {
             case FinaleKind::Victory: {
-                std::string t = "A victory condition has been met, so this game has ended. The Scores window shows how every empire finished.";
+                // A turn-based game plays one more game turn, its last (spec 05 §6).
+                std::string t = !s.gameOver && s.lastTurn
+                                    ? "A victory condition has been met. This is the last turn of the game: play it as usual, and when every "
+                                      "player has played it the game is over. The Scores window shows how every empire stands."
+                                    : "A victory condition has been met, so this game has ended. The Scores window shows how every empire finished.";
                 if (s.winner.valid() && s.winner.index() < s.empires.size()) t += std::format(" The best score belongs to the {}.", s.empire(s.winner).name);
                 return t;
             }
             case FinaleKind::Lose:
                 return "Your empire has no colony and no ship left. This is your last turn: when it ends, your empire is out of the game.";
             case FinaleKind::HumanDead:
-                return "Every empire left is played by the computer: no human player remains. The game ends here and no further turn is played.";
+                return "Every empire left is played by the computer: no human player remains. The game ends here and no further turn is "
+                       "played; closing this returns to the title screen.";
             case FinaleKind::Conquered: {
                 const game::Empire& me = ui.me();
                 return std::format("Every other empire has been destroyed. The {} under {} {} stands alone in the quadrant.", me.name, me.leaderTitle,
@@ -116,8 +127,9 @@ private:
         return {};
     }
 
-    // The question after the conquest: Yes plays on, No leaves the game for
-    // the intro (inferred, spec 06 §7 Q99).
+    // The question after the conquest: Yes plays on; No ends the game, which
+    // the original does by exiting the program and OpenSE4 by returning to
+    // the intro (confirmed: binary, spec 06 §7 Q99).
     bool askToContinue(UiContext& ui) {
         const std::optional<bool> yes = question_.answer(ui);
         if (!yes) return true;

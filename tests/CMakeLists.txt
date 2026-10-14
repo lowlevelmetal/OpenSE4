@@ -68,6 +68,7 @@ add_executable(opense4_tests
     test_stellar.cpp
     test_turn_based.cpp
     test_battle_flow.cpp
+    test_game_flow.cpp
     test_turn_order.cpp
     test_unit_groups.cpp
     test_window_hit.cpp
@@ -159,6 +160,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/combat_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/file_list.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
 # The script runtime's heap driven directly (tests/sdk/test_script_memory.cpp): C

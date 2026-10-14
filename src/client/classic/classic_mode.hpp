@@ -94,6 +94,7 @@ public:
     // The tutorial input lock (lesson_lock.hpp).
     EventVerdict filterEvent(const SDL_Event& event) override;
     int exitCode() const override { return exitCode_; }
+    bool closeRequested() override;
     const script::Probe* probe() const override { return options_.scripted ? this : nullptr; }
 
 private:
@@ -104,11 +105,23 @@ private:
         std::shared_ptr<const game::Rules> rules;
         assets::InstallFiles files;
         mods::ModSet mods;
+        // The installed data's errors, when it loaded all the same (without
+        // mods): shown in a window per data file, and the game goes on
+        // (spec 06 §1.1 "Data File Errors", inferred).
+        std::vector<std::string> errors;
     };
     static std::expected<DataSet, std::string> readDataSet(const std::filesystem::path& dataDir, const mods::ModChoice& choice);
     mods::ModChoice modChoice(std::vector<std::string> ids) const;
     // Plays with this data set from now on: the art, fonts, pointers and music follow it.
     void useDataSet(DataSet d);
+    // The data files' errors still to show, one window per file (DataSet::errors).
+    struct DataFileErrors {
+        std::string file;   // "Components.txt"
+        std::filesystem::path path;
+        std::vector<std::string> errors;
+    };
+    std::deque<DataFileErrors> dataErrors_;
+    void drawDataErrors(const classic::MenuContext& ctx);
     // The Mods window's choice (in the front end only): the data set read
     // again with these mods, kept in the settings; why not, when it cannot be.
     std::optional<std::string> changeMods(const std::vector<std::string>& ids);
@@ -290,12 +303,46 @@ private:
     std::deque<game::PlayerMessage> messageBoxes_;
     void drawMessageBox(classic::UiContext& ui);
 
-    // Hotseat hand-over between human players.
-    void drawHandoff(classic::UiContext& ui);
-    game::EmpireId handoffPlayer_;
-    bool handoff_ = false;
-    std::string handoffPassword_;
-    std::string handoffError_;
+    // Before a player plays, the map hidden (spec 06 §1.1, §1.2.1): the Next
+    // Player window at each human player's turn when more than one empire is
+    // human-controlled (destroyed ones included), and when a turn-based
+    // game's autosave is loaded; Login To Game when a simultaneous game is
+    // loaded (confirmed: binary).
+    enum class SignInWindow { None, NextPlayer, Login };
+    SignInWindow signIn_ = SignInWindow::None;
+    struct TurnKey {
+        uint32_t turn = 0;
+        game::EmpireId player;
+        bool operator==(const TurnKey&) const = default;
+    };
+    // The human turn the Next Player window last came for (or that needs none: a game loaded).
+    std::optional<TurnKey> signInKey_;
+    std::string signInPassword_;
+    std::string signInError_;
+    int signInFailures_ = 0;       // wrong passwords in a row in the Next Player window
+    int loginRow_ = -1;            // Login To Game: the row picked (the empires', then Game Master)
+    std::optional<TurnKey> currentTurnKey() const;
+    // Whether the Next Player window is due now (and remembers it came).
+    bool nextPlayerDue();
+    // A game just started or loaded: what it asks first (ClassicSession::takeSignIn).
+    void beginSignIn(classic::ClassicSession::SignIn ask, bool loaded);
+    void drawNextPlayer(classic::UiContext& ui);
+    void drawLogin(classic::UiContext& ui);
+    // Leaves the game for the intro: the original exits the program at its
+    // endings (Game Completed, Human Dead, No to playing on after the
+    // conquest, a fourth wrong password in Next Player); OpenSE4 returns to
+    // the intro instead (spec 06 §1.7).
+    void leaveToFront(classic::FrontId where);
+
+    // A turn-based game whose last turn every player has played (spec 05 §6):
+    // the "Game Completed" box, then the intro.
+    bool gameCompleted() const;
+    void drawGameCompleted(classic::UiContext& ui);
+    // Closing the window during a game asks first (spec 06 §4.3, confirmed: binary).
+    bool quitAsked_ = false;
+    void drawQuitQuestion(classic::UiContext& ui);
+    // The Progress window while a turn is processed in the background (spec 06 §1.7).
+    void drawProgress(classic::UiContext& ui);
 };
 
 } // namespace opense4::client
