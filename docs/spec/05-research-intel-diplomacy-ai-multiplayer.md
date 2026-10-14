@@ -1065,8 +1065,12 @@ Non-Aggression: War, Non-Intercourse, None, or not yet met.
 
 **Territory** (confirmed: binary). The territory is the empire's set of claimed systems,
 the same set the Borders display shows (spec 01 §6.8). At the start of the game an empire
-claims its home system only. A computer empire's Politics minister rewrites the set each
-turn, first thing in its run:
+claims the systems of its starting planets: its home system, and with 3, 5 or 10 starting
+planets the systems that received the extra ones (spec 02 §9). A Colonize that founds a
+colony claims the planet's system for the colonizing empire when its Empire Options switch
+"claim every system we colonize" is on, as it is for every computer player (spec 06 §7
+Q47). A computer empire's Politics minister rewrites the set each turn, first thing in its
+run:
 1. every claim is cleared;
 2. every system holding one of the empire's colonies is claimed;
 3. unless the empire is neutral, every other system one warp jump from such a system (over
@@ -1081,18 +1085,26 @@ from the giver to the receiver at once; it lasts until the receiver's next rewri
 (confirmed: binary). Observed under a debugger (2026-10-02, spec 07 "Pace observed under a
 debugger"): in 1,463 of 1,485 start-of-turn updates of three 100-turn games the claimed
 systems were exactly those the rule above gives from the colonies and warp links of the
-turn before; each of the other 22 held one system more for that turn only, as a traded
-system would. The Politics minister runs after the state update and after the lists
-below are built (§7.1), so each turn's lists and transitions use the territory claimed
-during the previous turn: a new colony's system and its neighbours count only from the
-second start-of-turn update after the colony is founded. A human empire keeps the claims its
-player makes unless its Politics minister acts. OpenSE4 follows this since 2026-10-02: the
+turn before; each of the other 22 held one system more for that turn only. The 14 of them
+that could be rechecked held exactly the systems that empire had colonized during the turn
+before: claims made at founding, not trades (spec 07 "Lists and claims"). The Politics
+minister runs after the state update and after the lists below are built (§7.1), so each
+turn's lists and transitions use the territory claimed during the previous turn, plus the
+systems claimed at founding since: a new colony's own system counts from the first
+start-of-turn update after the colony is founded, its neighbours only from the second. That
+matters only when the colony's system was not claimed already, that is, more than one jump
+from the empire's other colonies (confirmed: binary; observed). A human empire keeps the
+claims its player makes, those of its starting planets and those its colonies make with the
+switch on, unless its Politics minister acts. OpenSE4 follows this since 2026-10-02: the
 claims are rewritten (`ai::claimTerritory`) after the state update and the political step,
 first thing before the Politics minister decides, so a trade it accepts then moves a claim
 until the receiver's next rewrite; the ministers after Politics read the territory only
 through the lists (question 60), and the engine hands them the claims the state update used
 (`planOrdersAfterPolitics`). It used to claim after the empire's start-of-turn ministers,
-which wiped a system received in the empire's own Politics run at once.
+which wiped a system received in the empire's own Politics run at once. Since 2026-10-14 it
+also claims at founding and the systems of every starting planet (spec 06 §7 Q47); before,
+setup claimed the home system only and founding nothing, so a computer player's new colony
+system counted a turn later than in the original.
 
 **Jumps** (confirmed: binary): every AI jump count uses every warp link of the map, known
 or not, and an unreachable system counts as 999 jumps. That covers the territory's "one
@@ -1336,9 +1348,10 @@ territory §7.2 uses):
 - except the home system of any computer empire, and systems we agreed to leave by
   accepting a "remove ships", "remove colonies" or "leave planet" demand (§7.4).
 
-Human players claim systems by hand; their home system starts claimed. The step runs
-for every empire whose Politics minister is on, so a human who turns that minister on
-gets the same claims each turn (spec 06 §7 Q47, confirmed: binary).
+Human players claim systems by hand, and each colony they found claims its system while
+their Empire Options switch is on; the systems of their starting planets start claimed. The
+step runs for every empire whose Politics minister is on, so a human who turns that
+minister on gets the same claims each turn (spec 06 §7 Q47, confirmed: binary).
 
 **Per-turn update** toward empire X, in this order:
 
@@ -3971,7 +3984,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - colonies: every populated colony of such an empire in a territory system the
       evaluating empire has explored, seen or not, met or not;
     - the systems: the claimed territory (every colony system and every system one jump
-      away over all links), with the exclusions and the one-turn delay of §7.2 "Territory".
+      away over all links), with the exclusions and the one-turn delay of §7.2 "Territory"
+      (a new colony's own system counts at once through the claim made at founding).
 
     The engine matches, since 2026-10-01 with the territory's delay and exclusions too
     (§7.2). So the list is not where the engine's extra Defend (Short Term) time comes

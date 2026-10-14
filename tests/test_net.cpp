@@ -1143,7 +1143,7 @@ TEST_CASE("net: a turn-based network game plays like the same game on one comput
             for (size_t i = battles; i < host.state()->combats.size(); ++i)
                 for (game::EmpireId p : host.state()->combats[i].participants) fought = fought || p == other->empire();
             if (!fought) CHECK(game::stateChecksum(*other->state()) == otherView);
-            CHECK(other->state()->playerTurn.moves.empty() == !fought);  // none of its own groups moved
+            CHECK(other->state()->playerTurn.moves.empty());  // nothing counts steps (spec 03 §19 Q85)
             CHECK(other->state()->playerTurn.questions.empty());
             for (const game::Vehicle& v : other->state()->vehicles) {
                 if (v.owner == other->empire()) continue;

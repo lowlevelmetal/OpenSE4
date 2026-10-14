@@ -108,6 +108,16 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
     s.colonies[planet.index()] = std::move(c);
     Colony& col = *s.colonies[planet.index()];
     sight::recalculateColony(r, col);  // a new colony's cloak and sensor levels (spec 01 §6.9)
+    // The Empire Options' "claim every system we colonize" (on for a new
+    // empire): the colonizing empire claims the planet's system at once,
+    // human or computer, minister or not. A claim of ours stays as it is;
+    // another empire's stands beside it, so the system becomes contested
+    // (spec 06 §7 Q47, confirmed: binary).
+    const SystemId sys = s.galaxy.object(planet).system;
+    if (Empire& e = s.empire(owner); e.interfaceOptions.autoClaimColonized) {
+        std::vector<SystemId>& claims = e.claimedSystems;   // kept sorted
+        if (!std::binary_search(claims.begin(), claims.end(), sys)) claims.insert(std::upper_bound(claims.begin(), claims.end(), sys), sys);
+    }
     // More than the planet holds is lost (inferred).
     int64_t over = col.totalPopulation() - maxPopulation(r, s, col);
     for (auto it = col.population.rbegin(); over > 0 && it != col.population.rend(); ++it) {
@@ -126,15 +136,10 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
     if (playedByController(ctx, owner))
         if (std::optional<std::string> chosen = ctx.players->colonyType(ctx, owner, planet, id)) col.colonyType = std::move(*chosen);
 
-    const SystemId sys = s.galaxy.object(planet).system;
     ctx.log(owner, LogCategory::Misc, std::format("{} colonized", s.galaxy.object(planet).name), std::format("{} founded the colony.", v.name),
             locationOf(s.galaxy, planet), logpicture::colonyFounded(s.galaxy.object(planet)));
     addHistory(s, owner, owner, std::format("Colonized {}", s.galaxy.object(planet).name), locationOf(s.galaxy, planet));
     ctx.mood(owner, "Any Planet Colonized", sys, planet);
-    // Founding a colony claims nothing: the Empire Options' "claim every
-    // system we colonize" switch is stored and shown but never read; the
-    // Politics minister's territory pass makes the claims (spec 06 §7 Q47,
-    // confirmed: binary).
     s.vehicle(id)->count = 0;  // the colony ship is consumed
     grantRuins(ctx, owner, planet);
     if (ctx.hooks) {
@@ -254,6 +259,7 @@ void repairEmpire(TurnContext& ctx, EmpireId e) {
                 v.damage[i] = 0;  // the engine keeps partial damage; a damaged part costs one point like a destroyed one
                 --points;
             }
+            capMovement(r, s, v);  // the maximum is recomputed (spec 03 §6.1)
         }
     }
 }
@@ -274,6 +280,7 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     const int64_t droneUse = r.setting("Drone Supply Usage Per Turn", 200);
     auto decloak = [&](Vehicle& v) {
         v.status = VehicleStatus::Normal;
+        capMovement(r, s, v);  // the maximum is recomputed (spec 03 §6.1)
         ctx.log(e, LogCategory::Misc, std::format("{} decloaked", v.name), "Its cloak could no longer be kept up.", v.location,
                 logpicture::vehicle(r, s, v));
         // Any decloak runs the first-contact check in its system (spec 05 §3.1).
@@ -298,6 +305,7 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
             cost = int64_t{std::max(1, v.count)} * (droneUse + cloak);
         }
         spendSupply(r, s, v, cost);
+        capMovement(r, s, v);  // supply lowered: the maximum is recomputed (spec 03 §6.1)
         // A cloak drops at 0 supply, before any depot, or when it can no longer work (§8).
         if (v.status == VehicleStatus::Cloaked && ((v.supply <= 0 && !vehicleHasUnlimitedSupply(r, s, v)) || !canCloak(r, s, v))) decloak(v);
     }

@@ -1207,10 +1207,13 @@ struct GameOptions {
 
 // ---- Turn-based games ----------------------------------------------------------------------
 
-// What a vehicle did during the player turn in progress (turn-based games):
-// the steps it made and the movement Emergency Energy gave it. Its remaining
-// movement is capped at its maximum plus that bonus, less the steps, when the
-// maximum drops (spec 03 §6.1, §6.4, §8).
+// Unused since 2026-10-14, kept so that the save format stays the same:
+// OpenSE4 used to count the steps each vehicle made in the player turn in
+// progress and the movement Emergency Energy gave it, and capped its movement
+// left at that maximum plus the bonus, less the steps. The original keeps no
+// such count: a recompute of the maximum caps the movement left at the new
+// maximum alone (movement::capMovement; spec 03 §6.1, §19 Q85). The list is
+// cleared at every player's turn start and nothing fills it.
 struct TurnMoves {
     VehicleId vehicle;
     int steps = 0;
@@ -1247,7 +1250,7 @@ struct EntryQuestion {
 struct PlayerTurn {
     EmpireId empire;                    // whose turn it is; invalid: the next round has not started
     bool started = false;               // its start of turn has run (movement, continued orders, ministers)
-    std::vector<TurnMoves> moves;       // sorted by vehicle
+    std::vector<TurnMoves> moves;       // unused, always empty (TurnMoves)
     std::vector<TurnLaunches> launched;
     // The player's Attack Sector questions still open, oldest first. Kept in
     // the game so that a saved or network game asks them again (inferred).

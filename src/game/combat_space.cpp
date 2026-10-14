@@ -23,6 +23,7 @@
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
+#include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
@@ -3749,6 +3750,13 @@ void Battle::finish() {
             continue;
         }
         if (p.kind == Kind::Vehicle) detail::restoreRegeneratingArmor(r_, s_, p.unit, kRegenerationCap);   // (history 1.79)
+        // A part destroyed (or regenerated), supply spent or a cloak lowered
+        // recomputes the maximum, which caps the movement left: engines lost
+        // slow the ship at once, whether it moved in, was there already or
+        // was hit in another empire's turn (spec 03 §6.1, §6.4, §19 Q85,
+        // confirmed: binary). The original does it hit by hit; since a
+        // battle only lowers the maximum, once at the end comes to the same.
+        const bool recomputed = v->damage != p.unit.damage || v->supply != p.unit.supply || p.wasCloaked;
         v->damage = p.unit.damage;
         v->supply = p.unit.supply;
         std::erase_if(p.unit.cargo.units, [](const UnitStack& u) { return u.count <= 0; });
@@ -3756,6 +3764,7 @@ void Battle::finish() {
         v->experience = p.unit.experience;
         v->experienceTenths = p.unit.experienceTenths;
         if (p.kind == Kind::Vehicle) v->count = p.unit.count;
+        if (recomputed) movement::capMovement(r_, s_, *v);
         if (p.owner != v->owner) {
             if (Fleet* f = s_.fleet(v->fleet)) {
                 std::erase(f->members, v->id);

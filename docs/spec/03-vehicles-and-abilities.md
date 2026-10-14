@@ -611,7 +611,8 @@ Each vehicle stores:
   partial damage (confirmed: binary); how a hit's damage is spread over components is in the
   combat spec;
 - supply;
-- movement points remaining and movement points at the start of the turn;
+- movement points left this turn, and its maximum, which the original keeps as a figure of its
+  own and recomputes whenever something it depends on changes (§6.1) (confirmed: binary);
 - an order list and a repeat flag;
 - fleet id;
 - cargo (population amount and a count per unit design);
@@ -633,11 +634,19 @@ status (confirmed: binary).
 
 ### 6.1 Movement points per turn
 
-A ship's maximum MP is recomputed whenever something that affects it changes (a component is
-destroyed or repaired, supply changes, a turn starts). The MP left this turn are then lowered to
-the new maximum if they exceed it, so engines lost mid-turn cut the remaining movement at once.
-Unspent MP do not carry over. The maximum is found in these steps (confirmed: binary), where L
-is the ship's ability list (§3.1: hull plus components not destroyed; empty when mothballed):
+A ship's maximum MP is recomputed whenever something that affects it changes: a component is
+destroyed (in combat too, at each hit that destroys one) or repaired; the ship is resupplied
+(also on a step into or within a sector where it gets supply); its supply is lowered or set,
+or runs out on a step; it is mothballed or unmothballed; it cloaks or decloaks. Each recompute
+ends with **MP left := the smaller of the MP left and the new maximum**, so engines lost
+mid-turn cut the remaining movement at once, for the ship that moved into the battle, the ships
+that were there and a ship hit during another empire's player turn alike. Nothing counts the
+steps already made: a ship of speed 6 that made two steps (4 left) and comes out of a battle
+with a maximum of 3 has 3 left and can use them at once. An ordinary step lowers the MP left by
+1 and recomputes nothing. The MP left are set to the maximum at the start of the owner's turn
+(§6.3). Unspent MP do not carry over (confirmed: binary; §19 Q85). The maximum is found in
+these steps (confirmed: binary), where L is the ship's ability list (§3.1: hull plus components
+not destroyed; empty when mothballed):
 
 1. E = Sum of `Standard Ship Movement` V1 over L (the original keeps only the low 8 bits of E,
    which never matters with stock data).
@@ -674,7 +683,10 @@ Consequences worth stating:
   bridge-or-auxiliary-control, crew quarters, life support. The test is "none left", not "fewer
   than the hull minimum", and it ignores whether the hull requires the item. A working
   `Master Computer` prevents all three halvings. Auxiliary control stands in for a lost bridge.
-- `Emergency Energy` adds movement to the current turn only (§8).
+- `Emergency Energy` adds movement to the current turn only (§8). In a turn-based game it adds
+  to the MP left without a ceiling, so they can then exceed the maximum, until the next
+  recompute (a component lost, a resupply on a step, a cloak...) throws away what is above it
+  (confirmed: binary).
 - Units (fighters, drones) in space use their own movement rules (§12).
 
 ### 6.2 Grid, paths and warp points
@@ -779,8 +791,14 @@ no MP or supply spent:
 
 ### 6.3 Turn modes
 
-**Turn-based.** Orders execute as soon as they are issued, spending MP. At the start of each turn,
-every vehicle regains MP and first continues its existing order list.
+**Turn-based.** Orders execute as soon as they are issued, spending MP. At the start of each
+empire's own player turn, after its ministers have given their orders, every ship, base and unit
+group of that empire regains MP (its current maximum, so a damaged ship its damaged maximum) and
+first continues its existing order list. Other empires' vehicles are not touched then, and the
+end of the game turn refills nobody: each empire's vehicles are refilled once per game turn, at
+its own turn start (confirmed: binary). A group steps while every member has MP left, 1 point per
+step, so a ship whose maximum dropped moves at once with what the cap left it, and waits only
+when some member has 0 left (§19 Q85).
 
 **Simultaneous** (this project's mode). Players only queue orders; the host resolves all movement
 over a **30-day** month (confirmed: binary):
@@ -922,8 +940,8 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   destination in the same run while MP last, although the lists are already empty, so nothing is
   left of it for a later turn if MP run out first; in a simultaneous game the action ends
   there.
-- If a vehicle's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1). In a
-  simultaneous game a drop during the vehicle's own action (supply running out on its step, for
+- If a vehicle's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1), whoever's
+  turn it is; the steps it already made do not count (§19 Q85). In a simultaneous game a drop during the vehicle's own action (supply running out on its step, for
   example) stops it once its counter has no whole unit left (§6.3 step 4), and a drop between
   its actions slows it (§6.3).
 - A cloaked vehicle that the enemy cannot detect passes through enemy-held sectors without combat.
@@ -1157,7 +1175,7 @@ sector is elsewhere) plus the action.
 | Cloak (Z) / Decloak (X) | — | Take effect immediately, for the ship or unit group, a fleet's members at its location, or every tagged object; they are not queued, the order list is left alone, and the sound plays. Since 2026-10-14 the client gives them as `cmd::CloakVehicles` (the order kinds stay for imported games). Cloaking needs a working part whose `Cloak Level` gives level 2 or more in some sight type, and supply above 0. While cloaked the vehicle pays, every turn, the total mounted `Supply Amount Used` of its working cloak parts (a group of fighters pays it per unit), and it decloaks by itself at 0 supply or when it can no longer cloak. A cloaked vehicle cannot colonize, manipulate stellar objects, be mothballed, scrapped, analyzed or retrofitted (confirmed: binary). Colonies cloak by other rules: no supply, no upkeep, and their queue is kept (spec 01 §6.9). |
 | Sweep Mines (Ctrl M) | — | Runs the whole mine encounter of the current sector again (sweeping, then the remaining hostile mines strike the group, §12), then, if the group survived, costs 1 MP (if any is left) and one move's supply. Always done (confirmed: binary). |
 | Add / Remove Tagged Minefield (Ctrl T / Ctrl R) | sector | Empire-level. |
-| Use Component (Ctrl Z) | component position | Given through a picker; in a turn-based game it first clears the list. Only the acting group's first member uses the part (rules below the table). A part with `Component Destroyed On Use` is destroyed first. `Emergency Energy`, only when the vehicle's maximum MP is above 0: in turn-based games it adds V1 to this turn's remaining MP, without a cap; in simultaneous games it adds V1 to the day counter (§6.3), giving up to V1 extra actions at one per day. `Emergency Resupply` adds V1 supply, capped at the maximum, with no effect on unlimited supply or mothballed vehicles. No supply is charged for the use (confirmed: binary). |
+| Use Component (Ctrl Z) | component position | Given through a picker; in a turn-based game it first clears the list. Only the acting group's first member uses the part (rules below the table). A part with `Component Destroyed On Use` is destroyed first. `Emergency Energy`, only when the vehicle's maximum MP is above 0: in turn-based games it adds V1 to this turn's remaining MP, without a cap (the next recompute of the maximum throws away what is left above it, §6.1); in simultaneous games it adds V1 to the day counter (§6.3), giving up to V1 extra actions at one per day. `Emergency Resupply` adds V1 supply, capped at the maximum, with no effect on unlimited supply or mothballed vehicles. No supply is charged for the use (confirmed: binary). |
 | Self-Destruct | — | A separate order. A ship or base needs `Self-Destruct` in its ability list; satellite groups, minefields and drone groups need nothing; fighter groups cannot self-destruct (§15) (confirmed: binary). |
 | Stellar Manipulation (B) | action | See below. |
 | Scrap / Analyze / Mothball (G) | — | §15. |
@@ -1194,6 +1212,9 @@ group's cargo after the orders before it (inferred).
   `Automatic Colonization Population`, and then every kind of cargo on the ship is dropped under
   the Drop Cargo rules, so only what fits arrives; the rest is lost with the ship, which is
   consumed. Then the planet's ancient ruins take effect (§3.3).
+- When the colonizing empire's Empire Options switch "claim every system we colonize" is on (it
+  is on for a new empire, computer players included), the planet's system is claimed for it as
+  the colony is founded, whatever the system's other claims (spec 06 §7 Q47).
 - The colony type: when the empire's option to choose it on colonization is on (it is on for a
   new empire) and the colonizing empire is a human player in a turn-based game, the player picks
   it in a dialog; otherwise it is chosen automatically, as a computer player chooses it
@@ -2799,3 +2820,55 @@ fleet's row in the sector list is spec 06 §7 Q110.
       entry: title and category (OpenSE4: "<planet> abandoned", Misc).
     - The Scrap window's Order By Class: OpenSE4 sorts by design name, then by vehicle name.
       And what Status shows with nothing selected (OpenSE4: "-").
+85. **Movement left after a battle (GitHub issue #13).** "Ships damaged in combat can display as
+    having more than their maximum movement after combat." "I went to move the ship which
+    displayed 4 / 3, and it changed to 0 / 3 movement and queued it for the next turn instead of
+    moving." In the report's turn-based game a battle destroyed engines; afterwards the Ship
+    Report showed more movement left than the maximum ("4 / 3", another ship "4 / 0"), and a Move
+    To then left the ship with none and waited for the next turn. Whose movement does the original
+    cap when the maximum drops, when, do the steps already made count, when are turn-based
+    vehicles refilled, and what does the Movement line show?
+
+    **Answer** (confirmed: binary; not observed in the running game), now in §5, §6.1, §6.3 and
+    §6.4:
+    - A ship or base keeps two figures: the movement left and its maximum. Nothing counts the
+      steps made in a turn or the Emergency Energy received. Every recompute of the maximum (a
+      component destroyed or repaired, a resupply, supply lowered, set or running out on a step,
+      mothballing or unmothballing, cloaking or decloaking) ends with movement left := the smaller
+      of movement left and the new maximum. A battle destroys components on the ship itself, so
+      the cap comes at once, hit by hit, for the ship that moved in, the ships that were there and
+      a ship hit during another empire's player turn alike. A battle neither refills nor spends
+      strategic movement; movement in combat is a figure of the combat piece.
+    - So a speed-6 ship that made two steps (4 left) and comes out of a battle with a maximum of 3
+      has 3 left, shown "3/3". The battle on entry fails its order (§6.4), but the ship keeps that
+      movement: ordered on, it moves up to 3 sectors at once, and the rest of the route waits for
+      its next turn. A group waits at once only when a member has 0 left.
+    - In a turn-based game an empire's ships, bases and unit groups get their current maximum as
+      movement left at the start of that empire's own player turn, after its ministers act and
+      before its continuing orders run; no other empire's vehicles, and nothing at the end of the
+      game turn. A ship hit in another empire's turn starts its owner's next turn with its damaged
+      maximum.
+    - Emergency Energy adds to the movement left without a ceiling; the next recompute throws
+      away whatever is above the maximum. An ordinary step lowers the movement left by 1 and
+      recomputes nothing.
+    - The Ship Report's Movement line is "<left>/<maximum>" without spaces ("3/6"), the two stored
+      figures, with a small gauge beside it when the maximum is above 0. The left figure exceeds
+      the maximum only after Emergency Energy, never after combat damage.
+
+    Since 2026-10-14 ours follows. `movement::capMovement` (`game/movement_util.cpp`) sets the
+    movement left to the smaller of itself and the maximum. It runs where the original
+    recomputes: when a battle's results are written back to a ship whose parts, supply or cloak
+    the battle changed (`Battle::finish`, `game/combat_space.cpp`; once at the end, which comes to
+    the same as hit by hit, since a battle only lowers the maximum); after every other part lost
+    (`fitToCapacity`: mines, storms, turbulence, events, parts used up); after repairs; on a
+    resupply (`refillSupply`, a step's included) and when supply runs out (`spendSupply`); when
+    Emergency Resupply, cloak upkeep or a stellar manipulation changes supply; and when a vehicle
+    cloaks or decloaks. Before, the turn-based engine counted each vehicle's steps and Emergency
+    Energy in the player turn (`TurnMoves`) and capped only a moving group's members, at the
+    maximum plus that energy less the steps, when they next stepped. A battle capped nobody, hence
+    "4 / 3"; ordered on, the ship's steps already made (as many as the new maximum, or more) took
+    everything, hence "0 / 3" and the waiting Move To. `TurnMoves` is now unused and its list
+    always empty; it stays in the saved game so that the format does not change. Simultaneous
+    games did not change: their daily cap (§6.3) already gave the same results. Our client shows
+    the Movement line as "3/6" since then, without the gauge. Open: unit groups (fighters,
+    drones) were not checked in the executable; OpenSE4 caps them the same way (inferred).

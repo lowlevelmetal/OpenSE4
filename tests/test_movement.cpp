@@ -2484,30 +2484,39 @@ TEST_CASE("movement: warp point turbulence hits half the transits and ends the m
 
 // ---- Colonization -----------------------------------------------------------------------------------
 
-TEST_CASE("movement: founding a colony claims nothing, whatever the Politics option says") {
-    // Empire Options, Politics (spec 06 §1.9): on for a new empire, stored
-    // and shown but never read (spec 06 §7 Q47, confirmed: binary).
-    for (const bool on : {true, false}) {
+TEST_CASE("movement: founding a colony claims its system when the empire's option is on (issue 18)") {
+    // Empire Options, Politics (spec 06 §1.9): on for a new empire. A Colonize
+    // that founds a colony claims the planet's system for the colonizing
+    // empire, human or computer; a claim of ours stays, another empire's
+    // stands beside it (spec 06 §7 Q47, confirmed: binary).
+    enum class Case { On, Off, Computer, OursAlready, TheirsAlready };
+    for (const Case k : {Case::On, Case::Off, Case::Computer, Case::OursAlready, Case::TheirsAlready}) {
+        CAPTURE(static_cast<int>(k));
         World w;
         const Rules& r = w.rules();
         CHECK(w.s.empire(kA).interfaceOptions.autoClaimColonized);
-        InterfaceOptions o = w.s.empire(kA).interfaceOptions;
-        o.autoClaimColonized = on;
-        REQUIRE(apply(r, w.s, kA, cmd::SetInterfaceOptions{o}).ok);
+        if (k == Case::Off) {
+            InterfaceOptions o = w.s.empire(kA).interfaceOptions;
+            o.autoClaimColonized = false;
+            REQUIRE(apply(r, w.s, kA, cmd::SetInterfaceOptions{o}).ok);
+        }
+        if (k == Case::Computer) w.s.empire(kA).kind = PlayerKind::Computer;
         const SystemId a = w.system("A");
         const SystemId b = w.system("B", 10, 0);
+        const SystemId c = w.system("C", 20, 0);
         const ObjectId target = w.planet(b, {5, 6});
-        w.s.empire(kA).claimedSystems = {a};
+        w.s.empire(kA).claimedSystems = k == Case::OursAlready ? std::vector<SystemId>{a, b, c} : std::vector<SystemId>{a, c};
+        w.s.empire(kB).claimedSystems = k == Case::TheirsAlready ? std::vector<SystemId>{b} : std::vector<SystemId>{};
         const VehicleId ship = w.spawn(w.ship(kA, "Settler", 4, {"Test Rock Pod"}), at(b, 5, 6));
         fuel(w, ship);
         w.v(ship).cargo.population.push_back({kA, 2});
         w.order(ship, mk(OrderKind::Colonize, {}, target));
         w.colonize();
         REQUIRE(w.s.colony(target));
-        const auto& claimed = w.s.empire(kA).claimedSystems;
-        CHECK(std::is_sorted(claimed.begin(), claimed.end()));
-        CHECK(std::find(claimed.begin(), claimed.end(), b) == claimed.end());
-        CHECK(claimed == std::vector<SystemId>{a});
+        // The claims stay sorted, B once among them, or not at all with the option off.
+        CHECK(w.s.empire(kA).claimedSystems == (k == Case::Off ? std::vector<SystemId>{a, c} : std::vector<SystemId>{a, b, c}));
+        // Another empire's claim stands: the system is contested.
+        CHECK(w.s.empire(kB).claimedSystems == (k == Case::TheirsAlready ? std::vector<SystemId>{b} : std::vector<SystemId>{}));
     }
 }
 

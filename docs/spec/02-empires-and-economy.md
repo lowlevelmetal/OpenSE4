@@ -1450,7 +1450,9 @@ New Game no empire gets designs (spec 01 §2.1, §3.6 "Starting assets"; confirm
 
 How the planets are chosen is in spec 01 §3.6. Then **every** starting planet, the
 homeworld and the extra ones alike, is set up the same way:
-- Its system is explored for the owner.
+- Its system is explored for the owner, and claimed for it without condition, so with 3, 5
+  or 10 starting planets the systems holding the extra ones are claimed as well as the home
+  system (spec 06 §7 Q47). OpenSE4 claimed the home system only before 2026-10-14.
 - Any `Ancient Ruins` or `Ancient Ruins Unique` ability is removed.
 - **Values.** In a normal game, each of the three values is the `Plr Planet Value
   {Low,Medium,High} Percent` of the Home Planet Value setting plus R[1,10] − 5, drawn

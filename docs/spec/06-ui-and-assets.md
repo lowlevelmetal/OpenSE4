@@ -366,7 +366,7 @@ reports render inside the right-hand panel (§2.5).
 
 | Report | Tabs / content |
 |---|---|
-| Ship Report | Detail (owner flag, 128 px portrait with status icons under it, name, class, size, movement, damage, supplies, crew experience, fleet, maintenance), Comps, Cargo, Ability. Less detail for foreign ships. |
+| Ship Report | Detail (owner flag, 128 px portrait with status icons under it, name, class, size, movement, damage, supplies, crew experience, fleet, maintenance), Comps, Cargo, Ability. Less detail for foreign ships. Movement is the movement left and the maximum as "3/6", with a small gauge beside it when the maximum is above 0 (confirmed: binary, spec 03 §19 Q85; ours since 2026-10-14, without the gauge). |
 | Planet Report | Detail (owner flag, picture, status icons, physical data, value, description, then colony data: type, population, mood, output, construction), Facil, Cargo, Ability. An "Empty" variant without tabs for planets that are not ours. |
 | Race Report | Detail, Descr (free-text blocks), Race (characteristics, each with its level word as on Empire Setup's Characteristics page (spec 02 §9, confirmed: binary), traits), Tech (known tech). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); Detail in the object report's places (the race's portrait with the flag on it, the name from x 120 at y 4, label lines at x 130 every 30 px with values at x 140); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate) and closes with it; Esc closes it (inferred, as the Combat Piece Report). |
 | Fleet, Storm reports | Fleet: movement, supply pool, experience, formation, strategy, ships. Storm: picture, size, description, abilities. |
@@ -957,7 +957,7 @@ in brackets.
 | System Display | warp point names [on]; planet names [off]; colonizable planets [on]; system grid [off]; coordinate location [on]; then one row per group of facility letter markers, all [off]: R/S/Y (resupply depot, spaceport, planetary space yard), Ca/Cc/Cv (atmosphere, conditions and value changers), St/Ft, Rc/Rr, Sst/Sft, Spv/Spc, Sph/Spa, Scm/Sdm, Srm/Ssm, Spp/Src, Sbe/Sbi, Slr |
 | Galaxy Display | Show Grid Lines [on]; Show Warp Lines [on] |
 | Latest Items | only latest items for construction [off]; only latest components for designs [off] |
-| Politics | automatically claim every system we colonize [on] (stored and shown but never read: founding a colony claims nothing, §7 Q47) |
+| Politics | automatically claim every system we colonize [on] (a Colonize that founds a colony claims the planet's system for the empire, §7 Q47) |
 
 ### 1.10 Combat windows in detail
 
@@ -4209,13 +4209,33 @@ something open; all are now settled from the executable:
     empires when the colony is founded (computer players work out their claims each
     turn). Facilities left on an abandoned planet go, all of them, to the next colony
     founded there by any empire. Do these match? **Answer:**
-    - The "automatically claim any system colonized" option is stored, saved and shown,
-      but nothing reads it: founding a colony never claims a system. Systems become
-      claimed only as the home system at empire creation, by a click in the Borders
-      window (which toggles the claim), through a trade or gift package (the giver loses
-      it and the receiver claims it, Q70), and by the Politics minister's territory pass each turn (spec 05) for every
-      empire whose Politics minister is on: every computer player, and a human who turns
-      that minister on.
+    - (Corrected on 2026-10-14, GitHub issue #18: "Empire Option 'Claim every system we
+      colonize' isn't working." "I have colonized many systems and only the system I
+      started in and two I claimed manually right after I started have been claimed.")
+      The "automatically claim any system colonized" option works. When a Colonize order
+      founds a colony and the colonizing ship's empire has the option on, the planet's
+      system is claimed for that empire at once, in both turn styles, before the new
+      colony's log entry. It applies to every empire, computer players included: the
+      option is on for a new empire and in every stock empire file, and nothing in a
+      computer player's turn changes it. Nothing else is tested: not the Politics
+      minister, not the system's claims. A claim of ours stays as it is (the claim is set,
+      not toggled); another empire's claim stands beside it, and the system becomes
+      contested. Nothing else reads the option, so switching it on later claims nothing
+      for colonies founded before, and switching it off only stops later claims. The
+      earlier answer, that nothing reads the option, came from a decompiled export that
+      left out the end of the Colonize order, where the read sits.
+    - Systems become claimed in these ways only: the home system when an empire is
+      created (a new game, a player added at setup, the empire a rebelling planet forms);
+      at game setup the system of every starting planet, without condition, so with 3, 5
+      or 10 starting planets the systems holding the extra ones are claimed too (spec 02
+      §9); a Colonize with the option on; a click in the Borders window (which toggles the
+      claim); a System item of an accepted trade or gift (the giver loses it and the
+      receiver claims it, Q70); and the Politics minister's territory pass each turn (spec
+      05 §7.2) for every empire whose Politics minister is on: every computer player, and a
+      human who turns that minister on. That pass clears and rewrites the claims, so for
+      such an empire a claim made at founding lasts until its next pass, which claims the
+      colony's system anyway. Capturing a planet, receiving one in a trade or gift and the
+      movement replay claim nothing; loading a game restores its claims.
     - Abandon Planet empties the population and resets the colony's anger to 25. If the
       player chose to scrap the facilities, they are scrapped with the usual refund
       (spec 02). Only when no facility remains is the colony removed and the planet left
@@ -4224,11 +4244,15 @@ something open; all are now settled from the executable:
       a colony is already there). In a turn-based game this happens at once.
 
     (confirmed: binary)
-    Our engine follows this: founding a colony claims nothing, the territory pass claims
-    for exactly the empires whose Politics minister is on, and an abandoned colony that
-    keeps facilities stays with its owner, empty, with anger 25. Abandon Planet is a colony
-    order since 2026-10-13: a simultaneous game carries it out during turn processing
-    (spec 02 §5).
+    Our engine follows this. Since 2026-10-14 a colony founded by an empire whose option
+    is on claims its system (`colonize`, `game/movement_upkeep.cpp`;
+    `InterfaceOptions::autoClaimColonized`), and game setup claims the system of every
+    starting planet (`createGame`, `game/setup.cpp`); before, founding a colony claimed
+    nothing and setup claimed the home system only, so a human's claims grew only by hand,
+    as the report found. The territory pass claims for exactly the empires whose Politics
+    minister is on, and an abandoned colony that keeps facilities stays with its owner,
+    empty, with anger 25. Abandon Planet is a colony order since 2026-10-13: a
+    simultaneous game carries it out during turn processing (spec 02 §5).
 48. **Smaller choices.** The planet report's Time Remaining uses the Construction
     Queues' years ("0.3 Years", "On Hold", "Never"). "Skip ships under construction"
     skips nothing: our ships appear finished, with no Under Construction status. Save

@@ -834,6 +834,29 @@ std::vector<const game::Colony*> coloniesOf(const game::GameState& s, game::Empi
 
 } // namespace
 
+TEST_CASE("setup: the system of every starting planet is claimed (issue 18)") {
+    // Spec 02 §9, spec 06 §7 Q47 (confirmed: binary): without condition, so with
+    // more starting planets than the home system holds, the systems of the
+    // extra ones are claimed too.
+    const game::Rules& r = test::engineRules();
+    bool beyondHome = false;
+    for (int planets : {1, 3, 10})
+        for (uint64_t seed : {3ull, 8ull, 21ull}) {
+            game::GameState s = startGame(r, planets, 12, seed, true);
+            for (const game::Empire& e : s.empires) {
+                INFO(e.name << " planets " << planets << " seed " << seed);
+                std::vector<game::SystemId> systems;
+                for (const game::Colony* c : coloniesOf(s, e.id)) systems.push_back(s.galaxy.object(c->planet).system);
+                std::sort(systems.begin(), systems.end());
+                systems.erase(std::unique(systems.begin(), systems.end()), systems.end());
+                CHECK(e.claimedSystems == systems);
+                CHECK(std::binary_search(e.claimedSystems.begin(), e.claimedSystems.end(), e.homeSystem));
+                beyondHome = beyondHome || e.claimedSystems.size() > 1;
+            }
+        }
+    CHECK(beyondHome);
+}
+
 TEST_CASE("setup: every starting planet gets the homeworld setup") {
     // Planets of the starting systems always carry ruins here, to see them removed.
     ruleset::Ruleset data = test::buildEngineRuleset();

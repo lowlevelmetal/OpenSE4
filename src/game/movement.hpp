@@ -389,10 +389,20 @@ int64_t damageUnitGroup(const Rules& r, GameState& s, Vehicle& v, int64_t amount
 // counts; a mothballed vehicle has none); satellite groups, minefields and
 // drone groups always; fighter groups never.
 bool canSelfDestruct(const Rules& r, const GameState& s, const Vehicle& v);
-// After damage: supply clamped to the capacity that is left (spec 03 §7) and
-// cargo that no longer fits removed (§11). Unlimited supply is left alone
-// (a vehicle that lost its reactor drops back when it next moves).
+// After damage: supply clamped to the capacity that is left (spec 03 §7),
+// cargo that no longer fits removed (§11) and the movement left capped
+// (capMovement). Unlimited supply is left alone (a vehicle that lost its
+// reactor drops back when it next moves).
 void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v);
+// The movement left this turn becomes the smaller of itself and the vehicle's
+// maximum (0 while it is held in place). The original recomputes the maximum,
+// and so caps the movement left, whenever something it depends on changes: a
+// component destroyed (in battle, hit by hit) or repaired, a resupply,
+// supply lowered or running out, mothballing, cloaking or decloaking (spec 03
+// §6.1, §6.4, confirmed: binary); the callers are those places. Steps made
+// this turn do not count, and Emergency Energy above the maximum is lost at
+// the first such change.
+void capMovement(const Rules& r, const GameState& s, Vehicle& v);
 
 // ---- Launching and recovering units (spec 03 §12) -------------------------------------------
 // What a launch or recovery did, or would do: the units moved, and the

@@ -790,6 +790,7 @@ struct Applier {
             if (!c.cloak) {
                 if (v.status != VehicleStatus::Cloaked) continue;
                 v.status = VehicleStatus::Normal;
+                movement::capMovement(r, s, v);  // the maximum is recomputed (spec 03 §6.1)
                 changed = true;
                 if (std::find(decloakedIn.begin(), decloakedIn.end(), v.location.system) == decloakedIn.end())
                     decloakedIn.push_back(v.location.system);
@@ -798,6 +799,7 @@ struct Applier {
             if (v.status != VehicleStatus::Normal || !movement::detail::canCloak(r, s, v)) continue;
             if (v.supply <= 0 && !vehicleHasUnlimitedSupply(r, s, v)) continue;
             v.status = VehicleStatus::Cloaked;
+            movement::capMovement(r, s, v);  // the maximum is recomputed (spec 03 §6.1)
             v.queue.items.clear();   // a cloaked ship cannot build (spec 01 §6.4)
             changed = true;
         }

@@ -825,7 +825,11 @@ follow.
 - Claimed systems: in 1,463 of the 1,485 start-of-turn updates of the three games the claims
   were exactly those of spec 05 §7.2 "Territory", from the colonies and the warp links of the
   turn before (computer players closed warp points in two games). Each of the other 22 held
-  one system more, for that turn only, as a traded system would; none lacked one.
+  one system more, for that turn only; none lacked one. Rechecked on 2026-10-14 from the
+  logs of the two games that hold the warp map (870 updates): all 14 extras there were
+  exactly the systems that empire had colonized during the turn before (one update held
+  two), claimed at founding by the Empire Options switch (spec 06 §7 Q47), not trades. The
+  third game's log has no map records and could not be rechecked.
 - The economy step of player 1 found the lists of player 5's start-of-turn step on every turn;
   players 2–5 built their own (spec 05 §7.2 "Whose lists the economy step reads").
 

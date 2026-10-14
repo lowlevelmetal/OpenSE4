@@ -65,9 +65,11 @@ std::optional<Sector> centreStep(const CentreCostMap& map, Sector at);
 int64_t scaledSupply(const Rules& r, const GameState& s, EmpireId owner, int64_t amount);
 // Takes `amount`, leaving at least 0. Unlimited supply is held at its marker
 // and never charged; a vehicle that lost its reactor first drops back to its
-// capacity (inferred: "a normal supply value").
+// capacity (inferred: "a normal supply value"). Supply running out caps the
+// movement left (capMovement, spec 03 §6.1).
 void spendSupply(const Rules& r, const GameState& s, Vehicle& v, int64_t amount);
-// Refills to the maximum (drones never; satellites and mines have no supply).
+// Refills to the maximum (drones never; satellites and mines have no supply)
+// and caps the movement left (capMovement, spec 03 §6.1).
 void refillSupply(const Rules& r, const GameState& s, Vehicle& v);
 // Unlimited supply back at its marker; otherwise supply clamped to the capacity.
 void holdSupply(const Rules& r, const GameState& s, Vehicle& v);
