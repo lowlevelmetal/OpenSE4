@@ -358,7 +358,7 @@ void completeHeadOrder(std::vector<Order>& orders, bool repeat, uint16_t& shift)
     const Order done = orders.front();
     orders.erase(orders.begin());
     if (repeat) orders.push_back(done);
-    shift = repeat && !orders.empty() ? static_cast<uint16_t>((turned + 1) % orders.size()) : 0;
+    shift = static_cast<uint16_t>(repeat && !orders.empty() ? (turned + 1) % orders.size() : 0);
 }
 
 void removeHeadOrder(std::vector<Order>& orders, bool repeat, uint16_t& shift) {
@@ -367,7 +367,7 @@ void removeHeadOrder(std::vector<Order>& orders, bool repeat, uint16_t& shift) {
     // the next one (on the first after the last).
     const size_t turned = orderListShift(orders, repeat, shift);
     orders.erase(orders.begin());
-    shift = repeat && !orders.empty() ? static_cast<uint16_t>(turned % orders.size()) : 0;
+    shift = static_cast<uint16_t>(repeat && !orders.empty() ? turned % orders.size() : 0);
 }
 
 std::vector<Order> originalOrderList(const std::vector<Order>& orders, bool repeat, uint16_t shift) {
