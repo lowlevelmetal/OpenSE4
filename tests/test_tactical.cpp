@@ -758,9 +758,23 @@ TEST_CASE("tactical: Resolve Combat hands the side to its strategies for the res
     CHECK_FALSE(b.isPlayer(EmpireId{0u}));
     CHECK_FALSE(b.awaitingOrders());
     CHECK(b.finished());
+    const CombatRecord fought = b.record();
     b.finish();
-    // Resolve Combat in the launch step of the first phase is the strategic battle.
-    CHECK(stateChecksum(b.state()) == stateChecksum(strategic(start, where)));
+    // Resolve Combat in the launch step of the first phase fights the strategic
+    // battle, phase for phase. Only the end check differs: the tactical window
+    // checks after every phase, a strategic battle after whole combat turns
+    // (spec 04 §4), so the strategic one can go on to the end of the turn.
+    const GameState alone = strategic(start, where);
+    const CombatRecord& whole = alone.combats.back();
+    REQUIRE(fought.events.size() <= whole.events.size());
+    for (size_t i = 0; i < fought.events.size(); ++i) {
+        const CombatEvent& a = fought.events[i];
+        const CombatEvent& c = whole.events[i];
+        CHECK((a.kind == c.kind && a.round == c.round && a.piece == c.piece && a.target == c.target && a.amount == c.amount));
+    }
+    CHECK(fought.events.back().round == whole.events.back().round);
+    CHECK(b.state().combats.back().summary == whole.summary);
+    if (fought.events.size() == whole.events.size()) CHECK(stateChecksum(b.state()) == stateChecksum(alone));
 }
 
 TEST_CASE("tactical: finishing early lets the strategies play the phases left, as a script that runs out") {

@@ -1282,6 +1282,25 @@ per-computer switch for its list of the replay's events (§7 Q39).
   after it, drawn only while the battle runs. "Combat Forces" at (15,38), "Current" and
   "Lost" at +220 and +270, all in #7D9FFF. List at (15,55), 329×400, 18 px rows. Map at
   (354,55), 218×191, 3 px squares, framed by a #647EC7 line one pixel outside it.
+- **The small map** (confirmed: binary). Every paint draws the whole picture anew: black,
+  then every piece in the battle's piece list, in piece order, with square (x, y) at
+  (3x, 3y) of the map; no grid and no view box (the box belongs to the Tactical Combat
+  overview). A one-square piece (ship, base, fighter, satellite or drone group, and a
+  seeker in flight) is a filled 3×3 square, the same size whatever the hull; a planet or
+  neutral obstacle is a hollow 12×12 outline, 1 px wide, round its 4×4 squares, through
+  which smaller pieces show. The colour is the owner's empire colour (a simulation's side
+  colour); a piece with no owner, such as a planet whose colony died, is grey #808080. A
+  captured ship takes its new owner's colour at the next paint. Mines are no pieces and
+  never show. A destroyed piece leaves the piece list at once, with every seeker aimed at
+  it (spec 04 §10.1), so its square is gone at the next paint, which comes after the next
+  step of any piece or seeker or at the latest at the redraw after the combat turn. The
+  last paint is the one after the last combat turn, before the end check, and the
+  end-of-battle steps change nothing on it: with Close lit the map shows the pieces still
+  in the battle. A seeker can be left on it only when the turn counter ended the battle,
+  since a flying seeker keeps the battle going (spec 04 §4). Since 2026-10-14 our client
+  follows (§7 Q122, GitHub issue #17; `CombatMapPainter::squares`, which also draws the
+  Tactical Combat overview's pieces so, inferred); the piece under the pointer named in a
+  tooltip is OpenSE4's.
 - **Forces list.** Its rows are made once, when the window opens, and never added
   later. For each empire in player-number order that has any row: a row with its flag
   (in a simulation the side's numbered box, spec 04 §17) and name; then one row per hull
@@ -3552,8 +3571,8 @@ the 800x600 layout in §2.1.1.
     (§5.1, §5.3). Sector sprites follow `Mask Background Objs` (§2.4) (confirmed:
     binary).
     Our client draws beams, the combat background and hit and miss lines opaque. It
-    differs: its own overlays on the combat maps (firing lines, the squares of big pieces,
-    seeker dots, the capture ring) still use alpha.
+    differs: its own overlays on the combat maps (firing lines, the capture ring) still
+    use alpha. The small maps' squares and outlines are opaque since 2026-10-14 (Q122).
 15. **UI sounds and music.** **Answer:** the sound-to-action table, the sound-set choice
     and the music rules are in §5.5, the fresh-install defaults in §1.9 (confirmed:
     binary). One effect plays at a time. Command and order buttons play `cmdbtn` and
@@ -5921,3 +5940,26 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      - *The step bytes of the empire options* (spec 08 §3.6.7) are taken as the radio's
        position counted from 1 (Move One 1 .. Move All 5 for Transfer Cargo, 4 for the
        window Launch \ Recover Units); the stock value 3 is Move Ten either way.
+
+**Players' reports on v0.12.0: the reports and the Strategic Combat map (GitHub issues #15–#17,
+2026-10-14).**
+
+122. **A square left on the Strategic Combat map.** "At the end of a strategic combat,
+     sometimes it still shows a dot for a ship even if there are no ships of that empire left
+     intact." (GitHub issue #17: the forces list showed the empire's only ship lost, and a
+     small dot in its colour stayed on the map.) **Answer** (confirmed: binary): the dot was a
+     seeker in flight. In the original a flying seeker is a piece for the battle's end check:
+     the battle goes on while any empire's seeker flies and an empire hostile to it still has
+     a piece, so the beaten side's seekers strike, are shot down or vanish first, and a seeker
+     can be left on the map with Close lit only when the turn counter ended the battle (spec 04
+     §4). A seeker whose launcher dies flies on; one whose target leaves the battle goes with
+     it at once (spec 04 §10.1). The map draws every piece, a seeker as a filled 3×3 square,
+     planets and obstacles as hollow 12×12 outlines (§1.10.5 "The small map"). OpenSE4's end
+     check left seekers out, so its battle ended with the seeker still flying, and its map drew
+     seekers as small round dots.
+     Since 2026-10-14 the engine follows: `Battle::hasPieces` counts seekers for the end check
+     and the phases, `Battle::hasSurvivors` leaves them out of the verdict, and
+     `Battle::dropSeekersAimedAt` takes the seekers aimed at a piece that leaves the battle;
+     battles with seekers can now last longer than before. Our client draws the small maps as
+     §1.10.5 says (`CombatMapPainter::squares`). Open: what the original credits for the kill
+     of a seeker whose launcher has died (the engine credits the dead launcher, inferred).

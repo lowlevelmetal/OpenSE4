@@ -977,12 +977,18 @@ void Battle::startRound() {
 }
 
 bool Battle::hasPieces(EmpireId e) const {
+    return std::any_of(pieces_.begin(), pieces_.end(), [&](const Piece& p) { return p.alive && p.owner == e && p.kind != Kind::Obstacle; });
+}
+
+bool Battle::hasSurvivors(EmpireId e) const {
     return std::any_of(pieces_.begin(), pieces_.end(),
                        [&](const Piece& p) { return p.alive && p.owner == e && p.kind != Kind::Seeker && p.kind != Kind::Obstacle; });
 }
 
 bool Battle::over() const {
-    // The battle ends as soon as no two empires that still have pieces are hostile (confirmed: binary).
+    // The battle ends as soon as no two empires that still have pieces are
+    // hostile; a seeker in flight is a piece here, so a side whose last ship
+    // died fights on while its seekers fly (spec 04 §4, confirmed: binary).
     for (EmpireId a : empires_)
         for (EmpireId b : empires_)
             if (a < b && detail::enemies(s_, a, b) && hasPieces(a) && hasPieces(b)) return false;
@@ -2349,6 +2355,7 @@ void Battle::kill(int t, int att) {
     b.alive = false;
     vacate(t);
     event(Ev::Destroyed, t, att >= 0 ? att : t);
+    dropSeekersAimedAt(t);
     // The victim's value: a ship's or base's hull tonnage; a unit group's hull
     // tonnage times every unit it had in the battle, now that the whole group
     // is dead; nothing for a planet or a seeker.
@@ -2494,6 +2501,12 @@ void Battle::pdReact(int mover) {
 void Battle::expire(int i) {
     pieces_[i].alive = false;
     event(Ev::Destroyed, i, i);
+    dropSeekersAimedAt(i);
+}
+
+void Battle::dropSeekersAimedAt(int t) {
+    for (size_t k = 0; k < pieces_.size(); ++k)
+        if (pieces_[k].alive && pieces_[k].kind == Kind::Seeker && pieces_[k].seekTarget == t) expire(static_cast<int>(k));
 }
 
 void Battle::moveSeekers(EmpireId e) {
@@ -2504,7 +2517,8 @@ void Battle::moveSeekers(EmpireId e) {
         if (pieces_[k].kind != Kind::Seeker || !pieces_[k].alive || pieces_[k].owner != e || pieces_[k].launchRound >= round_) continue;
         for (int stepNo = 0; stepNo < pieces_[k].speed && pieces_[k].alive; ++stepNo) {
             const int t = pieces_[k].seekTarget;
-            // Expired: target gone or no longer hostile (history 1.04, 1.18).
+            // Expired: target no longer hostile (history 1.04, 1.18). A target
+            // that left the battle took its seekers with it (dropSeekersAimedAt).
             if (t < 0 || !combatant(t) || !detail::enemies(s_, e, pieces_[t].owner)) {
                 expire(i);
                 break;
@@ -2532,6 +2546,7 @@ void Battle::moveSeekers(EmpireId e) {
                 const int shieldsBefore = pieces_[static_cast<size_t>(t)].sh.current;
                 pieces_[k].alive = false;
                 event(Ev::Destroyed, i, i);
+                dropSeekersAimedAt(i);
                 applyHit(i, t, w.type, damage);
                 markHit(hitAt, t, before, shieldsBefore);
                 break;
@@ -3685,10 +3700,10 @@ void Battle::finish() {
     // binary).
     std::map<uint32_t, Result> results;
     for (EmpireId e : empires_) {
-        const bool mine = hasPieces(e);
+        const bool mine = hasSurvivors(e);
         bool others = false;
         for (EmpireId o : empires_)
-            if (o != e && hasPieces(o)) others = true;
+            if (o != e && hasSurvivors(o)) others = true;
         results[e.value] = mine && !others ? Result::Win : (!mine && others ? Result::Loss : Result::Stalemate);
     }
     for (EmpireId e : empires_) {

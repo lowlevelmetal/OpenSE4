@@ -245,7 +245,15 @@ on, the combat window offers only the strategic view, so every battle is strateg
 empires have had their phase. The battle ends as soon as the counter reaches Settings
 `Number Of Space Combat Turns` (30), so at most **29** combat turns are fought with the
 default setting. It also ends as soon as no two empires that still have pieces are
-hostile. A side with no weapons left does not end the battle.
+hostile. A side with no weapons left does not end the battle. **Seekers in flight are
+pieces here**, like ships, bases, planets and unit groups; only unowned obstacles are not
+(confirmed: binary). So while a seeker of an empire flies and an empire hostile to it
+still has any piece, the battle goes on, even when that empire has nothing else left: its
+seekers strike, are shot down or vanish (§10.1) before the battle can end, unless the
+turn counter ends it first. The empires that get a phase each combat turn are the same
+set, so a side left with seekers only still has its phase and moves them. The verdict
+(§15) leaves seekers out. Since 2026-10-14 the engine follows (`Battle::hasPieces`, and
+`Battle::hasSurvivors` for the verdict; spec 06 §7 Q122, GitHub issue #17).
 
 **Start of every combat turn after the first** (confirmed: binary), for each piece:
 lower every non-zero reload counter by 1; add shield regeneration and organic armor
@@ -739,8 +747,18 @@ same (§10.6).
   other pieces act. Each step moves one square toward the target's centre square (its
   own square for one-square pieces), diagonally when needed.
 - After each step the seeker's travelled count goes up by 1. It **expires** when its
-  target is gone or no longer hostile (history 1.04, 1.18), or when the table entry at
-  its travelled count (capped at 20) is 0 — so a gap in the table ends the flight.
+  target is no longer hostile (history 1.04, 1.18), or when the table entry at its
+  travelled count (capped at 20) is 0 — so a gap in the table ends the flight.
+- **Target gone, launcher gone** (confirmed: binary). A piece that leaves the battle (it
+  is destroyed; a seeker that strikes, expires or is shot down; a unit group recovered
+  aboard its carrier) is taken out of the battle's piece list at once, and every seeker
+  aimed at it goes with it at that moment, not at its next step. A planet whose colony
+  dies stays as an obstacle, so seekers aimed at it expire at their next step, as for a
+  target captured or converted (§12). A seeker whose launcher is destroyed keeps flying
+  and strikes or expires as usual; only the kill credit has no piece left to go to.
+  Since 2026-10-14 the engine follows (`Battle::dropSeekersAimedAt`). What the original
+  credits for such a seeker's kill is not settled; the engine credits the dead launcher
+  as before (inferred; spec 06 §7 Q122).
 - **Impact.** When the seeker reaches the target's centre square, it deals
   table[travelled] × (members in the group) as one hit of the weapon's damage type, with
   the launching empire's damage modifier. No roll. The launcher gets the kill credit

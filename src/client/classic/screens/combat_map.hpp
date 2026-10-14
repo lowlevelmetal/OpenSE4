@@ -51,10 +51,12 @@ public:
     float pieceExtent(uint32_t i) const;
     // Every piece on the map; returns the one under `mouse` when `hover` is set.
     std::optional<uint32_t> pieces(ImDrawList* dl, const CombatView& v, bool hover, ImVec2 mouse) const;
-    // Every piece as a square of its owner's colour (planets and obstacles 4x4,
-    // neutral grey, seekers as dots), for small maps: the Strategic Combat
-    // window's map and the Tactical Combat overview. Returns the piece under
-    // `mouse` when `hover` is set. `minSize` is the smallest square in pixels.
+    // Every piece in piece order as a filled square of one cell in its owner's
+    // colour (seekers too), planets and obstacles as a hollow outline round
+    // their 4x4 squares, unowned ones grey: the small maps of the Strategic
+    // Combat window and the Tactical Combat overview (spec 06 §1.10.5). Returns
+    // the piece under `mouse` when `hover` is set, the smallest there. `minSize`
+    // is the smallest square in pixels.
     std::optional<uint32_t> squares(ImDrawList* dl, const CombatView& v, float minSize, bool hover = false, ImVec2 mouse = {}) const;
     // The event being animated, at its current frame (CombatPlayback::frame()).
     void event(ImDrawList* dl, const CombatView& v, const game::CombatEvent& e, const AnimationFrame& f) const;
