@@ -1391,6 +1391,19 @@ in the code and asked in §7 Q89–Q98.
   is ours. The original shows Tech Tree only when the game lets players see the complete tech
   tree (§1.2, spec 01 §2.2), and the project boxes of §7 Q92 (confirmed: binary); ours too
   since 2026-10-03 (`GameOptions::completeTechTree`).
+
+  *The area's report* (GitHub issue #11, on 0.12.0: "In the original game, right clicking on a
+  research in progress would give a popup about the research."; the player wants to see "which
+  items are going to be available on my next research, like Armor gives different types of
+  armor every few levels"). Ours opens it on a right-click on a project in progress as on an
+  area's row: the area's group, level, the next level's cost, requirements and description,
+  and "Level N brings" with what the next level makes available. **Ours adds**, since
+  2026-10-14, "Later levels bring" under it: a line per later level up to the area's maximum
+  that makes something available, "Level M" and the items' names, tech areas marked "(tech
+  area)"; levels that bring nothing are left out (OpenSE4's own; `levelUnlocksFrom` in
+  `screens/empire_logic.cpp`, `techDetail` in `screens/item_reports.cpp`). The report popup
+  is at most the frame's height less 40 px (so it fits the 800x600 frame) and scrolls beyond.
+  The Research window's own line under the pointer keeps the next level alone.
 - **Designs** (observed, and spec 07 §UI): rows under design-type headings, each with a lamp
   (green for the selected design, blue for the others), the picture, the name, the hull and
   "Prototype"; the detail shows Size, Design Type and Date Created by the picture, then Cost,
