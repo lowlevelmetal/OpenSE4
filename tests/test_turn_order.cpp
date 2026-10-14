@@ -140,7 +140,7 @@ TEST_CASE("turn order: the event roll comes after the victory check") {
     s.options.eventFrequency = 3;        // a 100 % chance in the fixture
     s.turn = 19;                         // the date reaches 2402.0 this turn: events may start
     s.options.victory.years = true;
-    s.options.victory.yearsValue = 2;    // ... and the game ends
+    s.options.victory.yearsTurns = 20;   // ... and the game ends
 
     quietTurn(*r, s);
     CHECK(s.gameOver);

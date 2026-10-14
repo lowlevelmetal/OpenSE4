@@ -300,16 +300,16 @@ private:
         v.score = w.score;
         v.scoreValue = clampInt(w.scoreValue);
         v.years = w.years;
-        v.yearsTurns = clampInt(int64_t{w.yearsValue} * 10);
+        v.yearsTurns = w.yearsTurns;
         v.percentOfSecond = w.percentOfSecond;
         v.percentOfSecondValue = w.percentOfSecondValue;
         v.techPercent = w.techPercent;
         v.techPercentValue = clampWord(w.techPercentValue);
         v.peace = w.peace;
-        v.peaceTurns = clampInt(int64_t{w.peaceYears} * 10);
+        v.peaceTurns = w.peaceTurns;
         v.peacefulTurns = clampInt(s_.peacefulTurns);
         v.delay = w.delay;
-        v.delayTurns = clampInt(int64_t{w.delayYears} * 10);
+        v.delayTurns = w.delayTurns;
         v.completed = s_.gameOver;
     }
 

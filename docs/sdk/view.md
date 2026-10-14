@@ -144,15 +144,15 @@ Each condition is a switch and its value.
 | `score` | bool | Win at a score... |
 | `score_value` | int | ...of this. |
 | `years` | bool | The game ends after... |
-| `years_value` | int | ...this many years. |
+| `years_turns` | int | ...this many turns (tenths of a year: 100 is ten years). |
 | `percent_of_second` | bool | Win with a score of... |
 | `percent_of_second_value` | int | ...this percentage of the second best. |
 | `tech_percent` | bool | Win with... |
 | `tech_percent_value` | int | ...this percentage of the tech tree researched. |
 | `peace` | bool | The game ends when everyone has been at peace for... |
-| `peace_years` | int | ...this many years. |
+| `peace_turns` | int | ...this many turns (tenths of a year). |
 | `delay` | bool | Nothing is checked until... |
-| `delay_years` | int | ...this many years have passed. |
+| `delay_turns` | int | ...this many turns (tenths of a year) have passed. |
 
 ## The empire's own affairs
 

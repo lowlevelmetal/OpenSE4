@@ -36,6 +36,8 @@ click item:##pick in=front nth=1
 wait-for item:##pick in=##listpicker
 click item:##pick in=##listpicker nth=1
 wait-gone item:##pick in=##listpicker
+click item:##edit in=front nth=4
+type "Ada"
 click item:"Create Empire" in=front
 wait-for item:"Add New" in=front
 # A listed computer empire of its own player: the classic AI, whatever the game's choice.
@@ -45,6 +47,8 @@ click item:##pick in=front nth=1
 wait-for item:##pick in=##listpicker
 click item:##pick in=##listpicker nth=2
 wait-gone item:##pick in=##listpicker
+click item:##edit in=front nth=4
+type "Grace"
 click item:"Controlled by Player" in=front
 wait-for item:"Computer player: The game's choice" in=front
 click item:##computerplayer in=front

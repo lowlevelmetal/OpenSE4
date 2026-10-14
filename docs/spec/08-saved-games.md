@@ -412,16 +412,16 @@ Years are stored in turns (tenths of a year). **(confirmed: binary)**
 | Type | Meaning | OpenSE4 |
 |---|---|---|
 | bool, int | Score condition on; score | `victory.score`, `scoreValue` |
-| bool, int | Years condition on; turns | `victory.years`, `yearsValue` = turns / 10 |
+| bool, int | Years condition on; turns | `victory.years`, `yearsTurns` |
 | bool, int | Percent of the second empire on; percent | `percentOfSecond`, `percentOfSecondValue` |
 | bool, word | Share of technology on; percent | `techPercent`, `techPercentValue` |
-| bool, int | Peace condition on; turns | `peace`, `peaceYears` = turns / 10 |
+| bool, int | Peace condition on; turns | `peace`, `peaceTurns` |
 | int | Consecutive peaceful turns so far | `GameState::peacefulTurns` |
-| bool, int | Delay before conditions count on; turns | `delay`, `delayYears` = turns / 10 |
+| bool, int | Delay before conditions count on; turns | `delay`, `delayTurns` |
 | bool | Game completed (a condition was met; no further turns) | `GameState::gameOver` |
 
-OpenSE4 keeps whole years, so a year count that is not a whole number is rounded on
-import (lossy).
+OpenSE4 keeps the three year counts in turns too (since save format 10), so they come
+across exactly.
 
 ### 3.4 Timed events and other globals
 
@@ -1394,7 +1394,7 @@ next turn does not continue OpenSE4's random sequence.
 |---|---|
 | Both | Partial damage of a ship's parts (only destroyed or intact is stored); load and drop orders by cargo kind in the original versus by design in OpenSE4; the random sequence (reseeded from the seed); undelivered diplomatic messages; window memories that only one side has |
 | Import | The original's AI memory not covered by §3.6.9 (OpenSE4's `Relation` memory fields, `politicsMark`, `aiMemory.avoid`, `attackSystems`, `metMinefield` start at their defaults); `treatyTurn`, `lastWarTurn`, `foundedTurn`, `builtTurn` and the per-system last-seen turns are unknown; combat records exist only as log summaries; one-way warp links become links with no far end (OpenSE4 expects pairs); the queue templates; the original's game-master password |
-| Export | Fractional victory years cannot come from OpenSE4 (whole years only, no loss); OpenSE4's history and statistics unless the companion files are written; `arrival`, `cameFrom`, `immobileUntil` (blocked movement after sabotage or events is forgotten); OpenSE4's own log targets beyond the original's seven; passwords (§7.4) |
+| Export | OpenSE4's history and statistics unless the companion files are written; `arrival`, `cameFrom`, `immobileUntil` (blocked movement after sabotage or events is forgotten); OpenSE4's own log targets beyond the original's seven; passwords (§7.4) |
 
 Estimate: everything needed to rebuild a playable game is stored in the `.gam` and
 mapped above, so import can be faithful for the board, empires, designs, vehicles,

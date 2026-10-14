@@ -102,6 +102,9 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e);
 uint32_t fileDate(const GameState& s);
 // "2401.3": the date of a turn number (2400.0 + turn / 10).
 std::string dateText(uint32_t turn);
+// "10.2": a number of turns as years with one decimal, as the Victory
+// Conditions page shows its "years" values (spec 01 §11).
+std::string yearsText(int64_t turns);
 // A statistics row (spec 05 §5, confirmed: binary): the empire's number
 // (EmpireId + 1) in 5 characters, the date as a whole number of tenths of a
 // year (24001 for 2400.1) in 8, then the Score window's eleven columns in 12

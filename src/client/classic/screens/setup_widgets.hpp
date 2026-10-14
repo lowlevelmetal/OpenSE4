@@ -10,6 +10,7 @@
 // a heading over a box with lamp rows (one choice) or check boxes (on/off).
 
 #include "client/classic/frontend.hpp"
+#include "client/classic/screens/setup_model.hpp"
 
 #include <imgui.h>
 
@@ -109,10 +110,12 @@ public:
     void lamp(Vec2 c, bool on, bool enabled = true) const;
 
     // A spin control: ◁ at `left` (20×20), the value box `valueW` wide, ▷;
-    // dim while disabled. The value box can be typed into. Returns true when
-    // the value changed.
-    bool spin(const char* id, Vec2 left, float valueW, int64_t& value, int64_t step, int64_t lo, int64_t hi, std::string_view shown,
-              bool enabled = true);
+    // dim while disabled. An arrow moves the value one step and clamps it to
+    // the range (setup::spinStep). The value box can be typed into (ours),
+    // read with `decimals` digits after the point (setup::parseSpinText) and
+    // clamped too. Returns true when the value changed.
+    bool spin(const char* id, Vec2 left, float valueW, int64_t& value, const SpinRange& range, std::string_view shown, bool enabled = true,
+              int decimals = 0);
     // An edit box over [a, b] (20 px tall).
     bool edit(const char* id, Vec2 a, Vec2 b, std::string& value, ImGuiInputTextFlags flags = 0, bool enabled = true);
     bool editMultiline(const char* id, Vec2 a, Vec2 b, std::string& value);

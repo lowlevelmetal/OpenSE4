@@ -83,6 +83,45 @@ inline constexpr std::array<int, 6> kAutosaveTurns{0, 1, 2, 3, 5, 10};          
 // Nothing when `everyTurns` is 0 or this turn is not saved.
 std::optional<std::string> autosaveName(int everyTurns, uint32_t turn);
 
+// ---- Spin controls (spec 01 §2.2, §11, spec 02 §9; confirmed: binary) ---------------------
+
+// A spin control's step and range: a click on an arrow moves the value by one
+// step, then clamps it to [lo, hi] (a value from elsewhere that lies outside
+// the range comes back into it); the arrows take no modifier keys.
+struct SpinRange {
+    int64_t step = 1, lo = 0, hi = 0;
+};
+int64_t spinStep(int64_t value, const SpinRange& r, bool up);
+
+// Victory Conditions, each in the unit the game keeps (points, turns, percent):
+// score 200,000 a click from 100,000 to 10,000,000; years 1.0 from 3.0 to
+// 500.0; the lead over the second 20 % from 150 % to 1,000 %; the research
+// share 10 % from 10 % to 100 %; peace 0.2 year from 0.2 to 10.0; the
+// qualifier 1.0 year from 1.0 to 100.0. The years show one decimal.
+inline constexpr SpinRange kScoreSpin{200'000, 100'000, 10'000'000};
+inline constexpr SpinRange kYearsSpin{10, 30, 5'000};
+inline constexpr SpinRange kLeadSpin{20, 150, 1'000};
+inline constexpr SpinRange kResearchSpin{10, 10, 100};
+inline constexpr SpinRange kPeaceSpin{2, 2, 100};
+inline constexpr SpinRange kQualifierSpin{10, 10, 1'000};
+// Game Settings: the units and ships caps, 100 a click from 100 to 20,000.
+inline constexpr SpinRange kCapSpin{100, 100, 20'000};
+// Empire Setup's characteristics: 1 % a click within the characteristic's
+// `Min Pct` and `Max Pct` (characteristicLimits).
+inline constexpr int64_t kCharacteristicStep = 1;
+
+// The grey note after a characteristic on Empire Setup's Characteristics
+// page: "(+10% to Research)", "(0% to Research)" at 100 %, "(-5% to ...)"
+// (confirmed: binary). The word before it is economy::characteristicLevel.
+std::string characteristicEffectText(int percent, std::string_view effect);
+
+// What a spin control's value box reads when the player types into it (an
+// OpenSE4 addition): a number with up to `decimals` digits after the point,
+// in units of 10^-decimals ("10.5" with one decimal is 105, "10" is 100);
+// spaces, thousands separators and a trailing "%" are ignored, further
+// digits after the point are dropped. nullopt without a digit.
+std::optional<int64_t> parseSpinText(std::string_view text, int decimals);
+
 // ---- Quadrant -----------------------------------------------------------------------------
 
 int maxSystems(const game::Rules& r);  // Settings `Maximum Number Of Systems` (at most 255)
@@ -238,9 +277,18 @@ EmpireDraft blankDraft(const game::Rules& r, const ruleset::RacePreset* style);
 std::vector<std::string> atmospheresInSetupOrder(const game::Rules& r);
 std::vector<std::string> surfacesInSetupOrder(const game::Rules& r);
 EmpireDraft draftFromSetup(const game::Rules& r, const game::EmpireSetup& e);
-// Create Empire: refused while the racial point balance is negative. The result
-// names the preset tier when the race is unmodified, and carries the custom
-// race otherwise.
+// What Create Empire refuses, as a titled message (spec 02 §9, confirmed:
+// binary): it checks, in this order, that the racial points are not
+// overspent, that the empire and the emperor have names, that a race
+// breathing no atmosphere does not live on a gas giant, and that a culture
+// is chosen, and stops at the first that fails. The titles and texts are ours.
+struct DraftProblem {
+    std::string title, text;
+};
+std::optional<DraftProblem> checkDraft(const game::Rules& r, const EmpireDraft& d, int racialPoints);
+// Create Empire: refused with checkDraft's first problem (its text). The
+// result names the preset tier when the race is unmodified, and carries the
+// custom race otherwise.
 std::expected<game::EmpireSetup, std::string> finishDraft(const game::Rules& r, const EmpireDraft& d, int racialPoints);
 
 // The minister style controls of the General page (spec 02 §10). A new empire

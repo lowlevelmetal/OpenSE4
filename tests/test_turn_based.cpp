@@ -224,7 +224,7 @@ TEST_CASE("turn-based: messages take effect when sent") {
 TEST_CASE("turn-based: each player's end-of-turn processing runs when it ends its turn; the game turn's steps after the last") {
     Duel d;
     d.s().options.victory.years = true;
-    d.s().options.victory.yearsValue = 0;  // met at the first victory check
+    d.s().options.victory.yearsTurns = 0;  // met at the first victory check
     resumeTurnBased(d.r(), d.s());
     REQUIRE(d.s().empire(kA).history.empty());
     REQUIRE(d.s().empire(kB).history.empty());

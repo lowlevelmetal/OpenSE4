@@ -201,6 +201,21 @@ std::string_view raceAge(int64_t experience) {
     return "First Ones";
 }
 
+std::string_view characteristicLevel(int percent) {
+    // Each word from its lower bound up (confirmed: binary).
+    static constexpr std::array<std::pair<int, std::string_view>, 8> kLevels{{{130, "God-like"},
+                                                                              {120, "Superior"},
+                                                                              {110, "Impressive"},
+                                                                              {105, "Enhanced"},
+                                                                              {100, "Average"},
+                                                                              {95, "Reduced"},
+                                                                              {90, "Weak"},
+                                                                              {80, "Pathetic"}}};
+    for (const auto& [from, word] : kLevels)
+        if (percent >= from) return word;
+    return "Non-Existant";
+}
+
 // ---- Modifier tables -------------------------------------------------------------------------------
 
 PopulationModifier populationModifier(const Rules& r, int64_t population) {

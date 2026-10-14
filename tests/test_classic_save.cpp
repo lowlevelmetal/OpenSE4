@@ -150,7 +150,7 @@ void checkCarried(const Rules& r, const GameState& a, const GameState& b) {
     CHECK(a.options.maxUnitsPerPlayer == b.options.maxUnitsPerPlayer);
     CHECK(a.options.allowSurrender == b.options.allowSurrender);
     CHECK(a.options.victory.years == b.options.victory.years);
-    CHECK(a.options.victory.yearsValue == b.options.victory.yearsValue);
+    CHECK(a.options.victory.yearsTurns == b.options.victory.yearsTurns);
     CHECK(a.peacefulTurns == b.peacefulTurns);
     CHECK(a.gameOver == b.gameOver);
     if (!a.options.simultaneous) CHECK(a.playerTurn.empire == b.playerTurn.empire);
