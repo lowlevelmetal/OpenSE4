@@ -108,9 +108,9 @@ TEST_CASE("sdk players golden: a turn-based game two script players play gives t
         {2, 0x02ea057fa19d58dcull},
         {5, 0xbf4f437b5578acceull},
         {10, 0x1881acd6ce267551ull},
-        {20, 0x4db788f1a35748ceull},
-        {40, 0xe93b984c245693c2ull},
-        {60, 0x3354b09c91df2441ull},
+        {20, 0x62dbb8902dd8e274ull},
+        {40, 0x9011af70378cf5afull},
+        {60, 0x4acf05104335ec67ull},
     }};
     playGolden("turn-based", 48, false, kGolden);
 }

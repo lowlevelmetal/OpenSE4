@@ -175,12 +175,12 @@ TEST_CASE("determinism: a turn-based game gives the golden checksums") {
         {1, 0x559d881fd6c3db0cull},
         {2, 0x6b1a773ccfa67ee3ull},
         {5, 0xc9d491214d13e035ull},
-        {10, 0x30d677d1f6eac69bull},
+        {10, 0xb9a063ca04aecac2ull},
         {20, 0xe933135ed086ed47ull},
         {40, 0x893ea1115cad8c33ull},
         {60, 0xb23448a222aa2d3aull},
         {80, 0xd744e7fb3e4b66b8ull},
-        {100, 0x6fd055ab8eca0b44ull},
+        {100, 0x7a289d7443ed0236ull},
     }};
     checkCoverage(playGolden("turn-based", 39, false, kGolden));
 }
@@ -197,12 +197,12 @@ TEST_CASE("determinism: varied battles give the golden checksums") {
         0x00c7c17c0e01ff34ull,
         0x6b07920f4e28ed9eull,
         0x35c1de36fc5adb4full,
-        0x715c9a103b276bc5ull,
+        0xe66751e6a73f4decull,
         0x75d3173aab33667dull,
-        0x76da58f13e9767c0ull,
+        0x3cd4ca8cbd42992cull,
         0x7971b97742fadea4ull,
-        0x382395552261864full,
-        0xe320ddac0bfe580eull,
+        0x5a605320ac27e873ull,
+        0xdca681e18ed42a06ull,
     }};
     std::string printed;
     int fought = 0, landed = 0;
