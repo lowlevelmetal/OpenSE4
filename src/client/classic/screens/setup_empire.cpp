@@ -27,26 +27,12 @@ std::string squash(std::string_view s) {
     return out;
 }
 
-std::string signedPercent(int v) { return v == 0 ? std::string("0") : std::format("{:+}%", v); }
-
 // The racial effect each characteristic feeds (spec 02 §8.1, §8.2), as the
-// Characteristics page names it after the value (our wording).
+// Characteristics page names it after the value (confirmed: binary).
 constexpr std::array<const char*, game::kCharacteristics> kEffects{
-    "Ground Combat", "Research",        "Intelligence", "Environmental Resistance", "Reproduction",
-    "Happiness",     "Ship Attack",     "Ship Defense", "Trade",                    "Mineral Production",
-    "Organic Production", "Radioactive Production", "Space Yard Rate", "Repair", "Maintenance"};
-
-// The word for a characteristic's level beside its value; the original shows
-// "Average" at 100 %, the other words are ours (inferred).
-const char* levelWord(int v) {
-    if (v <= 60) return "Very Poor";
-    if (v <= 80) return "Poor";
-    if (v < 100) return "Below Average";
-    if (v == 100) return "Average";
-    if (v < 120) return "Above Average";
-    if (v < 140) return "Good";
-    return "Excellent";
-}
+    "Ground Combat", "Research",          "Intelligence",        "Tolerance",       "Reproduction",
+    "Happiness",     "Ship Attack",       "Ship Defense",        "Trade",           "Mineral Prod.",
+    "Organics Prod.", "Radioactives Prod.", "Space Yard Rate",   "Repair Rate",     "Maintenance Reduction"};
 
 int indexOf(const std::vector<std::string>& list, std::string_view v) {
     for (size_t i = 0; i < list.size(); ++i)
@@ -175,20 +161,49 @@ EmpireEditor::Result EmpireEditor::draw(MenuContext& ctx) {
         if (a.pageButton(static_cast<int>(i), kPageTitles[i], page_ == static_cast<EmpirePage>(i))) page_ = static_cast<EmpirePage>(i);
     if (!error_.empty()) a.status(error_, kBad);
 
-    if (a.beginButton(isNew_ ? "Create Empire" : "Save Empire")) {
+    const bool modal = problem_.has_value();
+    if (a.beginButton(isNew_ ? "Create Empire" : "Save Empire") && !modal) {
         EmpireDraft d = draft_;
         if (!password_.empty()) d.setup.passwordHash = hashPassword(password_);
         d.setup.email = game::cleanEmail(d.setup.email);
-        auto done = finishDraft(rules(), d, racialPoints_);
-        if (done) {
+        // The first check that fails says so in a titled message (spec 02 §9).
+        if (auto problem = checkDraft(rules(), d, racialPoints_)) {
+            problem_ = std::move(*problem);
+            ImGui::OpenPopup("###draftproblem");
+        } else if (auto done = finishDraft(rules(), d, racialPoints_)) {
             result_ = std::move(*done);
             result = Result::Created;
         } else {
             error_ = done.error();
         }
     }
-    if (a.cancelButton()) result = Result::Cancelled;
+    if (a.cancelButton() && !modal) result = Result::Cancelled;
+    problemPopup(a);
     return result;
+}
+
+void EmpireEditor::problemPopup(SetupArea& a) {
+    if (!problem_) return;
+    const Painter p = a.painter();
+    ImGui::SetNextWindowSize(p.size({400, 0}), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(a.ctx().at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, p.size({10, 10}));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, p.size({6, 8}));
+    const std::string id = problem_->title + "###draftproblem";
+    if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(problem_->text.c_str());
+        ImGui::PopTextWrapPos();
+        if (classicButton(p, "OK##draftproblem", {380, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) {
+            ImGui::CloseCurrentPopup();
+            problem_.reset();
+        }
+        ImGui::EndPopup();
+    } else {
+        problem_.reset();   // closed some other way
+    }
+    ImGui::PopStyleVar(2);
 }
 
 // ---- General ------------------------------------------------------------------------------------
@@ -352,40 +367,92 @@ void EmpireEditor::pageCulture(SetupArea& a) {
 }
 
 void EmpireEditor::compareCulturesPopup(SetupArea& a) {
-    // Ours: the modifiers of every culture side by side (the original's
-    // window is not described).
+    // "Culture Modifiers Comparison" (confirmed: binary): a 780×475 dialog;
+    // the list at (20,60), 550×320, 20 px rows: the name in 100 px, then ten
+    // 42 px columns (a modifier of 0 left blank, the others "N%", "+" before
+    // a positive one); the legend under it in three columns; Close. The
+    // current culture's name in yellow is ours.
     const auto& cultures = rules().data().cultures;
     const Painter p = a.painter();
-    ImGui::SetNextWindowSize(p.size({720, 420}), ImGuiCond_Always);
-    ImGui::SetNextWindowPos(a.ctx().at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, p.size({10, 10}));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, p.size({6, 4}));
-    if (ImGui::BeginPopupModal("Compare Culture Modifiers", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-        static constexpr std::array<const char*, 10> kColumns{"Prod", "Research", "Intel", "Trade", "Space", "Ground", "Happy", "Maint", "Yards", "Repair"};
-        const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-        if (beginListTable(p, "##modifiers", 11, flags, ImVec2(0, -p.px(36)), kListLineStep)) {
-            ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("Culture", ImGuiTableColumnFlags_WidthStretch);
-            for (const char* c : kColumns) ImGui::TableSetupColumn(c, ImGuiTableColumnFlags_WidthFixed, p.px(52));
-            ImGui::TableHeadersRow();
-            for (uint32_t i = 0; i < cultures.size(); ++i) {
-                const ruleset::Culture& c = cultures[i];
-                const std::array<int, 10> v{c.production, c.research, c.intelligence, c.trade, c.spaceCombat,
-                                            c.groundCombat, c.happiness, c.maintenance, c.shipyardRate, c.repair};
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextColored(draft_.race.culture == i ? kHighlight : ImGui::GetStyle().Colors[ImGuiCol_Text], "%s", c.name.c_str());
-                for (int x : v) {
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(x > 0 ? kGood : x < 0 ? kBad : kDim, "%s", signedPercent(x).c_str());
-                }
+    constexpr Vec2 kSize{780, 475};
+    const Vec2 min{std::floor((frameW() - kSize.x) * 0.5f), std::floor((frameH() - kSize.y) * 0.5f)};
+    const Rect r{min, min + kSize};
+    ImGui::SetNextWindowPos(p.at(r.min), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(p.size(kSize), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+    if (ImGui::BeginPopupModal("Compare Culture Modifiers", nullptr,
+                               ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoScrollWithMouse)) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        auto P = [&](float x, float y) { return p.at(r.min + Vec2{x, y}); };
+        drawWindowFrame(p, dl, r, "Culture Modifiers Comparison", 180);
+        ImFont* body = a.ctx().fonts.regular;
+        const float bodySize = p.fontPx(kTextSize);
+        static constexpr std::array<const char*, 10> kColumns{"Prod.", "Res.", "Intel.", "Trade", "SC", "GC", "Happy", "Maint.", "SY", "Repair"};
+        const float lw = std::max(1.0f, std::floor(p.map.scale)) / p.fbScale;
+
+        // The list's heading row, then the cultures.
+        dl->AddRect(P(20, 60), P(570, 380), imColor(palette::kFrameLight), 0.0f, lw);
+        dl->AddText(body, bodySize, P(24, 61 + 3 - kTextLead), imColor(palette::kLabel), "Name");
+        for (size_t c = 0; c < kColumns.size(); ++c)
+            dl->AddText(body, bodySize, P(121 + 42.0f * float(c), 61 + 3 - kTextLead), imColor(palette::kLabel), kColumns[c]);
+        dl->AddLine(P(21, 80), P(569, 80), imColor(palette::kFrame), lw);
+        ImGui::SetCursorScreenPos(P(21, 81));
+        beginList(p, "##modifiers", p.size({548, 298}), 20.0f, ImGuiChildFlags_None, false);
+        const float rowW = ImGui::GetContentRegionAvail().x;
+        ImDrawList* rows = ImGui::GetWindowDrawList();
+        for (uint32_t i = 0; i < cultures.size(); ++i) {
+            const ruleset::Culture& c = cultures[i];
+            const std::array<int, 10> v{c.production, c.research, c.intelligence, c.trade, c.spaceCombat,
+                                        c.groundCombat, c.happiness, c.maintenance, c.shipyardRate, c.repair};
+            const ImVec2 r0 = ImGui::GetCursorScreenPos();
+            ImGui::Dummy(ImVec2(rowW, p.px(20)));
+            script::reportItem(c.name);
+            const float textY = r0.y + p.px((20 - kTextCell) * 0.5f);
+            rows->PushClipRect(r0, {r0.x + p.px(98), r0.y + p.px(20)}, true);
+            rows->AddText(body, bodySize, {r0.x + p.px(3), textY}, draft_.race.culture == i ? ImGui::GetColorU32(kHighlight) : IM_COL32_WHITE, c.name.c_str());
+            rows->PopClipRect();
+            for (size_t k = 0; k < v.size(); ++k) {
+                if (v[k] == 0) continue;
+                const std::string text = v[k] > 0 ? std::format("+{}%", v[k]) : std::format("{}%", v[k]);
+                rows->AddText(body, bodySize, {r0.x + p.px(100 + 42.0f * float(k)), textY}, IM_COL32_WHITE, text.c_str());
             }
-            endListTable(p);
         }
-        if (classicButton(p, "Close", {140, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        endList(p);
+
+        // The legend: what each column's heading stands for, in three columns.
+        static constexpr std::array<std::array<const char*, 2>, 10> kLegend{{{"Prod.", "Resource Production"},
+                                                                             {"Res.", "Research"},
+                                                                             {"Intel.", "Intelligence"},
+                                                                             {"Trade", "Trade"},
+                                                                             {"SC", "Space Combat"},
+                                                                             {"GC", "Ground Combat"},
+                                                                             {"Happy", "Population Happiness"},
+                                                                             {"Maint.", "Maintenance"},
+                                                                             {"SY", "Space Yard Rate"},
+                                                                             {"Repair", "Component Repair"}}};
+        for (size_t k = 0; k < kLegend.size(); ++k) {
+            const size_t column = k < 4 ? 0 : k < 8 ? 1 : 2, row = k < 4 ? k : k < 8 ? k - 4 : k - 8;
+            const float x = 20 + 184.0f * float(column), y = 388 + 18.0f * float(row);
+            dl->AddText(body, bodySize, P(x, y), imColor(palette::kLabel), kLegend[k][0]);
+            dl->AddText(body, bodySize, P(x + 46, y), IM_COL32_WHITE, kLegend[k][1]);
+        }
+
+        // The button column: empty slots down to Close at its foot, as in every
+        // large dialog (Esc and Enter close it too).
+        for (int slot = 0; slot < 13; ++slot) {
+            ImGui::SetCursorScreenPos(P(585, 35 + 31.0f * float(slot)));
+            emptySlot(p, {180, 28});
+        }
+        ImGui::SetCursorScreenPos(P(585, 35 + 13 * 31.0f));
+        if (classicButton(p, "Close", {180, 28}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+            ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))
+            ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar(3);
 }
 
 // ---- Characteristics -------------------------------------------------------------------------------
@@ -402,13 +469,11 @@ void EmpireEditor::pageCharacteristics(SetupArea& a) {
         a.text({255, y + 4}, game::displayName(c));
         int64_t value = v;
         ImGui::PushID(static_cast<int>(i));
-        // The buttons keep the value in its range (spec 02 §8.1); one click is 5 % (inferred).
-        if (a.spin("##value", {406, y}, 71, value, 5, l.min, l.max, std::format("{}%", v))) v = static_cast<int>(value);
+        // One click is 1 %, kept in the characteristic's range (spec 02 §8.1, §9, confirmed: binary).
+        if (a.spin("##value", {406, y}, 71, value, SpinRange{kCharacteristicStep, l.min, l.max}, std::format("{}%", v))) v = static_cast<int>(value);
         ImGui::PopID();
-        a.text({556, y + 4}, levelWord(v));
-        const int effect = v - 100;
-        a.textRight({790, y + 4}, std::format("({}% to {})", effect == 0 ? std::string("0") : std::format("{:+}", effect), kEffects[i]),
-                    kExplainRgb, Face::Small);
+        a.text({556, y + 4}, game::economy::characteristicLevel(v));
+        a.textRight({790, y + 4}, characteristicEffectText(v, kEffects[i]), kExplainRgb, Face::Small);
     }
     // OpenSE4's own: back to the preset's values, or every one at 100 %.
     if (preset() && a.button({500, 316}, {640, 335}, "Preset Values")) {

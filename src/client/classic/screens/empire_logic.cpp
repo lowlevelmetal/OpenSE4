@@ -991,7 +991,7 @@ bool victoryMark(const game::Rules& r, const game::GameState& s, VictoryRow row,
     const int64_t now = s.turn;
     switch (row) {
         case VictoryRow::Score: return game::score::empireScore(r, s, e) >= v.scoreValue;
-        case VictoryRow::Years: return now >= int64_t{v.yearsValue} * 10;
+        case VictoryRow::Years: return now >= int64_t{v.yearsTurns};
         case VictoryRow::PercentOfSecond: {
             const int64_t mine = game::score::empireScore(r, s, e);
             for (const game::Empire& other : s.empires)
@@ -1003,8 +1003,8 @@ bool victoryMark(const game::Rules& r, const game::GameState& s, VictoryRow row,
             const game::Empire& emp = s.empire(e);
             return game::score::techShareMet(game::research::totalLevels(r, emp), game::research::maxLevels(r, s, emp), v.techPercentValue);
         }
-        case VictoryRow::Peace: return s.peacefulTurns >= static_cast<uint32_t>(std::max(0, v.peaceYears)) * 10;
-        case VictoryRow::Delay: return now >= int64_t{v.delayYears} * 10;
+        case VictoryRow::Peace: return s.peacefulTurns >= static_cast<uint32_t>(std::max(0, v.peaceTurns));
+        case VictoryRow::Delay: return now >= int64_t{v.delayTurns};
         case VictoryRow::Count: break;
     }
     return false;

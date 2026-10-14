@@ -275,19 +275,20 @@ private:
             }
             allowOnly(*v, "options.victory", {"score", "years", "percent_of_second", "tech_percent", "peace_years", "delay_years"});
             game::VictoryConditions& vc = o.victory;
-            // A key switches its condition on with that value.
-            auto condition = [&](std::string_view key, int64_t min, int64_t max, bool& on, auto& value) {
+            // A key switches its condition on with that value; the years are
+            // whole years here, kept in turns (tenths of a year).
+            auto condition = [&](std::string_view key, int64_t min, int64_t max, bool& on, auto& value, int64_t scale = 1) {
                 if (auto x = integer(*v, key, min, max)) {
                     on = true;
-                    value = static_cast<std::remove_reference_t<decltype(value)>>(*x);
+                    value = static_cast<std::remove_reference_t<decltype(value)>>(*x * scale);
                 }
             };
             condition("score", 1, std::numeric_limits<int64_t>::max(), vc.score, vc.scoreValue);
-            condition("years", 1, 10000, vc.years, vc.yearsValue);
+            condition("years", 1, 10000, vc.years, vc.yearsTurns, 10);
             condition("percent_of_second", 101, 100000, vc.percentOfSecond, vc.percentOfSecondValue);
             condition("tech_percent", 1, 100, vc.techPercent, vc.techPercentValue);
-            condition("peace_years", 1, 10000, vc.peace, vc.peaceYears);
-            condition("delay_years", 0, 10000, vc.delay, vc.delayYears);
+            condition("peace_years", 1, 10000, vc.peace, vc.peaceTurns, 10);
+            condition("delay_years", 0, 10000, vc.delay, vc.delayTurns, 10);
         }
     }
 

@@ -554,8 +554,20 @@ void io(Ar& ar, PendingEvent& e) {
 
 template <class Ar>
 void io(Ar& ar, VictoryConditions& v) {
-    fields(ar, v.score, v.scoreValue, v.years, v.yearsValue, v.percentOfSecond, v.percentOfSecondValue, v.techPercent, v.techPercentValue,
-           v.peace, v.peaceYears, v.delay, v.delayYears);
+    if (formatVersion(ar) >= 10) {
+        fields(ar, v.score, v.scoreValue, v.years, v.yearsTurns, v.percentOfSecond, v.percentOfSecondValue, v.techPercent, v.techPercentValue,
+               v.peace, v.peaceTurns, v.delay, v.delayTurns);
+        return;
+    }
+    // Format 9 and older kept the three "years" values in whole years.
+    int years = v.yearsTurns / 10, peace = v.peaceTurns / 10, delay = v.delayTurns / 10;
+    fields(ar, v.score, v.scoreValue, v.years, years, v.percentOfSecond, v.percentOfSecondValue, v.techPercent, v.techPercentValue, v.peace,
+           peace, v.delay, delay);
+    if constexpr (Ar::kReading) {
+        v.yearsTurns = years * 10;
+        v.peaceTurns = peace * 10;
+        v.delayTurns = delay * 10;
+    }
 }
 
 template <class Ar>

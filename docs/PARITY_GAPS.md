@@ -502,8 +502,9 @@ sectors come out exactly as the original's. The empire placement showed that the
 spread test counts two jumps more than the real number (spec 01 §3.6). Since 2026-10-03 the
 engine's spread test does the same (J + 2 > L), the last-resort homeworld may reuse an
 earlier home system when "Allowed to start in the same system" is on, and a template's
-`Ring 0` is any sector of the inner 11 × 11 square (`generate.cpp`). `Ring 8` and `Ring 9`
-stay on `Ring 7` with a warning: the spec has no rule for them (spec 01 §14 Q46).
+`Ring 0` is any sector of the inner 11 × 11 square (`generate.cpp`). `Ring 8` and `Ring 9`,
+which the original places off the grid with no defined result (spec 01 §4.3, §14 Q46), stay
+on `Ring 7` with a warning, an OpenSE4 choice.
 
 These rows are where the engine differs:
 
@@ -667,7 +668,13 @@ Catastrophic, the victory values) and Quick Start keeping them, its opponents ro
 seed (`setup::quickStartGame`); Quick Start's picker in Settings.txt's style order, eight to a
 page, column by column, with the empire's name as written; one Load Game dialog for the intro,
 the Game Menu's Load and Delete and Add Existing's Load Empire (`screens/file_dialog.cpp`);
-the intro's "Loading:" and "Complete". What still differs, and OpenSE4's own additions:
+the intro's "Loading:" and "Complete". Since the REA audit of 2026-10-11 they also take the
+original's spin steps and ranges (Victory Conditions, whose years are kept in turns, the
+unit and ship caps, 1 % a click for the characteristics), the characteristics' level words
+and effect labels (also in the Race Report), Create Empire's five checks in order, the
+Culture Modifiers Comparison window and Change Directory's Select Directory folder browser
+(spec 01 §2.2, §11, spec 02 §9, spec 06 §1.1). What still differs, and OpenSE4's own
+additions:
 
 - **Ours, kept** (impact none): the intro's Multiplayer, Settings and Manual buttons at the top
   right; a status line under the setup frame (errors, a summary); Game Setup's Seed box,
@@ -684,13 +691,19 @@ the intro's "Loading:" and "Complete". What still differs, and OpenSE4's own add
   Multiplayer); Mechanics' Different Machines, Multiplayer
   Game Filename, Save Game Directory Path and Connection Type (network and e-mail games are set
   up from Multiplayer).
-- **Our choices where the observation is silent** (impact L): the spin controls' steps (5 % a
-  click for characteristics, 100,000 points, one year, 10 % and 5 % for the victory values, 50
-  units and 10 ships) and typing into their value boxes; the characteristics' level words
-  other than "Average" and the effect wording; Begin Game without a chosen portrait asks for
-  one; Change Directory asks for a folder by name (with Default); the Compare Culture
-  Modifiers window is our table; the pictures under the page buttons come from the seed;
-  Victory Conditions keeps whole years; the lists use the shared arrow column.
+- **Our choices where the observation is silent** (impact L): typing into the spin controls'
+  value boxes (kept in the arrows' range; the original reads a typed unit or ship cap
+  unchecked); Create Empire's messages in our words; the current culture in yellow in the
+  Culture Modifiers Comparison, and its legend's places; Select Directory's places, its
+  Drive box (the root outside Windows), a folder typed into Current Directory and the
+  Default button; Begin Game without a chosen portrait asks for one; the pictures under the
+  page buttons come from the seed; the lists use the shared arrow column.
+- **The command line and the network game's sounds** (impact L, since 2026-10-11): the
+  program's fourth argument that is not an option names a mod folder, as the original's
+  does (spec 05 §9.2); OpenSE4 plays it as a classic mod for the run, since it reads the
+  game's data from mods and never from `Path.txt`'s folder. The original's TCP/IP sounds
+  play in OpenSE4's network games and lobby (spec 06 §5.5); its host generates the turn by
+  itself once every order is in, so it has no alert for being ready to generate one.
 
 Since 2026-10-03 the battle windows follow session 5 and spec 06 §7 Q86, Q87, Q97 and Q98:
 Tactical Combat's places, panels, weapon cells and title-strip buttons, the Combat Piece

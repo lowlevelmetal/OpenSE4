@@ -4,6 +4,7 @@
 // host starts the game, the running session hands its network connection to
 // the game (net_transport.hpp).
 
+#include "client/audio.hpp"
 #include "client/classic/frontend.hpp"
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/net_transport.hpp"
@@ -518,8 +519,13 @@ private:
 
     void pollNetwork(MenuContext& ctx) {
         std::vector<net::Event> events = host_ ? host_->poll(0) : client_ ? client_->poll(0) : std::vector<net::Event>{};
+        // The lobby's sounds: players connecting and leaving (on the host), chat lines arriving (docs/spec/06 §5.5).
+        const NetSoundSide side = host_ ? NetSoundSide{true, host_->localSlot(), {}, {}, false}
+                                        : NetSoundSide{false, net::kNoSlot, client_ ? client_->config().playerName : std::string(), {}, false};
         for (const net::Event& e : events) {
             if (e.type != net::EventType::LobbyChanged && e.type != net::EventType::TurnStatusChanged) log_.add(net::describe(e));
+            if (e.type != net::EventType::NewTurn && e.type != net::EventType::PlayerTurn)
+                if (const std::string_view sound = networkSound(e, side); !sound.empty()) audio().play(sound);
             if (e.type == net::EventType::Joined && client_) noteHostKey();
             if (e.type == net::EventType::Rejected && client_ && client_->seenHostKey()) {
                 promptKey_ = *client_->seenHostKey();
@@ -762,6 +768,7 @@ private:
         chat_ = buffer;
         ImGui::SameLine();
         if ((ImGui::Button("Send", ctx.size({80, 26})) || send) && !chat_.empty()) {
+            audio().play("ordbtn");   // sending a chat line (docs/spec/06 §5.5)
             if (host_) {
                 host_->chat(chat_);
                 log_.add(std::format("[chat] {}: {}", name_, chat_));

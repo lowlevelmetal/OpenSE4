@@ -55,6 +55,7 @@ private:
     void pageTraits(SetupArea& a);
     void pageDescription(SetupArea& a);
     void compareCulturesPopup(SetupArea& a);
+    void problemPopup(SetupArea& a);
 
     std::shared_ptr<const game::Rules> rules_;
     EmpireDraft draft_;
@@ -65,6 +66,7 @@ private:
     size_t presetPos_ = 0;
     std::string password_;
     std::string error_;
+    std::optional<DraftProblem> problem_;   // Create Empire's titled message, while it is open
     int hoveredTrait_ = -1;
     game::EmpireSetup result_;
     std::vector<std::string> surfaces_, atmospheres_, designFiles_, ministerStyles_;

@@ -223,6 +223,11 @@ void gainExperience(Empire& e, int64_t amount);
 // Infantile, Young, Moderate, Old, Ancient, God-like, Stellar Ancients and
 // First Ones (confirmed: binary).
 std::string_view raceAge(int64_t experience);
+// The word Empire Setup's Characteristics page and the Race Report show for
+// a characteristic's value in percent: 130 and up God-like, 120 Superior, 110
+// Impressive, 105 Enhanced, 100 Average, 95 Reduced, 90 Weak, 80 Pathetic,
+// and below 80 Non-Existant, the original's spelling (confirmed: binary).
+std::string_view characteristicLevel(int percent);
 
 // ---- Treasury (spec 02 §5.6, §7) ------------------------------------------------------------------
 

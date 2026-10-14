@@ -36,6 +36,10 @@ struct ClassicOptions {
     bool modsGiven = false;
     std::string modsDir;     // empty: <user data>/Mods
     bool noBundledMods = false;  // without the mods that come with OpenSE4 (mods/ beside the program)
+    // The program's fourth argument (AppOptions::positional): a mod folder,
+    // relative to the game folder, played as a classic mod for this run and
+    // read in Path.txt's place. Empty: none.
+    std::string commandLineModFolder;
     uint64_t seed = 1;
     bool seedGiven = false;  // the player gave the seed (--seed, or a script run)
     int systemCount = 0;     // 0 = default
@@ -111,8 +115,13 @@ private:
         // (spec 06 §1.1 "Data File Errors", inferred).
         std::vector<std::string> errors;
     };
-    static std::expected<DataSet, std::string> readDataSet(const std::filesystem::path& dataDir, const mods::ModChoice& choice);
+    // `modFolder`: the command line's mod folder, read in Path.txt's place (none: Path.txt's).
+    static std::expected<DataSet, std::string> readDataSet(const std::filesystem::path& dataDir, const mods::ModChoice& choice,
+                                                           const std::optional<std::string>& modFolder);
     mods::ModChoice modChoice(std::vector<std::string> ids) const;
+    // The command line's mod folder as Path.txt would name it (relative to
+    // the game folder; empty when it lies elsewhere), or none.
+    std::optional<std::string> commandLineModFolder() const { return commandLineModDir_; }
     // Plays with this data set from now on: the art, fonts, pointers and music follow it.
     void useDataSet(DataSet d);
     // The data files' errors still to show, one window per file (DataSet::errors).
@@ -173,6 +182,7 @@ private:
 
     Platform platform_;
     Fonts fonts_;  // the classic game's fonts, else the app's
+    std::optional<std::string> commandLineModDir_;   // commandLineModFolder()
     ClassicOptions options_;
     std::shared_ptr<const game::Rules> rules_;
     std::unique_ptr<classic::Art> art_;

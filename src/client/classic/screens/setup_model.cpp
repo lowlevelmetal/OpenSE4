@@ -163,6 +163,46 @@ std::optional<std::string> autosaveName(int everyTurns, uint32_t turn) {
     return std::format("AutoSav{}", turn % 10);
 }
 
+int64_t spinStep(int64_t value, const SpinRange& r, bool up) {
+    // One step, then into the range (spec 01 §2.2, §11, confirmed: binary).
+    const int64_t next = up ? value + r.step : value - r.step;
+    return std::clamp(next, r.lo, std::max(r.lo, r.hi));
+}
+
+std::string characteristicEffectText(int percent, std::string_view effect) {
+    const int d = percent - 100;
+    return d > 0 ? std::format("(+{}% to {})", d, effect) : std::format("({}% to {})", d, effect);
+}
+
+std::optional<int64_t> parseSpinText(std::string_view text, int decimals) {
+    bool negative = false, digits = false, point = false;
+    int fraction = 0;   // digits taken after the point
+    int64_t v = 0;
+    constexpr int64_t kLimit = 100'000'000'000'000'000;   // far beyond any spin control's range
+    size_t i = 0;
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) ++i;
+    if (i < text.size() && (text[i] == '-' || text[i] == '+')) negative = text[i++] == '-';
+    for (; i < text.size(); ++i) {
+        const char c = text[i];
+        if (c >= '0' && c <= '9') {
+            digits = true;
+            if (point && fraction >= decimals) continue;   // further decimals are dropped
+            if (v < kLimit) v = v * 10 + (c - '0');
+            if (point) ++fraction;
+        } else if (c == '.' && !point) {
+            point = true;
+        } else if ((c == ',' || c == ' ') && !point) {
+            continue;   // thousands separators
+        } else {
+            break;   // "%", a unit, anything else ends the number
+        }
+    }
+    if (!digits) return std::nullopt;
+    for (; fraction < decimals; ++fraction)
+        if (v < kLimit) v *= 10;
+    return negative ? -v : v;
+}
+
 int maxSystems(const game::Rules& r) { return game::maxSystemCount(r.data()); }
 
 std::pair<int, int> quadrantSizeRange(const game::Rules& r, int quadrantSize) {
@@ -603,12 +643,23 @@ EmpireDraft draftFromSetup(const game::Rules& r, const game::EmpireSetup& e) {
     return d;
 }
 
+std::optional<DraftProblem> checkDraft(const game::Rules& r, const EmpireDraft& d, int racialPoints) {
+    // In the original's order (spec 02 §9, confirmed: binary).
+    if (const int left = racialPointsLeft(r, d.race, racialPoints); left < 0)
+        return DraftProblem{"Racial Points", std::format("This race costs {} racial points more than the {} available. Lower a characteristic "
+                                                         "or drop a trait.",
+                                                         -left, racialPoints)};
+    if (d.setup.name.empty()) return DraftProblem{"Empire Name", "Enter a name for the empire."};
+    if (d.setup.leaderName.empty()) return DraftProblem{"Emperor Name", "Enter a name for the emperor."};
+    if (isNone(d.race.atmosphere) && keysEqual(d.race.nativeSurface, "Gas Giant"))
+        return DraftProblem{"Incompatible Environment", "A race that breathes no atmosphere cannot live on a gas giant. Choose another "
+                                                        "atmosphere or home planet type."};
+    if (d.race.culture >= r.data().cultures.size()) return DraftProblem{"Culture", "Choose a culture for the race."};
+    return std::nullopt;
+}
+
 std::expected<game::EmpireSetup, std::string> finishDraft(const game::Rules& r, const EmpireDraft& d, int racialPoints) {
-    if (d.setup.name.empty()) return std::unexpected("Enter a name for the empire.");
-    const int left = racialPointsLeft(r, d.race, racialPoints);
-    if (left < 0)
-        return std::unexpected(std::format("This race costs {} racial points more than the {} available. Lower a characteristic or drop a trait.",
-                                           -left, racialPoints));
+    if (auto problem = checkDraft(r, d, racialPoints)) return std::unexpected(std::move(problem->text));
     if (!d.race.name.empty()) return collapse(r, d);
     // A race without a name of its own (an empty Add New) takes the empire's.
     EmpireDraft named = d;

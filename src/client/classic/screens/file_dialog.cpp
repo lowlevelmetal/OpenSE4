@@ -20,6 +20,11 @@ std::string upperAscii(std::string s) {
     return s;
 }
 
+std::string lowerAscii(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
 constexpr Vec2 kDialogSize{420, 520};
 constexpr float kRowH = 32.0f;
 
@@ -123,11 +128,7 @@ FileDialog::Result FileDialog::draw(const Painter& p, const char* window, UiCont
         }
 
         ImGui::SetCursorScreenPos(P(12, 452));
-        if (classicButton(p, "Change Directory", {396, 26})) {
-            folderField_ = directory_.string();
-            folderError_.clear();
-            ImGui::OpenPopup("Change Directory");
-        }
+        if (classicButton(p, "Change Directory", {396, 26})) ImGui::OpenPopup("Select Directory");
         changeDirectoryPopup(p);
         ImGui::SetCursorScreenPos(P(12, 482));
         const bool cancel = classicButton(p, "Cancel", {396, 26});
@@ -141,37 +142,159 @@ FileDialog::Result FileDialog::draw(const Painter& p, const char* window, UiCont
     return result;
 }
 
+namespace {
+
+// The folders in a folder, by name (any case).
+std::vector<std::string> subfolders(const std::filesystem::path& dir) {
+    std::vector<std::string> out;
+    std::error_code ec;
+    for (auto it = std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec);
+         !ec && it != std::filesystem::directory_iterator(); it.increment(ec)) {
+        std::error_code type;
+        if (!it->is_directory(type)) continue;
+        std::string name = it->path().filename().string();
+#ifndef _WIN32
+        if (name.starts_with(".")) continue;   // hidden folders (ours)
+#endif
+        out.push_back(std::move(name));
+    }
+    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) {
+        const std::string la = lowerAscii(a), lb = lowerAscii(b);
+        return la != lb ? la < lb : a < b;
+    });
+    return out;
+}
+
+std::vector<std::string> driveRoots() {
+#ifdef _WIN32
+    std::vector<std::string> out;
+    for (char d = 'a'; d <= 'z'; ++d) {
+        std::error_code ec;
+        if (std::filesystem::exists(std::filesystem::path(std::string{d, ':', '\\'}), ec)) out.push_back(std::string{d, ':'});
+    }
+    return out;
+#else
+    return {"/"};
+#endif
+}
+
+} // namespace
+
+void FileDialog::browse(std::filesystem::path dir) {
+    std::error_code ec;
+    const std::filesystem::path full = std::filesystem::absolute(dir, ec).lexically_normal();
+    browsing_ = ec ? dir : full;
+    if (browsing_.has_relative_path() && !browsing_.has_filename()) browsing_ = browsing_.parent_path();   // no trailing separator
+    folders_ = subfolders(browsing_);
+    if (browsing_.has_relative_path()) folders_.insert(folders_.begin(), "..");
+    pickedFolder_ = -1;
+    folderField_ = browsing_.string();
+    folderError_.clear();
+}
+
 void FileDialog::changeDirectoryPopup(const Painter& p) {
-    // Ours: the folder typed in (the original's folder browser is not described).
-    ImGui::SetNextWindowSize(p.size({400, 0}));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, p.size({10, 10}));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, p.size({6, 6}));
-    if (ImGui::BeginPopupModal("Change Directory", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextColored(kLabelBlue, "Folder");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+    // "Select Directory" (confirmed: binary): a 400×500 window with a Drive
+    // box, a 300 px list of the folders (a double click opens one), the
+    // Current Directory box, OK and Cancel. The places are ours (inferred);
+    // typing a folder into Current Directory and the Default button are
+    // OpenSE4's.
+    constexpr Vec2 kSize{400, 500};
+    const Vec2 min{std::floor((frameW() - kSize.x) * 0.5f), std::floor((frameH() - kSize.y) * 0.5f)};
+    const Rect rect{min, min + kSize};
+    ImGui::SetNextWindowPos(p.at(rect.min), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(p.size(kSize), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+    if (ImGui::BeginPopupModal("Select Directory", nullptr,
+                               ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoScrollWithMouse)) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        auto P = [&](float x, float y) { return p.at(rect.min + Vec2{x, y}); };
+        drawWindowFrame(p, dl, rect, nullptr, 0);
+        dl->AddText(p.fonts.bold, p.fontPx(kTitleSize), P(10, 10), IM_COL32_WHITE, "Select Directory");
+        ImFont* body = p.fonts.regular;
+        const float bodySize = p.fontPx(kTextSize);
+        const float lw = std::max(1.0f, std::floor(p.map.scale)) / p.fbScale;
+        if (ImGui::IsWindowAppearing()) browse(directory_);
+
+        // Drive: the roots of this computer's file systems.
+        dl->AddText(body, bodySize, P(12, 42), imColor(palette::kLabel), "Drive");
+        ImGui::SetCursorScreenPos(P(80, 38));
+        ImGui::SetNextItemWidth(p.px(308));
+        const std::string root = browsing_.root_name().string() + (browsing_.root_name().empty() ? browsing_.root_directory().string() : std::string());
+        if (ImGui::BeginCombo("##drive", lowerAscii(root).c_str())) {
+            for (const std::string& d : driveRoots())
+                if (ImGui::Selectable(d.c_str(), lowerAscii(d) == lowerAscii(root))) browse(std::filesystem::path(d + (d.ends_with(':') ? "\\" : "")));
+            ImGui::EndCombo();
+        } else {
+            script::reportItem("##drive");   // a combo box names itself to input scripts only so
+        }
+
+        // Directory: the folders here, ".." first; a double click opens one.
+        dl->AddText(body, bodySize, P(12, 66), imColor(palette::kLabel), "Directory");
+        dl->AddRect(P(10, 82), P(390, 382), imColor(palette::kFrameLight), 0.0f, lw);
+        ImGui::SetCursorScreenPos(P(11, 83));
+        beginList(p, "##folders", p.size({378, 298}), 18.0f, ImGuiChildFlags_None, false);
+        const float rowW = ImGui::GetContentRegionAvail().x;
+        ImDrawList* rows = ImGui::GetWindowDrawList();
+        std::optional<std::filesystem::path> open;
+        for (size_t i = 0; i < folders_.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            const ImVec2 r0 = ImGui::GetCursorScreenPos();
+            if (ImGui::InvisibleButton("##folder-row", ImVec2(rowW, p.px(18)))) pickedFolder_ = static_cast<int>(i);
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                open = folders_[i] == ".." ? browsing_.parent_path() : browsing_ / folders_[i];
+            ImGui::PopID();
+            script::reportItem(folders_[i]);   // input scripts find a folder by its name
+            if (pickedFolder_ == static_cast<int>(i))
+                if (Sprite grid = p.art.region("Pictures/Game/Dialogs/Rowgrid.bmp", 0, 0, int(rowW / p.k()), 18, false))
+                    rows->AddImage(ImTextureRef(static_cast<ImTextureID>(grid.tex.value)), r0, {r0.x + rowW, r0.y + p.px(18)},
+                                   {grid.uv.min.x, grid.uv.min.y}, {grid.uv.max.x, grid.uv.max.y});
+            rows->PushClipRect(r0, {r0.x + rowW, r0.y + p.px(18)}, true);
+            rows->AddText(body, bodySize, {r0.x + p.px(4), r0.y + p.px((18 - kTextCell) * 0.5f)}, IM_COL32_WHITE, folders_[i].c_str());
+            rows->PopClipRect();
+        }
+        endList(p);
+        if (open) browse(*open);
+
+        // Current Directory: the folder chosen; typing another and Enter goes there (ours).
+        dl->AddText(body, bodySize, P(12, 392), imColor(palette::kLabel), "Current Directory");
+        ImGui::SetCursorScreenPos(P(10, 408));
+        ImGui::SetNextItemWidth(p.px(380));
         const bool enter = inputString("##folder", folderField_, 1024, ImGuiInputTextFlags_EnterReturnsTrue);
-        if (!folderError_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.45f, 1), "%s", folderError_.c_str());
-        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3.0f;
-        if (ImGui::Button("OK", ImVec2(w, p.px(26))) || enter) {
+        auto typedFolder = [&]() -> std::optional<std::filesystem::path> {
             std::error_code ec;
-            const std::filesystem::path dir(folderField_);
-            if (std::filesystem::is_directory(dir, ec)) {
-                directory_ = dir;
+            const std::filesystem::path typed(folderField_);
+            if (!folderField_.empty() && std::filesystem::is_directory(typed, ec)) return typed;
+            folderError_ = "There is no such folder.";
+            return std::nullopt;
+        };
+        if (enter)
+            if (auto typed = typedFolder()) browse(*typed);
+        if (!folderError_.empty()) {
+            dl->AddText(body, bodySize, P(12, 434), IM_COL32(255, 128, 100, 255), folderError_.c_str());
+            script::reportItem(folderError_, P(12, 434), P(388, 450));   // input scripts read it
+        }
+
+        const float w = 121;
+        ImGui::SetCursorScreenPos(P(12, 462));
+        if (classicButton(p, "OK", {w, 26})) {
+            if (auto chosen = folderField_ == browsing_.string() ? std::optional<std::filesystem::path>(browsing_) : typedFolder()) {
+                directory_ = *chosen;
                 scanned_ = false;
                 error_.clear();
                 ImGui::CloseCurrentPopup();
-            } else {
-                folderError_ = "There is no such folder.";
             }
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Default", ImVec2(w, p.px(26)))) folderField_ = defaultDirectory_.string();
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(w, p.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        ImGui::SetCursorScreenPos(P(12 + w + 6, 462));
+        if (classicButton(p, "Default", {w, 26})) browse(defaultDirectory_);
+        ImGui::SetCursorScreenPos(P(12 + 2 * (w + 6), 462));
+        if (classicButton(p, "Cancel", {w, 26}) || (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive()))
+            ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar(3);
 }
 
 } // namespace opense4::client::classic

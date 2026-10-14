@@ -528,7 +528,7 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x1c9a603d3f48c849ull;
+    constexpr uint64_t kGoldenChecksum = 0x2b24457d37a67651ull;
     constexpr size_t kGoldenSize = 1971;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
@@ -708,6 +708,44 @@ TEST_CASE("serialize: format 9 games load; format 10 keeps the audit's records, 
     CHECK_FALSE(before->empires[0].interfaceOptions.galaxyMapDistances);
     CHECK(before->vehicles[0].orders.back().planetSize == 0);
     CHECK(stateChecksum(*before) == stateChecksum(nine));
+}
+
+// Format 10 keeps the victory conditions' "years" values in turns, as the
+// original does (spec 01 §11): format 9 held whole years, which still load.
+TEST_CASE("serialize: format 9 games load; format 10 keeps the victory years in turns") {
+    GameState g = busyGame();
+    g.options.victory.peace = true;
+    g.options.victory.peaceTurns = 12;    // 1.2 years
+    g.options.victory.yearsTurns = 35;
+    g.options.victory.delayTurns = 70;
+    auto now = deserializeState(serializeState(g));
+    REQUIRE_MESSAGE(now.has_value(), (now ? std::string{} : now.error()));
+    CHECK(now->options.victory.peaceTurns == 12);
+    CHECK(now->options.victory.yearsTurns == 35);
+    CHECK(now->options.victory.delayTurns == 70);
+
+    // The same game as format 9 wrote it: whole years, version 9 in the envelope.
+    const std::vector<uint8_t> current = serializeState(g);
+    const std::string magic(current.begin(), current.begin() + 8);
+    std::vector<uint8_t> payload;
+    serial::write(payload, g, 9);
+    std::vector<uint8_t> old = wrapEnvelope(magic, payload);
+    old[8] = 9;
+    auto before = deserializeState(old);
+    REQUIRE_MESSAGE(before.has_value(), (before ? std::string{} : before.error()));
+    CHECK(before->options.victory.peace);
+    CHECK(before->options.victory.peaceTurns == 10);   // format 9 knew 1 year
+    CHECK(before->options.victory.yearsTurns == 30);
+    CHECK(before->options.victory.delayTurns == 70);
+    // A game of whole years writes format 9 as before.
+    GameState whole = g;
+    dropFormat10(whole);   // what else format 10 added, which format 9 drops
+    whole.options.victory.peaceTurns = 10;
+    whole.options.victory.yearsTurns = 30;
+    std::vector<uint8_t> wholePayload;
+    serial::write(wholePayload, whole, 9);
+    CHECK(payload == wholePayload);
+    CHECK(stateChecksum(*before) == stateChecksum(whole));
 }
 
 // ---- Save files --------------------------------------------------------------------------------------------

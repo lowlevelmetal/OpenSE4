@@ -1,21 +1,30 @@
 # The front end's setup screens in the original's layouts (spec 07 session 5): Load Game
 # with Change Directory and Cancel; Quick Start's picker; New Game opening on Players with an
 # empty list and random computer and neutral players; the pages; Add New's empty empire, a
-# name from the list picker and an Email address; Create Empire; Begin Game; and Change Email
-# in Empire Status (docs/BUILDING.md "Input scripts").
+# name from the list picker and an Email address; Create Empire refusing an empire without an
+# emperor's name; Compare Culture Modifiers; Create Empire; Begin Game; and Change Email in
+# Empire Status (docs/BUILDING.md "Input scripts").
 # ci: fixture-data (it needs nothing but our own content: CI plays it on the test fixtures)
 # layouts: both (also plays at 800x600: run_input_tests.py --small)
 options --layout=1024x768 --size=1280x800
 
 wait-screen front
-# Load Game: the 420x520 dialog, its Change Directory box, Cancel back to the intro.
+# Load Game: the 420x520 dialog, its Change Directory (Select Directory), Cancel back to the intro.
 click item:"Load Game" in=front
 wait-for item:"Change Directory" in=front
 screenshot load-game.png
 click item:"Change Directory" in=front
-wait-for item:Default in="Change Directory"
-click item:Cancel in="Change Directory"
-wait-gone item:Default in="Change Directory"
+wait-for item:Default in="Select Directory"
+# Select Directory: a folder typed into Current Directory and Enter go there; Cancel keeps the old one.
+wait-for item:##drive in="Select Directory"
+click item:##folder in="Select Directory"
+key Ctrl+A
+type "/no/such/folder/here"
+key Enter
+wait-for item:"There is no such folder." in="Select Directory"
+screenshot select-directory.png
+click item:Cancel in="Select Directory"
+wait-gone item:Default in="Select Directory"
 click item:Cancel in=front
 wait-for item:"Quick Start" in=front
 # Quick Start: Begin Game is lit before a portrait is chosen; Cancel goes back.
@@ -61,8 +70,25 @@ wait-gone item:##pick in=##listpicker
 click item:##email in=front
 type "player@example.org"
 screenshot empire-general.png
+# Create Empire's checks: without an emperor's name it says so in a titled message, and stays.
+click item:"Create Empire" in=front
+wait-for item:OK in="Emperor Name"
+screenshot create-empire-check.png
+click item:OK in="Emperor Name"
+wait-gone item:OK in="Emperor Name"
+assert-present item:"Create Empire" in=front
+click item:##edit in=front nth=4
+type "Ada"
 click item:Environment in=front
 wait-for item:Oxygen in=front
+# Culture: Compare Culture Modifiers opens the original's comparison window; Close.
+click item:Culture in=front
+wait-for item:"Compare Culture Modifiers" in=front
+click item:"Compare Culture Modifiers" in=front
+wait-for item:Close in="Compare Culture Modifiers"
+screenshot culture-modifiers.png
+click item:Close in="Compare Culture Modifiers"
+wait-gone item:Close in="Compare Culture Modifiers"
 click item:"Create Empire" in=front
 wait-for item:"Add New" in=front
 assert-enabled item:Edit in=front

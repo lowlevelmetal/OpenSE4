@@ -234,22 +234,18 @@ private:
 
         const Victory& v = in_.victory;
         VictoryConditions& w = g.victory;
-        auto years = [&](int32_t turns) {
-            if (turns % 10 != 0) count("victory years that are not whole years");
-            return static_cast<int>(xmath::divRoundHalfEven(turns, 10));
-        };
         w.score = v.score;
         w.scoreValue = v.scoreValue;
         w.years = v.years;
-        w.yearsValue = years(v.yearsTurns);
+        w.yearsTurns = v.yearsTurns;
         w.percentOfSecond = v.percentOfSecond;
         w.percentOfSecondValue = v.percentOfSecondValue;
         w.techPercent = v.techPercent;
         w.techPercentValue = v.techPercentValue;
         w.peace = v.peace;
-        w.peaceYears = years(v.peaceTurns);
+        w.peaceTurns = v.peaceTurns;
         w.delay = v.delay;
-        w.delayYears = years(v.delayTurns);
+        w.delayTurns = v.delayTurns;
         s_.peacefulTurns = static_cast<uint32_t>(std::max(0, v.peacefulTurns));
         // The completed mark (spec 05 §6): a turn-based game is in its last
         // turn, which every player still plays; a simultaneous game is over.

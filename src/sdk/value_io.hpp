@@ -670,15 +670,15 @@ void fields(A& a, game::VictoryConditions& x) {
     a("score", x.score);
     a("score_value", x.scoreValue);
     a("years", x.years);
-    a("years_value", x.yearsValue);
+    a("years_turns", x.yearsTurns);
     a("percent_of_second", x.percentOfSecond);
     a("percent_of_second_value", x.percentOfSecondValue);
     a("tech_percent", x.techPercent);
     a("tech_percent_value", x.techPercentValue);
     a("peace", x.peace);
-    a("peace_years", x.peaceYears);
+    a("peace_turns", x.peaceTurns);
     a("delay", x.delay);
-    a("delay_years", x.delayYears);
+    a("delay_turns", x.delayTurns);
 }
 
 // ---- Commands -----------------------------------------------------------------------------------------------

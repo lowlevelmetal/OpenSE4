@@ -4907,9 +4907,9 @@ class VictoryConditions(Record):
         return self._d['years']
 
     @property
-    def years_value(self) -> int:
-        """...this many years."""
-        return self._d['years_value']
+    def years_turns(self) -> int:
+        """...this many turns (tenths of a year: 100 is ten years)."""
+        return self._d['years_turns']
 
     @property
     def percent_of_second(self) -> bool:
@@ -4937,9 +4937,9 @@ class VictoryConditions(Record):
         return self._d['peace']
 
     @property
-    def peace_years(self) -> int:
-        """...this many years."""
-        return self._d['peace_years']
+    def peace_turns(self) -> int:
+        """...this many turns (tenths of a year)."""
+        return self._d['peace_turns']
 
     @property
     def delay(self) -> bool:
@@ -4947,9 +4947,9 @@ class VictoryConditions(Record):
         return self._d['delay']
 
     @property
-    def delay_years(self) -> int:
-        """...this many years have passed."""
-        return self._d['delay_years']
+    def delay_turns(self) -> int:
+        """...this many turns (tenths of a year) have passed."""
+        return self._d['delay_turns']
 
 
 
@@ -5399,7 +5399,7 @@ FIELDS: Dict[str, Tuple[str, ...]] = {
     'unit_stack': ('design', 'count'),
     'vehicle': ('id', 'owner', 'design', 'name', 'type', 'location', 'count', 'stacks', 'status', 'built_turn', 'structure', 'damage', 'component_damage', 'experience', 'supply', 'supply_capacity', 'unlimited_supply', 'movement', 'max_movement', 'orders', 'repeat_orders', 'fleet', 'cargo', 'cargo_capacity', 'cargo_used', 'minister', 'immobile_until', 'queue'),
     'vehicle_movement': ('vehicle', 'movement', 'max_movement', 'moves_per_turn', 'supply', 'supply_capacity', 'unlimited_supply', 'uses_supply', 'supply_per_move', 'moves_on_supply', 'turns_on_supply'),
-    'victory_conditions': ('score', 'score_value', 'years', 'years_value', 'percent_of_second', 'percent_of_second_value', 'tech_percent', 'tech_percent_value', 'peace', 'peace_years', 'delay', 'delay_years'),
+    'victory_conditions': ('score', 'score_value', 'years', 'years_turns', 'percent_of_second', 'percent_of_second_value', 'tech_percent', 'tech_percent_value', 'peace', 'peace_turns', 'delay', 'delay_turns'),
     'view': ('api', 'empire', 'whole', 'game', 'my', 'empires', 'systems', 'objects', 'colonies', 'vehicles', 'fleets', 'designs', 'messages', 'log', 'battles'),
     'view_design': ('id', 'owner', 'known', 'name', 'design_type', 'hull', 'picture', 'entries', 'strategy', 'obsolete', 'created_turn', 'template_name', 'prototype', 'built', 'lost', 'scrapped', 'enemy_tonnage_destroyed', 'seen_turn', 'figures'),
     'waypoint': ('name', 'location', 'set'),

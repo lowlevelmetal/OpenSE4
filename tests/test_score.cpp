@@ -276,7 +276,7 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         s.options.victory.score = true;
         s.options.victory.scoreValue = 1;
         s.options.victory.years = true;
-        s.options.victory.yearsValue = 1;
+        s.options.victory.yearsTurns = 10;
         s.turn = 30;
         end(s);
         CHECK_FALSE(s.gameOver);  // score and years are met, but the lead is not
@@ -300,7 +300,7 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
     SUBCASE("years elapsed") {
         GameState s = fresh();
         s.options.victory.years = true;
-        s.options.victory.yearsValue = 2;
+        s.options.victory.yearsTurns = 20;
         s.turn = 18;
         end(s);
         CHECK_FALSE(s.gameOver);
@@ -312,7 +312,7 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
     SUBCASE("peace needs Non-Aggression or better between every pair") {
         GameState s = fresh();
         s.options.victory.peace = true;
-        s.options.victory.peaceYears = 1;
+        s.options.victory.peaceTurns = 10;
         for (int i = 0; i < 12; ++i) end(s);
         CHECK(s.peacefulTurns == 0);  // no contact breaks the peace
         makePeace(s);
@@ -334,7 +334,7 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         s.options.victory.score = true;
         s.options.victory.scoreValue = 1;
         s.options.victory.delay = true;
-        s.options.victory.delayYears = 1;
+        s.options.victory.delayTurns = 10;
         s.turn = 8;
         end(s);
         CHECK_FALSE(s.gameOver);

@@ -89,14 +89,15 @@ On the Players page, `Add New` opens **Empire Setup**, where you create an empir
 
 - **General**: names, the race's look, the list of names for ship designs, human or computer player, the ministers' style, and a password.
 - **Environment**: the atmosphere your race breathes and its home planet type.
-- **Culture**: a set of bonuses and penalties for the whole society.
-- **Characteristics**: fifteen racial characteristics, from mining and research to happiness and combat skill. Raising one above 100 % costs racial points; lowering one gives points back.
+- **Culture**: a set of bonuses and penalties for the whole society. `Compare Culture Modifiers` sets every culture's side by side.
+- **Characteristics**: fifteen racial characteristics, from mining and research to happiness and combat skill, each moved 1 % a click. Raising one above 100 % costs racial points; lowering one gives points back.
 - **Advanced Traits**: special abilities, such as needing no spaceports or a racial technology area. They cost racial points.
 - **Description**: the race's happiness type and its background texts.
 
 The racial points left are shown at the top. `Create Empire` is refused while you are over
-budget. `Save To File` on the Players page keeps an empire for later games, and `Add Existing`
-loads one.
+budget, while the empire or its emperor has no name, for a race that breathes no atmosphere
+on a gas giant, and without a culture; a message says which. `Save To File` on the Players
+page keeps an empire for later games, and `Add Existing` loads one.
 
 > A race's happiness type matters more than it looks: it decides how your people react to war, peace and losses. Read it before you choose.
 

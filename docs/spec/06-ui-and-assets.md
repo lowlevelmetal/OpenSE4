@@ -76,8 +76,9 @@ sit below; **Close is always the bottom slot** [S].
 | Quick Start | One-click game. | Grid of race portraits (the list of styles comes from `Quick Start Style N` in Settings.txt [M]); Begin Game, Cancel. Pages of eight in two columns of four, in that list's order, the left column first; an arrow click turns a page (observed, spec 07 session 5). | Intro. |
 | Game Setup (8 pages) | Configure a new game. Pages: Quadrant, Events, Technology, Player Settings, Players, Victory Conditions, Game Settings, Mechanics. | Full-screen; page buttons plus Begin Game / Cancel on every page. Quadrant page has a map preview with Generate Map Now and Load Map; Players page has Add New, Add Existing, Remove, Save To File [T]. Opens on the Players page with an empty list and forgets everything between games; every page's layout is in spec 07 session 5 (observed). | Intro → New Game; File Menu → New. |
 | Empire Setup (6 pages) | Create an empire. Pages: General, Environment, Culture, Characteristics, Advanced Traits, Description. | Full-screen; page buttons plus Create Empire / Cancel. General page has a race-style picture chooser with arrows (the race portrait and a ship of the style side by side), design-name-file picker, minister style [T], and Password and Email boxes. It starts empty; the ▽ buttons open 340×370 list pickers; layouts in spec 07 session 5 (observed). | Game Setup → Players → Add New. |
-| Culture Modifiers | Compare cultures. | List; Close. | Empire Setup → Culture. |
+| Culture Modifiers Comparison | Compare cultures. | A 780x475 dialog: the list of cultures with ten modifier columns, a legend under it, Close; layout in spec 02 §9 (confirmed: binary). | Empire Setup → Culture → Compare Culture Modifiers. |
 | Load Game | Pick a save. | Two-column list (name without extension, last-modified time), scroll arrows, Cancel. Clicking a row loads it [T][S]. A 420×520 dialog: "Save Game Name" and "Date" columns, names in capitals, Change Directory and Cancel under the list (observed, spec 07 session 5); Add Existing's "Load Empire" is the same dialog. It opens sorted by name, A to Z; a click on the "Save Game Name" or "Date" heading sorts by that column, dates newest first, with the usual five-key history of §7 Q24 (confirmed: binary; that a heading click does it, inferred). Ours since 2026-10-14 (`FileSortHistory`, `screens/file_list.hpp`), the history kept while the dialog is open. | Intro; File Menu → Load. |
+| Select Directory | Choose a folder. | A 400x500 window: a Drive box ("c:" at first), a 300 px list of the folders (a double click opens one, inferred), an editable Current Directory box, OK and Cancel (confirmed: binary). Our client: the Drive box lists the drives on Windows and the root elsewhere, ".." heads the list, a folder typed into Current Directory with Enter is opened, and Default goes to the saves folder (OpenSE4's); the places inside the window are ours (inferred). | Load Game (and the original's Save Game) → Change Directory. |
 | Load Map | Pick a saved map. | (not documented) | Game Setup → Quadrant. |
 | Scenario chooser | Pick a scenario. | The Load Game picker in scenario mode, titled "Load Scenario": the first column "Scenario Filename", then Date. It lists the scenario folder's files whose lower-case name contains "_settings.txt", each as its name without that part in capitals, with the file's date; Change Directory and Cancel as in Load Game. A row starts the scenario with the stem folder + name (§5.6); Cancel does nothing. The Tutorial button starts the scenario folder's Tutorial without the picker (confirmed: binary). Ours: the Learn window's Scenarios tab lists them beside the mods' scenarios (§5.6). | Intro → Scenario. |
 | Credits | Rolling credits. | — | Intro. |
@@ -367,7 +368,7 @@ reports render inside the right-hand panel (§2.5).
 |---|---|
 | Ship Report | Detail (owner flag, 128 px portrait with status icons under it, name, class, size, movement, damage, supplies, crew experience, fleet, maintenance), Comps, Cargo, Ability. Less detail for foreign ships. |
 | Planet Report | Detail (owner flag, picture, status icons, physical data, value, description, then colony data: type, population, mood, output, construction), Facil, Cargo, Ability. An "Empty" variant without tabs for planets that are not ours. |
-| Race Report | Detail, Descr (free-text blocks), Race (characteristics, traits), Tech (known tech). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); Detail in the object report's places (the race's portrait with the flag on it, the name from x 120 at y 4, label lines at x 130 every 30 px with values at x 140); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate) and closes with it; Esc closes it (inferred, as the Combat Piece Report). |
+| Race Report | Detail, Descr (free-text blocks), Race (characteristics, each with its level word as on Empire Setup's Characteristics page (spec 02 §9, confirmed: binary), traits), Tech (known tech). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); Detail in the object report's places (the race's portrait with the flag on it, the name from x 120 at y 4, label lines at x 130 every 30 px with values at x 140); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate) and closes with it; Esc closes it (inferred, as the Combat Piece Report). |
 | Fleet, Storm reports | Fleet: movement, supply pool, experience, formation, strategy, ships. Storm: picture, size, description, abilities. |
 | System Report | Shown when empty space in the system panel is clicked. The 128x128 picture `Pictures/Systems/<Background Bitmap>` (the system type's background name, folder root; normal systems use `Starmap.bmp`) at the top left; "<Name> System" right-aligned at the top (left edge at most x 120, y 4); the type's description in grey (160,160,160) from y 140, in a box 42 px tall; the system's abilities from y 197 (confirmed: binary). Our client follows these places since 2026-10-04 and adds the type and the location as label lines beside the picture; the picture, opaque where a planet's portrait is keyed, sits at (0,0) just inside the panel's frame rail and is clipped there (v0.9.0 drew it 3 px higher, over the rail: GitHub issue #2); it wraps the description and every ability (a black hole's are long), and when they do not fit the panel (a long text, a larger Text size) the description and the abilities scroll together with the lists' arrow column from y 140 down (inferred: what the original does with text longer than its boxes is not described). |
 | Component / Facility / Ship Size / Formation reports | Cost with resource icons, size, damage resistance, vehicle types, weapon data including damage by range, abilities; formation diagram. |
@@ -3036,6 +3037,15 @@ differs:
 
   Stellar-manipulation sounds play only when the player can see the effect. The
   Strategic Combat window plays no sounds.
+
+  Our client plays the TCP/IP sounds in its network games (over its own protocol): the
+  host hears `openwp` and `closewp` as players connect, come back and leave, in the lobby
+  too; a chat line from another player plays `cloakon` and sending one `ordbtn`, in the
+  lobby and the game; `destsun` sounds when this computer's player has a turn to play (a
+  new turn of a simultaneous game, a turn-based game's turn passing to it) and brings back
+  the game window if it is minimized. Our client differs: its host generates the turn by
+  itself once every order is in, so it has no alert for being ready to generate it; the
+  host's player hears the new turn's alert instead.
 - `Music/`: 15 MP3 tracks named `Space Empires IV - Track NN.mp3`. Settings.txt defines
   three playlists by file name [M]: intro (1 track), background (8), combat (6). Music
   volume is a game option [M].
@@ -3473,8 +3483,8 @@ the 800x600 layout in §2.1.1.
     Our client follows the playback and music rules, the cloak and stellar-manipulation
     sounds and the `boom` rules of the combat maps, and its music volume is Off and five
     steps. It differs: it plays no `boom1`/`boom2` per ground combat round and draws no
-    small explosion over a system-panel sector; of the TCP/IP sounds only sending a chat
-    line plays (`ordbtn`); a stellar manipulation sounds when the player's log reports it;
+    small explosion over a system-panel sector; a stellar manipulation sounds when the
+    player's log reports it;
     a game loaded from the Game Menu keeps the music (Q53); it keeps an effects volume of
     its own.
 16. **Tooltips and focus.** **Answer:** there are no pop-up tooltips. Hovering a command

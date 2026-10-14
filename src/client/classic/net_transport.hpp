@@ -10,6 +10,10 @@
 #include <chrono>
 #include <deque>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -23,6 +27,23 @@ private:
     std::deque<std::string> lines_;
 };
 
+// Who hears a network event (networkSound): this computer's side of the game.
+struct NetSoundSide {
+    bool hosting = false;          // a TCP/IP host (players connect to us)
+    uint32_t localSlot = net::kNoSlot;   // the host's own slot (its own chat lines)
+    std::string localName;         // a player's own name (the host sends our lines back)
+    game::EmpireId me;             // the empire this computer plays
+    bool turnBased = false;
+};
+
+// The sound a network event plays (docs/spec/06 §5.5, confirmed: binary), or
+// empty: `openwp` on the host when a player connects (or comes back),
+// `closewp` when one leaves; `cloakon` when another's chat line arrives; and
+// the turn alert `destsun` when this computer's player has a turn to play: a
+// new turn of a simultaneous game, or a turn-based game's turn passing to us.
+// Sending a chat line plays `ordbtn` where it is sent.
+std::string_view networkSound(const net::Event& e, const NetSoundSide& side);
+
 class NetTransport : public TurnTransport {
 public:
     virtual NetLog& log() = 0;
@@ -30,6 +51,20 @@ public:
     // Who we are waiting for this turn ("Waiting for: Alice, Bob").
     virtual const net::TurnStatus& turnStatus() const = 0;
     virtual bool hosting() const = 0;
+    // The sounds the events polled since the last call make (networkSound),
+    // in order, for the game to play; and whether the turn alert was among
+    // them: the game window is brought back then if it is minimized
+    // (docs/spec/06 §5.5).
+    std::vector<std::string> takeSounds() { return std::exchange(sounds_, {}); }
+    bool takeTurnAlert() { return std::exchange(turnAlert_, false); }
+
+protected:
+    // Notes the sound an event makes on this side, if any.
+    void sound(const net::Event& e, const NetSoundSide& side);
+
+private:
+    std::vector<std::string> sounds_;
+    bool turnAlert_ = false;
 };
 
 class HostTransport final : public NetTransport {

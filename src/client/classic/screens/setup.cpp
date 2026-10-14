@@ -18,6 +18,7 @@
 #include "client/script/items.hpp"
 #include "datafile/datafile.hpp"
 #include "game/economy.hpp"
+#include "game/score.hpp"
 
 #include <algorithm>
 #include <array>
@@ -98,8 +99,6 @@ ImU32 starColor(std::string_view color) {
     if (keysEqual(color, "White")) return IM_COL32(235, 238, 255, 255);
     return IM_COL32(210, 210, 210, 255);
 }
-
-std::string yearsText(int64_t years) { return std::format("{}.0", years); }
 
 class GameSetupScreen final : public FrontScreen {
 public:
@@ -760,35 +759,40 @@ private:
         // Our wording of the original's two-line explanation.
         a.heading({231, 18}, "Check the conditions that end the game. The game ends after the turn in which");
         a.heading({231, 34}, "an empire meets any checked condition; the last one only delays the others.");
+        // Each value in the unit the game keeps it in (the years in turns), with
+        // the original's steps and ranges (spec 01 §11, confirmed: binary).
         struct Row {
             const char* label;
             bool* on;
             int64_t value;
-            int64_t step, lo, hi;
+            SpinRange range;
+            int decimals;
             std::string shown;
         };
         std::array<Row, 6> rows{{
-            {"An empire's score reaches this value", &v.score, v.scoreValue, 100000, 1000, 1'000'000'000'000, std::to_string(v.scoreValue)},
-            {"This many years have passed", &v.years, v.yearsValue, 1, 1, 10000, yearsText(v.yearsValue)},
-            {"An empire's score is this percent of the second place's", &v.percentOfSecond, v.percentOfSecondValue, 10, 100, 100000,
+            {"An empire's score reaches this value", &v.score, v.scoreValue, kScoreSpin, 0, std::to_string(v.scoreValue)},
+            {"This many years have passed", &v.years, v.yearsTurns, kYearsSpin, 1, game::score::yearsText(v.yearsTurns)},
+            {"An empire's score is this percent of the second place's", &v.percentOfSecond, v.percentOfSecondValue, kLeadSpin, 0,
              std::format("{}%", v.percentOfSecondValue)},
-            {"An empire has researched this percent of the tech areas", &v.techPercent, v.techPercentValue, 5, 1, 100, std::format("{}%", v.techPercentValue)},
-            {"The quadrant has been at peace for this many years", &v.peace, v.peaceYears, 1, 1, 10000, yearsText(v.peaceYears)},
-            {"No condition applies before this many years (a qualifier)", &v.delay, v.delayYears, 1, 1, 10000, yearsText(v.delayYears)},
+            {"An empire has researched this percent of the tech areas", &v.techPercent, v.techPercentValue, kResearchSpin, 0,
+             std::format("{}%", v.techPercentValue)},
+            {"The quadrant has been at peace for this many years", &v.peace, v.peaceTurns, kPeaceSpin, 1, game::score::yearsText(v.peaceTurns)},
+            {"No condition applies before this many years (a qualifier)", &v.delay, v.delayTurns, kQualifierSpin, 1,
+             game::score::yearsText(v.delayTurns)},
         }};
         for (size_t i = 0; i < rows.size(); ++i) {
             Row& r = rows[i];
             const float y = 66 + 40.0f * float(i);
             ImGui::PushID(static_cast<int>(i));
             a.checkBox("##on", {234, y}, r.label, *r.on, true, 253, 330);
-            if (a.spin("##value", {602, y + 3}, 101, r.value, r.step, r.lo, r.hi, r.shown, *r.on)) {
+            if (a.spin("##value", {602, y + 3}, 101, r.value, r.range, r.shown, *r.on, r.decimals)) {
                 switch (i) {
                     case 0: v.scoreValue = r.value; break;
-                    case 1: v.yearsValue = static_cast<int>(r.value); break;
+                    case 1: v.yearsTurns = static_cast<int>(r.value); break;
                     case 2: v.percentOfSecondValue = static_cast<int>(r.value); break;
                     case 3: v.techPercentValue = static_cast<int>(r.value); break;
-                    case 4: v.peaceYears = static_cast<int>(r.value); break;
-                    default: v.delayYears = static_cast<int>(r.value); break;
+                    case 4: v.peaceTurns = static_cast<int>(r.value); break;
+                    default: v.delayTurns = static_cast<int>(r.value); break;
                 }
             }
             ImGui::PopID();
@@ -805,9 +809,10 @@ private:
         a.edit("##master", {586, 16}, {735, 35}, masterPassword_, ImGuiInputTextFlags_Password, false);
         a.heading({231, 57}, "Maximum number of units allowed (in space) per player");
         int64_t units = o.maxUnitsPerPlayer, ships = o.maxShipsPerPlayer;
-        if (a.spin("##units", {586, 52}, 101, units, 50, 1, 32767, std::to_string(units))) o.maxUnitsPerPlayer = static_cast<int>(units);
+        // 100 a click, from 100 to 20,000 (confirmed: binary).
+        if (a.spin("##units", {586, 52}, 101, units, kCapSpin, std::to_string(units))) o.maxUnitsPerPlayer = static_cast<int>(units);
         a.heading({231, 93}, "Maximum number of ships allowed per player");
-        if (a.spin("##ships", {586, 88}, 101, ships, 10, 1, 32767, std::to_string(ships))) o.maxShipsPerPlayer = static_cast<int>(ships);
+        if (a.spin("##ships", {586, 88}, 101, ships, kCapSpin, std::to_string(ships))) o.maxShipsPerPlayer = static_cast<int>(ships);
         // Twelve check rows in the order of spec 01 §2.2. Cheat codes are not
         // in our game options: dim (PARITY_GAPS).
         bool cheats = false;

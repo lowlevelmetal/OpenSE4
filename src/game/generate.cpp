@@ -708,8 +708,9 @@ private:
                 }
                 if (k == 1) return center;
                 if (k > 7) {
-                    // The spec gives no rule for Ring 8 and 9: the ring formula would
-                    // leave the 13 × 13 grid (OpenSE4 choice, spec 01 §14 Q46).
+                    // Ring 8 and 9: the original's unclamped ring formula leaves the
+                    // 13 × 13 grid with no defined result (confirmed: binary); Ring 7
+                    // instead is an OpenSE4 choice (spec 01 §4.3, §14 Q46).
                     warn(std::format("System '{}': position '{}' is beyond the grid; using Ring 7.", sys.name, spec));
                     k = 7;
                 }

@@ -1701,3 +1701,37 @@ TEST_CASE("net: a network client shows the movement line of its own new orders a
         CHECK(rest_.points.back() == target);
     }
 }
+
+TEST_CASE("net: the network game's sounds (docs/spec/06 §5.5)") {
+    using client::classic::NetSoundSide;
+    using client::classic::networkSound;
+    auto event = [](net::EventType type, std::string player = {}, uint32_t slot = net::kNoSlot, game::EmpireId empire = {}) {
+        net::Event e;
+        e.type = type;
+        e.player = std::move(player);
+        e.slot = slot;
+        e.empire = empire;
+        return e;
+    };
+    const NetSoundSide host{true, 0, {}, game::EmpireId{0u}, false};
+    const NetSoundSide player{false, net::kNoSlot, "Bob", game::EmpireId{1u}, false};
+    // A player connects, comes back or leaves: the host hears it.
+    CHECK(networkSound(event(net::EventType::PlayerJoined, "Bob", 1), host) == "openwp");
+    CHECK(networkSound(event(net::EventType::PlayerReconnected, "Bob", 1), host) == "openwp");
+    CHECK(networkSound(event(net::EventType::PlayerLeft, "Bob", 1), host) == "closewp");
+    CHECK(networkSound(event(net::EventType::PlayerJoined, "Carol", 2), player).empty());
+    // Another's chat line arrives; our own (the host's, or a player's sent back to it) is silent.
+    CHECK(networkSound(event(net::EventType::Chat, "Bob", 1), host) == "cloakon");
+    CHECK(networkSound(event(net::EventType::Chat, "Alice", 0), host).empty());
+    CHECK(networkSound(event(net::EventType::Chat, "Alice", 0), player) == "cloakon");
+    CHECK(networkSound(event(net::EventType::Chat, "Bob", 1), player).empty());
+    // The turn alert: a simultaneous game's new turn, a turn-based game's turn passing to us.
+    CHECK(networkSound(event(net::EventType::NewTurn), host) == "destsun");
+    CHECK(networkSound(event(net::EventType::NewTurn), player) == "destsun");
+    NetSoundSide turnBased = player;
+    turnBased.turnBased = true;
+    CHECK(networkSound(event(net::EventType::NewTurn), turnBased).empty());
+    CHECK(networkSound(event(net::EventType::PlayerTurn, "Bob", 1, game::EmpireId{1u}), turnBased) == "destsun");
+    CHECK(networkSound(event(net::EventType::PlayerTurn, "Alice", 0, game::EmpireId{0u}), turnBased).empty());
+    CHECK(networkSound(event(net::EventType::OrdersReceived, "Bob", 1), host).empty());
+}

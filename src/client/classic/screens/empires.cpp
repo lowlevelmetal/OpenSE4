@@ -1214,10 +1214,13 @@ private:
 
     void race(UiContext& ui, const game::Empire& e) {
         heading(ui, "Characteristics");
-        if (ImGui::BeginTable("##chars", 2, ImGuiTableFlags_RowBg)) {
+        // Each value with its level word, as Empire Setup shows it (confirmed: binary).
+        if (ImGui::BeginTable("##chars", 3, ImGuiTableFlags_RowBg)) {
             const float value = ImGui::CalcTextSize("000%").x + ImGui::GetStyle().CellPadding.x * 2;
+            const float word = ImGui::CalcTextSize("Non-Existant").x + ImGui::GetStyle().CellPadding.x * 2;
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, value);
+            ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, word);
             for (size_t i = 0; i < game::kCharacteristics; ++i) {
                 const int v = e.race.characteristics[i];
                 ImGui::TableNextRow();
@@ -1225,6 +1228,9 @@ private:
                 fittedText(game::displayName(static_cast<game::Characteristic>(i)));
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextColored(v > 100 ? kTextGood : v < 100 ? kTextBad : ImVec4(0.9f, 0.92f, 0.97f, 1), "%d%%", v);
+                ImGui::TableSetColumnIndex(2);
+                const std::string_view level = game::economy::characteristicLevel(v);
+                ImGui::TextUnformatted(level.data(), level.data() + level.size());
             }
             ImGui::EndTable();
         }
@@ -1382,7 +1388,8 @@ public:
             row(VictoryRow::Score, "Score", std::format("Score of {}", formatNumber(v.scoreValue)), "First to reach", [&](EmpireId e) {
                 return std::format("{}% of the score", pct(game::score::empireScore(r, s, e), v.scoreValue));
             });
-            row(VictoryRow::Years, "Years", std::format("After {} years", v.yearsValue), std::format("{}.{} of {} years", years10 / 10, years10 % 10, v.yearsValue),
+            row(VictoryRow::Years, "Years", std::format("After {} years", game::score::yearsText(v.yearsTurns)),
+                std::format("{}.{} of {} years", years10 / 10, years10 % 10, game::score::yearsText(v.yearsTurns)),
                 [&](EmpireId) { return std::string{}; });
             row(VictoryRow::PercentOfSecond, "Percent of second place", std::format("{}% of second place", v.percentOfSecondValue), "Leader vs. next",
                 [&](EmpireId e) {
@@ -1395,11 +1402,11 @@ public:
                     const auto [owned, total] = techProgress(r, s, s.empire(e));
                     return std::format("{}% of all technology", pct(owned, total));
                 });
-            row(VictoryRow::Peace, "Years of peace", std::format("{} years of peace", v.peaceYears),
+            row(VictoryRow::Peace, "Years of peace", std::format("{} years of peace", game::score::yearsText(v.peaceTurns)),
                 std::format("{}.{} years so far", s.peacefulTurns / 10, s.peacefulTurns % 10), [&](EmpireId) { return std::string{}; });
-            row(VictoryRow::Delay, "No victory before", std::format("No victory before {} years", v.delayYears),
-                years10 >= uint32_t(v.delayYears) * 10 ? std::string("Passed") : std::format("{}.{} years left", (uint32_t(v.delayYears) * 10 - years10) / 10,
-                                                                                          (uint32_t(v.delayYears) * 10 - years10) % 10),
+            row(VictoryRow::Delay, "No victory before", std::format("No victory before {} years", game::score::yearsText(v.delayTurns)),
+                years10 >= uint32_t(std::max(0, v.delayTurns)) ? std::string("Passed")
+                                                               : std::format("{} years left", game::score::yearsText(v.delayTurns - int64_t{years10})),
                 [&](EmpireId) { return std::string{}; });
             ImGui::EndTable();
         }

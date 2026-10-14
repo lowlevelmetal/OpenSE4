@@ -382,12 +382,12 @@ bool SetupArea::checkBox(const char* id, Vec2 boxAt, std::string_view label, boo
 
 // ---- Fields ---------------------------------------------------------------------------------
 
-bool SetupArea::spin(const char* id, Vec2 left, float valueW, int64_t& value, int64_t step, int64_t lo, int64_t hi, std::string_view shown,
-                     bool enabled) {
+bool SetupArea::spin(const char* id, Vec2 left, float valueW, int64_t& value, const SpinRange& range, std::string_view shown, bool enabled,
+                     int decimals) {
     ImGui::PushID(id);
     const int64_t before = value;
     place(left);
-    if (arrowButton(painter(), "##less", ArrowGlyph::Left, {20, 20}, enabled)) value = std::max(lo, value - step);
+    if (arrowButton(painter(), "##less", ArrowGlyph::Left, {20, 20}, enabled)) value = spinStep(value, range, false);
     // The value box (#2D2D2D lines and a #606060 value while dim), which takes typing.
     const Vec2 va = left + Vec2{24, 0}, vb = va + Vec2{valueW, 19};
     box(va, vb, enabled ? kBoxRgb : kDimBoxRgb);
@@ -401,14 +401,13 @@ bool SetupArea::spin(const char* id, Vec2 left, float valueW, int64_t& value, in
     char buf[32];
     std::snprintf(buf, sizeof buf, "%.*s", int(shown.size()), shown.data());
     if (ImGui::InputText("##value", buf, sizeof buf, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
-        long long typed = 0;
-        if (std::sscanf(buf, "%lld", &typed) == 1) value = std::clamp<int64_t>(typed, lo, hi);
+        if (const auto typed = parseSpinText(buf, decimals)) value = std::clamp<int64_t>(*typed, range.lo, std::max(range.lo, range.hi));
     }
     ImGui::EndDisabled();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
     place(vb + Vec2{5, -19});
-    if (arrowButton(painter(), "##more", ArrowGlyph::Right, {20, 20}, enabled)) value = std::min(hi, value + step);
+    if (arrowButton(painter(), "##more", ArrowGlyph::Right, {20, 20}, enabled)) value = spinStep(value, range, true);
     ImGui::PopID();
     return value != before;
 }

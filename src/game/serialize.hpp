@@ -112,6 +112,9 @@ class Rules;
 //   (EconomyReport::partners, spec 06 §1.5), the Empires window's tab
 //   (InterfaceOptions::empiresTab) and the minister mark on answers
 //   (cmd::AnswerMessage::minister, spec 05 §3.2).
+// - The victory conditions' three "years" values in turns, tenths of a year,
+//   as the original keeps them (VictoryConditions::yearsTurns, peaceTurns,
+//   delayTurns; docs/spec/01 §11): format 9 held whole years.
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

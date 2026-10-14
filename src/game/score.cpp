@@ -184,6 +184,11 @@ std::string destroyedText(const GameState& s, EmpireId gone) {
 
 std::string dateText(uint32_t turn) { return std::format("{}.{}", 2400 + turn / 10, turn % 10); }
 
+std::string yearsText(int64_t turns) {
+    const int64_t t = turns < 0 ? -turns : turns;
+    return std::format("{}{}.{}", turns < 0 ? "-" : "", t / 10, t % 10);
+}
+
 uint32_t fileDate(const GameState& s) { return s.options.simultaneous ? s.turn + 1 : s.turn; }
 
 namespace {
@@ -305,7 +310,7 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
     const VictoryConditions& v = s.options.victory;
     const int64_t now = date;
     // "After X years": nothing is checked before then, and the peace counter stands still.
-    if (v.delay && now < int64_t{v.delayYears} * 10) return;
+    if (v.delay && now < int64_t{v.delayTurns}) return;
 
     // The peace counter rises each turn and restarts whenever two living
     // empires hold a treaty worse than Non-Aggression (no contact included).
@@ -320,7 +325,7 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
     bool scoreMet = false, yearsMet = false, secondMet = false, techMet = false, peaceMet = false;
     if (v.score)
         scoreMet = std::any_of(scores.begin(), scores.end(), [&](const auto& row) { return row.second >= v.scoreValue; });
-    if (v.years) yearsMet = now >= int64_t{v.yearsValue} * 10;
+    if (v.years) yearsMet = now >= int64_t{v.yearsTurns};
     if (v.percentOfSecond) {
         // Some living empire has score >= (X / 100) × the score of every other
         // living empire, compared in floating point; with one living empire
@@ -339,7 +344,7 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
             const Empire& e = s.empire(id);
             if (techShareMet(research::totalLevels(r, e), research::maxLevels(r, s, e), v.techPercentValue)) techMet = true;
         }
-    if (v.peace) peaceMet = s.peacefulTurns >= static_cast<uint32_t>(std::max(0, v.peaceYears)) * 10;
+    if (v.peace) peaceMet = s.peacefulTurns >= static_cast<uint32_t>(std::max(0, v.peaceTurns));
 
     // Quirk (confirmed: binary): with "% of second place" on, its result
     // replaces those of the Score and Years tests.
@@ -348,9 +353,9 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
     if (!over) return;
     if (v.percentOfSecond && secondMet) reason = std::format("an empire has {}% of every other empire's score", v.percentOfSecondValue);
     else if (scoreMet) reason = std::format("an empire's score has reached {}", v.scoreValue);
-    else if (yearsMet) reason = std::format("{} years have passed", v.yearsValue);
+    else if (yearsMet) reason = std::format("{} years have passed", yearsText(v.yearsTurns));
     else if (techMet) reason = std::format("an empire has researched {}% of its technology", v.techPercentValue);
-    else reason = std::format("the quadrant has been at peace for {} years", v.peaceYears);
+    else reason = std::format("the quadrant has been at peace for {} years", yearsText(v.peaceTurns));
 
     // The game ends; the original names no winner. A turn-based game first
     // plays one more game turn, its last, which every player plays (spec 05

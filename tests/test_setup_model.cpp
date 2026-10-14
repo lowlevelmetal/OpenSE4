@@ -180,11 +180,11 @@ TEST_CASE("setup model: a new game starts with no empire and random computer and
     // Maximum Event Severity Catastrophic and the Victory Conditions page's values (spec 01 §2.2, §11).
     CHECK(s.options.maxEventSeverity == 3);
     CHECK(s.options.victory.scoreValue == 5'000'000);
-    CHECK(s.options.victory.yearsValue == 10);
+    CHECK(s.options.victory.yearsTurns == 100);   // 10.0 years
     CHECK(s.options.victory.percentOfSecondValue == 300);
     CHECK(s.options.victory.techPercentValue == 50);
-    CHECK(s.options.victory.peaceYears == 1);
-    CHECK(s.options.victory.delayYears == 5);
+    CHECK(s.options.victory.peaceTurns == 10);
+    CHECK(s.options.victory.delayTurns == 50);
     CHECK_FALSE(s.options.victory.score);
     CHECK_FALSE(s.options.victory.delay);
     // The original's defaults (spec 01 §2.2, spec 02 §9).
@@ -865,14 +865,131 @@ TEST_CASE("setup model: Add New starts an empty empire of the first race style")
     CHECK(std::find(surf.begin(), surf.end(), d.race.nativeSurface) != surf.end());
     if (std::find(atm.begin(), atm.end(), "Oxygen") != atm.end()) CHECK(d.race.atmosphere == "Oxygen");
     if (std::find(surf.begin(), surf.end(), "Rock") != surf.end()) CHECK(surf.front() == "Rock");
-    // A name is needed; the race without one takes the empire's.
+    // Names are needed, the empire's and the emperor's; the race without one takes the empire's.
     CHECK_FALSE(setup::finishDraft(r, d, 2000).has_value());
     setup::EmpireDraft named = d;
     named.setup.name = "Blank Realm";
     named.setup.email = "realm@example.org";
+    CHECK_FALSE(setup::finishDraft(r, named, 2000).has_value());
+    named.setup.leaderName = "Ada";
     const auto done = setup::finishDraft(r, named, 2000);
     REQUIRE(done.has_value());
     REQUIRE(done->customRace.has_value());
     CHECK(done->customRace->name == "Blank Realm");
     CHECK(done->email == "realm@example.org");
+}
+
+TEST_CASE("setup model: Create Empire's checks come in the original's order, each with a title") {
+    const game::Rules& r = setupRules();
+    setup::EmpireDraft d = setup::blankDraft(r, nullptr);
+    d.setup.name = "Checked Realm";
+    d.setup.leaderName = "Ada";
+    REQUIRE_FALSE(setup::checkDraft(r, d, 2000).has_value());
+    // Each check alone.
+    auto titleOf = [&](const setup::EmpireDraft& x, int points) {
+        const auto problem = setup::checkDraft(r, x, points);
+        return problem ? problem->title : std::string();
+    };
+    setup::EmpireDraft overspent = d;
+    overspent.race.characteristics[1] = 150;   // Intelligence: costs points
+    REQUIRE(setup::racialPointsLeft(r, overspent.race, 0) < 0);
+    CHECK(titleOf(overspent, 0) == "Racial Points");
+    setup::EmpireDraft unnamed = d;
+    unnamed.setup.name.clear();
+    CHECK(titleOf(unnamed, 2000) == "Empire Name");
+    setup::EmpireDraft noEmperor = d;
+    noEmperor.setup.leaderName.clear();
+    CHECK(titleOf(noEmperor, 2000) == "Emperor Name");
+    setup::EmpireDraft gasless = d;
+    gasless.race.atmosphere = "None";
+    gasless.race.nativeSurface = "Gas Giant";
+    CHECK(titleOf(gasless, 2000) == "Incompatible Environment");
+    gasless.race.nativeSurface = "Rock";   // no atmosphere on rock is allowed
+    CHECK(titleOf(gasless, 2000).empty());
+    setup::EmpireDraft noCulture = d;
+    noCulture.race.culture = static_cast<uint32_t>(r.data().cultures.size());
+    CHECK(titleOf(noCulture, 2000) == "Culture");
+    // All at once: the first in the order wins.
+    setup::EmpireDraft all = overspent;
+    all.setup.name.clear();
+    all.setup.leaderName.clear();
+    all.race.atmosphere = "None";
+    all.race.nativeSurface = "Gas Giant";
+    all.race.culture = noCulture.race.culture;
+    CHECK(titleOf(all, 0) == "Racial Points");
+    CHECK(titleOf(all, 1'000'000) == "Empire Name");
+    all.setup.name = "Checked Realm";
+    CHECK(titleOf(all, 1'000'000) == "Emperor Name");
+    all.setup.leaderName = "Ada";
+    CHECK(titleOf(all, 1'000'000) == "Incompatible Environment");
+    all.race.nativeSurface = "Rock";
+    CHECK(titleOf(all, 1'000'000) == "Culture");
+    // finishDraft refuses with the same text.
+    const auto refused = setup::finishDraft(r, all, 1'000'000);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == setup::checkDraft(r, all, 1'000'000)->text);
+}
+
+TEST_CASE("setup model: the spin controls' steps and ranges, and what their boxes read") {
+    using setup::spinStep;
+    // A click moves one step, then the value is clamped into the range (spec 01 §2.2, §11).
+    CHECK(spinStep(5'000'000, setup::kScoreSpin, true) == 5'200'000);
+    CHECK(spinStep(200'000, setup::kScoreSpin, false) == 100'000);
+    CHECK(spinStep(9'900'000, setup::kScoreSpin, true) == 10'000'000);
+    CHECK(spinStep(100, setup::kYearsSpin, true) == 110);   // 10.0 years -> 11.0
+    CHECK(spinStep(35, setup::kYearsSpin, false) == 30);    // never under 3.0 years
+    CHECK(spinStep(5'000, setup::kYearsSpin, true) == 5'000);
+    CHECK(spinStep(300, setup::kLeadSpin, true) == 320);
+    CHECK(spinStep(160, setup::kLeadSpin, false) == 150);
+    CHECK(spinStep(50, setup::kResearchSpin, false) == 40);
+    CHECK(spinStep(100, setup::kResearchSpin, true) == 100);
+    CHECK(spinStep(10, setup::kPeaceSpin, false) == 8);     // 1.0 year of peace -> 0.8
+    CHECK(spinStep(2, setup::kPeaceSpin, false) == 2);
+    CHECK(spinStep(99, setup::kPeaceSpin, true) == 100);
+    CHECK(spinStep(50, setup::kQualifierSpin, true) == 60);
+    CHECK(spinStep(10, setup::kQualifierSpin, false) == 10);
+    CHECK(spinStep(1'000, setup::kCapSpin, true) == 1'100);
+    CHECK(spinStep(200, setup::kCapSpin, false) == 100);
+    CHECK(spinStep(100, setup::kCapSpin, false) == 100);
+    CHECK(spinStep(32'767, setup::kCapSpin, false) == 20'000);   // a value from elsewhere comes back into the range
+    CHECK(spinStep(19'950, setup::kCapSpin, true) == 20'000);
+    // Characteristics: 1 % a click.
+    CHECK(spinStep(100, setup::SpinRange{setup::kCharacteristicStep, 50, 200}, true) == 101);
+    CHECK(spinStep(50, setup::SpinRange{setup::kCharacteristicStep, 50, 200}, false) == 50);
+
+    using setup::parseSpinText;
+    CHECK(parseSpinText("10.5", 1) == 105);
+    CHECK(parseSpinText("10", 1) == 100);
+    CHECK(parseSpinText(" 0.25", 1) == 2);    // further decimals are dropped
+    CHECK(parseSpinText("300%", 0) == 300);
+    CHECK(parseSpinText("5,000,000", 0) == 5'000'000);
+    CHECK(parseSpinText("12.9", 0) == 12);
+    CHECK(parseSpinText("-3", 0) == -3);
+    CHECK_FALSE(parseSpinText("", 1).has_value());
+    CHECK_FALSE(parseSpinText("years", 1).has_value());
+}
+
+TEST_CASE("setup model: the characteristics' words and effect notes") {
+    using game::economy::characteristicLevel;
+    CHECK(characteristicLevel(200) == "God-like");
+    CHECK(characteristicLevel(130) == "God-like");
+    CHECK(characteristicLevel(129) == "Superior");
+    CHECK(characteristicLevel(120) == "Superior");
+    CHECK(characteristicLevel(119) == "Impressive");
+    CHECK(characteristicLevel(110) == "Impressive");
+    CHECK(characteristicLevel(109) == "Enhanced");
+    CHECK(characteristicLevel(105) == "Enhanced");
+    CHECK(characteristicLevel(104) == "Average");
+    CHECK(characteristicLevel(100) == "Average");
+    CHECK(characteristicLevel(99) == "Reduced");
+    CHECK(characteristicLevel(95) == "Reduced");
+    CHECK(characteristicLevel(94) == "Weak");
+    CHECK(characteristicLevel(90) == "Weak");
+    CHECK(characteristicLevel(89) == "Pathetic");
+    CHECK(characteristicLevel(80) == "Pathetic");
+    CHECK(characteristicLevel(79) == "Non-Existant");
+    CHECK(characteristicLevel(0) == "Non-Existant");
+    CHECK(setup::characteristicEffectText(110, "Research") == "(+10% to Research)");
+    CHECK(setup::characteristicEffectText(100, "Research") == "(0% to Research)");
+    CHECK(setup::characteristicEffectText(95, "Tolerance") == "(-5% to Tolerance)");
 }

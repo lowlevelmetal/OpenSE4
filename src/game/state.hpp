@@ -1049,15 +1049,16 @@ struct PendingEvent {
 };
 
 // The values a new game's Victory Conditions page shows, every condition
-// off (observed, spec 01 §11, spec 07 sessions 3 and 5). Years are whole
-// years here; the original keeps them in turns and shows one decimal.
+// off (observed, spec 01 §11, spec 07 sessions 3 and 5). The "years" values
+// are kept in turns (tenths of a year), as the original keeps them; the
+// setup shows them with one decimal (confirmed: binary).
 struct VictoryConditions {
     bool score = false;             int64_t scoreValue = 5'000'000;
-    bool years = false;             int yearsValue = 10;
+    bool years = false;             int yearsTurns = 100;
     bool percentOfSecond = false;   int percentOfSecondValue = 300;
     bool techPercent = false;       int techPercentValue = 50;
-    bool peace = false;             int peaceYears = 1;
-    bool delay = false;             int delayYears = 5;
+    bool peace = false;             int peaceTurns = 10;
+    bool delay = false;             int delayTurns = 50;
 };
 
 struct GameOptions {

@@ -3029,9 +3029,16 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
   - Cargo transfer and launch/recover become orders.
   - Attack becomes a pursuit of a moving target.
   - There is no tactical combat.
-- **Headless hosting**: the command-line arguments are the save path, the password, the
-  player number (0 = process the turn as host) and an optional mod path, plus a flag that
-  suppresses dialogs [H].
+- **The command line** (confirmed: binary): any argument skips the launcher (spec 06
+  §1.1). With four or more arguments the fourth names the mod folder, in place of the one
+  `Path.txt` names (§1 "Mods"); the first three are never read in 1.95, so the original
+  has no headless hosting from its command line (the save path, password and player
+  number once thought to be read there [H] are not). OpenSE4 reads its own options
+  (`--name=value`) as before and, like the original, any other argument: the fourth
+  names a mod folder (in the game folder, or a path), which OpenSE4 plays as a classic
+  mod for that run (as `--mod` would, after any `--mod`) and reads for fonts and pointers
+  in `Path.txt`'s place; the others are ignored. OpenSE4's headless hosting is
+  `opense4-server` (docs/MULTIPLAYER.md), an OpenSE4 extension.
 
 ### 9.3 Simultaneous movement and combat timing
 

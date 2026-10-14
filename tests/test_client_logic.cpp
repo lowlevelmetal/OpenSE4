@@ -518,7 +518,7 @@ TEST_CASE("client logic: the score figures, ranks, comparison rows and victory m
     CHECK_FALSE(victoryRowOn(v, VictoryRow::Years));
     CHECK_FALSE(victoryMark(r, s, VictoryRow::Years, me));
     v.years = true;
-    v.yearsValue = 1;
+    v.yearsTurns = 10;
     s.turn = 9;
     CHECK_FALSE(victoryMark(r, s, VictoryRow::Years, me));
     s.turn = 10;
@@ -530,7 +530,7 @@ TEST_CASE("client logic: the score figures, ranks, comparison rows and victory m
     v.scoreValue = game::score::empireScore(r, s, me) + 1;
     CHECK_FALSE(victoryMark(r, s, VictoryRow::Score, me));
     v.peace = true;
-    v.peaceYears = 1;
+    v.peaceTurns = 10;
     s.peacefulTurns = 9;
     CHECK_FALSE(victoryMark(r, s, VictoryRow::Peace, b));
     s.peacefulTurns = 10;

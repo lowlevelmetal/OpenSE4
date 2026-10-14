@@ -589,7 +589,8 @@ TEST_CASE("quadrant generation: position specifiers, comets and names") {
     CHECK(seen.size() == 8);  // 101 draws find every free sector of the ring
 
     // Ring 0 is any sector of the inner 11 x 11 square, redrawn while taken (spec 01
-    // §4.3, confirmed: binary); Ring 9 has no rule and is placed on Ring 7 with a warning.
+    // §4.3, confirmed: binary); Ring 9, undefined in the original, is placed on Ring 7 with a
+    // warning (an OpenSE4 choice, spec 01 §14 Q46).
     std::vector<ruleset::SystemObjectTemplate> inner;
     for (int k = 0; k < 30; ++k) inner.push_back(obj("Planet", "Ring 0"));
     inner.push_back(obj("Planet", "Ring 9"));
