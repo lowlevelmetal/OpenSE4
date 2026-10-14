@@ -95,6 +95,15 @@ std::vector<game::MessageType> replyTypes(game::MessageType received);
 // A reply type's name as the list shows it: "Accept Tribute" for AcceptGift
 // answering a tribute, otherwise game::displayName.
 std::string replyTypeName(game::MessageType reply, game::MessageType received);
+// Whether a reply type (replyTypes) accepts (true) or refuses (false) the
+// message it answers; nullopt for Counter Treaty and Counter Trade, which are
+// new proposals.
+std::optional<bool> replyAccepts(game::MessageType reply);
+// Communicate's View Trade, View Gift and View Tribute buttons (spec 06 §1.5,
+// confirmed: binary): the one the type of the newest message from the empire
+// (replyableMessage) lights, if any.
+enum class OfferView : uint8_t { None, Trade, Gift, Tribute };
+OfferView offerView(const game::DiplomaticMessage* newest);
 // Treaties a Propose or Counter Treaty may name while the current treaty is
 // `current` (spec 06 §4.2, confirmed: binary): Non-Intercourse to
 // Partnership, never War or None; the current treaty stays listed.
@@ -126,6 +135,34 @@ bool isAnyItem(const game::PackageItem& item);
 bool packageHasAny(const std::vector<game::PackageItem>& items);
 std::string packageItemText(const game::Rules& r, const game::GameState& s, const game::PackageItem& item);
 std::string_view packageKindName(game::PackageItem::Kind k);
+
+// ---- Select Package (spec 05 §3.4, spec 06 §1.5, confirmed: binary) ------------------------
+
+enum class PackageTab : uint8_t { Systems, Planets, Resources, Technology, Ships, Units, StarCharts, Treaty, CommChannels, Count };
+std::string_view packageTabName(PackageTab t);
+// Whether the tab can be chosen: Technology is dim when the game does not
+// allow technology trades.
+bool packageTabEnabled(const game::GameOptions& o, PackageTab t);
+// The items Select Package lists on a tab for `me` writing to `them`, on the
+// side we give (`give`) or the side we ask for; an "Any" placeholder (an item
+// whose id is left invalid) comes first where the original offers one:
+// - Systems: every system we have explored, on both sides; no "Any".
+// - Planets: our colonies; theirs in systems we have explored, after "Any".
+// - Technology (only with technology trades allowed): the areas we hold a
+//   level in; the areas we can see or hold, after "Any".
+// - Ships: our ships, bases and other vehicles that are not units; theirs that
+//   we see, after "Any".
+// - Units: the ships carrying units (loaded transports), ours or theirs that
+//   we see, after "Any".
+// - Star Charts: every system we have explored, on both sides; "Any" on the
+//   side we ask for.
+// - Treaty: packageTreaties.
+// - Comm Channels: the empires we have met; on the side we ask for, the
+//   empires they have met and we have not (inferred: spec 05 open question
+//   on the original's list). No "Any".
+// Resources are typed in, so their tab lists nothing.
+std::vector<game::PackageItem> packageChoices(const game::Rules& r, const game::GameState& s, game::EmpireId me, game::EmpireId them,
+                                              PackageTab tab, bool give);
 
 // ---- Research -------------------------------------------------------------------------------
 
@@ -204,6 +241,26 @@ std::string rankText(int rank);
 // Dense ranks of the scores, best first: equal scores share a rank and the
 // next score gets the next number.
 std::vector<int> denseRanks(const std::vector<int64_t>& scores);
+
+// ---- Victory Conditions (spec 06 §1.5, confirmed: binary) ---------------------------------------
+
+// Whether the Victory Conditions window gives `other` a column for `viewer`:
+// the viewer always, a destroyed empire never, everyone once the game is
+// over; otherwise the Score Display option read one step off, as the
+// original reads it: "own empire only" shows the empires we hold
+// Non-Aggression or better with, and "Non-Aggression partners" shows all.
+bool victoryColumnVisible(const game::GameState& s, game::EmpireId viewer, game::EmpireId other);
+// The window's rows, in its order.
+enum class VictoryRow : uint8_t { Score, Years, PercentOfSecond, Tech, Peace, Delay, Count };
+// Whether the condition is set in this game (an unset row shows its title only).
+bool victoryRowOn(const game::VictoryConditions& v, VictoryRow row);
+// Whether the window marks `e` with an "X" in `row`: its score has reached
+// the value; it has the percentage of every other living empire's score; its
+// capped tech levels reach the share of its maximum. The years, the peace
+// and the "no victory before" qualifier are game-wide: once met (the date
+// has come, the peace counter is full, the date has passed) every shown
+// empire is marked. Nothing is marked in a row that is off.
+bool victoryMark(const game::Rules& r, const game::GameState& s, VictoryRow row, game::EmpireId e);
 
 // Timeline lines derived from consecutive TurnStats ("Colonized 2 planets").
 struct HistoryEvent {

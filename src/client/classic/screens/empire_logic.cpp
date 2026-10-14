@@ -234,6 +234,31 @@ std::string replyTypeName(MessageType reply, MessageType received) {
     return std::string(game::displayName(reply));
 }
 
+std::optional<bool> replyAccepts(MessageType reply) {
+    switch (reply) {
+        case MessageType::AcceptTreaty:
+        case MessageType::AcceptTrade:
+        case MessageType::AcceptGift:
+        case MessageType::AcceptDemand: return true;
+        case MessageType::RefuseTreaty:
+        case MessageType::RefuseTrade:
+        case MessageType::RefuseGift:
+        case MessageType::RefuseDemand: return false;
+        default: return std::nullopt;
+    }
+}
+
+OfferView offerView(const game::DiplomaticMessage* newest) {
+    if (!newest) return OfferView::None;
+    switch (newest->type) {
+        case MessageType::ProposeTrade:
+        case MessageType::CounterTrade: return OfferView::Trade;
+        case MessageType::Gift: return OfferView::Gift;
+        case MessageType::Tribute: return OfferView::Tribute;
+        default: return OfferView::None;
+    }
+}
+
 std::vector<Treaty> proposableTreaties(Treaty current) {
     (void)current;   // the current treaty stays listed
     std::vector<Treaty> out;
@@ -358,6 +383,115 @@ std::string_view packageKindName(game::PackageItem::Kind k) {
         case K::System: return "System";
     }
     return "?";
+}
+
+std::string_view packageTabName(PackageTab t) {
+    switch (t) {
+        case PackageTab::Systems: return "Systems";
+        case PackageTab::Planets: return "Planets";
+        case PackageTab::Resources: return "Resources";
+        case PackageTab::Technology: return "Technology";
+        case PackageTab::Ships: return "Ships";
+        case PackageTab::Units: return "Units";
+        case PackageTab::StarCharts: return "Star Charts";
+        case PackageTab::Treaty: return "Treaty";
+        case PackageTab::CommChannels: return "Comm Channels";
+        case PackageTab::Count: break;
+    }
+    return {};
+}
+
+bool packageTabEnabled(const game::GameOptions& o, PackageTab t) { return t != PackageTab::Technology || o.allowTechTrades; }
+
+std::vector<game::PackageItem> packageChoices(const game::Rules& r, const game::GameState& s, game::EmpireId me, game::EmpireId them,
+                                              PackageTab tab, bool give) {
+    using K = game::PackageItem::Kind;
+    std::vector<game::PackageItem> out;
+    if (!me.valid() || me.index() >= s.empires.size() || !them.valid() || them.index() >= s.empires.size() || me == them) return out;
+    const game::Empire& us = s.empire(me);
+    const game::EmpireId owner = give ? me : them;
+    auto item = [](K kind) {
+        game::PackageItem i;
+        i.kind = kind;
+        return i;
+    };
+    // The "Any" placeholder, on the side we ask for only.
+    auto any = [&](K kind) {
+        if (!give) out.push_back(item(kind));
+    };
+    // A vehicle of `owner` we may list: ours, or one of theirs that we see.
+    auto listable = [&](const game::Vehicle& v) {
+        if (v.owner != owner || v.count <= 0) return false;
+        return give || std::find(us.knowledge.visibleVehicles.begin(), us.knowledge.visibleVehicles.end(), v.id) != us.knowledge.visibleVehicles.end();
+    };
+    switch (tab) {
+        case PackageTab::Systems:
+        case PackageTab::StarCharts: {
+            const bool charts = tab == PackageTab::StarCharts;
+            if (charts) any(K::StarChart);
+            for (const game::StarSystem& sys : s.galaxy.systems) {
+                if (!us.hasExplored(sys.id)) continue;
+                game::PackageItem i = item(charts ? K::StarChart : K::System);
+                i.system = sys.id;
+                out.push_back(i);
+            }
+            break;
+        }
+        case PackageTab::Planets:
+            any(K::Planet);
+            for (const auto& c : s.colonies) {
+                if (!c || c->owner != owner) continue;
+                if (!give && !us.hasExplored(s.galaxy.object(c->planet).system)) continue;
+                game::PackageItem i = item(K::Planet);
+                i.planet = c->planet;
+                out.push_back(i);
+            }
+            break;
+        case PackageTab::Resources: break;
+        case PackageTab::Technology:
+            if (!s.options.allowTechTrades) break;
+            any(K::Technology);
+            for (uint32_t a = 0; a < r.data().techAreas.size(); ++a) {
+                const ruleset::TechAreaId id{a};
+                if (give ? us.techLevel(id) <= 0 : !r.techVisible(s, us, id) && us.techLevel(id) == 0) continue;
+                game::PackageItem i = item(K::Technology);
+                i.tech = id;
+                out.push_back(i);
+            }
+            break;
+        case PackageTab::Ships:
+        case PackageTab::Units: {
+            const bool units = tab == PackageTab::Units;
+            any(K::Vehicle);
+            for (const game::Vehicle& v : s.vehicles) {
+                if (!listable(v) || game::isUnitType(game::vehicleType(r, s, v))) continue;
+                if (units && v.cargo.units.empty()) continue;
+                game::PackageItem i = item(K::Vehicle);
+                i.vehicle = v.id;
+                out.push_back(i);
+            }
+            break;
+        }
+        case PackageTab::Treaty:
+            for (Treaty t : packageTreaties(us.relation(them).treaty)) {
+                game::PackageItem i = item(K::Treaty);
+                i.treaty = t;
+                out.push_back(i);
+            }
+            break;
+        case PackageTab::CommChannels:
+            for (const game::Empire& x : s.empires) {
+                if (x.id == me || x.id == them || !x.alive) continue;
+                const bool weMet = us.relation(x.id).contact;
+                if (give ? !weMet : weMet || !s.empire(them).relation(x.id).contact) continue;
+                game::PackageItem i = item(K::CommChannel);
+                i.empire = x.id;
+                out.push_back(i);
+            }
+            break;
+        case PackageTab::Count: break;
+    }
+    return out;
 }
 
 std::string packageItemText(const game::Rules& r, const game::GameState& s, const game::PackageItem& item) {
@@ -676,6 +810,55 @@ std::vector<int> denseRanks(const std::vector<int64_t>& scores) {
     for (int64_t v : scores)
         out.push_back(int(std::find(distinct.begin(), distinct.end(), v) - distinct.begin()) + 1);
     return out;
+}
+
+bool victoryColumnVisible(const game::GameState& s, game::EmpireId viewer, game::EmpireId other) {
+    if (!other.valid() || other.index() >= s.empires.size()) return false;
+    if (viewer == other) return true;
+    if (!s.empire(other).alive) return false;
+    if (s.gameOver) return true;
+    if (s.options.scoreDisplay > 0) return true;
+    if (!viewer.valid() || viewer.index() >= s.empires.size()) return false;
+    const game::Relation& rel = s.empire(viewer).relation(other);
+    return rel.contact && rel.treaty >= Treaty::NonAggression;
+}
+
+bool victoryRowOn(const game::VictoryConditions& v, VictoryRow row) {
+    switch (row) {
+        case VictoryRow::Score: return v.score;
+        case VictoryRow::Years: return v.years;
+        case VictoryRow::PercentOfSecond: return v.percentOfSecond;
+        case VictoryRow::Tech: return v.techPercent;
+        case VictoryRow::Peace: return v.peace;
+        case VictoryRow::Delay: return v.delay;
+        case VictoryRow::Count: break;
+    }
+    return false;
+}
+
+bool victoryMark(const game::Rules& r, const game::GameState& s, VictoryRow row, game::EmpireId e) {
+    const game::VictoryConditions& v = s.options.victory;
+    if (!victoryRowOn(v, row) || !e.valid() || e.index() >= s.empires.size()) return false;
+    const int64_t now = s.turn;
+    switch (row) {
+        case VictoryRow::Score: return game::score::empireScore(r, s, e) >= v.scoreValue;
+        case VictoryRow::Years: return now >= int64_t{v.yearsValue} * 10;
+        case VictoryRow::PercentOfSecond: {
+            const int64_t mine = game::score::empireScore(r, s, e);
+            for (const game::Empire& other : s.empires)
+                if (other.alive && other.id != e && !game::score::leadsBy(mine, game::score::empireScore(r, s, other.id), v.percentOfSecondValue))
+                    return false;
+            return true;
+        }
+        case VictoryRow::Tech: {
+            const game::Empire& emp = s.empire(e);
+            return game::score::techShareMet(game::research::totalLevels(r, emp), game::research::maxLevels(r, s, emp), v.techPercentValue);
+        }
+        case VictoryRow::Peace: return s.peacefulTurns >= static_cast<uint32_t>(std::max(0, v.peaceYears)) * 10;
+        case VictoryRow::Delay: return now >= int64_t{v.delayYears} * 10;
+        case VictoryRow::Count: break;
+    }
+    return false;
 }
 
 std::vector<game::EmpireId> historyEmpires(const game::GameState& s, game::EmpireId viewer) {
