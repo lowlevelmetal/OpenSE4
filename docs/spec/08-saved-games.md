@@ -1043,7 +1043,11 @@ the turn it was built, the movement-blocked turn, arrival stamps.
 `word n`, bool repeat, word current order (1-based), then n orders, each: byte kind, byte
 system, byte sector, byte extra, word target, string target name (shown in windows).
 OpenSE4 keeps the current order first: on import rotate the list so that the current order
-comes first; export the current order as 1.
+comes first; export the current order as 1. Since save format 10 OpenSE4 also counts how far
+a repeating list has turned (`repeatShift`, spec 03 §8), which is the current order less 1;
+the import does not set it yet, nor does the export write the list back in place, so a
+repeating list imported mid-way restarts at its imported current order when Repeat is
+switched (docs/PARITY_GAPS.md).
 
 | Kind | Order | Parameters | OpenSE4 `OrderKind` |
 |---|---|---|---|
