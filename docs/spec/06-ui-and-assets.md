@@ -92,9 +92,11 @@ sit below; **Close is always the bottom slot** [S].
 | Save Game, Delete Game | Name / remove a save. | Save Game: buttons New Save Game, Change Directory, Cancel; files go to the folder in §6.1 (confirmed: binary). | Game Menu. |
 | Player Computer Control | Hand empires to the computer or take them back. | Check list titled "Empires Under Computer Control", 420x520, OK / Cancel: one row per empire in empire-number order (every empire, neutral and destroyed ones included) with a lamp, the empire's flag and its name; a lit lamp means computer-controlled. The same window serves the Combat Simulator [T] and Reset Passwords (§1.9). Rules in §1.2.1 (confirmed: binary). | Game Menu → Players. |
 | Options (per computer) | Sound, music, animation and autosave. | Lamp list under headings; Close. Full list in §1.9 (confirmed: binary). | Game Menu → Options. |
-| Designs | Browse and manage designs. | Design list; detail pane (stats, then either components or, with Stats\Strategy on, build/loss/kill counts and default strategy). Tabs: Ship Designs, Unit Designs, Enemy Ship Dsgn, Enemy Unit Dsgn. Actions: Create, Copy, Edit, Upgrade, Make Obsolete, Hide Obsolete, Stats\Strategy, Simulator [T]. | F3. |
+| Designs | Browse and manage designs. | Design list; detail pane (stats, then either components or, with Stats\Strategy on, build/loss/kill counts and default strategy). Tabs: Ship Designs, Unit Designs, Enemy Ship Dsgn, Enemy Unit Dsgn; the window opens on the tab kept with the empire's options. Actions: Create, Copy, Edit, Upgrade, Make Obsolete, Hide Obsolete, Stats\Strategy, Simulator [T]. Which are lit, and what the enemy tabs list: §7 Q93 (confirmed: binary). | F3. |
 | Create Design | Ship designer. | Size, type and name pickers; running totals; components-on-design and components-available lists; warnings box; hover detail. Comp Type (group filter), Weap Mount, Condensed View, Only Latest, Weapons Report, Create Design, Cancel [T]. | Designs → Create / Copy / Edit. |
-| Weapon Mounts | Pick a mount for weapons added next. | List; Cancel. | Create Design; Weapons Report. |
+| Select Vehicle Size | Pick the design's size. | List window: the researched hulls of the vehicle type in data order, columns Pic, Name, Size, Cost; an "Abilities" box under the list; Cancel (§7 Q94, confirmed: binary). | Create Design → Size. |
+| Select Component Group | Filter Components Available. | List window: the General Groups of the components available and "All", sorted; Cancel picks All (§7 Q94, confirmed: binary). | Create Design → Comp Type. |
+| Select Weapon Mount | Pick a mount for weapons added next. | List window: "Normal Mount" first, then each mount with its description in grey under its name; a description pane under the list; Cancel (§7 Q94, confirmed: binary). | Create Design → Weap Mount; Weapons Report. |
 | Combat Simulator | Set up a test battle. | Vehicles-in-combat list, design list, owner picker; Tactical / Strategic choice; No Obsolete, Strategies, Computer Control, Fleets for Plr, Change Cargo, Begin, Cancel [T]. Details in §1.10.4 (confirmed: binary). | Designs → Simulator. |
 | Planets | All planets seen. | Statistics block; galaxy mini-map highlighting the hovered row; planet list. Filter tabs: All, Colonizable, All Colonies, Enemy Colonies, Ally Colonies, Coloniz\Empty, Coloniz\Breathe, Ship Enroute, Asteroids, Special; toggle No Sys To Avoid; Send Colony Ship [T]. Rules and layout in §1.8.1 (confirmed: binary). | F4. |
 | Colonies | Own colonies. | Statistics; mini-map; sortable list whose columns depend on the tab: General, Value, Production, Facilities, Cargo, Construction, Status (status icons), Races, Orders. Actions: Scrap Facil Types, Set Colony Type [T]. Columns and sorting in §1.8.3 (confirmed: binary). | F5. |
@@ -102,8 +104,8 @@ sit below; **Close is always the bottom slot** [S].
 | Construction Queues | All queues. | Statistics; quadrant map; queue list. Column tabs Rate, Usage, Planet Value, Facilities, Cargo; inclusion toggles Ships, Planets, Ship SY, Planet SY; Multi-Add (acts on the shift-selected queues), Scrap Facilities, Upgrade Facilities [T]. Rules and layout in §1.8.2 (confirmed: binary). | F7; Log → Constr. Queues. |
 | Set Construction Queue | Edit one queue. | Buildable-items list (tabs Ships, Facilities, Units, Upgrades; Only Latest); queue owner header; the queue itself; hover detail. Toggles Emergency Build, Repeat Build, Queue On Hold; Set Move To / Clear Move To; Fill Queue; Clear Queue; Reorder Queue [T]. | Order "Build Queue" (Q); row in Construction Queues. |
 | Select Queue Type | Fill a queue from a template. | Template list; Add Type, Delete Type, Cancel. | Set Construction Queue → Fill Queue. |
-| Research | Choose research. | Points available; tech-area list (left-click adds); current projects in pages of four (Projects 1-4, 5-8, 9-12); Repeat Projects, Divide Pts Evenly, Tech Tree (only if the game allows it), Reorder Projects [T]. | F8. |
-| Tech Tree | Whole tree. | Two list views: Tech Areas (prerequisites), Tech Levels (what each level unlocks); Export (writes the view to a text file) [T]. | Research → Tech Tree. |
+| Research | Choose research. | Points available; tech-area list (left-click adds; a click on a queued or completed area, or with 12 queued, does nothing; right-click opens the area's report, as on a project box); current projects in pages of four (Projects 1-4, 5-8, 9-12); Repeat Projects, Divide Pts Evenly, Tech Tree (only if the game allows it), Reorder Projects [T]. | F8. |
+| Tech Tree | Whole tree. | Titled "Technology Tree": every tech area of the data set under alphabetical group headings. Two list views: Tech Areas (prerequisites), Tech Levels (what each level makes available); Export in slot 13 writes the view to a text file (§7 Q92, confirmed: binary) [T]. | Research → Tech Tree. |
 | Empires | Diplomacy hub. | One portrait per known empire with a stat column under each; tabs Treaty, Trade, Tariff. Buttons History, Treaty Grid, Intelligence, Borders, Victory Conditions, Scores, Comparisons, Our Race [T]. Left-click a portrait opens Communicate; right-click opens Race Report. | F9. |
 | Log | Turn news. | See §4.1. | F10; auto-opens at turn start. |
 | Empire Status | Budget and empire settings. | Balance sheet (income lines, expense lines, net per turn, treasury and storage cap; see spec 02). Buttons Empire Options, Ministers, Systems To Avoid, Waypoints, Strategies, Repair Priorities, Change Email, Change Password [T]. | F11. |
@@ -114,7 +116,7 @@ sit below; **Close is always the bottom slot** [S].
 | Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Launching, Formation); Add [T]. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
 | Help | In-game encyclopedia. | Item list; detail pane (128 px picture, cost with resource icons, stats, abilities) [S]. Tabs: Components, Weap Mount, Facilities, Ship Sizes, Unit Sizes, Tech Areas, Treaties, Intel Projects, Formations, Hotkeys; a gap; Weapons Report (slot 12), Manual (slot 13), Close (observed). Lists only what the empire knows, by name in alphabetical order with a lamp per row; layout in spec 07 session 5. | F1. |
-| Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point-Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. | Help; Create Design. |
+| Weapons Report | Weapon damage-by-range grid. | Filters All, Direct Fire, Seeking, Point Defense, Warhead; Weapon Mount; Only Latest; range pages Dmg 1-10 / 11-20 [T]. The known weapons of the kind chosen, never filtered by mount or vehicle type: the mount changes only their size and damage figures, and its name is in yellow in the title strip. Weapon Mount opens "Select Weapon Mount" with the mounts valid for the design's vehicle type and hull, from the designer, or only "Normal Mount" from Help; the report starts on Normal Mount (confirmed: binary). Ours: a weapon whose type the mount does not take keeps its plain figures (inferred, §7 Q113). | Help; Create Design. |
 | Galaxy Map | Enlarged strategic map. | See §2.6. | Right-click the galaxy panel. |
 
 #### 1.2.1 Player Computer Control
@@ -1122,9 +1124,15 @@ in the code and asked in §7 Q89–Q98.
   values icons as well.
 - **Research** (observed): completed areas stay in the list, dimmed (#606060), with "Complete"
   as the cost, and a click on one does nothing; a small box under each project box (ours holds
-  the project's progress); Reorder Projects in the 13th slot. The original shows Tech Tree only
-  when the game lets players see the complete tech tree (§1.2, spec 01 §2.2), and the project
-  boxes of §7 Q92 (confirmed: binary); ours too since 2026-10-03 (`GameOptions::completeTechTree`).
+  the project's progress); Reorder Projects in the 13th slot. Besides (confirmed: binary): a
+  queued area is drawn green and still shows its next level's cost; the group headings are in
+  alphabetical order, the areas in data order under each; the heading over the boxes reads "1
+  Current Project" or "N Current Projects"; the reorder window's rows are the areas' names; a
+  right-click on an area or a project box opens the area's report. Ours since 2026-10-11 (the
+  green is the progress bar's #00FF00, inferred, §7 Q113); the description under the pointer
+  is ours. The original shows Tech Tree only when the game lets players see the complete tech
+  tree (§1.2, spec 01 §2.2), and the project boxes of §7 Q92 (confirmed: binary); ours too
+  since 2026-10-03 (`GameOptions::completeTechTree`).
 - **Designs** (observed, and spec 07 §UI): rows under design-type headings, each with a lamp
   (green for the selected design, blue for the others), the picture, the name, the hull and
   "Prototype"; the detail shows Size, Design Type and Date Created by the picture, then Cost,
@@ -4718,7 +4726,8 @@ choices (inferred):
       cannot be reached at all. The setting adds nothing to the window's content; it only
       decides whether the button exists. The window (tabs Tech Areas and Tech Levels, Export
       in slot 13) lists every tech area of the data set, and per level what it makes
-      available (inferred: nothing is hidden for areas the empire has not researched).
+      available; nothing is hidden, racial, unique and disallowed areas included (see *Tech
+      Tree window* below).
     - *Project boxes:* the area list is at (15,56), 560×243; the four project boxes of the
       shown page are 140×130 cells side by side from (15,330). Each cell: black (a patterned
       fill under the pointer when it holds a project), its top, right and bottom edges in
@@ -4731,11 +4740,32 @@ choices (inferred):
       (#00FF00) blocks 5×22 px, 7 px apart from x 3, y 104; the number of blocks is
       truncate(percent paid × 19 / 100), the percent being truncate(points paid × 100 /
       level cost) held to 0–100.
+    - *Tech Tree window* (confirmed: binary): titled "Technology Tree"; every tech area of
+      the data set under the groups' headings in alphabetical order; an area the empire can
+      research now (requirements met, allowed, below its maximum) is white, every other grey
+      #606060. **Tech Areas** has the columns Tech Name, Required Tech and Level, one row per
+      requirement; a racial area adds a row naming the racial trait that opens it, with
+      "Racial Trait" in the Level column; a unique area adds a row reading "Unique Technology"
+      and "(Must Be Found)". **Tech Levels** has the columns Tech Name, Level and "Item [Number
+      of Tech Dependencies]": each level lists the vehicle sizes, components, facilities and
+      intelligence projects it makes available, an item's name followed by " [N]" when it has
+      more than one requirement (N of them). **Export** (slot 13) writes the view shown to
+      `TechAreas.txt` or `TechLevels.txt` in the save folder (§6.1), one comma-separated line
+      per row, then a box titled "Export Successful" names the file (the Levels lines' format
+      is the less certain part).
     Our client follows the answer since 2026-10-03 (`GameOptions::completeTechTree`, off in a
-    new game; the boxes of `projectBoxes`, shared with Intelligence). Our choices: each line of
-    the wrapped name is centred; Completion reads "Never" for a project that gets no points;
-    the Tech Tree window can also be opened from the manual's window links (an OpenSE4
-    extension).
+    new game; the boxes of `projectBoxes`, shared with Intelligence), and the Tech Tree window
+    since 2026-10-11 (`techAreaRows`, `techLevelRows`, `techTreeExport` in
+    `screens/empire_logic.cpp`). Our choices: each line of the wrapped name is centred;
+    Completion reads "Never" for a project that gets no points; the Tech Tree window can also
+    be opened from the manual's window links (an OpenSE4 extension); its list's places and
+    column widths are ours, the description of the area under the pointer shows, the area's
+    name is on each of its rows, an area that needs nothing gets one row with its name only,
+    a level that makes nothing available one row without an item, and the export writes no
+    heading line (inferred, §7 Q113); the files go to OpenSE4's save folder, in the user's
+    data, never the install. Until 2026-10-11 ours hid disallowed, racial and unique areas, drew its own
+    layout and colours, had Export in slot 4 and wrote `tech_areas.txt` and `tech_levels.txt`
+    in a format of its own.
 93. **The Designs list and detail.** Ours: 36 px rows with the lamp at (2,11), the 32 px
     picture at (19,2), the name at (55,2), the hull under it in grey small type and "Prototype"
     right-aligned on that line for a design never built; an obsolete design's name in grey; the
@@ -4750,7 +4780,14 @@ choices (inferred):
     - *Buttons:* tabs Ship Designs, Unit Designs, Enemy Ship Dsgn, Enemy Unit Dsgn (slots
       1–4); Create, Copy, Edit, Upgrade, Make Obsolete (6–10); Hide Obsolete and
       Stats\Strategy check boxes (11, 12); Simulator (13); Close (14). The enemy tabs switch
-      Stats\Strategy off.
+      Stats\Strategy off. Create and Stats\Strategy are dim on the enemy tabs; Copy, Edit,
+      Upgrade and Make Obsolete are dim there and with nothing selected; Edit is dim for a
+      design that has been built, and lit for one in a construction queue, where a click
+      shows a "Cannot Edit Design" box saying that a design in a queue cannot be edited.
+      The window opens on the tab kept with the empire's options (spec 08 §3.6.7).
+    - *Which designs:* Hide Obsolete applies to the own tabs only. The enemy tabs list every
+      design of another empire seen at least once, obsolete or not, leaving out the designs
+      of eliminated empires.
     - *List:* "Designs" at (16,39) and "Design Detail" at (269,39) in #7D9FFF; the list at
       (16,58), 246×393. Headings are rows 25 px high, their text in the large font, silver
       #C0C0C0, at x 4 resting on the row's foot. On the own tabs the headings are the design
@@ -4786,9 +4823,14 @@ choices (inferred):
     Hide Obsolete and Stats\Strategy are kept with the empire's options in the saved game, as
     the original keeps them (spec 08 §3.6.7), so the window opens again as it was left: ours
     since 2026-10-04 (`InterfaceOptions::designsHideObsolete`, `designsStatsView`, save format
-    8; GitHub issue #1), where v0.9.0 forgot them at every closing. The window's tab, which
-    the original keeps too, still opens on Ship Designs (or the tab of the design it was
-    opened for).
+    8; GitHub issue #1), where v0.9.0 forgot them at every closing. Since 2026-10-11 the tab
+    is kept too (`InterfaceOptions::designsTab`, save format 10, carried in the original's
+    saves), the buttons are lit as above, and the enemy tabs list as above; ours hid enemy
+    designs their owner had made obsolete and listed eliminated empires' designs, lit
+    Create and Stats\Strategy everywhere and dimmed Edit for a design in a queue. Ours still
+    opens on the tab of a design it was opened for, and writes "(Obsolete)" only for an own
+    design (whether another empire made a design obsolete is its own business; inferred,
+    §7 Q113).
 94. **Create Design.** Ours: the vehicle-type picker is a list window titled "Select Vehicle
     Type", the same from every tab; the designer is a 780x475 window. Places in its content
     area: the picture at (3,3); Size, Design Type and Design Name at x 140 with their boxes
@@ -4832,7 +4874,30 @@ choices (inferred):
       Space and Supply Capacity it shows "Offense Bonus" and "Defense Bonus", the design's
       combat to-hit bonuses as signed percentages ("+10%").
     - *Condensed View* (an empire option) merges identical components (same component and
-      mount) into one cell of the strip, with the count written on it when above 1.
+      mount) into one cell of the strip, with the count written on it when above 1. It also
+      reorders the design itself: when the box is ticked, and after each component added
+      while it is on, identical entries move next to the first of their kind, the order
+      otherwise kept. Weapons fire in the design's order (spec 03 §4.1), so this changes a
+      battle's firing order.
+    - *Size* opens a list window, "Select Vehicle Size": the empire's researched hulls of
+      the vehicle type in data order, columns Pic, Name, Size (the tonnage) and Cost (the
+      minerals, organics and radioactives in their colours), with an "Abilities" box under
+      the list for the selected hull. Cancel leaves the design with no size. Without a size
+      the box reads "Vehicle Size", and a click on a component does nothing.
+    - *Comp Type* opens "Select Component Group": the General Groups of the available
+      components with "All" sorted in among them, the letter case ignored; picking nothing
+      means All. *Weap Mount* opens "Select Weapon Mount": "Normal Mount" first, then each
+      mount's name with its description in grey under it, and a description pane under the
+      list. The label reads "Components Available (<group>)"; the mount's name is drawn
+      apart, to its right, at x 319.
+    - *Names and Create Design:* the Design Name list shows every line of the name file in
+      file order, names in use included; without a file it is empty. A design without a name
+      holds the words "Design Name" in its box, so a design made without typing is named
+      "Design Name", and an erased name is accepted as empty. Create Design (the button keeps
+      that caption when editing) refuses a design with any warning in a box titled "Design
+      Warnings" (it cannot be made while it has warnings); after that the name is checked,
+      exactly, against every design in the game, and a clash gets a box of the same title
+      saying the name is in use. The name is never one of the warnings.
     - *Start and warnings* (observed, spec 07 session 3 capture of a new Ship Design,
       measured in session 5): a new design has no design type, its box showing the words
       "Design Type" as the name box shows "Design Name". Each warning is a line of white
@@ -4840,9 +4905,24 @@ choices (inferred):
       design does not meet yet.
     Our client follows the answer since 2026-10-03 (To Hit Modifiers and Condensed View kept
     with the empire, `InterfaceOptions::designToHit`, `designCondensed`; the bonuses from
-    `game::designToHit`). Our choices: the strip's arrows are the small left and right arrows
-    (`SmallLeftRightArrows.bmp`), 16 × 38, at its ends; a tile holds the 36 px picture, the
-    name and the size in small type; the Component Details box shows our compact report.
+    `game::designToHit`), and the reordering, list windows, names and Create Design checks
+    since 2026-10-11 (`condenseEntries`, `designNameClashes` in `screens/design_tools.cpp`;
+    `screens/design_pickers.cpp`). Our choices: the strip's arrows are the small left and
+    right arrows (`SmallLeftRightArrows.bmp`), 16 × 38, at its ends; a tile holds the 36 px
+    picture, the name and the size in small type; the Component Details box shows our compact
+    report; a design opened while Condensed View is on is reordered only at its next added
+    component, the strip merging its identical entries meanwhile; the size list's Abilities
+    box shows the hull under the pointer, else the design's, a design being edited keeps its
+    hull listed, and Cancel clears a size chosen before (inferred, as in Design Type's list, §7 Q113);
+    Cancel in "Select Weapon Mount" picks Normal Mount, and the mount's name at x 319 is white
+    and reads "Normal Mount" without one (inferred, §7 Q113); blank lines of a name file are
+    left out; a mount's figures show under the pointer in its list. **Our client differs:**
+    the words "Design Name" are only a hint in an empty box, and Create Design refuses an
+    empty name in the "Design Warnings" box, so no design is named "Design Name" or nothing
+    by default. Until 2026-10-11 ours listed name problems among the warnings, showed a
+    refusal as a warnings line, let components be added before a size, read "Save Design"
+    when editing, offered only the unused names of the list (or "<hull> N" without one),
+    merged Condensed View on screen only, and used plain pop-up lists.
 95. **Empire Status.** Ours draws one table per block under its silver heading, the amounts in
     the resource colours, each block's first row with the resource icons, Net Resources Per Turn
     as a block of one unlabelled row. Our engine's other income (resources generated by
@@ -5002,6 +5082,16 @@ Implementing Q83, Q84, Q88–Q96 and the session 5 windows on 2026-10-03 left th
     intelligence project? (d) "Changed during the turn" (Q84) is, in ours, a ship, unit group,
     fleet member or colony given orders, or whose minister button was pressed. Do other
     commands (a rename, a construction queue change) mark an object too?
+
+    **Answer to (c)** (confirmed: binary): spec 05 §2.1 "Adding a project" and "A project's
+    box". Intelligence Defense takes no target; every other project asks for the empire in
+    "Select Empire" (no "Any"), then, by its type, in "Select Ship", "Select Planet",
+    "Select Technology" or a second "Select Empire", each starting with an "Any ..." row; the
+    box shows the target picked (or "Any Ship" and the like) at y 40 and "Against " with the
+    target empire's flag at y 54. Our client follows since 2026-10-11; it asked for a third
+    empire only for Fake and Prevent Messages, titled that list "Select Third Empire" without
+    "Any", read "Any" in every list, listed ships unsorted and every non-racial, non-unique
+    area in data order, and wrote "vs <empire>" in the box.
 
 **Players' reports on v0.8.1 (2026-10-04).** Players compared OpenSE4 0.8.1 with the
 original and reported eleven differences. Each was settled from the executable and,
@@ -5219,3 +5309,26 @@ an imported turn-based game of the original.
      measurement. The player found ours too slow next to the original on their own computer,
      which suggests a finer counter there and the waits as written, the pace OpenSE4 now takes
      by default (inferred). Measuring the original on Windows would settle it.
+
+113. **Choices left by the designs and research audit (2026-10-11).** The executable gave the
+     rules of spec 05 §2.1 and Q92–Q94 above; these details it did not settle, and OpenSE4
+     chose them (inferred):
+     (a) *Tech Tree rows.* Is an area's name written on each of its rows or only on the
+     first? Does an area that needs nothing get a row of its own, and a level that makes
+     nothing available? Does the export write a heading line, and are the Tech Levels
+     lines exactly "Tech Name,Level,Item [N]"? Ours: the name on each row, one row for
+     each such area and level, no heading line, cells joined by a bare comma.
+     (b) *Select Vehicle Size.* Does the Abilities box follow the row under the pointer or a
+     row selected by a first click (and a second click or double click pick it)? Does
+     Cancel also clear a size chosen before? Ours: the pointer, a single click picks, and
+     Cancel clears it.
+     (c) *Select Weapon Mount.* What does Cancel pick, and what does the label at x 319
+     show without a mount (and in which colour)? Ours: Normal Mount; "Normal Mount", white.
+     (d) *Research.* Which green are queued areas drawn in? Ours: #00FF00.
+     (e) *Intelligence.* In which order do the "Select Empire" lists give the empires, and
+     do the sorted lists ignore the letter case? Ours: empire order; the case ignored.
+     (f) *Weapons Report.* Does a mount change the figures of a weapon whose type it does
+     not take (a direct-fire mount and a missile)? Ours: no, that weapon keeps its plain
+     figures.
+     (g) *Designs.* Does the detail of an enemy design say "(Obsolete)" when its owner made
+     it obsolete? Ours: no, only an own design's does.
