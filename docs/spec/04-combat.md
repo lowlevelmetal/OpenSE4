@@ -274,7 +274,8 @@ moment, including during other empires' phases (§10.2).
   play the current phase; from the next phase on, every empire follows its strategies,
   and play pauses after the phase of the last human empire in each combat turn (End Turn
   goes on). Releasing it gives each empire back its normal control (in the simulator,
-  only side 1 goes back to hand control).
+  side 1 goes back to hand control and every other side to the computer, §17). It can be
+  pressed before Begin too (spec 06 §1.10.1).
 - **Resolve Combat** asks for confirmation, then hands every empire to its strategies,
   disables the window's buttons and runs the battle to its end.
 - The battle's end (§4 Length) is checked only after a phase, never in the middle of a
@@ -336,8 +337,11 @@ moment, including during other empires' phases (§10.2).
   The move itself never dissolves a group: a blocked leader keeps it. In the tactical
   window groups are numbered, and the player picks the number from a list:
   - **Set Group Leader** is refused if another piece of that player already leads that
-    number, or if the piece belongs to a group. The player then picks a formation;
-    cancelling sets no group.
+    number, or if the piece belongs to a group, with one exception: a leader given the
+    number it already leads is accepted and picks a new formation, which puts its members
+    at their places in it (confirmed: binary). The player then picks a formation;
+    cancelling sets no group, and clears the marks of a piece that had them (spec 06
+    §1.10.2). A member, or the leader of another number, gets no formation list at all.
   - **Set Group Member** needs an existing leader with that number and is refused for a
     piece that already leads or belongs to a group. The member takes the next position
     of the leader's formation, not the square where it stands.
@@ -393,6 +397,18 @@ neutral obstacle is refused. Each ticked weapon takes the target within the targ
 (below); weapons that did not fire lose it again. The conditions above apply as for the
 computer, but the damage type is not checked (the computer never assigns a weapon whose
 type cannot affect the target, §16), and point-defense may be fired this way.
+
+The ticks belong to the window, not to the piece (confirmed: binary; spec 06 §1.10.1):
+every time a piece becomes selected (by a click, by the next and previous keys, at the start
+of each phase played by hand) and after every move of that piece, the ticks are reset to
+every intact weapon that is not reloading. A weapon that fires is unticked. Shift+A ticks
+the intact weapons that are ready, Shift+C unticks them all. OpenSE4's window fires one
+weapon at a time in design order, each as its own order (`TacticalOrder::Fire` with the
+weapon), and says why when none of them could fire. Whether a reloading weapon can be
+ticked by hand is question 91; OpenSE4's window allows it (inferred). The engine keeps
+its own per-weapon switch (`ToggleWeapon`, `TacticalWeapon::enabled`), which the order
+`Fire` with weapon -1 uses: that is for script and external players (docs/sdk), not the
+window.
 
 **Supply use.** Each shot uses the component's `Supply Amount Used`, scaled by the
 mount's `Supply Percent` (Round), times the number of weapons fired together (confirmed:
@@ -757,6 +773,13 @@ same (§10.6).
 
 - **Ram order:** the rammer must have movement left, the target must be adjacent and
   hostile. Strategies with Ram movement (Kamikaze, Drone Attack) do this automatically.
+  By hand (confirmed: binary) the order is refused, in this order, when no piece of ours
+  is selected, when the target is not found, when it is not adjacent, when the rammer has
+  no movement left, and when the target is ours or of an empire we are not hostile to.
+  Any other piece can be rammed: an enemy seeker too, and an unowned piece (a neutral
+  obstacle) counts as hostile. Against an obstacle the rammer takes B = 500000 like
+  against a planet; the obstacle itself takes nothing and is never destroyed, so the blow
+  is not recorded as a hit and the ram credits no kill (inferred, question 94).
 - Let R = the rammer's remaining hit points and T = the target's remaining hit points,
   taken when the ram happens (after the rammer's move). Shields never count:
   - ship or base: the structure of its intact components (with mounts) minus its damage
@@ -992,7 +1015,11 @@ same (§10.6).
 
 - **Preconditions** for Capture Ship: both pieces are ships or bases of different
   empires, the target is adjacent (history 1.73), the attacker has some `Boarding
-  Attack`, and the target's shields are 0.
+  Attack`, and the target's shields are 0. By hand the refusals come in this order: no
+  piece of ours selected; no target; the target is unowned or not a ship or base; the
+  boarder is not a ship or base; the target is ours; not adjacent; no boarding ability;
+  the target's shields are up; and last, the target belongs to an empire we are not
+  hostile to (spec 06 §1.10.2 shows that one even when Auto is on, titled "Ram Ship").
 - **Strength.** Offense = total `Boarding Attack` of the attacker's intact components.
   Defense = total `Boarding Defense` + 4 × (number of intact `Ship Crew Quarters`
   components) + total `Boarding Attack` of the target's intact components.
@@ -1009,6 +1036,13 @@ same (§10.6).
 - **Crew Conversion** (§9.5) changes the owner the same way, but with no reload penalty,
   no loss of experience and no self-destruct. The new owner's seekers already aimed at it
   expire at their next step, and drones aimed at it pick new targets (history 1.73).
+- **Telling the players** (confirmed: binary). The outcome of a boarding (taken, failed,
+  or the target self-destructed) is told in message boxes to the sides played by hand at
+  that moment (spec 06 §1.10.2), whoever's phase it is: a computer side's boarding of a
+  ship of a human playing tactically is told to that human. In a battle every side fights
+  automatically (strategic combat, Auto, Resolve Combat) nobody is told. OpenSE4's record
+  keeps each boarding's outcome as a `Boarding` event (combat.hpp) after its hits, with the
+  empire the target belonged to; the window turns it into the boxes.
 
 ## 13. Ground combat (confirmed: binary unless marked)
 
@@ -1156,7 +1190,8 @@ command exists). The only ways to disengage are:
 - **Log.** One battle report per participant, listing losses and ships "Taken". A piece
   is reported "Taken" when it is missing from its owner's list at the end but its name is
   in another empire's list: captures, conversions and planets taken by troops during the
-  battle alike (confirmed: binary). A human player also gets a message box on a capture.
+  battle alike (confirmed: binary). A human playing the battle by hand also gets a message
+  box on a boarding, whatever its outcome (§12, spec 06 §1.10.2).
   If Settings `Create Combat Replay` is on, also record a replay stream (§17); a boarding
   capture is recorded in it, a conversion is not.
 - **The verdict** (confirmed: binary). A participant is an empire that had a piece when
@@ -1467,6 +1502,14 @@ describes this effect).
     Control. Tactical or Strategic is chosen in the simulator window; Stop Combat (in the
     tactical window's options) exists only here. No experience or design statistics are
     gained (§15).
+  - **Auto released** (confirmed: binary). Turning Auto off in a simulation gives side 1 to
+    the player and every other side to the computer, whatever Computer Control said; in a
+    real battle each empire gets back its own control (§4). The engine does the same
+    (`TacticalBattle::Setup::release`, side 1 only in `startSimulation`).
+  - **Begin** (confirmed: binary) is refused only when no item belongs to a side. One side
+    is enough, and there is no sight test: the battle starts whenever a side has something
+    on the field (a lone side's battle ends at its first end check, §4). The same object
+    of the home system may be added several times, each a copy of its own on the field.
 - **Combat replay.** A view-only playback from the log, advanced one combat turn at a
   time with Next. It records only piece movement, including forced moves, and weapon
   firings. It holds no damage or reload state. Hovering a piece shows its design, not
@@ -2238,3 +2281,33 @@ settled from the executable the same day; Q87 and Q88 need changes to the engine
     other square (inferred). To verify in the executable: which random call the tries make
     (and so how many numbers each takes from the sequence), and which square each result
     names.
+
+### 19.6 Questions from the 2026-10-11 parity audit of the combat windows
+
+The audit (spec 06 §1.10) brought the tactical window's selection, weapon ticks, target
+panel, refusals and boarding boxes in line with the executable. These details were not
+traced and are OpenSE4's choices until a session with the executable settles them:
+
+91. **Ticking a reloading weapon.** The window ticks every intact weapon that is not
+    reloading when a piece is selected (§6). Can the player tick a reloading weapon by
+    clicking its cell? Ours allows it (inferred); the tick then does nothing until the
+    weapon is ready, and the Fire order refuses it quietly when others fire.
+92. **The target panel's damage line** (spec 06 §1.10.1). Ours writes it after every hit
+    drawn while the panel shows a piece, whatever the hit's target, and clears it when the
+    panel shows another piece or none. The structure part is what the target's hit points
+    lost, so damage held in a pool (§9.1) counts 0 (inferred). Which hits write it in the
+    original, what it counts as structure damage, and when it goes away?
+93. **Weapon cells** (spec 06 §1.10.1). Ours draws the reload bars from y 2 to 8 of the
+    cell, counts the instance of a stack that will be ready first, and writes a unit
+    group's count under the to-hit chance when both show at the top right (inferred).
+94. **Ramming an obstacle.** A neutral obstacle can be rammed (§10.3) and the rammer takes
+    B = 500000. Ours gives the obstacle nothing, records no hit on it and credits no kill
+    (inferred). Does the original draw a hit, or credit the second experience and tonnage
+    of §10.3?
+95. **When the boarding boxes open** (§12, spec 06 §1.10.2). Ours opens them when the
+    window's playback passes the boarding, after its hits and the capture are drawn, and
+    the playback waits until they are closed (inferred).
+96. **Firing refusals in boxes.** A click on a piece that is not hostile is refused in a
+    "Cannot Fire Weapons" box (spec 06 §1.10.2). Ours writes every other reason a click
+    does not fire (out of range, reloading, no supplies) on the map, as before (inferred).
+    Which of them does the original put in a box?

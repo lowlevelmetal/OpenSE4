@@ -764,12 +764,48 @@ All of this subsection is (confirmed: binary). W×H is the tactical window's siz
   in two rows, 70 px above the overview: Options and Orders, then Auto and the fourth
   button. Current-piece panel 216×64 at (W−232, 36) with the weapon list under it. The
   target-piece panel only when the window is at least 1024 wide.
-- **Begin.** The window opens with the fourth button labelled Begin and Orders disabled.
-  The first press starts the battle, relabels it End Turn and enables Orders. When the
-  battle ends, a "Combat Complete" message appears and the window closes by itself.
+- **Begin.** The window opens with the fourth button labelled Begin and Orders disabled;
+  Auto is live already, only Orders is dim. Before Begin a left-click on any piece, an
+  enemy's too, puts it in the current-piece panel and the weapon grid; a click on an
+  empty square does nothing; E presses the fourth button whatever it says, so it begins
+  the battle. The first press starts the battle, relabels it End Turn and enables Orders.
+  When the battle ends, a "Combat Complete" message appears and the window closes by
+  itself. After Resolve Combat is confirmed all four buttons dim, Options included, and
+  Auto shows pressed.
 - **Mouse.** Left-click on an empty square moves the selected piece (a leader's members
   move to their formation places); on another empire's piece, fires at it; on one of our
-  pieces, selects it. Clicking the current-piece header opens that piece's report.
+  pieces, selects it. A click on a piece that is not hostile (an ally, our own drone group)
+  while one of ours is selected also tries to fire, and is refused in a "Cannot Fire
+  Weapons" message box saying that allies cannot be fired on. Clicking the current-piece
+  header opens that piece's report.
+- **Weapon ticks.** The ticks of the weapon grid are the window's, not the piece's. Every
+  time a piece becomes selected (a click, Space and the Ctrl keys, the start of each phase
+  played by hand) and after every move of the piece, they go to every intact weapon that is
+  not reloading. A click on an enemy fires the ticked weapons; those that fired are
+  unticked. Shift+A ticks only the intact weapons that are ready, Shift+C unticks all
+  (spec 04 §6; whether a reloading weapon can be ticked by hand is spec 04 §19.6 Q91).
+- **Next and previous piece** (Space, Ctrl+N and Ctrl+B for movement, Ctrl+F and Ctrl+D
+  for firing, and the title strip's selectors). The search makes up to three passes around
+  the side's pieces, seekers and drones skipped, each starting after the current piece:
+  first the group leaders (fleet leaders included) that can move (or fire), then any piece
+  that can, and for movement only the side's first planet. "Next" walks the list
+  backwards, "previous" forwards. At the start of each phase played by hand the selection
+  is made the same way walking forward from the first piece, so the first group leader
+  with movement left is selected.
+- **Target panel.** It shows a piece only while the pointer is over a piece of another
+  empire (allies too) with one of ours selected; moving onto an empty square or a neutral
+  piece, or arming Ram or Capture, empties it, and it is empty before Begin. The window
+  never picks a target by itself. A seeker's impact puts the piece it struck in the panel
+  (and, with Center Map on Current Ship, in view as for a newly selected piece). After each
+  hit drawn while the panel shows a piece, a 220×20 line 66 px below the panel's top reads
+  "Damage: " in white, the shield damage in blue, "/" in white and the structure damage
+  in red; a shot that destroys its target counts all the shields and structure it had
+  left (the hits it counts and when it goes: spec 04 §19.6 Q92).
+- **Weapon cells.** A ticked weapon's cell has a teal background (not a ready one's). Up to
+  five red 3×6 bars, one per combat turn of reload left, are drawn leftward from x 32 of
+  the cell, 4 px apart. With Show Weapon To Hit Chances, a ready weapon's chance is
+  right-aligned at the cell's top right; a unit group's count of the weapon shows at the
+  top right when it is more than 1 (the details ours chose: spec 04 §19.6 Q93).
 - **Pointers** (the install's `.cur` files): Normal by default; Target over another
   empire's piece while one of ours is selected; one of the eight Arrow pointers over an
   empty square while a piece is selected, by the signs of the column and row offsets from
@@ -821,7 +857,8 @@ All of this subsection is (confirmed: binary). W×H is the tactical window's siz
 #### 1.10.2 Tactical Combat Orders
 
 A 326×350 window without border or title bar, holding 11 stacked 306×30 buttons with no
-gap between them (330 px from (10,10)). It is modal; a click on a button closes it, and
+gap between them (330 px from (10,10)). Every button is always enabled: an order that
+cannot be given is refused once chosen. It is modal; a click on a button closes it, and
 only then does the chosen order run, so every picker below is a window of its own that
 opens after the menu has gone:
 
@@ -830,10 +867,10 @@ opens after the menu has gone:
 | Launch Units | L | opens the Launch Units window for the selected piece |
 | Launch Fighters in Groups | — | opens a list window titled "Select Fighters Per group", one column "Amount", rows 5, 8, 10, 15, 20, 30, 40, 50 |
 | Drop Troops | T | acts at once, no target click: lands all troops of the selected ship on the adjacent colonized planet of another side (the side its piece fights for) that comes last in piece order, **whatever the treaty**; refused when that colony already holds a third empire's troops; ground combat follows at once (spec 04 §11). For a side played by hand a message box titled "Drop Troops" explains a refusal; the tests run in this order: no colonized planet of another side adjacent, troops of another empire already on the colony the landing takes, no units of any kind aboard. A ship with units but no troops is refused without a message. The selected piece's kind is not checked: a colony's planet piece drops the troops of its colony's cargo (confirmed: binary; spec 04 §19.4 Q88) |
-| Ram Ship | R | arms a target mode; the next left-click on a piece rams it, a click on an empty square cancels |
-| Capture Ship | C | as Ram Ship, boarding instead |
+| Ram Ship | R | arms a target mode, even with nothing selected; the next left-click on a piece rams it, a click on an empty square cancels. Refusals (spec 04 §10.3), in a message box titled "Ram Ship": no piece of ours selected, no target, not adjacent, no movement left, a target that is ours or an ally's |
+| Capture Ship | C | as Ram Ship, boarding instead. Refusals (spec 04 §12), titled "Capture Ship": no piece of ours selected, no target, a target that is unowned or not a ship, a boarder that is not a ship, our own ship, not adjacent, no boarding ability, the target's shields up; and last a target of an empire we are not hostile to, titled "Ram Ship" |
 | Resolve Combat | — | the game's confirmation window, titled "Resolve Combat", asking whether the rest of the battle should be fought automatically; confirming hands every side to its strategies (spec 04 §4) |
-| Set Group Leader / Set Group Member | Alt / Ctrl + digit | opens a list window titled "Select Combat Group" with the numbers 1 to 9; a new leader then picks a formation in a "Select Formation" list window. Closing that one without a choice clears the piece's group marks |
+| Set Group Leader / Set Group Member | Alt / Ctrl + digit | opens a list window titled "Select Combat Group" with the numbers 1 to 9; a new leader, or the leader of that very number, then picks a formation in a "Select Formation" list window (Alt + digit goes straight there). Closing that one without a choice clears the piece's group marks. A member, or the leader of another number, gets no formation list |
 | Clear Group Assignment, Clear All Group Assignments | Alt or Ctrl + 0 clears the selected piece | act at once |
 | Cancel | | closes the menu |
 
@@ -841,6 +878,20 @@ Group numbers run from 1 to 9: the list offers no 0, and Alt+0 or Ctrl+0 clears 
 selected piece's marks instead of setting group 0. The group orders act only on a
 selected piece of the side whose phase it is, never on a seeker, and refuse silently
 (spec 04 §5).
+
+**Message boxes.** The Ram and Capture refusals show only for a side played by hand, that
+is while Auto is off; Capture's last refusal (a target of an empire we are not hostile to)
+is titled "Ram Ship" and shows even for a side the computer plays. A boarding's outcome
+(spec 04 §12) is told in a message box to each side played by hand at that moment,
+checked separately for the boarder's side and the target's: when the ship is taken, a box
+titled "Ship Boarded" tells the boarder's side that its ship boarded and took over the
+target, or, when the boarder's side is played by the computer and the target's by hand,
+tells the target's side that its ship was boarded and taken over; "Boarding Failed" says
+the ship failed to board the target, and "Self-Destruct" that the target blew itself up
+during the boarding and both ships are gone, to either side or both. The computer's phases
+use the same code, so a human defending tactically is told of a computer's boarding. With
+every side automatic (Strategic, Auto, Resolve Combat) there are no boxes. Our client opens
+them as its playback passes the boarding (spec 04 §19.6 Q95).
 
 #### 1.10.3 Combat Options and Combat Replay Options
 
@@ -851,7 +902,7 @@ selected piece of the side whose phase it is, never on a seeker, and refuse sile
 |---|---|
 | Animation | animate ship movement in combat [on] |
 | Sound | Sound On [on]; Music On [on, unless music is off or not allowed] |
-| Tactical Combat | Fast Tactical Combat [off] (removes every wait from the animations, below); Show Group Identifiers [off]; Show Viewing Rectangle on Map [on] (the dotted box on the overview); Center Map on Current Ship [on]; Show Weapon To Hit Chances [off] (with it on, hovering an enemy while a piece is selected shows each weapon's chance in the weapon list); Show Grid [off] |
+| Tactical Combat | Fast Tactical Combat [off] (removes every wait from the animations, below); Show Group Identifiers [off] (on every piece with a group number, of any empire, a 14×12 box at the top right of its square, blue for a leader and red for a member, with the number in white in its middle); Show Viewing Rectangle on Map [on] (the dotted box on the overview); Center Map on Current Ship [on] (the view moves to a newly selected piece only when its square is outside the part of the map shown; a piece struck by a seeker likewise); Show Weapon To Hit Chances [off] (with it on, hovering an enemy while a piece is selected shows each ready weapon's chance in the weapon list); Show Grid [off] |
 
 Closing the window saves the switches and starts or stops the music. In the Combat
 Simulator only, a Stop Combat button ends the battle and closes the tactical window.
@@ -948,8 +999,11 @@ per-computer switch for its list of the replay's events (§7 Q39).
   (fighters, satellites), while a drone design always makes a new group; or an unowned
   object as a neutral obstacle. The first item given to a side makes that side a copy of
   the real empire that owns it (spec 04 §17).
-- **Begin** refuses when no side has a vehicle. With Strategic selected, the Strategic
-  Combat window opens over the simulator, which stays open. With Tactical selected, the
+- **Begin** refuses only when no item belongs to a side, with a message that at least one
+  player is needed: one side is enough, and nobody needs to see an enemy (spec 04 §17).
+  Each click on an object of the home system adds another copy, so the same planet can
+  take part several times. With Strategic selected, the Strategic Combat window opens
+  over the simulator, which stays open. With Tactical selected, the
   simulator and Designs close and the battle is fought in the Tactical Combat window;
   afterwards Designs and the simulator reopen with the same setup. The Tactical/Strategic
   choice does not depend on Computer Control. **Cancel** discards the setup.
@@ -2136,12 +2190,12 @@ has no Esc or Enter binding (confirmed: binary).
 | Alt+0 or Ctrl+0 | Clear the selected ship's group marks (confirmed: binary) |
 | L | Open Launch Units for the selected ship |
 | T | Drop troops at once on the adjacent colony (§1.10.2) |
-| R | Ram ship (then click the target) |
-| C | Capture ship (then click the target) |
-| E | End combat turn, once the battle has begun (manual only; absent from the Readme) |
-| Space or Ctrl+N / Ctrl+B | Next / previous ship with movement |
+| R | Ram ship (then click the target), even with nothing selected |
+| C | Capture ship (then click the target), even with nothing selected |
+| E | Presses the fourth button: Begin before the battle begins, then End Turn (manual only; absent from the Readme; confirmed: binary) |
+| Space or Ctrl+N / Ctrl+B | Next / previous ship with movement (the search of §1.10.1: leaders first, then any piece, then the first planet; "next" walks the list backwards) |
 | Ctrl+F / Ctrl+D | Next / previous ship that can fire |
-| Shift+A / Shift+C | Select all / clear weapons |
+| Shift+A / Shift+C | Tick the intact weapons that are ready / untick all (§1.10.1) |
 
 Esc does nothing in the tactical window (confirmed: binary).
 
@@ -4966,9 +5020,11 @@ choices (inferred):
     their disabled row before Begin and while no side of the player is in its phase; a row
     of blocks lights one block for every 2 % left, a part rounding up; a planet's thousands
     on a black ground so they read over the blocks; the group badge (8×8, blue a leader, red
-    a member) on the picture's top right corner; a weapon switched off drawn dim, a
-    destroyed one red, and a unit group's identical weapons sharing a cell with the number
-    ready at the bottom left; the to-hit chance across the middle of the cell.
+    a member) on the picture's top right corner; a destroyed weapon drawn red, and a unit
+    group's identical weapons sharing a cell. Since the parity audit of 2026-10-11 the
+    weapon cells, the target panel and its damage line follow §1.10.1 (the details left
+    open are spec 04 §19.6 Q92, Q93); the cells no longer show a weapon switched off, the
+    ready count or the chance across the middle.
 98. **The report's up-arrow button.** Ours draws `DetailUp.bmp` (state rows normal, under the
     pointer, held; the fourth unused) at the report panel's top right, 35 px from its right edge
     and 2 px below its top, whenever the shown object's sector holds more than one object.
