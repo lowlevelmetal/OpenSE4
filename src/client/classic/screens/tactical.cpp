@@ -1773,9 +1773,18 @@ private:
         }
         ImGui::SetCursorScreenPos(o);
         image(ui, pic, {128, 128});
-        // The owner's flag on the picture (a simulation's side box).
+        // The owner's flag on the picture (a simulation's side box). A
+        // right-click on the flag opens that empire's Race Report, over this
+        // window; the side box opens nothing (spec 06 §1.4, §7 Q120, confirmed: binary).
         ImGui::SetCursorScreenPos(o);
-        ownerMark(ui, s, p.owner, {26, 18}, false);
+        if (ownerMark(ui, s, p.owner, {26, 18}, false) && p.owner.valid() && simulationSide(s, p.owner) == 0) {
+            script::reportItem("report:flag");   // input scripts: where it is
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                ScreenArgs a;
+                a.empire = p.owner;
+                ui.open(ScreenId::RaceReport, a);
+            }
+        }
         // The name at the top from x 120; right-aligned 10 px from the right edge when too long.
         ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         const float w = ImGui::CalcTextSize(p.name.c_str()).x;

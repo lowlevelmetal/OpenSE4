@@ -21,9 +21,10 @@ wait-for item:"End Turn" in=tactical-combat
 drag tag:tactical-combat:map@50%,50% to tag:tactical-combat:map@40%,45% middle
 wheel tag:tactical-combat:map 2
 wheel tag:tactical-combat:map -2
-# A right-click on a piece: its report.
+# A right-click on a piece: its report. A simulation's side box opens no Race Report (spec 06 §7 Q120).
 right-click item:piece:own in=tactical-combat
 wait-window combat-piece-report
+assert-absent item:report:flag in=combat-piece-report
 click item:Comps in=combat-piece-report
 click item:Ability in=combat-piece-report
 click item:Close in=combat-piece-report

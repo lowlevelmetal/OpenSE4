@@ -337,6 +337,7 @@ private:
                 itemDetail(ui, e.ref, DetailStyle::Full);
                 ImGui::EndGroup();
                 break;
+            case Kind::Race:
             case Kind::None: break;
         }
     }

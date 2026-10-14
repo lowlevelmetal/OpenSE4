@@ -368,7 +368,7 @@ reports render inside the right-hand panel (§2.5).
 |---|---|
 | Ship Report | Detail (owner flag, 128 px portrait with status icons under it, name, class, size, movement, damage, supplies, crew experience, fleet, maintenance), Comps, Cargo, Ability. Less detail for foreign ships. Damage counts destroyed components ("Damage on the Ship Report" below). |
 | Planet Report | Detail (owner flag, picture, status icons, physical data, value, description, then colony data: type, population, mood, output, construction), Facil, Cargo, Ability. An "Empty" variant without tabs for planets that are not ours. |
-| Race Report | Detail, Descr (free-text blocks), Race (characteristics, each with its level word as on Empire Setup's Characteristics page (spec 02 §9, confirmed: binary), traits), Tech (known tech). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); Detail in the object report's places (the race's portrait with the flag on it, the name from x 120 at y 4, label lines at x 130 every 30 px with values at x 140); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate) and closes with it; Esc closes it (inferred, as the Combat Piece Report). |
+| Race Report | Detail, Descr (free-text blocks), Race (characteristics, each with its level word as on Empire Setup's Characteristics page (spec 02 §9, confirmed: binary), traits), Tech (known tech). Detail (confirmed: binary): the race's 128×128 portrait at (0,0) with no flag; the empire's name in the Button face at y 4 from x 120, further left when long; for another empire, labels in #7D9FFF at x 130, Treaty (y 20), Trade (y 50) and Mood (y 80), with white values at x 140 15 px under each: our treaty with it by name in the treaty colours ("Unknown" with no contact; red for war, non-intercourse and no contact, yellow for none, non-aggression, subjugation and protectorate, green from trade alliance up), the trade percentage with "%" as in the Empires window, its mood word toward us; a conquered empire shows Treaty "Conquered" in white and "None" for Trade and Mood. For every empire, labels in #7D9FFF at x 4 with white values at x 140 on the same line: Age (y 134, the race-age word), Culture (148), Demeanor (162), Home Atmosphere (190), Home Planet Type (204), Race Directory (232, the race's art folder with a capital first letter); for our own, Experience Points (260); our own has no Treaty, Trade or Mood. The Tech page is headed "Known Technology" for another empire and "Technology used on our Ships" for our own, listing without repeats and sorted the technology areas of the components of that empire's designs the viewer has seen (all of ours for our own; medium confidence on the exact list). It opens from Empires, Communicate, population right-clicks and an object report's flag (§1.4 "Right-clicks"). Our client draws it since 2026-10-04 like every report opened on its own (§1.10.1, §7 Q87): borderless, 310x420, the pages at (10,10), the four tabs at (10,340), a 153x30 Close at (79,380); the other pages scroll with the lists' arrow column. It is modal over the window that opened it (Empires, Communicate, the main window, the Combat Piece Report) and closes with it; over a report popup it opens as a popup of its own. Esc closes it (inferred, as the Combat Piece Report). Since 2026-10-14 its Detail page follows the original's (§7 Q120), "Conquered" meaning an empire no longer alive (inferred); our Tech page still lists the empire's known areas with their levels, for our own empire and partners only. |
 | Fleet, Storm reports | Fleet: movement, supply pool, experience, formation, strategy, ships. Storm: picture, size, description, abilities. |
 | System Report | Shown when empty space in the system panel is clicked. The 128x128 picture `Pictures/Systems/<Background Bitmap>` (the system type's background name, folder root; normal systems use `Starmap.bmp`) at the top left; "<Name> System" right-aligned at the top (left edge at most x 120, y 4); the type's description in grey (160,160,160) from y 140, in a box 42 px tall; the system's abilities from y 197 (confirmed: binary). Our client follows these places since 2026-10-04 and adds the type and the location as label lines beside the picture; the picture, opaque where a planet's portrait is keyed, sits at (0,0) just inside the panel's frame rail and is clipped there (v0.9.0 drew it 3 px higher, over the rail: GitHub issue #2); it wraps the description and every ability (a black hole's are long), and when they do not fit the panel (a long text, a larger Text size) the description and the abilities scroll together with the lists' arrow column from y 140 down (inferred: what the original does with text longer than its boxes is not described). |
 | Component / Facility / Ship Size / Formation reports | Cost with resource icons, size, damage resistance, vehicle types, weapon data including damage by range, abilities; formation diagram. |
@@ -389,10 +389,40 @@ the Combat Piece Report. Left-clicks on these pages do nothing.
   gave it.
 - **Cargo**: a right-click on units opens their design's report, on population the race's
   report.
-- **Detail** (an own colony's Planet Report): a right-click on the population (x 196–236,
-  y 230–290 of the page) opens **Races On Planet**, a list of the races living there, one
-  row each with the race's picture, its name and its population, and a Close button. It is
-  read-only (spec 03 §11).
+- **Detail** (a Planet Report of a colony): a right-click at x 230–290, y 196–236 of the
+  page, where an own colony's race pictures are drawn (from (230,196), 20 px apart, three
+  to a row, the next row at y 216), opens **Races On Planet**, a list of the races living
+  there, one row each with the race's picture, its name and its population, and a Close
+  button. It is read-only (spec 03 §11). Only a colony is checked for, not whose it is: it
+  opens for another empire's colony too, though that page draws nothing there.
+- **Detail** (the owner's flag, §7 Q120): on the Ship Report (ships and bases), the Planet
+  Report and the unit-group reports (fighter, satellite and drone groups, mine fields), a
+  right-click on the owner's flag, x 0–26 and y 0–18 of the page with both ends included,
+  opens that empire's **Race Report**, modal over the window holding the report (the main
+  window or the report popup), on Detail. It needs an owner (a planet's is its colony's, so
+  an uncolonised planet does nothing), the object seen by the viewer (a cloaked colony shows
+  no flag) and a report not opened from the Combat Simulator, whose corner shows the side's
+  box; no treaty or contact is checked, so it opens for our own empire, any empire met, one
+  never contacted and a neutral one. A left-click does nothing; on a Planet Report only the
+  owner's flag at the top answers, not the invader's under it (apart from its top pixel
+  row). Storm, star, warp point and system reports and the Fleet Report have no flag. A
+  quirk: the unit-group report popups test the window's corner, x 0–26, y 0–18, although
+  their picture with its flag is drawn at (10,10), so only the flag's top-left part answers
+  there. Elsewhere the Race Report opens from the Empires window (a portrait's right-click,
+  Our Race), Communicate's Report, a right-click on population on a Cargo page or in
+  Jettison Cargo, and the empire lists of the diplomacy pickers; in the main window only the
+  report's flag opens it (the system panel's owner flags select the sector, the status
+  bar's flag opens nothing).
+
+Since 2026-10-04 our client follows for Facil and Comps (§7 Q105), still drawn as rows,
+not the 36 px grid; Cargo takes no right-click. Since 2026-10-14 the Detail page's
+right-clicks open Races On Planet at the original's place, for any colony, and the Race
+Report from the owner's flag (§7 Q120, GitHub issue #15). Our client differs: it takes
+the flag's click on the whole flag as drawn, also in the unit-group report popups and on
+the Combat Piece Report's picture (the original's quirk above is left out), and only on
+Detail, where the original's other pages draw no flag (inferred). The window Jettison Cargo
+takes the same right-clicks as the Cargo page on its lines (a design's report, a race's
+report; confirmed: binary).
 
 **Damage on the Ship Report** (confirmed: binary). The Detail page of a ship or base has
 "Damage" in #7D9FFF at (130,110) and under it, in white at (140,125), "D/N" with no spaces
@@ -418,14 +448,6 @@ the value). Our client differs: hovering the Damage line shows the structure los
 the design's ("Structure lost: S of T (P%)"), which the original shows nowhere; our
 unit-group reports keep their Units and Movement lines; the bar's frame ends 2 px after
 the last cell (inferred).
-
-Since 2026-10-04 our client follows for Facil and Comps (§7 Q105), still drawn as rows,
-not the 36 px grid; Cargo takes no right-click. Since 2026-10-14 the Detail page's
-right-click opens Races On Planet. Our client differs: it takes the right-click on the
-Population line, where our page draws the population, and offers it for own colonies
-only (inferred: whether the original opens it for another empire's colony is not known).
-The window Jettison Cargo takes the same right-clicks as the Cargo page on its lines (a
-design's report, a race's report; confirmed: binary).
 
 **The Ability page** (confirmed: binary; observed, spec 07 session 6). A plain list of
 text lines. Each line starts with the blue 13×13 lamp of `Pictures/Game/General.bmp` (the
@@ -5961,13 +5983,35 @@ Cloak and Decloak, the waypoints' numbers and what marks an object changed (§2.
      - *The pickers of Load, Drop, Launch and Recover Remotely.* For Drop Cargo, does the
        kind picker come before or after the Pick Object window? Ours asks the destination
        first. Their titles and look are ours.
-     - *Races On Planet* for a colony of another empire: ours opens it for own colonies only.
+     - *Races On Planet* for a colony of another empire: ours opened it for own colonies only.
+       Settled by Q120: the original opens it for any colony, and ours does since 2026-10-14.
      - *The step bytes of the empire options* (spec 08 §3.6.7) are taken as the radio's
        position counted from 1 (Move One 1 .. Move All 5 for Transfer Cargo, 4 for the
        window Launch \ Recover Units); the stock value 3 is Move Ten either way.
 
 **Players' reports on v0.12.0: the reports and the Strategic Combat map (GitHub issues #15–#17,
 2026-10-14).**
+
+120. **The owner's flag in a report.** "When viewing a different empire's ships or planets in
+     the sector view, you should be able to right-click on their flag to see information about
+     the empire, as in the original game." (GitHub issue #15.) **Answer** (confirmed: binary):
+     a right-click on the owner's flag on the Detail page of a Ship, Planet or unit-group
+     report opens that empire's Race Report, modal over the window holding the report, wherever
+     the report is shown (the main window's panel, report popups, the Combat Piece Report),
+     for any owned object the viewer sees, with no treaty or contact check, never from the
+     Combat Simulator (§1.4 "Right-clicks"). The Race Report's Detail page shows the original's
+     lines (§1.4 table). Two side answers: Races On Planet's area is x 230–290, y 196–236, where
+     an own colony's race pictures are, not the x 196–236, y 230–290 this spec gave; and it
+     opens for any colony, another empire's too (Q119).
+     Since 2026-10-14 our client follows: the report functions return `ItemRef::Kind::Race`
+     for a right-click on the flag (`vehicleReport`, `planetReport`), which the main window
+     opens as the Race Report window and a report popup as a popup over itself
+     (`RaceReportPopup`, `client/classic/screens/race_report.cpp`, through `ItemReportPopup`);
+     the Combat Piece Report opens the window over itself, a simulation's side box nothing.
+     The Race Report's Detail page draws the original's lines; the Planet Report draws an own
+     colony's race pictures at the original's place, where the right-click opens Races On
+     Planet for any colony. Our client differs: the flag answers as a whole wherever it is
+     drawn (the unit-group popups' quirk is left out), and only on Detail.
 
 121. **What the Ship Report's damage counts.** "Damaged vessels show the combined structure
      size of the damaged components, rather than the number of components damaged, while the

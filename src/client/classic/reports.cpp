@@ -333,6 +333,12 @@ std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, Repo
     }
     if (Sprite flag = ui.art.flag(v.owner.valid() ? s.empire(v.owner).race.style : "")) {
         image(ui, flag, {26, 18});
+        // A right-click on the owner's flag on Detail opens that empire's Race
+        // Report (spec 06 §1.4, §7 Q120, confirmed: binary); not in the simulator.
+        if (tab == ReportTab::Detail && !simulator && v.owner.valid()) {
+            script::reportItem("report:flag");   // input scripts: where it is
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) opened = ItemRef{ItemRef::Kind::Race, v.owner.value};
+        }
         ImGui::SameLine();
     }
     title(ui, v.name);
@@ -550,7 +556,31 @@ std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, Report
             // indented below, the description, then the colony block in two columns.
             Pen pen(ui);
             pen.sprite(ui.art.planetPortrait(type.picture), -5, -11, 128, 128);
-            if (c) pen.sprite(ui.art.flag(s.empire(c->owner).race.style), -2, -6, 26, 18);
+            if (c) {
+                pen.sprite(ui.art.flag(s.empire(c->owner).race.style), -2, -6, 26, 18);
+                // A right-click on the owner's flag opens that empire's Race Report
+                // (spec 06 §1.4, §7 Q120, confirmed: binary); not in the simulator.
+                const ImVec2 flagMin = pen.at(-2, -6), flagMax = pen.at(25, 13);
+                if (!simulator) {
+                    script::reportItem("report:flag", flagMin, flagMax);   // input scripts: where it is
+                    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(flagMin, flagMax) &&
+                        ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                        opened = ItemRef{ItemRef::Kind::Race, c->owner.value};
+                }
+                // Races On Planet: a right-click at x 230-290, y 196-236 of the
+                // original's page, where an own colony's race icons are, for any
+                // colony, another empire's too (spec 06 §1.4, §7 Q120, confirmed: binary).
+                const ImVec2 racesMin = pen.at(226, 188), racesMax = pen.at(287, 229);
+                if (!simulator) {
+                    script::reportItem("report:population", racesMin, racesMax);   // input scripts: where it is
+                    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(racesMin, racesMax) &&
+                        ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        ScreenArgs a;
+                        a.planet = c->planet;
+                        ui.open(ScreenId::RacesOnPlanet, a);
+                    }
+                }
+            }
             pen.centered(ui.fonts.bold, kTitleSize, 153, -4, IM_COL32_WHITE, o.name);
             float y = 15;
             auto field = [&](const char* label, const std::string& value) {
@@ -585,17 +615,17 @@ std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, Report
             }
             const game::economy::ColonyOutput out = game::economy::colonyOutput(r, s, *c);
             line("Colony Type", c->colonyType);
-            pen.sprite(ui.art.populationMini(s.empire(c->owner).race.style), 229, row - 4, 20, 20);
-            // A right-click on the population opens Races On Planet (spec 06 §1.4,
-            // confirmed: binary). Ours: on the Population line, where our page
-            // draws the population.
-            if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(pen.at(0, row - 4), pen.at(286, row + 16)) &&
-                ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !simulator) {
-                ScreenArgs a;
-                a.planet = c->planet;
-                ui.open(ScreenId::RacesOnPlanet, a);
+            // The races living there, a picture each from (230,196) of the
+            // original's page, 20 px apart, three to a row (spec 06 §1.4).
+            {
+                int k = 0;
+                for (const game::PopulationGroup& g : c->population) {
+                    if (g.millions <= 0 || k >= 6) continue;
+                    const std::string& style = g.race.valid() && g.race.index() < s.empires.size() ? s.empire(g.race).race.style : std::string{};
+                    pen.sprite(ui.art.populationMini(style), 226 + 20 * float(k % 3), 188 + 20 * float(k / 3), 20, 20);
+                    ++k;
+                }
             }
-            script::reportItem("report:population", pen.at(0, row - 4), pen.at(286, row + 16));   // input scripts: where it is
             line("Population", std::format("{}M/{}M", c->totalPopulation(), game::maxPopulation(r, s, *c)));
             line("Reproduction", std::format("{}% per year", out.reproductionPercent));
             line("Mood", std::string(game::economy::moodName(r, s, *c)));

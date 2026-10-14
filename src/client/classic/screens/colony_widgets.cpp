@@ -325,7 +325,7 @@ void ReportPopup::draw(UiContext& ui) {
     ImGui::EndChild();
     if (item) item_.open(*item);
     tab_ = reportTabs(ui, tab_, planet_.has_value());
-    const bool itemOpen = ImGui::IsPopupOpen("##itemreport");
+    const bool itemOpen = ItemReportPopup::isOpen();
     if (ImGui::Button("Close", ImVec2(-FLT_MIN, ui.px(26))) || (!itemOpen && escapePressed())) ImGui::CloseCurrentPopup();
     item_.draw(ui);
     ImGui::EndPopup();
