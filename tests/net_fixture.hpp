@@ -72,7 +72,9 @@ struct Loop {
         for (size_t i = 0; i < clients.size(); ++i)
             for (auto& e : clients[i]->poll(1)) clientEvents[i].push_back(std::move(e));
     }
-    bool until(const std::function<bool()>& done, int ms = 5000) {
+    // Steps until `done` holds. The limit is generous: a turn with Argon2id work on
+    // a loaded debug runner (macOS in CI) has taken over 5 s.
+    bool until(const std::function<bool()>& done, int ms = 30000) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
         while (std::chrono::steady_clock::now() < deadline) {
             step();
