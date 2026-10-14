@@ -182,11 +182,13 @@ letters. The authoritative data is in the records:
 
 - `Name`, `Description`
 - `Leader Position Xpos` and `Leader Position Ypos`: grid cell of the leader (1..19).
-- `Leader Design Type`: `Any` or a design-type name the leader must have.
+- `Leader Design Type`: `Any` or a design-type name.
 - `Number of Positions`, then `Position i Xpos`, `Position i Ypos` and `Position i Type`
   (`Any` or a design-type name) for i = 1..N.
 
-Stock formations have 36–100 positions, all `Any`, with no duplicate cells.
+Stock formations have 36–100 positions, all `Any`, with no duplicate cells. `Leader Design
+Type` and every `Position i Type` are loaded and then ignored: no rule and no window reads
+them (§10) (confirmed: binary; corrected 2026-10-14, complete listing).
 
 ### 2.7 RepairPriorities.txt
 
@@ -198,7 +200,10 @@ Engines, Weapons and Armor).
 
 Records with only `Name` hold the initial per-empire list of design types (at most 255), such as
 attack ship, colony, transport and carrier roles. Design types are labels only and have no rules
-effect, except that formation slots and AI logic can refer to them.
+effect; they matter only to the computer player's logic and to display. Formation slots do not
+use them: a formation's design-type fields are ignored (§2.6, §10) (confirmed: binary; corrected
+2026-10-14, complete listing; this section said earlier that formation slots could refer to
+them).
 
 ### 2.9 Settings.txt keys owned by this spec
 
@@ -1482,8 +1487,13 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   member in piece order anchors instead. The other armed members get positions 1, 2, 3… in the
   order their pieces enter combat. Nothing breaks formation at placement. Members numbered beyond
   the formation's position count get no formation place.
-- A position's `Type` and the `Leader Design Type` are never used for placement; they are for
-  display only.
+- A position's `Type` and the `Leader Design Type` are loaded and ignored: they affect neither
+  placement nor any window (confirmed: binary; corrected 2026-10-14, complete listing; this
+  section said earlier that they were shown). The formation picture marks the leader with a
+  fixed label and numbers the other positions; the Fleet Report, the formation pickers, the help
+  and the computer player's fleet settings use only the formation's name. OpenSE4's formation
+  report follows since 2026-10-14 (`item_reports.cpp` `formationDetail`): it used to show a
+  leader's design type other than `Any`.
 - A member's target cell is the leader's cell plus the offset (dx, dy) = its position − the leader
   position, rotated by the leader's facing, one of 8 directions:
 
@@ -2133,7 +2143,9 @@ All rules in this section are (confirmed: binary).
 23. **Formations:** do slot `Type` restrictions and formation orientation matter in practice? What
     happens with more members than positions? **Answer:** `Type` is ignored. Formations rotate
     with the leader's 8-way facing, diagonals stretched. Extra members get no formation place
-    (§10) (confirmed: binary).
+    (§10) (confirmed: binary). `Type` and `Leader Design Type` are not shown in any window
+    either: no code reads them back once loaded (confirmed: binary; corrected 2026-10-14,
+    complete listing; the answer said earlier that they were for display).
 24. **Stellar-manipulation "Stop ..." facilities:** do they cover the system or the whole empire?
     What are the units of `Open Warp Point Distance`? **Answer:** the whole system, counting
     objects of every empire; `Stop Planet Destroyer` covers only its sector. Distance is in

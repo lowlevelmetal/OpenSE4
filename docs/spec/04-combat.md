@@ -1651,8 +1651,11 @@ component `Family` and adds the families (§7).
   `Description`, `Leader Position Xpos/Ypos` and `Leader Design Type`, then `Number of
   Positions` (up to 100, history 1.68) followed by `Position N Xpos/Ypos/Type` on a
   19×19 template. Slots are filled in order by the leader's followers. A slot's offset
-  is its position minus the leader's position. `Type` restricts which design types may
-  take the slot, and is `Any` in all stock data.
+  is its position minus the leader's position. `Type` and `Leader Design Type` are
+  loaded and ignored: they restrict no slot and no window shows them (spec 03 §10)
+  (confirmed: binary; corrected 2026-10-14, complete listing; this section said earlier
+  that `Type` restricted which design types may take the slot). Both are `Any` in all
+  stock data.
 - **VehicleSize.** The hull's to-hit abilities (§7), its vehicle type (bases have
   unlimited supplies, §6) and `Engines Per Move`.
 - **Cultures.** `Space Combat` and `Ground Combat` are signed percentages (§7, §13).
