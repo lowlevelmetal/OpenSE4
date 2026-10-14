@@ -1,0 +1,24 @@
+# Set Construction Queue's Units tab: a unit asks for the "Amount" first (spec 02 §6.5, spec 06
+# §1.2), a list whose choices, One Turn's Worth and 1 to 200, all show whole without scrolling
+# (GitHub issue #12: 0.12.0's Batch buttons were cut off) (docs/BUILDING.md "Input scripts").
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start=Terran --seed=7 --open=queues --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait-window queues
+click item:##row in=queues
+wait-window set-queue
+click item:Units in=set-queue
+click item:##row in=set-queue
+wait-for item:"window:Amount*"
+# Fifteen rows, the last (200) in view, and nothing to scroll.
+assert-present item:##row in=Amount* nth=15
+assert-absent item:##row in=Amount* nth=16
+assert-disabled item:##down in=Amount*
+assert-fits Amount*
+screenshot queue-amount.png
+click item:##row in=Amount* nth=15
+wait-gone item:"window:Amount*"
+assert { command = "QueueAdd" }
+click tag:set-queue:close
+wait-closed set-queue
