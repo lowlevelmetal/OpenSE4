@@ -149,7 +149,9 @@ def set_vehicle_strategy(design: Optional[Ref] = None, strategy: Ref = 0) -> Dic
 
 
 def rename(vehicle: Optional[Ref] = None, fleet: Optional[Ref] = None, design: Optional[Ref] = None, planet: Optional[Ref] = None, name: str = '') -> Dict[str, Any]:
-    """Renames one of our vehicles, fleets, designs or colonies (name one).
+    """Renames one of our vehicles, fleets, designs or colonies (name one). A vehicle, fleet or colony
+    cannot take a name some ship, unit group, planet, star or other space object of the game already
+    has (exactly, case counting); its own name again changes nothing.
 
     vehicle: A vehicle.
     fleet: Or a fleet.
@@ -253,8 +255,8 @@ def retrofit(vehicle: Optional[Ref] = None, design: Optional[Ref] = None) -> Dic
 
 def set_minister(vehicle: Optional[Ref] = None, planet: Optional[Ref] = None, empire_wide: bool = False, on: bool = True, fleet: Optional[Ref] = None) -> Dict[str, Any]:
     """Puts a vehicle or colony under its minister (the computer controls it), or takes it back;
-    empire_wide does the same for everything of ours. For a fleet, the fleet's own flag, and every
-    member at the fleet's location gets it.
+    empire_wide does the same for everything of ours. For a fleet, the fleet's own flag is set, and
+    every member at the fleet's location gets the same flag.
 
     vehicle: A vehicle.
     planet: Or a colony, by its planet.
@@ -435,6 +437,26 @@ def cloak_colony(planet: Optional[Ref] = None, cloak: bool = True) -> Dict[str, 
         'kind': 'cloak_colony',
         'planet': _id(planet, 'object', 'cloak_colony.planet'),
         'cloak': _bool(cloak, 'cloak_colony.cloak'),
+    }
+
+
+def cloak_vehicles(vehicles: Optional[Sequence[Ref]] = None, fleet: Optional[Ref] = None, cloak: bool = True) -> Dict[str, Any]:
+    """Cloaks or decloaks vehicles at once, as the Cloak and Decloak orders do; their order lists are
+    left alone. Name vehicles (a fleet member stands for every member at its fleet's location, as in
+    order_tagged), a fleet, or both. Cloak cloaks each one that can: a working part of Cloak Level 2
+    or more, supplies above 0, and neither mothballed nor already cloaked; a cloaked ship's
+    construction queue is emptied. Decloak decloaks each one that is cloaked. Refused when it
+    changes nothing.
+
+    vehicles: Our vehicles.
+    fleet: Or a fleet: its members at its location.
+    cloak: Cloak (the default) or decloak.
+    """
+    return {
+        'kind': 'cloak_vehicles',
+        'vehicles': [] if vehicles is None else _ids(vehicles, 'vehicle', 'cloak_vehicles.vehicles'),
+        'fleet': _id(fleet, 'fleet', 'cloak_vehicles.fleet'),
+        'cloak': _bool(cloak, 'cloak_vehicles.cloak'),
     }
 
 
@@ -1269,6 +1291,7 @@ COMMAND_KINDS = (
     'set_colony_type',
     'abandon_planet',
     'cloak_colony',
+    'cloak_vehicles',
     'transfer_cargo',
     'jettison_cargo',
     'create_design',

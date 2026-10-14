@@ -1,5 +1,6 @@
 #include "game/state.hpp"
 
+#include <algorithm>
 #include <tuple>
 
 namespace opense4::game {
@@ -293,6 +294,57 @@ bool fleetRepeats(const GameState& s, const Fleet& f) {
     for (VehicleId id : group)
         if (const Vehicle* v = s.vehicle(id); !first || earlierInObjectOrder(*v, *first)) first = v;
     return first && first->repeatOrders;
+}
+
+size_t orderListShift(const std::vector<Order>& orders, bool repeat, uint16_t shift) {
+    return !repeat || orders.empty() ? 0 : shift % orders.size();
+}
+
+void completeHeadOrder(std::vector<Order>& orders, bool repeat, uint16_t& shift) {
+    if (orders.empty()) return;
+    const size_t turned = orderListShift(orders, repeat, shift);
+    const Order done = orders.front();
+    orders.erase(orders.begin());
+    if (repeat) orders.push_back(done);
+    shift = repeat && !orders.empty() ? static_cast<uint16_t>((turned + 1) % orders.size()) : 0;
+}
+
+void removeHeadOrder(std::vector<Order>& orders, bool repeat, uint16_t& shift) {
+    if (orders.empty()) return;
+    // The original takes out its current order and its index stays, now on
+    // the next one (on the first after the last).
+    const size_t turned = orderListShift(orders, repeat, shift);
+    orders.erase(orders.begin());
+    shift = repeat && !orders.empty() ? static_cast<uint16_t>(turned % orders.size()) : 0;
+}
+
+std::vector<Order> originalOrderList(const std::vector<Order>& orders, bool repeat, uint16_t shift) {
+    std::vector<Order> out = orders;
+    const size_t turned = orderListShift(orders, repeat, shift);
+    std::rotate(out.begin(), out.end() - static_cast<std::ptrdiff_t>(turned), out.end());
+    return out;
+}
+
+void changeOrderList(std::vector<Order>& orders, bool& repeat, uint16_t& shift, std::vector<Order> full, std::optional<size_t> added,
+                     bool newRepeat) {
+    if (!added || *added != orders.size() || full.size() < orders.size()) {
+        orders = std::move(full);
+        repeat = newRepeat;
+        shift = 0;
+        return;
+    }
+    const auto tail = full.begin() + static_cast<std::ptrdiff_t>(*added);
+    if (newRepeat != repeat) {
+        // Repeat switched: the list restarts at its first order (spec 03 §8).
+        orders = originalOrderList(orders, repeat, shift);
+        orders.insert(orders.end(), tail, full.end());
+        repeat = newRepeat;
+        shift = 0;
+        return;
+    }
+    const size_t turned = orderListShift(orders, repeat, shift);
+    orders.insert(orders.end() - static_cast<std::ptrdiff_t>(turned), tail, full.end());
+    shift = static_cast<uint16_t>(turned);
 }
 
 void fleetMemberMoved(GameState& s, const Vehicle& v) {

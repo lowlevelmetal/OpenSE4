@@ -316,7 +316,8 @@ Scrap window action like `scrap`.
 
 Puts a vehicle or colony under its minister (the computer controls it), or
 takes it back; `empire_wide` does the same for everything of ours. For a
-fleet, the fleet's own flag, and every member at the fleet's location gets it.
+fleet, the fleet's own flag is set, and every member at the fleet's location
+gets the same flag.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -494,6 +495,26 @@ level of 2 or more from the colony's facilities.
 
 ```json
 {"kind": "cloak_colony", "planet": 7, "cloak": true}
+```
+
+### `cloak_vehicles`
+
+Cloaks or decloaks vehicles at once, as the Cloak and Decloak orders do; their
+order lists are left alone. Name vehicles (a fleet member stands for every
+member at its fleet's location, as in `order_tagged`), a fleet, or both. Cloak
+cloaks each one that can: a working part of Cloak Level 2 or more, supplies
+above 0, and neither mothballed nor already cloaked; a cloaked ship's
+construction queue is emptied. Decloak decloaks each one that is cloaked.
+Refused when it changes nothing.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `vehicles` | list of vehicle id | Our vehicles. |
+| `fleet` | fleet id, or null | Or a fleet: its members at its location. |
+| `cloak` | bool | Cloak (the default) or decloak. |
+
+```json
+{"kind": "cloak_vehicles", "vehicles": [31], "cloak": true}
 ```
 
 ### `transfer_cargo`

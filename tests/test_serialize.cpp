@@ -278,19 +278,24 @@ TEST_CASE("serialize: orders round trip for every command type") {
     CHECK(sent.request.front().planet == ObjectId{12u});
     CHECK(std::get<cmd::SetOrders>(loaded->commands[0]).orders.front() == order);
     CHECK(std::get<cmd::Rename>(loaded->commands[7]).name == "New Name \xE2\x9C\x93");
-    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 5]).email == "someone@example.org");
-    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 4]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
-    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 3]);
+    CHECK(std::get<cmd::SetEmail>(loaded->commands[c.size() - 6]).email == "someone@example.org");
+    CHECK(std::get<cmd::EnterSector>(loaded->commands[c.size() - 5]).tagged == std::vector<VehicleId>{VehicleId{42u}, VehicleId{43u}});
+    const auto& tagged = std::get<cmd::OrderTagged>(loaded->commands[c.size() - 4]);
     CHECK(tagged.vehicles == std::vector<VehicleId>{VehicleId{44u}, VehicleId{45u}});
     CHECK(tagged.orders.size() == 1);
     CHECK(tagged.repeat);
-    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands[c.size() - 2]);
+    const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands[c.size() - 3]);
     CHECK(leader.fleet == FleetId{46u});
     CHECK(leader.vehicle == VehicleId{47u});
     // A mod's order (format 9).
-    const auto& mod = std::get<cmd::ModCommand>(loaded->commands.back());
-    CHECK(mod == std::get<cmd::ModCommand>(c.back()));
+    const auto& mod = std::get<cmd::ModCommand>(loaded->commands[c.size() - 2]);
+    CHECK(mod == std::get<cmd::ModCommand>(c[c.size() - 2]));
     CHECK(mod.args == R"({"power":2,"note":"x"})");
+    // Cloak and Decloak of vehicles (format 10).
+    const auto& cloak = std::get<cmd::CloakVehicles>(loaded->commands.back());
+    CHECK(cloak.vehicles == std::vector<VehicleId>{VehicleId{49u}, VehicleId{50u}});
+    CHECK(cloak.fleet == FleetId{51u});
+    CHECK_FALSE(cloak.cloak);
 }
 
 // ---- Hostile input ------------------------------------------------------------------------------------
@@ -523,8 +528,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x136cc7ee252f6d26ull;
-    constexpr size_t kGoldenSize = 1948;
+    constexpr uint64_t kGoldenChecksum = 0x117c4f1f873972b6ull;
+    constexpr size_t kGoldenSize = 1952;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

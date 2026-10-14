@@ -90,8 +90,11 @@ class Rules;
 // boxes (InterfaceOptions::designsHideObsolete, designsStatsView, spec 08
 // §3.6.7). Format 7 still reads, without them.
 // Version 10: the REA parity audit's state (listed as each change lands):
-// a fleet's Toggle Minister Control (cmd::SetMinister::fleet, spec 03 §8).
-// Format 9 still reads, without it.
+// a fleet's Toggle Minister Control (cmd::SetMinister::fleet, spec 03 §8);
+// how far a repeating order list has turned since Repeat was switched on
+// (Vehicle::repeatShift, Colony::repeatShift, spec 03 §8), and Cloak and
+// Decloak of vehicles at once (cmd::CloakVehicles, a new command).
+// Format 9 still reads, without them.
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

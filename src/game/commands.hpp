@@ -144,6 +144,16 @@ struct AbandonPlanet { ObjectId planet; };
 // contact check makes only the player's side of a first contact (spec 01
 // §6.9, §14 Q44, spec 05 §9.2, confirmed: binary).
 struct CloakColony { ObjectId planet; bool cloak = true; };
+// Cloak and Decloak of vehicles (spec 03 §8, confirmed: binary): immediate,
+// like a colony's cloak, and the order lists are left alone. The vehicles
+// are ours (a tagged group: a fleet member stands for its fleet's members at
+// the fleet's location), or `fleet` names a fleet, whose members at its
+// location count. Cloak cloaks each of them that can (a working part of
+// Cloak Level 2 or more, supplies above 0, neither mothballed nor cloaked)
+// and empties its construction queue; Decloak decloaks each that is
+// cloaked, and runs the first-contact check in its system. Refused when it
+// changes nothing.
+struct CloakVehicles { std::vector<VehicleId> vehicles; FleetId fleet; bool cloak = true; };
 struct TransferCargo {       // immediate transfer between own holders in the same sector
     VehicleId fromVehicle;
     ObjectId fromPlanet;
@@ -297,7 +307,8 @@ using Command = std::variant<
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
-    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader, cmd::ModCommand>;
+    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn, cmd::SetEmail, cmd::OrderTagged, cmd::SetFleetLeader, cmd::ModCommand,
+    cmd::CloakVehicles>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

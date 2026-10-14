@@ -832,6 +832,12 @@ void fields(A& a, cmd::CloakColony& x) {
     a("cloak", x.cloak);
 }
 template <class A>
+void fields(A& a, cmd::CloakVehicles& x) {
+    a("vehicles", x.vehicles);
+    a("fleet", x.fleet);
+    a("cloak", x.cloak);
+}
+template <class A>
 void fields(A& a, cmd::TransferCargo& x) {
     a("from_vehicle", x.fromVehicle);
     a("from_planet", x.fromPlanet);

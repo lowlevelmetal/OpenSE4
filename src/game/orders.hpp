@@ -6,10 +6,12 @@
 //   - Explore becomes Move To plus Warp for the nearest explorable warp point;
 //   - Resupply becomes Move To the nearest depot, Repair Move To the nearest
 //     repair source;
+//   both search from where the selected object is now, whatever orders come
+//   before, and add the Move To even when it leads where the object is;
 //   - the composite orders (Warp, Colonize, Load Cargo, Drop Cargo, Launch
 //     Units, Recover Units) become Move To the target sector, when it is
 //     elsewhere, plus the order; Colonize first adds Load Cargo (population)
-//     where it starts when the ship carries no population.
+//     when the selected object carries no population now.
 // cmd::SetOrders expands the orders it adds; movement expands an Explore,
 // Resupply or Repair that reached a list some other way when it comes up.
 
@@ -28,9 +30,16 @@ struct OrderContext {
     VehicleId lead;                  // the group's leading ship (the vehicle, or the fleet's leader); invalid: the first member
     Location at;                     // where the next order starts
     bool carriesPopulation = false;  // some member carries population there
+    // The selected object as it is now (spec 03 §8, confirmed: binary): its
+    // sector, where Explore, Resupply and Repair search from (invalid: `at`),
+    // and whether its own cargo holds population (Colonize's Load Cargo).
+    Location here;
+    bool selfCarriesPopulation = false;
 };
 OrderContext orderContextOf(const GameState& s, const Vehicle& v);
-OrderContext orderContextOf(const GameState& s, const Fleet& f);
+// A fleet's orders; `addressed` is the member they were given to, if any
+// (else the fleet's leading member stands for the selected object).
+OrderContext orderContextOf(const GameState& s, const Fleet& f, const Vehicle* addressed = nullptr);
 
 // Where `o` leaves the group, as far as it is known when the order is given
 // (a simple order's target; unchanged for orders that do not move it).

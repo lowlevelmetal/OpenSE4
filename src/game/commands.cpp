@@ -170,18 +170,25 @@ struct Applier {
         const std::vector<VehicleId> holders = fleetGroup(s, f);
         if (holders.empty()) return R::fail("The fleet has no member at its location");
         const std::vector<Order> base = addressed ? addressed->orders : fleetOrders(s, f);
-        std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, f), base, given);
+        std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, f, addressed), base, given);
         bool appended = given.size() >= base.size() && std::equal(base.begin(), base.end(), given.begin());
         // Use Component in a turn-based game: each list at the location is cleared first.
         if (appended && clearBeforeUse(full, base.size())) {
             appended = false;
             repeat = false;
         }
+        // Added orders go to the end of each list, a change of Repeat
+        // restarts each list (changeOrderList, spec 03 §8).
         for (VehicleId id : holders) {
             Vehicle& v = *s.vehicle(id);
-            if (appended) v.orders.insert(v.orders.end(), full.begin() + static_cast<std::ptrdiff_t>(base.size()), full.end());
-            else v.orders = full;
-            v.repeatOrders = repeat;
+            if (appended) {
+                std::vector<Order> own = v.orders;
+                const size_t held = own.size();
+                own.insert(own.end(), full.begin() + static_cast<std::ptrdiff_t>(base.size()), full.end());
+                changeOrderList(v.orders, v.repeatOrders, v.repeatShift, std::move(own), held, repeat);
+            } else {
+                changeOrderList(v.orders, v.repeatOrders, v.repeatShift, full, std::nullopt, repeat);
+            }
         }
         return {};
     }
@@ -225,8 +232,9 @@ struct Applier {
                 if (list[i].kind == OrderKind::ConvertResources && !economy::colonyConverts(r, s, *col))
                     return R::fail("This colony cannot convert resources");
             const bool cleared = clearBeforeUse(list, kept);
-            col->orders = std::move(list);
-            col->repeatOrders = c.repeat && !cleared;
+            const bool appended = !cleared && kept == col->orders.size();
+            changeOrderList(col->orders, col->repeatOrders, col->repeatShift, std::move(list), appended ? std::optional<size_t>(kept) : std::nullopt,
+                            c.repeat && !cleared);
             return {};
         }
         for (const Order& o : c.orders)
@@ -251,9 +259,11 @@ struct Applier {
         if (!v) return R::fail("Not your vehicle");
         if (const Fleet* f = v->fleet.valid() ? s.fleet(v->fleet) : nullptr) return setFleetOrders(*f, v, c.orders, c.repeat);
         const size_t kept = static_cast<size_t>(std::mismatch(v->orders.begin(), v->orders.end(), c.orders.begin(), c.orders.end()).second - c.orders.begin());
-        v->orders = expandGivenOrders(r, s, orderContextOf(s, *v), v->orders, c.orders);
-        const bool cleared = clearBeforeUse(v->orders, kept);
-        v->repeatOrders = c.repeat && !cleared;
+        std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, *v), v->orders, c.orders);
+        const bool cleared = clearBeforeUse(full, kept);
+        const bool appended = !cleared && kept == v->orders.size();
+        changeOrderList(v->orders, v->repeatOrders, v->repeatShift, std::move(full), appended ? std::optional<size_t>(kept) : std::nullopt,
+                        c.repeat && !cleared);
         return {};
     }
 
@@ -724,6 +734,50 @@ struct Applier {
         // acting side only (decloakSide).
         TurnContext contact{r, s, {}, {}, {}};
         diplomacy::afterDecloak(contact, s.galaxy.object(c.planet).system, decloakSide());
+        return {};
+    }
+
+    R operator()(const cmd::CloakVehicles& c) {
+        std::vector<VehicleId> ids;
+        if (c.fleet.valid()) {
+            const Fleet* f = ownFleet(s, e, c.fleet);
+            if (!f) return R::fail("Not your fleet");
+            ids = fleetGroup(s, *f);
+        }
+        for (VehicleId id : c.vehicles) {
+            const Vehicle* v = ownVehicle(s, e, id);
+            if (!v || v->count <= 0) return R::fail("Not your vehicle");
+        }
+        for (VehicleId id : taggedVehicles(s, e, c.vehicles))
+            if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+        if (ids.empty()) return R::fail("Nothing to cloak");
+        std::vector<SystemId> decloakedIn;
+        bool changed = false;
+        for (VehicleId id : ids) {
+            Vehicle& v = *s.vehicle(id);
+            if (!c.cloak) {
+                if (v.status != VehicleStatus::Cloaked) continue;
+                v.status = VehicleStatus::Normal;
+                changed = true;
+                if (std::find(decloakedIn.begin(), decloakedIn.end(), v.location.system) == decloakedIn.end())
+                    decloakedIn.push_back(v.location.system);
+                continue;
+            }
+            if (v.status != VehicleStatus::Normal || !movement::detail::canCloak(r, s, v)) continue;
+            if (v.supply <= 0 && !vehicleHasUnlimitedSupply(r, s, v)) continue;
+            v.status = VehicleStatus::Cloaked;
+            v.queue.items.clear();   // a cloaked ship cannot build (spec 01 §6.4)
+            changed = true;
+        }
+        if (!changed) return R::fail(c.cloak ? "No working cloaking device, or no supplies." : "Nothing here is cloaked.");
+        if (c.cloak) {
+            sight::updateKnowledge(r, s);
+            return {};
+        }
+        // Every decloak runs the first-contact check in its system (spec 05
+        // §3.1), as a colony's does (decloakSide).
+        TurnContext contact{r, s, {}, {}, {}};
+        for (SystemId sys : decloakedIn) diplomacy::afterDecloak(contact, sys, decloakSide());
         return {};
     }
 
@@ -1310,6 +1364,7 @@ OPENSE4_CMD_NAME(SetEmail)
 OPENSE4_CMD_NAME(OrderTagged)
 OPENSE4_CMD_NAME(SetFleetLeader)
 OPENSE4_CMD_NAME(ModCommand)
+OPENSE4_CMD_NAME(CloakVehicles)
 #undef OPENSE4_CMD_NAME
 
 } // namespace
