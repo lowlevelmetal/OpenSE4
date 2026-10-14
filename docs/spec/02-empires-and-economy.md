@@ -564,6 +564,22 @@ system is added each turn to every colony of the owner there. Negative values do
   anger returns to 25; the colony goes only when no facility is left, otherwise the
   planet stays the owner's, empty, and nobody can colonize it (spec 06 §7 Q47,
   confirmed: binary).
+- Abandon Planet is a **colony order** (confirmed: binary). The population test is made when
+  it is given; after the two questions an Abandon order (kind 64 of the saved games, its
+  target 1 when the facilities are to be scrapped; spec 08 §3.8.8) goes to the end of the
+  colony's order list. In a turn-based game the colony's list then runs at once from its
+  head. In a simultaneous game it waits for day 1 of the movement phase; until then it shows
+  in View Orders and the Colonies window's Orders tab, and Clear Orders takes it back. When it
+  is carried out the population is not tested again; each facility scrapped returns
+  round(cost × P %) per resource, P being the larger of `Scrap Facility Percent Returned` and
+  the best `Resource Reclamation` in the sector (§6.6). Only when it is not carried out at
+  the player's command (a simultaneous game's turn processing) does the Planet minister
+  report the abandonment in the log, with a sentence more when the facilities were scrapped.
+  Our engine follows this since 2026-10-13 (`cmd::AbandonPlanet` with `scrapFacilities`,
+  `OrderKind::Abandon`, movement's `abandon`): it used to abandon at once in both turn
+  styles after scrapping the facilities one command at a time, and always wrote the entry.
+  The percentage is worked out once, before the first facility goes (inferred, spec 03 §19
+  Q84), and the empire's history keeps an entry either way (OpenSE4's).
 
 **Death and defence**
 - Bombardment kills 1M for every `Damage Points To Kill One Population` points of damage.

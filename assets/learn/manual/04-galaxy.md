@@ -156,8 +156,9 @@ systems** on (it is on for a new empire), your ships never route through an avoi
 system unless they start or end there. If no other route exists, the move fails instead.
 
 The same window has tabs that show your presence and the systems your allies and enemies
-claim. On the **Ally Claimed** tab, clicking a system claims it for you or releases your
-claim, and `Release All Claims` gives them all up. With the Empire Option *Claim every system we colonize* on (the default), every system you
+claim; on every tab a click marks or unmarks a system to avoid. You claim systems in the
+[Borders](window:borders) window; on the **Ally Claimed** tab `Release All Claims` gives every
+claim of yours up. With the Empire Option *Claim every system we colonize* on (the default), every system you
 settle is claimed for you.
 
 > Avoid a system with a known minefield or a strong enemy fleet, and your Move To orders will steer around it on their own.

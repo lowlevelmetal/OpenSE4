@@ -1011,7 +1011,9 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   - done: the order is removed. With **Repeat Orders** on, it stays in the list and execution
     moves on to the next order, wrapping round to the first;
   - waiting: execution stops for this pass and the order stays where it is;
-  - failed: the **whole list is cleared** and Repeat is switched off.
+  - failed: the **whole list is cleared** and Repeat is switched off. The Scrap window's orders
+    do not fail when they cannot be carried out: they count as done (§15). Only a Scrap that
+    scrapped the acting fleet member itself fails, clearing its fleet-mates' lists.
 - Done orders chain: the next order runs in the same pass, up to 21 order executions per vehicle
   per pass. Orders that need no MP can therefore complete several times in one turn.
 - Clear Orders also switches Repeat off. Switching Repeat on restarts at the first order.
@@ -1345,11 +1347,26 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   normally losing its orders. The `Ship - Moved` event moves the ship first and then takes it out
   of its fleet, so the fleet's location goes with it and the whole fleet is disbanded.
 - **Who can join:** ships always; bases only when `Bases Can Join Fleets` is True; fighter groups
-  yes; drones, satellites and mines never. Fleet Transfer offers only own vehicles in the same
-  sector that are not already in a fleet, mothballed ones included. "Add All" and "Remove All"
-  are available. Joining or leaving a fleet clears the vehicle's own orders (below). A vehicle
-  in a fleet cannot be mothballed, scrapped, analyzed or retrofitted, because the Scrap window
-  does not list it (§15, §19 Q74).
+  yes; drones, satellites and mines never. Fleet Transfer's vehicle list offers only own vehicles
+  in the same sector that are in no fleet and may join one, mothballed and cloaked ones included
+  (a vehicle whose fleet no longer exists has its fleet number cleared first). Its fleet list
+  holds the own fleets whose location is this sector, each with its members at that location.
+  "Add All" and "Remove All" are available. Joining or leaving a fleet clears the vehicle's own
+  orders (below). A vehicle in a fleet cannot be mothballed, scrapped, analyzed or retrofitted,
+  because the Scrap window does not list it (§15, §19 Q74).
+- **Create Fleet** (Fleet Transfer) asks for the name in a box with OK and Cancel. It offers
+  "<letter> Fleet" with the Greek letters Alpha to Kappa for the empire's number of fleets plus
+  one, going up past names in use, and two words past ten (OpenSE4 writes "Alpha Alpha Fleet"
+  for the 11th, "Alpha Beta Fleet" for the 12th, and so on to "Kappa Kappa Fleet", then
+  "Fleet N", inferred). The typed name is not checked. The fleet is created **empty** at the
+  window's sector, with the first formation and the first strategy, and under minister control
+  when the empire's "new vehicles use ministers" option is on; the player then clicks vehicles
+  into it. A fleet still empty when the window closes is deleted. Our engine follows this since
+  2026-10-13 (`cmd::CreateFleet` with no members and a `location`, `defaultFleetName`); an empty
+  fleet survives the tidying that disbands a fleet with no member at its location, and turn
+  processing deletes any left (OpenSE4's own, for a window that never closed).
+  `cmd::CreateFleet` with members, which the computer players and scripts use, is OpenSE4's;
+  their fleets get the same default names.
 - **Leader:** the player-chosen leader when one is set, otherwise the first member in the sector's
   object order. If the chosen leader leaves or is destroyed, the choice is cleared and the first
   member leads again. The leader only matters for the formation. The player chooses it with
@@ -1645,21 +1662,30 @@ Effect:
   removes components is free.
 - Damage and mothball status are not checked.
 
+**The picker** ("Select New Design", opened by the Scrap window's Retrofit button, §15) lists the
+empire's own designs in its design-list order that use the vehicle's hull, are not its current
+design, are not obsolete and can be built now (hull, components and mounts researched). Each row
+shows the design's picture, Name, Size and the retrofit's cost in three resource columns; a
+right-click opens the Design Report. The checks above are made only when the retrofit is carried
+out, so a listed design can still be refused then. Our client follows this since 2026-10-13
+(`retrofitChoices`, `ships_logic.cpp`); a row the retrofit would refuse now gives the reason when
+hovered (OpenSE4's), and it can be picked all the same.
+
 ---
 
 ## 15. Scrap window actions
 
 Each action applies to the selected own vehicles in one sector. The window lists only own
-vehicles in the sector that are in no fleet and not cloaked (§19 Q74). Scrap, Analyze, Mothball
-and Retrofit need an own space yard in the sector and a vehicle that is not cloaked. All rules
-in this section are (confirmed: binary).
+vehicles in the sector that are in no fleet and not cloaked (§19 Q74). Scrap, Analyze, Mothball,
+Unmothball and Retrofit need an own space yard in the sector and a vehicle that is not cloaked.
+All rules in this section are (confirmed: binary).
 
 | Action | Requires | Effect |
 |---|---|---|
 | Scrap | a space yard, not cloaked | Destroys the vehicles. A ship or base returns, per resource, round(design cost × P %), where P is the larger of `Scrap Ship Percent Returned` and the best `Resource Reclamation` among the owner's objects in the sector. A fighter or satellite group returns round(design cost × `Scrap Unit Percent Returned` %) per unit, times the number of units. Drone groups and minefields cannot be scrapped. Damage does not lower the value. Cargo on board is lost without refund. |
 | Analyze | a ship or base (never a unit group), a space yard, not cloaked | Destroys the vehicle, returns no resources, and raises the owner's technology from the vehicle's parts. Rules under **Analyze** below. |
 | Mothball | a space yard, not cloaked, status Normal, no cargo | Status becomes Mothballed: no abilities, 0 movement, 0 supply, no maintenance. |
-| Unmothball | status Mothballed | Costs round(design cost × `UnMothball Ship Percent Cost` %) per resource, and every resource must be in stock. The vehicle returns to Normal. Bases and vehicles with a working `Quantum Reactor` come back with full (unlimited) supply; others are refilled only if they are at a resupply depot and otherwise stay at 0. |
+| Unmothball | the button: status Mothballed and an own working space yard in the sector (no cost test: it is lit for a vehicle the empire cannot afford); the order: every resource of the cost in stock, then the yard | Costs round(design cost × `UnMothball Ship Percent Cost` %) per resource. The vehicle returns to Normal. Bases and vehicles with a working `Quantum Reactor` come back with full (unlimited) supply; others are refilled only if they are at a resupply depot and otherwise stay at 0. |
 | Retrofit | a space yard | §14. |
 | Self-destruct | a ship or base: `Self-Destruct` in its ability list (the hull counts; a mothballed vehicle has none); satellite groups, minefields and drone groups: nothing; fighter groups: never allowed | The whole object is destroyed. No yard is needed and nothing is refunded. |
 | Fire On | another own armed vehicle in the sector | The vehicle is removed outright, with no battle. Rules under **Fire On** below. |
@@ -1669,11 +1695,11 @@ in this section are (confirmed: binary).
 **Carrying out the actions** (confirmed: binary). Scrap, Analyze, Mothball, Unmothball, Retrofit,
 Self-Destruct and Fire On are given to every selected vehicle, one after another in list order.
 A button is lit only when every selected vehicle passes its test (the window is spec 06 §1.3).
-- **Turn-based game.** Each vehicle's action is carried out at once, in that order. The test is
-  made again for each vehicle just before its action, so the action on one vehicle can change
-  the outcome for the next (see Fire On). The vehicle's order list is not touched. Analyze and
-  Fire On neither need nor spend movement, and a vehicle that fails their test is left alone,
-  with no message.
+- **Turn-based game.** Each vehicle's action is carried out at once, in that order. The order's
+  test is made again for each vehicle just before its action, so the action on one vehicle can
+  change the outcome for the next (see Fire On), and an Unmothball the empire cannot pay for
+  does nothing. The vehicle's order list is not touched. Analyze and Fire On neither need nor
+  spend movement. A vehicle that fails the test is left alone, with no message.
 - **Simultaneous game.** Nothing happens while the player gives orders. Each selected vehicle's
   order list is cleared (Repeat goes off) and the action becomes its only order, shown in the
   order list as "Scrap / Analyze / Mothball" (Scrap), "Deconstruct & Analyze", "Mothball",
@@ -1681,10 +1707,23 @@ A button is lit only when every selected vehicle passes its test (the window is 
   added behind it. The order is carried out when the vehicle first acts during the turn's
   movement (§6.3): a vehicle with a maximum of 0 movement (a mothballed one, for instance) acts on
   day 1, any other on its first action, and a vehicle that never acts (speed 1) never carries
-  it out. The test is made again then: if it passes, the action happens and the order is done;
-  if it fails, the order fails and the whole list is cleared (§8), with no message from Analyze
-  or Fire On. Analyze and Fire On act on the acting vehicle only, even when it heads an
-  ad-hoc group (§8), so each vehicle carries out its own order.
+  it out. The order's test is made again then: if it passes, the action happens and the order
+  is done. If it fails, the order counts as done all the same: it leaves the list (with Repeat
+  on, it goes to the end), the orders behind it run, and the list is never cleared. Only
+  Mothball, Unmothball and Retrofit report a failure, each with one log entry: the Mothball
+  minister's "Cannot Unmothball" says that there are not enough resources or that no space
+  yard is present. Scrap, Analyze and Fire On say nothing. Analyze, Mothball, Unmothball,
+  Retrofit and Fire On act on the acting vehicle only, even when it heads an ad-hoc group
+  (§8), so each vehicle carries out its own order.
+- **The Scrap order** scraps one vehicle, the first of the group that carries it out: the
+  acting vehicle, or for a fleet member its fleet's member at the fleet's location that comes
+  first in object order, whichever member holds the order. The test is the order's: an own
+  working space yard in that vehicle's sector and no cloak (not the window's fleet test). The
+  refund is the one above, and the owner gets a "Vehicle Scrapped" log entry. When the acting
+  vehicle itself was scrapped the run counts as failed and the lists of the members left at
+  the fleet's location are cleared (Repeat off); otherwise the order leaves every member's list
+  there and the member that held it stays in the fleet. Only the Scrap minister's orders put
+  a Scrap on a fleet member's list (spec 05 §7.5 *Scrap*, §19 Q74).
 - No computer player and no minister ever gives an Analyze or Fire On order; only the player's
   Scrap window does.
 
@@ -1768,11 +1807,15 @@ A button is lit only when every selected vehicle passes its test (the window is 
 **The engine and client follow this section since 2026-10-01** (`src/game/scrap.*`):
 - Each action is a command on one vehicle (`cmd::Scrap`, `cmd::Analyze`, `cmd::Mothball` for
   Mothball and Unmothball, `cmd::Retrofit`, `cmd::SelfDestruct`, `cmd::FireOn`), tested by
-  `scrapActionProblem` when it is given. A turn-based game carries it out at once and leaves
-  the order list alone; a simultaneous game clears the list, switches Repeat off and leaves
-  the action as the only order (order kinds `Scrap`, `Analyze`, `Mothball`, `Unmothball`,
-  `Retrofit`, `SelfDestruct`, `FireOn`), which movement carries out at the vehicle's first
-  action, testing it again (a failure clears the list, silently for Analyze and Fire On).
+  `scrapActionProblem` with the window's test when it is given. A turn-based game makes the
+  order's test too (`ScrapTest::Order`), carries it out at once and leaves the order list
+  alone; a simultaneous game clears the list, switches Repeat off and leaves the action as the
+  only order (order kinds `Scrap`, `Analyze`, `Mothball`, `Unmothball`, `Retrofit`,
+  `SelfDestruct`, `FireOn`), which movement carries out at the vehicle's first action, making
+  the order's test. Since 2026-10-13 a failure counts as done (it used to clear the list),
+  Mothball, Unmothball and Retrofit write their "Cannot ..." entries, Unmothball's button
+  needs a yard and no longer the cost, and the Scrap order scraps its group's first vehicle
+  (movement's `scrapOrder`).
   The window's orders cannot be given through `cmd::SetOrders`; a list keeps those it holds.
 - Analyze grants one level per pair of `analyzePairs` (`research::analyzeLevel`, which
   checks only `canGainLevel`), and the level entries of research (`research::grantLevel`
@@ -1787,14 +1830,17 @@ A button is lit only when every selected vehicle passes its test (the window is 
   `src/client/classic/screens/ships_logic.cpp`).
 
 OpenSE4's own choices, (inferred):
-- Computer players' and ministers' Scrap and Retrofit go through the same commands, so in a
-  simultaneous game they too become the vehicle's only order. How the original's ministers
-  carry them out is open.
+- Computer players' and ministers' Retrofit goes through the same command, so in a
+  simultaneous game it too becomes the vehicle's only order. How the original's ministers
+  carry it out is open. Their Scrap is the minister's order of spec 05 §7.5.
 - Scrap and Self-Destruct count each living unit of a unit group in "Number Scrapped".
 - A self-destructed vehicle still gets its "destroyed" Misc entry, but raises no "ship lost"
-  mood (it is not lost).
-- The Fire On entry has no picture (our log keeps pictures only for events), and Unmothball's
-  button needs the cost in stock as well as the Mothballed status.
+  mood (it is not lost). A Self-Destruct order nobody in the group can carry out counts as
+  done, like the window's other orders, and says nothing.
+- "Vehicle Scrapped" is a Construction entry naming the vehicle and its sector in our words,
+  written for a unit group too and in a turn-based game's window as well. "Cannot Mothball"
+  and "Cannot Retrofit" are our titles for those two failures (Construction entries with the
+  reason in our words), "Cannot Unmothball" the original's.
 
 ---
 
@@ -2494,6 +2540,11 @@ marked (inferred) in the code.
       happiness?
     - Unmothball is lit only when the cost is in stock (the order's test). Is the button lit
       for a mothballed vehicle the empire cannot afford?
+      **Answer** (confirmed: binary): yes. The button needs every selected vehicle to be
+      mothballed with an own working space yard in its sector, and nothing else; the order
+      then needs the cost in stock and the yard, and otherwise does nothing (a turn-based
+      game's window) or, carried out as an order, writes the Mothball minister's "Cannot
+      Unmothball" entry. Our engine follows this since 2026-10-13 (§15).
 
 **Players' reports on v0.8.1 (2026-10-04).** The Colonize picker is spec 06 §7 Q100 (with the
 rules in §8); this one is ours:
@@ -2643,3 +2694,19 @@ fleet's row in the sector list is spec 06 §7 Q110.
     first tagged vehicle has orders (OpenSE4) or ends with the order run, and whether a member
     whose maximum movement is 0 (a base, a mothballed ship) makes the group wait (OpenSE4, as
     for a fleet, §19 Q74) or makes the order fail.
+84. **The Scrap window, Create Fleet and Abandon Planet: details the 2026-10-11 audit left
+    open.** OpenSE4's choices since 2026-10-13 (inferred), to verify in the executable:
+    - Create Fleet's default name past the tenth fleet is "two words": OpenSE4 pairs the
+      letters ("Alpha Alpha Fleet" for the 11th). Which words does the original use?
+    - "Vehicle Scrapped": its text and category, whether a turn-based game's window writes it
+      too (OpenSE4 does), and whether a unit group gets the same title.
+    - The log entries of a failed Mothball and a failed Retrofit order: titles ("Cannot
+      Mothball", "Cannot Retrofit" in OpenSE4), category and text.
+    - A Self-Destruct order nobody in the group can carry out counts as done in OpenSE4 and
+      says nothing; does the original write anything?
+    - Abandon Planet with its facilities scrapped: OpenSE4 works the refund percentage out once,
+      before the first facility goes; does the original work it out again for each (it differs
+      only when a scrapped facility gives `Resource Reclamation`)? And the Planet minister's
+      entry: title and category (OpenSE4: "<planet> abandoned", Misc).
+    - The Scrap window's Order By Class: OpenSE4 sorts by design name, then by vehicle name.
+      And what Status shows with nothing selected (OpenSE4: "-").

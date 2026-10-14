@@ -480,6 +480,23 @@ keys the client ignored followed the specs:
   its first action; designs keep Number Scrapped. The window shows the last selected vehicle's
   research potential word and lights each button only when every selected vehicle qualifies.
   Our choices are spec 03 §19 Q78 (the computer players' Scrap and Retrofit go the same way).
+- **Since 2026-10-13** (the REA parity audit, findings on orders): a Scrap-window order that
+  fails when carried out counts as done (the orders behind it run), with "Cannot Mothball",
+  "Cannot Unmothball" and "Cannot Retrofit" entries; Unmothball's button needs a yard but not
+  the cost; the Scrap order scraps its group's first vehicle, so the Scrap minister's order on
+  a fleet member (which no longer leaves its fleet) scraps the fleet's first member there
+  (spec 05 Q74); the window opens with nothing selected, with Order By Name / Order By Class,
+  Select All / Select None, "<design> Class" rows with status icons, the last selected
+  vehicle's Status and sums only for lit buttons; Retrofit's Select New Design lists only
+  buildable designs of the hull that are not obsolete, with picture, Name, Size and cost
+  columns and the Design Report on a right-click; Abandon Planet is a colony order (kind 64
+  imported and exported) carried out at once only in a turn-based game; Create Fleet makes an
+  empty "Alpha Fleet" (and on), deleted when the window closes empty, under minister control
+  as new vehicles are; Fleet Transfer lists only vehicles that may join and the fleets whose
+  location is the sector; Systems To Avoid toggles the avoid mark on every tab. OpenSE4's own
+  in these windows: the Scrap window's Facilities tab and status line, the reason a picker
+  row gives when hovered, Fleet Transfer's Disband Fleet and Rename Fleet, Systems To Avoid's
+  Release All Claims, and turn processing deleting an empty fleet a lost window left.
 - **Player Computer Control** (spec 06 §1.2.1, §7 Q84; `ai::setComputerControl`): the check
   list behind a master password, the mark with all ministers and flags; local and hotseat games
   end when no human is left. Since 2026-10-03 every empire can be switched, neutral ones too:
@@ -979,7 +996,6 @@ games). The rows above give what remains.
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| A Scrap order on a fleet member (`scrapOldest`; spec 05 question 74) | The candidate leaves its fleet before it gets the Move To and the Scrap (inferred) | The orders go onto the member's own list; its fleet's group carries them out, so the Move To takes the whole fleet and the Scrap takes the group's first member (read in the executable, not traced) | L |
 | Attack minister in Prepare for Attack (`planAttack`) | A ship outside fleets already in the staging system gets no order from the routine (inferred) | Every ship outside the staging system is sent there; the spec names nothing for those inside it | L |
 
 The turn-based golden game of `tests/test_determinism.cpp` moved to seed 39 with these

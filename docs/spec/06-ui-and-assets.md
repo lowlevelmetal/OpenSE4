@@ -109,7 +109,7 @@ sit below; **Close is always the bottom slot** [S].
 | Empire Status | Budget and empire settings. | Balance sheet (income lines, expense lines, net per turn, treasury and storage cap; see spec 02). Buttons Empire Options, Ministers, Systems To Avoid, Waypoints, Strategies, Repair Priorities, Change Email, Change Password [T]. | F11. |
 | Options (Empire Options) | Per-empire UI and behaviour switches, saved with the game. | Scrolling list grouped under headings: General Options, Next/Previous, Ship Movement, Ship Orders, System Display, Galaxy Display, Latest Items, Politics [S]. Full list with defaults in §1.9 (confirmed: binary). | Empire Status → Empire Options; Log → Goto on some entries. Not Game Menu → Options, which opens the per-computer Options window (confirmed: binary). |
 | Ministers | Automation switches. | Minister list with lamps; Select All/None; individual ministers on/off; Complete AI On/Off [T]. | Empire Status. |
-| Systems To Avoid | Mark systems for pathing. | Map (click to toggle); tabs Avoid, Presence, Ally Claimed, Enemy Claimed [T]. | Empire Status. |
+| Systems To Avoid | Mark systems for pathing. | Map (a click toggles the avoid mark, on every tab; confirmed: binary); tabs Avoid, Presence, Ally Claimed, Enemy Claimed [T]. Our client follows this since 2026-10-13 (it used to toggle a claim on Ally Claimed); its Release All Claims on that tab is OpenSE4's own. | Empire Status. |
 | Waypoints | Manage waypoints. | Waypoint list; quadrant map; ships heading there; yards auto-sending there; Set (returns to main window to pick a spot), Delete, Rename [T]. | Empire Status. |
 | Strategies | Combat AI presets. | Strategy list and property pages (Movement, Firing, Launching, Formation); Add [T]. | Empire Status; Combat Simulator. |
 | Repair Priorities | Repair order by component group. | Available groups; ordered priority list; Remove All [T]. | Empire Status. |
@@ -257,12 +257,12 @@ OpenSE4's own choices, (inferred):
 | Screen | Purpose | Reached from |
 |---|---|---|
 | Select Waypoint | Choose a waypoint as a destination. | Move To Waypoint; Set Construction Queue → Set Move To. |
-| Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. | Order F; Combat Simulator. |
+| Fleet Transfer | Create fleets, move ships in and out (left-click moves an item between the two lists); Create Fleet, Formation, Strategy, Existing Fleets, Add All, Remove All. The vehicle list holds only vehicles in no fleet that may join one, cloaked ones too; the fleet list the fleets whose location is the sector, with their members there. Create Fleet asks for a name (OK, Cancel; "Alpha Fleet" and on) and makes an empty fleet; one still empty when the window closes is deleted. Rules in spec 03 §9 (confirmed: binary). Disband Fleet and Rename Fleet are OpenSE4's own. | Order F; Combat Simulator. |
 | Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / Hundred / All (titled "Transfer Cargo"; no order buttons, spec 04 §17 for the simulator's use). The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
 | Launch \ Recover Units | Same two-list pattern for units in space. Not available in simultaneous games. | Order U; tactical combat orders. |
 | Cargo-type / unit-type picker, then location pick | Deferred Load, Drop, Launch-Remote, Recover-Remote orders. | Orders L, D, I, O. |
 | Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). | Order B. |
-| Scrap | Selected Vehicles list (own vehicles at the location in no fleet and not cloaked); Statistics: Scrap Value, Research Potential (None, Minor, Moderate, Sizable or Major, of the last selected vehicle; "None" when any selected one cannot be analyzed), Status, Cost to Unmothball, Can Self-Destruct and Can Be Fired On (Yes only when every selected vehicle can), Space Yard In Sector; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On, each lit only when every selected vehicle qualifies. Rules and turn styles in spec 03 §15 (confirmed: binary). | Order G. |
+| Scrap | Selected Vehicles list (own vehicles at the location in no fleet and not cloaked; on a colony too, the order lists the vehicles in its sector), opened with nothing selected; each row the vehicle's name, "<design> Class" and its status icons; Order By Name (the default: name with letter case ignored, then design) and Order By Class, each refilling the list and dropping the selection; Select All and Select None. Statistics: Scrap Value and Cost to Unmothball (the selection's sums, 0 unless that button is lit), Research Potential (None, Minor, Moderate, Sizable or Major, of the last selected vehicle; "None" when any selected one cannot be analyzed), Status (the last selected vehicle's word), Can Self-Destruct and Can Be Fired On (Yes only when every selected vehicle can), Space Yard In Sector, and two fixed note lines; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On, each lit only when every selected vehicle qualifies. Retrofit opens Select New Design (spec 03 §14). Rules and turn styles in spec 03 §15 (confirmed: binary). Our client follows this since 2026-10-13; its Facilities tab, shown with an own colony in the sector, is OpenSE4's own (opened with `kFacilitiesTab`, for Scrap Facilities), and so are its status line and the reason a picker row gives when hovered. | Order G. |
 | View Orders | Pending orders of the selected object. | Order V. |
 | Select Facilities | Pick facilities to scrap on a planet. | Scrap Facilities order. |
 | Select Component | Pick a usable component. | Use Component order. |
@@ -270,7 +270,7 @@ OpenSE4's own choices, (inferred):
 | Convert Resources | Choose source/target resource and amount. | Convert Resources order (Ctrl+V). |
 | Change Name | Text prompt. | Order N. |
 | Formation \ Strategy picker | For a selected fleet. | Order H. |
-| Abandon Planet confirmation | Choose whether to scrap facilities. | Ctrl+A. |
+| Abandon Planet confirmation | Two questions: abandon the planet, then (with facilities) whether to scrap them; the answer becomes the colony's Abandon order (spec 02 §5, confirmed: binary). | Ctrl+A. |
 | Pick Object | Choose one planet, warp point, own object or target when the sector clicked holds several (§2.9) (confirmed: binary). | Colonize, Warp, Drop Cargo, a pursuing Attack. |
 | Colony-type picker | Shown when a colonize order completes, if the empire option is on. | Colonize. |
 | Attack Sector prompt | Yes/No when a move would enter a sector holding enemies [S]. | Move orders. |
@@ -3729,7 +3729,9 @@ something open; all are now settled from the executable:
     (confirmed: binary)
     Our engine follows this: founding a colony claims nothing, the territory pass claims
     for exactly the empires whose Politics minister is on, and an abandoned colony that
-    keeps facilities stays with its owner, empty, with anger 25.
+    keeps facilities stays with its owner, empty, with anger 25. Abandon Planet is a colony
+    order since 2026-10-13: a simultaneous game carries it out during turn processing
+    (spec 02 §5).
 48. **Smaller choices.** The planet report's Time Remaining uses the Construction
     Queues' years ("0.3 Years", "On Hold", "Never"). "Skip ships under construction"
     skips nothing: our ships appear finished, with no Under Construction status. Save

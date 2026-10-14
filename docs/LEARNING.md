@@ -183,9 +183,8 @@ wrong one.
 **A command or a state.** A command counts once it is given while the step is active; a count
 or a state holds whenever it is true, however it came about. Where a step can be done again (a
 resumed game goes back a few steps, see "Resuming a lesson"), give it the state too, in an
-`any`, so that it does not wait for a command the game no longer needs: tutorial 5's "Add the
-second attack ship" is `any = [{ command = "JoinFleet", design_type = "Attack Ship" }, {
-fleet_ships = 2, design_type = "Attack Ship" }]`.
+`any`, so that it does not wait for a command the game no longer needs: tutorial 5's "Create a
+fleet" is `any = [{ command = "CreateFleet" }, { fleet_ships = 1, design_type = "Attack Ship" }]`.
 
 **`message_type` and `message_treaty`** qualify `command = "SendMessage"` the same way: only a
 message of that type (an id of Communicate's Message Type list) naming that treaty counts, so a
@@ -473,7 +472,8 @@ shown:
   work of the client's own that closing them loses (`learn::lostWithWindow`): the designer (the
   design being built), the Combat Simulator (the battle being set up) and Communicate (the
   message being written). Everything done in another window is a command the game keeps (a
-  fleet created, an item queued, a project chosen), so closing Fleet Transfer, a queue window
+  fleet with ships put in it, an item queued, a project chosen; a fleet left empty goes as
+  Fleet Transfer closes), so closing Fleet Transfer, a queue window
   or Research only shows the way back. When a window that holds such work, and that the active
   step uses (`learn::usesWork`: one of its outlined or allowed parts lies in it, not its Close
   button nor the simulator's Strategies, which needs no battle), has closed after being open at
@@ -997,8 +997,8 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 `recover-units`, `cloak`, `decloak`, `sweep-mines`, `use-component`,
 `stellar-manipulation`, `move-to-waypoint`, `self-destruct`, `use-facility`,
 `convert-resources`, the Scrap window's orders of a simultaneous game: `scrap`,
-`analyze`, `mothball`, `unmothball`, `retrofit`, `fire-on`, and the ministers' own
-`seek` and `join-fleet`.
+`analyze`, `mothball`, `unmothball`, `retrofit`, `fire-on`, the ministers' own
+`seek` and `join-fleet`, and a colony's `abandon-planet`.
 
 **Battle order kinds** (`battle_order`): `move`, `fire`, `toggle-weapon`, `launch`,
 `launch-fighters`, `drop-troops`, `ram`, `capture`, `set-leader`, `set-member`,

@@ -2119,11 +2119,11 @@ binary).
       (`scrapOldest`, `ai_military.cpp`; the place from `queueList` and `workingYard`,
       `ai_economy.cpp`, by `findPathToNearest`; `cmd::Scrap` with `moveFirst` sets the list
       without the window's checks, and the Scrap order makes its test when carried out, so
-      a cloaked candidate gets the orders but is not scrapped, as question 74 reads it), but
-      for one choice: a candidate in a fleet leaves it first (`cmd::LeaveFleet`), since what
-      a Scrap order at the head of a fleet member's list does to the rest of its fleet in
-      the original is question 74 (inferred). It used to pass a cloaked candidate over and
-      take the nearest yard as the Repair minister finds it.
+      a cloaked candidate gets the orders but is not scrapped). A candidate in a fleet stays
+      in it and gets the orders on its own list; what its fleet then does is question 74,
+      which OpenSE4 follows since 2026-10-13 (until then the candidate left its fleet first,
+      an inferred choice). It used to pass a cloaked candidate over and take the nearest
+      yard as the Repair minister finds it.
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -4394,8 +4394,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     first that passes the attack or the defence test, with no idle test (§7.5 `AI_Fleets`).
     What a Scrap at the head of a fleet member's list does to its fleet is question 74.
     OpenSE4 follows the answer since 2026-10-03, and the recruits' rule of the same round
-    (no idle test, §7.5 `AI_Fleets` *Size*); while question 74 is open a candidate in a
-    fleet still leaves it before it gets its orders (inferred).
+    (no idle test, §7.5 `AI_Fleets` *Size*); a candidate in a fleet stays in it since
+    2026-10-13 (question 74).
 73. **Details the net income rule leaves open** (§7.5 *Net income*). OpenSE4's choices
     since 2026-10-02 (inferred):
     - the start-of-turn step works the figure out when its ministers after Politics start;
@@ -4427,13 +4427,35 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     a Scrap (all scrapped, the member alone, or nothing), and whether a cloaked candidate is
     scrapped.
 
-    **In part** (read in the executable, 2026-10-03, not traced). The Scrap order scraps one
-    vehicle, the first of the group that carries it out, and only when that vehicle may be
-    scrapped there (an own space yard in its sector, not cloaked); the refund follows spec
-    02 §7. A fleet member's orders are carried out by its fleet's group (the members at the
-    fleet's location), so the Move To takes the whole fleet to the yard and the Scrap would
-    take the group's first member, which need not be the candidate; a cloaked candidate is
-    not scrapped. To verify with a trace: which member a fleet's group lists first.
+    **Answer** (confirmed: binary, traced 2026-10-11). When a fleet member X holds a Move To and
+    a Scrap on its own list:
+    1. The group that carries X's orders out is its fleet's members at the fleet's location,
+       in object (slot) order, without X when X stands elsewhere; for a computer player the
+       own objects in X's sector whose first order is the same join singly after them
+       (spec 03 §19 Q75).
+    2. The Move To takes the whole group to the yard. When it completes (Repeat off), the
+       first position is removed from the list of every member at the location, whatever each
+       held there.
+    3. The Scrap scraps only the group's first vehicle (the lowest slot), and only when that
+       vehicle stands at an own working space yard and is not cloaked; it is refunded (spec 02
+       §7) and logged ("Vehicle Scrapped"). Otherwise nothing is scrapped. Either way the
+       order counts as done.
+    4. When X itself was scrapped, the run counts as failed: the list of every member left at
+       the location is cleared and Repeat goes off. Otherwise X's Scrap position is removed
+       from every member's list there, and X stays in the fleet, not scrapped; with Repeat on
+       the lists advance instead.
+    5. A cloaked X is never scrapped; another member that comes first may be.
+    6. When X stands away from the fleet's location, its head Move To runs again (up to 21
+       times an action), sending the members at the location each time; X's own list never
+       advances, so its Scrap is never reached.
+
+    So a computer player that picks a fleet member scraps its fleet's first member instead
+    (one a turn while it stays over the soft cap and X stays the oldest). OpenSE4 follows this
+    since 2026-10-13: `scrapOldest` no longer takes the candidate out of its fleet, and the
+    Scrap order (movement's `scrapOrder`) scraps the first of its fleet's members at the
+    location in object order (`objectOrderKey`), with the yard and cloak tests of the order
+    (spec 03 §15), failing the run when that was the acting vehicle. The rest follows from
+    the fleet group of spec 03 §8 and §19 Q73.
 75. **The first 25 turns** (spec 07 "The computer players' second round under a debugger").
     With the vehicle table's counts taken before the clean-up (question 70), our computers
     spend 78 % of turns 1–25 in Exploration, explore 4.8 systems by turn 10 and pass through
