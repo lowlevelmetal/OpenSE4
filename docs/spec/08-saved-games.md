@@ -634,7 +634,7 @@ and 0-based in OpenSE4.
 | byte ×4 | Tabs of the Colonies, Planets, Ships\Units and Construction Queues windows | `planetsTab`, `shipsTab`, `queuesTab` (value − 1); Colonies: none |
 | byte | Set Construction Queue tab **(observed: changes when the tab is visited)** | none |
 | byte | Designs window tab | none |
-| byte | Politics window tab | none |
+| byte | Politics (Empires) window tab: 1 Treaty, 2 Trade, 3 Tariff (confirmed: binary that the window keeps it here; the numbering as the other tabs', inferred) | `empiresTab` (value − 1) |
 | byte | Log filter: 1 All, 2..8 Construction..Misc | `logFilter` = value − 1 |
 | byte ×2 | Cargo and units transfer tabs (3) | none |
 | bool ×3 | Ships\Units window: show ships, units, fleets | `shipsShown` bits 0..2 |

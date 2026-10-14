@@ -391,6 +391,31 @@ package treaty logs "Treaty Enacted", which writes a contact line in the history
 accepted proposal only its "Message"; channels, technology, systems and star charts follow the
 same answer (`diplomacy::executePackage`). No row remains.
 
+The 2026-10-11 audit of the original's dialogs found the diplomacy rules below; the engine
+follows them since 2026-10-14:
+
+- A subjugated race (the subordinate side of a Subjugation; a Protectorate does not count)
+  can neither propose nor accept a treaty, not even with its master; Break Treaty and Declare
+  War stay (`diplomacy::isSubjugated`, spec 05 §3.2). Nothing stops a treaty itself any more:
+  OpenSE4's earlier choice, which refused a subject's treaties with third empires when they
+  were set, is gone, and a treaty in an accepted package takes effect.
+- The treaty grid shows the treaties of the empires we hold Non-Aggression or better with,
+  not only our allies' (`diplomacy::treatyVisible`).
+- A player's messages follow the original's window (`diplomacy::playerMessageProblem`, spec
+  05 §3.4): proposals name Non-Intercourse to Partnership (never War or None), Break Treaty
+  needs Non-Aggression or better, a trade has items on both sides and no "Any" item on the
+  side we give, a gift or tribute holds items and a request for one names what it wants
+  (which the computer player pays from, §7.4), Surrender and its demand need Allow Surrender.
+- A human player's statistics record (`Empire::statistics`, save format 10) keeps the rows
+  the original's statistics file gets, for the Comparisons window (spec 05 §5).
+
+What remains different, on purpose:
+
+| Where | Engine now | Original | Impact |
+|---|---|---|---|
+| A human player's messages and answers (`cmd::SendMessage`, `cmd::AnswerMessage` without `minister`) | Refused in the command when the original's window would not send them (a subjugated race's treaty, an empty trade side, and so on) | Checked in the Communicate window only | None in a game on one computer; a network player cannot get round the window |
+| Grant independence (`diplomacy.cpp` `grantIndependence`) | An OpenSE4 extension: offered, and the sender's colony is abandoned for the recipient to settle | Never offered; its message does nothing (spec 05 §3.4) | L |
+
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
 Generation, empire placement, starting planets and stockpile, the setup option lists,
@@ -700,6 +725,29 @@ What remains, in network and e-mail games only:
 | Where | Client now | Original | Impact |
 |---|---|---|---|
 | Colonize candidates in a network or e-mail game | A foreign colony whose planet the player does not see (its cloak, a storm, a nebula) is not in the player's view at all (`game::redactForEmpire`, spec 05 §9.5), so it is no candidate; an uncolonized hidden planet is | Every player holds the whole game (spec 05 §9.2), so such a planet is listed like any other | L; keeping the planet in the view without its colony would show it as an uncolonized planet the panel draws, so matching needs the view to say which planets are hidden, a protocol change of its own |
+
+The 2026-10-11 audit's diplomacy windows (spec 06 §1.5, §4.2, §4.3) follow the original since
+2026-10-14: Communicate's View Trade, View Gift and View Tribute, Edit Package and Edit Trade,
+its message types and refusals, the text from the race's speech pools, the answers offered
+when it is opened from a portrait and the portrait that does nothing once a message went out;
+Select Package's lists and the dim Technology tab; the Empires window's Treaty, Trade and Tariff
+columns (roles, Trade N%, every empire's mood, the status line, Trade Amount, Tariff Received or
+Given) and its tab kept with the empire's options (`InterfaceOptions::empiresTab`, save format
+10, imported and exported); the Treaty Grid's cells, codes, role marks and legend; Borders'
+Allies and Enemies by Non-Aggression; Scores' figures, ordinal dense ranks and columns; the
+Comparisons graph from the statistics record; Victory Conditions' marks and columns; History's
+list on the left with Other Events and its lines oldest first under decade headings. What
+remains different:
+
+| Where | Client now | Original | Impact |
+|---|---|---|---|
+| Communicate's pickers (`screens/communicate.cpp`) | The type, treaty, empire, system and planet are drop-down lists in the window; a package type opens Select Package at once, which returns with Done | Choosing a type opens its pickers at once; cancelling one returns to Start Again | L (cosmetic) |
+| Communicate's demands and requests | Listed flat with the other types | Behind a "Demand / Request / Warn" entry that switches the list to its 16 types | L (cosmetic) |
+| Communicate's answers from a portrait | Sent as `cmd::AnswerMessage`, so offered only while our engine has seen no answer to the message; OpenSE4's Accept, Refuse, Counter and Reply for a message opened from the Log's Send Reply | Offered for the newest message in the date window, answered or not | L |
+| Select Package's resources | Typed in, in steps of 1,000 | x10000 and x100000 toggles | L (OpenSE4's, kept) |
+| Select Package's Comm Channels on the side asked for | The empires the recipient has met and we have not (inferred, spec 05 Q79) | Not described | L |
+| History's lists | Our empire, every empire we know and every empire the record names, each with OpenSE4's founding line and statistics lines; a galaxy map under the list | The empires that appear in the history file | L (OpenSE4's additions, kept) |
+| The Empires window's extra lines | After the original's: race, player, since, last war, anger value, "Inbox: N waiting"; trade of the maximum, what is shared; who pays whom | The original's lines only | None (OpenSE4's additions, kept) |
 
 ## Computer player (spec 05 §7)
 

@@ -104,7 +104,7 @@ sit below; **Close is always the bottom slot** [S].
 | Select Queue Type | Fill a queue from a template. | Template list; Add Type, Delete Type, Cancel. | Set Construction Queue → Fill Queue. |
 | Research | Choose research. | Points available; tech-area list (left-click adds); current projects in pages of four (Projects 1-4, 5-8, 9-12); Repeat Projects, Divide Pts Evenly, Tech Tree (only if the game allows it), Reorder Projects [T]. | F8. |
 | Tech Tree | Whole tree. | Two list views: Tech Areas (prerequisites), Tech Levels (what each level unlocks); Export (writes the view to a text file) [T]. | Research → Tech Tree. |
-| Empires | Diplomacy hub. | One portrait per known empire with a stat column under each; tabs Treaty, Trade, Tariff. Buttons History, Treaty Grid, Intelligence, Borders, Victory Conditions, Scores, Comparisons, Our Race [T]. Left-click a portrait opens Communicate; right-click opens Race Report. | F9. |
+| Empires | Diplomacy hub. | One portrait per known empire with a stat column under each; tabs Treaty, Trade, Tariff. Buttons History, Treaty Grid, Intelligence, Borders, Victory Conditions, Scores, Comparisons, Our Race [T]. Left-click a portrait opens Communicate, and does nothing once a message has gone to that empire this turn; right-click opens Race Report. The columns and the remembered tab are in §1.5 "The Empires window's columns" (confirmed: binary). | F9. |
 | Log | Turn news. | See §4.1. | F10; auto-opens at turn start. |
 | Empire Status | Budget and empire settings. | Balance sheet (income lines, expense lines, net per turn, treasury and storage cap; see spec 02). Buttons Empire Options, Ministers, Systems To Avoid, Waypoints, Strategies, Repair Priorities, Change Email, Change Password [T]. | F11. |
 | Options (Empire Options) | Per-empire UI and behaviour switches, saved with the game. | Scrolling list grouped under headings: General Options, Next/Previous, Ship Movement, Ship Orders, System Display, Galaxy Display, Latest Items, Politics [S]. Full list with defaults in §1.9 (confirmed: binary). | Empire Status → Empire Options; Log → Goto on some entries. Not Game Menu → Options, which opens the per-computer Options window (confirmed: binary). |
@@ -371,15 +371,74 @@ cultural, population-level and mood lines.
 
 | Screen | Purpose | Reached from |
 |---|---|---|
-| Communicate | Compose a political message: target race portrait, Message Type, Message Tone, free text; Report, View Trade/Tribute/Gift (enabled when last turn's offer exists), Edit Package, Edit Trade, Start Again, Send Message, Cancel. | Empires → portrait; Log → Send Reply. |
-| Select Package | Build a give/take package from tabs Systems, Planets, Resources, Technology, Ships, Units, Star Charts, Treaty, Comm Channels; Clear Package. | Communicate. |
-| History | Per-empire timeline with galaxy map highlight. | Empires. |
-| Treaty Grid | Empire × empire treaty abbreviations with legend; paged 10 empires at a time. Our client (since 2026-10-04, GitHub issue #3) keeps the large dialog's size: the row names take 124 px and the ten columns of a page share the rest, each headed by the empire's flag over the first three letters of its name (the whole name on hover); every code is drawn whole, a long name ends in "…" with a tooltip, and the rows scroll when they do not fit above the legend. v0.9.0 gave every column 52 px, which the dialog could not hold: the last four were squeezed to slivers. | Empires. |
+| Communicate | Compose a political message: target race portrait, Message Type, Message Tone, free text; Report, View Trade/Tribute/Gift, Edit Package, Edit Trade, Start Again, Send Message, Cancel. Details below (confirmed: binary). | Empires → portrait; Log → Send Reply. |
+| Select Package | Build a give/take package from tabs Systems, Planets, Resources, Technology, Ships, Units, Star Charts, Treaty, Comm Channels; Clear Package. What each tab lists: spec 05 §3.4 (confirmed: binary). | Communicate. |
+| History | A list of the empires that appear in the player's history on the left, with "Other Events" last; the chosen list's lines in the file's order, oldest first, under decade headings ("2400 - 2410") (confirmed: binary). Our client follows since 2026-10-14 and keeps its galaxy map (now under the list), which shows the selected line's system and the empire's known colonies; its lists are our empire, every empire we know and every empire our record names, each starting with the empire's founding and the changes its statistics show (OpenSE4's lines, spec 05 §3.4 "OpenSE4 choices"). | Empires. |
+| Treaty Grid | Empire × empire treaty abbreviations with legend; paged 10 empires at a time. The player first, then every known empire. The cell of row A and column B is filled only when we may see their treaty (spec 05 §3.2: A or B is us, or we hold Non-Aggression or better with A or with B) and A and B hold a real treaty; None and "no contact" cells are blank, and the legend has no entry for None. The codes are War, NI, NA, Sub, Pro, TA, TR, MA and P; a Subjugation or Protectorate cell carries the roles in (row, column) order, S the subordinate and D the dominant side: "Sub (D, S)". The "AI State" button is a debugging aid only (confirmed: binary). Our client follows since 2026-10-14. It keeps the large dialog's size (since 2026-10-04, GitHub issue #3): the row names take 124 px and the ten columns of a page share the rest, each headed by the empire's flag over the first three letters of its name (the whole name on hover); every code is drawn whole, a long name ends in "…" with a tooltip, and the rows scroll when they do not fit above the legend. v0.9.0 gave every column 52 px, which the dialog could not hold: the last four were squeezed to slivers. | Empires. |
 | Intelligence | Intel points, project list, current projects in pages of four, Repeat, Divide Evenly, Reorder. The Research window's layout: points in the title strip, projects under silver group headings with their cost, four 140 px project boxes side by side, Repeat Projects and Divide Pts Evenly in slots 5 and 6, Reorder Projects in slot 13 (observed, spec 07 session 5). | Empires. |
-| Borders | Map of claimed systems with empire filter (Select All, Allies, Enemies, Us). | Empires. |
-| Victory Conditions | Grid of conditions × empires, paged by 10. | Empires. |
-| Scores | Flags with score, resources, research, intel, tech levels, systems, planets, population, units, ships, bases, rank. Our client (since 2026-10-04, GitHub issue #3) follows that description in the large dialog: a column per empire, ten to a page (Empires 1-10, ...), headed by its flag over the first letters of its name and ordered by rank, under them a row per figure named in full, rank last; a figure too wide for its column is given in thousands, millions or billions with the exact value on hover. v0.9.0 gave each empire a row of eleven figures, which the dialog's width cut to "Sc…" and "1196" (inferred: the original's places are not described). | Empires. |
-| Comparisons | Line graph over time of one chosen metric (same metrics as Scores) for selected empires. | Empires. |
+| Borders | Map of claimed systems with empire filter (Select All, Allies, Enemies, Us). Allies checks us and every empire we hold Non-Aggression or better with; Enemies every empire below Non-Aggression (confirmed: binary; ours since 2026-10-14, where Allies took Military Alliance and up). | Empires. |
+| Victory Conditions | Grid of conditions × empires, paged by 10. An "X" where an empire meets a condition: its score has reached the value, it has the percentage of every other living empire's score, its capped tech levels reach the share; the years, the peace and the "no victory before" qualifier are game-wide, so once met they mark every column shown. A condition that is off shows its plain title only. The columns read the Score Display option one step off: "own empire only" shows the empires we hold Non-Aggression or better with, "Non-Aggression partners" shows every empire (confirmed: binary, a quirk ours copies); we always see our own column, never a destroyed empire's, and every one once the game is over. Our client follows since 2026-10-14 and adds the Game column, each figure's progress on hover and the paging. | Empires. |
+| Scores | Flags with score, resources, research, intel, tech levels, systems, planets, population, units, ships, bases, rank. A column for each empire whose score we may see (spec 05 §5), in player order. Score, Resources, Research and Intelligence are given in thousands with one decimal and "K" ("12.3K"), in millions with "M" from 1000K; the population in billions with "B", trillions with "T". The rank is an ordinal ("1st", "2nd", "3rd", otherwise the number and "th", so "21th"); ranks are dense (equal scores share a rank and the next score gets the next number) and every empire is ranked, destroyed ones included (confirmed: binary). Our client follows since 2026-10-14 in the large dialog of v0.10 (since 2026-10-04, GitHub issue #3): ten columns to a page (Empires 1-10, ...), each headed by its flag over the first letters of its name, a row per figure named in full, rank last; the other figures are given whole or shortened to fit, with the exact value on hover (inferred: the original's places are not described). | Empires. |
+| Comparisons | Line graph over time of one chosen metric (same metrics as Scores) for selected empires. It plots only the rows of the player's statistics file, so an empire has a gap for the turns it was not visible, and lists every empire with a row, destroyed ones and those no longer visible included (spec 05 §5, confirmed: binary). Ours since 2026-10-14 (`Empire::statistics`); it plotted the whole history of the empires visible now, and the turn in progress. | Empires. |
+
+**Communicate in detail** (confirmed: binary):
+
+- Choosing a message type opens its pickers at once (the treaty, the empire, the system, the
+  planet, or Select Package for a type with a package); cancelling one returns to Start
+  Again. Edit Package is lit for exactly Give Gift, Offer Tribute, Want a gift and Want a
+  tribute, and opens Select Package on the side the type fills: the side we give for a gift
+  or tribute, the side we ask for (with "Any" items) for a request. Edit Trade is lit for
+  Propose and Counter Trade. View Trade, View Gift and View Tribute are separate buttons,
+  each lit when the newest message from the empire (as below) is of its kind.
+- The text box is filled, when a type is chosen, with a random line of the player's own
+  race's `_AI_Speech` pool "Send <type>" (by the computer player's name of the type, spec 05
+  §7.5), its tokens filled in; an Accept or Refuse Demand takes "Response Friend|Enemy YES|NO
+  <demand>", Friend when the player holds Non-Aggression or better with the recipient.
+- Opened from a portrait, the window looks at the newest political message from that empire
+  that is dated after the date − 2 (in a simultaneous game, after the date − 1 when the
+  sender's player number is lower than ours), and adds the types that answer it: Accept,
+  Refuse and Counter Treaty after a Propose or Counter Treaty; Accept, Refuse and Counter
+  Trade after a trade; Accept and Refuse Gift after a gift; Accept and Refuse Tribute after a
+  tribute; Accept and Refuse Demand after any demand or request. A Counter Trade starts from
+  the received packages with the sides swapped (spec 05 §3.4).
+- A click on a portrait does nothing once a message has gone to that empire this turn.
+
+Our client follows since 2026-10-14: the separate View and Edit buttons, a package type
+opening Select Package at once, the text from the speech pool (drawn with a random source of
+the window's own, never the game's), the answers from the portrait (sent as
+`cmd::AnswerMessage`, so only while our engine has not yet seen an answer to the message) and
+the inert portrait. Our client differs: the type, treaty, empire, system and planet are drop-down
+lists in the window rather than pickers opened at once, Select Package returns with Done, a
+received message opened from the Log's Send Reply shows OpenSE4's Accept, Refuse, Counter and
+Reply buttons, and the demands and requests are listed flat rather than behind a "Demand /
+Request / Warn" entry that switches the list to its 16 types (cosmetic). The Declare War and
+Surrender confirmations are OpenSE4's.
+
+**The Empires window's columns** (confirmed: binary). The tab (Treaty, Trade or Tariff) is kept
+with the empire's options and saved with the game (spec 08 §3.6.7); ours since 2026-10-14
+(`InterfaceOptions::empiresTab`, save format 10), stored when the window closes. Under each
+portrait, by tab:
+
+- Treaty: the treaty in its colour, a Subjugation or Protectorate followed by the roles in
+  brackets ("We Dominate Them", "They Dominate Us", "We Protect Them", "They Protect Us");
+  "Trade N%", where N is the trade percentage (spec 05 §3.3: the counter capped at `Maximum
+  Trade Percentage`) from Trade Alliance up and 0 below; the "Mood" of every empire, human
+  players included, in the words of its anger toward us (spec 05 §7.3: below 10 Brotherly,
+  20 Amiable, 30 Receptive, 40 Warm, 60 Moderate, 70 Cool, 80 Displeased, 90 Angry, else
+  Murderous); and one status line, the first that applies: "Message Sent" when we wrote to
+  it this turn; "Offered Trade", "Offered Gift" or "Offered Tribute" when its newest message
+  (as Communicate's) is one; "Proposed Treaty" and the treaty when it proposed one other than
+  the current treaty.
+- Trade: "Trade Amount", what trade with that empire brings us this turn: minerals, organics,
+  radioactives, research and intelligence, each with its icon.
+- Tariff: "Tariff Received" with the three amounts when any of them is above 0, otherwise
+  "Tariff Given" with the three amounts.
+
+Our client follows since 2026-10-14, from the economy report's breakdown by empire
+(`EconomyReport::partners`, the projection for the coming turn as the rest of that report), and
+keeps OpenSE4's further lines after the original's: race, player, since, last war, the anger
+value after a computer player's mood, "Inbox: N waiting"; the trade percentage of the maximum,
+what is shared, shared sight and resupply; and who pays whom.
 
 ### 1.6 Combat screens
 
@@ -2361,20 +2420,31 @@ carry a package [T]. Types:
   refuse, counter-propose.
 - **Gift** and **Tribute**: offer, accept (items transfer on acceptance), refuse. A
   tribute is a gift offered to a stronger power.
-- **Surrender**: hands the whole empire to the recipient; confirmed by a prompt.
-- **Grant independence**: pick a colony; the handover is not immediate.
+- **Surrender**: hands the whole empire to the recipient; confirmed by a prompt. Offered
+  only with Allow Surrender on (confirmed: binary).
+- **Grant independence**: never offered by the original (confirmed: binary; the manual
+  describes it). An OpenSE4 extension: pick a colony, which the sender abandons for the
+  recipient to settle (spec 05 §3.4).
 - **Demand / Request / Warn** group (non-binding, 16 subtypes plus accept/refuse
   demand): ask for a gift, tribute or surrender; ask the recipient to pull ships or
   colonies out of a system or leave a planet; to stop hostilities against, break a
   treaty with, declare war on, make peace with, or fight a third empire (optionally in a
   given system or against a given planet); to stop espionage, sabotage, or attacks in a
-  system. Each prompts for its parameter (system, planet or empire).
+  system. Each prompts for its parameter (system, planet or empire); a request for a gift
+  or tribute opens Select Package on the side asked for. Offered whatever the treaty, war
+  included; Demand your surrender only with Allow Surrender on (confirmed: binary).
+- Which types the list offers, and what it refuses to send, is spec 05 §3.4 "What a player
+  may send"; the window's buttons and its answers from a portrait are §1.5 "Communicate in
+  detail".
 
 ### 4.3 Other message surfaces
 
-- **History window**: per-empire list of dated events with map highlight (in
-  multiplayer these come from a per-player `_events.txt`) [T].
-- **Comparisons window**: graphs from a per-player `_stats.txt` [T].
+- **History window**: per-empire list of dated events (in multiplayer these come from a
+  per-player `_events.txt`) [T]; the lines in the file's order, oldest first, under decade
+  headings, the empires that appear in it in a list on the left with "Other Events" last
+  (§1.5, confirmed: binary).
+- **Comparisons window**: graphs from a per-player `_stats.txt` [T], its rows only (spec 05
+  §5, confirmed: binary).
 - **Confirmation prompts**, switchable in Empire Options (end turn, scrapping, stellar
   manipulation, deleting research/intel projects, removing the first item of a
   construction queue) (confirmed: binary; which actions ask: §7 Q28, Q46); always-on
@@ -4901,8 +4971,10 @@ choices (inferred):
     your empire)" in small #7D9FFF, right-aligned to x 569 at y 390; "Legend" at (94,394)
     and a yellow dot with "Contested" under it. A click on a system claims it for the
     player's empire, or gives the claim up. Buttons: Select All (slot 1: checks every
-    empire), Allies (2: the player and its allies), Enemies (3), Us (4, lit at opening: the
-    player only), slots 5–13 empty, Close (14).
+    empire), Allies (2: the player and every empire it holds Non-Aggression or better with),
+    Enemies (3: every empire below Non-Aggression), Us (4, lit at opening: the player only),
+    slots 5–13 empty, Close (14). (Allies and Enemies by treaty: confirmed: binary, 2026-10-11
+    audit; ours took Military Alliance and up as allies until 2026-10-14.)
     Our client follows the answer since 2026-10-03 (the window `borders`). Our choices: the
     list's rows are 20 px with the small flag; any system can be claimed by a click, explored
     or not; the filter buttons act as tabs, the last one pressed lit.
