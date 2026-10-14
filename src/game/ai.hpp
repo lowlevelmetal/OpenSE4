@@ -311,8 +311,9 @@ bool setComputerControl(GameState& s, EmpireId e, bool computer);
 // The TCP/IP host's toggle (spec 05 §9.4): only the mark changes; ministers
 // and individual flags are untouched. Same conditions as above.
 bool setComputerMark(GameState& s, EmpireId e, bool computer);
-// Whether any living empire is human-controlled. Local and hotseat games
-// end without one (spec 06 §1.2.1 "No human left").
+// Whether any living empire is human-controlled, or a human-controlled
+// empire still plays its last turn (game::playsLastTurn). Local and hotseat
+// games end without one (spec 06 §1.2.1 "No human left").
 bool anyHumanLeft(const GameState& s);
 
 // Difficulty (spec 05 §7.1): the empire's level, kDifficultyLow..High.

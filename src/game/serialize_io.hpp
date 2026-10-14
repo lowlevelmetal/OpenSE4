@@ -568,7 +568,10 @@ void io(Ar& ar, EntryQuestion& q) {
     fields(ar, q.vehicle, q.fleet, q.where);
     if (formatVersion(ar) >= 8) fields(ar, q.tagged);   // format 7 had no tagged groups' questions
 }
-template <class Ar> void io(Ar& ar, PlayerTurn& t) { fields(ar, t.empire, t.started, t.moves, t.launched, t.questions); }
+template <class Ar> void io(Ar& ar, PlayerTurn& t) {
+    fields(ar, t.empire, t.started, t.moves, t.launched, t.questions);
+    if (formatVersion(ar) >= 10) fields(ar, t.loseEnding);   // format 9 had no Lose mark
+}
 
 // ---- The game -----------------------------------------------------------------------------------------
 
@@ -587,6 +590,7 @@ void io(Ar& ar, GameState& s) {
            s.startingPoints, s.leftFacilities, s.arrivals);
     if (formatVersion(ar) >= 9) fields(ar, s.mods);   // format 8 had no mods
     if (formatVersion(ar) >= 9) fields(ar, s.modData, s.modRules, s.scenario, s.endReason);   // nor mods' rules
+    if (formatVersion(ar) >= 10) fields(ar, s.lastTurn);   // format 9 had no last turn
     // The happiness events waiting for an empire's next update are not saved:
     // a loaded game starts with none (spec 02 §4, confirmed: binary). Nor is
     // the journal of the players' answers (docs/sdk/ai-protocol.md §8).
@@ -691,6 +695,7 @@ template <class Ar>
 void io(Ar& ar, SaveInfo& i) {
     fields(ar, i.gameName, i.dataSet, i.turn, i.empires, i.gameId, i.players, i.masterPasswordVerifier);
     if (formatVersion(ar) >= 9) fields(ar, i.mods);   // format 8 had no mods
+    if (formatVersion(ar) >= 10) fields(ar, i.autosave);   // nor the autosave mark
     // The format the file was written in: filled in by the reader.
     unsaved(ar, i.formatVersion);
 }

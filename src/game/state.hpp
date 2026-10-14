@@ -1131,6 +1131,11 @@ struct PlayerTurn {
     // The player's Attack Sector questions still open, oldest first. Kept in
     // the game so that a saved or network game asks them again (inferred).
     std::vector<EntryQuestion> questions;
+    // Save format 10: the Lose ending is due at this turn's start. The human
+    // whose turn it is owned no colony and no vehicle when the turn came up,
+    // before its start of turn (spec 06 §7 Q83, Q99, confirmed: binary); the
+    // client shows the ending (score::ownsNothing).
+    bool loseEnding = false;
 };
 
 // Facilities left on a planet for a later owner. Nothing makes these any
@@ -1222,7 +1227,16 @@ struct GameState {
     uint64_t arrivals = 0;          // the last Vehicle::arrival stamp given
     uint32_t nextMessageId = 0;
     uint32_t peacefulTurns = 0;
+    // No further turn is played: a simultaneous game whose victory check
+    // was met, a turn-based game whose last turn every player has played, or
+    // a mod's victory condition or scenario.
     bool gameOver = false;
+    // Turn-based games (save format 10): the victory check was met as the last
+    // game turn ended (the original's "completed" mark, spec 05 §6, confirmed:
+    // binary). The game turn in progress is the last: every player plays it,
+    // the humans after the Victory ending, and when it ends the game is over
+    // (gameOver), before anything of the next game turn runs.
+    bool lastTurn = false;
     EmpireId winner;
     Rng rng;
     PlayerTurn playerTurn;                        // turn-based games only

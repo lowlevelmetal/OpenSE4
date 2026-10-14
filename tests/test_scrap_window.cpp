@@ -419,7 +419,7 @@ TEST_CASE("scrap window: a simultaneous order is tested again when it acts; a fa
     CHECK(s.vehicle(scrapped)->orders.empty());
     int cancelled = 0;
     for (const LogEntry& l : s.empire(kMe).log)
-        if (l.title.find("order cancelled") != std::string::npos) {
+        if (l.title.starts_with("Unable to")) {
             ++cancelled;
             CHECK(l.title.find("Scrap") != std::string::npos);
         }

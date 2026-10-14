@@ -310,7 +310,7 @@ private:
         v.peacefulTurns = clampInt(s_.peacefulTurns);
         v.delay = w.delay;
         v.delayTurns = clampInt(int64_t{w.delayYears} * 10);
-        v.completed = s_.gameOver;
+        v.completed = s_.gameOver || s_.lastTurn;   // a turn-based game's last turn too (spec 05 §6)
     }
 
     EmpireId currentPlayer() const { return fileCurrentPlayer(s_); }

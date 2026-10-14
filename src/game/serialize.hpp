@@ -90,6 +90,10 @@ class Rules;
 // boxes (InterfaceOptions::designsHideObsolete, designsStatsView, spec 08
 // §3.6.7). Format 7 still reads, without them.
 // Version 10: the REA parity audit's state (listed as each change lands).
+// A turn-based game's last turn after its victory check was met
+// (GameState::lastTurn, spec 05 §6); the Lose ending due at the start of a
+// human's turn (PlayerTurn::loseEnding, spec 06 §7 Q99); an autosave's mark
+// (SaveInfo::autosave, spec 06 §6.1).
 // Format 9 still reads, without it.
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
@@ -136,6 +140,9 @@ struct SaveInfo {
     std::vector<std::string> players;  // per empire: the player's login name in network games (may be empty)
     std::string masterPasswordVerifier;  // net::passwordVerifier() of the master password; empty = none
     std::vector<ruleset::ModRecord> mods;  // the game's mods (format 9), as GameState::mods
+    // Format 10: an autosave, written at the start of a human's turn: loading
+    // it opens the Next Player window (spec 06 §1.2.1, §6.1, confirmed: binary).
+    bool autosave = false;
     uint32_t formatVersion = kSaveVersion;  // the format the file was written in (not saved: readers fill it in)
 };
 

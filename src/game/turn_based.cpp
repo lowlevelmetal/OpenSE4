@@ -281,11 +281,12 @@ void markPoliticalStep(GameState& s, EmpireId e) {
 // ---- A player's turn ------------------------------------------------------------------------------
 
 // The start of `e`'s turn (spec 05 §8 "Turn-based game", confirmed: binary):
-// a human's destruction check; the start-of-turn step (AI state, political
-// step, the Politics minister and then the other ministers give their orders,
-// messages taking effect when sent); the vehicles get their movement back and
-// every group carries out its orders, the ministers' new ones included; a
-// computer player's destruction check. False when the empire is destroyed.
+// the start-of-turn step (AI state, political step, the Politics minister and
+// then the other ministers give their orders, messages taking effect when
+// sent); the vehicles get their movement back and every group carries out its
+// orders, the ministers' new ones included; then the destruction check. False
+// when a computer player is destroyed; a human destroyed then plays the turn,
+// its last, already marked dead (spec 06 §7 Q99, confirmed: binary).
 bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     TurnContext& ctx = lc.ctx;
     const Rules& r = ctx.rules;
@@ -294,14 +295,11 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     s.playerTurn.started = true;
     s.playerTurn.questions.clear();
     const bool human = s.empire(e).kind == PlayerKind::Human;
-    // 1. A human's turn starts with the destruction check (spec 05 §6). One
-    // found defeated now is not destroyed: this is its last turn, the one the
-    // Lose ending announces, and it is marked dead when the turn ends (spec 06
-    // §7 Q83, confirmed: binary).
-    if (human) {
-        score::checkDestruction(ctx, e, false);
-        if (!living(s, e)) return false;
-    }
+    // 1. Before it a human player signs in, the autosave is written and the
+    // endings are shown: the client's part (spec 06 §2.7). The Lose ending's
+    // test is made now, on the game as the turn comes up: the empire owns no
+    // colony and no vehicle (spec 06 §7 Q83, Q99, confirmed: binary).
+    s.playerTurn.loseEnding = human && control == Control::Player && score::ownsNothing(s, e);
     // 2. The start-of-turn step. First thing it works out the figures its
     // ministers and the economy step use (spec 05 §7.5 *Net income*,
     // confirmed: binary). The Politics minister rewrites the claims first
@@ -350,12 +348,12 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     all.empire = e;
     all.ask = control == Control::Player;
     carryOut(lc, all);
-    // 4. A computer player's destruction check comes now; its turn then ends.
-    if (!human) {
-        score::checkDestruction(ctx, e);
-        if (!living(s, e)) return false;
-    }
-    return true;
+    // 4. The destruction check comes now (spec 05 §6, spec 06 §7 Q99,
+    // confirmed: binary). A computer player's turn then ends. A human found
+    // defeated is destroyed at once (every empire in contact is told, its
+    // treaties end) and still plays this turn, its last, marked dead.
+    score::checkDestruction(ctx, e);
+    return human || living(s, e);
 }
 
 // The once-per-game-turn steps after the last player (spec 05 §8 steps 7-10):
@@ -363,6 +361,14 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
 void endGameTurn(TurnContext& ctx) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
+    // Every player has played the last turn the victory check announced: the
+    // game is over now, before anything of the next game turn (spec 05 §6,
+    // confirmed: binary).
+    if (s.lastTurn) {
+        s.gameOver = true;
+        s.playerTurn = PlayerTurn{};
+        return;
+    }
     // The date advances; GameState::turn follows at the end, as in processTurn.
     const uint32_t date = s.turn + 1;
     if (date % 10 == 0) movement::purgeObsoleteDesigns(ctx);
@@ -370,7 +376,7 @@ void endGameTurn(TurnContext& ctx) {
     score::checkVictory(ctx, date);
     // The mods' check_victory hooks, victory conditions and scenario
     // objectives; their events; then the mods' events after the classic ones.
-    if (!s.gameOver) runHook(ctx, Hook::CheckVictory);
+    if (!s.gameOver && !s.lastTurn) runHook(ctx, Hook::CheckVictory);
     deliverHooks(ctx);
     movement::runStellarHazards(ctx);
     {
@@ -425,12 +431,14 @@ void finishPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
         runHook(ctx, Hook::OrdersApplied, a);
         deliverHooks(ctx);
     }
+    // A human that was destroyed at the start of this turn, its last, has no
+    // end-of-turn processing: empireEndOfTurn skips a dead empire, and it owns
+    // nothing any more (inferred).
     empireEndOfTurn(ctx, e, ministersPlan(s, e, control));
     s.removeDeadVehicles();
-    // A human defeated at the end of its turn has played its last turn (spec
-    // 06 §7 Q83). One that lost everything during its own turn ends with it
-    // too, without a turn start of its own in between (inferred, spec 06 §7 Q99).
-    if (e.index() < s.empires.size() && s.empire(e).kind == PlayerKind::Human) score::checkDestruction(ctx, e);
+    // No destruction check for a human at the end of its own turn: one that
+    // lost everything during it is still alive while the others play, and its
+    // check comes at the start of its next turn (spec 06 §7 Q99, confirmed: binary).
     sight::updateKnowledge(ctx.rules, s);
     passTurn(ctx, e);
 }
@@ -500,13 +508,15 @@ void resume(LiveContext& lc, const LiveOptions& options) {
             if (!ensureRound(lc.ctx)) return;
         }
         const EmpireId e = s.playerTurn.empire;
-        if (!living(s, e)) {
+        if (!living(s, e) && !playsLastTurn(s, e)) {
             passTurn(lc.ctx, e);
             turnEnded = turnEnded || !s.playerTurn.empire.valid();
             continue;
         }
         const Control control = liveControl(s, e, options);
         if (control == Control::Player) {
+            // The game as it is before a human player's turn starts (the client's autosave).
+            if (!s.playerTurn.started && options.beforeHumanTurn) options.beforeHumanTurn(s);
             if (!s.playerTurn.started && !startPlayerTurn(lc, e, control)) {
                 passTurn(lc.ctx, e);
                 turnEnded = turnEnded || !s.playerTurn.empire.valid();
@@ -559,6 +569,12 @@ void dropSettledQuestions(GameState& s, const Command& c, bool applied) {
 }
 
 bool LiveOptions::computerPlaysFor(EmpireId e) const { return std::find(computerPlays.begin(), computerPlays.end(), e) != computerPlays.end(); }
+
+bool playsLastTurn(const GameState& s, EmpireId e) {
+    if (!turnBased(s) || s.gameOver || !e.valid() || e.index() >= s.empires.size()) return false;
+    const Empire& emp = s.empire(e);
+    return !emp.alive && emp.kind == PlayerKind::Human && s.playerTurn.empire == e && s.playerTurn.started;
+}
 bool tacticalOffered(const GameState& s) { return turnBased(s) && !s.options.noTacticalCombat; }
 
 EmpireId activePlayer(const GameState& s) {
@@ -633,7 +649,7 @@ TurnResult playTurnBasedTurn(const Rules& r, GameState& s, std::span<const Empir
     if (!ensureRound(lc.ctx)) return lc.result();
     while (!s.gameOver && s.playerTurn.empire.valid()) {
         const EmpireId e = s.playerTurn.empire;
-        if (!living(s, e)) {
+        if (!living(s, e) && !playsLastTurn(s, e)) {
             passTurn(lc.ctx, e);
             continue;
         }

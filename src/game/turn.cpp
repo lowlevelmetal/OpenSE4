@@ -250,6 +250,22 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     ctx.battles = battles;
     ctx.movementDay = options.movementDay;
     ctx.movementStep = options.movementStep;
+    // The Progress window's steps (TurnOptions::progress): four per empire
+    // (its orders, its messages, its start of turn, its end-of-turn
+    // processing) and the 30 movement days (inferred split).
+    const int totalSteps = static_cast<int>(s.empires.size()) * 4 + 30;
+    int stepsDone = 0;
+    auto stepDone = [&](int n = 1) {
+        stepsDone = std::min(totalSteps, stepsDone + n);
+        if (options.progress) options.progress(stepsDone, totalSteps);
+    };
+    if (options.progress) {
+        options.progress(0, totalSteps);
+        ctx.movementDay = [&, observe = options.movementDay](int day, const GameState& st) {
+            if (observe) observe(day, st);
+            stepDone();
+        };
+    }
     // Mood events raised after an empire's happiness update last turn (spec 02 §4).
     ctx.moodEvents = std::move(s.pendingMood);
     s.pendingMood.clear();
@@ -278,6 +294,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     std::vector<Control> control(s.empires.size(), Control::Computer);
     std::vector<std::pair<EmpireId, ai::MinisterSettings>> standIns;  // their own minister settings, restored at the end
     for (size_t i = 0; i < s.empires.size(); ++i) {
+        stepDone();
         Empire& e = s.empires[i];
         if (!e.alive || e.kind != PlayerKind::Human) continue;
         if (byEmpire[i]) {
@@ -306,6 +323,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
 
     // ---- 2. Each player's messages, player by player.
     diplomacy::deliverMessages(ctx);
+    stepDone(static_cast<int>(s.empires.size()));
 
     // ---- 3. The date advances. GameState::turn stays the number the orders
     // were given for until the end of the turn (log entries and records carry
@@ -324,6 +342,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     // use the claims of the previous turn (spec 05 §7.2).
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
+        stepDone();
         if (!s.empire(id).alive) continue;
         // An empire a script or external player plays (players.hpp): its
         // player gets the `politics` and `orders` calls in the ministers'
@@ -408,6 +427,7 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     const size_t processed = s.empires.size();
     for (size_t i = 0; i < processed; ++i) {
         const EmpireId id{i};
+        stepDone();
         if (!s.empire(id).alive) continue;
         empireEndOfTurn(ctx, id, ministersPlan(s, id, controlOf(i)));
         score::checkDestruction(ctx, id, i < defeatedAtStart.size() && defeatedAtStart[i]);

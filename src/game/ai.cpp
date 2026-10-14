@@ -1291,7 +1291,11 @@ bool setComputerControl(GameState& s, EmpireId e, bool computer) {
 }
 
 bool anyHumanLeft(const GameState& s) {
-    return std::any_of(s.empires.begin(), s.empires.end(), [](const Empire& e) { return e.alive && e.kind == PlayerKind::Human; });
+    // A human destroyed at the start of its turn plays that turn, its last,
+    // marked dead (spec 06 §7 Q99): it still counts until the turn ends.
+    const bool lastTurn = !s.options.simultaneous && s.playerTurn.started && s.playerTurn.empire.valid() &&
+                          s.playerTurn.empire.index() < s.empires.size() && s.empire(s.playerTurn.empire).kind == PlayerKind::Human;
+    return lastTurn || std::any_of(s.empires.begin(), s.empires.end(), [](const Empire& e) { return e.alive && e.kind == PlayerKind::Human; });
 }
 
 int difficultyOf(const GameState& s, EmpireId e) {

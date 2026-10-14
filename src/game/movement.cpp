@@ -733,11 +733,98 @@ private:
         });
     }
 
+    // Where the player reads about something its own order ran into (spec
+    // 03 §8 "Where the player reads why"): in a turn-based game, while the
+    // human whose turn it is carries its orders out (an order given, or the
+    // orders carried over at its turn's start), a message box titled `title`
+    // comes at once and nothing is logged (confirmed: binary for a move and a
+    // colonization; inferred for the rest); otherwise `logIt` writes the
+    // owner's log entry. Not saved: the box is the client's (TurnResult).
+    template <class LogIt>
+    void tell(EmpireId owner, std::string title, std::string text, LogIt&& logIt) {
+        if (live_ && live_->ask && owner == live_->empire) {
+            ctx_.messages.push_back(PlayerMessage{owner, std::move(title), std::move(text)});
+            return;
+        }
+        logIt();
+    }
+
+    // A failed order clears the whole list (§8). The player reads why as
+    // `tell` says: the box is titled after the order, the log entry is
+    // "Unable to <order>" in the words of the minister in charge, with the
+    // acting object's picture (spec 06 §4.1).
     Exec fail(const Group& g, const Order& o, std::string_view why) {
-        ctx_.log(g.owner, LogCategory::Misc, std::format("{}: {} order cancelled", name(g), displayName(o.kind)), std::string(why), where(g),
-                 picture(g));
+        tell(g.owner, failureBoxTitle(o), std::string(why), [&] { logFailure(g, o, why); });
         return Exec::Fail;
     }
+
+    // The log entry of a failed order (`fail`), also for a failure the
+    // player never gets a box for (combat on entering a sector).
+    void logFailure(const Group& g, const Order& o, std::string_view why) {
+        const Location here = where(g);
+        const std::string system = here.system.valid() && here.system.index() < s_.galaxy.systems.size() ? s_.galaxy.system(here.system).name : "?";
+        ctx_.log(g.owner, LogCategory::Misc, std::format("Unable to {}", failureVerb(o)),
+                 std::format("The {} reports that {} could not carry out its {} order in the {} system. {}", failureMinister(g), name(g),
+                             displayName(o.kind), system, why),
+                 here, picture(g));
+    }
+
+    // The message box's title: the original's where the findings name them
+    // ("Move", confirmed: binary; "Cannot Mothball", "Cannot <action>" for a
+    // stellar manipulation, "Drop Troops", inferred), else the order's name.
+    std::string failureBoxTitle(const Order& o) const {
+        switch (o.kind) {
+            case OrderKind::Mothball:
+            case OrderKind::Unmothball: return "Cannot Mothball";
+            case OrderKind::StellarManipulation: {
+                const auto action = static_cast<StellarAction>(std::clamp(o.amount, 0, static_cast<int>(StellarAction::Count)));
+                return std::format("Cannot {}", stellarActionName(action));
+            }
+            default: return failureVerb(o);
+        }
+    }
+
+    static const char* stellarActionName(StellarAction a) {
+        switch (a) {
+            case StellarAction::CreatePlanet: return "Create Planet";
+            case StellarAction::DestroyPlanet: return "Destroy Planet";
+            case StellarAction::CreateStar: return "Create Star";
+            case StellarAction::DestroyStar: return "Destroy Star";
+            case StellarAction::OpenWarpPoint: return "Open Warp Point";
+            case StellarAction::CloseWarpPoint: return "Close Warp Point";
+            case StellarAction::CreateStorm: return "Create Storm";
+            case StellarAction::DestroyStorm: return "Destroy Storm";
+            case StellarAction::CreateNebulae: return "Create Nebulae";
+            case StellarAction::DestroyNebulae: return "Destroy Nebulae";
+            case StellarAction::CreateBlackHole: return "Create Black Hole";
+            case StellarAction::DestroyBlackHole: return "Destroy Black Hole";
+            case StellarAction::CreateConstructedPlanet: return "Construct Planet";
+            case StellarAction::Count: break;
+        }
+        return "Manipulate";
+    }
+
+    // What the order does, as the box's title and "Unable to <verb>": a
+    // move is "Move" (confirmed: binary), troops dropped "Drop Troops", the
+    // others the order's name (inferred).
+    std::string failureVerb(const Order& o) const {
+        switch (o.kind) {
+            case OrderKind::MoveTo:
+            case OrderKind::MoveToWaypoint:
+            case OrderKind::Warp:
+            case OrderKind::Seek:
+            case OrderKind::JoinFleet: return "Move";
+            case OrderKind::DropCargo:
+                if (o.design.valid() && o.design.index() < s_.designs.size() && r_.hull(s_.design(o.design).hull).type == VehicleType::Troop)
+                    return "Drop Troops";
+                return std::string(displayName(o.kind));
+            default: return std::string(displayName(o.kind));
+        }
+    }
+
+    // The minister in charge (inferred): the Fleet Minister for a vehicle's
+    // order, the Planetary Minister for a colony's.
+    static const char* failureMinister(const Group& g) { return g.planet.valid() ? "Planetary Minister" : "Fleet Minister"; }
 
     // The acting object's own picture for the entries about it (spec 06
     // §4.1): a planet's, a fleet member's fleet portrait, a unit group's
@@ -956,12 +1043,16 @@ private:
         return total;
     }
 
-    // Damages every member; the group stops and its order fails.
+    // Damages every member; the group stops and its order fails. The player
+    // reads of it as `tell` says: one box titled "Damage Taken", or an entry
+    // per member hurt (inferred).
     void hazardHit(Group& g, int64_t damage, std::string_view cause) {
         for (VehicleId id : std::vector<VehicleId>(g.members)) hurt(ctx_, id, static_cast<int>(std::min<int64_t>(damage, INT_MAX)), cause);
-        for (VehicleId id : g.members)
-            if (const Vehicle* v = s_.vehicle(id); v && alive(*v))
-                ctx_.log(g.owner, LogCategory::Events, std::format("{} damaged", v->name), std::string(cause), v->location, "ShipDamaged");
+        tell(g.owner, "Damage Taken", std::format("{} took damage. {}", name(g), cause), [&] {
+            for (VehicleId id : g.members)
+                if (const Vehicle* v = s_.vehicle(id); v && alive(*v))
+                    ctx_.log(g.owner, LogCategory::Events, std::format("{} damaged", v->name), std::string(cause), v->location, "ShipDamaged");
+        });
         g.stopped = true;
     }
 
@@ -1539,6 +1630,16 @@ private:
             }
         }
         if (o.kind == OrderKind::DropCargo && moved <= 0) return fail(g, o, "Nothing could be dropped here.");
+        // Nothing launched or recovered: the order is still done, with a
+        // warning told as `tell` says, a box titled "Launch Warning" or
+        // "Recover Warning", or an entry with the picture AtMaxUnits (spec 06
+        // §4.1; when it comes is inferred).
+        if (moved <= 0 && (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits)) {
+            const bool launch = o.kind == OrderKind::LaunchUnits;
+            const std::string title = launch ? "Launch Warning" : "Recover Warning";
+            const std::string text = std::format("{} could not {} any units here.", name(g), launch ? "launch" : "recover");
+            tell(g.owner, title, text, [&] { ctx_.log(g.owner, LogCategory::Misc, title, text, where(g), "AtMaxUnits"); });
+        }
         if (moved > 0 && (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits)) {
             const bool byKind = o.kind == OrderKind::RecoverUnits && !o.vehicle.valid();
             const std::string what = byKind ? std::string("units") : s_.design(o.design).name;
@@ -1876,8 +1977,11 @@ private:
                 if (!v || v->count < mark->second.first || v->damage != mark->second.second) struck = true;
             }
             if (!struck) continue;
-            ctx_.log(e.owner, LogCategory::Combat, std::format("{} stopped by a minefield", e.name),
-                     e.pursuit ? "It keeps its orders." : "Its orders were cancelled.", where, "MineExplosion");
+            // Told as `tell` says: a box titled "Minefield" (inferred), or the entry.
+            const char* after = e.pursuit ? "It keeps its orders." : "Its orders were cancelled.";
+            tell(e.owner, "Minefield", std::format("{} was stopped by a minefield. {}", e.name, after), [&] {
+                ctx_.log(e.owner, LogCategory::Combat, std::format("{} stopped by a minefield", e.name), after, where, "MineExplosion");
+            });
             if (!e.pursuit) clearListsOf(e.holders);
         }
     }
@@ -2011,7 +2115,8 @@ private:
         if (!battleSince(here, records)) return g.stopped || pursuit;  // only mines struck
         if (!g.stopped && !pursuit)
             if (const std::vector<Order>* list = orders(g); list && !list->empty()) {
-                fail(g, list->front(), "Combat on entering the sector.");
+                // The battle was the news: no message box for it (inferred).
+                logFailure(g, list->front(), "Combat on entering the sector.");
                 setLists(g, {});
             }
         g.stopped = true;
