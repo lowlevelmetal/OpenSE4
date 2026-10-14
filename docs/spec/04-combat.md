@@ -1139,7 +1139,9 @@ same (§10.6).
 - **Victory.** When the defender has no troops or militia left and the attacker still
   has troops, the attacker takes the planet with its surviving facilities, stored units
   and population. When the attackers are gone, the fight ends. No facilities are lost in
-  ground combat.
+  ground combat. The planet's construction queue gets the clear of a treaty transfer
+  (spec 02 §6.4): its items go, emergency mode and its counter stay (confirmed: binary;
+  added 2026-10-14, complete listing).
 - **Reinforcing** (confirmed: binary). The invading empire may drop more troops at any
   time, in the same battle or a later one; they join the landed ones and a new fight is
   fought at once. Drop Troops never lands on a planet piece of the ship's own side (§11),
