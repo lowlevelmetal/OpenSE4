@@ -20,6 +20,7 @@
 #include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
+#include "game/serialize.hpp"
 #include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
@@ -1685,6 +1686,97 @@ TEST_CASE("ai: trades are judged on item values") {
     CHECK(trade(900000, 60000) == false);
 }
 
+TEST_CASE("ai: a subject proposes no treaty, ignores treaty proposals and refuses packages that hold a treaty") {
+    // Spec 05 §3.2 (confirmed: binary): the computer player and a Politics
+    // minister apply the subjugated-race rule to themselves.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 3, 12, false);
+    const EmpireId master{0u}, cpu{1u}, third{2u};
+    meet(s, master, cpu);
+    meet(s, cpu, third);
+    meet(s, master, third);
+    s.empire(cpu).stockpile = Resources{50000, 50000, 50000};
+    s.empire(cpu).relation(master).anger = 0;
+    s.empire(cpu).relation(third).anger = 0;
+    auto subjugate = [&](GameState& g) {
+        g.empire(cpu).relation(master).treaty = Treaty::Subjugation;
+        g.empire(master).relation(cpu).treaty = Treaty::Subjugation;
+        g.empire(master).relation(cpu).dominant = true;
+    };
+    PackageItem treatyItem;
+    treatyItem.kind = PackageItem::Kind::Treaty;
+    treatyItem.treaty = Treaty::NonAggression;
+    auto trade = [&](GameState& g, bool withTreaty) {
+        DiplomaticMessage m;
+        m.id = MessageId{g.nextMessageId++};
+        m.from = third;
+        m.to = cpu;
+        m.type = MessageType::ProposeTrade;
+        m.sentTurn = g.turn;
+        m.delivered = true;
+        PackageItem offer, request;
+        offer.resources = {20000, 0, 0};
+        request.resources = {1000, 0, 0};
+        m.offer.push_back(offer);
+        if (withTreaty) m.offer.push_back(treatyItem);
+        m.request.push_back(request);
+        g.messages.push_back(m);
+        return m.id;
+    };
+    auto answered = [&](GameState g, MessageId id) {
+        std::optional<bool> a;
+        for (uint32_t turn = 60; turn < 70 && !a; ++turn) {
+            g.turn = turn;
+            a = answerTo(r, g, cpu, id);
+        }
+        return a;
+    };
+    s.turn = 60;
+    // Not a subject: a good trade with a treaty in it, and a gift holding one, are accepted.
+    {
+        GameState g = s;
+        CHECK(answered(g, trade(g, true)) == true);
+        const MessageId gift = deliver(g, master, cpu, MessageType::Gift);
+        g.messages.back().offer.push_back(treatyItem);
+        CHECK(answered(g, gift) == true);
+    }
+    subjugate(s);
+    // A subject refuses them, and only them.
+    {
+        GameState g = s;
+        CHECK(answered(g, trade(g, true)) == false);
+        g.messages.clear();
+        CHECK(answered(g, trade(g, false)) == true);
+        g.messages.clear();
+        const MessageId gift = deliver(g, master, cpu, MessageType::Gift);
+        g.messages.back().offer.push_back(treatyItem);
+        CHECK(answered(g, gift) == false);
+        g.messages.clear();
+        const MessageId tribute = deliver(g, third, cpu, MessageType::Tribute);
+        g.messages.back().offer.push_back(treatyItem);
+        CHECK(answered(g, tribute) == false);
+        g.messages.clear();
+        CHECK(answered(g, deliver(g, master, cpu, MessageType::Gift)) == true);
+    }
+    // A treaty proposal or counter-proposal gets no answer at all.
+    for (MessageType type : {MessageType::ProposeTreaty, MessageType::CounterTreaty}) {
+        GameState g = s;
+        const MessageId id = deliver(g, third, cpu, type, Treaty::NonAggression);
+        for (uint32_t turn = 60; turn < 70; ++turn) {
+            g.turn = turn;
+            CHECK_FALSE(answerTo(r, g, cpu, id));
+            CHECK_FALSE(sentInReply(r, g, cpu, id));
+        }
+    }
+    // And it never proposes one, to its master or anyone else.
+    for (uint32_t turn = 0; turn < 80; ++turn) {
+        s.turn = turn;
+        for (const Command& c : ai::planTurn(r, s, cpu))
+            if (const auto* m = as<cmd::SendMessage>(c))
+                CHECK((m->message.type != MessageType::ProposeTreaty && m->message.type != MessageType::CounterTreaty));
+    }
+}
+
 TEST_CASE("ai: an accepted demand is carried out half of the time, before the reply, even when the reply's pool is empty") {
     TempTree t("request");
     t.write("Ai/Default_AI_Politics.txt",
@@ -1883,6 +1975,36 @@ TEST_CASE("ai: the demand lists are emptied at the start of turns whose date is 
     CHECK(rel.promises == 0);
     CHECK(s.empire(cpu).aiMemory.avoid.empty());
     CHECK(s.empire(cpu).aiMemory.attackSystems.empty());
+}
+
+TEST_CASE("ai: a carried-out request to attack an empire in a system or a planet changes nothing in the plans") {
+    // Spec 05 §7.4 (confirmed: binary): the system is recorded, and nothing
+    // reads the record before the 10-turn clear empties it.
+    const Rules& r = engineRules();
+    GameState a = computerGame(11, 3, 0, 12);
+    const EmpireId asker{0u}, cpu{1u}, third{2u};
+    for (EmpireId x : {asker, cpu, third})
+        for (EmpireId y : {asker, cpu, third})
+            if (x != y) a.empire(x).relation(y).contact = true;
+    a.turn = 1;
+    GameState b = a;
+    const MessageId inSystem = deliver(b, asker, cpu, MessageType::RequestAttackEmpire);
+    b.messages.back().thirdEmpire = third;
+    b.messages.back().system = b.galaxy.object(homeworld(b, third).planet).system;
+    REQUIRE(apply(r, b, cpu, cmd::CarryOutDemand{inSystem}).ok);
+    const MessageId planet = deliver(b, asker, cpu, MessageType::RequestAttackPlanet);
+    b.messages.back().planet = homeworld(b, asker).planet;
+    REQUIRE(apply(r, b, cpu, cmd::CarryOutDemand{planet}).ok);
+    REQUIRE(b.empire(cpu).aiMemory.attackSystems.size() == 2);
+    b.messages = a.messages;
+    b.nextMessageId = a.nextMessageId;
+    for (int turn = 0; turn < 6; ++turn) {
+        processTurn(r, a, {});
+        processTurn(r, b, {});
+        GameState same = b;
+        same.empire(cpu).aiMemory.attackSystems.clear();
+        CHECK(stateChecksum(same) == stateChecksum(a));
+    }
 }
 
 TEST_CASE("ai: a furious AI declares war, and the declaration sets anger to 100") {
@@ -5068,6 +5190,57 @@ TEST_CASE("ai: the layers' star-destroyer flag: dates that are multiples of 20, 
     CHECK(s.empire(me).aiMemory.designsFought.front().design == ours);
     CHECK(s.empire(me).aiMemory.designsFought.front().turn == s.turn);
     CHECK(flag(s));
+}
+
+TEST_CASE("ai: a computer player starts with its AI strategies, else the data set's; every empire gets the default name lists") {
+    // Spec 05 §7.7 (confirmed: binary).
+    auto names = [](const std::vector<ruleset::CombatStrategy>& list) {
+        std::vector<std::string> out;
+        for (const auto& st : list) out.push_back(st.name);
+        return out;
+    };
+    auto game = [](const Rules& r, std::vector<ruleset::CombatStrategy> fileStrategies = {}) {
+        GameSetup setup;
+        setup.seed = 5;
+        setup.options.systemCount = 8;
+        for (PlayerKind kind : {PlayerKind::Human, PlayerKind::Computer, PlayerKind::Neutral, PlayerKind::Computer}) {
+            EmpireSetup e;
+            e.name = std::format("Empire {}", setup.empires.size() + 1);
+            e.kind = kind;
+            setup.empires.push_back(std::move(e));
+        }
+        setup.empires.back().strategies = std::move(fileStrategies);  // from an empire file
+        auto g = createGame(r, setup);
+        REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+        return std::move(*g);
+    };
+    TempTree t("startstrategies");
+    t.write("Ai/Default_AI_Strategies.txt",
+            "Name := AI Bold\nPrimary Movement Strategy := Optimal Weapons Range\n"
+            "Name := AI Careful\nPrimary Movement Strategy := Don't Get Hurt\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    const std::vector<std::string> dataSet = names(r.data().combatStrategies);
+    REQUIRE_FALSE(dataSet.empty());
+    const std::vector<std::string> fromAi{"AI Bold", "AI Careful"};
+    const std::vector<std::string> fromFile{"Saved"};
+    GameState s = game(r, {ruleset::CombatStrategy{"Saved", {}}});
+    CHECK(names(s.empire(EmpireId{0u}).strategies) == dataSet);  // a human
+    CHECK(names(s.empire(EmpireId{1u}).strategies) == fromAi);   // the table's, in its order, not added to the data set's
+    CHECK(names(s.empire(EmpireId{2u}).strategies) == fromAi);   // a neutral too
+    CHECK(names(s.empire(EmpireId{3u}).strategies) == fromFile); // an empire file's list comes whole
+    for (const Empire& e : s.empires) {
+        CHECK(e.designTypes == r.data().names.designTypes);
+        CHECK(e.colonyTypes == r.data().names.colonyTypes);
+    }
+    // Nothing is joined on the first turn: the list is already the table's.
+    for (const Command& c : ai::planTurn(r, s, EmpireId{1u})) CHECK_FALSE(as<cmd::SetStrategy>(c));
+
+    // An empty table, or none at all, gives the data set's, as for a human.
+    TempTree empty("emptystrategies");
+    empty.write("Ai/Default_AI_Strategies.txt", "");
+    const Rules rEmpty{buildEngineRuleset(), empty.root};
+    CHECK(names(game(rEmpty).empire(EmpireId{1u}).strategies) == dataSet);
+    CHECK(names(game(engineRules()).empire(EmpireId{1u}).strategies) == names(engineRules().data().combatStrategies));
 }
 
 TEST_CASE("installed data set: AI files load and computer players play (opt-in)") {

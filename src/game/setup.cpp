@@ -2,6 +2,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
+#include "game/ai_data.hpp"
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
@@ -492,8 +493,13 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         e.knowledge.lastSeen.assign(s.galaxy.systems.size(), 0);
         e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), s.options.allSystemsSeen ? 1 : 0);
         e.knowledge.notes.assign(s.galaxy.systems.size(), {});
-        // The strategies saved with the empire, else the data set's (spec 06 §7 Q72).
-        e.strategies = es.strategies.empty() ? r.data().combatStrategies : es.strategies;
+        // The strategies saved with the empire (spec 06 §7 Q72). Otherwise a
+        // computer player takes those of its AI strategies table, found as its
+        // other AI tables are; when that gives none, and for a human, the data
+        // set's (spec 05 §7.7, confirmed: binary).
+        if (!es.strategies.empty()) e.strategies = es.strategies;
+        else if (e.kind != PlayerKind::Human) e.strategies = ai::profileFor(r, e).strategies;
+        if (e.strategies.empty()) e.strategies = r.data().combatStrategies;
         if (e.strategies.empty()) e.strategies.push_back({"Default", {}});
         // An empire file's name lists and settings come with it whole (spec 08
         // §13.4, confirmed: binary); an empty list is the data set's (inferred, §11.1 Q25).

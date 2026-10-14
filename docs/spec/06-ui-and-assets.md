@@ -4336,7 +4336,10 @@ something open; all are now settled from the executable:
     - **Skip ships under construction** skips ships whose status is Under Construction,
       which a ship has only from its creation until its components are first updated; a
       space yard runs that update at once (and every supply update does too), so in a
-      normal game the option skips nothing.
+      normal game the option skips nothing. This answer was not rechecked when the claims
+      that something is never read or never done were checked again on the complete
+      listing (2026-10-14); it rests on the listing that cut routines short at their
+      cleanup blocks, so a reader of the status may have been missed. To recheck.
     - **Save Empire** first asks whether to save the designs with the empire (Yes/No; Esc
       and Enter mean No), then opens the empire file picker. The file holds a copy of the
       empire with the game state cleared (research, intelligence, diplomacy, queues, log,

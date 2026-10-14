@@ -17,6 +17,7 @@
 
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/query.hpp"
 #include "game/turn.hpp"
 #include "game/turn_internal.hpp"
@@ -359,7 +360,11 @@ void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
     // population; its surviving troops join the cargo (spec 04 §13).
     c.owner = captor;
     c.homeworld = false;
-    c.queue = ConstructionQueue{};
+    // Its queue gets the clear of a treaty or package transfer: the items, their
+    // progress, On Hold, Repeat Build and the automatic waypoint go; emergency
+    // mode and its counter stay, so slow mode carries over (spec 02 §6.4,
+    // confirmed: binary).
+    economy::clearQueue(c.queue);
     c.minister = false;
     endInvasion(c, c.invader == captor);
     Empire& e = s.empire(captor);

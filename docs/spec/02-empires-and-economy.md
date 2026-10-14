@@ -1055,11 +1055,14 @@ progress, On Hold, Repeat Build and the automatic Move To waypoint go; emergency
 its turn counter stay, so slow mode still follows. It runs for Clear Queue (spec 06 §7
 Q28), for a ship whose space yard stops working (cloaked or mothballed, spec 06 §1.8.2),
 and when a planet is handed to another empire by treaty or package (and on the intelligence
-and rebellion paths that use the same transfer). So emergency and slow mode go with a
-planet that changes hands. Since 2026-10-13 the engine follows (`economy::clearQueue`);
-before, a transfer gave the planet a fresh queue and a cloaked ship kept its waypoint and
-flags. A colony taken in ground combat still gets a fresh queue: the original's capture
-path was not checked.
+and rebellion paths that use the same transfer). A colony taken in ground combat goes to the
+winner with the same clear: no fresh queue is made (confirmed: binary; corrected 2026-10-14,
+complete listing; this section said earlier that the capture path was not checked). So
+emergency and slow mode go with a planet that changes hands, however it changes hands.
+Since 2026-10-13 the engine follows (`economy::clearQueue`); before, a transfer gave the
+planet a fresh queue and a cloaked ship kept its waypoint and flags. Since 2026-10-14 the
+capture follows too (`combat_ground.cpp` `capturePlanet`); before, a captured colony got a
+fresh queue, which ended emergency and slow mode.
 
 **Other controls**
 - **Repeat Build** rebuilds the top item forever, as long as it is still valid.

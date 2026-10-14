@@ -31,7 +31,7 @@ and the classic ministers that a script computer player calls through `ai.builti
 | Construction_Units | `_AI_Construction_Units.txt` | `ai.construction_units` | rows | the Ship Construction minister, for units on planets |
 | DesignCreation | `_AI_DesignCreation.txt` | `ai.design_creation` | named | the Design minister |
 | Speech | `_AI_Speech.txt` | `ai.speech` | one | every message the computer writes |
-| Strategies | `_AI_Strategies.txt` | `ai.strategies` | named | added to the empire's combat strategies |
+| Strategies | `_AI_Strategies.txt` | `ai.strategies` | named | a computer empire's combat strategies |
 
 The original installs ship no `Construction_Units` file; OpenSE4 reads one when a mod
 supplies it.
@@ -364,9 +364,11 @@ Friend or Enemy follows its treaty with the other empire. The lines may hold
 
 ### AI_Strategies (`ai.strategies`)
 
-Combat strategies with the fields of DefaultStrategies.txt ([combat.md](combat.md)). Each
-turn a computer empire adds to its strategy list every strategy of this table that it does
-not have by name, so its design templates and fleets can name them.
+Combat strategies with the fields of DefaultStrategies.txt ([combat.md](combat.md)). A
+computer empire starts the game with this table's strategies in place of DefaultStrategies.txt,
+which it gets only when the table has none. Each turn it also adds to its strategy list every
+strategy of this table that it does not have by name, so its design templates and fleets can
+name them; that matters only for an empire handed to the computer during the game.
 
 ### The fixed names
 

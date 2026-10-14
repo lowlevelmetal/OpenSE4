@@ -376,7 +376,8 @@ void formationDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
     const ruleset::Formation& f = ui.rules().data().formations[item.index];
     title(ui, f.name);
     row(ui, "Positions", std::to_string(f.positions.size()), st);
-    if (!f.leader.designType.empty() && f.leader.designType != "Any") row(ui, "Leader", f.leader.designType, st);
+    // The leader's and the positions' design types are loaded and ignored: no
+    // window shows them (spec 03 §10, confirmed: binary).
     ImGui::Spacing();
     formationDiagram(ui, f, st == DetailStyle::Full ? 13.0f : st == DetailStyle::Report ? 11.0f : 8.0f);
     ImGui::TextColored(kDimText, "L = leader; the fleet faces up.");

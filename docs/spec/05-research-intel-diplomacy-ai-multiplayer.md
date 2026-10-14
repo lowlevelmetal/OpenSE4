@@ -324,7 +324,8 @@ message at all.
     construction queues, options, experience, and its ministers' state: the minister
     style, the anger toward each empire, the turns since war with each, the AI state and
     turns in it, and the AI's target, staging, secured and defended systems and its
-    attack timer. It gets no designs, and the lists of accepted demands start empty. Then:
+    attack timer. It gets no designs, and the lists of accepted demands start empty.
+    Whether it also takes the owner's waiting happiness events is question 82. Then:
     - its name is the system's name. When that is empty or any other empire (destroyed
       ones included) has the name, a random line of the empire-names file is drawn, again
       until the name is unique. It gets a new leader name and the pictures of a random
@@ -497,12 +498,26 @@ up the trade chain [M].
   not even with its master. Its Communicate window leaves Propose Treaty out of the list,
   and refuses a Propose or Counter Treaty ("Subjugated races cannot propose treaties") and an
   Accept Treaty ("Subjugated races cannot accept treaties"). Break Treaty and Declare War stay.
-  The original checks this in the window only: a computer player's and a Politics
-  minister's messages and answers are not checked, and a treaty in an accepted package still
-  takes effect. Our engine differs: it also refuses such a message or answer from a human
-  player in the command itself (`cmd::SendMessage`, `cmd::AnswerMessage` without their
-  `minister` mark), so a network player cannot get round the window. It replaces OpenSE4's
-  earlier choice, which stopped a subject's treaties with third empires when they were set.
+- **A subject's computer player and Politics minister** (confirmed: binary; corrected
+  2026-10-14, complete listing: this section said earlier that they were not checked). The
+  computer player applies the rule to itself, and so does a human empire's Politics
+  minister, which runs the same rules (§7.4). While the empire is the subordinate side of a
+  Subjugation:
+  - it never proposes a treaty;
+  - a treaty proposal or counter-proposal sent to it gets no answer at all: no accept, no
+    refusal and no counter-proposal;
+  - it refuses every trade, gift or tribute whose package holds a treaty.
+
+  It does not test whether the empire it proposes to is a subject. What stays unchecked:
+  the processing of the messages themselves, so an Accept Treaty takes effect whoever sends
+  it and a treaty in an accepted package still takes effect; and a human subject accepting,
+  in the window, a trade that holds a treaty. Our engine follows (`ai_diplomacy.cpp`,
+  `Politician::subject`; the refusal of a package with a treaty since 2026-10-14, before
+  the team rules, inferred). It also refuses a subject's treaty message or answer from a
+  human player in the command itself (`cmd::SendMessage`, `cmd::AnswerMessage` without
+  their `minister` mark), so a network player cannot get round the window. That replaces
+  OpenSE4's earlier choice, which stopped a subject's treaties with third empires when they
+  were set.
 - **OpenSE4 choices** [I]:
   - A Treaty package item makes the receiver the master unless it names the giver.
   - Break Treaty does not end a war (the window offers it only from Non-Aggression up,
@@ -1604,6 +1619,8 @@ follows the same pattern as war, with the Break Treaty threshold and the break l
 - Otherwise accepted when value received ≥ value given × pct / 100 (truncated), where
   pct is `Accept Trade From Friend …` or `… Enemy …`. Every treaty item in either package
   must also pass the accept rule.
+- A subject (§3.2) refuses every trade that holds a treaty on either side (confirmed:
+  binary; added 2026-10-14, complete listing).
 
 **Item values**, for the receiving side:
 
@@ -1627,7 +1644,9 @@ in finite-resource games), plus, when it is colonized, 100 × its population in 
 
 **Gifts and tributes received** are accepted when:
 - anger ≤ `Max Anger Level for Accept a Gift` (or `… Tribute`);
-- every treaty item inside passes the accept rule.
+- every treaty item inside passes the accept rule;
+- the AI is not a subject (§3.2) or the package holds no treaty (confirmed: binary; added
+  2026-10-14, complete listing).
 
 Team mates are always accepted, and team enemies always refused.
 
@@ -1665,7 +1684,12 @@ Team mates are always accepted, and team enemies always refused.
     are never abandoned;
   - declare war on, support against, break with or make peace with a third empire: one
     entry naming that empire is added to the matching demand list (below);
-  - attack an empire in a system, or attack a planet: that system becomes an attack target;
+  - attack an empire in a system, or attack a planet: the system is recorded, but nothing
+    ever reads that record, which only waits for the 10-turn clear below. So these two
+    change nothing in the computer player's plans, like "stop attacks in a system"
+    (confirmed: binary; corrected 2026-10-14, complete listing: this line said earlier
+    that the system became an attack target). Our engine matches: it records the system
+    (`AiMemory::attackSystems`) and no planner reads it;
   - stop espionage or sabotage: intelligence projects against the requester are cancelled;
   - stop hostile actions against an empire: a promise about the empire the demand names,
     not the requester (§7.3 term 8);
@@ -1684,7 +1708,8 @@ Team mates are always accepted, and team enemies always refused.
   start-of-turn step of every turn whose date (the one the ministers see, §7.5 "The
   date") is a multiple of 10, before the Politics minister acts. An entry therefore lasts
   until the next such date: from 1 turn (added on a date ending in 9) to 10 turns (added
-  on a date that is a multiple of 10) (confirmed: binary).
+  on a date that is a multiple of 10) (confirmed: binary). Whether a save and load empties
+  them earlier is question 83.
 - **Which messages get an answer** (confirmed: binary). Each turn the AI answers at most the
   newest political message from X in its answer window (above):
   - a treaty proposal or counter-proposal: Accept, Counter or Refuse Treaty; a trade:
@@ -2744,7 +2769,8 @@ binary).
   100 but declares nothing, and an accepted demand is still carried out (§7.4). In the stock files the pools of the generic demand/request/warn
   and of the Accept and Refuse Demand messages are empty.
 - **`AI_Strategies`**: the same schema as `DefaultStrategies.txt` (§7.7). Other tables
-  refer to it by name.
+  refer to it by name. A computer player starts with this table's strategies in place of
+  `DefaultStrategies.txt` (§7.7) (confirmed: binary).
 
 ### 7.6 Mega Evil Empire (MEE)
 
@@ -2766,7 +2792,20 @@ Each computer empire works out the MEE for itself once per turn (confirmed: bina
 Scores are the ones from §5. AIs then add the MEE anger each turn and may make an MEE
 declaration (§7.3, §7.4).
 
-### 7.7 Player default lists (not used by the AI) [M]
+### 7.7 Default lists
+
+The manual calls these the player's default lists and says the AI does not use them. That
+is only partly so (confirmed: binary; corrected 2026-10-14, complete listing: this
+heading said earlier "not used by the AI"). Every new empire, computer players included,
+gets the default design-type and colony-type lists. A computer player takes its combat
+strategies from its AI strategies table (`AI_Strategies`, found by the rule of §7.2); when
+that gives none (no file, or an empty one) it starts with `DefaultStrategies.txt`, as a
+human does. An empire that brings its own lists from an empire file keeps them (spec 08
+§13.4). Since 2026-10-14 our engine follows (`setup.cpp`); before, a computer player
+started with `DefaultStrategies.txt` and its first turn added the table's strategies
+after them. Our computer players still add any of the table's strategies their list lacks,
+at its end, once (`planStrategies`): that happens only to an empire handed to the computer
+during the game or loaded with such a list (OpenSE4's, inferred).
 
 - **`DefaultDesignTypes.txt`**: design-type labels. Ministers use them to find, for
   example, colony ships. The AI tables and ministers work with a fixed set of 39 design
@@ -2774,7 +2813,8 @@ declaration (§7.3, §7.4).
 - **`DefaultColonyTypes.txt`**: colony-type labels. A planet's colony type selects its
   facility-minister queue. Only the nine fixed names of §7.5 mean anything to the
   ministers; any other label is built like Homeworld (confirmed: binary).
-- **`DefaultStrategies.txt`**: the starting combat strategies. Fields:
+- **`DefaultStrategies.txt`**: the starting combat strategies of a human, and of a
+  computer player whose AI strategies table gives none. Fields:
   - `Primary/Secondary Movement Strategy`;
   - `Targeting Priority 1..4`;
   - `Use Type Priority First`;
@@ -3874,11 +3914,16 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - **The flag:** the request is chosen before its `Will Send …` flag is tested; a
       forbidden request cancels steps 1–5 for that turn.
     - **Ministers:** a human empire whose Politics minister is on sends these requests by
-      the same rules, unchecked.
+      the same rules, unchecked. "Unchecked" means the player's picker tests are not made;
+      the computer player's own rule for a subject (§3.2: no treaty proposals, no answer
+      to one, no package that holds a treaty) does apply to the minister, which runs the
+      same rules (confirmed: binary; corrected 2026-10-14, complete listing).
     - **Recipients:** a computer recipient that carries the request out records the named
       empire without any check (question 51); for "attack an empire in a system" it
-      records only the system and never uses the empire. A human recipient reads the
-      empire's name in the text, whatever that empire's state.
+      records only the system and never uses the empire. Nothing reads the recorded
+      system either, so the request changes nothing in its plans (§7.4, confirmed:
+      binary; added 2026-10-14, complete listing). A human recipient reads the empire's
+      name in the text, whatever that empire's state.
 
     Since 2026-10-01 the engine follows this (`ai_diplomacy.cpp`, `chooseRequest()` and
     `demand()`; `commands.cpp`, `SendMessage`): steps 1-5 choose the request first and
@@ -4688,3 +4733,24 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     enforce for them. To verify in the executable: does the computer player's vehicle list
     look at the ship limit before it places an item, and if not, does it fill its queues
     with ships that wait there?
+82. **A rebel's waiting happiness events** (raised 2026-10-14 by the recheck of the negative
+    claims on the complete listing, seen in passing and not checked; §2.3 "The new empire").
+    A rebel empire starts as a copy of its former owner, and that copy seems to take the
+    owner's list of happiness events waiting for its next update too (spec 02 §4 "Events
+    waiting for the next update are not saved"). If so, the rebels' first happiness update
+    counts the former owner's events of the turn, such as "Any Planet Lost" for the very
+    colony that broke away. To verify: does the copy carry that list, and does the former
+    owner keep its own? Our engine gives the rebels no waiting events: each waiting event
+    names its empire (`GameState::pendingMood`, `MoodEvent::empire`), so the former owner's
+    stay with it (`events.cpp` `breakAway`, inferred).
+83. **The demand lists across a save** (raised 2026-10-14 by the recheck of the negative
+    claims on the complete listing, seen in passing and not checked; §7.4 "Demand lists").
+    The computer player's war, break and peace lists, its promises and the systems it
+    recorded to avoid or to attack seem not to be written to the saved game, which has no
+    place for them (spec 08 §6.3: they are not stored). Loading a game would then empty them
+    before the 10-turn clear, so an accepted demand would stop counting whenever a game is
+    saved and loaded, which a game hosted turn by turn does every turn. To verify: are they
+    saved, and are they emptied on load? Our engine keeps them in its own saves
+    (`Relation::queuedWar`, `queuedBreak`, `queuedPeace`, `promises`, `AiMemory::avoid`,
+    `attackSystems`), so a loaded game keeps them to the 10-turn clear; a game imported from
+    the original's save starts with them empty (spec 08 §7.6).

@@ -1911,6 +1911,12 @@ TEST_CASE("combat: ground combat captures a planet") {
     QueueItem item;
     item.kind = QueueItem::Kind::Facility;
     target.queue.items.push_back(item);
+    target.queue.onHold = true;
+    target.queue.repeat = true;
+    target.queue.autoWaypoint = 2;
+    target.queue.emergency = true;
+    target.queue.emergencyTurns = 3;
+    target.queue.slowTurns = 1;
     const size_t facilities = target.facilities.size();
     const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
     const VehicleId transport = spawn(s, frigate(s, ar.a, "Transport", 1, {"Test Cargo Bay"}), locationOf(s.galaxy, planet));
@@ -1928,7 +1934,16 @@ TEST_CASE("combat: ground combat captures a planet") {
     REQUIRE(after != nullptr);
     CHECK(after->owner == ar.a);
     CHECK_FALSE(after->homeworld);
+    // The queue gets the clear of a treaty transfer: the items, On Hold, Repeat
+    // Build and the waypoint go; emergency mode and its counter stay, so slow
+    // mode carries over to the captor (spec 02 §6.4, confirmed: binary).
     CHECK(after->queue.items.empty());
+    CHECK_FALSE(after->queue.onHold);
+    CHECK_FALSE(after->queue.repeat);
+    CHECK(after->queue.autoWaypoint == -1);
+    CHECK(after->queue.emergency);
+    CHECK(after->queue.emergencyTurns == 3);
+    CHECK(after->queue.slowTurns == 1);
     CHECK(after->facilities.size() == facilities);   // no facilities are lost in ground combat
     CHECK(after->totalPopulation() == 20);            // the population now serves the captor
     CHECK(after->cargo.unitCount(trooper) > 0);   // the surviving invaders join the cargo

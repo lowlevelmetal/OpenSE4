@@ -460,7 +460,10 @@ follows them since 2026-10-14:
   can neither propose nor accept a treaty, not even with its master; Break Treaty and Declare
   War stay (`diplomacy::isSubjugated`, spec 05 §3.2). Nothing stops a treaty itself any more:
   OpenSE4's earlier choice, which refused a subject's treaties with third empires when they
-  were set, is gone, and a treaty in an accepted package takes effect.
+  were set, is gone, and a treaty in an accepted package takes effect. A subject's computer
+  player and Politics minister propose no treaty, leave treaty proposals unanswered and,
+  since 2026-10-14 (complete listing), refuse every trade, gift or tribute holding a treaty
+  (`ai_diplomacy.cpp`, `Politician::subject`).
 - The treaty grid shows the treaties of the empires we hold Non-Aggression or better with,
   not only our allies' (`diplomacy::treatyVisible`).
 - A player's messages follow the original's window (`diplomacy::playerMessageProblem`, spec
@@ -701,7 +704,8 @@ unbuildable designs in grey; the Ships tab lit only with a working yard and the 
 remembered (`InterfaceOptions::setQueueTab`); the empire's queue types saved with the game
 and carried to and from the original's saved games (`Empire::queueTypes`,
 `cmd::SetQueueTypes`), Fill giving a "Warning" per refused item; Clear Queue's clear (Move To
-too, the emergency kept) for a cloaked or mothballed ship and a planet handed over by treaty;
+too, the emergency kept) for a cloaked or mothballed ship and a planet handed over by treaty,
+and since 2026-10-14 for a colony taken in ground combat (spec 02 §6.4);
 Scrap Facil Types refunding the setting alone (`cmd::Scrap::typeWide`); the type list window
 with Add Type and Delete Type for colony and design types; Complete AI as plain buttons that
 no longer latch full control, the 25 minister switches written to the original's file as they
@@ -723,7 +727,6 @@ different:
 | Minister switches (`MinistersScreen`) | Each lamp, Select All and Select None take effect at once (`cmd::SetMinisters`) | The lamps take effect when the window closes (spec 02 §10) | L |
 | Queue types (`queues.cpp`) | Select Queue Type also lists OpenSE4's types kept on this computer (`queue_types.txt`, Keep on Computer) and the built-in ones that fill the free facility slots, under headings of their own | The empire's types only (spec 02 §6.4) | L |
 | Ships at the limit, computer players (`ShipBuilder::queueable`) | Place no ship or base while the empire is at its ship limit (inferred) | Not known whether the vehicle list checks the limit; the queues do not (spec 05 question 81) | L |
-| A colony taken in ground combat (`combat_ground.cpp`) | Gets a fresh queue: emergency and slow mode end | Not checked; a planet handed over by treaty keeps them (spec 02 §6.4) | L |
 | E-mail address (`Empire::email`, `cmd::SetEmail`) | Kept with the empire since 2026-10-03 (Empire Setup's Email box, Change Email, saved with the game, and in empire files since 2026-10-14); it travels in a player's orders only as a Change Email command, and another player's address is left out of a player's view and of the lobby | Saved with the empire in the game file and in every orders file, so every player's game holds every address (spec 05 §9.2, spec 06 §7 Q95) | L |
 | Moves shown in the system window (`ship_glides.cpp`, `turn_start.cpp`) | The moves of an engine call glide together once it has made them all, several steps of one group as one straight glide; a battle that stops the call is shown before the moves that led to it; a click or a key shows a turn's moves at once | Each group's steps animated one after another as they are made, a battle when it starts (spec 06 §2.4, §2.7, §7 Q112) | L |
 | Choosing one of the original's scenarios (`screens/learn_screens.cpp`) | The intro's Tutorial and Scenario open OpenSE4's Learn window; its Scenarios tab lists the original's scenarios beside the mods', and Start Game starts one. The scenario folder is the install's, or that of the last classic mod in use that has one | Tutorial starts the tutorial at once; Scenario opens the "Load Scenario" picker with Change Directory; the folder is that of the `Path.txt` mod when it has one (spec 06 §1.1, §5.6) | L |
@@ -1012,7 +1015,10 @@ facilities switched by an upgrade change in place and keep what was paid
 (`cmd::QueueReplaceFacility`); a war declaration whose speech pool is empty declares
 nothing but still sets the anger to 100 (`cmd::DecideWar`); a new design's fallback
 strategy follows the design type as §7.5 lists it, so transports, colony ships and the
-other unarmed types get Don't Get Hurt.
+other unarmed types get Don't Get Hurt. Since 2026-10-14 a computer player starts with its
+`AI_Strategies` table's strategies, and with `DefaultStrategies.txt` only when the table gives
+none (spec 05 §7.7, complete listing); before, it had the data set's list with the table's
+strategies added after it.
 
 On 2026-09-30 the engine's own choices (spec 05 open question 37) were answered from the
 executable, with the demand lists (questions 47 and 49). The rows found then were implemented

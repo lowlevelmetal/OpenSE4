@@ -136,6 +136,11 @@ private:
     bool human(EmpireId x) const { return p_.st.empire(x).kind == PlayerKind::Human; }
     bool teamMate(EmpireId x) const { return p_.st.options.teamMode && human(x) == human(p_.id); }
     bool teamEnemy(EmpireId x) const { return p_.st.options.teamMode && human(x) != human(p_.id); }
+    // The subordinate side of a Subjugation (a Protectorate does not count). A
+    // subject never proposes a treaty, does not answer a treaty proposal or
+    // counter-proposal at all, and refuses a trade, gift or tribute whose
+    // package holds a treaty; it does not test whether X is a subject (spec 05
+    // §3.2, confirmed: binary).
     bool subject() const {
         for (const Empire& o : p_.st.empires)
             if (o.id != p_.id && o.alive && rel(o.id).treaty == Treaty::Subjugation && !rel(o.id).dominant) return true;
@@ -511,6 +516,12 @@ private:
         for (const PackageItem& i : items) v += itemValue(i, giver, receiver);
         return v;
     }
+    // A package (either side of a trade) that holds a treaty, which a subject
+    // refuses whatever it is worth (spec 05 §3.2, confirmed: binary).
+    static bool holdsTreaty(const std::vector<PackageItem>& a, const std::vector<PackageItem>& b = {}) {
+        auto treaty = [](const PackageItem& i) { return i.kind == PackageItem::Kind::Treaty; };
+        return std::any_of(a.begin(), a.end(), treaty) || std::any_of(b.begin(), b.end(), treaty);
+    }
     bool treatyItemsPass(EmpireId x, const std::vector<PackageItem>& a, const std::vector<PackageItem>& b) const {
         for (const auto* list : {&a, &b})
             for (const PackageItem& i : *list)
@@ -592,6 +603,9 @@ private:
 
     bool answerTrade(const DiplomaticMessage& msg) {
         const EmpireId x = msg.from;
+        // A subject refuses a trade that holds a treaty, before anything else
+        // (the order against the team rules is inferred).
+        if (subject() && holdsTreaty(msg.offer, msg.request)) return reply(msg, false, "Send Refuse Trade");
         if (teamMate(x) || teamEnemy(x)) return reply(msg, teamMate(x), teamMate(x) ? "Send Accept Trade" : "Send Refuse Trade");
         for (const PackageItem& i : msg.request)
             if (!diplomacy::isPlaceholder(i) && !canGive(i, x)) return reply(msg, false, "Send Refuse Trade");
@@ -628,7 +642,10 @@ private:
         const EmpireId x = msg.from;
         const bool gift = msg.type == MessageType::Gift;
         bool accept = false;
-        if (teamMate(x)) accept = true;
+        // A subject refuses a gift or tribute that holds a treaty (spec 05 §3.2,
+        // confirmed: binary; the order against the team rules is inferred).
+        if (subject() && holdsTreaty(msg.offer)) accept = false;
+        else if (teamMate(x)) accept = true;
         else if (!teamEnemy(x))
             accept = anger(x) <= (gift ? pol_.maxAngerAcceptGift : pol_.maxAngerAcceptTribute) && treatyItemsPass(x, msg.offer, {});
         return reply(msg, accept, gift ? (accept ? "Send Accept Gift" : "Send Refuse Gift") : (accept ? "Send Accept Tribute" : "Send Refuse Tribute"));
