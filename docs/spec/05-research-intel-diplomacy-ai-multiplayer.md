@@ -324,7 +324,8 @@ message at all.
     construction queues, options, experience, and its ministers' state: the minister
     style, the anger toward each empire, the turns since war with each, the AI state and
     turns in it, and the AI's target, staging, secured and defended systems and its
-    attack timer. It gets no designs, and the lists of accepted demands start empty. Then:
+    attack timer. It gets no designs, and the lists of accepted demands start empty.
+    Whether it also takes the owner's waiting happiness events is question 82. Then:
     - its name is the system's name. When that is empty or any other empire (destroyed
       ones included) has the name, a random line of the empire-names file is drawn, again
       until the name is unique. It gets a new leader name and the pictures of a random
@@ -1707,7 +1708,8 @@ Team mates are always accepted, and team enemies always refused.
   start-of-turn step of every turn whose date (the one the ministers see, §7.5 "The
   date") is a multiple of 10, before the Politics minister acts. An entry therefore lasts
   until the next such date: from 1 turn (added on a date ending in 9) to 10 turns (added
-  on a date that is a multiple of 10) (confirmed: binary).
+  on a date that is a multiple of 10) (confirmed: binary). Whether a save and load empties
+  them earlier is question 83.
 - **Which messages get an answer** (confirmed: binary). Each turn the AI answers at most the
   newest political message from X in its answer window (above):
   - a treaty proposal or counter-proposal: Accept, Counter or Refuse Treaty; a trade:
@@ -4731,3 +4733,24 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     enforce for them. To verify in the executable: does the computer player's vehicle list
     look at the ship limit before it places an item, and if not, does it fill its queues
     with ships that wait there?
+82. **A rebel's waiting happiness events** (raised 2026-10-14 by the recheck of the negative
+    claims on the complete listing, seen in passing and not checked; §2.3 "The new empire").
+    A rebel empire starts as a copy of its former owner, and that copy seems to take the
+    owner's list of happiness events waiting for its next update too (spec 02 §4 "Events
+    waiting for the next update are not saved"). If so, the rebels' first happiness update
+    counts the former owner's events of the turn, such as "Any Planet Lost" for the very
+    colony that broke away. To verify: does the copy carry that list, and does the former
+    owner keep its own? Our engine gives the rebels no waiting events: each waiting event
+    names its empire (`GameState::pendingMood`, `MoodEvent::empire`), so the former owner's
+    stay with it (`events.cpp` `breakAway`, inferred).
+83. **The demand lists across a save** (raised 2026-10-14 by the recheck of the negative
+    claims on the complete listing, seen in passing and not checked; §7.4 "Demand lists").
+    The computer player's war, break and peace lists, its promises and the systems it
+    recorded to avoid or to attack seem not to be written to the saved game, which has no
+    place for them (spec 08 §6.3: they are not stored). Loading a game would then empty them
+    before the 10-turn clear, so an accepted demand would stop counting whenever a game is
+    saved and loaded, which a game hosted turn by turn does every turn. To verify: are they
+    saved, and are they emptied on load? Our engine keeps them in its own saves
+    (`Relation::queuedWar`, `queuedBreak`, `queuedPeace`, `promises`, `AiMemory::avoid`,
+    `attackSystems`), so a loaded game keeps them to the 10-turn clear; a game imported from
+    the original's save starts with them empty (spec 08 §7.6).
