@@ -641,7 +641,7 @@ and 0-based in OpenSE4.
 | bool ×4 | Construction Queues window: ships, planets, ship yards, planet yards | `queuesShown` bits 0..3 |
 | bool | Designer condensed view | `designCondensed` |
 | bool | Designer to-hit modifiers | `designToHit` |
-| bool ×2 | Galaxy window: show names, show distances | none |
+| bool ×2 | Galaxy Map window: Show Names, and Show Distances in its destination mode (spec 06 §2.6) | `galaxyMapNames`, `galaxyMapDistances` |
 | bool | Planets window: hide systems to avoid | `planetsNoSysToAvoid` |
 | bool | Combat simulator: no obsolete designs | `simulatorNoObsolete` |
 | bool | System grid | `systemGrid` |
@@ -1062,7 +1062,7 @@ comes first; export the current order as 1.
 | 18, 20, 22, 24 | Close warp point, destroy storm, destroy planet, destroy star | target = the object | StellarManipulation |
 | 19, 21, 23, 61, 63 | Create storm, create planet, create star, destroy nebulae, destroy black hole | act where the ship is | StellarManipulation |
 | 60, 62 | Create nebulae, create black hole | target = an object (a star for nebulae) | StellarManipulation |
-| 66 | Stellar construction | target = object, a planet-size parameter (inferred: in extra) | StellarManipulation (CreateConstructedPlanet) |
+| 66 | Stellar construction | target = object, a planet-size parameter: the size chosen in the window (spec 06 §1.3, confirmed: binary; inferred: in extra) | StellarManipulation (CreateConstructedPlanet); the size, `planetSize`, is neither read nor written while its place is open (§11.1 Q7) |
 | 25 | Sentry | | Sentry |
 | 34, 35 | Launch, recover units | extra = unit kind in the cargo-kind numbering of Load: 2 troops, 3 fighters, 4 mines, 5 satellites, 6 drones, 7 weapon platforms; 0 every kind **(confirmed: binary)**. Not the closing list's vehicle types (§3.9), which number mines and satellites the other way round | LaunchUnits, RecoverUnits (by kind) |
 | 42..46 | Analyze, mothball, unmothball, self-destruct, fire on | | Analyze, Mothball, Unmothball, SelfDestruct, FireOn |
@@ -1546,7 +1546,8 @@ carries out OpenSE4's start of that player's turn before writing (§12).
    values). They are set when a game is made through Game Setup and whenever a host
    processes a turn, and they are needed by every simultaneous game, hotseat included
    (observed).
-7. The exact parameters of the Stellar Construction order.
+7. The exact parameters of the Stellar Construction order. It carries the size the player
+   chose (spec 06 §1.3, confirmed: binary); where in the record is not known.
 8. The formats of the statistics and events companion files, for exporting OpenSE4's
    history (the statistics file is plain text, one line per turn).
 9. Whether militia units (design ids from 65000) can remain in a saved colony.

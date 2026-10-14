@@ -261,7 +261,7 @@ OpenSE4's own choices, (inferred):
 | Cargo Transfer | Two cargo lists (from / to) with transfer step Move One / Five / Ten / Hundred / All (titled "Transfer Cargo"; no order buttons, spec 04 §17 for the simulator's use). The manual says it is not available in simultaneous games, but the executable lights the button and opens the window in both modes (confirmed: binary). | Order T; Combat Simulator. |
 | Launch \ Recover Units | Same two-list pattern for units in space. Not available in simultaneous games. | Order U; tactical combat orders. |
 | Cargo-type / unit-type picker, then location pick | Deferred Load, Drop, Launch-Remote, Recover-Remote orders. | Orders L, D, I, O. |
-| Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). | Order B. |
+| Stellar Manipulation | Location view plus one button per effect (create/destroy planet, star, storm, nebula, black hole; open/close warp point; Construct for ringworld/sphereworld). How it gives its orders: below the table (confirmed: binary). | Order B. |
 | Scrap | Selected Vehicles list (own vehicles at the location in no fleet and not cloaked); Statistics: Scrap Value, Research Potential (None, Minor, Moderate, Sizable or Major, of the last selected vehicle; "None" when any selected one cannot be analyzed), Status, Cost to Unmothball, Can Self-Destruct and Can Be Fired On (Yes only when every selected vehicle can), Space Yard In Sector; Scrap, Analyze, Retrofit, Mothball, Unmothball, Self-destruct, Fire On, each lit only when every selected vehicle qualifies. Rules and turn styles in spec 03 §15 (confirmed: binary). | Order G. |
 | View Orders | Pending orders of the selected object. | Order V. |
 | Select Facilities | Pick facilities to scrap on a planet. | Scrap Facilities order. |
@@ -271,10 +271,44 @@ OpenSE4's own choices, (inferred):
 | Change Name | Text prompt. | Order N. |
 | Formation \ Strategy picker | For a selected fleet. | Order H. |
 | Abandon Planet confirmation | Choose whether to scrap facilities. | Ctrl+A. |
-| Pick Object | Choose one planet, warp point, own object or target when the sector clicked holds several (§2.9) (confirmed: binary). | Colonize, Warp, Drop Cargo, a pursuing Attack. |
+| Pick Object | Choose one planet, warp point, own object or target when the sector clicked holds several (§2.9), or the object a stellar manipulation acts on when the vehicle's sector holds several (below) (confirmed: binary). | Colonize, Warp, Drop Cargo, a pursuing Attack, Stellar Manipulation. |
 | Colony-type picker | Shown when a colonize order completes, if the empire option is on. | Colonize. |
 | Attack Sector prompt | Yes/No when a move would enter a sector holding enemies [S]. | Move orders. |
 | Reorder | Generic list ordering: Move Up, Move Down, Move To Top, Move To Bottom, OK, Cancel. | Research, Intelligence, queues. |
+
+**Stellar Manipulation** (confirmed: binary unless marked). The window shows the selected
+vehicle's sector and a button for each of the 13 manipulations.
+
+- A button is lit when the vehicle itself has the matching ability (a working part that
+  gives it); Create Planet, Destroy Planet, Open Warp Point and Construct also need the
+  ability's value above 0. Nothing else is tested: the order's own checks (spec 01 §9) are
+  made when it is carried out.
+- Construct first asks for the world's size: the constructed worlds (PlanetSize records
+  with `Constructed`) whose `Special Ability ID` is at most the ability's value. Our list
+  offers them in PlanetSize.txt order (inferred).
+- With Empire Options' "confirm stellar manipulation" on, a "Confirm Action" Yes/No names
+  the effect; for Construct it names the size, asking whether to build that world around
+  this star (§7 Q46). No gives no order.
+- Then the target. Create Planet, Create Star, Create Storm, Destroy Nebulae and Destroy
+  Black Hole name none: they act where the vehicle is. Open Warp Point opens the Galaxy Map
+  in destination mode (§2.6) and takes the system clicked there. The others take an object
+  of the vehicle's sector: a star for Destroy Star, Create Nebulae, Create Black Hole and
+  Construct, a warp point for Close Warp Point, a storm for Destroy Storm, a planet for
+  Destroy Planet. One such object is the target at once; with several the Pick Object
+  window asks which; with none a "Cannot Perform Action" box says the sector holds no such
+  object, and no order is given. The candidates are every object of that kind in the
+  sector, in the system's object order, whether or not the player sees it, as for Colonize
+  (§2.9) (inferred; §7 Q113).
+- The order is appended to the vehicle's **own** order list, never given to its fleet: the
+  other members' lists stay as they are (a fleet member's own list can then differ from
+  theirs; spec 03 §8 says how a fleet acts on such lists).
+- In a simultaneous game the window then closes. In a turn-based game the vehicle's list is
+  carried out at once, the effect's picture plays and the window shows the result.
+
+Our client follows this since 2026-10-13 (`screens/stellar.cpp`; the order is
+`cmd::SetOrders` with `ownList`, the size `Order::planetSize`). Its own additions stay: the
+film strip of the action under the pointer, and the line that says, for the action under
+the pointer, what the order's checks would say if it were carried out now.
 
 ### 1.4 Report popups
 
@@ -1845,6 +1879,43 @@ binary):
 
 The Systems To Avoid window uses the same four schemes, and the Borders window the
 Claimed scheme over the empires picked with Select All, Allies, Enemies or Us.
+
+**Show Names** (confirmed: binary) starts from an option of the empire's that Empire Options
+does not show. A click on any button of the window writes the check box's state back into
+it, so it is kept between openings and saved with the game (spec 08 §3.6.7).
+
+**Notes** (confirmed: binary). A left-click anywhere on the map takes the system nearest the
+pointer, explored or not, and opens a Notes window titled "Notes for" and the system's name,
+or "Notes for Unexplored System" when the player has not explored it (an unexplored system is
+never named, spec 01 §6.1). It holds a text box with the system's notes, OK and Cancel. OK or
+Enter saves the text and marks the system's notes as changed; Cancel or Esc leaves them as
+they were. Hovering writes the notes of the system nearest the pointer, wherever the pointer
+is on the map, on the line under it.
+
+**Destination mode** (confirmed: binary). Open Warp Point in the Stellar Manipulation window
+(§1.3) opens the window in a mode of its own:
+
+- the six overlay buttons are hidden; a Show Distances check box sits in slot 12, and Cancel
+  in slot 14, in Close's place;
+- the line under the map says that every distance is in light-years from the system under
+  the pointer, and the hint asks for a click on the system to take as the destination;
+- the vehicle's own system is marked;
+- Show Distances starts from a second option of the empire's, kept and saved as Show Names
+  is;
+- a left-click anywhere on the map takes the system nearest the pointer, explored or not, as
+  the destination and closes the window; Cancel or Esc closes it with no destination, and no
+  order is given.
+
+Goto System (slot 11) and Show Names (slot 13) stay as in the plain mode (inferred: the
+analysis names only the changes above).
+
+Since 2026-10-13 our client follows (`screens/galaxy_map.cpp`; the options are
+`InterfaceOptions::galaxyMapNames` and `galaxyMapDistances`, save format 10). The
+destination mode replaces OpenSE4's earlier pick of a sector of the destination system in
+the main window. OpenSE4's own additions stay: in the plain mode its Show Distances in slot 7
+(off at each opening, not saved), the legend in slots 8 to 10, and the system's name before
+its notes on the line under the map. Ours marks the origin as the galaxy panel marks the
+system it shows (inferred: how the original marks it).
 
 ### 2.7 Turn flow as the player sees it
 
@@ -3705,9 +3776,9 @@ something open; all are now settled from the executable:
     Our client follows this: Scrap and Self-Destruct ask "Confirm Action" with the option
     on, the facility check lists never ask, and each Stellar Manipulation button asks
     "Confirm Action" naming its effect in our words. It differs: Analyze and Fire On are
-    disabled buttons in ours (the engine has neither), so their questions do not exist yet;
-    our engine picks a constructed world's size itself, so Construct asks once, without a
-    size question.
+    disabled buttons in ours (the engine has neither), so their questions do not exist yet.
+    Since 2026-10-13 Construct asks for the size first and then whether to build that size
+    (§1.3, `Order::planetSize`).
 47. **Claims and abandoned planets.** "Claim every system we colonize" applies to human
     empires when the colony is founded (computer players work out their claims each
     turn). Facilities left on an abandoned planet go, all of them, to the next colony
@@ -5219,3 +5290,10 @@ an imported turn-based game of the original.
      measurement. The player found ours too slow next to the original on their own computer,
      which suggests a finer counter there and the waits as written, the pace OpenSE4 now takes
      by default (inferred). Measuring the original on Windows would settle it.
+113. **The objects a stellar manipulation can be aimed at.** The Stellar Manipulation window
+     takes its target from the vehicle's sector after the player confirms (§1.3), and asks
+     with Pick Object when there are several. Does it list the objects the player cannot see
+     (a planet a storm hides, a cloaked colony's planet), as Colonize's pick does (§2.9)? And
+     does the Construct size picker list the constructed worlds in PlanetSize.txt order, and
+     appear when only one size qualifies? Our client lists every object of the kind, seen or
+     not, and always shows the size picker, its sizes in file order (inferred).
