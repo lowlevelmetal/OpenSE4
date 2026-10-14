@@ -596,7 +596,11 @@ void io(Ar& ar, GameState& s) {
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------
 
 template <class Ar> void io(Ar& ar, cmd::SetOrders& c) { fields(ar, c.vehicle, c.fleet, c.orders, c.repeat, c.planet); }
-template <class Ar> void io(Ar& ar, cmd::CreateFleet& c) { fields(ar, c.name, c.members); }
+template <class Ar>
+void io(Ar& ar, cmd::CreateFleet& c) {
+    fields(ar, c.name, c.members);
+    if (formatVersion(ar) >= 10) fields(ar, c.location);   // format 9 had no empty fleets
+}
 template <class Ar> void io(Ar& ar, cmd::JoinFleet& c) { fields(ar, c.fleet, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::LeaveFleet& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::DisbandFleet& c) { fields(ar, c.fleet); }
@@ -615,7 +619,11 @@ template <class Ar> void io(Ar& ar, cmd::QueueFlags& c) { fields(ar, c.target, c
 template <class Ar> void io(Ar& ar, cmd::QueueReplaceFacility& c) { fields(ar, c.target, c.index, c.facility); }
 template <class Ar> void io(Ar& ar, cmd::Retrofit& c) { fields(ar, c.vehicle, c.design); }
 template <class Ar> void io(Ar& ar, cmd::SetColonyType& c) { fields(ar, c.planet, c.colonyType); }
-template <class Ar> void io(Ar& ar, cmd::AbandonPlanet& c) { fields(ar, c.planet); }
+template <class Ar>
+void io(Ar& ar, cmd::AbandonPlanet& c) {
+    fields(ar, c.planet);
+    if (formatVersion(ar) >= 10) fields(ar, c.scrapFacilities);   // format 9 abandoned at once, its facilities scrapped first
+}
 
 template <class Ar>
 void io(Ar& ar, cmd::TransferCargo& c) {

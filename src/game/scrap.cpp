@@ -91,8 +91,9 @@ void scrapVehicle(TurnContext& ctx, Vehicle& v) {
     // Damage does not lower the value and cargo is lost (spec 03 §15).
     s.empire(v.owner).stockpile += scrapRefund(ctx.rules, s, v);
     perDesign(ctx.rules, s, v, [&](DesignId d, int n) { s.design(d).scrapped += n; });
-    ctx.log(v.owner, LogCategory::Construction, std::format("{} scrapped", v.name), {}, v.location,
-            logpicture::unitGroup(vehicleType(ctx.rules, s, v), v.owner, v.design));
+    // "Vehicle Scrapped" (spec 03 §15, spec 05 §19 Q74, confirmed: binary); the text is ours.
+    ctx.log(v.owner, LogCategory::Construction, "Vehicle Scrapped", std::format("{} was scrapped in {}.", v.name, sectorText(s, v.location)),
+            v.location, logpicture::unitGroup(vehicleType(ctx.rules, s, v), v.owner, v.design));
     removeVehicle(v);
 }
 
@@ -195,10 +196,12 @@ bool scrapYardAt(const Rules& r, const GameState& s, EmpireId e, Location where)
     return false;
 }
 
-std::string scrapActionProblem(const Rules& r, const GameState& s, EmpireId e, const Vehicle& v, ScrapAction a, DesignId retrofitTo) {
+std::string scrapActionProblem(const Rules& r, const GameState& s, EmpireId e, const Vehicle& v, ScrapAction a, DesignId retrofitTo,
+                               ScrapTest test) {
     if (!alive(v) || v.owner != e) return "Not your vehicle";
-    // The window lists no fleet member and no cloaked vehicle (spec 03 §15, §19 Q74).
-    if (v.fleet.valid()) return "A vehicle in a fleet is not in the Scrap window";
+    // The window lists no fleet member and no cloaked vehicle (spec 03 §15,
+    // §19 Q74); an order is not refused for a fleet (spec 05 §7.5 *Scrap*, Q74).
+    if (test == ScrapTest::Window && v.fleet.valid()) return "A vehicle in a fleet is not in the Scrap window";
     if (v.status == VehicleStatus::Cloaked) return "A cloaked vehicle is not in the Scrap window";
     const VehicleType type = vehicleType(r, s, v);
     switch (a) {
@@ -217,8 +220,11 @@ std::string scrapActionProblem(const Rules& r, const GameState& s, EmpireId e, c
             if (!v.cargo.empty()) return "Unload the cargo first";
             return {};
         case ScrapAction::Unmothball:
+            // The button needs the status and a yard; the order the cost in
+            // stock, then the yard (spec 03 §15, confirmed: binary).
             if (v.status != VehicleStatus::Mothballed) return "Not mothballed";
-            if (!s.empire(e).stockpile.covers(unmothballCharge(r, s, v))) return "Not enough resources to unmothball";
+            if (test == ScrapTest::Order && !s.empire(e).stockpile.covers(unmothballCharge(r, s, v))) return "Not enough resources to unmothball";
+            if (!scrapYardAt(r, s, e, v.location)) return "Unmothballing needs a space yard in the sector";
             return {};
         case ScrapAction::Retrofit: return retrofitProblem(r, s, e, v, retrofitTo);
         case ScrapAction::SelfDestruct: return movement::canSelfDestruct(r, s, v) ? std::string{} : std::string("It cannot self-destruct");

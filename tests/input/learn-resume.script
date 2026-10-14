@@ -65,6 +65,7 @@ wait-window fleet-transfer
 wait-step 4
 click tag:fleet-transfer:create-fleet
 click item:OK in="Create Fleet"
+click item:##row in=fleet-transfer nth=1
 wait-step 5
 key Escape
 wait-closed fleet-transfer

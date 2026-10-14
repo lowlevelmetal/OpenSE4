@@ -1157,7 +1157,14 @@ private:
                 o.amount = position;
                 return o;
             }
-            case 64: return dropped("Abandon Planet orders (OpenSE4 abandons at once; dropped)");
+            case 64:
+                // A colony's Abandon Planet; target 1: scrap the facilities first (§3.8.8).
+                if (!colony) return dropped("Abandon Planet orders of a vehicle (dropped)");
+                o.kind = OrderKind::Abandon;
+                o.object = colony->planet;
+                o.location = locationOf(s_.galaxy, colony->planet);
+                o.amount = rec.target == 1 ? 1 : 0;
+                return o;
             case 65:
                 if (rec.extra < 1 || rec.extra > 3 || rec.system < 1 || rec.system > 3) return dropped("orders with a missing target (dropped)");
                 o.kind = OrderKind::ConvertResources;

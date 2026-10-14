@@ -194,6 +194,22 @@ game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& 
 // its ability list; satellite groups, minefields and drone groups always;
 // fighter groups never (spec 03 §12, §15).
 bool canSelfDestruct(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+// The Scrap window's list order (spec 06 §1.3, confirmed: binary): Order By
+// Name (the default) by vehicle name with letter case ignored, then by
+// design name; Order By Class by design name, then by vehicle name
+// (inferred). Ties keep the order they came in.
+void sortScrapList(const game::GameState& s, std::vector<const game::Vehicle*>& list, bool byClass);
+// The Retrofit picker's designs, "Select New Design" (spec 03 §14,
+// confirmed: binary): the empire's own designs in its design-list order
+// with the vehicle's hull, other than its design, not obsolete and
+// buildable now (hull, components and mounts researched).
+std::vector<game::DesignId> retrofitChoices(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Vehicle& v);
+// Fleet Transfer's lists (spec 03 §9, confirmed: binary): the own vehicles in
+// the sector in no fleet that may join one (ships, fighter groups, bases when
+// `Bases Can Join Fleets`; cloaked and mothballed ones too), and the own
+// fleets whose location is the sector.
+std::vector<const game::Vehicle*> fleetTransferVehicles(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::Location where);
+std::vector<const game::Fleet*> fleetTransferFleets(const game::GameState& s, game::EmpireId e, game::Location where);
 // What the Scrap window shows and lights for the selected vehicles, given in
 // the window's list order (spec 03 §15, spec 06 §1.3, confirmed: binary).
 struct ScrapWindowState {
@@ -208,6 +224,12 @@ struct ScrapWindowState {
     // action's test (game::scrapActionProblem); Retrofit when they all have
     // the same design, a yard and no cloak (the design picked is tested later).
     bool scrap = false, analyze = false, mothball = false, unmothball = false, retrofit = false, selfDestruct = false, fireOn = false;
+    // Status: the last selected vehicle's word (Normal, Mothballed); empty
+    // when nothing is selected.
+    std::string_view status;
+    // Scrap Value and Cost to Unmothball: the sums over the selection, 0
+    // unless the action's button is lit.
+    game::Resources scrapValue, unmothballCost;
 };
 ScrapWindowState scrapWindowState(const game::Rules& r, const game::GameState& s, game::EmpireId e,
                                   const std::vector<const game::Vehicle*>& selection);

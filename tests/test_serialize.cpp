@@ -287,6 +287,10 @@ TEST_CASE("serialize: orders round trip for every command type") {
     const auto& leader = std::get<cmd::SetFleetLeader>(loaded->commands[c.size() - 2]);
     CHECK(leader.fleet == FleetId{46u});
     CHECK(leader.vehicle == VehicleId{47u});
+    // An empty fleet's place and Abandon Planet's choice (format 10).
+    CHECK(std::get<cmd::CreateFleet>(loaded->commands[1]).location == (Location{SystemId{1u}, Sector{2, 3}}));
+    for (const Command& k : loaded->commands)
+        if (const auto* abandon = std::get_if<cmd::AbandonPlanet>(&k)) CHECK(abandon->scrapFacilities);
     // A mod's order (format 9).
     const auto& mod = std::get<cmd::ModCommand>(loaded->commands.back());
     CHECK(mod == std::get<cmd::ModCommand>(c.back()));

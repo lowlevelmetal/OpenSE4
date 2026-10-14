@@ -113,7 +113,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     EmpireOrders orders{EmpireId{1u}, 42, {}};
     auto& c = orders.commands;
     c.push_back(cmd::SetOrders{VehicleId{1u}, FleetId{2u}, {order, Order{}}, true});
-    c.push_back(cmd::CreateFleet{"Strike Group", {VehicleId{3u}, VehicleId{4u}}});
+    c.push_back(cmd::CreateFleet{"Strike Group", {VehicleId{3u}, VehicleId{4u}}, Location{SystemId{1u}, Sector{2, 3}}});
     c.push_back(cmd::JoinFleet{FleetId{5u}, VehicleId{6u}});
     c.push_back(cmd::LeaveFleet{VehicleId{7u}});
     c.push_back(cmd::DisbandFleet{FleetId{8u}});
@@ -130,7 +130,7 @@ game::EmpireOrders everyCommandSample(const Rules& r) {
     c.push_back(cmd::QueueFlags{yard, true, true, true, 7});
     c.push_back(cmd::Retrofit{VehicleId{16u}, DesignId{17u}});
     c.push_back(cmd::SetColonyType{ObjectId{18u}, "Research"});
-    c.push_back(cmd::AbandonPlanet{ObjectId{19u}});
+    c.push_back(cmd::AbandonPlanet{ObjectId{19u}, true});
     c.push_back(cmd::TransferCargo{VehicleId{20u}, ObjectId{21u}, VehicleId{22u}, ObjectId{23u}, DesignId{24u}, EmpireId{2u}, 1234567890123});
     c.push_back(cmd::CreateDesign{design});
     c.push_back(cmd::SetDesignObsolete{DesignId{25u}, false});

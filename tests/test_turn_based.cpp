@@ -755,6 +755,26 @@ TEST_CASE("turn-based: Use Facility clears the colony's list and waits for the c
     CHECK(hasRejection(applyLive(d.r(), d.s(), kA, ordersFor(ship, {use}))));
 }
 
+TEST_CASE("turn-based: Abandon Planet runs the colony's list at once, without a log entry (spec 02 §5)") {
+    Duel d;
+    const ObjectId home = d.w.planet(d.a, {6, 6});
+    d.w.colony(home, kA, 10, {"Mv Trainer"});
+    resumeTurnBased(d.r(), d.s());
+    REQUIRE(d.s().playerTurn.empire == kA);
+    d.s().empire(kA).log.clear();
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, cmd::AbandonPlanet{home})));
+    // Facilities kept: the planet stays ours, empty, and its list is done.
+    REQUIRE(d.s().colony(home));
+    CHECK(d.s().colony(home)->totalPopulation() == 0);
+    CHECK(d.s().colony(home)->orders.empty());
+    CHECK_FALSE(d.w.logged(kA, "abandoned"));
+    // Scrapped first: the colony goes at once.
+    const ObjectId other = d.w.planet(d.a, {2, 2});
+    d.w.colony(other, kA, 10, {"Mv Trainer"});
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, cmd::AbandonPlanet{other, true})));
+    CHECK_FALSE(d.s().colony(other));
+}
+
 // ---- Tagged vehicles (spec 03 §8 "Tagged vehicles", §19 Q82) ----------------------------------------
 
 namespace {

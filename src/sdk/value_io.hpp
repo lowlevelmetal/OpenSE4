@@ -691,6 +691,7 @@ template <class A>
 void fields(A& a, cmd::CreateFleet& x) {
     a("name", x.name);
     a("members", x.members);
+    a("location", x.location);
 }
 template <class A>
 void fields(A& a, cmd::OrderTagged& x) {
@@ -824,6 +825,7 @@ void fields(A& a, cmd::SetColonyType& x) {
 template <class A>
 void fields(A& a, cmd::AbandonPlanet& x) {
     a("planet", x.planet);
+    a("scrap_facilities", x.scrapFacilities);
 }
 template <class A>
 void fields(A& a, cmd::CloakColony& x) {

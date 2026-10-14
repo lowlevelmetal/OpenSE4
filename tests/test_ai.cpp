@@ -6108,14 +6108,15 @@ TEST_CASE("ai: over the soft cap the oldest design goes: a ship wherever it is, 
     }
     s.vehicle(veteran)->status = VehicleStatus::Normal;
     s.vehicle(veteran)->orders.clear();
-    // A candidate in a fleet leaves it first: what a Scrap does to a fleet is
-    // open (spec 05 Q74), so OpenSE4 keeps its choice (inferred).
+    // A candidate in a fleet stays in it: the Move To and the Scrap go onto
+    // its own list (spec 05 Q74, confirmed: binary).
     REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {veteran}}).ok);
     cmds = plan(true);
-    REQUIRE(firstOf<cmd::LeaveFleet>(cmds));
-    CHECK(firstOf<cmd::LeaveFleet>(cmds)->vehicle == veteran);
-    CHECK(countOf<cmd::Scrap>(cmds) == 1);
+    CHECK(countOf<cmd::LeaveFleet>(cmds) == 0);
+    REQUIRE(countOf<cmd::Scrap>(cmds) == 1);
     CHECK(applyAll(r, s, me, cmds).empty());
+    CHECK(s.vehicle(veteran)->fleet.valid());
+    CHECK(s.vehicle(veteran)->orders == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
 }
 
 TEST_CASE("ai: the scrap place is the nearest queue owner with a working yard, the earlier in the queue list on a tie") {

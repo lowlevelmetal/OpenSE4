@@ -411,11 +411,10 @@ public:
         const game::Empire& me = ui.me();
         const bool claimTab = overlay_ == MapOverlay::AllyClaimed;
         d.beginContent();
-        dimText(claimTab ? "Click a system to claim it for us, or to give up our claim."
-                 : me.avoidRestrictedSystems
-                     ? "Click a system to mark it as one our ships avoid, or to clear the mark."
-                     : "Click a system to mark it as one to avoid, or to clear the mark. Routes ignore the marks while the "
-                       "Empire Options switch to avoid them is off.");
+        // A click toggles the avoid mark on every tab (spec 06 §1.2, confirmed: binary).
+        dimText(me.avoidRestrictedSystems ? "Click a system to mark it as one our ships avoid, or to clear the mark."
+                                          : "Click a system to mark it as one to avoid, or to clear the mark. Routes ignore the marks while the "
+                                            "Empire Options switch to avoid them is off.");
         QuadrantMapOptions opt;
         opt.overlay = overlay_;
         opt.names = true;
@@ -423,13 +422,8 @@ public:
         const ImVec2 avail = ImGui::GetContentRegionAvail();
         const QuadrantMapResult r = quadrantMap(ui, "##map", {avail.x / ui.k(), avail.y / ui.k() - 48}, opt);
         if (r.clicked) {
-            if (claimTab) {
-                const bool claimed = std::binary_search(me.claimedSystems.begin(), me.claimedSystems.end(), *r.clicked);
-                status_.issue(ui, cmd::SetSystemFlags{.system = *r.clicked, .claim = !claimed});
-            } else {
-                const bool avoided = std::binary_search(me.systemsToAvoid.begin(), me.systemsToAvoid.end(), *r.clicked);
-                status_.issue(ui, cmd::SetSystemFlags{.system = *r.clicked, .avoid = !avoided});
-            }
+            const bool avoided = std::binary_search(me.systemsToAvoid.begin(), me.systemsToAvoid.end(), *r.clicked);
+            status_.issue(ui, cmd::SetSystemFlags{.system = *r.clicked, .avoid = !avoided});
         }
         // Status line: the hovered system, else the totals.
         if (r.hovered) {
@@ -452,14 +446,14 @@ public:
         if (d.tab("Ally Claimed", overlay_ == MapOverlay::AllyClaimed)) overlay_ = MapOverlay::AllyClaimed;
         if (d.tab("Enemy Claimed", overlay_ == MapOverlay::EnemyClaimed)) overlay_ = MapOverlay::EnemyClaimed;
         d.spacer();
-        if (claimTab) {
-            if (d.button("Release All Claims", !me.claimedSystems.empty())) {
-                const std::vector<game::SystemId> list = me.claimedSystems;
-                for (game::SystemId sys : list) status_.issue(ui, cmd::SetSystemFlags{.system = sys, .claim = false});
-            }
-        } else if (d.button("Clear All", !me.systemsToAvoid.empty())) {
+        if (d.button("Clear All", !me.systemsToAvoid.empty())) {
             const std::vector<game::SystemId> list = me.systemsToAvoid;
             for (game::SystemId sys : list) status_.issue(ui, cmd::SetSystemFlags{.system = sys, .avoid = false});
+        }
+        // OpenSE4's own: claims are made in the Borders window; this gives them all up.
+        if (claimTab && d.button("Release All Claims", !me.claimedSystems.empty())) {
+            const std::vector<game::SystemId> list = me.claimedSystems;
+            for (game::SystemId sys : list) status_.issue(ui, cmd::SetSystemFlags{.system = sys, .claim = false});
         }
         d.close();
         return d.keepOpen();

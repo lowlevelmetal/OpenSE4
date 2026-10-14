@@ -2511,8 +2511,10 @@ TEST_CASE("movement: founding a colony claims nothing, whatever the Politics opt
     }
 }
 
-TEST_CASE("commands: an abandoned colony that keeps facilities stays with its owner") {
-    // Spec 06 §7 Q47 (confirmed: binary): the people leave and the anger is
+TEST_CASE("commands: Abandon Planet is a colony order; an abandoned colony that keeps facilities stays with its owner") {
+    // Spec 02 §5, spec 06 §7 Q47 (confirmed: binary): the population test is
+    // made when the order is given; the order then waits in the colony's
+    // list for day 1 of the movement phase. The people leave and the anger is
     // reset to 25; with facilities left, the planet stays the same empire's
     // colony, empty, and nobody can colonize it.
     World w;
@@ -2523,12 +2525,34 @@ TEST_CASE("commands: an abandoned colony that keeps facilities stays with its ow
     const std::vector<uint32_t> facilities = w.s.colony(planet)->facilities;
     w.s.colonies[planet.index()]->anger = 70;
     REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{planet}).ok);
+    REQUIRE(w.s.colony(planet)->orders.size() == 1);
+    const Order abandon = w.s.colony(planet)->orders.front();
+    CHECK(abandon.kind == OrderKind::Abandon);
+    CHECK(abandon.amount == 0);
+    CHECK(displayName(OrderKind::Abandon) == "Abandon Planet");
+    CHECK(w.s.colony(planet)->totalPopulation() == 10);
+    // Clear Orders takes it back; a list may keep it, but nothing else gives it.
+    cmd::SetOrders keep;
+    keep.planet = planet;
+    keep.orders = {abandon};
+    REQUIRE(apply(r, w.s, kA, keep).ok);
+    cmd::SetOrders clear;
+    clear.planet = planet;
+    REQUIRE(apply(r, w.s, kA, clear).ok);
+    CHECK(w.s.colony(planet)->orders.empty());
+    CHECK_FALSE(apply(r, w.s, kA, keep).ok);
+    REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{planet}).ok);
+    w.s.empire(kA).log.clear();
+    w.move();
     REQUIRE(w.s.colony(planet));
+    CHECK(w.s.colony(planet)->orders.empty());
     CHECK(w.s.colony(planet)->owner == kA);
     CHECK(w.s.colony(planet)->totalPopulation() == 0);
     CHECK(w.s.colony(planet)->anger == 25);
     CHECK(w.s.colony(planet)->facilities == facilities);
     CHECK(w.s.leftFacilities.empty());
+    // During turn processing the Planet Minister reports it.
+    CHECK(w.logged(kA, "Planet Minister"));
     // Another empire's colony ship cannot settle it.
     const VehicleId ship = w.spawn(w.ship(kB, "Settler", 4, {"Test Rock Pod"}), at(a, 5, 6));
     fuel(w, ship);
@@ -2538,16 +2562,27 @@ TEST_CASE("commands: an abandoned colony that keeps facilities stays with its ow
     REQUIRE(w.s.colony(planet));
     CHECK(w.s.colony(planet)->owner == kA);
 
-    // Scrapped first: a refund now, and with no facility left the colony goes.
+    // Facilities scrapped first: round(cost × 30 %) each, and with no facility
+    // left the colony goes. The population is not tested again.
     const ObjectId other = w.planet(a, {8, 8});
     w.colony(other, kA, 10, {"Mv Trainer"});
+    const Resources refund =
+        Resources::from(r.facility(w.s.colony(other)->facilities.front()).cost).percentRounded(r.setting("Scrap Facility Percent Returned", 30));
+    REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{other, true}).ok);
+    CHECK(w.s.colony(other)->orders.front().amount == 1);
+    w.s.colonies[other.index()]->population.front().millions = 500;
     const Resources before = w.s.empire(kA).stockpile;
-    REQUIRE(apply(r, w.s, kA, cmd::Scrap{{}, other, 0}).ok);
-    CHECK(w.s.empire(kA).stockpile.total() > before.total());
-    REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{other}).ok);
+    w.move();
     CHECK_FALSE(w.s.colony(other));
+    CHECK(w.s.empire(kA).stockpile == before + refund);
     CHECK(w.s.leftFacilities.empty());
     CHECK(validateState(w.s, &r).empty());
+
+    // Too many people: refused when it is given.
+    const ObjectId crowded = w.planet(a, {2, 2});
+    w.colony(crowded, kA, 60);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::AbandonPlanet{crowded}).ok);
+    CHECK(w.s.colony(crowded)->orders.empty());
 }
 
 TEST_CASE("commands: the Empire Options are replaced as a whole and checked") {

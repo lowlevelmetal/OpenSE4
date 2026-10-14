@@ -91,6 +91,7 @@ click item:report:ship nth=1
 wait 2
 key G
 wait-window scrap
+click item:##row in=scrap nth=1
 click item:Scrap in=scrap
 click item:Yes in="Confirm Action" optional
 wait 5

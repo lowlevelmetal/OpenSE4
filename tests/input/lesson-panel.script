@@ -64,6 +64,7 @@ wait-for item:OK in="Create Fleet"
 assert-inside item:OK in="Create Fleet" tag:lesson:panel
 screenshot create-fleet-over-panel.png
 click item:OK in="Create Fleet"
+click item:##row in=fleet-transfer nth=1
 wait-step 5
 # The panel keeps the place it was dragged to: it hides nothing step 5 outlines.
 assert-inside at:300,350 tag:lesson:panel

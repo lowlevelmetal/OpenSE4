@@ -54,25 +54,27 @@ title = "Create a fleet"
 text = """
 **Press Create Fleet**, keep the name offered (or type your own) and press **OK**.
 
-The new fleet starts with your selected attack ship.
+The new fleet starts empty: you put ships in it next.
 """
 highlight = ["fleet-transfer:create-fleet"]
 show = ["fleet-transfer:ships", "fleet-transfer:fleets"]
-done = { any = [{ command = "CreateFleet", design_type = "Attack Ship" }, { fleet_ships = 1, design_type = "Attack Ship" }] }
+done = { any = [{ command = "CreateFleet" }, { fleet_ships = 1, design_type = "Attack Ship" }] }
 manual = "ships-and-fleets#fleets"
 
 [[step]]
-title = "Add the second attack ship"
+title = "Add the attack ships"
 text = """
-**Click your other attack ship** in the list of ships outside fleets: its name begins with
-**{design:Attack Ship}**. It joins the selected fleet.
+**Click both attack ships** in the list of ships outside fleets: their names begin with
+**{design:Attack Ship}**. Each joins the selected fleet.
 
-Leave the colony ship out: a fleet moves at the speed of its slowest ship. Later, a click on a
-ship in the fleet's list on the right takes it out again.
+Leave the colony ship out: a fleet moves at the speed of its slowest ship. A click on a ship in
+the fleet's list on the right takes it out again. A fleet still empty when the window closes is
+deleted.
 """
 highlight = ["fleet-transfer:ships", "fleet-transfer:ships:named"]
+allow = ["fleet-transfer:create-fleet"]
 show = ["fleet-transfer:fleets"]
-done = { any = [{ command = "JoinFleet", design_type = "Attack Ship" }, { fleet_ships = 2, design_type = "Attack Ship" }] }
+done = { fleet_ships = 2, design_type = "Attack Ship" }
 manual = "ships-and-fleets#fleets"
 
 [[step]]

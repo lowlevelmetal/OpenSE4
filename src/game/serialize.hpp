@@ -91,6 +91,11 @@ class Rules;
 // §3.6.7). Format 7 still reads, without them.
 // Version 10: the REA parity audit's state (listed as each change lands).
 // Format 9 still reads, without it.
+// - The scrap package: a colony's Abandon Planet order (OrderKind::Abandon,
+//   `amount` 1 to scrap the facilities first; spec 02 §5); the commands'
+//   cmd::AbandonPlanet::scrapFacilities and cmd::CreateFleet::location (an
+//   empty fleet, spec 03 §9). A format 9 AbandonPlanet reads as one that
+//   keeps the facilities, a CreateFleet as one with no place.
 inline constexpr uint32_t kSaveVersion = 10;
 inline constexpr uint32_t kMinSaveVersion = 7;
 

@@ -37,6 +37,7 @@ std::string_view displayName(OrderKind k) {
         // The ministers' own orders (spec 05 §7.5).
         case OrderKind::Seek: return "Seek";
         case OrderKind::JoinFleet: return "Join Fleet";
+        case OrderKind::Abandon: return "Abandon Planet";
         case OrderKind::Count: break;
     }
     return "?";
@@ -182,9 +183,16 @@ void GameState::removeDeadVehicles() {
     tidyFleets();
 }
 
-void GameState::tidyFleets() {
+void GameState::tidyFleets(bool keepEmpty) {
     std::vector<FleetId> abandoned;
     for (Fleet& f : fleets) {
+        // A fleet with no members at all is one Fleet Transfer has just made
+        // and is filling (cmd::CreateFleet); the window deletes it when it is
+        // still empty as it closes, and turn processing drops any left.
+        if (f.members.empty()) {
+            if (!keepEmpty) abandoned.push_back(f.id);
+            continue;
+        }
         std::erase_if(f.members, [&](VehicleId id) {
             const Vehicle* v = vehicle(id);
             return !v || v->count <= 0 || v->fleet != f.id;
@@ -301,14 +309,12 @@ void fleetMemberMoved(GameState& s, const Vehicle& v) {
 }
 
 void leaveFleet(GameState& s, Vehicle& v) {
-    const FleetId id = v.fleet;
     v.fleet = {};
     v.orders.clear();
     v.repeatOrders = false;
-    if (Fleet* f = s.fleet(id)) {
-        std::erase(f->members, v.id);
-        if (f->leader == v.id) f->leader = {};  // the first member leads again (spec 03 §9)
-    }
+    // tidyFleets takes it off the member list, clears a choice of it as the
+    // leader (the first member leads again, spec 03 §9) and disbands the
+    // fleet when no member is left at its location.
     s.tidyFleets();
 }
 

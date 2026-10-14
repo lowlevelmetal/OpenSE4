@@ -397,6 +397,65 @@ ScrapWindowState scrapWindowState(const game::Rules& r, const game::GameState& s
     });
     // The last selected vehicle's word; "None" when any cannot be analyzed.
     if (out.analyze) out.researchPotential = game::researchPotentialWord(game::analyzePairs(r, s, e, *sel.back()).size());
+    out.status = sel.back()->status == game::VehicleStatus::Mothballed ? "Mothballed" : sel.back()->status == game::VehicleStatus::Cloaked ? "Cloaked" : "Normal";
+    for (const game::Vehicle* v : sel) {
+        if (out.scrap) out.scrapValue += scrapValue(r, s, *v);
+        if (out.unmothball) out.unmothballCost += unmothballCost(r, s, *v);
+    }
+    return out;
+}
+
+namespace {
+
+// Letter case ignored (ASCII), as the window's sorted list compares.
+int compareNoCase(std::string_view a, std::string_view b) {
+    const size_t n = std::min(a.size(), b.size());
+    for (size_t i = 0; i < n; ++i) {
+        auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
+        const char x = lower(a[i]), y = lower(b[i]);
+        if (x != y) return static_cast<unsigned char>(x) < static_cast<unsigned char>(y) ? -1 : 1;
+    }
+    return a.size() == b.size() ? 0 : a.size() < b.size() ? -1 : 1;
+}
+
+} // namespace
+
+void sortScrapList(const game::GameState& s, std::vector<const game::Vehicle*>& list, bool byClass) {
+    auto designName = [&](const game::Vehicle* v) -> std::string_view {
+        return v->design.valid() && v->design.index() < s.designs.size() ? std::string_view(s.design(v->design).name) : std::string_view{};
+    };
+    std::stable_sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
+        const int first = byClass ? compareNoCase(designName(a), designName(b)) : compareNoCase(a->name, b->name);
+        if (first != 0) return first < 0;
+        return (byClass ? compareNoCase(a->name, b->name) : compareNoCase(designName(a), designName(b))) < 0;
+    });
+}
+
+std::vector<game::DesignId> retrofitChoices(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Vehicle& v) {
+    std::vector<game::DesignId> out;
+    if (!e.valid() || e.index() >= s.empires.size() || !v.design.valid() || v.design.index() >= s.designs.size()) return out;
+    const game::Empire& emp = s.empire(e);
+    const uint32_t hull = s.design(v.design).hull;
+    for (game::DesignId id : emp.designs) {
+        if (!id.valid() || id.index() >= s.designs.size() || id == v.design) continue;
+        const game::Design& d = s.design(id);
+        if (d.owner != e || d.hull != hull || d.obsolete || !r.designTechnology(emp, d)) continue;
+        out.push_back(id);
+    }
+    return out;
+}
+
+std::vector<const game::Vehicle*> fleetTransferVehicles(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::Location where) {
+    std::vector<const game::Vehicle*> out;
+    for (const game::Vehicle& v : s.vehicles)
+        if (v.owner == e && v.count > 0 && v.location == where && !v.fleet.valid() && game::fleetJoinProblem(r, s, v).empty()) out.push_back(&v);
+    return out;
+}
+
+std::vector<const game::Fleet*> fleetTransferFleets(const game::GameState& s, game::EmpireId e, game::Location where) {
+    std::vector<const game::Fleet*> out;
+    for (const game::Fleet& f : s.fleets)
+        if (f.owner == e && f.location == where) out.push_back(&f);
     return out;
 }
 

@@ -2,11 +2,14 @@
 // spec 03 §14-15, spec 02 §6): the own vehicles in a sector, toggled into a
 // selection, with what scrapping, unmothballing and the other actions would
 // give or cost. With an own colony in the sector a Facilities tab lists its
-// facilities for Scrap Facilities.
+// facilities for Scrap Facilities (OpenSE4's own; the window opens on its
+// vehicles, and on that tab when opened with kFacilitiesTab).
 
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
+#include "client/classic/status_icons.hpp"
 
 #include "game/design.hpp"
 #include "game/query.hpp"
@@ -23,11 +26,84 @@ using namespace shipui;
 
 std::string plural(int n, std::string_view one, std::string_view many) { return std::format("{} {}", n, n == 1 ? one : many); }
 
+// The Retrofit picker, "Select New Design" (spec 03 §14, confirmed: binary):
+// a row per design with its picture, Name, Size and the retrofit's cost in
+// three resource columns; a left-click picks it, a right-click opens its
+// Design Report. A row the retrofit would refuse now says why when hovered
+// (OpenSE4's); it can be picked all the same, as in the original.
+class RetrofitPicker {
+public:
+    struct Row {
+        game::DesignId design;
+        std::string size;
+        game::Resources cost;
+        std::string problem;
+    };
+    void open(std::vector<Row> rows) {
+        rows_ = std::move(rows);
+        request_ = true;
+    }
+    std::optional<game::DesignId> draw(UiContext& ui) {
+        const char* id = "Select New Design###retrofitpicker";
+        if (request_) {
+            ImGui::OpenPopup(id);
+            request_ = false;
+        }
+        if (!beginModal(ui, id, {520, 440})) return std::nullopt;
+        const game::GameState& s = ui.state();
+        std::optional<game::DesignId> chosen;
+        const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
+        constexpr ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY;
+        if (ImGui::BeginTable("##designs", 6, flags, ImVec2(0, -footer))) {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ui.px(36));
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, ui.px(96));
+            for (const char* res : {"Min", "Org", "Rad"}) ImGui::TableSetupColumn(res, ImGuiTableColumnFlags_WidthFixed, ui.px(56));
+            ImGui::TableHeadersRow();
+            for (const Row& row : rows_) {
+                if (!row.design.valid() || row.design.index() >= s.designs.size()) continue;
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, ui.px(36));
+                ImGui::TableSetColumnIndex(0);
+                ImGui::PushID(static_cast<int>(row.design.value));
+                if (ImGui::Selectable("##row", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, ui.px(34)))) chosen = row.design;
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) report_.open(row.design);
+                if (ImGui::IsItemHovered() && !row.problem.empty()) ImGui::SetTooltip("%s", row.problem.c_str());
+                ImGui::SameLine(0, 0);
+                image(ui, designMini(ui, row.design), {32, 32});
+                ImGui::PopID();
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(s.design(row.design).name.c_str());
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextUnformatted(row.size.c_str());
+                for (size_t i = 0; i < 3; ++i) {
+                    ImGui::TableSetColumnIndex(static_cast<int>(3 + i));
+                    ImGui::TextUnformatted(formatNumber(row.cost.v[i]).c_str());
+                }
+            }
+            ImGui::EndTable();
+        }
+        if (rows_.empty()) ImGui::TextColored(kDim, "No design of ours with this hull can be built now.");
+        const bool reportOpen = ImGui::IsPopupOpen("Design Report###designreport");
+        if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || (!reportOpen && ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
+            ImGui::CloseCurrentPopup();
+        if (chosen) ImGui::CloseCurrentPopup();
+        report_.draw(ui);
+        ImGui::EndPopup();
+        return chosen;
+    }
+
+private:
+    std::vector<Row> rows_;
+    bool request_ = false;
+    DesignReportPopup report_;
+};
+
 class ScrapScreen final : public Screen {
 public:
-    explicit ScrapScreen(const ScreenArgs& args) : planet_(args.planet), facilities_(!args.vehicle.valid() && args.planet.valid()) {
-        if (args.vehicle.valid()) selected_.push_back(args.vehicle);
-        // A tagged group opens the window on its sector with nothing selected (spec 06 §7 Q52).
+    explicit ScrapScreen(const ScreenArgs& args)
+        : planet_(args.planet), anchor_(args.vehicle), facilities_(args.text == kFacilitiesTab && args.planet.valid()) {
+        // A tagged group opens the window on its sector (spec 06 §7 Q52).
         if (!args.vehicle.valid() && !args.planet.valid() && args.location) where_ = args.location;
     }
 
@@ -64,16 +140,14 @@ public:
     }
 
 private:
+    // The sector: the given vehicle's, else the given colony's, else the
+    // first own ship's. The window opens with nothing selected (spec 06 §1.3).
     void locate(UiContext& ui) {
         if (where_) return;
-        if (!selected_.empty())
-            if (const game::Vehicle* v = ownVehicle(ui, selected_.front())) where_ = v->location;
+        if (const game::Vehicle* v = ownVehicle(ui, anchor_)) where_ = v->location;
         if (!where_ && ownColony(ui, planet_)) where_ = game::locationOf(ui.state().galaxy, planet_);
         if (!where_)
-            if (const game::Vehicle* v = ownVehicle(ui, firstOwnShip(ui))) {
-                where_ = v->location;
-                selected_.push_back(v->id);
-            }
+            if (const game::Vehicle* v = ownVehicle(ui, firstOwnShip(ui))) where_ = v->location;
     }
 
     const game::Colony* coloniesHere(const UiContext& ui) {
@@ -89,13 +163,22 @@ private:
     // and not cloaked (spec 03 §15, §19 Q74, confirmed: binary).
     static bool listed(const game::Vehicle& v) { return !v.fleet.valid() && v.status != game::VehicleStatus::Cloaked; }
 
+    // The listed vehicles in the window's order (Order By Name or By Class).
+    std::vector<const game::Vehicle*> listedVehicles(const UiContext& ui) const {
+        std::vector<const game::Vehicle*> out;
+        if (!where_) return out;
+        for (const game::Vehicle* v : ownVehiclesAt(ui, *where_))
+            if (listed(*v)) out.push_back(v);
+        sortScrapList(ui.state(), out, byClass_);
+        return out;
+    }
+
     // The selected vehicles in the window's list order: the actions go to
     // them one after another in that order (spec 03 §15).
     std::vector<const game::Vehicle*> selection(const UiContext& ui) const {
         std::vector<const game::Vehicle*> out;
-        if (!where_) return out;
-        for (const game::Vehicle* v : ownVehiclesAt(ui, *where_))
-            if (listed(*v) && isSelected(v->id)) out.push_back(v);
+        for (const game::Vehicle* v : listedVehicles(ui))
+            if (isSelected(v->id)) out.push_back(v);
         return out;
     }
 
@@ -107,17 +190,27 @@ private:
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
         ImGui::TextColored(kDim, "Location: %s", sectorName(s, *where_, ui.session.player()).c_str());
-        const float listW = ImGui::GetContentRegionAvail().x * 0.46f;
+        const float listW = ImGui::GetContentRegionAvail().x * 0.50f;
         const float h = ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 2.4f;
         beginPanel(ui, "##vehicles", "Selected Vehicles", ImVec2(listW, h));
-        for (const game::Vehicle* v : ownVehiclesAt(ui, *where_)) {
-            if (!listed(*v)) continue;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        for (const game::Vehicle* v : listedVehicles(ui)) {
             RowStyle st;
             st.lamp = isSelected(v->id) ? Lamp::On : Lamp::Off;
-            std::string detail = groupDesigns(s, *v, 2);
-            if (v->status == game::VehicleStatus::Mothballed) detail += ", mothballed";
-            const RowClick c = row(ui, static_cast<int>(v->id.value), isUnitVehicle(r, s, *v) ? unitMini(ui, *v) : vehicleMini(ui, *v),
+            // "<design> Class" under the name, and the status icons (spec 06 §1.3).
+            const bool unit = isUnitVehicle(r, s, *v);
+            const std::string detail = s.design(v->design).name + " Class";
+            const RowClick c = row(ui, static_cast<int>(v->id.value), unit ? unitMini(ui, *v) : vehicleMini(ui, *v),
                                    v->count > 1 ? std::format("{} (x{})", v->name, v->count) : v->name, detail, st);
+            const ImVec2 corner{ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y};
+            const std::vector<int> cells = vehicleStatusCells(r, s, *v);
+            for (size_t i = 0; i < cells.size() && i < 6; ++i) {
+                const Sprite icon = ui.art.statusIcon(cells[i] + 1);
+                if (!icon) continue;
+                const float x = corner.x - ui.px(18) * float(i + 1) - ui.px(4), y = corner.y + ui.px(2);
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), {x, y}, {x + ui.px(16), y + ui.px(16)},
+                             {icon.uv.min.x, icon.uv.min.y}, {icon.uv.max.x, icon.uv.max.y});
+            }
             if (c.left) {
                 if (isSelected(v->id)) std::erase(selected_, v->id);
                 else selected_.push_back(v->id);
@@ -129,45 +222,29 @@ private:
 
         const auto sel = selection(ui);
         const ScrapWindowState state = scrapWindowState(r, s, ui.session.player(), sel);
-        game::Resources value, unmothball;
-        int mothballed = 0, normal = 0, cloaked = 0;
-        for (const game::Vehicle* v : sel) {
-            value += scrapValue(r, s, *v);
-            if (v->status == game::VehicleStatus::Mothballed) {
-                ++mothballed;
-                unmothball += unmothballCost(r, s, *v);
-            } else if (v->status == game::VehicleStatus::Cloaked) {
-                ++cloaked;
-            } else {
-                ++normal;
-            }
-        }
-        const int n = static_cast<int>(sel.size());
-        const char* status = n == 0 ? "-" : mothballed == n ? "Mothballed" : cloaked == n ? "Cloaked" : normal == n ? "Normal" : "Mixed";
         ImGui::BeginGroup();
         heading(ui, "Statistics");
         ImGui::Separator();
         constexpr float col = 170;
+        // The sums count only while their button is lit (spec 06 §1.3).
         ImGui::TextColored(kLabelBlue, "Scrap Value");
         ImGui::SameLine(ui.px(col));
-        resources(ui, value, true);
-        // The last selected vehicle's word (spec 03 §15).
+        resources(ui, state.scrapValue, true);
+        // The last selected vehicle's words (spec 03 §15, spec 06 §1.3).
         labelValue(ui, "Research Potential", std::string(state.researchPotential), col);
-        labelValue(ui, "Status", status, col);
+        labelValue(ui, "Status", state.status.empty() ? std::string("-") : std::string(state.status), col);
         ImGui::TextColored(kLabelBlue, "Cost to Unmothball");
         ImGui::SameLine(ui.px(col));
-        resources(ui, unmothball, true);
-        labelValue(ui, "Can Self-Destruct", n == 0 ? "-" : state.canSelfDestruct ? "Yes" : "No", col);
-        labelValue(ui, "Can Be Fired On", n == 0 ? "-" : state.canBeFiredOn ? "Yes" : "No", col);
+        resources(ui, state.unmothballCost, true);
+        const bool none = sel.empty();
+        labelValue(ui, "Can Self-Destruct", none ? "-" : state.canSelfDestruct ? "Yes" : "No", col);
+        labelValue(ui, "Can Be Fired On", none ? "-" : state.canBeFiredOn ? "Yes" : "No", col);
         labelValue(ui, "Space Yard In Sector", game::scrapYardAt(r, s, ui.session.player(), *where_) ? "Yes" : "No", col);
         ImGui::Dummy(ImVec2(0, ui.px(16)));
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
-        ImGui::TextColored(kDim, "%s",
-                           s.options.simultaneous
-                               ? "Scrapping, analyzing, retrofitting and mothballing need a space yard in the sector. Each action becomes "
-                                 "the vehicle's only order and is carried out when the vehicle first acts in the turn."
-                               : "Scrapping, analyzing, retrofitting and mothballing need a space yard in the sector. Each action is "
-                                 "carried out at once.");
+        // Two fixed note lines (spec 06 §1.3), in our words.
+        ImGui::TextColored(kDim, "%s", "Scrap, Analyze, Retrofit, Mothball and Unmothball need a space yard in the sector.");
+        ImGui::TextColored(kDim, "%s", "Ships in a fleet and cloaked ships are not listed.");
         ImGui::Dummy(ImVec2(0, ui.px(8)));
         status_.draw(ui);
         ImGui::PopTextWrapPos();
@@ -175,19 +252,18 @@ private:
     }
 
     // Each button is lit only when every selected vehicle qualifies (spec 06
-    // §1.3, spec 03 §15, confirmed: binary).
+    // §1.3, spec 03 §15, confirmed: binary). Order By Name and Order By Class
+    // refill the list and drop the selection; Select All and Select None.
     void vehicleButtons(UiContext& ui, Dialog& d) {
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
         const auto sel = selection(ui);
         const ScrapWindowState state = scrapWindowState(r, s, ui.session.player(), sel);
         if (d.button("Scrap", state.scrap)) {
-            game::Resources value;
-            for (const game::Vehicle* v : sel) value += scrapValue(r, s, *v);
             ask(ui, Action::Scrap,
                 std::format("Scrap {} for their raw materials? The empire gets back {} minerals, {} organics and {} radioactives.",
-                            plural(static_cast<int>(sel.size()), "vehicle", "vehicles"), formatNumber(value.v[0]), formatNumber(value.v[1]),
-                            formatNumber(value.v[2])));
+                            plural(static_cast<int>(sel.size()), "vehicle", "vehicles"), formatNumber(state.scrapValue.v[0]),
+                            formatNumber(state.scrapValue.v[1]), formatNumber(state.scrapValue.v[2])));
         }
         if (d.button("Analyze", state.analyze))
             ask(ui, Action::Analyze, "Take the selected vehicles apart to study their technology? They are lost, and nothing is refunded.");
@@ -197,27 +273,37 @@ private:
         if (d.button("Self-Destruct", state.selfDestruct)) ask(ui, Action::SelfDestruct, "Order the selected vehicles to destroy themselves?");
         if (d.button("Fire On", state.fireOn))
             ask(ui, Action::FireOn, "Order our own armed ships here to fire on the selected vehicles and destroy them?");
+        d.spacer();
+        if (d.tab("Order By Name", !byClass_) && byClass_) {
+            byClass_ = false;
+            selected_.clear();
+        }
+        if (d.tab("Order By Class", byClass_) && !byClass_) {
+            byClass_ = true;
+            selected_.clear();
+        }
+        const std::vector<const game::Vehicle*> all = listedVehicles(ui);
+        if (d.button("Select All", !all.empty())) {
+            selected_.clear();
+            for (const game::Vehicle* v : all) selected_.push_back(v->id);
+        }
+        if (d.button("Select None", !selected_.empty())) selected_.clear();
     }
 
     void openRetrofit(UiContext& ui, const std::vector<const game::Vehicle*>& sel) {
         const game::GameState& s = ui.state();
-        retrofitDesigns_.clear();
-        std::vector<ListPicker::Item> items;
+        const game::Rules& r = ui.rules();
         const game::Vehicle& first = *sel.front();
-        const uint32_t hull = s.design(first.design).hull;
-        for (game::DesignId id : ui.me().designs) {
-            const game::Design& d = s.design(id);
-            if (d.hull != hull || id == first.design) continue;
-            game::Resources cost;
-            const std::string why = game::retrofitProblem(ui.rules(), s, ui.session.player(), first, id, &cost);
-            std::string detail = why.empty() ? std::format("Cost {} / {} / {} each", formatNumber(cost.v[0]), formatNumber(cost.v[1]),
-                                                           formatNumber(cost.v[2]))
-                                             : why;
-            if (d.obsolete) detail += " (obsolete)";
-            items.push_back({d.name, detail, why.empty(), designMini(ui, id)});
-            retrofitDesigns_.push_back(id);
+        std::vector<RetrofitPicker::Row> rows;
+        for (game::DesignId id : retrofitChoices(r, s, ui.session.player(), first)) {
+            RetrofitPicker::Row row;
+            row.design = id;
+            const ruleset::VehicleSize& hull = r.hull(s.design(id).hull);
+            row.size = hull.shortName.empty() ? hull.name : hull.shortName;
+            row.problem = game::retrofitProblem(r, s, ui.session.player(), first, id, &row.cost);
+            rows.push_back(std::move(row));
         }
-        retrofit_.open("Retrofit To", std::move(items));
+        retrofit_.open(std::move(rows));
     }
 
     // ---- Facilities ----
@@ -360,21 +446,22 @@ private:
 
     void popups(UiContext& ui) {
         if (confirm_.draw(ui)) perform(ui, confirmAction_);
-        if (auto i = retrofit_.draw(ui); i && *i < retrofitDesigns_.size()) act(ui, game::ScrapAction::Retrofit, retrofitDesigns_[*i]);
+        if (auto design = retrofit_.draw(ui)) act(ui, game::ScrapAction::Retrofit, *design);
         report_.draw(ui);
     }
 
     std::optional<game::Location> where_;
     game::ObjectId planet_;
+    game::VehicleId anchor_;
     bool facilities_ = false;
+    bool byClass_ = false;   // Order By Class; Order By Name is the default
     std::vector<game::VehicleId> selected_;
     std::vector<size_t> slots_;
     Status status_;
     Confirm confirm_;
     Action confirmAction_ = Action::Scrap;
-    ListPicker retrofit_;
-    std::vector<game::DesignId> retrofitDesigns_;
-    ReportPopup report_;
+    RetrofitPicker retrofit_;
+    shipui::ReportPopup report_;
 };
 
 // ---- Abandon Planet -------------------------------------------------------------------------------
@@ -383,6 +470,9 @@ private:
 // player confirms; the order is refused when more people live there than
 // Settings allow; otherwise, when the planet has facilities, the player
 // chooses whether to scrap them for a refund or leave them for a later owner.
+// The answer becomes the colony's Abandon order (cmd::AbandonPlanet): a
+// turn-based game carries it out at once, a simultaneous one during the
+// turn's movement, and until then it shows in the colony's orders.
 class AbandonPlanetScreen final : public Screen {
 public:
     explicit AbandonPlanetScreen(const ScreenArgs& args) : planet_(args.planet) {}
@@ -427,13 +517,7 @@ private:
     enum class Step { Confirm, Scrap, Notice, Done };
 
     void abandon(UiContext& ui, bool scrap) {
-        if (scrap) {
-            // Highest slot first, so the others keep their places.
-            const game::Colony* c = ownColony(ui, planet_);
-            for (size_t i = c ? c->facilities.size() : 0; i-- > 0;)
-                if (!ui.session.issue(game::cmd::Scrap{{}, planet_, static_cast<int32_t>(i)}).ok) break;
-        }
-        const game::CommandResult r = ui.session.issue(game::cmd::AbandonPlanet{planet_});
+        const game::CommandResult r = ui.session.issue(game::cmd::AbandonPlanet{planet_, scrap});
         if (r.ok) {
             step_ = Step::Done;
         } else {

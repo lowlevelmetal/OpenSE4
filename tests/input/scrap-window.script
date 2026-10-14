@@ -1,0 +1,39 @@
+# The Scrap window (order G, docs/spec/06 §1.3, spec 03 §15; docs/BUILDING.md "Input scripts"):
+# it opens with nothing selected, so every action is dim; Select All selects the listed ships
+# (at the home yard Scrap lights) and Select None drops them; Order By Class refills the list
+# and drops the selection, and Order By Name brings the default order back. The computer plays
+# 20 turns first, so ships wait at the home yard.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --quick-start --seed=7 --turns=20 --open=none --layout=1024x768 --size=1280x800
+
+wait-screen game
+# New colonies ask for their type first (questions are modal).
+repeat 10
+  click item:"*(suggested)" optional timeout=5
+end
+click system:home
+wait 5
+click sector:home
+wait-for item:report:ship
+click item:report:ship nth=1
+key G
+wait-window scrap
+assert-disabled item:Scrap in=scrap
+assert-disabled item:"Select None" in=scrap
+click item:"Select All" in=scrap
+wait-for item:"Select None" in=scrap
+assert-enabled item:"Select None" in=scrap
+assert-enabled item:Scrap in=scrap
+click item:"Order By Class" in=scrap
+wait 3
+assert-disabled item:Scrap in=scrap
+assert-disabled item:"Select None" in=scrap
+click item:##row in=scrap nth=1
+wait 3
+assert-enabled item:Scrap in=scrap
+click item:"Select None" in=scrap
+wait 3
+assert-disabled item:Scrap in=scrap
+click item:"Order By Name" in=scrap
+click item:Close in=scrap
+wait-closed scrap

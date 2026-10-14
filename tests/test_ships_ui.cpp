@@ -327,7 +327,8 @@ TEST_CASE("ship windows: scrap and mothball rules") {
     CHECK(s.empire(me).stockpile - before ==
           Resources{3 * xmath::pctRound(unitCost.v[0], 30), 3 * xmath::pctRound(unitCost.v[1], 30), 3 * xmath::pctRound(unitCost.v[2], 30)});
 
-    // Mothballing needs no cargo; the ship loses its supply; unmothballing needs no yard.
+    // Mothballing needs no cargo; the ship loses its supply; unmothballing
+    // needs a yard where the ship is (spec 03 §15, confirmed: binary).
     const DesignId d = frigate(s, r, me, "Sleeper", {"Test Supply Pod"});
     const VehicleId ship = addTestVehicle(s, r, d, where).id;
     s.vehicle(ship)->cargo.population.push_back({me, 1});
@@ -336,8 +337,18 @@ TEST_CASE("ship windows: scrap and mothball rules") {
     REQUIRE(apply(r, s, me, cmd::Mothball{ship, true}).ok);
     CHECK(s.vehicle(ship)->supply == 0);
     CHECK(vehicleMaxMovement(r, s, *s.vehicle(ship)) == 0);
-    s.vehicle(ship)->location = {where.system, Sector{where.sector.x == 0 ? 1 : 0, where.sector.y}};
-    REQUIRE(apply(r, s, me, cmd::Mothball{ship, false}).ok);  // away from any yard or depot
+    const Location away{where.system, Sector{where.sector.x == 0 ? 1 : 0, where.sector.y}};
+    s.vehicle(ship)->location = away;
+    CHECK_FALSE(apply(r, s, me, cmd::Mothball{ship, false}).ok);  // no yard there
+    addTestVehicle(s, r, frigate(s, r, me, "Yard Ship", {"Test Yard Module"}), away);
+    // The button is lit without the cost in stock; a turn-based game's order then does nothing.
+    const Resources funds = s.empire(me).stockpile;
+    s.empire(me).stockpile = {};
+    CHECK(shipui::scrapWindowState(r, s, me, {s.vehicle(ship)}).unmothball);
+    CHECK_FALSE(apply(r, s, me, cmd::Mothball{ship, false}).ok);
+    CHECK(s.vehicle(ship)->status == VehicleStatus::Mothballed);
+    s.empire(me).stockpile = funds;
+    REQUIRE(apply(r, s, me, cmd::Mothball{ship, false}).ok);  // at a ship's yard, away from any depot
     CHECK(s.vehicle(ship)->supply == 0);                      // no depot: it stays empty
     // Bases come back with unlimited supply.
     const DesignId baseD = addTestDesign(s, r, me, "Fort", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters"});
@@ -364,6 +375,89 @@ TEST_CASE("ship windows: who can join a fleet") {
     CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, mine}).ok);
     CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, drone}).ok);
     CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, base}).ok);  // Bases Can Join Fleets is off
+}
+
+TEST_CASE("ship windows: Fleet Transfer lists vehicles that may join and fleets whose place is the sector") {
+    // Spec 03 §9 (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    const Location where = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location away{where.system, Sector{where.sector.x == 0 ? 1 : 0, where.sector.y}};
+    const VehicleId ship = addTestVehicle(s, r, frigate(s, r, me, "Lead", {}), where).id;
+    const VehicleId cloaked = addTestVehicle(s, r, frigate(s, r, me, "Shade", {}), where).id;
+    s.vehicle(cloaked)->status = VehicleStatus::Cloaked;
+    const VehicleId fighters = addTestVehicle(s, r, addTestDesign(s, r, me, "F", "Test Fighter Hull", {"Test Fighter Engine"}), where).id;
+    addTestVehicle(s, r, addTestDesign(s, r, me, "S", "Test Satellite Hull", {"Test Satellite Gun"}), where);
+    addTestVehicle(s, r, addTestDesign(s, r, me, "B", "Test Station", {"Test Bridge"}), where);   // Bases Can Join Fleets is off
+    std::vector<VehicleId> listed;
+    for (const Vehicle* v : shipui::fleetTransferVehicles(r, s, me, where)) listed.push_back(v->id);
+    CHECK(listed == std::vector<VehicleId>{ship, cloaked, fighters});
+    // A fleet is listed where its own location is, with its members there.
+    const VehicleId mate = addTestVehicle(s, r, frigate(s, r, me, "Mate", {}), where).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{"Wing", {ship, mate}}).ok);
+    const FleetId wing = s.vehicle(ship)->fleet;
+    REQUIRE(shipui::fleetTransferFleets(s, me, where).size() == 1);
+    s.vehicle(mate)->location = away;   // a member elsewhere: the fleet stays listed here
+    CHECK(shipui::fleetTransferFleets(s, me, where).front()->id == wing);
+    CHECK(shipui::fleetTransferFleets(s, me, away).empty());
+    CHECK(fleetMembersAt(s, *s.fleet(wing)) == std::vector<VehicleId>{ship});
+}
+
+TEST_CASE("ship windows: the Scrap window's order, status and sums") {
+    // Spec 06 §1.3 (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    const Location where = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId alpha = frigate(s, r, me, "Alpha", {});
+    const DesignId zulu = frigate(s, r, me, "Zulu", {});
+    const VehicleId bId = addTestVehicle(s, r, alpha, where).id;
+    const VehicleId aId = addTestVehicle(s, r, zulu, where).id;
+    const VehicleId cId = addTestVehicle(s, r, alpha, where).id;
+    s.vehicle(bId)->name = "bravo";
+    s.vehicle(aId)->name = "Able";
+    s.vehicle(cId)->name = "Able";
+    const Vehicle* a = s.vehicle(aId);
+    const Vehicle* b = s.vehicle(bId);
+    const Vehicle* c = s.vehicle(cId);
+    std::vector<const Vehicle*> list{b, a, c};
+    shipui::sortScrapList(s, list, false);   // by name, case ignored, then design
+    CHECK(list == std::vector<const Vehicle*>{c, a, b});
+    shipui::sortScrapList(s, list, true);    // by class, then name
+    CHECK(list == std::vector<const Vehicle*>{c, b, a});
+    // Status is the last selected vehicle's; the sums count only while their button is lit.
+    s.vehicle(aId)->status = VehicleStatus::Mothballed;
+    const shipui::ScrapWindowState mixed = shipui::scrapWindowState(r, s, me, {b, a});
+    CHECK(mixed.status == "Mothballed");
+    CHECK(mixed.scrap);
+    CHECK(mixed.scrapValue == shipui::scrapValue(r, s, *b) + shipui::scrapValue(r, s, *a));
+    CHECK_FALSE(mixed.unmothball);
+    CHECK(mixed.unmothballCost.total() == 0);
+    const shipui::ScrapWindowState asleep = shipui::scrapWindowState(r, s, me, {a});
+    CHECK(asleep.unmothball);
+    CHECK(asleep.unmothballCost == shipui::unmothballCost(r, s, *a));
+    CHECK(shipui::scrapWindowState(r, s, me, {}).status.empty());
+}
+
+TEST_CASE("ship windows: the Retrofit picker offers buildable designs of the hull that are not obsolete") {
+    // Spec 03 §14 (confirmed: binary): the empire's designs in design-list order.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u}, them{1u};
+    const Location where = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId current = frigate(s, r, me, "Current", {});
+    const DesignId later = frigate(s, r, me, "Later", {"Test Laser"});
+    const DesignId old = frigate(s, r, me, "Old", {"Test Armor Plate"});
+    s.design(old).obsolete = true;
+    const DesignId beyond = frigate(s, r, me, "Beyond", {"Test Cloak"});   // needs Test Cloaking 1
+    frigate(s, r, them, "Theirs", {});
+    const DesignId other = addTestDesign(s, r, me, "Station", "Test Station", {"Test Bridge"});
+    const Vehicle& v = addTestVehicle(s, r, current, where);
+    REQUIRE_FALSE(r.designTechnology(s.empire(me), s.design(beyond)));
+    const std::vector<DesignId> choices = shipui::retrofitChoices(r, s, me, v);
+    CHECK(choices == std::vector<DesignId>{later});
+    (void)other;
 }
 
 TEST_CASE("ship windows: a renamed design needs a name no empire uses") {

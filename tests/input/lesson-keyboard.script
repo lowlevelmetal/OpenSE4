@@ -20,6 +20,8 @@ click item:OK in="Create Fleet"
 wait-step 5
 wait-for tag:fleet-transfer:ships:named
 click tag:fleet-transfer:ships:named
+wait 5
+click tag:fleet-transfer:ships:named
 wait-step 6
 click tag:fleet-transfer:close
 wait-closed fleet-transfer
