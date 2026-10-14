@@ -4,6 +4,7 @@
 
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/list_widgets.hpp"
+#include "client/classic/screens/ships_logic.hpp"
 #include "client/classic/sector_view.hpp"
 #include "client/classic/status_icons.hpp"
 
@@ -284,6 +285,39 @@ void noteForeignReport(UiContext& ui, const game::Vehicle& v) {
         }
 }
 
+// The Damage line of a ship's or base's report (spec 06 §1.4, §7 Q121,
+// confirmed: binary): "D/N", the destroyed components against the design's,
+// each mounted component counted once, then the bar 80 px after the value: a
+// #647EC7 frame 13 px tall holding 3x9 cells every 4 px from 2 px in, one per
+// component, the first D red and the rest green; from 16 components on, 15
+// cells with truncate(15 x D / N) red. The frame's width (2 px after the last
+// cell) is inferred. Ours: the line's tooltip gives the structure lost, which
+// the original shows nowhere.
+void damageLine(UiContext& ui, const game::Vehicle& v) {
+    const game::GameState& s = ui.state();
+    const game::Rules& r = ui.rules();
+    const auto [destroyed, total] = shipui::destroyedComponents(r, s, v);
+    const ImVec2 start = ImGui::GetCursorScreenPos();
+    labelValue(ui, "Damage", std::format("{}/{}", destroyed, total));
+    const ImVec2 value = ImGui::GetItemRectMin();
+    const float lineH = ImGui::GetItemRectSize().y;
+    const auto [cells, red] = shipui::damageBar(destroyed, total);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float x = value.x + ui.px(80), y = std::floor(value.y + (lineH - ui.px(13)) * 0.5f);
+    const ImVec2 boxMax{x + ui.px(4.0f * float(cells) + 3.0f), y + ui.px(13)};
+    if (cells > 0) {
+        dl->AddRect({x, y}, boxMax, imColor(palette::kFrameLight), 0.0f, std::max(1.0f, ui.px(1)));
+        for (int k = 0; k < cells; ++k) {
+            const ImVec2 a{x + ui.px(2.0f + 4.0f * float(k)), y + ui.px(2)};
+            dl->AddRectFilled(a, {a.x + ui.px(3), a.y + ui.px(9)}, k < red ? IM_COL32(255, 0, 0, 255) : IM_COL32(0, 255, 0, 255));
+        }
+    }
+    const int structure = game::vehicleStructure(r, s, v);
+    const int lost = std::min(structure, game::vehicleDamageTaken(s, v));
+    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(start, {std::max(boxMax.x, value.x + ImGui::GetItemRectSize().x), start.y + lineH}))
+        ImGui::SetTooltip("Structure lost: %d of %d (%d%%)", lost, structure, structure > 0 ? lost * 100 / structure : 0);
+}
+
 } // namespace
 
 std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab, bool simulator) {
@@ -299,6 +333,12 @@ std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, Repo
     }
     if (Sprite flag = ui.art.flag(v.owner.valid() ? s.empire(v.owner).race.style : "")) {
         image(ui, flag, {26, 18});
+        // A right-click on the owner's flag on Detail opens that empire's Race
+        // Report (spec 06 §1.4, §7 Q120, confirmed: binary); not in the simulator.
+        if (tab == ReportTab::Detail && !simulator && v.owner.valid()) {
+            script::reportItem("report:flag");   // input scripts: where it is
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) opened = ItemRef{ItemRef::Kind::Race, v.owner.value};
+        }
         ImGui::SameLine();
     }
     title(ui, v.name);
@@ -319,11 +359,19 @@ std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, Repo
             ImGui::EndGroup();
             // The status icons under the portrait, for own vehicles only.
             if (own) statusRow(ui, vehicleStatusCells(r, s, v));
-            const int structure = game::vehicleStructure(r, s, v);
-            const int damage = std::min(structure, game::vehicleDamageTaken(s, v));
-            // "<left>/<maximum>", the two figures as they stand (spec 06 §1.4, spec 03 §19 Q85).
-            labelValue(ui, "Movement", std::format("{}/{}", v.movement, game::vehicleMaxMovement(r, s, v)));
-            labelValue(ui, "Damage", std::format("{} / {} ({}%)", damage, structure, structure > 0 ? damage * 100 / structure : 0));
+            // Movement and Damage (spec 06 §1.4, §7 Q121, confirmed: binary): an own
+            // vehicle's unless mothballed (its Status says so instead), another
+            // empire's only while long-range scanners inspect it, with a grey note
+            // when its jammer blocks them. Unit groups have no Damage line.
+            const bool mothballed = v.status == game::VehicleStatus::Mothballed;
+            const bool shown = own || simulator ? !mothballed : game::sight::scannerReaches(r, s, ui.session.player(), v);
+            if (shown) {
+                // "<left>/<maximum>", the two figures as they stand (spec 03 §19 Q85).
+                labelValue(ui, "Movement", std::format("{}/{}", v.movement, game::vehicleMaxMovement(r, s, v)));
+                if (!game::isUnitType(game::vehicleType(r, s, v))) damageLine(ui, v);
+            } else if (!own && !simulator && game::sight::scannerBlocked(r, s, ui.session.player(), v)) {
+                ImGui::TextColored(kDim, "Long range scanning being jammed.");
+            }
             if (own) {
                 labelValue(ui, "Supplies", game::vehicleHasUnlimitedSupply(r, s, v)
                                                ? std::string("Endless")
@@ -351,6 +399,17 @@ std::optional<ItemRef> vehicleReport(UiContext& ui, const game::Vehicle& v, Repo
             // A right-click on a component opens its Component Report, with
             // the mount the design gave it (spec 06 §1.4, §7 Q105).
             int row = 0;
+            // A ship's or base's page starts with "Damaged Components" and its "D/N",
+            // right-aligned to x 200 (spec 06 §1.4, §7 Q121, confirmed: binary).
+            if (!game::isUnitType(game::vehicleType(r, s, v))) {
+                const auto [destroyed, total] = shipui::destroyedComponents(r, s, v);
+                const std::string count = std::format("{}/{}", destroyed, total);
+                ImGui::TextColored(kLabelBlue, "Damaged Components");
+                script::reportText("Damaged Components");
+                const float labelEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + ui.px(8);
+                ImGui::SameLine(std::max(labelEnd, ImGui::GetCursorStartPos().x + ui.px(200) - ImGui::CalcTextSize(count.c_str()).x));
+                ImGui::TextUnformatted(count.c_str());
+            }
             auto rightClicked = [&](const game::DesignEntry& e, std::string_view label) {
                 script::reportItem(label);   // input scripts find a row by what it shows
                 if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
@@ -498,7 +557,31 @@ std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, Report
             // indented below, the description, then the colony block in two columns.
             Pen pen(ui);
             pen.sprite(ui.art.planetPortrait(type.picture), -5, -11, 128, 128);
-            if (c) pen.sprite(ui.art.flag(s.empire(c->owner).race.style), -2, -6, 26, 18);
+            if (c) {
+                pen.sprite(ui.art.flag(s.empire(c->owner).race.style), -2, -6, 26, 18);
+                // A right-click on the owner's flag opens that empire's Race Report
+                // (spec 06 §1.4, §7 Q120, confirmed: binary); not in the simulator.
+                const ImVec2 flagMin = pen.at(-2, -6), flagMax = pen.at(25, 13);
+                if (!simulator) {
+                    script::reportItem("report:flag", flagMin, flagMax);   // input scripts: where it is
+                    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(flagMin, flagMax) &&
+                        ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                        opened = ItemRef{ItemRef::Kind::Race, c->owner.value};
+                }
+                // Races On Planet: a right-click at x 230-290, y 196-236 of the
+                // original's page, where an own colony's race icons are, for any
+                // colony, another empire's too (spec 06 §1.4, §7 Q120, confirmed: binary).
+                const ImVec2 racesMin = pen.at(226, 188), racesMax = pen.at(287, 229);
+                if (!simulator) {
+                    script::reportItem("report:population", racesMin, racesMax);   // input scripts: where it is
+                    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(racesMin, racesMax) &&
+                        ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        ScreenArgs a;
+                        a.planet = c->planet;
+                        ui.open(ScreenId::RacesOnPlanet, a);
+                    }
+                }
+            }
             pen.centered(ui.fonts.bold, kTitleSize, 153, -4, IM_COL32_WHITE, o.name);
             float y = 15;
             auto field = [&](const char* label, const std::string& value) {
@@ -533,17 +616,17 @@ std::optional<ItemRef> planetReport(UiContext& ui, game::ObjectId planet, Report
             }
             const game::economy::ColonyOutput out = game::economy::colonyOutput(r, s, *c);
             line("Colony Type", c->colonyType);
-            pen.sprite(ui.art.populationMini(s.empire(c->owner).race.style), 229, row - 4, 20, 20);
-            // A right-click on the population opens Races On Planet (spec 06 §1.4,
-            // confirmed: binary). Ours: on the Population line, where our page
-            // draws the population.
-            if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(pen.at(0, row - 4), pen.at(286, row + 16)) &&
-                ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !simulator) {
-                ScreenArgs a;
-                a.planet = c->planet;
-                ui.open(ScreenId::RacesOnPlanet, a);
+            // The races living there, a picture each from (230,196) of the
+            // original's page, 20 px apart, three to a row (spec 06 §1.4).
+            {
+                int k = 0;
+                for (const game::PopulationGroup& g : c->population) {
+                    if (g.millions <= 0 || k >= 6) continue;
+                    const std::string& style = g.race.valid() && g.race.index() < s.empires.size() ? s.empire(g.race).race.style : std::string{};
+                    pen.sprite(ui.art.populationMini(style), 226 + 20 * float(k % 3), 188 + 20 * float(k / 3), 20, 20);
+                    ++k;
+                }
             }
-            script::reportItem("report:population", pen.at(0, row - 4), pen.at(286, row + 16));   // input scripts: where it is
             line("Population", std::format("{}M/{}M", c->totalPopulation(), game::maxPopulation(r, s, *c)));
             line("Reproduction", std::format("{}% per year", out.reproductionPercent));
             line("Mood", std::string(game::economy::moodName(r, s, *c)));

@@ -396,6 +396,7 @@ bool validItem(const UiContext& ui, const ItemRef& item) {
         case Kind::IntelProject: return item.index < d.intelProjects.size();
         case Kind::Treaty: return item.index < static_cast<uint32_t>(game::Treaty::Count);
         case Kind::Formation: return item.index < d.formations.size();
+        case Kind::Race:
         case Kind::None: break;
     }
     return false;
@@ -420,6 +421,7 @@ void itemDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
         case Kind::IntelProject: intelDetail(ui, item, st); break;
         case Kind::Treaty: treatyDetail(ui, item); break;
         case Kind::Formation: formationDetail(ui, item, st); break;
+        case Kind::Race:
         case Kind::None: break;
     }
     ImGui::PopID();
@@ -437,6 +439,7 @@ Sprite itemIcon(UiContext& ui, const ItemRef& item) {
         case Kind::IntelProject: return ui.art.icon16(Icon::Intelligence);
         case Kind::Formation: return ui.art.groupMini(ui.me().race.style, "Fleet");
         case Kind::Treaty:
+        case Kind::Race:
         case Kind::None: break;
     }
     return {};
@@ -456,6 +459,7 @@ std::string itemName(const UiContext& ui, const ItemRef& item) {
         case Kind::IntelProject: return r.data().intelProjects[item.index].name;
         case Kind::Treaty: return std::string(game::displayName(static_cast<game::Treaty>(item.index)));
         case Kind::Formation: return r.data().formations[item.index].name;
+        case Kind::Race:
         case Kind::None: break;
     }
     return {};
@@ -481,7 +485,10 @@ void ItemReportPopup::draw(UiContext& ui) {
         ImGui::EndPopup();
     }
     ImGui::PopFont();
+    race_.draw(ui);
 }
+
+bool ItemReportPopup::isOpen() { return ImGui::IsPopupOpen("##itemreport") || ImGui::IsPopupOpen(kRaceReportPopup); }
 
 std::string_view treatyDescription(game::Treaty t) {
     const auto i = static_cast<size_t>(t);

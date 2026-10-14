@@ -308,7 +308,11 @@ private:
     void afterDamage(int i);
     int computeMp(int i) const;
     void planetShields(Piece& p, bool fill) const;
+    // The empire still has a piece in the battle: anything it owns but an
+    // obstacle, seekers in flight included (spec 04 §4, confirmed: binary).
     bool hasPieces(EmpireId e) const;
+    // Its survivors for the verdict: the same, seekers left out (spec 04 §15).
+    bool hasSurvivors(EmpireId e) const;
     const Strategy& strategy(EmpireId e, uint32_t index) const;
     uint32_t strategyIndex(int i) const;
     const Strategy& strategyOf(int i) const { return strategy(pieces_[i].owner, strategyIndex(i)); }
@@ -408,6 +412,10 @@ private:
     void pdReact(int mover);
     void moveSeekers(EmpireId e);
     void expire(int i);
+    // A piece left the battle (destroyed, a seeker that struck or expired, a
+    // group recovered aboard): every seeker aimed at it goes with it at once
+    // (spec 04 §10.1, confirmed: binary).
+    void dropSeekersAimedAt(int t);
     // A computer carrier's or planet's launches (spec 04 §10.4, §10.7); returns the units launched.
     int launchFrom(int i);
     int spawnUnit(int carrier, DesignId design, int count);

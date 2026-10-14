@@ -390,7 +390,9 @@ private:
         ui.tag("strategic-combat:forces", ui.at(o + Vec2{15, 38}), ui.at(o + Vec2{15 + 329, 55 + 400}));   // for lessons: with its headings
     }
 
-    // The map at (354,55), 218x191: the whole combat grid in 3 px squares, framed by a #647EC7 line just outside it.
+    // The map at (354,55), 218x191: the whole combat grid in 3 px squares,
+    // square (x, y) at (3x, 3y) of the map, framed by a #647EC7 line just
+    // outside it; black under the pieces, no grid (spec 06 §1.10.5).
     void drawMap(UiContext& ui, const game::GameState& s, const game::CombatRecord& rec) {
         const Vec2 o = largeOrigin();
         const ImVec2 a = ui.at(o + Vec2{354, 55}), b = ui.at(o + Vec2{354 + 218, 55 + 191});
@@ -399,9 +401,7 @@ private:
         dl->AddRectFilled(a, b, IM_COL32_BLACK);
         CombatView v;
         v.cell = ui.px(3);
-        v.cx = float(game::combat::kCombatMapWidth) * 0.5f;
-        v.cy = float(game::combat::kCombatMapHeight) * 0.5f;
-        v.center = {(a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f};
+        v.center = a;
         const CombatMapPainter paint(ui, s, rec, playback_);
         const ImVec2 mouse = ImGui::GetIO().MousePos;
         const bool inside = mouse.x >= a.x && mouse.x < b.x && mouse.y >= a.y && mouse.y < b.y;

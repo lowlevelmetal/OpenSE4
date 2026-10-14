@@ -505,6 +505,7 @@ void Battle::recoverOrder(const TacticalOrder& o) {
     if (g.unit.count <= 0) {
         g.alive = false;   // back aboard: no loss (unitsLost is not counted)
         vacate(t);
+        dropSeekersAimedAt(t);
     } else {
         afterDamage(t);
     }

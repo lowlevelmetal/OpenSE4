@@ -1126,6 +1126,87 @@ TEST_CASE("combat: seekers wait a turn, hit on arrival and point defense shoots 
     CHECK(impacts2 < launched2);
 }
 
+namespace {
+
+// Where each seeker of a record left the battle (its Destroyed event), or none.
+std::map<uint32_t, size_t> seekerEnds(const CombatRecord& rec) {
+    std::map<uint32_t, size_t> out;
+    for (size_t i = 0; i < rec.events.size(); ++i)
+        if (rec.events[i].kind == CombatEvent::Kind::Destroyed && rec.pieces[rec.events[i].piece].kind == CombatPiece::Kind::Seeker)
+            out.emplace(rec.events[i].piece, i);
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("combat: a seeker in flight keeps its side in the battle; a target's death takes its seekers at once (GitHub issue #17)") {
+    // The launcher dies to the fort's guns while its torpedoes fly (spec 04 §4,
+    // §10.1, confirmed: binary): seekers count as pieces for the end check, so
+    // the battle goes on until each strikes or vanishes, and none is left on
+    // the map when it ends before the turn limit. The verdict leaves seekers out.
+    const int lastRound = combat::loadSettings(combatRules()).spaceTurns - 1;
+    int launcherDiedFirst = 0;
+    for (uint64_t seed = 1; seed <= 12; ++seed) {
+        CAPTURE(seed);
+        Arena ar = makeArena(seed);
+        GameState& s = ar.s;
+        const VehicleId launcher = spawn(s, frigate(s, ar.a, "Launcher", 2, {"CT Torpedo", "CT Torpedo"}), ar.loc);
+        spawn(s, design(s, ar.b, "Fort", "Test Station", {"Test Bridge", "CT Big Gun", "CT Big Gun", "CT Big Armor"}), ar.loc);
+        TurnContext ctx = context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        REQUIRE(s.combats.size() == 1);
+        const CombatRecord& rec = s.combats.front();
+        const std::map<uint32_t, size_t> ends = seekerEnds(rec);
+        int launched = 0;
+        for (size_t p = 0; p < rec.pieces.size(); ++p)
+            if (rec.pieces[p].kind == CombatPiece::Kind::Seeker) {
+                ++launched;
+                if (rec.events.back().round < lastRound) CHECK(ends.count(static_cast<uint32_t>(p)) == 1);
+            }
+        CHECK(launched > 0);
+        // The launcher's death: the seekers still in flight then go on.
+        const int ship = pieceOf(rec, launcher);
+        size_t died = rec.events.size();
+        for (size_t i = 0; i < rec.events.size(); ++i)
+            if (rec.events[i].kind == CombatEvent::Kind::Destroyed && rec.events[i].piece == static_cast<uint32_t>(ship)) died = i;
+        REQUIRE(died < rec.events.size());
+        for (const auto& [seeker, end] : ends)
+            if (end > died) ++launcherDiedFirst;
+        CHECK(std::find(rec.summary.begin(), rec.summary.end(), std::format("{}: defeat", s.empire(ar.a).name)) != rec.summary.end());
+        CHECK(std::find(rec.summary.begin(), rec.summary.end(), std::format("{}: victory", s.empire(ar.b).name)) != rec.summary.end());
+    }
+    CHECK(launcherDiedFirst > 0);   // some flew on after their launcher died
+}
+
+TEST_CASE("combat: seekers aimed at a piece that dies leave the battle with it, before they move again") {
+    int dropped = 0;
+    for (int variant = 0; variant < 10; ++variant)
+        for (uint64_t seed = 1; seed <= 3; ++seed) {
+            auto [s, where] = battleScenario(variant, seed);
+            TurnContext ctx = context(s);
+            combat::resolveSpaceCombat(ctx, where);
+            REQUIRE_FALSE(s.combats.empty());
+            const CombatRecord& rec = s.combats.back();
+            std::map<uint32_t, uint32_t> target;
+            for (const CombatEvent& e : rec.events)
+                if (e.kind == CombatEvent::Kind::Seeker) target.emplace(e.piece, e.target);
+            std::map<uint32_t, size_t> deaths;
+            for (size_t i = 0; i < rec.events.size(); ++i)
+                if (rec.events[i].kind == CombatEvent::Kind::Destroyed) deaths.emplace(rec.events[i].piece, i);
+            for (const auto& [seeker, end] : seekerEnds(rec)) {
+                const auto t = deaths.find(target[seeker]);
+                if (t == deaths.end() || t->second > end) continue;   // it struck, expired or was shot down first
+                // Its target left first (destroyed, or a seeker that struck):
+                // the seeker went at that moment, only other seekers going
+                // between the two.
+                ++dropped;
+                for (size_t i = t->second + 1; i < end; ++i)
+                    CHECK((rec.events[i].kind == CombatEvent::Kind::Destroyed && rec.pieces[rec.events[i].piece].kind == CombatPiece::Kind::Seeker));
+            }
+        }
+    CHECK(dropped > 0);
+}
+
 TEST_CASE("combat: fighters launch from carriers, combine their hits and land again") {
     Arena ar = makeArena();
     GameState& s = ar.s;

@@ -300,6 +300,7 @@ private:
     std::vector<game::VehicleId> tagged_;
     ReportTab tab_ = ReportTab::Detail;
     ItemReportPopup itemReport_;   // a facility's or component's report, from a right-click on Facil or Comps
+    void openItem(UiContext& ui, const ItemRef& item);   // ... or the Race Report, from the owner's flag
     shipui::ReportPopup shipReport_;   // a fleet member's Ship Report, from a right-click on its row in the Fleet Report
 
     Pick pick_ = Pick::None;

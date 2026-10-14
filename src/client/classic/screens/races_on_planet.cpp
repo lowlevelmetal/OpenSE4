@@ -1,7 +1,9 @@
-// Races On Planet (docs/spec/06 §1.4, spec 03 §11, confirmed: binary): a
-// right-click on the population of an own colony's Planet Report, Detail
-// page, lists the races living there, one row each: the race's picture, its
-// name and its population. Read-only; Close (or Esc, Enter) closes it.
+// Races On Planet (docs/spec/06 §1.4, §7 Q120, spec 03 §11, confirmed:
+// binary): a right-click where an own colony's race pictures are on the
+// Planet Report's Detail page, for any colony (another empire's too, though
+// its page draws nothing there), lists the races living there, one row each:
+// the race's picture, its name and its population. Read-only; Close (or Esc,
+// Enter) closes it.
 
 #include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -24,7 +26,7 @@ public:
     bool draw(UiContext& ui) override {
         const game::GameState& s = ui.state();
         const game::Colony* c = planet_.valid() ? s.colony(planet_) : nullptr;
-        if (!c || c->owner != ui.session.player()) return false;   // only an own colony's races are shown (inferred)
+        if (!c) return false;
         Dialog d(ui, screenTitle(ScreenId::RacesOnPlanet), DialogSize::Picker);
         if (!d.open()) return d.keepOpen();
         d.beginContent();

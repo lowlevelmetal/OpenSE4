@@ -1,0 +1,54 @@
+# The owner's flag on an object report's Detail page (spec 06 §1.4, §7 Q120; GitHub issue #15;
+# docs/BUILDING.md "Input scripts"), on a training game of our own in tests/input/learn-intel,
+# where another empire has a colony in the home system:
+# - a right-click on the flag of another empire's Planet Report opens that empire's Race Report
+#   over the main window, Esc closes it; on our own colony's flag our own Race Report opens;
+# - a right-click where an own colony's race pictures are opens Races On Planet, for another
+#   empire's colony too;
+# - in a report popup (the Colonies window's) the flag opens the Race Report as a popup over it,
+#   and Esc closes that alone.
+# layouts: both (also plays at 800x600: run_input_tests.py --small)
+options --learn-dir=tests/input/learn-intel --training=intel --layout=1024x768 --size=1280x800
+
+wait-screen game
+wait 10
+key Escape
+wait 5
+# Another empire's colony (Prenix X): its flag, then its races.
+click sector:2,7
+wait-for item:report:flag
+right-click item:report:flag
+wait-window race-report
+assert-present item:Detail in=race-report
+screenshot race-report-other.png
+key Escape
+wait-closed race-report
+right-click item:report:population
+wait-window races-on-planet
+key Escape
+wait-closed races-on-planet
+# A left-click on the flag does nothing.
+click item:report:flag
+wait 5
+assert-no-window race-report
+# Our own homeworld: our own Race Report.
+click sector:home
+wait 5
+right-click item:report:flag
+wait-window race-report
+screenshot race-report-own.png
+click tag:race-report:close
+wait-closed race-report
+# In the Colonies window's report popup: a popup over it, which Esc closes alone.
+click tag:command:colonies
+wait-window colonies
+right-click item:"##row" in=colonies
+wait-for item:report:flag in="Planet Report"
+right-click item:report:flag in="Planet Report"
+wait-for item:"window:##racereport"
+click item:Descr
+wait 3
+key Escape
+wait-gone item:"window:##racereport"
+assert-present item:report:flag in="Planet Report"
+assert-window colonies

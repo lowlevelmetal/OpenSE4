@@ -1628,6 +1628,17 @@ void iconStrip(UiContext& ui, ImDrawList* dl, const std::vector<int>& cells, ImV
 
 } // namespace
 
+void MainWindow::openItem(UiContext& ui, const ItemRef& item) {
+    // An owner's flag: the Race Report window, modal over the main window (spec 06 §1.4, §7 Q120).
+    if (item.kind == ItemRef::Kind::Race) {
+        ScreenArgs a;
+        a.empire = game::EmpireId{item.index};
+        ui.open(ScreenId::RaceReport, a);
+        return;
+    }
+    itemReport_.open(item);
+}
+
 void MainWindow::reportPanel(UiContext& ui) {
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
@@ -1670,7 +1681,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 }
                 if (click.report) shipReport_.vehicle(*click.report);
             } else {
-                if (const auto item = vehicleReport(ui, *v, tab_)) itemReport_.open(*item);
+                if (const auto item = vehicleReport(ui, *v, tab_)) openItem(ui, *item);
                 aiNotesInReport(ui, "vehicle", v->id.value);
                 tabsFor = true;
             }
@@ -1678,7 +1689,7 @@ void MainWindow::reportPanel(UiContext& ui) {
     } else if (object_ && tagged_.empty()) {
         const game::SpaceObject& o = s.galaxy.object(*object_);
         if (o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids) {
-            if (const auto item = planetReport(ui, *object_, tab_)) itemReport_.open(*item);
+            if (const auto item = planetReport(ui, *object_, tab_)) openItem(ui, *item);
             aiNotesInReport(ui, "object", object_->value);
             tabsFor = planetTabs = true;
         } else {

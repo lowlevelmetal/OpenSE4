@@ -117,6 +117,9 @@ bool colonyCanCloak(const Colony& c);
 // Scanner - System and the target is a ship or base (unit groups are not
 // covered by it).
 bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target);
+// The viewer's long-range scanners would reach the vehicle but its Scanner
+// Jammer blocks them (spec 06 §1.4: its report says so).
+bool scannerBlocked(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target);
 // The designs a vehicle's report dates (spec 05 §8 "Design knowledge", open
 // question 43, confirmed: binary): a ship's or base's own design, never the
 // units in its cargo; every design of a unit group, sorted.

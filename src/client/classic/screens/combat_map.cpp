@@ -279,25 +279,36 @@ std::optional<uint32_t> CombatMapPainter::pieces(ImDrawList* dl, const CombatVie
 }
 
 std::optional<uint32_t> CombatMapPainter::squares(ImDrawList* dl, const CombatView& v, float minSize, bool hover, ImVec2 mouse) const {
+    // The original's small map (spec 06 §1.10.5, §7 Q122, confirmed: binary):
+    // every piece in piece order, in its owner's colour (a simulation's side
+    // colour; no owner: grey #808080); a one-square piece, a seeker too, as a
+    // filled square of one cell, whatever its hull; a planet or obstacle as a
+    // hollow outline round its 4x4 squares, through which smaller pieces show.
+    // Mines are no pieces. The square under the pointer is OpenSE4's.
     const auto& pieces = playback_.pieces();
     std::optional<uint32_t> hovered;
-    // Big pieces first, so the small ones stay visible on top of them.
-    for (const bool big : {true, false})
-        for (uint32_t i = 0; i < pieces.size() && i < record_.pieces.size(); ++i) {
-            const CombatPlayback::Piece& p = pieces[i];
-            if (!p.onMap || (p.size > 1) != big) continue;
-            const ImVec2 c = piecePos(v, i);
-            const bool seeker = record_.pieces[i].kind == game::CombatPiece::Kind::Seeker;
-            const ImU32 col = p.neutral ? IM_COL32(120, 120, 120, 255) : empireColor(s_, p.owner);
-            if (seeker) {
-                dl->AddCircleFilled(c, std::max(1.5f, v.cell * 0.25f), withAlpha(col, 0.85f));
-                continue;
-            }
-            const float h = std::max(minSize, v.cell * float(p.size)) * 0.5f;
-            dl->AddRectFilled({c.x - h, c.y - h}, {c.x + h, c.y + h}, big ? withAlpha(col, 0.55f) : col);
-            if (p.captured) dl->AddRect({c.x - h - 1, c.y - h - 1}, {c.x + h + 1, c.y + h + 1}, IM_COL32(255, 220, 80, 255));
-            if (hover && std::abs(mouse.x - c.x) <= h + 1 && std::abs(mouse.y - c.y) <= h + 1 && (!hovered || pieces[*hovered].size > p.size)) hovered = i;
+    const float line = std::max(1.0f, v.cell / 3.0f);
+    for (uint32_t i = 0; i < pieces.size() && i < record_.pieces.size(); ++i) {
+        const CombatPlayback::Piece& p = pieces[i];
+        if (!p.onMap) continue;
+        const ImVec2 c = piecePos(v, i);
+        ImU32 col = IM_COL32(128, 128, 128, 255);
+        if (!p.neutral && p.owner.valid()) {
+            const int side = simulationSide(s_, p.owner);
+            col = side > 0 ? sideBoxColor(side) : empireColor(s_, p.owner);
         }
+        const float h = std::max(minSize, v.cell * float(p.size)) * 0.5f;
+        const ImVec2 a{c.x - h, c.y - h}, b{c.x + h, c.y + h};
+        if (p.size > 1) {
+            dl->AddRectFilled(a, {b.x, a.y + line}, col);
+            dl->AddRectFilled({a.x, b.y - line}, b, col);
+            dl->AddRectFilled({a.x, a.y + line}, {a.x + line, b.y - line}, col);
+            dl->AddRectFilled({b.x - line, a.y + line}, {b.x, b.y - line}, col);
+        } else {
+            dl->AddRectFilled(a, b, col);
+        }
+        if (hover && std::abs(mouse.x - c.x) <= h + 1 && std::abs(mouse.y - c.y) <= h + 1 && (!hovered || pieces[*hovered].size >= p.size)) hovered = i;
+    }
     return hovered;
 }
 

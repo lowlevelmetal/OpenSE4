@@ -628,6 +628,11 @@ TEST_CASE("ship windows: a vehicle's sort values") {
     hit.damage.assign(s.design(plain).entries.size(), 0);
     hit.damage.back() = r.component(s.design(plain).entries.back().component).structure;
     CHECK(shipui::shipSortValues(r, s, hit).destroyed == 1);
+    CHECK(shipui::destroyedComponents(r, s, hit) == std::pair<int, int>{1, static_cast<int>(s.design(plain).entries.size())});
+    // Damage counts destroyed components, never structure (GitHub issue #16): a part
+    // hit but not destroyed counts nothing.
+    hit.damage.front() = r.component(s.design(plain).entries.front().component).structure - 1;
+    CHECK(shipui::destroyedComponents(r, s, hit).first == 1);
     // In a fleet: the fleet's number.
     Fleet f;
     f.id = FleetId{static_cast<uint32_t>(s.fleets.size())};
@@ -640,4 +645,15 @@ TEST_CASE("ship windows: a vehicle's sort values") {
     const Resources perDesign = economy::designMaintenance(r, s, s.design(plain));
     CHECK_FALSE(perDesign.isZero());
     CHECK(perDesign == economy::vehicleMaintenance(r, s, *s.vehicle(id)));
+}
+
+TEST_CASE("ship windows: the Ship Report's damage bar, a cell per component up to 15 (GitHub issue #16)") {
+    using B = shipui::DamageBar;
+    CHECK(shipui::damageBar(0, 0) == B{0, 0});
+    CHECK(shipui::damageBar(0, 10) == B{10, 0});
+    CHECK(shipui::damageBar(3, 10) == B{10, 3});
+    CHECK(shipui::damageBar(15, 15) == B{15, 15});
+    CHECK(shipui::damageBar(9, 16) == B{15, 8});    // truncate(15 x 9 / 16)
+    CHECK(shipui::damageBar(1, 40) == B{15, 0});
+    CHECK(shipui::damageBar(40, 40) == B{15, 15});
 }
